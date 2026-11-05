@@ -44,6 +44,8 @@ changelog:
       - '^chore:'
 
 release:
-  prerelease: auto
+  # Every release before 1.0 is a pre-release. "auto" would only flag
+  # versions with a suffix such as -rc1, which misrepresents 0.x tags.
+  prerelease: true
   footer: |
     Pre-release. See ROADMAP.md for what is implemented and what is not.

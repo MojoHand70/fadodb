@@ -1,0 +1,21 @@
+name: Feature request
+description: Propose a capability. Check ROADMAP.md first; it may already be planned.
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What you are trying to do and why the current design does not allow it.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposal
+      description: How it could work. A class definition or formula sketch helps.
+  - type: textarea
+    id: performance
+    attributes:
+      label: Performance impact
+      description: Every FadoDB feature carries a performance budget. What would this one cost, and where?

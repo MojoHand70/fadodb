@@ -1,0 +1,29 @@
+name: Bug report
+description: Something behaves differently from what the documentation promises.
+labels: [bug]
+body:
+  - type: input
+    id: version
+    attributes:
+      label: FadoDB version
+      description: Output of `fadodb version`.
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected, what you got. Include the class definition and formula if relevant.
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Minimal reproduction
+      description: The smallest class definition, documents and commands that show the problem.
+      render: json
+  - type: input
+    id: platform
+    attributes:
+      label: Platform
+      placeholder: linux/amd64, Go 1.26

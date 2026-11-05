@@ -317,7 +317,11 @@ first write or eagerly by command. The event log is never rewritten.
 
 DuckDB attaches the SQLite file read-only, or Postgres through its scanner.
 Mining views live here. The analytics build is a second binary
-(`fadodb-analytics`) or a build tag, never part of the core.
+(`fadodb-analytics`) or a build tag, never part of the core. The DuckDB Go
+client bundles only the ICU, JSON, Parquet and Autocomplete extensions; the
+`sqlite` extension it needs for ATTACH is installed on first use, so the
+analytics build documents how to pre-install it and is tested without network
+access. See ADR-0002 for the measured cost of the client.
 
 ---
 

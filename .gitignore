@@ -1,1 +1,14 @@
+# Personal planning material, never committed.
 private/
+
+# Build output
+bin/
+dist/
+*.test
+*.out
+*.prof
+
+# Editors and OS
+.idea/
+.vscode/
+.DS_Store

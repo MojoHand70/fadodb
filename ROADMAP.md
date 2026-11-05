@@ -10,14 +10,14 @@ Legend: ✅ done · 🚧 in progress · ⬜ not started
 | Phase | Goal | Status |
 |---|---|---|
 | 0 | Foundations: module, gates, CI, release pipeline, ADRs, docs | 🚧 |
-| 1 | Formula engine: lexer, parser, binder, bytecode, Go VM, SQL generator, conformance suite | ⬜ |
-| 2 | Document model and SQLite store: classes, typed values, one table per class, event log, migrations, queries | ⬜ |
+| 1 | Formula engine: lexer, parser, binder, bytecode, Go VM, SQL generator with SQLite and DuckDB dialects, conformance suite | ⬜ |
+| 2 | Document model and store: primary-store benchmark, variables with defaults, current, history and child tables, commits, event log, migrations, LOOKUP, queries | ⬜ |
 | 3 | Statechart: states, transitions, guards, eventless transitions, exit and entry snapshots | ⬜ |
-| 4 | Rules and actions: event-condition-action rules, built-in actions, transactional outbox, admin tables | ⬜ |
+| 4 | Rules and actions: event-condition-action rules, built-in actions incl. reset and refresh, transactional outbox, explicit tables with storage bindings, QUERY | ⬜ |
 | 5 | Security: users, groups, API keys, access rules compiled to SQL predicates | ⬜ |
 | 6 | Server and CLI: JSON command set over HTTP and WebSocket, OpenAPI, `fadodb serve` | ⬜ |
 | 7 | Browser VM and reference frontend: TypeScript VM on the same bytecode, UI schema, TypeScript client | ⬜ |
-| 8 | Analytics and process mining: SQL views over the event log, optional DuckDB build | ⬜ |
+| 8 | Analytical engine: DuckDB projection of document tables, native and attached bindings, set-wise recompute, mining views, full build per OS | ⬜ |
 | 9 | Embedding: C ABI, Python client, embedding guides | ⬜ |
 | 10 | Postgres backend | ⬜ |
 | 11 | Optional AI layer: MCP server, authoring assistant | ⬜ |
@@ -34,4 +34,4 @@ in [docs/architecture.md](docs/architecture.md) and [docs/adr/](docs/adr/).
 
 Parallel statechart regions, BPMN, multi-tenancy inside one database file,
 replication and clustering, WASM plugin actions, a visual class designer,
-a decimal number type, OCEL export, nested arrays.
+a decimal number type, OCEL export, nested composites, raw SQL inside formulas.

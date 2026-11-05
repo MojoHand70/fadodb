@@ -12,7 +12,7 @@ An embeddable **active document database**, written in Go, MIT licensed.
 
 ## What it will be
 
-A document class declares typed named values, Excel-like formulas, a
+A document class declares typed variables, Excel-like formulas, a
 statechart, and rules that fire actions when the state changes. FadoDB keeps
 an append-only event log with a snapshot on every transition, evaluates
 formulas on the server and in the browser from one compiled bytecode, exposes
@@ -25,14 +25,13 @@ A class is one JSON document:
 ```json
 {
   "name": "Invoice",
-  "values": {
+  "variables": {
     "customer": {"type": "text", "required": true},
-    "lines":    {"type": "array", "of": "number"},
-    "discount": {"type": "number", "default": 0}
-  },
-  "formulas": {
-    "subtotal": "SUM(lines)",
-    "total":    "ROUND(subtotal * (1 - discount), 2)"
+    "due":      {"type": "date", "default": "ADDDAYS(TODAY(), 30)"},
+    "discount": {"type": "number", "default": "0"},
+    "lines":    {"type": "rows", "schema": {"sku": "text", "qty": "number", "price": "number"}},
+    "subtotal": {"formula": "SUM(lines.qty * lines.price)"},
+    "total":    {"formula": "ROUND(subtotal * (1 - discount), 2)"}
   },
   "states": {"initial": "draft", "list": ["draft", "submitted", "approved", "paid"]},
   "transitions": [
@@ -53,7 +52,7 @@ Planned Go API, not implemented:
 ```go
 db, _ := fado.Open("app.fado", fado.Options{})
 db.DefineClass(ctx, invoiceJSON)
-id, _ := db.Create(ctx, "Invoice", fado.Values{"customer": "ACME", "lines": []float64{100, 250}}, fado.As(user))
+id, _ := db.Create(ctx, "Invoice", fado.Values{"customer": "ACME"}, fado.As(user))
 db.Transition(ctx, "Invoice", id, "submit", fado.As(user))
 rows, _ := db.Query(ctx, `SELECT id, total FROM Invoice WHERE state = 'submitted'`, fado.As(user))
 ```
@@ -89,7 +88,7 @@ make gates    # what CI runs
 cmd/fadodb/        command-line tool and server entry point
 fado/              public Go API (planned)
 internal/formula/  lexer, parser, binder, bytecode, VM, SQL generator
-internal/model/    document classes, typed values, validation, migrations
+internal/model/    document classes, typed variables, defaults, validation, migrations
 internal/store/    SQLite store, event log, outbox
 internal/state/    statechart engine
 internal/rules/    event-condition-action rules and built-in actions

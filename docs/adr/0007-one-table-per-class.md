@@ -1,6 +1,6 @@
 # ADR-0007: One table per document class
 
-- Status: Accepted
+- Status: Accepted; amended by ADR-0014 (history table, child tables for composite variables, views)
 - Date: 2026-11-05
 
 ## Context

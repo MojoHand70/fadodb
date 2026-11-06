@@ -1,6 +1,6 @@
 # Roadmap
 
-**Current status: Phase 0 done, Phase 1 not started. There is nothing to use yet.**
+**Current status: Phase 1, the formula engine, in progress since 2026-11-06. There is nothing to use yet.**
 `fadodb version` is the only working command. This page is updated when a
 phase starts and when it ends; it never describes a phase as done before its
 acceptance criteria pass.
@@ -10,7 +10,7 @@ Legend: ✅ done · 🚧 in progress · ⬜ not started
 | Phase | Goal | Status |
 |---|---|---|
 | 0 | Foundations: module, gates, CI, release pipeline, ADRs, docs | ✅ |
-| 1 | Formula engine: lexer, parser, binder, bytecode, Go VM, SQL generator with SQLite and DuckDB dialects, conformance suite | ⬜ |
+| 1 | Formula engine: lexer, parser, binder, bytecode, Go VM, SQL generator with SQLite and DuckDB dialects, conformance suite | 🚧 |
 | 2 | Document model and store: primary-store benchmark, variables with defaults, `json` type, class metadata and title, current, history and child tables, commits, event log, migrations, LOOKUP, queries | ⬜ |
 | 3 | Statechart: states, transitions, guards, eventless transitions, exit and entry snapshots | ⬜ |
 | 4 | Rules and actions: event-condition-action rules, built-in actions incl. reset and refresh, transactional outbox, explicit tables with storage bindings, QUERY | ⬜ |

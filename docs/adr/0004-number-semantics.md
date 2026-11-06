@@ -1,6 +1,6 @@
 # ADR-0004: Number semantics: float64 with Excel rules
 
-- Status: Accepted
+- Status: Accepted; amended by ADR-0019 (TEXT rendering rule)
 - Date: 2026-11-05
 
 ## Context

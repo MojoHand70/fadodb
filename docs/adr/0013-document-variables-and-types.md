@@ -1,6 +1,6 @@
 # ADR-0013: Document variables and the type system
 
-- Status: Accepted
+- Status: Accepted; amended by ADR-0019 (formula keywords are reserved names)
 - Date: 2026-11-05
 
 ## Context

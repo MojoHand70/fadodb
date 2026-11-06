@@ -10,7 +10,7 @@ justification and a reviewer who agrees with it. See
 | Module | License | Status | Justification |
 |---|---|---|---|
 | Go standard library | BSD-3 | in use | Everything the core needs for HTTP, JSON, crypto and testing. |
-| `modernc.org/sqlite` | BSD-3 | approved, not yet added | Pure-Go SQLite. Keeps the core free of cgo so it cross-compiles and embeds anywhere. Added in Phase 2. |
+| `modernc.org/sqlite` | BSD-3 | approved, not yet added | Pure-Go SQLite. Keeps the core free of cgo so it cross-compiles and embeds anywhere. Added in Phase 1 for the SQL conformance runner (ADR-0020). |
 
 ## Separate modules
 

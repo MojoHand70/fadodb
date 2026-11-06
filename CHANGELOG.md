@@ -6,6 +6,23 @@ All notable changes to FadoDB are recorded here. The format follows
 
 ## [Unreleased]
 
+Phase 1, the formula engine, started on 2026-11-06. Still nothing to run
+beyond `fadodb version`.
+
+### Added
+
+- ADR-0019: formula language semantics: grammar, static types, coercion,
+  comparison, dates, text, composites and errors.
+- ADR-0020: `LOOKUP` and `QUERY` execution: one engine call per invocation,
+  point lookups off the analytical engine, set-wise recomputes as one
+  statement per class, DuckDB dialect tested from Phase 1.
+
+### Changed
+
+- ROADMAP and README mark Phase 1 as in progress.
+- `modernc.org/sqlite` is scheduled for Phase 1 instead of Phase 2, for the
+  SQL conformance runner.
+
 ## [0.0.1] - 2026-11-05
 
 Project scaffold. Nothing to run beyond `fadodb version`.

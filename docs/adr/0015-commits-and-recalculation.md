@@ -1,6 +1,6 @@
 # ADR-0015: Commits, recalculation modes, defaults, reset and refresh
 
-- Status: Accepted
+- Status: Accepted; amended by ADR-0020 (how recomputes and query functions reach their engine)
 - Date: 2026-11-05
 
 ## Context

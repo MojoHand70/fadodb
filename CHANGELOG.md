@@ -11,6 +11,13 @@ beyond `fadodb version`.
 
 ### Added
 
+- SQL generator with the SQLite dialect. A program becomes a value
+  expression and an error expression over the columns holding its
+  variables, with the short-circuit rules of ADR-0019 kept in both. The
+  dialect uses native SQL where SQLite agrees with the VM and calls the
+  engine's own Go functions, registered by `internal/formula/sqlitefn`,
+  where it does not. The differential test runs every evaluation case on
+  SQLite through `modernc.org/sqlite`, now a dependency of the core module.
 - Binder, bytecode v1 and the Go VM. The binder gives every expression a
   static type by ADR-0019 and rejects type errors, unknown names and
   context functions in auto mode at definition time, with a column in every

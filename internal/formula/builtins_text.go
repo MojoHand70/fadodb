@@ -200,7 +200,7 @@ func fnRegexReplace(_ *VM, args []Value) (Value, *EvalError) {
 	if err != nil {
 		return Value{}, &EvalError{Code: ErrBadText, Msg: "invalid pattern: " + err.Error()}
 	}
-	return Text(re.ReplaceAllString(args[0].str, args[2].str)), nil
+	return Text(re.ReplaceAllLiteralString(args[0].str, args[2].str)), nil
 }
 
 func fnText(_ *VM, args []Value) (Value, *EvalError) { return Text(render(args[0])), nil }

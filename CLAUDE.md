@@ -18,7 +18,8 @@ pure Go. Read
 make tools      # install staticcheck, govulncheck, benchstat
 make build      # bin/fadodb
 make test       # go test -race ./...
-make gates      # lint, vuln, depgate, sizegate, test  (what CI runs)
+make gates      # lint, vuln, depgate, sizegate, test  (what CI runs on the core)
+make analytics  # the DuckDB module: separate go.mod, needs cgo and a C compiler
 make benchgate BASE=origin/main
 go test -count=1 -run TestName ./internal/formula/
 ```

@@ -12,11 +12,18 @@ errors) and ADR-0020 (LOOKUP and QUERY). The function catalog is
 
 ## Status
 
-The Go VM and the SQL generator's SQLite dialect run every evaluation case
-in CI, which is the first VM = SQL differential check. The DuckDB dialect
-and the browser VM do not exist yet. Composite values (arrays and rows) and
-the query functions are not implemented yet; the binder refuses them, and
-the binding suite says so.
+The Go VM and the SQL generator's SQLite and DuckDB dialects run every
+evaluation case in CI: the VM and SQLite exactly, DuckDB exactly except
+aggregates, which may differ by the relative 1e-12 of ADR-0019 because
+DuckDB sums without compensation. The browser VM does not exist yet.
+Composite values (arrays and rows) and the query functions are not
+implemented yet; the binder refuses them, and the binding suite says so.
+
+Known, documented differences of the SQL targets: `VALUE` and `DATEVALUE`
+trim spaces only on DuckDB where the VM trims all whitespace; `UPPER` of
+"ß" is "ẞ" on DuckDB and "ß" in the VM; an invalid `REGEXREPLACE` pattern
+built at run time fails the statement on DuckDB instead of yielding
+`bad_text`.
 
 ## Evaluation cases: `formula/*.json`
 

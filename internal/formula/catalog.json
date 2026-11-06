@@ -178,7 +178,7 @@
      "summary": "The text padded on the left with the fill character, a space when omitted, up to the width. Longer text is returned unchanged."},
     {"name": "REGEXREPLACE", "class": "pure", "category": "text", "returns": "text",
      "params": [{"name": "text", "type": "text"}, {"name": "pattern", "type": "text"}, {"name": "replacement", "type": "text"}],
-     "summary": "The text with every match of the RE2 pattern replaced. An invalid pattern is rejected at definition time when it is a literal."},
+     "summary": "The text with every match of the RE2 pattern replaced by the replacement, taken literally: no backreferences. An invalid pattern is rejected at definition time when it is a literal; an invalid pattern built at run time is the error bad_text."},
     {"name": "TEXT", "class": "pure", "category": "text", "returns": "text",
      "params": [{"name": "value", "type": "scalar"}],
      "summary": "The value as text: numbers with 15 significant digits and no trailing zeros, dates as YYYY-MM-DD or YYYY-MM-DD HH:MM:SS, TRUE and FALSE, refs as Class:id, blank as empty text."},

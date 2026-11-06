@@ -5,9 +5,11 @@ Guidance for AI-assisted development sessions in this repository.
 ## What FadoDB is
 
 An embeddable active document database in pure Go. Document classes declare
-typed values, Excel-like formulas, a statechart, and rules that fire actions on
+typed variables, Excel-like formulas, a statechart, and rules that fire actions on
 state changes. One compiler produces bytecode for the Go VM, SQL for the
-store, and the browser VM. The event log is the source of truth. Read
+stores, and the browser VM. Every change is a commit with a typed history
+row; DuckDB is the analytical engine behind an interface, so the core stays
+pure Go. Read
 `docs/architecture.md` and `docs/adr/` before changing anything.
 
 ## Commands

@@ -1,6 +1,6 @@
 # ADR-0002: Pure-Go core and dependency budget
 
-- Status: Accepted
+- Status: Accepted; amended by ADR-0017 (DuckDB as the analytical engine, full and lite builds)
 - Date: 2026-11-05
 - Revised: 2026-11-05, to correct the DuckDB Go client facts after checking the
   DuckDB 2.0 client documentation and measuring the current client. The

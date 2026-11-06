@@ -1,6 +1,6 @@
 # ADR-0006: Event log as the source of truth
 
-- Status: Accepted
+- Status: Accepted; amended by ADR-0014 (snapshots are typed history rows that events reference, not JSON on events)
 - Date: 2026-11-05
 
 ## Context

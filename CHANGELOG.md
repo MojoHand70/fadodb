@@ -11,6 +11,16 @@ beyond `fadodb version`.
 
 ### Added
 
+- Binder, bytecode v1 and the Go VM. The binder gives every expression a
+  static type by ADR-0019 and rejects type errors, unknown names and
+  context functions in auto mode at definition time, with a column in every
+  message. Bytecode v1 (`FADO`, versioned, binary and JSON debug forms)
+  reserves the `lookup` and `query` opcodes of ADR-0020. The VM executes
+  the scalar language with zero allocations on the scalar path and the
+  closed list of error codes. 59 of the 67 catalog functions run; the
+  composite and query functions are refused as not implemented yet.
+- The conformance runner executes every evaluation case on the VM, and a
+  binding suite pins the static typing rules and the auto-mode restriction.
 - Formula lexer and parser for the grammar of ADR-0019, with positions in
   every error, and the function catalog (`internal/formula/catalog.json`,
   67 functions with their evaluation class, arguments and summary) that the

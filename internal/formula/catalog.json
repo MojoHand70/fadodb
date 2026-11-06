@@ -206,7 +206,7 @@
      "summary": "The elements rendered as TEXT does and joined with the separator, blanks skipped."},
     {"name": "JSONVALUE", "class": "pure", "category": "composite", "returns": "scalar",
      "params": [{"name": "json", "type": "json"}, {"name": "path", "type": "text"}],
-     "summary": "One scalar read from a json value at a dotted path such as address.city or items.0.sku. Blank when the path is absent."},
+     "summary": "One value read from a json value at a dotted path such as address.city or items.0.sku, as text: numbers as TEXT renders them, booleans as TRUE and FALSE. Blank when the path is absent or null; an object or array at the path is the error bad_text. Convert with VALUE or DATEVALUE."},
 
     {"name": "LOOKUP", "class": "lookup", "category": "data", "returns": "scalar",
      "params": [{"name": "source", "type": "source"}, {"name": "column", "type": "column"}, {"name": "condition", "type": "condition"}],

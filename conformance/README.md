@@ -12,9 +12,10 @@ errors) and ADR-0020 (LOOKUP and QUERY). The function catalog is
 
 ## Status
 
-The Go VM, the SQL generator and the browser VM do not exist yet. Today the
-evaluation cases are checked to be well formed and to parse; the syntax
-cases run against the parser. Evaluation starts with the VM.
+The Go VM runs every evaluation case in CI. The SQL generator and the
+browser VM do not exist yet, so the cross-target check is still to come.
+Composite values (arrays and rows) and the query functions are not
+implemented yet; the binder refuses them, and the binding suite says so.
 
 ## Evaluation cases: `formula/*.json`
 
@@ -47,6 +48,12 @@ One file per topic:
 
 Numbers compare exactly, except that aggregates over floating-point values
 compare to a relative 1e-12 across targets (ADR-0019).
+
+## Binding cases: `binding/*.json`
+
+Formulas the binder must accept and formulas it must refuse at definition
+time by the static typing rules of ADR-0019, in a `mode` of `any` (the
+default) or `auto` (ADR-0015). Same shape as the syntax cases, plus `mode`.
 
 ## Syntax cases: `syntax/*.json`
 

@@ -1,0 +1,29 @@
+{
+  "suite": "context",
+  "description": "The context functions read the caller's context: USER and INGROUP the principal, NOW and TODAY the clock, all in UTC.",
+  "variables": {"D": "date"},
+  "cases": [
+    {"formula": "USER()", "context": {"user": "alice"}, "expected": "alice"},
+    {"name": "a system recompute has no user", "formula": "USER()", "expected": null},
+    {"formula": "ISBLANK(USER())", "expected": true},
+    {"formula": "USER() = \"alice\"", "context": {"user": "alice"}, "expected": true},
+    {"formula": "USER() = \"alice\"", "context": {"user": "bob"}, "expected": false},
+    {"formula": "INGROUP(\"admins\")", "context": {"user": "alice", "groups": ["staff", "admins"]}, "expected": true},
+    {"formula": "INGROUP(\"admins\")", "context": {"user": "bob", "groups": ["staff"]}, "expected": false},
+    {"formula": "INGROUP(\"admins\")", "expected": false},
+    {"name": "group names are case-sensitive like all text", "formula": "INGROUP(\"Admins\")", "context": {"groups": ["admins"]}, "expected": false},
+    {"formula": "NOW()", "context": {"now": "2024-01-31 10:30:00"}, "type": "date", "expected": "2024-01-31 10:30:00"},
+    {"formula": "TODAY()", "context": {"now": "2024-01-31 10:30:00"}, "type": "date", "expected": "2024-01-31"},
+    {"formula": "TODAY()", "context": {"now": "2024-01-31"}, "type": "date", "expected": "2024-01-31"},
+    {"formula": "TODAY()", "context": {"now": "1969-12-31 23:00:00"}, "type": "date", "expected": "1969-12-31"},
+    {"formula": "YEAR(TODAY())", "context": {"now": "2024-01-31 10:30:00"}, "expected": 2024},
+    {"formula": "DAYS(TODAY(), D)", "context": {"now": "2024-01-31 10:30:00"}, "inputs": {"D": "2024-01-01"}, "expected": 30},
+    {"formula": "DAYS(NOW(), D)", "context": {"now": "2024-01-31 01:00:00"}, "inputs": {"D": "2024-01-30 23:00:00"}, "expected": 1},
+    {"formula": "NOW() > TODAY()", "context": {"now": "2024-01-31 10:30:00"}, "expected": true},
+    {"formula": "NOW() = TODAY()", "context": {"now": "2024-01-31"}, "expected": true},
+    {"formula": "IF(D < TODAY(), \"overdue\", \"open\")", "context": {"now": "2024-01-31"}, "inputs": {"D": "2024-01-15"}, "expected": "overdue"},
+    {"formula": "IF(D < TODAY(), \"overdue\", \"open\")", "context": {"now": "2024-01-31"}, "inputs": {"D": "2024-02-15"}, "expected": "open"},
+    {"formula": "TEXT(ADDDAYS(TODAY(), 7))", "context": {"now": "2024-02-25 15:00:00"}, "expected": "2024-03-03"},
+    {"formula": "ISBLANK(NOW())", "expected": false}
+  ]
+}

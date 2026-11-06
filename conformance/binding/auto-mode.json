@@ -1,0 +1,20 @@
+{
+  "suite": "auto-mode",
+  "description": "An auto formula may use pure functions and LOOKUP only (ADR-0015): its stored value must be a function of the document itself, never of who is looking or of the clock.",
+  "variables": {"qty": "number", "due": "date"},
+  "mode": "auto",
+  "accept": [
+    "qty * 2",
+    "ROUND(qty, 2)",
+    "DAYS(due, DATE(2024, 1, 1))",
+    "ADDMONTHS(due, 1)",
+    "IF(ISBLANK(due), \"open\", TEXT(due))"
+  ],
+  "reject": [
+    {"formula": "NOW()", "reason": "context function in an auto formula"},
+    {"formula": "TODAY()", "reason": "context function in an auto formula"},
+    {"formula": "DAYS(due, TODAY())", "reason": "context function in an auto formula"},
+    {"formula": "USER()", "reason": "context function in an auto formula"},
+    {"formula": "IF(INGROUP(\"admins\"), 1, 0)", "reason": "context function in an auto formula"}
+  ]
+}

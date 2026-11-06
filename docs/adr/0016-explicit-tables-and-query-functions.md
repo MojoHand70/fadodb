@@ -1,6 +1,6 @@
 # ADR-0016: Explicit tables, storage bindings, LOOKUP and QUERY
 
-- Status: Accepted
+- Status: Accepted; amended by ADR-0020 (run-time execution of LOOKUP and QUERY)
 - Date: 2026-11-05
 
 ## Context

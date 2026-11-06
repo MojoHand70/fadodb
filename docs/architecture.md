@@ -479,12 +479,16 @@ and a call-free instruction loop. Row-wise expressions over `rows`, such as
 `SUM(lines.qty * lines.price)`, compile to a loop over the rows with the
 scalar path inside.
 
-### Semantics to fix in ADRs before coding
+### Semantics
 
-Blank propagation; division by zero (`/` gives 0, `\` errors); mixed-type
-comparisons; text/number coercion; date arithmetic and month clamping; number
-formatting in `TEXT()`; rounding mode; string collation; array and rows
-operations and their blank handling.
+The rules every evaluator follows are fixed in records before any code:
+numbers in ADR-0004, blanks in ADR-0005, types in ADR-0013, grammar,
+coercion, comparison, dates, text, composites and errors in ADR-0019, and
+how `LOOKUP` and `QUERY` reach their engine in ADR-0020. In short: every
+expression has a static type resolved at definition time, there is no
+implicit conversion to or from text, text compares case-sensitively, dates
+change only through functions, errors are a closed list of codes, and a
+query function costs one engine call and never a round trip per row.
 
 ### Conformance suite
 

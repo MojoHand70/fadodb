@@ -12,10 +12,11 @@ errors) and ADR-0020 (LOOKUP and QUERY). The function catalog is
 
 ## Status
 
-The Go VM runs every evaluation case in CI. The SQL generator and the
-browser VM do not exist yet, so the cross-target check is still to come.
-Composite values (arrays and rows) and the query functions are not
-implemented yet; the binder refuses them, and the binding suite says so.
+The Go VM and the SQL generator's SQLite dialect run every evaluation case
+in CI, which is the first VM = SQL differential check. The DuckDB dialect
+and the browser VM do not exist yet. Composite values (arrays and rows) and
+the query functions are not implemented yet; the binder refuses them, and
+the binding suite says so.
 
 ## Evaluation cases: `formula/*.json`
 

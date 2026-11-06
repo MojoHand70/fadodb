@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 )
 
 // The conformance suite under conformance/ is the specification of the
@@ -269,4 +270,95 @@ func validateVariables(vars map[string]string) error {
 		return fmt.Errorf("variable %s: unknown type %q", name, typ)
 	}
 	return nil
+}
+
+// ScopeOf builds the scope of a suite's variables, in name order.
+func ScopeOf(vars map[string]string) (*Scope, error) {
+	names := make([]string, 0, len(vars))
+	for n := range vars {
+		names = append(names, n)
+	}
+	sort.Strings(names)
+	vs := make([]Variable, 0, len(names))
+	for _, n := range names {
+		t, err := ParseType(vars[n])
+		if err != nil {
+			return nil, fmt.Errorf("variable %s: %w", n, err)
+		}
+		vs = append(vs, Variable{Name: n, Type: t})
+	}
+	return NewScope(vs...)
+}
+
+// ParseCaseDate reads a date as the suite writes it: YYYY-MM-DD or
+// YYYY-MM-DD HH:MM:SS, UTC.
+func ParseCaseDate(s string) (int64, error) {
+	layout := dateLayout
+	if len(s) > len(dateLayout) {
+		layout = dateTimeLayout
+	}
+	t, err := time.Parse(layout, s)
+	if err != nil {
+		return 0, err
+	}
+	return t.Unix(), nil
+}
+
+// ParseCaseValue reads a case value written in the suite notation as a
+// value of the given type.
+func ParseCaseValue(raw json.RawMessage, t Type) (Value, error) {
+	if raw == nil || string(raw) == "null" {
+		return Blank(), nil
+	}
+	switch t.Kind {
+	case KindNull:
+		return Value{}, fmt.Errorf("a blank-typed result cannot be %s", raw)
+	case KindNumber:
+		var f float64
+		if err := json.Unmarshal(raw, &f); err != nil {
+			return Value{}, fmt.Errorf("want a number, got %s", raw)
+		}
+		return Number(f), nil
+	case KindBool:
+		var b bool
+		if err := json.Unmarshal(raw, &b); err != nil {
+			return Value{}, fmt.Errorf("want a bool, got %s", raw)
+		}
+		return Bool(b), nil
+	case KindText, KindRef, KindJSON, KindDate:
+		var s string
+		if err := json.Unmarshal(raw, &s); err != nil {
+			return Value{}, fmt.Errorf("want text, got %s", raw)
+		}
+		switch t.Kind {
+		case KindText:
+			return Text(s), nil
+		case KindRef:
+			return Ref(s), nil
+		case KindJSON:
+			return JSON(s), nil
+		}
+		secs, err := ParseCaseDate(s)
+		if err != nil {
+			return Value{}, fmt.Errorf("want a date, got %s", raw)
+		}
+		return Date(secs), nil
+	}
+	return Value{}, fmt.Errorf("values of type %s are not supported by the runners yet", t)
+}
+
+// Context converts the case context to a VM context; nil for none.
+func (c *CaseContext) Context() (*Context, error) {
+	if c == nil {
+		return nil, nil
+	}
+	ctx := &Context{User: c.User, Groups: c.Groups}
+	if c.Now != "" {
+		secs, err := ParseCaseDate(c.Now)
+		if err != nil {
+			return nil, fmt.Errorf("context now: %w", err)
+		}
+		ctx.Now = secs
+	}
+	return ctx, nil
 }

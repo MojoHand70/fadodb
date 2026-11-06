@@ -177,6 +177,12 @@ Composite variables are meant to hold up to a few hundred elements. The soft
 limit is 1,000 elements with a definition-time warning, the hard cap is
 10,000; larger data belongs in an explicit table behind a `ref`.
 
+A text value, stored or computed, is at most the database's text limit,
+65,536 code points by default (ADR-0021). A formula that would produce more
+stops with `out_of_range` before building it, on every evaluator; the limit
+is chosen when the database is created and travels with it, so that a
+commit recomputes as it was committed wherever the database is opened.
+
 A `json` variable is the escape hatch for data without a typed shape yet: an
 address block, settings, a payload from another system. It is stored as JSON
 text, compared as text, and reachable in formulas only through

@@ -47,6 +47,7 @@ func TestConformance_DuckDB(t *testing.T) {
 		if err != nil {
 			t.Fatalf("%s: %v", s.File, err)
 		}
+		ds := d.WithLimits(s.EvalLimits())
 		for i := range s.Cases {
 			c := &s.Cases[i]
 			total++
@@ -63,7 +64,7 @@ func TestConformance_DuckDB(t *testing.T) {
 				fail("bind: %v", err)
 				continue
 			}
-			res, err := formula.RunSQLCase(db, d, prog, c)
+			res, err := formula.RunSQLCase(db, ds, prog, c)
 			if err != nil {
 				fail("%v\n    %s", err, res.Query)
 				continue

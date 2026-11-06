@@ -1,6 +1,6 @@
 # ADR-0019: Formula language semantics: grammar, types, coercion, comparison, dates, text, composites and errors
 
-- Status: Accepted
+- Status: Accepted, amended by ADR-0021
 - Date: 2026-11-06
 
 ## Context

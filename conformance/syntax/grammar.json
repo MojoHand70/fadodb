@@ -30,6 +30,8 @@
     "NOT NOT a",
     "NOT (a AND b)",
     "NOT(a)",
+    "NOT(a) <= b",
+    "NOT(a) & NOT(b)",
     "AND(a, b)",
     "AND(a, b, Alfa > 0)",
     "and(a)",

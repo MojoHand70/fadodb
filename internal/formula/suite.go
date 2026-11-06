@@ -24,9 +24,27 @@ type Suite struct {
 	// Variables declares the input variables the cases may set, by type:
 	// bool, number, text, date, ref, json, array<scalar>, rows.
 	Variables map[string]string `json:"variables,omitempty"`
-	Cases     []Case            `json:"cases"`
+	// Limits sets the size limits the cases evaluate under (ADR-0021);
+	// absent, the defaults. A suite at a small limit reaches the boundary
+	// with short texts.
+	Limits *SuiteLimits `json:"limits,omitempty"`
+	Cases  []Case       `json:"cases"`
 	// File is where the suite was loaded from, for messages.
 	File string `json:"-"`
+}
+
+// SuiteLimits is the limits field of a suite.
+type SuiteLimits struct {
+	MaxText int `json:"max_text"`
+}
+
+// EvalLimits are the limits the suite's cases evaluate under.
+func (s *Suite) EvalLimits() Limits {
+	l := DefaultLimits()
+	if s.Limits != nil {
+		l.MaxText = s.Limits.MaxText
+	}
+	return l
 }
 
 // Case is one evaluation case: a formula, its inputs and context, and the
@@ -206,6 +224,9 @@ func loadSuite(path string) (*Suite, error) {
 	}
 	if err := validateVariables(s.Variables); err != nil {
 		return nil, fmt.Errorf("%s: %w", path, err)
+	}
+	if s.Limits != nil && s.Limits.MaxText < MinMaxText {
+		return nil, fmt.Errorf("%s: limits.max_text must be at least %d", path, MinMaxText)
 	}
 	if len(s.Cases) == 0 {
 		return nil, fmt.Errorf("%s: no cases", path)

@@ -22,12 +22,24 @@ import (
 // the statements that create them.
 
 // DuckDB is the dialect for DuckDB through github.com/duckdb/duckdb-go.
-type DuckDB struct{ coercions }
+type DuckDB struct {
+	coercions
+	lim Limits
+}
 
-// NewDuckDB makes the DuckDB dialect.
+// NewDuckDB makes the DuckDB dialect under the default limits.
 func NewDuckDB() DuckDB {
-	return DuckDB{coercions{zeroNumber: "0.0::DOUBLE", zeroBool: "FALSE", zeroText: "''",
-		castNumber: func(x string) string { return "CAST(" + x + " AS DOUBLE)" }}}
+	return DuckDB{coercions: coercions{zeroNumber: "0.0::DOUBLE", zeroBool: "FALSE", zeroText: "''",
+		castNumber: func(x string) string { return "CAST(" + x + " AS DOUBLE)" }}, lim: DefaultLimits()}
+}
+
+// Limits implements Dialect.
+func (d DuckDB) Limits() Limits { return d.lim }
+
+// WithLimits implements Dialect.
+func (d DuckDB) WithLimits(l Limits) Dialect {
+	d.lim = l
+	return d
 }
 
 // Name implements Dialect.
@@ -102,6 +114,9 @@ func (d DuckDB) Render(e SQLExpr) string {
 func (d DuckDB) Call(name string, args []SQLExpr, params *Params) (SQLExpr, error) {
 	macro := func(kind Kind, withErr bool, sqlArgs ...string) SQLExpr {
 		fn := "fado_" + strings.ToLower(name)
+		if limitedFunctions[name] {
+			sqlArgs = append(sqlArgs, strconv.Itoa(d.lim.MaxText))
+		}
 		list := strings.Join(sqlArgs, ", ")
 		e := SQLExpr{Val: fn + "(" + list + ")", Kind: kind}
 		if withErr {
@@ -131,8 +146,11 @@ func (d DuckDB) Call(name string, args []SQLExpr, params *Params) (SQLExpr, erro
 		}
 		return "CAST(" + e.Val + " IS NOT NULL AS INTEGER)"
 	}
-	intArg := func(x string, floor string) string {
-		return "CAST(GREATEST(trunc(" + x + "), " + floor + ") AS INTEGER)"
+	// intArg truncates a position or count argument to an integer, clamped
+	// to -1 below and to one past maxCount above, so that a negative
+	// argument is still seen and the cast cannot overflow.
+	intArg := func(x string) string {
+		return "CAST(LEAST(GREATEST(trunc(" + x + "), -1), " + maxCount + " + 1) AS BIGINT)"
 	}
 	year := func(v string) string { return "CAST(year(fado_ts(" + v + ")) AS DOUBLE)" }
 	month := func(v string) string { return "CAST(month(fado_ts(" + v + ")) AS DOUBLE)" }
@@ -197,7 +215,8 @@ func (d DuckDB) Call(name string, args []SQLExpr, params *Params) (SQLExpr, erro
 		return SQLExpr{Val: val, Err: "CASE WHEN " + x + " <= 0 OR " + b + " <= 0 OR " + b + " = 1 THEN 'not_a_number' END", Kind: KindNumber}, nil
 	case "MOD":
 		a, b := d.Num(args[0]), d.Num(args[1])
-		return SQLExpr{Val: "(" + a + " - " + b + " * floor(" + a + " / " + b + "))", Err: "CASE WHEN " + b + " = " + zero + " THEN 'div_by_zero' END", Kind: KindNumber}, nil
+		val := "(" + a + " - " + b + " * floor(" + a + " / " + b + "))"
+		return SQLExpr{Val: val, Err: coalesceErr("CASE WHEN "+b+" = "+zero+" THEN 'div_by_zero' END", notFiniteErr(d, val)), Kind: KindNumber}, nil
 	case "DATE":
 		return macro(KindDate, true, d.Num(args[0]), d.Num(args[1]), d.Num(args[2])), nil
 	case "DATEVALUE":
@@ -244,17 +263,15 @@ func (d DuckDB) Call(name string, args []SQLExpr, params *Params) (SQLExpr, erro
 	case "INGROUP":
 		return SQLExpr{Val: "COALESCE(list_contains(" + params.Use("groups") + ", " + d.Text(args[0]) + "), FALSE)", Kind: KindBool, Sure: true}, nil
 	case "LEFT", "RIGHT":
-		n := "trunc(" + d.Num(args[1]) + ")"
-		return SQLExpr{Val: strings.ToLower(name) + "(" + d.Text(args[0]) + ", " + intArg(d.Num(args[1]), "0") + ")", Err: nonNegativeErr(n), Kind: KindText, Sure: true}, nil
+		n := intArg(d.Num(args[1]))
+		return SQLExpr{Val: strings.ToLower(name) + "(" + d.Text(args[0]) + ", GREATEST(" + n + ", 0))", Err: countErr(n), Kind: KindText, Sure: true}, nil
 	case "MID":
-		t, p := d.Text(args[0]), "trunc("+d.Num(args[1])+")"
-		errExpr := "CASE WHEN " + p + " < 1 THEN 'out_of_range' END"
+		t, p := d.Text(args[0]), intArg(d.Num(args[1]))
 		if len(args) == 2 {
-			return SQLExpr{Val: "substr(" + t + ", " + intArg(d.Num(args[1]), "1") + ")", Err: errExpr, Kind: KindText, Sure: true}, nil
+			return SQLExpr{Val: "substr(" + t + ", GREATEST(" + p + ", 1))", Err: positionErr(p, ""), Kind: KindText, Sure: true}, nil
 		}
-		n := "trunc(" + d.Num(args[2]) + ")"
-		errExpr = "CASE WHEN " + p + " < 1 OR " + n + " < 0 THEN 'out_of_range' END"
-		return SQLExpr{Val: "substr(" + t + ", " + intArg(d.Num(args[1]), "1") + ", " + intArg(d.Num(args[2]), "0") + ")", Err: errExpr, Kind: KindText, Sure: true}, nil
+		n := intArg(d.Num(args[2]))
+		return SQLExpr{Val: "substr(" + t + ", GREATEST(" + p + ", 1), GREATEST(" + n + ", 0))", Err: positionErr(p, n), Kind: KindText, Sure: true}, nil
 	case "LEN":
 		return SQLExpr{Val: "CAST(length(" + d.Text(args[0]) + ") AS DOUBLE)", Kind: KindNumber, Sure: true}, nil
 	case "UPPER", "LOWER":
@@ -266,13 +283,9 @@ func (d DuckDB) Call(name string, args []SQLExpr, params *Params) (SQLExpr, erro
 	case "REPLACE":
 		return macro(KindText, true, d.Text(args[0]), d.Num(args[1]), d.Num(args[2]), d.Text(args[3])), nil
 	case "SUBSTITUTE":
-		return SQLExpr{Val: "replace(" + d.Text(args[0]) + ", " + d.Text(args[1]) + ", " + d.Text(args[2]) + ")", Kind: KindText, Sure: true}, nil
+		return macro(KindText, true, d.Text(args[0]), d.Text(args[1]), d.Text(args[2])), nil
 	case "CONCAT":
-		parts := make([]string, len(args))
-		for i, a := range args {
-			parts[i] = d.Render(a)
-		}
-		return SQLExpr{Val: "(" + strings.Join(parts, " || ") + ")", Kind: KindText, Sure: true}, nil
+		return concatExpr(d, args, false), nil
 	case "REPEAT":
 		return macro(KindText, true, d.Text(args[0]), d.Num(args[1])), nil
 	case "FINDFIRST":
@@ -288,7 +301,7 @@ func (d DuckDB) Call(name string, args []SQLExpr, params *Params) (SQLExpr, erro
 		}
 		return macro(KindText, true, d.Text(args[0]), d.Num(args[1]), fill), nil
 	case "REGEXREPLACE":
-		e := macro(KindText, false, d.Text(args[0]), d.Text(args[1]), d.Text(args[2]))
+		e := macro(KindText, true, d.Text(args[0]), d.Text(args[1]), d.Text(args[2]))
 		e.Sure = true
 		return e, nil
 	case "TEXT":
@@ -311,10 +324,17 @@ const (
 // more than one row.
 var duckdbMacros = []string{
 	// Rounding, as the VM's roundTo and scaledStep, operation for operation.
-	`CREATE OR REPLACE MACRO fado_round(x, d) AS CASE WHEN trunc(d::DOUBLE) > 300 THEN x::DOUBLE WHEN trunc(d::DOUBLE) < -300 THEN 0.0::DOUBLE WHEN isinf(x::DOUBLE * pow(10::DOUBLE, trunc(d::DOUBLE))) THEN x::DOUBLE ELSE round(x::DOUBLE * pow(10::DOUBLE, trunc(d::DOUBLE))) / pow(10::DOUBLE, trunc(d::DOUBLE)) END`,
-	`CREATE OR REPLACE MACRO fado_floor(x, d) AS CASE WHEN isinf(x::DOUBLE * pow(10::DOUBLE, LEAST(GREATEST(trunc(d::DOUBLE), -300), 300))) THEN x::DOUBLE ELSE floor(fado_round(x::DOUBLE * pow(10::DOUBLE, LEAST(GREATEST(trunc(d::DOUBLE), -300), 300)), 9)) / pow(10::DOUBLE, LEAST(GREATEST(trunc(d::DOUBLE), -300), 300)) END`,
-	`CREATE OR REPLACE MACRO fado_ceiling(x, d) AS CASE WHEN isinf(x::DOUBLE * pow(10::DOUBLE, LEAST(GREATEST(trunc(d::DOUBLE), -300), 300))) THEN x::DOUBLE ELSE ceil(fado_round(x::DOUBLE * pow(10::DOUBLE, LEAST(GREATEST(trunc(d::DOUBLE), -300), 300)), 9)) / pow(10::DOUBLE, LEAST(GREATEST(trunc(d::DOUBLE), -300), 300)) END`,
-	`CREATE OR REPLACE MACRO fado_trunc(x, d) AS CASE WHEN isinf(x::DOUBLE * pow(10::DOUBLE, LEAST(GREATEST(trunc(d::DOUBLE), -300), 300))) THEN x::DOUBLE ELSE trunc(fado_round(x::DOUBLE * pow(10::DOUBLE, LEAST(GREATEST(trunc(d::DOUBLE), -300), 300)), 9)) / pow(10::DOUBLE, LEAST(GREATEST(trunc(d::DOUBLE), -300), 300)) END`,
+	// The power of ten comes from its decimal spelling beyond 22, where it is
+	// no longer exactly representable: DuckDB's text-to-double conversion is
+	// correctly rounded, as is the VM's table, while pow() may be off by an
+	// ulp. A scaled value of 2^52 or more is an integer already and the value
+	// is returned as it is.
+	`CREATE OR REPLACE MACRO fado_pow10(d) AS CASE WHEN abs(trunc(d::DOUBLE)) <= 22 THEN pow(10::DOUBLE, trunc(d::DOUBLE)) ELSE CAST('1e' || CAST(CAST(LEAST(GREATEST(trunc(d::DOUBLE), -323), 308) AS INTEGER) AS VARCHAR) AS DOUBLE) END`,
+	`CREATE OR REPLACE MACRO fado_scale(d) AS fado_pow10(LEAST(GREATEST(trunc(d::DOUBLE), -300), 300))`,
+	`CREATE OR REPLACE MACRO fado_round(x, d) AS CASE WHEN trunc(d::DOUBLE) > 300 THEN x::DOUBLE WHEN trunc(d::DOUBLE) < -300 THEN 0.0::DOUBLE WHEN abs(x::DOUBLE * fado_pow10(d)) >= 4503599627370496 THEN x::DOUBLE ELSE round(x::DOUBLE * fado_pow10(d)) / fado_pow10(d) END`,
+	`CREATE OR REPLACE MACRO fado_floor(x, d) AS CASE WHEN abs(x::DOUBLE * fado_scale(d)) >= 4503599627370496 THEN x::DOUBLE ELSE floor(fado_round(x::DOUBLE * fado_scale(d), 9)) / fado_scale(d) END`,
+	`CREATE OR REPLACE MACRO fado_ceiling(x, d) AS CASE WHEN abs(x::DOUBLE * fado_scale(d)) >= 4503599627370496 THEN x::DOUBLE ELSE ceil(fado_round(x::DOUBLE * fado_scale(d), 9)) / fado_scale(d) END`,
+	`CREATE OR REPLACE MACRO fado_trunc(x, d) AS CASE WHEN abs(x::DOUBLE * fado_scale(d)) >= 4503599627370496 THEN x::DOUBLE ELSE trunc(fado_round(x::DOUBLE * fado_scale(d), 9)) / fado_scale(d) END`,
 	// Dates: seconds to a naive timestamp, clamped so that garbage never
 	// raises. The NULL test comes first because LEAST and GREATEST ignore
 	// NULLs, which would turn a blank into the first day of year 1.
@@ -330,14 +350,31 @@ var duckdbMacros = []string{
 	// Text.
 	`CREATE OR REPLACE MACRO fado_trim(t) AS regexp_replace(trim(t::VARCHAR, ' '), ' +', ' ', 'g')`,
 	`CREATE OR REPLACE MACRO fado_proper(t) AS COALESCE(list_aggregate(list_transform(str_split(t::VARCHAR, ''), lambda c, i: CASE WHEN regexp_matches(c, '\p{L}') AND (i = 1 OR NOT regexp_matches(str_split(t::VARCHAR, '')[i - 1], '\p{L}')) THEN upper(c) WHEN regexp_matches(c, '\p{L}') THEN lower(c) ELSE c END), 'string_agg', ''), '')`,
-	`CREATE OR REPLACE MACRO fado_replace(t, p, n, s) AS substr(t::VARCHAR, 1, CAST(GREATEST(trunc(p::DOUBLE), 1) AS INTEGER) - 1) || s::VARCHAR || substr(t::VARCHAR, CAST(GREATEST(trunc(p::DOUBLE), 1) AS INTEGER) + CAST(GREATEST(trunc(n::DOUBLE), 0) AS INTEGER))`,
-	`CREATE OR REPLACE MACRO fado_replace_err(t, p, n, s) AS CASE WHEN trunc(p::DOUBLE) < 1 OR trunc(n::DOUBLE) < 0 THEN 'out_of_range' END`,
-	`CREATE OR REPLACE MACRO fado_repeat(t, n) AS repeat(t::VARCHAR, CAST(LEAST(GREATEST(trunc(n::DOUBLE), 0), 1048576) AS INTEGER))`,
-	`CREATE OR REPLACE MACRO fado_repeat_err(t, n) AS CASE WHEN trunc(n::DOUBLE) < 0 OR trunc(n::DOUBLE) * length(t::VARCHAR) > 1048576 THEN 'out_of_range' END`,
+	// Text builders under the text limit m (ADR-0021). Each keeps the value
+	// it builds bounded by clamping the argument that makes it grow, since
+	// DuckDB folds a constant branch before a CASE could skip it, and
+	// reports out_of_range from a length worked out without building the
+	// result. REPLACE reads the position and the length clamped to the text;
+	// SUBSTITUTE counts the occurrences from a bounded deletion; REGEXREPLACE
+	// counts the matches as the difference of two bounded replacements,
+	// which agree with the replacement itself on empty matches.
+	`CREATE OR REPLACE MACRO fado_replace_start(t, p) AS LEAST(GREATEST(trunc(p::DOUBLE), 1), length(t::VARCHAR) + 1)`,
+	`CREATE OR REPLACE MACRO fado_replace_cut(t, p, n) AS LEAST(GREATEST(trunc(n::DOUBLE), 0), length(t::VARCHAR) - fado_replace_start(t, p) + 1)`,
+	`CREATE OR REPLACE MACRO fado_replace_len(t, p, n, s) AS length(t::VARCHAR) - fado_replace_cut(t, p, n) + length(s::VARCHAR)`,
+	`CREATE OR REPLACE MACRO fado_replace(t, p, n, s, m) AS substr(t::VARCHAR, 1, CAST(fado_replace_start(t, p) AS BIGINT) - 1) || (CASE WHEN fado_replace_len(t, p, n, s) > m THEN '' ELSE s::VARCHAR END) || substr(t::VARCHAR, CAST(fado_replace_start(t, p) + fado_replace_cut(t, p, n) AS BIGINT))`,
+	`CREATE OR REPLACE MACRO fado_replace_err(t, p, n, s, m) AS CASE WHEN trunc(p::DOUBLE) < 1 OR trunc(n::DOUBLE) < 0 OR fado_replace_len(t, p, n, s) > m THEN 'out_of_range' END`,
+	`CREATE OR REPLACE MACRO fado_substitute_len(t, p, n) AS length(t::VARCHAR) + CASE WHEN length(p::VARCHAR) = 0 THEN 0 ELSE (length(t::VARCHAR) - length(replace(t::VARCHAR, p::VARCHAR, ''))) // length(p::VARCHAR) * (length(n::VARCHAR) - length(p::VARCHAR)) END`,
+	`CREATE OR REPLACE MACRO fado_substitute(t, p, n, m) AS CASE WHEN p::VARCHAR = '' THEN t::VARCHAR ELSE replace(t::VARCHAR, NULLIF(p::VARCHAR, ''), CASE WHEN fado_substitute_len(t, p, n) > m THEN p::VARCHAR ELSE n::VARCHAR END) END`,
+	`CREATE OR REPLACE MACRO fado_substitute_err(t, p, n, m) AS CASE WHEN p::VARCHAR <> '' AND fado_substitute_len(t, p, n) > m THEN 'out_of_range' END`,
+	`CREATE OR REPLACE MACRO fado_repeat(t, n, m) AS repeat(t::VARCHAR, CAST(CASE WHEN trunc(n::DOUBLE) < 0 OR length(t::VARCHAR) = 0 OR trunc(n::DOUBLE) * length(t::VARCHAR) > m THEN 0 ELSE trunc(n::DOUBLE) END AS INTEGER))`,
+	`CREATE OR REPLACE MACRO fado_repeat_err(t, n, m) AS CASE WHEN trunc(n::DOUBLE) < 0 OR trunc(n::DOUBLE) * length(t::VARCHAR) > m THEN 'out_of_range' END`,
+	`CREATE OR REPLACE MACRO fado_pad_width(w, m) AS CASE WHEN trunc(w::DOUBLE) < 0 OR trunc(w::DOUBLE) > m THEN 0 ELSE trunc(w::DOUBLE) END`,
+	`CREATE OR REPLACE MACRO fado_pad(t, w, f, m) AS CASE WHEN length(t::VARCHAR) >= fado_pad_width(w, m) THEN t::VARCHAR ELSE lpad(t::VARCHAR, CAST(fado_pad_width(w, m) AS INTEGER), COALESCE(NULLIF(substr(f::VARCHAR, 1, 1), ''), ' ')) END`,
+	`CREATE OR REPLACE MACRO fado_pad_err(t, w, f, m) AS CASE WHEN trunc(w::DOUBLE) < 0 OR trunc(w::DOUBLE) > m THEN 'out_of_range' END`,
+	`CREATE OR REPLACE MACRO fado_regexreplace_len(t, p, r) AS length(regexp_replace(t::VARCHAR, p::VARCHAR, '', 'g')) + (length(regexp_replace(t::VARCHAR, p::VARCHAR, 'X', 'g')) - length(regexp_replace(t::VARCHAR, p::VARCHAR, '', 'g'))) * length(r::VARCHAR)`,
+	`CREATE OR REPLACE MACRO fado_regexreplace(t, p, r, m) AS regexp_replace(t::VARCHAR, p::VARCHAR, CASE WHEN fado_regexreplace_len(t, p, r) > m THEN '' ELSE replace(r::VARCHAR, '\', '\\') END, 'g')`,
+	`CREATE OR REPLACE MACRO fado_regexreplace_err(t, p, r, m) AS CASE WHEN fado_regexreplace_len(t, p, r) > m THEN 'out_of_range' END`,
 	`CREATE OR REPLACE MACRO fado_findlast(s, t) AS CASE WHEN strpos(reverse(t::VARCHAR), reverse(s::VARCHAR)) = 0 THEN 0.0::DOUBLE ELSE CAST(length(t::VARCHAR) - strpos(reverse(t::VARCHAR), reverse(s::VARCHAR)) - length(s::VARCHAR) + 2 AS DOUBLE) END`,
-	`CREATE OR REPLACE MACRO fado_pad(t, w, f) AS CASE WHEN length(t::VARCHAR) >= CAST(GREATEST(trunc(w::DOUBLE), 0) AS INTEGER) THEN t::VARCHAR ELSE lpad(t::VARCHAR, CAST(GREATEST(trunc(w::DOUBLE), 0) AS INTEGER), COALESCE(NULLIF(substr(f::VARCHAR, 1, 1), ''), ' ')) END`,
-	`CREATE OR REPLACE MACRO fado_pad_err(t, w, f) AS CASE WHEN trunc(w::DOUBLE) < 0 THEN 'out_of_range' END`,
-	`CREATE OR REPLACE MACRO fado_regexreplace(t, p, r) AS regexp_replace(t::VARCHAR, p::VARCHAR, replace(r::VARCHAR, '\', '\\'), 'g')`,
 	`CREATE OR REPLACE MACRO fado_value(t) AS CASE WHEN trim(t::VARCHAR) = '' THEN NULL WHEN regexp_full_match(trim(t::VARCHAR), '[+-]?([0-9]+\.?[0-9]*|\.[0-9]+)([eE][+-]?[0-9]+)?') THEN TRY_CAST(trim(t::VARCHAR) AS DOUBLE) END`,
 	`CREATE OR REPLACE MACRO fado_value_err(t) AS CASE WHEN trim(t::VARCHAR) = '' THEN NULL WHEN NOT regexp_full_match(trim(t::VARCHAR), '[+-]?([0-9]+\.?[0-9]*|\.[0-9]+)([eE][+-]?[0-9]+)?') THEN 'bad_text' WHEN NOT COALESCE(isfinite(TRY_CAST(trim(t::VARCHAR) AS DOUBLE)), FALSE) THEN 'not_a_number' END`,
 	// JSON: the dotted path becomes a JSON pointer; numbers render as TEXT does.

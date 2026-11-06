@@ -2,6 +2,7 @@ package formula
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 )
 
@@ -86,6 +87,10 @@ type Dialect interface {
 	// Setup lists statements to run on a connection before the generated
 	// SQL can be used: the DuckDB macros, nothing for SQLite.
 	Setup() []string
+	// Limits are the size limits the generated SQL enforces (ADR-0021).
+	Limits() Limits
+	// WithLimits returns the dialect under other limits.
+	WithLimits(l Limits) Dialect
 }
 
 // Params records the context parameters a statement uses.
@@ -199,7 +204,7 @@ func (t *sqlTranslator) block(start, end int) (SQLExpr, error) {
 			}
 			b := pop()
 			a := pop()
-			push(SQLExpr{Val: "(" + d.Render(a) + " || " + d.Render(b) + ")", Err: coalesceErr(a.Err, b.Err), Kind: KindText, Sure: true})
+			push(concatExpr(d, []SQLExpr{a, b}, true))
 		case OpEq, OpNe, OpLt, OpLe, OpGt, OpGe:
 			if err := need(2, pc); err != nil {
 				return SQLExpr{}, err
@@ -372,9 +377,10 @@ func arith(d Dialect, op Op, a, b SQLExpr) SQLExpr {
 		own = notFiniteErr(d, val)
 	case OpDiv:
 		val = "(CASE WHEN " + y + " = " + zero + " THEN " + zero + " ELSE " + x + " / " + y + " END)"
+		own = notFiniteErr(d, val)
 	case OpDivStrict:
 		val = "(CASE WHEN " + y + " = " + zero + " THEN NULL ELSE " + x + " / " + y + " END)"
-		own = "CASE WHEN " + y + " = " + zero + " THEN 'div_by_zero' END"
+		own = coalesceErr("CASE WHEN "+y+" = "+zero+" THEN 'div_by_zero' END", notFiniteErr(d, val))
 	case OpPow:
 		val = "pow(" + x + ", " + y + ")"
 		own = notFiniteErr(d, val)
@@ -455,9 +461,67 @@ func blankTest(d Dialect, blank bool, x SQLExpr) SQLExpr {
 	return SQLExpr{Val: "(" + x.Val + " IS NOT NULL)", Kind: KindBool, Sure: true}
 }
 
-// nonNegativeErr is the out_of_range check of a count or width argument.
-func nonNegativeErr(x string) string {
-	return "CASE WHEN " + x + " < 0 THEN 'out_of_range' END"
+// maxCount is where the dialects clamp a count, length or width before
+// casting it to an integer, so that a huge number never overflows the
+// cast. A count that large reads to the end of any text, since a text is
+// at most the limit of ADR-0021.
+const maxCount = "1000000000"
+
+// countErr is the out_of_range check of a count, length or width argument:
+// it must not be negative.
+func countErr(n string) string {
+	return "CASE WHEN " + n + " < 0 THEN 'out_of_range' END"
+}
+
+// positionErr is the out_of_range check of a 1-based position and, when n
+// is not empty, a count after it.
+func positionErr(p, n string) string {
+	if n == "" {
+		return "CASE WHEN " + p + " < 1 THEN 'out_of_range' END"
+	}
+	return "CASE WHEN " + p + " < 1 OR " + n + " < 0 THEN 'out_of_range' END"
+}
+
+// concatExpr joins scalars rendered as text under the text limit
+// (ADR-0021). The error expression adds the lengths of the parts up, and
+// the value is cut one past the limit, so that a chain of concatenations
+// stays bounded whatever the error column says; each part is at most the
+// limit by the same rule, so the join itself is bounded. withArgErrs
+// includes the parts' own errors, which the call path adds itself.
+func concatExpr(d Dialect, parts []SQLExpr, withArgErrs bool) SQLExpr {
+	texts := make([]string, len(parts))
+	var errs []string
+	for i, p := range parts {
+		texts[i] = d.Render(p)
+		if withArgErrs {
+			errs = append(errs, p.Err)
+		}
+	}
+	e := SQLExpr{Kind: KindText, Sure: true}
+	if len(texts) == 1 {
+		e.Val = texts[0]
+		e.Err = coalesceErr(errs...)
+		return e
+	}
+	lens := make([]string, len(texts))
+	for i, t := range texts {
+		lens[i] = "length(" + t + ")"
+	}
+	max := d.Limits().MaxText
+	e.Val = "substr(" + strings.Join(texts, " || ") + ", 1, " + strconv.Itoa(max+1) + ")"
+	own := "CASE WHEN " + strings.Join(lens, " + ") + " > " + strconv.Itoa(max) + " THEN 'out_of_range' END"
+	e.Err = coalesceErr(append(errs, own)...)
+	return e
+}
+
+// HasOp reports whether the program contains the opcode.
+func (p *Program) HasOp(op Op) bool {
+	for _, in := range p.Code {
+		if in.Op == op {
+			return true
+		}
+	}
+	return false
 }
 
 // Calls reports whether the program calls the named builtin.

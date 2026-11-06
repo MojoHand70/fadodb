@@ -11,6 +11,32 @@ beyond `fadodb version`.
 
 ### Added
 
+- Size limits (ADR-0021). Every text a formula produces is at most the
+  database's text limit, 65,536 code points by default, and every builder,
+  `&`, `CONCAT`, `REPEAT`, `PAD`, `SUBSTITUTE`, `REPLACE` and `REGEXREPLACE`,
+  decides `out_of_range` before it builds, on the VM, SQLite and DuckDB
+  alike. A count past the end of a text now reads to the end instead of
+  failing above a billion. The limit is a property of the database,
+  carried by `formula.Limits`, read by the VM and passed to the dialects;
+  the `limits` conformance suite runs at 64 code points and the property
+  campaigns at 1,024 (`FADODB_FUZZ_MAXTEXT`).
+- Property-based testing of the engine. `internal/formula/fuzz` generates
+  random well-typed formulas with inputs and context and runs each on the
+  Go VM and on a SQL dialect; the SQLite and DuckDB property tests run
+  2,000 formulas in CI and a campaign of any size locally (`FADODB_FUZZ_N`,
+  `FADODB_FUZZ_SEED`, `FADODB_FUZZ_WORKERS`). The campaigns found, and the
+  branch fixes, with conformance cases for each: a blank-typed program did
+  not survive encode and decode; `NOT(a) <= b` parsed as `NOT (a <= b)`,
+  and `NOT(` is now the function form; `/`, `\` and `MOD` could overflow
+  to infinity without `not_a_number`; `POWER` with a large integer
+  exponent was hundreds of ulps off the C math libraries and is computed
+  in double-double arithmetic; `LOG` was inexact at the powers of ten and
+  wrong for a base below 1 on both dialects; `LN` and `LOG` of a subnormal
+  number were the logarithm of the smallest normal number instead; and
+  `ROUND`, `FLOOR`, `CEILING` and `TRUNC` beyond 22 digits scaled by a
+  power of ten that differed by an ulp between Go and C. They now scale by
+  the correctly rounded power on every evaluator and leave a value alone
+  once its scaled form is already an integer.
 - DuckDB dialect of the SQL generator and the `analytics/` module. The
   dialect computes in DOUBLE with every literal cast, builds dates as naive
   timestamps so the session time zone never leaks in, and ships its engine

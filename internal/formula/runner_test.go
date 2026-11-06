@@ -23,6 +23,7 @@ func TestConformance_VM(t *testing.T) {
 		if err != nil {
 			t.Fatalf("%s: %v", s.File, err)
 		}
+		vm.Limits = s.EvalLimits()
 		for i, c := range s.Cases {
 			total++
 			label := fmt.Sprintf("%s[%d] %s", s.Suite, i, c.Formula)

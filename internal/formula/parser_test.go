@@ -52,6 +52,10 @@ func TestParse_Shapes(t *testing.T) {
 		{"NOT(a)", "(not a)"},
 		{"NOT (a AND b)", "(not (AND a b))"},
 		{"NOT(a > 0) AND b = 0", "(AND (not (> a 0)) (= b 0))"},
+		{"NOT(a) <= b", "(<= (not a) b)"},
+		{"NOT (a) <= b", "(<= (not a) b)"},
+		{"NOT a <= b", "(not (<= a b))"},
+		{"NOT(a) & NOT(b)", "(& (not a) (not b))"},
 		// Calls, aliases, names.
 		{"ROUND(x, 2)", "(ROUND x 2)"},
 		{"round(x)", "(ROUND x)"},

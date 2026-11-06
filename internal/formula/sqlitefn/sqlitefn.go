@@ -20,6 +20,10 @@ const DriverName = "sqlite"
 var (
 	once   sync.Once
 	regErr error
+	// vms lends a VM to a limited function for one call: the function
+	// reads the database's text limit from it (ADR-0021), and the driver
+	// may call from several connections at once.
+	vms = sync.Pool{New: func() any { return formula.NewVM() }}
 )
 
 // Register registers every function the SQLite dialect expects, once per
@@ -43,15 +47,26 @@ func register(f formula.RegisteredFunc) error {
 		}
 		return vals
 	}
+	// call runs the function; a limited one gets a VM carrying the limit
+	// the dialect passed as the last argument.
+	call := func(args []driver.Value) (formula.Value, *formula.EvalError) {
+		if !f.Limited {
+			return f.Fn(nil, convert(args))
+		}
+		vm := vms.Get().(*formula.VM)
+		defer vms.Put(vm)
+		vm.Limits = formula.Limits{MaxText: limitArg(args[len(args)-1])}
+		return f.Fn(vm, convert(args[:len(args)-1]))
+	}
 	value := func(_ *sqlite.FunctionContext, args []driver.Value) (driver.Value, error) {
-		v, err := f.Fn(nil, convert(args))
+		v, err := call(args)
 		if err != nil {
 			return nil, nil
 		}
 		return v.DriverValue(), nil
 	}
 	code := func(_ *sqlite.FunctionContext, args []driver.Value) (driver.Value, error) {
-		if _, err := f.Fn(nil, convert(args)); err != nil {
+		if _, err := call(args); err != nil {
 			return err.Code, nil
 		}
 		return nil, nil
@@ -60,4 +75,15 @@ func register(f formula.RegisteredFunc) error {
 		return err
 	}
 	return sqlite.RegisterDeterministicScalarFunction(f.Name+"_err", int32(f.NArgs), code)
+}
+
+// limitArg reads the text limit the dialect passes, an integer literal.
+func limitArg(v driver.Value) int {
+	switch x := v.(type) {
+	case int64:
+		return int(x)
+	case float64:
+		return int(x)
+	}
+	return formula.DefaultMaxText
 }

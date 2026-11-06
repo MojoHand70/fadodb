@@ -1,6 +1,9 @@
-// Package formula holds the formula language: lexer, parser, binder,
-// bytecode, the Go virtual machine and the SQL generator. One compiler, three
-// targets; the browser VM in web/vm executes the same bytecode.
+// Package formula holds the formula language: lexer, parser, function
+// catalog and the loader of the conformance suite today; binder, bytecode,
+// the Go virtual machine and the SQL generator as Phase 1 continues. One
+// compiler, three targets; the browser VM in web/vm executes the same
+// bytecode.
 //
-// Not implemented yet. See docs/adr/0003-bytecode-as-interchange-format.md.
+// The grammar and semantics are fixed by ADR-0019, the query functions by
+// ADR-0020, and the suite under conformance/ is the specification.
 package formula

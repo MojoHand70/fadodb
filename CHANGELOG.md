@@ -11,6 +11,14 @@ beyond `fadodb version`.
 
 ### Added
 
+- Formula lexer and parser for the grammar of ADR-0019, with positions in
+  every error, and the function catalog (`internal/formula/catalog.json`,
+  67 functions with their evaluation class, arguments and summary) that the
+  parser checks arities against.
+- The conformance suite under `conformance/`: 579 evaluation cases in seven
+  suites (blank, logic, math, numeric, arithmetic, text, date) and a syntax
+  suite of 220 accept and reject cases, with the loader that validates them.
+  Until the VM lands, evaluation cases are checked to parse.
 - ADR-0019: formula language semantics: grammar, static types, coercion,
   comparison, dates, text, composites and errors.
 - ADR-0020: `LOOKUP` and `QUERY` execution: one engine call per invocation,

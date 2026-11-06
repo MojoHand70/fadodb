@@ -60,6 +60,21 @@ db.Transition(ctx, "Invoice", id, "submit", fado.As(user))
 rows, _ := db.Query(ctx, `SELECT id, total FROM Invoice WHERE state = 'submitted'`, fado.As(user))
 ```
 
+## Install
+
+Each release has archives for Linux, macOS and Windows on amd64 and arm64,
+with a `checksums.txt`, on the
+[releases page](https://github.com/MojoHand70/fadodb/releases). Unpack the
+one for your platform and put `fadodb` on your path. With Go 1.26 or newer
+you can build it instead:
+
+```
+go install github.com/MojoHand70/fadodb/cmd/fadodb@latest
+```
+
+Every release before 1.0 is a pre-release. `fadodb version` prints the
+version, the commit and the build date.
+
 ## Try the formula engine
 
 ```

@@ -66,6 +66,8 @@
     {"formula": "PAD(\"1234\", 3, \"0\")", "expected": "1234"},
     {"formula": "REGEXREPLACE(\"a1b22c\", \"[0-9]+\", \"#\")", "expected": "a#b#c"},
     {"formula": "REGEXREPLACE(\"hello\", \"l+\", \"L\")", "expected": "heLo"},
+    {"name": "the replacement is literal text, not a template", "formula": "REGEXREPLACE(\"ab\", \"(a)\", \"$1x\")", "expected": "$1xb"},
+    {"formula": "REGEXREPLACE(\"a.b\", \"\\.\", \"-\")", "expected": "a-b"},
     {"name": "TEXT renders 15 significant digits without trailing zeros", "formula": "TEXT(1)", "expected": "1"},
     {"formula": "TEXT(1.5)", "expected": "1.5"},
     {"formula": "TEXT(-1.5)", "expected": "-1.5"},

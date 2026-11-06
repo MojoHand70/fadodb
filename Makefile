@@ -11,7 +11,7 @@ STATICCHECK_VERSION ?= latest
 GOVULNCHECK_VERSION ?= latest
 BENCHSTAT_VERSION   ?= latest
 
-.PHONY: all build run test bench fmt vet lint vuln tools depgate sizegate benchgate gates clean
+.PHONY: all build run test analytics bench fmt vet lint vuln tools depgate sizegate benchgate gates clean
 
 all: build
 
@@ -23,6 +23,10 @@ run: build
 
 test:
 	go test -race -count=1 ./...
+
+# The DuckDB module is a separate Go module and needs cgo and a C compiler.
+analytics:
+	cd analytics && CGO_ENABLED=1 go vet ./... && CGO_ENABLED=1 go test -count=1 ./...
 
 bench:
 	go test -run '^$$' -bench . -benchmem -count 6 ./...

@@ -18,13 +18,13 @@ func TestGenerateSQL_Shapes(t *testing.T) {
 		params    []string
 	}{
 		{src: "qty * 2", wantValue: []string{`(COALESCE(CAST("qty" AS REAL), 0.0) * 2.0)`}, wantError: []string{"abs(", "'not_a_number'"}},
-		{src: "qty / 0", wantValue: []string{"CASE WHEN 0.0 = 0 THEN 0.0 ELSE"}, noError: true},
+		{src: "qty / 0", wantValue: []string{"CASE WHEN 0.0 = 0.0 THEN 0.0 ELSE"}, noError: true},
 		{src: `qty \ 2`, wantError: []string{"'div_by_zero'"}},
 		{src: `name & qty`, wantValue: []string{`COALESCE("name", '') || (CASE WHEN CAST("qty" AS REAL) IS NULL THEN '' ELSE printf('%.15g', CAST("qty" AS REAL)) END)`}, noError: true},
 		{src: `name = "x"`, wantValue: []string{`(COALESCE("name", '') = 'x')`}, noError: true},
 		{src: `qty = BLANK`, wantValue: []string{`(COALESCE(CAST("qty" AS REAL), 0.0) = 0.0)`}, noError: true},
 		{src: `IF(paid, 1, 2)`, wantValue: []string{`(CASE WHEN COALESCE("paid", 0) THEN 1.0 ELSE 2.0 END)`}, noError: true},
-		{src: `IF(paid, 1 \ qty, 0)`, wantError: []string{`CASE WHEN COALESCE("paid", 0) THEN CASE WHEN COALESCE(CAST("qty" AS REAL), 0.0) = 0 THEN 'div_by_zero' END END`}},
+		{src: `IF(paid, 1 \ qty, 0)`, wantError: []string{`CASE WHEN COALESCE("paid", 0) THEN CASE WHEN COALESCE(CAST("qty" AS REAL), 0.0) = 0.0 THEN 'div_by_zero' END END`}},
 		{src: `paid OR 1 \ qty > 0`, wantError: []string{`CASE WHEN NOT COALESCE("paid", 0) THEN`}},
 		{src: `paid AND NOT ISBLANK(name)`, wantValue: []string{`(COALESCE("paid", 0) AND (NOT ("name" IS NULL)))`}, noError: true},
 		{src: `ROUND(qty, 2)`, wantValue: []string{`fado_round(COALESCE(CAST("qty" AS REAL), 0.0), 2.0)`}, noError: true},
@@ -37,7 +37,7 @@ func TestGenerateSQL_Shapes(t *testing.T) {
 	}
 	for _, c := range cases {
 		p := mustBind(t, c.src, scope)
-		stmt, err := GenerateSQL(p, SQLite{}, quoteSlot)
+		stmt, err := GenerateSQL(p, NewSQLite(), quoteSlot)
 		if err != nil {
 			t.Errorf("%s: %v", c.src, err)
 			continue
@@ -73,12 +73,12 @@ func TestGenerateSQL_RefusesUnstructuredBytecode(t *testing.T) {
 			p.Code[i].Op = OpNop
 		}
 	}
-	if _, err := GenerateSQL(p, SQLite{}, quoteSlot); err == nil || !strings.Contains(err.Error(), "binder's shape") {
+	if _, err := GenerateSQL(p, NewSQLite(), quoteSlot); err == nil || !strings.Contains(err.Error(), "binder's shape") {
 		t.Errorf("unstructured IF: %v", err)
 	}
 	q := mustBind(t, "qty + 1", scope)
 	q.Code = q.Code[:len(q.Code)-1]
-	if _, err := GenerateSQL(q, SQLite{}, quoteSlot); err == nil {
+	if _, err := GenerateSQL(q, NewSQLite(), quoteSlot); err == nil {
 		t.Error("a program without return should be refused")
 	}
 }
@@ -132,5 +132,69 @@ func TestValueFromDriverAndBack(t *testing.T) {
 		if !Equal(back, v) {
 			t.Errorf("round trip of %s gave %s", v, back)
 		}
+	}
+}
+
+func TestGenerateSQL_DuckDBShapes(t *testing.T) {
+	scope := mustScope(t, Variable{Name: "qty", Type: Scalar(KindNumber)}, Variable{Name: "name", Type: Scalar(KindText)},
+		Variable{Name: "due", Type: Scalar(KindDate)}, Variable{Name: "paid", Type: Scalar(KindBool)})
+	cases := []struct {
+		src       string
+		wantValue []string
+		wantError []string
+		params    []string
+	}{
+		{src: "qty * 2.5", wantValue: []string{`(COALESCE(CAST("qty" AS DOUBLE), 0.0::DOUBLE) * CAST(2.5 AS DOUBLE))`}, wantError: []string{"NOT isfinite("}},
+		{src: "IF(paid, TRUE, FALSE)", wantValue: []string{`CASE WHEN COALESCE(CAST("paid" AS BOOLEAN), FALSE) THEN TRUE ELSE FALSE END`}},
+		{src: "ROUND(qty)", wantValue: []string{`fado_round(COALESCE(CAST("qty" AS DOUBLE), 0.0::DOUBLE), CAST(0 AS DOUBLE))`}},
+		{src: "YEAR(due)", wantValue: []string{`CAST(year(fado_ts(CAST("due" AS DOUBLE))) AS DOUBLE)`}},
+		{src: "INGROUP(\"g\") AND USER() = \"a\"", wantValue: []string{`list_contains($groups, 'g')`, `CAST($user AS VARCHAR)`}, params: []string{"groups", "user"}},
+		{src: "VALUE(name)", wantValue: []string{`fado_value(COALESCE("name", ''))`}, wantError: []string{`fado_value_err(COALESCE("name", ''))`}},
+		{src: "SUM(qty, 1)", wantValue: []string{`(COALESCE(CAST("qty" AS DOUBLE), 0.0::DOUBLE) + CAST(1 AS DOUBLE))`}},
+		{src: "TEXT(qty)", wantValue: []string{`COALESCE(printf('%.15g', CAST("qty" AS DOUBLE) + 0.0::DOUBLE), '')`}},
+	}
+	for _, c := range cases {
+		p := mustBind(t, c.src, scope)
+		stmt, err := GenerateSQL(p, NewDuckDB(), quoteSlot)
+		if err != nil {
+			t.Errorf("%s: %v", c.src, err)
+			continue
+		}
+		for _, w := range c.wantValue {
+			if !strings.Contains(stmt.Value, w) {
+				t.Errorf("%s: value %s\n  lacks %s", c.src, stmt.Value, w)
+			}
+		}
+		for _, w := range c.wantError {
+			if !strings.Contains(stmt.Error, w) {
+				t.Errorf("%s: error %s\n  lacks %s", c.src, stmt.Error, w)
+			}
+		}
+		if len(c.params) != len(stmt.Params) {
+			t.Errorf("%s: params %v, want %v", c.src, stmt.Params, c.params)
+		}
+	}
+	if n := len(NewDuckDB().Setup()); n < 20 {
+		t.Errorf("DuckDB setup has %d statements, expected the macro set", n)
+	}
+	for _, stmt := range NewDuckDB().Setup() {
+		if !strings.HasPrefix(stmt, "CREATE OR REPLACE MACRO fado_") {
+			t.Errorf("not a macro definition: %.60s", stmt)
+		}
+		if strings.Contains(stmt, "(SELECT") {
+			t.Errorf("a macro body must be an expression, not a subquery: %.60s", stmt)
+		}
+	}
+}
+
+func TestNearlyEqual(t *testing.T) {
+	if !NearlyEqual(Number(0.6000000000000001), Number(0.6), 1e-12) {
+		t.Error("last-bit difference should pass")
+	}
+	if NearlyEqual(Number(0.61), Number(0.6), 1e-12) {
+		t.Error("a real difference should fail")
+	}
+	if NearlyEqual(Text("a"), Text("b"), 1) || !NearlyEqual(Blank(), Blank(), 0) {
+		t.Error("non-numbers compare exactly")
 	}
 }

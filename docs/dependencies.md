@@ -18,7 +18,7 @@ These live in their own Go modules so their weight and cgo never reach the core.
 
 | Module | Used by | License | Why separate |
 |---|---|---|---|
-| `github.com/duckdb/duckdb-go/v2` with `go.duckdb.org/libduckdb/<os>-<arch>` | `analytics/` | MIT | Needs cgo and a C compiler; a minimal binary linking DuckDB 2.0.0 is 75 MB. Prebuilt libraries for five platforms; `duckdb_use_lib` links a system library instead. |
+| `github.com/duckdb/duckdb-go/v2` with `go.duckdb.org/libduckdb/<os>-<arch>` | `analytics/` | MIT | Needs cgo and a C compiler; a minimal binary linking DuckDB 2.0.0 is 75 MB. Prebuilt libraries for five platforms; `duckdb_use_lib` links a system library instead. In use since Phase 1 for the DuckDB conformance runner (ADR-0020). |
 | `github.com/jackc/pgx/v5` | `postgres/` | MIT | Driver and its tree are only needed by the enterprise backend. |
 
 ## Developer tools

@@ -1,9 +1,12 @@
 package formula
 
 import (
+	"database/sql"
+	"encoding/json"
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // The SQLite dialect. Numbers are REAL throughout, so integer division
@@ -17,10 +20,66 @@ import (
 // cast. The sqlitefn package does the registration.
 
 // SQLite is the dialect for SQLite through modernc.org/sqlite.
-type SQLite struct{}
+type SQLite struct{ coercions }
+
+// NewSQLite makes the SQLite dialect.
+func NewSQLite() SQLite {
+	return SQLite{coercions{zeroNumber: "0.0", zeroBool: "0", zeroText: "''",
+		castNumber: func(x string) string { return "CAST(" + x + " AS REAL)" }}}
+}
 
 // Name implements Dialect.
 func (SQLite) Name() string { return "sqlite" }
+
+// True implements Dialect: SQLite has no bool type, so 1 and 0.
+func (SQLite) True() string { return "1" }
+
+// False implements Dialect.
+func (SQLite) False() string { return "0" }
+
+// NotFinite implements Dialect. SQLite yields NULL for NaN and keeps
+// infinities, so both are checked.
+func (SQLite) NotFinite(val string) string {
+	return "(" + val + " IS NULL OR abs(" + val + ") > " + maxFloat + ")"
+}
+
+// Param implements Dialect.
+func (SQLite) Param(name string) string { return ":" + name }
+
+// ContextArgs implements Dialect: now is always bound, user is text or
+// NULL, groups is a JSON array or NULL.
+func (SQLite) ContextArgs(ctx *Context) []any {
+	now, user, groups := contextValues(ctx)
+	var g any
+	if groups != nil {
+		b, _ := json.Marshal(groups)
+		g = string(b)
+	}
+	return []any{sql.Named("now", now), sql.Named("user", user), sql.Named("groups", g)}
+}
+
+// Setup implements Dialect: the engine functions come from the sqlitefn
+// package's registration, not from statements.
+func (SQLite) Setup() []string { return nil }
+
+// contextValues is what every dialect binds: the clock in seconds, always
+// present; the user id or nil; the groups or nil.
+func contextValues(ctx *Context) (now int64, user any, groups []string) {
+	now = time.Now().Unix()
+	if ctx != nil {
+		if ctx.Now != 0 {
+			now = ctx.Now
+		}
+		if ctx.User != "" {
+			user = ctx.User
+		}
+		groups = ctx.Groups
+	}
+	return now, user, groups
+}
+
+// maxFloat is the largest finite float64, the bound of the overflow checks.
+const maxFloat = "1.7976931348623157e308"
 
 // NumberLit implements Dialect. The literal always reads as REAL.
 func (SQLite) NumberLit(f float64) string { return numberLiteral(f) }
@@ -66,7 +125,7 @@ func (d SQLite) Render(e SQLExpr) string {
 		return "(CASE WHEN " + e.Val + " IS NULL THEN '' WHEN " + e.Val + " % 86400 = 0 THEN strftime('%Y-%m-%d', " + e.Val +
 			", 'unixepoch') ELSE strftime('%Y-%m-%d %H:%M:%S', " + e.Val + ", 'unixepoch') END)"
 	}
-	return text(e)
+	return d.Text(e)
 }
 
 // SQLiteFunctions lists the engine functions the SQLite dialect expects to
@@ -232,7 +291,7 @@ func (d SQLite) Call(name string, args []SQLExpr, params *Params) (SQLExpr, erro
 	}
 	numOr := func(i int, def string) string {
 		if i < len(args) {
-			return num(args[i])
+			return d.Num(args[i])
 		}
 		return def
 	}
@@ -243,29 +302,15 @@ func (d SQLite) Call(name string, args []SQLExpr, params *Params) (SQLExpr, erro
 		}
 		return e.Val
 	}
-	nonNegative := func(x, what string) string {
-		return "CASE WHEN " + x + " < 0 THEN 'out_of_range' END"
-	}
 	switch name {
-	case "ISBLANK", "ISNOTBLANK":
-		if args[0].Kind == KindNull {
-			if name == "ISBLANK" {
-				return SQLExpr{Val: "1", Kind: KindBool, Sure: true}, nil
-			}
-			return SQLExpr{Val: "0", Kind: KindBool, Sure: true}, nil
-		}
-		if name == "ISBLANK" {
-			return SQLExpr{Val: "(" + args[0].Val + " IS NULL)", Kind: KindBool, Sure: true}, nil
-		}
-		return SQLExpr{Val: "(" + args[0].Val + " IS NOT NULL)", Kind: KindBool, Sure: true}, nil
 	case "ROUND", "FLOOR", "CEILING", "TRUNC":
-		e := reg(KindNumber, false, num(args[0]), numOr(1, "0.0"))
+		e := reg(KindNumber, false, d.Num(args[0]), numOr(1, "0.0"))
 		e.Sure = true
 		return e, nil
 	case "ABS":
-		return SQLExpr{Val: "abs(" + num(args[0]) + ")", Kind: KindNumber, Sure: true}, nil
+		return SQLExpr{Val: "abs(" + d.Num(args[0]) + ")", Kind: KindNumber, Sure: true}, nil
 	case "SIGN":
-		x := num(args[0])
+		x := d.Num(args[0])
 		return SQLExpr{Val: "(CASE WHEN " + x + " > 0 THEN 1.0 WHEN " + x + " < 0 THEN -1.0 ELSE 0.0 END)", Kind: KindNumber, Sure: true}, nil
 	case "MIN", "MAX", "SUM", "AVERAGE", "COUNT":
 		list := make([]string, len(args))
@@ -280,31 +325,31 @@ func (d SQLite) Call(name string, args []SQLExpr, params *Params) (SQLExpr, erro
 		e.Sure = name == "COUNT" || name == "SUM"
 		return e, nil
 	case "POWER":
-		return arith(OpPow, args[0], args[1]), nil
+		return arith(d, OpPow, args[0], args[1]), nil
 	case "SQRT":
-		x := num(args[0])
+		x := d.Num(args[0])
 		return SQLExpr{Val: "sqrt(" + x + ")", Err: "CASE WHEN " + x + " < 0 THEN 'not_a_number' END", Kind: KindNumber}, nil
 	case "EXP":
-		val := "exp(" + num(args[0]) + ")"
-		return SQLExpr{Val: val, Err: overflowErr(val), Kind: KindNumber, Sure: true}, nil
+		val := "exp(" + d.Num(args[0]) + ")"
+		return SQLExpr{Val: val, Err: notFiniteErr(d, val), Kind: KindNumber, Sure: true}, nil
 	case "LN":
-		x := num(args[0])
+		x := d.Num(args[0])
 		return SQLExpr{Val: "ln(" + x + ")", Err: "CASE WHEN " + x + " <= 0 THEN 'not_a_number' END", Kind: KindNumber}, nil
 	case "LOG":
-		x := num(args[0])
+		x := d.Num(args[0])
 		if len(args) == 1 {
 			return SQLExpr{Val: "log(" + x + ")", Err: "CASE WHEN " + x + " <= 0 THEN 'not_a_number' END", Kind: KindNumber}, nil
 		}
-		b := num(args[1])
+		b := d.Num(args[1])
 		val := "(CASE WHEN " + b + " = 10.0 THEN log(" + x + ") ELSE log(" + b + ", " + x + ") END)"
 		return SQLExpr{Val: val, Err: "CASE WHEN " + x + " <= 0 OR " + b + " <= 0 OR " + b + " = 1 THEN 'not_a_number' END", Kind: KindNumber}, nil
 	case "MOD":
-		a, b := num(args[0]), num(args[1])
+		a, b := d.Num(args[0]), d.Num(args[1])
 		return SQLExpr{Val: "(" + a + " - " + b + " * floor(" + a + " / " + b + "))", Err: "CASE WHEN " + b + " = 0 THEN 'div_by_zero' END", Kind: KindNumber}, nil
 	case "DATE":
-		return reg(KindDate, true, num(args[0]), num(args[1]), num(args[2])), nil
+		return reg(KindDate, true, d.Num(args[0]), d.Num(args[1]), d.Num(args[2])), nil
 	case "DATEVALUE":
-		return reg(KindDate, true, text(args[0])), nil
+		return reg(KindDate, true, d.Text(args[0])), nil
 	case "YEAR", "MONTH", "DAY":
 		if args[0].Kind == KindNull {
 			return SQLExpr{Val: "NULL", Kind: KindNumber}, nil
@@ -340,10 +385,10 @@ func (d SQLite) Call(name string, args []SQLExpr, params *Params) (SQLExpr, erro
 		if args[0].Kind == KindNull {
 			return SQLExpr{Val: "NULL", Kind: KindDate}, nil
 		}
-		val := "floor(" + args[0].Val + " + " + num(args[1]) + " * 86400.0)"
+		val := "floor(" + args[0].Val + " + " + d.Num(args[1]) + " * 86400.0)"
 		return SQLExpr{Val: val, Err: "CASE WHEN " + val + " < " + strconv.Itoa(minDateSecs) + " OR " + val + " > " + strconv.Itoa(maxDateSecs) + " THEN 'out_of_range' END", Kind: KindDate}, nil
 	case "ADDMONTHS", "ADDYEARS":
-		return reg(KindDate, true, raw(args[0]), num(args[1])), nil
+		return reg(KindDate, true, raw(args[0]), d.Num(args[1])), nil
 	case "NOW":
 		return SQLExpr{Val: "CAST(" + params.Use("now") + " AS REAL)", Kind: KindDate, Sure: true}, nil
 	case "TODAY":
@@ -351,33 +396,33 @@ func (d SQLite) Call(name string, args []SQLExpr, params *Params) (SQLExpr, erro
 	case "USER":
 		return SQLExpr{Val: params.Use("user"), Kind: KindText}, nil
 	case "INGROUP":
-		return SQLExpr{Val: "EXISTS (SELECT 1 FROM json_each(" + params.Use("groups") + ") WHERE json_each.value = " + text(args[0]) + ")", Kind: KindBool, Sure: true}, nil
+		return SQLExpr{Val: "EXISTS (SELECT 1 FROM json_each(" + params.Use("groups") + ") WHERE json_each.value = " + d.Text(args[0]) + ")", Kind: KindBool, Sure: true}, nil
 	case "LEFT":
-		n := "CAST(trunc(" + num(args[1]) + ") AS INTEGER)"
-		return SQLExpr{Val: "substr(" + text(args[0]) + ", 1, " + n + ")", Err: nonNegative(n, "count"), Kind: KindText, Sure: true}, nil
+		n := "CAST(trunc(" + d.Num(args[1]) + ") AS INTEGER)"
+		return SQLExpr{Val: "substr(" + d.Text(args[0]) + ", 1, " + n + ")", Err: nonNegativeErr(n), Kind: KindText, Sure: true}, nil
 	case "RIGHT":
-		t, n := text(args[0]), "CAST(trunc("+num(args[1])+") AS INTEGER)"
+		t, n := d.Text(args[0]), "CAST(trunc("+d.Num(args[1])+") AS INTEGER)"
 		val := "(CASE WHEN " + n + " <= 0 THEN '' WHEN " + n + " >= length(" + t + ") THEN " + t + " ELSE substr(" + t + ", -" + n + ") END)"
-		return SQLExpr{Val: val, Err: nonNegative(n, "count"), Kind: KindText, Sure: true}, nil
+		return SQLExpr{Val: val, Err: nonNegativeErr(n), Kind: KindText, Sure: true}, nil
 	case "MID":
-		t, p := text(args[0]), "CAST(trunc("+num(args[1])+") AS INTEGER)"
+		t, p := d.Text(args[0]), "CAST(trunc("+d.Num(args[1])+") AS INTEGER)"
 		errExpr := "CASE WHEN " + p + " < 1 THEN 'out_of_range' END"
 		if len(args) == 2 {
 			return SQLExpr{Val: "substr(" + t + ", " + p + ")", Err: errExpr, Kind: KindText, Sure: true}, nil
 		}
-		n := "CAST(trunc(" + num(args[2]) + ") AS INTEGER)"
+		n := "CAST(trunc(" + d.Num(args[2]) + ") AS INTEGER)"
 		errExpr = "CASE WHEN " + p + " < 1 OR " + n + " < 0 THEN 'out_of_range' END"
 		return SQLExpr{Val: "substr(" + t + ", " + p + ", " + n + ")", Err: errExpr, Kind: KindText, Sure: true}, nil
 	case "LEN":
-		return SQLExpr{Val: "CAST(length(" + text(args[0]) + ") AS REAL)", Kind: KindNumber, Sure: true}, nil
+		return SQLExpr{Val: "CAST(length(" + d.Text(args[0]) + ") AS REAL)", Kind: KindNumber, Sure: true}, nil
 	case "TRIM", "UPPER", "LOWER", "PROPER":
-		e := reg(KindText, false, text(args[0]))
+		e := reg(KindText, false, d.Text(args[0]))
 		e.Sure = true
 		return e, nil
 	case "REPLACE":
-		return reg(KindText, true, text(args[0]), num(args[1]), num(args[2]), text(args[3])), nil
+		return reg(KindText, true, d.Text(args[0]), d.Num(args[1]), d.Num(args[2]), d.Text(args[3])), nil
 	case "SUBSTITUTE":
-		return SQLExpr{Val: "replace(" + text(args[0]) + ", " + text(args[1]) + ", " + text(args[2]) + ")", Kind: KindText, Sure: true}, nil
+		return SQLExpr{Val: "replace(" + d.Text(args[0]) + ", " + d.Text(args[1]) + ", " + d.Text(args[2]) + ")", Kind: KindText, Sure: true}, nil
 	case "CONCAT":
 		parts := make([]string, len(args))
 		for i, a := range args {
@@ -385,27 +430,27 @@ func (d SQLite) Call(name string, args []SQLExpr, params *Params) (SQLExpr, erro
 		}
 		return SQLExpr{Val: "(" + strings.Join(parts, " || ") + ")", Kind: KindText, Sure: true}, nil
 	case "REPEAT":
-		return reg(KindText, true, text(args[0]), num(args[1])), nil
+		return reg(KindText, true, d.Text(args[0]), d.Num(args[1])), nil
 	case "FINDFIRST":
-		return SQLExpr{Val: "CAST(instr(" + text(args[1]) + ", " + text(args[0]) + ") AS REAL)", Kind: KindNumber, Sure: true}, nil
+		return SQLExpr{Val: "CAST(instr(" + d.Text(args[1]) + ", " + d.Text(args[0]) + ") AS REAL)", Kind: KindNumber, Sure: true}, nil
 	case "FINDLAST":
-		e := reg(KindNumber, false, text(args[0]), text(args[1]))
+		e := reg(KindNumber, false, d.Text(args[0]), d.Text(args[1]))
 		e.Sure = true
 		return e, nil
 	case "PAD":
 		fill := "NULL"
 		if len(args) > 2 {
-			fill = text(args[2])
+			fill = d.Text(args[2])
 		}
-		return reg(KindText, true, text(args[0]), num(args[1]), fill), nil
+		return reg(KindText, true, d.Text(args[0]), d.Num(args[1]), fill), nil
 	case "REGEXREPLACE":
-		return reg(KindText, true, text(args[0]), text(args[1]), text(args[2])), nil
+		return reg(KindText, true, d.Text(args[0]), d.Text(args[1]), d.Text(args[2])), nil
 	case "TEXT":
 		return SQLExpr{Val: d.Render(args[0]), Kind: KindText, Sure: true}, nil
 	case "VALUE":
-		return reg(KindNumber, true, text(args[0])), nil
+		return reg(KindNumber, true, d.Text(args[0])), nil
 	case "JSONVALUE":
-		return reg(KindText, true, raw(args[0]), text(args[1])), nil
+		return reg(KindText, true, raw(args[0]), d.Text(args[1])), nil
 	}
 	return SQLExpr{}, fmt.Errorf("no SQLite translation")
 }

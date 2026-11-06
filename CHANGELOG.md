@@ -11,6 +11,17 @@ beyond `fadodb version`.
 
 ### Added
 
+- DuckDB dialect of the SQL generator and the `analytics/` module. The
+  dialect computes in DOUBLE with every literal cast, builds dates as naive
+  timestamps so the session time zone never leaks in, and ships its engine
+  functions as `CREATE MACRO` statements, inlined SQL rather than Go
+  callbacks, under the same `fado_<name>` names as SQLite's registered
+  functions. The module is a separate Go module with cgo and holds only the
+  DuckDB conformance runner; CI builds it on Ubuntu, and `make analytics`
+  runs it locally. All evaluation cases now agree across the VM, SQLite and
+  DuckDB, aggregates to the relative 1e-12 of ADR-0019.
+- `REGEXREPLACE` takes its replacement literally, with no backreferences,
+  so the three targets agree; the catalog and the suite say so.
 - SQL generator with the SQLite dialect. A program becomes a value
   expression and an error expression over the columns holding its
   variables, with the short-circuit rules of ADR-0019 kept in both. The

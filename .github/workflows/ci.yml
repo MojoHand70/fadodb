@@ -46,6 +46,23 @@ jobs:
       - name: Build
         run: go build ./...
 
+  analytics:
+    name: analytics / ubuntu-latest
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          check-latest: true
+      - name: Test the DuckDB module with cgo
+        working-directory: analytics
+        env:
+          CGO_ENABLED: "1"
+        run: |
+          go vet ./...
+          go test -count=1 ./...
+
   bench:
     name: bench
     runs-on: ubuntu-latest

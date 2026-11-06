@@ -2,12 +2,9 @@ package sqlitefn
 
 import (
 	"database/sql"
-	"encoding/json"
 	"fmt"
 	"path/filepath"
-	"strings"
 	"testing"
-	"time"
 
 	"github.com/MojoHand70/fadodb/internal/formula"
 )
@@ -32,53 +29,21 @@ func openDB(t *testing.T) *sql.DB {
 	return db
 }
 
-// query builds one SELECT over a one-row subselect holding the inputs.
-func query(prog *formula.Program, stmt formula.SQL) string {
-	cols := make([]string, len(prog.Slots))
-	for i, s := range prog.Slots {
-		cols[i] = fmt.Sprintf(":v%d AS %q", i, s.Name)
-	}
-	from := "(SELECT 1)"
-	if len(cols) > 0 {
-		from = "(SELECT " + strings.Join(cols, ", ") + ")"
-	}
-	return "SELECT (" + stmt.Value + ") AS v, (" + stmt.ErrorOrNull() + ") AS e FROM " + from
-}
-
-// contextArgs binds the context parameters. The now parameter is always
-// bound, with the wall clock when the case gives none, as the VM does.
-func contextArgs(ctx *formula.Context) []any {
-	var user, groups any
-	now := any(time.Now().Unix())
-	if ctx != nil {
-		if ctx.Now != 0 {
-			now = ctx.Now
-		}
-		if ctx.User != "" {
-			user = ctx.User
-		}
-		if ctx.Groups != nil {
-			b, _ := json.Marshal(ctx.Groups)
-			groups = string(b)
-		}
-	}
-	return []any{sql.Named("now", now), sql.Named("user", user), sql.Named("groups", groups)}
-}
-
 func TestConformance_SQLite(t *testing.T) {
 	suites, err := formula.LoadSuites(filepath.Join(conformanceDir, "formula"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	db := openDB(t)
-	column := func(s formula.Slot) string { return fmt.Sprintf("%q", s.Name) }
+	d := formula.NewSQLite()
 	total, failed := 0, 0
 	for _, s := range suites {
 		scope, err := formula.ScopeOf(s.Variables)
 		if err != nil {
 			t.Fatalf("%s: %v", s.File, err)
 		}
-		for i, c := range s.Cases {
+		for i := range s.Cases {
+			c := &s.Cases[i]
 			total++
 			label := fmt.Sprintf("%s[%d] %s", s.Suite, i, c.Formula)
 			if c.Name != "" {
@@ -93,48 +58,19 @@ func TestConformance_SQLite(t *testing.T) {
 				fail("bind: %v", err)
 				continue
 			}
-			stmt, err := formula.GenerateSQL(prog, formula.SQLite{}, column)
+			res, err := formula.RunSQLCase(db, d, prog, c)
 			if err != nil {
-				fail("generate: %v", err)
-				continue
-			}
-			args := make([]any, 0, len(prog.Slots)+3)
-			bad := false
-			for si, slot := range prog.Slots {
-				var v formula.Value
-				if raw, ok := c.Inputs[slot.Name]; ok {
-					v, err = formula.ParseCaseValue(raw, slot.Type)
-					if err != nil {
-						fail("input %s: %v", slot.Name, err)
-						bad = true
-						break
-					}
-				}
-				args = append(args, sql.Named(fmt.Sprintf("v%d", si), v.DriverValue()))
-			}
-			if bad {
-				continue
-			}
-			ctx, err := c.Context.Context()
-			if err != nil {
-				fail("%v", err)
-				continue
-			}
-			args = append(args, contextArgs(ctx)...)
-			q := query(prog, stmt)
-			var v, e any
-			if err := db.QueryRow(q, args...).Scan(&v, &e); err != nil {
-				fail("sqlite: %v\n    %s", err, q)
+				fail("%v\n    %s", err, res.Query)
 				continue
 			}
 			if c.Error != "" {
-				if code, _ := e.(string); code != c.Error {
-					fail("got error %v (value %v), want %s\n    %s", e, v, c.Error, q)
+				if res.Code != c.Error {
+					fail("got error %q (value %s), want %s\n    %s", res.Code, res.Value, c.Error, res.Query)
 				}
 				continue
 			}
-			if e != nil {
-				fail("got error %v, want %s\n    %s", e, string(c.Expected), q)
+			if res.Code != "" {
+				fail("got error %s, want %s\n    %s", res.Code, string(c.Expected), res.Query)
 				continue
 			}
 			want, err := formula.ParseCaseValue(c.Expected, prog.Result)
@@ -142,9 +78,8 @@ func TestConformance_SQLite(t *testing.T) {
 				fail("expected: %v", err)
 				continue
 			}
-			got := formula.ValueFromDriver(v, prog.Result.Kind)
-			if !formula.Equal(got, want) {
-				fail("got %s (%T %v), want %s\n    %s", got, v, v, want, q)
+			if !formula.Equal(res.Value, want) {
+				fail("got %s, want %s\n    %s", res.Value, want, res.Query)
 			}
 		}
 	}

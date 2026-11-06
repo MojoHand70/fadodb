@@ -16,7 +16,9 @@ import (
 // The generator reads bytecode, not syntax, so it works on stored programs
 // and on anything else that produces the format. It accepts the structured
 // shapes the binder emits for IF, AND and OR and refuses other control
-// flow.
+// flow. The core handles operators, control flow and the blank rules; a
+// Dialect spells literals, casts, rendering, function calls and parameters
+// for one engine.
 
 // SQL is a generated statement fragment.
 type SQL struct {
@@ -28,8 +30,8 @@ type SQL struct {
 	Kind Kind
 	// Params lists the context parameters the expressions reference, by
 	// name: now (seconds since the epoch, always bound, never NULL), user
-	// (the user id or NULL) and groups (a JSON array of group names or
-	// NULL).
+	// (the user id or NULL) and groups (the user's groups or NULL, in the
+	// form the dialect's ContextArgs binds).
 	Params []string
 }
 
@@ -53,38 +55,58 @@ type SQLExpr struct {
 	Sure bool
 }
 
-// Dialect spells one SQL engine. The core handles operators, control flow
-// and blank rules; the dialect handles literals, column casts, the TEXT
-// rendering rule, function calls and context parameters.
+// Dialect spells one SQL engine.
 type Dialect interface {
 	Name() string
 	NumberLit(f float64) string
 	TextLit(s string) string
+	True() string
+	False() string
 	// Load references a column holding a variable of the kind, cast to the
 	// SQL type the dialect computes with.
 	Load(column string, k Kind) string
+	// Num, Cond and Text read an expression as a number, a condition or
+	// text with the blank rules of ADR-0005: a blank is 0, FALSE or "".
+	Num(e SQLExpr) string
+	Cond(e SQLExpr) string
+	Text(e SQLExpr) string
+	// NotFinite is the condition that a numeric value is not a finite
+	// number, the overflow check of ADR-0019.
+	NotFinite(val string) string
 	// Render applies the TEXT rule of ADR-0019 to a scalar.
 	Render(e SQLExpr) string
 	// Call translates a builtin by canonical name. Args are translated
-	// already; the dialect reads their kinds and never evaluates them twice
-	// in the value expression.
+	// already; the dialect reads their kinds.
 	Call(name string, args []SQLExpr, params *Params) (SQLExpr, error)
+	// Param references a context parameter by name.
+	Param(name string) string
+	// ContextArgs binds the context parameters for database/sql, in the
+	// form the dialect's SQL expects.
+	ContextArgs(ctx *Context) []any
+	// Setup lists statements to run on a connection before the generated
+	// SQL can be used: the DuckDB macros, nothing for SQLite.
+	Setup() []string
 }
 
 // Params records the context parameters a statement uses.
 type Params struct {
 	names []string
+	ref   func(string) string
 }
 
-// Use records a parameter and returns its reference, :name.
+// Use records a parameter and returns its reference in the dialect.
 func (p *Params) Use(name string) string {
+	seen := false
 	for _, n := range p.names {
 		if n == name {
-			return ":" + name
+			seen = true
+			break
 		}
 	}
-	p.names = append(p.names, name)
-	return ":" + name
+	if !seen {
+		p.names = append(p.names, name)
+	}
+	return p.ref(name)
 }
 
 // GenerateSQL translates a program for a dialect. column gives the column
@@ -93,7 +115,7 @@ func GenerateSQL(p *Program, d Dialect, column func(Slot) string) (SQL, error) {
 	if len(p.Code) == 0 || p.Code[len(p.Code)-1].Op != OpReturn {
 		return SQL{}, fmt.Errorf("sqlgen: the program does not end with return")
 	}
-	t := &sqlTranslator{p: p, d: d, column: column}
+	t := &sqlTranslator{p: p, d: d, column: column, params: Params{ref: d.Param}}
 	e, err := t.block(0, len(p.Code)-1)
 	if err != nil {
 		return SQL{}, err
@@ -108,9 +130,6 @@ type sqlTranslator struct {
 	params Params
 }
 
-// maxFloat is the largest finite float64, the bound of the overflow checks.
-const maxFloat = "1.7976931348623157e308"
-
 // block translates code[start:end), which must leave exactly one value on
 // the stack. Control flow is recovered from the binder's shapes:
 //
@@ -119,6 +138,7 @@ const maxFloat = "1.7976931348623157e308"
 //	OR:  left; or.jump L; right; to.bool; L:
 func (t *sqlTranslator) block(start, end int) (SQLExpr, error) {
 	code := t.p.Code
+	d := t.d
 	var stack []SQLExpr
 	push := func(e SQLExpr) { stack = append(stack, e) }
 	pop := func() SQLExpr {
@@ -138,13 +158,13 @@ func (t *sqlTranslator) block(start, end int) (SQLExpr, error) {
 		switch in.Op {
 		case OpNop:
 		case OpConstNum:
-			push(SQLExpr{Val: t.d.NumberLit(t.p.Nums[in.Arg]), Kind: KindNumber, Sure: true})
+			push(SQLExpr{Val: d.NumberLit(t.p.Nums[in.Arg]), Kind: KindNumber, Sure: true})
 		case OpConstText:
-			push(SQLExpr{Val: t.d.TextLit(t.p.Texts[in.Arg]), Kind: KindText, Sure: true})
+			push(SQLExpr{Val: d.TextLit(t.p.Texts[in.Arg]), Kind: KindText, Sure: true})
 		case OpTrue:
-			push(SQLExpr{Val: "1", Kind: KindBool, Sure: true})
+			push(SQLExpr{Val: d.True(), Kind: KindBool, Sure: true})
 		case OpFalse:
-			push(SQLExpr{Val: "0", Kind: KindBool, Sure: true})
+			push(SQLExpr{Val: d.False(), Kind: KindBool, Sure: true})
 		case OpBlank:
 			push(SQLExpr{Val: "NULL", Kind: KindNull})
 		case OpLoad:
@@ -152,7 +172,7 @@ func (t *sqlTranslator) block(start, end int) (SQLExpr, error) {
 			if !slot.Type.IsScalar() {
 				return SQLExpr{}, fmt.Errorf("sqlgen: %s is %s; composite values are not supported yet", slot.Name, slot.Type)
 			}
-			push(SQLExpr{Val: t.d.Load(t.column(slot), slot.Type.Kind), Kind: slot.Type.Kind})
+			push(SQLExpr{Val: d.Load(t.column(slot), slot.Type.Kind), Kind: slot.Type.Kind})
 		case OpNeg, OpPercent, OpNot:
 			if err := need(1, pc); err != nil {
 				return SQLExpr{}, err
@@ -160,11 +180,11 @@ func (t *sqlTranslator) block(start, end int) (SQLExpr, error) {
 			x := pop()
 			switch in.Op {
 			case OpNeg:
-				push(SQLExpr{Val: "(-" + num(x) + ")", Err: x.Err, Kind: KindNumber, Sure: true})
+				push(SQLExpr{Val: "(-" + d.Num(x) + ")", Err: x.Err, Kind: KindNumber, Sure: true})
 			case OpPercent:
-				push(SQLExpr{Val: "(" + num(x) + " / 100.0)", Err: x.Err, Kind: KindNumber, Sure: true})
+				push(SQLExpr{Val: "(" + d.Num(x) + " / " + d.NumberLit(100) + ")", Err: x.Err, Kind: KindNumber, Sure: true})
 			default:
-				push(SQLExpr{Val: "(NOT " + cond(x) + ")", Err: x.Err, Kind: KindBool, Sure: true})
+				push(SQLExpr{Val: "(NOT " + d.Cond(x) + ")", Err: x.Err, Kind: KindBool, Sure: true})
 			}
 		case OpAdd, OpSub, OpMul, OpDiv, OpDivStrict, OpPow:
 			if err := need(2, pc); err != nil {
@@ -172,21 +192,21 @@ func (t *sqlTranslator) block(start, end int) (SQLExpr, error) {
 			}
 			b := pop()
 			a := pop()
-			push(arith(in.Op, a, b))
+			push(arith(d, in.Op, a, b))
 		case OpConcat:
 			if err := need(2, pc); err != nil {
 				return SQLExpr{}, err
 			}
 			b := pop()
 			a := pop()
-			push(SQLExpr{Val: "(" + t.d.Render(a) + " || " + t.d.Render(b) + ")", Err: coalesceErr(a.Err, b.Err), Kind: KindText, Sure: true})
+			push(SQLExpr{Val: "(" + d.Render(a) + " || " + d.Render(b) + ")", Err: coalesceErr(a.Err, b.Err), Kind: KindText, Sure: true})
 		case OpEq, OpNe, OpLt, OpLe, OpGt, OpGe:
 			if err := need(2, pc); err != nil {
 				return SQLExpr{}, err
 			}
 			b := pop()
 			a := pop()
-			push(comparison(in.Op, a, b))
+			push(comparison(d, in.Op, a, b))
 		case OpJumpIfFalse:
 			if err := need(1, pc); err != nil {
 				return SQLExpr{}, err
@@ -209,7 +229,7 @@ func (t *sqlTranslator) block(start, end int) (SQLExpr, error) {
 			if err != nil {
 				return SQLExpr{}, err
 			}
-			push(ifExpr(c, then, els))
+			push(ifExpr(d, c, then, els))
 			pc = endPC
 			continue
 		case OpAndJump, OpOrJump:
@@ -226,7 +246,7 @@ func (t *sqlTranslator) block(start, end int) (SQLExpr, error) {
 			if err != nil {
 				return SQLExpr{}, err
 			}
-			push(logical(in.Op == OpAndJump, left, right))
+			push(logical(d, in.Op == OpAndJump, left, right))
 			pc = after
 			continue
 		case OpJump, OpToBool:
@@ -240,9 +260,15 @@ func (t *sqlTranslator) block(start, end int) (SQLExpr, error) {
 			copy(args, stack[len(stack)-argc:])
 			stack = stack[:len(stack)-argc]
 			name := builtins[in.Arg>>8].name
-			e, err := t.d.Call(name, args, &t.params)
-			if err != nil {
-				return SQLExpr{}, fmt.Errorf("sqlgen: %s: %w", name, err)
+			var e SQLExpr
+			var err error
+			if name == "ISBLANK" || name == "ISNOTBLANK" {
+				e = blankTest(d, name == "ISBLANK", args[0])
+			} else {
+				e, err = d.Call(name, args, &t.params)
+				if err != nil {
+					return SQLExpr{}, fmt.Errorf("sqlgen: %s: %w", name, err)
+				}
 			}
 			errs := make([]string, 0, argc+1)
 			for _, a := range args {
@@ -266,42 +292,46 @@ func (t *sqlTranslator) block(start, end int) (SQLExpr, error) {
 	return stack[0], nil
 }
 
-// num reads an expression as a number: a blank is 0, a bool is 1 or 0.
-func num(e SQLExpr) string {
+// coercions implements Num, Cond and Text for a dialect from its zero
+// literals and its bool-to-number cast.
+type coercions struct {
+	zeroNumber, zeroBool, zeroText string
+	castNumber                     func(string) string
+}
+
+// Num reads an expression as a number: a blank is 0, a bool is 1 or 0.
+func (c coercions) Num(e SQLExpr) string {
 	switch {
 	case e.Kind == KindNull:
-		return "0.0"
+		return c.zeroNumber
 	case e.Kind == KindBool:
-		if e.Sure {
-			return "CAST(" + e.Val + " AS REAL)"
-		}
-		return "CAST(COALESCE(" + e.Val + ", 0) AS REAL)"
+		return c.castNumber(c.Cond(e))
 	case e.Sure:
 		return e.Val
 	}
-	return "COALESCE(" + e.Val + ", 0.0)"
+	return "COALESCE(" + e.Val + ", " + c.zeroNumber + ")"
 }
 
-// cond reads an expression as a condition: a blank is FALSE.
-func cond(e SQLExpr) string {
+// Cond reads an expression as a condition: a blank is FALSE.
+func (c coercions) Cond(e SQLExpr) string {
 	switch {
 	case e.Kind == KindNull:
-		return "0"
+		return c.zeroBool
 	case e.Sure:
 		return e.Val
 	}
-	return "COALESCE(" + e.Val + ", 0)"
+	return "COALESCE(" + e.Val + ", " + c.zeroBool + ")"
 }
 
-// text reads an expression as text: a blank is the empty text.
-func text(e SQLExpr) string {
+// Text reads an expression as text: a blank is the empty text.
+func (c coercions) Text(e SQLExpr) string {
 	switch {
 	case e.Kind == KindNull:
-		return "''"
+		return c.zeroText
 	case e.Sure:
 		return e.Val
 	}
-	return "COALESCE(" + e.Val + ", '')"
+	return "COALESCE(" + e.Val + ", " + c.zeroText + ")"
 }
 
 // coalesceErr joins error expressions in evaluation order: the first error
@@ -322,31 +352,32 @@ func coalesceErr(parts ...string) string {
 	return "COALESCE(" + strings.Join(kept, ", ") + ")"
 }
 
-func overflowErr(val string) string {
-	return "CASE WHEN abs(" + val + ") > " + maxFloat + " THEN 'not_a_number' END"
+func notFiniteErr(d Dialect, val string) string {
+	return "CASE WHEN " + d.NotFinite(val) + " THEN 'not_a_number' END"
 }
 
-func arith(op Op, a, b SQLExpr) SQLExpr {
-	x, y := num(a), num(b)
+func arith(d Dialect, op Op, a, b SQLExpr) SQLExpr {
+	x, y := d.Num(a), d.Num(b)
+	zero := d.NumberLit(0)
 	var val, own string
 	switch op {
 	case OpAdd:
 		val = "(" + x + " + " + y + ")"
-		own = overflowErr(val)
+		own = notFiniteErr(d, val)
 	case OpSub:
 		val = "(" + x + " - " + y + ")"
-		own = overflowErr(val)
+		own = notFiniteErr(d, val)
 	case OpMul:
 		val = "(" + x + " * " + y + ")"
-		own = overflowErr(val)
+		own = notFiniteErr(d, val)
 	case OpDiv:
-		val = "(CASE WHEN " + y + " = 0 THEN 0.0 ELSE " + x + " / " + y + " END)"
+		val = "(CASE WHEN " + y + " = " + zero + " THEN " + zero + " ELSE " + x + " / " + y + " END)"
 	case OpDivStrict:
-		val = "(CASE WHEN " + y + " = 0 THEN NULL ELSE " + x + " / " + y + " END)"
-		own = "CASE WHEN " + y + " = 0 THEN 'div_by_zero' END"
+		val = "(CASE WHEN " + y + " = " + zero + " THEN NULL ELSE " + x + " / " + y + " END)"
+		own = "CASE WHEN " + y + " = " + zero + " THEN 'div_by_zero' END"
 	case OpPow:
 		val = "pow(" + x + ", " + y + ")"
-		own = "CASE WHEN " + val + " IS NULL OR abs(" + val + ") > " + maxFloat + " THEN 'not_a_number' END"
+		own = notFiniteErr(d, val)
 	}
 	return SQLExpr{Val: val, Err: coalesceErr(a.Err, b.Err, own), Kind: KindNumber, Sure: op != OpDivStrict}
 }
@@ -355,7 +386,7 @@ var sqlComparison = map[Op]string{OpEq: "=", OpNe: "<>", OpLt: "<", OpLe: "<=", 
 
 // comparison compares two values of the same kind, or one blank: a blank
 // reads as the zero of the other side's kind.
-func comparison(op Op, a, b SQLExpr) SQLExpr {
+func comparison(d Dialect, op Op, a, b SQLExpr) SQLExpr {
 	k := a.Kind
 	if k == KindNull {
 		k = b.Kind
@@ -363,37 +394,38 @@ func comparison(op Op, a, b SQLExpr) SQLExpr {
 	var x, y string
 	switch k {
 	case KindText, KindRef, KindJSON:
-		x, y = text(a), text(b)
+		x, y = d.Text(a), d.Text(b)
 	case KindBool:
-		x, y = cond(a), cond(b)
+		x, y = d.Cond(a), d.Cond(b)
 	default:
-		x, y = num(a), num(b)
+		x, y = d.Num(a), d.Num(b)
 	}
 	return SQLExpr{Val: "(" + x + " " + sqlComparison[op] + " " + y + ")", Err: coalesceErr(a.Err, b.Err), Kind: KindBool, Sure: true}
 }
 
-func ifExpr(c, then, els SQLExpr) SQLExpr {
+func ifExpr(d Dialect, c, then, els SQLExpr) SQLExpr {
 	kind := then.Kind
 	if kind == KindNull {
 		kind = els.Kind
 	}
-	val := "(CASE WHEN " + cond(c) + " THEN " + then.Val + " ELSE " + els.Val + " END)"
+	cond := d.Cond(c)
+	val := "(CASE WHEN " + cond + " THEN " + then.Val + " ELSE " + els.Val + " END)"
 	var branches string
 	switch {
 	case then.Err != "" && els.Err != "":
-		branches = "CASE WHEN " + cond(c) + " THEN " + then.Err + " ELSE " + els.Err + " END"
+		branches = "CASE WHEN " + cond + " THEN " + then.Err + " ELSE " + els.Err + " END"
 	case then.Err != "":
-		branches = "CASE WHEN " + cond(c) + " THEN " + then.Err + " END"
+		branches = "CASE WHEN " + cond + " THEN " + then.Err + " END"
 	case els.Err != "":
-		branches = "CASE WHEN NOT " + cond(c) + " THEN " + els.Err + " END"
+		branches = "CASE WHEN NOT " + cond + " THEN " + els.Err + " END"
 	}
 	return SQLExpr{Val: val, Err: coalesceErr(c.Err, branches), Kind: kind, Sure: then.Sure && els.Sure && then.Kind != KindNull && els.Kind != KindNull}
 }
 
 // logical is AND or OR with the right side evaluated only when the left
 // has not decided the result.
-func logical(and bool, left, right SQLExpr) SQLExpr {
-	l, r := cond(left), cond(right)
+func logical(d Dialect, and bool, left, right SQLExpr) SQLExpr {
+	l, r := d.Cond(left), d.Cond(right)
 	var val, when string
 	if and {
 		val = "(" + l + " AND " + r + ")"
@@ -407,4 +439,37 @@ func logical(and bool, left, right SQLExpr) SQLExpr {
 		rightErr = "CASE WHEN " + when + " THEN " + right.Err + " END"
 	}
 	return SQLExpr{Val: val, Err: coalesceErr(left.Err, rightErr), Kind: KindBool, Sure: true}
+}
+
+// blankTest is ISBLANK and ISNOTBLANK, the same in every dialect.
+func blankTest(d Dialect, blank bool, x SQLExpr) SQLExpr {
+	if x.Kind == KindNull {
+		if blank {
+			return SQLExpr{Val: d.True(), Kind: KindBool, Sure: true}
+		}
+		return SQLExpr{Val: d.False(), Kind: KindBool, Sure: true}
+	}
+	if blank {
+		return SQLExpr{Val: "(" + x.Val + " IS NULL)", Kind: KindBool, Sure: true}
+	}
+	return SQLExpr{Val: "(" + x.Val + " IS NOT NULL)", Kind: KindBool, Sure: true}
+}
+
+// nonNegativeErr is the out_of_range check of a count or width argument.
+func nonNegativeErr(x string) string {
+	return "CASE WHEN " + x + " < 0 THEN 'out_of_range' END"
+}
+
+// Calls reports whether the program calls the named builtin.
+func (p *Program) Calls(name string) bool {
+	id, ok := builtinByName[name]
+	if !ok {
+		return false
+	}
+	for _, in := range p.Code {
+		if in.Op == OpCall && int(in.Arg>>8) == id {
+			return true
+		}
+	}
+	return false
 }

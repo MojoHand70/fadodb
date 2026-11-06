@@ -17,15 +17,29 @@ import (
 // 0.49999999999999994 up, ignores negative digit counts, upper-cases ASCII
 // only, keeps inner spaces in trim, takes the dividend's sign in mod, does
 // not clamp month arithmetic, normalises February 30 and never fails a
-// cast. The sqlitefn package does the registration.
+// cast; and its pow, ln and log are the platform's, which differ from the
+// VM in the last bit between Linux, macOS and Windows. The sqlitefn
+// package does the registration.
 
 // SQLite is the dialect for SQLite through modernc.org/sqlite.
-type SQLite struct{ coercions }
+type SQLite struct {
+	coercions
+	lim Limits
+}
 
-// NewSQLite makes the SQLite dialect.
+// NewSQLite makes the SQLite dialect under the default limits.
 func NewSQLite() SQLite {
-	return SQLite{coercions{zeroNumber: "0.0", zeroBool: "0", zeroText: "''",
-		castNumber: func(x string) string { return "CAST(" + x + " AS REAL)" }}}
+	return SQLite{coercions: coercions{zeroNumber: "0.0", zeroBool: "0", zeroText: "''",
+		castNumber: func(x string) string { return "CAST(" + x + " AS REAL)" }}, lim: DefaultLimits()}
+}
+
+// Limits implements Dialect.
+func (d SQLite) Limits() Limits { return d.lim }
+
+// WithLimits implements Dialect.
+func (d SQLite) WithLimits(l Limits) Dialect {
+	d.lim = l
+	return d
 }
 
 // Name implements Dialect.
@@ -42,6 +56,9 @@ func (SQLite) False() string { return "0" }
 func (SQLite) NotFinite(val string) string {
 	return "(" + val + " IS NULL OR abs(" + val + ") > " + maxFloat + ")"
 }
+
+// Pow implements Dialect: the engine's own power function, not SQLite's.
+func (SQLite) Pow(x, y string) string { return "fado_power(" + x + ", " + y + ")" }
 
 // Param implements Dialect.
 func (SQLite) Param(name string) string { return ":" + name }
@@ -135,9 +152,11 @@ func SQLiteFunctions() []RegisteredFunc {
 	var out []RegisteredFunc
 	for _, name := range sqliteRegistered {
 		b := builtins[builtinByName[name]]
-		rf := RegisteredFunc{Name: "fado_" + strings.ToLower(name), NArgs: len(b.args), Fn: b.fn}
+		rf := RegisteredFunc{Name: "fado_" + strings.ToLower(name), NArgs: len(b.args), Fn: b.fn, Limited: limitedFunctions[name]}
 		if len(b.args) > 0 && LookupFunction(name).MaxArgs() < 0 {
 			rf.NArgs = -1
+		} else if rf.Limited {
+			rf.NArgs++
 		}
 		rf.Kinds = make([]Kind, len(b.args))
 		for i, a := range b.args {
@@ -151,10 +170,18 @@ func SQLiteFunctions() []RegisteredFunc {
 // sqliteRegistered names the builtins the SQLite dialect calls through
 // registered Go functions.
 var sqliteRegistered = []string{
-	"ROUND", "FLOOR", "CEILING", "TRUNC", "MIN", "MAX", "SUM", "AVERAGE", "COUNT",
+	"ROUND", "FLOOR", "CEILING", "TRUNC", "MIN", "MAX", "SUM", "AVERAGE", "COUNT", "POWER", "LN", "LOG",
 	"DATE", "DATEVALUE", "ADDMONTHS", "ADDYEARS",
-	"TRIM", "UPPER", "LOWER", "PROPER", "REPLACE", "REPEAT", "FINDLAST", "PAD", "REGEXREPLACE",
+	"TRIM", "UPPER", "LOWER", "PROPER", "REPLACE", "SUBSTITUTE", "REPEAT", "FINDLAST", "PAD", "REGEXREPLACE",
 	"VALUE", "JSONVALUE",
+}
+
+// limitedFunctions names the builtins whose result can be longer than
+// their inputs. The dialects pass them the text limit of ADR-0021 as one
+// extra trailing argument, an integer literal, since a registered function
+// and a macro have no VM to read it from.
+var limitedFunctions = map[string]bool{
+	"REPLACE": true, "SUBSTITUTE": true, "REPEAT": true, "PAD": true, "REGEXREPLACE": true,
 }
 
 // RegisteredFunc describes an engine function a SQL dialect calls back into
@@ -162,12 +189,16 @@ var sqliteRegistered = []string{
 type RegisteredFunc struct {
 	// Name is the SQL function name.
 	Name string
-	// NArgs is the argument count, or -1 for variadic.
+	// NArgs is the argument count, the limit included when Limited, or -1
+	// for variadic.
 	NArgs int
 	// Kinds gives the kind expected at each position; the last repeats.
 	Kinds []Kind
 	// Fn is the implementation, the VM's own.
 	Fn func(vm *VM, args []Value) (Value, *EvalError)
+	// Limited: the last argument is the text limit, and Fn reads it from
+	// the VM it is called with.
+	Limited bool
 }
 
 // Kind returns the kind expected at argument position i.
@@ -278,10 +309,20 @@ func (v Value) DriverValue() any {
 	return v.str
 }
 
+// intArg truncates a number to an integer for a position or a count,
+// clamped to -1 below and to one past maxCount above, so that a negative
+// argument is still seen and the cast cannot overflow.
+func intArg(x string) string {
+	return "CAST(min(max(trunc(" + x + "), -1), " + maxCount + " + 1) AS INTEGER)"
+}
+
 // Call implements Dialect.
 func (d SQLite) Call(name string, args []SQLExpr, params *Params) (SQLExpr, error) {
 	reg := func(kind Kind, withErr bool, sqlArgs ...string) SQLExpr {
 		fn := "fado_" + strings.ToLower(name)
+		if limitedFunctions[name] {
+			sqlArgs = append(sqlArgs, strconv.Itoa(d.lim.MaxText))
+		}
 		list := strings.Join(sqlArgs, ", ")
 		e := SQLExpr{Val: fn + "(" + list + ")", Kind: kind}
 		if withErr {
@@ -333,19 +374,13 @@ func (d SQLite) Call(name string, args []SQLExpr, params *Params) (SQLExpr, erro
 		val := "exp(" + d.Num(args[0]) + ")"
 		return SQLExpr{Val: val, Err: notFiniteErr(d, val), Kind: KindNumber, Sure: true}, nil
 	case "LN":
-		x := d.Num(args[0])
-		return SQLExpr{Val: "ln(" + x + ")", Err: "CASE WHEN " + x + " <= 0 THEN 'not_a_number' END", Kind: KindNumber}, nil
+		return reg(KindNumber, true, d.Num(args[0])), nil
 	case "LOG":
-		x := d.Num(args[0])
-		if len(args) == 1 {
-			return SQLExpr{Val: "log(" + x + ")", Err: "CASE WHEN " + x + " <= 0 THEN 'not_a_number' END", Kind: KindNumber}, nil
-		}
-		b := d.Num(args[1])
-		val := "(CASE WHEN " + b + " = 10.0 THEN log(" + x + ") ELSE log(" + b + ", " + x + ") END)"
-		return SQLExpr{Val: val, Err: "CASE WHEN " + x + " <= 0 OR " + b + " <= 0 OR " + b + " = 1 THEN 'not_a_number' END", Kind: KindNumber}, nil
+		return reg(KindNumber, true, d.Num(args[0]), numOr(1, "10.0")), nil
 	case "MOD":
 		a, b := d.Num(args[0]), d.Num(args[1])
-		return SQLExpr{Val: "(" + a + " - " + b + " * floor(" + a + " / " + b + "))", Err: "CASE WHEN " + b + " = 0 THEN 'div_by_zero' END", Kind: KindNumber}, nil
+		val := "(" + a + " - " + b + " * floor(" + a + " / " + b + "))"
+		return SQLExpr{Val: val, Err: coalesceErr("CASE WHEN "+b+" = 0 THEN 'div_by_zero' END", notFiniteErr(d, val)), Kind: KindNumber}, nil
 	case "DATE":
 		return reg(KindDate, true, d.Num(args[0]), d.Num(args[1]), d.Num(args[2])), nil
 	case "DATEVALUE":
@@ -398,21 +433,19 @@ func (d SQLite) Call(name string, args []SQLExpr, params *Params) (SQLExpr, erro
 	case "INGROUP":
 		return SQLExpr{Val: "EXISTS (SELECT 1 FROM json_each(" + params.Use("groups") + ") WHERE json_each.value = " + d.Text(args[0]) + ")", Kind: KindBool, Sure: true}, nil
 	case "LEFT":
-		n := "CAST(trunc(" + d.Num(args[1]) + ") AS INTEGER)"
-		return SQLExpr{Val: "substr(" + d.Text(args[0]) + ", 1, " + n + ")", Err: nonNegativeErr(n), Kind: KindText, Sure: true}, nil
+		n := intArg(d.Num(args[1]))
+		return SQLExpr{Val: "substr(" + d.Text(args[0]) + ", 1, " + n + ")", Err: countErr(n), Kind: KindText, Sure: true}, nil
 	case "RIGHT":
-		t, n := d.Text(args[0]), "CAST(trunc("+d.Num(args[1])+") AS INTEGER)"
+		t, n := d.Text(args[0]), intArg(d.Num(args[1]))
 		val := "(CASE WHEN " + n + " <= 0 THEN '' WHEN " + n + " >= length(" + t + ") THEN " + t + " ELSE substr(" + t + ", -" + n + ") END)"
-		return SQLExpr{Val: val, Err: nonNegativeErr(n), Kind: KindText, Sure: true}, nil
+		return SQLExpr{Val: val, Err: countErr(n), Kind: KindText, Sure: true}, nil
 	case "MID":
-		t, p := d.Text(args[0]), "CAST(trunc("+d.Num(args[1])+") AS INTEGER)"
-		errExpr := "CASE WHEN " + p + " < 1 THEN 'out_of_range' END"
+		t, p := d.Text(args[0]), intArg(d.Num(args[1]))
 		if len(args) == 2 {
-			return SQLExpr{Val: "substr(" + t + ", " + p + ")", Err: errExpr, Kind: KindText, Sure: true}, nil
+			return SQLExpr{Val: "substr(" + t + ", " + p + ")", Err: positionErr(p, ""), Kind: KindText, Sure: true}, nil
 		}
-		n := "CAST(trunc(" + d.Num(args[2]) + ") AS INTEGER)"
-		errExpr = "CASE WHEN " + p + " < 1 OR " + n + " < 0 THEN 'out_of_range' END"
-		return SQLExpr{Val: "substr(" + t + ", " + p + ", " + n + ")", Err: errExpr, Kind: KindText, Sure: true}, nil
+		n := intArg(d.Num(args[2]))
+		return SQLExpr{Val: "substr(" + t + ", " + p + ", " + n + ")", Err: positionErr(p, n), Kind: KindText, Sure: true}, nil
 	case "LEN":
 		return SQLExpr{Val: "CAST(length(" + d.Text(args[0]) + ") AS REAL)", Kind: KindNumber, Sure: true}, nil
 	case "TRIM", "UPPER", "LOWER", "PROPER":
@@ -422,13 +455,9 @@ func (d SQLite) Call(name string, args []SQLExpr, params *Params) (SQLExpr, erro
 	case "REPLACE":
 		return reg(KindText, true, d.Text(args[0]), d.Num(args[1]), d.Num(args[2]), d.Text(args[3])), nil
 	case "SUBSTITUTE":
-		return SQLExpr{Val: "replace(" + d.Text(args[0]) + ", " + d.Text(args[1]) + ", " + d.Text(args[2]) + ")", Kind: KindText, Sure: true}, nil
+		return reg(KindText, true, d.Text(args[0]), d.Text(args[1]), d.Text(args[2])), nil
 	case "CONCAT":
-		parts := make([]string, len(args))
-		for i, a := range args {
-			parts[i] = d.Render(a)
-		}
-		return SQLExpr{Val: "(" + strings.Join(parts, " || ") + ")", Kind: KindText, Sure: true}, nil
+		return concatExpr(d, args, false), nil
 	case "REPEAT":
 		return reg(KindText, true, d.Text(args[0]), d.Num(args[1])), nil
 	case "FINDFIRST":

@@ -12,17 +12,64 @@ import (
 )
 
 // Text functions. A blank text argument reads as "": Value.str is "" for a
-// blank. Positions and lengths count code points and are 1-based.
+// blank. Positions and lengths count code points and are 1-based, and a
+// count past the end of the text reads to the end. Every text a formula
+// produces is at most the database's MaxText code points (ADR-0021): a
+// function whose result can be longer than its inputs works the length out
+// first and stops with out_of_range instead of building it, so a formula
+// can never ask for gigabytes. The functions that only shrink or recase
+// their input need no check, since the inputs are within the limit. A
+// length is checked in bytes first, which bound the code points, and in
+// code points only when the bytes exceed the limit, so the usual short
+// text costs nothing to check.
 
-func countArg(v Value, what string) (int, *EvalError) {
+// countArg reads a count, length or width argument: truncated, and never
+// negative. It stays a float64 so that a huge count cannot overflow an
+// int; callers clamp it to what they can use.
+func countArg(v Value, what string) (float64, *EvalError) {
 	n := math.Trunc(v.num)
-	if n < 0 {
+	if !(n >= 0) { // negative, or NaN
 		return 0, outOfRange(what + " must not be negative")
 	}
-	if n > 1e9 {
-		return 0, outOfRange(what + " is too large")
+	return n, nil
+}
+
+// clamp converts a non-negative count to an int no larger than limit.
+func clamp(n float64, limit int) int {
+	if n > float64(limit) {
+		return limit
 	}
-	return int(n), nil
+	return int(n)
+}
+
+func tooLong() *EvalError { return outOfRange("the result is too long") }
+
+// start0 is the 0-based start for a 1-based position, which is 1 or more,
+// clamped to one past the end of r.
+func start0(pos float64, r []rune) int { return int(math.Min(pos, float64(len(r)+1))) - 1 }
+
+// textBytes bounds the rendering of a scalar in bytes without rendering
+// it: the text itself, or the 24 bytes a number, a bool or a date never
+// exceeds.
+func textBytes(v Value) int {
+	switch v.kind {
+	case KindText, KindRef, KindJSON:
+		return len(v.str)
+	case KindNull:
+		return 0
+	}
+	return 24
+}
+
+// runeLen is the length in code points of a scalar rendered as text.
+func runeLen(v Value) int {
+	switch v.kind {
+	case KindText, KindRef, KindJSON:
+		return utf8.RuneCountInString(v.str)
+	case KindNull:
+		return 0
+	}
+	return utf8.RuneCountInString(render(v))
 }
 
 func fnLeft(_ *VM, args []Value) (Value, *EvalError) {
@@ -31,10 +78,7 @@ func fnLeft(_ *VM, args []Value) (Value, *EvalError) {
 		return Value{}, err
 	}
 	r := []rune(args[0].str)
-	if n > len(r) {
-		n = len(r)
-	}
-	return Text(string(r[:n])), nil
+	return Text(string(r[:clamp(n, len(r))])), nil
 }
 
 func fnRight(_ *VM, args []Value) (Value, *EvalError) {
@@ -43,28 +87,23 @@ func fnRight(_ *VM, args []Value) (Value, *EvalError) {
 		return Value{}, err
 	}
 	r := []rune(args[0].str)
-	if n > len(r) {
-		n = len(r)
-	}
-	return Text(string(r[len(r)-n:])), nil
+	return Text(string(r[len(r)-clamp(n, len(r)):])), nil
 }
 
 func fnMid(_ *VM, args []Value) (Value, *EvalError) {
 	pos := math.Trunc(args[1].num)
-	if pos < 1 {
+	if !(pos >= 1) {
 		return Value{}, outOfRange("the position must be 1 or more")
 	}
 	r := []rune(args[0].str)
-	start := int(math.Min(pos, float64(len(r)+1))) - 1
+	start := start0(pos, r)
 	end := len(r)
 	if len(args) > 2 {
 		n, err := countArg(args[2], "the length")
 		if err != nil {
 			return Value{}, err
 		}
-		if start+n < end {
-			end = start + n
-		}
+		end = start + clamp(n, len(r)-start)
 	}
 	return Text(string(r[start:end])), nil
 }
@@ -119,9 +158,9 @@ func proper(s string) string {
 	return b.String()
 }
 
-func fnReplace(_ *VM, args []Value) (Value, *EvalError) {
+func fnReplace(vm *VM, args []Value) (Value, *EvalError) {
 	pos := math.Trunc(args[1].num)
-	if pos < 1 {
+	if !(pos >= 1) {
 		return Value{}, outOfRange("the position must be 1 or more")
 	}
 	n, err := countArg(args[2], "the length")
@@ -129,22 +168,40 @@ func fnReplace(_ *VM, args []Value) (Value, *EvalError) {
 		return Value{}, err
 	}
 	r := []rune(args[0].str)
-	start := int(math.Min(pos, float64(len(r)+1))) - 1
-	end := start + n
-	if end > len(r) {
-		end = len(r)
+	start := start0(pos, r)
+	end := start + clamp(n, len(r)-start)
+	if len(r)-(end-start)+utf8.RuneCountInString(args[3].str) > vm.maxText() {
+		return Value{}, tooLong()
 	}
 	return Text(string(r[:start]) + args[3].str + string(r[end:])), nil
 }
 
-func fnSubstitute(_ *VM, args []Value) (Value, *EvalError) {
-	if args[1].str == "" {
-		return Text(args[0].str), nil
+func fnSubstitute(vm *VM, args []Value) (Value, *EvalError) {
+	t, old, repl := args[0].str, args[1].str, args[2].str
+	if old == "" {
+		return Text(t), nil
 	}
-	return Text(strings.ReplaceAll(args[0].str, args[1].str, args[2].str)), nil
+	if count := strings.Count(t, old); count > 0 && len(t)+count*(len(repl)-len(old)) > vm.maxText() &&
+		utf8.RuneCountInString(t)+count*(utf8.RuneCountInString(repl)-utf8.RuneCountInString(old)) > vm.maxText() {
+		return Value{}, tooLong()
+	}
+	return Text(strings.ReplaceAll(t, old, repl)), nil
 }
 
-func fnConcat(_ *VM, args []Value) (Value, *EvalError) {
+func fnConcat(vm *VM, args []Value) (Value, *EvalError) {
+	n := 0
+	for _, a := range args {
+		n += textBytes(a)
+	}
+	if n > vm.maxText() {
+		n = 0
+		for _, a := range args {
+			n += runeLen(a)
+		}
+		if n > vm.maxText() {
+			return Value{}, tooLong()
+		}
+	}
 	var b strings.Builder
 	for _, a := range args {
 		b.WriteString(render(a))
@@ -152,15 +209,18 @@ func fnConcat(_ *VM, args []Value) (Value, *EvalError) {
 	return Text(b.String()), nil
 }
 
-func fnRepeat(_ *VM, args []Value) (Value, *EvalError) {
+func fnRepeat(vm *VM, args []Value) (Value, *EvalError) {
 	n, err := countArg(args[1], "the count")
 	if err != nil {
 		return Value{}, err
 	}
-	if n*len(args[0].str) > 1<<20 {
-		return Value{}, outOfRange("the result is too long")
+	if args[0].str == "" || n == 0 {
+		return Text(""), nil
 	}
-	return Text(strings.Repeat(args[0].str, n)), nil
+	if max := float64(vm.maxText()); n*float64(len(args[0].str)) > max && n*float64(utf8.RuneCountInString(args[0].str)) > max {
+		return Value{}, tooLong()
+	}
+	return Text(strings.Repeat(args[0].str, int(n))), nil
 }
 
 func runePos(s string, byteIndex int) float64 {
@@ -178,11 +238,15 @@ func fnFindLast(_ *VM, args []Value) (Value, *EvalError) {
 	return Number(runePos(args[1].str, strings.LastIndex(args[1].str, args[0].str))), nil
 }
 
-func fnPad(_ *VM, args []Value) (Value, *EvalError) {
-	width, err := countArg(args[1], "the width")
+func fnPad(vm *VM, args []Value) (Value, *EvalError) {
+	w, err := countArg(args[1], "the width")
 	if err != nil {
 		return Value{}, err
 	}
+	if w > float64(vm.maxText()) {
+		return Value{}, tooLong()
+	}
+	width := int(w)
 	fill := " "
 	if len(args) > 2 && args[2].str != "" {
 		r, _ := utf8.DecodeRuneInString(args[2].str)
@@ -195,12 +259,36 @@ func fnPad(_ *VM, args []Value) (Value, *EvalError) {
 	return Text(strings.Repeat(fill, width-n) + args[0].str), nil
 }
 
-func fnRegexReplace(_ *VM, args []Value) (Value, *EvalError) {
+// fnRegexReplace replaces every match with the replacement taken
+// literally. The matches are found first, so that the length of the result
+// is known before it is built; Go's successive non-overlapping matches
+// are those of RE2, which the DuckDB dialect runs.
+func fnRegexReplace(vm *VM, args []Value) (Value, *EvalError) {
 	re, err := regexp.Compile(args[1].str)
 	if err != nil {
 		return Value{}, &EvalError{Code: ErrBadText, Msg: "invalid pattern: " + err.Error()}
 	}
-	return Text(re.ReplaceAllLiteralString(args[0].str, args[2].str)), nil
+	t, repl := args[0].str, args[2].str
+	matches := re.FindAllStringIndex(t, -1)
+	if len(matches) == 0 {
+		return Text(t), nil
+	}
+	matched := 0
+	for _, m := range matches {
+		matched += utf8.RuneCountInString(t[m[0]:m[1]])
+	}
+	if utf8.RuneCountInString(t)-matched+len(matches)*utf8.RuneCountInString(repl) > vm.maxText() {
+		return Value{}, tooLong()
+	}
+	var b strings.Builder
+	last := 0
+	for _, m := range matches {
+		b.WriteString(t[last:m[0]])
+		b.WriteString(repl)
+		last = m[1]
+	}
+	b.WriteString(t[last:])
+	return Text(b.String()), nil
 }
 
 func fnText(_ *VM, args []Value) (Value, *EvalError) { return Text(render(args[0])), nil }

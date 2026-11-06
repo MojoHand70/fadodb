@@ -7,8 +7,8 @@ cases in CI; a frontend author can run them against their own port.
 
 Semantics are fixed in ADR-0004 (numbers), ADR-0005 (blanks), ADR-0013
 (types), ADR-0019 (grammar, coercion, comparison, dates, text, composites,
-errors) and ADR-0020 (LOOKUP and QUERY). The function catalog is
-`internal/formula/catalog.json`.
+errors), ADR-0020 (LOOKUP and QUERY) and ADR-0021 (size limits). The
+function catalog is `internal/formula/catalog.json`.
 
 ## Status
 
@@ -53,6 +53,9 @@ One file per topic:
   codes in ADR-0019 and ADR-0020.
 - `type` pins the static type of the formula. A date result must declare
   `"type": "date"` so that `expected` can be written as text.
+- `limits` sets the size limits the suite evaluates under, `{"max_text":
+  N}` code points (ADR-0021); absent, the defaults. The `limits` suite runs
+  at a small limit so that short texts reach the boundary.
 
 Numbers compare exactly, except that aggregates over floating-point values
 compare to a relative 1e-12 across targets (ADR-0019).

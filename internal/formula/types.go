@@ -95,10 +95,16 @@ var scalarKinds = map[string]Kind{
 }
 
 // ParseType reads a type as written in class definitions and in the
-// conformance suite: a scalar name, array<scalar>, or rows.
+// conformance suite: a scalar name, array<scalar>, or rows. It also reads
+// "blank", the static type of a formula that is BLANK, so that every type
+// String writes decodes again; a variable is never declared blank, which
+// is the declaring side's check.
 func ParseType(s string) (Type, error) {
 	if k, ok := scalarKinds[s]; ok {
 		return Scalar(k), nil
+	}
+	if s == "blank" {
+		return Scalar(KindNull), nil
 	}
 	if s == "rows" {
 		return Type{Kind: KindRows}, nil

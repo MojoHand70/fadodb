@@ -69,6 +69,10 @@
     {"name": "huge magnitudes stay finite until they overflow", "formula": "1e308 * 10", "error": "not_a_number"},
     {"formula": "1e308 + 1e308", "error": "not_a_number"},
     {"formula": "-1e308 * 10", "error": "not_a_number"},
-    {"formula": "1e308 * 0.5", "expected": 5e307}
+    {"formula": "1e308 * 0.5", "expected": 5e307},
+    {"name": "division overflows too", "formula": "1e308 / 0.1", "error": "not_a_number"},
+    {"formula": "1e308 \\ 0.1", "error": "not_a_number"},
+    {"formula": "1e308 / 10", "expected": 1e307},
+    {"formula": "MOD(1e308, 1e-10)", "error": "not_a_number"}
   ]
 }

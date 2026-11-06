@@ -67,6 +67,7 @@ func TestConformance_LoaderRejectsMalformedSuites(t *testing.T) {
 		"bad-type.json":      `{"suite":"x","variables":{"q":"money"},"cases":[{"formula":"1","expected":1}]}`,
 		"no-name.json":       `{"cases":[{"formula":"1","expected":1}]}`,
 		"unknown-field.json": `{"suite":"x","cases":[{"formula":"1","expected":1,"note":"x"}]}`,
+		"low-limit.json":     `{"suite":"x","limits":{"max_text":10},"cases":[{"formula":"1","expected":1}]}`,
 	}
 	for name, raw := range bad {
 		if err := writeFile(filepath.Join(dir, name), raw); err != nil {

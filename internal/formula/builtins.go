@@ -2,6 +2,7 @@ package formula
 
 import (
 	"math"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -121,7 +122,10 @@ func fnIsNotBlank(_ *VM, args []Value) (Value, *EvalError) {
 // ---- Numeric. A blank argument reads as 0: Value.num is 0 for a blank.
 
 // roundTo rounds half away from zero at a decimal scale. The clamps keep
-// 10^digits a finite float64; beyond that scale rounding is a no-op.
+// 10^digits a finite float64; beyond that scale rounding is a no-op. Once
+// the scaled value is 2^52 or more it is an integer already, so the value
+// is returned as it is rather than scaled back, which could move it by an
+// ulp. The SQL dialects emit the same shape so that every target agrees.
 func roundTo(v, digits float64) float64 {
 	d := math.Trunc(digits)
 	if d > 300 {
@@ -130,9 +134,9 @@ func roundTo(v, digits float64) float64 {
 	if d < -300 {
 		return 0
 	}
-	p := math.Pow(10, d)
+	p := pow10(int(d))
 	scaled := v * p
-	if math.IsInf(scaled, 0) {
+	if math.Abs(scaled) >= 1<<52 {
 		return v
 	}
 	return math.Round(scaled) / p
@@ -144,9 +148,9 @@ func roundTo(v, digits float64) float64 {
 // dialects emit the same shape so that every target agrees.
 func scaledStep(v, digits float64, step func(float64) float64) float64 {
 	d := math.Max(-300, math.Min(300, math.Trunc(digits)))
-	p := math.Pow(10, d)
+	p := pow10(int(d))
 	scaled := v * p
-	if math.IsInf(scaled, 0) {
+	if math.Abs(scaled) >= 1<<52 {
 		return v
 	}
 	return step(roundTo(scaled, 9)) / p
@@ -259,8 +263,136 @@ func fnCount(_ *VM, args []Value) (Value, *EvalError) {
 }
 
 func fnPower(_ *VM, args []Value) (Value, *EvalError) {
-	return finite(math.Pow(args[0].num, args[1].num))
+	return finite(pow(args[0].num, args[1].num))
 }
+
+// pow is x to the y. Go's math.Pow raises x to the integer part of y by
+// repeated squaring in plain doubles and loses about a bit per squaring:
+// 1.005 ^ 1064 comes out hundreds of ulps from the correctly rounded
+// result the C math libraries behind SQLite and DuckDB give. The integer
+// part is raised here in double-double arithmetic instead, so that the
+// targets agree to the last bit in all but rare cases; the fractional part
+// goes through Exp and Log, or Sqrt for a half, which is within a few ulps
+// of the C libraries and inside the tolerance of ADR-0019. The
+// special cases, zero, infinities, NaN and a negative base with a
+// fractional exponent, are math.Pow's.
+func pow(x, y float64) float64 {
+	if y == 0 || x == 1 {
+		return 1
+	}
+	yi, yf := math.Modf(y)
+	if x <= 0 || math.IsInf(x, 0) || math.IsNaN(x) || math.IsNaN(y) || math.IsInf(y, 0) || math.Abs(yi) > 1<<62 {
+		return math.Pow(x, y)
+	}
+	frac := 1.0
+	switch yf {
+	case 0:
+	case 0.5:
+		frac = math.Sqrt(x)
+	default:
+		frac = math.Exp(yf * ln(x))
+	}
+	n := int64(yi)
+	neg := n < 0
+	if neg {
+		n = -n
+	}
+	hi, lo := 1.0, 0.0
+	bh, bl := x, 0.0
+	for n > 0 {
+		if n&1 == 1 {
+			hi, lo = ddMul(hi, lo, bh, bl)
+		}
+		n >>= 1
+		if n > 0 {
+			bh, bl = ddMul(bh, bl, bh, bl)
+		}
+		if math.IsInf(hi, 0) || math.IsInf(bh, 0) || hi == 0 {
+			// Overflow or underflow on the way: the result is infinite,
+			// zero or subnormal, and math.Pow's scaling gets those right.
+			return math.Pow(x, y)
+		}
+	}
+	r := hi + lo
+	if neg {
+		r = 1 / r
+	}
+	return r * frac
+}
+
+// ddMul multiplies two double-double numbers; the error of each product
+// is recovered with a fused multiply-add. The explicit conversions round
+// every product where it stands: on arm64 the compiler would otherwise
+// fuse a product into a sum that follows it, even one statements later,
+// skip a rounding, and give a result that differs from amd64's in the
+// last bits.
+func ddMul(ah, al, bh, bl float64) (float64, float64) {
+	p := float64(ah * bh)
+	if math.IsInf(p, 0) {
+		return p, 0 // the error term would be NaN; pow stops on the infinity
+	}
+	e := math.FMA(ah, bh, -p) + float64(ah*bl) + float64(al*bh)
+	hi := p + e
+	return hi, e - (hi - p)
+}
+
+// minNormal is the smallest normal float64; below it a number is subnormal.
+const minNormal = 0x1p-1022
+
+// ln is the natural logarithm, right for a subnormal argument too. Go's
+// math.Log flattens every subnormal to the smallest normal number, so that
+// LN(1e-310) came out as -708.4 where the C libraries behind SQLite and
+// DuckDB give -713.8; a subnormal is scaled up by 2^64 first and the
+// scaling taken back out of the result.
+func ln(x float64) float64 {
+	if x > 0 && x < minNormal {
+		return math.Log(x*(1<<64)) - 64*math.Ln2
+	}
+	return math.Log(x)
+}
+
+// log10 is the base-10 logarithm, exact at the powers of ten. Go's
+// math.Log10 is Log2 scaled by a constant and gives 14.999999999999998
+// for 1e15 where the C libraries give 15; and like math.Log it flattens a
+// subnormal, which goes through ln instead.
+func log10(x float64) float64 {
+	r := math.Log10(x)
+	if x < minNormal {
+		r = ln(x) / math.Ln10
+	}
+	if n := math.Round(r); n != r && math.Abs(n) <= 323 && pow10(int(n)) == x {
+		return n
+	}
+	return r
+}
+
+// pow10 is 10 to an integer power, correctly rounded, so that every
+// evaluator scales by the same double: math.Pow raises 10 by repeated
+// squaring and is off by an ulp for most exponents beyond 22, where the
+// power is no longer exactly representable, while the DuckDB dialect
+// reads the same power from its decimal spelling. Outside the table the
+// power is zero or infinite.
+func pow10(d int) float64 {
+	if d < -323 {
+		return 0
+	}
+	if d > 308 {
+		return math.Inf(1)
+	}
+	return pow10Table[d+323]
+}
+
+var pow10Table = func() [632]float64 {
+	var t [632]float64
+	for i := range t {
+		f, err := strconv.ParseFloat("1e"+strconv.Itoa(i-323), 64)
+		if err != nil {
+			panic(err)
+		}
+		t[i] = f
+	}
+	return t
+}()
 
 func fnSqrt(_ *VM, args []Value) (Value, *EvalError) {
 	if args[0].num < 0 {
@@ -275,7 +407,7 @@ func fnLn(_ *VM, args []Value) (Value, *EvalError) {
 	if args[0].num <= 0 {
 		return Value{}, notANumber()
 	}
-	return Number(math.Log(args[0].num)), nil
+	return Number(ln(args[0].num)), nil
 }
 
 func fnLog(_ *VM, args []Value) (Value, *EvalError) {
@@ -287,9 +419,9 @@ func fnLog(_ *VM, args []Value) (Value, *EvalError) {
 		return Value{}, notANumber()
 	}
 	if base == 10 {
-		return finite(math.Log10(x))
+		return finite(log10(x))
 	}
-	return finite(math.Log(x) / math.Log(base))
+	return finite(ln(x) / ln(base))
 }
 
 func fnMod(_ *VM, args []Value) (Value, *EvalError) {
@@ -297,7 +429,9 @@ func fnMod(_ *VM, args []Value) (Value, *EvalError) {
 	if b == 0 {
 		return Value{}, &EvalError{Code: ErrDivByZero, Msg: "MOD by zero"}
 	}
-	return finite(a - b*math.Floor(a/b))
+	// The product rounds before the subtraction, as the SQL engines round
+	// it, so that arm64 cannot fuse the two into one differently rounded step.
+	return finite(a - float64(b*math.Floor(a/b)))
 }
 
 // ---- Dates. Seconds since the epoch, UTC; a blank date argument gives a
@@ -392,7 +526,7 @@ func fnAddDays(_ *VM, args []Value) (Value, *EvalError) {
 	if args[0].kind == KindNull {
 		return Blank(), nil
 	}
-	return dateValue(args[0].num + args[1].num*secondsPerDay)
+	return dateValue(args[0].num + float64(args[1].num*secondsPerDay))
 }
 
 // addMonthsClamped keeps the day of month and the time of day and clamps to

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math"
 	"time"
+	"unicode/utf8"
 )
 
 // The Go VM executes a Program over a fixed value stack with a call-free
@@ -52,12 +53,16 @@ const (
 // VM executes programs. A VM is not safe for concurrent use; make one per
 // goroutine. Its stack is reused across runs.
 type VM struct {
+	// Limits are the size limits of the database the programs belong to
+	// (ADR-0021). NewVM sets the defaults; set others before Run.
+	Limits Limits
+
 	stack []Value
 	ctx   *Context
 }
 
-// NewVM makes a VM.
-func NewVM() *VM { return &VM{stack: make([]Value, 0, 32)} }
+// NewVM makes a VM with the default limits.
+func NewVM() *VM { return &VM{Limits: DefaultLimits(), stack: make([]Value, 0, 32)} }
 
 // Run executes the program. vars holds one value per program slot, in slot
 // order. ctx may be nil when the program uses no context function.
@@ -114,34 +119,39 @@ func (vm *VM) Run(p *Program, vars []Value, ctx *Context) (Value, error) {
 			case OpMul:
 				r = a * b
 			default:
-				r = math.Pow(a, b)
+				r = pow(a, b)
 			}
-			if math.IsInf(r, 0) || math.IsNaN(r) {
+			if notFinite(r) {
 				err = &EvalError{Code: ErrNotANumber, Msg: "the result is not a finite number"}
 				break
 			}
 			sp--
 			stack[sp-1] = Value{kind: KindNumber, num: r}
-		case OpDiv:
+		case OpDiv, OpDivStrict:
 			a, b := stack[sp-2].num, stack[sp-1].num
-			sp--
+			var r float64
 			if b == 0 {
-				stack[sp-1] = Value{kind: KindNumber}
+				if in.Op == OpDivStrict {
+					err = &EvalError{Code: ErrDivByZero, Msg: `\ by zero`}
+					break
+				}
 			} else {
-				stack[sp-1] = Value{kind: KindNumber, num: a / b}
+				r = a / b
+				if notFinite(r) {
+					err = &EvalError{Code: ErrNotANumber, Msg: "the result is not a finite number"}
+					break
+				}
 			}
-		case OpDivStrict:
-			a, b := stack[sp-2].num, stack[sp-1].num
-			if b == 0 {
-				err = &EvalError{Code: ErrDivByZero, Msg: `\ by zero`}
+			sp--
+			stack[sp-1] = Value{kind: KindNumber, num: r}
+		case OpConcat:
+			a, b := render(stack[sp-2]), render(stack[sp-1])
+			if n := vm.maxText(); len(a)+len(b) > n && utf8.RuneCountInString(a)+utf8.RuneCountInString(b) > n {
+				err = tooLong()
 				break
 			}
 			sp--
-			stack[sp-1] = Value{kind: KindNumber, num: a / b}
-		case OpConcat:
-			s := render(stack[sp-2]) + render(stack[sp-1])
-			sp--
-			stack[sp-1] = Value{kind: KindText, str: s}
+			stack[sp-1] = Value{kind: KindText, str: a + b}
 		case OpEq, OpNe, OpLt, OpLe, OpGt, OpGe:
 			c := compare(stack[sp-2], stack[sp-1])
 			sp--
@@ -212,6 +222,11 @@ func (vm *VM) Run(p *Program, vars []Value, ctx *Context) (Value, error) {
 		}
 	}
 }
+
+// notFinite reports an infinite or NaN result with one comparison: the
+// magnitude of a finite number is at most MaxFloat64, an infinity's is
+// larger, and a NaN compares false with everything.
+func notFinite(r float64) bool { return !(math.Abs(r) <= math.MaxFloat64) }
 
 // compare orders two scalars for the comparison operators. The binder
 // guarantees the same static type or a blank on one side; a blank reads as

@@ -70,3 +70,20 @@ func TestOp_Names(t *testing.T) {
 		t.Error("opcode names")
 	}
 }
+
+func TestProgram_BlankResultRoundTrips(t *testing.T) {
+	scope := mustScope(t, numVars("a")...)
+	for _, src := range []string{"BLANK", "IF(a > 0, BLANK, BLANK)"} {
+		p := mustBind(t, src, scope)
+		if p.Result.Kind != KindNull {
+			t.Fatalf("%s: result type %s, want blank", src, p.Result)
+		}
+		back, err := Decode(p.Encode())
+		if err != nil {
+			t.Fatalf("%s: decode: %v", src, err)
+		}
+		if !back.Result.Equal(p.Result) {
+			t.Errorf("%s: decoded result type %s, want %s", src, back.Result, p.Result)
+		}
+	}
+}

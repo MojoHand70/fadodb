@@ -24,5 +24,6 @@ line says so. Copy `0000-template.md` to start.
 | [0016](0016-explicit-tables-and-query-functions.md) | Explicit tables, storage bindings, LOOKUP and QUERY | Accepted, amended by 0020 |
 | [0017](0017-duckdb-as-the-analytical-engine.md) | DuckDB as the analytical engine, full and lite builds | Accepted |
 | [0018](0018-class-metadata-layouts-and-wire-format.md) | JSON for definitions and interchange: class metadata, layouts and the wire format | Accepted |
-| [0019](0019-formula-language-semantics.md) | Formula language semantics: grammar, types, coercion, comparison, dates, text, composites and errors | Accepted |
+| [0019](0019-formula-language-semantics.md) | Formula language semantics: grammar, types, coercion, comparison, dates, text, composites and errors | Accepted, amended by 0021 |
 | [0020](0020-query-function-execution.md) | LOOKUP and QUERY execution: one engine call per invocation | Accepted |
+| [0021](0021-size-limits.md) | Size limits: one text limit per database, enforced before building | Accepted |

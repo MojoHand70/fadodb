@@ -18,13 +18,15 @@ func TestGenerateSQL_Shapes(t *testing.T) {
 		params    []string
 	}{
 		{src: "qty * 2", wantValue: []string{`(COALESCE(CAST("qty" AS REAL), 0.0) * 2.0)`}, wantError: []string{"abs(", "'not_a_number'"}},
-		{src: "qty / 0", wantValue: []string{"CASE WHEN 0.0 = 0.0 THEN 0.0 ELSE"}, noError: true},
+		{src: "qty / 0", wantValue: []string{"CASE WHEN 0.0 = 0.0 THEN 0.0 ELSE"}, wantError: []string{"'not_a_number'"}},
 		{src: `qty \ 2`, wantError: []string{"'div_by_zero'"}},
-		{src: `name & qty`, wantValue: []string{`COALESCE("name", '') || (CASE WHEN CAST("qty" AS REAL) IS NULL THEN '' ELSE printf('%.15g', CAST("qty" AS REAL)) END)`}, noError: true},
+		{src: `name & qty`, wantValue: []string{`substr(COALESCE("name", '') || (CASE WHEN CAST("qty" AS REAL) IS NULL THEN '' ELSE printf('%.15g', CAST("qty" AS REAL)) END), 1, 65537)`}, wantError: []string{`length(COALESCE("name", ''))`, "> 65536 THEN 'out_of_range'"}},
+		{src: `REPEAT(name, 2)`, wantValue: []string{`fado_repeat(COALESCE("name", ''), 2.0, 65536)`}, wantError: []string{`fado_repeat_err(COALESCE("name", ''), 2.0, 65536)`}},
+		{src: `LEFT(name, 1e10)`, wantValue: []string{`substr(COALESCE("name", ''), 1, CAST(min(max(trunc(1e+10), -1), 1000000000 + 1) AS INTEGER))`}, wantError: []string{`< 0 THEN 'out_of_range'`}},
 		{src: `name = "x"`, wantValue: []string{`(COALESCE("name", '') = 'x')`}, noError: true},
 		{src: `qty = BLANK`, wantValue: []string{`(COALESCE(CAST("qty" AS REAL), 0.0) = 0.0)`}, noError: true},
 		{src: `IF(paid, 1, 2)`, wantValue: []string{`(CASE WHEN COALESCE("paid", 0) THEN 1.0 ELSE 2.0 END)`}, noError: true},
-		{src: `IF(paid, 1 \ qty, 0)`, wantError: []string{`CASE WHEN COALESCE("paid", 0) THEN CASE WHEN COALESCE(CAST("qty" AS REAL), 0.0) = 0.0 THEN 'div_by_zero' END END`}},
+		{src: `IF(paid, 1 \ qty, 0)`, wantError: []string{`CASE WHEN COALESCE("paid", 0) THEN COALESCE(CASE WHEN COALESCE(CAST("qty" AS REAL), 0.0) = 0.0 THEN 'div_by_zero' END, CASE WHEN`, `'not_a_number' END) END`}},
 		{src: `paid OR 1 \ qty > 0`, wantError: []string{`CASE WHEN NOT COALESCE("paid", 0) THEN`}},
 		{src: `paid AND NOT ISBLANK(name)`, wantValue: []string{`(COALESCE("paid", 0) AND (NOT ("name" IS NULL)))`}, noError: true},
 		{src: `ROUND(qty, 2)`, wantValue: []string{`fado_round(COALESCE(CAST("qty" AS REAL), 0.0), 2.0)`}, noError: true},
@@ -33,7 +35,7 @@ func TestGenerateSQL_Shapes(t *testing.T) {
 		{src: `USER() = "a" AND INGROUP("g")`, wantValue: []string{`:user`, `json_each(:groups)`}, noError: true, params: []string{"user", "groups"}},
 		{src: `TEXT(due)`, wantValue: []string{`strftime('%Y-%m-%d'`, `% 86400 = 0`}, noError: true},
 		{src: `"it's"`, wantValue: []string{`'it''s'`}, noError: true},
-		{src: `-5 ^ 2`, wantValue: []string{`pow((-5.0), 2.0)`}, wantError: []string{"IS NULL OR abs("}},
+		{src: `-5 ^ 2`, wantValue: []string{`fado_power((-5.0), 2.0)`}, wantError: []string{"IS NULL OR abs("}},
 	}
 	for _, c := range cases {
 		p := mustBind(t, c.src, scope)

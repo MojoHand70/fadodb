@@ -79,11 +79,13 @@ func (p *parser) and() (Node, error) {
 }
 
 // not := NOT not | cmp
+//
+// NOT directly followed by a parenthesis is the function form, a primary:
+// NOT(a) = b compares NOT a with b, as a function call does, while
+// NOT a = b negates the comparison, as the operator does.
 func (p *parser) not() (Node, error) {
-	if t, ok := p.accept(TokNot); ok {
-		if p.peek().Kind == TokLParen && p.isCallForm() {
-			return p.callForm(t)
-		}
+	if p.peek().Kind == TokNot && p.toks[p.i+1].Kind != TokLParen {
+		t := p.next()
 		x, err := p.not()
 		if err != nil {
 			return nil, err
@@ -248,11 +250,6 @@ func (p *parser) primary() (Node, error) {
 	}
 	return nil, p.errAt(t.Pos, "unexpected %s", describe(t))
 }
-
-// isCallForm reports whether NOT is followed by the function form NOT(x).
-// NOT (a AND b) and NOT(a AND b) mean the same thing, so both are parsed
-// as the function form; the catalog gives NOT exactly one argument.
-func (p *parser) isCallForm() bool { return true }
 
 // callForm parses the function form of a keyword: AND(a, b), OR(a, b),
 // NOT(a). The opening parenthesis is the next token.

@@ -12,7 +12,8 @@ import (
 // The conformance suite under conformance/ is the specification of the
 // formula language (ADR-0003). This file loads and validates it; each
 // target has its own runner. Evaluation cases live in conformance/formula,
-// definition-time acceptance cases in conformance/syntax.
+// definition-time acceptance cases in conformance/syntax (the parser) and
+// conformance/binding (the binder).
 
 // Suite is one file of evaluation cases.
 type Suite struct {
@@ -71,6 +72,19 @@ type RejectCase struct {
 	Reason  string `json:"reason,omitempty"`
 }
 
+// BindingSuite is one file of definition-time cases for the binder:
+// formulas that must bind and formulas it must refuse, in a mode.
+type BindingSuite struct {
+	Suite       string            `json:"suite"`
+	Description string            `json:"description,omitempty"`
+	Variables   map[string]string `json:"variables,omitempty"`
+	// Mode is "any" (the default) or "auto" (ADR-0015).
+	Mode   string       `json:"mode,omitempty"`
+	Accept []string     `json:"accept"`
+	Reject []RejectCase `json:"reject"`
+	File   string       `json:"-"`
+}
+
 // ErrorCodes is the closed list of evaluation error codes (ADR-0019,
 // ADR-0020). A case may only expect one of these.
 var ErrorCodes = map[string]bool{
@@ -118,6 +132,36 @@ func LoadSyntaxSuites(dir string) ([]*SyntaxSuite, error) {
 			return nil, err
 		}
 		suites = append(suites, s)
+	}
+	return suites, nil
+}
+
+// LoadBindingSuites loads every binding suite from dir, sorted by file name.
+func LoadBindingSuites(dir string) ([]*BindingSuite, error) {
+	files, err := jsonFiles(dir)
+	if err != nil {
+		return nil, err
+	}
+	var suites []*BindingSuite
+	for _, f := range files {
+		var s BindingSuite
+		if err := decodeStrict(f, &s); err != nil {
+			return nil, err
+		}
+		s.File = f
+		if s.Suite == "" {
+			return nil, fmt.Errorf("%s: suite name is required", f)
+		}
+		if err := validateVariables(s.Variables); err != nil {
+			return nil, fmt.Errorf("%s: %w", f, err)
+		}
+		if s.Mode != "" && s.Mode != "any" && s.Mode != "auto" {
+			return nil, fmt.Errorf("%s: mode must be any or auto, got %q", f, s.Mode)
+		}
+		if len(s.Accept)+len(s.Reject) == 0 {
+			return nil, fmt.Errorf("%s: no cases", f)
+		}
+		suites = append(suites, &s)
 	}
 	return suites, nil
 }

@@ -25,6 +25,7 @@ A class is one JSON document:
 ```json
 {
   "name": "Invoice",
+  "title": "\"Invoice for \" & customer",
   "variables": {
     "customer": {"type": "text", "required": true},
     "due":      {"type": "date", "default": "ADDDAYS(TODAY(), 30)"},

@@ -11,12 +11,12 @@ Legend: ✅ done · 🚧 in progress · ⬜ not started
 |---|---|---|
 | 0 | Foundations: module, gates, CI, release pipeline, ADRs, docs | 🚧 |
 | 1 | Formula engine: lexer, parser, binder, bytecode, Go VM, SQL generator with SQLite and DuckDB dialects, conformance suite | ⬜ |
-| 2 | Document model and store: primary-store benchmark, variables with defaults, current, history and child tables, commits, event log, migrations, LOOKUP, queries | ⬜ |
+| 2 | Document model and store: primary-store benchmark, variables with defaults, `json` type, class metadata and title, current, history and child tables, commits, event log, migrations, LOOKUP, queries | ⬜ |
 | 3 | Statechart: states, transitions, guards, eventless transitions, exit and entry snapshots | ⬜ |
 | 4 | Rules and actions: event-condition-action rules, built-in actions incl. reset and refresh, transactional outbox, explicit tables with storage bindings, QUERY | ⬜ |
 | 5 | Security: users, groups, API keys, access rules compiled to SQL predicates | ⬜ |
-| 6 | Server and CLI: JSON command set over HTTP and WebSocket, OpenAPI, `fadodb serve` | ⬜ |
-| 7 | Browser VM and reference frontend: TypeScript VM on the same bytecode, UI schema, TypeScript client | ⬜ |
+| 6 | Server and CLI: JSON command set over HTTP and WebSocket, documents on the wire, layouts, OpenAPI, `fadodb serve` | ⬜ |
+| 7 | Browser VM and reference frontend: TypeScript VM on the same bytecode, class bundle, layout renderer, TypeScript client | ⬜ |
 | 8 | Analytical engine: DuckDB projection of document tables, native and attached bindings, set-wise recompute, mining views, full build per OS | ⬜ |
 | 9 | Embedding: C ABI, Python client, embedding guides | ⬜ |
 | 10 | Postgres backend | ⬜ |

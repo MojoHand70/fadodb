@@ -1,8 +1,9 @@
 # FadoDB architecture
 
-Status: design, revised 2026-11-05 with the document model (variables,
+Status: design, revised 2026-11-06 with the document model (variables,
 commits, recalculation, document tables, explicit tables, DuckDB as the
-analytical engine). Nothing below is implemented yet; see
+analytical engine, class metadata, layouts, the wire format). Nothing below
+is implemented yet; see
 [ROADMAP.md](../ROADMAP.md) for what exists today. Decisions with their
 reasoning are in [adr/](adr/).
 
@@ -74,16 +75,24 @@ A class is one JSON document.
 {
   "name": "Invoice",
   "version": 1,
+  "label": "Invoice",
+  "plural": "Invoices",
+  "description": "A bill issued to a customer.",
+  "icon": "receipt",
+  "title": "\"INV-\" & number",
   "variables": {
+    "number":   {"type": "text", "required": true},
     "customer": {"type": "ref", "class": "Customer", "required": true},
     "issued":   {"type": "date", "default": "TODAY()"},
     "due":      {"type": "date", "default": "ADDDAYS(issued, 30)"},
     "owner":    {"type": "ref", "class": "User", "default": "USER().id"},
     "currency": {"type": "text", "default": "\"EUR\""},
     "discount": {"type": "number", "default": "0"},
+    "shipping": {"type": "json"},
     "lines":    {"type": "rows", "schema": {"sku": "text", "qty": "number", "price": "number"}},
 
     "subtotal":  {"formula": "SUM(lines.qty * lines.price)"},
+    "ship_city": {"formula": "JSONVALUE(shipping, \"$.city\")"},
     "total":     {"formula": "ROUND(subtotal * (1 - discount), 2)"},
     "rate":      {"formula": "LOOKUP(Rates, rate, code = THIS.currency)"},
     "total_eur": {"formula": "ROUND(total * rate, 2)"},
@@ -122,10 +131,29 @@ A class is one JSON document.
 }
 ```
 
-Every string in `default`, `formula`, `guard`, `if`, `access`, action
-arguments and UI bindings is a formula. Literal text inside a formula is
-quoted. Classes are versioned; a change to variables creates a new version and
-a migration (see Class migrations).
+Every string in `default`, `formula`, `guard`, `if`, `access`, `title`,
+action arguments and layout bindings is a formula. Literal text inside a
+formula is quoted. Classes are versioned; a change to variables creates a
+new version and a migration (see Class migrations).
+
+The header holds what is not a variable: `label` and `plural` for display,
+`description`, `icon` and `color` for frontends, and `title`, a formula over
+pure functions and the document's own variables that gives every document
+its display name. The title is computed like an auto variable and exposed as
+the system variable `TITLE`, so a list sorts by it and a `ref` renders it
+with one join.
+
+### JSON: definitions and interchange, not storage
+
+JSON is FadoDB's format for definitions and for interchange. Class
+definitions, layouts, the function catalog and the bytecode debug form are
+JSON documents and are stored as such. Every command, every document on the
+wire and the bundle a frontend fetches are JSON. What is not JSON is the
+stored document: its values are typed columns in the current and history
+tables (see Document tables), because a blob cannot be a queryable table and
+cannot be projected into the analytical engine. The one exception is the
+opaque `json` variable type, which stores a JSON value the engine never
+interprets.
 
 ### Variables
 
@@ -139,6 +167,7 @@ A class declares **variables**. Each has a name and a type.
 | `text` | UTF-8 string | |
 | `date` | int64 seconds UTC | One representation; `date` and `datetime` differ in display only |
 | `ref` | class and id | Typed reference to another document |
+| `json` | opaque JSON text | Structured data the engine does not interpret; read through `JSONVALUE` only |
 | `array<scalar>` | ordered list of one scalar type | Short lists the document owns, such as tags |
 | `rows<schema>` | ordered rows with named scalar columns | Embedded tables such as invoice lines; also what `QUERY` returns |
 
@@ -147,6 +176,15 @@ immutable; assigning an element produces a whole new value in a new commit.
 Composite variables are meant to hold up to a few hundred elements. The soft
 limit is 1,000 elements with a definition-time warning, the hard cap is
 10,000; larger data belongs in an explicit table behind a `ref`.
+
+A `json` variable is the escape hatch for data without a typed shape yet: an
+address block, settings, a payload from another system. It is stored as JSON
+text, compared as text, and reachable in formulas only through
+`JSONVALUE(value, path)`, a pure function that extracts one scalar by a path
+such as `"$.city"`. It cannot be indexed, cannot appear inside `array` or
+`rows`, and no formula produces one. A `json` variable that grows a
+`JSONVALUE` for every field is a sign that it should become typed variables,
+a `rows` variable or an explicit table.
 
 Variables come in three kinds:
 
@@ -159,10 +197,16 @@ Variables come in three kinds:
 - **Computed** variables carry a `formula` and are read-only. Their `mode` is
   `auto` (the default) or `triggered`; see Commits and recalculation.
 - **System** variables exist on every document and cannot be declared:
-  `ID`, `STATE`, `VERSION`, `CREATED_AT`, `UPDATED_AT`, `STATE_ENTERED_AT`.
+  `ID`, `TITLE`, `STATE`, `VERSION`, `CREATED_AT`, `UPDATED_AT`,
+  `STATE_ENTERED_AT`. `TITLE` comes from the class's `title` formula and
+  equals `ID` when the class declares none.
 
 Names are identifiers, resolved case-insensitively in formulas and shown as
-declared in tables and views.
+declared in tables and views. The columns the generated tables and views add
+are reserved and rejected as variable and schema column names at definition
+time: `id`, `title`, `state`, `version`, `created_at`, `updated_at`,
+`state_entered_at`, `valid_from`, `valid_to`, `actor_id`, `event_id`,
+`doc_id`, `idx` and `value`.
 
 ### Formulas
 
@@ -175,10 +219,10 @@ result:
 
 | Class | Examples | Allowed in |
 |---|---|---|
-| Pure | `IF ROUND SUM LEFT DATE ADDMONTHS` | everywhere |
-| Context | `USER() INGROUP() NOW() TODAY() STATE() ID()` | defaults, triggered formulas, guards, rules, access rules, UI; not in auto formulas |
+| Pure | `IF ROUND SUM LEFT DATE ADDMONTHS JSONVALUE` | everywhere |
+| Context | `USER() INGROUP() NOW() TODAY() STATE() ID()` | defaults, triggered formulas, guards, rules, access rules, layouts; not in auto formulas |
 | Lookup | `LOOKUP(source, column, condition)` | everywhere; in auto formulas only against explicit tables |
-| Query | `QUERY(source, columns, condition, sort, groupby, limit)` | defaults, triggered formulas, rules, UI; not in auto formulas |
+| Query | `QUERY(source, columns, condition, sort, groupby, limit)` | defaults, triggered formulas, rules, layouts; not in auto formulas |
 
 The rule behind the table: the stored value of an auto variable must be a
 function of the document itself, so it may not depend on who is looking,
@@ -350,18 +394,22 @@ Three paths, all with the caller's predicates injected:
    The SQLite authorizer restricts statements to `SELECT`; in the full build
    the same views exist in DuckDB.
 
-### Visualisation
+### Layouts
 
-A UI schema is a second JSON document bound to a class. Components bind to
-variables; `visible`, `enabled`, `style` and templates are formulas evaluated
-live in the browser VM, and a `rows` variable renders as a grid. The reference
-renderer is one implementation of the schema; Flutter, terminal or
-spreadsheet frontends are others.
+Visuals live at class level, never per document. A class has any number of
+named **layouts**, each a JSON document that binds components to variables:
+`form`, `list`, `card`, `print`, or whatever a frontend needs. `visible`,
+`enabled`, `editable`, `style` and templates are formulas evaluated live in
+the browser VM, and a `rows` variable renders as a grid. A layout that looks
+different per document does so through those formulas, not through stored
+per-document presentation.
 
 ```json
 {
   "class": "Invoice",
-  "layout": [
+  "name": "form",
+  "components": [
+    {"type": "field",   "variable": "number"},
     {"type": "field",   "variable": "customer"},
     {"type": "grid",    "variable": "lines", "editable": "STATE() = \"draft\""},
     {"type": "text",    "template": "Total: {total} {currency}", "visible": "total > 0"},
@@ -371,6 +419,18 @@ spreadsheet frontends are others.
   ]
 }
 ```
+
+Layouts are stored in their own table and versioned independently of the
+class, so a layout change never bumps the class version or migrates
+documents. Saving a layout validates every binding and formula against the
+class; removing a variable that a layout binds to is rejected until the
+layout changes. The reference renderer is one implementation of the layout
+format; Flutter, terminal or spreadsheet frontends are others, and all of
+them fetch the same bundle (see Documents on the wire).
+
+Attachments and comments are neither variables nor visuals. They are planned
+after 1.0 as side objects keyed by class and document id, with their own
+events; nothing in the core model depends on them.
 
 ---
 
@@ -441,10 +501,10 @@ against their own VM port.
 
 - WAL mode, `synchronous=NORMAL`, one writer goroutine with batching,
   prepared statements, read connections pooled.
-- Schema: `classes`, `class_versions`, per class the current, history and
-  child tables, `events`, `event_docs`, `outbox`, `users`, `groups`,
-  `memberships`, `api_keys`, `sessions`, `tables_registry`, `schema_version`,
-  plus explicit tables bound to `sqlite`.
+- Schema: `classes`, `class_versions`, `layouts`, per class the current,
+  history and child tables, `events`, `event_docs`, `outbox`, `users`,
+  `groups`, `memberships`, `api_keys`, `sessions`, `tables_registry`,
+  `schema_version`, plus explicit tables bound to `sqlite`.
 - Indexes declared per variable (`"index": true`), plus `(class, doc_id, ts)`
   on events and `(id, valid_from)` on history.
 
@@ -487,6 +547,7 @@ rewritten.
 ```go
 db, err := fado.Open("app.fado", fado.Options{})
 err  = db.DefineClass(ctx, classJSON)
+err  = db.DefineLayout(ctx, "Invoice", layoutJSON)
 id, err := db.Create(ctx, "Invoice", fado.Values{"customer": "Customer:42"}, fado.As(user))
 err  = db.Set(ctx, "Invoice", id, fado.Values{"discount": 0.1}, fado.As(user))
 err  = db.Transition(ctx, "Invoice", id, "approve", fado.As(user))
@@ -503,6 +564,7 @@ mapping:
 | Route | Purpose |
 |---|---|
 | `POST /v1/classes`, `GET /v1/classes/{name}`, `GET /v1/classes/{name}/bundle` | Define classes; fetch the bundle for frontends |
+| `PUT /v1/classes/{name}/layouts/{layout}`, `GET .../layouts`, `GET .../layouts/{layout}` | Layouts, versioned independently of the class |
 | `POST /v1/docs/{class}`, `GET /v1/docs/{class}/{id}`, `PATCH .../values`, `DELETE` | Documents |
 | `POST /v1/docs/{class}/{id}/transitions/{name}` | Transition |
 | `POST /v1/docs/{class}/{id}/refresh`, `POST .../reset` | Trigger recalculation of named variables; reset inputs to defaults |
@@ -514,6 +576,38 @@ mapping:
 | `GET /v1/health`, `GET /v1/metrics` | Operations; Prometheus text format written by hand |
 
 The OpenAPI document is generated from the Go route table and checked into `api/`.
+
+### Documents on the wire
+
+A document is one JSON object: system variables at the top level, declared
+variables under `values`, composites inline. Reads, the change stream,
+create (`values` only) and `PATCH .../values` (the variables to change)
+share this shape. A blank is `null`; a variable absent from a patch is
+unchanged. Dates are integer seconds, refs are `"Class:id"` text, `json`
+variables are embedded as they are.
+
+```json
+{
+  "class": "Invoice", "id": "inv_01JC3X5M8K", "version": 7, "state": "approved",
+  "title": "INV-2026-0042",
+  "created_at": 1762300800, "updated_at": 1762387200, "state_entered_at": 1762387200,
+  "values": {
+    "number": "2026-0042", "customer": "Customer:42", "owner": "User:7",
+    "issued": 1762300800, "due": 1764892800, "currency": "EUR", "discount": 0,
+    "shipping": {"street": "Długa 1", "city": "Gdańsk"},
+    "lines": [{"sku": "A1", "qty": 2, "price": 9.5}],
+    "subtotal": 19, "ship_city": "Gdańsk", "total": 19, "rate": 1, "total_eur": 19,
+    "overdue": false, "backlog": 3
+  }
+}
+```
+
+The bundle at `GET /v1/classes/{name}/bundle` is the class definition, its
+layouts, the compiled bytecode of every formula including layout bindings,
+and the slice of the function catalog they use. A frontend needs nothing
+else to render a document and evaluate it live. The bundle is cached by an
+ETag derived from the class and layout versions. Encoding documents is on
+the read path, so the encoder is hand-written and reflection-free.
 
 ### C ABI
 
@@ -585,6 +679,7 @@ Validated and revised at the end of Phase 1; until then they are targets, not pr
 | Browser VM recalculation of 200 formulas | < 1 ms |
 | Lite binary and library size | ≤ 15 MB |
 | Open an existing database | < 50 ms |
+| Encode a 50-variable document to JSON | < 5 µs |
 
 ### Tooling and gates
 
@@ -608,14 +703,14 @@ fadodb/
   cmd/fadodb/            single binary: serve, class, doc, table, query, bench, export
   fado/                  public Go API (small surface, see Go API)
   internal/formula/      lexer, parser, binder, bytecode, vm, sqlgen (dialects), catalog
-  internal/model/        class definitions, variables, defaults, validation, migrations
+  internal/model/        class definitions, layouts, variables, defaults, validation, migrations
   internal/store/        sqlite store, history, child tables, events, outbox, schema
   internal/state/        statechart engine
   internal/rules/        ECA rules, built-in actions, outbox worker
   internal/auth/         users, groups, tokens, predicate compilation
   internal/query/        LOOKUP/QUERY compilation, filter DSL, SQL endpoint, authorizer
   internal/server/       http, websocket, command dispatch
-  api/                   openapi.json, json schemas for class and ui documents
+  api/                   openapi.json, json schemas for class, layout and wire documents
   analytics/             duckdb module: projection, native tables, attach, mining views
   postgres/              postgres dialect and driver (separate module)
   cabi/                  c-shared build and header (lite build)
@@ -637,4 +732,6 @@ of the core `go.mod`.
 Parallel statechart regions; BPMN; multi-tenancy inside one database file
 (run one file per tenant); replication and clustering; WASM plugin actions;
 a visual class designer; a decimal number type; OCEL export; nested
-composites (rows inside rows, arrays of arrays); raw SQL inside formulas.
+composites (rows inside rows, arrays of arrays); raw SQL inside formulas;
+attachments and comments (planned as side objects after 1.0); per-document
+layouts.

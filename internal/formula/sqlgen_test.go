@@ -35,7 +35,7 @@ func TestGenerateSQL_Shapes(t *testing.T) {
 		{src: `USER() = "a" AND INGROUP("g")`, wantValue: []string{`:user`, `json_each(:groups)`}, noError: true, params: []string{"user", "groups"}},
 		{src: `TEXT(due)`, wantValue: []string{`strftime('%Y-%m-%d'`, `% 86400 = 0`}, noError: true},
 		{src: `"it's"`, wantValue: []string{`'it''s'`}, noError: true},
-		{src: `-5 ^ 2`, wantValue: []string{`pow((-5.0), 2.0)`}, wantError: []string{"IS NULL OR abs("}},
+		{src: `-5 ^ 2`, wantValue: []string{`fado_power((-5.0), 2.0)`}, wantError: []string{"IS NULL OR abs("}},
 	}
 	for _, c := range cases {
 		p := mustBind(t, c.src, scope)

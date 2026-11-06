@@ -73,6 +73,10 @@ func (DuckDB) Load(column string, k Kind) string {
 // NotFinite implements Dialect: DuckDB keeps NaN and the infinities.
 func (DuckDB) NotFinite(val string) string { return "NOT isfinite(" + val + ")" }
 
+// Pow implements Dialect: DuckDB's pow is the C library's, which the VM's
+// double-double power matches.
+func (DuckDB) Pow(x, y string) string { return "pow(" + x + ", " + y + ")" }
+
 // Param implements Dialect.
 func (DuckDB) Param(name string) string { return "$" + name }
 

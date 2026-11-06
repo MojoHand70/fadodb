@@ -17,7 +17,9 @@ import (
 // 0.49999999999999994 up, ignores negative digit counts, upper-cases ASCII
 // only, keeps inner spaces in trim, takes the dividend's sign in mod, does
 // not clamp month arithmetic, normalises February 30 and never fails a
-// cast. The sqlitefn package does the registration.
+// cast; and its pow, ln and log are the platform's, which differ from the
+// VM in the last bit between Linux, macOS and Windows. The sqlitefn
+// package does the registration.
 
 // SQLite is the dialect for SQLite through modernc.org/sqlite.
 type SQLite struct {
@@ -54,6 +56,9 @@ func (SQLite) False() string { return "0" }
 func (SQLite) NotFinite(val string) string {
 	return "(" + val + " IS NULL OR abs(" + val + ") > " + maxFloat + ")"
 }
+
+// Pow implements Dialect: the engine's own power function, not SQLite's.
+func (SQLite) Pow(x, y string) string { return "fado_power(" + x + ", " + y + ")" }
 
 // Param implements Dialect.
 func (SQLite) Param(name string) string { return ":" + name }
@@ -165,7 +170,7 @@ func SQLiteFunctions() []RegisteredFunc {
 // sqliteRegistered names the builtins the SQLite dialect calls through
 // registered Go functions.
 var sqliteRegistered = []string{
-	"ROUND", "FLOOR", "CEILING", "TRUNC", "MIN", "MAX", "SUM", "AVERAGE", "COUNT",
+	"ROUND", "FLOOR", "CEILING", "TRUNC", "MIN", "MAX", "SUM", "AVERAGE", "COUNT", "POWER", "LN", "LOG",
 	"DATE", "DATEVALUE", "ADDMONTHS", "ADDYEARS",
 	"TRIM", "UPPER", "LOWER", "PROPER", "REPLACE", "SUBSTITUTE", "REPEAT", "FINDLAST", "PAD", "REGEXREPLACE",
 	"VALUE", "JSONVALUE",
@@ -369,16 +374,9 @@ func (d SQLite) Call(name string, args []SQLExpr, params *Params) (SQLExpr, erro
 		val := "exp(" + d.Num(args[0]) + ")"
 		return SQLExpr{Val: val, Err: notFiniteErr(d, val), Kind: KindNumber, Sure: true}, nil
 	case "LN":
-		x := d.Num(args[0])
-		return SQLExpr{Val: "ln(" + x + ")", Err: "CASE WHEN " + x + " <= 0 THEN 'not_a_number' END", Kind: KindNumber}, nil
+		return reg(KindNumber, true, d.Num(args[0])), nil
 	case "LOG":
-		x := d.Num(args[0])
-		if len(args) == 1 {
-			return SQLExpr{Val: "log(" + x + ")", Err: "CASE WHEN " + x + " <= 0 THEN 'not_a_number' END", Kind: KindNumber}, nil
-		}
-		b := d.Num(args[1])
-		val := "(CASE WHEN " + b + " = 10.0 THEN log(" + x + ") ELSE ln(" + x + ") / ln(" + b + ") END)"
-		return SQLExpr{Val: val, Err: "CASE WHEN " + x + " <= 0 OR " + b + " <= 0 OR " + b + " = 1 THEN 'not_a_number' END", Kind: KindNumber}, nil
+		return reg(KindNumber, true, d.Num(args[0]), numOr(1, "10.0")), nil
 	case "MOD":
 		a, b := d.Num(args[0]), d.Num(args[1])
 		val := "(" + a + " - " + b + " * floor(" + a + " / " + b + "))"

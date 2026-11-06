@@ -36,7 +36,11 @@ beyond `fadodb version`.
   `ROUND`, `FLOOR`, `CEILING` and `TRUNC` beyond 22 digits scaled by a
   power of ten that differed by an ulp between Go and C. They now scale by
   the correctly rounded power on every evaluator and leave a value alone
-  once its scaled form is already an integer.
+  once its scaled form is already an integer. On SQLite, `^`, `POWER`, `LN`
+  and `LOG` run through the engine's own functions, since SQLite's are the
+  platform's and differ in the last bit between Linux, macOS and Windows,
+  and the VM rounds every product explicitly, so that arm64's fused
+  multiply-add cannot change a result.
 - DuckDB dialect of the SQL generator and the `analytics/` module. The
   dialect computes in DOUBLE with every literal cast, builds dates as naive
   timestamps so the session time zone never leaks in, and ships its engine

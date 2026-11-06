@@ -75,6 +75,7 @@ func (vm *VM) Run(p *Program, vars []Value, ctx *Context) (Value, error) {
 	}
 	stack := vm.stack[:p.MaxStack]
 	vm.ctx = ctx
+	maxText := vm.maxText()
 	code := p.Code
 	sp := 0
 	pc := 0
@@ -146,7 +147,7 @@ func (vm *VM) Run(p *Program, vars []Value, ctx *Context) (Value, error) {
 			stack[sp-1] = Value{kind: KindNumber, num: r}
 		case OpConcat:
 			a, b := render(stack[sp-2]), render(stack[sp-1])
-			if utf8.RuneCountInString(a)+utf8.RuneCountInString(b) > vm.maxText() {
+			if len(a)+len(b) > maxText && utf8.RuneCountInString(a)+utf8.RuneCountInString(b) > maxText {
 				err = tooLong()
 				break
 			}

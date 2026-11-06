@@ -18,7 +18,10 @@ import (
 // function whose result can be longer than its inputs works the length out
 // first and stops with out_of_range instead of building it, so a formula
 // can never ask for gigabytes. The functions that only shrink or recase
-// their input need no check, since the inputs are within the limit.
+// their input need no check, since the inputs are within the limit. A
+// length is checked in bytes first, which bound the code points, and in
+// code points only when the bytes exceed the limit, so the usual short
+// text costs nothing to check.
 
 // countArg reads a count, length or width argument: truncated, and never
 // negative. It stays a float64 so that a huge count cannot overflow an
@@ -44,6 +47,19 @@ func tooLong() *EvalError { return outOfRange("the result is too long") }
 // start0 is the 0-based start for a 1-based position, which is 1 or more,
 // clamped to one past the end of r.
 func start0(pos float64, r []rune) int { return int(math.Min(pos, float64(len(r)+1))) - 1 }
+
+// textBytes bounds the rendering of a scalar in bytes without rendering
+// it: the text itself, or the 24 bytes a number, a bool or a date never
+// exceeds.
+func textBytes(v Value) int {
+	switch v.kind {
+	case KindText, KindRef, KindJSON:
+		return len(v.str)
+	case KindNull:
+		return 0
+	}
+	return 24
+}
 
 // runeLen is the length in code points of a scalar rendered as text.
 func runeLen(v Value) int {
@@ -165,7 +181,7 @@ func fnSubstitute(vm *VM, args []Value) (Value, *EvalError) {
 	if old == "" {
 		return Text(t), nil
 	}
-	if count := strings.Count(t, old); count > 0 &&
+	if count := strings.Count(t, old); count > 0 && len(t)+count*(len(repl)-len(old)) > vm.maxText() &&
 		utf8.RuneCountInString(t)+count*(utf8.RuneCountInString(repl)-utf8.RuneCountInString(old)) > vm.maxText() {
 		return Value{}, tooLong()
 	}
@@ -175,10 +191,16 @@ func fnSubstitute(vm *VM, args []Value) (Value, *EvalError) {
 func fnConcat(vm *VM, args []Value) (Value, *EvalError) {
 	n := 0
 	for _, a := range args {
-		n += runeLen(a)
+		n += textBytes(a)
 	}
 	if n > vm.maxText() {
-		return Value{}, tooLong()
+		n = 0
+		for _, a := range args {
+			n += runeLen(a)
+		}
+		if n > vm.maxText() {
+			return Value{}, tooLong()
+		}
 	}
 	var b strings.Builder
 	for _, a := range args {
@@ -192,11 +214,10 @@ func fnRepeat(vm *VM, args []Value) (Value, *EvalError) {
 	if err != nil {
 		return Value{}, err
 	}
-	runes := utf8.RuneCountInString(args[0].str)
-	if runes == 0 || n == 0 {
+	if args[0].str == "" || n == 0 {
 		return Text(""), nil
 	}
-	if n*float64(runes) > float64(vm.maxText()) {
+	if max := float64(vm.maxText()); n*float64(len(args[0].str)) > max && n*float64(utf8.RuneCountInString(args[0].str)) > max {
 		return Value{}, tooLong()
 	}
 	return Text(strings.Repeat(args[0].str, int(n))), nil

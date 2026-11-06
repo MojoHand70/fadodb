@@ -74,6 +74,8 @@ type Dialect interface {
 	// NotFinite is the condition that a numeric value is not a finite
 	// number, the overflow check of ADR-0019.
 	NotFinite(val string) string
+	// Pow spells x to the power y as the VM computes it.
+	Pow(x, y string) string
 	// Render applies the TEXT rule of ADR-0019 to a scalar.
 	Render(e SQLExpr) string
 	// Call translates a builtin by canonical name. Args are translated
@@ -382,7 +384,7 @@ func arith(d Dialect, op Op, a, b SQLExpr) SQLExpr {
 		val = "(CASE WHEN " + y + " = " + zero + " THEN NULL ELSE " + x + " / " + y + " END)"
 		own = coalesceErr("CASE WHEN "+y+" = "+zero+" THEN 'div_by_zero' END", notFiniteErr(d, val))
 	case OpPow:
-		val = "pow(" + x + ", " + y + ")"
+		val = d.Pow(x, y)
 		own = notFiniteErr(d, val)
 	}
 	return SQLExpr{Val: val, Err: coalesceErr(a.Err, b.Err, own), Kind: KindNumber, Sure: op != OpDivStrict}

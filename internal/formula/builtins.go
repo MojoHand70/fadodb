@@ -321,13 +321,16 @@ func pow(x, y float64) float64 {
 }
 
 // ddMul multiplies two double-double numbers; the error of each product
-// is recovered with a fused multiply-add.
+// is recovered with a fused multiply-add. The explicit conversions round
+// the other products before they join the sum: on arm64 the compiler
+// would otherwise fuse them into the addition, skip a rounding, and give
+// a result that differs from amd64's in the last bits.
 func ddMul(ah, al, bh, bl float64) (float64, float64) {
 	p := ah * bh
 	if math.IsInf(p, 0) {
 		return p, 0 // the error term would be NaN; pow stops on the infinity
 	}
-	e := math.FMA(ah, bh, -p) + ah*bl + al*bh
+	e := math.FMA(ah, bh, -p) + float64(ah*bl) + float64(al*bh)
 	hi := p + e
 	return hi, e - (hi - p)
 }
@@ -425,7 +428,9 @@ func fnMod(_ *VM, args []Value) (Value, *EvalError) {
 	if b == 0 {
 		return Value{}, &EvalError{Code: ErrDivByZero, Msg: "MOD by zero"}
 	}
-	return finite(a - b*math.Floor(a/b))
+	// The product rounds before the subtraction, as the SQL engines round
+	// it, so that arm64 cannot fuse the two into one differently rounded step.
+	return finite(a - float64(b*math.Floor(a/b)))
 }
 
 // ---- Dates. Seconds since the epoch, UTC; a blank date argument gives a
@@ -520,7 +525,7 @@ func fnAddDays(_ *VM, args []Value) (Value, *EvalError) {
 	if args[0].kind == KindNull {
 		return Blank(), nil
 	}
-	return dateValue(args[0].num + args[1].num*secondsPerDay)
+	return dateValue(args[0].num + float64(args[1].num*secondsPerDay))
 }
 
 // addMonthsClamped keeps the day of month and the time of day and clamps to

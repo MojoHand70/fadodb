@@ -322,11 +322,12 @@ func pow(x, y float64) float64 {
 
 // ddMul multiplies two double-double numbers; the error of each product
 // is recovered with a fused multiply-add. The explicit conversions round
-// the other products before they join the sum: on arm64 the compiler
-// would otherwise fuse them into the addition, skip a rounding, and give
-// a result that differs from amd64's in the last bits.
+// every product where it stands: on arm64 the compiler would otherwise
+// fuse a product into a sum that follows it, even one statements later,
+// skip a rounding, and give a result that differs from amd64's in the
+// last bits.
 func ddMul(ah, al, bh, bl float64) (float64, float64) {
-	p := ah * bh
+	p := float64(ah * bh)
 	if math.IsInf(p, 0) {
 		return p, 0 // the error term would be NaN; pow stops on the infinity
 	}

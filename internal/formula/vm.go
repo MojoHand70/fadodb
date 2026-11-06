@@ -2,7 +2,6 @@ package formula
 
 import (
 	"fmt"
-	"math"
 	"time"
 	"unicode/utf8"
 )
@@ -75,7 +74,6 @@ func (vm *VM) Run(p *Program, vars []Value, ctx *Context) (Value, error) {
 	}
 	stack := vm.stack[:p.MaxStack]
 	vm.ctx = ctx
-	maxText := vm.maxText()
 	code := p.Code
 	sp := 0
 	pc := 0
@@ -122,7 +120,7 @@ func (vm *VM) Run(p *Program, vars []Value, ctx *Context) (Value, error) {
 			default:
 				r = pow(a, b)
 			}
-			if math.IsInf(r, 0) || math.IsNaN(r) {
+			if notFinite(r) {
 				err = &EvalError{Code: ErrNotANumber, Msg: "the result is not a finite number"}
 				break
 			}
@@ -138,7 +136,7 @@ func (vm *VM) Run(p *Program, vars []Value, ctx *Context) (Value, error) {
 				}
 			} else {
 				r = a / b
-				if math.IsInf(r, 0) || math.IsNaN(r) {
+				if notFinite(r) {
 					err = &EvalError{Code: ErrNotANumber, Msg: "the result is not a finite number"}
 					break
 				}
@@ -147,7 +145,7 @@ func (vm *VM) Run(p *Program, vars []Value, ctx *Context) (Value, error) {
 			stack[sp-1] = Value{kind: KindNumber, num: r}
 		case OpConcat:
 			a, b := render(stack[sp-2]), render(stack[sp-1])
-			if len(a)+len(b) > maxText && utf8.RuneCountInString(a)+utf8.RuneCountInString(b) > maxText {
+			if n := vm.maxText(); len(a)+len(b) > n && utf8.RuneCountInString(a)+utf8.RuneCountInString(b) > n {
 				err = tooLong()
 				break
 			}
@@ -223,6 +221,10 @@ func (vm *VM) Run(p *Program, vars []Value, ctx *Context) (Value, error) {
 		}
 	}
 }
+
+// notFinite reports an infinite or NaN result in one subtraction: a finite
+// number minus itself is zero, an infinity or a NaN minus itself is NaN.
+func notFinite(r float64) bool { return r-r != 0 }
 
 // compare orders two scalars for the comparison operators. The binder
 // guarantees the same static type or a blank on one side; a blank reads as

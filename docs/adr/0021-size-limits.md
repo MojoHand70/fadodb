@@ -90,8 +90,9 @@ short inputs reach the boundary often and never build a long text.
 The VM's scalar path still allocates nothing on arithmetic. `&` now counts
 the code points of both operands before it joins them: `BenchmarkVM_Text`
 (`UPPER`, `LEFT`, two concatenations and `TEXT`) went from 107.7 ns/op
-to 115.4 ns/op with the same 5 allocations and 32 bytes, and `ROUND` got
-faster, 40.8 to 35.2 ns/op in `BenchmarkVM_IfRoundCompare`, since its
+to 109.5 ns/op with the same 5 allocations and 32 bytes, since the count
+runs only when the byte length already exceeds the limit, and `ROUND` got
+faster, 40.8 to 35.4 ns/op in `BenchmarkVM_IfRoundCompare`, since its
 power of ten is a table lookup now. The per-vector cost that
 sets the default, at four bytes per code point:
 

@@ -13,9 +13,9 @@ function catalog is `internal/formula/catalog.json`.
 ## Status
 
 The Go VM and the SQL generator's SQLite and DuckDB dialects run every
-evaluation case in CI: the VM and SQLite exactly, DuckDB exactly except
-aggregates, which may differ by the relative 1e-12 of ADR-0019 because
-DuckDB sums without compensation. The browser VM does not exist yet.
+evaluation case in CI, all three exactly: SUM and AVERAGE add left to
+right on every evaluator, within the tolerance ADR-0019 allows them. The
+browser VM does not exist yet.
 Composite values (arrays and rows) and the query functions are not
 implemented yet; the binder refuses them, and the binding suite says so.
 
@@ -57,8 +57,7 @@ One file per topic:
   N}` code points (ADR-0021); absent, the defaults. The `limits` suite runs
   at a small limit so that short texts reach the boundary.
 
-Numbers compare exactly, except that aggregates over floating-point values
-compare to a relative 1e-12 across targets (ADR-0019).
+Numbers compare exactly on every target.
 
 ## Binding cases: `binding/*.json`
 

@@ -6,11 +6,26 @@ All notable changes to FadoDB are recorded here. The format follows
 
 ## [Unreleased]
 
-Phase 1, the formula engine, started on 2026-11-06. Still nothing to run
-beyond `fadodb version`.
+Nothing yet.
+
+## [0.1.0] - 2026-11-06
+
+Phase 1, the formula engine: the language of ADR-0019, compiled once and
+evaluated three ways, on the Go VM, on SQLite and on DuckDB, with the
+conformance suite as the specification and property-based campaigns
+checking that the three agree. `fadodb formula eval` runs it from the
+command line. Documents, storage and the server are not there yet.
 
 ### Added
 
+- `fadodb formula eval`: evaluates a formula on the Go VM with variables,
+  a user, groups and a clock given as flags, and prints the result in the
+  notation of the conformance suite; `-ast`, `-bytecode` and
+  `-sql sqlite|duckdb` show instead what the compiler makes of it.
+- The release's benchmarks under `docs/perf/v0.1.0.md`: the VM against
+  the budgets of ADR-0012, the compiler, and the throughput and the result
+  of the acceptance campaigns of one million generated formulas on each
+  SQL target.
 - Size limits (ADR-0021). Every text a formula produces is at most the
   database's text limit, 65,536 code points by default, and every builder,
   `&`, `CONCAT`, `REPEAT`, `PAD`, `SUBSTITUTE`, `REPLACE` and `REGEXREPLACE`,
@@ -39,8 +54,19 @@ beyond `fadodb version`.
   once its scaled form is already an integer. On SQLite, `^`, `POWER`, `LN`
   and `LOG` run through the engine's own functions, since SQLite's are the
   platform's and differ in the last bit between Linux, macOS and Windows,
-  and the VM rounds every product explicitly, so that arm64's fused
-  multiply-add cannot change a result.
+  and so does the rendering of a number as text, since SQLite's `printf`
+  rounds the fifteenth digit its own way; and the VM rounds every product
+  explicitly, so that arm64's fused multiply-add cannot change a result.
+  The million-formula acceptance campaigns found four more: `SUM` and
+  `AVERAGE` now add left to right in plain arithmetic on every evaluator,
+  since the compensated sum of the VM and SQLite differed from DuckDB's
+  inline additions by far more than the tolerance when large terms cancel;
+  a JSON array index in a `JSONVALUE` path is a JSON pointer index, digits
+  without a leading zero or a sign, as DuckDB reads it; `DATE` on DuckDB
+  carries months and days by civil-calendar arithmetic instead of clamped
+  timestamp intervals, which could cancel into a date in range where the
+  real one was not; and the property runner compares two noisy numbers
+  glued into one text by trying every split.
 - DuckDB dialect of the SQL generator and the `analytics/` module. The
   dialect computes in DOUBLE with every literal cast, builds dates as naive
   timestamps so the session time zone never leaks in, and ships its engine
@@ -108,5 +134,6 @@ Project scaffold. Nothing to run beyond `fadodb version`.
 - Contributing guide, code of conduct, security policy, issue and pull request
   templates, roadmap.
 
-[Unreleased]: https://github.com/MojoHand70/fadodb/compare/v0.0.1...HEAD
+[Unreleased]: https://github.com/MojoHand70/fadodb/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/MojoHand70/fadodb/releases/tag/v0.1.0
 [0.0.1]: https://github.com/MojoHand70/fadodb/releases/tag/v0.0.1

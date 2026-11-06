@@ -47,9 +47,9 @@ type Formula struct {
 // Generator produces formulas from a seed. It is not safe for concurrent
 // use; make one per goroutine.
 //
-// Noise and quiet: a power, an exponential, a logarithm or a floating
-// point aggregate carries last-bit noise between the targets, which the
-// runner tolerates in a number and in its rendering (Tolerance). It
+// Noise and quiet: a power, an exponential or a logarithm carries
+// last-bit noise between the targets, which the runner tolerates in a
+// number and in its rendering (Tolerance). It
 // cannot tolerate it once a discontinuous operation has amplified it: a
 // comparison, MOD, SIGN, rounding, a date part, a text position, a count.
 // So those operations ask for quiet arguments, and inside a quiet subtree

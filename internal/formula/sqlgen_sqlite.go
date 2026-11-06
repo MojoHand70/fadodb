@@ -17,9 +17,10 @@ import (
 // 0.49999999999999994 up, ignores negative digit counts, upper-cases ASCII
 // only, keeps inner spaces in trim, takes the dividend's sign in mod, does
 // not clamp month arithmetic, normalises February 30 and never fails a
-// cast; and its pow, ln and log are the platform's, which differ from the
-// VM in the last bit between Linux, macOS and Windows. The sqlitefn
-// package does the registration.
+// cast; its pow, ln and log are the platform's, which differ from the VM
+// in the last bit between Linux, macOS and Windows; and its printf rounds
+// the fifteenth significant digit its own way. The sqlitefn package does
+// the registration.
 
 // SQLite is the dialect for SQLite through modernc.org/sqlite.
 type SQLite struct {
@@ -132,10 +133,9 @@ func (d SQLite) Render(e SQLExpr) string {
 	case KindNull:
 		return "''"
 	case KindNumber:
-		if e.Sure {
-			return "printf('%.15g', " + e.Val + ")"
-		}
-		return "(CASE WHEN " + e.Val + " IS NULL THEN '' ELSE printf('%.15g', " + e.Val + ") END)"
+		// The engine's own rendering: SQLite's printf('%.15g') is not
+		// correctly rounded, and a NULL renders as the empty text.
+		return "fado_text(" + e.Val + ")"
 	case KindBool:
 		return "(CASE WHEN " + e.Val + " IS NULL THEN '' WHEN " + e.Val + " THEN 'TRUE' ELSE 'FALSE' END)"
 	case KindDate:
@@ -173,7 +173,7 @@ var sqliteRegistered = []string{
 	"ROUND", "FLOOR", "CEILING", "TRUNC", "MIN", "MAX", "SUM", "AVERAGE", "COUNT", "POWER", "LN", "LOG",
 	"DATE", "DATEVALUE", "ADDMONTHS", "ADDYEARS",
 	"TRIM", "UPPER", "LOWER", "PROPER", "REPLACE", "SUBSTITUTE", "REPEAT", "FINDLAST", "PAD", "REGEXREPLACE",
-	"VALUE", "JSONVALUE",
+	"TEXT", "VALUE", "JSONVALUE",
 }
 
 // limitedFunctions names the builtins whose result can be longer than

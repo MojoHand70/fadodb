@@ -343,8 +343,22 @@ var duckdbMacros = []string{
 	// raises. The NULL test comes first because LEAST and GREATEST ignore
 	// NULLs, which would turn a blank into the first day of year 1.
 	`CREATE OR REPLACE MACRO fado_ts(x) AS CASE WHEN x IS NULL THEN NULL ELSE make_timestamp(CAST(LEAST(GREATEST(x::DOUBLE, ` + duckdbMinDate + `), ` + duckdbMaxDate + `) AS BIGINT) * 1000000) END`,
-	`CREATE OR REPLACE MACRO fado_date(y, m, d) AS epoch(make_timestamp(CAST(LEAST(GREATEST(trunc(y::DOUBLE), -50000), 50000) AS BIGINT), 1, 1, 0, 0, 0) + to_months(CAST(LEAST(GREATEST(trunc(m::DOUBLE), -1000000), 1000000) AS INTEGER) - 1) + to_days(CAST(LEAST(GREATEST(trunc(d::DOUBLE), -30000000), 30000000) AS INTEGER) - 1))`,
-	`CREATE OR REPLACE MACRO fado_date_err(y, m, d) AS CASE WHEN abs(y::DOUBLE) > 1e6 OR abs(m::DOUBLE) > 1e7 OR abs(d::DOUBLE) > 1e9 OR fado_date(y, m, d) < ` + duckdbMinDate + ` OR fado_date(y, m, d) > ` + duckdbMaxDate + ` THEN 'out_of_range' END`,
+	// DATE by the civil-calendar arithmetic of the proleptic Gregorian
+	// calendar: the month carries into the year, the day is added to the
+	// first of that month, and the day count since the epoch is range
+	// checked. Plain arithmetic on doubles, exact at these magnitudes, so no
+	// clamp is needed and a far-off month and day cannot cancel into a date
+	// that looks valid. The same carry as the VM's time.Date normalisation.
+	`CREATE OR REPLACE MACRO fado_civil_y(yy, mm) AS yy - CASE WHEN mm <= 2 THEN 1 ELSE 0 END`,
+	`CREATE OR REPLACE MACRO fado_civil_era(yy, mm) AS floor(fado_civil_y(yy, mm) / 400)`,
+	`CREATE OR REPLACE MACRO fado_civil_yoe(yy, mm) AS fado_civil_y(yy, mm) - fado_civil_era(yy, mm) * 400`,
+	`CREATE OR REPLACE MACRO fado_civil_days(yy, mm) AS fado_civil_era(yy, mm) * 146097 + fado_civil_yoe(yy, mm) * 365 + floor(fado_civil_yoe(yy, mm) / 4) - floor(fado_civil_yoe(yy, mm) / 100) + floor((153 * ((mm + 9) % 12) + 2) / 5) - 719468`,
+	`CREATE OR REPLACE MACRO fado_date_months(y, m) AS trunc(y::DOUBLE) * 12 + trunc(m::DOUBLE) - 1`,
+	`CREATE OR REPLACE MACRO fado_date_year(y, m) AS floor(fado_date_months(y, m) / 12)`,
+	`CREATE OR REPLACE MACRO fado_date_month(y, m) AS fado_date_months(y, m) - fado_date_year(y, m) * 12 + 1`,
+	`CREATE OR REPLACE MACRO fado_date_day(y, m, d) AS fado_civil_days(fado_date_year(y, m), fado_date_month(y, m)) + trunc(d::DOUBLE) - 1`,
+	`CREATE OR REPLACE MACRO fado_date(y, m, d) AS fado_date_day(y, m, d) * 86400`,
+	`CREATE OR REPLACE MACRO fado_date_err(y, m, d) AS CASE WHEN abs(trunc(y::DOUBLE)) > 1e6 OR abs(trunc(m::DOUBLE)) > 1e7 OR abs(trunc(d::DOUBLE)) > 1e9 OR fado_date_day(y, m, d) < -719162 OR fado_date_day(y, m, d) > 2932896 THEN 'out_of_range' END`,
 	`CREATE OR REPLACE MACRO fado_datevalue(t) AS CASE WHEN trim(t::VARCHAR) = '' THEN NULL WHEN NOT regexp_full_match(trim(t::VARCHAR), '[0-9]{4}-[0-9]{2}-[0-9]{2}( [0-9]{2}:[0-9]{2}:[0-9]{2})?') THEN NULL ELSE COALESCE(epoch(try_strptime(trim(t::VARCHAR), '%Y-%m-%d')), epoch(try_strptime(trim(t::VARCHAR), '%Y-%m-%d %H:%M:%S'))) END`,
 	`CREATE OR REPLACE MACRO fado_datevalue_err(t) AS CASE WHEN trim(t::VARCHAR) = '' THEN NULL WHEN fado_datevalue(t) IS NULL THEN 'bad_text' WHEN fado_datevalue(t) < ` + duckdbMinDate + ` OR fado_datevalue(t) > ` + duckdbMaxDate + ` THEN 'out_of_range' END`,
 	`CREATE OR REPLACE MACRO fado_addmonths(x, n) AS epoch(fado_ts(x) + to_months(CAST(LEAST(GREATEST(trunc(n::DOUBLE), -1000000), 1000000) AS INTEGER)))`,

@@ -117,48 +117,68 @@ func disagreement(prog *formula.Program, o *Outcome) string {
 const Tolerance = 1e-12
 
 // Noisy reports whether the program's result may carry last-bit noise
-// between the targets: a floating-point aggregate, which DuckDB sums
-// without compensation, or a power, an exponential or a logarithm, which
-// each engine's math library rounds its own way (ADR-0019). A number or a
+// between the targets: a power, an exponential or a logarithm, which each
+// engine's math library rounds its own way (ADR-0019). A number or a
 // rendering of such a result compares to Tolerance; any other kind, a
 // comparison or a date built from it, must still agree exactly, and a
-// disagreement there is reported.
+// disagreement there is reported. SUM and AVERAGE add left to right on
+// every evaluator and are exact.
 func Noisy(p *formula.Program) bool {
-	return p.Calls("SUM") || p.Calls("AVERAGE") ||
-		p.HasOp(formula.OpPow) || p.Calls("POWER") || p.Calls("EXP") || p.Calls("LN") || p.Calls("LOG")
+	return p.HasOp(formula.OpPow) || p.Calls("POWER") || p.Calls("EXP") || p.Calls("LN") || p.Calls("LOG")
 }
 
 // textNearlyEqual compares two texts run by run: every run of number
 // characters must parse to numbers within the tolerance, and everything
 // between the runs must match exactly. It is how a rendered noisy number
-// inside a text result is compared. A run may glue a number to digits
-// that follow it in a concatenation, so runs are parsed as big floats,
-// which no exponent overflows.
+// inside a text result is compared. A concatenation may glue two numbers
+// into one run, so a run that is not one number is tried as two at every
+// split; runs are parsed as big floats, which no exponent overflows.
 func textNearlyEqual(a, b string, rel float64) bool {
 	ra, rb := numberRuns(a), numberRuns(b)
 	if len(ra) != len(rb) {
 		return false
 	}
 	for i := range ra {
-		if ra[i] == rb[i] {
-			continue
-		}
-		x, _, errA := big.ParseFloat(ra[i], 10, 80, big.ToNearestEven)
-		y, _, errB := big.ParseFloat(rb[i], 10, 80, big.ToNearestEven)
-		if errA != nil || errB != nil {
-			return false
-		}
-		diff := new(big.Float).Sub(x, y)
-		diff.Abs(diff)
-		scale := new(big.Float).Abs(y)
-		if scale.Cmp(big.NewFloat(1)) < 0 {
-			scale = big.NewFloat(1)
-		}
-		if diff.Cmp(scale.Mul(scale, big.NewFloat(rel))) > 0 {
+		if !runsNearlyEqual(ra[i], rb[i], rel) {
 			return false
 		}
 	}
 	return true
+}
+
+func runsNearlyEqual(a, b string, rel float64) bool {
+	if a == b {
+		return true
+	}
+	if numbersNearlyEqual(a, b, rel) {
+		return true
+	}
+	if len(a) > 120 || len(b) > 120 {
+		return false
+	}
+	for i := 1; i < len(a); i++ {
+		for j := 1; j < len(b); j++ {
+			if numbersNearlyEqual(a[:i], b[:j], rel) && runsNearlyEqual(a[i:], b[j:], rel) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func numbersNearlyEqual(a, b string, rel float64) bool {
+	x, _, errA := big.ParseFloat(a, 10, 80, big.ToNearestEven)
+	y, _, errB := big.ParseFloat(b, 10, 80, big.ToNearestEven)
+	if errA != nil || errB != nil {
+		return false
+	}
+	diff := new(big.Float).Sub(x, y)
+	diff.Abs(diff)
+	scale := new(big.Float).Abs(y)
+	if scale.Cmp(big.NewFloat(1)) < 0 {
+		scale = big.NewFloat(1)
+	}
+	return diff.Cmp(scale.Mul(scale, big.NewFloat(rel))) <= 0
 }
 
 // numberRuns splits a text into alternating runs, outside a number and

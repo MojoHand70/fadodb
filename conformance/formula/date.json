@@ -105,6 +105,25 @@
     {"name": "arithmetic on dates goes through functions", "formula": "DAYS(ADDDAYS(D, 30), D)", "inputs": {"D": "2024-01-31"}, "expected": 30},
     {"formula": "ADDDAYS(DATE(2024, 1, 31), DAYS(DATE(2024, 3, 1), DATE(2024, 2, 1)))", "type": "date", "expected": "2024-02-29"},
     {"formula": "ADDMONTHS(D, 1) > D", "inputs": {"D": "2024-01-31"}, "expected": true},
-    {"formula": "TEXT(ADDMONTHS(DATE(2024, 1, 31), 1))", "expected": "2024-02-29"}
+    {"formula": "TEXT(ADDMONTHS(DATE(2024, 1, 31), 1))", "expected": "2024-02-29"},
+    {"name": "months and days carry by the calendar, far as they like, within year 1 to 9999", "formula": "DATE(2000, 0, 0)", "type": "date", "expected": "1999-11-30"},
+    {"formula": "DATE(2000, -11, 1)", "type": "date", "expected": "1999-01-01"},
+    {"formula": "DATE(2000, 25, 1)", "type": "date", "expected": "2002-01-01"},
+    {"formula": "DATE(2000, 1, 366)", "type": "date", "expected": "2000-12-31"},
+    {"formula": "DATE(2001, 1, 366)", "type": "date", "expected": "2002-01-01"},
+    {"formula": "DATE(1, 1, 1)", "type": "date", "expected": "0001-01-01"},
+    {"formula": "DATE(9999, 12, 31)", "type": "date", "expected": "9999-12-31"},
+    {"formula": "DATE(1000, 1, 3000000)", "type": "date", "expected": "9213-09-20"},
+    {"formula": "DATE(2000, 1, -300000)", "type": "date", "expected": "1178-08-17"},
+    {"formula": "DATE(1600, 2, 29)", "type": "date", "expected": "1600-02-29"},
+    {"formula": "DATE(1700, 2, 29)", "type": "date", "expected": "1700-03-01"},
+    {"name": "a result outside year 1 to 9999 is out of range, however the month and the day combine", "formula": "DATE(1, 1, 0)", "error": "out_of_range"},
+    {"formula": "DATE(9999, 12, 32)", "error": "out_of_range"},
+    {"formula": "DATE(9999, 13, 1)", "error": "out_of_range"},
+    {"formula": "DATE(2000, 1, 3000000)", "error": "out_of_range"},
+    {"formula": "DATE(1942, -968801, 99950000)", "error": "out_of_range"},
+    {"formula": "DATE(2000, 1, 1000000000.0)", "error": "out_of_range"},
+    {"formula": "DATE(2000, 10000000.0, 1)", "error": "out_of_range"},
+    {"formula": "DATE(1000000.0, 1, 1)", "error": "out_of_range"}
   ]
 }

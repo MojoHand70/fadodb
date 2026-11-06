@@ -1,0 +1,33 @@
+{
+  "suite": "json",
+  "description": "JSONVALUE reads one scalar at a dotted path and renders it as TEXT does (ADR-0019). An array index is a JSON pointer index: digits without a leading zero or a sign.",
+  "variables": {"Doc": "json"},
+  "cases": [
+    {"name": "a key, a nested path, an array index", "formula": "JSONVALUE(Doc, \"b\")", "inputs": {"Doc": "{\"a\":1,\"b\":\"x\",\"c\":[1,2,{\"d\":true}],\"e\":null,\"f\":1.5,\"g\":false,\"h\":{\"i\":\"deep\"}}"}, "expected": "x"},
+    {"formula": "JSONVALUE(Doc, \"h.i\")", "inputs": {"Doc": "{\"h\":{\"i\":\"deep\"}}"}, "expected": "deep"},
+    {"formula": "JSONVALUE(Doc, \"c.2.d\")", "inputs": {"Doc": "{\"c\":[1,2,{\"d\":true}]}"}, "expected": "TRUE"},
+    {"formula": "JSONVALUE(Doc, \"1\")", "inputs": {"Doc": "[1,2,3]"}, "expected": "2"},
+    {"formula": "JSONVALUE(Doc, \"0\")", "inputs": {"Doc": "[1,2,3]"}, "expected": "1"},
+    {"name": "numbers render as TEXT does, booleans as TRUE and FALSE", "formula": "JSONVALUE(Doc, \"f\")", "inputs": {"Doc": "{\"f\":1.5}"}, "expected": "1.5"},
+    {"formula": "JSONVALUE(Doc, \"n\")", "inputs": {"Doc": "{\"n\":-0.5}"}, "expected": "-0.5"},
+    {"formula": "JSONVALUE(Doc, \"big\")", "inputs": {"Doc": "{\"big\":1e21}"}, "expected": "1e+21"},
+    {"formula": "JSONVALUE(Doc, \"g\")", "inputs": {"Doc": "{\"g\":false}"}, "expected": "FALSE"},
+    {"formula": "VALUE(JSONVALUE(Doc, \"a\")) + 1", "inputs": {"Doc": "{\"a\":41}"}, "expected": 42},
+    {"name": "the whole document when the path is empty, if it is a scalar", "formula": "JSONVALUE(Doc, \"\")", "inputs": {"Doc": "\"str\""}, "expected": "str"},
+    {"formula": "JSONVALUE(Doc, \"\")", "inputs": {"Doc": "42"}, "expected": "42"},
+    {"name": "a missing key, a null, an index past the end and a blank document are blank", "formula": "JSONVALUE(Doc, \"zz\")", "inputs": {"Doc": "{\"a\":1}"}, "expected": null},
+    {"formula": "JSONVALUE(Doc, \"e\")", "inputs": {"Doc": "{\"e\":null}"}, "expected": null},
+    {"formula": "JSONVALUE(Doc, \"9\")", "inputs": {"Doc": "[1,2,3]"}, "expected": null},
+    {"formula": "JSONVALUE(Doc, \"a.b\")", "inputs": {"Doc": "{\"a\":1}"}, "expected": null},
+    {"formula": "JSONVALUE(Doc, \"a\")", "expected": null},
+    {"name": "an array index has no leading zero and no sign", "formula": "JSONVALUE(Doc, \"00\")", "inputs": {"Doc": "[1,2,3]"}, "expected": null},
+    {"formula": "JSONVALUE(Doc, \"01\")", "inputs": {"Doc": "[1,2,3]"}, "expected": null},
+    {"formula": "JSONVALUE(Doc, \"+1\")", "inputs": {"Doc": "[1,2,3]"}, "expected": null},
+    {"formula": "JSONVALUE(Doc, \"-1\")", "inputs": {"Doc": "[1,2,3]"}, "expected": null},
+    {"formula": "JSONVALUE(Doc, \"00\")", "inputs": {"Doc": "{\"00\":\"key\"}"}, "expected": "key"},
+    {"name": "an object or an array at the path, and invalid JSON, are bad_text", "formula": "JSONVALUE(Doc, \"h\")", "inputs": {"Doc": "{\"h\":{\"i\":\"deep\"}}"}, "error": "bad_text"},
+    {"formula": "JSONVALUE(Doc, \"c\")", "inputs": {"Doc": "{\"c\":[1,2]}"}, "error": "bad_text"},
+    {"formula": "JSONVALUE(Doc, \"\")", "inputs": {"Doc": "[]"}, "error": "bad_text"},
+    {"formula": "JSONVALUE(Doc, \"a\")", "inputs": {"Doc": "{bad"}, "error": "bad_text"}
+  ]
+}

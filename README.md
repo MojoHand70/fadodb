@@ -7,8 +7,10 @@
 
 An embeddable **active document database**, written in Go, MIT licensed.
 
-> **Status: Phase 1, the formula engine, in progress.** Nothing works yet beyond `fadodb version`.
-> The design is public and reviewable; the code is not. See [ROADMAP.md](ROADMAP.md).
+> **Status: Phase 1, the formula engine, is done and released as v0.1.0.**
+> `fadodb formula eval` evaluates a formula on the Go VM and shows the SQL the
+> engine generates for SQLite and DuckDB. Documents, storage and the server
+> come in later phases. See [ROADMAP.md](ROADMAP.md).
 
 ## What it will be
 
@@ -57,6 +59,26 @@ id, _ := db.Create(ctx, "Invoice", fado.Values{"customer": "ACME"}, fado.As(user
 db.Transition(ctx, "Invoice", id, "submit", fado.As(user))
 rows, _ := db.Query(ctx, `SELECT id, total FROM Invoice WHERE state = 'submitted'`, fado.As(user))
 ```
+
+## Try the formula engine
+
+```
+$ fadodb formula eval -var qty:number=3 -var price:number=9.99 'ROUND(qty * price * (1 - 10%), 2)'
+26.97
+$ fadodb formula eval -var name:text=invoice 'UPPER(LEFT(name, 3)) & "-" & TEXT(42)'
+"INV-42"
+$ fadodb formula eval -sql duckdb -var due:date 'DAYS(due, TODAY())'
+value  (floor(CAST("due" AS DOUBLE) / CAST(86400 AS DOUBLE)) - floor((floor(CAST($now AS DOUBLE) / CAST(86400 AS DOUBLE)) * CAST(86400 AS DOUBLE)) / CAST(86400 AS DOUBLE)))
+error  NULL
+params now
+```
+
+The same formula gives the same result on the VM, on SQLite and on DuckDB:
+the conformance suite under `conformance/` is the specification, and the
+property tests generate formulas to check that the three agree. The
+semantics are in [ADR-0019](docs/adr/0019-formula-language-semantics.md),
+the size limits in [ADR-0021](docs/adr/0021-size-limits.md), and the
+numbers in [docs/perf/](docs/perf/).
 
 ## Design principles
 

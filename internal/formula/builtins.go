@@ -219,33 +219,29 @@ func fnMax(_ *VM, args []Value) (Value, *EvalError) {
 	return Number(m), nil
 }
 
-// neumaier sums with compensation, as SQLite does, so that the VM and the
-// SQL targets agree as far as a sum of floats can (ADR-0019).
-func neumaier(args []Value) (sum float64, n int) {
-	var c float64
+// sum adds the non-blank arguments left to right in plain double
+// arithmetic, exactly as the SQL dialects spell it, so that every
+// evaluator gets the same bits. A compensated sum would be more accurate,
+// but it differed from DuckDB's inline additions by far more than any
+// tolerance when large terms cancel.
+func sum(args []Value) (s float64, n int) {
 	for _, a := range args {
 		if a.kind == KindNull {
 			continue
 		}
 		n++
-		t := sum + a.num
-		if math.Abs(sum) >= math.Abs(a.num) {
-			c += (sum - t) + a.num
-		} else {
-			c += (a.num - t) + sum
-		}
-		sum = t
+		s += a.num
 	}
-	return sum + c, n
+	return s, n
 }
 
 func fnSum(_ *VM, args []Value) (Value, *EvalError) {
-	s, _ := neumaier(args)
+	s, _ := sum(args)
 	return finite(s)
 }
 
 func fnAverage(_ *VM, args []Value) (Value, *EvalError) {
-	s, n := neumaier(args)
+	s, n := sum(args)
 	if n == 0 {
 		return Blank(), nil
 	}

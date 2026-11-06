@@ -13,9 +13,8 @@ import (
 
 // The DuckDB runner: every evaluation case is bound, translated for the
 // DuckDB dialect and executed by DuckDB, and the value or the error code
-// must match the case. Aggregates may differ from the VM by the relative
-// tolerance of ADR-0019, because DuckDB sums left to right without
-// compensation.
+// must match the case, exactly: SUM and AVERAGE add left to right on
+// every evaluator.
 
 const conformanceDir = "../conformance"
 
@@ -84,11 +83,7 @@ func TestConformance_DuckDB(t *testing.T) {
 				fail("expected: %v", err)
 				continue
 			}
-			ok := formula.Equal(res.Value, want)
-			if !ok && (prog.Calls("SUM") || prog.Calls("AVERAGE")) {
-				ok = formula.NearlyEqual(res.Value, want, 1e-12)
-			}
-			if !ok {
+			if !formula.Equal(res.Value, want) {
 				fail("got %s, want %s\n    %s", res.Value, want, res.Query)
 			}
 		}

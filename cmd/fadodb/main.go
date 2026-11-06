@@ -1,7 +1,8 @@
 // Command fadodb is the FadoDB command-line tool and, later, its server.
 //
-// At this stage of the project only "fadodb version" does anything.
-// See ROADMAP.md for what comes next.
+// At this stage of the project "fadodb formula eval" runs the formula
+// engine and "fadodb version" prints the build. See ROADMAP.md for what
+// comes next.
 package main
 
 import (
@@ -23,10 +24,12 @@ var (
 const usage = `fadodb - an embeddable active document database (pre-release)
 
 Usage:
-  fadodb version   print version, commit and build date
-  fadodb help      print this help
+  fadodb formula eval [flags] FORMULA   evaluate a formula, or print its bytecode or SQL
+  fadodb version                        print version, commit and build date
+  fadodb help                           print this help
 
-Nothing else is implemented yet.
+Run "fadodb formula help" for the flags of eval. Documents, storage and
+the server arrive in later phases.
 Roadmap: https://github.com/MojoHand70/fadodb/blob/main/ROADMAP.md
 `
 
@@ -40,6 +43,8 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return 2
 	}
 	switch args[0] {
+	case "formula":
+		return runFormula(args[1:], stdout, stderr)
 	case "version", "--version", "-v":
 		fmt.Fprintln(stdout, versionString())
 		return 0

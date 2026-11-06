@@ -352,6 +352,22 @@ func numberSyntax(s string) bool {
 	return i == len(s)
 }
 
+// arrayIndex reads a path segment as an array index the way a JSON
+// pointer does (RFC 6901), which is what the DuckDB dialect's json_extract
+// accepts: "0" or digits without a leading zero, no sign.
+func arrayIndex(seg string) (int, bool) {
+	if seg == "" || (len(seg) > 1 && seg[0] == '0') {
+		return 0, false
+	}
+	for _, c := range seg {
+		if c < '0' || c > '9' {
+			return 0, false
+		}
+	}
+	i, err := strconv.Atoi(seg)
+	return i, err == nil
+}
+
 // fnJSONValue reads one value at a dotted path and renders it as text.
 func fnJSONValue(_ *VM, args []Value) (Value, *EvalError) {
 	if args[0].kind == KindNull {
@@ -372,8 +388,8 @@ func fnJSONValue(_ *VM, args []Value) (Value, *EvalError) {
 				}
 				cur = v
 			case []any:
-				i, err := strconv.Atoi(seg)
-				if err != nil || i < 0 || i >= len(c) {
+				i, ok := arrayIndex(seg)
+				if !ok || i >= len(c) {
 					return Blank(), nil
 				}
 				cur = c[i]

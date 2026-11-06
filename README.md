@@ -7,7 +7,7 @@
 
 An embeddable **active document database**, written in Go, MIT licensed.
 
-> **Status: Phase 0, scaffold.** Nothing works yet beyond `fadodb version`.
+> **Status: Phase 0 done, Phase 1 not started.** Nothing works yet beyond `fadodb version`.
 > The design is public and reviewable; the code is not. See [ROADMAP.md](ROADMAP.md).
 
 ## What it will be

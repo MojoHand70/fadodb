@@ -4,6 +4,8 @@
 # slower (sec/op), more than BENCH_BYTES_PCT percent more bytes per operation
 # (B/op), or any increase in allocations per operation (allocs/op). Only
 # statistically significant changes count; benchstat prints "~" for the rest.
+# Both trees get a warm-up round, then BENCH_COUNT rounds interleaved, so a
+# shared runner's drift cannot be mistaken for a regression.
 #
 # Usage:
 #   scripts/benchgate.sh [base-ref]     default base-ref: origin/main
@@ -59,22 +61,36 @@ cleanup() {
 }
 trap cleanup EXIT
 
+# One round of every benchmark in the tree at $1.
 run_bench() {
-  go test -run '^$' -bench . -benchmem -count "$COUNT" ./... 2>&1 || true
+  (cd "$1" && go test -run '^$' -bench . -benchmem -count 1 ./... 2>&1) || true
 }
 
-run_bench > "$work/new.txt"
-if ! grep -q '^Benchmark' "$work/new.txt"; then
+git worktree add --quiet --detach "$work/base" "$BASE"
+
+# A warm-up round per tree compiles the test binaries and absorbs the
+# frequency and cache effects of that compile, and tells whether there is
+# anything to compare at all.
+run_bench "$PWD" > "$work/warm-new.txt"
+if ! grep -q '^Benchmark' "$work/warm-new.txt"; then
   echo "benchgate: no benchmarks in the working tree, nothing to compare"
   exit 0
 fi
-
-git worktree add --quiet --detach "$work/base" "$BASE"
-(cd "$work/base" && run_bench) > "$work/old.txt"
-if ! grep -q '^Benchmark' "$work/old.txt"; then
+run_bench "$work/base" > "$work/warm-old.txt"
+if ! grep -q '^Benchmark' "$work/warm-old.txt"; then
   echo "benchgate: no benchmarks at $BASE, nothing to compare"
   exit 0
 fi
+
+# The measured rounds alternate between the two trees, so that drift on a
+# shared runner, thermal, frequency or a neighbour's load, lands on both
+# alike instead of on whichever tree happened to run first.
+: > "$work/new.txt"
+: > "$work/old.txt"
+for _ in $(seq "$COUNT"); do
+  run_bench "$PWD" >> "$work/new.txt"
+  run_bench "$work/base" >> "$work/old.txt"
+done
 
 benchstat "$work/old.txt" "$work/new.txt" 2>/dev/null || true
 benchstat -format csv "$work/old.txt" "$work/new.txt" > "$work/cmp.csv" 2>/dev/null || true

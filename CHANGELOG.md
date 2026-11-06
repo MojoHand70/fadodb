@@ -55,6 +55,9 @@ beyond `fadodb version`.
 
 ### Changed
 
+- The benchmark gate warms both trees up and interleaves the measured
+  rounds, so a shared runner's drift lands on the base and the change
+  alike instead of on whichever tree ran first.
 - ROADMAP and README mark Phase 1 as in progress.
 - `modernc.org/sqlite` is scheduled for Phase 1 instead of Phase 2, for the
   SQL conformance runner.

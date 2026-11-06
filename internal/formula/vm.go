@@ -2,6 +2,7 @@ package formula
 
 import (
 	"fmt"
+	"math"
 	"time"
 	"unicode/utf8"
 )
@@ -222,9 +223,10 @@ func (vm *VM) Run(p *Program, vars []Value, ctx *Context) (Value, error) {
 	}
 }
 
-// notFinite reports an infinite or NaN result in one subtraction: a finite
-// number minus itself is zero, an infinity or a NaN minus itself is NaN.
-func notFinite(r float64) bool { return r-r != 0 }
+// notFinite reports an infinite or NaN result with one comparison: the
+// magnitude of a finite number is at most MaxFloat64, an infinity's is
+// larger, and a NaN compares false with everything.
+func notFinite(r float64) bool { return !(math.Abs(r) <= math.MaxFloat64) }
 
 // compare orders two scalars for the comparison operators. The binder
 // guarantees the same static type or a blank on one side; a blank reads as

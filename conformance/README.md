@@ -13,8 +13,9 @@ function catalog is `internal/formula/catalog.json`.
 ## Status
 
 The Go VM and the SQL generator's SQLite and DuckDB dialects run every
-evaluation case in CI, all three exactly: SUM and AVERAGE add left to
-right on every evaluator, within the tolerance ADR-0019 allows them. The
+evaluation case in CI, and all three must match exactly. SUM and AVERAGE
+add left to right on every evaluator so that aggregates agree to the
+last bit, rather than differing within what ADR-0019 allows them. The
 browser VM does not exist yet.
 Composite values (arrays and rows) and the query functions are not
 implemented yet; the binder refuses them, and the binding suite says so.

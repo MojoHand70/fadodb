@@ -2,10 +2,11 @@
 
 Status: design, revised 2026-11-06 with the document model (variables,
 commits, recalculation, document tables, explicit tables, DuckDB as the
-analytical engine, class metadata, layouts, the wire format). Nothing below
-is implemented yet; see
-[ROADMAP.md](../ROADMAP.md) for what exists today. Decisions with their
-reasoning are in [adr/](adr/).
+analytical engine, class metadata, layouts, the wire format). Of what is
+described below, the formula engine exists as of v0.1.0, with the
+exceptions its section lists; the rest is design. See
+[ROADMAP.md](../ROADMAP.md) for what exists today and [perf/](perf/) for
+the measured numbers. Decisions with their reasoning are in [adr/](adr/).
 
 FadoDB is an embeddable active document database. A document class declares
 typed variables, Excel-like formulas, a statechart, and rules that fire
@@ -442,6 +443,19 @@ events; nothing in the core model depends on them.
 
 ## Formula engine
 
+Implemented in v0.1.0 (Phase 1): the lexer, the parser, the binder with
+static types and the function-class check of the evaluation mode,
+bytecode format v1 with its binary and JSON forms, the Go VM, the SQL
+generator with the SQLite and DuckDB dialects, the catalog, the
+conformance suite with its property tests, and `fadodb formula eval`.
+Not yet: the dependency DAG and cycle detection across a document's
+formulas, composite values (arrays and rows) and the query functions,
+which arrive with the document model in Phase 2; the constant-folding
+optimizer; the browser VM (Phase 7); the Postgres dialect (Phase 10).
+The pipeline and the value struct below are the design: today's `Value`
+holds a kind, a number and a text, and an array is a column-wise value
+beside it that no operation consumes yet.
+
 ### Pipeline
 
 ```
@@ -673,7 +687,11 @@ Celonis. It is an export, not a dependency.
 
 ### Initial budgets
 
-Validated and revised at the end of Phase 1; until then they are targets, not promises.
+A budget is a target until the phase that brings its feature measures it
+and publishes the result under [perf/](perf/). Phase 1 measured the
+arithmetic row and the binary size row: the five-operation formula runs
+in 13.7 ns with no allocation, and the core binary is 2.9 MB
+([perf/v0.1.0.md](perf/v0.1.0.md)). The other rows wait for their phases.
 
 | Measure | Budget |
 |---|---|
@@ -696,9 +714,13 @@ Validated and revised at the end of Phase 1; until then they are targets, not pr
 - Go benchmarks next to every package; `-benchmem` always on.
 - CI compares against the `main` baseline with `benchstat` and fails on more than
   5% regression in time or bytes per operation, or any extra allocation per operation.
-- A perf suite under `bench/` generates datasets and runs the end-to-end
-  scenarios in the budgets table nightly; results are committed to `docs/perf/` per release.
-- CPU and allocation profiles are archived per release so a regression can be diffed.
+- Each release's numbers are published under `docs/perf/`. Today they come
+  from the package benchmarks and the property campaigns, run on the
+  release commit by hand and reported by `benchstat`.
+- Planned, with the store in Phase 2: a perf suite under `bench/` that
+  generates datasets and runs the end-to-end scenarios in the budgets
+  table nightly, and CPU and allocation profiles archived per release so
+  a regression can be diffed.
 - Hot-path rules in `CONTRIBUTING.md`: no allocations in the VM loop, no
   interface boxing of values, no reflection, prepared statements only, batched writes.
 - Actions are asynchronous by default so an external call can never consume the commit budget.

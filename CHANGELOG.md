@@ -6,7 +6,10 @@ All notable changes to FadoDB are recorded here. The format follows
 
 ## [Unreleased]
 
-Nothing yet.
+### Fixed
+
+- `fadodb version` built with `go install .../cmd/fadodb@v0.1.0` reports
+  the module version instead of `dev`.
 
 ## [0.1.0] - 2026-11-06
 

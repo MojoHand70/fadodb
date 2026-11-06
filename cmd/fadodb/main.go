@@ -11,6 +11,7 @@ import (
 	"os"
 	"runtime"
 	"runtime/debug"
+	"strings"
 )
 
 // Set by the release build through -ldflags. A plain "go build" leaves the
@@ -57,12 +58,24 @@ func run(args []string, stdout, stderr io.Writer) int {
 }
 
 // versionString reports the version, the commit, the build date and the Go
-// toolchain. The commit falls back to the VCS revision embedded by the Go
-// tool when the release build did not set one.
+// toolchain, from the values the release build sets and, where it did not,
+// from the build information the Go tool embeds.
 func versionString() string {
-	c := commit
-	if c == "" {
-		if info, ok := debug.ReadBuildInfo(); ok {
+	info, _ := debug.ReadBuildInfo()
+	return versionStringFrom(version, commit, date, info)
+}
+
+// versionStringFrom builds the version line. A version of "dev" falls back
+// to the module version in info, which "go install module@version" sets
+// and a build from a checkout leaves as "(devel)"; an empty commit falls
+// back to the VCS revision a build from a checkout embeds.
+func versionStringFrom(ver, rev, built string, info *debug.BuildInfo) string {
+	v, c := ver, rev
+	if info != nil {
+		if v == "dev" && info.Main.Version != "" && info.Main.Version != "(devel)" {
+			v = strings.TrimPrefix(info.Main.Version, "v")
+		}
+		if c == "" {
 			for _, s := range info.Settings {
 				if s.Key == "vcs.revision" && len(s.Value) >= 7 {
 					c = s.Value[:7]
@@ -70,11 +83,11 @@ func versionString() string {
 			}
 		}
 	}
-	s := "fadodb " + version
+	s := "fadodb " + v
 	if c != "" {
 		s += " (" + c
-		if date != "" {
-			s += ", " + date
+		if built != "" {
+			s += ", " + built
 		}
 		s += ")"
 	}

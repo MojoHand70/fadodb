@@ -6,7 +6,7 @@ SQL the engine generates; nothing stores a document yet. Since v0.1.0 the
 engine gained exact numbers (`decimal`, `int`, `money`), a calendar-day
 `date` beside `datetime`, division by zero as an error and `IFERROR`
 (ADR-0022 to ADR-0024, unreleased); ADR-0025 to ADR-0029 record what the
-first embedder needs from Phases 2 to 7; ADR-0031 to ADR-0034 propose named
+first embedder needs from Phases 2 to 7; ADR-0031 to ADR-0034 add named
 schemas and object values, a vocabulary of real-world objects with their
 presentation, attachments as `File` values behind a blob store, and range
 constraints on numbers, for Phases 2 and 7. This page is updated when a phase

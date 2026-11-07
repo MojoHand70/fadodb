@@ -1,6 +1,6 @@
 # ADR-0034: Range constraints on numeric variables
 
-- Status: Proposed; amends ADR-0013, ADR-0018
+- Status: Accepted; amends ADR-0013, ADR-0018
 - Date: 2026-11-07
 
 ## Context

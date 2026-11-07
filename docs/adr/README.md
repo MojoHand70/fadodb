@@ -17,7 +17,7 @@ line says so. Copy `0000-template.md` to start.
 | [0009](0009-action-execution-model.md) | Action execution model: synchronous versus outbox | Accepted, amended by 0027 |
 | [0010](0010-security-rules-as-predicates.md) | Security rules compiled to SQL predicates | Accepted, amended by 0027, 0028 |
 | [0011](0011-one-json-command-set.md) | One JSON command set over HTTP, WebSocket and C ABI | Accepted, amended by 0025, 0026, 0027 |
-| [0012](0012-performance-gates.md) | Performance budgets and gates | Accepted |
+| [0012](0012-performance-gates.md) | Performance budgets and gates | Accepted, amended by 0030 |
 | [0013](0013-document-variables-and-types.md) | Document variables and the type system | Accepted, amended by 0019, 0022, 0023 |
 | [0014](0014-document-tables.md) | Document tables: current, history, child tables and views | Accepted, amended by 0026 |
 | [0015](0015-commits-and-recalculation.md) | Commits, recalculation modes, defaults, reset and refresh | Accepted, amended by 0020, 0025 |
@@ -35,3 +35,4 @@ line says so. Copy `0000-template.md` to start.
 | [0027](0027-principal-from-the-embedder-and-registered-executors.md) | The principal comes from the embedder; action executors are registered | Proposed |
 | [0028](0028-field-level-rights-per-state.md) | Field-level rights per state | Proposed |
 | [0029](0029-browser-vm-as-one-plain-javascript-file.md) | The browser VM ships as one plain JavaScript file | Proposed |
+| [0030](0030-benchmark-gate-measures-the-minimum-over-placements.md) | The benchmark gate measures the minimum over code placements | Accepted |

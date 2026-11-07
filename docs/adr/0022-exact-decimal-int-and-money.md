@@ -1,6 +1,6 @@
 # ADR-0022: Exact numbers: decimal, int and money
 
-- Status: Proposed; amends ADR-0004, ADR-0013, ADR-0018, ADR-0019
+- Status: Accepted; amends ADR-0004, ADR-0013, ADR-0018, ADR-0019
 - Date: 2026-11-06
 
 ## Context

@@ -1,6 +1,6 @@
 # ADR-0027: The principal comes from the embedder; action executors are registered
 
-- Status: Proposed; amends ADR-0009, ADR-0010, ADR-0011
+- Status: Accepted; amends ADR-0009, ADR-0010, ADR-0011
 - Date: 2026-11-06
 
 ## Context

@@ -1,6 +1,6 @@
 # ADR-0028: Field-level rights per state
 
-- Status: Proposed; amends ADR-0010, ADR-0018
+- Status: Accepted; amends ADR-0010, ADR-0018
 - Date: 2026-11-06
 
 ## Context

@@ -1,6 +1,6 @@
 # ADR-0023: A date is a calendar day, a datetime an instant, an enum a text with a value set
 
-- Status: Proposed; amends ADR-0013, ADR-0018, ADR-0019
+- Status: Accepted; amends ADR-0013, ADR-0018, ADR-0019
 - Date: 2026-11-06
 
 ## Context

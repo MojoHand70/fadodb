@@ -34,7 +34,7 @@ All notable changes to FadoDB are recorded here. The format follows
   binding suite `exact`; the property generator produces exact, money,
   date and datetime formulas, and found nine divergences between the VM
   and the SQL dialects before they shipped.
-- ADR-0025 to ADR-0029 record, as proposed, what the first embedder needs
+- ADR-0025 to ADR-0029 record what the first embedder needs
   from Phases 2 to 7: preview and validate without writing, idempotency
   keys on commands and a business date on events with a published
   transition event, the principal from the embedder and registered action

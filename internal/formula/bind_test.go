@@ -27,10 +27,28 @@ func TestBind_SlotsDependenciesAndClasses(t *testing.T) {
 }
 
 func TestBind_ConstantPoolDeduplicates(t *testing.T) {
-	scope := mustScope(t)
-	p := mustBind(t, `1 + 1 + 2 & "a" & "a" & "b"`, scope)
+	scope := mustScope(t, numVars("a")...)
+	p := mustBind(t, `1 + a + 1 + 2 & "a" & "a" & "b"`, scope)
 	if len(p.Nums) != 2 || len(p.Texts) != 2 {
 		t.Errorf("pools = %v %q, want [1 2] [a b]", p.Nums, p.Texts)
+	}
+}
+
+func TestBind_FoldsConstantExpressions(t *testing.T) {
+	scope := mustScope(t, Variable{Name: "m", Type: MoneyType(2)}, Variable{Name: "n", Type: Scalar(KindNumber)})
+	p := mustBind(t, `1 - 10%`, scope)
+	if len(p.Code) != 2 || p.Code[0].Op != OpConstNum || p.Nums[0] != 1-0.1 {
+		t.Errorf("1 - 10%% should fold to one constant, got %v %v", p.Code, p.Nums)
+	}
+	p = mustBind(t, `m * (1 - 10%)`, scope)
+	if len(p.Decs) != 1 || p.Decs[0] != (DecConst{Mant: 90, Scale: 2}) || !p.Result.Equal(MoneyType(4)) {
+		t.Errorf("m * (1 - 10%%) should read the constant exactly as 0.90, got %v, result %s", p.Decs, p.Result)
+	}
+	if _, err := Bind(`m * (1 / 3)`, scope, BindOptions{}); err == nil {
+		t.Error("a division of constants is a number, not an exact constant")
+	}
+	if _, err := Bind(`n * (1 - 10%)`, scope, BindOptions{}); err != nil {
+		t.Errorf("a folded constant still works with numbers: %v", err)
 	}
 }
 
@@ -43,7 +61,7 @@ func TestBind_Errors(t *testing.T) {
 		wantCol int
 	}{
 		{"nope + 1", "unknown variable nope", 1},
-		{"ROUND + 1", "ROUND is a function: write ROUND(number[, digits])", 1},
+		{"ROUND + 1", "ROUND is a function: write ROUND(number[, digits[, method]])", 1},
 		{"qty + name", "+ needs numbers, got text; VALUE converts text to a number", 5},
 		{"due + 1", "+ needs numbers, got date; dates move with ADDDAYS", 5},
 		{"TRUE = 1", "= compares bool with number", 6},
@@ -52,7 +70,7 @@ func TestBind_Errors(t *testing.T) {
 		{"NOT qty", "NOT needs a condition, got number", 1},
 		{"qty AND paid", "AND needs conditions, got number", 5},
 		{"UPPER(qty)", "UPPER: argument 1 must be text, got number; TEXT converts a number to text", 7},
-		{"YEAR(name)", "YEAR: argument 1 must be a date, got text; DATEVALUE converts text to a date", 6},
+		{"YEAR(name)", "YEAR: argument 1 must be a date or a datetime, got text; DATEVALUE converts text to a date", 6},
 		{"THIS.qty", "THIS.qty is only valid inside LOOKUP and QUERY", 1},
 		{`REGEXREPLACE(name, "(", "")`, `REGEXREPLACE: invalid pattern "("`, 1},
 		{"LOOKUP(t, c, x = 1)", "LOOKUP is not implemented yet", 1},
@@ -116,8 +134,8 @@ func TestBuiltins_MatchTheCatalog(t *testing.T) {
 		}
 	}
 	for _, fn := range Functions() {
-		if fn.Name == "IF" || fn.Name == "AND" || fn.Name == "OR" || fn.Name == "NOT" {
-			continue // the parser turns these into nodes
+		if specialForms[fn.Name] {
+			continue // the parser or the binder turns these into control flow
 		}
 		if !seen[fn.Name] && !notYetImplemented[fn.Name] {
 			t.Errorf("catalog function %s has no builtin and is not listed as not yet implemented", fn.Name)

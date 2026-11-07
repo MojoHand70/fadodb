@@ -18,7 +18,7 @@ func TestGenerateSQL_Shapes(t *testing.T) {
 		params    []string
 	}{
 		{src: "qty * 2", wantValue: []string{`(COALESCE(CAST("qty" AS REAL), 0.0) * 2.0)`}, wantError: []string{"abs(", "'not_a_number'"}},
-		{src: "qty / 0", wantValue: []string{"CASE WHEN 0.0 = 0.0 THEN 0.0 ELSE"}, wantError: []string{"'not_a_number'"}},
+		{src: "qty / 0", wantValue: []string{"CASE WHEN 0.0 = 0.0 THEN NULL ELSE"}, wantError: []string{"'div_by_zero'", "'not_a_number'"}},
 		{src: `qty \ 2`, wantError: []string{"'div_by_zero'"}},
 		{src: `name & qty`, wantValue: []string{`substr(COALESCE("name", '') || fado_text(CAST("qty" AS REAL)), 1, 65537)`}, wantError: []string{`length(COALESCE("name", ''))`, "> 65536 THEN 'out_of_range'"}},
 		{src: `REPEAT(name, 2)`, wantValue: []string{`fado_repeat(COALESCE("name", ''), 2.0, 65536)`}, wantError: []string{`fado_repeat_err(COALESCE("name", ''), 2.0, 65536)`}},
@@ -29,11 +29,12 @@ func TestGenerateSQL_Shapes(t *testing.T) {
 		{src: `IF(paid, 1 \ qty, 0)`, wantError: []string{`CASE WHEN COALESCE("paid", 0) THEN COALESCE(CASE WHEN COALESCE(CAST("qty" AS REAL), 0.0) = 0.0 THEN 'div_by_zero' END, CASE WHEN`, `'not_a_number' END) END`}},
 		{src: `paid OR 1 \ qty > 0`, wantError: []string{`CASE WHEN NOT COALESCE("paid", 0) THEN`}},
 		{src: `paid AND NOT ISBLANK(name)`, wantValue: []string{`(COALESCE("paid", 0) AND (NOT ("name" IS NULL)))`}, noError: true},
-		{src: `ROUND(qty, 2)`, wantValue: []string{`fado_round(COALESCE(CAST("qty" AS REAL), 0.0), 2.0)`}, noError: true},
+		{src: `ROUND(qty, 2)`, wantValue: []string{`fado_round(COALESCE(CAST("qty" AS REAL), 0.0), 2.0, 'half_up')`}, noError: true},
+		{src: `ROUND(qty, 2, "half_even")`, wantValue: []string{`fado_round(COALESCE(CAST("qty" AS REAL), 0.0), 2.0, 'half_even')`}, noError: true},
 		{src: `VALUE(name)`, wantValue: []string{`fado_value(COALESCE("name", ''))`}, wantError: []string{`fado_value_err(COALESCE("name", ''))`}},
-		{src: `DAYS(due, TODAY())`, wantValue: []string{`floor(CAST("due" AS REAL) / 86400.0)`, `:now`}, noError: true, params: []string{"now"}},
+		{src: `DAYS(due, TODAY())`, wantValue: []string{`(CAST("due" AS REAL) - floor(CAST(:now AS REAL) / 86400.0))`}, noError: true, params: []string{"now"}},
 		{src: `USER() = "a" AND INGROUP("g")`, wantValue: []string{`:user`, `json_each(:groups)`}, noError: true, params: []string{"user", "groups"}},
-		{src: `TEXT(due)`, wantValue: []string{`strftime('%Y-%m-%d'`, `% 86400 = 0`}, noError: true},
+		{src: `TEXT(due)`, wantValue: []string{`strftime('%Y-%m-%d', CAST("due" AS REAL) * 86400.0, 'unixepoch')`}, noError: true},
 		{src: `"it's"`, wantValue: []string{`'it''s'`}, noError: true},
 		{src: `-5 ^ 2`, wantValue: []string{`fado_power((-5.0), 2.0)`}, wantError: []string{"IS NULL OR abs("}},
 	}
@@ -117,7 +118,9 @@ func TestValueFromDriverAndBack(t *testing.T) {
 		{2.5, KindNumber, Number(2.5)},
 		{int64(1), KindBool, Bool(true)},
 		{0.0, KindBool, Bool(false)},
-		{1706659200.0, KindDate, Date(1706659200)},
+		{19753.0, KindDate, Date(19753)},
+		{1706659200.0, KindDateTime, DateTime(1706659200)},
+		{int64(1230), KindDecimal, Decimal(1230, 0)},
 		{"x", KindText, Text("x")},
 		{[]byte("y"), KindText, Text("y")},
 		{"{}", KindJSON, JSON("{}")},
@@ -129,7 +132,7 @@ func TestValueFromDriverAndBack(t *testing.T) {
 			t.Errorf("ValueFromDriver(%v, %s) = %s, want %s", c.in, c.kind, got, c.want)
 		}
 	}
-	for _, v := range []Value{Blank(), Number(2.5), Bool(true), Date(5), Text("a")} {
+	for _, v := range []Value{Blank(), Number(2.5), Bool(true), Date(5), DateTime(86401), Text("a")} {
 		back := ValueFromDriver(v.DriverValue(), v.Kind())
 		if !Equal(back, v) {
 			t.Errorf("round trip of %s gave %s", v, back)
@@ -148,8 +151,8 @@ func TestGenerateSQL_DuckDBShapes(t *testing.T) {
 	}{
 		{src: "qty * 2.5", wantValue: []string{`(COALESCE(CAST("qty" AS DOUBLE), 0.0::DOUBLE) * CAST(2.5 AS DOUBLE))`}, wantError: []string{"NOT isfinite("}},
 		{src: "IF(paid, TRUE, FALSE)", wantValue: []string{`CASE WHEN COALESCE(CAST("paid" AS BOOLEAN), FALSE) THEN TRUE ELSE FALSE END`}},
-		{src: "ROUND(qty)", wantValue: []string{`fado_round(COALESCE(CAST("qty" AS DOUBLE), 0.0::DOUBLE), CAST(0 AS DOUBLE))`}},
-		{src: "YEAR(due)", wantValue: []string{`CAST(year(fado_ts(CAST("due" AS DOUBLE))) AS DOUBLE)`}},
+		{src: "ROUND(qty)", wantValue: []string{`fado_round_m(COALESCE(CAST("qty" AS DOUBLE), 0.0::DOUBLE), CAST(0 AS DOUBLE), 'half_up')`}},
+		{src: "YEAR(due)", wantValue: []string{`CAST(year(fado_ts((CAST("due" AS DOUBLE) * CAST(86400 AS DOUBLE)))) AS DOUBLE)`}},
 		{src: "INGROUP(\"g\") AND USER() = \"a\"", wantValue: []string{`list_contains($groups, 'g')`, `CAST($user AS VARCHAR)`}, params: []string{"groups", "user"}},
 		{src: "VALUE(name)", wantValue: []string{`fado_value(COALESCE("name", ''))`}, wantError: []string{`fado_value_err(COALESCE("name", ''))`}},
 		{src: "SUM(qty, 1)", wantValue: []string{`(COALESCE(CAST("qty" AS DOUBLE), 0.0::DOUBLE) + CAST(1 AS DOUBLE))`}},

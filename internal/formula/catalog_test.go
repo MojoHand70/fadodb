@@ -51,7 +51,7 @@ func TestCatalog_Arity(t *testing.T) {
 		name     string
 		min, max int
 	}{
-		{"IF", 3, 3}, {"ROUND", 1, 2}, {"MIN", 1, -1}, {"NOW", 0, 0},
+		{"IF", 3, 3}, {"ROUND", 1, 3}, {"MIN", 1, -1}, {"NOW", 0, 0},
 		{"MID", 2, 3}, {"QUERY", 2, 6}, {"LOOKUP", 3, 3}, {"AND", 1, -1},
 	}
 	for _, c := range cases {
@@ -73,7 +73,7 @@ func TestCatalog_ArityMessagesNameTheFunctionAsSpelled(t *testing.T) {
 	}{
 		{"find", 1, "FIND takes 2 arguments, got 1"},
 		{"FINDFIRST", 1, "FINDFIRST takes 2 arguments, got 1"},
-		{"round", 3, "ROUND takes 1 to 2 arguments, got 3"},
+		{"round", 4, "ROUND takes 1 to 3 arguments, got 4"},
 		{"MIN", 0, "MIN takes at least 1 argument, got 0"},
 		{"NOW", 1, "NOW takes no arguments, got 1"},
 		{"TRIM", 0, "TRIM takes 1 argument, got 0"},
@@ -91,7 +91,7 @@ func TestCatalog_ArityMessagesNameTheFunctionAsSpelled(t *testing.T) {
 
 func TestCatalog_Signatures(t *testing.T) {
 	for name, want := range map[string]string{
-		"ROUND": "ROUND(number[, digits])",
+		"ROUND": "ROUND(number[, digits[, method]])",
 		"MIN":   "MIN(value[, value, ...])",
 		"NOW":   "NOW()",
 		"MID":   "MID(text, position[, length])",

@@ -96,7 +96,7 @@ func TestRegister_IsIdempotent(t *testing.T) {
 	}
 	db := openDB(t)
 	var got float64
-	if err := db.QueryRow("SELECT fado_round(2.675, 2)").Scan(&got); err != nil {
+	if err := db.QueryRow("SELECT fado_round(2.675, 2, 'half_up')").Scan(&got); err != nil {
 		t.Fatal(err)
 	}
 	if got != 2.68 {

@@ -138,7 +138,7 @@ func (p *parser) unary() (Node, error) {
 		if err != nil {
 			return nil, err
 		}
-		return &Unary{Op: TokMinus, X: x, P: t.Pos}, nil
+		return &Unary{Op: TokMinus, X: x, P: t.Pos, Const: constNode(x)}, nil
 	}
 	return p.postfix()
 }
@@ -154,7 +154,7 @@ func (p *parser) postfix() (Node, error) {
 		if !ok {
 			return x, nil
 		}
-		x = &Unary{Op: TokPercent, X: x, P: t.Pos}
+		x = &Unary{Op: TokPercent, X: x, P: t.Pos, Const: constNode(x)}
 	}
 }
 
@@ -180,7 +180,8 @@ func (p *parser) leftAssoc(operand func() (Node, error), ops ...TokenKind) (Node
 		if err != nil {
 			return nil, err
 		}
-		l = &Binary{Op: t.Kind, L: l, R: r, P: t.Pos}
+		l = &Binary{Op: t.Kind, L: l, R: r, P: t.Pos,
+			Const: (t.Kind == TokPlus || t.Kind == TokMinus || t.Kind == TokStar) && constNode(l) && constNode(r)}
 	}
 }
 
@@ -191,7 +192,7 @@ func (p *parser) primary() (Node, error) {
 	t := p.next()
 	switch t.Kind {
 	case TokNumber:
-		return &NumberLit{Value: t.Num, P: t.Pos}, nil
+		return &NumberLit{Value: t.Num, P: int32(t.Pos), Len: int32(len(t.Text))}, nil
 	case TokText:
 		return &TextLit{Value: t.Text, P: t.Pos}, nil
 	case TokTrue:

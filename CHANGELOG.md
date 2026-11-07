@@ -6,6 +6,51 @@ All notable changes to FadoDB are recorded here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- Exact numbers (ADR-0022): the types `decimal(s)`, `int` and `money(s)`,
+  an int64 mantissa at a scale of up to 18 places, with exact `+`, `-` and
+  `*`, division at the dividend's scale plus four, the error `overflow`
+  where a result does not fit, currencies that must agree or raise
+  `currency_mismatch`, and a number constant read exactly when it meets an
+  exact operand. New functions `DECIMAL`, `NUMBER`, `MONEY`, `MONEYVALUE`,
+  `DECIMALVALUE`, `AMOUNT` and `CURRENCY`; `ROUND` takes a method,
+  `half_up`, `half_even`, `down`, `up`, `floor` or `ceiling`; `MIN`, `MAX`,
+  `SUM`, `AVERAGE`, `MOD`, `ABS`, `SIGN`, `FLOOR`, `CEILING` and `TRUNC`
+  run on either family. A money variable is two columns in SQL, the
+  mantissa and the currency.
+- A `date` is a calendar day, days since 1970-01-01, and `datetime` is the
+  instant the old `date` was (ADR-0023). `DATEVALUE` reads days only; new
+  `DATETIMEVALUE`, `DATEOF` and `DATETIME`; the date functions take either
+  kind and the two never compare without a conversion; `TEXT` of a
+  datetime always shows the clock. Enum values for text variables are
+  recorded for Phase 2.
+- `IFERROR(value, fallback)` catches an evaluation error in the value
+  (ADR-0024), on the VM through a handler and in SQL through the error
+  expression.
+- `fadodb formula eval` declares the new types and reads money as
+  `"12.30 PLN"`.
+- The conformance suites `decimal`, `money`, `datetime`, `iferror` and the
+  binding suite `exact`; the property generator produces exact, money,
+  date and datetime formulas, and found nine divergences between the VM
+  and the SQL dialects before they shipped.
+- ADR-0025 to ADR-0029 record, as proposed, what the first embedder needs
+  from Phases 2 to 7: preview and validate without writing, idempotency
+  keys on commands and a business date on events with a published
+  transition event, the principal from the embedder and registered action
+  executors, field-level rights per state, and the browser VM as one plain
+  JavaScript file.
+
+### Changed
+
+- Division by zero is the error `div_by_zero` for `/` as it was for `\`,
+  which is now the same operator (ADR-0024). A formula that relied on the
+  silent zero guards the divisor with `IF` or `IFERROR`.
+- Bytecode format v2: an exact constant pool and the opcodes `const.dec`,
+  `dec.neg`, `dec.percent`, `dec.add`, `dec.sub`, `dec.mul`, `dec.div`,
+  `dec.scale`, `try` and `end.try`. A constant expression of literals folds
+  at definition time.
+
 ### Fixed
 
 - `fadodb version` built with `go install .../cmd/fadodb@v0.1.0` reports

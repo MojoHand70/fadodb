@@ -49,8 +49,8 @@ func tooLong() *EvalError { return outOfRange("the result is too long") }
 func start0(pos float64, r []rune) int { return int(math.Min(pos, float64(len(r)+1))) - 1 }
 
 // textBytes bounds the rendering of a scalar in bytes without rendering
-// it: the text itself, or the 24 bytes a number, a bool or a date never
-// exceeds.
+// it: the text itself, or the 32 bytes a number, a bool, a date, a
+// datetime, an exact number or a money never exceeds.
 func textBytes(v Value) int {
 	switch v.kind {
 	case KindText, KindRef, KindJSON:
@@ -58,7 +58,7 @@ func textBytes(v Value) int {
 	case KindNull:
 		return 0
 	}
-	return 24
+	return 32
 }
 
 // runeLen is the length in code points of a scalar rendered as text.

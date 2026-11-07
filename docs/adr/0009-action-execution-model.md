@@ -1,6 +1,6 @@
 # ADR-0009: Action execution model: synchronous versus outbox
 
-- Status: Accepted
+- Status: Accepted; amended by ADR-0027 (executors the embedder registers)
 - Date: 2026-11-05
 
 ## Context

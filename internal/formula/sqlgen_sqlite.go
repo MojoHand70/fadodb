@@ -10,17 +10,21 @@ import (
 )
 
 // The SQLite dialect. Numbers are REAL throughout, so integer division
-// never happens; dates are REAL seconds; booleans are INTEGER 0 and 1;
-// blank is NULL. Where SQLite's own function differs from the rule, the
-// dialect calls the engine's Go implementation registered as fado_<name>
-// (ADR-0019), with fado_<name>_err returning the error code: SQLite rounds
-// 0.49999999999999994 up, ignores negative digit counts, upper-cases ASCII
-// only, keeps inner spaces in trim, takes the dividend's sign in mod, does
-// not clamp month arithmetic, normalises February 30 and never fails a
-// cast; its pow, ln and log are the platform's, which differ from the VM
-// in the last bit between Linux, macOS and Windows; and its printf rounds
-// the fifteenth significant digit its own way. The sqlitefn package does
-// the registration.
+// never happens on them; a date is REAL days and a datetime REAL seconds;
+// booleans are INTEGER 0 and 1; blank is NULL. An exact value is its
+// INTEGER mantissa, and an integer operation that overflows turns REAL in
+// SQLite, which typeof detects (ADR-0022). Where SQLite's own function
+// differs from the rule, the dialect calls the engine's Go implementation
+// registered as fado_<name> (ADR-0019), with fado_<name>_err returning the
+// error code: SQLite rounds 0.49999999999999994 up, ignores negative digit
+// counts, upper-cases ASCII only, keeps inner spaces in trim, takes the
+// dividend's sign in mod, does not clamp month arithmetic, normalises
+// February 30 and never fails a cast; its pow, ln and log are the
+// platform's, which differ from the VM in the last bit between Linux,
+// macOS and Windows; and its printf rounds the fifteenth significant digit
+// its own way. Exact division, rounding, parsing and rendering are
+// registered too, so that the mantissas agree with the VM by construction.
+// The sqlitefn package does the registration.
 
 // SQLite is the dialect for SQLite through modernc.org/sqlite.
 type SQLite struct {
@@ -30,8 +34,9 @@ type SQLite struct {
 
 // NewSQLite makes the SQLite dialect under the default limits.
 func NewSQLite() SQLite {
-	return SQLite{coercions: coercions{zeroNumber: "0.0", zeroBool: "0", zeroText: "''",
-		castNumber: func(x string) string { return "CAST(" + x + " AS REAL)" }}, lim: DefaultLimits()}
+	return SQLite{coercions: coercions{zeroNumber: "0.0", zeroBool: "0", zeroText: "''", zeroMant: "0",
+		castNumber: func(x string) string { return "CAST(" + x + " AS REAL)" },
+		castMant:   func(x string) string { return "CAST(" + x + " AS INTEGER)" }}, lim: DefaultLimits()}
 }
 
 // Limits implements Dialect.
@@ -56,6 +61,15 @@ func (SQLite) False() string { return "0" }
 // infinities, so both are checked.
 func (SQLite) NotFinite(val string) string {
 	return "(" + val + " IS NULL OR abs(" + val + ") > " + maxFloat + ")"
+}
+
+// Narrow implements Dialect: an integer result is already 64-bit.
+func (SQLite) Narrow(val string) string { return val }
+
+// OverflowErr implements Dialect: an integer operation that overflows
+// turns REAL in SQLite; a NULL is a blank, not an overflow.
+func (SQLite) OverflowErr(val string) string {
+	return "CASE WHEN typeof(" + val + ") = 'real' THEN 'overflow' END"
 }
 
 // Pow implements Dialect: the engine's own power function, not SQLite's.
@@ -113,6 +127,14 @@ func numberLiteral(f float64) string {
 	return s
 }
 
+// IntLit implements Dialect.
+func (SQLite) IntLit(m int64) string {
+	if m < 0 {
+		return "(" + strconv.FormatInt(m, 10) + ")"
+	}
+	return strconv.FormatInt(m, 10)
+}
+
 // TextLit implements Dialect.
 func (SQLite) TextLit(s string) string { return textLiteral(s) }
 
@@ -121,13 +143,15 @@ func textLiteral(s string) string { return "'" + strings.ReplaceAll(s, "'", "''"
 // Load implements Dialect.
 func (SQLite) Load(column string, k Kind) string {
 	switch k {
-	case KindNumber, KindDate:
+	case KindNumber, KindDate, KindDateTime:
 		return "CAST(" + column + " AS REAL)"
+	case KindDecimal, KindMoney:
+		return "CAST(" + column + " AS INTEGER)"
 	}
 	return column
 }
 
-// Render implements Dialect: the TEXT rule of ADR-0019.
+// Render implements Dialect: the TEXT rule of ADR-0019 and ADR-0022.
 func (d SQLite) Render(e SQLExpr) string {
 	switch e.Kind {
 	case KindNull:
@@ -138,16 +162,22 @@ func (d SQLite) Render(e SQLExpr) string {
 		return "fado_text(" + e.Val + ")"
 	case KindBool:
 		return "(CASE WHEN " + e.Val + " IS NULL THEN '' WHEN " + e.Val + " THEN 'TRUE' ELSE 'FALSE' END)"
+	case KindDecimal:
+		return "COALESCE(fado_dec_text(" + e.Val + ", " + strconv.Itoa(int(e.Scale)) + "), '')"
+	case KindMoney:
+		return "(CASE WHEN " + curOrNull(e) + " IS NULL THEN '' ELSE fado_dec_text(" + e.Val + ", " + strconv.Itoa(int(e.Scale)) + ") || ' ' || " + e.Cur + " END)"
 	case KindDate:
-		return "(CASE WHEN " + e.Val + " IS NULL THEN '' WHEN " + e.Val + " % 86400 = 0 THEN strftime('%Y-%m-%d', " + e.Val +
-			", 'unixepoch') ELSE strftime('%Y-%m-%d %H:%M:%S', " + e.Val + ", 'unixepoch') END)"
+		return "(CASE WHEN " + e.Val + " IS NULL THEN '' ELSE strftime('%Y-%m-%d', " + e.Val + " * 86400.0, 'unixepoch') END)"
+	case KindDateTime:
+		return "(CASE WHEN " + e.Val + " IS NULL THEN '' ELSE strftime('%Y-%m-%d %H:%M:%S', " + e.Val + ", 'unixepoch') END)"
 	}
 	return d.Text(e)
 }
 
 // SQLiteFunctions lists the engine functions the SQLite dialect expects to
-// be registered, as fado_<name> and fado_<name>_err. The sqlitefn package
-// registers them from this list.
+// be registered, as fado_<name> and fado_<name>_err: the builtins named in
+// sqliteRegistered under their own arguments, then the exact-arithmetic
+// helpers. The sqlitefn package registers them from this list.
 func SQLiteFunctions() []RegisteredFunc {
 	var out []RegisteredFunc
 	for _, name := range sqliteRegistered {
@@ -164,7 +194,7 @@ func SQLiteFunctions() []RegisteredFunc {
 		}
 		out = append(out, rf)
 	}
-	return out
+	return append(out, sqliteExact...)
 }
 
 // sqliteRegistered names the builtins the SQLite dialect calls through
@@ -173,7 +203,7 @@ var sqliteRegistered = []string{
 	"ROUND", "FLOOR", "CEILING", "TRUNC", "MIN", "MAX", "SUM", "AVERAGE", "COUNT", "POWER", "LN", "LOG",
 	"DATE", "DATEVALUE", "ADDMONTHS", "ADDYEARS",
 	"TRIM", "UPPER", "LOWER", "PROPER", "REPLACE", "SUBSTITUTE", "REPEAT", "FINDLAST", "PAD", "REGEXREPLACE",
-	"TEXT", "VALUE", "JSONVALUE",
+	"TEXT", "VALUE", "JSONVALUE", "DATETIMEVALUE",
 }
 
 // limitedFunctions names the builtins whose result can be longer than
@@ -192,7 +222,8 @@ type RegisteredFunc struct {
 	// NArgs is the argument count, the limit included when Limited, or -1
 	// for variadic.
 	NArgs int
-	// Kinds gives the kind expected at each position; the last repeats.
+	// Kinds gives the kind expected at each position; the last repeats. A
+	// KindDecimal position receives a raw mantissa, scale 0.
 	Kinds []Kind
 	// Fn is the implementation, the VM's own.
 	Fn func(vm *VM, args []Value) (Value, *EvalError)
@@ -214,12 +245,16 @@ func (f RegisteredFunc) Kind(i int) Kind {
 
 func argKindKind(a argKind) Kind {
 	switch a {
-	case akNumber:
+	case akNumber, akNumeric:
 		return KindNumber
+	case akExact, akMoney:
+		return KindDecimal
 	case akText:
 		return KindText
 	case akDate:
 		return KindDate
+	case akDateTime, akDateLike:
+		return KindDateTime
 	case akCondition:
 		return KindBool
 	case akJSON:
@@ -228,9 +263,129 @@ func argKindKind(a argKind) Kind {
 	return KindNull
 }
 
+// sqliteExact are the exact-arithmetic helpers (ADR-0022), on raw
+// mantissas: the same Go steps the VM takes, so that SQLite agrees with it
+// by construction.
+var sqliteExact = []RegisteredFunc{
+	// fado_dec_div(x, y, k): round(x * 10^k / y) half away from zero.
+	{Name: "fado_dec_div", NArgs: 3, Kinds: []Kind{KindDecimal, KindDecimal, KindNumber},
+		Fn: func(_ *VM, args []Value) (Value, *EvalError) {
+			k := int(args[2].num)
+			if args[1].Mant() == 0 {
+				return Value{}, &EvalError{Code: ErrDivByZero, Msg: "/ by zero"}
+			}
+			x, ok := scaleBy(args[0].Mant(), k)
+			if !ok {
+				return Value{}, overflow()
+			}
+			q, ok := divRound(x, args[1].Mant())
+			if !ok {
+				return Value{}, overflow()
+			}
+			return Decimal(q, 0), nil
+		}},
+	// fado_dec_round(m, s, places, method): the mantissa at scale max(places, 0).
+	{Name: "fado_dec_round", NArgs: 4, Kinds: []Kind{KindDecimal, KindNumber, KindNumber, KindText},
+		Fn: func(_ *VM, args []Value) (Value, *EvalError) {
+			if args[0].kind == KindNull {
+				return Blank(), nil
+			}
+			m, _, ok := roundMant(args[0].Mant(), int(args[1].num), int(args[2].num), methodOf(args, 3))
+			if !ok {
+				return Value{}, overflow()
+			}
+			return Decimal(m, 0), nil
+		}},
+	// fado_dec_text(m, s): the TEXT rendering.
+	{Name: "fado_dec_text", NArgs: 2, Kinds: []Kind{KindDecimal, KindNumber},
+		Fn: func(_ *VM, args []Value) (Value, *EvalError) {
+			if args[0].kind == KindNull {
+				return Blank(), nil
+			}
+			return Text(formatDecimal(args[0].Mant(), int(args[1].num))), nil
+		}},
+	// fado_dec_parse(t, places): DECIMALVALUE.
+	{Name: "fado_dec_parse", NArgs: 2, Kinds: []Kind{KindText, KindNumber},
+		Fn: func(vm *VM, args []Value) (Value, *EvalError) {
+			v, err := fnDecimalValue(vm, args)
+			if err != nil || v.kind == KindNull {
+				return v, err
+			}
+			return Decimal(v.Mant(), 0), nil
+		}},
+	// fado_money_amount(t, places) and fado_money_cur(t): MONEYVALUE.
+	{Name: "fado_money_amount", NArgs: 2, Kinds: []Kind{KindText, KindNumber},
+		Fn: func(vm *VM, args []Value) (Value, *EvalError) {
+			v, err := fnMoneyValue(vm, args)
+			if err != nil || v.kind == KindNull {
+				return v, err
+			}
+			return Decimal(v.Mant(), 0), nil
+		}},
+	{Name: "fado_money_cur", NArgs: 1, Kinds: []Kind{KindText},
+		Fn: func(_ *VM, args []Value) (Value, *EvalError) {
+			s := strings.TrimSpace(args[0].str)
+			if s == "" {
+				return Blank(), nil
+			}
+			_, _, cur, err := parseMoney(s)
+			if err != nil {
+				return Blank(), nil
+			}
+			return Text(cur), nil
+		}},
+	// fado_currency(t): a currency code or NULL, bad_text otherwise.
+	{Name: "fado_currency", NArgs: 1, Kinds: []Kind{KindText},
+		Fn: func(_ *VM, args []Value) (Value, *EvalError) {
+			cur, ok := parseCurrency(args[0].str)
+			if !ok {
+				return Value{}, badCurrency(args[0].str)
+			}
+			return Text(cur), nil
+		}},
+	// fado_dec_from(x, places, method): DECIMAL of a number.
+	{Name: "fado_dec_from", NArgs: 3, Kinds: []Kind{KindNumber, KindNumber, KindText},
+		Fn: func(_ *VM, args []Value) (Value, *EvalError) {
+			if args[0].kind == KindNull {
+				return Blank(), nil
+			}
+			m, err := decFromFloat(args[0].num, int(args[1].num), methodOf(args, 2))
+			if err != nil {
+				return Value{}, err
+			}
+			return Decimal(m, 0), nil
+		}},
+	// fado_dec_mod(a, b) on aligned mantissas.
+	{Name: "fado_dec_mod", NArgs: 2, Kinds: []Kind{KindDecimal, KindDecimal},
+		Fn: func(_ *VM, args []Value) (Value, *EvalError) {
+			r, err := decMod(args[0].Mant(), args[1].Mant())
+			if err != nil {
+				return Value{}, err
+			}
+			return Decimal(r, 0), nil
+		}},
+	// fado_dec_min and fado_dec_max over aligned mantissas, blanks skipped;
+	// the mantissas are at one scale already, which the VM's functions
+	// take as their trailing scale argument.
+	{Name: "fado_dec_min", NArgs: -1, Kinds: []Kind{KindDecimal}, Fn: aligned(fnMin)},
+	{Name: "fado_dec_max", NArgs: -1, Kinds: []Kind{KindDecimal}, Fn: aligned(fnMax)},
+}
+
+// aligned adapts a family function to mantissas already at one scale: it
+// appends the scale 0 the function reads as its trailing argument.
+func aligned(fn func(*VM, []Value) (Value, *EvalError)) func(*VM, []Value) (Value, *EvalError) {
+	return func(vm *VM, args []Value) (Value, *EvalError) {
+		all := make([]Value, 0, len(args)+1)
+		all = append(all, args...)
+		return fn(vm, append(all, Decimal(0, 0)))
+	}
+}
+
 // ValueFromDriver converts a value as a database driver delivers it (nil,
 // int64, float64, string or []byte) to a Value of the expected kind.
 // KindNull means "whatever it is": numbers become numbers and text text.
+// KindDecimal reads a raw mantissa at scale 0; ValueOfType reads a typed
+// value with its scale and currency.
 func ValueFromDriver(v any, k Kind) Value {
 	if v == nil {
 		return Blank()
@@ -246,7 +401,21 @@ func ValueFromDriver(v any, k Kind) Value {
 		}
 	}
 	switch k {
-	case KindNumber, KindDate, KindBool, KindNull:
+	case KindDecimal, KindMoney:
+		switch x := v.(type) {
+		case int64:
+			return Decimal(x, 0)
+		case float64:
+			return Decimal(int64(x), 0)
+		case string:
+			m, err := strconv.ParseInt(strings.TrimSpace(x), 10, 64)
+			if err != nil {
+				return Blank()
+			}
+			return Decimal(m, 0)
+		}
+		return Blank()
+	case KindNumber, KindDate, KindDateTime, KindBool, KindNull:
 		var f float64
 		switch x := v.(type) {
 		case int64:
@@ -268,6 +437,8 @@ func ValueFromDriver(v any, k Kind) Value {
 		switch k {
 		case KindDate:
 			return Date(int64(f))
+		case KindDateTime:
+			return DateTime(int64(f))
 		case KindBool:
 			return Bool(f != 0)
 		}
@@ -295,16 +466,42 @@ func ValueFromDriver(v any, k Kind) Value {
 	return Blank()
 }
 
+// ValueOfType converts a driver value to a Value of a static type: an
+// exact value gets the type's scale, a money value its currency from cur,
+// and is blank when the currency is.
+func ValueOfType(v any, t Type, cur any) Value {
+	switch t.Kind {
+	case KindDecimal:
+		m := ValueFromDriver(v, KindDecimal)
+		if m.kind == KindNull {
+			return Blank()
+		}
+		return Decimal(m.Mant(), int(t.Scale))
+	case KindMoney:
+		m := ValueFromDriver(v, KindDecimal)
+		c := ValueFromDriver(cur, KindText)
+		if m.kind == KindNull || c.kind == KindNull {
+			return Blank()
+		}
+		return Money(m.Mant(), int(t.Scale), c.str)
+	}
+	return ValueFromDriver(v, t.Kind)
+}
+
 // DriverValue converts a Value to what a database driver takes: nil,
-// float64, int64 or string. Dates are REAL seconds, booleans 0 and 1.
+// float64, int64 or string. A date is REAL days, a datetime REAL seconds,
+// a bool 0 or 1, an exact value its mantissa; a money's currency is
+// bound apart, from Currency.
 func (v Value) DriverValue() any {
 	switch v.kind {
 	case KindNull:
 		return nil
 	case KindBool:
 		return int64(v.num)
-	case KindNumber, KindDate:
+	case KindNumber, KindDate, KindDateTime:
 		return v.num
+	case KindDecimal, KindMoney:
+		return v.Mant()
 	}
 	return v.str
 }
@@ -314,6 +511,14 @@ func (v Value) DriverValue() any {
 // argument is still seen and the cast cannot overflow.
 func intArg(x string) string {
 	return "CAST(min(max(trunc(" + x + "), -1), " + maxCount + " + 1) AS INTEGER)"
+}
+
+// secsOf spells a date or datetime expression in seconds.
+func secsOf(e SQLExpr) string {
+	if e.Kind == KindDate {
+		return "(" + e.Val + " * 86400.0)"
+	}
+	return e.Val
 }
 
 // Call implements Dialect.
@@ -343,17 +548,51 @@ func (d SQLite) Call(name string, args []SQLExpr, params *Params) (SQLExpr, erro
 		}
 		return e.Val
 	}
+	rawMant := d.RawMant
+	exact := len(args) > 0 && args[0].Kind.IsExact()
+	for _, a := range args {
+		exact = exact || a.Kind.IsExact()
+	}
+	year := func(v string) string { return "CAST(strftime('%Y', " + v + ", 'unixepoch') AS REAL)" }
+	month := func(v string) string { return "CAST(strftime('%m', " + v + ", 'unixepoch') AS REAL)" }
 	switch name {
 	case "ROUND", "FLOOR", "CEILING", "TRUNC":
-		e := reg(KindNumber, false, d.Num(args[0]), numOr(1, "0.0"))
+		if args[0].Kind.IsExact() {
+			method := d.TextLit(map[string]string{"ROUND": "half_up", "FLOOR": "floor", "CEILING": "ceiling", "TRUNC": "down"}[name])
+			if name == "ROUND" {
+				method = methodConst(d, args, 2)
+			}
+			places := placesConst(args, 1)
+			list := d.Mant(args[0]) + ", " + strconv.Itoa(int(args[0].Scale)) + ", " + strconv.Itoa(places) + ", " + method
+			return SQLExpr{Val: "fado_dec_round(" + list + ")", Err: "fado_dec_round_err(" + list + ")", Kind: args[0].Kind, Scale: int8(max(places, 0)), Cur: args[0].Cur, Sure: args[0].Sure}, nil
+		}
+		list := []string{d.Num(args[0]), numOr(1, "0.0")}
+		if name == "ROUND" {
+			list = append(list, methodConst(d, args, 2))
+		}
+		e := reg(KindNumber, false, list...)
 		e.Sure = true
 		return e, nil
 	case "ABS":
+		if exact {
+			m := d.Mant(args[0])
+			return SQLExpr{Val: "(CASE WHEN " + m + " = -9223372036854775808 THEN NULL ELSE abs(" + m + ") END)",
+				Err: "CASE WHEN " + m + " = -9223372036854775808 THEN 'overflow' END", Kind: args[0].Kind, Scale: args[0].Scale, Cur: args[0].Cur}, nil
+		}
 		return SQLExpr{Val: "abs(" + d.Num(args[0]) + ")", Kind: KindNumber, Sure: true}, nil
 	case "SIGN":
+		if exact {
+			x := d.Mant(args[0])
+			return SQLExpr{Val: "(CASE WHEN " + x + " > 0 THEN 1 WHEN " + x + " < 0 THEN -1 ELSE 0 END)", Kind: KindDecimal, Sure: true}, nil
+		}
 		x := d.Num(args[0])
 		return SQLExpr{Val: "(CASE WHEN " + x + " > 0 THEN 1.0 WHEN " + x + " < 0 THEN -1.0 ELSE 0.0 END)", Kind: KindNumber, Sure: true}, nil
-	case "MIN", "MAX", "SUM", "AVERAGE", "COUNT":
+	case "MIN", "MAX", "SUM", "AVERAGE":
+		if exact {
+			return d.exactAggregate(name, args[:len(args)-1]), nil
+		}
+		fallthrough
+	case "COUNT":
 		list := make([]string, len(args))
 		for i, a := range args {
 			if name == "COUNT" {
@@ -378,24 +617,74 @@ func (d SQLite) Call(name string, args []SQLExpr, params *Params) (SQLExpr, erro
 	case "LOG":
 		return reg(KindNumber, true, d.Num(args[0]), numOr(1, "10.0")), nil
 	case "MOD":
+		if exact {
+			mants, scale, kind, cur, errs := exactArgs(d, args[:len(args)-1])
+			list := mants[0] + ", " + mants[1]
+			e := SQLExpr{Val: "fado_dec_mod(" + list + ")", Err: coalesceErr(append(errs, "fado_dec_mod_err("+list+")")...), Kind: kind, Scale: int8(scale), Cur: cur}
+			return e, nil
+		}
 		a, b := d.Num(args[0]), d.Num(args[1])
 		val := "(" + a + " - " + b + " * floor(" + a + " / " + b + "))"
 		return SQLExpr{Val: val, Err: coalesceErr("CASE WHEN "+b+" = 0 THEN 'div_by_zero' END", notFiniteErr(d, val)), Kind: KindNumber}, nil
+	case "DECIMAL":
+		places := placesConst(args, 1)
+		method := methodConst(d, args, 2)
+		x := args[0]
+		if x.Kind.IsExact() {
+			list := rawMant(x) + ", " + strconv.Itoa(int(x.Scale)) + ", " + strconv.Itoa(places) + ", " + method
+			return SQLExpr{Val: "fado_dec_round(" + list + ")", Err: "fado_dec_round_err(" + list + ")", Kind: KindDecimal, Scale: int8(places), Sure: x.Sure}, nil
+		}
+		list := rawNum(x) + ", " + strconv.Itoa(places) + ", " + method
+		return SQLExpr{Val: "fado_dec_from(" + list + ")", Err: "fado_dec_from_err(" + list + ")", Kind: KindDecimal, Scale: int8(places)}, nil
+	case "NUMBER":
+		x := args[0]
+		if x.Kind.IsExact() {
+			return SQLExpr{Val: "(CAST(" + x.Val + " AS REAL) / " + d.NumberLit(pow10(int(x.Scale))) + ")", Kind: KindNumber, Sure: x.Sure}, nil
+		}
+		return SQLExpr{Val: rawNum(x), Kind: KindNumber, Sure: x.Sure}, nil
+	case "MONEY":
+		amount, cur := args[0], d.Text(args[1])
+		m := rawMant(amount)
+		return SQLExpr{Val: m, Err: "CASE WHEN " + m + " IS NOT NULL THEN fado_currency_err(" + cur + ") END",
+			Cur: "(CASE WHEN " + m + " IS NULL THEN NULL ELSE fado_currency(" + cur + ") END)", Kind: KindMoney, Scale: amount.Scale}, nil
+	case "MONEYVALUE":
+		t, places := d.Text(args[0]), strconv.Itoa(placesConst(args, 1))
+		return SQLExpr{Val: "fado_money_amount(" + t + ", " + places + ")", Err: "fado_money_amount_err(" + t + ", " + places + ")",
+			Cur: "fado_money_cur(" + t + ")", Kind: KindMoney, Scale: int8(placesConst(args, 1))}, nil
+	case "DECIMALVALUE":
+		t, places := d.Text(args[0]), strconv.Itoa(placesConst(args, 1))
+		return SQLExpr{Val: "fado_dec_parse(" + t + ", " + places + ")", Err: "fado_dec_parse_err(" + t + ", " + places + ")", Kind: KindDecimal, Scale: int8(placesConst(args, 1))}, nil
+	case "AMOUNT":
+		return SQLExpr{Val: rawMant(args[0]), Kind: KindDecimal, Scale: args[0].Scale, Sure: args[0].Sure && args[0].Kind != KindNull}, nil
+	case "CURRENCY":
+		return SQLExpr{Val: curOrNull(args[0]), Kind: KindText}, nil
 	case "DATE":
 		return reg(KindDate, true, d.Num(args[0]), d.Num(args[1]), d.Num(args[2])), nil
 	case "DATEVALUE":
 		return reg(KindDate, true, d.Text(args[0])), nil
+	case "DATETIMEVALUE":
+		return reg(KindDateTime, true, d.Text(args[0])), nil
+	case "DATEOF":
+		if args[0].Kind == KindNull {
+			return SQLExpr{Val: "NULL", Kind: KindDate}, nil
+		}
+		return SQLExpr{Val: "floor(" + args[0].Val + " / 86400.0)", Kind: KindDate, Sure: args[0].Sure}, nil
+	case "DATETIME":
+		if args[0].Kind == KindNull {
+			return SQLExpr{Val: "NULL", Kind: KindDateTime}, nil
+		}
+		return SQLExpr{Val: "(" + args[0].Val + " * 86400.0)", Kind: KindDateTime, Sure: args[0].Sure}, nil
 	case "YEAR", "MONTH", "DAY":
 		if args[0].Kind == KindNull {
 			return SQLExpr{Val: "NULL", Kind: KindNumber}, nil
 		}
 		part := map[string]string{"YEAR": "%Y", "MONTH": "%m", "DAY": "%d"}[name]
-		return SQLExpr{Val: "CAST(strftime('" + part + "', " + args[0].Val + ", 'unixepoch') AS REAL)", Kind: KindNumber}, nil
+		return SQLExpr{Val: "CAST(strftime('" + part + "', " + secsOf(args[0]) + ", 'unixepoch') AS REAL)", Kind: KindNumber}, nil
 	case "QUARTER":
 		if args[0].Kind == KindNull {
 			return SQLExpr{Val: "NULL", Kind: KindNumber}, nil
 		}
-		return SQLExpr{Val: "(floor((CAST(strftime('%m', " + args[0].Val + ", 'unixepoch') AS REAL) - 1) / 3) + 1)", Kind: KindNumber}, nil
+		return SQLExpr{Val: "(floor((CAST(strftime('%m', " + secsOf(args[0]) + ", 'unixepoch') AS REAL) - 1) / 3) + 1)", Kind: KindNumber}, nil
 	case "DAYS", "DAYSBETWEEN":
 		a, b := args[0], args[1]
 		if name == "DAYSBETWEEN" {
@@ -404,30 +693,45 @@ func (d SQLite) Call(name string, args []SQLExpr, params *Params) (SQLExpr, erro
 		if a.Kind == KindNull || b.Kind == KindNull {
 			return SQLExpr{Val: "NULL", Kind: KindNumber}, nil
 		}
+		if a.Kind == KindDate && b.Kind == KindDate {
+			return SQLExpr{Val: "(" + a.Val + " - " + b.Val + ")", Kind: KindNumber}, nil
+		}
 		return SQLExpr{Val: "(floor(" + a.Val + " / 86400.0) - floor(" + b.Val + " / 86400.0))", Kind: KindNumber}, nil
 	case "MONTHSBETWEEN", "YEARSBETWEEN":
 		if args[0].Kind == KindNull || args[1].Kind == KindNull {
 			return SQLExpr{Val: "NULL", Kind: KindNumber}, nil
 		}
-		year := func(v string) string { return "CAST(strftime('%Y', " + v + ", 'unixepoch') AS REAL)" }
-		month := func(v string) string { return "CAST(strftime('%m', " + v + ", 'unixepoch') AS REAL)" }
-		s, e := args[0].Val, args[1].Val
+		s, e := secsOf(args[0]), secsOf(args[1])
 		if name == "YEARSBETWEEN" {
 			return SQLExpr{Val: "(" + year(e) + " - " + year(s) + ")", Kind: KindNumber}, nil
 		}
 		return SQLExpr{Val: "((" + year(e) + " * 12 + " + month(e) + ") - (" + year(s) + " * 12 + " + month(s) + "))", Kind: KindNumber}, nil
 	case "ADDDAYS":
-		if args[0].Kind == KindNull {
-			return SQLExpr{Val: "NULL", Kind: KindDate}, nil
+		x := args[0]
+		if x.Kind == KindNull {
+			return SQLExpr{Val: "NULL", Kind: KindNull}, nil
 		}
-		val := "floor(" + args[0].Val + " + " + d.Num(args[1]) + " * 86400.0)"
-		return SQLExpr{Val: val, Err: "CASE WHEN " + val + " < " + strconv.Itoa(minDateSecs) + " OR " + val + " > " + strconv.Itoa(maxDateSecs) + " THEN 'out_of_range' END", Kind: KindDate}, nil
+		if x.Kind == KindDate {
+			val := "(" + x.Val + " + trunc(" + d.Num(args[1]) + "))"
+			return SQLExpr{Val: val, Err: "CASE WHEN " + val + " < " + strconv.Itoa(minDateDays) + " OR " + val + " > " + strconv.Itoa(maxDateDays) + " THEN 'out_of_range' END", Kind: KindDate}, nil
+		}
+		val := "floor(" + x.Val + " + " + d.Num(args[1]) + " * 86400.0)"
+		return SQLExpr{Val: val, Err: "CASE WHEN " + val + " < " + strconv.Itoa(minDateSecs) + " OR " + val + " > " + strconv.Itoa(maxDateSecs) + " THEN 'out_of_range' END", Kind: KindDateTime}, nil
 	case "ADDMONTHS", "ADDYEARS":
-		return reg(KindDate, true, raw(args[0]), d.Num(args[1])), nil
+		x := args[0]
+		if x.Kind == KindDate {
+			e := reg(KindDate, true, secsOf(x), d.Num(args[1]))
+			e.Val = "(" + e.Val + " / 86400.0)"
+			return e, nil
+		}
+		if x.Kind == KindNull {
+			return SQLExpr{Val: "NULL", Kind: KindNull}, nil
+		}
+		return reg(KindDateTime, true, raw(x), d.Num(args[1])), nil
 	case "NOW":
-		return SQLExpr{Val: "CAST(" + params.Use("now") + " AS REAL)", Kind: KindDate, Sure: true}, nil
+		return SQLExpr{Val: "CAST(" + params.Use("now") + " AS REAL)", Kind: KindDateTime, Sure: true}, nil
 	case "TODAY":
-		return SQLExpr{Val: "(floor(CAST(" + params.Use("now") + " AS REAL) / 86400.0) * 86400.0)", Kind: KindDate, Sure: true}, nil
+		return SQLExpr{Val: "floor(CAST(" + params.Use("now") + " AS REAL) / 86400.0)", Kind: KindDate, Sure: true}, nil
 	case "USER":
 		return SQLExpr{Val: params.Use("user"), Kind: KindText}, nil
 	case "INGROUP":
@@ -482,4 +786,50 @@ func (d SQLite) Call(name string, args []SQLExpr, params *Params) (SQLExpr, erro
 		return reg(KindText, true, raw(args[0]), d.Text(args[1])), nil
 	}
 	return SQLExpr{}, fmt.Errorf("no SQLite translation")
+}
+
+// exactAggregate spells MIN, MAX, SUM and AVERAGE over exact values: the
+// mantissas aligned to the largest scale, blanks skipped, and the
+// currencies checked.
+func (d SQLite) exactAggregate(name string, args []SQLExpr) SQLExpr {
+	mants, scale, kind, cur, errs := exactArgs(d, args)
+	e := SQLExpr{Kind: kind, Scale: int8(scale), Cur: cur}
+	switch name {
+	case "MIN", "MAX":
+		raws := make([]string, len(args))
+		for i, a := range args {
+			if a.Kind == KindNull {
+				raws[i] = "NULL"
+			} else {
+				var re string
+				raws[i], re = rescaled(d, d.RawMant(a), int(a.Scale), scale)
+				if re != "" {
+					errs = append(errs, re)
+				}
+			}
+		}
+		e.Val = "fado_dec_" + strings.ToLower(name) + "(" + strings.Join(raws, ", ") + ")"
+		errs = append(errs, "fado_dec_"+strings.ToLower(name)+"_err("+strings.Join(raws, ", ")+")")
+	case "SUM":
+		val := "(" + strings.Join(mants, " + ") + ")"
+		e.Val, e.Sure = val, true
+		errs = append(errs, d.OverflowErr(val))
+	default:
+		counts := make([]string, len(args))
+		for i, a := range args {
+			if a.Kind == KindNull {
+				counts[i] = "0"
+			} else {
+				counts[i] = "(CASE WHEN " + a.Val + " IS NULL THEN 0 ELSE 1 END)"
+			}
+		}
+		n := "(" + strings.Join(counts, " + ") + ")"
+		sum := "(" + strings.Join(mants, " + ") + ")"
+		list := sum + ", " + n + ", " + strconv.Itoa(divScale(scale)-scale)
+		e.Val = "(CASE WHEN " + n + " = 0 THEN NULL ELSE fado_dec_div(" + list + ") END)"
+		e.Scale = int8(divScale(scale))
+		errs = append(errs, d.OverflowErr(sum), "CASE WHEN "+n+" > 0 THEN fado_dec_div_err("+list+") END")
+	}
+	e.Err = coalesceErr(errs...)
+	return e
 }

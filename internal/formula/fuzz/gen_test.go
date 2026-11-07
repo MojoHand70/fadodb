@@ -11,7 +11,7 @@ import (
 // must therefore never produce; the keyword functions have no builtin.
 var notGenerated = map[string]bool{
 	"INDEX": true, "FILTER": true, "FIRST": true, "LAST": true, "CONTAINS": true, "JOIN": true,
-	"LOOKUP": true, "QUERY": true, "IF": true, "AND": true, "OR": true, "NOT": true,
+	"LOOKUP": true, "QUERY": true, "IF": true, "AND": true, "OR": true, "NOT": true, "IFERROR": true,
 }
 
 func TestGenerator_FormulasBindAndRun(t *testing.T) {
@@ -62,8 +62,8 @@ func TestGenerator_FormulasBindAndRun(t *testing.T) {
 	if len(missing) > 0 {
 		t.Errorf("functions never generated in %d formulas: %s", n, strings.Join(missing, ", "))
 	}
-	for _, k := range []formula.Kind{formula.KindNumber, formula.KindBool, formula.KindText, formula.KindDate} {
-		if kinds[k] < n/20 {
+	for _, k := range []formula.Kind{formula.KindNumber, formula.KindBool, formula.KindText, formula.KindDate, formula.KindDateTime, formula.KindDecimal, formula.KindMoney} {
+		if kinds[k] < n/25 {
 			t.Errorf("only %d of %d formulas have type %s", kinds[k], n, k)
 		}
 	}
@@ -89,11 +89,11 @@ func TestCaseJSON_LoadsAsSuite(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	c := f.CaseJSON(formula.Number(1), "", prog.Result.Kind)
+	c := f.CaseJSON(formula.Number(1), "", prog.Result)
 	if !strings.HasPrefix(c, `{"formula": `) || !strings.Contains(c, `"expected": 1}`) {
 		t.Errorf("case = %s", c)
 	}
-	e := f.CaseJSON(formula.Blank(), "div_by_zero", formula.KindDate)
+	e := f.CaseJSON(formula.Blank(), "div_by_zero", formula.Scalar(formula.KindDate))
 	if !strings.Contains(e, `"type": "date", "error": "div_by_zero"}`) {
 		t.Errorf("case = %s", e)
 	}

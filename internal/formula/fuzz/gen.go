@@ -10,8 +10,9 @@ import (
 )
 
 // Variables is the scope every generated formula reads: three numbers,
-// two texts, two bools, two dates and a json value. The names are short so
-// a report stays readable.
+// two texts, two bools, two dates, two datetimes, three exact numbers, two
+// money values and a json value. The names are short so a report stays
+// readable.
 var Variables = []formula.Variable{
 	{Name: "n1", Type: formula.Scalar(formula.KindNumber)},
 	{Name: "n2", Type: formula.Scalar(formula.KindNumber)},
@@ -22,6 +23,13 @@ var Variables = []formula.Variable{
 	{Name: "b2", Type: formula.Scalar(formula.KindBool)},
 	{Name: "d1", Type: formula.Scalar(formula.KindDate)},
 	{Name: "d2", Type: formula.Scalar(formula.KindDate)},
+	{Name: "s1", Type: formula.Scalar(formula.KindDateTime)},
+	{Name: "s2", Type: formula.Scalar(formula.KindDateTime)},
+	{Name: "x1", Type: formula.DecimalType(2)},
+	{Name: "x2", Type: formula.DecimalType(4)},
+	{Name: "i1", Type: formula.DecimalType(0)},
+	{Name: "m1", Type: formula.MoneyType(2)},
+	{Name: "m2", Type: formula.MoneyType(2)},
 	{Name: "j1", Type: formula.Scalar(formula.KindJSON)},
 }
 
@@ -51,11 +59,12 @@ type Formula struct {
 // last-bit noise between the targets, which the runner tolerates in a
 // number and in its rendering (Tolerance). It
 // cannot tolerate it once a discontinuous operation has amplified it: a
-// comparison, MOD, SIGN, rounding, a date part, a text position, a count.
-// So those operations ask for quiet arguments, and inside a quiet subtree
-// the generator never produces a noisy function. The conformance suite
-// covers the shapes this leaves out, such as ROUND of a power, with
-// values away from any rounding boundary.
+// comparison, MOD, SIGN, rounding, a date part, a text position, a count,
+// a conversion to an exact number. So those operations ask for quiet
+// arguments, and inside a quiet subtree the generator never produces a
+// noisy function. The conformance suite covers the shapes this leaves
+// out, such as ROUND of a power, with values away from any rounding
+// boundary. Exact arithmetic is never noisy.
 type Generator struct {
 	rng    *rand.Rand
 	seed   uint64
@@ -87,7 +96,7 @@ func (g *Generator) Formula() *Formula {
 	f.Src = g.sb.String()
 	f.Inputs = make([]formula.Value, len(Variables))
 	for i, v := range Variables {
-		f.Inputs[i] = g.value(v.Type.Kind)
+		f.Inputs[i] = g.value(v.Type)
 	}
 	f.Ctx = g.context()
 	return f
@@ -108,19 +117,25 @@ func (g *Generator) w(parts ...string) {
 
 func (g *Generator) resultKind() formula.Kind {
 	switch r := g.n(100); {
-	case r < 40:
+	case r < 28:
 		return formula.KindNumber
-	case r < 60:
+	case r < 42:
 		return formula.KindBool
-	case r < 85:
+	case r < 60:
 		return formula.KindText
+	case r < 68:
+		return formula.KindDate
+	case r < 76:
+		return formula.KindDateTime
+	case r < 90:
+		return formula.KindDecimal
 	}
-	return formula.KindDate
+	return formula.KindMoney
 }
 
 // anyKind picks a kind for an argument that accepts any scalar.
 func (g *Generator) anyKind() formula.Kind {
-	switch g.n(5) {
+	switch g.n(8) {
 	case 0:
 		return formula.KindBool
 	case 1:
@@ -129,12 +144,26 @@ func (g *Generator) anyKind() formula.Kind {
 		return formula.KindDate
 	case 3:
 		return formula.KindNull
+	case 4:
+		return formula.KindDateTime
+	case 5:
+		return formula.KindDecimal
+	case 6:
+		return formula.KindMoney
 	}
 	return formula.KindNumber
 }
 
 // expr writes an expression of the kind. Blank asks for the BLANK literal.
 func (g *Generator) expr(k formula.Kind, d int) {
+	switch k {
+	case formula.KindDecimal:
+		g.exact(d, false, formula.MaxScale)
+		return
+	case formula.KindMoney:
+		g.exact(d, true, formula.MaxScale)
+		return
+	}
 	g.budget--
 	if k == formula.KindNull {
 		g.w("BLANK")
@@ -153,6 +182,8 @@ func (g *Generator) expr(k formula.Kind, d int) {
 		g.text(d)
 	case formula.KindDate:
 		g.date(d)
+	case formula.KindDateTime:
+		g.datetime(d)
 	default:
 		g.leaf(k)
 	}
@@ -208,10 +239,23 @@ func (g *Generator) leaf(k formula.Kind) {
 		case 5:
 			g.w("BLANK")
 		case 6:
-			g.w(g.pick("NOW()", "TODAY()"))
+			g.w("TODAY()")
 		default:
 			g.w("DATEVALUE(")
-			g.textLit(g.dateText())
+			g.textLit(g.dayText())
+			g.w(")")
+		}
+	case formula.KindDateTime:
+		switch g.n(10) {
+		case 0, 1, 2, 3, 4:
+			g.w(g.pick("s1", "s2"))
+		case 5:
+			g.w("BLANK")
+		case 6:
+			g.w("NOW()")
+		default:
+			g.w("DATETIMEVALUE(")
+			g.textLit(g.dateTimeText())
 			g.w(")")
 		}
 	default:
@@ -267,6 +311,7 @@ var textPool = []string{
 	"", "a", "abc", "Hello World", "hello world", "  padded  ", "x y  z", "é", "Ünïcode", "日本語", "it's",
 	`say "hi"`, "1.5", "-2", "1e3", " 12 ", "abc1", "2024-02-29", "2024-13-01", "2024-02-30 10:00:00",
 	"TRUE", "%", "a.b", ".", "a\\b", "aaa", "AbC dEf", "x", "0", "007", "+3.25", "1,5", "€100", "tab\there",
+	"12.30", "12.30 PLN", "-0.5 EUR", "1e2 USD", "12.345", "0.1234567890123456789", "9223372036854775808", "PLN", "pln", "12.30PLN",
 }
 
 func (g *Generator) someText() string {
@@ -287,7 +332,7 @@ func (g *Generator) textLit(s string) {
 	g.w(`"`, strings.ReplaceAll(s, `"`, `""`), `"`)
 }
 
-var datePool = []int64{
+var secondsPool = []int64{
 	0,            // 1970-01-01
 	-62135596800, // 0001-01-01
 	253402300799, // 9999-12-31 23:59:59
@@ -305,11 +350,12 @@ var datePool = []int64{
 	1740700800,   // 2025-02-28
 }
 
-func (g *Generator) someDate() int64 {
+// someSecs is an instant: from the pool, or a day between 1900 and 2100
+// with a time of day on half of them.
+func (g *Generator) someSecs() int64 {
 	if g.chance(50) {
-		return datePool[g.n(len(datePool))]
+		return secondsPool[g.n(len(secondsPool))]
 	}
-	// A day between 1900 and 2100, with a time of day on half of them.
 	day := int64(g.n(73049)) - 25567
 	secs := day * 86400
 	if g.chance(50) {
@@ -318,12 +364,50 @@ func (g *Generator) someDate() int64 {
 	return secs
 }
 
-func (g *Generator) dateText() string {
-	if g.chance(80) {
-		return formula.Date(g.someDate()).String()
+// someDay is a calendar day: the day of an instant from the pool, or one
+// between 1900 and 2100.
+func (g *Generator) someDay() int64 {
+	if g.chance(50) {
+		secs := secondsPool[g.n(len(secondsPool))]
+		return int64(math.Floor(float64(secs) / 86400))
 	}
-	return g.pick("", " 2024-02-29 ", "2024-2-9", "2024-02-30", "29/02/2024", "2024-02-29T10:00:00", "abc", "2024-02-29 24:00:00", "0000-01-01")
+	return int64(g.n(73049)) - 25567
 }
+
+func (g *Generator) dayText() string {
+	if g.chance(80) {
+		return formula.Date(g.someDay()).String()
+	}
+	return g.pick("", " 2024-02-29 ", "2024-2-9", "2024-02-30", "29/02/2024", "2024-02-29T10:00:00", "abc", "2024-02-29 10:00:00", "0000-01-01")
+}
+
+func (g *Generator) dateTimeText() string {
+	if g.chance(80) {
+		if g.chance(30) {
+			return formula.Date(g.someDay()).String()
+		}
+		return formula.DateTime(g.someSecs()).String()
+	}
+	return g.pick("", " 2024-02-29 ", "2024-2-9", "2024-02-30", "29/02/2024", "2024-02-29T10:00:00", "abc", "2024-02-29 24:00:00", "0000-01-01", "2024-02-29 10:00")
+}
+
+// exactPool holds mantissas for exact values at scale 2; other scales are
+// rescaled from them.
+var exactPool = []int64{0, 1, -1, 100, 150, 1000, 999, -50, 12345, 1234567, 2675, 1005, 29, 50, 25, 33, 9999999999999999, -9999999999999999, 922337203685477580}
+
+func (g *Generator) someMant() int64 {
+	switch g.n(5) {
+	case 0, 1:
+		return exactPool[g.n(len(exactPool))]
+	case 2:
+		return int64(g.n(20001) - 10000)
+	case 3:
+		return int64(g.n(2000001)) - 1000000
+	}
+	return g.rng.Int64N(2000000000000000000) - 1000000000000000000
+}
+
+var currencyPool = []string{"PLN", "PLN", "PLN", "EUR", "USD"}
 
 var jsonPool = []string{
 	`{"a":1,"b":"x","c":[1,2,{"d":true}],"e":null,"f":1.5,"g":false,"h":{"i":"deep"}}`,
@@ -336,11 +420,11 @@ var patternPool = []string{"a", "[a-z]+", `\d`, "^", "$", ".", "x*", "(ab)+", `\
 
 // ---- Values and context
 
-func (g *Generator) value(k formula.Kind) formula.Value {
+func (g *Generator) value(t formula.Type) formula.Value {
 	if g.chance(20) {
 		return formula.Blank()
 	}
-	switch k {
+	switch t.Kind {
 	case formula.KindNumber:
 		return formula.Number(g.someNumber())
 	case formula.KindBool:
@@ -348,7 +432,13 @@ func (g *Generator) value(k formula.Kind) formula.Value {
 	case formula.KindText:
 		return formula.Text(g.someText())
 	case formula.KindDate:
-		return formula.Date(g.someDate())
+		return formula.Date(g.someDay())
+	case formula.KindDateTime:
+		return formula.DateTime(g.someSecs())
+	case formula.KindDecimal:
+		return formula.Decimal(g.someMant(), int(t.Scale))
+	case formula.KindMoney:
+		return formula.Money(g.someMant(), int(t.Scale), currencyPool[g.n(len(currencyPool))])
 	case formula.KindJSON:
 		return formula.JSON(jsonPool[g.n(len(jsonPool))])
 	}
@@ -356,7 +446,7 @@ func (g *Generator) value(k formula.Kind) formula.Value {
 }
 
 func (g *Generator) context() formula.Context {
-	ctx := formula.Context{Now: g.someDate(), User: g.pick("", "alice", "bob", "Alice")}
+	ctx := formula.Context{Now: g.someSecs(), User: g.pick("", "alice", "bob", "Alice")}
 	switch g.n(4) {
 	case 1:
 		ctx.Groups = []string{"finance"}
@@ -377,7 +467,7 @@ func (g *Generator) number(d int) {
 		r = g.n(30) // the noisy functions become arithmetic
 	}
 	switch {
-	case r < 30:
+	case r < 28:
 		ops := []string{"+", "-", "*", "/", `\`, "+", "*"}
 		if noisy {
 			ops = append(ops, "^")
@@ -387,26 +477,30 @@ func (g *Generator) number(d int) {
 		g.w(" ", ops[g.n(len(ops))], " ")
 		g.expr(formula.KindNumber, d+1)
 		g.w(")")
-	case r < 36:
+	case r < 33:
 		g.w("(-")
 		g.expr(formula.KindNumber, d+1)
 		g.w(")")
-	case r < 40:
+	case r < 36:
 		g.w("(")
 		g.expr(formula.KindNumber, d+1)
 		g.w("%)")
-	case r < 48:
+	case r < 42:
 		g.ifExpr(formula.KindNumber, d)
-	case r < 54:
-		g.call(g.pick("ROUND", "FLOOR", "CEILING", "TRUNC"), g.quietArg(formula.KindNumber, d), g.optional(func() { g.digits(d) }))
+	case r < 48:
+		g.call("ROUND", g.quietArg(formula.KindNumber, d), g.optional(func() { g.digits(d) }), g.optional(func() { g.textLit(g.method()) }))
+	case r < 52:
+		g.call(g.pick("FLOOR", "CEILING", "TRUNC"), g.quietArg(formula.KindNumber, d), g.optional(func() { g.digits(d) }))
 	case r < 56:
 		g.call(g.pick("ABS", "SQRT"), g.arg(formula.KindNumber, d))
 	case r < 58:
 		g.call("SIGN", g.quietArg(formula.KindNumber, d))
 	case r < 62:
 		g.call(g.pick("EXP", "LN"), g.arg(formula.KindNumber, d))
-	case r < 70:
+	case r < 68:
 		g.aggregate(d, noisy)
+	case r < 70:
+		g.call("NUMBER", func() { g.exact(d+1, g.chance(30), formula.MaxScale) })
 	case r < 74:
 		g.call("POWER", g.arg(formula.KindNumber, d), func() { g.smallInt(d, 4) })
 	case r < 77:
@@ -414,16 +508,32 @@ func (g *Generator) number(d int) {
 	case r < 81:
 		g.call("MOD", g.quietArg(formula.KindNumber, d), g.quietArg(formula.KindNumber, d))
 	case r < 86:
-		g.call(g.pick("YEAR", "MONTH", "DAY", "QUARTER"), g.arg(formula.KindDate, d))
+		g.call(g.pick("YEAR", "MONTH", "DAY", "QUARTER"), g.arg(g.dateLike(), d))
 	case r < 90:
-		g.call(g.pick("DAYS", "DAYSBETWEEN", "MONTHSBETWEEN", "YEARSBETWEEN"), g.arg(formula.KindDate, d), g.arg(formula.KindDate, d))
-	case r < 94:
+		k := g.dateLike()
+		g.call(g.pick("DAYS", "DAYSBETWEEN", "MONTHSBETWEEN", "YEARSBETWEEN"), g.arg(k, d), g.arg(k, d))
+	case r < 93:
 		g.call("LEN", g.quietArg(formula.KindText, d))
-	case r < 97:
+	case r < 96:
 		g.call(g.pick("FINDFIRST", "FINDLAST"), g.quietArg(formula.KindText, d), g.quietArg(formula.KindText, d))
+	case r < 98:
+		g.call("IFERROR", g.arg(formula.KindNumber, d), g.arg(formula.KindNumber, d))
 	default:
 		g.call("VALUE", g.arg(formula.KindText, d))
 	}
+}
+
+// dateLike picks a date or a datetime for an argument that takes either.
+func (g *Generator) dateLike() formula.Kind {
+	if g.chance(50) {
+		return formula.KindDate
+	}
+	return formula.KindDateTime
+}
+
+// method picks a rounding method.
+func (g *Generator) method() string {
+	return g.pick("half_up", "half_even", "down", "up", "floor", "ceiling")
 }
 
 // digits writes a digits argument: usually a small literal, negative now
@@ -495,20 +605,28 @@ func (g *Generator) condition(d int) {
 			}
 			g.quietly(formula.KindText, d+1)
 		})
+	case r < 93:
+		g.call("IFERROR", g.arg(formula.KindBool, d), g.arg(formula.KindBool, d))
 	default:
 		g.ifExpr(formula.KindBool, d)
 	}
 }
 
-// comparison compares two quiet operands of one kind, or one with BLANK.
+// comparison compares two quiet operands of one kind, or one with BLANK;
+// exact values compare with each other, money with a decimal too.
 func (g *Generator) comparison(d int) {
-	k := []formula.Kind{formula.KindNumber, formula.KindNumber, formula.KindText, formula.KindDate, formula.KindBool}[g.n(5)]
+	k := []formula.Kind{formula.KindNumber, formula.KindNumber, formula.KindText, formula.KindDate, formula.KindDateTime, formula.KindBool, formula.KindDecimal, formula.KindMoney}[g.n(8)]
 	g.w("(")
 	g.quietly(k, d+1)
 	g.w(" ", g.pick("=", "<>", "<", "<=", ">", ">="), " ")
-	if g.chance(10) {
+	switch {
+	case g.chance(10):
 		g.w("BLANK")
-	} else {
+	case k.IsExact() && g.chance(30):
+		g.exactLit(formula.MaxScale)
+	case k.IsExact() && g.chance(30):
+		g.quietly(formula.KindDecimal, d+1)
+	default:
 		g.quietly(k, d+1)
 	}
 	g.w(")")
@@ -526,27 +644,29 @@ func (g *Generator) text(d int) {
 		g.call(g.pick("LEFT", "RIGHT"), g.quietArg(formula.KindText, d), func() { g.smallInt(d, 6) })
 	case r < 32:
 		g.call("MID", g.quietArg(formula.KindText, d), func() { g.smallInt(d, 6) }, g.optional(func() { g.smallInt(d, 6) }))
-	case r < 44:
+	case r < 42:
 		g.call(g.pick("TRIM", "UPPER", "LOWER", "PROPER"), g.arg(formula.KindText, d))
-	case r < 49:
+	case r < 47:
 		g.call("REPLACE", g.quietArg(formula.KindText, d), func() { g.smallInt(d, 6) }, func() { g.smallInt(d, 6) }, g.quietArg(formula.KindText, d))
-	case r < 55:
+	case r < 53:
 		g.call("SUBSTITUTE", g.quietArg(formula.KindText, d), g.quietArg(formula.KindText, d), g.quietArg(formula.KindText, d))
-	case r < 61:
+	case r < 59:
 		argc := 1 + g.n(4)
 		args := make([]func(), argc)
 		for i := range args {
 			args[i] = g.arg(g.anyKind(), d)
 		}
 		g.call("CONCAT", args...)
-	case r < 65:
+	case r < 63:
 		g.call("REPEAT", g.arg(formula.KindText, d), func() { g.smallInt(d, 5) })
-	case r < 71:
+	case r < 69:
 		g.call("PAD", g.quietArg(formula.KindText, d), func() { g.smallInt(d, 12) }, g.optional(func() { g.textLit(g.pick("0", "*", "ab", "", " ", "é")) }))
-	case r < 77:
+	case r < 75:
 		g.call("REGEXREPLACE", g.quietArg(formula.KindText, d), func() { g.textLit(patternPool[g.n(len(patternPool))]) }, g.quietArg(formula.KindText, d))
-	case r < 87:
+	case r < 85:
 		g.call("TEXT", g.arg(g.anyKind(), d))
+	case r < 89:
+		g.call("CURRENCY", func() { g.exact(d+1, true, formula.MaxScale) })
 	case r < 93:
 		g.call("JSONVALUE", func() { g.w("j1") }, func() {
 			if g.chance(80) {
@@ -555,6 +675,8 @@ func (g *Generator) text(d int) {
 			}
 			g.quietly(formula.KindText, d+1)
 		})
+	case r < 96:
+		g.call("IFERROR", g.arg(formula.KindText, d), g.arg(formula.KindText, d))
 	default:
 		g.ifExpr(formula.KindText, d)
 	}
@@ -562,7 +684,7 @@ func (g *Generator) text(d int) {
 
 func (g *Generator) date(d int) {
 	switch r := g.n(100); {
-	case r < 30:
+	case r < 25:
 		g.call("DATE", func() {
 			if g.chance(60) {
 				g.w(strconv.Itoa(1900 + g.n(200)))
@@ -582,30 +704,352 @@ func (g *Generator) date(d int) {
 			}
 			g.quietly(formula.KindNumber, d+1)
 		})
-	case r < 45:
+	case r < 38:
 		g.call("DATEVALUE", func() {
 			if g.chance(50) {
-				g.textLit(g.dateText())
+				g.textLit(g.dayText())
 				return
 			}
 			g.quietly(formula.KindText, d+1)
 		})
-	case r < 80:
-		g.call(g.pick("ADDDAYS", "ADDMONTHS", "ADDYEARS"), g.arg(formula.KindDate, d), func() {
-			switch g.n(4) {
-			case 0:
-				g.quietly(formula.KindNumber, d+1)
-			case 1:
-				g.w("(-", strconv.Itoa(g.n(40)), ")")
-			default:
-				g.w(strconv.Itoa(g.n(40)))
-			}
-		})
-	case r < 88:
-		g.w(g.pick("NOW()", "TODAY()"))
+	case r < 50:
+		g.call("DATEOF", g.arg(formula.KindDateTime, d))
+	case r < 78:
+		g.call(g.pick("ADDDAYS", "ADDMONTHS", "ADDYEARS"), g.arg(formula.KindDate, d), g.moveBy(d))
+	case r < 84:
+		g.w("TODAY()")
+	case r < 90:
+		g.call("IFERROR", g.arg(formula.KindDate, d), g.arg(formula.KindDate, d))
 	default:
 		g.ifExpr(formula.KindDate, d)
 	}
+}
+
+func (g *Generator) datetime(d int) {
+	switch r := g.n(100); {
+	case r < 30:
+		g.call("DATETIMEVALUE", func() {
+			if g.chance(50) {
+				g.textLit(g.dateTimeText())
+				return
+			}
+			g.quietly(formula.KindText, d+1)
+		})
+	case r < 45:
+		g.call("DATETIME", g.arg(formula.KindDate, d))
+	case r < 78:
+		g.call(g.pick("ADDDAYS", "ADDMONTHS", "ADDYEARS"), g.arg(formula.KindDateTime, d), g.moveBy(d))
+	case r < 84:
+		g.w("NOW()")
+	case r < 90:
+		g.call("IFERROR", g.arg(formula.KindDateTime, d), g.arg(formula.KindDateTime, d))
+	default:
+		g.ifExpr(formula.KindDateTime, d)
+	}
+}
+
+// moveBy writes the count a date function moves by.
+func (g *Generator) moveBy(d int) func() {
+	return func() {
+		switch g.n(5) {
+		case 0:
+			g.quietly(formula.KindNumber, d+1)
+		case 1:
+			g.w("(-", strconv.Itoa(g.n(40)), ")")
+		case 2:
+			g.w(g.pick("0.5", "1.5", "(-0.25)", "2.9"))
+		default:
+			g.w(strconv.Itoa(g.n(40)))
+		}
+	}
+}
+
+// exact writes an exact expression, money or decimal, whose scale is at
+// most limit, and returns the scale. The productions keep the scale
+// within MaxScale by construction, since the binder refuses a product
+// that would need more.
+func (g *Generator) exact(d int, money bool, limit int) int {
+	g.budget--
+	if d >= MaxDepth || g.budget <= 0 || g.chance(12+12*d) {
+		return g.exactLeaf(money, limit)
+	}
+	r := g.n(100)
+	switch {
+	case r < 22:
+		// + and -: both sides within the limit.
+		g.w("(")
+		sl, lit := g.exactOperand(d, money, limit, false)
+		g.w(" ", g.pick("+", "-"), " ")
+		var sr int
+		if money && g.chance(40) || g.chance(30) {
+			sr, _ = g.exactOperand(d, false, limit, lit)
+		} else {
+			sr, _ = g.exactOperand(d, money, limit, lit)
+		}
+		g.w(")")
+		return max(sl, sr)
+	case r < 34:
+		// *: money times a decimal, or decimals; the right side fits the
+		// room the left leaves.
+		g.w("(")
+		sl, lit := g.exactOperand(d, money, limit, false)
+		g.w(" * ")
+		sr, _ := g.exactOperand(d, false, limit-sl, lit)
+		g.w(")")
+		return sl + sr
+	case r < 44:
+		// /: the result is the dividend's scale plus four, so the dividend
+		// has four to spare unless the limit is the maximum.
+		room := limit - formula.DivScaleStep
+		if limit == formula.MaxScale {
+			room = formula.MaxScale
+		}
+		if room < 0 {
+			return g.exactLeaf(money, limit)
+		}
+		g.w("(")
+		sl, lit := g.exactOperand(d, money, room, false)
+		g.w(" ", g.pick("/", "/", `\`), " ")
+		g.exactOperand(d, false, formula.MaxScale, lit)
+		g.w(")")
+		return min(sl+formula.DivScaleStep, formula.MaxScale)
+	case r < 48:
+		if money {
+			// money / money is a decimal, so a money expression cannot
+			// end in it; a decimal one can.
+			return g.exactLeaf(money, limit)
+		}
+		room := limit - formula.DivScaleStep
+		if limit == formula.MaxScale {
+			room = formula.MaxScale
+		}
+		if room < 0 {
+			return g.exactLeaf(money, limit)
+		}
+		g.w("(")
+		sl := g.exact(d+1, true, room)
+		g.w(" / ")
+		g.exact(d+1, true, formula.MaxScale)
+		g.w(")")
+		return min(sl+formula.DivScaleStep, formula.MaxScale)
+	case r < 52:
+		g.w("(-")
+		s := g.exact(d+1, money, limit)
+		g.w(")")
+		return s
+	case r < 55:
+		if limit < 2 {
+			return g.exactLeaf(money, limit)
+		}
+		g.w("(")
+		s := g.exact(d+1, money, limit-2)
+		g.w("%)")
+		return s + 2
+	case r < 63:
+		// Rounding: the places are written, the result lands on them.
+		name := g.pick("ROUND", "ROUND", "FLOOR", "CEILING", "TRUNC")
+		places := g.n(limit+3) - 2
+		g.w(name, "(")
+		g.exact(d+1, money, formula.MaxScale)
+		g.w(", ", strconv.Itoa(places))
+		if name == "ROUND" && g.chance(60) {
+			g.w(", ")
+			g.textLit(g.method())
+		}
+		g.w(")")
+		return max(places, 0)
+	case r < 67:
+		g.w("ABS(")
+		s := g.exact(d+1, money, limit)
+		g.w(")")
+		return s
+	case r < 77:
+		name := g.pick("MIN", "MAX", "SUM", "SUM", "AVERAGE", "MOD")
+		room := limit
+		if name == "AVERAGE" {
+			room = limit - formula.DivScaleStep
+			if limit == formula.MaxScale {
+				room = formula.MaxScale
+			}
+			if room < 0 {
+				return g.exactLeaf(money, limit)
+			}
+		}
+		argc := 2 + g.n(3)
+		if name == "MOD" {
+			argc = 2
+		}
+		g.w(name, "(")
+		s := 0
+		for i := 0; i < argc; i++ {
+			if i > 0 {
+				g.w(", ")
+			}
+			// The first argument is exact itself, so that the function
+			// runs on the exact family whatever the rest are.
+			si, _ := g.exactOperand(d, money && (i == 0 || g.chance(70)), room, i == 0)
+			s = max(s, si)
+		}
+		g.w(")")
+		if name == "AVERAGE" {
+			return min(s+formula.DivScaleStep, formula.MaxScale)
+		}
+		return s
+	case r < 83:
+		if money {
+			g.w("MONEY(")
+			s := g.exact(d+1, false, limit)
+			g.w(", ")
+			if g.chance(80) {
+				g.textLit(g.pick("PLN", "EUR", "USD", "pln", "", "PLNX"))
+			} else {
+				g.quietly(formula.KindText, d+1)
+			}
+			g.w(")")
+			return s
+		}
+		places := g.n(limit + 1)
+		g.w("DECIMAL(")
+		g.quietly(formula.KindNumber, d+1)
+		g.w(", ", strconv.Itoa(places))
+		if g.chance(50) {
+			g.w(", ")
+			g.textLit(g.method())
+		}
+		g.w(")")
+		return places
+	case r < 87:
+		if money {
+			places := g.n(limit + 1)
+			g.w("MONEYVALUE(")
+			if g.chance(60) {
+				g.textLit(g.pick("12.30 PLN", "12.3 EUR", "-5 USD", "1e2 PLN", "12.345 PLN", "abc PLN", "12.30", "", "12.30 pln", "0.50 CHF"))
+			} else {
+				g.quietly(formula.KindText, d+1)
+			}
+			g.w(", ", strconv.Itoa(places), ")")
+			return places
+		}
+		if g.chance(50) {
+			g.w("AMOUNT(")
+			s := g.exact(d+1, true, limit)
+			g.w(")")
+			return s
+		}
+		places := g.n(limit + 1)
+		g.w("DECIMALVALUE(")
+		if g.chance(60) {
+			g.textLit(g.pick("12.30", "12.3", "-0.5", "1e3", "12.345", "abc", "", " 7 ", "0.1234567890123456789", "9223372036854775808", ".5", "5."))
+		} else {
+			g.quietly(formula.KindText, d+1)
+		}
+		g.w(", ", strconv.Itoa(places), ")")
+		return places
+	case r < 93:
+		g.w("IFERROR(")
+		s := g.exact(d+1, money, limit)
+		g.w(", ")
+		s2 := g.exact(d+1, money, limit)
+		g.w(")")
+		return max(s, s2)
+	default:
+		g.w("(IF ")
+		g.expr(formula.KindBool, d+1)
+		g.w(" THEN ")
+		s := g.exact(d+1, money, limit)
+		g.w(" ELSE ")
+		s2 := g.exact(d+1, money, limit)
+		g.w(")")
+		return max(s, s2)
+	}
+}
+
+// exactOperand writes an operand of an exact operation: an exact
+// expression, or, unless the other operand is one already (noLit), a
+// number constant the binder reads exactly; the scale is within the
+// limit. It reports whether it wrote a constant, since an operation on
+// constants alone is a number, not an exact value.
+func (g *Generator) exactOperand(d int, money bool, limit int, noLit bool) (int, bool) {
+	if !money && !noLit && g.chance(30) {
+		return g.exactLit(limit), true
+	}
+	return g.exact(d+1, money, limit), false
+}
+
+// exactLit writes a number constant that reads exactly with at most limit
+// places, and returns its scale.
+func (g *Generator) exactLit(limit int) int {
+	pool := []struct {
+		text  string
+		scale int
+	}{
+		{"0", 0}, {"1", 0}, {"2", 0}, {"3", 0}, {"10", 0}, {"100", 0}, {"(-1)", 0}, {"7", 0},
+		{"0.5", 1}, {"1.5", 1}, {"0.1", 1}, {"2.5", 1}, {"(-0.5)", 1},
+		{"0.25", 2}, {"0.01", 2}, {"1.23", 2}, {"2.675", 3}, {"1.005", 3}, {"0.125", 3},
+		{"10%", 2}, {"23%", 2}, {"(1 - 10%)", 2}, {"(2 + 0.5)", 1}, {"1e3", 0}, {"1e-2", 2}, {"0.0001", 4},
+	}
+	for i := 0; i < 50; i++ {
+		p := pool[g.n(len(pool))]
+		if p.scale <= limit {
+			g.w(p.text)
+			return p.scale
+		}
+	}
+	g.w("1")
+	return 0
+}
+
+// exactLeaf writes a variable, a blank or a small constant expression of
+// the family within the limit, and returns its scale.
+func (g *Generator) exactLeaf(money bool, limit int) int {
+	g.budget--
+	if money {
+		switch g.n(10) {
+		case 0, 1, 2, 3, 4, 5:
+			if limit >= 2 {
+				g.w(g.pick("m1", "m2"))
+				return 2
+			}
+			g.w("ROUND(", g.pick("m1", "m2"), ", ", strconv.Itoa(limit), ")")
+			return limit
+		case 6, 7:
+			places := min(2, limit)
+			g.w("MONEYVALUE(\"1.50 PLN\", ", strconv.Itoa(places), ")")
+			return places
+		default:
+			g.w("MONEY(")
+			s := g.exactLit(limit)
+			g.w(", ", `"`, g.pick("PLN", "EUR", "USD"), `")`)
+			return s
+		}
+	}
+	for i := 0; i < 20; i++ {
+		switch g.n(10) {
+		case 0, 1, 2:
+			if limit >= 2 {
+				g.w("x1")
+				return 2
+			}
+		case 3, 4:
+			if limit >= 4 {
+				g.w("x2")
+				return 4
+			}
+		case 5, 6, 7:
+			g.w("i1")
+			return 0
+		case 8:
+			places := g.n(limit + 1)
+			g.w("DECIMAL(", strconv.FormatFloat(g.someNumber(), 'g', -1, 64), ", ", strconv.Itoa(places), ")")
+			return places
+		default:
+			places := g.n(limit + 1)
+			g.w("DECIMALVALUE(\"", g.pick("12.30", "1.5", "0", "7", "-2.25"), "\", ", strconv.Itoa(places), ")")
+			return places
+		}
+	}
+	g.w("i1")
+	return 0
 }
 
 // ifExpr writes an IF in the call form or the keyword form. One branch is
@@ -679,13 +1123,13 @@ func (f *Formula) DescribeInputs() string {
 // DescribeContext renders the context.
 func (f *Formula) DescribeContext() string {
 	return "user=" + strconv.Quote(f.Ctx.User) + " groups=" + strings.Join(f.Ctx.Groups, ",") +
-		" now=" + formula.Date(f.Ctx.Now).String()
+		" now=" + formula.DateTime(f.Ctx.Now).String()
 }
 
 // CaseJSON renders the formula with its inputs and context as a suite case
 // whose expectation is the given value or error code, ready to paste into
 // conformance/formula. The suite variables are those of Variables.
-func (f *Formula) CaseJSON(result formula.Value, code string, kind formula.Kind) string {
+func (f *Formula) CaseJSON(result formula.Value, code string, t formula.Type) string {
 	var b strings.Builder
 	b.WriteString(`{"formula": ` + strconv.Quote(f.Src))
 	first := true
@@ -715,9 +1159,9 @@ func (f *Formula) CaseJSON(result formula.Value, code string, kind formula.Kind)
 		}
 		b.WriteString("]")
 	}
-	b.WriteString(`, "now": ` + strconv.Quote(formula.Date(f.Ctx.Now).String()) + "}")
-	if kind == formula.KindDate {
-		b.WriteString(`, "type": "date"`)
+	b.WriteString(`, "now": ` + strconv.Quote(formula.DateTime(f.Ctx.Now).String()) + "}")
+	if t.Kind.IsDateLike() || t.Kind.IsExact() {
+		b.WriteString(`, "type": ` + strconv.Quote(t.String()))
 	}
 	if code != "" {
 		b.WriteString(`, "error": ` + strconv.Quote(code))
@@ -740,7 +1184,7 @@ func suiteValue(v formula.Value) string {
 		return "false"
 	case formula.KindNumber:
 		return strconv.FormatFloat(v.Num(), 'g', -1, 64)
-	case formula.KindDate:
+	case formula.KindDate, formula.KindDateTime, formula.KindDecimal, formula.KindMoney:
 		return strconv.Quote(v.String())
 	}
 	return strconv.Quote(v.Str())

@@ -1,6 +1,6 @@
 # ADR-0004: Number semantics: float64 with Excel rules
 
-- Status: Accepted; amended by ADR-0019 (TEXT rendering rule)
+- Status: Accepted; amended by ADR-0019 (TEXT rendering rule), ADR-0022 (exact decimal, int and money beside number), ADR-0024 (/ by zero is an error)
 - Date: 2026-11-05
 
 ## Context

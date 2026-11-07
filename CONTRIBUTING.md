@@ -14,6 +14,7 @@ make build     # bin/fadodb
 make test      # race detector on
 make gates     # everything CI runs: lint, vuln, depgate, sizegate, test
 make benchgate BASE=origin/main   # benchmark comparison against a git ref
+scripts/layoutsweep.sh -n 8 'VM_'  # spread of the VM benchmarks over code placements
 ```
 
 ## The gates

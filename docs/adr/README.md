@@ -36,7 +36,7 @@ line says so. Copy `0000-template.md` to start.
 | [0028](0028-field-level-rights-per-state.md) | Field-level rights per state | Accepted |
 | [0029](0029-browser-vm-as-one-plain-javascript-file.md) | The browser VM ships as one plain JavaScript file | Accepted |
 | [0030](0030-benchmark-gate-measures-the-minimum-over-placements.md) | The benchmark gate measures the minimum over code placements | Accepted |
-| [0031](0031-named-schemas-and-object-values.md) | Named schemas and object values | Proposed |
-| [0032](0032-predefined-vocabulary-and-object-presentation.md) | A predefined vocabulary of objects, and how an object is presented | Proposed |
-| [0033](0033-attachments-as-file-values-behind-a-blob-store.md) | Attachments are File values; the bytes live behind a blob store | Proposed |
-| [0034](0034-range-constraints-on-numeric-variables.md) | Range constraints on numeric variables | Proposed |
+| [0031](0031-named-schemas-and-object-values.md) | Named schemas and object values | Accepted |
+| [0032](0032-predefined-vocabulary-and-object-presentation.md) | A predefined vocabulary of objects, and how an object is presented | Accepted |
+| [0033](0033-attachments-as-file-values-behind-a-blob-store.md) | Attachments are File values; the bytes live behind a blob store | Accepted |
+| [0034](0034-range-constraints-on-numeric-variables.md) | Range constraints on numeric variables | Accepted |

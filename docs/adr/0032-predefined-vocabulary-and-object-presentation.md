@@ -1,6 +1,6 @@
 # ADR-0032: A predefined vocabulary of objects, and how an object is presented
 
-- Status: Proposed; amends ADR-0018
+- Status: Accepted; amends ADR-0018
 - Date: 2026-11-07
 
 ## Context

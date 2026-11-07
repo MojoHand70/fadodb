@@ -40,7 +40,7 @@ All notable changes to FadoDB are recorded here. The format follows
   transition event, the principal from the embedder and registered action
   executors, field-level rights per state, and the browser VM as one plain
   JavaScript file.
-- ADR-0031 to ADR-0034 propose, for Phases 2 and 7: named schemas and
+- ADR-0031 to ADR-0034 record, for Phases 2 and 7: named schemas and
   `object<Schema>` values stored flat as one typed column per field, with
   field paths, object blankness and equality in formulas; a predefined
   vocabulary (`Person`, `Organization`, `Address`, `GeoPoint`, `Place`,

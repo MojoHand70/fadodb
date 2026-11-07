@@ -1,6 +1,6 @@
 # ADR-0031: Named schemas and object values
 
-- Status: Proposed; amends ADR-0013, ADR-0014, ADR-0018, ADR-0019
+- Status: Accepted; amends ADR-0013, ADR-0014, ADR-0018, ADR-0019
 - Date: 2026-11-07
 
 ## Context

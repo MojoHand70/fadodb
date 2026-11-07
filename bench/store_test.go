@@ -38,7 +38,9 @@ func TestStore_SQLite(t *testing.T) {
 			t.Error(err)
 		}
 		db.Close()
-		if r.Commits != o.Commits || r.PerSecond <= 0 || r.P50 <= 0 || r.P99 < r.P50 || r.FileBytes <= 0 {
+		// The timing fields are informative here, and a coarse clock, as
+		// on the Windows runners, may round a short commit to zero.
+		if r.Commits != o.Commits || r.PerSecond <= 0 || r.P50 < 0 || r.P99 < r.P50 || r.Max < r.P99 || r.FileBytes <= 0 {
 			t.Errorf("report %+v is not plausible", r)
 		}
 		t.Log(r)
@@ -58,7 +60,7 @@ func TestLookup_SQLite(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, r := range reports {
-		if r.Map <= 0 || r.Stmt <= 0 || r.Stmt < r.Map {
+		if r.Map < 0 || r.Stmt <= 0 || r.Stmt < r.Map {
 			t.Errorf("report %+v is not plausible", r)
 		}
 		t.Log(r)

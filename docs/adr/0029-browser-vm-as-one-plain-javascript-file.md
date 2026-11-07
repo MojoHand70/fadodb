@@ -1,6 +1,6 @@
 # ADR-0029: The browser VM ships as one plain JavaScript file
 
-- Status: Proposed; amends ADR-0003
+- Status: Accepted; amends ADR-0003
 - Date: 2026-11-06
 
 ## Context

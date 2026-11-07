@@ -1,6 +1,6 @@
 # ADR-0025: Evaluate a class or a document without committing
 
-- Status: Proposed; amends ADR-0011, ADR-0015
+- Status: Accepted; amends ADR-0011, ADR-0015
 - Date: 2026-11-06
 
 ## Context

@@ -1,6 +1,6 @@
 # ADR-0024: Division by zero is an error, and IFERROR catches one
 
-- Status: Proposed; amends ADR-0004, ADR-0019
+- Status: Accepted; amends ADR-0004, ADR-0019
 - Date: 2026-11-06
 
 ## Context

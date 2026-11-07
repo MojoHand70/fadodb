@@ -27,12 +27,12 @@ line says so. Copy `0000-template.md` to start.
 | [0019](0019-formula-language-semantics.md) | Formula language semantics: grammar, types, coercion, comparison, dates, text, composites and errors | Accepted, amended by 0021, 0022, 0023, 0024 |
 | [0020](0020-query-function-execution.md) | LOOKUP and QUERY execution: one engine call per invocation | Accepted |
 | [0021](0021-size-limits.md) | Size limits: one text limit per database, enforced before building | Accepted |
-| [0022](0022-exact-decimal-int-and-money.md) | Exact numbers: decimal, int and money | Proposed |
-| [0023](0023-calendar-day-datetime-and-enum-values.md) | A date is a calendar day, a datetime an instant, an enum a text with a value set | Proposed |
-| [0024](0024-division-by-zero-is-an-error-and-iferror.md) | Division by zero is an error, and IFERROR catches one | Proposed |
-| [0025](0025-evaluate-without-committing.md) | Evaluate a class or a document without committing | Proposed |
-| [0026](0026-idempotency-keys-business-dates-and-the-transition-event.md) | Idempotency keys on commands, a business date on events, and the transition event | Proposed |
-| [0027](0027-principal-from-the-embedder-and-registered-executors.md) | The principal comes from the embedder; action executors are registered | Proposed |
-| [0028](0028-field-level-rights-per-state.md) | Field-level rights per state | Proposed |
-| [0029](0029-browser-vm-as-one-plain-javascript-file.md) | The browser VM ships as one plain JavaScript file | Proposed |
+| [0022](0022-exact-decimal-int-and-money.md) | Exact numbers: decimal, int and money | Accepted |
+| [0023](0023-calendar-day-datetime-and-enum-values.md) | A date is a calendar day, a datetime an instant, an enum a text with a value set | Accepted |
+| [0024](0024-division-by-zero-is-an-error-and-iferror.md) | Division by zero is an error, and IFERROR catches one | Accepted |
+| [0025](0025-evaluate-without-committing.md) | Evaluate a class or a document without committing | Accepted |
+| [0026](0026-idempotency-keys-business-dates-and-the-transition-event.md) | Idempotency keys on commands, a business date on events, and the transition event | Accepted |
+| [0027](0027-principal-from-the-embedder-and-registered-executors.md) | The principal comes from the embedder; action executors are registered | Accepted |
+| [0028](0028-field-level-rights-per-state.md) | Field-level rights per state | Accepted |
+| [0029](0029-browser-vm-as-one-plain-javascript-file.md) | The browser VM ships as one plain JavaScript file | Accepted |
 | [0030](0030-benchmark-gate-measures-the-minimum-over-placements.md) | The benchmark gate measures the minimum over code placements | Accepted |

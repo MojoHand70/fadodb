@@ -1,6 +1,6 @@
 # ADR-0012: Performance budgets and gates
 
-- Status: Accepted
+- Status: Accepted; amended by ADR-0030 (the gate measures the minimum over code placements)
 - Date: 2026-11-05
 
 ## Context

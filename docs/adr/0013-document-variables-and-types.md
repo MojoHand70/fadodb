@@ -1,6 +1,6 @@
 # ADR-0013: Document variables and the type system
 
-- Status: Accepted; amended by ADR-0019 (formula keywords are reserved names)
+- Status: Accepted; amended by ADR-0019 (formula keywords are reserved names), ADR-0022 (decimal, int and money), ADR-0023 (date is a calendar day, datetime an instant, enum values)
 - Date: 2026-11-05
 
 ## Context

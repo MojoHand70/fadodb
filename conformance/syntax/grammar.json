@@ -190,7 +190,7 @@
     {"formula": "FOO(1)", "reason": "unknown function"},
     {"formula": "ROUND(Godziny", "reason": "unclosed call"},
     {"formula": "ROUND()", "reason": "ROUND needs a number"},
-    {"formula": "ROUND(Godziny, 2, 3)", "reason": "ROUND takes at most two arguments"},
+    {"formula": "ROUND(Godziny, 2, 3, 4)", "reason": "ROUND takes at most three arguments"},
     {"formula": "ROUND(Godziny,)", "reason": "trailing comma"},
     {"formula": "ROUND(,Godziny)", "reason": "leading comma"},
     {"formula": "ABS()", "reason": "ABS needs a number"},

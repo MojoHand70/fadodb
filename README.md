@@ -31,8 +31,8 @@ A class is one JSON document:
   "variables": {
     "customer": {"type": "text", "required": true},
     "due":      {"type": "date", "default": "ADDDAYS(TODAY(), 30)"},
-    "discount": {"type": "number", "default": "0"},
-    "lines":    {"type": "rows", "schema": {"sku": "text", "qty": "number", "price": "number"}},
+    "discount": {"type": "decimal", "scale": 2, "default": "0"},
+    "lines":    {"type": "rows", "schema": {"sku": "text", "qty": "int", "price": "money"}},
     "subtotal": {"formula": "SUM(lines.qty * lines.price)"},
     "total":    {"formula": "ROUND(subtotal * (1 - discount), 2)"}
   },
@@ -46,7 +46,7 @@ A class is one JSON document:
     {"on": "enter", "state": "paid",
      "do": [{"action": "create", "class": "Receipt", "values": {"invoice": "ID()", "amount": "total"}}]}
   ],
-  "access": {"read": "INGROUP(\"finance\") OR customer = USER().name"}
+  "access": {"read": "INGROUP(\"finance\") OR customer = USER()"}
 }
 ```
 
@@ -55,9 +55,10 @@ Planned Go API, not implemented:
 ```go
 db, _ := fado.Open("app.fado", fado.Options{})
 db.DefineClass(ctx, invoiceJSON)
-id, _ := db.Create(ctx, "Invoice", fado.Values{"customer": "ACME"}, fado.As(user))
-db.Transition(ctx, "Invoice", id, "submit", fado.As(user))
-rows, _ := db.Query(ctx, `SELECT id, total FROM Invoice WHERE state = 'submitted'`, fado.As(user))
+p := fado.Principal{ID: "alice", Groups: []string{"sales"}}
+id, _ := db.Create(ctx, "Invoice", fado.Values{"customer": "ACME"}, fado.As(p), fado.Key("order-42"))
+db.Transition(ctx, "Invoice", id, "submit", fado.As(p))
+rows, _ := db.Query(ctx, `SELECT id, total FROM Invoice WHERE state = 'submitted'`, fado.As(p))
 ```
 
 ## Install
@@ -78,22 +79,31 @@ version, the commit and the build date.
 ## Try the formula engine
 
 ```
-$ fadodb formula eval -var qty:number=3 -var price:number=9.99 'ROUND(qty * price * (1 - 10%), 2)'
-26.97
+$ fadodb formula eval -var qty:int=3 -var price:money='9.99 PLN' 'ROUND(qty * price * (1 - 10%), 2)'
+26.97 PLN
+$ fadodb formula eval -var a:decimal=0.10 -var b:decimal=0.20 'a + b = 0.30'
+TRUE
 $ fadodb formula eval -var name:text=invoice 'UPPER(LEFT(name, 3)) & "-" & TEXT(42)'
 "INV-42"
 $ fadodb formula eval -sql duckdb -var due:date 'DAYS(due, TODAY())'
-value  (floor(CAST("due" AS DOUBLE) / CAST(86400 AS DOUBLE)) - floor((floor(CAST($now AS DOUBLE) / CAST(86400 AS DOUBLE)) * CAST(86400 AS DOUBLE)) / CAST(86400 AS DOUBLE)))
+value  (CAST("due" AS DOUBLE) - floor(CAST($now AS DOUBLE) / CAST(86400 AS DOUBLE)))
 error  NULL
 params now
 ```
 
-The same formula gives the same result on the VM, on SQLite and on DuckDB:
-the conformance suite under `conformance/` is the specification, and the
+Numbers come in two families: `number` is a float64 with a spreadsheet's
+arithmetic, and `decimal`, `int` and `money` are exact, an int64 mantissa
+at a declared scale, with rounding written in the formula and overflow an
+error. A `date` is a calendar day and a `datetime` an instant. The same
+formula gives the same result on the VM, on SQLite and on DuckDB: the
+conformance suite under `conformance/` is the specification, and the
 property tests generate formulas to check that the three agree. The
 semantics are in [ADR-0019](docs/adr/0019-formula-language-semantics.md),
-the size limits in [ADR-0021](docs/adr/0021-size-limits.md), and the
-numbers in [docs/perf/](docs/perf/).
+[ADR-0022](docs/adr/0022-exact-decimal-int-and-money.md),
+[ADR-0023](docs/adr/0023-calendar-day-datetime-and-enum-values.md) and
+[ADR-0024](docs/adr/0024-division-by-zero-is-an-error-and-iferror.md), the
+size limits in [ADR-0021](docs/adr/0021-size-limits.md), and the numbers
+in [docs/perf/](docs/perf/).
 
 ## Design principles
 

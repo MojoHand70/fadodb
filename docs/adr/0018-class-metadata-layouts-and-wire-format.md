@@ -1,6 +1,6 @@
 # ADR-0018: JSON for definitions and interchange: class metadata, layouts and the wire format
 
-- Status: Accepted
+- Status: Accepted; amended by ADR-0022 (exact values and money on the wire), ADR-0023 (dates and datetimes on the wire, enum values), ADR-0028 (the rights table in the bundle)
 - Date: 2026-11-06
 
 ## Context

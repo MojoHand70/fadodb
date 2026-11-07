@@ -229,7 +229,7 @@ func (o *Outcome) Report(f *Formula, d formula.Dialect) string {
 	if o.SQL.Query != "" {
 		fmt.Fprintf(&b, "query:   %s\n", o.SQL.Query)
 	}
-	fmt.Fprintf(&b, "case:    %s\n", f.CaseJSON(o.VM, o.VMCode, o.Prog.Result.Kind))
+	fmt.Fprintf(&b, "case:    %s\n", f.CaseJSON(o.VM, o.VMCode, o.Prog.Result))
 	return b.String()
 }
 

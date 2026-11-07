@@ -10,7 +10,8 @@ import (
 // The Go VM executes a Program over a fixed value stack with a call-free
 // instruction loop. The scalar path never allocates: a five-operation
 // arithmetic formula runs under 100 ns with zero allocations (ADR-0012).
-// Errors are the closed list of ADR-0019 and are returned, never panicked.
+// Errors are the closed list of ADR-0019, ADR-0022 and ADR-0024 and are
+// returned, never panicked.
 
 // Context is what the context functions see (ADR-0015).
 type Context struct {
@@ -39,16 +40,23 @@ func (e *EvalError) Error() string {
 	return fmt.Sprintf("%s: %s", e.Code, e.Msg)
 }
 
-// Error codes (ADR-0019, ADR-0020).
+// Error codes (ADR-0019, ADR-0020, ADR-0022, ADR-0024).
 const (
-	ErrDivByZero       = "div_by_zero"
-	ErrNotANumber      = "not_a_number"
-	ErrBadText         = "bad_text"
-	ErrOutOfRange      = "out_of_range"
-	ErrLengthMismatch  = "length_mismatch"
-	ErrTooManyElements = "too_many_elements"
-	ErrQueryFailed     = "query_failed"
+	ErrDivByZero        = "div_by_zero"
+	ErrNotANumber       = "not_a_number"
+	ErrBadText          = "bad_text"
+	ErrOutOfRange       = "out_of_range"
+	ErrLengthMismatch   = "length_mismatch"
+	ErrTooManyElements  = "too_many_elements"
+	ErrQueryFailed      = "query_failed"
+	ErrOverflow         = "overflow"
+	ErrInexact          = "inexact"
+	ErrCurrencyMismatch = "currency_mismatch"
 )
+
+// tryFrame is one open IFERROR: where to continue and how deep the stack
+// was when it opened.
+type tryFrame struct{ pc, sp int }
 
 // VM executes programs. A VM is not safe for concurrent use; make one per
 // goroutine. Its stack is reused across runs.
@@ -59,6 +67,11 @@ type VM struct {
 
 	stack []Value
 	ctx   *Context
+	// tries is the handler stack of IFERROR and nt its depth, kept out
+	// of the instruction loop's registers since only try, end.try and an
+	// error touch them.
+	tries [maxTries]tryFrame
+	nt    int
 }
 
 // NewVM makes a VM with the default limits.
@@ -75,6 +88,7 @@ func (vm *VM) Run(p *Program, vars []Value, ctx *Context) (Value, error) {
 	}
 	stack := vm.stack[:p.MaxStack]
 	vm.ctx = ctx
+	vm.nt = 0
 	code := p.Code
 	sp := 0
 	pc := 0
@@ -122,28 +136,28 @@ func (vm *VM) Run(p *Program, vars []Value, ctx *Context) (Value, error) {
 				r = pow(a, b)
 			}
 			if notFinite(r) {
-				err = &EvalError{Code: ErrNotANumber, Msg: "the result is not a finite number"}
+				err = errNotANumber
 				break
 			}
 			sp--
 			stack[sp-1] = Value{kind: KindNumber, num: r}
 		case OpDiv, OpDivStrict:
 			a, b := stack[sp-2].num, stack[sp-1].num
-			var r float64
 			if b == 0 {
-				if in.Op == OpDivStrict {
-					err = &EvalError{Code: ErrDivByZero, Msg: `\ by zero`}
-					break
-				}
-			} else {
-				r = a / b
-				if notFinite(r) {
-					err = &EvalError{Code: ErrNotANumber, Msg: "the result is not a finite number"}
-					break
-				}
+				err = errDivByZero
+				break
+			}
+			r := a / b
+			if notFinite(r) {
+				err = errNotANumber
+				break
 			}
 			sp--
 			stack[sp-1] = Value{kind: KindNumber, num: r}
+		case OpConstDec, OpDecNeg, OpDecPercent, OpDecScale, OpDecAdd, OpDecSub, OpDecMul, OpDecDiv:
+			// The exact instructions run out of line, so that the float
+			// path's registers stay in the loop (ADR-0022).
+			sp, err = exactOp(p, stack, sp, in)
 		case OpConcat:
 			a, b := render(stack[sp-2]), render(stack[sp-1])
 			if n := vm.maxText(); len(a)+len(b) > n && utf8.RuneCountInString(a)+utf8.RuneCountInString(b) > n {
@@ -153,7 +167,17 @@ func (vm *VM) Run(p *Program, vars []Value, ctx *Context) (Value, error) {
 			sp--
 			stack[sp-1] = Value{kind: KindText, str: a + b}
 		case OpEq, OpNe, OpLt, OpLe, OpGt, OpGe:
-			c := compare(stack[sp-2], stack[sp-1])
+			a, b := &stack[sp-2], &stack[sp-1]
+			var c int
+			if a.kind.IsExact() || b.kind.IsExact() {
+				var e *EvalError
+				if c, e = compareExact(a, b, int(in.Arg)); e != nil {
+					err = e
+					break
+				}
+			} else {
+				c = compare(*a, *b)
+			}
 			sp--
 			var r bool
 			switch in.Op {
@@ -195,6 +219,11 @@ func (vm *VM) Run(p *Program, vars []Value, ctx *Context) (Value, error) {
 			if stack[sp-1].kind == KindNull {
 				stack[sp-1] = Value{kind: KindBool}
 			}
+		case OpTry:
+			vm.tries[vm.nt] = tryFrame{pc: int(in.Arg), sp: sp}
+			vm.nt++
+		case OpEndTry:
+			vm.nt--
 		case OpCall:
 			argc := int(in.Arg & 0xff)
 			fn := builtins[in.Arg>>8]
@@ -214,23 +243,223 @@ func (vm *VM) Run(p *Program, vars []Value, ctx *Context) (Value, error) {
 			err = &EvalError{Code: ErrQueryFailed, Msg: fmt.Sprintf("unknown opcode %d", in.Op)}
 		}
 		if err != nil {
-			err.Pos = -1
-			if p.Pos != nil {
-				err.Pos = int(p.Pos[pc-1])
+			if vm.nt > 0 {
+				// IFERROR: drop what the failed value left and run the
+				// fallback.
+				vm.nt--
+				sp = vm.tries[vm.nt].sp
+				pc = vm.tries[vm.nt].pc
+				err = nil
+				continue
 			}
-			return Value{}, err
+			// The errors the operators raise are shared values; the one
+			// that leaves carries its position in a copy of its own.
+			out := &EvalError{Code: err.Code, Msg: err.Msg, Pos: -1}
+			if p.Pos != nil {
+				out.Pos = int(p.Pos[pc-1])
+			}
+			return Value{}, out
 		}
 	}
 }
+
+// The errors the instruction loop and the exact arithmetic raise without
+// a detail to carry, shared so that an error IFERROR catches costs no
+// allocation.
+var (
+	errDivByZero   = &EvalError{Code: ErrDivByZero, Msg: "/ by zero"}
+	errNotANumber  = &EvalError{Code: ErrNotANumber, Msg: "the result is not a finite number"}
+	errOverflow    = &EvalError{Code: ErrOverflow, Msg: "the exact result does not fit 18 digits"}
+	errModByZero   = &EvalError{Code: ErrDivByZero, Msg: "MOD by zero"}
+	errDateRange   = &EvalError{Code: ErrOutOfRange, Msg: "the date is outside year 1 to year 9999"}
+	errCurrencyMix = &EvalError{Code: ErrCurrencyMismatch, Msg: "the currencies of one operation must agree"}
+)
 
 // notFinite reports an infinite or NaN result with one comparison: the
 // magnitude of a finite number is at most MaxFloat64, an infinity's is
 // larger, and a NaN compares false with everything.
 func notFinite(r float64) bool { return !(math.Abs(r) <= math.MaxFloat64) }
 
-// compare orders two scalars for the comparison operators. The binder
-// guarantees the same static type or a blank on one side; a blank reads as
-// the zero of the other side's kind (ADR-0019).
+func currencyMismatch() *EvalError { return errCurrencyMix }
+
+// exactOp executes one exact instruction over the stack and returns the
+// new stack pointer.
+//
+//go:noinline
+func exactOp(p *Program, stack []Value, sp int, in Instr) (int, *EvalError) {
+	switch in.Op {
+	case OpConstDec:
+		c := p.Decs[in.Arg]
+		stack[sp] = Value{kind: KindDecimal, scale: c.Scale, num: mantBits(c.Mant)}
+		return sp + 1, nil
+	case OpDecAdd, OpDecSub, OpDecMul, OpDecDiv:
+		r, e := decBinary(in.Op, stack[sp-2], stack[sp-1], int(in.Arg&0xff), in.Arg&decMoneyFlag != 0)
+		if e != nil {
+			return sp, e
+		}
+		stack[sp-2] = r
+		return sp - 1, nil
+	}
+	v, e := decUnaryValue(in.Op, stack[sp-1], in.Arg)
+	if e != nil {
+		return sp, e
+	}
+	stack[sp-1] = v
+	return sp, nil
+}
+
+// decUnaryValue is dec.neg, dec.percent and dec.scale.
+func decUnaryValue(op Op, v Value, arg int32) (Value, *EvalError) {
+	scale, money := int(arg&0xff), arg&decMoneyFlag != 0
+	if op == OpDecScale {
+		if money && (v.kind == KindDecimal || v.kind == KindNumber) {
+			// A money result with no currency: every money operand was
+			// blank, and so is the result.
+			return Blank(), nil
+		}
+		if v.kind == KindNumber {
+			// A function ran on the float family because every exact
+			// argument was blank; its result is 0 or blank-derived.
+			m, e := decFromFloat(v.num, scale, rmHalfUp)
+			if e != nil {
+				return Value{}, e
+			}
+			return Decimal(m, scale), nil
+		}
+		if v.kind.IsExact() && int(v.scale) != scale {
+			m, e := rescaleExact(v.Mant(), int(v.scale), scale)
+			if e != nil {
+				return Value{}, e
+			}
+			return Value{kind: v.kind, scale: int8(scale), num: mantBits(m), str: v.str}, nil
+		}
+		return v, nil
+	}
+	if v.kind == KindNull || v.kind == KindBool {
+		if money {
+			return Blank(), nil
+		}
+		m := int64(v.num)
+		if op == OpDecNeg {
+			m = -m
+		}
+		return Decimal(m, scale), nil
+	}
+	m := v.Mant()
+	if op == OpDecNeg {
+		if m == math.MinInt64 {
+			return Value{}, overflow()
+		}
+		m = -m
+	}
+	return Value{kind: v.kind, scale: int8(scale), num: mantBits(m), str: v.str}, nil
+}
+
+// compareExact orders two operands of which one is exact, both brought to
+// the static scale the instruction carries, as the SQL dialects align
+// them; money operands must share a currency.
+//
+//go:noinline
+func compareExact(a, b *Value, scale int) (int, *EvalError) {
+	if a.kind == KindMoney && b.kind == KindMoney && a.str != b.str {
+		return 0, currencyMismatch()
+	}
+	ma, sa := exactOperand(*a)
+	mb, sb := exactOperand(*b)
+	x, ok := scaleBy(ma, scale-sa)
+	y, ok2 := scaleBy(mb, scale-sb)
+	if !ok || !ok2 {
+		return 0, overflow()
+	}
+	switch {
+	case x < y:
+		return -1, nil
+	case x > y:
+		return 1, nil
+	}
+	return 0, nil
+}
+
+// exactOperand reads an operand of an exact operation: a decimal or money
+// as it is, a bool as 1 or 0, a blank as 0 (ADR-0005).
+func exactOperand(v Value) (int64, int) {
+	switch v.kind {
+	case KindDecimal, KindMoney:
+		return v.Mant(), int(v.scale)
+	case KindBool:
+		return int64(v.num), 0
+	}
+	return 0, 0
+}
+
+// decBinary computes an exact +, -, * or / at the static result scale
+// (ADR-0022). The money operands must share a currency, which the result
+// takes; a money result with no currency, every money operand having been
+// blank, is blank.
+func decBinary(op Op, a, b Value, scale int, money bool) (Value, *EvalError) {
+	cur := ""
+	if a.kind == KindMoney {
+		cur = a.str
+	}
+	if b.kind == KindMoney {
+		if cur != "" && b.str != cur {
+			return Value{}, currencyMismatch()
+		}
+		cur = b.str
+	}
+	ma, sa := exactOperand(a)
+	mb, sb := exactOperand(b)
+	var (
+		m  int64
+		s  int
+		ok bool
+	)
+	switch op {
+	case OpDecAdd, OpDecSub:
+		x, y, s2, aligned := alignScales(ma, sa, mb, sb)
+		if !aligned {
+			return Value{}, overflow()
+		}
+		if op == OpDecSub {
+			if y == math.MinInt64 {
+				return Value{}, overflow()
+			}
+			y = -y
+		}
+		m, ok = addInt(x, y)
+		s = s2
+	case OpDecMul:
+		m, ok = mulInt(ma, mb)
+		s = sa + sb
+	default:
+		var e *EvalError
+		m, s, e = decDiv(ma, sa, mb, sb)
+		if e != nil {
+			return Value{}, e
+		}
+		ok = true
+	}
+	if !ok {
+		return Value{}, overflow()
+	}
+	if s != scale {
+		m, ok = scaleBy(m, scale-s)
+		if !ok {
+			return Value{}, overflow()
+		}
+	}
+	if money {
+		if cur == "" {
+			return Blank(), nil
+		}
+		return Money(m, scale, cur), nil
+	}
+	return Decimal(m, scale), nil
+}
+
+// compare orders two scalars for the comparison operators, exact values
+// aside. The binder guarantees the same static kind or a blank on one
+// side; a blank reads as the zero of the other side's kind (ADR-0019).
 func compare(a, b Value) int {
 	ka, kb := a.kind, b.kind
 	if ka == KindNull && kb == KindNull {

@@ -7,12 +7,15 @@ import (
 	"strings"
 )
 
-// The DuckDB dialect (ADR-0017, ADR-0020). Numbers are DOUBLE throughout:
-// DuckDB reads a bare literal such as 2.5 as DECIMAL and 1706659200 as a
-// 32-bit integer, so every literal is cast. Dates are DOUBLE seconds turned
-// into naive TIMESTAMPs through make_timestamp, never to_timestamp, whose
-// result would follow the session time zone. Booleans are BOOLEAN; blank is
-// NULL.
+// The DuckDB dialect (ADR-0017, ADR-0020, ADR-0022). Numbers are DOUBLE
+// throughout: DuckDB reads a bare literal such as 2.5 as DECIMAL and
+// 1706659200 as a 32-bit integer, so every literal is cast. A date is
+// DOUBLE days and a datetime DOUBLE seconds, turned into naive TIMESTAMPs
+// through make_timestamp, never to_timestamp, whose result would follow
+// the session time zone. Booleans are BOOLEAN; blank is NULL. An exact
+// value is its BIGINT mantissa; exact arithmetic runs in HUGEINT, which
+// cannot overflow on 64-bit operands, and TRY_CAST narrows the result,
+// NULL where it does not fit.
 //
 // Where DuckDB's own function differs from the rule, the dialect calls a
 // macro named like the SQLite dialect's registered function, fado_<name>,
@@ -29,8 +32,9 @@ type DuckDB struct {
 
 // NewDuckDB makes the DuckDB dialect under the default limits.
 func NewDuckDB() DuckDB {
-	return DuckDB{coercions: coercions{zeroNumber: "0.0::DOUBLE", zeroBool: "FALSE", zeroText: "''",
-		castNumber: func(x string) string { return "CAST(" + x + " AS DOUBLE)" }}, lim: DefaultLimits()}
+	return DuckDB{coercions: coercions{zeroNumber: "0.0::DOUBLE", zeroBool: "FALSE", zeroText: "''", zeroMant: "0::HUGEINT",
+		castNumber: func(x string) string { return "CAST(" + x + " AS DOUBLE)" },
+		castMant:   func(x string) string { return "CAST(" + x + " AS HUGEINT)" }}, lim: DefaultLimits()}
 }
 
 // Limits implements Dialect.
@@ -50,6 +54,9 @@ func (DuckDB) NumberLit(f float64) string {
 	return "CAST(" + strconv.FormatFloat(f, 'g', -1, 64) + " AS DOUBLE)"
 }
 
+// IntLit implements Dialect.
+func (DuckDB) IntLit(m int64) string { return "CAST(" + strconv.FormatInt(m, 10) + " AS BIGINT)" }
+
 // TextLit implements Dialect.
 func (DuckDB) TextLit(s string) string { return textLiteral(s) }
 
@@ -62,8 +69,10 @@ func (DuckDB) False() string { return "FALSE" }
 // Load implements Dialect.
 func (DuckDB) Load(column string, k Kind) string {
 	switch k {
-	case KindNumber, KindDate:
+	case KindNumber, KindDate, KindDateTime:
 		return "CAST(" + column + " AS DOUBLE)"
+	case KindDecimal, KindMoney:
+		return "CAST(" + column + " AS BIGINT)"
 	case KindBool:
 		return "CAST(" + column + " AS BOOLEAN)"
 	}
@@ -72,6 +81,14 @@ func (DuckDB) Load(column string, k Kind) string {
 
 // NotFinite implements Dialect: DuckDB keeps NaN and the infinities.
 func (DuckDB) NotFinite(val string) string { return "NOT isfinite(" + val + ")" }
+
+// Narrow implements Dialect.
+func (DuckDB) Narrow(val string) string { return "TRY_CAST(" + val + " AS BIGINT)" }
+
+// OverflowErr implements Dialect: a NULL is a blank, not an overflow.
+func (DuckDB) OverflowErr(val string) string {
+	return "CASE WHEN (" + val + ") IS NOT NULL AND TRY_CAST(" + val + " AS BIGINT) IS NULL THEN 'overflow' END"
+}
 
 // Pow implements Dialect: DuckDB's pow is the C library's, which the VM's
 // double-double power matches.
@@ -93,7 +110,7 @@ func (DuckDB) ContextArgs(ctx *Context) []any {
 // Setup implements Dialect: the macro definitions.
 func (DuckDB) Setup() []string { return duckdbMacros }
 
-// Render implements Dialect: the TEXT rule of ADR-0019.
+// Render implements Dialect: the TEXT rule of ADR-0019 and ADR-0022.
 func (d DuckDB) Render(e SQLExpr) string {
 	switch e.Kind {
 	case KindNull:
@@ -107,9 +124,14 @@ func (d DuckDB) Render(e SQLExpr) string {
 		return "COALESCE(printf('%.15g', " + e.Val + " + 0.0::DOUBLE), '')"
 	case KindBool:
 		return "(CASE WHEN " + e.Val + " IS NULL THEN '' WHEN " + e.Val + " THEN 'TRUE' ELSE 'FALSE' END)"
+	case KindDecimal:
+		return "COALESCE(fado_dec_text(" + e.Val + ", " + strconv.Itoa(int(e.Scale)) + "), '')"
+	case KindMoney:
+		return "(CASE WHEN " + curOrNull(e) + " IS NULL THEN '' ELSE fado_dec_text(" + e.Val + ", " + strconv.Itoa(int(e.Scale)) + ") || ' ' || " + e.Cur + " END)"
 	case KindDate:
-		return "(CASE WHEN " + e.Val + " IS NULL THEN '' WHEN " + e.Val + " % 86400 = 0 THEN strftime(fado_ts(" + e.Val +
-			"), '%Y-%m-%d') ELSE strftime(fado_ts(" + e.Val + "), '%Y-%m-%d %H:%M:%S') END)"
+		return "(CASE WHEN " + e.Val + " IS NULL THEN '' ELSE strftime(fado_ts(" + e.Val + " * " + d.NumberLit(secondsPerDay) + "), '%Y-%m-%d') END)"
+	case KindDateTime:
+		return "(CASE WHEN " + e.Val + " IS NULL THEN '' ELSE strftime(fado_ts(" + e.Val + "), '%Y-%m-%d %H:%M:%S') END)"
 	}
 	return d.Text(e)
 }
@@ -144,11 +166,16 @@ func (d DuckDB) Call(name string, args []SQLExpr, params *Params) (SQLExpr, erro
 		}
 		return e.Val
 	}
+	rawMant := d.RawMant
 	count := func(e SQLExpr) string {
 		if e.Kind == KindNull {
 			return "0"
 		}
 		return "CAST(" + e.Val + " IS NOT NULL AS INTEGER)"
+	}
+	exact := false
+	for _, a := range args {
+		exact = exact || a.Kind.IsExact()
 	}
 	// intArg truncates a position or count argument to an integer, clamped
 	// to -1 below and to one past maxCount above, so that a negative
@@ -156,19 +183,50 @@ func (d DuckDB) Call(name string, args []SQLExpr, params *Params) (SQLExpr, erro
 	intArg := func(x string) string {
 		return "CAST(LEAST(GREATEST(trunc(" + x + "), -1), " + maxCount + " + 1) AS BIGINT)"
 	}
+	secs := func(e SQLExpr) string {
+		if e.Kind == KindDate {
+			return "(" + e.Val + " * " + d.NumberLit(secondsPerDay) + ")"
+		}
+		return e.Val
+	}
 	year := func(v string) string { return "CAST(year(fado_ts(" + v + ")) AS DOUBLE)" }
 	month := func(v string) string { return "CAST(month(fado_ts(" + v + ")) AS DOUBLE)" }
 	switch name {
 	case "ROUND", "FLOOR", "CEILING", "TRUNC":
+		if args[0].Kind.IsExact() {
+			method := d.TextLit(map[string]string{"ROUND": "half_up", "FLOOR": "floor", "CEILING": "ceiling", "TRUNC": "down"}[name])
+			if name == "ROUND" {
+				method = methodConst(d, args, 2)
+			}
+			places := placesConst(args, 1)
+			list := d.Mant(args[0]) + ", " + strconv.Itoa(int(args[0].Scale)) + ", " + strconv.Itoa(places) + ", " + method
+			return SQLExpr{Val: "fado_dec_round(" + list + ")", Err: "fado_dec_round_err(" + list + ")", Kind: args[0].Kind, Scale: int8(max(places, 0)), Cur: args[0].Cur, Sure: args[0].Sure}, nil
+		}
+		if name == "ROUND" {
+			e := SQLExpr{Val: "fado_round_m(" + d.Num(args[0]) + ", " + numOr(1, zero) + ", " + methodConst(d, args, 2) + ")", Kind: KindNumber, Sure: true}
+			return e, nil
+		}
 		e := macro(KindNumber, false, d.Num(args[0]), numOr(1, zero))
 		e.Sure = true
 		return e, nil
 	case "ABS":
+		if exact {
+			m := d.Mant(args[0])
+			return SQLExpr{Val: "TRY_CAST(abs(" + m + ") AS BIGINT)", Err: "CASE WHEN TRY_CAST(abs(" + m + ") AS BIGINT) IS NULL THEN 'overflow' END",
+				Kind: args[0].Kind, Scale: args[0].Scale, Cur: args[0].Cur, Sure: true}, nil
+		}
 		return SQLExpr{Val: "abs(" + d.Num(args[0]) + ")", Kind: KindNumber, Sure: true}, nil
 	case "SIGN":
+		if exact {
+			x := d.Mant(args[0])
+			return SQLExpr{Val: "(CASE WHEN " + x + " > 0 THEN CAST(1 AS BIGINT) WHEN " + x + " < 0 THEN CAST(-1 AS BIGINT) ELSE CAST(0 AS BIGINT) END)", Kind: KindDecimal, Sure: true}, nil
+		}
 		x := d.Num(args[0])
 		return SQLExpr{Val: "(CASE WHEN " + x + " > 0 THEN " + d.NumberLit(1) + " WHEN " + x + " < 0 THEN " + d.NumberLit(-1) + " ELSE " + zero + " END)", Kind: KindNumber, Sure: true}, nil
 	case "MIN", "MAX":
+		if exact {
+			return d.exactAggregate(name, args[:len(args)-1]), nil
+		}
 		list := make([]string, len(args))
 		for i, a := range args {
 			list[i] = rawNum(a)
@@ -182,6 +240,9 @@ func (d DuckDB) Call(name string, args []SQLExpr, params *Params) (SQLExpr, erro
 		}
 		return SQLExpr{Val: fn + "(" + strings.Join(list, ", ") + ")", Kind: KindNumber}, nil
 	case "SUM", "AVERAGE", "COUNT":
+		if exact && name != "COUNT" {
+			return d.exactAggregate(name, args[:len(args)-1]), nil
+		}
 		sums := make([]string, len(args))
 		counts := make([]string, len(args))
 		for i, a := range args {
@@ -218,50 +279,118 @@ func (d DuckDB) Call(name string, args []SQLExpr, params *Params) (SQLExpr, erro
 		val := "(CASE WHEN " + b + " = " + d.NumberLit(10) + " THEN log10(" + x + ") ELSE ln(" + x + ") / ln(" + b + ") END)"
 		return SQLExpr{Val: val, Err: "CASE WHEN " + x + " <= 0 OR " + b + " <= 0 OR " + b + " = 1 THEN 'not_a_number' END", Kind: KindNumber}, nil
 	case "MOD":
+		if exact {
+			mants, scale, kind, cur, errs := exactArgs(d, args[:len(args)-1])
+			list := mants[0] + ", " + mants[1]
+			return SQLExpr{Val: "fado_dec_mod(" + list + ")", Err: coalesceErr(append(errs, "fado_dec_mod_err("+list+")")...), Kind: kind, Scale: int8(scale), Cur: cur}, nil
+		}
 		a, b := d.Num(args[0]), d.Num(args[1])
 		val := "(" + a + " - " + b + " * floor(" + a + " / " + b + "))"
 		return SQLExpr{Val: val, Err: coalesceErr("CASE WHEN "+b+" = "+zero+" THEN 'div_by_zero' END", notFiniteErr(d, val)), Kind: KindNumber}, nil
+	case "DECIMAL":
+		places := placesConst(args, 1)
+		method := methodConst(d, args, 2)
+		x := args[0]
+		if x.Kind.IsExact() {
+			list := rawMant(x) + ", " + strconv.Itoa(int(x.Scale)) + ", " + strconv.Itoa(places) + ", " + method
+			return SQLExpr{Val: "fado_dec_round(" + list + ")", Err: "fado_dec_round_err(" + list + ")", Kind: KindDecimal, Scale: int8(places), Sure: x.Sure}, nil
+		}
+		list := rawNum(x) + ", " + strconv.Itoa(places) + ", " + method
+		return SQLExpr{Val: "fado_dec_from(" + list + ")", Err: "fado_dec_from_err(" + list + ")", Kind: KindDecimal, Scale: int8(places)}, nil
+	case "NUMBER":
+		x := args[0]
+		if x.Kind.IsExact() {
+			return SQLExpr{Val: "(CAST(" + x.Val + " AS DOUBLE) / " + d.NumberLit(pow10(int(x.Scale))) + ")", Kind: KindNumber, Sure: x.Sure}, nil
+		}
+		return SQLExpr{Val: rawNum(x), Kind: KindNumber, Sure: x.Sure}, nil
+	case "MONEY":
+		amount, cur := args[0], d.Text(args[1])
+		m := "TRY_CAST(" + rawMant(amount) + " AS BIGINT)"
+		return SQLExpr{Val: m, Err: "CASE WHEN " + m + " IS NOT NULL THEN fado_currency_err(" + cur + ") END",
+			Cur: "(CASE WHEN " + m + " IS NULL THEN NULL ELSE fado_currency(" + cur + ") END)", Kind: KindMoney, Scale: amount.Scale}, nil
+	case "MONEYVALUE":
+		t, places := d.Text(args[0]), strconv.Itoa(placesConst(args, 1))
+		return SQLExpr{Val: "fado_money_amount(" + t + ", " + places + ")", Err: "fado_money_amount_err(" + t + ", " + places + ")",
+			Cur: "fado_money_cur(" + t + ")", Kind: KindMoney, Scale: int8(placesConst(args, 1))}, nil
+	case "DECIMALVALUE":
+		t, places := d.Text(args[0]), strconv.Itoa(placesConst(args, 1))
+		return SQLExpr{Val: "fado_dec_parse(" + t + ", " + places + ")", Err: "fado_dec_parse_err(" + t + ", " + places + ")", Kind: KindDecimal, Scale: int8(placesConst(args, 1))}, nil
+	case "AMOUNT":
+		if args[0].Kind == KindNull {
+			return SQLExpr{Val: "NULL::BIGINT", Kind: KindDecimal}, nil
+		}
+		return SQLExpr{Val: args[0].Val, Kind: KindDecimal, Scale: args[0].Scale, Sure: args[0].Sure}, nil
+	case "CURRENCY":
+		return SQLExpr{Val: curOrNull(args[0]), Kind: KindText}, nil
 	case "DATE":
 		return macro(KindDate, true, d.Num(args[0]), d.Num(args[1]), d.Num(args[2])), nil
 	case "DATEVALUE":
 		return macro(KindDate, true, d.Text(args[0])), nil
+	case "DATETIMEVALUE":
+		return macro(KindDateTime, true, d.Text(args[0])), nil
+	case "DATEOF":
+		if args[0].Kind == KindNull {
+			return SQLExpr{Val: "NULL::DOUBLE", Kind: KindDate}, nil
+		}
+		return SQLExpr{Val: "floor(" + args[0].Val + " / " + d.NumberLit(secondsPerDay) + ")", Kind: KindDate, Sure: args[0].Sure}, nil
+	case "DATETIME":
+		if args[0].Kind == KindNull {
+			return SQLExpr{Val: "NULL::DOUBLE", Kind: KindDateTime}, nil
+		}
+		return SQLExpr{Val: "(" + args[0].Val + " * " + d.NumberLit(secondsPerDay) + ")", Kind: KindDateTime, Sure: args[0].Sure}, nil
 	case "YEAR", "MONTH", "DAY", "QUARTER":
 		if args[0].Kind == KindNull {
-			return SQLExpr{Val: "NULL", Kind: KindNumber}, nil
+			return SQLExpr{Val: "NULL::DOUBLE", Kind: KindNumber}, nil
 		}
-		return SQLExpr{Val: "CAST(" + strings.ToLower(name) + "(fado_ts(" + args[0].Val + ")) AS DOUBLE)", Kind: KindNumber}, nil
+		return SQLExpr{Val: "CAST(" + strings.ToLower(name) + "(fado_ts(" + secs(args[0]) + ")) AS DOUBLE)", Kind: KindNumber}, nil
 	case "DAYS", "DAYSBETWEEN":
 		a, b := args[0], args[1]
 		if name == "DAYSBETWEEN" {
 			a, b = b, a
 		}
 		if a.Kind == KindNull || b.Kind == KindNull {
-			return SQLExpr{Val: "NULL", Kind: KindNumber}, nil
+			return SQLExpr{Val: "NULL::DOUBLE", Kind: KindNumber}, nil
+		}
+		if a.Kind == KindDate && b.Kind == KindDate {
+			return SQLExpr{Val: "(" + a.Val + " - " + b.Val + ")", Kind: KindNumber}, nil
 		}
 		day := d.NumberLit(secondsPerDay)
 		return SQLExpr{Val: "(floor(" + a.Val + " / " + day + ") - floor(" + b.Val + " / " + day + "))", Kind: KindNumber}, nil
 	case "MONTHSBETWEEN", "YEARSBETWEEN":
 		if args[0].Kind == KindNull || args[1].Kind == KindNull {
-			return SQLExpr{Val: "NULL", Kind: KindNumber}, nil
+			return SQLExpr{Val: "NULL::DOUBLE", Kind: KindNumber}, nil
 		}
-		s, e := args[0].Val, args[1].Val
+		s, e := secs(args[0]), secs(args[1])
 		if name == "YEARSBETWEEN" {
 			return SQLExpr{Val: "(" + year(e) + " - " + year(s) + ")", Kind: KindNumber}, nil
 		}
 		return SQLExpr{Val: "((" + year(e) + " * 12 + " + month(e) + ") - (" + year(s) + " * 12 + " + month(s) + "))", Kind: KindNumber}, nil
 	case "ADDDAYS":
-		if args[0].Kind == KindNull {
-			return SQLExpr{Val: "NULL", Kind: KindDate}, nil
+		x := args[0]
+		if x.Kind == KindNull {
+			return SQLExpr{Val: "NULL", Kind: KindNull}, nil
 		}
-		val := "floor(" + args[0].Val + " + " + d.Num(args[1]) + " * " + d.NumberLit(secondsPerDay) + ")"
-		return SQLExpr{Val: val, Err: "CASE WHEN " + val + " < " + strconv.Itoa(minDateSecs) + " OR " + val + " > " + strconv.Itoa(maxDateSecs) + " THEN 'out_of_range' END", Kind: KindDate}, nil
+		if x.Kind == KindDate {
+			val := "(" + x.Val + " + trunc(" + d.Num(args[1]) + "))"
+			return SQLExpr{Val: val, Err: "CASE WHEN " + val + " < " + strconv.Itoa(minDateDays) + " OR " + val + " > " + strconv.Itoa(maxDateDays) + " THEN 'out_of_range' END", Kind: KindDate}, nil
+		}
+		val := "floor(" + x.Val + " + " + d.Num(args[1]) + " * " + d.NumberLit(secondsPerDay) + ")"
+		return SQLExpr{Val: val, Err: "CASE WHEN " + val + " < " + strconv.Itoa(minDateSecs) + " OR " + val + " > " + strconv.Itoa(maxDateSecs) + " THEN 'out_of_range' END", Kind: KindDateTime}, nil
 	case "ADDMONTHS", "ADDYEARS":
-		return macro(KindDate, true, args[0].Val, d.Num(args[1])), nil
+		x := args[0]
+		if x.Kind == KindDate {
+			e := macro(KindDate, true, secs(x), d.Num(args[1]))
+			e.Val = "(" + e.Val + " / " + d.NumberLit(secondsPerDay) + ")"
+			return e, nil
+		}
+		if x.Kind == KindNull {
+			return SQLExpr{Val: "NULL", Kind: KindNull}, nil
+		}
+		return macro(KindDateTime, true, x.Val, d.Num(args[1])), nil
 	case "NOW":
-		return SQLExpr{Val: "CAST(" + params.Use("now") + " AS DOUBLE)", Kind: KindDate, Sure: true}, nil
+		return SQLExpr{Val: "CAST(" + params.Use("now") + " AS DOUBLE)", Kind: KindDateTime, Sure: true}, nil
 	case "TODAY":
-		day := d.NumberLit(secondsPerDay)
-		return SQLExpr{Val: "(floor(CAST(" + params.Use("now") + " AS DOUBLE) / " + day + ") * " + day + ")", Kind: KindDate, Sure: true}, nil
+		return SQLExpr{Val: "floor(CAST(" + params.Use("now") + " AS DOUBLE) / " + d.NumberLit(secondsPerDay) + ")", Kind: KindDate, Sure: true}, nil
 	case "USER":
 		return SQLExpr{Val: "CAST(" + params.Use("user") + " AS VARCHAR)", Kind: KindText}, nil
 	case "INGROUP":
@@ -318,9 +447,66 @@ func (d DuckDB) Call(name string, args []SQLExpr, params *Params) (SQLExpr, erro
 	return SQLExpr{}, fmt.Errorf("no DuckDB translation")
 }
 
+// exactAggregate spells MIN, MAX, SUM and AVERAGE over exact values in
+// HUGEINT: the mantissas aligned to the largest scale, blanks skipped, and
+// the currencies checked.
+func (d DuckDB) exactAggregate(name string, args []SQLExpr) SQLExpr {
+	mants, scale, kind, cur, errs := exactArgs(d, args)
+	e := SQLExpr{Kind: kind, Scale: int8(scale), Cur: cur}
+	switch name {
+	case "MIN", "MAX":
+		raws := make([]string, len(args))
+		for i, a := range args {
+			if a.Kind == KindNull {
+				raws[i] = "NULL::HUGEINT"
+			} else {
+				var re string
+				raws[i], re = rescaled(d, d.RawMant(a), int(a.Scale), scale)
+				if re != "" {
+					errs = append(errs, re)
+				}
+			}
+		}
+		fn := "least"
+		if name == "MAX" {
+			fn = "greatest"
+		}
+		val := raws[0]
+		if len(raws) > 1 {
+			val = fn + "(" + strings.Join(raws, ", ") + ")"
+		}
+		e.Val = d.Narrow(val)
+		errs = append(errs, "CASE WHEN "+val+" IS NOT NULL AND "+e.Val+" IS NULL THEN 'overflow' END")
+	case "SUM":
+		val := "(" + strings.Join(mants, " + ") + ")"
+		e.Val, e.Sure = d.Narrow(val), true
+		errs = append(errs, d.OverflowErr(val))
+	default:
+		counts := make([]string, len(args))
+		for i, a := range args {
+			if a.Kind == KindNull {
+				counts[i] = "0"
+			} else {
+				counts[i] = "CAST(" + a.Val + " IS NOT NULL AS INTEGER)"
+			}
+		}
+		n := "(" + strings.Join(counts, " + ") + ")"
+		sum := "(" + strings.Join(mants, " + ") + ")"
+		list := sum + ", CAST(" + n + " AS HUGEINT), " + strconv.Itoa(divScale(scale)-scale)
+		e.Val = "(CASE WHEN " + n + " = 0 THEN NULL ELSE fado_dec_div(" + list + ") END)"
+		e.Scale = int8(divScale(scale))
+		errs = append(errs, d.OverflowErr(sum), "CASE WHEN "+n+" > 0 THEN fado_dec_div_err("+list+") END")
+	}
+	e.Err = coalesceErr(errs...)
+	return e
+}
+
 const (
 	duckdbMinDate = "-62135596800"
 	duckdbMaxDate = "253402300799"
+	duckdbMinDay  = "-719162"
+	duckdbMaxDay  = "2932896"
+	duckdbMaxInt  = "9223372036854775807::HUGEINT"
 )
 
 // duckdbMacros are the engine functions as inlined SQL. A macro body is an
@@ -336,9 +522,69 @@ var duckdbMacros = []string{
 	`CREATE OR REPLACE MACRO fado_pow10(d) AS CASE WHEN abs(trunc(d::DOUBLE)) <= 22 THEN pow(10::DOUBLE, trunc(d::DOUBLE)) ELSE CAST('1e' || CAST(CAST(LEAST(GREATEST(trunc(d::DOUBLE), -323), 308) AS INTEGER) AS VARCHAR) AS DOUBLE) END`,
 	`CREATE OR REPLACE MACRO fado_scale(d) AS fado_pow10(LEAST(GREATEST(trunc(d::DOUBLE), -300), 300))`,
 	`CREATE OR REPLACE MACRO fado_round(x, d) AS CASE WHEN trunc(d::DOUBLE) > 300 THEN x::DOUBLE WHEN trunc(d::DOUBLE) < -300 THEN 0.0::DOUBLE WHEN abs(x::DOUBLE * fado_pow10(d)) >= 4503599627370496 THEN x::DOUBLE ELSE round(x::DOUBLE * fado_pow10(d)) / fado_pow10(d) END`,
+	`CREATE OR REPLACE MACRO fado_round_even(x, d) AS CASE WHEN trunc(d::DOUBLE) > 300 THEN x::DOUBLE WHEN trunc(d::DOUBLE) < -300 THEN 0.0::DOUBLE WHEN abs(x::DOUBLE * fado_pow10(d)) >= 4503599627370496 THEN x::DOUBLE ELSE round_even(x::DOUBLE * fado_pow10(d), 0) / fado_pow10(d) END`,
 	`CREATE OR REPLACE MACRO fado_floor(x, d) AS CASE WHEN abs(x::DOUBLE * fado_scale(d)) >= 4503599627370496 THEN x::DOUBLE ELSE floor(fado_round(x::DOUBLE * fado_scale(d), 9)) / fado_scale(d) END`,
 	`CREATE OR REPLACE MACRO fado_ceiling(x, d) AS CASE WHEN abs(x::DOUBLE * fado_scale(d)) >= 4503599627370496 THEN x::DOUBLE ELSE ceil(fado_round(x::DOUBLE * fado_scale(d), 9)) / fado_scale(d) END`,
 	`CREATE OR REPLACE MACRO fado_trunc(x, d) AS CASE WHEN abs(x::DOUBLE * fado_scale(d)) >= 4503599627370496 THEN x::DOUBLE ELSE trunc(fado_round(x::DOUBLE * fado_scale(d), 9)) / fado_scale(d) END`,
+	// ROUND with a method (ADR-0022): up is away from zero.
+	`CREATE OR REPLACE MACRO fado_round_m(x, d, m) AS CASE m WHEN 'half_even' THEN fado_round_even(x, d) WHEN 'down' THEN fado_trunc(x, d) WHEN 'up' THEN (CASE WHEN x::DOUBLE < 0 THEN fado_floor(x, d) ELSE fado_ceiling(x, d) END) WHEN 'floor' THEN fado_floor(x, d) WHEN 'ceiling' THEN fado_ceiling(x, d) ELSE fado_round(x, d) END`,
+	// Exact arithmetic (ADR-0022) in HUGEINT. A power of ten is built from
+	// its digits, which is exact where pow() is not.
+	`CREATE OR REPLACE MACRO fado_hpow10(k) AS CAST('1' || repeat('0', CAST(GREATEST(k, 0) AS INTEGER)) AS HUGEINT)`,
+	// The dividend scaled by at most 10^19 stays within HUGEINT; a larger
+	// power would overflow the engine, and the magnitude check below reports
+	// overflow for any non-zero dividend at that power anyway.
+	`CREATE OR REPLACE MACRO fado_dec_x(x, k) AS x::HUGEINT * fado_hpow10(LEAST(k, 19))`,
+	`CREATE OR REPLACE MACRO fado_dec_q(x, y, k) AS fado_dec_x(x, k) // NULLIF(y::HUGEINT, 0)`,
+	`CREATE OR REPLACE MACRO fado_dec_r(x, y, k) AS fado_dec_x(x, k) % NULLIF(y::HUGEINT, 0)`,
+	// Division rounds half away from zero: the quotient truncated toward
+	// zero, plus one in the quotient's direction when twice the remainder
+	// reaches the divisor.
+	`CREATE OR REPLACE MACRO fado_dec_div_raw(x, y, k) AS fado_dec_q(x, y, k) + CASE WHEN abs(fado_dec_r(x, y, k)) * 2 >= abs(y::HUGEINT) THEN (CASE WHEN (fado_dec_x(x, k) < 0) = (y::HUGEINT < 0) THEN 1 ELSE -1 END) ELSE 0 END`,
+	`CREATE OR REPLACE MACRO fado_dec_div(x, y, k) AS CASE WHEN y::HUGEINT = 0 OR abs(fado_dec_x(x, k)) > ` + duckdbMaxInt + ` THEN NULL ELSE TRY_CAST(fado_dec_div_raw(x, y, k) AS BIGINT) END`,
+	`CREATE OR REPLACE MACRO fado_dec_div_err(x, y, k) AS CASE WHEN y::HUGEINT = 0 THEN 'div_by_zero' WHEN abs(fado_dec_x(x, k)) > ` + duckdbMaxInt + ` OR TRY_CAST(fado_dec_div_raw(x, y, k) AS BIGINT) IS NULL THEN 'overflow' END`,
+	// Rounding a mantissa m at scale s to p places by method meth, as the
+	// VM's roundMant: the dropped digits decide by the method, and negative
+	// places scale the result back up.
+	`CREATE OR REPLACE MACRO fado_dec_pw(s, p) AS fado_hpow10(s - p)`,
+	`CREATE OR REPLACE MACRO fado_dec_rq(m, s, p) AS m::HUGEINT // fado_dec_pw(s, p)`,
+	`CREATE OR REPLACE MACRO fado_dec_rr(m, s, p) AS m::HUGEINT % fado_dec_pw(s, p)`,
+	`CREATE OR REPLACE MACRO fado_dec_sign(m) AS CASE WHEN m::HUGEINT > 0 THEN 1 WHEN m::HUGEINT < 0 THEN -1 ELSE 0 END`,
+	`CREATE OR REPLACE MACRO fado_dec_rounded(m, s, p, meth) AS fado_dec_rq(m, s, p) + CASE WHEN fado_dec_rr(m, s, p) = 0 THEN 0 WHEN meth = 'half_even' THEN (CASE WHEN abs(fado_dec_rr(m, s, p)) * 2 > fado_dec_pw(s, p) OR (abs(fado_dec_rr(m, s, p)) * 2 = fado_dec_pw(s, p) AND fado_dec_rq(m, s, p) % 2 <> 0) THEN fado_dec_sign(m) ELSE 0 END) WHEN meth = 'down' THEN 0 WHEN meth = 'up' THEN fado_dec_sign(m) WHEN meth = 'floor' THEN (CASE WHEN m::HUGEINT < 0 THEN -1 ELSE 0 END) WHEN meth = 'ceiling' THEN (CASE WHEN m::HUGEINT > 0 THEN 1 ELSE 0 END) ELSE (CASE WHEN abs(fado_dec_rr(m, s, p)) * 2 >= fado_dec_pw(s, p) THEN fado_dec_sign(m) ELSE 0 END) END`,
+	`CREATE OR REPLACE MACRO fado_dec_round_raw(m, s, p, meth) AS CASE WHEN p >= s THEN m::HUGEINT * fado_hpow10(p - s) WHEN p >= 0 THEN fado_dec_rounded(m, s, p, meth) ELSE fado_dec_rounded(m, s, p, meth) * fado_hpow10(-p) END`,
+	`CREATE OR REPLACE MACRO fado_dec_round(m, s, p, meth) AS TRY_CAST(fado_dec_round_raw(m, s, p, meth) AS BIGINT)`,
+	`CREATE OR REPLACE MACRO fado_dec_round_err(m, s, p, meth) AS CASE WHEN m IS NOT NULL AND TRY_CAST(fado_dec_round_raw(m, s, p, meth) AS BIGINT) IS NULL THEN 'overflow' END`,
+	// Rendering: every digit after the point.
+	`CREATE OR REPLACE MACRO fado_dec_mag(m) AS CAST(abs(m::HUGEINT) AS VARCHAR)`,
+	`CREATE OR REPLACE MACRO fado_dec_digits(m, s) AS CASE WHEN length(fado_dec_mag(m)) <= CAST(s AS INTEGER) THEN repeat('0', CAST(s AS INTEGER) + 1 - length(fado_dec_mag(m))) || fado_dec_mag(m) ELSE fado_dec_mag(m) END`,
+	`CREATE OR REPLACE MACRO fado_dec_text(m, s) AS CASE WHEN m IS NULL THEN NULL ELSE (CASE WHEN m::HUGEINT < 0 THEN '-' ELSE '' END) || (CASE WHEN s = 0 THEN fado_dec_digits(m, s) ELSE substr(fado_dec_digits(m, s), 1, length(fado_dec_digits(m, s)) - CAST(s AS INTEGER)) || '.' || substr(fado_dec_digits(m, s), length(fado_dec_digits(m, s)) - CAST(s AS INTEGER) + 1) END) END`,
+	// Parsing: the text's own scale is counted from its spelling, the
+	// mantissa read through DECIMAL(38, 18) and its digits, then brought to
+	// the places asked for, which must drop zeros only.
+	`CREATE OR REPLACE MACRO fado_dec_syntax(t) AS regexp_full_match(trim(t::VARCHAR), '[+-]?([0-9]+\.?[0-9]*|\.[0-9]+)([eE][+-]?[0-9]+)?')`,
+	`CREATE OR REPLACE MACRO fado_dec_exp(t) AS regexp_extract(trim(t::VARCHAR), '[eE]([+-]?[0-9]+)', 1)`,
+	`CREATE OR REPLACE MACRO fado_dec_scale(t) AS length(regexp_extract(trim(t::VARCHAR), '\.([0-9]*)', 1)) - CASE WHEN fado_dec_exp(t) = '' THEN 0 ELSE COALESCE(TRY_CAST(fado_dec_exp(t) AS BIGINT), 999) END`,
+	`CREATE OR REPLACE MACRO fado_dec_zero(t) AS regexp_full_match(trim(t::VARCHAR), '[+-]?(0+\.?0*|\.0+)([eE][+-]?[0-9]+)?')`,
+	`CREATE OR REPLACE MACRO fado_dec_m18(t) AS TRY_CAST(replace(CAST(TRY_CAST(trim(t::VARCHAR) AS DECIMAL(38, 18)) AS VARCHAR), '.', '') AS HUGEINT)`,
+	`CREATE OR REPLACE MACRO fado_dec_parse_raw(t, p) AS CASE WHEN fado_dec_m18(t) % fado_hpow10(18 - p) = 0 THEN fado_dec_m18(t) // fado_hpow10(18 - p) END`,
+	`CREATE OR REPLACE MACRO fado_dec_parse(t, p) AS CASE WHEN trim(t::VARCHAR) = '' OR NOT fado_dec_syntax(t) THEN NULL WHEN fado_dec_zero(t) THEN CAST(0 AS BIGINT) WHEN fado_dec_scale(t) > 18 THEN NULL ELSE TRY_CAST(fado_dec_parse_raw(t, p) AS BIGINT) END`,
+	`CREATE OR REPLACE MACRO fado_dec_parse_err(t, p) AS CASE WHEN trim(t::VARCHAR) = '' THEN NULL WHEN NOT fado_dec_syntax(t) THEN 'bad_text' WHEN fado_dec_zero(t) THEN NULL WHEN fado_dec_scale(t) > 18 OR fado_dec_m18(t) IS NULL THEN 'overflow' WHEN fado_dec_m18(t) % fado_hpow10(18 - p) <> 0 THEN 'inexact' WHEN TRY_CAST(fado_dec_parse_raw(t, p) AS BIGINT) IS NULL THEN 'overflow' END`,
+	`CREATE OR REPLACE MACRO fado_money_ok(t) AS regexp_full_match(trim(t::VARCHAR), '[^ ]+ [A-Z]{3}')`,
+	`CREATE OR REPLACE MACRO fado_money_cur(t) AS CASE WHEN fado_money_ok(t) AND fado_dec_syntax(split_part(trim(t::VARCHAR), ' ', 1)) THEN split_part(trim(t::VARCHAR), ' ', 2) END`,
+	`CREATE OR REPLACE MACRO fado_money_amount(t, p) AS CASE WHEN fado_money_ok(t) THEN fado_dec_parse(split_part(trim(t::VARCHAR), ' ', 1), p) END`,
+	`CREATE OR REPLACE MACRO fado_money_amount_err(t, p) AS CASE WHEN trim(t::VARCHAR) = '' THEN NULL WHEN NOT fado_money_ok(t) THEN 'bad_text' ELSE fado_dec_parse_err(split_part(trim(t::VARCHAR), ' ', 1), p) END`,
+	`CREATE OR REPLACE MACRO fado_currency(t) AS CASE WHEN regexp_full_match(COALESCE(t::VARCHAR, ''), '[A-Z]{3}') THEN t::VARCHAR END`,
+	`CREATE OR REPLACE MACRO fado_currency_err(t) AS CASE WHEN NOT regexp_full_match(COALESCE(t::VARCHAR, ''), '[A-Z]{3}') THEN 'bad_text' END`,
+	// DECIMAL of a number: the scaled value stepped by the method on the
+	// float rules, then narrowed.
+	`CREATE OR REPLACE MACRO fado_dec_fscaled(x, p) AS x::DOUBLE * fado_pow10(p)`,
+	`CREATE OR REPLACE MACRO fado_dec_fstep(x, p, meth) AS CASE meth WHEN 'half_even' THEN round_even(fado_dec_fscaled(x, p), 0) WHEN 'down' THEN trunc(fado_round(fado_dec_fscaled(x, p), 9)) WHEN 'up' THEN (CASE WHEN fado_round(fado_dec_fscaled(x, p), 9) < 0 THEN floor(fado_round(fado_dec_fscaled(x, p), 9)) ELSE ceil(fado_round(fado_dec_fscaled(x, p), 9)) END) WHEN 'floor' THEN floor(fado_round(fado_dec_fscaled(x, p), 9)) WHEN 'ceiling' THEN ceil(fado_round(fado_dec_fscaled(x, p), 9)) ELSE round(fado_dec_fscaled(x, p)) END`,
+	`CREATE OR REPLACE MACRO fado_dec_from(x, p, meth) AS CASE WHEN x IS NULL OR NOT isfinite(x::DOUBLE) OR abs(fado_dec_fstep(x, p, meth)) >= 9223372036854775808 THEN NULL ELSE CAST(fado_dec_fstep(x, p, meth) AS BIGINT) END`,
+	`CREATE OR REPLACE MACRO fado_dec_from_err(x, p, meth) AS CASE WHEN x IS NULL THEN NULL WHEN NOT isfinite(x::DOUBLE) THEN 'not_a_number' WHEN abs(fado_dec_fstep(x, p, meth)) >= 9223372036854775808 THEN 'overflow' END`,
+	// MOD on aligned mantissas, with the divisor's sign.
+	`CREATE OR REPLACE MACRO fado_dec_rem(a, b) AS a::HUGEINT % NULLIF(b::HUGEINT, 0)`,
+	`CREATE OR REPLACE MACRO fado_dec_mod(a, b) AS CASE WHEN b::HUGEINT = 0 THEN NULL WHEN b::HUGEINT = -1 THEN CAST(0 AS BIGINT) ELSE TRY_CAST(CASE WHEN fado_dec_rem(a, b) <> 0 AND ((fado_dec_rem(a, b) < 0) <> (b::HUGEINT < 0)) THEN fado_dec_rem(a, b) + b::HUGEINT ELSE fado_dec_rem(a, b) END AS BIGINT) END`,
+	`CREATE OR REPLACE MACRO fado_dec_mod_err(a, b) AS CASE WHEN b::HUGEINT = 0 THEN 'div_by_zero' END`,
 	// Dates: seconds to a naive timestamp, clamped so that garbage never
 	// raises. The NULL test comes first because LEAST and GREATEST ignore
 	// NULLs, which would turn a blank into the first day of year 1.
@@ -357,10 +603,12 @@ var duckdbMacros = []string{
 	`CREATE OR REPLACE MACRO fado_date_year(y, m) AS floor(fado_date_months(y, m) / 12)`,
 	`CREATE OR REPLACE MACRO fado_date_month(y, m) AS fado_date_months(y, m) - fado_date_year(y, m) * 12 + 1`,
 	`CREATE OR REPLACE MACRO fado_date_day(y, m, d) AS fado_civil_days(fado_date_year(y, m), fado_date_month(y, m)) + trunc(d::DOUBLE) - 1`,
-	`CREATE OR REPLACE MACRO fado_date(y, m, d) AS fado_date_day(y, m, d) * 86400`,
-	`CREATE OR REPLACE MACRO fado_date_err(y, m, d) AS CASE WHEN abs(trunc(y::DOUBLE)) > 1e6 OR abs(trunc(m::DOUBLE)) > 1e7 OR abs(trunc(d::DOUBLE)) > 1e9 OR fado_date_day(y, m, d) < -719162 OR fado_date_day(y, m, d) > 2932896 THEN 'out_of_range' END`,
-	`CREATE OR REPLACE MACRO fado_datevalue(t) AS CASE WHEN trim(t::VARCHAR) = '' THEN NULL WHEN NOT regexp_full_match(trim(t::VARCHAR), '[0-9]{4}-[0-9]{2}-[0-9]{2}( [0-9]{2}:[0-9]{2}:[0-9]{2})?') THEN NULL ELSE COALESCE(epoch(try_strptime(trim(t::VARCHAR), '%Y-%m-%d')), epoch(try_strptime(trim(t::VARCHAR), '%Y-%m-%d %H:%M:%S'))) END`,
-	`CREATE OR REPLACE MACRO fado_datevalue_err(t) AS CASE WHEN trim(t::VARCHAR) = '' THEN NULL WHEN fado_datevalue(t) IS NULL THEN 'bad_text' WHEN fado_datevalue(t) < ` + duckdbMinDate + ` OR fado_datevalue(t) > ` + duckdbMaxDate + ` THEN 'out_of_range' END`,
+	`CREATE OR REPLACE MACRO fado_date(y, m, d) AS fado_date_day(y, m, d)`,
+	`CREATE OR REPLACE MACRO fado_date_err(y, m, d) AS CASE WHEN abs(trunc(y::DOUBLE)) > 1e6 OR abs(trunc(m::DOUBLE)) > 1e7 OR abs(trunc(d::DOUBLE)) > 1e9 OR fado_date_day(y, m, d) < ` + duckdbMinDay + ` OR fado_date_day(y, m, d) > ` + duckdbMaxDay + ` THEN 'out_of_range' END`,
+	`CREATE OR REPLACE MACRO fado_datevalue(t) AS CASE WHEN trim(t::VARCHAR) = '' THEN NULL WHEN NOT regexp_full_match(trim(t::VARCHAR), '[0-9]{4}-[0-9]{2}-[0-9]{2}') THEN NULL ELSE epoch(try_strptime(trim(t::VARCHAR), '%Y-%m-%d')) / 86400 END`,
+	`CREATE OR REPLACE MACRO fado_datevalue_err(t) AS CASE WHEN trim(t::VARCHAR) = '' THEN NULL WHEN fado_datevalue(t) IS NULL THEN 'bad_text' WHEN fado_datevalue(t) < ` + duckdbMinDay + ` OR fado_datevalue(t) > ` + duckdbMaxDay + ` THEN 'out_of_range' END`,
+	`CREATE OR REPLACE MACRO fado_datetimevalue(t) AS CASE WHEN trim(t::VARCHAR) = '' THEN NULL WHEN NOT regexp_full_match(trim(t::VARCHAR), '[0-9]{4}-[0-9]{2}-[0-9]{2}( [0-9]{2}:[0-9]{2}:[0-9]{2})?') THEN NULL ELSE COALESCE(epoch(try_strptime(trim(t::VARCHAR), '%Y-%m-%d')), epoch(try_strptime(trim(t::VARCHAR), '%Y-%m-%d %H:%M:%S'))) END`,
+	`CREATE OR REPLACE MACRO fado_datetimevalue_err(t) AS CASE WHEN trim(t::VARCHAR) = '' THEN NULL WHEN fado_datetimevalue(t) IS NULL THEN 'bad_text' WHEN fado_datetimevalue(t) < ` + duckdbMinDate + ` OR fado_datetimevalue(t) > ` + duckdbMaxDate + ` THEN 'out_of_range' END`,
 	`CREATE OR REPLACE MACRO fado_addmonths(x, n) AS epoch(fado_ts(x) + to_months(CAST(LEAST(GREATEST(trunc(n::DOUBLE), -1000000), 1000000) AS INTEGER)))`,
 	`CREATE OR REPLACE MACRO fado_addmonths_err(x, n) AS CASE WHEN x IS NULL THEN NULL WHEN abs(trunc(n::DOUBLE)) > 1e7 OR fado_addmonths(x, n) < ` + duckdbMinDate + ` OR fado_addmonths(x, n) > ` + duckdbMaxDate + ` THEN 'out_of_range' END`,
 	`CREATE OR REPLACE MACRO fado_addyears(x, n) AS fado_addmonths(x, 12 * trunc(n::DOUBLE))`,

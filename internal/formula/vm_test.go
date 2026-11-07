@@ -42,6 +42,7 @@ func TestVM_ScalarPathDoesNotAllocate(t *testing.T) {
 		"a > 0 AND b > 0 OR NOT c = 0",
 		"ISBLANK(a) OR MOD(c, b) = 1",
 		"(a + b) % * 100",
+		"IFERROR(a / 0, b)",
 	} {
 		p := mustBind(t, src, scope)
 		if _, err := vm.Run(p, vars, nil); err != nil {
@@ -49,6 +50,28 @@ func TestVM_ScalarPathDoesNotAllocate(t *testing.T) {
 		}
 		allocs := testing.AllocsPerRun(200, func() {
 			if _, err := vm.Run(p, vars, nil); err != nil {
+				t.Fatal(err)
+			}
+		})
+		if allocs != 0 {
+			t.Errorf("%s: %v allocations per run, want 0", src, allocs)
+		}
+	}
+	// The exact path allocates nothing either (ADR-0022).
+	exact := mustScope(t, Variable{Name: "x", Type: DecimalType(2)}, Variable{Name: "m", Type: MoneyType(2)}, Variable{Name: "i", Type: DecimalType(0)})
+	evars := []Value{Decimal(150, 2), Money(999, 2, "PLN"), Decimal(3, 0)}
+	for _, src := range []string{
+		"x * i + x / 3 - 1",
+		"ROUND(m * i * (1 - 10%), 2)",
+		"SUM(x, i, 2.5) > m",
+		"IF(x > 1, m, m * 2) + 1",
+	} {
+		p := mustBind(t, src, exact)
+		if _, err := vm.Run(p, evars, nil); err != nil {
+			t.Fatalf("%s: %v", src, err)
+		}
+		allocs := testing.AllocsPerRun(200, func() {
+			if _, err := vm.Run(p, evars, nil); err != nil {
 				t.Fatal(err)
 			}
 		})
@@ -64,7 +87,7 @@ func TestVM_Results(t *testing.T) {
 	vars := []Value{Number(7), Number(2)}
 	cases := map[string]Value{
 		"a * b + 1":           Number(15),
-		"a / 0":               Number(0),
+		"IFERROR(a / 0, -1)":  Number(-1),
 		"a > b":               Bool(true),
 		"a & \"-\" & b":       Text("7-2"),
 		"IF(a > b, a, b)":     Number(7),
@@ -97,7 +120,7 @@ func TestVM_ErrorsCarryCodeAndPosition(t *testing.T) {
 	if ee.Code != ErrDivByZero || ee.Pos != 6 {
 		t.Errorf("error = %+v, want div_by_zero at offset 6", ee)
 	}
-	if ee.Error() != `div_by_zero: \ by zero at offset 6` {
+	if ee.Error() != `div_by_zero: / by zero at offset 6` {
 		t.Errorf("Error() = %q", ee.Error())
 	}
 }
@@ -131,6 +154,39 @@ func BenchmarkVM_Arithmetic5(b *testing.B) {
 	p := mustBind(b, "a * b + c / d - e", scope)
 	vm := NewVM()
 	vars := []Value{Number(2), Number(3), Number(10), Number(4), Number(1)}
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if _, err := vm.Run(p, vars, nil); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+// BenchmarkVM_Exact5 is the five-operation formula on exact values
+// (ADR-0022), beside the float one.
+func BenchmarkVM_Exact5(b *testing.B) {
+	scope := mustScope(b, Variable{Name: "a", Type: DecimalType(2)}, Variable{Name: "b", Type: DecimalType(2)},
+		Variable{Name: "c", Type: DecimalType(2)}, Variable{Name: "d", Type: DecimalType(2)}, Variable{Name: "e", Type: DecimalType(2)})
+	p := mustBind(b, "a * b + c / d - e", scope)
+	vm := NewVM()
+	vars := []Value{Decimal(200, 2), Decimal(300, 2), Decimal(1000, 2), Decimal(400, 2), Decimal(100, 2)}
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if _, err := vm.Run(p, vars, nil); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+// BenchmarkVM_MoneyLine is an invoice line on money: a product, a
+// discount and a rounding (ADR-0022).
+func BenchmarkVM_MoneyLine(b *testing.B) {
+	scope := mustScope(b, Variable{Name: "qty", Type: DecimalType(0)}, Variable{Name: "price", Type: MoneyType(2)}, Variable{Name: "discount", Type: DecimalType(2)})
+	p := mustBind(b, "ROUND(qty * price * (1 - discount%), 2)", scope)
+	vm := NewVM()
+	vars := []Value{Decimal(3, 0), Money(999, 2, "PLN"), Decimal(1000, 2)}
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {

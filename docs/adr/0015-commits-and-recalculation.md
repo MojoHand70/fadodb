@@ -1,6 +1,6 @@
 # ADR-0015: Commits, recalculation modes, defaults, reset and refresh
 
-- Status: Accepted; amended by ADR-0020 (how recomputes and query functions reach their engine)
+- Status: Accepted; amended by ADR-0020 (how recomputes and query functions reach their engine), ADR-0025 (preview runs the pipeline without the write)
 - Date: 2026-11-05
 
 ## Context

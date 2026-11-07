@@ -131,9 +131,9 @@ type binder struct {
 	depth, maxDepth int
 	tries           int
 
-	// lit describes the number literal the last expr emitted when the
-	// expression was one, so that an operation can make it exact when its
-	// other operand is (ADR-0022).
+	// lit describes the last constant expr emitted, so that an operation
+	// can make its operand exact when the other operand is (ADR-0022);
+	// operand checks that it is the operand's own.
 	lit litInfo
 }
 
@@ -370,13 +370,6 @@ func (b *binder) expr(n Node) (Type, error) {
 		b.lit = litInfo{at: int32(at), ok: true}
 		return Scalar(KindNumber), nil
 	}
-	t, err := b.node(n)
-	// Whatever literal a sub-expression left behind is not this expression.
-	b.lit = litInfo{}
-	return t, err
-}
-
-func (b *binder) node(n Node) (Type, error) {
 	switch n := n.(type) {
 	case *TextLit:
 		b.emit(OpConstText, b.text(n.Value), n.P)
@@ -431,10 +424,17 @@ func (b *binder) node(n Node) (Type, error) {
 	return Type{}, b.errAt(n.Pos(), "unexpected node %T", n)
 }
 
-// operand binds an expression and reports the literal it was, if any.
+// operand binds an expression and reports the constant it was, if any: a
+// constant compiles to exactly one instruction, the one b.lit names, so a
+// constant left behind by a sub-expression is told apart by its place.
 func (b *binder) operand(n Node) (Type, litInfo, error) {
+	start := b.here()
 	t, err := b.expr(n)
-	return t, b.lit, err
+	lit := b.lit
+	if !lit.ok || int(lit.at) != start || b.here() != start+1 {
+		lit = litInfo{}
+	}
+	return t, lit, err
 }
 
 // exactLit rewrites the constant's instruction into an exact constant read

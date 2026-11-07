@@ -161,6 +161,9 @@ func (v Value) String() string {
 // render is the TEXT rule of ADR-0019 and ADR-0022: the single place a
 // scalar becomes text.
 func render(v Value) string {
+	if v.kind == KindText {
+		return v.str
+	}
 	switch v.kind {
 	case KindNull:
 		return ""

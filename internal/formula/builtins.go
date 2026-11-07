@@ -349,6 +349,10 @@ func roundExact(x Value, places int, rm roundMethod) (Value, *EvalError) {
 }
 
 func fnRound(_ *VM, args []Value) (Value, *EvalError) {
+	if !args[0].kind.IsExact() && len(args) < 3 {
+		// The float rounding of ADR-0004, as before the methods.
+		return finite(roundTo(args[0].num, digitsArg(args)))
+	}
 	rm := methodOf(args, 2)
 	if args[0].kind.IsExact() {
 		return roundExact(args[0], placesOf(args), rm)
@@ -358,10 +362,10 @@ func fnRound(_ *VM, args []Value) (Value, *EvalError) {
 
 func stepFn(step func(float64) float64, rm roundMethod) func(*VM, []Value) (Value, *EvalError) {
 	return func(_ *VM, args []Value) (Value, *EvalError) {
-		if args[0].kind.IsExact() {
-			return roundExact(args[0], placesOf(args), rm)
+		if !args[0].kind.IsExact() {
+			return finite(scaledStep(args[0].num, digitsArg(args), step))
 		}
-		return finite(scaledStep(args[0].num, digitsArg(args), step))
+		return roundExact(args[0], placesOf(args), rm)
 	}
 }
 

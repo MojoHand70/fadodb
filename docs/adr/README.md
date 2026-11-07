@@ -17,7 +17,7 @@ line says so. Copy `0000-template.md` to start.
 | [0009](0009-action-execution-model.md) | Action execution model: synchronous versus outbox | Accepted |
 | [0010](0010-security-rules-as-predicates.md) | Security rules compiled to SQL predicates | Accepted |
 | [0011](0011-one-json-command-set.md) | One JSON command set over HTTP, WebSocket and C ABI | Accepted |
-| [0012](0012-performance-gates.md) | Performance budgets and gates | Accepted |
+| [0012](0012-performance-gates.md) | Performance budgets and gates | Accepted, amended by 0030 |
 | [0013](0013-document-variables-and-types.md) | Document variables and the type system | Accepted, amended by 0019 |
 | [0014](0014-document-tables.md) | Document tables: current, history, child tables and views | Accepted |
 | [0015](0015-commits-and-recalculation.md) | Commits, recalculation modes, defaults, reset and refresh | Accepted, amended by 0020 |
@@ -27,3 +27,4 @@ line says so. Copy `0000-template.md` to start.
 | [0019](0019-formula-language-semantics.md) | Formula language semantics: grammar, types, coercion, comparison, dates, text, composites and errors | Accepted, amended by 0021 |
 | [0020](0020-query-function-execution.md) | LOOKUP and QUERY execution: one engine call per invocation | Accepted |
 | [0021](0021-size-limits.md) | Size limits: one text limit per database, enforced before building | Accepted |
+| [0030](0030-benchmark-gate-measures-the-minimum-over-placements.md) | The benchmark gate measures the minimum over code placements | Accepted |

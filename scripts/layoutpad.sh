@@ -9,8 +9,9 @@
 # package shifts every function after it by one 32-byte slot or more.
 #
 #   layoutpad_write TREE K     placement K of TREE: 0 is the tree as it is,
-#                              K > 0 writes a_layoutpad.go with 2(K-1)
-#                              unfoldable statements, about 28 bytes each
+#                              K > 0 writes a_layoutpad.go with 2K pairs of
+#                              unfoldable statements, 28 bytes a pair, so
+#                              that every step crosses one 32-byte slot
 #   layoutpad_remove TREE      removes every a_layoutpad.go under TREE
 #   layoutpad_packages TREE    lists "dir name" of the packages that
 #                              declare benchmarks
@@ -43,7 +44,7 @@ layoutpad_write() {
       echo
       echo "//go:noinline"
       echo "func layoutPad(x int) int {"
-      for i in $(seq 1 $((2 * (k - 1)))); do
+      for i in $(seq 1 $((2 * k))); do
         echo "	x ^= x >> $(((i % 60) + 1))"
         echo "	x += $i"
       done

@@ -35,7 +35,9 @@ The gate measures the cost of the code, not its placement.
   slot or more per placement by a padding function that
   `scripts/layoutpad.sh` writes ahead of every benchmarked package's code
   (a file sorting first in the package, with statements the compiler
-  cannot fold, kept by the linker because an init calls it).
+  cannot fold, kept by the linker because an init calls it, growing by
+  28 bytes per placement so that every step crosses one 32-byte slot and
+  four placements always hold both halves of a 64-byte line).
   `BENCH_COUNT` rounds (default 5) run per placement, interleaved between
   the trees as before.
 - Per benchmark and per tree, the placement with the lowest median time

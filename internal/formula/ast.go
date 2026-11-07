@@ -15,10 +15,13 @@ type Node interface {
 	Pos() int
 }
 
-// NumberLit is a number literal.
+// NumberLit is a number literal: its value, its byte offset and its length
+// in the source, from which the binder reads the spelling exactly when the
+// literal meets an exact operand (ADR-0022).
 type NumberLit struct {
 	Value float64
-	P     int
+	P     int32
+	Len   int32
 }
 
 // TextLit is a text literal.
@@ -58,19 +61,37 @@ type ThisRef struct {
 }
 
 // Unary is -x, NOT x, or the postfix x%. Op is TokMinus, TokNot or
-// TokPercent.
+// TokPercent. Const marks a minus or a percent of a constant expression,
+// which the binder folds.
 type Unary struct {
-	Op TokenKind
-	X  Node
-	P  int
+	Op    TokenKind
+	Const bool
+	X     Node
+	P     int
 }
 
 // Binary is an infix operation. Op is one of the arithmetic, text,
-// comparison and logical operator kinds.
+// comparison and logical operator kinds. Const marks a +, - or * of two
+// constant expressions, which the binder folds.
 type Binary struct {
-	Op   TokenKind
-	L, R Node
-	P    int
+	Op    TokenKind
+	Const bool
+	L, R  Node
+	P     int
+}
+
+// constNode reports whether a node is a constant expression: a number
+// literal, or a marked unary or binary node.
+func constNode(n Node) bool {
+	switch n := n.(type) {
+	case *NumberLit:
+		return true
+	case *Unary:
+		return n.Const
+	case *Binary:
+		return n.Const
+	}
+	return false
 }
 
 // Call is a function call by canonical name. IF, AND, OR and NOT never
@@ -88,7 +109,10 @@ type If struct {
 }
 
 // Pos implements Node.
-func (n *NumberLit) Pos() int { return n.P }
+func (n *NumberLit) Pos() int { return int(n.P) }
+
+// Text is the literal's spelling in the source it was parsed from.
+func (n *NumberLit) Text(src string) string { return src[n.P : n.P+n.Len] }
 
 // Pos implements Node.
 func (n *TextLit) Pos() int { return n.P }

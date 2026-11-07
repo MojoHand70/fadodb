@@ -19,16 +19,18 @@ Usage:
   fadodb formula eval [flags] FORMULA
 
 Evaluates the formula on the Go VM and prints the result in the notation
-of the conformance suite: a number plain, text quoted, a date as
-YYYY-MM-DD or YYYY-MM-DD HH:MM:SS, TRUE or FALSE, and BLANK. A formula
-that does not parse or bind, or stops with an error code, prints the
-reason and exits 1; a usage mistake exits 2.
+of the conformance suite: a number plain, an exact number with every
+digit of its scale, money as "12.30 PLN", text quoted, a date as
+YYYY-MM-DD, a datetime as YYYY-MM-DD HH:MM:SS, TRUE or FALSE, and BLANK.
+A formula that does not parse or bind, or stops with an error code,
+prints the reason and exits 1; a usage mistake exits 2.
 
 Flags:
   -var name:type[=value]   declare a variable, blank without a value; may
-                           repeat. Types: number, text, bool, date, ref,
-                           json. A date is YYYY-MM-DD or
-                           YYYY-MM-DD HH:MM:SS, UTC.
+                           repeat. Types: number, int, decimal(s), money(s),
+                           text, bool, date, datetime, ref, json. A date
+                           is YYYY-MM-DD, a datetime YYYY-MM-DD HH:MM:SS
+                           in UTC, money an amount, a space and a code.
   -user id                 the user the formula runs for (USER)
   -group name              a group of the user (INGROUP); may repeat
   -now date                the clock (NOW, TODAY); default the wall clock
@@ -43,6 +45,7 @@ Flags:
                            variables as columns, instead of evaluating
 
 Examples:
+  fadodb formula eval -var qty:int=3 -var price:money='9.99 PLN' 'ROUND(qty * price * (1 - 10%), 2)'
   fadodb formula eval -var qty:number=3 -var price:number=9.99 'ROUND(qty * price, 2)'
   fadodb formula eval -var name:text=invoice 'UPPER(LEFT(name, 3)) & "-" & TEXT(42)'
   fadodb formula eval -user alice -group finance 'INGROUP("finance") AND USER() = "alice"'
@@ -211,7 +214,7 @@ func parseVar(spec string) (formula.Variable, formula.Value, error) {
 	typ, raw, hasValue := strings.Cut(rest, "=")
 	t, err := formula.ParseType(typ)
 	if err != nil || !t.IsScalar() || t.Kind == formula.KindNull {
-		return formula.Variable{}, formula.Value{}, fmt.Errorf("type %q is not number, text, bool, date, ref or json", typ)
+		return formula.Variable{}, formula.Value{}, fmt.Errorf("type %q is not number, int, decimal(s), money(s), text, bool, date, datetime, ref or json", typ)
 	}
 	v := formula.Variable{Name: name, Type: t}
 	if !hasValue {
@@ -232,12 +235,15 @@ func parseVar(spec string) (formula.Variable, formula.Value, error) {
 			return v, formula.Bool(false), nil
 		}
 		return v, formula.Value{}, fmt.Errorf("%q is not true or false", raw)
-	case formula.KindDate:
-		secs, err := formula.ParseCaseDate(strings.TrimSpace(raw))
+	case formula.KindDecimal, formula.KindMoney, formula.KindDate, formula.KindDateTime:
+		// The suite notation reads these: exact numbers, "12.30 PLN",
+		// YYYY-MM-DD and YYYY-MM-DD HH:MM:SS.
+		quoted, _ := json.Marshal(strings.TrimSpace(raw))
+		val, err := formula.ParseCaseValue(quoted, t)
 		if err != nil {
-			return v, formula.Value{}, fmt.Errorf("%q is not YYYY-MM-DD or YYYY-MM-DD HH:MM:SS", raw)
+			return v, formula.Value{}, err
 		}
-		return v, formula.Date(secs), nil
+		return v, val, nil
 	case formula.KindRef:
 		return v, formula.Ref(raw), nil
 	case formula.KindJSON:

@@ -2,27 +2,33 @@ package formula
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 )
 
-// Kind is the kind of a value, static or at run time (ADR-0013).
+// Kind is the kind of a value, static or at run time (ADR-0013, ADR-0022,
+// ADR-0023).
 type Kind uint8
 
 // The kinds. KindNull is the blank: the static type of the BLANK literal
-// and the run-time kind of a missing value.
+// and the run-time kind of a missing value. The scalar kinds come first so
+// that IsScalar is one comparison.
 const (
 	KindNull Kind = iota
 	KindBool
-	KindNumber
-	KindText
-	KindDate
-	KindRef
-	KindJSON
+	KindNumber   // float64, Excel arithmetic (ADR-0004)
+	KindDecimal  // an exact number: an int64 mantissa at a scale (ADR-0022)
+	KindMoney    // a decimal with a currency (ADR-0022)
+	KindText     // UTF-8 text
+	KindDate     // a calendar day: days since 1970-01-01 (ADR-0023)
+	KindDateTime // an instant: seconds since 1970-01-01 00:00:00 UTC
+	KindRef      // a document reference in its Class:id form
+	KindJSON     // opaque JSON text
 	KindArray
 	KindRows
 )
 
-var kindNames = [...]string{"blank", "bool", "number", "text", "date", "ref", "json", "array", "rows"}
+var kindNames = [...]string{"blank", "bool", "number", "decimal", "money", "text", "date", "datetime", "ref", "json", "array", "rows"}
 
 func (k Kind) String() string {
 	if int(k) < len(kindNames) {
@@ -34,10 +40,19 @@ func (k Kind) String() string {
 // IsScalar reports whether the kind is a scalar, blank included.
 func (k Kind) IsScalar() bool { return k <= KindJSON }
 
-// Type is a static type: a scalar kind, an array of a scalar kind, or rows
-// with a schema.
+// IsExact reports whether the kind is an exact number: decimal or money.
+func (k Kind) IsExact() bool { return k == KindDecimal || k == KindMoney }
+
+// IsDateLike reports whether the kind is a calendar day or an instant.
+func (k Kind) IsDateLike() bool { return k == KindDate || k == KindDateTime }
+
+// Type is a static type: a scalar kind with its scale when it is exact, an
+// array of a scalar kind, or rows with a schema.
 type Type struct {
 	Kind Kind
+	// Scale is the number of digits after the point of a decimal or money
+	// type, 0 to MaxScale. For an array it is the element's scale.
+	Scale int8
 	// Elem is the element kind of an array.
 	Elem Kind
 	// Cols is the schema of rows; nil when unknown.
@@ -46,12 +61,20 @@ type Type struct {
 
 // Column is one column of a rows type.
 type Column struct {
-	Name string
-	Kind Kind
+	Name  string
+	Kind  Kind
+	Scale int8
 }
 
-// Scalar makes the type of a scalar kind.
+// Scalar makes the type of a scalar kind. A decimal or money kind gets
+// scale 0; DecimalType and MoneyType take a scale.
 func Scalar(k Kind) Type { return Type{Kind: k} }
+
+// DecimalType makes an exact decimal type at the scale.
+func DecimalType(scale int) Type { return Type{Kind: KindDecimal, Scale: int8(scale)} }
+
+// MoneyType makes a money type at the scale.
+func MoneyType(scale int) Type { return Type{Kind: KindMoney, Scale: int8(scale)} }
 
 // ArrayOf makes the type of an array of a scalar kind.
 func ArrayOf(elem Kind) Type { return Type{Kind: KindArray, Elem: elem} }
@@ -59,26 +82,37 @@ func ArrayOf(elem Kind) Type { return Type{Kind: KindArray, Elem: elem} }
 // IsScalar reports whether the type is a scalar, blank included.
 func (t Type) IsScalar() bool { return t.Kind.IsScalar() }
 
+// IsExact reports whether the type is a decimal or money scalar.
+func (t Type) IsExact() bool { return t.Kind.IsExact() }
+
 func (t Type) String() string {
 	switch t.Kind {
+	case KindDecimal:
+		if t.Scale == 0 {
+			return "int"
+		}
+		return "decimal(" + strconv.Itoa(int(t.Scale)) + ")"
+	case KindMoney:
+		return "money(" + strconv.Itoa(int(t.Scale)) + ")"
 	case KindArray:
-		return "array<" + t.Elem.String() + ">"
+		return "array<" + Type{Kind: t.Elem, Scale: t.Scale}.String() + ">"
 	case KindRows:
 		if t.Cols == nil {
 			return "rows"
 		}
 		parts := make([]string, len(t.Cols))
 		for i, c := range t.Cols {
-			parts[i] = c.Name + " " + c.Kind.String()
+			parts[i] = c.Name + " " + Type{Kind: c.Kind, Scale: c.Scale}.String()
 		}
 		return "rows<" + strings.Join(parts, ", ") + ">"
 	}
 	return t.Kind.String()
 }
 
-// Equal reports whether two types are the same. Rows compare by schema.
+// Equal reports whether two types are the same. Exact types compare by
+// scale too; rows compare by schema.
 func (t Type) Equal(o Type) bool {
-	if t.Kind != o.Kind || t.Elem != o.Elem || len(t.Cols) != len(o.Cols) {
+	if t.Kind != o.Kind || t.Scale != o.Scale || t.Elem != o.Elem || len(t.Cols) != len(o.Cols) {
 		return false
 	}
 	for i := range t.Cols {
@@ -90,28 +124,49 @@ func (t Type) Equal(o Type) bool {
 }
 
 var scalarKinds = map[string]Kind{
-	"bool": KindBool, "number": KindNumber, "text": KindText, "date": KindDate,
+	"bool": KindBool, "number": KindNumber, "text": KindText, "date": KindDate, "datetime": KindDateTime,
 	"ref": KindRef, "json": KindJSON,
 }
 
 // ParseType reads a type as written in class definitions and in the
-// conformance suite: a scalar name, array<scalar>, or rows. It also reads
-// "blank", the static type of a formula that is BLANK, so that every type
-// String writes decodes again; a variable is never declared blank, which
-// is the declaring side's check.
+// conformance suite: a scalar name, `int`, `decimal(s)`, `money(s)`,
+// `array<scalar>`, or `rows`. `decimal` alone is `decimal(2)` and `money`
+// alone is `money(2)`. It also reads "blank", the static type of a formula
+// that is BLANK, so that every type String writes decodes again; a
+// variable is never declared blank, which is the declaring side's check.
 func ParseType(s string) (Type, error) {
 	if k, ok := scalarKinds[s]; ok {
 		return Scalar(k), nil
 	}
-	if s == "blank" {
+	switch s {
+	case "blank":
 		return Scalar(KindNull), nil
-	}
-	if s == "rows" {
+	case "rows":
 		return Type{Kind: KindRows}, nil
+	case "int":
+		return DecimalType(0), nil
+	case "decimal":
+		return DecimalType(2), nil
+	case "money":
+		return MoneyType(2), nil
 	}
 	if strings.HasPrefix(s, "array<") && strings.HasSuffix(s, ">") {
-		if k, ok := scalarKinds[s[6:len(s)-1]]; ok {
-			return ArrayOf(k), nil
+		elem, err := ParseType(s[6 : len(s)-1])
+		if err == nil && elem.IsScalar() && elem.Kind != KindNull {
+			return Type{Kind: KindArray, Elem: elem.Kind, Scale: elem.Scale}, nil
+		}
+		return Type{}, fmt.Errorf("unknown type %q", s)
+	}
+	for _, p := range []struct {
+		prefix string
+		kind   Kind
+	}{{"decimal(", KindDecimal}, {"money(", KindMoney}} {
+		if strings.HasPrefix(s, p.prefix) && strings.HasSuffix(s, ")") {
+			n, err := strconv.Atoi(s[len(p.prefix) : len(s)-1])
+			if err != nil || n < 0 || n > MaxScale {
+				return Type{}, fmt.Errorf("type %q: the scale must be 0 to %d", s, MaxScale)
+			}
+			return Type{Kind: p.kind, Scale: int8(n)}, nil
 		}
 	}
 	return Type{}, fmt.Errorf("unknown type %q", s)

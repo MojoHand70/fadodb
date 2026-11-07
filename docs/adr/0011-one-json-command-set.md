@@ -1,6 +1,6 @@
 # ADR-0011: One JSON command set over HTTP, WebSocket and C ABI
 
-- Status: Accepted
+- Status: Accepted; amended by ADR-0025 (preview and validate), ADR-0026 (idempotency keys), ADR-0027 (the principal on every call)
 - Date: 2026-11-05
 
 ## Context

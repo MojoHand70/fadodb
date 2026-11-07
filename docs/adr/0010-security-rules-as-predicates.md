@@ -1,6 +1,6 @@
 # ADR-0010: Security rules compiled to SQL predicates
 
-- Status: Accepted
+- Status: Accepted; amended by ADR-0027 (the principal comes from the embedder), ADR-0028 (field-level rights per state)
 - Date: 2026-11-05
 
 ## Context

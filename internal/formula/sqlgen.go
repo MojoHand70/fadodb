@@ -6,20 +6,31 @@ import (
 	"strings"
 )
 
-// SQL generation (ADR-0003, ADR-0019). A Program becomes two SQL
+// SQL generation (ADR-0003, ADR-0019, ADR-0022). A Program becomes two SQL
 // expressions over the columns that hold its variables: a value expression,
 // and an error expression that yields the error code where the VM would
 // stop and NULL elsewhere. The value is NULL or meaningless where the error
 // is set, so a reader checks the error first. Both respect the short-
 // circuit rules: an error in an untaken IF branch, or on the right of an
-// AND or OR that was decided on the left, is not an error.
+// AND or OR that was decided on the left, is not an error, and an error
+// under IFERROR selects the fallback.
 //
 // The generator reads bytecode, not syntax, so it works on stored programs
 // and on anything else that produces the format. It accepts the structured
-// shapes the binder emits for IF, AND and OR and refuses other control
-// flow. The core handles operators, control flow and the blank rules; a
-// Dialect spells literals, casts, rendering, function calls and parameters
-// for one engine.
+// shapes the binder emits for IF, AND, OR and IFERROR and refuses other
+// control flow. The core handles operators, control flow and the blank
+// rules; a Dialect spells literals, casts, rendering, function calls and
+// parameters for one engine.
+//
+// An exact value (decimal, int, money) is its mantissa as an integer
+// expression at the static scale; a money value carries a second
+// expression for its currency, NULL when the money is blank. A money
+// variable is two columns: the amount and, under the name with the
+// CurrencySuffix, the currency.
+
+// CurrencySuffix is appended to a money variable's name for the column
+// that holds its currency.
+const CurrencySuffix = "_currency"
 
 // SQL is a generated statement fragment.
 type SQL struct {
@@ -27,8 +38,12 @@ type SQL struct {
 	Value string
 	// Error is the error expression, or "" when the formula cannot fail.
 	Error string
+	// Currency is the currency expression of a money result, "" otherwise.
+	Currency string
 	// Kind is the kind of the value expression.
 	Kind Kind
+	// Scale is the scale of an exact value expression.
+	Scale int8
 	// Params lists the context parameters the expressions reference, by
 	// name: now (seconds since the epoch, always bound, never NULL), user
 	// (the user id or NULL) and groups (the user's groups or NULL, in the
@@ -44,22 +59,40 @@ func (s SQL) ErrorOrNull() string {
 	return s.Error
 }
 
+// CurrencyOrNull returns the currency expression, or NULL when there is none.
+func (s SQL) CurrencyOrNull() string {
+	if s.Currency == "" {
+		return "NULL"
+	}
+	return s.Currency
+}
+
 // SQLExpr is one translated expression with its static kind.
 type SQLExpr struct {
-	// Val is the value expression.
+	// Val is the value expression: the mantissa for an exact kind.
 	Val string
 	// Err is the error expression, or "" when the expression cannot fail.
 	Err string
+	// Cur is the currency expression of a money value, NULL for a blank.
+	Cur string
 	// Kind is the static kind of Val.
 	Kind Kind
+	// Scale is the scale of an exact Val.
+	Scale int8
 	// Sure reports that Val is never NULL, so no COALESCE is needed.
 	Sure bool
+	// IsConst and Const carry a number literal, which a dialect reads for
+	// an argument that must be written in the formula, such as places.
+	IsConst bool
+	Const   float64
 }
 
 // Dialect spells one SQL engine.
 type Dialect interface {
 	Name() string
 	NumberLit(f float64) string
+	// IntLit spells an integer literal as the engine's 64-bit integer.
+	IntLit(m int64) string
 	TextLit(s string) string
 	True() string
 	False() string
@@ -71,6 +104,16 @@ type Dialect interface {
 	Num(e SQLExpr) string
 	Cond(e SQLExpr) string
 	Text(e SQLExpr) string
+	// Mant reads an exact expression's mantissa as a non-null integer in
+	// the type the dialect does exact arithmetic in: a blank is 0, a bool
+	// 1 or 0. RawMant reads it with a blank kept NULL, for the functions
+	// that skip blanks.
+	Mant(e SQLExpr) string
+	RawMant(e SQLExpr) string
+	// Narrow brings an exact arithmetic result back to a 64-bit integer,
+	// NULL when it does not fit, and OverflowErr is the matching check.
+	Narrow(val string) string
+	OverflowErr(val string) string
 	// NotFinite is the condition that a numeric value is not a finite
 	// number, the overflow check of ADR-0019.
 	NotFinite(val string) string
@@ -117,7 +160,8 @@ func (p *Params) Use(name string) string {
 }
 
 // GenerateSQL translates a program for a dialect. column gives the column
-// expression that holds each slot's value.
+// expression that holds each slot's value; for a money slot it is asked
+// again for the currency column, a text slot named with CurrencySuffix.
 func GenerateSQL(p *Program, d Dialect, column func(Slot) string) (SQL, error) {
 	if len(p.Code) == 0 || p.Code[len(p.Code)-1].Op != OpReturn {
 		return SQL{}, fmt.Errorf("sqlgen: the program does not end with return")
@@ -127,7 +171,11 @@ func GenerateSQL(p *Program, d Dialect, column func(Slot) string) (SQL, error) {
 	if err != nil {
 		return SQL{}, err
 	}
-	return SQL{Value: e.Val, Error: e.Err, Kind: e.Kind, Params: t.params.names}, nil
+	out := SQL{Value: e.Val, Error: e.Err, Kind: e.Kind, Scale: e.Scale, Params: t.params.names}
+	if e.Kind == KindMoney {
+		out.Currency = e.Cur
+	}
+	return out, nil
 }
 
 type sqlTranslator struct {
@@ -140,9 +188,10 @@ type sqlTranslator struct {
 // block translates code[start:end), which must leave exactly one value on
 // the stack. Control flow is recovered from the binder's shapes:
 //
-//	IF:  cond; jump.if.false L1; then; jump L2; L1: else; L2:
-//	AND: left; and.jump L; right; to.bool; L:
-//	OR:  left; or.jump L; right; to.bool; L:
+//	IF:      cond; jump.if.false L1; then; jump L2; L1: else; L2:
+//	AND:     left; and.jump L; right; to.bool; L:
+//	OR:      left; or.jump L; right; to.bool; L:
+//	IFERROR: try L1; value; end.try; jump L2; L1: fallback; L2:
 func (t *sqlTranslator) block(start, end int) (SQLExpr, error) {
 	code := t.p.Code
 	d := t.d
@@ -165,7 +214,10 @@ func (t *sqlTranslator) block(start, end int) (SQLExpr, error) {
 		switch in.Op {
 		case OpNop:
 		case OpConstNum:
-			push(SQLExpr{Val: d.NumberLit(t.p.Nums[in.Arg]), Kind: KindNumber, Sure: true})
+			push(SQLExpr{Val: d.NumberLit(t.p.Nums[in.Arg]), Kind: KindNumber, Sure: true, IsConst: true, Const: t.p.Nums[in.Arg]})
+		case OpConstDec:
+			c := t.p.Decs[in.Arg]
+			push(SQLExpr{Val: d.IntLit(c.Mant), Kind: KindDecimal, Scale: c.Scale, Sure: true})
 		case OpConstText:
 			push(SQLExpr{Val: d.TextLit(t.p.Texts[in.Arg]), Kind: KindText, Sure: true})
 		case OpTrue:
@@ -179,7 +231,11 @@ func (t *sqlTranslator) block(start, end int) (SQLExpr, error) {
 			if !slot.Type.IsScalar() {
 				return SQLExpr{}, fmt.Errorf("sqlgen: %s is %s; composite values are not supported yet", slot.Name, slot.Type)
 			}
-			push(SQLExpr{Val: d.Load(t.column(slot), slot.Type.Kind), Kind: slot.Type.Kind})
+			e := SQLExpr{Val: d.Load(t.column(slot), slot.Type.Kind), Kind: slot.Type.Kind, Scale: slot.Type.Scale}
+			if slot.Type.Kind == KindMoney {
+				e.Cur = d.Load(t.column(Slot{Name: slot.Name + CurrencySuffix, Type: Scalar(KindText)}), KindText)
+			}
+			push(e)
 		case OpNeg, OpPercent, OpNot:
 			if err := need(1, pc); err != nil {
 				return SQLExpr{}, err
@@ -193,6 +249,11 @@ func (t *sqlTranslator) block(start, end int) (SQLExpr, error) {
 			default:
 				push(SQLExpr{Val: "(NOT " + d.Cond(x) + ")", Err: x.Err, Kind: KindBool, Sure: true})
 			}
+		case OpDecNeg, OpDecPercent, OpDecScale:
+			if err := need(1, pc); err != nil {
+				return SQLExpr{}, err
+			}
+			push(decUnary(d, in.Op, pop(), in.Arg))
 		case OpAdd, OpSub, OpMul, OpDiv, OpDivStrict, OpPow:
 			if err := need(2, pc); err != nil {
 				return SQLExpr{}, err
@@ -200,6 +261,13 @@ func (t *sqlTranslator) block(start, end int) (SQLExpr, error) {
 			b := pop()
 			a := pop()
 			push(arith(d, in.Op, a, b))
+		case OpDecAdd, OpDecSub, OpDecMul, OpDecDiv:
+			if err := need(2, pc); err != nil {
+				return SQLExpr{}, err
+			}
+			b := pop()
+			a := pop()
+			push(decArith(d, in.Op, a, b, in.Arg))
 		case OpConcat:
 			if err := need(2, pc); err != nil {
 				return SQLExpr{}, err
@@ -239,6 +307,27 @@ func (t *sqlTranslator) block(start, end int) (SQLExpr, error) {
 			push(ifExpr(d, c, then, els))
 			pc = endPC
 			continue
+		case OpTry:
+			handler := int(in.Arg)
+			endTry, jumpPC := handler-2, handler-1
+			if endTry <= pc || handler > end || code[endTry].Op != OpEndTry || code[jumpPC].Op != OpJump {
+				return SQLExpr{}, fmt.Errorf("sqlgen: instruction %d: IFERROR without the binder's shape", pc)
+			}
+			endPC := int(code[jumpPC].Arg)
+			if endPC < handler || endPC > end {
+				return SQLExpr{}, fmt.Errorf("sqlgen: instruction %d: IFERROR without the binder's shape", pc)
+			}
+			val, err := t.block(pc+1, endTry)
+			if err != nil {
+				return SQLExpr{}, err
+			}
+			fb, err := t.block(handler, endPC)
+			if err != nil {
+				return SQLExpr{}, err
+			}
+			push(ifErrorExpr(d, val, fb))
+			pc = endPC
+			continue
 		case OpAndJump, OpOrJump:
 			if err := need(1, pc); err != nil {
 				return SQLExpr{}, err
@@ -256,7 +345,7 @@ func (t *sqlTranslator) block(start, end int) (SQLExpr, error) {
 			push(logical(d, in.Op == OpAndJump, left, right))
 			pc = after
 			continue
-		case OpJump, OpToBool:
+		case OpJump, OpToBool, OpEndTry:
 			return SQLExpr{}, fmt.Errorf("sqlgen: instruction %d: %s outside the binder's shapes", pc, in.Op)
 		case OpCall:
 			argc := int(in.Arg & 0xff)
@@ -283,7 +372,7 @@ func (t *sqlTranslator) block(start, end int) (SQLExpr, error) {
 			}
 			errs = append(errs, e.Err)
 			e.Err = coalesceErr(errs...)
-			push(e)
+			push(moneyBlank(e))
 		case OpLookup, OpQuery:
 			return SQLExpr{}, fmt.Errorf("sqlgen: instruction %d: query functions are not implemented yet", pc)
 		case OpReturn:
@@ -299,11 +388,12 @@ func (t *sqlTranslator) block(start, end int) (SQLExpr, error) {
 	return stack[0], nil
 }
 
-// coercions implements Num, Cond and Text for a dialect from its zero
-// literals and its bool-to-number cast.
+// coercions implements Num, Cond, Text and Mant for a dialect from its
+// zero literals and its casts.
 type coercions struct {
-	zeroNumber, zeroBool, zeroText string
-	castNumber                     func(string) string
+	zeroNumber, zeroBool, zeroText, zeroMant string
+	castNumber                               func(string) string
+	castMant                                 func(string) string
 }
 
 // Num reads an expression as a number: a blank is 0, a bool is 1 or 0.
@@ -339,6 +429,32 @@ func (c coercions) Text(e SQLExpr) string {
 		return e.Val
 	}
 	return "COALESCE(" + e.Val + ", " + c.zeroText + ")"
+}
+
+// Mant reads an exact expression's mantissa as a non-null integer in the
+// arithmetic type: a blank is 0, a bool 1 or 0.
+func (c coercions) Mant(e SQLExpr) string {
+	switch {
+	case e.Kind == KindNull:
+		return c.zeroMant
+	case e.Kind == KindBool:
+		return c.castMant(c.Cond(e))
+	case e.Sure:
+		return c.castMant(e.Val)
+	}
+	return c.castMant("COALESCE(" + e.Val + ", 0)")
+}
+
+// RawMant reads an exact expression's mantissa in the arithmetic type with
+// a blank kept NULL.
+func (c coercions) RawMant(e SQLExpr) string {
+	switch e.Kind {
+	case KindNull:
+		return "NULL"
+	case KindBool:
+		return c.castMant(c.Cond(e))
+	}
+	return c.castMant(e.Val)
 }
 
 // coalesceErr joins error expressions in evaluation order: the first error
@@ -377,17 +493,131 @@ func arith(d Dialect, op Op, a, b SQLExpr) SQLExpr {
 	case OpMul:
 		val = "(" + x + " * " + y + ")"
 		own = notFiniteErr(d, val)
-	case OpDiv:
-		val = "(CASE WHEN " + y + " = " + zero + " THEN " + zero + " ELSE " + x + " / " + y + " END)"
-		own = notFiniteErr(d, val)
-	case OpDivStrict:
+	case OpDiv, OpDivStrict:
 		val = "(CASE WHEN " + y + " = " + zero + " THEN NULL ELSE " + x + " / " + y + " END)"
 		own = coalesceErr("CASE WHEN "+y+" = "+zero+" THEN 'div_by_zero' END", notFiniteErr(d, val))
 	case OpPow:
 		val = d.Pow(x, y)
 		own = notFiniteErr(d, val)
 	}
-	return SQLExpr{Val: val, Err: coalesceErr(a.Err, b.Err, own), Kind: KindNumber, Sure: op != OpDivStrict}
+	return SQLExpr{Val: val, Err: coalesceErr(a.Err, b.Err, own), Kind: KindNumber, Sure: op != OpDiv && op != OpDivStrict}
+}
+
+// rescaled spells a mantissa moved from one scale up to another, with the
+// overflow check of the move, "" when there is no move: the VM checks
+// every step, so the SQL must too.
+func rescaled(d Dialect, mant string, from, to int) (string, string) {
+	if to <= from {
+		return mant, ""
+	}
+	val := "(" + mant + " * " + d.IntLit(pow10i[to-from]) + ")"
+	return val, d.OverflowErr(val)
+}
+
+// decKind is the result kind of an exact operation from its operand.
+func decResult(arg int32) (Kind, int8) {
+	if arg&decMoneyFlag != 0 {
+		return KindMoney, int8(arg & 0xff)
+	}
+	return KindDecimal, int8(arg & 0xff)
+}
+
+// currencyOf is the currency expression of a money result built from the
+// operands: the one that is not NULL, so that a blank operand defers to
+// the other; and the mismatch check when both are money.
+func currencyOf(a, b SQLExpr) (cur, err string) {
+	switch {
+	case a.Kind == KindMoney && b.Kind == KindMoney:
+		return "COALESCE(" + a.Cur + ", " + b.Cur + ")",
+			"CASE WHEN " + a.Cur + " IS NOT NULL AND " + b.Cur + " IS NOT NULL AND " + a.Cur + " <> " + b.Cur + " THEN 'currency_mismatch' END"
+	case a.Kind == KindMoney:
+		return a.Cur, ""
+	case b.Kind == KindMoney:
+		return b.Cur, ""
+	}
+	return "", ""
+}
+
+// decUnary spells dec.neg, dec.percent and dec.scale.
+func decUnary(d Dialect, op Op, x SQLExpr, arg int32) SQLExpr {
+	kind, scale := decResult(arg)
+	e := SQLExpr{Kind: kind, Scale: scale, Sure: true}
+	if x.Kind == KindMoney {
+		e.Cur = x.Cur
+	} else if kind == KindMoney {
+		e.Cur = "NULL"
+	}
+	m := d.Mant(x)
+	switch op {
+	case OpDecNeg:
+		val := "(-" + m + ")"
+		e.Val, e.Err = d.Narrow(val), coalesceErr(x.Err, d.OverflowErr(val))
+	case OpDecPercent:
+		e.Val, e.Err = d.Narrow(m), x.Err
+	default:
+		// dec.scale: the value as it is at the static scale, a blank kept
+		// blank; brought up otherwise.
+		if x.Scale == scale {
+			e.Val, e.Err, e.Sure = x.Val, x.Err, x.Sure
+			return e
+		}
+		val, re := rescaled(d, d.RawMant(x), int(x.Scale), int(scale))
+		e.Val, e.Err, e.Sure = d.Narrow(val), coalesceErr(x.Err, re), x.Sure
+		return e
+	}
+	return moneyBlank(e)
+}
+
+// moneyBlank makes a money result blank, NULL, where it has no currency,
+// as the VM does, so that ISBLANK and COUNT agree.
+func moneyBlank(e SQLExpr) SQLExpr {
+	if e.Kind != KindMoney {
+		return e
+	}
+	e.Val = "(CASE WHEN " + curOrNull(e) + " IS NULL THEN NULL ELSE " + e.Val + " END)"
+	e.Sure = false
+	return e
+}
+
+// decArith spells an exact +, -, * or / at the static result scale
+// (ADR-0022), with the overflow and division checks the VM makes.
+func decArith(d Dialect, op Op, a, b SQLExpr, arg int32) SQLExpr {
+	kind, scale := decResult(arg)
+	s := int(scale)
+	x, y := d.Mant(a), d.Mant(b)
+	cur, curErr := currencyOf(a, b)
+	e := SQLExpr{Kind: kind, Scale: scale, Sure: true}
+	if kind == KindMoney {
+		e.Cur = cur
+		if e.Cur == "" {
+			e.Cur = "NULL"
+		}
+	}
+	var val, own string
+	switch op {
+	case OpDecAdd, OpDecSub:
+		sign := " + "
+		if op == OpDecSub {
+			sign = " - "
+		}
+		xv, xe := rescaled(d, x, int(a.Scale), s)
+		yv, ye := rescaled(d, y, int(b.Scale), s)
+		val = "(" + xv + sign + yv + ")"
+		own = coalesceErr(xe, ye, d.OverflowErr(val))
+		e.Val = d.Narrow(val)
+	case OpDecMul:
+		val = "(" + x + " * " + y + ")"
+		own = d.OverflowErr(val)
+		e.Val = d.Narrow(val)
+	default:
+		k := s - int(a.Scale) + int(b.Scale)
+		list := x + ", " + y + ", " + strconv.Itoa(k)
+		e.Val = "fado_dec_div(" + list + ")"
+		own = "fado_dec_div_err(" + list + ")"
+		e.Sure = false
+	}
+	e.Err = coalesceErr(a.Err, b.Err, curErr, own)
+	return moneyBlank(e)
 }
 
 var sqlComparison = map[Op]string{OpEq: "=", OpNe: "<>", OpLt: "<", OpLe: "<=", OpGt: ">", OpGe: ">="}
@@ -399,35 +629,95 @@ func comparison(d Dialect, op Op, a, b SQLExpr) SQLExpr {
 	if k == KindNull {
 		k = b.Kind
 	}
-	var x, y string
+	var x, y, own string
 	switch k {
 	case KindText, KindRef, KindJSON:
 		x, y = d.Text(a), d.Text(b)
 	case KindBool:
 		x, y = d.Cond(a), d.Cond(b)
+	case KindDecimal, KindMoney:
+		s := max(int(a.Scale), int(b.Scale))
+		var xe, ye string
+		x, xe = rescaled(d, d.Mant(a), int(a.Scale), s)
+		y, ye = rescaled(d, d.Mant(b), int(b.Scale), s)
+		// The currencies are checked before the operands align, as in the VM.
+		_, curErr := currencyOf(a, b)
+		own = coalesceErr(curErr, xe, ye)
 	default:
 		x, y = d.Num(a), d.Num(b)
 	}
-	return SQLExpr{Val: "(" + x + " " + sqlComparison[op] + " " + y + ")", Err: coalesceErr(a.Err, b.Err), Kind: KindBool, Sure: true}
+	return SQLExpr{Val: "(" + x + " " + sqlComparison[op] + " " + y + ")", Err: coalesceErr(a.Err, b.Err, own), Kind: KindBool, Sure: true}
 }
 
-func ifExpr(d Dialect, c, then, els SQLExpr) SQLExpr {
+// joined is the kind and scale two alternatives share, both at that scale,
+// and the overflow checks of the moves, kept apart from the alternatives'
+// own errors: the VM moves the chosen value after it has chosen.
+func joined(d Dialect, then, els SQLExpr) (SQLExpr, SQLExpr, Kind, int8, string, string) {
 	kind := then.Kind
 	if kind == KindNull {
 		kind = els.Kind
 	}
+	scale := max(then.Scale, els.Scale)
+	var res [2]string
+	if kind.IsExact() {
+		for i, e := range []*SQLExpr{&then, &els} {
+			if e.Kind.IsExact() && e.Scale < scale {
+				val, re := rescaled(d, d.RawMant(*e), int(e.Scale), int(scale))
+				e.Val, e.Scale, res[i] = d.Narrow(val), scale, re
+			}
+		}
+	}
+	return then, els, kind, scale, res[0], res[1]
+}
+
+// pick is the error expression of one alternative when it is taken,
+// "" when it cannot fail.
+func pick(when string, errs ...string) string {
+	all := coalesceErr(errs...)
+	if all == "" {
+		return ""
+	}
+	return "CASE WHEN " + when + " THEN " + all + " END"
+}
+
+func ifExpr(d Dialect, c, then, els SQLExpr) SQLExpr {
+	then, els, kind, scale, thenRe, elsRe := joined(d, then, els)
 	cond := d.Cond(c)
 	val := "(CASE WHEN " + cond + " THEN " + then.Val + " ELSE " + els.Val + " END)"
-	var branches string
-	switch {
-	case then.Err != "" && els.Err != "":
-		branches = "CASE WHEN " + cond + " THEN " + then.Err + " ELSE " + els.Err + " END"
-	case then.Err != "":
-		branches = "CASE WHEN " + cond + " THEN " + then.Err + " END"
-	case els.Err != "":
-		branches = "CASE WHEN NOT " + cond + " THEN " + els.Err + " END"
+	branches := coalesceErr(pick(cond, then.Err, thenRe), pick("NOT "+cond, els.Err, elsRe))
+	e := SQLExpr{Val: val, Err: coalesceErr(c.Err, branches), Kind: kind, Scale: scale, Sure: then.Sure && els.Sure && then.Kind != KindNull && els.Kind != KindNull}
+	if kind == KindMoney {
+		e.Cur = "(CASE WHEN " + cond + " THEN " + curOrNull(then) + " ELSE " + curOrNull(els) + " END)"
 	}
-	return SQLExpr{Val: val, Err: coalesceErr(c.Err, branches), Kind: kind, Sure: then.Sure && els.Sure && then.Kind != KindNull && els.Kind != KindNull}
+	return e
+}
+
+func curOrNull(e SQLExpr) string {
+	if e.Cur == "" {
+		return "NULL"
+	}
+	return e.Cur
+}
+
+// ifErrorExpr is IFERROR: the fallback where the value's error expression
+// is set, the value elsewhere, and the value's own errors swallowed.
+func ifErrorExpr(d Dialect, val, fb SQLExpr) SQLExpr {
+	if val.Err == "" {
+		// The value cannot fail, so the fallback is never taken; the
+		// value still moves to the joined scale, outside any catch.
+		val, _, kind, scale, valRe, _ := joined(d, val, fb)
+		val.Kind, val.Scale, val.Err = kind, scale, valRe
+		return val
+	}
+	failed := "(" + val.Err + ") IS NOT NULL"
+	val, fb, kind, scale, valRe, fbRe := joined(d, val, fb)
+	e := SQLExpr{Val: "(CASE WHEN " + failed + " THEN " + fb.Val + " ELSE " + val.Val + " END)", Kind: kind, Scale: scale,
+		Sure: val.Sure && fb.Sure && val.Kind != KindNull && fb.Kind != KindNull}
+	e.Err = coalesceErr(pick(failed, fb.Err, fbRe), pick("NOT "+failed, valRe))
+	if kind == KindMoney {
+		e.Cur = "(CASE WHEN " + failed + " THEN " + curOrNull(fb) + " ELSE " + curOrNull(val) + " END)"
+	}
+	return e
 }
 
 // logical is AND or OR with the right side evaluated only when the left
@@ -449,7 +739,8 @@ func logical(d Dialect, and bool, left, right SQLExpr) SQLExpr {
 	return SQLExpr{Val: val, Err: coalesceErr(left.Err, rightErr), Kind: KindBool, Sure: true}
 }
 
-// blankTest is ISBLANK and ISNOTBLANK, the same in every dialect.
+// blankTest is ISBLANK and ISNOTBLANK, the same in every dialect. A money
+// value is blank when it has no currency.
 func blankTest(d Dialect, blank bool, x SQLExpr) SQLExpr {
 	if x.Kind == KindNull {
 		if blank {
@@ -457,10 +748,14 @@ func blankTest(d Dialect, blank bool, x SQLExpr) SQLExpr {
 		}
 		return SQLExpr{Val: d.False(), Kind: KindBool, Sure: true}
 	}
-	if blank {
-		return SQLExpr{Val: "(" + x.Val + " IS NULL)", Kind: KindBool, Sure: true}
+	subject := x.Val
+	if x.Kind == KindMoney {
+		subject = curOrNull(x)
 	}
-	return SQLExpr{Val: "(" + x.Val + " IS NOT NULL)", Kind: KindBool, Sure: true}
+	if blank {
+		return SQLExpr{Val: "(" + subject + " IS NULL)", Kind: KindBool, Sure: true}
+	}
+	return SQLExpr{Val: "(" + subject + " IS NOT NULL)", Kind: KindBool, Sure: true}
 }
 
 // maxCount is where the dialects clamp a count, length or width before
@@ -514,6 +809,64 @@ func concatExpr(d Dialect, parts []SQLExpr, withArgErrs bool) SQLExpr {
 	own := "CASE WHEN " + strings.Join(lens, " + ") + " > " + strconv.Itoa(max) + " THEN 'out_of_range' END"
 	e.Err = coalesceErr(append(errs, own)...)
 	return e
+}
+
+// placesConst reads a places argument the binder required to be a literal.
+func placesConst(args []SQLExpr, i int) int {
+	if i < len(args) && args[i].IsConst {
+		return int(args[i].Const)
+	}
+	return 0
+}
+
+// methodConst reads a rounding method argument the binder required to be
+// a literal, as a quoted SQL text; 'half_up' when absent.
+func methodConst(d Dialect, args []SQLExpr, i int) string {
+	if i < len(args) {
+		return args[i].Val
+	}
+	return d.TextLit("half_up")
+}
+
+// exactArgs is the shared part of the exact-family functions in a dialect:
+// the largest scale of the arguments, every mantissa brought to it, the
+// currency of the result and the mismatch checks, and the kind.
+func exactArgs(d Dialect, args []SQLExpr) (mants []string, scale int, kind Kind, cur string, errs []string) {
+	kind = KindDecimal
+	for _, a := range args {
+		scale = max(scale, int(a.Scale))
+		if a.Kind == KindMoney {
+			kind = KindMoney
+		}
+	}
+	var curs []string
+	for _, a := range args {
+		if a.Kind == KindMoney {
+			curs = append(curs, a.Cur)
+		}
+	}
+	// Every pair must agree, since a blank among them has no currency to
+	// compare with; the VM checks the currencies before it aligns.
+	for i := 0; i < len(curs); i++ {
+		for j := i + 1; j < len(curs); j++ {
+			errs = append(errs, "CASE WHEN "+curs[i]+" IS NOT NULL AND "+curs[j]+" IS NOT NULL AND "+curs[i]+" <> "+curs[j]+" THEN 'currency_mismatch' END")
+		}
+	}
+	for _, a := range args {
+		m, re := rescaled(d, d.Mant(a), int(a.Scale), scale)
+		mants = append(mants, m)
+		if re != "" {
+			errs = append(errs, re)
+		}
+	}
+	switch len(curs) {
+	case 0:
+	case 1:
+		cur = curs[0]
+	default:
+		cur = "COALESCE(" + strings.Join(curs, ", ") + ")"
+	}
+	return mants, scale, kind, cur, errs
 }
 
 // HasOp reports whether the program contains the opcode.

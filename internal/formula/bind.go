@@ -2,15 +2,16 @@ package formula
 
 import (
 	"fmt"
+	"math"
 	"regexp"
 	"sort"
 	"strings"
 )
 
 // The binder turns a syntax tree into a Program: it resolves names to
-// slots, gives every expression a static type by the rules of ADR-0019,
-// checks function classes against the mode (ADR-0015), tracks the stack
-// depth, and emits bytecode. Everything it rejects is rejected at
+// slots, gives every expression a static type by the rules of ADR-0019 and
+// ADR-0022, checks function classes against the mode (ADR-0015), tracks
+// the stack depth, and emits bytecode. Everything it rejects is rejected at
 // definition time; the VM never sees a type error.
 
 // Mode says where a formula will run, which decides the function classes
@@ -94,8 +95,8 @@ func Bind(src string, scope *Scope, opts BindOptions) (*Program, error) {
 // for positions in messages.
 func BindNode(src string, n Node, scope *Scope, opts BindOptions) (*Program, error) {
 	b := &binder{src: src, scope: scope, opts: opts, prog: &Program{},
-		slotOf: map[string]int32{}, numIndex: map[float64]int32{}, textIndex: map[string]int32{},
-		classes: map[Class]bool{}}
+		slotOf: map[string]int32{}, numIndex: map[float64]int32{},
+		textIndex: map[string]int32{}, classes: map[Class]bool{}}
 	t, err := b.expr(n)
 	if err != nil {
 		return nil, err
@@ -112,6 +113,9 @@ func BindNode(src string, n Node, scope *Scope, opts BindOptions) (*Program, err
 
 var classOrder = map[Class]int{ClassPure: 0, ClassContext: 1, ClassLookup: 2, ClassQuery: 3}
 
+// maxTries bounds the nesting of IFERROR, which is the VM's handler stack.
+const maxTries = 16
+
 type binder struct {
 	src   string
 	scope *Scope
@@ -120,10 +124,130 @@ type binder struct {
 
 	slotOf    map[string]int32
 	numIndex  map[float64]int32
+	decIndex  map[DecConst]int32
 	textIndex map[string]int32
 	classes   map[Class]bool
 
 	depth, maxDepth int
+	tries           int
+
+	// lit describes the last constant expr emitted, so that an operation
+	// can make its operand exact when the other operand is (ADR-0022);
+	// operand checks that it is the operand's own.
+	lit litInfo
+}
+
+// litInfo marks a constant expression that compiled to one const.num
+// instruction: where it is. Its exact value is read from the expression
+// on demand.
+type litInfo struct {
+	at int32
+	ok bool
+}
+
+// foldLiteral recognises a constant expression, number literals combined
+// with unary minus, percent, +, - and *, and folds it to the float the VM
+// would compute, operation for operation. A fold whose float is not finite
+// is left to the VM, which reports it.
+func foldLiteral(n Node) (float64, bool) {
+	switch n := n.(type) {
+	case *NumberLit:
+		return n.Value, true
+	case *Unary:
+		if !n.Const {
+			return 0, false
+		}
+		x, ok := foldLiteral(n.X)
+		if !ok {
+			return 0, false
+		}
+		switch n.Op {
+		case TokMinus:
+			return -x, true
+		case TokPercent:
+			return x / 100, true
+		}
+	case *Binary:
+		if !n.Const {
+			return 0, false
+		}
+		l, ok := foldLiteral(n.L)
+		if !ok {
+			return 0, false
+		}
+		r, ok := foldLiteral(n.R)
+		if !ok {
+			return 0, false
+		}
+		var f float64
+		switch n.Op {
+		case TokPlus:
+			f = l + r
+		case TokMinus:
+			f = l - r
+		default:
+			f = l * r
+		}
+		if notFinite(f) {
+			return 0, false
+		}
+		return f, true
+	}
+	return 0, false
+}
+
+// exactConst reads a constant expression exactly from its spellings in
+// src (ADR-0022): a mantissa and a scale, or false when it does not fit 18
+// digits.
+func exactConst(src string, n Node) (int64, int, bool) {
+	switch n := n.(type) {
+	case *NumberLit:
+		m, s, e := parseDecimal(n.Text(src))
+		return m, s, e == nil
+	case *Unary:
+		if !n.Const {
+			return 0, 0, false
+		}
+		m, s, ok := exactConst(src, n.X)
+		if !ok {
+			return 0, 0, false
+		}
+		switch n.Op {
+		case TokMinus:
+			return -m, s, m != math.MinInt64
+		case TokPercent:
+			return m, s + 2, s+2 <= MaxScale
+		}
+	case *Binary:
+		if !n.Const {
+			return 0, 0, false
+		}
+		l, sl, ok := exactConst(src, n.L)
+		if !ok {
+			return 0, 0, false
+		}
+		r, sr, ok := exactConst(src, n.R)
+		if !ok {
+			return 0, 0, false
+		}
+		switch n.Op {
+		case TokPlus, TokMinus:
+			x, y, s, ok := alignScales(l, sl, r, sr)
+			if n.Op == TokMinus {
+				ok = ok && y != math.MinInt64
+				y = -y
+			}
+			if !ok {
+				return 0, 0, false
+			}
+			m, ok := addInt(x, y)
+			return m, s, ok
+		case TokStar:
+			m, ok := mulInt(l, r)
+			return m, sl + sr, ok && sl+sr <= MaxScale
+		}
+	}
+	return 0, 0, false
 }
 
 func (b *binder) errAt(pos int, format string, args ...any) error {
@@ -161,6 +285,19 @@ func (b *binder) num(f float64) int32 {
 	return i
 }
 
+func (b *binder) dec(c DecConst) int32 {
+	if b.decIndex == nil {
+		b.decIndex = map[DecConst]int32{}
+	}
+	if i, ok := b.decIndex[c]; ok {
+		return i
+	}
+	i := int32(len(b.prog.Decs))
+	b.prog.Decs = append(b.prog.Decs, c)
+	b.decIndex[c] = i
+	return i
+}
+
 func (b *binder) text(s string) int32 {
 	if i, ok := b.textIndex[s]; ok {
 		return i
@@ -182,29 +319,43 @@ func (b *binder) slot(v Variable) int32 {
 	return i
 }
 
-// Type predicates of ADR-0019. Blank fits everywhere.
+// Type predicates of ADR-0019 and ADR-0022. Blank fits everywhere; a bool
+// reads as 1 or 0 in either number family.
 
-func isNumeric(t Type) bool   { return t.Kind == KindNumber || t.Kind == KindBool || t.Kind == KindNull }
-func isCondition(t Type) bool { return t.Kind == KindBool || t.Kind == KindNull }
-func isTextual(t Type) bool   { return t.Kind == KindText || t.Kind == KindNull }
-func isDateT(t Type) bool     { return t.Kind == KindDate || t.Kind == KindNull }
-func isJSONT(t Type) bool     { return t.Kind == KindJSON || t.Kind == KindNull }
+func isNumeric(t Type) bool      { return t.Kind == KindNumber || t.Kind == KindBool || t.Kind == KindNull }
+func isExactOperand(t Type) bool { return t.Kind.IsExact() || t.Kind == KindBool || t.Kind == KindNull }
+func isAnyNumeric(t Type) bool   { return isNumeric(t) || t.Kind.IsExact() }
+func isCondition(t Type) bool    { return t.Kind == KindBool || t.Kind == KindNull }
+func isTextual(t Type) bool      { return t.Kind == KindText || t.Kind == KindNull }
+func isDateT(t Type) bool        { return t.Kind == KindDate || t.Kind == KindNull }
+func isDateTimeT(t Type) bool    { return t.Kind == KindDateTime || t.Kind == KindNull }
+func isDateLike(t Type) bool     { return t.Kind.IsDateLike() || t.Kind == KindNull }
+func isMoneyT(t Type) bool       { return t.Kind == KindMoney || t.Kind == KindNull }
+func isJSONT(t Type) bool        { return t.Kind == KindJSON || t.Kind == KindNull }
 
-// comparable kinds: everything scalar but json compares as text too (ADR-0013).
+// comparable kinds: everything scalar of one kind, json as text too
+// (ADR-0013); exact values of any scale compare with each other, money
+// with a decimal by its amount.
 func comparable(a, b Type) bool {
 	if !a.IsScalar() || !b.IsScalar() {
 		return false
 	}
-	return a.Kind == b.Kind || a.Kind == KindNull || b.Kind == KindNull
+	return a.Kind == b.Kind || a.Kind == KindNull || b.Kind == KindNull || a.Kind.IsExact() && b.Kind.IsExact()
 }
 
-// join is the type of two branches that must agree: the same type, or the
-// non-blank one when one side is blank.
+// join is the type of two branches that must agree: the same type, the
+// non-blank one when one side is blank, or two exact values of one kind at
+// the larger scale.
 func join(a, b Type) (Type, bool) {
 	switch {
 	case a.Kind == KindNull:
 		return b, true
 	case b.Kind == KindNull:
+		return a, true
+	case a.Kind == b.Kind && a.Kind.IsExact():
+		if b.Scale > a.Scale {
+			return b, true
+		}
 		return a, true
 	case a.Equal(b):
 		return a, true
@@ -213,11 +364,13 @@ func join(a, b Type) (Type, bool) {
 }
 
 func (b *binder) expr(n Node) (Type, error) {
-	switch n := n.(type) {
-	case *NumberLit:
-		b.emit(OpConstNum, b.num(n.Value), n.P)
+	if f, ok := foldLiteral(n); ok {
+		at := b.emit(OpConstNum, b.num(f), n.Pos())
 		b.push(1)
+		b.lit = litInfo{at: int32(at), ok: true}
 		return Scalar(KindNumber), nil
+	}
+	switch n := n.(type) {
 	case *TextLit:
 		b.emit(OpConstText, b.text(n.Value), n.P)
 		b.push(1)
@@ -271,6 +424,39 @@ func (b *binder) expr(n Node) (Type, error) {
 	return Type{}, b.errAt(n.Pos(), "unexpected node %T", n)
 }
 
+// operand binds an expression and reports the constant it was, if any: a
+// constant compiles to exactly one instruction, the one b.lit names, so a
+// constant left behind by a sub-expression is told apart by its place.
+func (b *binder) operand(n Node) (Type, litInfo, error) {
+	start := b.here()
+	t, err := b.expr(n)
+	lit := b.lit
+	if !lit.ok || int(lit.at) != start || b.here() != start+1 {
+		lit = litInfo{}
+	}
+	return t, lit, err
+}
+
+// exactLit rewrites the constant's instruction into an exact constant read
+// from its spelling, and returns its exact type.
+func (b *binder) exactLit(lit litInfo, node Node) (Type, error) {
+	m, s, ok := exactConst(b.src, node)
+	if !ok {
+		return Type{}, b.errAt(node.Pos(), "the constant %s cannot be exact: at most %d digits after the point and %d digits in all", renderNumber(b.prog.Nums[b.prog.Code[lit.at].Arg]), MaxScale, MaxScale)
+	}
+	b.prog.Code[lit.at] = Instr{Op: OpConstDec, Arg: b.dec(DecConst{Mant: m, Scale: int8(s)})}
+	return DecimalType(s), nil
+}
+
+// claim makes a number literal exact when the other operand is exact, and
+// leaves every other type as it is.
+func (b *binder) claim(t Type, lit litInfo, node Node, other Type) (Type, error) {
+	if other.IsExact() && !t.IsExact() && lit.ok {
+		return b.exactLit(lit, node)
+	}
+	return t, nil
+}
+
 func (b *binder) unary(n *Unary) (Type, error) {
 	t, err := b.expr(n.X)
 	if err != nil {
@@ -278,6 +464,20 @@ func (b *binder) unary(n *Unary) (Type, error) {
 	}
 	switch n.Op {
 	case TokMinus, TokPercent:
+		if t.IsExact() {
+			s := int(t.Scale)
+			op := OpDecNeg
+			if n.Op == TokPercent {
+				op = OpDecPercent
+				s += 2
+				if s > MaxScale {
+					return Type{}, b.errAt(n.P, "%% would need scale %d, at most %d; round first", s, MaxScale)
+				}
+			}
+			rt := Type{Kind: t.Kind, Scale: int8(s)}
+			b.emit(op, decArg(rt), n.P)
+			return rt, nil
+		}
 		if !isNumeric(t) {
 			return Type{}, b.errAt(n.P, "%s needs a number, got %s", opText[n.Op], t)
 		}
@@ -298,14 +498,18 @@ func (b *binder) unary(n *Unary) (Type, error) {
 }
 
 func conditionHint(t Type) string {
-	if t.Kind == KindNumber {
+	if t.Kind == KindNumber || t.Kind.IsExact() {
 		return "; compare it, for example <> 0"
 	}
 	return ""
 }
 
 var arithmeticOps = map[TokenKind]Op{
-	TokPlus: OpAdd, TokMinus: OpSub, TokStar: OpMul, TokSlash: OpDiv, TokBackslash: OpDivStrict, TokCaret: OpPow,
+	TokPlus: OpAdd, TokMinus: OpSub, TokStar: OpMul, TokSlash: OpDiv, TokBackslash: OpDiv, TokCaret: OpPow,
+}
+
+var exactOps = map[TokenKind]Op{
+	TokPlus: OpDecAdd, TokMinus: OpDecSub, TokStar: OpDecMul, TokSlash: OpDecDiv, TokBackslash: OpDecDiv,
 }
 
 var comparisonOps = map[TokenKind]Op{
@@ -317,16 +521,19 @@ func (b *binder) binary(n *Binary) (Type, error) {
 	case TokAnd, TokOr:
 		return b.logical(n)
 	}
-	lt, err := b.expr(n.L)
+	lt, llit, err := b.operand(n.L)
 	if err != nil {
 		return Type{}, err
 	}
-	rt, err := b.expr(n.R)
+	rt, rlit, err := b.operand(n.R)
 	if err != nil {
 		return Type{}, err
 	}
 	b.pop(1)
 	if op, ok := arithmeticOps[n.Op]; ok {
+		if lt.IsExact() || rt.IsExact() {
+			return b.exactArith(n, lt, llit, rt, rlit)
+		}
 		if !isNumeric(lt) || !isNumeric(rt) {
 			bad := rt
 			if !isNumeric(lt) {
@@ -345,21 +552,111 @@ func (b *binder) binary(n *Binary) (Type, error) {
 		return Scalar(KindText), nil
 	}
 	if op, ok := comparisonOps[n.Op]; ok {
-		if !comparable(lt, rt) {
-			return Type{}, b.errAt(n.P, "%s compares %s with %s; convert one side first", opText[n.Op], lt, rt)
+		if lt, err = b.claim(lt, llit, n.L, rt); err != nil {
+			return Type{}, err
 		}
-		b.emit(op, 0, n.P)
+		if rt, err = b.claim(rt, rlit, n.R, lt); err != nil {
+			return Type{}, err
+		}
+		if !comparable(lt, rt) {
+			return Type{}, b.errAt(n.P, "%s compares %s with %s; convert one side first%s", opText[n.Op], lt, rt, compareHint(lt, rt))
+		}
+		// Exact operands compare at the larger static scale, which the
+		// instruction carries so that a blank operand aligns like a value.
+		var arg int32
+		if lt.IsExact() || rt.IsExact() {
+			arg = int32(max(lt.Scale, rt.Scale))
+		}
+		b.emit(op, arg, n.P)
 		return Scalar(KindBool), nil
 	}
 	return Type{}, b.errAt(n.P, "unexpected operator")
+}
+
+// exactArith types and emits an arithmetic operation with an exact
+// operand (ADR-0022): the other side's literal becomes exact, a number
+// variable is refused, money follows the currency rules, and the result
+// scale is the operation's.
+func (b *binder) exactArith(n *Binary, lt Type, llit litInfo, rt Type, rlit litInfo) (Type, error) {
+	var err error
+	if lt, err = b.claim(lt, llit, n.L, rt); err != nil {
+		return Type{}, err
+	}
+	if rt, err = b.claim(rt, rlit, n.R, lt); err != nil {
+		return Type{}, err
+	}
+	for _, t := range []Type{lt, rt} {
+		if !isExactOperand(t) {
+			return Type{}, b.errAt(n.P, "%s needs numbers of one kind, got %s and %s%s", opText[n.Op], lt, rt, arithmeticHint(t))
+		}
+	}
+	if n.Op == TokCaret {
+		return Type{}, b.errAt(n.P, "^ needs numbers, got %s; NUMBER converts an exact value", lt)
+	}
+	t, msg := exactResult(n.Op, lt, rt)
+	if msg != "" {
+		return Type{}, b.errAt(n.P, "%s", msg)
+	}
+	b.emit(exactOps[n.Op], decArg(t), n.P)
+	return t, nil
+}
+
+// exactResult is the type of an exact operation: + and - at the larger
+// scale, * at the sum of the scales, / at the dividend's scale plus
+// DivScaleStep. Money plus or minus money or a decimal is money; money
+// times a decimal is money; money divided by money is a decimal and by a
+// decimal is money; money times money and a decimal divided by money are
+// refused.
+func exactResult(op TokenKind, lt, rt Type) (Type, string) {
+	sa, sb := int(lt.Scale), int(rt.Scale)
+	ma, mb := lt.Kind == KindMoney, rt.Kind == KindMoney
+	kind := KindDecimal
+	if ma || mb {
+		kind = KindMoney
+	}
+	switch op {
+	case TokPlus, TokMinus:
+		return Type{Kind: kind, Scale: int8(max(sa, sb))}, ""
+	case TokStar:
+		if ma && mb {
+			return Type{}, "* cannot multiply money by money"
+		}
+		if sa+sb > MaxScale {
+			return Type{}, fmt.Sprintf("* would need scale %d, at most %d; round an operand first", sa+sb, MaxScale)
+		}
+		return Type{Kind: kind, Scale: int8(sa + sb)}, ""
+	}
+	if mb && !ma {
+		return Type{}, "/ cannot divide a decimal by money"
+	}
+	if ma && mb {
+		kind = KindDecimal
+	}
+	return Type{Kind: kind, Scale: int8(divScale(sa))}, ""
 }
 
 func arithmeticHint(t Type) string {
 	switch t.Kind {
 	case KindText:
 		return "; VALUE converts text to a number"
-	case KindDate:
+	case KindDate, KindDateTime:
 		return "; dates move with ADDDAYS, ADDMONTHS and ADDYEARS, and DAYS measures them"
+	case KindNumber:
+		return "; DECIMAL(x, places) makes a number exact"
+	case KindDecimal, KindMoney:
+		return "; NUMBER converts an exact value"
+	}
+	return ""
+}
+
+func compareHint(a, b Type) string {
+	switch {
+	case a.Kind == KindDate && b.Kind == KindDateTime || a.Kind == KindDateTime && b.Kind == KindDate:
+		return "; DATEOF turns a datetime into a date"
+	case a.Kind == KindMoney && b.Kind == KindDecimal || a.Kind == KindDecimal && b.Kind == KindMoney:
+		return "; AMOUNT reads the amount of a money"
+	case a.Kind.IsExact() && b.Kind == KindNumber || a.Kind == KindNumber && b.Kind.IsExact():
+		return "; DECIMAL(x, places) makes a number exact"
 	}
 	return ""
 }
@@ -403,35 +700,83 @@ func (b *binder) ifExpr(n *If) (Type, error) {
 	toElse := b.emit(OpJumpIfFalse, 0, n.P)
 	b.pop(1)
 	base := b.depth
-	tt, err := b.expr(n.Then)
+	tt, tlit, err := b.operand(n.Then)
 	if err != nil {
 		return Type{}, err
 	}
 	toEnd := b.emit(OpJump, 0, n.P)
 	b.depth = base
 	b.patch(toElse, b.here())
-	et, err := b.expr(n.Else)
+	et, elit, err := b.operand(n.Else)
 	if err != nil {
 		return Type{}, err
 	}
 	b.patch(toEnd, b.here())
+	return b.branches("IF", n.P, tt, tlit, n.Then, et, elit, n.Else)
+}
+
+// settle brings an exact result of two alternatives to the joined scale and
+// kind at run time, since the branch taken carries its own.
+func (b *binder) settle(t Type, pos int) Type {
+	if t.IsExact() {
+		b.emit(OpDecScale, decArg(t), pos)
+	}
+	return t
+}
+
+// branches joins the types of two alternatives, making a literal exact
+// when the other alternative is.
+func (b *binder) branches(what string, pos int, tt Type, tlit litInfo, tn Node, et Type, elit litInfo, en Node) (Type, error) {
+	var err error
+	if tt, err = b.claim(tt, tlit, tn, et); err != nil {
+		return Type{}, err
+	}
+	if et, err = b.claim(et, elit, en, tt); err != nil {
+		return Type{}, err
+	}
 	t, ok := join(tt, et)
 	if !ok {
-		return Type{}, b.errAt(n.P, "IF branches must have the same type, got %s and %s", tt, et)
+		return Type{}, b.errAt(pos, "%s branches must have the same type, got %s and %s", what, tt, et)
 	}
 	if !t.IsScalar() {
-		return Type{}, b.errAt(n.P, "composite values are not supported yet")
+		return Type{}, b.errAt(pos, "composite values are not supported yet")
 	}
-	return t, nil
+	return b.settle(t, pos), nil
+}
+
+// ifError emits IFERROR(value, fallback): the value runs under a handler,
+// and an error in it discards what it left on the stack and evaluates the
+// fallback instead (ADR-0024).
+func (b *binder) ifError(n *Call) (Type, error) {
+	if b.tries >= maxTries {
+		return Type{}, b.errAt(n.P, "IFERROR nested more than %d deep", maxTries)
+	}
+	b.tries++
+	try := b.emit(OpTry, 0, n.P)
+	base := b.depth
+	vt, vlit, err := b.operand(n.Args[0])
+	if err != nil {
+		return Type{}, err
+	}
+	b.emit(OpEndTry, 0, n.P)
+	toEnd := b.emit(OpJump, 0, n.P)
+	b.depth = base
+	b.patch(try, b.here())
+	ft, flit, err := b.operand(n.Args[1])
+	if err != nil {
+		return Type{}, err
+	}
+	b.patch(toEnd, b.here())
+	b.tries--
+	return b.branches("IFERROR", n.P, vt, vlit, n.Args[0], ft, flit, n.Args[1])
 }
 
 func (b *binder) call(n *Call) (Type, error) {
+	if n.Name == "IFERROR" {
+		return b.ifError(n)
+	}
 	id, ok := builtinByName[n.Name]
 	if !ok {
-		fn := LookupFunction(n.Name)
-		if fn != nil && (fn.Class == ClassLookup || fn.Class == ClassQuery) {
-			return Type{}, b.errAt(n.P, "%s is not implemented yet", n.Name)
-		}
 		return Type{}, b.errAt(n.P, "%s is not implemented yet", n.Name)
 	}
 	spec := builtins[id]
@@ -441,8 +786,13 @@ func (b *binder) call(n *Call) (Type, error) {
 	if len(n.Args) > 255 {
 		return Type{}, b.errAt(n.P, "%s: at most 255 arguments", n.Name)
 	}
+	// The argument types and literals live on the stack for the usual
+	// call; a wider one grows past the arrays.
+	var tsBuf [4]Type
+	var litsBuf [4]litInfo
+	ts, lits := tsBuf[:0], litsBuf[:0]
 	for i, a := range n.Args {
-		t, err := b.expr(a)
+		t, lit, err := b.operand(a)
 		if err != nil {
 			return Type{}, err
 		}
@@ -450,42 +800,126 @@ func (b *binder) call(n *Call) (Type, error) {
 		if i < len(spec.args) {
 			k = spec.args[i]
 		}
+		if k == akExact && !t.IsExact() && lit.ok {
+			if t, err = b.exactLit(lit, a); err != nil {
+				return Type{}, err
+			}
+		}
 		if !k.accepts(t) {
 			return Type{}, b.errAt(a.Pos(), "%s: argument %d must be %s, got %s%s", n.Name, i+1, k, t, k.hint(t))
 		}
+		ts = append(ts, t)
+		lits = append(lits, lit)
 	}
 	if spec.check != nil {
 		if err := spec.check(n); err != nil {
 			return Type{}, b.errAt(n.P, "%s: %s", n.Name, err)
 		}
 	}
-	b.pop(len(n.Args))
-	b.emit(OpCall, int32(id)<<8|int32(len(n.Args)), n.P)
+	rt, err := b.resultType(spec, n, ts, lits)
+	if err != nil {
+		return Type{}, err
+	}
+	argc := len(n.Args)
+	if spec.family && rt.IsExact() {
+		// The static scale the arguments align on travels as one more
+		// exact argument, so that a blank argument counts like a value and
+		// the SQL dialects and the VM round and overflow on the same step.
+		scale := 0
+		for _, t := range ts {
+			scale = max(scale, int(t.Scale))
+		}
+		b.emit(OpConstDec, b.dec(DecConst{Mant: int64(scale)}), n.P)
+		b.push(1)
+		argc++
+	}
+	b.pop(argc)
+	b.emit(OpCall, int32(id)<<8|int32(argc), n.P)
 	b.push(1)
+	if rt.IsExact() {
+		// The function cannot know the static scale and kind when every
+		// exact argument was blank at run time; the result is brought to
+		// them.
+		b.emit(OpDecScale, decArg(rt), n.P)
+	}
 	b.classes[spec.class] = true
-	return Scalar(spec.result), nil
+	return rt, nil
+}
+
+// intLiteral reads an argument that must be a whole constant, such as a
+// number of places, and reports its value.
+func intLiteral(n Node) (int, bool) {
+	f, ok := foldLiteral(n)
+	if !ok || f != math.Trunc(f) || math.Abs(f) > 1e6 {
+		return 0, false
+	}
+	return int(f), true
+}
+
+// placesArg reads a places argument of a function on an exact value: an
+// integer literal from -MaxScale to MaxScale, or def when absent.
+func (b *binder) placesArg(n *Call, i int, def int) (int, error) {
+	if i >= len(n.Args) {
+		return def, nil
+	}
+	p, ok := intLiteral(n.Args[i])
+	if !ok || p < -MaxScale || p > MaxScale {
+		return 0, b.errAt(n.Args[i].Pos(), "%s: the places must be a whole number from %d to %d written in the formula, so that the result's scale is known when the class is defined", n.Name, -MaxScale, MaxScale)
+	}
+	return p, nil
+}
+
+// methodArg checks a rounding method argument: a text literal naming one
+// of RoundMethods, or nothing.
+func (b *binder) methodArg(n *Call, i int) error {
+	if i >= len(n.Args) {
+		return nil
+	}
+	lit, ok := n.Args[i].(*TextLit)
+	if !ok {
+		return b.errAt(n.Args[i].Pos(), "%s: the method must be written in the formula: one of %s", n.Name, strings.Join(RoundMethods, ", "))
+	}
+	if _, known := roundMethods[lit.Value]; !known {
+		return b.errAt(n.Args[i].Pos(), "%s: unknown method %q; one of %s", n.Name, lit.Value, strings.Join(RoundMethods, ", "))
+	}
+	return nil
 }
 
 // argKind is what a builtin accepts in one argument position.
 type argKind uint8
 
 const (
-	akNumber argKind = iota + 1
-	akText
-	akDate
-	akScalar
-	akCondition
-	akJSON
+	akNumber    argKind = iota + 1 // number, bool or blank
+	akExact                        // decimal, money, bool or blank; a number literal becomes exact
+	akNumeric                      // either family
+	akMoney                        // money or blank
+	akText                         // text or blank
+	akDate                         // a calendar day or blank
+	akDateTime                     // an instant or blank
+	akDateLike                     // a date, a datetime or blank
+	akScalar                       // any scalar
+	akCondition                    // bool or blank
+	akJSON                         // json or blank
 )
 
 func (k argKind) String() string {
 	switch k {
 	case akNumber:
 		return "a number"
+	case akExact:
+		return "an exact number"
+	case akNumeric:
+		return "a number"
+	case akMoney:
+		return "money"
 	case akText:
 		return "text"
 	case akDate:
 		return "a date"
+	case akDateTime:
+		return "a datetime"
+	case akDateLike:
+		return "a date or a datetime"
 	case akScalar:
 		return "a scalar value"
 	case akCondition:
@@ -500,10 +934,20 @@ func (k argKind) accepts(t Type) bool {
 	switch k {
 	case akNumber:
 		return isNumeric(t)
+	case akExact:
+		return isExactOperand(t)
+	case akNumeric:
+		return isAnyNumeric(t)
+	case akMoney:
+		return isMoneyT(t)
 	case akText:
 		return isTextual(t)
 	case akDate:
 		return isDateT(t)
+	case akDateTime:
+		return isDateTimeT(t)
+	case akDateLike:
+		return isDateLike(t)
 	case akScalar:
 		return t.IsScalar()
 	case akCondition:
@@ -516,14 +960,22 @@ func (k argKind) accepts(t Type) bool {
 
 func (k argKind) hint(t Type) string {
 	switch {
-	case k == akNumber:
+	case k == akNumber || k == akNumeric || k == akExact:
 		return arithmeticHint(t)
+	case k == akMoney && t.Kind == KindDecimal:
+		return "; MONEY(amount, currency) makes a decimal money"
 	case k == akCondition:
 		return conditionHint(t)
-	case k == akText && t.Kind == KindNumber:
+	case k == akText && (t.Kind == KindNumber || t.Kind.IsExact()):
 		return "; TEXT converts a number to text"
-	case k == akDate && t.Kind == KindText:
+	case (k == akDate || k == akDateLike) && t.Kind == KindText:
 		return "; DATEVALUE converts text to a date"
+	case k == akDate && t.Kind == KindDateTime:
+		return "; DATEOF turns a datetime into a date"
+	case k == akDateTime && t.Kind == KindText:
+		return "; DATETIMEVALUE converts text to a datetime"
+	case k == akDateTime && t.Kind == KindDate:
+		return "; DATETIME turns a date into a datetime"
 	}
 	return ""
 }

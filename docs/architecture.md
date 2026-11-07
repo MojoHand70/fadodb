@@ -86,9 +86,8 @@ A class is one JSON document.
     "customer": {"type": "ref", "class": "Customer", "required": true},
     "issued":   {"type": "date", "default": "TODAY()"},
     "due":      {"type": "date", "default": "ADDDAYS(issued, 30)"},
-    "owner":    {"type": "ref", "class": "User", "default": "USER().id"},
-    "currency": {"type": "text", "default": "\"EUR\""},
-    "discount": {"type": "number", "default": "0"},
+    "owner":    {"type": "text", "default": "USER()"},
+    "discount": {"type": "decimal", "scale": 2, "default": "0"},
     "shipping": {"type": "json"},
     "lines":    {"type": "rows", "schema": {"sku": "text", "qty": "number", "price": "number"}},
 
@@ -124,10 +123,10 @@ A class is one JSON document.
      "do": [{"action": "reset", "variables": ["discount"]}]}
   ],
   "access": {
-    "read":   "INGROUP(\"finance\") OR owner = USER().id",
+    "read":   "INGROUP(\"finance\") OR owner = USER()",
     "create": "INGROUP(\"sales\")",
     "update": "STATE() = \"draft\"",
-    "transition": {"approve": "INGROUP(\"finance\") AND owner <> USER().id"}
+    "transition": {"approve": "INGROUP(\"finance\") AND owner <> USER()"}
   }
 }
 ```
@@ -164,9 +163,12 @@ A class declares **variables**. Each has a name and a type.
 |---|---|---|
 | `null` | blank | Excel BLANK semantics, defined once in ADR-0005 |
 | `bool` | true/false | Comparisons yield bool, not 1/0 |
-| `number` | float64 | Excel arithmetic semantics; a `decimal` type is a post-1.0 ADR |
-| `text` | UTF-8 string | |
-| `date` | int64 seconds UTC | One representation; `date` and `datetime` differ in display only |
+| `number` | float64 | Excel arithmetic semantics (ADR-0004); for embedders that want a spreadsheet's numbers |
+| `decimal(s)`, `int` | int64 mantissa at a scale of 0 to 18 places | Exact arithmetic or the error `overflow`; `int` is `decimal(0)` (ADR-0022) |
+| `money(s)` | a decimal with a currency code | Currencies must agree in one operation; stored as two columns, written `"12.30 PLN"` (ADR-0022) |
+| `text` | UTF-8 string | A `values` list makes it an enum, refused outside the list at commit (ADR-0023) |
+| `date` | int32 days since 1970-01-01 | A calendar day with no clock and no zone (ADR-0023) |
+| `datetime` | int64 seconds UTC | An instant; `DATEOF` and `DATETIME` convert (ADR-0023) |
 | `ref` | class and id | Typed reference to another document |
 | `json` | opaque JSON text | Structured data the engine does not interpret; read through `JSONVALUE` only |
 | `array<scalar>` | ordered list of one scalar type | Short lists the document owns, such as tags |
@@ -213,7 +215,8 @@ declared in tables and views. The columns the generated tables and views add
 are reserved and rejected as variable and schema column names at definition
 time: `id`, `title`, `state`, `version`, `created_at`, `updated_at`,
 `state_entered_at`, `valid_from`, `valid_to`, `actor_id`, `event_id`,
-`doc_id`, `idx` and `value`.
+`doc_id`, `idx` and `value`; a name may not end in `_currency`, the suffix of
+a money variable's currency column.
 
 ### Formulas
 
@@ -226,7 +229,7 @@ result:
 
 | Class | Examples | Allowed in |
 |---|---|---|
-| Pure | `IF ROUND SUM LEFT DATE ADDMONTHS JSONVALUE` | everywhere |
+| Pure | `IF IFERROR ROUND SUM LEFT DATE ADDMONTHS DECIMAL MONEY JSONVALUE` | everywhere |
 | Context | `USER() INGROUP() NOW() TODAY() STATE() ID()` | defaults, triggered formulas, guards, rules, access rules, layouts; not in auto formulas |
 | Lookup | `LOOKUP(source, column, condition)` | everywhere; in auto formulas only against explicit tables |
 | Query | `QUERY(source, columns, condition, sort, groupby, limit)` | defaults, triggered formulas, rules, layouts; not in auto formulas |
@@ -307,7 +310,9 @@ doc_Invoice__lines        one row per element per version            key: (doc_i
                           + the row schema's columns, or `value` for arrays
 events                    one row per thing that happened            key: event_id
                           class, doc_id, kind, name, from_state, to_state,
-                          actor_id, before_version, after_version, cause_event_id
+                          actor_id, before_version, after_version, cause_event_id,
+                          command_key (unique, the caller's idempotency key),
+                          business_date (a calendar day the caller gives)
 event_docs                every document an event touched            (event_id, class, doc_id, qualifier)
 ```
 
@@ -383,8 +388,16 @@ SQLite with a documented subset of capabilities.
 
 ### Security
 
-- Principals: users, groups, group membership, API keys, sessions. Roles: `admin`, `user`.
+- The principal comes from the embedder on every call: an id, groups, an
+  admin flag and its business day (ADR-0027). The engine keeps no user
+  tables; an optional package of users, groups and API keys turns a
+  credential into a principal for `fadodb serve`.
 - Access rules per class: `read`, `create`, `update`, `delete`, and per-transition rules. Tables have `read` and `write` rules.
+- A class may declare `rights` per state and variable, a table of ticks:
+  a variable whose `write` rule is FALSE in the document's state cannot be
+  set, one whose `read` rule is FALSE is absent from the wire document, the
+  change stream and query results; the SQL endpoint and the views stay
+  row-level (ADR-0028).
 - `read` compiles to a SQL predicate appended to every query, view,
   subscription filter, and to every `LOOKUP` and `QUERY` whose source is a
   stack, so a formula can never see a row its author could not.
@@ -448,13 +461,17 @@ static types and the function-class check of the evaluation mode,
 bytecode format v1 with its binary and JSON forms, the Go VM, the SQL
 generator with the SQLite and DuckDB dialects, the catalog, the
 conformance suite with its property tests, and `fadodb formula eval`.
+Since then, unreleased: the exact types `decimal`, `int` and `money`
+(ADR-0022), `date` as a calendar day beside `datetime` (ADR-0023),
+division by zero as an error and `IFERROR` (ADR-0024), constant folding of
+literal expressions, and bytecode format v2.
 Not yet: the dependency DAG and cycle detection across a document's
 formulas, composite values (arrays and rows) and the query functions,
-which arrive with the document model in Phase 2; the constant-folding
-optimizer; the browser VM (Phase 7); the Postgres dialect (Phase 10).
-The pipeline and the value struct below are the design: today's `Value`
-holds a kind, a number and a text, and an array is a column-wise value
-beside it that no operation consumes yet.
+which arrive with the document model in Phase 2; the browser VM (Phase
+7); the Postgres dialect (Phase 10). The pipeline and the value struct
+below are the design: today's `Value` holds a kind, a scale, a number
+and a text, and an array is a column-wise value beside it that no
+operation consumes yet.
 
 ### Pipeline
 
@@ -464,7 +481,7 @@ source → lexer → parser (AST) → binder (names→slots, types, DAG, cycles,
 bytecode → Go VM          (typed tagged stack, zero allocations on the scalar path)
 bytecode → SQL generator  (SQLite, DuckDB, Postgres dialects; used by LOOKUP/QUERY,
                            set-wise recompute, access predicates and views)
-bytecode → browser VM     (TypeScript, zero dependencies)
+bytecode → browser VM     (TypeScript, zero dependencies, shipped as one plain JavaScript file)
 ```
 
 ### Bytecode
@@ -486,9 +503,10 @@ browser VM and the C ABI consume it.
 
 ```go
 type Value struct {
-    kind Kind      // Null, Bool, Number, Text, Date, Ref, Array, Rows
-    num  float64   // Number, Date (seconds), Bool (0/1)
-    str  string    // Text, Ref
+    kind  Kind      // Null, Bool, Number, Decimal, Money, Text, Date, DateTime, Ref, JSON, Array, Rows
+    scale int8      // Decimal, Money: digits after the point
+    num   float64   // Number, Date (days), DateTime (seconds), Bool (0/1); the mantissa bits of a Decimal or Money
+    str   string    // Text, Ref, JSON; the currency of a Money
     list []Value   // Array
     rows *Rows     // Rows: column names, types, and column-major values
 }
@@ -572,13 +590,21 @@ rewritten.
 db, err := fado.Open("app.fado", fado.Options{})
 err  = db.DefineClass(ctx, classJSON)
 err  = db.DefineLayout(ctx, "Invoice", layoutJSON)
-id, err := db.Create(ctx, "Invoice", fado.Values{"customer": "Customer:42"}, fado.As(user))
-err  = db.Set(ctx, "Invoice", id, fado.Values{"discount": 0.1}, fado.As(user))
-err  = db.Transition(ctx, "Invoice", id, "approve", fado.As(user))
-err  = db.Refresh(ctx, "Invoice", id, []string{"backlog"}, fado.As(user))
-rows, err := db.Query(ctx, `SELECT id, total FROM Invoice WHERE state = 'approved'`, fado.As(user))
-sub  := db.Subscribe(ctx, fado.Filter{Class: "Invoice"}, fado.As(user))
+p := fado.Principal{ID: "alice", Groups: []string{"finance"}}
+id, err := db.Create(ctx, "Invoice", fado.Values{"customer": "Customer:42"}, fado.As(p), fado.Key("ksef-2026-0042"))
+err  = db.Set(ctx, "Invoice", id, fado.Values{"discount": "0.10"}, fado.As(p))
+err  = db.Transition(ctx, "Invoice", id, "approve", fado.As(p), fado.BusinessDate(day))
+err  = db.Refresh(ctx, "Invoice", id, []string{"backlog"}, fado.As(p))
+doc, err := db.Preview(ctx, "Invoice", id, fado.Values{"discount": "0.20"}, "approve", fado.As(p))
+rows, err := db.Query(ctx, `SELECT id, total FROM Invoice WHERE state = 'approved'`, fado.As(p))
+sub  := db.Subscribe(ctx, fado.Filter{Class: "Invoice"}, fado.As(p))
+db.RegisterExecutor("books", func(ctx context.Context, a fado.Action) error { return post(a.Event) })
 ```
+
+The principal is the embedder's (ADR-0027); every mutating call takes an
+optional idempotency key and a business date (ADR-0026); `Preview` runs the
+commit pipeline and writes nothing (ADR-0025); a registered executor
+receives the transition event from the outbox (ADR-0027).
 
 ### JSON command set
 
@@ -592,6 +618,7 @@ mapping:
 | `POST /v1/docs/{class}`, `GET /v1/docs/{class}/{id}`, `PATCH .../values`, `DELETE` | Documents |
 | `POST /v1/docs/{class}/{id}/transitions/{name}` | Transition |
 | `POST /v1/docs/{class}/{id}/refresh`, `POST .../reset` | Trigger recalculation of named variables; reset inputs to defaults |
+| `POST /v1/docs/{class}/preview`, `POST /v1/classes/validate` | Evaluate without writing: a document, a draft class, one transition; definition-time diagnostics (ADR-0025) |
 | `GET /v1/docs/{class}/{id}/history`, `GET .../events` | Versions and log |
 | `POST /v1/query`, `POST /v1/sql` | Filter DSL, read-only SQL |
 | `GET /v1/subscribe` (WebSocket) | Change stream filtered by the caller's read predicate |
@@ -607,8 +634,9 @@ A document is one JSON object: system variables at the top level, declared
 variables under `values`, composites inline. Reads, the change stream,
 create (`values` only) and `PATCH .../values` (the variables to change)
 share this shape. A blank is `null`; a variable absent from a patch is
-unchanged. Dates are integer seconds, refs are `"Class:id"` text, `json`
-variables are embedded as they are.
+unchanged. Dates are `"YYYY-MM-DD"`, datetimes integer seconds, exact
+values text such as `"12.30"` and money `"12.30 PLN"`, refs are
+`"Class:id"` text, `json` variables are embedded as they are.
 
 ```json
 {
@@ -746,7 +774,7 @@ fadodb/
   analytics/             duckdb module: projection, native tables, attach, mining views
   postgres/              postgres dialect and driver (separate module)
   cabi/                  c-shared build and header (lite build)
-  web/vm/                TypeScript VM, zero dependencies
+  web/vm/                TypeScript VM, zero dependencies, built to one plain JavaScript file
   web/renderer/          reference frontend
   clients/ts/  clients/py/
   conformance/           formula and statechart cases run by all targets
@@ -763,7 +791,7 @@ of the core `go.mod`.
 
 Parallel statechart regions; BPMN; multi-tenancy inside one database file
 (run one file per tenant); replication and clustering; WASM plugin actions;
-a visual class designer; a decimal number type; OCEL export; nested
+a visual class designer; OCEL export; nested
 composites (rows inside rows, arrays of arrays); raw SQL inside formulas;
 attachments and comments (planned as side objects after 1.0); per-document
 layouts.

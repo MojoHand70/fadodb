@@ -33,8 +33,8 @@ const (
 	OpAdd
 	OpSub
 	OpMul
-	OpDiv       // / : by zero yields 0
-	OpDivStrict // \ : by zero is an error
+	OpDiv       // / and \ : by zero is an error (ADR-0024)
+	OpDivStrict // kept for the numbering: the same as div
 	OpPow
 	OpConcat
 	OpEq
@@ -52,7 +52,30 @@ const (
 	OpLookup      // reserved: LOOKUP through query slot arg (ADR-0020)
 	OpQuery       // reserved: QUERY through query slot arg (ADR-0020)
 	OpReturn      // the top is the result
+	OpConstDec    // push Decs[arg] (ADR-0022)
+	OpDecNeg      // -x on an exact value; arg is the result's scale and money flag
+	OpDecPercent  // x% on an exact value; arg as dec.neg
+	OpDecAdd      // exact +; arg as dec.neg
+	OpDecSub      // exact -; arg as dec.neg
+	OpDecMul      // exact *; arg as dec.neg
+	OpDecDiv      // exact /; arg as dec.neg
+	OpDecScale    // bring the exact top to the static scale and kind; arg as dec.neg
+	OpTry         // on an error before the matching end.try, restore the stack and pc = arg (IFERROR)
+	OpEndTry      // leave the innermost try
 )
+
+// The operand of the exact operations: the result's scale in the low byte
+// and, in bit 8, whether the static result is money, so that the VM can
+// finish a value whose operands were blank at run time.
+const decMoneyFlag = 1 << 8
+
+func decArg(t Type) int32 {
+	arg := int32(t.Scale)
+	if t.Kind == KindMoney {
+		arg |= decMoneyFlag
+	}
+	return arg
+}
 
 var opNames = [...]string{
 	OpNop: "nop", OpConstNum: "const.num", OpConstText: "const.text", OpTrue: "true",
@@ -62,6 +85,8 @@ var opNames = [...]string{
 	OpLt: "lt", OpLe: "le", OpGt: "gt", OpGe: "ge", OpJump: "jump",
 	OpJumpIfFalse: "jump.if.false", OpAndJump: "and.jump", OpOrJump: "or.jump",
 	OpToBool: "to.bool", OpCall: "call", OpLookup: "lookup", OpQuery: "query", OpReturn: "return",
+	OpConstDec: "const.dec", OpDecNeg: "dec.neg", OpDecPercent: "dec.percent", OpDecAdd: "dec.add",
+	OpDecSub: "dec.sub", OpDecMul: "dec.mul", OpDecDiv: "dec.div", OpDecScale: "dec.scale", OpTry: "try", OpEndTry: "end.try",
 }
 
 func (o Op) String() string {
@@ -91,9 +116,16 @@ type QuerySlot struct {
 	Args   []int32
 }
 
+// DecConst is an exact constant: a mantissa at a scale (ADR-0022).
+type DecConst struct {
+	Mant  int64
+	Scale int8
+}
+
 // Program is a compiled formula.
 type Program struct {
 	Nums    []float64
+	Decs    []DecConst
 	Texts   []string
 	Slots   []Slot
 	Code    []Instr
@@ -108,7 +140,7 @@ type Program struct {
 // Format constants.
 const (
 	formatMagic   = "FADO"
-	formatVersion = 1
+	formatVersion = 2
 )
 
 // Encode serializes the program in the binary format.
@@ -121,6 +153,11 @@ func (p *Program) Encode() []byte {
 	w.u32(uint32(len(p.Nums)))
 	for _, f := range p.Nums {
 		w.u64(math.Float64bits(f))
+	}
+	w.u32(uint32(len(p.Decs)))
+	for _, c := range p.Decs {
+		w.u64(uint64(c.Mant))
+		w.u8(uint8(c.Scale))
 	}
 	w.u32(uint32(len(p.Texts)))
 	for _, s := range p.Texts {
@@ -172,6 +209,17 @@ func Decode(data []byte) (*Program, error) {
 	p.Nums = make([]float64, n)
 	for i := range p.Nums {
 		p.Nums[i] = math.Float64frombits(r.u64())
+	}
+	n = r.count()
+	if n > 0 {
+		p.Decs = make([]DecConst, n)
+		for i := range p.Decs {
+			p.Decs[i].Mant = int64(r.u64())
+			p.Decs[i].Scale = int8(r.u8())
+			if p.Decs[i].Scale < 0 || p.Decs[i].Scale > MaxScale {
+				r.err = fmt.Errorf("exact constant %d has scale %d", i, p.Decs[i].Scale)
+			}
+		}
 	}
 	n = r.count()
 	p.Texts = make([]string, n)
@@ -248,13 +296,21 @@ func (p *Program) validate() error {
 			if in.Arg < 0 || int(in.Arg) >= len(p.Texts) {
 				return fmt.Errorf("instruction %d: text constant %d out of range", i, in.Arg)
 			}
+		case OpConstDec:
+			if in.Arg < 0 || int(in.Arg) >= len(p.Decs) {
+				return fmt.Errorf("instruction %d: exact constant %d out of range", i, in.Arg)
+			}
 		case OpLoad:
 			if in.Arg < 0 || int(in.Arg) >= len(p.Slots) {
 				return fmt.Errorf("instruction %d: slot %d out of range", i, in.Arg)
 			}
-		case OpJump, OpJumpIfFalse, OpAndJump, OpOrJump:
+		case OpJump, OpJumpIfFalse, OpAndJump, OpOrJump, OpTry:
 			if in.Arg < 0 || int(in.Arg) >= len(p.Code) {
 				return fmt.Errorf("instruction %d: jump target %d out of range", i, in.Arg)
+			}
+		case OpDecNeg, OpDecPercent, OpDecAdd, OpDecSub, OpDecMul, OpDecDiv, OpDecScale:
+			if in.Arg < 0 || in.Arg&0xff > MaxScale || in.Arg&^(0xff|decMoneyFlag) != 0 {
+				return fmt.Errorf("instruction %d: scale %d out of range", i, in.Arg)
 			}
 		case OpCall:
 			if id := int(in.Arg >> 8); id < 0 || id >= len(builtins) {
@@ -328,6 +384,7 @@ func (d *decoder) str() string {
 type debugProgram struct {
 	Format   string      `json:"format"`
 	Nums     []float64   `json:"nums"`
+	Decs     []string    `json:"decs"`
 	Texts    []string    `json:"texts"`
 	Slots    []debugSlot `json:"slots"`
 	Code     []string    `json:"code"`
@@ -349,6 +406,10 @@ func (p *Program) MarshalJSON() ([]byte, error) {
 		Result: p.Result.String(), Classes: p.Classes, MaxStack: p.MaxStack, Queries: p.Queries}
 	if d.Nums == nil {
 		d.Nums = []float64{}
+	}
+	d.Decs = make([]string, len(p.Decs))
+	for i, c := range p.Decs {
+		d.Decs[i] = formatDecimal(c.Mant, int(c.Scale))
 	}
 	if d.Texts == nil {
 		d.Texts = []string{}
@@ -373,12 +434,20 @@ func (p *Program) describe(i int, in Instr) string {
 		return fmt.Sprintf("%03d %s %d (%s)", i, in.Op, in.Arg, renderNumber(p.Nums[in.Arg]))
 	case OpConstText:
 		return fmt.Sprintf("%03d %s %d (%q)", i, in.Op, in.Arg, p.Texts[in.Arg])
+	case OpConstDec:
+		return fmt.Sprintf("%03d %s %d (%s)", i, in.Op, in.Arg, formatDecimal(p.Decs[in.Arg].Mant, int(p.Decs[in.Arg].Scale)))
 	case OpLoad:
 		return fmt.Sprintf("%03d %s %d (%s)", i, in.Op, in.Arg, p.Slots[in.Arg].Name)
 	case OpCall:
 		return fmt.Sprintf("%03d %s %d (%s/%d)", i, in.Op, in.Arg, builtins[in.Arg>>8].name, in.Arg&0xff)
-	case OpJump, OpJumpIfFalse, OpAndJump, OpOrJump, OpLookup, OpQuery:
+	case OpJump, OpJumpIfFalse, OpAndJump, OpOrJump, OpLookup, OpQuery, OpTry:
 		return fmt.Sprintf("%03d %s %d", i, in.Op, in.Arg)
+	case OpDecNeg, OpDecPercent, OpDecAdd, OpDecSub, OpDecMul, OpDecDiv, OpDecScale:
+		kind := "decimal"
+		if in.Arg&decMoneyFlag != 0 {
+			kind = "money"
+		}
+		return fmt.Sprintf("%03d %s %d (%s scale %d)", i, in.Op, in.Arg, kind, in.Arg&0xff)
 	}
 	return fmt.Sprintf("%03d %s", i, in.Op)
 }

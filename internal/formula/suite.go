@@ -105,15 +105,18 @@ type BindingSuite struct {
 }
 
 // ErrorCodes is the closed list of evaluation error codes (ADR-0019,
-// ADR-0020). A case may only expect one of these.
+// ADR-0020, ADR-0022, ADR-0024). A case may only expect one of these.
 var ErrorCodes = map[string]bool{
 	"div_by_zero": true, "not_a_number": true, "bad_text": true, "out_of_range": true,
 	"length_mismatch": true, "too_many_elements": true,
 	"unknown_source": true, "unknown_column": true, "query_failed": true,
+	"overflow": true, "inexact": true, "currency_mismatch": true,
 }
 
-var scalarTypes = map[string]bool{
-	"bool": true, "number": true, "text": true, "date": true, "ref": true, "json": true,
+// validType reports whether a type as written in a suite parses.
+func validType(s string) bool {
+	_, err := ParseType(s)
+	return err == nil
 }
 
 // LoadSuites loads every evaluation suite from dir, sorted by file name.
@@ -246,7 +249,7 @@ func loadSuite(path string) (*Suite, error) {
 		if c.Error != "" && !ErrorCodes[c.Error] {
 			return nil, fmt.Errorf("%s: unknown error code %q", where, c.Error)
 		}
-		if c.Type != "" && !scalarTypes[c.Type] && !strings.HasPrefix(c.Type, "array<") && c.Type != "rows" && c.Type != "blank" {
+		if c.Type != "" && !validType(c.Type) {
 			return nil, fmt.Errorf("%s: unknown type %q", where, c.Type)
 		}
 		for name := range c.Inputs {
@@ -282,13 +285,9 @@ func validateVariables(vars map[string]string) error {
 		if name == "" {
 			return fmt.Errorf("a variable has no name")
 		}
-		if scalarTypes[typ] {
-			continue
+		if typ == "blank" || !validType(typ) {
+			return fmt.Errorf("variable %s: unknown type %q", name, typ)
 		}
-		if typ == "rows" || (strings.HasPrefix(typ, "array<") && strings.HasSuffix(typ, ">") && scalarTypes[typ[6:len(typ)-1]]) {
-			continue
-		}
-		return fmt.Errorf("variable %s: unknown type %q", name, typ)
 	}
 	return nil
 }
@@ -311,8 +310,8 @@ func ScopeOf(vars map[string]string) (*Scope, error) {
 	return NewScope(vs...)
 }
 
-// ParseCaseDate reads a date as the suite writes it: YYYY-MM-DD or
-// YYYY-MM-DD HH:MM:SS, UTC.
+// ParseCaseDate reads an instant as the suite writes it: YYYY-MM-DD or
+// YYYY-MM-DD HH:MM:SS, UTC, as seconds since the epoch.
 func ParseCaseDate(s string) (int64, error) {
 	layout := dateLayout
 	if len(s) > len(dateLayout) {
@@ -325,8 +324,20 @@ func ParseCaseDate(s string) (int64, error) {
 	return t.Unix(), nil
 }
 
+// ParseCaseDay reads a calendar day as the suite writes it, YYYY-MM-DD, as
+// days since 1970-01-01.
+func ParseCaseDay(s string) (int64, error) {
+	t, err := time.Parse(dateLayout, s)
+	if err != nil {
+		return 0, err
+	}
+	return floorDiv(t.Unix(), secondsPerDay), nil
+}
+
 // ParseCaseValue reads a case value written in the suite notation as a
-// value of the given type.
+// value of the given type. An exact value is written as a JSON number or
+// as text, read exactly and brought to the type's scale, which must not
+// drop a digit; a money value is text such as "12.30 PLN".
 func ParseCaseValue(raw json.RawMessage, t Type) (Value, error) {
 	if raw == nil || string(raw) == "null" {
 		return Blank(), nil
@@ -346,7 +357,23 @@ func ParseCaseValue(raw json.RawMessage, t Type) (Value, error) {
 			return Value{}, fmt.Errorf("want a bool, got %s", raw)
 		}
 		return Bool(b), nil
-	case KindText, KindRef, KindJSON, KindDate:
+	case KindDecimal:
+		text := string(raw)
+		if strings.HasPrefix(text, `"`) {
+			if err := json.Unmarshal(raw, &text); err != nil {
+				return Value{}, fmt.Errorf("want an exact number, got %s", raw)
+			}
+		}
+		m, s, e := parseDecimal(strings.TrimSpace(text))
+		if e != nil {
+			return Value{}, fmt.Errorf("want an exact number, got %s: %s", raw, e.Msg)
+		}
+		m, e = rescaleExact(m, s, int(t.Scale))
+		if e != nil {
+			return Value{}, fmt.Errorf("%s does not fit %s: %s", raw, t, e.Msg)
+		}
+		return Decimal(m, int(t.Scale)), nil
+	case KindText, KindRef, KindJSON, KindDate, KindDateTime, KindMoney:
 		var s string
 		if err := json.Unmarshal(raw, &s); err != nil {
 			return Value{}, fmt.Errorf("want text, got %s", raw)
@@ -358,12 +385,27 @@ func ParseCaseValue(raw json.RawMessage, t Type) (Value, error) {
 			return Ref(s), nil
 		case KindJSON:
 			return JSON(s), nil
+		case KindMoney:
+			m, scale, cur, e := parseMoney(s)
+			if e == nil {
+				m, e = rescaleExact(m, scale, int(t.Scale))
+			}
+			if e != nil {
+				return Value{}, fmt.Errorf("want money as \"12.30 PLN\" fitting %s, got %s: %s", t, raw, e.Msg)
+			}
+			return Money(m, int(t.Scale), cur), nil
+		case KindDate:
+			days, err := ParseCaseDay(s)
+			if err != nil {
+				return Value{}, fmt.Errorf("want a date as YYYY-MM-DD, got %s", raw)
+			}
+			return Date(days), nil
 		}
 		secs, err := ParseCaseDate(s)
 		if err != nil {
-			return Value{}, fmt.Errorf("want a date, got %s", raw)
+			return Value{}, fmt.Errorf("want a datetime, got %s", raw)
 		}
-		return Date(secs), nil
+		return DateTime(secs), nil
 	}
 	return Value{}, fmt.Errorf("values of type %s are not supported by the runners yet", t)
 }

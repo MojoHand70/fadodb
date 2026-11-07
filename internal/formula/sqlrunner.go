@@ -18,10 +18,11 @@ type SQLResult struct {
 
 // RunSQL executes one program through database/sql on a dialect: it
 // generates the SQL, binds vars, one value per program slot in slot order,
-// as named parameters over a one-row subselect, binds the context, and
-// reads the value and the error columns. It is the shared half of every
-// SQL conformance and property runner; comparing with the VM is the
-// runner's job.
+// as named parameters over a one-row subselect, a money slot as its amount
+// and its currency column, binds the context, and reads the value, the
+// error and the currency columns. It is the shared half of every SQL
+// conformance and property runner; comparing with the VM is the runner's
+// job.
 func RunSQL(db *sql.DB, d Dialect, prog *Program, vars []Value, ctx *Context) (SQLResult, error) {
 	if len(vars) < len(prog.Slots) {
 		return SQLResult{}, fmt.Errorf("program reads %d variables, got %d", len(prog.Slots), len(vars))
@@ -30,24 +31,32 @@ func RunSQL(db *sql.DB, d Dialect, prog *Program, vars []Value, ctx *Context) (S
 	if err != nil {
 		return SQLResult{}, err
 	}
-	cols := make([]string, len(prog.Slots))
-	args := make([]any, 0, len(prog.Slots)+3)
+	cols := make([]string, 0, len(prog.Slots)+1)
+	args := make([]any, 0, len(prog.Slots)+4)
 	for i, s := range prog.Slots {
 		name := fmt.Sprintf("v%d", i)
-		cols[i] = d.Param(name) + " AS " + quoteIdent(s.Name)
+		cols = append(cols, d.Param(name)+" AS "+quoteIdent(s.Name))
 		args = append(args, sql.Named(name, vars[i].DriverValue()))
+		if s.Type.Kind == KindMoney {
+			var cur any
+			if vars[i].kind == KindMoney {
+				cur = vars[i].str
+			}
+			cols = append(cols, d.Param(name+"c")+" AS "+quoteIdent(s.Name+CurrencySuffix))
+			args = append(args, sql.Named(name+"c", cur))
+		}
 	}
 	from := "(SELECT 1)"
 	if len(cols) > 0 {
 		from = "(SELECT " + strings.Join(cols, ", ") + ")"
 	}
 	args = append(args, d.ContextArgs(ctx)...)
-	q := "SELECT (" + stmt.Value + ") AS v, (" + stmt.ErrorOrNull() + ") AS e FROM " + from
-	var v, e any
-	if err := db.QueryRow(q, args...).Scan(&v, &e); err != nil {
+	q := "SELECT (" + stmt.Value + ") AS v, (" + stmt.ErrorOrNull() + ") AS e, (" + stmt.CurrencyOrNull() + ") AS c FROM " + from
+	var v, e, c any
+	if err := db.QueryRow(q, args...).Scan(&v, &e, &c); err != nil {
 		return SQLResult{Query: q}, fmt.Errorf("%s: %w", d.Name(), err)
 	}
-	res := SQLResult{Query: q, Value: ValueFromDriver(v, prog.Result.Kind)}
+	res := SQLResult{Query: q, Value: ValueOfType(v, prog.Result, c)}
 	if e != nil {
 		res.Code = fmt.Sprint(e)
 	}

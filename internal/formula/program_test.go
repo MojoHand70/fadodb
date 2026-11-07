@@ -58,7 +58,7 @@ func TestProgram_DebugForm(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{`"format":"FADO v1"`, `"result":"number"`, `load 0 (qty)`, `call`, `(ROUND/2)`, `jump.if.false`, `return`, `"classes":["pure"]`} {
+	for _, want := range []string{`"format":"FADO v2"`, `"result":"number"`, `load 0 (qty)`, `call`, `(ROUND/2)`, `jump.if.false`, `return`, `"classes":["pure"]`} {
 		if !strings.Contains(string(out), want) {
 			t.Errorf("debug form lacks %s:\n%s", want, out)
 		}

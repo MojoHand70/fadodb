@@ -31,13 +31,14 @@ gate could not tell placement from cost.
 The gate measures the cost of the code, not its placement.
 
 - `scripts/benchgate.sh` builds each tree at `BENCH_PLACEMENTS`
-  placements (default 4): the tree as it is, then shifted by one 32-byte
+  placements (default 5): the tree as it is, then shifted by one 32-byte
   slot or more per placement by a padding function that
   `scripts/layoutpad.sh` writes ahead of every benchmarked package's code
   (a file sorting first in the package, with statements the compiler
   cannot fold, kept by the linker because an init calls it, growing by
   28 bytes per placement so that every step crosses one 32-byte slot and
-  four placements always hold both halves of a 64-byte line).
+  five placements always hold at least two of each half of a 64-byte
+  line).
   `BENCH_COUNT` rounds (default 5) run per placement, interleaved between
   the trees as before.
 - Per benchmark and per tree, the placement with the lowest median time
@@ -57,8 +58,8 @@ and are ignored by git.
 
 ## Consequences
 
-- The bench job takes about four times longer: around nine minutes on
-  the runner instead of two and a half.
+- The bench job takes about five times longer: around eleven minutes
+  on the runner instead of two and a half.
 - A change that leaves the best placement's cost unchanged but adds a
   slow placement class passes. The gate does not guard an embedder's
   placement, which its own build decides; a maintainer who wants to see

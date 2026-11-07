@@ -25,7 +25,7 @@ set -euo pipefail
 TIME_PCT="${BENCH_TIME_PCT:-5}"
 BYTES_PCT="${BENCH_BYTES_PCT:-5}"
 COUNT="${BENCH_COUNT:-5}"
-PLACEMENTS="${BENCH_PLACEMENTS:-4}"
+PLACEMENTS="${BENCH_PLACEMENTS:-5}"
 
 # evaluate_csv prints every regression found in a benchstat CSV and returns 1
 # when there is at least one.

@@ -1,6 +1,6 @@
 # ADR-0021: Size limits: one text limit per database, enforced before building
 
-- Status: Accepted
+- Status: Accepted; amended by ADR-0033 (MaxBlob, a second database limit)
 - Date: 2026-11-06
 
 ## Context

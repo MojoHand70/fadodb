@@ -88,11 +88,13 @@ A class is one JSON document.
     "due":      {"type": "date", "default": "ADDDAYS(issued, 30)"},
     "owner":    {"type": "text", "default": "USER()"},
     "discount": {"type": "decimal", "scale": 2, "default": "0"},
-    "shipping": {"type": "json"},
+    "shipping": {"type": "object", "schema": "Address"},
+    "contact":  {"type": "object", "schema": "Person"},
+    "scan":     {"type": "object", "schema": "File"},
     "lines":    {"type": "rows", "schema": {"sku": "text", "qty": "number", "price": "number"}},
 
     "subtotal":  {"formula": "SUM(lines.qty * lines.price)"},
-    "ship_city": {"formula": "JSONVALUE(shipping, \"$.city\")"},
+    "ship_city": {"formula": "shipping.city"},
     "total":     {"formula": "ROUND(subtotal * (1 - discount), 2)"},
     "rate":      {"formula": "LOOKUP(Rates, rate, code = THIS.currency)"},
     "total_eur": {"formula": "ROUND(total * rate, 2)"},
@@ -108,7 +110,7 @@ A class is one JSON document.
   },
   "transitions": [
     {"name": "submit",  "from": "draft",     "to": "submitted", "guard": "total > 0"},
-    {"name": "approve", "from": "submitted", "to": "approved",  "guard": "INGROUP(\"finance\")"},
+    {"name": "approve", "from": "submitted", "to": "approved",  "guard": "INGROUP(\"finance\") AND NOT ISBLANK(scan)"},
     {"name": "pay",     "from": "approved",  "to": "paid"},
     {"name": "cancel",  "from": ["draft", "submitted"], "to": "cancelled"}
   ],
@@ -172,13 +174,28 @@ A class declares **variables**. Each has a name and a type.
 | `ref` | class and id | Typed reference to another document |
 | `json` | opaque JSON text | Structured data the engine does not interpret; read through `JSONVALUE` only |
 | `array<scalar>` | ordered list of one scalar type | Short lists the document owns, such as tags |
-| `rows<schema>` | ordered rows with named scalar columns | Embedded tables such as invoice lines; also what `QUERY` returns |
+| `object<Schema>` | one record of a named schema, one typed column per field | A person, a place, a file: the engine ships a vocabulary (ADR-0032) and a class author defines more (ADR-0031) |
+| `rows<schema>` | ordered rows with named columns, scalars or objects | Embedded tables such as invoice lines; also what `QUERY` returns |
 
-No nesting: a `rows` column is a scalar, an array holds scalars. Values are
-immutable; assigning an element produces a whole new value in a new commit.
-Composite variables are meant to hold up to a few hundred elements. The soft
-limit is 1,000 elements with a definition-time warning, the hard cap is
-10,000; larger data belongs in an explicit table behind a `ref`.
+A **schema** is a named list of fields, each a scalar or another object,
+never a collection; `object<Schema>` holds one record and `rows<Schema>` a
+collection of them. Objects nest, collections do not: no collection sits
+inside a schema or inside another collection. An object is stored flat, one
+typed column per field named by its path (`shipping__city`), so every field
+is indexable, usable in a read rule and visible in history without JSON; the
+compiler turns `shipping.city`, `ISBLANK(contact)` and the equality of two
+`Person` values into operations on those columns, and no evaluator ever
+sees an object value. An object is a value, not a reference: a `Person` on two documents is
+two copies, its `id` is any text the embedder understands, and `ref` remains
+the pointer to a document. The engine ships `Person`, `Organization`,
+`Address`, `GeoPoint`, `Place`, `Period`, `Event`, `Quantity` and `File`,
+each with a presentation a layout renders as a chip, a card or coins; a
+class author defines more, or extends one (ADR-0031, ADR-0032). Values are
+immutable; assigning a field or an element produces a whole new value in a
+new commit. Composite variables are meant to hold up to a few hundred
+elements. The soft limit is 1,000 elements with a definition-time warning,
+the hard cap is 10,000; larger data belongs in an explicit table behind a
+`ref`.
 
 A text value, stored or computed, is at most the database's text limit,
 65,536 code points by default (ADR-0021). A formula that would produce more
@@ -186,14 +203,14 @@ stops with `out_of_range` before building it, on every evaluator; the limit
 is chosen when the database is created and travels with it, so that a
 commit recomputes as it was committed wherever the database is opened.
 
-A `json` variable is the escape hatch for data without a typed shape yet: an
-address block, settings, a payload from another system. It is stored as JSON
+A `json` variable is the escape hatch for data without a typed shape yet:
+settings or a payload from another system. It is stored as JSON
 text, compared as text, and reachable in formulas only through
 `JSONVALUE(value, path)`, a pure function that extracts one scalar by a path
 such as `"$.city"`. It cannot be indexed, cannot appear inside `array` or
 `rows`, and no formula produces one. A `json` variable that grows a
 `JSONVALUE` for every field is a sign that it should become typed variables,
-a `rows` variable or an explicit table.
+an object, a `rows` variable or an explicit table.
 
 Variables come in three kinds:
 
@@ -216,7 +233,10 @@ are reserved and rejected as variable and schema column names at definition
 time: `id`, `title`, `state`, `version`, `created_at`, `updated_at`,
 `state_entered_at`, `valid_from`, `valid_to`, `actor_id`, `event_id`,
 `doc_id`, `idx` and `value`; a name may not end in `_currency`, the suffix of
-a money variable's currency column.
+a money variable's currency column. A schema field reserves only the child
+table's own columns, `doc_id`, `version`, `idx` and `value`, since fields
+appear prefixed by their path; `__` is reserved in every name as the path
+separator (ADR-0031).
 
 ### Formulas
 
@@ -316,7 +336,8 @@ events                    one row per thing that happened            key: event_
 event_docs                every document an event touched            (event_id, class, doc_id, qualifier)
 ```
 
-Every variable is a typed column in the current and history tables. Every
+Every variable is a typed column in the current and history tables, an
+object one column per field named by its path (`shipping__city`). Every
 composite variable has a child table, copied per version, which is why
 composite variables are kept small. A transition event points at the exit
 snapshot as `before_version` and the entry snapshot as `after_version`, so
@@ -420,7 +441,8 @@ Visuals live at class level, never per document. A class has any number of
 named **layouts**, each a JSON document that binds components to variables:
 `form`, `list`, `card`, `print`, or whatever a frontend needs. `visible`,
 `enabled`, `editable`, `style` and templates are formulas evaluated live in
-the browser VM, and a `rows` variable renders as a grid. A layout that looks
+the browser VM; a `rows` variable renders as a grid, an object as a chip or
+a card and a collection of objects as coins (ADR-0032). A layout that looks
 different per document does so through those formulas, not through stored
 per-document presentation.
 
@@ -432,6 +454,8 @@ per-document presentation.
     {"type": "field",   "variable": "number"},
     {"type": "field",   "variable": "customer"},
     {"type": "grid",    "variable": "lines", "editable": "STATE() = \"draft\""},
+    {"type": "chip",    "variable": "contact"},
+    {"type": "field",   "variable": "scan", "editable": "STATE() = \"draft\""},
     {"type": "text",    "template": "Total: {total} {currency}", "visible": "total > 0"},
     {"type": "badge",   "template": "OVERDUE", "visible": "overdue", "style": "\"danger\""},
     {"type": "button",  "label": "Refresh backlog", "command": {"refresh": ["backlog"]}},
@@ -448,9 +472,12 @@ layout changes. The reference renderer is one implementation of the layout
 format; Flutter, terminal or spreadsheet frontends are others, and all of
 them fetch the same bundle (see Documents on the wire).
 
-Attachments and comments are neither variables nor visuals. They are planned
-after 1.0 as side objects keyed by class and document id, with their own
-events; nothing in the core model depends on them.
+Attachments are `File` values: a variable of type `object<File>` or
+`rows<File>` holds the hash, name, media type and size, attaching is a
+commit, and the bytes live behind a blob store, in the database file, in a
+directory beside it or in the embedder's own store (ADR-0033). Comments are
+neither variables nor visuals; they are planned after 1.0 as side objects
+keyed by class and document id, with their own events.
 
 ---
 
@@ -517,6 +544,10 @@ and a call-free instruction loop. Row-wise expressions over `rows`, such as
 `SUM(lines.qty * lines.price)`, compile to a loop over the rows with the
 scalar path inside.
 
+Objects never reach the VM: the compiler scalarizes field paths, object
+blankness and object equality into operations on leaf columns (ADR-0031),
+so the `Value` struct has no object kind.
+
 ### Semantics
 
 The rules every evaluator follows are fixed in records before any code:
@@ -543,10 +574,11 @@ against their own VM port.
 
 - WAL mode, `synchronous=NORMAL`, one writer goroutine with batching,
   prepared statements, read connections pooled.
-- Schema: `classes`, `class_versions`, `layouts`, per class the current,
-  history and child tables, `events`, `event_docs`, `outbox`, `users`,
-  `groups`, `memberships`, `api_keys`, `sessions`, `tables_registry`,
-  `schema_version`, plus explicit tables bound to `sqlite`.
+- Schema: `classes`, `class_versions`, `schemas`, `layouts`, per class the
+  current, history and child tables, `events`, `event_docs`, `outbox`,
+  `users`, `groups`, `memberships`, `api_keys`, `sessions`,
+  `tables_registry`, `schema_version`, `blobs` when the blob store is the
+  database file, plus explicit tables bound to `sqlite`.
 - Indexes declared per variable (`"index": true`), plus `(class, doc_id, ts)`
   on events and `(id, valid_from)` on history.
 
@@ -636,7 +668,8 @@ create (`values` only) and `PATCH .../values` (the variables to change)
 share this shape. A blank is `null`; a variable absent from a patch is
 unchanged. Dates are `"YYYY-MM-DD"`, datetimes integer seconds, exact
 values text such as `"12.30"` and money `"12.30 PLN"`, refs are
-`"Class:id"` text, `json` variables are embedded as they are.
+`"Class:id"` text, objects nested JSON objects and `null` when every field
+is blank, `json` variables embedded as they are.
 
 ```json
 {
@@ -646,7 +679,9 @@ values text such as `"12.30"` and money `"12.30 PLN"`, refs are
   "values": {
     "number": "2026-0042", "customer": "Customer:42", "owner": "User:7",
     "issued": 1762300800, "due": 1764892800, "currency": "EUR", "discount": 0,
-    "shipping": {"street": "Długa 1", "city": "Gdańsk"},
+    "shipping": {"line1": "Długa 1", "line2": null, "city": "Gdańsk", "postal_code": "80-831", "region": null, "country": "PL"},
+    "contact": {"id": "anna.k", "name": "Anna Kowalska", "email": "anna@acme.example", "phone": null, "avatar": null},
+    "scan": {"hash": "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08", "name": "invoice.pdf", "media_type": "application/pdf", "size": 48213},
     "lines": [{"sku": "A1", "qty": 2, "price": 9.5}],
     "subtotal": 19, "ship_city": "Gdańsk", "total": 19, "rate": 1, "total_eur": 19,
     "overdue": false, "backlog": 3
@@ -793,5 +828,4 @@ Parallel statechart regions; BPMN; multi-tenancy inside one database file
 (run one file per tenant); replication and clustering; WASM plugin actions;
 a visual class designer; OCEL export; nested
 composites (rows inside rows, arrays of arrays); raw SQL inside formulas;
-attachments and comments (planned as side objects after 1.0); per-document
-layouts.
+comments (planned as side objects after 1.0); per-document layouts.

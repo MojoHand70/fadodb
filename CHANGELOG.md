@@ -8,6 +8,16 @@ All notable changes to FadoDB are recorded here. The format follows
 
 ### Added
 
+- The `bench` package: the end-to-end scenarios behind the budgets of
+  ADR-0012, on database/sql so that one scenario runs on every engine. It
+  opens Phase 2 with the primary-store benchmark of ADR-0017, commits in
+  the shape of the document tables into SQLite and into DuckDB with their
+  latency, throughput and whether a second process can read the live
+  file, and the point-lookup benchmark of ADR-0020, a keyed lookup on a Go
+  map against a prepared statement at five table sizes. The DuckDB target
+  lives in the `analytics` module. The results are proposed as ADR-0035,
+  the transactional store, and ADR-0036, the in-memory index for `LOOKUP`
+  inside commits.
 - Exact numbers (ADR-0022): the types `decimal(s)`, `int` and `money(s)`,
   an int64 mantissa at a scale of up to 18 places, with exact `+`, `-` and
   `*`, division at the dividend's scale plus four, the error `overflow`

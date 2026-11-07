@@ -40,3 +40,5 @@ line says so. Copy `0000-template.md` to start.
 | [0032](0032-predefined-vocabulary-and-object-presentation.md) | A predefined vocabulary of objects, and how an object is presented | Accepted |
 | [0033](0033-attachments-as-file-values-behind-a-blob-store.md) | Attachments are File values; the bytes live behind a blob store | Accepted |
 | [0034](0034-range-constraints-on-numeric-variables.md) | Range constraints on numeric variables | Accepted |
+| [0035](0035-sqlite-is-the-transactional-store.md) | SQLite is the transactional store, by measurement | Proposed |
+| [0036](0036-in-memory-index-for-lookups-in-commits.md) | An in-memory index serves LOOKUP inside commits, by measurement | Proposed |

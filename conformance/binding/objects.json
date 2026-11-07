@@ -1,0 +1,31 @@
+{
+  "suite": "objects",
+  "description": "An object variable holds one record of a named schema (ADR-0031). A formula reads a field by its path, through object fields to a scalar leaf, which binds like a scalar variable; a whole object, and a path that stops on an object, are not yet supported in a formula.",
+  "schemas": {
+    "Address": {"line1": "text", "city": "text", "postal_code": "text", "country": "text"},
+    "GeoPoint": {"lat": "number", "lon": "number"},
+    "Place": {"name": "text", "address": "object<Address>", "geo": "object<GeoPoint>"},
+    "Quantity": {"value": "decimal(6)", "unit": "text"}
+  },
+  "variables": {"shipping": "object<Address>", "venue": "object<Place>", "weight": "object<Quantity>", "city": "text", "lines": "rows"},
+  "accept": [
+    "shipping.city",
+    "SHIPPING.City & \", \" & shipping.COUNTRY",
+    "venue.address.city = shipping.city",
+    "venue.geo.lat * 2",
+    "ISBLANK(venue.address.postal_code)",
+    "weight.value * 2",
+    "ROUND(weight.value, 2) & \" \" & weight.unit",
+    "IF(ISBLANK(shipping.city), city, shipping.city)"
+  ],
+  "reject": [
+    {"formula": "shipping", "reason": "a whole object is not a value in a formula yet"},
+    {"formula": "venue.address", "reason": "a path that stops on an object is a whole object"},
+    {"formula": "shipping.street", "reason": "no such field"},
+    {"formula": "shipping.city.name", "reason": "a text has no fields"},
+    {"formula": "city.name", "reason": "a scalar variable has no fields"},
+    {"formula": "shipping.city + 1", "reason": "the leaf has the field's type: text in arithmetic"},
+    {"formula": "weight.value + venue.geo.lat", "reason": "a decimal leaf and a number leaf never mix implicitly"},
+    {"formula": "lines.qty.x", "reason": "rows columns are not supported yet"}
+  ]
+}

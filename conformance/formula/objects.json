@@ -1,0 +1,40 @@
+{
+  "suite": "objects",
+  "description": "A field path reads one typed leaf of an object (ADR-0031): the leaf behaves as a scalar variable of the field's type on every evaluator, and a blank leaf is blank. Inputs set a leaf by its path.",
+  "schemas": {
+    "Address": {"line1": "text", "city": "text", "postal_code": "text", "country": "text"},
+    "GeoPoint": {"lat": "number", "lon": "number"},
+    "Place": {"name": "text", "address": "object<Address>", "geo": "object<GeoPoint>"},
+    "Quantity": {"value": "decimal(3)", "unit": "text"},
+    "Period": {"start": "datetime", "end": "datetime"}
+  },
+  "variables": {"shipping": "object<Address>", "venue": "object<Place>", "weight": "object<Quantity>", "when": "object<Period>"},
+  "cases": [
+    {"name": "a text leaf",
+     "formula": "shipping.city", "inputs": {"shipping.city": "Gdańsk"}, "expected": "Gdańsk"},
+    {"name": "leaves concatenate like text variables",
+     "formula": "shipping.city & \", \" & shipping.country", "inputs": {"shipping.city": "Gdańsk", "shipping.country": "PL"}, "expected": "Gdańsk, PL"},
+    {"name": "a blank leaf is blank",
+     "formula": "ISBLANK(shipping.postal_code)", "inputs": {"shipping.city": "Gdańsk"}, "expected": true},
+    {"name": "a blank leaf reads as empty text in &",
+     "formula": "shipping.line1 & shipping.city", "inputs": {"shipping.city": "Gdańsk"}, "expected": "Gdańsk"},
+    {"name": "names resolve case-insensitively along the path",
+     "formula": "SHIPPING.CITY", "inputs": {"shipping.city": "Gdańsk"}, "expected": "Gdańsk"},
+    {"name": "a nested leaf two objects down",
+     "formula": "venue.address.city", "inputs": {"venue.address.city": "Sopot"}, "expected": "Sopot"},
+    {"name": "a number leaf in arithmetic",
+     "formula": "ROUND(venue.geo.lat * 2, 2)", "inputs": {"venue.geo.lat": 54.3521}, "expected": 108.7},
+    {"name": "a blank number leaf is 0 in arithmetic",
+     "formula": "venue.geo.lon + 1", "inputs": {"venue.geo.lat": 54.3521}, "expected": 1},
+    {"name": "leaves of two objects compare",
+     "formula": "venue.address.city = shipping.city", "inputs": {"venue.address.city": "Sopot", "shipping.city": "Sopot"}, "expected": true},
+    {"name": "an exact leaf keeps its scale",
+     "formula": "weight.value * 2", "type": "decimal(3)", "inputs": {"weight.value": "1.250"}, "expected": "2.500"},
+    {"name": "an exact leaf renders every digit of its scale",
+     "formula": "TEXT(weight.value) & \" \" & weight.unit", "inputs": {"weight.value": "1.250", "weight.unit": "kg"}, "expected": "1.250 kg"},
+    {"name": "datetime leaves use the datetime functions",
+     "formula": "DAYSBETWEEN(when.start, when.end)", "inputs": {"when.start": "2026-11-01 08:00:00", "when.end": "2026-11-03 08:00:00"}, "expected": 2},
+    {"name": "a leaf in a condition with a fallback",
+     "formula": "IF(ISBLANK(venue.name), \"somewhere\", venue.name)", "inputs": {"venue.address.city": "Sopot"}, "expected": "somewhere"}
+  ]
+}

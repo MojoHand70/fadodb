@@ -42,7 +42,7 @@ func TestConformance_DuckDB(t *testing.T) {
 	d := formula.NewDuckDB()
 	total, failed := 0, 0
 	for _, s := range suites {
-		scope, err := formula.ScopeOf(s.Variables)
+		scope, err := s.Scope()
 		if err != nil {
 			t.Fatalf("%s: %v", s.File, err)
 		}

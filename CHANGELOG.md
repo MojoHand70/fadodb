@@ -8,6 +8,15 @@ All notable changes to FadoDB are recorded here. The format follows
 
 ### Added
 
+- Object field paths in formulas (ADR-0031): a variable of type
+  `object<Schema>` is read by its leaves, `shipping.city` or
+  `venue.address.city`, each a scalar slot of the field's type that
+  binds, evaluates and translates to SQL like a scalar variable. The
+  conformance suites declare schemas and set leaves by path; the binding
+  suite `objects` fixes what is refused for now: a whole object in a
+  formula, a path that stops on an object, and rows columns. A `pure`
+  binding mode allows pure functions only, for class titles and
+  presentation formulas.
 - The `bench` package: the end-to-end scenarios behind the budgets of
   ADR-0012, on database/sql so that one scenario runs on every engine. It
   opens Phase 2 with the primary-store benchmark of ADR-0017, commits in

@@ -108,8 +108,8 @@ func TestParse_Errors(t *testing.T) {
 		{"1 + 2)", "unexpected ')'", 6},
 		{"1 2", "unexpected number 2", 3},
 		{"a b", `unexpected name "b"`, 3},
-		{"a.b.c", "names nest only one level: a.b", 4},
-		{"a.", "expected a column name after a.", 3},
+		{"a.", "expected a column or field name after a.", 3},
+		{"a.b.", "expected a column or field name after a.", 5},
 		{"THIS", "THIS must be followed by .name", 1},
 		{"THIS.", "THIS must be followed by .name", 6},
 		{"THIS.1", "THIS must be followed by .name", 1}, // .1 lexes as a number

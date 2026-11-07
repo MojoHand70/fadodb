@@ -27,4 +27,4 @@ line says so. Copy `0000-template.md` to start.
 | [0019](0019-formula-language-semantics.md) | Formula language semantics: grammar, types, coercion, comparison, dates, text, composites and errors | Accepted, amended by 0021 |
 | [0020](0020-query-function-execution.md) | LOOKUP and QUERY execution: one engine call per invocation | Accepted |
 | [0021](0021-size-limits.md) | Size limits: one text limit per database, enforced before building | Accepted |
-| [0030](0030-benchmark-gate-measures-the-minimum-over-placements.md) | The benchmark gate measures the minimum over code placements | Proposed |
+| [0030](0030-benchmark-gate-measures-the-minimum-over-placements.md) | The benchmark gate measures the minimum over code placements | Accepted |

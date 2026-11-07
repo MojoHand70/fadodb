@@ -1,6 +1,6 @@
 # ADR-0030: The benchmark gate measures the minimum over code placements
 
-- Status: Proposed; amends ADR-0012
+- Status: Accepted; amends ADR-0012
 - Date: 2026-11-07
 
 ## Context

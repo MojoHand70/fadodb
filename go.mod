@@ -1,6 +1,6 @@
 module github.com/MojoHand70/fadodb
 
-go 1.26.5
+go 1.26.9
 
 require modernc.org/sqlite v1.61.1
 

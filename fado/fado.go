@@ -13,6 +13,7 @@ package fado
 
 import (
 	"context"
+	"io"
 	"time"
 
 	"github.com/MojoHand70/fadodb/internal/model"
@@ -41,6 +42,11 @@ type (
 	Filter = store.Filter
 	// Rows is the result of a SQL statement: columns and rows.
 	Rows = store.Rows
+	// BlobStore holds the bytes of attachments by content hash
+	// (ADR-0033); an embedder may supply its own in Options.Blobs.
+	BlobStore = store.BlobStore
+	// FileInfo is the fact of a file as a document holds it.
+	FileInfo = store.FileInfo
 	// Option configures one call: As, Key, BusinessDate, WithID.
 	Option = store.Option
 	// Error is a refusal with a stable code, the variable it is about, a
@@ -75,6 +81,10 @@ func WithID(id string) Option { return store.WithID(id) }
 
 // Replace makes ImportRows empty the table before writing the rows.
 func Replace() Option { return store.Replace() }
+
+// AtVersion makes OpenFile read a committed version instead of the
+// current one.
+func AtVersion(version int64) Option { return store.AtVersion(version) }
 
 // DB is an open database.
 type DB struct {
@@ -192,6 +202,29 @@ func (db *DB) Count(ctx context.Context, f Filter, opts ...Option) (int64, error
 // parameters; at most 10,000 rows come back.
 func (db *DB) SQL(ctx context.Context, statement string, args []any, opts ...Option) (*Rows, error) {
 	return db.s.SQL(ctx, statement, args, opts...)
+}
+
+// PutBlob stores the bytes of a file and returns the File fact to commit
+// in an object<File> variable or a rows<File> element (ADR-0033).
+func (db *DB) PutBlob(ctx context.Context, name, mediaType string, r io.Reader, opts ...Option) (Values, error) {
+	return db.s.PutBlob(ctx, name, mediaType, r, opts...)
+}
+
+// OpenFile opens a file a document holds, by the document and the hash,
+// at the current version or the one AtVersion names.
+func (db *DB) OpenFile(ctx context.Context, class, id, hash string, opts ...Option) (io.ReadCloser, *FileInfo, error) {
+	return db.s.OpenFile(ctx, class, id, hash, opts...)
+}
+
+// OpenBlob opens a blob by hash alone, for an administrator.
+func (db *DB) OpenBlob(ctx context.Context, hash string, opts ...Option) (io.ReadCloser, int64, error) {
+	return db.s.OpenBlob(ctx, hash, opts...)
+}
+
+// CheckBlobs recomputes the hash of every held blob and returns the ones
+// whose bytes do not match, and how many it checked.
+func (db *DB) CheckBlobs(ctx context.Context) (mismatched []string, checked int, err error) {
+	return db.s.CheckBlobs(ctx)
 }
 
 // Preview runs a create (empty id) or a set through the commit pipeline

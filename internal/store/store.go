@@ -57,6 +57,17 @@ type Options struct {
 	// speed and memory and never a result. 0 keeps what is stored, or
 	// DefaultMaxIndexedRows for a new database.
 	MaxIndexedRows int
+	// BlobStore is the kind of blob store a new database records
+	// (ADR-0033): "sqlite", the default, a table in the database file;
+	// "dir", a directory beside it; or "external", the embedder's store
+	// given in Blobs. An existing database keeps its kind.
+	BlobStore string
+	// Blobs is the embedder's blob store, required when the database's
+	// kind is external.
+	Blobs BlobStore
+	// MaxBlob is the blob size limit of a new database in bytes; 0 is
+	// DefaultMaxBlob. It may be raised on open and never lowered.
+	MaxBlob int64
 	// Now is the clock the store stamps commits with; nil is time.Now.
 	// Tests set it.
 	Now func() time.Time
@@ -71,6 +82,9 @@ type Store struct {
 	limits      formula.Limits
 	synchronous string
 	maxIndexed  int
+	maxBlob     int64
+	blobKind    string
+	blobs       BlobStore
 	now         func() time.Time
 	vm          *formula.VM
 	qvm         *formula.VM // runs the key expressions of indexed lookups while vm runs the formula
@@ -123,6 +137,17 @@ func Open(path string, o Options) (*Store, error) {
 	if o.MaxText != 0 && o.MaxText < formula.MinMaxText {
 		return nil, errf(CodeBadValue, "", "the text limit is at least %d code points, got %d", formula.MinMaxText, o.MaxText)
 	}
+	switch o.BlobStore {
+	case "", "sqlite", "dir", "external":
+	default:
+		return nil, errf(CodeBadValue, "", "the blob store is sqlite, dir or external, got %q", o.BlobStore)
+	}
+	if o.BlobStore == "external" && o.Blobs == nil {
+		return nil, errf(CodeBadValue, "", "an external blob store needs Blobs")
+	}
+	if o.MaxBlob < 0 {
+		return nil, errf(CodeBadValue, "", "the blob limit is not negative")
+	}
 	q := url.Values{}
 	q.Add("_pragma", "journal_mode(WAL)")
 	q.Add("_pragma", "busy_timeout(5000)")
@@ -152,8 +177,19 @@ func Open(path string, o Options) (*Store, error) {
 		db.Close()
 		return nil, err
 	}
-	if err := s.init(ctx, sync, o.MaxText, o.MaxIndexedRows); err != nil {
+	if err := s.init(ctx, sync, o.MaxText, o.MaxIndexedRows, o.BlobStore, o.MaxBlob); err != nil {
 		return fail(err)
+	}
+	switch s.blobKind {
+	case "sqlite":
+		s.blobs = sqliteBlobs{s: s}
+	case "dir":
+		s.blobs = dirBlobs{dir: path + ".blobs"}
+	case "external":
+		if o.Blobs == nil {
+			return fail(hintf(CodeBadValue, "", "the database records an external blob store", "open it with Options.Blobs set to the embedder's store"))
+		}
+		s.blobs = o.Blobs
 	}
 	if _, err := s.writer.ExecContext(ctx, "PRAGMA synchronous="+s.synchronous); err != nil {
 		return fail(storageErr("set synchronous", err))
@@ -183,7 +219,7 @@ func Open(path string, o Options) (*Store, error) {
 
 // init creates the engine's tables when the database is new and reads
 // the metadata.
-func (s *Store) init(ctx context.Context, wantSync string, wantMaxText int, wantIndexed int) error {
+func (s *Store) init(ctx context.Context, wantSync string, wantMaxText int, wantIndexed int, wantBlobs string, wantMaxBlob int64) error {
 	w := s.writer
 	if _, err := w.ExecContext(ctx, "BEGIN IMMEDIATE"); err != nil {
 		return storageErr("begin", err)
@@ -217,7 +253,16 @@ func (s *Store) init(ctx context.Context, wantSync string, wantMaxText int, want
 		if indexed <= 0 {
 			indexed = DefaultMaxIndexedRows
 		}
-		for _, kv := range [][2]string{{"synchronous", sync}, {"max_text", strconv.Itoa(maxText)}, {"max_indexed_rows", strconv.Itoa(indexed)}, {"created_at", strconv.FormatInt(now, 10)}} {
+		blobs := wantBlobs
+		if blobs == "" {
+			blobs = "sqlite"
+		}
+		maxBlob := wantMaxBlob
+		if maxBlob == 0 {
+			maxBlob = DefaultMaxBlob
+		}
+		for _, kv := range [][2]string{{"synchronous", sync}, {"max_text", strconv.Itoa(maxText)}, {"max_indexed_rows", strconv.Itoa(indexed)},
+			{"blob_store", blobs}, {"max_blob", strconv.FormatInt(maxBlob, 10)}, {"created_at", strconv.FormatInt(now, 10)}} {
 			if _, err := w.ExecContext(ctx, "INSERT INTO metadata (key, value) VALUES (?, ?)", kv[0], kv[1]); err != nil {
 				return rollback(storageErr("write the metadata", err))
 			}
@@ -229,6 +274,17 @@ func (s *Store) init(ctx context.Context, wantSync string, wantMaxText int, want
 	}
 	if wantIndexed > 0 {
 		if _, err := w.ExecContext(ctx, "INSERT INTO metadata (key, value) VALUES ('max_indexed_rows', ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value", strconv.Itoa(wantIndexed)); err != nil {
+			return rollback(storageErr("write the metadata", err))
+		}
+	}
+	if wantMaxBlob > 0 {
+		var current string
+		if err := w.QueryRowContext(ctx, "SELECT value FROM metadata WHERE key = 'max_blob'").Scan(&current); err == nil {
+			if stored, _ := strconv.ParseInt(current, 10, 64); wantMaxBlob < stored {
+				return rollback(hintf(CodeBadValue, "", "the database's blob limit is "+current+" bytes; it may be raised, never lowered (ADR-0033)", "open it without MaxBlob, or with a larger one"))
+			}
+		}
+		if _, err := w.ExecContext(ctx, "INSERT INTO metadata (key, value) VALUES ('max_blob', ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value", strconv.FormatInt(wantMaxBlob, 10)); err != nil {
 			return rollback(storageErr("write the metadata", err))
 		}
 	}
@@ -260,6 +316,20 @@ func (s *Store) init(ctx context.Context, wantSync string, wantMaxText int, want
 	s.limits = formula.Limits{MaxText: maxText}
 	if s.maxIndexed, _ = strconv.Atoi(meta["max_indexed_rows"]); s.maxIndexed <= 0 {
 		s.maxIndexed = DefaultMaxIndexedRows
+	}
+	if s.maxBlob, _ = strconv.ParseInt(meta["max_blob"], 10, 64); s.maxBlob <= 0 {
+		s.maxBlob = DefaultMaxBlob
+	}
+	s.blobKind = meta["blob_store"]
+	if s.blobKind == "" {
+		s.blobKind = "sqlite"
+	}
+	if s.blobKind != "sqlite" && s.blobKind != "dir" && s.blobKind != "external" {
+		return errf(CodeStorage, "", "the metadata has blob_store %q", s.blobKind)
+	}
+	if wantBlobs != "" && wantBlobs != s.blobKind {
+		return hintf(CodeBadValue, "", "the database was created with the "+s.blobKind+" blob store, not "+wantBlobs,
+			"the store is the database's (ADR-0033); open it without one")
 	}
 	if wantSync != "" && wantSync != s.synchronous {
 		return hintf(CodeBadValue, "", "the database was created with synchronous "+s.synchronous+", not "+wantSync,

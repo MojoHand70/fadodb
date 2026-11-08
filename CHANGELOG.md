@@ -8,6 +8,19 @@ All notable changes to FadoDB are recorded here. The format follows
 
 ### Added
 
+- Attachments (ADR-0033): a `BlobStore` interface with the `sqlite`
+  store, a table in the database file and the default, the `dir` store,
+  a directory beside it, and the embedder's own given on open; the kind
+  and `MaxBlob`, 32 MiB by default and raisable, in the metadata.
+  `PutBlob` hashes a stream while it writes, stops at the limit before
+  anything is stored, sniffs the media type when none is given and
+  returns the `File` fact to commit. A commit that sets a `File` whose
+  hash the store does not hold, or whose size differs, is refused with
+  `unknown_blob` naming the variable or the row. `OpenFile` serves a blob
+  through a document that holds its hash, at the current version or one
+  `AtVersion` names; an administrator may `OpenBlob` by hash. `CheckBlobs`
+  recomputes every held blob's hash, and `fadodb check FILE` reports the
+  mismatches.
 - The filter and the read-only SQL endpoint in the Go API (ADR-0038
   proposed). `Query` takes a class, a `where` formula over the class's
   variables and the system columns, an `order`, a `limit`, an `offset`

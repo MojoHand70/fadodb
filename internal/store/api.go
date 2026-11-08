@@ -98,6 +98,7 @@ type options struct {
 	hasBusinessDate bool
 	id              string
 	replace         bool
+	version         int64
 }
 
 // As runs the call as the principal.
@@ -120,6 +121,10 @@ func WithID(id string) Option { return func(o *options) { o.id = id } }
 // Replace makes an import empty the table first, so that the rows given
 // are all the rows.
 func Replace() Option { return func(o *options) { o.replace = true } }
+
+// AtVersion makes OpenFile read the document at a committed version
+// instead of the current one.
+func AtVersion(version int64) Option { return func(o *options) { o.version = version } }
 
 func apply(opts []Option) options {
 	var o options

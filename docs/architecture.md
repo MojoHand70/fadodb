@@ -617,8 +617,13 @@ SQLite's 0.06 ms. The store opens the file as above, with
 `wal_autocheckpoint` off and a checkpointer on its own connection, so that
 a commit never pays a checkpoint; every statement is prepared once on the
 pinned writer connection, and a commit is one `BEGIN IMMEDIATE`
-transaction. `synchronous` and the text limit are properties of the
-database, chosen when it is created and kept in its `metadata` table.
+transaction. `synchronous`, the text limit, the blob limit and the blob
+store's kind are properties of the database, chosen when it is created
+and kept in its `metadata` table. Attachments live behind the `BlobStore`
+of ADR-0033: the `blobs` table by default, a directory beside the file,
+or the embedder's store; `PutBlob` returns the `File` fact a commit sets,
+a commit that names a blob the store does not hold is refused, and
+`OpenFile` serves a blob through the document that holds it.
 
 ### Analytical engine: DuckDB
 

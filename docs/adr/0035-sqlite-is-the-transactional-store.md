@@ -1,6 +1,6 @@
 # ADR-0035: SQLite is the transactional store, by measurement
 
-- Status: Proposed; amends ADR-0017, confirms ADR-0033's default blob store
+- Status: Accepted; amends ADR-0017, confirms ADR-0033's default blob store
 - Date: 2026-11-07
 
 ## Context

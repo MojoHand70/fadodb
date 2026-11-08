@@ -1,0 +1,113 @@
+package fado_test
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"os"
+	"path/filepath"
+	"time"
+
+	"github.com/MojoHand70/fadodb/fado"
+)
+
+// The invoice of docs/architecture.md, as far as this build takes it: a
+// class with defaults, objects, lines and auto formulas; a document
+// created, changed, previewed and read back with its history.
+func Example() {
+	tmp, err := os.MkdirTemp("", "fado-example")
+	if err != nil {
+		panic(err)
+	}
+	defer os.RemoveAll(tmp)
+	db, err := fado.Open(filepath.Join(tmp, "example.fado"), fado.Options{
+		Now: func() time.Time { return time.Date(2026, 11, 8, 12, 0, 0, 0, time.UTC) },
+	})
+	if err != nil {
+		panic(err)
+	}
+	defer db.Close()
+	ctx := context.Background()
+
+	_, err = db.DefineClass(ctx, []byte(`{
+	  "name": "Invoice",
+	  "title": "\"INV-\" & number",
+	  "variables": {
+	    "number":   {"type": "text", "required": true},
+	    "customer": {"type": "ref", "class": "Customer"},
+	    "issued":   {"type": "date", "default": "TODAY()"},
+	    "due":      {"type": "date", "default": "ADDDAYS(issued, 30)"},
+	    "owner":    {"type": "text", "default": "USER()"},
+	    "discount": {"type": "decimal", "scale": 2, "default": "0"},
+	    "net":      {"type": "money", "scale": 2},
+	    "shipping": {"type": "object", "schema": "Address"},
+	    "lines":    {"type": "rows", "schema": {"sku": "text", "qty": "number", "price": "decimal(2)"}},
+	    "total":     {"formula": "ROUND(net * (1 - discount), 2)"},
+	    "ship_city": {"formula": "shipping.city"}
+	  },
+	  "states": {"initial": "draft", "list": ["draft", "approved", "paid"]}
+	}`))
+	if err != nil {
+		panic(err)
+	}
+
+	alice := fado.Principal{ID: "alice", Groups: []string{"sales"}}
+	values := fado.Values{
+		"number":   "2026-0042",
+		"customer": "Customer:42",
+		"net":      "100.00 EUR",
+		"shipping": fado.Values{"line1": "Długa 1", "city": "Gdańsk", "country": "PL"},
+		"lines":    []fado.Values{{"sku": "A1", "qty": 2, "price": "9.50"}},
+	}
+	doc, err := db.Create(ctx, "Invoice", values, fado.As(alice), fado.Key("ksef-2026-0042"), fado.WithID("inv_42"))
+	if err != nil {
+		panic(err)
+	}
+	fmt.Println(doc.Title, doc.State, doc.Version, doc.Values["issued"], doc.Values["due"], doc.Values["owner"], doc.Values["total"], doc.Values["ship_city"])
+
+	// The same command with the same key is the same commit, not a second
+	// document.
+	again, err := db.Create(ctx, "Invoice", values, fado.As(alice), fado.Key("ksef-2026-0042"), fado.WithID("inv_42"))
+	fmt.Println("replayed:", err == nil && again.Version == doc.Version)
+
+	// A change recalculates what depends on it and is a new version.
+	doc, _ = db.Set(ctx, "Invoice", "inv_42", fado.Values{"discount": "0.10"}, fado.As(alice))
+	fmt.Println(doc.Version, doc.Values["total"])
+
+	// A preview computes and writes nothing.
+	preview, _ := db.Preview(ctx, "Invoice", "inv_42", fado.Values{"discount": "0.50"}, "", fado.As(alice))
+	current, _ := db.Get(ctx, "Invoice", "inv_42")
+	fmt.Println("preview:", preview.Document.Values["total"], "stored:", current.Values["total"])
+
+	// A refusal names the variable and a stable code.
+	_, err = db.Set(ctx, "Invoice", "inv_42", fado.Values{"total": "1.00 EUR"})
+	var e *fado.Error
+	if errors.As(err, &e) {
+		fmt.Println(e.Code, e.Variable)
+	}
+
+	// Every version is in the history, with who committed it.
+	history, _ := db.History(ctx, "Invoice", "inv_42")
+	for _, h := range history {
+		fmt.Println("version", h.Version, h.Values["total"], h.ActorID, h.ValidTo == 0)
+	}
+
+	// A definition's problems come back at once, each with a place.
+	_, err = db.DefineClass(ctx, []byte(`{"name": "Receipt", "variables": {"amount": {"type": "money", "default": "1"}, "paid": {"type": "bool", "formula": "amount"}}}`))
+	var diags fado.Diagnostics
+	if errors.As(err, &diags) {
+		for _, d := range diags {
+			fmt.Println(d.Path, d.Code)
+		}
+	}
+	// Output:
+	// INV-2026-0042 draft 1 2026-11-08 2026-12-08 alice 100.00 EUR Gdańsk
+	// replayed: true
+	// 2 90.00 EUR
+	// preview: 50.00 EUR stored: 90.00 EUR
+	// read_only total
+	// version 1 100.00 EUR alice false
+	// version 2 90.00 EUR alice true
+	// /variables/amount/default type_mismatch
+	// /variables/paid/formula type_mismatch
+}

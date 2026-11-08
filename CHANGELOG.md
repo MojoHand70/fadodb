@@ -8,6 +8,31 @@ All notable changes to FadoDB are recorded here. The format follows
 
 ### Added
 
+- The store and the Go API, `internal/store` and `fado`: a database file
+  opened as ADR-0035 configures it, WAL mode with the checkpointer on its
+  own connection and every statement prepared once on one pinned writer,
+  `synchronous` and the text limit kept in its metadata. `DefineClass`
+  compiles a definition and creates the current, history and child
+  tables of ADR-0014 with the views a user sees; `DefineSchema` stores a
+  named schema. `Create`, `Set` and `Delete` are commits in the sense of
+  ADR-0015, computed first and written last in one transaction: the
+  values in the wire shape of ADR-0018 checked against the type, the
+  enum list, the range and the text limit, the defaults of the inputs
+  not given, the auto variables and the title recalculated over the
+  dirty part of the dependency graph, the history row closed and
+  written, the child rows carried forward in one statement, the event
+  appended with its idempotency key and business date (ADR-0026), and
+  the principal recorded as the actor (ADR-0027). A repeated key returns
+  the first commit's result; a set that changes nothing commits nothing.
+  `Preview` runs the same pipeline and rolls back (ADR-0025), reporting
+  the error of every variable whose formula failed. `Get`, `Version`,
+  `History` and `Events` read a document, one version, every version
+  and the log. Every refusal is an error with a stable code and the
+  variable it names. A class with no documents can be redefined; one
+  with documents cannot until class migration is decided.
+- `formula.ParseExact`, `ExactFromFloat`, `Rescale`, `Render` and `Day`:
+  the exact-number and date helpers the store reads and writes values
+  with.
 - The class model, `internal/model`: a class definition is parsed from
   JSON in written order and compiled with every finding reported at once
   as a list of diagnostics, each a stable code, the JSON pointer of the

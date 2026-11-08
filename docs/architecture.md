@@ -494,9 +494,11 @@ division by zero as an error and `IFERROR` (ADR-0024), constant folding of
 literal expressions, and bytecode format v2.
 Since Phase 2 started: object field paths, a leaf of an `object<Schema>`
 variable read as one scalar slot (ADR-0031), a pure-only binding mode
-for titles and presentation formulas, and in `internal/model` the class
+for titles and presentation formulas, in `internal/model` the class
 definition compiled with the dependency graph of its formulas, cycle
-detection and the evaluation order. Not yet: whole-object operations,
+detection and the evaluation order, and in `internal/store` the commit
+that runs defaults and the auto recalculation over the stored row and
+writes the current, history and child rows and the event. Not yet: whole-object operations,
 composite values (arrays and rows) and the query functions, which arrive
 with the document model in Phase 2; the browser VM (Phase 7); the
 Postgres dialect (Phase 10). The pipeline and the value struct
@@ -586,10 +588,15 @@ against their own VM port.
 - Indexes declared per variable (`"index": true`), plus `(class, doc_id, ts)`
   on events and `(id, valid_from)` on history.
 
-The choice of SQLite as the primary store is an expectation, not a measured
-fact. The first Phase 2 benchmark writes 100,000 commits into SQLite and into
-DuckDB and reports latency and throughput; the storage interface keeps the
-decision cheap to flip. See ADR-0017.
+SQLite is the transactional store by measurement (ADR-0035): the Phase 2
+benchmark wrote 100,000 commits into SQLite and into DuckDB, and DuckDB's
+cost per statement, not per fsync, put a small commit at 10 ms against
+SQLite's 0.06 ms. The store opens the file as above, with
+`wal_autocheckpoint` off and a checkpointer on its own connection, so that
+a commit never pays a checkpoint; every statement is prepared once on the
+pinned writer connection, and a commit is one `BEGIN IMMEDIATE`
+transaction. `synchronous` and the text limit are properties of the
+database, chosen when it is created and kept in its `metadata` table.
 
 ### Analytical engine: DuckDB
 
@@ -624,14 +631,15 @@ rewritten.
 
 ```go
 db, err := fado.Open("app.fado", fado.Options{})
-err  = db.DefineClass(ctx, classJSON)
+cls, err := db.DefineClass(ctx, classJSON)
 err  = db.DefineLayout(ctx, "Invoice", layoutJSON)
 p := fado.Principal{ID: "alice", Groups: []string{"finance"}}
-id, err := db.Create(ctx, "Invoice", fado.Values{"customer": "Customer:42"}, fado.As(p), fado.Key("ksef-2026-0042"))
-err  = db.Set(ctx, "Invoice", id, fado.Values{"discount": "0.10"}, fado.As(p))
-err  = db.Transition(ctx, "Invoice", id, "approve", fado.As(p), fado.BusinessDate(day))
-err  = db.Refresh(ctx, "Invoice", id, []string{"backlog"}, fado.As(p))
-doc, err := db.Preview(ctx, "Invoice", id, fado.Values{"discount": "0.20"}, "approve", fado.As(p))
+doc, err := db.Create(ctx, "Invoice", fado.Values{"customer": "Customer:42"}, fado.As(p), fado.Key("ksef-2026-0042"))
+doc, err  = db.Set(ctx, "Invoice", doc.ID, fado.Values{"discount": "0.10"}, fado.As(p))
+doc, err  = db.Transition(ctx, "Invoice", doc.ID, "approve", fado.As(p), fado.BusinessDate(day))
+doc, err  = db.Refresh(ctx, "Invoice", doc.ID, []string{"backlog"}, fado.As(p))
+preview, err := db.Preview(ctx, "Invoice", doc.ID, fado.Values{"discount": "0.20"}, "approve", fado.As(p))
+history, err := db.History(ctx, "Invoice", doc.ID, fado.As(p))
 rows, err := db.Query(ctx, `SELECT id, total FROM Invoice WHERE state = 'approved'`, fado.As(p))
 sub  := db.Subscribe(ctx, fado.Filter{Class: "Invoice"}, fado.As(p))
 db.RegisterExecutor("books", func(ctx context.Context, a fado.Action) error { return post(a.Event) })
@@ -640,7 +648,13 @@ db.RegisterExecutor("books", func(ctx context.Context, a fado.Action) error { re
 The principal is the embedder's (ADR-0027); every mutating call takes an
 optional idempotency key and a business date (ADR-0026); `Preview` runs the
 commit pipeline and writes nothing (ADR-0025); a registered executor
-receives the transition event from the outbox (ADR-0027).
+receives the transition event from the outbox (ADR-0027). Today the `fado`
+package has `Open`, `DefineClass`, `ValidateClass`, `DefineSchema`,
+`Create`, `Set`, `Delete`, `Get`, `Version`, `History`, `Events` and
+`Preview` of a create or a set; every refusal is a `fado.Error` with a
+stable code and the variable it is about, or the `Diagnostics` of a
+definition. Layouts, transitions, refresh, queries, subscriptions and
+executors arrive with their phases.
 
 ### JSON command set
 

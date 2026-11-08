@@ -446,6 +446,17 @@ Three paths, all with the caller's predicates injected:
    The SQLite authorizer restricts statements to `SELECT`; in the full build
    the same views exist in DuckDB.
 
+Today the Go API has the second and the third (ADR-0038): `Query` takes a
+class, a `where` formula over the class's variables and the system
+columns, an `order`, a `limit`, an `offset` and the `fields` to return,
+and answers documents in the wire shape; `Count` counts; `SQL` runs one
+`SELECT` over the views on a connection whose authorizer refuses the
+physical tables, writes, pragmas and attachments, at most 10,000 rows. A
+filter means what the same expression means in a formula, and beside that
+exact predicate the compiler adds, for each comparison of a column with a
+literal, the comparison on the bare column so that SQLite uses the index.
+Access rules and field rights are not applied until Phase 5.
+
 ### Layouts
 
 Visuals live at class level, never per document. A class has any number of

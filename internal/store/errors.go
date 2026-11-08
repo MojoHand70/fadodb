@@ -14,14 +14,20 @@ import (
 type Error struct {
 	Code     string `json:"code"`
 	Variable string `json:"variable,omitempty"`
-	Message  string `json:"message"`
-	Hint     string `json:"hint,omitempty"`
+	// Pos is the byte offset inside a formula when the finding is about a
+	// place in one, such as a filter's where, and -1 or 0 otherwise.
+	Pos     int    `json:"pos,omitempty"`
+	Message string `json:"message"`
+	Hint    string `json:"hint,omitempty"`
 }
 
 func (e *Error) Error() string {
 	s := e.Message
 	if e.Variable != "" {
 		s = e.Variable + ": " + s
+	}
+	if e.Pos > 0 {
+		s = fmt.Sprintf("%s (at offset %d)", s, e.Pos)
 	}
 	s += " [" + e.Code + "]"
 	if e.Hint != "" {
@@ -75,6 +81,14 @@ const (
 	// CodeStorage: the database refused a statement; Message carries its
 	// words.
 	CodeStorage = "storage"
+	// CodeBadFormula: a filter's where does not parse or bind; Pos says
+	// where.
+	CodeBadFormula = "bad_formula"
+	// CodeNotAllowed: a function class a filter may not use, or a SQL
+	// statement the endpoint refuses.
+	CodeNotAllowed = "not_allowed"
+	// CodeTooManyRows: a SQL statement returns more than MaxSQLRows.
+	CodeTooManyRows = "too_many_rows"
 )
 
 func errf(code, variable, format string, args ...any) *Error {

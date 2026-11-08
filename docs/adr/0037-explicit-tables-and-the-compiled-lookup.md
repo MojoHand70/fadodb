@@ -1,6 +1,6 @@
 # ADR-0037: Explicit tables bound to SQLite and the compiled LOOKUP
 
-- Status: Proposed; amends ADR-0003 (bytecode format v3), ADR-0016 (the table definition) and ADR-0020 (how a LOOKUP condition is compiled and carried)
+- Status: Accepted; amends ADR-0003 (bytecode format v3), ADR-0016 (the table definition) and ADR-0020 (how a LOOKUP condition is compiled and carried)
 - Date: 2026-11-08
 
 ## Context

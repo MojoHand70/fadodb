@@ -38,7 +38,7 @@ func TestConformance_SQLite(t *testing.T) {
 	d := formula.NewSQLite()
 	total, failed := 0, 0
 	for _, s := range suites {
-		scope, err := formula.ScopeOf(s.Variables)
+		scope, err := s.Scope()
 		if err != nil {
 			t.Fatalf("%s: %v", s.File, err)
 		}

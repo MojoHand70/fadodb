@@ -102,6 +102,52 @@ func TestBind_AutoModeRejectsContextFunctions(t *testing.T) {
 	}
 }
 
+func TestBind_ObjectFieldPaths(t *testing.T) {
+	address := ObjectType("Address", []Field{{"city", Scalar(KindText)}, {"country", Scalar(KindText)}})
+	place := ObjectType("Place", []Field{{"name", Scalar(KindText)}, {"address", address}, {"lat", Scalar(KindNumber)}})
+	scope := mustScope(t, Variable{Name: "Shipping", Type: address}, Variable{Name: "venue", Type: place}, Variable{Name: "n", Type: Scalar(KindNumber)})
+	p := mustBind(t, `shipping.CITY & venue.Address.City & TEXT(VENUE.lat + n)`, scope)
+	want := []Slot{{"Shipping.city", Scalar(KindText)}, {"venue.address.city", Scalar(KindText)}, {"venue.lat", Scalar(KindNumber)}, {"n", Scalar(KindNumber)}}
+	if len(p.Slots) != len(want) {
+		t.Fatalf("slots = %+v, want %+v", p.Slots, want)
+	}
+	for i := range want {
+		if p.Slots[i].Name != want[i].Name || !p.Slots[i].Type.Equal(want[i].Type) {
+			t.Errorf("slot %d = %+v, want %+v: a leaf is one slot named by its declared path", i, p.Slots[i], want[i])
+		}
+	}
+	for _, tc := range []struct{ src, want string }{
+		{"shipping", "whole objects are not supported yet"},
+		{"venue.address", "whole objects are not supported yet"},
+		{"shipping.street", "has no field street; its fields are city, country"},
+		{"shipping.city.x", "is text and has no field x"},
+		{"n.x", "only an object has fields"},
+	} {
+		_, err := Bind(tc.src, scope, BindOptions{})
+		if err == nil || !strings.Contains(err.Error(), tc.want) {
+			t.Errorf("%s: error %v, want one containing %q", tc.src, err, tc.want)
+		}
+	}
+	if _, err := NewScope(Variable{Name: "a", Type: ObjectType("S", []Field{{"if", Scalar(KindText)}})}); err == nil {
+		t.Error("a field named by a keyword must be refused")
+	}
+	if _, err := NewScope(Variable{Name: "a", Type: ObjectType("S", []Field{{"x", Scalar(KindText)}, {"X", Scalar(KindText)}})}); err == nil {
+		t.Error("two fields of one name in any case must be refused")
+	}
+}
+
+func TestBind_PureModeAllowsPureFunctionsOnly(t *testing.T) {
+	scope := mustScope(t, Variable{Name: "number", Type: Scalar(KindText)}, Variable{Name: "due", Type: Scalar(KindDate)})
+	if _, err := Bind(`"INV-" & number & " " & TEXT(due)`, scope, BindOptions{Mode: ModePure}); err != nil {
+		t.Errorf("a title over pure functions binds: %v", err)
+	}
+	for _, src := range []string{`"INV-" & USER()`, `DAYS(due, TODAY())`, `LOOKUP(Rates, rate, code = "EUR")`} {
+		if _, err := Bind(src, scope, BindOptions{Mode: ModePure}); err == nil {
+			t.Errorf("%s binds in pure mode, want a refusal", src)
+		}
+	}
+}
+
 func TestScope_RejectsDuplicatesAndKeywords(t *testing.T) {
 	if _, err := NewScope(Variable{Name: "qty"}, Variable{Name: "QTY"}); err == nil {
 		t.Error("duplicate names in different case should be rejected")

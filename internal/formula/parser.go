@@ -236,14 +236,20 @@ func (p *parser) primary() (Node, error) {
 			return p.call(t, args)
 		}
 		if _, ok := p.accept(TokDot); ok {
-			name, err := p.expect(TokIdent)
-			if err != nil {
-				return nil, p.errAt(name.Pos, "expected a column name after %s.", t.Text)
+			// A path: a column of a rows variable, or a field of an object
+			// and the fields of its object fields (ADR-0031).
+			var path []string
+			for {
+				name, err := p.expect(TokIdent)
+				if err != nil {
+					return nil, p.errAt(name.Pos, "expected a column or field name after %s.", t.Text)
+				}
+				path = append(path, name.Text)
+				if _, ok := p.accept(TokDot); !ok {
+					break
+				}
 			}
-			if p.peek().Kind == TokDot {
-				return nil, p.errAt(p.peek().Pos, "names nest only one level: %s.%s", t.Text, name.Text)
-			}
-			return &Member{Base: t.Text, Name: name.Text, P: t.Pos}, nil
+			return &Member{Base: t.Text, Path: path, P: t.Pos}, nil
 		}
 		return &Ident{Name: t.Text, P: t.Pos}, nil
 	case TokEOF:

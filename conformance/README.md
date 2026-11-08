@@ -17,8 +17,11 @@ evaluation case in CI, and all three must match exactly. SUM and AVERAGE
 add left to right on every evaluator so that aggregates agree to the
 last bit, rather than differing within what ADR-0019 allows them. The
 browser VM does not exist yet.
-Composite values (arrays and rows) and the query functions are not
-implemented yet; the binder refuses them, and the binding suite says so.
+Object field paths (ADR-0031) bind and evaluate on every target: a leaf
+is one slot of the field's type. Whole objects in a formula, `ISBLANK` of
+an object, object equality and computed object variables are not
+implemented yet, nor are the other composites, arrays and rows, and the
+query functions; the binder refuses them, and the binding suite says so.
 
 Known, documented differences of the SQL targets: `VALUE` and `DATEVALUE`
 trim spaces only on DuckDB where the VM trims all whitespace; `UPPER` of
@@ -45,9 +48,16 @@ One file per topic:
 ```
 
 - `variables` declares the inputs a case may set, by type: `bool`,
-  `number`, `text`, `date`, `ref`, `json`, `array<scalar>`, `rows`.
+  `number`, `int`, `decimal(s)`, `money(s)`, `text`, `date`, `datetime`,
+  `ref`, `json`, `array<scalar>`, `rows`, or `object<Name>` for a schema
+  the suite declares.
+- `schemas` declares object schemas (ADR-0031) by name: a field name to
+  its type, where a field may be `object<Name>` of another schema. A
+  formula reads a leaf as `shipping.city`; an input sets it under the
+  same path, `"shipping.city": "Gdańsk"`.
 - `inputs` gives values; an absent or `null` variable is blank. Dates are
-  written `YYYY-MM-DD` or `YYYY-MM-DD HH:MM:SS`, in UTC.
+  written `YYYY-MM-DD`, datetimes `YYYY-MM-DD HH:MM:SS` in UTC, exact
+  values as text such as `"1.250"`, money as `"12.30 PLN"`.
 - `context` sets what the context functions see: `user`, `groups`, `now`.
 - Exactly one of `expected` and `error`. `expected` is the value in the
   notation of `inputs`; `null` is a blank result. `error` is one of the
@@ -64,7 +74,9 @@ Numbers compare exactly on every target.
 
 Formulas the binder must accept and formulas it must refuse at definition
 time by the static typing rules of ADR-0019, in a `mode` of `any` (the
-default) or `auto` (ADR-0015). Same shape as the syntax cases, plus `mode`.
+default), `auto` (ADR-0015) or `pure` (the class title of ADR-0018 and
+the presentation formulas of ADR-0032). Same shape as the syntax cases,
+plus `mode` and, as in the evaluation cases, `schemas`.
 
 ## Syntax cases: `syntax/*.json`
 

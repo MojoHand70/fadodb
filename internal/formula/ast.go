@@ -47,10 +47,12 @@ type Ident struct {
 	P    int
 }
 
-// Member is base.name: one column of a rows variable as an array.
+// Member is base.name, or a longer path base.a.b: one column of a rows
+// variable as an array, or a field of an object variable, nested
+// through object fields (ADR-0031).
 type Member struct {
 	Base string
-	Name string
+	Path []string
 	P    int
 }
 
@@ -179,8 +181,10 @@ func writeSexpr(b *strings.Builder, n Node) {
 	case *Member:
 		b.WriteString("(. ")
 		b.WriteString(n.Base)
-		b.WriteByte(' ')
-		b.WriteString(n.Name)
+		for _, name := range n.Path {
+			b.WriteByte(' ')
+			b.WriteString(name)
+		}
 		b.WriteByte(')')
 	case *ThisRef:
 		b.WriteString("THIS.")

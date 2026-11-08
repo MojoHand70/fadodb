@@ -22,8 +22,13 @@ type Suite struct {
 	Suite       string `json:"suite"`
 	Description string `json:"description,omitempty"`
 	// Variables declares the input variables the cases may set, by type:
-	// bool, number, text, date, ref, json, array<scalar>, rows.
+	// bool, number, text, date, ref, json, array<scalar>, rows, or
+	// object<Name> for a schema of Schemas.
 	Variables map[string]string `json:"variables,omitempty"`
+	// Schemas declares object schemas by name: field name to type, where
+	// a type may be object<Name> of another schema (ADR-0031). A case sets
+	// an object's leaf by its path, "shipping.city".
+	Schemas map[string]map[string]string `json:"schemas,omitempty"`
 	// Limits sets the size limits the cases evaluate under (ADR-0021);
 	// absent, the defaults. A suite at a small limit reaches the boundary
 	// with short texts.
@@ -36,6 +41,37 @@ type Suite struct {
 // SuiteLimits is the limits field of a suite.
 type SuiteLimits struct {
 	MaxText int `json:"max_text"`
+}
+
+// Scope builds the scope of the suite's variables, in name order.
+func (s *Suite) Scope() (*Scope, error) { return ScopeOf(s.Variables, s.Schemas) }
+
+// declares reports whether an input name is a declared variable or, as
+// "variable.field.field", a scalar leaf of a declared object variable.
+func (s *Suite) declares(name string) bool {
+	parts := strings.Split(name, ".")
+	typ, ok := s.Variables[parts[0]]
+	if !ok {
+		return false
+	}
+	if len(parts) == 1 {
+		return true
+	}
+	t, err := parseTypeIn(typ, s.Schemas, map[string]bool{})
+	if err != nil {
+		return false
+	}
+	for _, step := range parts[1:] {
+		if t.Kind != KindObject {
+			return false
+		}
+		f, ok := t.Field(step)
+		if !ok {
+			return false
+		}
+		t = f.Type
+	}
+	return t.IsScalar()
 }
 
 // EvalLimits are the limits the suite's cases evaluate under.
@@ -94,10 +130,11 @@ type RejectCase struct {
 // BindingSuite is one file of definition-time cases for the binder:
 // formulas that must bind and formulas it must refuse, in a mode.
 type BindingSuite struct {
-	Suite       string            `json:"suite"`
-	Description string            `json:"description,omitempty"`
-	Variables   map[string]string `json:"variables,omitempty"`
-	// Mode is "any" (the default) or "auto" (ADR-0015).
+	Suite       string                       `json:"suite"`
+	Description string                       `json:"description,omitempty"`
+	Variables   map[string]string            `json:"variables,omitempty"`
+	Schemas     map[string]map[string]string `json:"schemas,omitempty"`
+	// Mode is "any" (the default), "auto" (ADR-0015) or "pure" (ADR-0018).
 	Mode   string       `json:"mode,omitempty"`
 	Accept []string     `json:"accept"`
 	Reject []RejectCase `json:"reject"`
@@ -113,10 +150,54 @@ var ErrorCodes = map[string]bool{
 	"overflow": true, "inexact": true, "currency_mismatch": true,
 }
 
-// validType reports whether a type as written in a suite parses.
-func validType(s string) bool {
-	_, err := ParseType(s)
-	return err == nil
+// Scope builds the scope of the suite's variables, in name order.
+func (s *BindingSuite) Scope() (*Scope, error) { return ScopeOf(s.Variables, s.Schemas) }
+
+// BindMode is the binding mode the suite names.
+func (s *BindingSuite) BindMode() Mode {
+	switch s.Mode {
+	case "auto":
+		return ModeAuto
+	case "pure":
+		return ModePure
+	}
+	return ModeAny
+}
+
+// parseTypeIn reads a type as written in a suite, resolving object<Name>
+// against the suite's schemas. visiting guards against a schema that
+// contains itself.
+func parseTypeIn(s string, schemas map[string]map[string]string, visiting map[string]bool) (Type, error) {
+	if strings.HasPrefix(s, "object<") && strings.HasSuffix(s, ">") {
+		name := s[7 : len(s)-1]
+		fields, ok := schemas[name]
+		if !ok {
+			return Type{}, fmt.Errorf("unknown schema %q", name)
+		}
+		if visiting[name] {
+			return Type{}, fmt.Errorf("schema %s contains itself", name)
+		}
+		visiting[name] = true
+		defer delete(visiting, name)
+		keys := make([]string, 0, len(fields))
+		for k := range fields {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		fs := make([]Field, 0, len(keys))
+		for _, k := range keys {
+			ft, err := parseTypeIn(fields[k], schemas, visiting)
+			if err != nil {
+				return Type{}, fmt.Errorf("schema %s, field %s: %w", name, k, err)
+			}
+			if !ft.IsScalar() && ft.Kind != KindObject || ft.Kind == KindNull {
+				return Type{}, fmt.Errorf("schema %s, field %s: a field is a scalar or an object, got %s", name, k, ft)
+			}
+			fs = append(fs, Field{Name: k, Type: ft})
+		}
+		return ObjectType(name, fs), nil
+	}
+	return ParseType(s)
 }
 
 // LoadSuites loads every evaluation suite from dir, sorted by file name.
@@ -174,11 +255,11 @@ func LoadBindingSuites(dir string) ([]*BindingSuite, error) {
 		if s.Suite == "" {
 			return nil, fmt.Errorf("%s: suite name is required", f)
 		}
-		if err := validateVariables(s.Variables); err != nil {
+		if err := validateVariables(s.Variables, s.Schemas); err != nil {
 			return nil, fmt.Errorf("%s: %w", f, err)
 		}
-		if s.Mode != "" && s.Mode != "any" && s.Mode != "auto" {
-			return nil, fmt.Errorf("%s: mode must be any or auto, got %q", f, s.Mode)
+		if s.Mode != "" && s.Mode != "any" && s.Mode != "auto" && s.Mode != "pure" {
+			return nil, fmt.Errorf("%s: mode must be any, auto or pure, got %q", f, s.Mode)
 		}
 		if len(s.Accept)+len(s.Reject) == 0 {
 			return nil, fmt.Errorf("%s: no cases", f)
@@ -225,7 +306,7 @@ func loadSuite(path string) (*Suite, error) {
 	if s.Suite == "" {
 		return nil, fmt.Errorf("%s: suite name is required", path)
 	}
-	if err := validateVariables(s.Variables); err != nil {
+	if err := validateVariables(s.Variables, s.Schemas); err != nil {
 		return nil, fmt.Errorf("%s: %w", path, err)
 	}
 	if s.Limits != nil && s.Limits.MaxText < MinMaxText {
@@ -249,12 +330,12 @@ func loadSuite(path string) (*Suite, error) {
 		if c.Error != "" && !ErrorCodes[c.Error] {
 			return nil, fmt.Errorf("%s: unknown error code %q", where, c.Error)
 		}
-		if c.Type != "" && !validType(c.Type) {
+		if _, err := ParseType(c.Type); c.Type != "" && err != nil {
 			return nil, fmt.Errorf("%s: unknown type %q", where, c.Type)
 		}
 		for name := range c.Inputs {
-			if _, ok := s.Variables[name]; !ok {
-				return nil, fmt.Errorf("%s: input %q is not a declared variable", where, name)
+			if !s.declares(name) {
+				return nil, fmt.Errorf("%s: input %q is not a declared variable or object leaf", where, name)
 			}
 		}
 	}
@@ -270,7 +351,7 @@ func loadSyntaxSuite(path string) (*SyntaxSuite, error) {
 	if s.Suite == "" {
 		return nil, fmt.Errorf("%s: suite name is required", path)
 	}
-	if err := validateVariables(s.Variables); err != nil {
+	if err := validateVariables(s.Variables, nil); err != nil {
 		return nil, fmt.Errorf("%s: %w", path, err)
 	}
 	if len(s.Accept)+len(s.Reject) == 0 {
@@ -280,20 +361,21 @@ func loadSyntaxSuite(path string) (*SyntaxSuite, error) {
 	return &s, nil
 }
 
-func validateVariables(vars map[string]string) error {
+func validateVariables(vars map[string]string, schemas map[string]map[string]string) error {
 	for name, typ := range vars {
 		if name == "" {
 			return fmt.Errorf("a variable has no name")
 		}
-		if typ == "blank" || !validType(typ) {
+		if _, err := parseTypeIn(typ, schemas, map[string]bool{}); err != nil || typ == "blank" {
 			return fmt.Errorf("variable %s: unknown type %q", name, typ)
 		}
 	}
 	return nil
 }
 
-// ScopeOf builds the scope of a suite's variables, in name order.
-func ScopeOf(vars map[string]string) (*Scope, error) {
+// ScopeOf builds the scope of a suite's variables, in name order, with
+// object<Name> types resolved against the schemas.
+func ScopeOf(vars map[string]string, schemas map[string]map[string]string) (*Scope, error) {
 	names := make([]string, 0, len(vars))
 	for n := range vars {
 		names = append(names, n)
@@ -301,7 +383,7 @@ func ScopeOf(vars map[string]string) (*Scope, error) {
 	sort.Strings(names)
 	vs := make([]Variable, 0, len(names))
 	for _, n := range names {
-		t, err := ParseType(vars[n])
+		t, err := parseTypeIn(vars[n], schemas, map[string]bool{})
 		if err != nil {
 			return nil, fmt.Errorf("variable %s: %w", n, err)
 		}

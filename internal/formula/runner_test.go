@@ -19,7 +19,7 @@ func TestConformance_VM(t *testing.T) {
 	vm := NewVM()
 	total, failed := 0, 0
 	for _, s := range suites {
-		scope, err := ScopeOf(s.Variables)
+		scope, err := s.Scope()
 		if err != nil {
 			t.Fatalf("%s: %v", s.File, err)
 		}
@@ -105,14 +105,11 @@ func TestConformance_Binding(t *testing.T) {
 	}
 	accepted, rejected := 0, 0
 	for _, s := range suites {
-		scope, err := ScopeOf(s.Variables)
+		scope, err := s.Scope()
 		if err != nil {
 			t.Fatalf("%s: %v", s.File, err)
 		}
-		opts := BindOptions{}
-		if s.Mode == "auto" {
-			opts.Mode = ModeAuto
-		}
+		opts := BindOptions{Mode: s.BindMode()}
 		for _, f := range s.Accept {
 			accepted++
 			if _, err := Bind(f, scope, opts); err != nil {

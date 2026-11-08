@@ -191,10 +191,11 @@ type binder struct {
 	tries           int
 
 	// Inside a LOOKUP condition: the source whose columns bare names
-	// resolve to, the enclosing binder whose scope THIS.name reads, the
-	// slot being built, and the argument positions by variable.
+	// resolve to, the slot being built, and the argument positions by
+	// variable. The scope is the enclosing formula's, which THIS.name
+	// reads. No pointer back to the enclosing binder: that would move it
+	// to the heap on every bind.
 	source *Source
-	outer  *binder
 	q      *QuerySlot
 	argOf  map[string]int
 
@@ -1149,6 +1150,11 @@ func (b *binder) lookup(n *Call) (Type, error) {
 		return Type{}, b.errAt(n.Args[2].Pos(), "LOOKUP: the condition must be a condition, got %s%s", ct, conditionHint(ct))
 	}
 	q.Cond = cond
+	// The THIS variables become slots of this program, in argument order.
+	for _, name := range q.ArgNames {
+		v, _ := b.scope.Lookup(name)
+		q.Args = append(q.Args, b.slot(v))
+	}
 	if eq, ok := n.Args[2].(*Binary); ok && eq.Op == TokEq {
 		for _, side := range [][2]Node{{eq.L, eq.R}, {eq.R, eq.L}} {
 			id, ok := side[0].(*Ident)
@@ -1185,7 +1191,7 @@ func (b *binder) lookup(n *Call) (Type, error) {
 func (b *binder) subProgram(n Node, src *Source, q *QuerySlot, argOf map[string]int) (*Program, Type, error) {
 	sub := &binder{src: b.src, scope: b.scope, opts: b.opts, prog: &Program{},
 		slotOf: map[string]int32{}, numIndex: map[float64]int32{}, textIndex: map[string]int32{}, classes: map[Class]bool{},
-		source: src, outer: b, q: q, argOf: argOf}
+		source: src, q: q, argOf: argOf}
 	t, err := sub.expr(n)
 	if err != nil {
 		return nil, Type{}, err
@@ -1227,7 +1233,7 @@ func mentionsColumn(n Node) bool {
 func (b *binder) column(n *Ident) (Type, error) {
 	col, ok := b.source.Column(n.Name)
 	if !ok {
-		if v, isVar := b.outer.scope.Lookup(n.Name); isVar {
+		if v, isVar := b.scope.Lookup(n.Name); isVar {
 			return Type{}, b.errAt(n.P, "unknown column %s of %s; the document's %s is THIS.%s", n.Name, b.source.Name, v.Name, v.Name)
 		}
 		return Type{}, b.errAt(n.P, "unknown column %s of %s; its columns are %s", n.Name, b.source.Name, strings.Join(b.source.ColumnNames(), ", "))
@@ -1238,9 +1244,10 @@ func (b *binder) column(n *Ident) (Type, error) {
 }
 
 // thisRef binds THIS.name inside a LOOKUP: a scalar variable of the
-// document, passed to the executor as an argument.
+// document, passed to the executor as an argument. The enclosing binder
+// gives the argument its slot once the condition is bound.
 func (b *binder) thisRef(n *ThisRef) (Type, error) {
-	v, ok := b.outer.scope.Lookup(n.Name)
+	v, ok := b.scope.Lookup(n.Name)
 	if !ok {
 		return Type{}, b.errAt(n.P, "THIS.%s: the document has no variable %s", n.Name, n.Name)
 	}
@@ -1249,8 +1256,7 @@ func (b *binder) thisRef(n *ThisRef) (Type, error) {
 	}
 	key := strings.ToUpper(v.Name)
 	if _, seen := b.argOf[key]; !seen {
-		b.argOf[key] = len(b.q.Args)
-		b.q.Args = append(b.q.Args, b.outer.slot(v))
+		b.argOf[key] = len(b.q.ArgNames)
 		b.q.ArgNames = append(b.q.ArgNames, v.Name)
 	}
 	b.emit(OpLoad, b.slot(Variable{Name: "THIS." + v.Name, Type: v.Type}), n.P)

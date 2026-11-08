@@ -1,6 +1,6 @@
 # Roadmap
 
-**Current status: Phase 1, the formula engine, done on 2026-11-06 and released as v0.1.0. Phase 2, the document model and store, started on 2026-11-07.**
+**Current status: Phase 2, the document model and store, done on 2026-11-08 and released as v0.2.0. Phase 3, the statechart, is next.**
 The Go API (`fado`) opens a database file, defines schemas, classes and
 explicit tables, and creates, changes, reads and deletes documents as
 commits: assignments and defaults, the auto recalculation, typed history
@@ -25,7 +25,7 @@ Legend: ✅ done · 🚧 in progress · ⬜ not started
 |---|---|---|
 | 0 | Foundations: module, gates, CI, release pipeline, ADRs, docs | ✅ |
 | 1 | Formula engine: lexer, parser, binder, bytecode, Go VM, SQL generator with SQLite and DuckDB dialects, conformance suite | ✅ |
-| 2 | Document model and store: primary-store benchmark, variables with defaults, `json` type, enum values, range constraints, named schemas and object values with the predefined vocabulary, attachments as `File` values with a blob store, class metadata and title, current, history and child tables, commits with idempotency keys and business dates, preview and validate without writing, event log, migrations, LOOKUP, queries | 🚧 |
+| 2 | Document model and store: primary-store benchmark, variables with defaults, `json` type, enum values, range constraints, named schemas and object values with the predefined vocabulary, attachments as `File` values with a blob store, class metadata and title, current, history and child tables, commits with idempotency keys and business dates, preview and validate without writing, event log, migrations, LOOKUP, queries | ✅ |
 | 3 | Statechart: states, transitions, guards, eventless transitions, exit and entry snapshots, field-level rights per state | ⬜ |
 | 4 | Rules and actions: event-condition-action rules, built-in actions incl. reset and refresh, transactional outbox, executors the embedder registers, the transition event, explicit tables with storage bindings, QUERY | ⬜ |
 | 5 | Security: the principal from the embedder on every call, access rules compiled to SQL predicates, an optional package of users, groups and API keys for the server | ⬜ |

@@ -44,4 +44,4 @@ line says so. Copy `0000-template.md` to start.
 | [0036](0036-in-memory-index-for-lookups-in-commits.md) | An in-memory index serves LOOKUP inside commits, by measurement | Accepted |
 | [0037](0037-explicit-tables-and-the-compiled-lookup.md) | Explicit tables bound to SQLite and the compiled LOOKUP | Accepted |
 | [0038](0038-the-filter-and-the-read-only-sql-endpoint.md) | The filter and the read-only SQL endpoint | Accepted |
-| [0039](0039-class-versions-terminal-states-and-migrations.md) | Class versions, terminal states and migrations | Proposed |
+| [0039](0039-class-versions-terminal-states-and-migrations.md) | Class versions, terminal states and migrations | Accepted |

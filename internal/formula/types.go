@@ -49,7 +49,9 @@ func (k Kind) IsDateLike() bool { return k == KindDate || k == KindDateTime }
 
 // Type is a static type: a scalar kind with its scale when it is exact, an
 // array of a scalar kind, rows with a schema, or an object of a named
-// schema.
+// schema. The struct is two words: what only composites and objects carry
+// lives behind a pointer, since the binder passes types by value on every
+// expression.
 type Type struct {
 	Kind Kind
 	// Scale is the number of digits after the point of a decimal or money
@@ -57,12 +59,16 @@ type Type struct {
 	Scale int8
 	// Elem is the element kind of an array.
 	Elem Kind
-	// Cols is the schema of rows; nil when unknown.
-	Cols []Column
-	// Schema names the schema of an object, for messages and for telling
-	// two object types apart; Fields are its fields in declared order,
-	// scalars or objects (ADR-0031). The binder resolves a field path to
-	// one scalar slot, so no evaluator ever sees an object value.
+	// shape is nil for a scalar and an array.
+	shape *typeShape
+}
+
+// typeShape is what rows and objects carry: the columns of rows as the VM
+// knows them, and the schema name and fields of an object or of rows of a
+// named schema (ADR-0031). The binder resolves a field path to one scalar
+// slot, so no evaluator ever sees an object value.
+type typeShape struct {
+	Cols   []Column
 	Schema string
 	Fields []Field
 }
@@ -74,7 +80,7 @@ type Column struct {
 	Scale int8
 }
 
-// Field is one field of an object type.
+// Field is one field of an object type, or one column of rows.
 type Field struct {
 	Name string
 	Type Type
@@ -82,12 +88,45 @@ type Field struct {
 
 // ObjectType makes the type of an object of a named schema.
 func ObjectType(schema string, fields []Field) Type {
-	return Type{Kind: KindObject, Schema: schema, Fields: fields}
+	return Type{Kind: KindObject, shape: &typeShape{Schema: schema, Fields: fields}}
+}
+
+// RowsType makes a rows type with the given columns, of a named schema
+// when schema is not empty.
+func RowsType(schema string, fields []Field) Type {
+	return Type{Kind: KindRows, shape: &typeShape{Schema: schema, Fields: fields}}
+}
+
+// Cols are the columns of a rows type as the VM holds them; nil when
+// unknown.
+func (t Type) Cols() []Column {
+	if t.shape == nil {
+		return nil
+	}
+	return t.shape.Cols
+}
+
+// Schema is the schema name of an object, or of rows of a named schema,
+// and "" otherwise.
+func (t Type) Schema() string {
+	if t.shape == nil {
+		return ""
+	}
+	return t.shape.Schema
+}
+
+// Fields are the fields of an object type or the columns of rows, in
+// declared order; nil for anything else.
+func (t Type) Fields() []Field {
+	if t.shape == nil {
+		return nil
+	}
+	return t.shape.Fields
 }
 
 // Field finds a field by name, case-insensitively.
 func (t Type) Field(name string) (Field, bool) {
-	for _, f := range t.Fields {
+	for _, f := range t.Fields() {
 		if strings.EqualFold(f.Name, name) {
 			return f, true
 		}
@@ -97,8 +136,9 @@ func (t Type) Field(name string) (Field, bool) {
 
 // FieldNames lists the field names of an object type, for messages.
 func (t Type) FieldNames() []string {
-	names := make([]string, len(t.Fields))
-	for i, f := range t.Fields {
+	fields := t.Fields()
+	names := make([]string, len(fields))
+	for i, f := range fields {
 		names[i] = f.Name
 	}
 	return names
@@ -135,19 +175,29 @@ func (t Type) String() string {
 	case KindArray:
 		return "array<" + Type{Kind: t.Elem, Scale: t.Scale}.String() + ">"
 	case KindRows:
-		if t.Cols == nil {
+		if t.Schema() != "" {
+			return "rows<" + t.Schema() + ">"
+		}
+		if fields := t.Fields(); fields != nil {
+			parts := make([]string, len(fields))
+			for i, f := range fields {
+				parts[i] = f.Name + " " + f.Type.String()
+			}
+			return "rows<" + strings.Join(parts, ", ") + ">"
+		}
+		if t.Cols() == nil {
 			return "rows"
 		}
-		parts := make([]string, len(t.Cols))
-		for i, c := range t.Cols {
+		parts := make([]string, len(t.Cols()))
+		for i, c := range t.Cols() {
 			parts[i] = c.Name + " " + Type{Kind: c.Kind, Scale: c.Scale}.String()
 		}
 		return "rows<" + strings.Join(parts, ", ") + ">"
 	case KindObject:
-		if t.Schema == "" {
+		if t.Schema() == "" {
 			return "object"
 		}
-		return "object<" + t.Schema + ">"
+		return "object<" + t.Schema() + ">"
 	}
 	return t.Kind.String()
 }
@@ -155,17 +205,20 @@ func (t Type) String() string {
 // Equal reports whether two types are the same. Exact types compare by
 // scale too; rows compare by schema; objects by schema name and fields.
 func (t Type) Equal(o Type) bool {
-	if t.Kind != o.Kind || t.Scale != o.Scale || t.Elem != o.Elem || len(t.Cols) != len(o.Cols) ||
-		t.Schema != o.Schema || len(t.Fields) != len(o.Fields) {
+	if t.Kind != o.Kind || t.Scale != o.Scale || t.Elem != o.Elem {
 		return false
 	}
-	for i := range t.Cols {
-		if t.Cols[i] != o.Cols[i] {
+	tc, oc, tf, of := t.Cols(), o.Cols(), t.Fields(), o.Fields()
+	if len(tc) != len(oc) || len(tf) != len(of) || t.Schema() != o.Schema() {
+		return false
+	}
+	for i := range tc {
+		if tc[i] != oc[i] {
 			return false
 		}
 	}
-	for i := range t.Fields {
-		if t.Fields[i].Name != o.Fields[i].Name || !t.Fields[i].Type.Equal(o.Fields[i].Type) {
+	for i := range tf {
+		if tf[i].Name != of[i].Name || !tf[i].Type.Equal(of[i].Type) {
 			return false
 		}
 	}

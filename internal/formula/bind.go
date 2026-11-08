@@ -105,7 +105,7 @@ func checkFields(path string, t Type) error {
 		return nil
 	}
 	seen := map[string]bool{}
-	for _, f := range t.Fields {
+	for _, f := range t.Fields() {
 		key := strings.ToUpper(f.Name)
 		if seen[key] {
 			return fmt.Errorf("%s: field %s is declared twice", path, f.Name)

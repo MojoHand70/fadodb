@@ -184,7 +184,7 @@ func parseTypeIn(s string, schemas map[string]map[string]string, visiting map[st
 			keys = append(keys, k)
 		}
 		sort.Strings(keys)
-		t := ObjectType(name, make([]Field, 0, len(keys)))
+		fs := make([]Field, 0, len(keys))
 		for _, k := range keys {
 			ft, err := parseTypeIn(fields[k], schemas, visiting)
 			if err != nil {
@@ -193,9 +193,9 @@ func parseTypeIn(s string, schemas map[string]map[string]string, visiting map[st
 			if !ft.IsScalar() && ft.Kind != KindObject || ft.Kind == KindNull {
 				return Type{}, fmt.Errorf("schema %s, field %s: a field is a scalar or an object, got %s", name, k, ft)
 			}
-			t.Fields = append(t.Fields, Field{Name: k, Type: ft})
+			fs = append(fs, Field{Name: k, Type: ft})
 		}
-		return t, nil
+		return ObjectType(name, fs), nil
 	}
 	return ParseType(s)
 }

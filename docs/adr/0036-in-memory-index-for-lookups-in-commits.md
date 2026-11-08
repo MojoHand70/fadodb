@@ -1,6 +1,6 @@
 # ADR-0036: An in-memory index serves LOOKUP inside commits, by measurement
 
-- Status: Proposed; amends ADR-0016 and ADR-0020
+- Status: Accepted; amends ADR-0016 and ADR-0020
 - Date: 2026-11-07
 
 ## Context

@@ -36,6 +36,11 @@ type (
 	Event = store.Event
 	// Preview is what a commit would do (ADR-0025).
 	Preview = store.Preview
+	// Filter is a query over a class: a where formula, an order, a limit,
+	// an offset and the fields to return (ADR-0038).
+	Filter = store.Filter
+	// Rows is the result of a SQL statement: columns and rows.
+	Rows = store.Rows
 	// Option configures one call: As, Key, BusinessDate, WithID.
 	Option = store.Option
 	// Error is a refusal with a stable code, the variable it is about, a
@@ -170,6 +175,23 @@ func (db *DB) History(ctx context.Context, class, id string, opts ...Option) ([]
 // Events reads the events that touched a document, oldest first.
 func (db *DB) Events(ctx context.Context, class, id string, opts ...Option) ([]*Event, error) {
 	return db.s.Events(ctx, class, id, opts...)
+}
+
+// Query reads the documents of a class that match a filter, in its
+// order, at most its limit, with the fields it names.
+func (db *DB) Query(ctx context.Context, f Filter, opts ...Option) ([]*Document, error) {
+	return db.s.Query(ctx, f, opts...)
+}
+
+// Count counts the documents a filter's where matches.
+func (db *DB) Count(ctx context.Context, f Filter, opts ...Option) (int64, error) {
+	return db.s.Count(ctx, f, opts...)
+}
+
+// SQL runs one read-only SELECT over the views with positional
+// parameters; at most 10,000 rows come back.
+func (db *DB) SQL(ctx context.Context, statement string, args []any, opts ...Option) (*Rows, error) {
+	return db.s.SQL(ctx, statement, args, opts...)
 }
 
 // Preview runs a create (empty id) or a set through the commit pipeline

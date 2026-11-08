@@ -88,6 +88,11 @@ type Store struct {
 	tables     map[string]*table
 	tableOrder []string
 
+	// sqlConn is the read-only SQL endpoint's connection, with its
+	// authorizer, made on first use; sqlMu serialises its statements.
+	sqlMu   sync.Mutex
+	sqlConn *sql.Conn
+
 	stop   chan struct{}
 	done   chan struct{}
 	closed bool
@@ -438,6 +443,12 @@ func (s *Store) Close() error {
 	s.cmu.Unlock()
 	s.closePlans()
 	s.stmts.close()
+	s.sqlMu.Lock()
+	if s.sqlConn != nil {
+		s.sqlConn.Close()
+		s.sqlConn = nil
+	}
+	s.sqlMu.Unlock()
 	err := s.writer.Close()
 	if err2 := s.db.Close(); err == nil {
 		err = err2

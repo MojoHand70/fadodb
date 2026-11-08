@@ -8,6 +8,20 @@ All notable changes to FadoDB are recorded here. The format follows
 
 ### Added
 
+- The filter and the read-only SQL endpoint in the Go API (ADR-0038
+  proposed). `Query` takes a class, a `where` formula over the class's
+  variables and the system columns, an `order`, a `limit`, an `offset`
+  and the `fields` to return, and answers documents in the wire shape
+  with their composites loaded in one statement per child table; `Count`
+  counts. The formula is bound and translated by the engine, so a filter
+  means what a formula means, a row on which it errors does not match,
+  and beside the exact predicate every comparison of a column with a
+  literal is added on the bare column so that SQLite uses the index.
+  `SQL` runs one `SELECT` over the views on a connection whose authorizer
+  refuses the physical tables, the schema, writes, pragmas, attachments
+  and transactions, with positional parameters and at most 10,000 rows.
+  Refusals carry a stable code, the element of the filter and the offset
+  inside `where`.
 - Explicit tables and `LOOKUP` (ADR-0016, ADR-0020, ADR-0036, ADR-0037
   proposed). A table is defined in JSON with its columns, key and
   indexes, stored as `tbl_<Name>` with the view `<Name>` and filled by

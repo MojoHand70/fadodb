@@ -92,6 +92,13 @@ func Example() {
 		fmt.Println("version", h.Version, h.Values["total"], h.ActorID, h.ValidTo == 0)
 	}
 
+	// A filter is a formula over the class's variables; SQL runs over the
+	// views.
+	open, _ := db.Query(ctx, fado.Filter{Class: "Invoice", Where: "state = \"draft\" AND total > 50.00", Fields: []string{"number", "total"}})
+	fmt.Println("filtered:", len(open), open[0].Values["number"], open[0].Values["total"])
+	rows, _ := db.SQL(ctx, `SELECT count(*) AS n, sum(total) AS cents FROM Invoice`, nil)
+	fmt.Println("sql:", rows.Columns, rows.Rows[0])
+
 	// A definition's problems come back at once, each with a place.
 	_, err = db.DefineClass(ctx, []byte(`{"name": "Receipt", "variables": {"amount": {"type": "money", "default": "1"}, "paid": {"type": "bool", "formula": "amount"}}}`))
 	var diags fado.Diagnostics
@@ -108,6 +115,8 @@ func Example() {
 	// read_only total
 	// version 1 100.00 EUR alice false
 	// version 2 90.00 EUR alice true
+	// filtered: 1 2026-0042 90.00 EUR
+	// sql: [n cents] [1 9000]
 	// /variables/amount/default type_mismatch
 	// /variables/paid/formula type_mismatch
 }

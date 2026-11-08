@@ -1,5 +1,25 @@
-// Package query implements the JSON filter DSL and the read-only SQL
-// endpoint with predicate injection.
+// Package query compiles the JSON filter of the Go API and the command set
+// into SQL over a class's view, and guards the read-only SQL endpoint
+// (docs/architecture.md, "Querying"; ADR-0038).
 //
-// Not implemented yet. See docs/architecture.md.
+// A Filter names a class and gives a where formula over the class's
+// variables and the system columns, an order, a limit, an offset and the
+// fields to return. The formula is bound by the formula engine and
+// translated by its SQL generator, so a filter means exactly what the same
+// expression means in a formula: blanks read as 0 and "", comparisons
+// follow ADR-0019, and a row on which the formula stops with an error does
+// not match. Beside that exact predicate the compiler adds, for every
+// comparison of a column with a literal in the top-level AND of the
+// formula, the same comparison on the bare column, which SQLite can answer
+// from an index; it is exact because a literal that a blank would not
+// satisfy never matches a blank row, and when a blank would satisfy it,
+// the blank rows are added back.
+//
+// Authorizer is the function the read-only SQL endpoint installs on its
+// connection: SELECT, reads through the views and function calls are
+// allowed; reads of the physical tables, writes, schema changes, pragmas
+// and attachments are refused.
+//
+// Access rules and field rights (Phases 5) are not applied yet: a filter
+// and a SQL statement see every row and every column.
 package query

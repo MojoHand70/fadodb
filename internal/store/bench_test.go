@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -160,4 +161,67 @@ func BenchmarkLookupStatement(b *testing.B) { benchLookup(b, lookupScanClass, Op
 // index, the cold budget of ADR-0016 under 100 µs.
 func BenchmarkLookupKeyedStatement(b *testing.B) {
 	benchLookup(b, lookupClass, Options{MaxIndexedRows: 1})
+}
+
+// BenchmarkFilter is the indexed-filter budget of ADR-0012: an equality
+// on an indexed text variable over FADODB_BENCH_DOCS documents (100,000
+// by default), and for contrast the same over a plain number column. It
+// writes to disk and runs only with FADODB_BENCH_DIR, like
+// BenchmarkCommit.
+func BenchmarkFilter(b *testing.B) {
+	dir := os.Getenv("FADODB_BENCH_DIR")
+	if dir == "" {
+		b.Skip("set FADODB_BENCH_DIR to a directory on disk to run the filter benchmark")
+	}
+	n := 100000
+	if v := os.Getenv("FADODB_BENCH_DOCS"); v != "" {
+		fmt.Sscanf(v, "%d", &n)
+	}
+	path := filepath.Join(dir, fmt.Sprintf("filter-%d.fado", time.Now().UnixNano()))
+	defer func() {
+		for _, suffix := range []string{"", "-wal", "-shm"} {
+			os.Remove(path + suffix)
+		}
+	}()
+	s, err := Open(path, Options{})
+	if err != nil {
+		b.Fatal(err)
+	}
+	defer s.Close()
+	ctx := context.Background()
+	if _, err := s.DefineClass(ctx, []byte(`{"name": "Ticket", "variables": {"number": {"type": "text", "index": true}, "priority": {"type": "number"}, "owner": {"type": "text"}}}`)); err != nil {
+		b.Fatal(err)
+	}
+	start := time.Now()
+	for i := 0; i < n; i++ {
+		if _, err := s.Create(ctx, "Ticket", Values{"number": fmt.Sprintf("T-%07d", i), "priority": float64(i % 7), "owner": fmt.Sprintf("u%d", i%100)}); err != nil {
+			b.Fatal(err)
+		}
+	}
+	b.Logf("%d documents created in %s", n, time.Since(start).Round(time.Millisecond))
+	for _, bc := range []struct {
+		name string
+		f    Filter
+	}{
+		{"indexed equality", Filter{Class: "Ticket", Where: fmt.Sprintf("number = \"T-%07d\"", n/2)}},
+		{"indexed range", Filter{Class: "Ticket", Where: fmt.Sprintf("number >= \"T-%07d\" AND number < \"T-%07d\"", n/2, n/2+10), Limit: 10}},
+		{"plain column, first 10", Filter{Class: "Ticket", Where: "priority = 3 AND owner = \"u7\"", Limit: 10}},
+		{"count over a plain column", Filter{Class: "Ticket", Where: "priority = 3"}},
+	} {
+		b.Run(bc.name, func(b *testing.B) {
+			b.ReportAllocs()
+			for b.Loop() {
+				if strings.HasPrefix(bc.name, "count") {
+					if _, err := s.Count(ctx, bc.f); err != nil {
+						b.Fatal(err)
+					}
+					continue
+				}
+				docs, err := s.Query(ctx, bc.f)
+				if err != nil || len(docs) == 0 {
+					b.Fatalf("%v, %d documents", err, len(docs))
+				}
+			}
+		})
+	}
 }

@@ -1,6 +1,6 @@
 # ADR-0020: LOOKUP and QUERY execution: one engine call per invocation
 
-- Status: Accepted; amends ADR-0015 and ADR-0016
+- Status: Accepted; amends ADR-0015 and ADR-0016; amended by ADR-0036 (the index threshold), ADR-0037 (the condition as a program of its own, LOOKUP in this build)
 - Date: 2026-11-06
 
 ## Context

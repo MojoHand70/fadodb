@@ -73,7 +73,7 @@ func TestBind_Errors(t *testing.T) {
 		{"YEAR(name)", "YEAR: argument 1 must be a date or a datetime, got text; DATEVALUE converts text to a date", 6},
 		{"THIS.qty", "THIS.qty is only valid inside LOOKUP and QUERY", 1},
 		{`REGEXREPLACE(name, "(", "")`, `REGEXREPLACE: invalid pattern "("`, 1},
-		{"LOOKUP(t, c, x = 1)", "LOOKUP is not implemented yet", 1},
+		{"LOOKUP(t, c, x = 1)", "unknown source t", 8},
 	}
 	for _, c := range cases {
 		_, err := Bind(c.src, scope, BindOptions{})

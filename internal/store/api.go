@@ -97,6 +97,7 @@ type options struct {
 	businessDate    time.Time
 	hasBusinessDate bool
 	id              string
+	replace         bool
 }
 
 // As runs the call as the principal.
@@ -115,6 +116,10 @@ func BusinessDate(day time.Time) Option {
 
 // WithID gives a new document the caller's id instead of a generated one.
 func WithID(id string) Option { return func(o *options) { o.id = id } }
+
+// Replace makes an import empty the table first, so that the rows given
+// are all the rows.
+func Replace() Option { return func(o *options) { o.replace = true } }
 
 func apply(opts []Option) options {
 	var o options

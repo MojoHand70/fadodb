@@ -18,10 +18,14 @@ add left to right on every evaluator so that aggregates agree to the
 last bit, rather than differing within what ADR-0019 allows them. The
 browser VM does not exist yet.
 Object field paths (ADR-0031) bind and evaluate on every target: a leaf
-is one slot of the field's type. Whole objects in a formula, `ISBLANK` of
-an object, object equality and computed object variables are not
-implemented yet, nor are the other composites, arrays and rows, and the
-query functions; the binder refuses them, and the binding suite says so.
+is one slot of the field's type. `LOOKUP` against an explicit table
+(ADR-0016, ADR-0020, ADR-0037) binds and evaluates on every target: the
+`lookup` suite declares its tables with their rows under `sources`, the
+Go VM answers them from an in-memory executor and the SQL dialects from
+the tables created in the database. Whole objects in a formula, `ISBLANK`
+of an object, object equality and computed object variables are not
+implemented yet, nor are the other composites, arrays and rows, and
+`QUERY`; the binder refuses them, and the binding suite says so.
 
 Known, documented differences of the SQL targets: `VALUE` and `DATEVALUE`
 trim spaces only on DuckDB where the VM trims all whitespace; `UPPER` of
@@ -64,6 +68,11 @@ One file per topic:
   codes in ADR-0019 and ADR-0020.
 - `type` pins the static type of the formula. A date result must declare
   `"type": "date"` so that `expected` can be written as text.
+- `sources` declares explicit tables a `LOOKUP` may read (ADR-0020): by
+  name, `columns` as name to scalar type, `key` as the columns that order
+  the table and identify a row, and `rows` as objects in the notation of
+  `inputs`, an absent column blank. Inside a `LOOKUP` a bare name is a
+  column of the source and `THIS.name` a declared variable.
 - `limits` sets the size limits the suite evaluates under, `{"max_text":
   N}` code points (ADR-0021); absent, the defaults. The `limits` suite runs
   at a small limit so that short texts reach the boundary.
@@ -76,7 +85,8 @@ Formulas the binder must accept and formulas it must refuse at definition
 time by the static typing rules of ADR-0019, in a `mode` of `any` (the
 default), `auto` (ADR-0015) or `pure` (the class title of ADR-0018 and
 the presentation formulas of ADR-0032). Same shape as the syntax cases,
-plus `mode` and, as in the evaluation cases, `schemas`.
+plus `mode` and, as in the evaluation cases, `schemas` and `sources`
+(whose rows may be left out).
 
 ## Syntax cases: `syntax/*.json`
 

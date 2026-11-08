@@ -1,0 +1,37 @@
+{
+  "suite": "lookup",
+  "description": "What the binder accepts and refuses in LOOKUP (ADR-0016, ADR-0020): the source is a table by name, the column one of its columns, the condition a condition over the source's columns, with the document's variables as THIS.name; a query function does not nest inside another's arguments.",
+  "variables": {"code": "text", "qty": "number", "shipping": "object<Address>"},
+  "schemas": {"Address": {"city": "text"}},
+  "sources": {
+    "Rates": {"key": ["code"], "columns": {"code": "text", "rate": "decimal(6)", "active": "bool"}}
+  },
+  "accept": [
+    "LOOKUP(Rates, rate, code = THIS.code)",
+    "LOOKUP(Rates, rate, TRUE)",
+    "LOOKUP(Rates, code, rate > 1)",
+    "LOOKUP(Rates, code, active)",
+    "LOOKUP(Rates, rate, code = UPPER(THIS.code))",
+    "LOOKUP(Rates, rate, code = THIS.code AND rate > DECIMAL(THIS.qty, 0))",
+    "IFERROR(LOOKUP(Rates, rate, code = THIS.code), 0)",
+    "NUMBER(LOOKUP(Rates, rate, code = THIS.code)) * qty",
+    "lookup(rates, RATE, CODE = this.Code)"
+  ],
+  "reject": [
+    {"formula": "LOOKUP(Nope, rate, TRUE)", "reason": "unknown source"},
+    {"formula": "LOOKUP(Rates, nope, TRUE)", "reason": "unknown column"},
+    {"formula": "LOOKUP(Rates, rate)", "reason": "LOOKUP takes three arguments"},
+    {"formula": "LOOKUP(Rates, rate, code)", "reason": "the condition must be a condition; code is text"},
+    {"formula": "LOOKUP(Rates, rate, qty = 1)", "reason": "inside the condition a bare name is a column; the document's qty is THIS.qty"},
+    {"formula": "LOOKUP(Rates, rate, THIS.nope = 1)", "reason": "THIS names a variable the document lacks"},
+    {"formula": "THIS.code", "reason": "THIS is only valid inside LOOKUP and QUERY"},
+    {"formula": "LOOKUP(Rates, rate, code = THIS.code) + THIS.qty", "reason": "THIS outside a query function"},
+    {"formula": "LOOKUP(Rates, rate, code = LOOKUP(Rates, code, TRUE))", "reason": "a query function does not nest inside another's arguments"},
+    {"formula": "LOOKUP(Rates, rate, code = THIS.shipping)", "reason": "only scalar variables are reachable through THIS yet"},
+    {"formula": "LOOKUP(Rates, rate, shipping.city = code)", "reason": "a field path inside a condition"},
+    {"formula": "LOOKUP(\"Rates\", rate, TRUE)", "reason": "the source is a name, not text"},
+    {"formula": "LOOKUP(Rates, \"rate\", TRUE)", "reason": "the column is a name, not text"},
+    {"formula": "LOOKUP(Rates, rate, code = THIS.qty)", "reason": "a text column compared with a number"},
+    {"formula": "QUERY(Rates, rate)", "reason": "QUERY is not implemented yet"}
+  ]
+}

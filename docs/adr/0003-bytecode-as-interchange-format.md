@@ -1,6 +1,6 @@
 # ADR-0003: Bytecode as the interchange format
 
-- Status: Accepted; amended by ADR-0029 (the browser VM ships as one plain JavaScript file)
+- Status: Accepted; amended by ADR-0029 (the browser VM ships as one plain JavaScript file), ADR-0037 (format v3: the query slot carries the LOOKUP condition)
 - Date: 2026-11-05
 
 ## Context

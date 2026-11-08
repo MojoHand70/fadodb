@@ -1,0 +1,17 @@
+{
+  "suite": "lookup-auto",
+  "description": "An auto formula may call LOOKUP against an explicit table (ADR-0015), and its condition is bound in the same mode, so a context function inside it is refused as it would be outside.",
+  "mode": "auto",
+  "variables": {"code": "text"},
+  "sources": {
+    "Rates": {"key": ["code"], "columns": {"code": "text", "rate": "decimal(6)", "owner": "text"}}
+  },
+  "accept": [
+    "LOOKUP(Rates, rate, code = THIS.code)",
+    "LOOKUP(Rates, rate, code = UPPER(THIS.code))"
+  ],
+  "reject": [
+    {"formula": "LOOKUP(Rates, rate, owner = USER())", "reason": "a context function inside an auto formula's lookup"},
+    {"formula": "LOOKUP(Rates, rate, code = THIS.code) & USER()", "reason": "a context function in an auto formula"}
+  ]
+}

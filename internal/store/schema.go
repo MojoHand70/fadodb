@@ -16,6 +16,7 @@ var engineDDL = []string{
 	`CREATE TABLE IF NOT EXISTS schemas (name TEXT PRIMARY KEY COLLATE NOCASE, version INTEGER NOT NULL, json TEXT NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)`,
 	`CREATE TABLE IF NOT EXISTS classes (name TEXT PRIMARY KEY COLLATE NOCASE, version INTEGER NOT NULL, json TEXT NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)`,
 	`CREATE TABLE IF NOT EXISTS class_versions (class TEXT NOT NULL COLLATE NOCASE, version INTEGER NOT NULL, json TEXT NOT NULL, created_at INTEGER NOT NULL, PRIMARY KEY (class, version))`,
+	`CREATE TABLE IF NOT EXISTS tables_registry (name TEXT PRIMARY KEY COLLATE NOCASE, version INTEGER NOT NULL, binding TEXT NOT NULL, json TEXT NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)`,
 	`CREATE TABLE IF NOT EXISTS events (event_id TEXT PRIMARY KEY, class TEXT NOT NULL, doc_id TEXT NOT NULL, kind TEXT NOT NULL, name TEXT, from_state TEXT, to_state TEXT,
 		actor_id TEXT, before_version INTEGER, after_version INTEGER, cause_event_id TEXT, command_key TEXT, command_hash TEXT, business_date INTEGER NOT NULL, ts INTEGER NOT NULL)`,
 	`CREATE UNIQUE INDEX IF NOT EXISTS events_command_key ON events (command_key)`,

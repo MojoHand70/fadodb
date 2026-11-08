@@ -64,8 +64,12 @@ type VM struct {
 	// Limits are the size limits of the database the programs belong to
 	// (ADR-0021). NewVM sets the defaults; set others before Run.
 	Limits Limits
+	// Executor answers LOOKUP (ADR-0020). A program with a lookup and no
+	// executor stops with query_failed.
+	Executor QueryExecutor
 
 	stack []Value
+	qargs []Value
 	ctx   *Context
 	// tries is the handler stack of IFERROR and nt its depth, kept out
 	// of the instruction loop's registers since only try, end.try and an
@@ -235,8 +239,28 @@ func (vm *VM) Run(p *Program, vars []Value, ctx *Context) (Value, error) {
 			sp -= argc
 			stack[sp] = v
 			sp++
-		case OpLookup, OpQuery:
-			err = &EvalError{Code: ErrQueryFailed, Msg: "query functions are not implemented yet"}
+		case OpLookup:
+			q := &p.Queries[in.Arg]
+			if vm.Executor == nil {
+				err = errNoExecutor
+				break
+			}
+			if cap(vm.qargs) < len(q.Args) {
+				vm.qargs = make([]Value, len(q.Args))
+			}
+			args := vm.qargs[:len(q.Args)]
+			for i, a := range q.Args {
+				args[i] = vars[a]
+			}
+			v, e := vm.Executor.Lookup(q, args, vm.ctx)
+			if e != nil {
+				err = e
+				break
+			}
+			stack[sp] = v
+			sp++
+		case OpQuery:
+			err = &EvalError{Code: ErrQueryFailed, Msg: "QUERY is not implemented yet"}
 		case OpReturn:
 			return stack[sp-1], nil
 		default:
@@ -273,6 +297,7 @@ var (
 	errModByZero   = &EvalError{Code: ErrDivByZero, Msg: "MOD by zero"}
 	errDateRange   = &EvalError{Code: ErrOutOfRange, Msg: "the date is outside year 1 to year 9999"}
 	errCurrencyMix = &EvalError{Code: ErrCurrencyMismatch, Msg: "the currencies of one operation must agree"}
+	errNoExecutor  = &EvalError{Code: ErrQueryFailed, Msg: "no query executor: the formula reads a table and the VM has nothing to read it with"}
 )
 
 // notFinite reports an infinite or NaN result with one comparison: the

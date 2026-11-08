@@ -46,7 +46,18 @@ func TestConformance_DuckDB(t *testing.T) {
 		if err != nil {
 			t.Fatalf("%s: %v", s.File, err)
 		}
+		sources, err := s.SourceSet()
+		if err != nil {
+			t.Fatalf("%s: %v", s.File, err)
+		}
+		rows, err := s.SourceRows()
+		if err != nil {
+			t.Fatalf("%s: %v", s.File, err)
+		}
 		ds := d.WithLimits(s.EvalLimits())
+		if err := formula.SetupSources(db, ds, rows); err != nil {
+			t.Fatalf("%s: %v", s.File, err)
+		}
 		for i := range s.Cases {
 			c := &s.Cases[i]
 			total++
@@ -58,7 +69,7 @@ func TestConformance_DuckDB(t *testing.T) {
 				failed++
 				t.Errorf("%s\n    %s", label, fmt.Sprintf(format, args...))
 			}
-			prog, err := formula.Bind(c.Formula, scope, formula.BindOptions{})
+			prog, err := formula.Bind(c.Formula, scope, formula.BindOptions{Sources: sources})
 			if err != nil {
 				fail("bind: %v", err)
 				continue

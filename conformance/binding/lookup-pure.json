@@ -1,0 +1,15 @@
+{
+  "suite": "lookup-pure",
+  "description": "A title or a presentation formula is pure (ADR-0018, ADR-0032): it may not read a table.",
+  "mode": "pure",
+  "variables": {"code": "text"},
+  "sources": {
+    "Rates": {"key": ["code"], "columns": {"code": "text", "name": "text"}}
+  },
+  "accept": [
+    "\"Rate \" & code"
+  ],
+  "reject": [
+    {"formula": "LOOKUP(Rates, name, code = THIS.code)", "reason": "a lookup in a pure formula"}
+  ]
+}

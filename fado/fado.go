@@ -43,6 +43,8 @@ type (
 	Error = store.Error
 	// Class is a compiled class definition.
 	Class = model.Class
+	// Table is a compiled explicit table definition (ADR-0016).
+	Table = model.Table
 	// Schema is a resolved named schema (ADR-0031).
 	Schema = model.Schema
 	// Diagnostics are the findings of a class or schema definition; the
@@ -65,6 +67,9 @@ func BusinessDate(day time.Time) Option { return store.BusinessDate(day) }
 
 // WithID gives a new document the caller's id.
 func WithID(id string) Option { return store.WithID(id) }
+
+// Replace makes ImportRows empty the table before writing the rows.
+func Replace() Option { return store.Replace() }
 
 // DB is an open database.
 type DB struct {
@@ -101,6 +106,30 @@ func (db *DB) DefineSchema(ctx context.Context, definition []byte) (*Schema, err
 
 // Classes lists the class names in definition order.
 func (db *DB) Classes() []string { return db.s.Classes() }
+
+// DefineTable compiles an explicit table definition in JSON, creates the
+// table and its view and stores it; formulas read it through LOOKUP.
+func (db *DB) DefineTable(ctx context.Context, definition []byte) (*Table, error) {
+	return db.s.DefineTable(ctx, definition)
+}
+
+// ImportRows writes rows into a table, each a map of column to value,
+// replacing a row whose key exists; with Replace, the table is emptied
+// first. It returns the number of rows written.
+func (db *DB) ImportRows(ctx context.Context, table string, rows []Values, opts ...Option) (int, error) {
+	return db.s.ImportRows(ctx, table, rows, opts...)
+}
+
+// TableRows reads every row of a table in key order.
+func (db *DB) TableRows(ctx context.Context, table string) ([]Values, error) {
+	return db.s.TableRows(ctx, table)
+}
+
+// Tables lists the table names in definition order.
+func (db *DB) Tables() []string { return db.s.Tables() }
+
+// Table returns a compiled table definition by name.
+func (db *DB) Table(name string) (*Table, bool) { return db.s.Table(name) }
 
 // Class returns a compiled class by name.
 func (db *DB) Class(name string) (*Class, bool) { return db.s.Class(name) }

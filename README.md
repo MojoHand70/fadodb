@@ -11,10 +11,12 @@ An embeddable **active document database**, written in Go, MIT licensed.
 > Phase 2, the document model and store, is in progress.**
 > `fadodb formula eval` evaluates a formula on the Go VM and shows the SQL the
 > engine generates for SQLite and DuckDB. The Go API (`fado`) opens a
-> database file, defines classes and schemas, and creates, changes, reads
-> and deletes documents as commits with recalculation, typed history and an
-> event log; the statechart, rules, access rules, queries and the server
-> come in later phases. See [ROADMAP.md](ROADMAP.md).
+> database file, defines classes, schemas and explicit tables that
+> formulas read through `LOOKUP`, and creates, changes, reads and deletes
+> documents as commits with recalculation, typed history and an event
+> log; the statechart, rules, access rules, `QUERY`, the filter DSL, the
+> SQL endpoint and the server come in later phases. See
+> [ROADMAP.md](ROADMAP.md).
 
 ## What it will be
 

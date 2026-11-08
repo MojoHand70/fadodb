@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"strings"
 )
 
 // Bytecode format v1 (ADR-0003). A program is a stack machine over Values
@@ -109,11 +110,49 @@ type Slot struct {
 	Type Type
 }
 
-// QuerySlot is a compiled LOOKUP or QUERY call (ADR-0020). Reserved: the
-// binder does not emit them yet.
+// QuerySlot is a compiled LOOKUP call (ADR-0020): the source and the
+// column it returns; the condition as a program of its own over the
+// source's columns, named by column, and the document variables it reads
+// as THIS.name, named "THIS.<variable>"; the slots of the enclosing
+// program those variables live in; and, when the condition is one
+// equality of a column with an expression of the document alone, that
+// expression as a program, so that an index on the column can serve the
+// lookup (ADR-0036). QUERY arrives with Phase 4.
 type QuerySlot struct {
 	Source string
-	Args   []int32
+	Column string
+	// Type is the column's type, which is the type of the lookup.
+	Type Type
+	// Order lists the source's key columns: "first row" is first in this
+	// order.
+	Order []string
+	// Args are the slots of the enclosing program whose values the
+	// condition reads as THIS.name, and ArgNames those variables' names,
+	// so that a slot "THIS.<name>" of Cond or Key maps to Args[i].
+	Args     []int32
+	ArgNames []string
+	// Cond is the condition; a row matches when it is TRUE, and a row on
+	// which it stops with an error does not match.
+	Cond *Program
+	// Key is the compared expression of an equality condition, nil for
+	// any other shape, and IndexColumn the column it is compared with.
+	Key         *Program
+	IndexColumn string
+}
+
+// ArgIndex returns the position in Args of a "THIS.<name>" slot of Cond or
+// Key, or -1 when the slot is a column.
+func (q *QuerySlot) ArgIndex(slotName string) int {
+	name, ok := strings.CutPrefix(slotName, "THIS.")
+	if !ok {
+		return -1
+	}
+	for i, a := range q.ArgNames {
+		if strings.EqualFold(a, name) {
+			return i
+		}
+	}
+	return -1
 }
 
 // DecConst is an exact constant: a mantissa at a scale (ADR-0022).
@@ -162,7 +201,7 @@ func (p *Program) ClaimExact(t Type) bool {
 // Format constants.
 const (
 	formatMagic   = "FADO"
-	formatVersion = 2
+	formatVersion = 3
 )
 
 // Encode serializes the program in the binary format.
@@ -207,10 +246,20 @@ func (p *Program) Encode() []byte {
 	w.u32(uint32(len(p.Queries)))
 	for _, q := range p.Queries {
 		w.str(q.Source)
-		w.u32(uint32(len(q.Args)))
-		for _, a := range q.Args {
-			w.i32(a)
+		w.str(q.Column)
+		w.str(q.Type.String())
+		w.u32(uint32(len(q.Order)))
+		for _, o := range q.Order {
+			w.str(o)
 		}
+		w.u32(uint32(len(q.Args)))
+		for i, a := range q.Args {
+			w.i32(a)
+			w.str(q.ArgNames[i])
+		}
+		w.program(q.Cond)
+		w.program(q.Key)
+		w.str(q.IndexColumn)
 	}
 	w.u32(uint32(p.MaxStack))
 	return b.Bytes()
@@ -282,11 +331,24 @@ func Decode(data []byte) (*Program, error) {
 	}
 	n = r.count()
 	for i := uint32(0); i < n; i++ {
-		q := QuerySlot{Source: r.str()}
+		q := QuerySlot{Source: r.str(), Column: r.str()}
+		t, err := ParseType(r.str())
+		if err != nil && r.err == nil {
+			r.err = err
+		}
+		q.Type = t
 		m := r.count()
 		for j := uint32(0); j < m; j++ {
-			q.Args = append(q.Args, r.i32())
+			q.Order = append(q.Order, r.str())
 		}
+		m = r.count()
+		for j := uint32(0); j < m; j++ {
+			q.Args = append(q.Args, r.i32())
+			q.ArgNames = append(q.ArgNames, r.str())
+		}
+		q.Cond = r.program()
+		q.Key = r.program()
+		q.IndexColumn = r.str()
 		p.Queries = append(p.Queries, q)
 	}
 	p.MaxStack = int(r.u32())
@@ -342,6 +404,15 @@ func (p *Program) validate() error {
 			if in.Arg < 0 || int(in.Arg) >= len(p.Queries) {
 				return fmt.Errorf("instruction %d: query slot %d out of range", i, in.Arg)
 			}
+			q := &p.Queries[in.Arg]
+			if q.Cond == nil || q.Column == "" || len(q.Args) != len(q.ArgNames) || q.Key != nil && q.IndexColumn == "" {
+				return fmt.Errorf("instruction %d: query slot %d is incomplete", i, in.Arg)
+			}
+			for _, a := range q.Args {
+				if a < 0 || int(a) >= len(p.Slots) {
+					return fmt.Errorf("instruction %d: query argument slot %d out of range", i, a)
+				}
+			}
 		default:
 			if int(in.Op) >= len(opNames) {
 				return fmt.Errorf("instruction %d: unknown opcode %d", i, in.Op)
@@ -352,6 +423,18 @@ func (p *Program) validate() error {
 }
 
 type encoder struct{ w *bytes.Buffer }
+
+// program writes a nested program as a length and its encoding, a zero
+// length for nil.
+func (e *encoder) program(p *Program) {
+	if p == nil {
+		e.u32(0)
+		return
+	}
+	b := p.Encode()
+	e.u32(uint32(len(b)))
+	e.w.Write(b)
+}
 
 func (e *encoder) u8(v uint8)   { e.w.WriteByte(v) }
 func (e *encoder) u16(v uint16) { _ = binary.Write(e.w, binary.BigEndian, v) }
@@ -372,6 +455,26 @@ func (d *decoder) read(v any) {
 	if d.err == nil {
 		d.err = binary.Read(d.r, binary.BigEndian, v)
 	}
+}
+
+// program reads a nested program written by encoder.program: nil for a
+// zero length.
+func (d *decoder) program() *Program {
+	n := d.count()
+	if n == 0 || d.err != nil {
+		return nil
+	}
+	buf := make([]byte, n)
+	if _, err := io.ReadFull(d.r, buf); err != nil {
+		d.err = err
+		return nil
+	}
+	p, err := Decode(buf)
+	if err != nil {
+		d.err = err
+		return nil
+	}
+	return p
 }
 
 func (d *decoder) u8() uint8   { var v uint8; d.read(&v); return v }

@@ -407,6 +407,17 @@ document stack with analytical data in one engine. Joins across bindings are
 only available there; the lite build answers `LOOKUP` and `QUERY` from
 SQLite with a documented subset of capabilities.
 
+Today a table is defined in JSON, `{"name": "Rates", "columns": {"code":
+"text", "rate": "decimal(6)"}, "key": ["code"]}`, stored as `tbl_Rates`
+with the view `Rates`, filled by the Go API's `ImportRows`, and read by
+`LOOKUP` in auto formulas and defaults; only the `sqlite` binding exists,
+`QUERY` and the `table.*` actions arrive with Phase 4 (ADR-0037). A lookup
+whose condition is one equality of a column with an expression of the
+document is answered from an in-memory index while the table has at most
+`MaxIndexedRows` rows, and through a prepared statement narrowed by the
+table's index above that; every other condition runs as a statement
+(ADR-0036).
+
 ### Security
 
 - The principal comes from the embedder on every call: an id, groups, an

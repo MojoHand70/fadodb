@@ -97,6 +97,20 @@ func (DuckDB) Pow(x, y string) string { return "pow(" + x + ", " + y + ")" }
 // Param implements Dialect.
 func (DuckDB) Param(name string) string { return "$" + name }
 
+// ColumnType implements Dialect: DOUBLE for a number and for the days
+// and seconds of dates, BIGINT for a mantissa, BOOLEAN, VARCHAR.
+func (DuckDB) ColumnType(k Kind) string {
+	switch k {
+	case KindNumber, KindDate, KindDateTime:
+		return "DOUBLE"
+	case KindDecimal, KindMoney:
+		return "BIGINT"
+	case KindBool:
+		return "BOOLEAN"
+	}
+	return "VARCHAR"
+}
+
 // ContextArgs implements Dialect: groups bind as a list of text.
 func (DuckDB) ContextArgs(ctx *Context) []any {
 	now, user, groups := contextValues(ctx)

@@ -73,7 +73,10 @@ type Variable struct {
 	// Deps are the variables the formula or default reads, by declared
 	// name, an object by its variable name whichever leaf was read.
 	Deps []string
-	Def  *VariableDef
+	// Sources are the explicit tables the formula or default reads
+	// through LOOKUP, by name.
+	Sources []string
+	Def     *VariableDef
 }
 
 // ComputeMode is how a computed variable recalculates (ADR-0015).
@@ -177,14 +180,34 @@ func (c *Class) Variable(name string) (*Variable, bool) {
 	return v, ok
 }
 
-// Define parses and compiles a class definition in one step.
+// Env is what a definition compiles against: the schemas its objects
+// name and the explicit tables its formulas may read (ADR-0016). A nil
+// Schemas is the vocabulary alone; nil Sources are none.
+type Env struct {
+	Schemas *SchemaSet
+	Sources formula.Sources
+}
+
+// Define parses and compiles a class definition in one step, against the
+// schemas and no tables.
 func Define(data []byte, schemas *SchemaSet) (*Class, Diagnostics) {
+	return DefineIn(data, Env{Schemas: schemas})
+}
+
+// DefineIn parses and compiles a class definition against an environment.
+func DefineIn(data []byte, env Env) (*Class, Diagnostics) {
 	def, diags := Parse(data)
 	if def == nil {
 		return nil, diags
 	}
-	cls, more := Compile(def, schemas)
+	cls, more := CompileIn(def, env)
 	return cls, append(diags, more...)
+}
+
+// Compile validates and compiles a definition against the schemas and no
+// tables.
+func Compile(def *Definition, schemas *SchemaSet) (*Class, Diagnostics) {
+	return CompileIn(def, Env{Schemas: schemas})
 }
 
 // reservedClassNames are the tables and views the database itself owns,
@@ -194,14 +217,15 @@ var reservedClassNames = map[string]bool{
 	"layouts": true, "outbox": true, "blobs": true, "tables_registry": true, "schema_version": true, "metadata": true,
 }
 
-// Compile validates a definition against the schemas and compiles it. It
-// reports every finding it can, not the first: a class with three wrong
-// formulas earns three diagnostics.
-func Compile(def *Definition, schemas *SchemaSet) (*Class, Diagnostics) {
+// CompileIn validates a definition against the environment and compiles
+// it. It reports every finding it can, not the first: a class with three
+// wrong formulas earns three diagnostics.
+func CompileIn(def *Definition, env Env) (*Class, Diagnostics) {
+	schemas := env.Schemas
 	if schemas == nil {
 		schemas = NewSchemaSet()
 	}
-	c := &collector{}
+	c := &collector{env: env}
 	cls := &Class{Name: def.Name, Version: def.Version, Label: def.Label, Plural: def.Plural, Description: def.Description,
 		Icon: def.Icon, Color: def.Color, Def: def, byName: map[string]*Variable{}}
 	if c.checkName("/name", def.Name, reservedClassNames) && strings.HasPrefix(strings.ToLower(def.Name), "doc_") {
@@ -262,6 +286,7 @@ func Compile(def *Definition, schemas *SchemaSet) (*Class, Diagnostics) {
 				if prog := bindAs(c, path+"/formula", v.Def.Formula, scope, mode, v.Type); prog != nil {
 					v.Formula = prog
 					v.Deps = depsOf(prog)
+					v.Sources = sourcesOf(prog)
 				}
 			}
 			for i, t := range v.Def.On {
@@ -273,6 +298,7 @@ func Compile(def *Definition, schemas *SchemaSet) (*Class, Diagnostics) {
 			if prog := bindAs(c, path+"/default", v.Def.Default, scope, formula.ModeAny, v.Type); prog != nil {
 				v.Default = prog
 				v.Deps = depsOf(prog)
+				v.Sources = sourcesOf(prog)
 				for _, d := range v.Deps {
 					if dv, ok := cls.Variable(d); ok && dv.Computed {
 						c.hint(CodeNotAllowed, path+"/default", "a default may read input variables only; "+dv.Name+" is computed",
@@ -283,7 +309,7 @@ func Compile(def *Definition, schemas *SchemaSet) (*Class, Diagnostics) {
 		}
 	}
 	if def.Title != "" {
-		prog, err := formula.Bind(def.Title, scope, formula.BindOptions{Mode: formula.ModePure})
+		prog, err := c.bind(def.Title, scope, formula.ModePure)
 		switch {
 		case err != nil:
 			c.formulaErr("/title", err)
@@ -628,7 +654,7 @@ func inferTypes(c *collector, cls *Class, schemas *SchemaSet) {
 		if v.Mode == ModeTriggered {
 			mode = formula.ModeAny
 		}
-		prog, err := formula.Bind(v.Def.Formula, scopeOf(cls.Variables), formula.BindOptions{Mode: mode})
+		prog, err := c.bind(v.Def.Formula, scopeOf(cls.Variables), mode)
 		if err != nil {
 			c.formulaErr(path+"/formula", err)
 			continue
@@ -640,6 +666,7 @@ func inferTypes(c *collector, cls *Class, schemas *SchemaSet) {
 		v.Type = prog.Result
 		v.Formula = prog
 		v.Deps = depsOf(prog)
+		v.Sources = sourcesOf(prog)
 		checkInferred(c, path, v)
 	}
 }
@@ -664,38 +691,49 @@ func checkInferred(c *collector, path string, v *Variable) {
 }
 
 // namesIn lists the variable names a parsed formula mentions, the base of
-// every path included.
+// every path included. Inside LOOKUP and QUERY a bare name is a column of
+// the source and the document's variables are THIS.name (ADR-0020).
 func namesIn(n formula.Node) []string {
 	var names []string
-	var walk func(formula.Node)
-	walk = func(n formula.Node) {
+	var walk func(formula.Node, bool)
+	walk = func(n formula.Node, inQuery bool) {
 		switch n := n.(type) {
 		case *formula.Ident:
-			names = append(names, n.Name)
+			if !inQuery {
+				names = append(names, n.Name)
+			}
 		case *formula.Member:
-			names = append(names, n.Base)
+			if !inQuery {
+				names = append(names, n.Base)
+			}
+		case *formula.ThisRef:
+			names = append(names, n.Name)
 		case *formula.Unary:
-			walk(n.X)
+			walk(n.X, inQuery)
 		case *formula.Binary:
-			walk(n.L)
-			walk(n.R)
+			walk(n.L, inQuery)
+			walk(n.R, inQuery)
 		case *formula.If:
-			walk(n.Cond)
-			walk(n.Then)
-			walk(n.Else)
+			walk(n.Cond, inQuery)
+			walk(n.Then, inQuery)
+			walk(n.Else, inQuery)
 		case *formula.Call:
-			for _, a := range n.Args {
-				walk(a)
+			query := n.Name == "LOOKUP" || n.Name == "QUERY"
+			for i, a := range n.Args {
+				if query && i < 2 {
+					continue
+				}
+				walk(a, inQuery || query)
 			}
 		}
 	}
-	walk(n)
+	walk(n, false)
 	return names
 }
 
 // bindAs binds a formula that must produce a value of the declared type.
 func bindAs(c *collector, path, src string, scope *formula.Scope, mode formula.Mode, want formula.Type) *formula.Program {
-	prog, err := formula.Bind(src, scope, formula.BindOptions{Mode: mode})
+	prog, err := c.bind(src, scope, mode)
 	if err != nil {
 		c.formulaErr(path, err)
 		return nil
@@ -715,7 +753,7 @@ func bindCondition(c *collector, path, src string, scope *formula.Scope, what st
 	if src == "" {
 		return nil
 	}
-	prog, err := formula.Bind(src, scope, formula.BindOptions{})
+	prog, err := c.bind(src, scope, formula.ModeAny)
 	if err != nil {
 		c.formulaErr(path, err)
 		return nil
@@ -786,6 +824,23 @@ func depsOf(prog *formula.Program) []string {
 		}
 	}
 	return deps
+}
+
+// sourcesOf lists the explicit tables a program reads, by name, once each.
+func sourcesOf(prog *formula.Program) []string {
+	var out []string
+	for _, q := range prog.Queries {
+		found := false
+		for _, s := range out {
+			if upper(s) == upper(q.Source) {
+				found = true
+			}
+		}
+		if !found {
+			out = append(out, q.Source)
+		}
+	}
+	return out
 }
 
 // checkTrigger reads one trigger of a triggered variable.

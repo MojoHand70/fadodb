@@ -118,9 +118,16 @@ const (
 	CodeNotSupported = "not_supported"
 )
 
-// collector gathers diagnostics while compiling.
+// collector gathers diagnostics while compiling, and carries the
+// environment the formulas bind against.
 type collector struct {
 	list Diagnostics
+	env  Env
+}
+
+// bind binds a formula in the mode against the environment's sources.
+func (c *collector) bind(src string, scope *formula.Scope, mode formula.Mode) (*formula.Program, error) {
+	return formula.Bind(src, scope, formula.BindOptions{Mode: mode, Sources: c.env.Sources})
 }
 
 func (c *collector) add(code, path, message string) {

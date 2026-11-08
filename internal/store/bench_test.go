@@ -88,3 +88,76 @@ func BenchmarkCommit(b *testing.B) {
 		}
 	}
 }
+
+// lookupClass reads one table in an indexed lookup; lookupScan the same
+// table through a condition the index cannot serve.
+const lookupClass = `{"name": "Quote", "variables": {"currency": {"type": "text"}, "net": {"type": "decimal(2)"},
+  "rate": {"formula": "LOOKUP(Fx, rate, code = THIS.currency)"}, "net_pln": {"formula": "ROUND(net * rate, 2)"}}}`
+const lookupScanClass = `{"name": "Quote", "variables": {"currency": {"type": "text"}, "net": {"type": "decimal(2)"},
+  "rate": {"formula": "LOOKUP(Fx, rate, code = THIS.currency AND rate > 0)"}, "net_pln": {"formula": "ROUND(net * rate, 2)"}}}`
+
+func benchLookup(b *testing.B, class string, o Options) {
+	s, err := Open(filepath.Join(b.TempDir(), "bench.fado"), o)
+	if err != nil {
+		b.Fatal(err)
+	}
+	defer s.Close()
+	ctx := context.Background()
+	if _, err := s.DefineTable(ctx, []byte(`{"name": "Fx", "columns": {"code": "text", "rate": "decimal(6)"}, "key": ["code"]}`)); err != nil {
+		b.Fatal(err)
+	}
+	rows := make([]Values, 1000)
+	for i := range rows {
+		rows[i] = Values{"code": fmt.Sprintf("C%04d", i), "rate": fmt.Sprintf("%d.%06d", i%9+1, i)}
+	}
+	if _, err := s.ImportRows(ctx, "Fx", rows); err != nil {
+		b.Fatal(err)
+	}
+	if _, err := s.DefineClass(ctx, []byte(class)); err != nil {
+		b.Fatal(err)
+	}
+	doc, err := s.Create(ctx, "Quote", Values{"currency": "C0500", "net": "100.00"})
+	if err != nil {
+		b.Fatal(err)
+	}
+	if doc.Values["rate"] != "6.000500" {
+		b.Fatalf("rate %v", doc.Values["rate"])
+	}
+	c, _ := s.class("Quote")
+	row, err := c.scanRow(c.w.selectCurrent.QueryRowContext(ctx, doc.ID), false)
+	if err != nil {
+		b.Fatal(err)
+	}
+	// The executor runs inside the writer's transaction.
+	if _, err := s.writer.ExecContext(ctx, "BEGIN"); err != nil {
+		b.Fatal(err)
+	}
+	defer s.writer.ExecContext(ctx, "ROLLBACK")
+	evalCtx := &formula.Context{Now: time.Now().Unix()}
+	var errs []*Error
+	b.ReportAllocs()
+	b.ResetTimer()
+	for b.Loop() {
+		dirty := s.dirtyFor(c)
+		if err := s.recalc(c, row, dirty, true, evalCtx, false, &errs); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+// BenchmarkLookupIndexed is the recalculation of a two-formula class whose
+// lookup the in-memory index serves (ADR-0036): the cached budget of
+// ADR-0016 is under 1 µs.
+func BenchmarkLookupIndexed(b *testing.B) { benchLookup(b, lookupClass, Options{}) }
+
+// BenchmarkLookupStatement is the same recalculation through the prepared
+// statement for a condition that is not one equality, which runs the
+// condition over the table.
+func BenchmarkLookupStatement(b *testing.B) { benchLookup(b, lookupScanClass, Options{}) }
+
+// BenchmarkLookupKeyedStatement is the equality shape above
+// MaxIndexedRows: the statement narrowed to the key through the table's
+// index, the cold budget of ADR-0016 under 100 µs.
+func BenchmarkLookupKeyedStatement(b *testing.B) {
+	benchLookup(b, lookupClass, Options{MaxIndexedRows: 1})
+}

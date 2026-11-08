@@ -225,3 +225,74 @@ func BenchmarkFilter(b *testing.B) {
 		})
 	}
 }
+
+// fiftyFormulas is a class with ten inputs and fifty auto formulas, each
+// reading an input and the formula before it, so that every one runs and
+// the order matters: the full recalculation of ADR-0012, budget 50 µs.
+func fiftyFormulas() string {
+	var b strings.Builder
+	b.WriteString(`{"name": "Model", "variables": {`)
+	inputs := []string{"a", "b", "c", "d", "e", "f", "g", "h", "i", "j"}
+	for _, in := range inputs {
+		fmt.Fprintf(&b, `"%s": {"type": "number"},`, in)
+	}
+	fmt.Fprintf(&b, `"t": {"type": "text"},`)
+	prev := "a"
+	for k := 1; k <= 50; k++ {
+		in := inputs[k%len(inputs)]
+		var f string
+		switch k % 5 {
+		case 0:
+			f = fmt.Sprintf("ROUND(%s * 1.1 + %s, 2)", prev, in)
+		case 1:
+			f = fmt.Sprintf("IF(%s > %s, %s - %s, %s + %s)", prev, in, prev, in, prev, in)
+		case 2:
+			f = fmt.Sprintf("MAX(%s, %s) / 2", prev, in)
+		case 3:
+			f = fmt.Sprintf("ABS(%s - %s) + 1", prev, in)
+		default:
+			f = fmt.Sprintf("%s * 0.5 + %s", prev, in)
+		}
+		name := fmt.Sprintf("f%02d", k)
+		fmt.Fprintf(&b, `"%s": {"formula": "%s"}`, name, f)
+		if k < 50 {
+			b.WriteString(",")
+		}
+		prev = name
+	}
+	b.WriteString("}}")
+	return b.String()
+}
+
+// BenchmarkRecalculate50 is the full recalculation of a fifty-formula
+// document, the ADR-0012 budget of 50 µs.
+func BenchmarkRecalculate50(b *testing.B) {
+	s, err := Open(filepath.Join(b.TempDir(), "bench.fado"), Options{})
+	if err != nil {
+		b.Fatal(err)
+	}
+	defer s.Close()
+	ctx := context.Background()
+	if _, err := s.DefineClass(ctx, []byte(fiftyFormulas())); err != nil {
+		b.Fatal(err)
+	}
+	doc, err := s.Create(ctx, "Model", Values{"a": 1, "b": 2, "c": 3, "d": 4, "e": 5, "f": 6, "g": 7, "h": 8, "i": 9, "j": 10})
+	if err != nil {
+		b.Fatal(err)
+	}
+	c, _ := s.class("Model")
+	row, err := c.scanRow(c.w.selectCurrent.QueryRowContext(ctx, doc.ID), false)
+	if err != nil {
+		b.Fatal(err)
+	}
+	evalCtx := &formula.Context{Now: time.Now().Unix()}
+	var errs []*Error
+	b.ReportAllocs()
+	b.ResetTimer()
+	for b.Loop() {
+		dirty := s.dirtyFor(c)
+		if err := s.recalc(c, row, dirty, true, evalCtx, false, &errs); err != nil {
+			b.Fatal(err)
+		}
+	}
+}

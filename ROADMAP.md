@@ -1,20 +1,23 @@
 # Roadmap
 
 **Current status: Phase 1, the formula engine, done on 2026-11-06 and released as v0.1.0. Phase 2, the document model and store, started on 2026-11-07.**
-`fadodb formula eval` evaluates a formula and shows the bytecode and the
-SQL the engine generates; nothing stores a document yet. Since v0.1.0 the
-engine gained exact numbers (`decimal`, `int`, `money`), a calendar-day
-`date` beside `datetime`, division by zero as an error and `IFERROR`
-(ADR-0022 to ADR-0024, unreleased); ADR-0025 to ADR-0029 record what the
-first embedder needs from Phases 2 to 7; ADR-0031 to ADR-0034 add named
-schemas and object values, a vocabulary of real-world objects with their
-presentation, attachments as `File` values behind a blob store, and range
-constraints on numbers, for Phases 2 and 7. Phase 2 opened with the two
-measurements its records ask for: the primary-store benchmark of ADR-0017
-and the point-lookup benchmark of ADR-0020, in the `bench` package, with
-their results proposed as ADR-0035 and ADR-0036. This page is updated when
-a phase starts and when it ends; it never describes a phase as done before
-its acceptance criteria pass.
+The Go API (`fado`) opens a database file, defines schemas, classes and
+explicit tables, and creates, changes, reads and deletes documents as
+commits: assignments and defaults, the auto recalculation, typed history
+rows, child rows for composites, an event log with idempotency keys and
+business dates, attachments behind a blob store, `LOOKUP` against tables,
+a filter over a class and read-only SQL over the views, with previews that
+write nothing. `fadodb formula eval` evaluates a formula and `fadodb
+check` verifies a file. The statechart, rules, access rules, `QUERY` and
+the server come with their phases. Since v0.1.0 the records ADR-0022 to
+ADR-0038 fixed what the first embedder needs and what Phase 2 measured:
+SQLite as the transactional store and the in-memory index for lookups, by
+measurement (ADR-0035, ADR-0036), the compiled `LOOKUP` and explicit
+tables (ADR-0037), the filter and the SQL endpoint (ADR-0038). Open in
+Phase 2: class migrations under live documents, which wait for a
+decision, and the release. This page is updated when a phase starts and
+when it ends; it never describes a phase as done before its acceptance
+criteria pass.
 
 Legend: ✅ done · 🚧 in progress · ⬜ not started
 

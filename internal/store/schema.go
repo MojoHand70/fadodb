@@ -23,6 +23,7 @@ var engineDDL = []string{
 	`CREATE INDEX IF NOT EXISTS events_class_doc ON events (class, doc_id, ts)`,
 	`CREATE INDEX IF NOT EXISTS events_business_date ON events (business_date)`,
 	`CREATE TABLE IF NOT EXISTS event_docs (event_id TEXT NOT NULL, class TEXT NOT NULL, doc_id TEXT NOT NULL, qualifier TEXT NOT NULL, PRIMARY KEY (event_id, class, doc_id))`,
+	`CREATE TABLE IF NOT EXISTS blobs (hash TEXT PRIMARY KEY, size INTEGER NOT NULL, bytes BLOB NOT NULL, put_at INTEGER NOT NULL)`,
 }
 
 // The system columns of a current row (ADR-0013, ADR-0018) and the ones a

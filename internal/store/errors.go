@@ -89,6 +89,11 @@ const (
 	CodeNotAllowed = "not_allowed"
 	// CodeTooManyRows: a SQL statement returns more than MaxSQLRows.
 	CodeTooManyRows = "too_many_rows"
+	// CodeUnknownBlob: a File names a hash the blob store does not hold,
+	// or a size that differs from the stored one (ADR-0033).
+	CodeUnknownBlob = "unknown_blob"
+	// CodeBlobTooLarge: a file exceeds the database's blob limit.
+	CodeBlobTooLarge = "blob_too_large"
 )
 
 func errf(code, variable, format string, args ...any) *Error {

@@ -38,6 +38,8 @@ type class struct {
 	// sources are the explicit tables the class's formulas read, by
 	// upper-cased name.
 	sources map[string]bool
+	// files are the File objects among the leaves (ADR-0033).
+	files []filePair
 
 	w writeStmts
 	r readStmts
@@ -75,6 +77,8 @@ type child struct {
 	// fields are the columns of a rows value, or one field "value" for an
 	// array.
 	fields []formula.Field
+	// files are the File objects among a row's leaves (ADR-0033).
+	files []filePair
 
 	insert, copyRows, selectRows *sql.Stmt // on the writer
 	readRows                     *sql.Stmt // on the pool
@@ -157,6 +161,11 @@ func newClass(cls *model.Class, src []byte) (*class, error) {
 			cv.leaf = i
 		}
 	}
+	for _, v := range cls.Variables {
+		if v.Type.Kind == formula.KindObject {
+			c.files = append(c.files, filePairs(v.Name, v.Type, c.leafIndex)...)
+		}
+	}
 	for _, ct := range cls.Children {
 		cv := c.byName[strings.ToUpper(ct.Variable)]
 		ch := &child{v: cv.v, def: ct, table: "doc_" + cls.Name + "__" + ct.Variable}
@@ -169,6 +178,7 @@ func newClass(cls *model.Class, src []byte) (*class, error) {
 			ch.fields = []formula.Field{{Name: "value", Type: formula.Type{Kind: cv.v.Type.Elem, Scale: cv.v.Type.Scale}}}
 		} else {
 			ch.fields = cv.v.Type.Fields()
+			ch.files = filePairs("", cv.v.Type, ch.leafIndex)
 		}
 		cv.child = ch
 		c.children = append(c.children, ch)

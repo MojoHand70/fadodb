@@ -17,7 +17,8 @@ func TestReadmeClass(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	m := regexp.MustCompile("(?s)```json\n(.*?)\n```").FindSubmatch(readme)
+	// A checkout on Windows may carry CRLF line endings.
+	m := regexp.MustCompile("(?s)```json\r?\n(.*?)\r?\n```").FindSubmatch(readme)
 	if m == nil {
 		t.Fatal("no json block in the README")
 	}

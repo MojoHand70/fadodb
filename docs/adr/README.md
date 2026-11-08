@@ -42,4 +42,4 @@ line says so. Copy `0000-template.md` to start.
 | [0034](0034-range-constraints-on-numeric-variables.md) | Range constraints on numeric variables | Accepted |
 | [0035](0035-sqlite-is-the-transactional-store.md) | SQLite is the transactional store, by measurement | Accepted |
 | [0036](0036-in-memory-index-for-lookups-in-commits.md) | An in-memory index serves LOOKUP inside commits, by measurement | Accepted |
-| [0037](0037-explicit-tables-and-the-compiled-lookup.md) | Explicit tables bound to SQLite and the compiled LOOKUP | Proposed |
+| [0037](0037-explicit-tables-and-the-compiled-lookup.md) | Explicit tables bound to SQLite and the compiled LOOKUP | Accepted |

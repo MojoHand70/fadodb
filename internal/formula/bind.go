@@ -26,13 +26,43 @@ const (
 	// ModeAuto allows pure functions and LOOKUP only: the stored value of
 	// an auto variable must be a function of the document itself.
 	ModeAuto
+	// ModePure allows pure functions only: a class title (ADR-0018) and a
+	// schema's presentation formulas (ADR-0032) are computed from the
+	// document's own values and nothing else.
+	ModePure
 )
 
 func (m Mode) String() string {
-	if m == ModeAuto {
+	switch m {
+	case ModeAuto:
 		return "auto"
+	case ModePure:
+		return "pure"
 	}
 	return "any"
+}
+
+// allows reports whether a formula in the mode may call a function of the
+// class.
+func (m Mode) allows(c Class) bool {
+	switch m {
+	case ModeAuto:
+		return c == ClassPure || c == ClassLookup
+	case ModePure:
+		return c == ClassPure
+	}
+	return true
+}
+
+// where names the kind of formula the mode stands for, in a message.
+func (m Mode) where() string {
+	switch m {
+	case ModeAuto:
+		return "an auto formula"
+	case ModePure:
+		return "a title or presentation formula, which allows pure functions only"
+	}
+	return "this formula"
 }
 
 // Variable is one name a formula may read.
@@ -59,10 +89,36 @@ func NewScope(vars ...Variable) (*Scope, error) {
 		if _, kw := keywords[key]; kw {
 			return nil, fmt.Errorf("variable %s: %s is a reserved word", v.Name, key)
 		}
+		if err := checkFields(v.Name, v.Type); err != nil {
+			return nil, err
+		}
 		s.index[key] = len(s.vars)
 		s.vars = append(s.vars, v)
 	}
 	return s, nil
+}
+
+// checkFields rejects an object type whose field names collide or are
+// reserved words, which the lexer would never read after a dot.
+func checkFields(path string, t Type) error {
+	if t.Kind != KindObject {
+		return nil
+	}
+	seen := map[string]bool{}
+	for _, f := range t.Fields() {
+		key := strings.ToUpper(f.Name)
+		if seen[key] {
+			return fmt.Errorf("%s: field %s is declared twice", path, f.Name)
+		}
+		seen[key] = true
+		if _, kw := keywords[key]; kw {
+			return fmt.Errorf("%s.%s: %s is a reserved word", path, f.Name, key)
+		}
+		if err := checkFields(path+"."+f.Name, f.Type); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // Lookup finds a variable by name, case-insensitively.
@@ -395,6 +451,9 @@ func (b *binder) expr(n Node) (Type, error) {
 			}
 			return Type{}, b.errAt(n.P, "unknown variable %s", n.Name)
 		}
+		if v.Type.Kind == KindObject {
+			return Type{}, b.errAt(n.P, "%s is an %s; read one of its fields, %s.%s; whole objects are not supported yet", v.Name, v.Type, v.Name, strings.Join(v.Type.FieldNames(), ", "+v.Name+"."))
+		}
 		if !v.Type.IsScalar() {
 			return Type{}, b.errAt(n.P, "%s is %s; composite values are not supported yet", v.Name, v.Type)
 		}
@@ -402,14 +461,7 @@ func (b *binder) expr(n Node) (Type, error) {
 		b.push(1)
 		return v.Type, nil
 	case *Member:
-		v, ok := b.scope.Lookup(n.Base)
-		if !ok {
-			return Type{}, b.errAt(n.P, "unknown variable %s", n.Base)
-		}
-		if v.Type.Kind != KindRows {
-			return Type{}, b.errAt(n.P, "%s is %s, not rows; only a rows variable has columns", v.Name, v.Type)
-		}
-		return Type{}, b.errAt(n.P, "%s.%s: composite values are not supported yet", n.Base, n.Name)
+		return b.member(n)
 	case *ThisRef:
 		return Type{}, b.errAt(n.P, "THIS.%s is only valid inside LOOKUP and QUERY", n.Name)
 	case *Unary:
@@ -422,6 +474,40 @@ func (b *binder) expr(n Node) (Type, error) {
 		return b.call(n)
 	}
 	return Type{}, b.errAt(n.Pos(), "unexpected node %T", n)
+}
+
+// member binds base.path: a field of an object variable, through object
+// fields to a scalar leaf, which is one slot named by the declared path
+// (ADR-0031); or a column of a rows variable, which composites will bring.
+func (b *binder) member(n *Member) (Type, error) {
+	v, ok := b.scope.Lookup(n.Base)
+	if !ok {
+		return Type{}, b.errAt(n.P, "unknown variable %s", n.Base)
+	}
+	switch v.Type.Kind {
+	case KindObject:
+		t, name := v.Type, v.Name
+		for i, step := range n.Path {
+			if t.Kind != KindObject {
+				return Type{}, b.errAt(n.P, "%s is %s and has no field %s", name, t, step)
+			}
+			f, ok := t.Field(step)
+			if !ok {
+				return Type{}, b.errAt(n.P, "%s has no field %s; its fields are %s", name, step, strings.Join(t.FieldNames(), ", "))
+			}
+			name += "." + f.Name
+			t = f.Type
+			if i == len(n.Path)-1 && t.Kind == KindObject {
+				return Type{}, b.errAt(n.P, "%s is an %s; read one of its fields, %s.%s; whole objects are not supported yet", name, t, name, strings.Join(t.FieldNames(), ", "+name+"."))
+			}
+		}
+		b.emit(OpLoad, b.slot(Variable{Name: name, Type: t}), n.P)
+		b.push(1)
+		return t, nil
+	case KindRows:
+		return Type{}, b.errAt(n.P, "%s.%s: composite values are not supported yet", n.Base, strings.Join(n.Path, "."))
+	}
+	return Type{}, b.errAt(n.P, "%s is %s; only an object has fields and only a rows variable has columns", v.Name, v.Type)
 }
 
 // operand binds an expression and reports the constant it was, if any: a
@@ -780,8 +866,8 @@ func (b *binder) call(n *Call) (Type, error) {
 		return Type{}, b.errAt(n.P, "%s is not implemented yet", n.Name)
 	}
 	spec := builtins[id]
-	if b.opts.Mode == ModeAuto && (spec.class == ClassContext || spec.class == ClassQuery) {
-		return Type{}, b.errAt(n.P, "%s is a %s function and may not be used in an auto formula", n.Name, spec.class)
+	if !b.opts.Mode.allows(spec.class) {
+		return Type{}, b.errAt(n.P, "%s is a %s function and may not be used in %s", n.Name, spec.class, b.opts.Mode.where())
 	}
 	if len(n.Args) > 255 {
 		return Type{}, b.errAt(n.P, "%s: at most 255 arguments", n.Name)

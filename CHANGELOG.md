@@ -8,6 +8,32 @@ All notable changes to FadoDB are recorded here. The format follows
 
 ### Added
 
+- The class model, `internal/model`: a class definition is parsed from
+  JSON in written order and compiled with every finding reported at once
+  as a list of diagnostics, each a stable code, the JSON pointer of the
+  element, the position inside a formula, a message and a fix where there
+  is one. It checks names against the reserved columns and keywords,
+  types with their scales, enum values, ranges, refs, the properties an
+  input and a computed variable may have, binds defaults, formulas, the
+  title, guards, rule conditions, access rules and rights with the
+  function classes each allows, infers a computed variable's type from
+  its formula when none is declared, reads a bare number literal as an
+  exact constant for a decimal variable, builds the dependency graph of
+  the auto variables and the defaults and refuses a cycle, resolves
+  named schemas with the predefined vocabulary of ADR-0032 and user
+  schemas that extend them, and lays the variables out as the typed
+  columns and child tables of ADR-0014. The statechart, rules, access
+  rules and rights are checked for structure and bound now and run in
+  their phases.
+- Object field paths in formulas (ADR-0031): a variable of type
+  `object<Schema>` is read by its leaves, `shipping.city` or
+  `venue.address.city`, each a scalar slot of the field's type that
+  binds, evaluates and translates to SQL like a scalar variable. The
+  conformance suites declare schemas and set leaves by path; the binding
+  suite `objects` fixes what is refused for now: a whole object in a
+  formula, a path that stops on an object, and rows columns. A `pure`
+  binding mode allows pure functions only, for class titles and
+  presentation formulas.
 - The `bench` package: the end-to-end scenarios behind the budgets of
   ADR-0012, on database/sql so that one scenario runs on every engine. It
   opens Phase 2 with the primary-store benchmark of ADR-0017, commits in

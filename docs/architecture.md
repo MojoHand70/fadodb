@@ -492,10 +492,14 @@ Since then, unreleased: the exact types `decimal`, `int` and `money`
 (ADR-0022), `date` as a calendar day beside `datetime` (ADR-0023),
 division by zero as an error and `IFERROR` (ADR-0024), constant folding of
 literal expressions, and bytecode format v2.
-Not yet: the dependency DAG and cycle detection across a document's
-formulas, composite values (arrays and rows) and the query functions,
-which arrive with the document model in Phase 2; the browser VM (Phase
-7); the Postgres dialect (Phase 10). The pipeline and the value struct
+Since Phase 2 started: object field paths, a leaf of an `object<Schema>`
+variable read as one scalar slot (ADR-0031), a pure-only binding mode
+for titles and presentation formulas, and in `internal/model` the class
+definition compiled with the dependency graph of its formulas, cycle
+detection and the evaluation order. Not yet: whole-object operations,
+composite values (arrays and rows) and the query functions, which arrive
+with the document model in Phase 2; the browser VM (Phase 7); the
+Postgres dialect (Phase 10). The pipeline and the value struct
 below are the design: today's `Value` holds a kind, a scale, a number
 and a text, and an array is a column-wise value beside it that no
 operation consumes yet.

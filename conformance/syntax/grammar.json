@@ -5,6 +5,8 @@
   "accept": [
     "1",
     "Alfa",
+    "lines.qty",
+    "shipping.address.city",
     "1 + 2",
     "Alfa - Beta",
     "Alfa ^ 2",
@@ -185,7 +187,7 @@
     {"formula": "THIS.1", "reason": "THIS needs .name"},
     {"formula": "THIS()", "reason": "THIS is not a function"},
     {"formula": "lines.", "reason": "a column name is required"},
-    {"formula": "lines.qty.x", "reason": "names nest only one level"},
+    {"formula": "lines.qty.", "reason": "a name is required after every dot"},
     {"formula": "lines.1", "reason": "a column name is required"},
     {"formula": "FOO(1)", "reason": "unknown function"},
     {"formula": "ROUND(Godziny", "reason": "unclosed call"},

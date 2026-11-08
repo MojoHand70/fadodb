@@ -155,6 +155,12 @@ func (db *DB) Create(ctx context.Context, class string, values Values, opts ...O
 	return db.s.Create(ctx, class, values, opts...)
 }
 
+// CreateMany makes documents in one transaction, one commit each, all or
+// none: the bulk load path (ADR-0035). A batch takes no key and no id.
+func (db *DB) CreateMany(ctx context.Context, class string, docs []Values, opts ...Option) ([]*Document, error) {
+	return db.s.CreateMany(ctx, class, docs, opts...)
+}
+
 // Set assigns values to a document and recalculates what depends on
 // them, as a new version; a set that changes nothing commits nothing.
 func (db *DB) Set(ctx context.Context, class, id string, values Values, opts ...Option) (*Document, error) {

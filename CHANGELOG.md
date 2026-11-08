@@ -8,6 +8,15 @@ All notable changes to FadoDB are recorded here. The format follows
 
 ### Added
 
+- `CreateMany`, the bulk load path of ADR-0035: documents of one class in
+  one transaction, one commit each with its history row and event, all
+  or none; a batch takes no key and no id. The Phase 2 commit campaign,
+  `TestCommitCampaign` in the store package, measures the commit with
+  its compute at p99, keyed beside unkeyed commits (ADR-0026), a preview
+  beside its commit (ADR-0025), batched creates and commits with lookups,
+  on disk with `FADODB_BENCH_DIR`; `BenchmarkRecalculate50` measures the
+  full recalculation of a fifty-formula document. The results are
+  published under `docs/perf/`.
 - Attachments (ADR-0033): a `BlobStore` interface with the `sqlite`
   store, a table in the database file and the default, the `dir` store,
   a directory beside it, and the embedder's own given on open; the kind

@@ -4,6 +4,8 @@ Published per tagged release, with the budgets from
 [ADR-0012](../adr/0012-performance-gates.md).
 
 - [v0.1.0](v0.1.0.md): the formula engine, Phase 1.
+- [v0.2.0](v0.2.0.md): the document model and store, Phase 2, measured
+  ahead of the tag.
 
 The end-to-end suite is the `bench` package: scenarios written against
 database/sql so that the same one runs on every storage engine. Each
@@ -12,6 +14,14 @@ module runs a small scenario in CI and the full campaign on request:
 ```
 FADODB_BENCH=store,lookup go test -count=1 -v -run TestCampaign ./bench/
 cd analytics && FADODB_BENCH=store,lookup CGO_ENABLED=1 go test -count=1 -v -run TestCampaign ./...
+```
+
+The store's own campaign runs the real commit, compute and write, on the
+test classes of the store package, and the filter over a loaded database:
+
+```
+FADODB_BENCH_DIR=/path/on/disk FADODB_BENCH_COMMITS=100000 go test -count=1 -v -run TestCommitCampaign ./internal/store/
+FADODB_BENCH_DIR=/path/on/disk FADODB_BENCH_DOCS=1000000 go test -run '^$' -bench 'Filter|Commit' -benchmem ./internal/store/
 ```
 
 `FADODB_BENCH_COMMITS` sizes the store campaign (default 100,000),

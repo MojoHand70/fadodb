@@ -8,6 +8,20 @@ All notable changes to FadoDB are recorded here. The format follows
 
 ### Added
 
+- Class versions, terminal states and migrations (ADR-0039 proposed). A
+  redefinition is a new class version and touches no document: every
+  current and history row records the class version that computed it,
+  and a document is read under that version. A document in a terminal
+  state, one of `states.final`, is frozen: set, delete, preview and
+  migration are refused with `terminal`, and a transition out of it must
+  lead to a terminal state. A live document adopts the current version
+  at its next commit; `Migrate` adopts every live document of a class in
+  batches, as `migrated` events. `DefineClass` and `Validate` refuse,
+  with the count of documents in the way, removing a state documents are
+  in, thawing a terminal state with documents in it, removing a variable
+  that holds values and retyping one that ever did; everything else is
+  allowed, and the tables are altered in place. The engine schema is
+  version 2; a pre-release file of schema 1 is refused.
 - `CreateMany`, the bulk load path of ADR-0035: documents of one class in
   one transaction, one commit each with its history row and event, all
   or none; a batch takes no key and no id. The Phase 2 commit campaign,

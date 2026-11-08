@@ -32,9 +32,10 @@ const (
 	opCreate op = iota
 	opSet
 	opDelete
+	opMigrate
 )
 
-func (o op) String() string { return [...]string{"create", "set", "delete"}[o] }
+func (o op) String() string { return [...]string{"create", "set", "delete", "migrate"}[o] }
 
 type command struct {
 	op      op
@@ -177,6 +178,7 @@ func (s *Store) run(ctx context.Context, cmd command, now time.Time) (*result, e
 	}
 
 	var before *docRow
+	var beforeClass *class // the version that computed the current row
 	if cmd.op != opCreate {
 		var err error
 		if before, err = c.scanRow(c.w.selectCurrent.QueryRowContext(ctx, cmd.id), false); err != nil {
@@ -184,6 +186,21 @@ func (s *Store) run(ctx context.Context, cmd command, now time.Time) (*result, e
 				return nil, errf(CodeUnknownDocument, "", "no document %s of class %s", cmd.id, c.cls.Name)
 			}
 			return nil, storageErr("read the document", err)
+		}
+		// A document in a terminal state is frozen (ADR-0039).
+		if c.cls.States.IsFinal(before.state) {
+			return nil, hintf(CodeTerminal, "", "the document is in the terminal state "+before.state+" and cannot change", "a terminal document keeps its values and its class version; it may only move to another terminal state")
+		}
+		beforeClass = c
+		if before.classVersion != c.cls.Version && before.classVersion != 0 {
+			old := s.classAt(c.cls.Name, before.classVersion)
+			if old == nil {
+				return nil, errf(CodeStorage, "", "the document %s was computed by version %d of %s, which the store does not have", before.id, before.classVersion, c.cls.Name)
+			}
+			if before, err = old.scanRow(old.w.selectCurrent.QueryRowContext(ctx, cmd.id), false); err != nil {
+				return nil, storageErr("read the document under its class version", err)
+			}
+			beforeClass = old
 		}
 	}
 	eventID := s.ids.next(now)
@@ -214,7 +231,7 @@ func (s *Store) run(ctx context.Context, cmd command, now time.Time) (*result, e
 				return nil, errf(CodeDuplicate, "", "a document %s of class %s exists, or existed", id, c.cls.Name)
 			}
 		}
-		after = &docRow{id: id, version: 1, createdAt: secs, updatedAt: secs, vals: make([]formula.Value, len(c.leaves))}
+		after = &docRow{id: id, version: 1, classVersion: c.cls.Version, createdAt: secs, updatedAt: secs, vals: make([]formula.Value, len(c.leaves))}
 		if c.cls.States != nil {
 			after.state, after.stateEntered = c.cls.States.Initial, secs
 		}
@@ -256,7 +273,23 @@ func (s *Store) run(ctx context.Context, cmd command, now time.Time) (*result, e
 			return nil, err
 		}
 	} else {
-		after = before.clone()
+		// A live document computed by an older version adopts the current
+		// one with this commit: its values move to the current layout by
+		// name, every formula is recomputed, and the row says so
+		// (ADR-0039). A migration is that and nothing else.
+		adopt := beforeClass != c || cmd.op == opMigrate
+		if beforeClass != c {
+			after = &docRow{id: before.id, title: before.title, state: before.state, version: before.version, createdAt: before.createdAt,
+				updatedAt: before.updatedAt, stateEntered: before.stateEntered, vals: make([]formula.Value, len(c.leaves))}
+			for i, l := range c.leaves {
+				if j, ok := beforeClass.leafIndex[strings.ToUpper(l.path)]; ok {
+					after.vals[i] = before.vals[j]
+				}
+			}
+		} else {
+			after = before.clone()
+		}
+		after.classVersion = c.cls.Version
 		changed, err := c.assign(after, kids, cmd.values, dirty, s.limits)
 		if err != nil {
 			return nil, err
@@ -273,7 +306,7 @@ func (s *Store) run(ctx context.Context, cmd command, now time.Time) (*result, e
 				changed = true
 			}
 		}
-		if !changed {
+		if !changed && !adopt {
 			all, err := c.loadChildren(ctx, before.id, before.version, kids, true)
 			if err != nil {
 				return nil, err
@@ -284,7 +317,7 @@ func (s *Store) run(ctx context.Context, cmd command, now time.Time) (*result, e
 		}
 		after.version++
 		after.updatedAt = secs
-		if err := s.recalc(c, after, dirty, false, evalCtx, cmd.preview, &res.errs); err != nil {
+		if err := s.recalc(c, after, dirty, adopt, evalCtx, cmd.preview, &res.errs); err != nil {
 			return nil, err
 		}
 	}
@@ -421,7 +454,7 @@ func sameRows(a, b []childRow) bool {
 func (s *Store) write(ctx context.Context, cmd command, before, after *docRow, kids map[*child][]childRow, secs int64, eventID, actor, hash string, day int64) error {
 	c := cmd.c
 	args := make([]any, 0, len(systemColumns)+len(historyColumns)+len(c.cls.Columns))
-	args = append(args, after.id, nullText(after.title), nullText(after.state), after.version, after.createdAt, after.updatedAt, nullInt(after.stateEntered))
+	args = append(args, after.id, nullText(after.title), nullText(after.state), after.version, after.classVersion, after.createdAt, after.updatedAt, nullInt(after.stateEntered))
 	args = c.encodeVals(args, after)
 	if _, err := c.w.upsert.ExecContext(ctx, args...); err != nil {
 		return storageErr("write the current row", err)
@@ -432,7 +465,7 @@ func (s *Store) write(ctx context.Context, cmd command, before, after *docRow, k
 		}
 	}
 	args = args[:0]
-	args = append(args, after.id, nullText(after.title), nullText(after.state), after.version, after.createdAt, after.updatedAt, nullInt(after.stateEntered),
+	args = append(args, after.id, nullText(after.title), nullText(after.state), after.version, after.classVersion, after.createdAt, after.updatedAt, nullInt(after.stateEntered),
 		secs, nil, nullText(actor), eventID)
 	args = c.encodeVals(args, after)
 	if _, err := c.w.insertHistory.ExecContext(ctx, args...); err != nil {
@@ -461,8 +494,11 @@ func (s *Store) write(ctx context.Context, cmd command, before, after *docRow, k
 	if before != nil {
 		beforeVersion = before.version
 	}
-	if cmd.op == opCreate {
+	switch cmd.op {
+	case opCreate:
 		kind, qualifier = EventCreated, "created"
+	case opMigrate:
+		kind, qualifier = EventMigrated, "migrated"
 	}
 	return s.writeEvent(ctx, eventID, c.cls.Name, after.id, kind, qualifier, actor, beforeVersion, after.version, cmd.o.key, hash, day, secs)
 }

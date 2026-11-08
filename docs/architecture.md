@@ -308,7 +308,9 @@ on commit is authoritative; the conformance suite guarantees the two agree.
 
 ### Statechart
 
-- Flat named states, one initial, optional final states. Hierarchical states in 1.x.
+- Flat named states, one initial, optional final states, which are
+  terminal: a document in one is frozen and may only move to another
+  terminal state (ADR-0039). Hierarchical states in 1.x.
 - A transition has a name, source states, a target, an optional guard formula,
   and optional entry/exit effects. Transitions are the only way state changes.
 - **Eventless transitions** have a guard and no name, and are evaluated after
@@ -643,12 +645,21 @@ Same engine, a third dialect, driver `pgx` through `database/sql`, kept in a
 separate Go module. Row-level security is still FadoDB's predicate injection,
 not Postgres RLS, so behaviour is identical across backends.
 
-### Class migrations
+### Class versions and migrations
 
-Adding a variable or formula: in place. Changing a type or removing a
-variable: a new class version with a migration record; documents migrate
-lazily on first write or eagerly by command. History and events are never
-rewritten.
+A redefinition of a class is a new class version and touches no document
+(ADR-0039). Every current and history row records the class version that
+computed it, and a document is read under that version. A document in a
+terminal state, one listed in `states.final`, is frozen: its values, its
+computed values and its class version never change, and it may only move
+to another terminal state. A live document adopts the current version at
+its next commit, which the current definition computes; `Migrate` does
+that for every live document of a class, in batches, on purpose. A
+redefinition may add variables, change formulas and constraints, add
+states and change behaviour; it may not remove a state documents are in,
+make a terminal state live again while documents are in it, remove a
+variable that holds values, or change the type of a variable that ever
+held one. History and events are never rewritten.
 
 ---
 

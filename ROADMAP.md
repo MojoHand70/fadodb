@@ -13,9 +13,9 @@ the server come with their phases. Since v0.1.0 the records ADR-0022 to
 ADR-0038 fixed what the first embedder needs and what Phase 2 measured:
 SQLite as the transactional store and the in-memory index for lookups, by
 measurement (ADR-0035, ADR-0036), the compiled `LOOKUP` and explicit
-tables (ADR-0037), the filter and the SQL endpoint (ADR-0038). Open in
-Phase 2: class migrations under live documents, which wait for a
-decision, and the release. This page is updated when a phase starts and
+tables (ADR-0037), the filter and the SQL endpoint (ADR-0038), and class
+versions with terminal states and migrations (ADR-0039). Open in Phase 2:
+the release. This page is updated when a phase starts and
 when it ends; it never describes a phase as done before its acceptance
 criteria pass.
 

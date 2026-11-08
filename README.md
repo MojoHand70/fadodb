@@ -15,7 +15,8 @@ An embeddable **active document database**, written in Go, MIT licensed.
 > formulas read through `LOOKUP`, creates, changes, reads and deletes
 > documents as commits with recalculation, typed history and an event
 > log, attaches files as `File` values behind a blob store, filters
-> documents with a formula and runs read-only SQL over the views;
+> documents with a formula, runs read-only SQL over the views, and
+> redefines a class as a new version that touches no document;
 > `fadodb check` verifies a file. The statechart, rules, access rules,
 > `QUERY` and the server come in later phases. See
 > [ROADMAP.md](ROADMAP.md).

@@ -94,6 +94,9 @@ const (
 	CodeUnknownBlob = "unknown_blob"
 	// CodeBlobTooLarge: a file exceeds the database's blob limit.
 	CodeBlobTooLarge = "blob_too_large"
+	// CodeTerminal: the document is in a terminal state and cannot change
+	// (ADR-0039).
+	CodeTerminal = "terminal"
 )
 
 func errf(code, variable, format string, args ...any) *Error {

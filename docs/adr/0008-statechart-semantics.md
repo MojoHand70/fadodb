@@ -1,6 +1,6 @@
 # ADR-0008: Statechart semantics, SCXML subset
 
-- Status: Accepted
+- Status: Accepted; amended by ADR-0039 (a final state freezes the document)
 - Date: 2026-11-05
 
 ## Context

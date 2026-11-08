@@ -339,6 +339,9 @@ func (s *Store) OpenFile(ctx context.Context, class, id, hash string, opts ...Op
 		}
 		return nil, nil, storageErr("read the document", err)
 	}
+	if c, row, err = s.underVersion(ctx, c, row, o.version > 0); err != nil {
+		return nil, nil, err
+	}
 	version := row.version
 	info := c.fileOf(row.vals, hash)
 	if info == nil {

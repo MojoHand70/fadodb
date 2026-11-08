@@ -137,6 +137,28 @@ type Program struct {
 	MaxStack int
 }
 
+// ClaimExact makes a program that is one number constant into the exact
+// constant of the type, when the number is exactly a value at the type's
+// scale: a default of "0" for a decimal(2) variable is 0.00, as a literal
+// meeting an exact operand is read exactly (ADR-0022). It reports whether
+// it did; a program that is not a lone constant, a type that is not a
+// decimal, or a number that does not fit the scale leave the program as
+// it is.
+func (p *Program) ClaimExact(t Type) bool {
+	if t.Kind != KindDecimal || len(p.Code) != 2 || p.Code[0].Op != OpConstNum || p.Code[1].Op != OpReturn {
+		return false
+	}
+	f := p.Nums[p.Code[0].Arg]
+	m, err := decFromFloat(f, int(t.Scale), rmHalfUp)
+	if err != nil || decToFloat(m, int(t.Scale)) != f {
+		return false
+	}
+	p.Decs = append(p.Decs, DecConst{Mant: m, Scale: t.Scale})
+	p.Code[0] = Instr{Op: OpConstDec, Arg: int32(len(p.Decs) - 1)}
+	p.Result = t
+	return true
+}
+
 // Format constants.
 const (
 	formatMagic   = "FADO"

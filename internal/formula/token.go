@@ -2,6 +2,7 @@ package formula
 
 import (
 	"fmt"
+	"strings"
 	"unicode/utf8"
 )
 
@@ -45,6 +46,14 @@ const (
 	TokGt
 	TokGe
 )
+
+// IsKeyword reports whether a name, in any case, is a keyword of the
+// language and so can never name a variable, a field, a column or a table
+// (ADR-0019).
+func IsKeyword(name string) bool {
+	_, ok := keywords[strings.ToUpper(name)]
+	return ok
+}
 
 var keywords = map[string]TokenKind{
 	"AND": TokAnd, "OR": TokOr, "NOT": TokNot, "IF": TokIf, "THEN": TokThen,

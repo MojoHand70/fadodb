@@ -1,6 +1,6 @@
 # ADR-0038: The filter and the read-only SQL endpoint
 
-- Status: Proposed; amends ADR-0011 (the shape of the query command) and ADR-0016 (the SQL endpoint's rules)
+- Status: Accepted; amends ADR-0011 (the shape of the query command) and ADR-0016 (the SQL endpoint's rules)
 - Date: 2026-11-08
 
 ## Context

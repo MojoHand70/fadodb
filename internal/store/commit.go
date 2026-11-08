@@ -44,6 +44,9 @@ type command struct {
 	values  Values
 	o       options
 	preview bool
+	// stored is the class the document is read from when c is a draft
+	// compiled for one preview (ADR-0025); nil otherwise.
+	stored *class
 }
 
 type result struct {
@@ -180,20 +183,26 @@ func (s *Store) run(ctx context.Context, cmd command, now time.Time) (*result, e
 	var before *docRow
 	var beforeClass *class // the version that computed the current row
 	if cmd.op != opCreate {
+		reader := c
+		if cmd.stored != nil {
+			reader = cmd.stored
+		}
 		var err error
-		if before, err = c.scanRow(c.w.selectCurrent.QueryRowContext(ctx, cmd.id), false); err != nil {
+		if before, err = reader.scanRow(reader.w.selectCurrent.QueryRowContext(ctx, cmd.id), false); err != nil {
 			if err == sql.ErrNoRows {
-				return nil, errf(CodeUnknownDocument, "", "no document %s of class %s", cmd.id, c.cls.Name)
+				return nil, errf(CodeUnknownDocument, "", "no document %s of class %s", cmd.id, reader.cls.Name)
 			}
 			return nil, storageErr("read the document", err)
 		}
-		// A document in a terminal state is frozen (ADR-0039).
-		if c.cls.States.IsFinal(before.state) {
+		// A document in a terminal state is frozen (ADR-0039). A draft
+		// preview computes what a definition would make of it and writes
+		// nothing, so it may look.
+		if cmd.stored == nil && c.cls.States.IsFinal(before.state) {
 			return nil, hintf(CodeTerminal, "", "the document is in the terminal state "+before.state+" and cannot change", "a terminal document keeps its values and its class version; it may only move to another terminal state")
 		}
-		beforeClass = c
-		if before.classVersion != c.cls.Version && before.classVersion != 0 {
-			old := s.classAt(c.cls.Name, before.classVersion)
+		beforeClass = reader
+		if before.classVersion != reader.cls.Version && before.classVersion != 0 {
+			old := s.classAt(reader.cls.Name, before.classVersion)
 			if old == nil {
 				return nil, errf(CodeStorage, "", "the document %s was computed by version %d of %s, which the store does not have", before.id, before.classVersion, c.cls.Name)
 			}
@@ -222,7 +231,7 @@ func (s *Store) run(ctx context.Context, cmd command, now time.Time) (*result, e
 		id := cmd.id
 		if id == "" {
 			id = s.ids.next(now)
-		} else {
+		} else if cmd.stored == nil && c.w.selectCurrent != nil {
 			var n int64
 			if err := s.writer.QueryRowContext(ctx, "SELECT count(*) FROM "+quote(c.history)+` WHERE "id" = ?`, id).Scan(&n); err != nil {
 				return nil, storageErr("check the id", err)
@@ -298,6 +307,9 @@ func (s *Store) run(ctx context.Context, cmd command, now time.Time) (*result, e
 			return nil, err
 		}
 		for ch, rows := range kids {
+			if ch.selectRows == nil {
+				break // a draft has no statements; it adopts anyway
+			}
 			prev, err := ch.load(ctx, ch.selectRows, before.id, before.version)
 			if err != nil {
 				return nil, err
@@ -325,7 +337,12 @@ func (s *Store) run(ctx context.Context, cmd command, now time.Time) (*result, e
 	all := kids
 	if before != nil {
 		var err error
-		if all, err = c.loadChildren(ctx, before.id, before.version, kids, true); err != nil {
+		if cmd.stored != nil {
+			all, err = s.draftChildren(ctx, c, beforeClass, before, kids)
+		} else {
+			all, err = c.loadChildren(ctx, before.id, before.version, kids, true)
+		}
+		if err != nil {
 			return nil, err
 		}
 	}

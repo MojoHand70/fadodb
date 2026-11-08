@@ -1,37 +1,34 @@
 # FadoDB
 
 [![ci](https://github.com/MojoHand70/fadodb/actions/workflows/ci.yml/badge.svg)](https://github.com/MojoHand70/fadodb/actions/workflows/ci.yml)
-[![Go Reference](https://pkg.go.dev/badge/github.com/MojoHand70/fadodb.svg)](https://pkg.go.dev/github.com/MojoHand70/fadodb)
+[![Go Reference](https://pkg.go.dev/badge/github.com/MojoHand70/fadodb.svg)](https://pkg.go.dev/github.com/MojoHand70/fadodb/fado)
 [![Go Report Card](https://goreportcard.com/badge/github.com/MojoHand70/fadodb)](https://goreportcard.com/report/github.com/MojoHand70/fadodb)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 An embeddable **active document database**, written in Go, MIT licensed.
+Website: [fadodb.com](https://fadodb.com).
 
 > **Status: Phase 2, the document model and store, is done and released
-> as v0.2.0; Phase 3, the statechart, is next.**
-> `fadodb formula eval` evaluates a formula on the Go VM and shows the SQL the
-> engine generates for SQLite and DuckDB. The Go API (`fado`) opens a
-> database file, defines classes, schemas and explicit tables that
-> formulas read through `LOOKUP`, creates, changes, reads and deletes
-> documents as commits with recalculation, typed history and an event
-> log, attaches files as `File` values behind a blob store, filters
-> documents with a formula, runs read-only SQL over the views, and
-> redefines a class as a new version that touches no document;
-> `fadodb check` verifies a file. The statechart, rules, access rules,
-> `QUERY` and the server come in later phases. See
-> [ROADMAP.md](ROADMAP.md).
+> as v0.2.0; Phase 3, the statechart, is next.** The Go API stores
+> documents of typed classes as commits with recalculation, history and an
+> event log, with attachments, lookups into reference tables, filters and
+> read-only SQL. The statechart, rules, access rules and the server come
+> with their phases. The numbers are in [docs/perf/](docs/perf/), the plan
+> in [ROADMAP.md](ROADMAP.md).
 
-## What it will be
+## What it is
 
 A document class declares typed variables, Excel-like formulas, a
 statechart, and rules that fire actions when the state changes. FadoDB keeps
-an append-only event log with a snapshot on every transition, evaluates
-formulas on the server and in the browser from one compiled bytecode, exposes
-every document class as a queryable SQL table, and enforces user and group
-access rules that are themselves formulas. Analytics and process mining are
-SQL over the event log.
+an append-only event log and a typed history row for every version,
+evaluates formulas on the server and in the browser from one compiled
+bytecode, exposes every document class as a queryable SQL view, and
+enforces user and group access rules that are themselves formulas.
+Analytics and process mining are SQL over the event log.
 
-A class is one JSON document:
+A class is one JSON document. This one defines, stores and computes today;
+its transitions and rules are compiled and checked now and run with
+Phases 3 and 4, and formulas over `lines` arrive with composites:
 
 ```json
 {
@@ -40,12 +37,12 @@ A class is one JSON document:
   "variables": {
     "customer": {"type": "text", "required": true},
     "due":      {"type": "date", "default": "ADDDAYS(TODAY(), 30)"},
-    "discount": {"type": "decimal", "scale": 2, "default": "0"},
+    "discount": {"type": "decimal", "scale": 2, "default": "0", "min": 0, "max": "0.50"},
+    "net":      {"type": "money", "scale": 2},
     "lines":    {"type": "rows", "schema": {"sku": "text", "qty": "int", "price": "money"}},
-    "subtotal": {"formula": "SUM(lines.qty * lines.price)"},
-    "total":    {"formula": "ROUND(subtotal * (1 - discount), 2)"}
+    "total":    {"formula": "ROUND(net * (1 - discount), 2)"}
   },
-  "states": {"initial": "draft", "list": ["draft", "submitted", "approved", "paid"]},
+  "states": {"initial": "draft", "list": ["draft", "submitted", "approved", "paid"], "final": ["paid"]},
   "transitions": [
     {"name": "submit",  "from": "draft",     "to": "submitted", "guard": "total > 0"},
     {"name": "approve", "from": "submitted", "to": "approved",  "guard": "INGROUP(\"finance\")"},
@@ -59,16 +56,34 @@ A class is one JSON document:
 }
 ```
 
-Planned Go API, not implemented:
+## Try the document store
 
 ```go
-db, _ := fado.Open("app.fado", fado.Options{})
-db.DefineClass(ctx, invoiceJSON)
-p := fado.Principal{ID: "alice", Groups: []string{"sales"}}
-id, _ := db.Create(ctx, "Invoice", fado.Values{"customer": "ACME"}, fado.As(p), fado.Key("order-42"))
-db.Transition(ctx, "Invoice", id, "submit", fado.As(p))
-rows, _ := db.Query(ctx, `SELECT id, total FROM Invoice WHERE state = 'submitted'`, fado.As(p))
+db, err := fado.Open("app.fado", fado.Options{})
+_, err = db.DefineClass(ctx, invoiceJSON)
+
+alice := fado.Principal{ID: "alice", Groups: []string{"sales"}}
+doc, err := db.Create(ctx, "Invoice", fado.Values{"customer": "ACME", "net": "100.00 PLN"},
+	fado.As(alice), fado.Key("order-42"))                    // the key makes a retry the same commit
+doc, err = db.Set(ctx, "Invoice", doc.ID, fado.Values{"discount": "0.10"}, fado.As(alice))
+fmt.Println(doc.Version, doc.Values["total"])             // 2 90.00 PLN
+
+open, err := db.Query(ctx, fado.Filter{Class: "Invoice", Where: "state = \"draft\" AND total > 50.00", Order: []string{"-due"}})
+rows, err := db.SQL(ctx, `SELECT count(*), sum(total) FROM Invoice`, nil)
+history, err := db.History(ctx, "Invoice", doc.ID)       // every version, who committed it, when
+preview, err := db.Preview(ctx, "Invoice", doc.ID, fado.Values{"discount": "0.50"}, "", fado.As(alice))
 ```
+
+Every change is a commit: the assignments, the recalculation of the
+formulas that depend on them, a typed history row and an event, in one
+transaction. A refusal is a `fado.Error` with a stable code and the
+variable it names; a definition's problems come back at once as
+`Diagnostics`, each with a code and the place. Files are attached as
+`File` values behind a blob store, reference data lives in explicit tables
+that formulas read with `LOOKUP`, and a class can be redefined as a new
+version that touches no existing document. `fadodb check FILE` verifies
+a database file. The full walk-through is `fado/example_test.go`, and
+`fado/readme_test.go` runs the class and the calls above.
 
 ## Install
 
@@ -122,6 +137,8 @@ in [docs/perf/](docs/perf/).
   No cgo in the core. DuckDB analytics and Postgres are separate modules.
 - **Deterministic.** Same class, same values, same user: same result on the
   server, in SQL, and in the browser.
+- **Records, not cells.** A redefinition of a class never changes a stored
+  document; a document in a terminal state never changes at all.
 - **Protocol first.** One JSON command set over HTTP, WebSocket, a C ABI and
   the Go API, so any frontend or language can attach.
 - **Honest status.** Docs describe what works today.
@@ -142,16 +159,17 @@ make gates    # what CI runs
 ## Layout
 
 ```
-cmd/fadodb/        command-line tool and server entry point
-fado/              public Go API (planned)
+cmd/fadodb/        command-line tool: formula eval, check; the server later
+fado/              public Go API
 internal/formula/  lexer, parser, binder, bytecode, VM, SQL generator
-internal/model/    document classes, typed variables, defaults, validation, migrations
-internal/store/    SQLite store, event log, outbox
-internal/state/    statechart engine
-internal/rules/    event-condition-action rules and built-in actions
-internal/auth/     users, groups, access rules as predicates
-internal/query/    filter DSL and read-only SQL
-internal/server/   HTTP and WebSocket
+internal/model/    document classes, schemas, tables, validation, the diff between class versions
+internal/store/    SQLite store: documents, history, events, tables, lookups, filters, blobs, class versions
+internal/query/    the filter compiler and the SQL endpoint's authorizer
+internal/state/    statechart engine (Phase 3)
+internal/rules/    event-condition-action rules and built-in actions (Phase 4)
+internal/auth/     users, groups, access rules as predicates (Phase 5)
+internal/server/   HTTP and WebSocket (Phase 6)
+analytics/         the DuckDB module: conformance and store benchmarks today, the projection in Phase 8
 bench/             end-to-end performance scenarios behind the budgets
 docs/              architecture, ADRs, dependency budget, benchmarks
 scripts/           the gates CI runs

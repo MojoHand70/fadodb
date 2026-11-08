@@ -780,10 +780,14 @@ in 13.7 ns with no allocation, and the core binary is 2.9 MB
 - Each release's numbers are published under `docs/perf/`. Today they come
   from the package benchmarks and the property campaigns, run on the
   release commit by hand and reported by `benchstat`.
-- Planned, with the store in Phase 2: a perf suite under `bench/` that
-  generates datasets and runs the end-to-end scenarios in the budgets
-  table nightly, and CPU and allocation profiles archived per release so
-  a regression can be diffed.
+- The end-to-end suite is the `bench` package, written against
+  database/sql so that one scenario runs on every engine. Since the
+  start of Phase 2 it holds the primary-store scenario of ADR-0017 and
+  the point-lookup scenario of ADR-0020; each module runs a small
+  version in CI and the full campaign on request (`docs/perf/README.md`).
+  Planned: the remaining scenarios of the budgets table, nightly runs,
+  and CPU and allocation profiles archived per release so a regression
+  can be diffed.
 - Hot-path rules in `CONTRIBUTING.md`: no allocations in the VM loop, no
   interface boxing of values, no reflection, prepared statements only, batched writes.
 - Actions are asynchronous by default so an external call can never consume the commit budget.

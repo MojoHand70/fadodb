@@ -8,6 +8,13 @@ dist/
 *.out
 *.prof
 
+# Databases a benchmark campaign leaves behind when interrupted
+*.db
+*.db-wal
+*.db-shm
+*.duckdb
+*.duckdb.wal
+
 # Editors and OS
 .idea/
 .vscode/

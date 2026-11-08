@@ -29,13 +29,13 @@ var engineDDL = []string{
 // The system columns of a current row (ADR-0013, ADR-0018) and the ones a
 // history row adds (ADR-0014).
 var (
-	systemColumns  = []string{"id", "title", "state", "version", "created_at", "updated_at", "state_entered_at"}
+	systemColumns  = []string{"id", "title", "state", "version", "class_version", "created_at", "updated_at", "state_entered_at"}
 	historyColumns = []string{"valid_from", "valid_to", "actor_id", "event_id"}
 	childKey       = []string{"doc_id", "version", "idx"}
 )
 
 const (
-	currentSystemDDL = `"id" TEXT NOT NULL, "title" TEXT, "state" TEXT, "version" INTEGER NOT NULL, "created_at" INTEGER NOT NULL, "updated_at" INTEGER NOT NULL, "state_entered_at" INTEGER`
+	currentSystemDDL = `"id" TEXT NOT NULL, "title" TEXT, "state" TEXT, "version" INTEGER NOT NULL, "class_version" INTEGER NOT NULL, "created_at" INTEGER NOT NULL, "updated_at" INTEGER NOT NULL, "state_entered_at" INTEGER`
 	historySystemDDL = currentSystemDDL + `, "valid_from" INTEGER NOT NULL, "valid_to" INTEGER, "actor_id" TEXT, "event_id" TEXT NOT NULL`
 	childKeyDDL      = `"doc_id" TEXT NOT NULL, "version" INTEGER NOT NULL, "idx" INTEGER NOT NULL`
 )
@@ -87,14 +87,15 @@ func columnNames(cols []model.Column) []string {
 // createDDL is the DDL of a class: the current, history and child tables
 // with their indexes, and the views a user sees (ADR-0014).
 func (c *class) createDDL() []string {
+	return append(c.tableDDL(), c.viewDDL()...)
+}
+
+// tableDDL makes the tables and indexes of a class.
+func (c *class) tableDDL() []string {
 	cls := c.cls
 	vars := columnDDL(cls.Columns)
 	if vars != "" {
 		vars = ", " + vars
-	}
-	cols := quoteAll(columnNames(cls.Columns))
-	all := func(prefix []string) string {
-		return strings.Join(append(quoteAll(prefix), cols...), ", ")
 	}
 	ddl := []string{
 		"CREATE TABLE " + quote(c.table) + " (" + currentSystemDDL + vars + `, PRIMARY KEY ("id"))`,
@@ -107,17 +108,33 @@ func (c *class) createDDL() []string {
 		}
 	}
 	for _, ch := range c.children {
-		cd := columnDDL(ch.def.Columns)
-		if cd != "" {
-			cd = ", " + cd
-		}
-		ddl = append(ddl, "CREATE TABLE "+quote(ch.table)+" ("+childKeyDDL+cd+`, PRIMARY KEY ("doc_id", "version", "idx"))`)
+		ddl = append(ddl, ch.tableDDL())
 	}
-	ddl = append(ddl,
-		"CREATE VIEW "+quote(cls.Name)+" AS SELECT "+all(systemColumns)+" FROM "+quote(c.table),
-		"CREATE VIEW "+quote(cls.Name+"_history")+" AS SELECT "+all(append(append([]string{}, systemColumns...), historyColumns...))+" FROM "+quote(c.history),
-		"CREATE VIEW "+quote(cls.Name+"_events")+` AS SELECT e.*, d."qualifier" FROM "events" e JOIN "event_docs" d ON d."event_id" = e."event_id" WHERE d."class" = `+lit(cls.Name),
-	)
+	return ddl
+}
+
+// tableDDL makes a child table.
+func (ch *child) tableDDL() string {
+	cd := columnDDL(ch.def.Columns)
+	if cd != "" {
+		cd = ", " + cd
+	}
+	return "CREATE TABLE " + quote(ch.table) + " (" + childKeyDDL + cd + `, PRIMARY KEY ("doc_id", "version", "idx"))`
+}
+
+// viewDDL makes the views of a class: the current and history documents,
+// the events, and each composite current and per version.
+func (c *class) viewDDL() []string {
+	cls := c.cls
+	cols := quoteAll(columnNames(cls.Columns))
+	all := func(prefix []string) string {
+		return strings.Join(append(quoteAll(prefix), cols...), ", ")
+	}
+	ddl := []string{
+		"CREATE VIEW " + quote(cls.Name) + " AS SELECT " + all(systemColumns) + " FROM " + quote(c.table),
+		"CREATE VIEW " + quote(cls.Name+"_history") + " AS SELECT " + all(append(append([]string{}, systemColumns...), historyColumns...)) + " FROM " + quote(c.history),
+		"CREATE VIEW " + quote(cls.Name+"_events") + ` AS SELECT e.*, d."qualifier" FROM "events" e JOIN "event_docs" d ON d."event_id" = e."event_id" WHERE d."class" = ` + lit(cls.Name),
+	}
 	for _, ch := range c.children {
 		ccols := strings.Join(append(quoteAll(childKey), quoteAll(columnNames(ch.def.Columns))...), ", ")
 		ddl = append(ddl,
@@ -139,12 +156,18 @@ func prefixed(alias, cols string) string {
 
 // dropDDL removes everything createDDL made.
 func (c *class) dropDDL() []string {
+	ddl := c.dropViewDDL()
+	for _, t := range c.tableNames() {
+		ddl = append(ddl, "DROP TABLE IF EXISTS "+quote(t))
+	}
+	return ddl
+}
+
+// dropViewDDL removes the views of a class.
+func (c *class) dropViewDDL() []string {
 	var ddl []string
 	for _, v := range c.viewNames() {
 		ddl = append(ddl, "DROP VIEW IF EXISTS "+quote(v))
-	}
-	for _, t := range c.tableNames() {
-		ddl = append(ddl, "DROP TABLE IF EXISTS "+quote(t))
 	}
 	return ddl
 }

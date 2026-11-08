@@ -1036,6 +1036,17 @@ func compileTransitions(c *collector, cls *Class, defs []TransitionDef, scope *f
 			c.add(CodeMissing, path+"/to", "a transition has a target state")
 		} else if !cls.States.Has(d.To) {
 			c.addf(CodeUnknownState, path+"/to", "unknown state %s", quote(d.To))
+		} else if !cls.States.IsFinal(d.To) {
+			// A document in a terminal state is frozen; it may move to
+			// another terminal state and never back to a live one
+			// (ADR-0039).
+			for _, st := range from {
+				if cls.States.IsFinal(st) {
+					c.hint(CodeNotAllowed, path+"/to", "a transition out of the terminal state "+quote(st)+" must lead to a terminal state; "+quote(d.To)+" is not one",
+						"list "+quote(d.To)+" under states.final, or drop the transition")
+					break
+				}
+			}
 		}
 		t.Guard = bindCondition(c, path+"/guard", d.Guard, scope, "a guard")
 		cls.Transitions = append(cls.Transitions, t)

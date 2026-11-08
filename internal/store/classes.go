@@ -96,6 +96,7 @@ type readStmts struct {
 type docRow struct {
 	id, title, state                   string
 	version                            int64
+	classVersion                       int
 	createdAt, updatedAt, stateEntered int64
 	validFrom, validTo                 int64
 	actor, eventID                     string
@@ -340,21 +341,22 @@ func (s *Store) compileClass(ctx context.Context, data []byte) (*model.Class, mo
 				Message: "the stored class is at version " + itoa(old.cls.Version) + "; a redefinition is version " + itoa(version),
 				Hint:    "omit version, or write " + itoa(version)})
 		}
-		var n int64
-		if err := s.db.QueryRowContext(ctx, "SELECT count(*) FROM "+quote(old.history)).Scan(&n); err == nil && n > 0 {
-			diags = append(diags, model.Diagnostic{Code: model.CodeNotSupported, Path: "/name", Pos: -1,
-				Message: "the class has documents; redefining a class under live documents is not supported yet",
-				Hint:    "a class with no documents can be redefined; migrations are a later decision"})
-		}
+		diags = append(diags, s.redefinitionDiagnostics(ctx, old, cls)...)
 	}
 	return cls, diags, version
 }
 
 // DefineClass compiles a class definition, creates its tables and views
 // and stores the definition. Defining the same definition again is a
-// no-op. A class with no documents can be redefined, which drops its empty
-// tables and makes the next version; a class with documents cannot be
-// redefined in this build.
+// no-op. A redefinition is the next version of the class (ADR-0039): it
+// adds the columns and tables of new variables, drops and remakes the
+// columns of a variable that changed type with no value anywhere, keeps
+// the columns of removed variables for the history, remakes the views,
+// and touches no document; every earlier version stays compiled so that
+// a document is read under the version that computed it. What a
+// redefinition may not do against the documents is in
+// redefinitionDiagnostics. A class with no history at all is dropped
+// and made again.
 func (s *Store) DefineClass(ctx context.Context, data []byte) (*model.Class, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -389,24 +391,62 @@ func (s *Store) DefineClass(ctx context.Context, data []byte) (*model.Class, err
 		_, _ = w.ExecContext(ctx, "ROLLBACK")
 		return nil, err
 	}
+	fresh := old == nil
 	if old != nil {
+		var n int64
+		if err := w.QueryRowContext(ctx, "SELECT count(*) FROM "+quote(old.history)).Scan(&n); err != nil {
+			return rollback(storageErr("count the history", err))
+		}
+		fresh = n == 0
+	}
+	// The names the new version needs must be free: every table and view
+	// of a fresh class, the views and the new child tables otherwise.
+	names := c.viewNames()
+	if fresh {
+		names = append(c.tableNames(), names...)
+	} else {
+		for _, ch := range c.children {
+			if _, had := old.childOfName(ch.v.Name); !had {
+				names = append(names, ch.table)
+			}
+		}
+	}
+	if old != nil {
+		for _, ddl := range old.dropViewDDL() {
+			if _, err := w.ExecContext(ctx, ddl); err != nil {
+				return rollback(storageErr("drop the views of "+old.cls.Name, err))
+			}
+		}
+	}
+	for _, name := range names {
+		var n int64
+		if err := w.QueryRowContext(ctx, "SELECT count(*) FROM sqlite_master WHERE name = ? COLLATE NOCASE", name).Scan(&n); err != nil {
+			return rollback(storageErr("check the names", err))
+		}
+		if n > 0 && !(fresh && old != nil && isOwn(old, name)) {
+			return rollback(hintf(CodeDuplicate, "", "the name "+name+" is taken by another table or view", "rename the class or the variable"))
+		}
+	}
+	switch {
+	case fresh && old != nil:
 		for _, ddl := range old.dropDDL() {
 			if _, err := w.ExecContext(ctx, ddl); err != nil {
 				return rollback(storageErr("drop the tables of "+old.cls.Name, err))
 			}
 		}
-	}
-	for _, name := range append(c.tableNames(), c.viewNames()...) {
-		var n int64
-		if err := w.QueryRowContext(ctx, "SELECT count(*) FROM sqlite_master WHERE name = ? COLLATE NOCASE", name).Scan(&n); err != nil {
-			return rollback(storageErr("check the names", err))
-		}
-		if n > 0 {
-			return rollback(hintf(CodeDuplicate, "", "the name "+name+" is taken by another table or view", "rename the class or the variable"))
+	case old != nil:
+		for _, ddl := range alterDDL(old, c) {
+			if _, err := w.ExecContext(ctx, ddl); err != nil {
+				return rollback(storageErr("alter the tables of "+old.cls.Name, err))
+			}
 		}
 	}
-	for _, ddl := range c.createDDL() {
-		if _, err := w.ExecContext(ctx, ddl); err != nil {
+	ddl := c.viewDDL()
+	if fresh {
+		ddl = c.createDDL()
+	}
+	for _, d := range ddl {
+		if _, err := w.ExecContext(ctx, d); err != nil {
 			return rollback(storageErr("create the tables of "+cls.Name, err))
 		}
 	}
@@ -425,8 +465,22 @@ func (s *Store) DefineClass(ctx context.Context, data []byte) (*model.Class, err
 		return nil, storageErr("commit", err)
 	}
 	if old != nil {
-		old.close()
 		s.closePlans()
+		if fresh {
+			// Nothing was ever written under the old versions: forget them.
+			for v, oc := range s.versions[strings.ToUpper(cls.Name)] {
+				oc.close()
+				delete(s.versions[strings.ToUpper(cls.Name)], v)
+			}
+		} else {
+			// The old version's statements may name columns a type change
+			// dropped; it is prepared again and stays as the reader of
+			// the documents it computed.
+			old.close()
+			if err := old.prepare(ctx, w, s.db); err != nil {
+				return nil, err
+			}
+		}
 	}
 	if err := c.prepare(ctx, w, s.db); err != nil {
 		// The tables exist and the class is stored; the statements failed,
@@ -437,6 +491,27 @@ func (s *Store) DefineClass(ctx context.Context, data []byte) (*model.Class, err
 	}
 	s.register(c)
 	return cls, nil
+}
+
+// isOwn reports whether a name is one of the class's own tables, which a
+// fresh redefinition drops before it creates them again.
+func isOwn(c *class, name string) bool {
+	for _, t := range c.tableNames() {
+		if strings.EqualFold(t, name) {
+			return true
+		}
+	}
+	return false
+}
+
+// childOfName finds a composite's table by variable name.
+func (c *class) childOfName(name string) (*child, bool) {
+	for _, ch := range c.children {
+		if strings.EqualFold(ch.v.Name, name) {
+			return ch, true
+		}
+	}
+	return nil, false
 }
 
 // DefineSchema compiles a schema definition and stores it (ADR-0031).

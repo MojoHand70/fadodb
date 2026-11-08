@@ -14,8 +14,8 @@ import (
 type Filter struct {
 	Class string `json:"class"`
 	// Where is a formula over the class's variables and the system
-	// columns id, title, state, version, created_at, updated_at and
-	// state_entered_at; empty matches every document.
+	// columns id, title, state, version, class_version, created_at,
+	// updated_at and state_entered_at; empty matches every document.
 	Where string `json:"where,omitempty"`
 	// Order lists variables or system columns to sort by, a leading "-"
 	// for descending; empty is by id.
@@ -89,6 +89,7 @@ var systemColumns = []formula.Variable{
 	{Name: "title", Type: formula.Scalar(formula.KindText)},
 	{Name: "state", Type: formula.Scalar(formula.KindText)},
 	{Name: "version", Type: formula.Scalar(formula.KindNumber)},
+	{Name: "class_version", Type: formula.Scalar(formula.KindNumber)},
 	{Name: "created_at", Type: formula.Scalar(formula.KindDateTime)},
 	{Name: "updated_at", Type: formula.Scalar(formula.KindDateTime)},
 	{Name: "state_entered_at", Type: formula.Scalar(formula.KindDateTime)},

@@ -87,6 +87,29 @@ func (s *Store) Query(ctx context.Context, f Filter, opts ...Option) ([]*Documen
 	}
 	docs := make([]*Document, len(found))
 	for i, row := range found {
+		if row.classVersion != c.cls.Version && row.classVersion != 0 {
+			// A document computed by an older version is read under it.
+			vc, vrow, err := s.underVersion(ctx, c, row, false)
+			if err != nil {
+				return nil, err
+			}
+			vkids, err := vc.loadChildren(ctx, vrow.id, vrow.version, nil, false)
+			if err != nil {
+				return nil, err
+			}
+			d := vc.document(vrow, vkids)
+			if plan.Fields != nil {
+				values := make(Values, len(plan.Fields))
+				for _, f := range plan.Fields {
+					if v, ok := d.Values[f]; ok {
+						values[f] = v
+					}
+				}
+				d.Values = values
+			}
+			docs[i] = d
+			continue
+		}
 		have := map[*child][]childRow{}
 		for ch := range wanted {
 			have[ch] = kids[ch][row.id]

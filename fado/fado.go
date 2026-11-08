@@ -161,6 +161,13 @@ func (db *DB) CreateMany(ctx context.Context, class string, docs []Values, opts 
 	return db.s.CreateMany(ctx, class, docs, opts...)
 }
 
+// Migrate brings every live document of a class that an older version
+// computed to the current version, as commits in batches (ADR-0039). It
+// returns how many documents it moved; terminal documents stay.
+func (db *DB) Migrate(ctx context.Context, class string, opts ...Option) (int, error) {
+	return db.s.Migrate(ctx, class, opts...)
+}
+
 // Set assigns values to a document and recalculates what depends on
 // them, as a new version; a set that changes nothing commits nothing.
 func (db *DB) Set(ctx context.Context, class, id string, values Values, opts ...Option) (*Document, error) {

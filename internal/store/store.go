@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"net/url"
 	"os"
 	"strconv"
@@ -29,8 +30,9 @@ const DefaultCheckpointEvery = 100 * time.Millisecond
 const DefaultMaxIndexedRows = 100000
 
 // engineSchema is the version of the store's own tables. A database made
-// by a newer engine is refused.
-const engineSchema = 1
+// by another engine schema is refused: before 1.0 there is no upgrade
+// path, and a pre-release file is recreated.
+const engineSchema = 2
 
 // Options configure Open. The ones that are properties of the database,
 // Synchronous and MaxText, are read at creation and kept in the metadata
@@ -98,6 +100,7 @@ type Store struct {
 	schemas    *model.SchemaSet
 	schemaJSON map[string][]byte
 	classes    map[string]*class
+	versions   map[string]map[int]*class // every compiled version of a class, by upper-cased name
 	order      []string
 	tables     map[string]*table
 	tableOrder []string
@@ -159,7 +162,7 @@ func Open(path string, o Options) (*Store, error) {
 	}
 	s := &Store{
 		path: path, db: db, now: o.Now, vm: formula.NewVM(), qvm: formula.NewVM(),
-		schemas: model.NewSchemaSet(), schemaJSON: map[string][]byte{}, classes: map[string]*class{},
+		schemas: model.NewSchemaSet(), schemaJSON: map[string][]byte{}, classes: map[string]*class{}, versions: map[string]map[int]*class{},
 		tables: map[string]*table{}, plans: map[*formula.QuerySlot]*lookupPlan{},
 		stop: make(chan struct{}), done: make(chan struct{}),
 	}
@@ -271,6 +274,9 @@ func (s *Store) init(ctx context.Context, wantSync string, wantMaxText int, want
 		return rollback(storageErr("read the schema version", err))
 	case version > engineSchema:
 		return rollback(errf(CodeNotSupported, "", "the database was created by a newer engine (schema %d, this one reads %d)", version, engineSchema))
+	case version < engineSchema:
+		return rollback(hintf(CodeNotSupported, "", fmt.Sprintf("the database was created by an earlier pre-release engine (schema %d, this one reads %d)", version, engineSchema),
+			"there is no upgrade path before 1.0; recreate the file"))
 	}
 	if wantIndexed > 0 {
 		if _, err := w.ExecContext(ctx, "INSERT INTO metadata (key, value) VALUES ('max_indexed_rows', ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value", strconv.Itoa(wantIndexed)); err != nil {
@@ -434,20 +440,35 @@ func (s *Store) load(ctx context.Context) error {
 		classes = append(classes, st)
 	}
 	rows.Close()
-	for _, st := range classes {
-		cls, diags := model.DefineIn(st.json, s.env())
-		if len(diags) > 0 {
-			return &Error{Code: CodeStorage, Message: "the stored class " + st.name + " does not compile: " + diags.Error()}
+	// Every version of every class is compiled: a document is read under
+	// the version that computed it (ADR-0039).
+	if rows, err = s.db.QueryContext(ctx, "SELECT class, version, json FROM class_versions ORDER BY class, version"); err != nil {
+		return storageErr("read the class versions", err)
+	}
+	var olds []stored
+	for rows.Next() {
+		var st stored
+		if err := rows.Scan(&st.name, &st.version, &st.json); err != nil {
+			rows.Close()
+			return storageErr("read the class versions", err)
 		}
-		cls.Version = st.version
-		c, err := newClass(cls, st.json)
+		olds = append(olds, st)
+	}
+	rows.Close()
+	for _, st := range classes {
+		c, err := s.compileStored(ctx, st.name, st.version, st.json)
 		if err != nil {
 			return err
 		}
-		if err := c.prepare(ctx, s.writer, s.db); err != nil {
+		s.register(c)
+	}
+	for _, st := range olds {
+		if cur, ok := s.classes[strings.ToUpper(st.name)]; !ok || cur.cls.Version == st.version {
+			continue
+		}
+		if _, err := s.compileStored(ctx, st.name, st.version, st.json); err != nil {
 			return err
 		}
-		s.register(c)
 	}
 	return nil
 }
@@ -461,12 +482,50 @@ func (s *Store) env() model.Env {
 	return model.Env{Schemas: s.schemas, Sources: set}
 }
 
+// compileStored compiles one stored version of a class, prepares it and
+// keeps it among the class's versions.
+func (s *Store) compileStored(ctx context.Context, name string, version int, src []byte) (*class, error) {
+	cls, diags := model.DefineIn(src, s.env())
+	if len(diags) > 0 {
+		return nil, &Error{Code: CodeStorage, Message: "the stored class " + name + " version " + itoa(version) + " does not compile: " + diags.Error()}
+	}
+	cls.Version = version
+	c, err := newClass(cls, src)
+	if err != nil {
+		return nil, err
+	}
+	if err := c.prepare(ctx, s.writer, s.db); err != nil {
+		return nil, err
+	}
+	s.keepVersion(c)
+	return c, nil
+}
+
+// register makes a class the current one of its name.
 func (s *Store) register(c *class) {
 	key := strings.ToUpper(c.cls.Name)
 	if _, exists := s.classes[key]; !exists {
 		s.order = append(s.order, c.cls.Name)
 	}
 	s.classes[key] = c
+	s.keepVersion(c)
+}
+
+// keepVersion remembers a compiled version of a class.
+func (s *Store) keepVersion(c *class) {
+	key := strings.ToUpper(c.cls.Name)
+	if s.versions[key] == nil {
+		s.versions[key] = map[int]*class{}
+	}
+	s.versions[key][c.cls.Version] = c
+}
+
+// classAt returns a compiled version of a class, nil when the store does
+// not have it.
+func (s *Store) classAt(name string, version int) *class {
+	s.cmu.RLock()
+	defer s.cmu.RUnlock()
+	return s.versions[strings.ToUpper(name)][version]
 }
 
 // checkpoint copies the write-ahead log into the database file every
@@ -504,8 +563,10 @@ func (s *Store) Close() error {
 	close(s.stop)
 	<-s.done
 	s.cmu.Lock()
-	for _, c := range s.classes {
-		c.close()
+	for _, vs := range s.versions {
+		for _, c := range vs {
+			c.close()
+		}
 	}
 	for _, t := range s.tables {
 		t.close()

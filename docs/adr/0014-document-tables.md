@@ -1,6 +1,6 @@
 # ADR-0014: Document tables: current, history, child tables and views
 
-- Status: Accepted; amends ADR-0006 and ADR-0007; amended by ADR-0026 (command keys and business dates), ADR-0031 (objects flatten to prefixed columns)
+- Status: Accepted; amends ADR-0006 and ADR-0007; amended by ADR-0026 (command keys and business dates), ADR-0031 (objects flatten to prefixed columns), ADR-0039 (class_version on every row)
 - Date: 2026-11-05
 
 ## Context

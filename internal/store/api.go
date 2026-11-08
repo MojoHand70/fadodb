@@ -34,6 +34,9 @@ type Document struct {
 	Title   string `json:"title"`
 	State   string `json:"state,omitempty"`
 	Version int64  `json:"version"`
+	// ClassVersion is the version of the class that computed this version
+	// of the document (ADR-0039).
+	ClassVersion int `json:"class_version"`
 	// Seconds since the epoch, UTC.
 	CreatedAt      int64  `json:"created_at"`
 	UpdatedAt      int64  `json:"updated_at"`
@@ -74,9 +77,10 @@ type Event struct {
 // The event kinds this build writes, and the qualifiers of their
 // event_docs rows.
 const (
-	EventCreated = "created"
-	EventSet     = "set"
-	EventDeleted = "deleted"
+	EventCreated  = "created"
+	EventSet      = "set"
+	EventDeleted  = "deleted"
+	EventMigrated = "migrated"
 )
 
 // Preview is what a commit would do, without having done it (ADR-0025):

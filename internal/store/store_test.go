@@ -198,7 +198,7 @@ func TestDefineClass(t *testing.T) {
 		colList = append(colList, n+" "+typ)
 	}
 	cols.Close()
-	wantCols := "id TEXT title TEXT state TEXT version INTEGER created_at INTEGER updated_at INTEGER state_entered_at INTEGER valid_from INTEGER valid_to INTEGER actor_id TEXT event_id TEXT " +
+	wantCols := "id TEXT title TEXT state TEXT version INTEGER class_version INTEGER created_at INTEGER updated_at INTEGER state_entered_at INTEGER valid_from INTEGER valid_to INTEGER actor_id TEXT event_id TEXT " +
 		"number TEXT customer TEXT issued INTEGER due INTEGER owner TEXT status TEXT discount INTEGER net INTEGER net_currency TEXT priority REAL parts REAL notes TEXT settings TEXT " +
 		"shipping__line1 TEXT shipping__line2 TEXT shipping__city TEXT shipping__postal_code TEXT shipping__region TEXT shipping__country TEXT " +
 		"contact__id TEXT contact__name TEXT contact__email TEXT contact__phone TEXT contact__avatar TEXT total INTEGER total_currency TEXT ship_city TEXT per_part REAL label TEXT"
@@ -238,19 +238,24 @@ func TestDefineClass(t *testing.T) {
 	if cls3, err := s.DefineClass(ctx, []byte(v3)); err != nil || cls3.Version != 3 {
 		t.Errorf("version 3 after 2: %v", err)
 	}
-	// With documents, no redefinition.
-	if _, err := s.Create(ctx, "Invoice", sampleValues(), As(alice)); err != nil {
+	// With documents, a redefinition is the next version and touches no
+	// document (ADR-0039); the versions test has the rest.
+	doc, err := s.Create(ctx, "Invoice", sampleValues(), As(alice))
+	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = s.DefineClass(ctx, []byte(v2))
-	if !errors.As(err, &diags) || !diags.Has(model.CodeNotSupported) {
+	v4 := strings.Replace(v2, `"memo": {"type": "text"},`, `"memo": {"type": "text"}, "note2": {"type": "text"},`, 1)
+	if cls4, err := s.DefineClass(ctx, []byte(v4)); err != nil || cls4.Version != 4 {
 		t.Errorf("redefining under documents: %v", err)
 	}
-	if diags := s.Validate([]byte(v2)); !diags.Has(model.CodeNotSupported) {
+	if diags := s.Validate([]byte(v4)); len(diags) > 0 {
 		t.Errorf("Validate under documents: %v", diags)
 	}
-	if again, err := s.DefineClass(ctx, []byte(v3)); err != nil || again.Version != 3 {
+	if again, err := s.DefineClass(ctx, []byte(v4)); err != nil || again.Version != 4 {
 		t.Errorf("the same definition under documents is still a no-op: %v", err)
+	}
+	if got, err := s.Get(ctx, "Invoice", doc.ID); err != nil || got.ClassVersion != 3 || got.Values["note2"] != nil {
+		t.Errorf("the document is read under its version: %v %s", err, dump(got))
 	}
 	// Diagnostics of a bad definition come back as the error.
 	_, err = s.DefineClass(ctx, []byte(`{"name": "Bad", "variables": {"x": {"type": "nope"}}}`))

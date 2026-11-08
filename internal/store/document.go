@@ -28,8 +28,8 @@ func (c *class) scanRow(sc scanner, history bool) (*docRow, error) {
 	if err := sc.Scan(dest...); err != nil {
 		return nil, err
 	}
-	r := &docRow{id: toString(raw[0]), title: toString(raw[1]), state: toString(raw[2]), version: toInt64(raw[3]),
-		createdAt: toInt64(raw[4]), updatedAt: toInt64(raw[5]), stateEntered: toInt64(raw[6])}
+	r := &docRow{id: toString(raw[0]), title: toString(raw[1]), state: toString(raw[2]), version: toInt64(raw[3]), classVersion: int(toInt64(raw[4])),
+		createdAt: toInt64(raw[5]), updatedAt: toInt64(raw[6]), stateEntered: toInt64(raw[7])}
 	rest := raw[len(systemColumns):]
 	if history {
 		r.validFrom, r.validTo, r.actor, r.eventID = toInt64(rest[0]), toInt64(rest[1]), toString(rest[2]), toString(rest[3])
@@ -96,7 +96,7 @@ func (c *class) loadChildren(ctx context.Context, id string, version int64, have
 
 // document renders a row and its composites in the wire shape.
 func (c *class) document(r *docRow, kids map[*child][]childRow) *Document {
-	d := &Document{Class: c.cls.Name, ID: r.id, Title: r.title, State: r.state, Version: r.version,
+	d := &Document{Class: c.cls.Name, ID: r.id, Title: r.title, State: r.state, Version: r.version, ClassVersion: r.classVersion,
 		CreatedAt: r.createdAt, UpdatedAt: r.updatedAt, StateEnteredAt: r.stateEntered, Values: make(Values, len(c.cls.Variables))}
 	if d.Title == "" {
 		d.Title = r.id
@@ -199,11 +199,38 @@ func (s *Store) Get(ctx context.Context, class, id string, opts ...Option) (*Doc
 		}
 		return nil, storageErr("read the document", err)
 	}
+	if c, row, err = s.underVersion(ctx, c, row, false); err != nil {
+		return nil, err
+	}
 	kids, err := c.loadChildren(ctx, id, row.version, nil, false)
 	if err != nil {
 		return nil, err
 	}
 	return c.document(row, kids), nil
+}
+
+// underVersion returns the class that computed a row and the row read
+// under that class's layout, which is the row itself when the class is
+// the current one (ADR-0039). A document is read under the version that
+// computed it, so a later definition never changes what it shows.
+func (s *Store) underVersion(ctx context.Context, c *class, row *docRow, history bool) (*class, *docRow, error) {
+	if row.classVersion == c.cls.Version || row.classVersion == 0 {
+		return c, row, nil
+	}
+	old := s.classAt(c.cls.Name, row.classVersion)
+	if old == nil {
+		return nil, nil, errf(CodeStorage, "", "the document %s was computed by version %d of %s, which the store does not have", row.id, row.classVersion, c.cls.Name)
+	}
+	var err error
+	if history {
+		row, err = old.scanRow(old.r.getVersion.QueryRowContext(ctx, row.id, row.version), true)
+	} else {
+		row, err = old.scanRow(old.r.getCurrent.QueryRowContext(ctx, row.id), false)
+	}
+	if err != nil {
+		return nil, nil, storageErr("read the document under its class version", err)
+	}
+	return old, row, nil
 }
 
 // Version reads one committed version of a document from its history.
@@ -219,6 +246,9 @@ func (s *Store) Version(ctx context.Context, class, id string, version int64, op
 			return nil, errf(CodeUnknownDocument, "", "no version %d of document %s of class %s", version, id, c.cls.Name)
 		}
 		return nil, storageErr("read the version", err)
+	}
+	if c, row, err = s.underVersion(ctx, c, row, true); err != nil {
+		return nil, err
 	}
 	return c.historyRow(ctx, row)
 }
@@ -258,7 +288,11 @@ func (s *Store) History(ctx context.Context, class, id string, opts ...Option) (
 	}
 	out := make([]*HistoryRow, 0, len(raw))
 	for _, row := range raw {
-		h, err := c.historyRow(ctx, row)
+		vc, row, err := s.underVersion(ctx, c, row, true)
+		if err != nil {
+			return nil, err
+		}
+		h, err := vc.historyRow(ctx, row)
 		if err != nil {
 			return nil, err
 		}

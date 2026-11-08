@@ -1,8 +1,7 @@
 // Package formula holds the formula language: lexer, parser, function
 // catalog, binder, bytecode, the Go virtual machine and the SQL generator
-// with its SQLite dialect; the DuckDB dialect follows as Phase 1
-// continues. One compiler, three targets; the browser VM in web/vm
-// executes the same bytecode.
+// with its SQLite and DuckDB dialects. One compiler, three targets; the
+// browser VM of Phase 7 executes the same bytecode.
 //
 // Parse turns text into a tree, Bind turns the tree into a Program by the
 // static typing rules of ADR-0019, VM.Run executes a Program over the

@@ -6,6 +6,13 @@ All notable changes to FadoDB are recorded here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- `PreviewDraft` (ADR-0025): a class definition compiled for one call
+  and run through the commit pipeline over an existing document of the
+  stored class, or as a create, writing and storing nothing, so that a
+  designer tries a draft on real documents, terminal ones included.
+
 ## [0.2.0] - 2026-11-08
 
 ### Added

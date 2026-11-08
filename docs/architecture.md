@@ -688,11 +688,13 @@ optional idempotency key and a business date (ADR-0026); `Preview` runs the
 commit pipeline and writes nothing (ADR-0025); a registered executor
 receives the transition event from the outbox (ADR-0027). Today the `fado`
 package has `Open`, `DefineClass`, `ValidateClass`, `DefineSchema`,
-`Create`, `Set`, `Delete`, `Get`, `Version`, `History`, `Events` and
-`Preview` of a create or a set; every refusal is a `fado.Error` with a
-stable code and the variable it is about, or the `Diagnostics` of a
-definition. Layouts, transitions, refresh, queries, subscriptions and
-executors arrive with their phases.
+`DefineTable`, `ImportRows`, `TableRows`, `Create`, `CreateMany`, `Set`,
+`Delete`, `Migrate`, `Get`, `Version`, `History`, `Events`, `Query`,
+`Count`, `SQL`, `PutBlob`, `OpenFile`, `OpenBlob`, `CheckBlobs`, and
+`Preview` and `PreviewDraft` of a create or a set; every refusal is a
+`fado.Error` with a stable code and the variable it is about, or the
+`Diagnostics` of a definition. Layouts, transitions, refresh, `QUERY`,
+subscriptions and executors arrive with their phases.
 
 ### JSON command set
 

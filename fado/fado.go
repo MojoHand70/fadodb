@@ -1,14 +1,18 @@
-// Package fado is the Go API of FadoDB: open a database file, define
-// schemas and classes, and create, change, read and delete documents as
-// commits with history and an event log (docs/architecture.md, "Go API").
+// Package fado is the Go API of FadoDB: open a database file; define
+// schemas, classes and explicit tables; create, change, read and delete
+// documents as commits with recalculation, typed history and an event
+// log; attach files; filter documents with a formula and run read-only
+// SQL over the views; redefine a class as a new version that touches no
+// document, and migrate live documents on purpose (docs/architecture.md,
+// "Go API").
 //
 // The embedder supplies the principal on every call (ADR-0027), may give
 // every mutating call an idempotency key and a business date (ADR-0026),
-// and can run a change through the commit pipeline without writing it
-// (ADR-0025). What this build does not do yet is listed on the store
-// package: the statechart, rules, access rules and rights, LOOKUP against
-// explicit tables, the filter DSL and the SQL endpoint, the blob store,
-// and class migrations under live documents.
+// and can run a change, or a draft class, through the commit pipeline
+// without writing anything (ADR-0025). Not here yet: the statechart
+// (Phase 3), rules and QUERY (Phase 4), access rules and rights (Phase 5)
+// and the server (Phase 6); the principal is recorded as the actor and
+// enforces nothing until Phase 5.
 package fado
 
 import (
@@ -244,4 +248,13 @@ func (db *DB) CheckBlobs(ctx context.Context) (mismatched []string, checked int,
 // and writes nothing (ADR-0025).
 func (db *DB) Preview(ctx context.Context, class, id string, values Values, transition string, opts ...Option) (*Preview, error) {
 	return db.s.Preview(ctx, class, id, values, transition, opts...)
+}
+
+// PreviewDraft compiles a class definition for this call alone and runs
+// a create (empty id) or a set of an existing document of the stored
+// class of the same name through the commit pipeline under it, writing
+// and storing nothing (ADR-0025): a designer tries a draft on real
+// documents, terminal ones included.
+func (db *DB) PreviewDraft(ctx context.Context, definition []byte, id string, values Values, transition string, opts ...Option) (*Preview, error) {
+	return db.s.PreviewDraft(ctx, definition, id, values, transition, opts...)
 }

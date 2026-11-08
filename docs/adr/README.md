@@ -8,7 +8,7 @@ line says so. Copy `0000-template.md` to start.
 |---|---|---|
 | [0001](0001-license-and-name.md) | License and name | Accepted |
 | [0002](0002-pure-go-core-and-dependency-budget.md) | Pure-Go core and dependency budget | Accepted, amended by 0017 |
-| [0003](0003-bytecode-as-interchange-format.md) | Bytecode as the interchange format | Accepted, amended by 0029 |
+| [0003](0003-bytecode-as-interchange-format.md) | Bytecode as the interchange format | Accepted, amended by 0029, 0037 |
 | [0004](0004-number-semantics.md) | Number semantics: float64 with Excel rules | Accepted, amended by 0019, 0022, 0024 |
 | [0005](0005-blank-semantics.md) | Blank and null semantics | Accepted |
 | [0006](0006-event-log-as-source-of-truth.md) | Event log as the source of truth | Accepted, amended by 0014, 0026 |
@@ -21,11 +21,11 @@ line says so. Copy `0000-template.md` to start.
 | [0013](0013-document-variables-and-types.md) | Document variables and the type system | Accepted, amended by 0019, 0022, 0023, 0031, 0034 |
 | [0014](0014-document-tables.md) | Document tables: current, history, child tables and views | Accepted, amended by 0026, 0031 |
 | [0015](0015-commits-and-recalculation.md) | Commits, recalculation modes, defaults, reset and refresh | Accepted, amended by 0020, 0025 |
-| [0016](0016-explicit-tables-and-query-functions.md) | Explicit tables, storage bindings, LOOKUP and QUERY | Accepted, amended by 0020, 0036 |
+| [0016](0016-explicit-tables-and-query-functions.md) | Explicit tables, storage bindings, LOOKUP and QUERY | Accepted, amended by 0020, 0036, 0037 |
 | [0017](0017-duckdb-as-the-analytical-engine.md) | DuckDB as the analytical engine, full and lite builds | Accepted, amended by 0035 |
 | [0018](0018-class-metadata-layouts-and-wire-format.md) | JSON for definitions and interchange: class metadata, layouts and the wire format | Accepted, amended by 0022, 0023, 0028, 0031, 0032, 0033, 0034 |
 | [0019](0019-formula-language-semantics.md) | Formula language semantics: grammar, types, coercion, comparison, dates, text, composites and errors | Accepted, amended by 0021, 0022, 0023, 0024, 0031 |
-| [0020](0020-query-function-execution.md) | LOOKUP and QUERY execution: one engine call per invocation | Accepted, amended by 0036 |
+| [0020](0020-query-function-execution.md) | LOOKUP and QUERY execution: one engine call per invocation | Accepted, amended by 0036, 0037 |
 | [0021](0021-size-limits.md) | Size limits: one text limit per database, enforced before building | Accepted, amended by 0033 |
 | [0022](0022-exact-decimal-int-and-money.md) | Exact numbers: decimal, int and money | Accepted |
 | [0023](0023-calendar-day-datetime-and-enum-values.md) | A date is a calendar day, a datetime an instant, an enum a text with a value set | Accepted |
@@ -42,3 +42,4 @@ line says so. Copy `0000-template.md` to start.
 | [0034](0034-range-constraints-on-numeric-variables.md) | Range constraints on numeric variables | Accepted |
 | [0035](0035-sqlite-is-the-transactional-store.md) | SQLite is the transactional store, by measurement | Accepted |
 | [0036](0036-in-memory-index-for-lookups-in-commits.md) | An in-memory index serves LOOKUP inside commits, by measurement | Accepted |
+| [0037](0037-explicit-tables-and-the-compiled-lookup.md) | Explicit tables bound to SQLite and the compiled LOOKUP | Proposed |

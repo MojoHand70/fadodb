@@ -24,6 +24,10 @@ const DefaultWALLimit int64 = 64 << 20
 // checkpoint.
 const DefaultCheckpointEvery = 100 * time.Millisecond
 
+// DefaultMaxIndexedRows is the row count up to which a table is held in
+// memory for the lookups of auto formulas (ADR-0036).
+const DefaultMaxIndexedRows = 100000
+
 // engineSchema is the version of the store's own tables. A database made
 // by a newer engine is refused.
 const engineSchema = 1
@@ -47,6 +51,12 @@ type Options struct {
 	// CheckpointEvery is the checkpointer's period; 0 is
 	// DefaultCheckpointEvery.
 	CheckpointEvery time.Duration
+	// MaxIndexedRows is the row count up to which an explicit table is
+	// held in memory for LOOKUP (ADR-0036). It is kept in the metadata;
+	// a value given on open replaces the stored one, since it changes
+	// speed and memory and never a result. 0 keeps what is stored, or
+	// DefaultMaxIndexedRows for a new database.
+	MaxIndexedRows int
 	// Now is the clock the store stamps commits with; nil is time.Now.
 	// Tests set it.
 	Now func() time.Time
@@ -60,18 +70,23 @@ type Store struct {
 	mu          sync.Mutex // the single writer: commits, definitions, close
 	limits      formula.Limits
 	synchronous string
+	maxIndexed  int
 	now         func() time.Time
 	vm          *formula.VM
+	qvm         *formula.VM // runs the key expressions of indexed lookups while vm runs the formula
 	vars        []formula.Value
 	dirty       []bool
 	ids         idGen
 	stmts       engineStmts
+	plans       map[*formula.QuerySlot]*lookupPlan
 
 	cmu        sync.RWMutex
 	schemas    *model.SchemaSet
 	schemaJSON map[string][]byte
 	classes    map[string]*class
 	order      []string
+	tables     map[string]*table
+	tableOrder []string
 
 	stop   chan struct{}
 	done   chan struct{}
@@ -113,8 +128,9 @@ func Open(path string, o Options) (*Store, error) {
 		return nil, storageErr("open", err)
 	}
 	s := &Store{
-		path: path, db: db, now: o.Now, vm: formula.NewVM(),
+		path: path, db: db, now: o.Now, vm: formula.NewVM(), qvm: formula.NewVM(),
 		schemas: model.NewSchemaSet(), schemaJSON: map[string][]byte{}, classes: map[string]*class{},
+		tables: map[string]*table{}, plans: map[*formula.QuerySlot]*lookupPlan{},
 		stop: make(chan struct{}), done: make(chan struct{}),
 	}
 	if s.now == nil {
@@ -131,13 +147,14 @@ func Open(path string, o Options) (*Store, error) {
 		db.Close()
 		return nil, err
 	}
-	if err := s.init(ctx, sync, o.MaxText); err != nil {
+	if err := s.init(ctx, sync, o.MaxText, o.MaxIndexedRows); err != nil {
 		return fail(err)
 	}
 	if _, err := s.writer.ExecContext(ctx, "PRAGMA synchronous="+s.synchronous); err != nil {
 		return fail(storageErr("set synchronous", err))
 	}
-	s.vm.Limits = s.limits
+	s.vm.Limits, s.qvm.Limits = s.limits, s.limits
+	s.vm.Executor = (*executor)(s)
 	if err := s.prepareEngine(ctx); err != nil {
 		return fail(err)
 	}
@@ -161,7 +178,7 @@ func Open(path string, o Options) (*Store, error) {
 
 // init creates the engine's tables when the database is new and reads
 // the metadata.
-func (s *Store) init(ctx context.Context, wantSync string, wantMaxText int) error {
+func (s *Store) init(ctx context.Context, wantSync string, wantMaxText int, wantIndexed int) error {
 	w := s.writer
 	if _, err := w.ExecContext(ctx, "BEGIN IMMEDIATE"); err != nil {
 		return storageErr("begin", err)
@@ -191,7 +208,11 @@ func (s *Store) init(ctx context.Context, wantSync string, wantMaxText int) erro
 		if _, err := w.ExecContext(ctx, "INSERT INTO schema_version (version) VALUES (?)", engineSchema); err != nil {
 			return rollback(storageErr("write the schema version", err))
 		}
-		for _, kv := range [][2]string{{"synchronous", sync}, {"max_text", strconv.Itoa(maxText)}, {"created_at", strconv.FormatInt(now, 10)}} {
+		indexed := wantIndexed
+		if indexed <= 0 {
+			indexed = DefaultMaxIndexedRows
+		}
+		for _, kv := range [][2]string{{"synchronous", sync}, {"max_text", strconv.Itoa(maxText)}, {"max_indexed_rows", strconv.Itoa(indexed)}, {"created_at", strconv.FormatInt(now, 10)}} {
 			if _, err := w.ExecContext(ctx, "INSERT INTO metadata (key, value) VALUES (?, ?)", kv[0], kv[1]); err != nil {
 				return rollback(storageErr("write the metadata", err))
 			}
@@ -200,6 +221,11 @@ func (s *Store) init(ctx context.Context, wantSync string, wantMaxText int) erro
 		return rollback(storageErr("read the schema version", err))
 	case version > engineSchema:
 		return rollback(errf(CodeNotSupported, "", "the database was created by a newer engine (schema %d, this one reads %d)", version, engineSchema))
+	}
+	if wantIndexed > 0 {
+		if _, err := w.ExecContext(ctx, "INSERT INTO metadata (key, value) VALUES ('max_indexed_rows', ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value", strconv.Itoa(wantIndexed)); err != nil {
+			return rollback(storageErr("write the metadata", err))
+		}
 	}
 	rows, err := w.QueryContext(ctx, "SELECT key, value FROM metadata")
 	if err != nil {
@@ -227,6 +253,9 @@ func (s *Store) init(ctx context.Context, wantSync string, wantMaxText int) erro
 		return errf(CodeStorage, "", "the metadata has max_text %q", meta["max_text"])
 	}
 	s.limits = formula.Limits{MaxText: maxText}
+	if s.maxIndexed, _ = strconv.Atoi(meta["max_indexed_rows"]); s.maxIndexed <= 0 {
+		s.maxIndexed = DefaultMaxIndexedRows
+	}
 	if wantSync != "" && wantSync != s.synchronous {
 		return hintf(CodeBadValue, "", "the database was created with synchronous "+s.synchronous+", not "+wantSync,
 			"the setting is the database's (ADR-0035); open it without one")
@@ -293,6 +322,31 @@ func (s *Store) load(ctx context.Context) error {
 		}
 		s.schemaJSON[strings.ToUpper(st.name)] = st.json
 	}
+	if rows, err = s.db.QueryContext(ctx, "SELECT name, version, json FROM tables_registry ORDER BY rowid"); err != nil {
+		return storageErr("read the tables", err)
+	}
+	var tables []stored
+	for rows.Next() {
+		var st stored
+		if err := rows.Scan(&st.name, &st.version, &st.json); err != nil {
+			rows.Close()
+			return storageErr("read the tables", err)
+		}
+		tables = append(tables, st)
+	}
+	rows.Close()
+	for _, st := range tables {
+		def, diags := model.DefineTable(st.json)
+		if len(diags) > 0 {
+			return &Error{Code: CodeStorage, Message: "the stored table " + st.name + " does not compile: " + diags.Error()}
+		}
+		def.Version = st.version
+		t := newTable(def, st.json)
+		if err := t.prepare(ctx, s.writer, s.db); err != nil {
+			return err
+		}
+		s.registerTable(t)
+	}
 	if rows, err = s.db.QueryContext(ctx, "SELECT name, version, json FROM classes ORDER BY rowid"); err != nil {
 		return storageErr("read the classes", err)
 	}
@@ -306,7 +360,7 @@ func (s *Store) load(ctx context.Context) error {
 	}
 	rows.Close()
 	for _, st := range classes {
-		cls, diags := model.Define(st.json, s.schemas)
+		cls, diags := model.DefineIn(st.json, s.env())
 		if len(diags) > 0 {
 			return &Error{Code: CodeStorage, Message: "the stored class " + st.name + " does not compile: " + diags.Error()}
 		}
@@ -321,6 +375,15 @@ func (s *Store) load(ctx context.Context) error {
 		s.register(c)
 	}
 	return nil
+}
+
+// env is what definitions compile against: the schemas and the tables.
+func (s *Store) env() model.Env {
+	set := formula.NewSourceSet()
+	for _, name := range s.tableOrder {
+		set.Add(s.tables[strings.ToUpper(name)].src)
+	}
+	return model.Env{Schemas: s.schemas, Sources: set}
 }
 
 func (s *Store) register(c *class) {
@@ -369,7 +432,11 @@ func (s *Store) Close() error {
 	for _, c := range s.classes {
 		c.close()
 	}
+	for _, t := range s.tables {
+		t.close()
+	}
 	s.cmu.Unlock()
+	s.closePlans()
 	s.stmts.close()
 	err := s.writer.Close()
 	if err2 := s.db.Close(); err == nil {
@@ -386,6 +453,10 @@ func (s *Store) Limits() formula.Limits { return s.limits }
 
 // Synchronous is the database's synchronous setting, NORMAL or FULL.
 func (s *Store) Synchronous() string { return s.synchronous }
+
+// MaxIndexedRows is the row count up to which a table is held in memory
+// for lookups (ADR-0036).
+func (s *Store) MaxIndexedRows() int { return s.maxIndexed }
 
 // Classes lists the class names in the order they were defined.
 func (s *Store) Classes() []string {

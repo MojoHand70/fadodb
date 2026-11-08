@@ -8,6 +8,22 @@ All notable changes to FadoDB are recorded here. The format follows
 
 ### Added
 
+- Explicit tables and `LOOKUP` (ADR-0016, ADR-0020, ADR-0036, ADR-0037
+  proposed). A table is defined in JSON with its columns, key and
+  indexes, stored as `tbl_<Name>` with the view `<Name>` and filled by
+  `ImportRows`, which replaces rows by key or the whole table. The binder
+  compiles `LOOKUP(source, column, condition)` into one query slot: the
+  condition is a program of its own over the source's columns and the
+  document's `THIS.name` variables, a row on which it errors does not
+  match, and an equality of a column with an expression of the document
+  alone is recorded as the key the index serves. The VM hands the slot to
+  a `QueryExecutor`; the store answers from an in-memory index while the
+  table has at most `MaxIndexedRows` rows, a database limit kept in the
+  metadata, and from a prepared statement narrowed by the table's index
+  above that; the SQL generator writes a correlated subquery. The
+  conformance suite `lookup` declares its tables inline and runs on the
+  VM, SQLite and DuckDB; three binding suites fix what is refused. The
+  bytecode format is v3: the query slot carries the condition.
 - The store and the Go API, `internal/store` and `fado`: a database file
   opened as ADR-0035 configures it, WAL mode with the checkpointer on its
   own connection and every statement prepared once on one pinned writer,

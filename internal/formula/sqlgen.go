@@ -126,6 +126,9 @@ type Dialect interface {
 	Call(name string, args []SQLExpr, params *Params) (SQLExpr, error)
 	// Param references a context parameter by name.
 	Param(name string) string
+	// ColumnType is the SQL type of a column that stores values of the
+	// kind, as the engine's tables declare it.
+	ColumnType(k Kind) string
 	// ContextArgs binds the context parameters for database/sql, in the
 	// form the dialect's SQL expects.
 	ContextArgs(ctx *Context) []any
@@ -159,19 +162,37 @@ func (p *Params) Use(name string) string {
 	return p.ref(name)
 }
 
+// NewParams makes an empty parameter list for a dialect, for callers that
+// generate fragments with LookupSQL.
+func NewParams(d Dialect) *Params { return &Params{ref: d.Param} }
+
+// Names lists the parameters recorded so far.
+func (p *Params) Names() []string { return append([]string(nil), p.names...) }
+
 // GenerateSQL translates a program for a dialect. column gives the column
 // expression that holds each slot's value; for a money slot it is asked
 // again for the currency column, a text slot named with CurrencySuffix.
+// A program with a lookup refers to the source by its quoted name; a
+// caller whose tables are named otherwise uses GenerateSQLWith. Column
+// expressions must be qualified when the program has a lookup, since
+// they are referenced inside its subquery.
 func GenerateSQL(p *Program, d Dialect, column func(Slot) string) (SQL, error) {
+	return GenerateSQLWith(p, d, column, quoteIdent)
+}
+
+// GenerateSQLWith is GenerateSQL with the table expression of each source
+// a LOOKUP reads given by table.
+func GenerateSQLWith(p *Program, d Dialect, column func(Slot) string, table func(source string) string) (SQL, error) {
 	if len(p.Code) == 0 || p.Code[len(p.Code)-1].Op != OpReturn {
 		return SQL{}, fmt.Errorf("sqlgen: the program does not end with return")
 	}
-	t := &sqlTranslator{p: p, d: d, column: column, params: Params{ref: d.Param}}
+	params := NewParams(d)
+	t := &sqlTranslator{p: p, d: d, column: column, table: table, params: params}
 	e, err := t.block(0, len(p.Code)-1)
 	if err != nil {
 		return SQL{}, err
 	}
-	out := SQL{Value: e.Val, Error: e.Err, Kind: e.Kind, Scale: e.Scale, Params: t.params.names}
+	out := SQL{Value: e.Val, Error: e.Err, Kind: e.Kind, Scale: e.Scale, Params: params.names}
 	if e.Kind == KindMoney {
 		out.Currency = e.Cur
 	}
@@ -182,7 +203,8 @@ type sqlTranslator struct {
 	p      *Program
 	d      Dialect
 	column func(Slot) string
-	params Params
+	table  func(string) string
+	params *Params
 }
 
 // block translates code[start:end), which must leave exactly one value on
@@ -361,7 +383,7 @@ func (t *sqlTranslator) block(start, end int) (SQLExpr, error) {
 			if name == "ISBLANK" || name == "ISNOTBLANK" {
 				e = blankTest(d, name == "ISBLANK", args[0])
 			} else {
-				e, err = d.Call(name, args, &t.params)
+				e, err = d.Call(name, args, t.params)
 				if err != nil {
 					return SQLExpr{}, fmt.Errorf("sqlgen: %s: %w", name, err)
 				}
@@ -373,8 +395,22 @@ func (t *sqlTranslator) block(start, end int) (SQLExpr, error) {
 			errs = append(errs, e.Err)
 			e.Err = coalesceErr(errs...)
 			push(moneyBlank(e))
-		case OpLookup, OpQuery:
-			return SQLExpr{}, fmt.Errorf("sqlgen: instruction %d: query functions are not implemented yet", pc)
+		case OpLookup:
+			q := &t.p.Queries[in.Arg]
+			arg := func(i int, currency bool) string {
+				slot := t.p.Slots[q.Args[i]]
+				if currency {
+					return t.column(Slot{Name: slot.Name + CurrencySuffix, Type: Scalar(KindText)})
+				}
+				return t.column(slot)
+			}
+			e, err := LookupSQL(q, d, arg, t.table, t.params)
+			if err != nil {
+				return SQLExpr{}, err
+			}
+			push(e)
+		case OpQuery:
+			return SQLExpr{}, fmt.Errorf("sqlgen: instruction %d: QUERY is not implemented yet", pc)
 		case OpReturn:
 			return SQLExpr{}, fmt.Errorf("sqlgen: instruction %d: return inside a block", pc)
 		default:
@@ -891,4 +927,52 @@ func (p *Program) Calls(name string) bool {
 		}
 	}
 	return false
+}
+
+// LookupSQL translates one lookup slot into a correlated scalar subquery
+// (ADR-0020): the column of the first row of the source, in key order, on
+// which the condition holds, NULL when none does. A row on which the
+// condition would stop with an error does not match. arg gives the
+// expression of the i-th THIS argument, and of its currency column when
+// currency is set; table the expression of the source. The store's
+// statement path and the generator's lookup instruction share it.
+func LookupSQL(q *QuerySlot, d Dialect, arg func(i int, currency bool) string, table func(string) string, params *Params) (SQLExpr, error) {
+	const alias = "q"
+	inner := func(s Slot) string {
+		name, ok := strings.CutPrefix(s.Name, "THIS.")
+		if !ok {
+			return alias + "." + quoteIdent(s.Name)
+		}
+		if i := q.ArgIndex(s.Name); i >= 0 {
+			return arg(i, false)
+		}
+		base := strings.TrimSuffix(name, CurrencySuffix)
+		if i := q.ArgIndex("THIS." + base); i >= 0 && base != name {
+			return arg(i, true)
+		}
+		return alias + "." + quoteIdent(name)
+	}
+	sub := &sqlTranslator{p: q.Cond, d: d, column: inner, table: table, params: params}
+	cond, err := sub.block(0, len(q.Cond.Code)-1)
+	if err != nil {
+		return SQLExpr{}, fmt.Errorf("sqlgen: LOOKUP condition: %w", err)
+	}
+	where := d.Cond(cond)
+	if cond.Err != "" {
+		where = "(" + cond.Err + ") IS NULL AND " + where
+	}
+	var order string
+	if len(q.Order) > 0 {
+		keys := make([]string, len(q.Order))
+		for i, k := range q.Order {
+			keys[i] = alias + "." + quoteIdent(k)
+		}
+		order = " ORDER BY " + strings.Join(keys, ", ")
+	}
+	from := " FROM " + table(q.Source) + " AS " + alias + " WHERE " + where + order + " LIMIT 1)"
+	e := SQLExpr{Val: "(SELECT " + d.Load(alias+"."+quoteIdent(q.Column), q.Type.Kind) + from, Kind: q.Type.Kind, Scale: q.Type.Scale}
+	if q.Type.Kind == KindMoney {
+		e.Cur = "(SELECT " + alias + "." + quoteIdent(q.Column+CurrencySuffix) + from
+	}
+	return e, nil
 }

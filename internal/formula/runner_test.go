@@ -23,6 +23,13 @@ func TestConformance_VM(t *testing.T) {
 		if err != nil {
 			t.Fatalf("%s: %v", s.File, err)
 		}
+		sources, err := s.SourceSet()
+		if err != nil {
+			t.Fatalf("%s: %v", s.File, err)
+		}
+		if vm.Executor, err = s.Executor(); err != nil {
+			t.Fatalf("%s: %v", s.File, err)
+		}
 		vm.Limits = s.EvalLimits()
 		for i, c := range s.Cases {
 			total++
@@ -34,7 +41,7 @@ func TestConformance_VM(t *testing.T) {
 				failed++
 				t.Errorf("%s\n    %s", label, fmt.Sprintf(format, args...))
 			}
-			prog, err := Bind(c.Formula, scope, BindOptions{})
+			prog, err := Bind(c.Formula, scope, BindOptions{Sources: sources})
 			if err != nil {
 				fail("bind: %v", err)
 				continue
@@ -109,7 +116,11 @@ func TestConformance_Binding(t *testing.T) {
 		if err != nil {
 			t.Fatalf("%s: %v", s.File, err)
 		}
-		opts := BindOptions{Mode: s.BindMode()}
+		sources, err := s.SourceSet()
+		if err != nil {
+			t.Fatalf("%s: %v", s.File, err)
+		}
+		opts := BindOptions{Mode: s.BindMode(), Sources: sources}
 		for _, f := range s.Accept {
 			accepted++
 			if _, err := Bind(f, scope, opts); err != nil {

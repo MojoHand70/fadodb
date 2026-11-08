@@ -29,6 +29,9 @@ type Suite struct {
 	// a type may be object<Name> of another schema (ADR-0031). A case sets
 	// an object's leaf by its path, "shipping.city".
 	Schemas map[string]map[string]string `json:"schemas,omitempty"`
+	// Sources declares the explicit tables LOOKUP may read (ADR-0020),
+	// with their rows.
+	Sources map[string]*SuiteSource `json:"sources,omitempty"`
 	// Limits sets the size limits the cases evaluate under (ADR-0021);
 	// absent, the defaults. A suite at a small limit reaches the boundary
 	// with short texts.
@@ -36,6 +39,107 @@ type Suite struct {
 	Cases  []Case       `json:"cases"`
 	// File is where the suite was loaded from, for messages.
 	File string `json:"-"`
+}
+
+// SuiteSource declares one table a suite's LOOKUP cases read: its columns
+// by scalar type, its key columns, and its rows as objects in the input
+// notation, an absent column blank. Columns are in name order.
+type SuiteSource struct {
+	Columns map[string]string            `json:"columns"`
+	Key     []string                     `json:"key"`
+	Rows    []map[string]json.RawMessage `json:"rows,omitempty"`
+}
+
+// SourceSet resolves the suite's sources.
+func (s *Suite) SourceSet() (*SourceSet, error) { return sourcesOf(s.Sources) }
+
+// SourceRows parses the rows of every source, row-major in column order.
+func (s *Suite) SourceRows() (map[*Source][][]Value, error) {
+	set, err := sourcesOf(s.Sources)
+	if err != nil {
+		return nil, err
+	}
+	out := map[*Source][][]Value{}
+	for name, ss := range s.Sources {
+		src, _ := set.Source(name)
+		rows := make([][]Value, 0, len(ss.Rows))
+		for ri, raw := range ss.Rows {
+			row := make([]Value, len(src.Columns))
+			for i, f := range src.Columns {
+				v, err := ParseCaseValue(raw[f.Name], f.Type)
+				if err != nil {
+					return nil, fmt.Errorf("source %s, row %d, %s: %w", name, ri, f.Name, err)
+				}
+				row[i] = v
+			}
+			rows = append(rows, row)
+		}
+		out[src] = rows
+	}
+	return out, nil
+}
+
+// Executor makes the in-memory executor over the suite's sources.
+func (s *Suite) Executor() (*MemoryExecutor, error) {
+	rows, err := s.SourceRows()
+	if err != nil {
+		return nil, err
+	}
+	m := NewMemoryExecutor()
+	for src, data := range rows {
+		m.AddTable(src, data)
+	}
+	return m, nil
+}
+
+// sourcesOf resolves suite sources into a SourceSet, columns in name
+// order, and validates them.
+func sourcesOf(decl map[string]*SuiteSource) (*SourceSet, error) {
+	set := NewSourceSet()
+	names := make([]string, 0, len(decl))
+	for name := range decl {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	for _, name := range names {
+		ss := decl[name]
+		if name == "" || ss == nil {
+			return nil, fmt.Errorf("a source has no name or no body")
+		}
+		if len(ss.Columns) == 0 {
+			return nil, fmt.Errorf("source %s: no columns", name)
+		}
+		src := &Source{Name: name, Key: ss.Key}
+		cols := make([]string, 0, len(ss.Columns))
+		for c := range ss.Columns {
+			cols = append(cols, c)
+		}
+		sort.Strings(cols)
+		for _, c := range cols {
+			t, err := ParseType(ss.Columns[c])
+			if err != nil || !t.IsScalar() || t.Kind == KindNull {
+				return nil, fmt.Errorf("source %s: column %s has type %q; a column is a scalar", name, c, ss.Columns[c])
+			}
+			src.Columns = append(src.Columns, Field{Name: c, Type: t})
+		}
+		if len(ss.Key) == 0 {
+			return nil, fmt.Errorf("source %s: no key", name)
+		}
+		for _, k := range ss.Key {
+			if _, ok := src.Column(k); !ok {
+				return nil, fmt.Errorf("source %s: key column %s is not a column", name, k)
+			}
+		}
+		for ri, row := range ss.Rows {
+			for c := range row {
+				if _, ok := src.Column(c); !ok {
+					return nil, fmt.Errorf("source %s: row %d sets %s, which is not a column", name, ri, c)
+				}
+			}
+		}
+		set.Add(src)
+	}
+	return set, nil
 }
 
 // SuiteLimits is the limits field of a suite.
@@ -134,12 +238,18 @@ type BindingSuite struct {
 	Description string                       `json:"description,omitempty"`
 	Variables   map[string]string            `json:"variables,omitempty"`
 	Schemas     map[string]map[string]string `json:"schemas,omitempty"`
+	// Sources declares the tables LOOKUP may read, as in an evaluation
+	// suite; their rows are not needed to bind.
+	Sources map[string]*SuiteSource `json:"sources,omitempty"`
 	// Mode is "any" (the default), "auto" (ADR-0015) or "pure" (ADR-0018).
 	Mode   string       `json:"mode,omitempty"`
 	Accept []string     `json:"accept"`
 	Reject []RejectCase `json:"reject"`
 	File   string       `json:"-"`
 }
+
+// SourceSet resolves the suite's sources.
+func (s *BindingSuite) SourceSet() (*SourceSet, error) { return sourcesOf(s.Sources) }
 
 // ErrorCodes is the closed list of evaluation error codes (ADR-0019,
 // ADR-0020, ADR-0022, ADR-0024). A case may only expect one of these.
@@ -258,6 +368,9 @@ func LoadBindingSuites(dir string) ([]*BindingSuite, error) {
 		if err := validateVariables(s.Variables, s.Schemas); err != nil {
 			return nil, fmt.Errorf("%s: %w", f, err)
 		}
+		if _, err := sourcesOf(s.Sources); err != nil {
+			return nil, fmt.Errorf("%s: %w", f, err)
+		}
 		if s.Mode != "" && s.Mode != "any" && s.Mode != "auto" && s.Mode != "pure" {
 			return nil, fmt.Errorf("%s: mode must be any, auto or pure, got %q", f, s.Mode)
 		}
@@ -307,6 +420,9 @@ func loadSuite(path string) (*Suite, error) {
 		return nil, fmt.Errorf("%s: suite name is required", path)
 	}
 	if err := validateVariables(s.Variables, s.Schemas); err != nil {
+		return nil, fmt.Errorf("%s: %w", path, err)
+	}
+	if _, err := sourcesOf(s.Sources); err != nil {
 		return nil, fmt.Errorf("%s: %w", path, err)
 	}
 	if s.Limits != nil && s.Limits.MaxText < MinMaxText {

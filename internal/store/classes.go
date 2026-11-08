@@ -35,6 +35,9 @@ type class struct {
 	// slots maps a program to the leaf of each of its slots.
 	slots    map[*formula.Program][]int
 	maxSlots int
+	// sources are the explicit tables the class's formulas read, by
+	// upper-cased name.
+	sources map[string]bool
 
 	w writeStmts
 	r readStmts
@@ -128,7 +131,12 @@ func indexOf(leaves []leaf) map[string]int {
 // newClass lays a compiled class out for storage.
 func newClass(cls *model.Class, src []byte) (*class, error) {
 	c := &class{cls: cls, json: src, table: "doc_" + cls.Name, history: "doc_" + cls.Name + "_history",
-		byName: map[string]*cvar{}, slots: map[*formula.Program][]int{}}
+		byName: map[string]*cvar{}, slots: map[*formula.Program][]int{}, sources: map[string]bool{}}
+	for _, v := range cls.Variables {
+		for _, name := range v.Sources {
+			c.sources[strings.ToUpper(name)] = true
+		}
+	}
 	c.leaves = leavesOf(cls.Columns)
 	c.leafIndex = indexOf(c.leaves)
 	for i, v := range cls.Variables {
@@ -306,7 +314,7 @@ func (s *Store) Validate(data []byte) model.Diagnostics {
 // version the class would get. The document count reads through the
 // pool, so that Validate needs no writer.
 func (s *Store) compileClass(ctx context.Context, data []byte) (*model.Class, model.Diagnostics, int) {
-	cls, diags := model.Define(data, s.schemas)
+	cls, diags := model.DefineIn(data, s.env())
 	if cls == nil {
 		return nil, diags, 0
 	}
@@ -408,6 +416,7 @@ func (s *Store) DefineClass(ctx context.Context, data []byte) (*model.Class, err
 	}
 	if old != nil {
 		old.close()
+		s.closePlans()
 	}
 	if err := c.prepare(ctx, w, s.db); err != nil {
 		// The tables exist and the class is stored; the statements failed,

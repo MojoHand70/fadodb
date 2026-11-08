@@ -78,6 +78,19 @@ func (SQLite) Pow(x, y string) string { return "fado_power(" + x + ", " + y + ")
 // Param implements Dialect.
 func (SQLite) Param(name string) string { return ":" + name }
 
+// ColumnType implements Dialect: SQLite's storage classes, a date as
+// INTEGER days and a datetime as INTEGER seconds (ADR-0023), an exact
+// value as its INTEGER mantissa (ADR-0022), a bool as 0 or 1.
+func (SQLite) ColumnType(k Kind) string {
+	switch k {
+	case KindNumber:
+		return "REAL"
+	case KindBool, KindDecimal, KindMoney, KindDate, KindDateTime:
+		return "INTEGER"
+	}
+	return "TEXT"
+}
+
 // ContextArgs implements Dialect: now is always bound, user is text or
 // NULL, groups is a JSON array or NULL.
 func (SQLite) ContextArgs(ctx *Context) []any {

@@ -27,7 +27,7 @@ func RunSQL(db *sql.DB, d Dialect, prog *Program, vars []Value, ctx *Context) (S
 	if len(vars) < len(prog.Slots) {
 		return SQLResult{}, fmt.Errorf("program reads %d variables, got %d", len(prog.Slots), len(vars))
 	}
-	stmt, err := GenerateSQL(prog, d, func(s Slot) string { return quoteIdent(s.Name) })
+	stmt, err := GenerateSQL(prog, d, func(s Slot) string { return "v." + quoteIdent(s.Name) })
 	if err != nil {
 		return SQLResult{}, err
 	}
@@ -46,9 +46,9 @@ func RunSQL(db *sql.DB, d Dialect, prog *Program, vars []Value, ctx *Context) (S
 			args = append(args, sql.Named(name+"c", cur))
 		}
 	}
-	from := "(SELECT 1)"
+	from := "(SELECT 1) AS v"
 	if len(cols) > 0 {
-		from = "(SELECT " + strings.Join(cols, ", ") + ")"
+		from = "(SELECT " + strings.Join(cols, ", ") + ") AS v"
 	}
 	args = append(args, d.ContextArgs(ctx)...)
 	q := "SELECT (" + stmt.Value + ") AS v, (" + stmt.ErrorOrNull() + ") AS e, (" + stmt.CurrencyOrNull() + ") AS c FROM " + from
@@ -109,4 +109,49 @@ func NearlyEqual(a, b Value, rel float64) bool {
 		scale = 1
 	}
 	return diff <= rel*scale
+}
+
+// SetupSources creates the tables of the sources in a database, named as
+// the sources are, and fills them: the conformance and property runners'
+// half of LOOKUP on the SQL dialects. Rows are row-major in column order;
+// a money column is its amount and its currency column.
+func SetupSources(db *sql.DB, d Dialect, rows map[*Source][][]Value) error {
+	for src, data := range rows {
+		cols := make([]string, 0, len(src.Columns))
+		names := make([]string, 0, len(src.Columns))
+		for _, f := range src.Columns {
+			cols = append(cols, quoteIdent(f.Name)+" "+d.ColumnType(f.Type.Kind))
+			names = append(names, quoteIdent(f.Name))
+			if f.Type.Kind == KindMoney {
+				cols = append(cols, quoteIdent(f.Name+CurrencySuffix)+" "+d.ColumnType(KindText))
+				names = append(names, quoteIdent(f.Name+CurrencySuffix))
+			}
+		}
+		if _, err := db.Exec("DROP TABLE IF EXISTS " + quoteIdent(src.Name)); err != nil {
+			return fmt.Errorf("%s: %w", src.Name, err)
+		}
+		if _, err := db.Exec("CREATE TABLE " + quoteIdent(src.Name) + " (" + strings.Join(cols, ", ") + ")"); err != nil {
+			return fmt.Errorf("%s: %w", src.Name, err)
+		}
+		marks := strings.TrimSuffix(strings.Repeat("?, ", len(names)), ", ")
+		insert := "INSERT INTO " + quoteIdent(src.Name) + " (" + strings.Join(names, ", ") + ") VALUES (" + marks + ")"
+		for _, row := range data {
+			args := make([]any, 0, len(names))
+			for i, f := range src.Columns {
+				v := row[i]
+				args = append(args, v.DriverValue())
+				if f.Type.Kind == KindMoney {
+					var cur any
+					if v.kind == KindMoney {
+						cur = v.str
+					}
+					args = append(args, cur)
+				}
+			}
+			if _, err := db.Exec(insert, args...); err != nil {
+				return fmt.Errorf("%s: %w", src.Name, err)
+			}
+		}
+	}
+	return nil
 }

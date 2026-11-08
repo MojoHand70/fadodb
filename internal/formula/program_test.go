@@ -1,6 +1,7 @@
 package formula
 
 import (
+	"bytes"
 	"encoding/json"
 	"strings"
 	"testing"
@@ -58,7 +59,7 @@ func TestProgram_DebugForm(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{`"format":"FADO v2"`, `"result":"number"`, `load 0 (qty)`, `call`, `(ROUND/2)`, `jump.if.false`, `return`, `"classes":["pure"]`} {
+	for _, want := range []string{`"format":"FADO v3"`, `"result":"number"`, `load 0 (qty)`, `call`, `(ROUND/2)`, `jump.if.false`, `return`, `"classes":["pure"]`} {
 		if !strings.Contains(string(out), want) {
 			t.Errorf("debug form lacks %s:\n%s", want, out)
 		}
@@ -85,5 +86,74 @@ func TestProgram_BlankResultRoundTrips(t *testing.T) {
 		if !back.Result.Equal(p.Result) {
 			t.Errorf("%s: decoded result type %s, want %s", src, back.Result, p.Result)
 		}
+	}
+}
+
+func TestProgram_LookupRoundTrip(t *testing.T) {
+	scope := mustScope(t, Variable{Name: "code", Type: Scalar(KindText)}, Variable{Name: "qty", Type: Scalar(KindNumber)})
+	rates := &Source{Name: "Rates", Key: []string{"code"}, Columns: []Field{{Name: "code", Type: Scalar(KindText)}, {Name: "rate", Type: DecimalType(6)}, {Name: "min_qty", Type: Scalar(KindNumber)}}}
+	opts := BindOptions{Sources: NewSourceSet(rates)}
+	indexed, err := Bind("LOOKUP(Rates, rate, code = UPPER(THIS.code))", scope, opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	q := indexed.Queries[0]
+	if q.Source != "Rates" || q.Column != "rate" || q.Type.String() != "decimal(6)" || q.IndexColumn != "code" || q.Key == nil ||
+		len(q.Args) != 1 || indexed.Slots[q.Args[0]].Name != "code" || q.ArgNames[0] != "code" || q.Cond == nil || len(q.Order) != 1 {
+		t.Errorf("indexed slot: %+v", q)
+	}
+	if q.ArgIndex("THIS.code") != 0 || q.ArgIndex("THIS.CODE") != 0 || q.ArgIndex("code") != -1 {
+		t.Errorf("ArgIndex")
+	}
+	if len(indexed.Slots) != 1 || len(indexed.Classes) != 2 || indexed.Classes[1] != ClassLookup {
+		t.Errorf("program: slots %v classes %v", indexed.Slots, indexed.Classes)
+	}
+	scan, err := Bind("LOOKUP(Rates, rate, code = THIS.code AND min_qty <= THIS.qty)", scope, opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if q := scan.Queries[0]; q.Key != nil || q.IndexColumn != "" || len(q.Args) != 2 || len(q.Cond.Slots) != 4 {
+		t.Errorf("statement slot: %+v", q)
+	}
+	for _, p := range []*Program{indexed, scan} {
+		back, err := Decode(p.Encode())
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !bytes.Equal(back.Encode(), p.Encode()) {
+			t.Errorf("round trip changed the encoding of %+v", p)
+		}
+		j1, _ := json.Marshal(p)
+		j2, _ := json.Marshal(back)
+		if !bytes.Equal(j1, j2) {
+			t.Errorf("round trip:\n%s\nwant\n%s", j2, j1)
+		}
+	}
+	// A slot that does not fit its program is refused.
+	bad := indexed.Encode()
+	broken, _ := Decode(bad)
+	broken.Queries[0].Args[0] = 7
+	if _, err := Decode(broken.Encode()); err == nil {
+		t.Error("an argument slot out of range decoded")
+	}
+}
+
+func TestVM_LookupWithoutExecutor(t *testing.T) {
+	scope := mustScope(t, Variable{Name: "code", Type: Scalar(KindText)})
+	rates := &Source{Name: "Rates", Key: []string{"code"}, Columns: []Field{{Name: "code", Type: Scalar(KindText)}, {Name: "rate", Type: Scalar(KindNumber)}}}
+	p, err := Bind("LOOKUP(Rates, rate, code = THIS.code)", scope, BindOptions{Sources: NewSourceSet(rates)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = NewVM().Run(p, []Value{Text("EUR")}, nil)
+	if ee, ok := err.(*EvalError); !ok || ee.Code != ErrQueryFailed {
+		t.Errorf("without an executor: %v", err)
+	}
+	m := NewMemoryExecutor()
+	m.AddTable(rates, [][]Value{{Text("USD"), Number(4)}, {Text("EUR"), Number(4.5)}})
+	vm := NewVM()
+	vm.Executor = m
+	if v, err := vm.Run(p, []Value{Text("EUR")}, nil); err != nil || v.Num() != 4.5 {
+		t.Errorf("with the memory executor: %v %v", v, err)
 	}
 }

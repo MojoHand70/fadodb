@@ -39,6 +39,8 @@ const (
 	// CodeUnknownDocument: no current document with that id, or no such
 	// version in its history.
 	CodeUnknownDocument = "unknown_document"
+	// CodeUnknownTable: no explicit table of that name.
+	CodeUnknownTable = "unknown_table"
 	// CodeUnknownVariable: a value names a variable or a field the class
 	// does not have.
 	CodeUnknownVariable = "unknown_variable"

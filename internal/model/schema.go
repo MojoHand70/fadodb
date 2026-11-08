@@ -254,7 +254,7 @@ func (s *SchemaSet) presentation(c *collector, sch *Schema, def *PresentationDef
 		if src == "" {
 			return nil
 		}
-		prog, err := formula.Bind(src, scope, formula.BindOptions{Mode: formula.ModePure})
+		prog, err := c.bind(src, scope, formula.ModePure)
 		if err != nil {
 			c.formulaErr(path, err)
 			return nil

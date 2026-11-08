@@ -1,0 +1,55 @@
+{
+  "suite": "lookup",
+  "description": "LOOKUP(source, column, condition) returns one column of the first row of an explicit table, in the table's key order, on which the condition holds, and blank when no row does (ADR-0016, ADR-0020). Inside the condition a bare name is a column of the source and THIS.name a variable of the document; a row on which the condition stops with an error does not match. An equality of one column with an expression of the document alone is the shape an index serves (ADR-0036); every other condition runs as a statement; both answer the same.",
+  "variables": {"code": "text", "qty": "number", "day": "date", "amount": "money(2)", "limit": "decimal(2)", "k": "number"},
+  "sources": {
+    "Rates": {
+      "key": ["code"],
+      "columns": {"code": "text", "rate": "decimal(6)", "name": "text", "since": "date", "active": "bool"},
+      "rows": [
+        {"code": "EUR", "rate": "4.321000", "name": "Euro", "since": "2024-01-01", "active": true},
+        {"code": "GBP", "rate": "5.012345", "name": "Pound", "since": "2025-06-15", "active": false},
+        {"code": "USD", "rate": "3.987600", "name": "Dollar", "since": "2024-03-01", "active": true},
+        {"code": "ZZZ", "rate": null, "name": "Unknown", "since": null, "active": null}
+      ]
+    },
+    "Prices": {
+      "key": ["sku", "min_qty"],
+      "columns": {"sku": "text", "min_qty": "number", "price": "money(2)", "divisor": "number"},
+      "rows": [
+        {"sku": "A1", "min_qty": 1, "price": "9.50 PLN", "divisor": 0},
+        {"sku": "A1", "min_qty": 10, "price": "8.00 PLN", "divisor": 1},
+        {"sku": "B2", "min_qty": 1, "price": "4.00 PLN", "divisor": 2}
+      ]
+    }
+  },
+  "cases": [
+    {"name": "equality on the key", "formula": "LOOKUP(Rates, rate, code = THIS.code)", "inputs": {"code": "EUR"}, "type": "decimal(6)", "expected": "4.321000"},
+    {"name": "no match is blank", "formula": "LOOKUP(Rates, rate, code = THIS.code)", "inputs": {"code": "CHF"}, "expected": null},
+    {"name": "a blank text variable reads as the empty text and matches no code", "formula": "LOOKUP(Rates, name, code = THIS.code)", "expected": null},
+    {"name": "a matched blank is blank", "formula": "LOOKUP(Rates, rate, code = THIS.code)", "inputs": {"code": "ZZZ"}, "expected": null},
+    {"name": "a text column", "formula": "LOOKUP(Rates, name, code = THIS.code) & \"!\"", "inputs": {"code": "USD"}, "expected": "Dollar!"},
+    {"name": "the result joins arithmetic", "formula": "ROUND(LOOKUP(Rates, rate, code = THIS.code) * DECIMAL(qty, 0), 2)", "inputs": {"code": "EUR", "qty": 2}, "type": "decimal(2)", "expected": "8.64"},
+    {"name": "the key may be an expression of the document", "formula": "LOOKUP(Rates, rate, code = UPPER(THIS.code))", "inputs": {"code": "usd"}, "type": "decimal(6)", "expected": "3.987600"},
+    {"name": "a constant key", "formula": "LOOKUP(Rates, name, code = \"GBP\")", "expected": "Pound"},
+    {"name": "the key may be on the right", "formula": "LOOKUP(Rates, name, \"GBP\" = code)", "expected": "Pound"},
+    {"name": "the first row in key order when several match", "formula": "LOOKUP(Rates, code, active = TRUE)", "expected": "EUR"},
+    {"name": "a bool column is a condition", "formula": "LOOKUP(Rates, code, active)", "expected": "EUR"},
+    {"name": "a comparison other than equality", "formula": "LOOKUP(Rates, code, since > THIS.day)", "inputs": {"day": "2024-02-01"}, "expected": "GBP"},
+    {"name": "a condition with AND", "formula": "LOOKUP(Rates, name, active AND since < THIS.day)", "inputs": {"day": "2024-02-01"}, "expected": "Euro"},
+    {"name": "a condition with a function of a column", "formula": "LOOKUP(Rates, code, LEFT(name, 1) = \"D\")", "expected": "USD"},
+    {"name": "a blank date column reads as the epoch", "formula": "LOOKUP(Rates, code, since < DATE(1980, 1, 1))", "expected": "ZZZ"},
+    {"name": "TRUE matches the first row", "formula": "LOOKUP(Rates, code, TRUE)", "expected": "EUR"},
+    {"name": "FALSE matches nothing", "formula": "LOOKUP(Rates, code, FALSE)", "expected": null},
+    {"name": "a two-column key orders the rows", "formula": "LOOKUP(Prices, price, sku = THIS.code)", "inputs": {"code": "A1"}, "type": "money(2)", "expected": "9.50 PLN"},
+    {"name": "the first match in key order, not the best", "formula": "LOOKUP(Prices, price, sku = THIS.code AND min_qty <= THIS.qty)", "inputs": {"code": "A1", "qty": 12}, "expected": "9.50 PLN"},
+    {"name": "a row on which the condition errors does not match", "formula": "LOOKUP(Prices, min_qty, sku = THIS.code AND 10 / divisor > 1)", "inputs": {"code": "A1"}, "expected": 10},
+    {"name": "money compares with a decimal by its amount", "formula": "LOOKUP(Prices, sku, price = THIS.limit)", "inputs": {"limit": "4.00"}, "expected": "B2"},
+    {"name": "money compares with money of the same currency", "formula": "LOOKUP(Prices, sku, price = THIS.amount)", "inputs": {"amount": "8.00 PLN"}, "expected": "A1"},
+    {"name": "a currency mismatch is an error on every row, so nothing matches", "formula": "LOOKUP(Prices, sku, price = THIS.amount)", "inputs": {"amount": "8.00 EUR"}, "expected": null},
+    {"name": "a blank number variable reads as 0", "formula": "LOOKUP(Prices, sku, divisor = THIS.k)", "expected": "A1"},
+    {"name": "a lookup inside IFERROR", "formula": "IFERROR(LOOKUP(Rates, rate, code = THIS.code), 0)", "inputs": {"code": "EUR"}, "type": "decimal(6)", "expected": "4.321000"},
+    {"name": "a blank lookup under ISBLANK", "formula": "ISBLANK(LOOKUP(Rates, rate, code = THIS.code))", "inputs": {"code": "CHF"}, "expected": true},
+    {"name": "two lookups in one formula", "formula": "LOOKUP(Rates, name, code = THIS.code) & \" \" & LOOKUP(Prices, sku, TRUE)", "inputs": {"code": "GBP"}, "expected": "Pound A1"}
+  ]
+}

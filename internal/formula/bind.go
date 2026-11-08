@@ -136,6 +136,9 @@ func (s *Scope) Lookup(name string) (Variable, bool) {
 // BindOptions configures a bind.
 type BindOptions struct {
 	Mode Mode
+	// Sources are the explicit tables LOOKUP may read (ADR-0016); nil
+	// means none, and every LOOKUP is an unknown source.
+	Sources Sources
 }
 
 // Bind parses and binds a formula against a scope.
@@ -186,6 +189,15 @@ type binder struct {
 
 	depth, maxDepth int
 	tries           int
+
+	// Inside a LOOKUP condition: the source whose columns bare names
+	// resolve to, the slot being built, and the argument positions by
+	// variable. The scope is the enclosing formula's, which THIS.name
+	// reads. No pointer back to the enclosing binder: that would move it
+	// to the heap on every bind.
+	source *Source
+	q      *QuerySlot
+	argOf  map[string]int
 
 	// lit describes the last constant expr emitted, so that an operation
 	// can make its operand exact when the other operand is (ADR-0022);
@@ -444,6 +456,9 @@ func (b *binder) expr(n Node) (Type, error) {
 		b.push(1)
 		return Scalar(KindNull), nil
 	case *Ident:
+		if b.source != nil {
+			return b.column(n)
+		}
 		v, ok := b.scope.Lookup(n.Name)
 		if !ok {
 			if fn := LookupFunction(n.Name); fn != nil {
@@ -461,8 +476,14 @@ func (b *binder) expr(n Node) (Type, error) {
 		b.push(1)
 		return v.Type, nil
 	case *Member:
+		if b.source != nil {
+			return Type{}, b.errAt(n.P, "inside LOOKUP a bare name is a column of %s; the document's variables are THIS.name, and their fields are not reachable yet", b.source.Name)
+		}
 		return b.member(n)
 	case *ThisRef:
+		if b.source != nil {
+			return b.thisRef(n)
+		}
 		return Type{}, b.errAt(n.P, "THIS.%s is only valid inside LOOKUP and QUERY", n.Name)
 	case *Unary:
 		return b.unary(n)
@@ -861,6 +882,9 @@ func (b *binder) call(n *Call) (Type, error) {
 	if n.Name == "IFERROR" {
 		return b.ifError(n)
 	}
+	if n.Name == "LOOKUP" {
+		return b.lookup(n)
+	}
 	id, ok := builtinByName[n.Name]
 	if !ok {
 		return Type{}, b.errAt(n.P, "%s is not implemented yet", n.Name)
@@ -1074,4 +1098,168 @@ func checkRegexLiteral(n *Call) error {
 		}
 	}
 	return nil
+}
+
+// lookup binds LOOKUP(source, column, condition) (ADR-0016, ADR-0020): the
+// source is a table of the options, the column one of its columns, and
+// the condition a program of its own over the source's columns and the
+// document variables it names as THIS.name. The call becomes one lookup
+// instruction over a query slot; the VM hands the slot and the values of
+// the THIS variables to the executor, and the SQL generator writes a
+// correlated subquery. A condition that is one equality of a column with
+// an expression of the document alone also records that expression, so
+// that an index on the column can serve the lookup (ADR-0036).
+func (b *binder) lookup(n *Call) (Type, error) {
+	if b.source != nil {
+		return Type{}, b.errAt(n.P, "a query function may not be used inside another's arguments (ADR-0020)")
+	}
+	if !b.opts.Mode.allows(ClassLookup) {
+		return Type{}, b.errAt(n.P, "LOOKUP is a lookup function and may not be used in %s", b.opts.Mode.where())
+	}
+	if err := LookupFunction("LOOKUP").checkArity("LOOKUP", len(n.Args)); err != nil {
+		return Type{}, b.errAt(n.P, "%v", err)
+	}
+	srcName, ok := n.Args[0].(*Ident)
+	if !ok {
+		return Type{}, b.errAt(n.Args[0].Pos(), "LOOKUP: the source is the name of a table")
+	}
+	var src *Source
+	if b.opts.Sources != nil {
+		src, ok = b.opts.Sources.Source(srcName.Name)
+	} else {
+		ok = false
+	}
+	if !ok {
+		return Type{}, b.errAt(srcName.P, "unknown source %s", srcName.Name)
+	}
+	colName, ok := n.Args[1].(*Ident)
+	if !ok {
+		return Type{}, b.errAt(n.Args[1].Pos(), "LOOKUP: the column is the name of a column of %s", src.Name)
+	}
+	col, ok := src.Column(colName.Name)
+	if !ok {
+		return Type{}, b.errAt(colName.P, "unknown column %s of %s; its columns are %s", colName.Name, src.Name, strings.Join(src.ColumnNames(), ", "))
+	}
+	q := &QuerySlot{Source: src.Name, Column: col.Name, Type: col.Type, Order: append([]string(nil), src.Key...)}
+	argOf := map[string]int{}
+	cond, ct, err := b.subProgram(n.Args[2], src, q, argOf)
+	if err != nil {
+		return Type{}, err
+	}
+	if !isCondition(ct) {
+		return Type{}, b.errAt(n.Args[2].Pos(), "LOOKUP: the condition must be a condition, got %s%s", ct, conditionHint(ct))
+	}
+	q.Cond = cond
+	// The THIS variables become slots of this program, in argument order.
+	for _, name := range q.ArgNames {
+		v, _ := b.scope.Lookup(name)
+		q.Args = append(q.Args, b.slot(v))
+	}
+	if eq, ok := n.Args[2].(*Binary); ok && eq.Op == TokEq {
+		for _, side := range [][2]Node{{eq.L, eq.R}, {eq.R, eq.L}} {
+			id, ok := side[0].(*Ident)
+			if !ok || mentionsColumn(side[1]) {
+				continue
+			}
+			kcol, ok := src.Column(id.Name)
+			if !ok {
+				continue
+			}
+			key, kt, err := b.subProgram(side[1], src, q, argOf)
+			if err != nil {
+				return Type{}, err
+			}
+			if kt.Kind == KindNumber && kcol.Type.Kind == KindDecimal && key.ClaimExact(kcol.Type) {
+				kt = key.Result
+			}
+			if kt.Kind == kcol.Type.Kind {
+				q.Key, q.IndexColumn = key, kcol.Name
+			}
+			break
+		}
+	}
+	idx := int32(len(b.prog.Queries))
+	b.prog.Queries = append(b.prog.Queries, *q)
+	b.classes[ClassLookup] = true
+	b.emit(OpLookup, idx, n.P)
+	b.push(1)
+	return col.Type, nil
+}
+
+// subProgram binds an expression of a LOOKUP as a program of its own,
+// whose slots are the source's columns and the THIS arguments of q.
+func (b *binder) subProgram(n Node, src *Source, q *QuerySlot, argOf map[string]int) (*Program, Type, error) {
+	sub := &binder{src: b.src, scope: b.scope, opts: b.opts, prog: &Program{},
+		slotOf: map[string]int32{}, numIndex: map[float64]int32{}, textIndex: map[string]int32{}, classes: map[Class]bool{},
+		source: src, q: q, argOf: argOf}
+	t, err := sub.expr(n)
+	if err != nil {
+		return nil, Type{}, err
+	}
+	sub.emit(OpReturn, 0, n.Pos())
+	sub.prog.Result = t
+	for c := range sub.classes {
+		b.classes[c] = true
+		sub.prog.Classes = append(sub.prog.Classes, c)
+	}
+	sort.Slice(sub.prog.Classes, func(i, j int) bool { return classOrder[sub.prog.Classes[i]] < classOrder[sub.prog.Classes[j]] })
+	sub.prog.MaxStack = sub.maxDepth
+	return sub.prog, t, nil
+}
+
+// mentionsColumn reports whether an expression inside a LOOKUP names a
+// column: any bare name, since variables are THIS.name there.
+func mentionsColumn(n Node) bool {
+	switch n := n.(type) {
+	case *Ident, *Member:
+		return true
+	case *Unary:
+		return mentionsColumn(n.X)
+	case *Binary:
+		return mentionsColumn(n.L) || mentionsColumn(n.R)
+	case *If:
+		return mentionsColumn(n.Cond) || mentionsColumn(n.Then) || mentionsColumn(n.Else)
+	case *Call:
+		for _, a := range n.Args {
+			if mentionsColumn(a) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// column binds a bare name inside a LOOKUP: a column of the source.
+func (b *binder) column(n *Ident) (Type, error) {
+	col, ok := b.source.Column(n.Name)
+	if !ok {
+		if v, isVar := b.scope.Lookup(n.Name); isVar {
+			return Type{}, b.errAt(n.P, "unknown column %s of %s; the document's %s is THIS.%s", n.Name, b.source.Name, v.Name, v.Name)
+		}
+		return Type{}, b.errAt(n.P, "unknown column %s of %s; its columns are %s", n.Name, b.source.Name, strings.Join(b.source.ColumnNames(), ", "))
+	}
+	b.emit(OpLoad, b.slot(Variable(col)), n.P)
+	b.push(1)
+	return col.Type, nil
+}
+
+// thisRef binds THIS.name inside a LOOKUP: a scalar variable of the
+// document, passed to the executor as an argument. The enclosing binder
+// gives the argument its slot once the condition is bound.
+func (b *binder) thisRef(n *ThisRef) (Type, error) {
+	v, ok := b.scope.Lookup(n.Name)
+	if !ok {
+		return Type{}, b.errAt(n.P, "THIS.%s: the document has no variable %s", n.Name, n.Name)
+	}
+	if !v.Type.IsScalar() {
+		return Type{}, b.errAt(n.P, "THIS.%s is %s; only a scalar variable can be read inside LOOKUP yet", v.Name, v.Type)
+	}
+	key := strings.ToUpper(v.Name)
+	if _, seen := b.argOf[key]; !seen {
+		b.argOf[key] = len(b.q.ArgNames)
+		b.q.ArgNames = append(b.q.ArgNames, v.Name)
+	}
+	b.emit(OpLoad, b.slot(Variable{Name: "THIS." + v.Name, Type: v.Type}), n.P)
+	b.push(1)
+	return v.Type, nil
 }

@@ -1,6 +1,6 @@
 # ADR-0041: Field rights and transition rules in the Go API
 
-- Status: Proposed; amends ADR-0010 (when the per-transition rules are enforced), ADR-0028 (the row a right is evaluated over, the paths the projection covers, the filter)
+- Status: Proposed; amends ADR-0010 (when the per-transition rules are enforced), ADR-0028 (the row a right is evaluated over, the paths the projection covers, the filter compiles a read right instead of refusing it, read rights use the functions of a read rule)
 - Date: 2026-11-08
 
 ## Context
@@ -67,16 +67,26 @@ is, now that the principal decides something.
    decided, and `TableRows` reads an explicit table, whose rules come with
    Phase 5.
 
-5. **The filter.** `where` and `order` of a `Query` or a `Count` may name a
-   variable only when the principal may read it in every state without
-   the row: no cell names it, or every cell that does is a group list
-   naming a group of the principal or a formula that reads no variable
-   and evaluates TRUE for the principal. Otherwise the filter is refused
-   with `forbidden` naming the variable and the element. `fields` is
+5. **The filter compiles the right.** A variable with a read right stays
+   usable in the `where` and `order` of a `Query` or a `Count`: the right
+   is compiled into the predicate, so a row in whose state the principal
+   may not read the variable does not match and does not sort, the way the
+   row rules of ADR-0010 will work in Phase 5. The compiler takes the cell
+   of the row's state, then the cell of `*`, as a `CASE` over `state`; a
+   group list becomes the literal test of the principal's groups, a
+   formula goes through the SQL generator with the principal's context;
+   the result is conjoined with the comparison, beside the bare-column
+   term that serves the index (ADR-0038). The filter is refused with
+   `forbidden` naming the variable and the element only when no state at
+   all lets the principal read it, which is decided without a row. For
+   this a read right, like a read rule (ADR-0010), may use pure and
+   context functions over the row's own variables only; a `LOOKUP` or a
+   `QUERY` in a read right is refused at definition time with
+   `not_allowed`, and write rights keep every function. `fields` is
    projected as a document is: a hidden variable is absent from the
-   result, with no refusal. The alternative, deciding per row and dropping
-   the rows a principal may not filter on, would make the same filter
-   return different rows for different people without saying so.
+   result, with no refusal. The alternative, refusing every variable
+   whose right needs the row, would stop an owner filtering their own
+   documents by a variable whose right reads `owner`.
 
 6. **A call without a principal runs as nobody**: no id, no groups, not an
    administrator. It sets what the rules allow nobody in particular and
@@ -93,11 +103,12 @@ is, now that the principal decides something.
 - The first embedder's test holds at the end of Phase 3 for the Go API,
   and again for the server in Phase 6 with the same code, since the
   projection is the store's and not the encoder's.
-- A right that reads the document cannot be filtered or sorted on by a
-  principal it does not decide without the row. A designer who wants a
-  variable filterable by a group writes its right as that group's list,
-  or as a formula over context functions alone. The documentation says so
-  beside the rights table.
+- A filter means what the rights mean: an owner filters their own
+  documents by a variable whose right reads `owner`, and a stranger's
+  filter on it matches nothing, since the engine never compares a value
+  the caller may not see. Read rights lose data functions; a designer who
+  wants a right over a lookup computes the lookup into a variable and
+  tests that, as for read rules.
 - Rules evaluated over the stored document mean a caller may set `owner`
   to someone else and lose the right to the document in the same commit;
   they also mean nobody grants themselves a right by the change that
@@ -114,7 +125,9 @@ Budgets from ADR-0028: the write check is one formula per set variable,
 inside the commit budget of ADR-0006; the read projection under 5 µs per
 document of fifty variables, measured in the store with
 `BenchmarkProject` on a class with a rights cell per variable, group lists
-and formulas alike, and reported in `docs/perf/v0.3.0.md`. The filter's
-check is decided once per call when the filter compiles and costs nothing
-per row. The encoder of ADR-0018, Phase 6, receives the projected document
-and pays nothing more.
+and formulas alike, and reported in `docs/perf/v0.3.0.md`. The compiled right
+is one predicate per rights-bearing variable the filter names, and the
+budget is ADR-0010's: under 5% on the indexed filter of ADR-0038, measured
+with `BenchmarkFilter` on a class with a right on the filtered variable.
+The encoder of ADR-0018, Phase 6, receives the projected document and pays
+nothing more.

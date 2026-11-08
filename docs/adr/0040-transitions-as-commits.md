@@ -1,6 +1,6 @@
 # ADR-0040: Transitions as commits: the command, eventless chains and state visits
 
-- Status: Proposed; amends ADR-0008 (what a chain of eventless transitions writes), ADR-0014 (the `_states` view defined), ADR-0015 (one command may make several commits), ADR-0026 (the key of a command that made a chain)
+- Status: Proposed; amends ADR-0008 (what a chain of eventless transitions writes), ADR-0014 (the `_states` view defined), ADR-0015 (one command may make several commits), ADR-0026 (the key of a command that made a chain), ADR-0039 (a class without states has no documents, not only live ones)
 - Date: 2026-11-08
 
 ## Context
@@ -23,9 +23,10 @@ What none of the records says, and Phase 3 cannot build without: the
 shape of the transition command and its refusals; what a chain of
 eventless transitions writes, since one commit is one version (ADR-0015)
 and a chain of three passes through two states that would have no row of
-their own; which commits evaluate eventless transitions; what happens to
-a document whose class gains a statechart, which ADR-0039 allows; how a
-caller learns which transitions it may take; the definition of the
+their own; which commits evaluate eventless transitions; whether a class without
+states may hold documents at all, since ADR-0039 allows adding states to
+a class and says such a class has only live documents; how a caller
+learns which transitions it may take; the definition of the
 `<Class>_states` view that ADR-0014 names and nothing defines; and the
 context functions `STATE()` and `ID()`, in the architecture's function
 table since the start and in no catalog.
@@ -95,12 +96,18 @@ a refusal that names a stable code and the fix.
    adopts a definition and moves no document through its process
    (ADR-0039, "that and nothing else"); the document's next commit does.
 
-5. **A document that gains a statechart.** A class without `states` may be
-   redefined with one (ADR-0039). Its live documents have no state; at
-   adoption, the next commit or `Migrate`, a document enters the initial
-   state with `state_entered_at` the commit's time, as part of that commit
-   and its event, the way a creation enters it. The eventless transitions
-   then follow rule 4 for the kind of commit it was.
+5. **A class without states stores no documents.** A class that declares
+   no `states` is a stateless application: its variables, defaults and
+   formulas are evaluated with `Preview` and `PreviewDraft`, and in the
+   browser from Phase 7, and no instance of it is ever stored. `Create`
+   and `CreateMany` on such a class are refused with `stateless`, whose
+   hint says to add a `states` block. Every stored document is therefore
+   created into its class's initial state by the `created` event, and a
+   document never gains a statechart later: a redefinition that adds
+   `states` finds no documents, and one that removes the block is refused
+   while documents exist, as ADR-0039 refuses removing a state with
+   documents in it. ADR-0039 item 2 said a class without states has only
+   live documents; it has none.
 
 6. **The allowed transitions.** `Transitions(ctx, class, id, opts...)`
    lists, for the named transitions whose sources include the document's
@@ -126,8 +133,8 @@ a refusal that names a stable code and the fix.
    zero duration inside a chain is one row like any other.
 
 8. **`STATE()` and `ID()`** join the catalog as context functions
-   returning text: the document's state, blank for a class without one,
-   and its id. The VM reads them from its `Context`; the SQL generator
+   returning text: the document's state, blank in the preview of a
+   stateless application, and its id. The VM reads them from its `Context`; the SQL generator
    binds them to the row's `state` and `id` columns where a statement runs
    over document rows, and to parameters where it evaluates one formula,
    as for `USER()`. The binder treats them as the other context functions:
@@ -172,10 +179,13 @@ a refusal that names a stable code and the fix.
   budget belongs to Phase 8.
 - `STATE()` in a filter's `where` (ADR-0038) is the `state` column; the
   two spell the same predicate.
-- A document whose class gained a statechart enters the initial state
-  silently at its next commit. The alternative, refusing commits until an
-  explicit entry, would hold every live document of a redefined class
-  hostage.
+- A class without states is a calculator, not a store. Entering the first
+  state is always the explicit act of creation, recorded as the `created`
+  event, never a side effect of a later edit. Tests and examples that
+  store documents of a class without states gain a `states` block; the
+  formula engine, the previews and the draft previews are unchanged, and
+  a pre-release database that holds such documents keeps them readable
+  and accepts no more.
 
 ## Performance
 

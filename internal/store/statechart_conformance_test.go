@@ -42,9 +42,8 @@ type scriptStep struct {
 	As         string          `json:"as,omitempty"`
 	Key        string          `json:"key,omitempty"`
 	Transition string          `json:"transition,omitempty"`
-	Values     Values          `json:"values,omitempty"`
-	Expect     scriptExpect    `json:"expect"`
-	raw        json.RawMessage `json:"-"`
+	Values     Values       `json:"values,omitempty"`
+	Expect     scriptExpect `json:"expect"`
 }
 
 type scriptExpect struct {

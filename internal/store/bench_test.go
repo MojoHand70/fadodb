@@ -545,3 +545,63 @@ func BenchmarkWriteCheck(b *testing.B) {
 		}
 	}
 }
+
+// benchChain is a class whose two named transitions each start a chain
+// of three: the named move and two eventless ones, so that every command
+// is three state changes in one transaction (ADR-0040).
+const benchChain = `{"name": "Chain", "variables": {"n": {"type": "number"}, "note": {"type": "text"}},
+ "states": {"initial": "s0", "list": ["s0", "s1", "s2", "s3", "s4", "s5"]},
+ "transitions": [
+   {"name": "go",   "from": "s0", "to": "s1"},
+   {"from": "s1", "to": "s2", "guard": "n >= 0"},
+   {"from": "s2", "to": "s3", "guard": "n >= 0"},
+   {"name": "back", "from": "s3", "to": "s4"},
+   {"from": "s4", "to": "s5", "guard": "n >= 0"},
+   {"from": "s5", "to": "s0", "guard": "n >= 0"}
+ ]}`
+
+// benchListing is a class with ten named transitions leaving its one
+// working state, each with a guard of its own, for the listing budget of
+// ADR-0040: ten candidates, guards evaluated, under 10 µs.
+const benchListing = `{"name": "Hub", "variables": {"amount": {"type": "number"}, "qty": {"type": "number"}, "note": {"type": "text"}, "owner": {"type": "text"}, "due": {"type": "date"}},
+ "states": {"initial": "hub", "list": ["hub", "a", "b", "c", "d", "e", "f", "g", "h", "i", "j"]},
+ "transitions": [
+   {"name": "t1",  "from": "hub", "to": "a", "guard": "amount > 0"},
+   {"name": "t2",  "from": "hub", "to": "b", "guard": "amount > 1000"},
+   {"name": "t3",  "from": "hub", "to": "c", "guard": "INGROUP(\"finance\")"},
+   {"name": "t4",  "from": "hub", "to": "d", "guard": "owner = USER()"},
+   {"name": "t5",  "from": "hub", "to": "e", "guard": "qty > 0 AND amount / qty > 10"},
+   {"name": "t6",  "from": "hub", "to": "f", "guard": "LEN(note) > 3"},
+   {"name": "t7",  "from": "hub", "to": "g", "guard": "TODAY() > due"},
+   {"name": "t8",  "from": "hub", "to": "h", "guard": "NOT ISBLANK(owner)"},
+   {"name": "t9",  "from": "hub", "to": "i", "guard": "ROUND(amount * 1.23, 2) > 100"},
+   {"name": "t10", "from": "hub", "to": "j", "guard": "IF(qty > 5, amount > 50, amount > 500)"}
+ ]}`
+
+var benchHubValues = Values{"amount": 500, "qty": 5, "note": "a note", "owner": "alice", "due": "2026-01-01"}
+
+// BenchmarkTransitions10 is the listing of ten candidates with their
+// guards evaluated, the budget of ADR-0040 being 10 µs.
+func BenchmarkTransitions10(b *testing.B) {
+	s, err := Open(filepath.Join(b.TempDir(), "bench.fado"), Options{})
+	if err != nil {
+		b.Fatal(err)
+	}
+	defer s.Close()
+	ctx := context.Background()
+	if _, err := s.DefineClass(ctx, []byte(benchListing)); err != nil {
+		b.Fatal(err)
+	}
+	doc, err := s.Create(ctx, "Hub", benchHubValues, As(alice))
+	if err != nil {
+		b.Fatal(err)
+	}
+	b.ReportAllocs()
+	b.ResetTimer()
+	for b.Loop() {
+		infos, err := s.Transitions(ctx, "Hub", doc.ID, As(alice))
+		if err != nil || len(infos) != 10 {
+			b.Fatalf("%v, %d transitions", err, len(infos))
+		}
+	}
+}

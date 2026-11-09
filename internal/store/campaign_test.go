@@ -12,12 +12,15 @@ import (
 	"time"
 )
 
-// TestCommitCampaign is the Phase 2 commit benchmark the records ask for:
-// the commit with its compute at p99 against the 2 ms budget (ADR-0014,
+// TestCommitCampaign is the commit benchmark the records ask for: the
+// commit with its compute at p99 against the 2 ms budget (ADR-0014,
 // ADR-0035), keyed beside unkeyed commits (ADR-0026), a preview beside the
-// commit it precedes (ADR-0025), batched creates against the 10,000 per
-// second budget (ADR-0012), commits whose formulas look a table up
-// (ADR-0036), and the time to open the database afterwards. It writes to
+// commit it precedes, at the clock and at a chosen moment (ADR-0025,
+// ADR-0042), batched creates against the 10,000 per second budget
+// (ADR-0012), commits whose formulas look a table up (ADR-0036), the
+// statechart rows of ADR-0040: a transition, a transition with values, a
+// chain of three state changes in one command and the listing of ten
+// candidates; and the time to open the database afterwards. It writes to
 // disk and runs only with FADODB_BENCH_DIR set to a directory on a real
 // disk; FADODB_BENCH_COMMITS sizes it, 100,000 by default, and
 // FADODB_BENCH_WAL_MB sets the log size at which the checkpointer
@@ -67,6 +70,11 @@ func TestCommitCampaign(t *testing.T) {
 	}
 	if _, err := s.DefineClass(ctx, []byte(order)); err != nil {
 		t.Fatal(err)
+	}
+	for _, def := range []string{benchFlow, benchChain, benchListing} {
+		if _, err := s.DefineClass(ctx, []byte(def)); err != nil {
+			t.Fatal(err)
+		}
 	}
 	var table []string
 	report := func(work string, commits int, lat []time.Duration, elapsed time.Duration) {
@@ -202,7 +210,109 @@ func TestCommitCampaign(t *testing.T) {
 	}
 	report("set with two lookups recomputed", n, lat, time.Since(start))
 
-	// 7. Open the database again.
+	// 8. Transitions (ADR-0040): a fifth of the documents as Flow, every
+	// command a named transition with a guard, submit then back, so that
+	// no eventless transition follows and each commit is one state
+	// change; then the same with values.
+	flows := make([]string, 0, docs)
+	for i := 0; i < docs; i += batch {
+		many := make([]Values, min(batch, docs-i))
+		for j := range many {
+			many[j] = Values{"amount": float64(100 + j%900), "qty": float64(j%9 + 1), "note": "flow"}
+		}
+		made, err := s.CreateMany(ctx, "Flow", many, As(alice))
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, d := range made {
+			flows = append(flows, d.ID)
+		}
+	}
+	inReview := make([]bool, len(flows))
+	move := func(k int) string {
+		inReview[k] = !inReview[k]
+		if inReview[k] {
+			return "submit"
+		}
+		return "back"
+	}
+	lat = lat[:0]
+	start = time.Now()
+	for i := 0; i < n; i++ {
+		k := i % len(flows)
+		t0 := time.Now()
+		if _, err := s.Transition(ctx, "Flow", flows[k], move(k), nil, As(alice)); err != nil {
+			t.Fatal(err)
+		}
+		lat = append(lat, time.Since(t0))
+	}
+	report("transition, one transaction each", n, lat, time.Since(start))
+	lat = lat[:0]
+	start = time.Now()
+	for i := 0; i < n; i++ {
+		k := i % len(flows)
+		t0 := time.Now()
+		if _, err := s.Transition(ctx, "Flow", flows[k], move(k), Values{"note": "moved " + fmt.Sprint(i)}, As(alice)); err != nil {
+			t.Fatal(err)
+		}
+		lat = append(lat, time.Since(t0))
+	}
+	report("transition with values", n, lat, time.Since(start))
+
+	// 9. A chain of three: every command on the Chain class is a named
+	// transition and two eventless ones, three versions, three history
+	// rows and three events in one transaction.
+	chains := make([]string, 0, docs)
+	for i := 0; i < docs; i += batch {
+		many := make([]Values, min(batch, docs-i))
+		for j := range many {
+			many[j] = Values{"n": float64(j), "note": "chain"}
+		}
+		made, err := s.CreateMany(ctx, "Chain", many, As(alice))
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, d := range made {
+			chains = append(chains, d.ID)
+		}
+	}
+	atEnd := make([]bool, len(chains))
+	lat = lat[:0]
+	start = time.Now()
+	for i := 0; i < n; i++ {
+		k := i % len(chains)
+		name := "go"
+		if atEnd[k] {
+			name = "back"
+		}
+		atEnd[k] = !atEnd[k]
+		t0 := time.Now()
+		if _, err := s.Transition(ctx, "Chain", chains[k], name, nil, As(alice)); err != nil {
+			t.Fatal(err)
+		}
+		lat = append(lat, time.Since(t0))
+	}
+	report("transition starting a chain of three", n, lat, time.Since(start))
+
+	// 10. The listing of ten candidates, guards evaluated, writing
+	// nothing: the budget is 10 µs.
+	hub, err := s.Create(ctx, "Hub", benchHubValues, As(alice))
+	if err != nil {
+		t.Fatal(err)
+	}
+	lat = lat[:0]
+	start = time.Now()
+	for i := 0; i < n; i++ {
+		t0 := time.Now()
+		infos, err := s.Transitions(ctx, "Hub", hub.ID, As(alice))
+		if err != nil || len(infos) != 10 {
+			t.Fatalf("%v, %d transitions", err, len(infos))
+		}
+		lat = append(lat, time.Since(t0))
+	}
+	report("listing of ten candidate transitions", n, lat, time.Since(start))
+
+	// 11. Open the database again.
 	if err := s.Close(); err != nil {
 		t.Fatal(err)
 	}

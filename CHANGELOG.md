@@ -8,6 +8,11 @@ All notable changes to FadoDB are recorded here. The format follows
 
 ### Added
 
+- `docs/perf/v0.3.0.md`, the Phase 3 measurements against the budgets of
+  ADR-0040, ADR-0041 and ADR-0042; the commit campaign gained the rows a
+  transition, a transition with values, a transition starting a chain of
+  three and the listing of ten candidates, and `BenchmarkTransitions10`
+  measures that listing alone.
 - `At(t)`, a moment the caller chooses for a call that reads or previews
   and writes nothing (ADR-0042): on `Preview`, `PreviewDraft`,
   `Transitions`, `Query`, `Count`, `Get`, `Version` and `History`, `NOW()`

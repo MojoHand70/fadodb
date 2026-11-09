@@ -5,6 +5,8 @@ Published per tagged release, with the budgets from
 
 - [v0.1.0](v0.1.0.md): the formula engine, Phase 1.
 - [v0.2.0](v0.2.0.md): the document model and store, Phase 2.
+- [v0.3.0](v0.3.0.md): the statechart, the rights and the chosen moment,
+  Phase 3.
 
 The end-to-end suite is the `bench` package: scenarios written against
 database/sql so that the same one runs on every storage engine. Each
@@ -16,7 +18,11 @@ cd analytics && FADODB_BENCH=store,lookup CGO_ENABLED=1 go test -count=1 -v -run
 ```
 
 The store's own campaign runs the real commit, compute and write, on the
-test classes of the store package, and the filter over a loaded database:
+test classes of the store package, with the statechart rows of ADR-0040
+(a transition, a transition with values, a chain of three and the listing
+of ten candidates) and the preview at a chosen moment of ADR-0042, and
+the filter over a loaded database, with and without a read right on the
+filtered variable (ADR-0041):
 
 ```
 FADODB_BENCH_DIR=/path/on/disk FADODB_BENCH_COMMITS=100000 go test -count=1 -v -run TestCommitCampaign ./internal/store/

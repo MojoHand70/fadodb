@@ -1,6 +1,6 @@
 # ADR-0039: Class versions, terminal states and migrations
 
-- Status: Accepted; amends ADR-0008 (what a final state means), ADR-0014 (the class version on every row) and ADR-0018 (what a redefinition may change)
+- Status: Accepted; amends ADR-0008 (what a final state means), ADR-0014 (the class version on every row) and ADR-0018 (what a redefinition may change); amended by ADR-0040 (a class without states has no documents)
 - Date: 2026-11-08
 
 ## Context

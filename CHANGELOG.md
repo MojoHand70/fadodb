@@ -38,14 +38,6 @@ All notable changes to FadoDB are recorded here. The format follows
   the specification of the statechart's behaviour; the format is in
   `conformance/README.md`.
 
-### Changed
-
-- A class without states stores no documents (ADR-0040): it is a
-  stateless application, evaluated with `Preview` and `PreviewDraft`.
-  `Create` and `CreateMany` on such a class are refused with
-  `stateless`. Every stored document is created into its class's
-  initial state, and a class with documents keeps its states block.
-
 - `STATE()` and `ID()` (ADR-0040), the first of Phase 3: context
   functions returning the state and the id of the document a formula
   runs over, blank for a class without states and when there is no
@@ -60,6 +52,21 @@ All notable changes to FadoDB are recorded here. The format follows
   and run through the commit pipeline over an existing document of the
   stored class, or as a create, writing and storing nothing, so that a
   designer tries a draft on real documents, terminal ones included.
+
+### Changed
+
+- A class without states stores no documents (ADR-0040): it is a
+  stateless application, evaluated with `Preview` and `PreviewDraft`.
+  `Create` and `CreateMany` on such a class are refused with
+  `stateless`. Every stored document is created into its class's
+  initial state, and a class with documents keeps its states block.
+
+### Fixed
+
+- A filter whose `where` calls a function the engine implements in Go,
+  `UPPER`, `TEXT`, `ROUND` and the others behind `fado_` functions,
+  failed with `no such function`: the store never registered them with
+  the SQLite driver. `Open` registers them once per process.
 
 ## [0.2.0] - 2026-11-08
 

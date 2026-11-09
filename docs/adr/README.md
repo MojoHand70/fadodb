@@ -45,3 +45,6 @@ line says so. Copy `0000-template.md` to start.
 | [0037](0037-explicit-tables-and-the-compiled-lookup.md) | Explicit tables bound to SQLite and the compiled LOOKUP | Accepted |
 | [0038](0038-the-filter-and-the-read-only-sql-endpoint.md) | The filter and the read-only SQL endpoint | Accepted |
 | [0039](0039-class-versions-terminal-states-and-migrations.md) | Class versions, terminal states and migrations | Accepted |
+| [0040](0040-transitions-as-commits.md) | Transitions as commits: the command, eventless chains and state visits | Proposed |
+| [0041](0041-field-rights-and-transition-rules-in-the-go-api.md) | Field rights and transition rules in the Go API | Proposed |
+| [0042](0042-a-moment-the-caller-chooses.md) | A moment the caller chooses, for previews and reads | Proposed |

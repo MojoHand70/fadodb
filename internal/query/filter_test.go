@@ -38,6 +38,10 @@ func TestCompile_Prefilter(t *testing.T) {
 		{`shipping.city = "Sopot"`, `"shipping__city" = :f0 AND (`},
 		{`number = "A" AND priority > 2`, `"number" = :f0 AND "priority" > :f1 AND (`},
 		{`state = "draft"`, `"state" = :f0 AND (`},
+		{`STATE() = "draft"`, `"state" = :f0 AND (`},
+		{`"draft" = State()`, `"state" = :f0 AND (`},
+		{`ID() = "01J0"`, `"id" = :f0 AND (`},
+		{`ID() = "01J0" AND STATE() = "draft"`, `"id" = :f0 AND "state" = :f1 AND (`},
 		// No prefilter: OR, a function, money, a non-literal, a decimal that does not fit.
 		{`number = "A" OR priority > 2`, ""},
 		{`UPPER(number) = "A"`, ""},

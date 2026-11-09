@@ -169,6 +169,23 @@ func NewParams(d Dialect) *Params { return &Params{ref: d.Param} }
 // Names lists the parameters recorded so far.
 func (p *Params) Names() []string { return append([]string(nil), p.names...) }
 
+// SQLBinding says how a program's references are spelled in a statement.
+type SQLBinding struct {
+	// Column gives the column expression that holds each slot's value; for
+	// a money slot it is asked again for the currency column, a text slot
+	// named with CurrencySuffix. Column expressions must be qualified when
+	// the program has a lookup, since they are referenced inside its
+	// subquery.
+	Column func(Slot) string
+	// Table gives the table expression of each source a LOOKUP reads; nil
+	// refers to the source by its quoted name.
+	Table func(source string) string
+	// Row gives the column that holds a system value of the document row
+	// the statement runs over, asked for "state" and "id", which STATE()
+	// and ID() read (ADR-0040); nil binds them to parameters, as USER().
+	Row func(name string) string
+}
+
 // GenerateSQL translates a program for a dialect. column gives the column
 // expression that holds each slot's value; for a money slot it is asked
 // again for the currency column, a text slot named with CurrencySuffix.
@@ -177,17 +194,25 @@ func (p *Params) Names() []string { return append([]string(nil), p.names...) }
 // expressions must be qualified when the program has a lookup, since
 // they are referenced inside its subquery.
 func GenerateSQL(p *Program, d Dialect, column func(Slot) string) (SQL, error) {
-	return GenerateSQLWith(p, d, column, quoteIdent)
+	return GenerateSQLBound(p, d, SQLBinding{Column: column})
 }
 
 // GenerateSQLWith is GenerateSQL with the table expression of each source
 // a LOOKUP reads given by table.
 func GenerateSQLWith(p *Program, d Dialect, column func(Slot) string, table func(source string) string) (SQL, error) {
+	return GenerateSQLBound(p, d, SQLBinding{Column: column, Table: table})
+}
+
+// GenerateSQLBound is GenerateSQL with every binding given.
+func GenerateSQLBound(p *Program, d Dialect, b SQLBinding) (SQL, error) {
 	if len(p.Code) == 0 || p.Code[len(p.Code)-1].Op != OpReturn {
 		return SQL{}, fmt.Errorf("sqlgen: the program does not end with return")
 	}
+	if b.Table == nil {
+		b.Table = quoteIdent
+	}
 	params := NewParams(d)
-	t := &sqlTranslator{p: p, d: d, column: column, table: table, params: params}
+	t := &sqlTranslator{p: p, d: d, column: b.Column, table: b.Table, row: b.Row, params: params}
 	e, err := t.block(0, len(p.Code)-1)
 	if err != nil {
 		return SQL{}, err
@@ -204,6 +229,7 @@ type sqlTranslator struct {
 	d      Dialect
 	column func(Slot) string
 	table  func(string) string
+	row    func(string) string
 	params *Params
 }
 
@@ -380,9 +406,14 @@ func (t *sqlTranslator) block(start, end int) (SQLExpr, error) {
 			name := builtins[in.Arg>>8].name
 			var e SQLExpr
 			var err error
-			if name == "ISBLANK" || name == "ISNOTBLANK" {
+			switch {
+			case name == "ISBLANK" || name == "ISNOTBLANK":
 				e = blankTest(d, name == "ISBLANK", args[0])
-			} else {
+			case (name == "STATE" || name == "ID") && t.row != nil:
+				// Over document rows the state and the id are columns of
+				// the row (ADR-0040); the dialect binds a parameter otherwise.
+				e = SQLExpr{Val: d.Load(t.row(strings.ToLower(name)), KindText), Kind: KindText}
+			default:
 				e, err = d.Call(name, args, t.params)
 				if err != nil {
 					return SQLExpr{}, fmt.Errorf("sqlgen: %s: %w", name, err)

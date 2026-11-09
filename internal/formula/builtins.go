@@ -71,6 +71,8 @@ var builtins = []*builtin{
 	{name: "TODAY", class: ClassContext, args: []argKind{}, result: KindDate, fn: fnToday},
 	{name: "USER", class: ClassContext, args: []argKind{}, result: KindText, fn: fnUser},
 	{name: "INGROUP", class: ClassContext, args: []argKind{akText}, result: KindBool, fn: fnInGroup},
+	{name: "STATE", class: ClassContext, args: []argKind{}, result: KindText, fn: fnState},
+	{name: "ID", class: ClassContext, args: []argKind{}, result: KindText, fn: fnID},
 	// Text
 	{name: "LEFT", class: ClassPure, args: []argKind{akText, akNumber}, result: KindText, fn: fnLeft},
 	{name: "RIGHT", class: ClassPure, args: []argKind{akText, akNumber}, result: KindText, fn: fnRight},
@@ -1075,6 +1077,20 @@ func fnUser(vm *VM, _ []Value) (Value, *EvalError) {
 		return Blank(), nil
 	}
 	return Text(vm.ctx.User), nil
+}
+
+func fnState(vm *VM, _ []Value) (Value, *EvalError) {
+	if vm.ctx == nil || vm.ctx.State == "" {
+		return Blank(), nil
+	}
+	return Text(vm.ctx.State), nil
+}
+
+func fnID(vm *VM, _ []Value) (Value, *EvalError) {
+	if vm.ctx == nil || vm.ctx.ID == "" {
+		return Blank(), nil
+	}
+	return Text(vm.ctx.ID), nil
 }
 
 func fnInGroup(vm *VM, args []Value) (Value, *EvalError) {

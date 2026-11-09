@@ -28,6 +28,8 @@ func TestFormulaEval(t *testing.T) {
 		{[]string{"-var", `doc:json={"a":{"b":"deep"}}`, `JSONVALUE(doc, "a.b")`}, `"deep"`},
 		{[]string{"-user", "alice", "-group", "finance", `INGROUP("finance") AND USER() = "alice"`}, "TRUE"},
 		{[]string{"-now", "2024-02-29 10:00:00", "TEXT(TODAY())"}, `"2024-02-29"`},
+		{[]string{"-state", "draft", "-id", "inv-1", `STATE() & "/" & ID()`}, `"draft/inv-1"`},
+		{[]string{"ISBLANK(STATE()) AND ISBLANK(ID())"}, "TRUE"},
 		{[]string{"BLANK"}, "BLANK"},
 		{[]string{"-ast", "1 + 2 * 3"}, "(+ 1 (* 2 3))"},
 	}

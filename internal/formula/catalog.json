@@ -2,7 +2,7 @@
   "version": 1,
   "classes": {
     "pure": "A function of its arguments only. Allowed everywhere.",
-    "context": "Reads the caller's context: the user, the clock. Not allowed in auto formulas.",
+    "context": "Reads the caller's context: the user, the clock, the document's state and id. Not allowed in auto formulas.",
     "lookup": "Reads one value from a table or stack. In auto formulas only against explicit tables.",
     "query": "Reads rows from a table or stack. Not allowed in auto formulas."
   },
@@ -165,6 +165,12 @@
     {"name": "INGROUP", "class": "context", "category": "context", "returns": "bool",
      "params": [{"name": "group", "type": "text"}],
      "summary": "TRUE when the current user is a member of the named group."},
+    {"name": "STATE", "class": "context", "category": "context", "returns": "text",
+     "params": [],
+     "summary": "The state of the document the formula runs over. Blank for a class without states."},
+    {"name": "ID", "class": "context", "category": "context", "returns": "text",
+     "params": [],
+     "summary": "The id of the document the formula runs over. Blank when there is no document."},
 
     {"name": "LEFT", "class": "pure", "category": "text", "returns": "text",
      "params": [{"name": "text", "type": "text"}, {"name": "count", "type": "number"}],

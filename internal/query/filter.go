@@ -165,7 +165,9 @@ func Compile(f Filter, cls *model.Class, sources formula.Sources) (*Plan, error)
 			return nil, &Error{Code: CodeBadFormula, Element: "where", Pos: -1,
 				Message: "the filter must be a condition, got " + prog.Result.String(), Hint: "compare it, for example <> 0 or <> \"\""}
 		}
-		stmt, err := formula.GenerateSQL(prog, d, quoted)
+		// STATE() and ID() are the row's columns here (ADR-0040): the
+		// function and the bare column spell the same predicate.
+		stmt, err := formula.GenerateSQLBound(prog, d, formula.SQLBinding{Column: quoted, Row: quoteIdent})
 		if err != nil {
 			return nil, &Error{Code: CodeBadFormula, Element: "where", Pos: -1, Message: err.Error()}
 		}
@@ -308,6 +310,19 @@ func columnOf(n formula.Node, cols map[string]column) *column {
 		path = n.Name
 	case *formula.Member:
 		path = n.Base + "." + strings.Join(n.Path, ".")
+	case *formula.Call:
+		// STATE() and ID() are the state and id columns (ADR-0040).
+		if len(n.Args) != 0 {
+			return nil
+		}
+		switch strings.ToUpper(n.Name) {
+		case "STATE":
+			path = "state"
+		case "ID":
+			path = "id"
+		default:
+			return nil
+		}
 	default:
 		return nil
 	}

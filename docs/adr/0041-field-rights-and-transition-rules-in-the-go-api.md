@@ -1,6 +1,6 @@
 # ADR-0041: Field rights and transition rules in the Go API
 
-- Status: Proposed; amends ADR-0010 (when the per-transition rules are enforced), ADR-0028 (the row a right is evaluated over, the paths the projection covers, the filter compiles a read right instead of refusing it, read rights use the functions of a read rule)
+- Status: Accepted; amends ADR-0010 (when the per-transition rules are enforced), ADR-0028 (the row a right is evaluated over, the paths the projection covers, the filter compiles a read right instead of refusing it, read rights use the functions of a read rule)
 - Date: 2026-11-08
 
 ## Context

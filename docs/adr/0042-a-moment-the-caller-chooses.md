@@ -1,6 +1,6 @@
 # ADR-0042: A moment the caller chooses, for previews and reads
 
-- Status: Proposed; amends ADR-0025 (a preview may run at a chosen moment and reports it)
+- Status: Accepted; amends ADR-0025 (a preview may run at a chosen moment and reports it)
 - Date: 2026-11-09
 
 ## Context

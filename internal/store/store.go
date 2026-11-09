@@ -14,6 +14,7 @@ import (
 	_ "modernc.org/sqlite" // the pure-Go driver, the core's one dependency (ADR-0002, ADR-0035)
 
 	"github.com/MojoHand70/fadodb/internal/formula"
+	"github.com/MojoHand70/fadodb/internal/formula/sqlitefn"
 	"github.com/MojoHand70/fadodb/internal/model"
 )
 
@@ -150,6 +151,12 @@ func Open(path string, o Options) (*Store, error) {
 	}
 	if o.MaxBlob < 0 {
 		return nil, errf(CodeBadValue, "", "the blob limit is not negative")
+	}
+	// The SQL the filter and the views run calls the engine's functions,
+	// fado_upper and the rest; they are registered with the driver once
+	// per process, before the first connection opens.
+	if err := sqlitefn.Register(); err != nil {
+		return nil, storageErr("register the engine functions", err)
 	}
 	q := url.Values{}
 	q.Add("_pragma", "journal_mode(WAL)")

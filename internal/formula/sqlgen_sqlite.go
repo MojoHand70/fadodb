@@ -103,6 +103,49 @@ func (SQLite) ContextArgs(ctx *Context) []any {
 	return []any{sql.Named("now", now), sql.Named("user", user), sql.Named("groups", g), sql.Named("state", state), sql.Named("id", id)}
 }
 
+// ContextArgsFor appends to dst the context parameters a statement
+// uses, by name as SQL.Params lists them, bound as ContextArgs binds them.
+// A statement that reads no context binds nothing, which keeps a lookup
+// inside a commit free of the cost of parameters it never reads.
+func (d SQLite) ContextArgsFor(ctx *Context, names []string, dst []any) []any {
+	for _, name := range names {
+		switch name {
+		case "now":
+			now := time.Now().Unix()
+			if ctx != nil && ctx.Now != 0 {
+				now = ctx.Now
+			}
+			dst = append(dst, sql.Named("now", now))
+		case "user":
+			dst = append(dst, sql.Named("user", textOrNil(ctx, func(c *Context) string { return c.User })))
+		case "state":
+			dst = append(dst, sql.Named("state", textOrNil(ctx, func(c *Context) string { return c.State })))
+		case "id":
+			dst = append(dst, sql.Named("id", textOrNil(ctx, func(c *Context) string { return c.ID })))
+		case "groups":
+			var g any
+			if ctx != nil && ctx.Groups != nil {
+				b, _ := json.Marshal(ctx.Groups)
+				g = string(b)
+			}
+			dst = append(dst, sql.Named("groups", g))
+		}
+	}
+	return dst
+}
+
+// textOrNil reads a text of the context, nil when the context or the
+// text is empty.
+func textOrNil(ctx *Context, get func(*Context) string) any {
+	if ctx == nil {
+		return nil
+	}
+	if s := get(ctx); s != "" {
+		return s
+	}
+	return nil
+}
+
 // Setup implements Dialect: the engine functions come from the sqlitefn
 // package's registration, not from statements.
 func (SQLite) Setup() []string { return nil }

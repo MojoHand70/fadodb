@@ -410,8 +410,10 @@ type lookupPlan struct {
 	idxType formula.Type
 	// stmt is the statement of the condition alone; keyed the same with
 	// the index column pinned to the key, which lets SQLite use the
-	// table's index (ADR-0036).
+	// table's index (ADR-0036). params are the context parameters the
+	// condition reads, which both statements bind.
 	stmt, keyed *sql.Stmt
+	params      []string
 	nargs       int
 	money       []bool // per argument, whether it is a money value with a currency parameter
 }
@@ -540,6 +542,7 @@ func (s *Store) lookupStatement(p *lookupPlan, q *formula.QuerySlot, args []form
 		if err != nil {
 			return formula.Value{}, &formula.EvalError{Code: formula.ErrQueryFailed, Pos: -1, Msg: err.Error()}
 		}
+		p.params = params.Names()
 		cur := "NULL"
 		if e.Cur != "" {
 			cur = e.Cur
@@ -564,7 +567,7 @@ func (s *Store) lookupStatement(p *lookupPlan, q *formula.QuerySlot, args []form
 	if keyed {
 		named = append(named, sql.Named("k", keyArg))
 	}
-	named = append(named, formula.NewSQLite().ContextArgs(ctx)...)
+	named = formula.NewSQLite().ContextArgsFor(ctx, p.params, named)
 	var v, c any
 	if err := (*stmt).QueryRowContext(context.Background(), named...).Scan(&v, &c); err != nil {
 		return formula.Value{}, &formula.EvalError{Code: formula.ErrQueryFailed, Pos: -1, Msg: err.Error()}

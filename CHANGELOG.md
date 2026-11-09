@@ -8,6 +8,16 @@ All notable changes to FadoDB are recorded here. The format follows
 
 ### Added
 
+- `STATE()` and `ID()` (ADR-0040), the first of Phase 3: context
+  functions returning the state and the id of the document a formula
+  runs over, blank for a class without states and when there is no
+  document. The VM reads them from its context; in a filter's `where`
+  they are the row's `state` and `id` columns, the index term included,
+  so `STATE() = "draft"` and `state = "draft"` spell the same predicate;
+  elsewhere the SQL binds them as parameters, as `USER()`. Like the
+  other context functions they are refused in auto formulas and the
+  title. The `context` conformance suite has their cases, and `fadodb
+  formula eval` takes `-state` and `-id`.
 - `PreviewDraft` (ADR-0025): a class definition compiled for one call
   and run through the commit pipeline over an existing document of the
   stored class, or as a create, writing and storing nothing, so that a

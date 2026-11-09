@@ -113,12 +113,12 @@ func (DuckDB) ColumnType(k Kind) string {
 
 // ContextArgs implements Dialect: groups bind as a list of text.
 func (DuckDB) ContextArgs(ctx *Context) []any {
-	now, user, groups := contextValues(ctx)
+	now, user, state, id, groups := contextValues(ctx)
 	var g any
 	if groups != nil {
 		g = groups
 	}
-	return []any{sql.Named("now", now), sql.Named("user", user), sql.Named("groups", g)}
+	return []any{sql.Named("now", now), sql.Named("user", user), sql.Named("groups", g), sql.Named("state", state), sql.Named("id", id)}
 }
 
 // Setup implements Dialect: the macro definitions.
@@ -407,6 +407,10 @@ func (d DuckDB) Call(name string, args []SQLExpr, params *Params) (SQLExpr, erro
 		return SQLExpr{Val: "floor(CAST(" + params.Use("now") + " AS DOUBLE) / " + d.NumberLit(secondsPerDay) + ")", Kind: KindDate, Sure: true}, nil
 	case "USER":
 		return SQLExpr{Val: "CAST(" + params.Use("user") + " AS VARCHAR)", Kind: KindText}, nil
+	case "STATE":
+		return SQLExpr{Val: "CAST(" + params.Use("state") + " AS VARCHAR)", Kind: KindText}, nil
+	case "ID":
+		return SQLExpr{Val: "CAST(" + params.Use("id") + " AS VARCHAR)", Kind: KindText}, nil
 	case "INGROUP":
 		return SQLExpr{Val: "COALESCE(list_contains(" + params.Use("groups") + ", " + d.Text(args[0]) + "), FALSE)", Kind: KindBool, Sure: true}, nil
 	case "LEFT", "RIGHT":

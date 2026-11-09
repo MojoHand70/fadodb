@@ -34,6 +34,7 @@ func TestGenerateSQL_Shapes(t *testing.T) {
 		{src: `VALUE(name)`, wantValue: []string{`fado_value(COALESCE("name", ''))`}, wantError: []string{`fado_value_err(COALESCE("name", ''))`}},
 		{src: `DAYS(due, TODAY())`, wantValue: []string{`(CAST("due" AS REAL) - floor(CAST(:now AS REAL) / 86400.0))`}, noError: true, params: []string{"now"}},
 		{src: `USER() = "a" AND INGROUP("g")`, wantValue: []string{`:user`, `json_each(:groups)`}, noError: true, params: []string{"user", "groups"}},
+		{src: `STATE() = "draft" AND ID() <> ""`, wantValue: []string{`(COALESCE(:state, '') = 'draft')`, `(COALESCE(:id, '') <> '')`}, noError: true, params: []string{"state", "id"}},
 		{src: `TEXT(due)`, wantValue: []string{`strftime('%Y-%m-%d', CAST("due" AS REAL) * 86400.0, 'unixepoch')`}, noError: true},
 		{src: `"it's"`, wantValue: []string{`'it''s'`}, noError: true},
 		{src: `-5 ^ 2`, wantValue: []string{`fado_power((-5.0), 2.0)`}, wantError: []string{"IS NULL OR abs("}},
@@ -63,6 +64,30 @@ func TestGenerateSQL_Shapes(t *testing.T) {
 		}
 		if stmt.Kind != p.Result.Kind {
 			t.Errorf("%s: SQL kind %s, program result %s", c.src, stmt.Kind, p.Result)
+		}
+	}
+}
+
+// Over document rows STATE() and ID() are the row's columns, and the
+// statement takes no parameter for them (ADR-0040).
+func TestGenerateSQLBound_RowBindsStateAndID(t *testing.T) {
+	scope := mustScope(t, Variable{Name: "qty", Type: Scalar(KindNumber)})
+	p := mustBind(t, `STATE() = "draft" AND ID() <> "" AND USER() = "a"`, scope)
+	for _, d := range []Dialect{NewSQLite(), NewDuckDB()} {
+		stmt, err := GenerateSQLBound(p, d, SQLBinding{Column: quoteSlot, Row: func(name string) string { return "d." + quoteIdent(name) }})
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, w := range []string{`d."state"`, `d."id"`} {
+			if !strings.Contains(stmt.Value, w) {
+				t.Errorf("%s: value %s\n  lacks %s", d.Name(), stmt.Value, w)
+			}
+		}
+		if len(stmt.Params) != 1 || stmt.Params[0] != "user" {
+			t.Errorf("%s: params %v, want [user]", d.Name(), stmt.Params)
+		}
+		if stmt.Error != "" {
+			t.Errorf("%s: error expression %s, want none", d.Name(), stmt.Error)
 		}
 	}
 }
@@ -154,6 +179,7 @@ func TestGenerateSQL_DuckDBShapes(t *testing.T) {
 		{src: "ROUND(qty)", wantValue: []string{`fado_round_m(COALESCE(CAST("qty" AS DOUBLE), 0.0::DOUBLE), CAST(0 AS DOUBLE), 'half_up')`}},
 		{src: "YEAR(due)", wantValue: []string{`CAST(year(fado_ts((CAST("due" AS DOUBLE) * CAST(86400 AS DOUBLE)))) AS DOUBLE)`}},
 		{src: "INGROUP(\"g\") AND USER() = \"a\"", wantValue: []string{`list_contains($groups, 'g')`, `CAST($user AS VARCHAR)`}, params: []string{"groups", "user"}},
+		{src: "STATE() = \"draft\" OR ID() = \"x\"", wantValue: []string{`CAST($state AS VARCHAR)`, `CAST($id AS VARCHAR)`}, params: []string{"state", "id"}},
 		{src: "VALUE(name)", wantValue: []string{`fado_value(COALESCE("name", ''))`}, wantError: []string{`fado_value_err(COALESCE("name", ''))`}},
 		{src: "SUM(qty, 1)", wantValue: []string{`(COALESCE(CAST("qty" AS DOUBLE), 0.0::DOUBLE) + CAST(1 AS DOUBLE))`}},
 		{src: "TEXT(qty)", wantValue: []string{`COALESCE(printf('%.15g', CAST("qty" AS DOUBLE) + 0.0::DOUBLE), '')`}},

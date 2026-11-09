@@ -244,6 +244,7 @@ func (s *Store) run(ctx context.Context, cmd command, now time.Time) (*result, e
 		if c.cls.States != nil {
 			after.state, after.stateEntered = c.cls.States.Initial, secs
 		}
+		evalCtx.ID, evalCtx.State = after.id, after.state
 		if _, err := c.assign(after, kids, cmd.values, dirty, s.limits); err != nil {
 			return nil, err
 		}
@@ -287,6 +288,7 @@ func (s *Store) run(ctx context.Context, cmd command, now time.Time) (*result, e
 		// name, every formula is recomputed, and the row says so
 		// (ADR-0039). A migration is that and nothing else.
 		adopt := beforeClass != c || cmd.op == opMigrate
+		evalCtx.ID, evalCtx.State = before.id, before.state
 		if beforeClass != c {
 			after = &docRow{id: before.id, title: before.title, state: before.state, version: before.version, createdAt: before.createdAt,
 				updatedAt: before.updatedAt, stateEntered: before.stateEntered, vals: make([]formula.Value, len(c.leaves))}

@@ -49,7 +49,7 @@ func (s *Store) Query(ctx context.Context, f Filter, opts ...Option) ([]*Documen
 		text += " WHERE " + plan.Where
 	}
 	text += " ORDER BY " + plan.Order + " LIMIT " + fmt.Sprint(plan.Limit) + " OFFSET " + fmt.Sprint(plan.Offset)
-	args := append(plan.Args, contextArgs(opts)...)
+	args := append(plan.Args, s.contextArgs(o)...)
 	st, err := s.filters.acquire(ctx, s.db, text)
 	if err != nil {
 		return nil, storageErr("prepare the query of "+c.cls.Name, err)
@@ -96,7 +96,7 @@ func (s *Store) Query(ctx context.Context, f Filter, opts ...Option) ([]*Documen
 	}
 	ev := s.reader()
 	defer s.release(ev)
-	now := s.now().Unix()
+	now := s.clock(o)
 	docs := make([]*Document, len(found))
 	for i, row := range found {
 		var d *Document
@@ -147,8 +147,9 @@ func (s *Store) Count(ctx context.Context, f Filter, opts ...Option) (int64, err
 	if e != nil {
 		return 0, e
 	}
+	o := apply(opts)
 	f.Order, f.Fields, f.Limit, f.Offset = nil, nil, 0, 0
-	plan, err := query.Compile(f, c.cls, s.sources(), caller(apply(opts)))
+	plan, err := query.Compile(f, c.cls, s.sources(), caller(o))
 	if err != nil {
 		return 0, filterErr(err)
 	}
@@ -162,7 +163,7 @@ func (s *Store) Count(ctx context.Context, f Filter, opts ...Option) (int64, err
 	}
 	defer s.filters.release(st)
 	var n int64
-	if err := st.stmt.QueryRowContext(ctx, append(plan.Args, contextArgs(opts)...)...).Scan(&n); err != nil {
+	if err := st.stmt.QueryRowContext(ctx, append(plan.Args, s.contextArgs(o)...)...).Scan(&n); err != nil {
 		return 0, storageErr("count "+c.cls.Name, err)
 	}
 	return n, nil
@@ -214,10 +215,10 @@ func (ch *child) loadCurrent(ctx context.Context, db *sql.DB, c *class, docs []*
 }
 
 // contextArgs binds the context parameters a filter's formula may read:
-// the clock and the principal.
-func contextArgs(opts []Option) []any {
-	o := apply(opts)
-	return formula.NewSQLite().ContextArgs(&formula.Context{User: o.principal.ID, Groups: o.principal.Groups})
+// the principal, and the clock, the moment chosen with At or the
+// database's (ADR-0042).
+func (s *Store) contextArgs(o options) []any {
+	return formula.NewSQLite().ContextArgs(&formula.Context{User: o.principal.ID, Groups: o.principal.Groups, Now: s.clock(o)})
 }
 
 func filterErr(err error) error {

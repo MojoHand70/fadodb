@@ -141,6 +141,20 @@ func TestCommitCampaign(t *testing.T) {
 	}
 	report("preview of that set", n, lat, time.Since(start))
 
+	// 4b. The same preview at a moment the caller chooses (ADR-0042): the
+	// difference must be nothing.
+	moment := At(time.Date(2027, 1, 15, 9, 0, 0, 0, time.UTC))
+	lat = lat[:0]
+	start = time.Now()
+	for i := 0; i < n; i++ {
+		t0 := time.Now()
+		if _, err := s.Preview(ctx, "Invoice", ids[i%docs], set(i+2), "", As(alice), moment); err != nil {
+			t.Fatal(err)
+		}
+		lat = append(lat, time.Since(t0))
+	}
+	report("preview of that set at a chosen moment", n, lat, time.Since(start))
+
 	// 5. Batched creates, 1,000 per transaction; the latency is the batch's.
 	const batch = 1000
 	lat = lat[:0]

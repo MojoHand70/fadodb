@@ -84,8 +84,9 @@ const (
 	// CodeBadFormula: a filter's where does not parse or bind; Pos says
 	// where.
 	CodeBadFormula = "bad_formula"
-	// CodeNotAllowed: a function class a filter may not use, or a SQL
-	// statement the endpoint refuses.
+	// CodeNotAllowed: a function class a filter may not use, a SQL
+	// statement the endpoint refuses, or At on a command that writes
+	// (ADR-0042).
 	CodeNotAllowed = "not_allowed"
 	// CodeTooManyRows: a SQL statement returns more than MaxSQLRows.
 	CodeTooManyRows = "too_many_rows"

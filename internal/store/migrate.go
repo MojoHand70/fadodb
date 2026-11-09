@@ -162,6 +162,9 @@ func (s *Store) Migrate(ctx context.Context, class string, opts ...Option) (int,
 	if o.key != "" {
 		return 0, hintf(CodeNotSupported, "", "a migration takes no idempotency key", "running it again moves nothing: every live document is already at the current version")
 	}
+	if err := refuseAt(o, "migration"); err != nil {
+		return 0, err
+	}
 	where := `WHERE "class_version" < ?`
 	var args []any
 	args = append(args, c.cls.Version)

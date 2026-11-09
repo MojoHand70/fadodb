@@ -330,6 +330,9 @@ func (s *Store) ImportRows(ctx context.Context, name string, rows []Values, opts
 		return 0, e
 	}
 	o := apply(opts)
+	if err := refuseAt(o, "row import"); err != nil {
+		return 0, err
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.closed {

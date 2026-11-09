@@ -104,12 +104,17 @@ type TransitionInfo struct {
 // formula failed or whose value the principal may not set, each with its
 // code; for a class with states, the states the command visited, the
 // state before first, and the named transitions leaving the resulting
-// state (ADR-0040). Rules arrive with Phase 4.
+// state (ADR-0040); and Now, the seconds since the epoch its formulas
+// saw, the moment chosen with At or the database's clock (ADR-0042). A
+// preview of a set that changes nothing reports the path and the
+// transitions all the same, the version as it is. Rules arrive with
+// Phase 4.
 type Preview struct {
 	Document    *Document        `json:"document"`
 	Errors      []*Error         `json:"errors,omitempty"`
 	Path        []string         `json:"path,omitempty"`
 	Transitions []TransitionInfo `json:"transitions,omitempty"`
+	Now         int64            `json:"now"`
 }
 
 // Option configures one call.
@@ -123,6 +128,7 @@ type options struct {
 	id              string
 	replace         bool
 	version         int64
+	at              time.Time
 }
 
 // As runs the call as the principal.
@@ -149,6 +155,13 @@ func Replace() Option { return func(o *options) { o.replace = true } }
 // AtVersion makes OpenFile read the document at a committed version
 // instead of the current one.
 func AtVersion(version int64) Option { return func(o *options) { o.version = version } }
+
+// At runs a call that reads or previews at the moment (ADR-0042): NOW()
+// is t and TODAY() its UTC day in every formula the call evaluates,
+// defaults, guards, access rules and rights alike, and a preview reports
+// it as Now. A zero t is the database's clock. A command that writes
+// refuses it with not_allowed; the business date is untouched.
+func At(t time.Time) Option { return func(o *options) { o.at = t } }
 
 func apply(opts []Option) options {
 	var o options

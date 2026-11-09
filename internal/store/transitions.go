@@ -63,7 +63,7 @@ func (s *Store) Transitions(ctx context.Context, class, id string, opts ...Optio
 	if c.cls.States == nil {
 		return []TransitionInfo{}, nil
 	}
-	evalCtx := &formula.Context{User: o.principal.ID, Groups: o.principal.Groups, Now: s.now().Unix(), State: row.state, ID: row.id}
+	evalCtx := &formula.Context{User: o.principal.ID, Groups: o.principal.Groups, Now: s.clock(o), State: row.state, ID: row.id}
 	return s.listTransitions(c, row, evalCtx, o.principal), nil
 }
 

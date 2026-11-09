@@ -1,6 +1,6 @@
 # ADR-0012: Performance budgets and gates
 
-- Status: Accepted; amended by ADR-0030 (the gate measures the minimum over code placements)
+- Status: Accepted; amended by ADR-0030 (the gate measures the minimum over code placements); the gate's scope narrowed on 2026-11-09 (see Gates)
 - Date: 2026-11-05
 
 ## Context
@@ -32,6 +32,12 @@ Gates, enforced in CI on every pull request:
 - Benchmarks with `-benchmem` next to every package; `benchstat` compares the
   pull request against the base branch and fails on more than 5% regression
   in time or bytes per operation, or any extra allocation per operation.
+  Since 2026-11-09 the gate runs on the pull requests that change Go code,
+  a build file or a script, and over the benchmarks the budgets name, the
+  hot paths of the table above and of each phase's records, eleven at the
+  time; every benchmark still runs by hand for a release's perf page. The
+  gate had grown to half an hour per pull request, docs-only ones included,
+  as Phase 3 added its benchmarks.
 - Binary size gate against the budget above.
 - A perf suite under `bench/` runs the end-to-end scenarios nightly; CPU and
   allocation profiles are archived per release.

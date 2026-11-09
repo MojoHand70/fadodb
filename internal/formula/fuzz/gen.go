@@ -229,6 +229,8 @@ func (g *Generator) leaf(k formula.Kind) {
 			g.w("BLANK")
 		case 5:
 			g.w("USER()")
+		case 6:
+			g.w(g.pick("STATE()", "ID()"))
 		default:
 			g.textLit(g.someText())
 		}
@@ -446,7 +448,8 @@ func (g *Generator) value(t formula.Type) formula.Value {
 }
 
 func (g *Generator) context() formula.Context {
-	ctx := formula.Context{Now: g.someSecs(), User: g.pick("", "alice", "bob", "Alice")}
+	ctx := formula.Context{Now: g.someSecs(), User: g.pick("", "alice", "bob", "Alice"),
+		State: g.pick("", "draft", "paid"), ID: g.pick("", "inv-1", "01J0")}
 	switch g.n(4) {
 	case 1:
 		ctx.Groups = []string{"finance"}

@@ -15,6 +15,9 @@
     {"formula": "TODAY()", "reason": "context function in an auto formula"},
     {"formula": "DAYS(due, TODAY())", "reason": "context function in an auto formula"},
     {"formula": "USER()", "reason": "context function in an auto formula"},
-    {"formula": "IF(INGROUP(\"admins\"), 1, 0)", "reason": "context function in an auto formula"}
+    {"formula": "IF(INGROUP(\"admins\"), 1, 0)", "reason": "context function in an auto formula"},
+    {"formula": "STATE()", "reason": "context function in an auto formula"},
+    {"formula": "IF(STATE() = \"paid\", 1, 0)", "reason": "context function in an auto formula"},
+    {"formula": "ID()", "reason": "context function in an auto formula"}
   ]
 }

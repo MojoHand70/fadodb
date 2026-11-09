@@ -23,6 +23,13 @@ type Context struct {
 	// Now is the current time in seconds since the epoch, UTC. Zero means
 	// the wall clock.
 	Now int64
+	// State is the state of the document the formula runs over, for
+	// STATE(); empty for a class without states and in a preview of a
+	// stateless application (ADR-0040).
+	State string
+	// ID is the id of the document the formula runs over, for ID(); empty
+	// when there is no document.
+	ID string
 }
 
 // EvalError is an evaluation error: a code from the closed list, the byte

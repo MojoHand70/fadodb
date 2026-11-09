@@ -1,6 +1,6 @@
 # ADR-0026: Idempotency keys on commands, a business date on events, and the transition event
 
-- Status: Accepted; amends ADR-0006, ADR-0011, ADR-0014
+- Status: Accepted; amends ADR-0006, ADR-0011, ADR-0014; amended by ADR-0040 (the key of a command that made a chain)
 - Date: 2026-11-06
 
 ## Context

@@ -94,13 +94,56 @@ func (SQLite) ColumnType(k Kind) string {
 // ContextArgs implements Dialect: now is always bound, user is text or
 // NULL, groups is a JSON array or NULL.
 func (SQLite) ContextArgs(ctx *Context) []any {
-	now, user, groups := contextValues(ctx)
+	now, user, state, id, groups := contextValues(ctx)
 	var g any
 	if groups != nil {
 		b, _ := json.Marshal(groups)
 		g = string(b)
 	}
-	return []any{sql.Named("now", now), sql.Named("user", user), sql.Named("groups", g)}
+	return []any{sql.Named("now", now), sql.Named("user", user), sql.Named("groups", g), sql.Named("state", state), sql.Named("id", id)}
+}
+
+// ContextArgsFor appends to dst the context parameters a statement
+// uses, by name as SQL.Params lists them, bound as ContextArgs binds them.
+// A statement that reads no context binds nothing, which keeps a lookup
+// inside a commit free of the cost of parameters it never reads.
+func (d SQLite) ContextArgsFor(ctx *Context, names []string, dst []any) []any {
+	for _, name := range names {
+		switch name {
+		case "now":
+			now := time.Now().Unix()
+			if ctx != nil && ctx.Now != 0 {
+				now = ctx.Now
+			}
+			dst = append(dst, sql.Named("now", now))
+		case "user":
+			dst = append(dst, sql.Named("user", textOrNil(ctx, func(c *Context) string { return c.User })))
+		case "state":
+			dst = append(dst, sql.Named("state", textOrNil(ctx, func(c *Context) string { return c.State })))
+		case "id":
+			dst = append(dst, sql.Named("id", textOrNil(ctx, func(c *Context) string { return c.ID })))
+		case "groups":
+			var g any
+			if ctx != nil && ctx.Groups != nil {
+				b, _ := json.Marshal(ctx.Groups)
+				g = string(b)
+			}
+			dst = append(dst, sql.Named("groups", g))
+		}
+	}
+	return dst
+}
+
+// textOrNil reads a text of the context, nil when the context or the
+// text is empty.
+func textOrNil(ctx *Context, get func(*Context) string) any {
+	if ctx == nil {
+		return nil
+	}
+	if s := get(ctx); s != "" {
+		return s
+	}
+	return nil
 }
 
 // Setup implements Dialect: the engine functions come from the sqlitefn
@@ -108,8 +151,9 @@ func (SQLite) ContextArgs(ctx *Context) []any {
 func (SQLite) Setup() []string { return nil }
 
 // contextValues is what every dialect binds: the clock in seconds, always
-// present; the user id or nil; the groups or nil.
-func contextValues(ctx *Context) (now int64, user any, groups []string) {
+// present; the user id, the document's state and id, each or nil; the
+// groups or nil.
+func contextValues(ctx *Context) (now int64, user, state, id any, groups []string) {
 	now = time.Now().Unix()
 	if ctx != nil {
 		if ctx.Now != 0 {
@@ -118,9 +162,15 @@ func contextValues(ctx *Context) (now int64, user any, groups []string) {
 		if ctx.User != "" {
 			user = ctx.User
 		}
+		if ctx.State != "" {
+			state = ctx.State
+		}
+		if ctx.ID != "" {
+			id = ctx.ID
+		}
 		groups = ctx.Groups
 	}
-	return now, user, groups
+	return now, user, state, id, groups
 }
 
 // maxFloat is the largest finite float64, the bound of the overflow checks.
@@ -747,6 +797,10 @@ func (d SQLite) Call(name string, args []SQLExpr, params *Params) (SQLExpr, erro
 		return SQLExpr{Val: "floor(CAST(" + params.Use("now") + " AS REAL) / 86400.0)", Kind: KindDate, Sure: true}, nil
 	case "USER":
 		return SQLExpr{Val: params.Use("user"), Kind: KindText}, nil
+	case "STATE":
+		return SQLExpr{Val: params.Use("state"), Kind: KindText}, nil
+	case "ID":
+		return SQLExpr{Val: params.Use("id"), Kind: KindText}, nil
 	case "INGROUP":
 		return SQLExpr{Val: "EXISTS (SELECT 1 FROM json_each(" + params.Use("groups") + ") WHERE json_each.value = " + d.Text(args[0]) + ")", Kind: KindBool, Sure: true}, nil
 	case "LEFT":

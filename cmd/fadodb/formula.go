@@ -34,6 +34,9 @@ Flags:
   -user id                 the user the formula runs for (USER)
   -group name              a group of the user (INGROUP); may repeat
   -now date                the clock (NOW, TODAY); default the wall clock
+  -state name              the state of the document the formula runs
+                           over (STATE); default blank
+  -id id                   the id of that document (ID); default blank
   -max-text n              the text limit in code points (ADR-0021);
                            default 65536, at least 64
   -ast                     print the parsed formula as an s-expression
@@ -83,6 +86,8 @@ func runFormulaEval(args []string, stdout, stderr io.Writer) int {
 	fs.Var(&groups, "group", "a group of the user")
 	user := fs.String("user", "", "the user the formula runs for")
 	now := fs.String("now", "", "the clock")
+	state := fs.String("state", "", "the document's state")
+	id := fs.String("id", "", "the document's id")
 	maxText := fs.Int("max-text", formula.DefaultMaxText, "the text limit in code points")
 	dialect := fs.String("sql", "", "print the SQL for a dialect")
 	ast := fs.Bool("ast", false, "print the parsed formula")
@@ -142,7 +147,7 @@ func runFormulaEval(args []string, stdout, stderr io.Writer) int {
 	if err != nil {
 		return usageErr("%v", err)
 	}
-	ctx := &formula.Context{User: *user, Groups: groups}
+	ctx := &formula.Context{User: *user, Groups: groups, State: *state, ID: *id}
 	if *now != "" {
 		secs, err := formula.ParseCaseDate(*now)
 		if err != nil {

@@ -195,7 +195,8 @@ type Case struct {
 	// Inputs are values for declared variables; an absent variable is blank.
 	// Dates are written as YYYY-MM-DD or YYYY-MM-DD HH:MM:SS.
 	Inputs map[string]json.RawMessage `json:"inputs,omitempty"`
-	// Context sets the context functions: user, groups, now (a date).
+	// Context sets the context functions: user, groups, now (a date),
+	// state and id.
 	Context *CaseContext `json:"context,omitempty"`
 	// Type is the static type the formula must have, when the case pins it.
 	// A date result must declare it so that Expected can be written as text.
@@ -212,6 +213,8 @@ type CaseContext struct {
 	User   string   `json:"user,omitempty"`
 	Groups []string `json:"groups,omitempty"`
 	Now    string   `json:"now,omitempty"`
+	State  string   `json:"state,omitempty"`
+	ID     string   `json:"id,omitempty"`
 }
 
 // SyntaxSuite is one file of definition-time cases: formulas the parser
@@ -613,7 +616,7 @@ func (c *CaseContext) Context() (*Context, error) {
 	if c == nil {
 		return nil, nil
 	}
-	ctx := &Context{User: c.User, Groups: c.Groups}
+	ctx := &Context{User: c.User, Groups: c.Groups, State: c.State, ID: c.ID}
 	if c.Now != "" {
 		secs, err := ParseCaseDate(c.Now)
 		if err != nil {

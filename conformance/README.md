@@ -62,7 +62,8 @@ One file per topic:
 - `inputs` gives values; an absent or `null` variable is blank. Dates are
   written `YYYY-MM-DD`, datetimes `YYYY-MM-DD HH:MM:SS` in UTC, exact
   values as text such as `"1.250"`, money as `"12.30 PLN"`.
-- `context` sets what the context functions see: `user`, `groups`, `now`.
+- `context` sets what the context functions see: `user`, `groups`, `now`,
+  and `state` and `id` for the document the formula runs over.
 - Exactly one of `expected` and `error`. `expected` is the value in the
   notation of `inputs`; `null` is a blank result. `error` is one of the
   codes in ADR-0019 and ADR-0020.

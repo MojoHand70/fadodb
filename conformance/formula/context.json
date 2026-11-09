@@ -1,6 +1,6 @@
 {
   "suite": "context",
-  "description": "The context functions read the caller's context: USER and INGROUP the principal, NOW and TODAY the clock, all in UTC. NOW is an instant, TODAY a calendar day (ADR-0023).",
+  "description": "The context functions read the caller's context: USER and INGROUP the principal, NOW and TODAY the clock, all in UTC, STATE and ID the document the formula runs over (ADR-0040). NOW is an instant, TODAY a calendar day (ADR-0023).",
   "variables": {"D": "date", "T": "datetime"},
   "cases": [
     {"formula": "USER()", "context": {"user": "alice"}, "expected": "alice"},
@@ -26,6 +26,21 @@
     {"formula": "IF(D < TODAY(), \"overdue\", \"open\")", "context": {"now": "2024-01-31"}, "inputs": {"D": "2024-01-15"}, "expected": "overdue"},
     {"formula": "IF(D < TODAY(), \"overdue\", \"open\")", "context": {"now": "2024-01-31"}, "inputs": {"D": "2024-02-15"}, "expected": "open"},
     {"formula": "TEXT(ADDDAYS(TODAY(), 7))", "context": {"now": "2024-02-25 15:00:00"}, "expected": "2024-03-03"},
-    {"formula": "ISBLANK(NOW())", "expected": false}
+    {"formula": "ISBLANK(NOW())", "expected": false},
+    {"formula": "STATE()", "context": {"state": "draft"}, "expected": "draft"},
+    {"name": "a class without states has no state", "formula": "STATE()", "expected": null},
+    {"formula": "ISBLANK(STATE())", "expected": true},
+    {"formula": "ISBLANK(STATE())", "context": {"state": "draft"}, "expected": false},
+    {"formula": "STATE() = \"draft\"", "context": {"state": "draft"}, "expected": true},
+    {"formula": "STATE() = \"draft\"", "context": {"state": "paid"}, "expected": false},
+    {"name": "the blank state compares as the empty text", "formula": "STATE() = \"\"", "expected": true},
+    {"formula": "IF(STATE() = \"paid\", \"closed\", \"open\")", "context": {"state": "paid"}, "expected": "closed"},
+    {"formula": "UPPER(STATE()) & \"/\" & USER()", "context": {"state": "draft", "user": "alice"}, "expected": "DRAFT/alice"},
+    {"formula": "ID()", "context": {"id": "01J0W6Z8Y3Q4R5S6T7U8V9WXYZ"}, "expected": "01J0W6Z8Y3Q4R5S6T7U8V9WXYZ"},
+    {"name": "no document, no id", "formula": "ID()", "expected": null},
+    {"formula": "ISBLANK(ID())", "expected": true},
+    {"formula": "\"INV-\" & ID()", "context": {"id": "42"}, "expected": "INV-42"},
+    {"formula": "LEN(ID())", "context": {"id": "inv-1"}, "expected": 5},
+    {"formula": "ID() = \"inv-1\" AND STATE() <> \"paid\"", "context": {"id": "inv-1", "state": "draft"}, "expected": true}
   ]
 }

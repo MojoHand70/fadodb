@@ -1,6 +1,6 @@
 # ADR-0008: Statechart semantics, SCXML subset
 
-- Status: Accepted; amended by ADR-0039 (a final state freezes the document)
+- Status: Accepted; amended by ADR-0039 (a final state freezes the document), ADR-0040 (what a chain of eventless transitions writes)
 - Date: 2026-11-05
 
 ## Context

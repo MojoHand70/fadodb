@@ -1,6 +1,6 @@
 # ADR-0041: Field rights and transition rules in the Go API
 
-- Status: Accepted; amends ADR-0010 (when the per-transition rules are enforced), ADR-0028 (the row a right is evaluated over, the paths the projection covers, the filter compiles a read right instead of refusing it, read rights use the functions of a read rule)
+- Status: Accepted, its filter budget amended on 2026-11-09; amends ADR-0010 (when the per-transition rules are enforced), ADR-0028 (the row a right is evaluated over, the paths the projection covers, the filter compiles a read right instead of refusing it, read rights use the functions of a read rule)
 - Date: 2026-11-08
 
 ## Context
@@ -125,9 +125,23 @@ Budgets from ADR-0028: the write check is one formula per set variable,
 inside the commit budget of ADR-0006; the read projection under 5 µs per
 document of fifty variables, measured in the store with
 `BenchmarkProject` on a class with a rights cell per variable, group lists
-and formulas alike, and reported in `docs/perf/v0.3.0.md`. The compiled right
-is one predicate per rights-bearing variable the filter names, and the
-budget is ADR-0010's: under 5% on the indexed filter of ADR-0038, measured
-with `BenchmarkFilter` on a class with a right on the filtered variable.
-The encoder of ADR-0018, Phase 6, receives the projected document and pays
-nothing more.
+and formulas alike, and reported in `docs/perf/v0.3.0.md`. The compiled
+right is one predicate per rights-bearing variable the filter names,
+measured with `BenchmarkFilter` on a class with a right on the filtered
+variable: under 5% on the indexed filter of ADR-0038 for a group list,
+which the compiler folds to a literal, and under 15% for a formula that
+reads the principal, which pays SQLite's binding of every context
+parameter it reads and the predicate on every row the index yields, on
+top of the projection's own evaluation of the right. The encoder of
+ADR-0018, Phase 6, receives the projected document and pays nothing more.
+
+Amended on 2026-11-09, when the first implementation measured the filter.
+The budget had been ADR-0010's, under 5% for every right. Measured, a
+group list costs 3.4% and a formula reading both the user and a group 10
+to 12%, and the floor is SQLite's, not the compiler's, whose share is a
+fifth of a percent once the predicate text is kept per class and the
+filter's prepared statement is cached. Folding the principal into the
+statement at compile time would bring a formula right under 5% at the
+price of a statement text per principal, which no cache serves; it was
+not done. ADR-0010's figure for the row predicates of Phase 5 is
+measured when they arrive.

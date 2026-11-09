@@ -38,10 +38,10 @@ type scriptStep struct {
 	Do string `json:"do"`
 	// Doc labels the document a create makes, and names the document
 	// another step acts on; the last created document when absent.
-	Doc        string          `json:"doc,omitempty"`
-	As         string          `json:"as,omitempty"`
-	Key        string          `json:"key,omitempty"`
-	Transition string          `json:"transition,omitempty"`
+	Doc        string       `json:"doc,omitempty"`
+	As         string       `json:"as,omitempty"`
+	Key        string       `json:"key,omitempty"`
+	Transition string       `json:"transition,omitempty"`
 	Values     Values       `json:"values,omitempty"`
 	Expect     scriptExpect `json:"expect"`
 }

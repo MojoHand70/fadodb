@@ -8,6 +8,18 @@ All notable changes to FadoDB are recorded here. The format follows
 
 ### Added
 
+- `skills/`, five agent skills in the SKILL.md format, one per hat an
+  agent wears with FadoDB: `fadodb-design`, `fadodb-operate`,
+  `fadodb-simulate`, `fadodb-mine` and `fadodb-own-work`. Stubs: each
+  says what works today with the project's marks and outlines its
+  procedure; the shared reference set under `skills/reference/` is to be
+  generated from the catalogue and the decision records.
+- `examples/classes/`, the sample classes the skills draw on, starting
+  with the README's Invoice; `TestExampleClasses` validates and defines
+  every sample so the corpus cannot drift from the engine.
+
+### Added
+
 - `docs/perf/v0.3.0.md`, the Phase 3 measurements against the budgets of
   ADR-0040, ADR-0041 and ADR-0042; the commit campaign gained the rows a
   transition, a transition with values, a transition starting a chain of

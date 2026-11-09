@@ -314,9 +314,18 @@ on commit is authoritative; the conformance suite guarantees the two agree.
 - A transition has a name, source states, a target, an optional guard formula,
   and optional entry/exit effects. Transitions are the only way state changes.
 - **Eventless transitions** have a guard and no name, and are evaluated after
-  every value change with a per-commit bound of eight.
+  every value change with a per-commit bound of eight. Each one that fires
+  is a commit of its own in the same transaction, so every state visited
+  has its history row (ADR-0040).
 - Exit and entry snapshots are the history rows before and after the
   transition; the transition event references both.
+- A transition is a command with the assignments it carries: one commit,
+  one event. A transition that cannot happen is refused before anything
+  is written with `unknown_transition`, `wrong_state`, `guard_false`,
+  `too_many_transitions` or `terminal`, and the open transitions of a
+  document are listed on request (ADR-0040).
+- A class without states is a stateless application: it is evaluated
+  with a preview and stores no documents (ADR-0040).
 - Timers (`after: "7d"`) are a 0.x feature implemented through the outbox scheduler.
 
 ### Document tables
@@ -674,7 +683,8 @@ err  = db.DefineLayout(ctx, "Invoice", layoutJSON)
 p := fado.Principal{ID: "alice", Groups: []string{"finance"}}
 doc, err := db.Create(ctx, "Invoice", fado.Values{"customer": "Customer:42"}, fado.As(p), fado.Key("ksef-2026-0042"))
 doc, err  = db.Set(ctx, "Invoice", doc.ID, fado.Values{"discount": "0.10"}, fado.As(p))
-doc, err  = db.Transition(ctx, "Invoice", doc.ID, "approve", fado.As(p), fado.BusinessDate(day))
+doc, err  = db.Transition(ctx, "Invoice", doc.ID, "approve", nil, fado.As(p), fado.BusinessDate(day))
+open, err := db.Transitions(ctx, "Invoice", doc.ID, fado.As(p))
 doc, err  = db.Refresh(ctx, "Invoice", doc.ID, []string{"backlog"}, fado.As(p))
 preview, err := db.Preview(ctx, "Invoice", doc.ID, fado.Values{"discount": "0.20"}, "approve", fado.As(p))
 history, err := db.History(ctx, "Invoice", doc.ID, fado.As(p))
@@ -689,12 +699,13 @@ commit pipeline and writes nothing (ADR-0025); a registered executor
 receives the transition event from the outbox (ADR-0027). Today the `fado`
 package has `Open`, `DefineClass`, `ValidateClass`, `DefineSchema`,
 `DefineTable`, `ImportRows`, `TableRows`, `Create`, `CreateMany`, `Set`,
-`Delete`, `Migrate`, `Get`, `Version`, `History`, `Events`, `Query`,
-`Count`, `SQL`, `PutBlob`, `OpenFile`, `OpenBlob`, `CheckBlobs`, and
-`Preview` and `PreviewDraft` of a create or a set; every refusal is a
-`fado.Error` with a stable code and the variable it is about, or the
-`Diagnostics` of a definition. Layouts, transitions, refresh, `QUERY`,
-subscriptions and executors arrive with their phases.
+`Transition`, `Transitions`, `Delete`, `Migrate`, `Get`, `Version`,
+`History`, `Events`, `Query`, `Count`, `SQL`, `PutBlob`, `OpenFile`,
+`OpenBlob`, `CheckBlobs`, and `Preview` and `PreviewDraft` of a create, a
+set or a transition; every refusal is a `fado.Error` with a stable code
+and the variable it is about, or the `Diagnostics` of a definition.
+Layouts, refresh, `QUERY`, subscriptions and executors arrive with their
+phases.
 
 ### JSON command set
 

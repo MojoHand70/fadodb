@@ -93,9 +93,9 @@ func BenchmarkCommit(b *testing.B) {
 // lookupClass reads one table in an indexed lookup; lookupScan the same
 // table through a condition the index cannot serve.
 const lookupClass = `{"name": "Quote", "variables": {"currency": {"type": "text"}, "net": {"type": "decimal(2)"},
-  "rate": {"formula": "LOOKUP(Fx, rate, code = THIS.currency)"}, "net_pln": {"formula": "ROUND(net * rate, 2)"}}}`
+  "rate": {"formula": "LOOKUP(Fx, rate, code = THIS.currency)"}, "net_pln": {"formula": "ROUND(net * rate, 2)"}}, "states": {"initial": "open", "list": ["open"]}}`
 const lookupScanClass = `{"name": "Quote", "variables": {"currency": {"type": "text"}, "net": {"type": "decimal(2)"},
-  "rate": {"formula": "LOOKUP(Fx, rate, code = THIS.currency AND rate > 0)"}, "net_pln": {"formula": "ROUND(net * rate, 2)"}}}`
+  "rate": {"formula": "LOOKUP(Fx, rate, code = THIS.currency AND rate > 0)"}, "net_pln": {"formula": "ROUND(net * rate, 2)"}}, "states": {"initial": "open", "list": ["open"]}}`
 
 func benchLookup(b *testing.B, class string, o Options) {
 	s, err := Open(filepath.Join(b.TempDir(), "bench.fado"), o)
@@ -189,7 +189,7 @@ func BenchmarkFilter(b *testing.B) {
 	}
 	defer s.Close()
 	ctx := context.Background()
-	if _, err := s.DefineClass(ctx, []byte(`{"name": "Ticket", "variables": {"number": {"type": "text", "index": true}, "priority": {"type": "number"}, "owner": {"type": "text"}}}`)); err != nil {
+	if _, err := s.DefineClass(ctx, []byte(`{"name": "Ticket", "variables": {"number": {"type": "text", "index": true}, "priority": {"type": "number"}, "owner": {"type": "text"}}, "states": {"initial": "open", "list": ["open"]}}`)); err != nil {
 		b.Fatal(err)
 	}
 	start := time.Now()
@@ -260,7 +260,7 @@ func fiftyFormulas() string {
 		}
 		prev = name
 	}
-	b.WriteString("}}")
+	b.WriteString(`}, "states": {"initial": "open", "list": ["open"]}}`)
 	return b.String()
 }
 
@@ -293,6 +293,143 @@ func BenchmarkRecalculate50(b *testing.B) {
 		dirty := s.dirtyFor(c)
 		if err := s.recalc(c, row, dirty, true, evalCtx, false, &errs); err != nil {
 			b.Fatal(err)
+		}
+	}
+}
+
+// benchFlow is the class of the transition benchmarks: a guard over a
+// value and one over the principal, an eventless transition, and a
+// handful of formulas so that the recalculation is not trivial.
+const benchFlow = `{"name": "Flow", "variables": {
+  "amount": {"type": "number"}, "note": {"type": "text"}, "qty": {"type": "number"},
+  "big": {"formula": "amount > 1000"}, "unit": {"formula": "IF(qty > 0, amount / qty, 0)"}, "label": {"formula": "note & \": \" & TEXT(amount)"}
+ },
+ "states": {"initial": "draft", "list": ["draft", "review", "approved", "booked", "closed"]},
+ "transitions": [
+   {"name": "submit",  "from": "draft",    "to": "review",   "guard": "amount > 0"},
+   {"name": "approve", "from": "review",   "to": "approved", "guard": "INGROUP(\"finance\")"},
+   {"name": "back",    "from": "review",   "to": "draft"},
+   {"from": "approved", "to": "booked", "guard": "NOT big"},
+   {"name": "close",   "from": ["booked", "approved"], "to": "closed"},
+   {"name": "reopen",  "from": "closed",   "to": "draft"}
+ ]}`
+
+// BenchmarkTransition measures a transition commit with its guard, write
+// and event (ADR-0040): the document goes submit, back, submit, ... so
+// that every iteration is one named transition and no chain.
+func BenchmarkTransition(b *testing.B) {
+	s, err := Open(filepath.Join(b.TempDir(), "bench.fado"), Options{})
+	if err != nil {
+		b.Fatal(err)
+	}
+	defer s.Close()
+	ctx := context.Background()
+	if _, err := s.DefineClass(ctx, []byte(benchFlow)); err != nil {
+		b.Fatal(err)
+	}
+	doc, err := s.Create(ctx, "Flow", Values{"amount": 500, "qty": 5, "note": "n"})
+	if err != nil {
+		b.Fatal(err)
+	}
+	names := [2]string{"submit", "back"}
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; b.Loop(); i++ {
+		if _, err := s.Transition(ctx, "Flow", doc.ID, names[i%2], nil, As(alice)); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+// BenchmarkTransitionChain measures a named transition followed by one
+// eventless hop, two commits in one transaction: approve books, close,
+// reopen, submit, and again.
+func BenchmarkTransitionChain(b *testing.B) {
+	s, err := Open(filepath.Join(b.TempDir(), "bench.fado"), Options{})
+	if err != nil {
+		b.Fatal(err)
+	}
+	defer s.Close()
+	ctx := context.Background()
+	if _, err := s.DefineClass(ctx, []byte(benchFlow)); err != nil {
+		b.Fatal(err)
+	}
+	doc, err := s.Create(ctx, "Flow", Values{"amount": 500, "qty": 5, "note": "n"})
+	if err != nil {
+		b.Fatal(err)
+	}
+	if _, err := s.Transition(ctx, "Flow", doc.ID, "submit", nil); err != nil {
+		b.Fatal(err)
+	}
+	fin := Principal{ID: "fin", Groups: []string{"finance"}}
+	cycle := [4]string{"approve", "close", "reopen", "submit"}
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; b.Loop(); i++ {
+		if _, err := s.Transition(ctx, "Flow", doc.ID, cycle[i%4], nil, As(fin)); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+// BenchmarkTransitions measures the listing of the transitions leaving a
+// state, guards evaluated, over the stored document: budget 10 µs for
+// ten candidates (ADR-0040); here three leave review.
+func BenchmarkTransitions(b *testing.B) {
+	s, err := Open(filepath.Join(b.TempDir(), "bench.fado"), Options{})
+	if err != nil {
+		b.Fatal(err)
+	}
+	defer s.Close()
+	ctx := context.Background()
+	if _, err := s.DefineClass(ctx, []byte(benchFlow)); err != nil {
+		b.Fatal(err)
+	}
+	doc, err := s.Create(ctx, "Flow", Values{"amount": 500, "qty": 5, "note": "n"})
+	if err != nil {
+		b.Fatal(err)
+	}
+	if _, err := s.Transition(ctx, "Flow", doc.ID, "submit", nil); err != nil {
+		b.Fatal(err)
+	}
+	b.ReportAllocs()
+	b.ResetTimer()
+	for b.Loop() {
+		if _, err := s.Transitions(ctx, "Flow", doc.ID, As(alice)); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+// BenchmarkGuardLoop measures the guard evaluation alone, the loop of the
+// chain and the listing, which must not allocate.
+func BenchmarkGuardLoop(b *testing.B) {
+	s, err := Open(filepath.Join(b.TempDir(), "bench.fado"), Options{})
+	if err != nil {
+		b.Fatal(err)
+	}
+	defer s.Close()
+	ctx := context.Background()
+	if _, err := s.DefineClass(ctx, []byte(benchFlow)); err != nil {
+		b.Fatal(err)
+	}
+	doc, err := s.Create(ctx, "Flow", Values{"amount": 500, "qty": 5, "note": "n"})
+	if err != nil {
+		b.Fatal(err)
+	}
+	c, _ := s.class("Flow")
+	row, err := c.scanRow(c.w.selectCurrent.QueryRowContext(ctx, doc.ID), false)
+	if err != nil {
+		b.Fatal(err)
+	}
+	evalCtx := &formula.Context{User: "alice", Groups: []string{"sales"}, Now: time.Now().Unix(), State: row.state, ID: row.id}
+	b.ReportAllocs()
+	b.ResetTimer()
+	for b.Loop() {
+		for _, t := range c.cls.Transitions {
+			if _, err := s.holds(c, t, row, evalCtx); err != nil {
+				b.Fatal(err)
+			}
 		}
 	}
 }

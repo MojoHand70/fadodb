@@ -26,9 +26,9 @@ bytecode, exposes every document class as a queryable SQL view, and
 enforces user and group access rules that are themselves formulas.
 Analytics and process mining are SQL over the event log.
 
-A class is one JSON document. This one defines, stores and computes today;
-its transitions and rules are compiled and checked now and run with
-Phases 3 and 4, and formulas over `lines` arrive with composites:
+A class is one JSON document. This one defines, stores, computes and
+moves through its states today; its rules are compiled and checked now
+and run with Phase 4, and formulas over `lines` arrive with composites:
 
 ```json
 {
@@ -67,6 +67,8 @@ doc, err := db.Create(ctx, "Invoice", fado.Values{"customer": "ACME", "net": "10
 	fado.As(alice), fado.Key("order-42"))                    // the key makes a retry the same commit
 doc, err = db.Set(ctx, "Invoice", doc.ID, fado.Values{"discount": "0.10"}, fado.As(alice))
 fmt.Println(doc.Version, doc.Values["total"])             // 2 90.00 PLN
+doc, err = db.Transition(ctx, "Invoice", doc.ID, "submit", nil, fado.As(alice))
+fmt.Println(doc.Version, doc.State)                       // 3 submitted; approve needs finance
 
 open, err := db.Query(ctx, fado.Filter{Class: "Invoice", Where: "state = \"draft\" AND total > 50.00", Order: []string{"-due"}})
 rows, err := db.SQL(ctx, `SELECT count(*), sum(total) FROM Invoice`, nil)
@@ -76,7 +78,10 @@ preview, err := db.Preview(ctx, "Invoice", doc.ID, fado.Values{"discount": "0.50
 
 Every change is a commit: the assignments, the recalculation of the
 formulas that depend on them, a typed history row and an event, in one
-transaction. A refusal is a `fado.Error` with a stable code and the
+transaction. A transition is a commit too, its guard evaluated over the
+recalculated document, and every eventless transition that follows is a
+commit of its own in the same transaction; `Transitions` says which
+moves are open. A refusal is a `fado.Error` with a stable code and the
 variable it names; a definition's problems come back at once as
 `Diagnostics`, each with a code and the place. Files are attached as
 `File` values behind a blob store, reference data lives in explicit tables

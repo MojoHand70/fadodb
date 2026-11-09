@@ -196,6 +196,18 @@ func newClass(cls *model.Class, src []byte) (*class, error) {
 			}
 		}
 	}
+	for i, t := range cls.Transitions {
+		if t.Guard == nil {
+			continue
+		}
+		owner := "transition " + t.Name
+		if t.Name == "" {
+			owner = "transitions/" + itoa(i)
+		}
+		if err := c.bindSlots(t.Guard, owner); err != nil {
+			return nil, err
+		}
+	}
 	for _, name := range cls.Order {
 		if name == "title" {
 			c.order = append(c.order, nil)

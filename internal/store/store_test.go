@@ -183,7 +183,7 @@ func TestDefineClass(t *testing.T) {
 	}
 	rows.Close()
 	want := "index:doc_Invoice_history_valid table:doc_Invoice table:doc_Invoice__lines table:doc_Invoice__tags table:doc_Invoice_history " +
-		"view:Invoice view:Invoice_events view:Invoice_history view:Invoice_lines view:Invoice_lines_history view:Invoice_tags view:Invoice_tags_history"
+		"view:Invoice view:Invoice_events view:Invoice_history view:Invoice_lines view:Invoice_lines_history view:Invoice_states view:Invoice_tags view:Invoice_tags_history"
 	if got := strings.Join(names, " "); got != want {
 		t.Errorf("objects:\n%s\nwant\n%s", got, want)
 	}
@@ -270,7 +270,7 @@ func TestDefineClass(t *testing.T) {
 		t.Errorf("a class named like a view: %v", err)
 	}
 	// A class in quotes-needing case: a SQL keyword as a name.
-	if _, err := s.DefineClass(ctx, []byte(`{"name": "Order", "variables": {"group": {"type": "text"}, "select": {"type": "number"}}}`)); err != nil {
+	if _, err := s.DefineClass(ctx, []byte(`{"name": "Order", "variables": {"group": {"type": "text"}, "select": {"type": "number"}}, "states": {"initial": "open", "list": ["open"]}}`)); err != nil {
 		t.Errorf("SQL keywords as names: %v", err)
 	}
 	if doc, err := s.Create(ctx, "Order", Values{"group": "a", "select": 1}); err != nil || doc.Values["select"] != 1.0 {
@@ -291,7 +291,7 @@ func TestDefineSchema(t *testing.T) {
 	if sch2, err := s.DefineSchema(ctx, []byte(`{"name": "Employee", "extends": "Person", "fields": {"badge": "int"}}`)); err != nil || sch2.Version != 2 {
 		t.Errorf("unused schema redefined: %v", err)
 	}
-	if _, err := s.DefineClass(ctx, []byte(`{"name": "Task", "variables": {"who": {"type": "object", "schema": "Employee"}, "badge": {"formula": "who.badge"}}}`)); err != nil {
+	if _, err := s.DefineClass(ctx, []byte(`{"name": "Task", "variables": {"who": {"type": "object", "schema": "Employee"}, "badge": {"formula": "who.badge"}}, "states": {"initial": "open", "list": ["open"]}}`)); err != nil {
 		t.Fatal(err)
 	}
 	_, err = s.DefineSchema(ctx, []byte(`{"name": "Employee", "extends": "Person", "fields": {"badge": "text"}}`))
@@ -638,8 +638,8 @@ func TestPreview(t *testing.T) {
 	if _, err := s.Preview(ctx, "Invoice", doc.ID, Values{"status": "lost"}, ""); code(err) != CodeNotInValues {
 		t.Errorf("preview of a bad value: %v", err)
 	}
-	if _, err := s.Preview(ctx, "Invoice", doc.ID, Values{}, "approve"); code(err) != CodeNotSupported {
-		t.Errorf("preview of a transition: %v", err)
+	if _, err := s.Preview(ctx, "Invoice", doc.ID, Values{}, "approve"); code(err) != CodeUnknownTransition {
+		t.Errorf("preview of a transition the class lacks: %v", err)
 	}
 	// Missing required inputs are reported, not refused.
 	p, err = s.Preview(ctx, "Invoice", "", Values{}, "")
@@ -653,7 +653,7 @@ func TestReopen(t *testing.T) {
 	ctx := context.Background()
 	s.DefineSchema(ctx, []byte(`{"name": "Employee", "extends": "Person", "fields": {"badge": "text"}}`))
 	defineInvoice(t, s)
-	s.DefineClass(ctx, []byte(`{"name": "Task", "variables": {"who": {"type": "object", "schema": "Employee"}}}`))
+	s.DefineClass(ctx, []byte(`{"name": "Task", "variables": {"who": {"type": "object", "schema": "Employee"}}, "states": {"initial": "open", "list": ["open"]}}`))
 	doc, _ := s.Create(ctx, "Invoice", sampleValues(), As(alice))
 	task, _ := s.Create(ctx, "Task", Values{"who": Values{"name": "Bo", "badge": "7"}})
 	if err := s.Close(); err != nil {

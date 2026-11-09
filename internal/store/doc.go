@@ -16,9 +16,11 @@
 // Every refusal is an *Error with a stable code, the variable it is about,
 // a message and, where there is one, a hint.
 //
-// Not here yet: the statechart (Phase 3), rules (Phase 4), access rules and
-// rights (Phase 5), LOOKUP against explicit tables, the filter DSL and the
-// read-only SQL endpoint, the blob store, and a class migration under live
-// documents. A class with documents cannot be redefined until that is
-// decided.
+// Transition moves a document along a named transition of its class's
+// statechart, with the eventless transitions that follow as further
+// commits in the same transaction, and Transitions lists what may be
+// taken (ADR-0040); a class without states stores no documents.
+//
+// Not here yet: rules (Phase 4), access rules and rights (Phase 5), and
+// the server (Phase 6).
 package store

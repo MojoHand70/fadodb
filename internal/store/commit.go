@@ -12,6 +12,7 @@ import (
 
 	"github.com/MojoHand70/fadodb/internal/formula"
 	"github.com/MojoHand70/fadodb/internal/model"
+	"github.com/MojoHand70/fadodb/internal/state"
 )
 
 // A commit (ADR-0015) is computed first and written last, in one
@@ -23,8 +24,11 @@ import (
 //  3. the assignments are applied, or the defaults for a new document;
 //  4. the auto variables whose dependencies changed recalculate in the
 //     class's order, and the title with them;
-//  5. the current row is upserted, the previous history row closed, the
-//     new history row and the child rows written, the event appended.
+//  5. the guard of a named transition is evaluated and the eventless
+//     transitions followed from the resulting state (ADR-0040);
+//  6. the current row is upserted, the previous history row closed, the
+//     new history row and the child rows written, the event appended; and
+//     once more for every eventless transition that fired.
 
 type op uint8
 
@@ -33,17 +37,22 @@ const (
 	opSet
 	opDelete
 	opMigrate
+	opTransition
 )
 
-func (o op) String() string { return [...]string{"create", "set", "delete", "migrate"}[o] }
+func (o op) String() string {
+	return [...]string{"create", "set", "delete", "migrate", "transition"}[o]
+}
 
 type command struct {
-	op      op
-	c       *class
-	id      string
-	values  Values
-	o       options
-	preview bool
+	op     op
+	c      *class
+	id     string
+	values Values
+	// transition names the transition of an opTransition.
+	transition string
+	o          options
+	preview    bool
 	// stored is the class the document is read from when c is a draft
 	// compiled for one preview (ADR-0025); nil otherwise.
 	stored *class
@@ -54,6 +63,26 @@ type result struct {
 	eventID string
 	noop    bool
 	errs    []*Error
+	// path and transitions are a preview's: the states the command
+	// visited and the named transitions leaving the last one.
+	path        []string
+	transitions []TransitionInfo
+}
+
+// eventInfo is what the event of a commit says beyond its versions.
+type eventInfo struct {
+	kind, qualifier, name, from, to, cause string
+}
+
+// eventFor is the event of a commit that moves no state.
+func eventFor(o op) eventInfo {
+	switch o {
+	case opCreate:
+		return eventInfo{kind: EventCreated, qualifier: "created"}
+	case opMigrate:
+		return eventInfo{kind: EventMigrated, qualifier: "migrated"}
+	}
+	return eventInfo{kind: EventSet, qualifier: "changed"}
 }
 
 // Create makes a document: the values given, the defaults of the inputs
@@ -97,26 +126,30 @@ func (s *Store) Delete(ctx context.Context, class, id string, opts ...Option) er
 	return err
 }
 
-// Preview runs a create (id empty) or a set through the commit pipeline
-// and rolls back (ADR-0025). Transitions arrive with Phase 3.
+// Preview runs a create (id empty), a set or a transition through the
+// commit pipeline and rolls back (ADR-0025): the document as it would be,
+// the states visited and the transitions leaving the resulting state.
 func (s *Store) Preview(ctx context.Context, class, id string, values Values, transition string, opts ...Option) (*Preview, error) {
-	if transition != "" {
-		return nil, errf(CodeNotSupported, "", "previewing a transition arrives with the statechart (Phase 3)")
-	}
 	c, e := s.class(class)
 	if e != nil {
 		return nil, e
 	}
 	o := apply(opts)
 	cmd := command{op: opSet, c: c, id: id, values: values, o: o, preview: true}
-	if id == "" {
+	switch {
+	case transition != "":
+		if id == "" {
+			return nil, hintf(CodeBadValue, "", "a transition moves an existing document; no id was given", "create the document first, or preview the create alone")
+		}
+		cmd.op, cmd.transition = opTransition, transition
+	case id == "":
 		cmd.op, cmd.id = opCreate, o.id
 	}
 	res, err := s.commit(ctx, cmd)
 	if err != nil {
 		return nil, err
 	}
-	return &Preview{Document: res.doc, Errors: res.errs}, nil
+	return &Preview{Document: res.doc, Errors: res.errs, Path: res.path, Transitions: res.transitions}, nil
 }
 
 // commit runs a command in a transaction on the writer.
@@ -153,14 +186,20 @@ func (s *Store) run(ctx context.Context, cmd command, now time.Time) (*result, e
 	secs := now.Unix()
 	res := &result{}
 
+	// A class without states is a stateless application and stores no
+	// documents (ADR-0040); the previews evaluate it.
+	if cmd.op == opCreate && c.cls.States == nil && !cmd.preview {
+		return nil, hintf(CodeStateless, "", c.cls.Name+" declares no states: it is a stateless application and stores no documents", "add a states block with an initial state, or evaluate it with Preview")
+	}
+
 	// The idempotency key (ADR-0026).
 	var hash string
 	if cmd.o.key != "" {
 		hash = commandHash(cmd)
-		var kind, class, docID string
+		var kind, class, docID, keyed string
 		var after sql.NullInt64
 		var stored sql.NullString
-		err := s.stmts.lookupKey.QueryRowContext(ctx, cmd.o.key).Scan(&kind, &class, &docID, &after, &stored)
+		err := s.stmts.lookupKey.QueryRowContext(ctx, cmd.o.key).Scan(&kind, &class, &docID, &after, &stored, &keyed)
 		switch {
 		case err == sql.ErrNoRows:
 		case err != nil:
@@ -170,6 +209,15 @@ func (s *Store) run(ctx context.Context, cmd command, now time.Time) (*result, e
 		default:
 			res.noop = true
 			if kind != EventDeleted {
+				// A command whose chain made further versions is answered
+				// with the last of them (ADR-0040).
+				var last sql.NullInt64
+				if err := s.stmts.lastOfCommand.QueryRowContext(ctx, keyed).Scan(&last); err != nil {
+					return nil, storageErr("look up the command's versions", err)
+				}
+				if last.Valid {
+					after = last
+				}
 				row, err := s.Version(ctx, class, docID, after.Int64)
 				if err != nil {
 					return nil, err
@@ -182,6 +230,7 @@ func (s *Store) run(ctx context.Context, cmd command, now time.Time) (*result, e
 
 	var before *docRow
 	var beforeClass *class // the version that computed the current row
+	var trans *model.Transition
 	if cmd.op != opCreate {
 		reader := c
 		if cmd.stored != nil {
@@ -194,11 +243,23 @@ func (s *Store) run(ctx context.Context, cmd command, now time.Time) (*result, e
 			}
 			return nil, storageErr("read the document", err)
 		}
-		// A document in a terminal state is frozen (ADR-0039). A draft
-		// preview computes what a definition would make of it and writes
-		// nothing, so it may look.
+		if cmd.op == opTransition {
+			var e *Error
+			if trans, e = resolveTransition(c, cmd.transition, before.state); e != nil {
+				return nil, e
+			}
+		}
+		// A document in a terminal state is frozen (ADR-0039): it may only
+		// move to another terminal state, with no values. A draft preview
+		// computes what a definition would make of it and writes nothing,
+		// so it may look.
 		if cmd.stored == nil && c.cls.States.IsFinal(before.state) {
-			return nil, hintf(CodeTerminal, "", "the document is in the terminal state "+before.state+" and cannot change", "a terminal document keeps its values and its class version; it may only move to another terminal state")
+			if cmd.op != opTransition {
+				return nil, hintf(CodeTerminal, "", "the document is in the terminal state "+before.state+" and cannot change", "a terminal document keeps its values and its class version; it may only move to another terminal state")
+			}
+			if len(cmd.values) > 0 {
+				return nil, hintf(CodeTerminal, "", "the document is in the terminal state "+before.state+" and its values cannot change", "a terminal document only moves: take the transition without values")
+			}
 		}
 		beforeClass = reader
 		if before.classVersion != reader.cls.Version && before.classVersion != 0 {
@@ -320,7 +381,7 @@ func (s *Store) run(ctx context.Context, cmd command, now time.Time) (*result, e
 				changed = true
 			}
 		}
-		if !changed && !adopt {
+		if !changed && !adopt && cmd.op != opTransition {
 			all, err := c.loadChildren(ctx, before.id, before.version, kids, true)
 			if err != nil {
 				return nil, err
@@ -336,6 +397,41 @@ func (s *Store) run(ctx context.Context, cmd command, now time.Time) (*result, e
 		}
 	}
 
+	// The statechart (ADR-0040): the named transition's guard over the
+	// recalculated document, with STATE() the state it leaves; then the
+	// eventless chain from the state the commit leaves the document in.
+	// A migration moves nothing.
+	path := s.visits[:0]
+	if c.cls.States != nil {
+		path = append(path, after.state)
+	}
+	ev := eventFor(cmd.op)
+	if trans != nil {
+		evalCtx.State = after.state
+		if err := s.guard(c, trans, after, evalCtx); err != nil {
+			return nil, err
+		}
+		ev = eventInfo{kind: EventTransition, qualifier: "transitioned", name: trans.Name, from: after.state, to: trans.To}
+		after.state, after.stateEntered = trans.To, secs
+		path = append(path, after.state)
+	}
+	var hops []string
+	if c.cls.States != nil && cmd.op != opMigrate {
+		base := len(path)
+		var ok bool
+		path, ok = state.Chain(c.cls, after.state, path, func(t *model.Transition, from string) bool {
+			evalCtx.State = from
+			held, _ := s.holds(c, t, after, evalCtx)
+			return held
+		})
+		s.visits = path
+		if !ok {
+			return nil, hintf(CodeTooManyTransitions, "", fmt.Sprintf("more than %d eventless transitions fired after the %s", state.MaxEventless, cmd.op),
+				"the states visited: "+strings.Join(path, " > ")+"; a guard keeps holding, or guards hold in turn")
+		}
+		hops = path[base:]
+	}
+
 	all := kids
 	if before != nil {
 		var err error
@@ -349,19 +445,55 @@ func (s *Store) run(ctx context.Context, cmd command, now time.Time) (*result, e
 		}
 	}
 	if cmd.preview {
-		res.doc = c.document(after, all)
+		final := after
+		if len(hops) > 0 {
+			final = after.clone()
+			final.version += int64(len(hops))
+			final.state, final.stateEntered = hops[len(hops)-1], secs
+		}
+		res.doc = c.document(final, all)
+		if c.cls.States != nil {
+			res.path = append([]string(nil), path...)
+			evalCtx.State = final.state
+			res.transitions = s.listTransitions(c, final, evalCtx)
+		}
 		return res, nil
 	}
-	if err := s.write(ctx, cmd, before, after, kids, secs, eventID, actor, hash, day); err != nil {
+	if err := s.write(ctx, c, before, after, kids, secs, eventID, actor, ev, cmd.o.key, hash, day); err != nil {
 		return nil, err
 	}
-	res.doc = c.document(after, all)
+	// Every eventless transition that fired is a further commit: the same
+	// values, the new state, a version and a history row of its own, and
+	// a transition event with no name caused by the command's event.
+	prev := after
+	for _, to := range hops {
+		hop := prev.clone()
+		hop.version++
+		hop.updatedAt = secs
+		hop.state, hop.stateEntered = to, secs
+		hopEvent := s.ids.next(now)
+		if err := s.write(ctx, c, prev, hop, nil, secs, hopEvent, actor, eventInfo{kind: EventTransition, qualifier: "transitioned", from: prev.state, to: to, cause: eventID}, "", "", day); err != nil {
+			return nil, err
+		}
+		prev = hop
+	}
+	res.doc = c.document(prev, all)
 	res.eventID = eventID
 	return res, nil
 }
 
 // eval runs a program over the row.
 func (s *Store) eval(c *class, prog *formula.Program, row *docRow, evalCtx *formula.Context) (formula.Value, *Error) {
+	val, err := s.evalRaw(c, prog, row, evalCtx)
+	if err != nil {
+		return formula.Value{}, evalErr("", err)
+	}
+	return val, nil
+}
+
+// evalRaw runs a program over the row and returns the engine's error as
+// it is, for the callers that word it themselves.
+func (s *Store) evalRaw(c *class, prog *formula.Program, row *docRow, evalCtx *formula.Context) (formula.Value, error) {
 	idx := c.slots[prog]
 	if cap(s.vars) < len(idx) {
 		s.vars = make([]formula.Value, c.maxSlots)
@@ -370,11 +502,7 @@ func (s *Store) eval(c *class, prog *formula.Program, row *docRow, evalCtx *form
 	for i, li := range idx {
 		vars[i] = row.vals[li]
 	}
-	val, err := s.vm.Run(prog, vars, evalCtx)
-	if err != nil {
-		return formula.Value{}, evalErr("", err)
-	}
-	return val, nil
+	return s.vm.Run(prog, vars, evalCtx)
 }
 
 // fit brings a computed or defaulted value to the variable's scale and
@@ -469,9 +597,9 @@ func sameRows(a, b []childRow) bool {
 }
 
 // write is the write step: the current row, the history rows, the child
-// rows and the event.
-func (s *Store) write(ctx context.Context, cmd command, before, after *docRow, kids map[*child][]childRow, secs int64, eventID, actor, hash string, day int64) error {
-	c := cmd.c
+// rows and the event. With kids nil and a before row, every composite is
+// carried forward from the previous version.
+func (s *Store) write(ctx context.Context, c *class, before, after *docRow, kids map[*child][]childRow, secs int64, eventID, actor string, ev eventInfo, key, hash string, day int64) error {
 	args := make([]any, 0, len(systemColumns)+len(historyColumns)+len(c.cls.Columns))
 	args = append(args, after.id, nullText(after.title), nullText(after.state), after.version, after.classVersion, after.createdAt, after.updatedAt, nullInt(after.stateEntered))
 	args = c.encodeVals(args, after)
@@ -508,18 +636,11 @@ func (s *Store) write(ctx context.Context, cmd command, before, after *docRow, k
 			}
 		}
 	}
-	kind, qualifier := EventSet, "changed"
 	var beforeVersion any
 	if before != nil {
 		beforeVersion = before.version
 	}
-	switch cmd.op {
-	case opCreate:
-		kind, qualifier = EventCreated, "created"
-	case opMigrate:
-		kind, qualifier = EventMigrated, "migrated"
-	}
-	return s.writeEvent(ctx, eventID, c.cls.Name, after.id, kind, qualifier, actor, beforeVersion, after.version, cmd.o.key, hash, day, secs)
+	return s.writeEvent(ctx, eventID, c.cls.Name, after.id, ev, actor, beforeVersion, after.version, key, hash, day, secs)
 }
 
 func (s *Store) writeDelete(ctx context.Context, c *class, before *docRow, secs int64, eventID, actor, key, hash string, day int64) error {
@@ -529,14 +650,14 @@ func (s *Store) writeDelete(ctx context.Context, c *class, before *docRow, secs 
 	if _, err := c.w.deleteCurrent.ExecContext(ctx, before.id); err != nil {
 		return storageErr("delete the current row", err)
 	}
-	return s.writeEvent(ctx, eventID, c.cls.Name, before.id, EventDeleted, "deleted", actor, before.version, nil, key, hash, day, secs)
+	return s.writeEvent(ctx, eventID, c.cls.Name, before.id, eventInfo{kind: EventDeleted, qualifier: "deleted"}, actor, before.version, nil, key, hash, day, secs)
 }
 
-func (s *Store) writeEvent(ctx context.Context, eventID, class, docID, kind, qualifier, actor string, before, after any, key, hash string, day, secs int64) error {
-	if _, err := s.stmts.insertEvent.ExecContext(ctx, eventID, class, docID, kind, nil, nil, nil, nullText(actor), before, after, nil, nullText(key), nullText(hash), day, secs); err != nil {
+func (s *Store) writeEvent(ctx context.Context, eventID, class, docID string, ev eventInfo, actor string, before, after any, key, hash string, day, secs int64) error {
+	if _, err := s.stmts.insertEvent.ExecContext(ctx, eventID, class, docID, ev.kind, nullText(ev.name), nullText(ev.from), nullText(ev.to), nullText(actor), before, after, nullText(ev.cause), nullText(key), nullText(hash), day, secs); err != nil {
 		return storageErr("write the event", err)
 	}
-	if _, err := s.stmts.insertEventDoc.ExecContext(ctx, eventID, class, docID, qualifier); err != nil {
+	if _, err := s.stmts.insertEventDoc.ExecContext(ctx, eventID, class, docID, ev.qualifier); err != nil {
 		return storageErr("write the event's documents", err)
 	}
 	return nil
@@ -582,6 +703,9 @@ func businessDay(o options, now time.Time) int64 {
 func commandHash(cmd command) string {
 	h := sha256.New()
 	fmt.Fprintf(h, "%s\x00%s\x00%s\x00", cmd.op, strings.ToUpper(cmd.c.cls.Name), cmd.id)
+	if cmd.transition != "" {
+		fmt.Fprintf(h, "%s\x00", cmd.transition)
+	}
 	if b, err := json.Marshal(cmd.values); err == nil {
 		h.Write(b)
 	} else {

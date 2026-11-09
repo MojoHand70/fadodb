@@ -135,6 +135,9 @@ func (c *class) viewDDL() []string {
 		"CREATE VIEW " + quote(cls.Name+"_history") + " AS SELECT " + all(append(append([]string{}, systemColumns...), historyColumns...)) + " FROM " + quote(c.history),
 		"CREATE VIEW " + quote(cls.Name+"_events") + ` AS SELECT e.*, d."qualifier" FROM "events" e JOIN "event_docs" d ON d."event_id" = e."event_id" WHERE d."class" = ` + lit(cls.Name),
 	}
+	if cls.States != nil {
+		ddl = append(ddl, c.statesViewDDL())
+	}
 	for _, ch := range c.children {
 		ccols := strings.Join(append(quoteAll(childKey), quoteAll(columnNames(ch.def.Columns))...), ", ")
 		ddl = append(ddl,
@@ -143,6 +146,23 @@ func (c *class) viewDDL() []string {
 		)
 	}
 	return ddl
+}
+
+// statesViewDDL makes the <Class>_states view (ADR-0014, ADR-0040): one
+// row per visit of a document to a state, over the history table with
+// window functions. A visit begins at a history row whose state differs
+// from the previous version's; it ends where the next visit begins, so
+// left_at, duration and exit_version are null while the visit is current.
+// The entry version is the entry snapshot and the exit version the row
+// the leaving transition's guard saw. A visit of zero duration inside a
+// chain is a row like any other.
+func (c *class) statesViewDDL() string {
+	window := `OVER (PARTITION BY "id" ORDER BY "version")`
+	return "CREATE VIEW " + quote(c.cls.Name+"_states") + " AS WITH h AS (" +
+		`SELECT "id", "state", "version", "valid_from", lag("state") ` + window + ` AS prev_state FROM ` + quote(c.history) +
+		`), e AS (SELECT "id", "state", "version", "valid_from", lead("version") ` + window + ` AS next_version, lead("valid_from") ` + window + ` AS next_from` +
+		` FROM h WHERE prev_state IS NULL OR prev_state IS NOT "state")` +
+		` SELECT "id", "state", "valid_from" AS "entered_at", next_from AS "left_at", next_from - "valid_from" AS "duration", "version" AS "entry_version", next_version - 1 AS "exit_version" FROM e`
 }
 
 // prefixed qualifies every column of a comma-separated quoted list.
@@ -182,6 +202,9 @@ func (c *class) tableNames() []string {
 
 func (c *class) viewNames() []string {
 	names := []string{c.cls.Name, c.cls.Name + "_history", c.cls.Name + "_events"}
+	if c.cls.States != nil {
+		names = append(names, c.cls.Name+"_states")
+	}
 	for _, ch := range c.children {
 		names = append(names, c.cls.Name+"_"+ch.v.Name, c.cls.Name+"_"+ch.v.Name+"_history")
 	}

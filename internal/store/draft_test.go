@@ -67,7 +67,7 @@ func TestPreviewDraft(t *testing.T) {
 	if _, err := s.PreviewDraft(ctx, []byte(ticketV2), "missing", nil, ""); code(err) != CodeUnknownDocument {
 		t.Errorf("an unknown document: %v", err)
 	}
-	if _, err := s.PreviewDraft(ctx, []byte(ticketV2), a.ID, nil, "approve"); code(err) != CodeNotSupported {
+	if _, err := s.PreviewDraft(ctx, []byte(ticketV2), a.ID, nil, "approve"); code(err) != CodeUnknownTransition {
 		t.Errorf("a transition: %v", err)
 	}
 	// A terminal document may be looked at under a draft, since nothing

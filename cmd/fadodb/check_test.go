@@ -20,7 +20,7 @@ func TestCheck(t *testing.T) {
 		t.Fatal(err)
 	}
 	ctx := context.Background()
-	if _, err := s.DefineClass(ctx, []byte(`{"name": "Note", "variables": {"text": {"type": "text"}}}`)); err != nil {
+	if _, err := s.DefineClass(ctx, []byte(`{"name": "Note", "variables": {"text": {"type": "text"}}, "states": {"initial": "open", "list": ["open"]}}`)); err != nil {
 		t.Fatal(err)
 	}
 	fact, err := s.PutBlob(ctx, "a.txt", "", strings.NewReader("attached"))

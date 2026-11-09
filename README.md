@@ -88,7 +88,9 @@ moves are open. The principal decides what a call may set and sees: a
 value a right refuses, or a transition its rule refuses, comes back as
 `forbidden`, and a variable the principal may not read in the document's
 state is absent from what they get back; the row-level access rule waits
-for Phase 5. A refusal is a `fado.Error` with a stable code and the
+for Phase 5. A preview, a listing or a read may be asked at a moment the
+caller chooses, `fado.At(t)`, and a preview reports the moment it ran
+under; a commit runs at the database's clock. A refusal is a `fado.Error` with a stable code and the
 variable it names; a definition's problems come back at once as
 `Diagnostics`, each with a code and the place. Files are attached as
 `File` values behind a blob store, reference data lives in explicit tables

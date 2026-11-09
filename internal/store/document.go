@@ -209,18 +209,18 @@ func (s *Store) Get(ctx context.Context, class, id string, opts ...Option) (*Doc
 		return nil, err
 	}
 	d := vc.document(row, kids)
-	s.projectRead(c, vc, row, d, o.principal)
+	s.projectRead(c, vc, row, d, o)
 	return d, nil
 }
 
 // projectRead projects a document on a read path with a borrowed
-// evaluator (ADR-0041).
-func (s *Store) projectRead(c, vc *class, row *docRow, d *Document, p Principal) {
-	if c.rights == nil || p.Admin {
+// evaluator (ADR-0041), at the call's clock (ADR-0042).
+func (s *Store) projectRead(c, vc *class, row *docRow, d *Document, o options) {
+	if c.rights == nil || o.principal.Admin {
 		return
 	}
 	ev := s.reader()
-	s.project(ev, c, vc, row, d, p, s.now().Unix())
+	s.project(ev, c, vc, row, d, o.principal, s.clock(o))
 	s.release(ev)
 }
 
@@ -265,7 +265,7 @@ func (s *Store) Version(ctx context.Context, class, id string, version int64, op
 	if err != nil {
 		return nil, err
 	}
-	s.projectRead(c, vc, row, &h.Document, o.principal)
+	s.projectRead(c, vc, row, &h.Document, o)
 	return h, nil
 }
 
@@ -318,7 +318,7 @@ func (s *Store) History(ctx context.Context, class, id string, opts ...Option) (
 	}
 	ev := s.reader()
 	defer s.release(ev)
-	now := s.now().Unix()
+	now := s.clock(o)
 	out := make([]*HistoryRow, 0, len(raw))
 	for _, row := range raw {
 		vc, row, err := s.underVersion(ctx, c, row, true)

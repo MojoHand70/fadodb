@@ -8,6 +8,18 @@ All notable changes to FadoDB are recorded here. The format follows
 
 ### Added
 
+- `At(t)`, a moment the caller chooses for a call that reads or previews
+  and writes nothing (ADR-0042): on `Preview`, `PreviewDraft`,
+  `Transitions`, `Query`, `Count`, `Get`, `Version` and `History`, `NOW()`
+  is the instant and `TODAY()` its UTC day in every formula the call
+  evaluates, defaults, guards, eventless guards, access rules and rights
+  alike. A preview reports the moment its formulas saw as `Now`, chosen
+  or not. A zero moment is the database's clock. A commit runs at the
+  database's clock: `At` on `Create`, `CreateMany`, `Set`, `Transition`,
+  `Delete`, `Migrate` or `ImportRows` is refused with `not_allowed`, and
+  the business date is untouched. `conformance/statechart/clock.json`
+  is the specification; a suite may declare its `clock` and a step its
+  `at`.
 - The rights table and the per-transition rules are enforced in the Go
   API (ADR-0041). A value for a variable whose `write` right is not TRUE
   for the principal in the document's state is refused with `forbidden`
@@ -80,6 +92,14 @@ All notable changes to FadoDB are recorded here. The format follows
 
 ### Changed
 
+- `NOW()` and `TODAY()` in a filter's `where` read the database's clock,
+  `Options.Now`, as every other formula does; they read the wall clock
+  before.
+- A preview of a set that changes nothing no longer stops short: it
+  reports `Path`, the states a commit at that moment would visit, and the
+  transitions open from the resulting state, with the version as it is,
+  so that a preview at a chosen moment answers whether an eventless
+  transition would fire.
 - `Query` and `Count` keep their prepared statements, at most 64 by SQL
   text, the least recently used one making room, dropped when a class is
   redefined: a repeated filter pays SQLite's parse once, which was half

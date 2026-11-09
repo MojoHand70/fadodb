@@ -72,8 +72,11 @@ type Options struct {
 	// MaxBlob is the blob size limit of a new database in bytes; 0 is
 	// DefaultMaxBlob. It may be raised on open and never lowered.
 	MaxBlob int64
-	// Now is the clock the store stamps commits with; nil is time.Now.
-	// Tests set it.
+	// Now is the clock of the database: it stamps every commit and is
+	// what NOW() and TODAY() read in every formula, unless a call that
+	// reads or previews chooses a moment with At (ADR-0042). nil is
+	// time.Now. A test sets it, and so does an embedder that replays a
+	// scenario into a copy of the file.
 	Now func() time.Time
 }
 

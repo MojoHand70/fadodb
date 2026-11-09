@@ -25,7 +25,9 @@
 // call (ADR-0041): a transition's rule and the write rights over the
 // stored document before the assignments, every document returned
 // projected for the principal, and the read rights of the variables a
-// filter names compiled into its predicate.
+// filter names compiled into its predicate. A call that reads or
+// previews may run at a moment the caller chooses with At, and a preview
+// reports it; a commit runs at the database's clock (ADR-0042).
 //
 // Not here yet: rules (Phase 4), the class-level access rules (Phase 5),
 // and the server (Phase 6).

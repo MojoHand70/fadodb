@@ -58,7 +58,7 @@ func (s *Store) PreviewDraft(ctx context.Context, definition []byte, id string, 
 	if err != nil {
 		return nil, err
 	}
-	return &Preview{Document: res.doc, Errors: res.errs, Path: res.path, Transitions: res.transitions}, nil
+	return &Preview{Document: res.doc, Errors: res.errs, Path: res.path, Transitions: res.transitions, Now: res.now}, nil
 }
 
 // dropPlansOf forgets the lookup plans made for a draft's programs, with

@@ -11,7 +11,9 @@
 // and can run a change, or a draft class, through the commit pipeline
 // without writing anything (ADR-0025). A document moves through its
 // class's statechart with Transition, and Transitions says which moves
-// are open (ADR-0040). The principal decides what a call may set and
+// are open (ADR-0040); a preview, a listing or a read may be asked at a
+// moment the caller chooses with At, and a preview reports the moment it
+// ran under (ADR-0042). The principal decides what a call may set and
 // sees: the rights table and the per-transition rules are enforced on
 // every call, a refusal being forbidden and a hidden variable absent
 // (ADR-0041). Not here yet: rules and QUERY (Phase 4), the class-level
@@ -97,6 +99,13 @@ func Replace() Option { return store.Replace() }
 // AtVersion makes OpenFile read a committed version instead of the
 // current one.
 func AtVersion(version int64) Option { return store.AtVersion(version) }
+
+// At runs a call that reads or previews at the moment (ADR-0042): NOW()
+// is t and TODAY() its UTC day in every formula the call evaluates, and a
+// preview reports it as Now. A zero t is the database's clock. A command
+// that writes refuses it with not_allowed: a change is previewed at a
+// moment, or made in a copy of the database opened with Options.Now set.
+func At(t time.Time) Option { return store.At(t) }
 
 // DB is an open database.
 type DB struct {

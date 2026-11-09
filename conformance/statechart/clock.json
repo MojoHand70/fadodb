@@ -1,0 +1,47 @@
+{
+  "suite": "clock",
+  "description": "A preview, a listing, a filter and a read run at a moment the caller chooses (ADR-0042): NOW() is the instant and TODAY() its UTC day in every formula the call evaluates, defaults, guards, eventless guards and rights alike, and a preview reports the moment. A commit runs at the database's clock and refuses the option with not_allowed. The suite's clock is the database's.",
+  "clock": "2026-11-06 12:00:00",
+  "class": {
+    "name": "Task",
+    "variables": {
+      "due":     {"type": "date"},
+      "created": {"type": "date", "default": "TODAY()"},
+      "note":    {"type": "text"}
+    },
+    "states": {"initial": "open", "list": ["open", "overdue", "done"]},
+    "transitions": [
+      {"from": "open", "to": "overdue", "guard": "TODAY() > due"},
+      {"name": "close", "from": ["open", "overdue"], "to": "done", "guard": "TODAY() >= due"}
+    ],
+    "rights": {"*": {"note": {"read": "TODAY() <= due OR INGROUP(\"audit\")"}}}
+  },
+  "principals": {
+    "alice": {"id": "alice", "groups": ["staff"]},
+    "aud":   {"id": "aud",   "groups": ["audit"]}
+  },
+  "script": [
+    {"name": "a default reads the database's clock", "do": "create", "doc": "t1", "as": "alice", "values": {"due": "2026-11-20", "note": "call"},
+     "expect": {"state": "open", "version": 1, "values": {"created": "2026-11-06"}, "present": ["note"]}},
+    {"name": "a preview at a later day fires the eventless transition and reports the moment", "do": "preview", "doc": "t1", "as": "alice", "at": "2026-11-21 10:00:00",
+     "expect": {"state": "overdue", "path": ["open", "overdue"], "now": "2026-11-21 10:00:00", "transitions": [{"name": "close", "to": "done", "enabled": true}]}},
+    {"name": "a preview without a moment runs at the database's clock", "do": "preview", "doc": "t1", "as": "alice",
+     "expect": {"state": "open", "path": ["open"], "now": "2026-11-06 12:00:00", "transitions": [{"name": "close", "enabled": false, "code": "guard_false"}]}},
+    {"name": "a preview at a moment leaves the right alone when the day allows it", "do": "preview", "doc": "t1", "as": "alice", "at": "2026-11-10",
+     "expect": {"state": "open", "now": "2026-11-10 00:00:00", "present": ["note"]}},
+    {"name": "the listing at a moment", "do": "transitions", "doc": "t1", "as": "alice", "at": "2026-11-21 10:00:00", "expect": {"transitions": [{"name": "close", "enabled": true}]}},
+    {"name": "and at the clock", "do": "transitions", "doc": "t1", "as": "alice", "expect": {"transitions": [{"name": "close", "enabled": false, "code": "guard_false"}]}},
+    {"name": "a read right that reads the day, at a moment past the due date", "do": "get", "doc": "t1", "as": "alice", "at": "2026-11-21 10:00:00", "expect": {"absent": ["note"], "present": ["due", "created"]}},
+    {"name": "and at the clock", "do": "get", "doc": "t1", "as": "alice", "expect": {"present": ["note"]}},
+    {"name": "the auditor reads it at any moment", "do": "get", "doc": "t1", "as": "aud", "at": "2026-11-21 10:00:00", "expect": {"present": ["note"]}},
+    {"name": "a filter at a moment compiles the right at that moment", "do": "query", "as": "alice", "at": "2026-11-21 10:00:00", "where": "note = \"call\"", "expect": {"docs": []}},
+    {"name": "and at the clock", "do": "query", "as": "alice", "where": "note = \"call\"", "expect": {"docs": ["t1"]}},
+    {"name": "the clock of a filter is the database's", "do": "count", "as": "alice", "where": "TODAY() = DATE(2026, 11, 6)", "expect": {"count": 1}},
+    {"name": "and a moment when one is chosen", "do": "count", "as": "alice", "at": "2026-11-21 10:00:00", "where": "TODAY() = DATE(2026, 11, 21)", "expect": {"count": 1}},
+    {"name": "a commit refuses the moment: create", "do": "create", "as": "alice", "at": "2026-11-21 10:00:00", "values": {"due": "2026-12-01"}, "expect": {"code": "not_allowed"}},
+    {"name": "set", "do": "set", "doc": "t1", "as": "alice", "at": "2026-11-21 10:00:00", "values": {"note": "x"}, "expect": {"code": "not_allowed"}},
+    {"name": "transition", "do": "transition", "doc": "t1", "transition": "close", "as": "alice", "at": "2026-11-21 10:00:00", "expect": {"code": "not_allowed"}},
+    {"name": "the transition at the clock is refused by its guard", "do": "transition", "doc": "t1", "transition": "close", "as": "alice", "expect": {"code": "guard_false"}},
+    {"name": "the document is unchanged", "do": "get", "doc": "t1", "as": "alice", "expect": {"state": "open", "version": 1}}
+  ]
+}

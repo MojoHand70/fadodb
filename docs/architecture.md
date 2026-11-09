@@ -713,7 +713,9 @@ package has `Open`, `DefineClass`, `ValidateClass`, `DefineSchema`,
 `Transition`, `Transitions`, `Delete`, `Migrate`, `Get`, `Version`,
 `History`, `Events`, `Query`, `Count`, `SQL`, `PutBlob`, `OpenFile`,
 `OpenBlob`, `CheckBlobs`, and `Preview` and `PreviewDraft` of a create, a
-set or a transition. The principal decides what a call may set and sees
+set or a transition; a preview, a listing or a read runs at a moment the
+caller chooses with `At`, and a preview reports its moment (ADR-0042).
+The principal decides what a call may set and sees
 (ADR-0041): a right or a transition rule that is not TRUE for it refuses
 with `forbidden`, and every document comes back projected. Every refusal
 is a `fado.Error` with a stable code and the variable it is about, or the

@@ -64,9 +64,11 @@ type result struct {
 	noop    bool
 	errs    []*Error
 	// path and transitions are a preview's: the states the command
-	// visited and the named transitions leaving the last one.
+	// visited and the named transitions leaving the last one; now the
+	// seconds its formulas saw (ADR-0042).
 	path        []string
 	transitions []TransitionInfo
+	now         int64
 }
 
 // eventInfo is what the event of a commit says beyond its versions.
@@ -149,7 +151,7 @@ func (s *Store) Preview(ctx context.Context, class, id string, values Values, tr
 	if err != nil {
 		return nil, err
 	}
-	return &Preview{Document: res.doc, Errors: res.errs, Path: res.path, Transitions: res.transitions}, nil
+	return &Preview{Document: res.doc, Errors: res.errs, Path: res.path, Transitions: res.transitions, Now: res.now}, nil
 }
 
 // commit runs a command in a transaction on the writer.
@@ -158,6 +160,11 @@ func (s *Store) commit(ctx context.Context, cmd command) (*result, error) {
 	defer s.mu.Unlock()
 	if s.closed {
 		return nil, errf(CodeClosed, "", "the store is closed")
+	}
+	if !cmd.preview {
+		if err := refuseAt(cmd.o, cmd.op.String()); err != nil {
+			return nil, err
+		}
 	}
 	now := s.now()
 	begin := "BEGIN IMMEDIATE"
@@ -184,7 +191,14 @@ func (s *Store) commit(ctx context.Context, cmd command) (*result, error) {
 func (s *Store) run(ctx context.Context, cmd command, now time.Time) (*result, error) {
 	c := cmd.c
 	secs := now.Unix()
-	res := &result{}
+	// The formulas' clock is the moment a preview chose, else the
+	// commit's; the timestamps a commit writes are always the commit's
+	// (ADR-0042).
+	clock := secs
+	if !cmd.o.at.IsZero() {
+		clock = cmd.o.at.Unix()
+	}
+	res := &result{now: clock}
 
 	// A class without states is a stateless application and stores no
 	// documents (ADR-0040); the previews evaluate it.
@@ -226,7 +240,7 @@ func (s *Store) run(ctx context.Context, cmd command, now time.Time) (*result, e
 				if err != nil {
 					return nil, err
 				}
-				s.project(&s.wev, c, vc, vrow, &h.Document, cmd.o.principal, secs)
+				s.project(&s.wev, c, vc, vrow, &h.Document, cmd.o.principal, clock)
 				res.doc = &h.Document
 			}
 			return res, nil
@@ -291,7 +305,7 @@ func (s *Store) run(ctx context.Context, cmd command, now time.Time) (*result, e
 
 	kids := map[*child][]childRow{}
 	dirty := s.dirtyFor(c)
-	evalCtx := &formula.Context{User: actor, Groups: cmd.o.principal.Groups, Now: secs}
+	evalCtx := &formula.Context{User: actor, Groups: cmd.o.principal.Groups, Now: clock}
 	var after *docRow
 	if cmd.op == opCreate {
 		id := cmd.id
@@ -402,18 +416,25 @@ func (s *Store) run(ctx context.Context, cmd command, now time.Time) (*result, e
 				changed = true
 			}
 		}
-		if !changed && !adopt && cmd.op != opTransition {
+		unchanged := !changed && !adopt && cmd.op != opTransition
+		if unchanged && !cmd.preview {
 			all, err := c.loadChildren(ctx, before.id, before.version, kids, true)
 			if err != nil {
 				return nil, err
 			}
 			res.noop = true
 			res.doc = c.document(before, all)
-			s.project(&s.wev, c, c, before, res.doc, cmd.o.principal, secs)
+			s.project(&s.wev, c, c, before, res.doc, cmd.o.principal, clock)
 			return res, nil
 		}
-		after.version++
-		after.updatedAt = secs
+		// A preview of a set that changes nothing answers what a commit
+		// at this moment would do (ADR-0042): the eventless transitions
+		// from the document's state and the listing, the version as it
+		// is.
+		if !unchanged {
+			after.version++
+			after.updatedAt = secs
+		}
 		if err := s.recalc(c, after, dirty, adopt, evalCtx, cmd.preview, &res.errs); err != nil {
 			return nil, err
 		}
@@ -479,7 +500,7 @@ func (s *Store) run(ctx context.Context, cmd command, now time.Time) (*result, e
 			evalCtx.State = final.state
 			res.transitions = s.listTransitions(c, final, evalCtx, cmd.o.principal)
 		}
-		s.project(&s.wev, c, c, final, res.doc, cmd.o.principal, secs)
+		s.project(&s.wev, c, c, final, res.doc, cmd.o.principal, clock)
 		return res, nil
 	}
 	if err := s.write(ctx, c, before, after, kids, secs, eventID, actor, ev, cmd.o.key, hash, day); err != nil {
@@ -501,7 +522,7 @@ func (s *Store) run(ctx context.Context, cmd command, now time.Time) (*result, e
 		prev = hop
 	}
 	res.doc = c.document(prev, all)
-	s.project(&s.wev, c, c, prev, res.doc, cmd.o.principal, secs)
+	s.project(&s.wev, c, c, prev, res.doc, cmd.o.principal, clock)
 	res.eventID = eventID
 	return res, nil
 }

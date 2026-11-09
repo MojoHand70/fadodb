@@ -10,6 +10,9 @@ import (
 	"sort"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/MojoHand70/fadodb/internal/formula"
 )
 
 // The statechart conformance suite (ADR-0040) is the specification of the
@@ -19,11 +22,14 @@ import (
 // in conformance/README.md.
 
 type statechartSuite struct {
-	Suite       string                     `json:"suite"`
-	Description string                     `json:"description,omitempty"`
-	Class       json.RawMessage            `json:"class"`
-	Principals  map[string]scriptPrincipal `json:"principals,omitempty"`
-	Script      []scriptStep               `json:"script"`
+	Suite       string `json:"suite"`
+	Description string `json:"description,omitempty"`
+	// Clock is the database's clock while the suite runs, as
+	// YYYY-MM-DD HH:MM:SS in UTC; the runner's default when absent.
+	Clock      string                     `json:"clock,omitempty"`
+	Class      json.RawMessage            `json:"class"`
+	Principals map[string]scriptPrincipal `json:"principals,omitempty"`
+	Script     []scriptStep               `json:"script"`
 }
 
 type scriptPrincipal struct {
@@ -45,6 +51,9 @@ type scriptStep struct {
 	Transition string       `json:"transition,omitempty"`
 	Values     Values       `json:"values,omitempty"`
 	Expect     scriptExpect `json:"expect"`
+	// At is the moment the step runs at (ADR-0042), as YYYY-MM-DD or
+	// YYYY-MM-DD HH:MM:SS in UTC.
+	At string `json:"at,omitempty"`
 	// Where, Order and Fields are the filter of a query or a count.
 	Where  string   `json:"where,omitempty"`
 	Order  []string `json:"order,omitempty"`
@@ -79,6 +88,18 @@ type scriptExpect struct {
 	// Count the count.
 	Docs  []string `json:"docs,omitempty"`
 	Count *int64   `json:"count,omitempty"`
+	// Now is the moment a preview reports, in the notation of At.
+	Now string `json:"now,omitempty"`
+}
+
+// moment reads a step's or a suite's instant.
+func moment(t *testing.T, s string) time.Time {
+	t.Helper()
+	secs, err := formula.ParseCaseDate(s)
+	if err != nil {
+		t.Fatalf("%q: want YYYY-MM-DD or YYYY-MM-DD HH:MM:SS, %v", s, err)
+	}
+	return time.Unix(secs, 0).UTC()
 }
 
 func TestStatechartConformance(t *testing.T) {
@@ -103,7 +124,12 @@ func TestStatechartConformance(t *testing.T) {
 }
 
 func runStatechartSuite(t *testing.T, suite *statechartSuite) {
-	s, _ := openStore(t, Options{})
+	var o Options
+	if suite.Clock != "" {
+		at := moment(t, suite.Clock)
+		o.Now = func() time.Time { return at }
+	}
+	s, _ := openStore(t, o)
 	ctx := context.Background()
 	cls, err := s.DefineClass(ctx, suite.Class)
 	if err != nil {
@@ -126,6 +152,9 @@ func runStatechartSuite(t *testing.T, suite *statechartSuite) {
 		}
 		if step.Key != "" {
 			opts = append(opts, Key(step.Key))
+		}
+		if step.At != "" {
+			opts = append(opts, At(moment(t, step.At)))
 		}
 		id := last
 		if step.Do != "create" && step.Doc != "" {
@@ -223,6 +252,13 @@ func runStatechartSuite(t *testing.T, suite *statechartSuite) {
 		}
 		if want.Count != nil && count != *want.Count {
 			t.Errorf("%s: count %d, want %d", name, count, *want.Count)
+		}
+		if want.Now != "" {
+			if pv == nil {
+				t.Errorf("%s: a moment is expected of a preview only", name)
+			} else if at := moment(t, want.Now).Unix(); pv.Now != at {
+				t.Errorf("%s: now %d, want %d", name, pv.Now, at)
+			}
 		}
 		if want.Path != nil {
 			if pv == nil {

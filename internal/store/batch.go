@@ -20,6 +20,9 @@ func (s *Store) CreateMany(ctx context.Context, class string, docs []Values, opt
 	if o.key != "" {
 		return nil, hintf(CodeNotSupported, "", "a batch takes no idempotency key; a key names one command (ADR-0026)", "give each document its own commit with Create, or load without a key")
 	}
+	if err := refuseAt(o, "batch"); err != nil {
+		return nil, err
+	}
 	if o.id != "" {
 		return nil, hintf(CodeBadValue, "", "a batch takes no document id", "ids are generated for every document of a batch")
 	}

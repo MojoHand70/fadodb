@@ -170,10 +170,51 @@ type Right struct {
 	Read, Write *RightRule
 }
 
-// RightRule is a formula or a group list.
+// RightRule is a formula or a group list; Src is the rule as written,
+// for the hint of a refusal.
 type RightRule struct {
 	Formula *formula.Program
 	Groups  []string
+	Src     string
+}
+
+// ReadRule resolves the read right that governs a variable in a state
+// (ADR-0028, ADR-0041): the cell of the named state and variable, then
+// the state's "*", then the "*" state's cell of the variable, then its
+// "*"; the first cell declaring a read rule decides. nil means the class
+// rules alone apply and the variable is readable. A state of "" reads the
+// "*" row alone.
+func (c *Class) ReadRule(state, variable string) *RightRule {
+	return c.rule(state, variable, func(r *Right) *RightRule { return r.Read })
+}
+
+// WriteRule resolves the write right of a variable in a state the way
+// ReadRule resolves the read right.
+func (c *Class) WriteRule(state, variable string) *RightRule {
+	return c.rule(state, variable, func(r *Right) *RightRule { return r.Write })
+}
+
+func (c *Class) rule(state, variable string, pick func(*Right) *RightRule) *RightRule {
+	if c.Rights == nil {
+		return nil
+	}
+	for _, st := range [2]string{state, "*"} {
+		if st == "" {
+			continue
+		}
+		row, ok := c.Rights[st]
+		if !ok {
+			continue
+		}
+		for _, name := range [2]string{variable, "*"} {
+			if r, ok := row[name]; ok {
+				if rule := pick(r); rule != nil {
+					return rule
+				}
+			}
+		}
+	}
+	return nil
 }
 
 // Variable finds a variable by name, case-insensitively.
@@ -1176,11 +1217,18 @@ func compileRights(c *collector, cls *Class, def *Definition, scope *formula.Sco
 		}
 		for _, name := range vars {
 			vpath := spath + "/" + name
+			key := name
 			if name != "*" {
-				if _, ok := cls.Variable(name); !ok {
+				v, ok := cls.Variable(name)
+				if !ok {
 					c.addf(CodeUnknownVariable, vpath, "unknown variable %s", quote(name))
 					continue
 				}
+				key = v.Name
+			}
+			if _, dup := row[key]; dup {
+				c.add(CodeDuplicate, vpath, "the variable is listed twice; names differ in case only")
+				continue
 			}
 			rd := def.Rights[st][name]
 			if rd == nil {
@@ -1188,28 +1236,41 @@ func compileRights(c *collector, cls *Class, def *Definition, scope *formula.Sco
 				continue
 			}
 			r := &Right{}
-			r.Read = rightRule(c, vpath+"/read", rd.Read, scope)
-			r.Write = rightRule(c, vpath+"/write", rd.Write, scope)
+			r.Read = rightRule(c, vpath+"/read", rd.Read, scope, true)
+			r.Write = rightRule(c, vpath+"/write", rd.Write, scope, false)
 			if r.Read == nil && r.Write == nil && !c.failed() {
 				c.add(CodeMissing, vpath, "a right has read, write or both")
 			}
-			row[name] = r
+			row[key] = r
 		}
 		cls.Rights[st] = row
 	}
 }
 
-// rightRule reads one cell: a formula as text or a list of groups.
-func rightRule(c *collector, path string, raw json.RawMessage, scope *formula.Scope) *RightRule {
+// rightRule reads one cell: a formula as text or a list of groups. A
+// read right is compiled into every filter as a predicate (ADR-0041), so
+// like a read rule it may use pure and context functions only; a write
+// right keeps every function.
+func rightRule(c *collector, path string, raw json.RawMessage, scope *formula.Scope, read bool) *RightRule {
 	if len(raw) == 0 {
 		return nil
 	}
 	var src string
 	if json.Unmarshal(raw, &src) == nil {
-		if prog := bindCondition(c, path, src, scope, "a right"); prog != nil {
-			return &RightRule{Formula: prog}
+		prog := bindCondition(c, path, src, scope, "a right")
+		if prog == nil {
+			return nil
 		}
-		return nil
+		if read {
+			for _, cl := range prog.Classes {
+				if cl == formula.ClassLookup || cl == formula.ClassQuery {
+					c.hint(CodeNotAllowed, path, "a read right may use pure and context functions over the document's own variables only: it is compiled into every filter as a predicate",
+						"move the lookup into a computed variable and test that variable")
+					return nil
+				}
+			}
+		}
+		return &RightRule{Formula: prog, Src: src}
 	}
 	var groups []string
 	if json.Unmarshal(raw, &groups) == nil {
@@ -1217,7 +1278,7 @@ func rightRule(c *collector, path string, raw json.RawMessage, scope *formula.Sc
 			c.add(CodeBadValue, path, "a group list names at least one group")
 			return nil
 		}
-		return &RightRule{Groups: groups}
+		return &RightRule{Groups: groups, Src: strings.Join(groups, ", ")}
 	}
 	c.add(CodeBadValue, path, "a right is a formula as text or a list of group names")
 	return nil

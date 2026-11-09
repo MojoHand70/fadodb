@@ -11,9 +11,12 @@
 // and can run a change, or a draft class, through the commit pipeline
 // without writing anything (ADR-0025). A document moves through its
 // class's statechart with Transition, and Transitions says which moves
-// are open (ADR-0040). Not here yet: rules and QUERY (Phase 4), access
-// rules and rights (Phase 5) and the server (Phase 6); the principal is
-// recorded as the actor and enforces nothing until Phase 5.
+// are open (ADR-0040). The principal decides what a call may set and
+// sees: the rights table and the per-transition rules are enforced on
+// every call, a refusal being forbidden and a hidden variable absent
+// (ADR-0041). Not here yet: rules and QUERY (Phase 4), the class-level
+// access rules compiled to row predicates (Phase 5) and the server
+// (Phase 6).
 package fado
 
 import (

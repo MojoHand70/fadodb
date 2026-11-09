@@ -21,6 +21,12 @@
 // commits in the same transaction, and Transitions lists what may be
 // taken (ADR-0040); a class without states stores no documents.
 //
-// Not here yet: rules (Phase 4), access rules and rights (Phase 5), and
-// the server (Phase 6).
+// The rights table and the per-transition rules are enforced on every
+// call (ADR-0041): a transition's rule and the write rights over the
+// stored document before the assignments, every document returned
+// projected for the principal, and the read rights of the variables a
+// filter names compiled into its predicate.
+//
+// Not here yet: rules (Phase 4), the class-level access rules (Phase 5),
+// and the server (Phase 6).
 package store

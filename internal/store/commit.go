@@ -218,11 +218,16 @@ func (s *Store) run(ctx context.Context, cmd command, now time.Time) (*result, e
 				if last.Valid {
 					after = last
 				}
-				row, err := s.Version(ctx, class, docID, after.Int64)
+				vc, vrow, err := s.version(ctx, c, docID, after.Int64)
 				if err != nil {
 					return nil, err
 				}
-				res.doc = &row.Document
+				h, err := vc.historyRow(ctx, vrow)
+				if err != nil {
+					return nil, err
+				}
+				s.project(&s.wev, c, vc, vrow, &h.Document, cmd.o.principal, secs)
+				res.doc = &h.Document
 			}
 			return res, nil
 		}
@@ -331,6 +336,11 @@ func (s *Store) run(ctx context.Context, cmd command, now time.Time) (*result, e
 			after.vals[cv.leaf] = val
 			dirty[cv.idx] = true
 		}
+		// The write rights, over the new document after its defaults, in
+		// the initial state (ADR-0041).
+		if err := s.checkWrites(c, &cmd, after, evalCtx, res); err != nil {
+			return nil, err
+		}
 		for _, cv := range c.vars {
 			if v := cv.v; !v.Computed && v.Required && cv.leaf >= 0 && after.vals[cv.leaf].IsBlank() {
 				err := errf(CodeRequired, v.Name, "%s is required", v.Name)
@@ -362,6 +372,17 @@ func (s *Store) run(ctx context.Context, cmd command, now time.Time) (*result, e
 			after = before.clone()
 		}
 		after.classVersion = c.cls.Version
+		// The transition's access rule, then the write rights, over the
+		// stored document before the assignments, in the state it is in
+		// (ADR-0041): the rules say who may change this document.
+		if trans != nil {
+			if err := s.checkTransition(c, trans, after, evalCtx, cmd.o.principal); err != nil {
+				return nil, err
+			}
+		}
+		if err := s.checkWrites(c, &cmd, after, evalCtx, res); err != nil {
+			return nil, err
+		}
 		changed, err := c.assign(after, kids, cmd.values, dirty, s.limits)
 		if err != nil {
 			return nil, err
@@ -388,6 +409,7 @@ func (s *Store) run(ctx context.Context, cmd command, now time.Time) (*result, e
 			}
 			res.noop = true
 			res.doc = c.document(before, all)
+			s.project(&s.wev, c, c, before, res.doc, cmd.o.principal, secs)
 			return res, nil
 		}
 		after.version++
@@ -455,8 +477,9 @@ func (s *Store) run(ctx context.Context, cmd command, now time.Time) (*result, e
 		if c.cls.States != nil {
 			res.path = append([]string(nil), path...)
 			evalCtx.State = final.state
-			res.transitions = s.listTransitions(c, final, evalCtx)
+			res.transitions = s.listTransitions(c, final, evalCtx, cmd.o.principal)
 		}
+		s.project(&s.wev, c, c, final, res.doc, cmd.o.principal, secs)
 		return res, nil
 	}
 	if err := s.write(ctx, c, before, after, kids, secs, eventID, actor, ev, cmd.o.key, hash, day); err != nil {
@@ -478,6 +501,7 @@ func (s *Store) run(ctx context.Context, cmd command, now time.Time) (*result, e
 		prev = hop
 	}
 	res.doc = c.document(prev, all)
+	s.project(&s.wev, c, c, prev, res.doc, cmd.o.principal, secs)
 	res.eventID = eventID
 	return res, nil
 }
@@ -491,18 +515,10 @@ func (s *Store) eval(c *class, prog *formula.Program, row *docRow, evalCtx *form
 	return val, nil
 }
 
-// evalRaw runs a program over the row and returns the engine's error as
-// it is, for the callers that word it themselves.
+// evalRaw runs a program over the row on the writer's VM and returns the
+// engine's error as it is, for the callers that word it themselves.
 func (s *Store) evalRaw(c *class, prog *formula.Program, row *docRow, evalCtx *formula.Context) (formula.Value, error) {
-	idx := c.slots[prog]
-	if cap(s.vars) < len(idx) {
-		s.vars = make([]formula.Value, c.maxSlots)
-	}
-	vars := s.vars[:len(idx)]
-	for i, li := range idx {
-		vars[i] = row.vals[li]
-	}
-	return s.vm.Run(prog, vars, evalCtx)
+	return s.wev.run(c, prog, row, evalCtx)
 }
 
 // fit brings a computed or defaulted value to the variable's scale and

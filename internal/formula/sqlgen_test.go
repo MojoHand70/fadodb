@@ -33,7 +33,7 @@ func TestGenerateSQL_Shapes(t *testing.T) {
 		{src: `ROUND(qty, 2, "half_even")`, wantValue: []string{`fado_round(COALESCE(CAST("qty" AS REAL), 0.0), 2.0, 'half_even')`}, noError: true},
 		{src: `VALUE(name)`, wantValue: []string{`fado_value(COALESCE("name", ''))`}, wantError: []string{`fado_value_err(COALESCE("name", ''))`}},
 		{src: `DAYS(due, TODAY())`, wantValue: []string{`(CAST("due" AS REAL) - floor(CAST(:now AS REAL) / 86400.0))`}, noError: true, params: []string{"now"}},
-		{src: `USER() = "a" AND INGROUP("g")`, wantValue: []string{`:user`, `json_each(:groups)`}, noError: true, params: []string{"user", "groups"}},
+		{src: `USER() = "a" AND INGROUP("g")`, wantValue: []string{`:user`, `instr(:groups, char(31)`}, noError: true, params: []string{"user", "groups"}},
 		{src: `STATE() = "draft" AND ID() <> ""`, wantValue: []string{`(COALESCE(:state, '') = 'draft')`, `(COALESCE(:id, '') <> '')`}, noError: true, params: []string{"state", "id"}},
 		{src: `TEXT(due)`, wantValue: []string{`strftime('%Y-%m-%d', CAST("due" AS REAL) * 86400.0, 'unixepoch')`}, noError: true},
 		{src: `"it's"`, wantValue: []string{`'it''s'`}, noError: true},

@@ -16,6 +16,7 @@ import (
 	"github.com/MojoHand70/fadodb/internal/formula"
 	"github.com/MojoHand70/fadodb/internal/formula/sqlitefn"
 	"github.com/MojoHand70/fadodb/internal/model"
+	"github.com/MojoHand70/fadodb/internal/query"
 )
 
 // DefaultWALLimit is the write-ahead log size past which the checkpointer
@@ -91,12 +92,15 @@ type Store struct {
 	now         func() time.Time
 	vm          *formula.VM
 	qvm         *formula.VM // runs the key expressions of indexed lookups while vm runs the formula
-	vars        []formula.Value
+	wev         evaluator   // the writer's evaluator over vm, with its scratch
+	readers     sync.Pool   // evaluators for the read paths' projections (ADR-0041)
 	dirty       []bool
+	given       []bool   // the variables one command sets, for the write check
 	visits      []string // the states one command visits, reused under the writer's lock
 	ids         idGen
 	stmts       engineStmts
 	plans       map[*formula.QuerySlot]*lookupPlan
+	filters     filterStmts // the prepared statements of Query and Count, by text
 
 	cmu        sync.RWMutex
 	schemas    *model.SchemaSet
@@ -207,6 +211,7 @@ func Open(path string, o Options) (*Store, error) {
 	}
 	s.vm.Limits, s.qvm.Limits = s.limits, s.limits
 	s.vm.Executor = (*executor)(s)
+	s.wev.vm = s.vm
 	if err := s.prepareEngine(ctx); err != nil {
 		return fail(err)
 	}
@@ -575,6 +580,7 @@ func (s *Store) Close() error {
 	for _, vs := range s.versions {
 		for _, c := range vs {
 			c.close()
+			query.Forget(c.cls)
 		}
 	}
 	for _, t := range s.tables {
@@ -582,6 +588,7 @@ func (s *Store) Close() error {
 	}
 	s.cmu.Unlock()
 	s.closePlans()
+	s.filters.clear()
 	s.stmts.close()
 	s.sqlMu.Lock()
 	if s.sqlConn != nil {

@@ -27,8 +27,10 @@ enforces user and group access rules that are themselves formulas.
 Analytics and process mining are SQL over the event log.
 
 A class is one JSON document. This one defines, stores, computes and
-moves through its states today; its rules are compiled and checked now
-and run with Phase 4, and formulas over `lines` arrive with composites:
+moves through its states today, and its rights and transition rules are
+enforced; its rules are compiled and checked now and run with Phase 4,
+the class-level access rule with Phase 5, and formulas over `lines`
+arrive with composites:
 
 ```json
 {
@@ -52,7 +54,8 @@ and run with Phase 4, and formulas over `lines` arrive with composites:
     {"on": "enter", "state": "paid",
      "do": [{"action": "create", "class": "Receipt", "values": {"invoice": "ID()", "amount": "total"}}]}
   ],
-  "access": {"read": "INGROUP(\"finance\") OR customer = USER()"}
+  "access": {"read": "INGROUP(\"finance\") OR customer = USER()"},
+  "rights": {"*": {"discount": {"write": ["sales"]}}, "approved": {"discount": {"read": ["finance"]}}}
 }
 ```
 
@@ -81,7 +84,11 @@ formulas that depend on them, a typed history row and an event, in one
 transaction. A transition is a commit too, its guard evaluated over the
 recalculated document, and every eventless transition that follows is a
 commit of its own in the same transaction; `Transitions` says which
-moves are open. A refusal is a `fado.Error` with a stable code and the
+moves are open. The principal decides what a call may set and sees: a
+value a right refuses, or a transition its rule refuses, comes back as
+`forbidden`, and a variable the principal may not read in the document's
+state is absent from what they get back; the row-level access rule waits
+for Phase 5. A refusal is a `fado.Error` with a stable code and the
 variable it names; a definition's problems come back at once as
 `Diagnostics`, each with a code and the place. Files are attached as
 `File` values behind a blob store, reference data lives in explicit tables

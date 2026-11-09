@@ -10,6 +10,7 @@ import (
 
 	"github.com/MojoHand70/fadodb/internal/formula"
 	"github.com/MojoHand70/fadodb/internal/model"
+	"github.com/MojoHand70/fadodb/internal/query"
 )
 
 // class is a compiled class with its storage layout and its prepared
@@ -23,9 +24,10 @@ type class struct {
 	leaves    []leaf
 	leafIndex map[string]int // upper-cased dotted path
 	// vars are the variables in declared order; byName finds one by its
-	// upper-cased name.
+	// upper-cased name, exact by its name as declared, without folding.
 	vars   []*cvar
 	byName map[string]*cvar
+	exact  map[string]*cvar
 	// order are the auto variables, and nil for the title, in evaluation
 	// order; defaults the inputs with defaults in dependency order.
 	order     []*cvar
@@ -40,6 +42,10 @@ type class struct {
 	sources map[string]bool
 	// files are the File objects among the leaves (ADR-0033).
 	files []filePair
+	// rights is the rights table resolved per state (ADR-0041): for each
+	// state of the class, and "" for the "*" row alone, one cell per
+	// variable in declared order; nil when the class declares no rights.
+	rights map[string][]rightCell
 
 	w writeStmts
 	r readStmts
@@ -136,7 +142,7 @@ func indexOf(leaves []leaf) map[string]int {
 // newClass lays a compiled class out for storage.
 func newClass(cls *model.Class, src []byte) (*class, error) {
 	c := &class{cls: cls, json: src, table: "doc_" + cls.Name, history: "doc_" + cls.Name + "_history",
-		byName: map[string]*cvar{}, slots: map[*formula.Program][]int{}, sources: map[string]bool{}}
+		byName: map[string]*cvar{}, exact: map[string]*cvar{}, slots: map[*formula.Program][]int{}, sources: map[string]bool{}}
 	for _, v := range cls.Variables {
 		for _, name := range v.Sources {
 			c.sources[strings.ToUpper(name)] = true
@@ -148,6 +154,7 @@ func newClass(cls *model.Class, src []byte) (*class, error) {
 		cv := &cvar{v: v, idx: i, leaf: -1}
 		c.vars = append(c.vars, cv)
 		c.byName[strings.ToUpper(v.Name)] = cv
+		c.exact[v.Name] = cv
 	}
 	for i := range c.leaves {
 		l := &c.leaves[i]
@@ -206,6 +213,41 @@ func newClass(cls *model.Class, src []byte) (*class, error) {
 		}
 		if err := c.bindSlots(t.Guard, owner); err != nil {
 			return nil, err
+		}
+	}
+	// The transition rules and the rights (ADR-0041): their slots bound,
+	// and the rights table resolved per state once, so that a projection
+	// and a write check look nothing up.
+	if cls.Access != nil {
+		for name, prog := range cls.Access.Transition {
+			if err := c.bindSlots(prog, "access/transition/"+name); err != nil {
+				return nil, err
+			}
+		}
+	}
+	if cls.Rights != nil {
+		for st, row := range cls.Rights {
+			for name, r := range row {
+				for kind, rule := range map[string]*model.RightRule{"read": r.Read, "write": r.Write} {
+					if rule != nil && rule.Formula != nil {
+						if err := c.bindSlots(rule.Formula, "rights/"+st+"/"+name+"/"+kind); err != nil {
+							return nil, err
+						}
+					}
+				}
+			}
+		}
+		c.rights = map[string][]rightCell{}
+		states := []string{""}
+		if cls.States != nil {
+			states = append(states, cls.States.List...)
+		}
+		for _, st := range states {
+			cells := make([]rightCell, len(c.vars))
+			for i, cv := range c.vars {
+				cells[i] = rightCell{read: cls.ReadRule(st, cv.v.Name), write: cls.WriteRule(st, cv.v.Name)}
+			}
+			c.rights[st] = cells
 		}
 	}
 	for _, name := range cls.Order {
@@ -478,6 +520,8 @@ func (s *Store) DefineClass(ctx context.Context, data []byte) (*model.Class, err
 	}
 	if old != nil {
 		s.closePlans()
+		s.filters.clear()
+		query.Forget(old.cls)
 		if fresh {
 			// Nothing was ever written under the old versions: forget them.
 			for v, oc := range s.versions[strings.ToUpper(cls.Name)] {

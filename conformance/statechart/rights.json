@@ -1,0 +1,75 @@
+{
+  "suite": "rights",
+  "description": "The rights table and the per-transition rules are enforced in the Go API (ADR-0041): a write right is checked over the stored document before the assignments, in the state the command arrives in, and over a new document after its defaults; a transition's rule the same way, before its guard; every document returned is projected for the principal, a variable whose read right is not TRUE in the row's state absent; a filter compiles the read right of the variables it names and is refused only where no state lets the principal read one. An administrator bypasses the rules and the rights and never a guard; a call without a principal is nobody.",
+  "class": {
+    "name": "Claim",
+    "variables": {
+      "owner":  {"type": "text", "default": "USER()"},
+      "amount": {"type": "number"},
+      "note":   {"type": "text"},
+      "payout": {"type": "number"},
+      "double": {"formula": "amount * 2"}
+    },
+    "states": {"initial": "open", "list": ["open", "review", "paid"], "final": ["paid"]},
+    "transitions": [
+      {"name": "submit", "from": "open",   "to": "review", "guard": "amount > 0"},
+      {"name": "pay",    "from": "review", "to": "paid",   "guard": "payout > 0"},
+      {"name": "back",   "from": "review", "to": "open"}
+    ],
+    "access": {"transition": {"pay": "INGROUP(\"finance\")", "back": "owner = USER()"}},
+    "rights": {
+      "*":      {"payout": {"read": ["finance"], "write": ["finance"]},
+                 "amount": {"write": "owner = USER()"}},
+      "review": {"note":   {"read": "owner = USER() OR INGROUP(\"finance\")", "write": "FALSE"}}
+    }
+  },
+  "principals": {
+    "alice": {"id": "alice", "groups": ["claims"]},
+    "bob":   {"id": "bob",   "groups": ["claims"]},
+    "fin":   {"id": "fin",   "groups": ["finance"]},
+    "root":  {"id": "root",  "admin": true}
+  },
+  "script": [
+    {"name": "the owner defaults to the caller, who may then set the amount; the result hides the payout", "do": "create", "doc": "c1", "as": "alice", "values": {"amount": 100, "note": "car"},
+     "expect": {"state": "open", "version": 1, "values": {"owner": "alice", "double": 200}, "absent": ["payout"], "present": ["owner", "amount", "note", "double"]}},
+    {"name": "a group list the caller is not in refuses the create", "do": "create", "as": "alice", "values": {"payout": 5}, "expect": {"code": "forbidden"}},
+    {"name": "finance sets the payout and reads it", "do": "create", "doc": "c2", "as": "fin", "values": {"amount": 1, "payout": 5},
+     "expect": {"state": "open", "version": 1, "values": {"payout": 5}, "present": ["payout"]}},
+    {"name": "a formula right over the stored document: not the owner", "do": "set", "doc": "c1", "as": "bob", "values": {"amount": 200}, "expect": {"code": "forbidden"}},
+    {"name": "the owner", "do": "set", "doc": "c1", "as": "alice", "values": {"amount": 200}, "expect": {"version": 2, "values": {"double": 400}}},
+    {"name": "a read as a stranger hides the payout and shows the note in open", "do": "get", "doc": "c1", "as": "bob", "expect": {"absent": ["payout"], "present": ["note", "amount", "owner"]}},
+    {"name": "an administrator reads everything", "do": "get", "doc": "c1", "as": "root", "expect": {"present": ["payout", "note"]}},
+    {"name": "a call without a principal is nobody", "do": "get", "doc": "c1", "expect": {"absent": ["payout"], "present": ["note"]}},
+    {"name": "an administrator sets what a group list guards", "do": "set", "doc": "c1", "as": "root", "values": {"payout": 10}, "expect": {"version": 3, "present": ["payout"]}},
+    {"name": "nobody may not set the amount", "do": "set", "doc": "c1", "values": {"amount": 1}, "expect": {"code": "forbidden"}},
+    {"name": "rights are read in the state the command arrives in: the note is set on the way into review", "do": "transition", "doc": "c1", "transition": "submit", "as": "alice", "values": {"note": "sent"},
+     "expect": {"state": "review", "version": 4, "values": {"note": "sent"}, "absent": ["payout"]}},
+    {"name": "and not once there", "do": "set", "doc": "c1", "as": "alice", "values": {"note": "later"}, "expect": {"code": "forbidden"}},
+    {"name": "in review the note is the owner's", "do": "get", "doc": "c1", "as": "alice", "expect": {"present": ["note"], "absent": ["payout"]}},
+    {"name": "and finance's", "do": "get", "doc": "c1", "as": "fin", "expect": {"present": ["note", "payout"]}},
+    {"name": "and nobody else's", "do": "get", "doc": "c1", "as": "bob", "expect": {"absent": ["note", "payout"], "present": ["amount", "owner", "double"]}},
+    {"name": "the listing for the owner: the rule of pay refuses, back is open", "do": "transitions", "doc": "c1", "as": "alice",
+     "expect": {"transitions": [{"name": "pay", "to": "paid", "enabled": false, "code": "forbidden"}, {"name": "back", "to": "open", "enabled": true}]}},
+    {"name": "for a stranger both rules refuse", "do": "transitions", "doc": "c1", "as": "bob",
+     "expect": {"transitions": [{"name": "pay", "enabled": false, "code": "forbidden"}, {"name": "back", "enabled": false, "code": "forbidden"}]}},
+    {"name": "for finance pay is open and back is not", "do": "transitions", "doc": "c1", "as": "fin",
+     "expect": {"transitions": [{"name": "pay", "enabled": true}, {"name": "back", "enabled": false, "code": "forbidden"}]}},
+    {"name": "an administrator passes every rule", "do": "transitions", "doc": "c1", "as": "root",
+     "expect": {"transitions": [{"name": "pay", "enabled": true}, {"name": "back", "enabled": true}]}},
+    {"name": "the rule refuses the command before the guard", "do": "transition", "doc": "c1", "transition": "pay", "as": "alice", "expect": {"code": "forbidden"}},
+    {"name": "and the preview of it", "do": "preview", "doc": "c1", "transition": "pay", "as": "alice", "expect": {"code": "forbidden"}},
+    {"name": "a filter on a variable readable in no state is refused", "do": "query", "as": "bob", "where": "payout > 0", "expect": {"code": "forbidden"}},
+    {"name": "finance filters on it", "do": "query", "as": "fin", "where": "payout > 0", "order": ["amount"], "expect": {"docs": ["c2", "c1"]}},
+    {"name": "and counts", "do": "count", "as": "fin", "where": "payout > 0", "expect": {"count": 2}},
+    {"name": "a right that depends on the row matches where the state allows: the owner finds the note in review", "do": "query", "as": "alice", "where": "note = \"sent\"", "expect": {"docs": ["c1"]}},
+    {"name": "a stranger does not", "do": "query", "as": "bob", "where": "note = \"sent\"", "expect": {"docs": []}},
+    {"name": "nor nobody", "do": "query", "where": "note = \"sent\"", "expect": {"docs": []}},
+    {"name": "an administrator matches without predicates", "do": "query", "as": "root", "where": "note = \"sent\"", "expect": {"docs": ["c1"]}},
+    {"name": "a sort on a hidden variable leaves the row out", "do": "query", "as": "bob", "order": ["note", "amount"], "expect": {"docs": ["c2"]}},
+    {"name": "fields are projected, with no refusal", "do": "query", "as": "bob", "fields": ["payout", "amount"], "order": ["amount"], "expect": {"docs": ["c2", "c1"], "absent": ["payout"], "present": ["amount"]}},
+    {"name": "finance pays", "do": "transition", "doc": "c1", "transition": "pay", "as": "fin", "expect": {"state": "paid", "version": 5, "present": ["payout", "note"]}},
+    {"name": "an administrator never bypasses a guard", "do": "create", "doc": "c3", "as": "alice", "values": {"amount": 1}, "expect": {"state": "open"}},
+    {"do": "transition", "doc": "c3", "transition": "submit", "as": "alice", "expect": {"state": "review"}},
+    {"do": "transition", "doc": "c3", "transition": "pay", "as": "root", "expect": {"code": "guard_false"}}
+  ]
+}

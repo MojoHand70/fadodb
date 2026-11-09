@@ -185,13 +185,14 @@ func valueOut(v formula.Value) any {
 	return formula.Render(v)
 }
 
-// Get reads the current version of a document.
+// Get reads the current version of a document, projected for the
+// principal (ADR-0041).
 func (s *Store) Get(ctx context.Context, class, id string, opts ...Option) (*Document, error) {
 	c, e := s.class(class)
 	if e != nil {
 		return nil, e
 	}
-	_ = apply(opts)
+	o := apply(opts)
 	row, err := c.scanRow(c.r.getCurrent.QueryRowContext(ctx, id), false)
 	if err != nil {
 		if err == sql.ErrNoRows {
@@ -199,14 +200,28 @@ func (s *Store) Get(ctx context.Context, class, id string, opts ...Option) (*Doc
 		}
 		return nil, storageErr("read the document", err)
 	}
-	if c, row, err = s.underVersion(ctx, c, row, false); err != nil {
-		return nil, err
-	}
-	kids, err := c.loadChildren(ctx, id, row.version, nil, false)
+	vc, row, err := s.underVersion(ctx, c, row, false)
 	if err != nil {
 		return nil, err
 	}
-	return c.document(row, kids), nil
+	kids, err := vc.loadChildren(ctx, id, row.version, nil, false)
+	if err != nil {
+		return nil, err
+	}
+	d := vc.document(row, kids)
+	s.projectRead(c, vc, row, d, o.principal)
+	return d, nil
+}
+
+// projectRead projects a document on a read path with a borrowed
+// evaluator (ADR-0041).
+func (s *Store) projectRead(c, vc *class, row *docRow, d *Document, p Principal) {
+	if c.rights == nil || p.Admin {
+		return
+	}
+	ev := s.reader()
+	s.project(ev, c, vc, row, d, p, s.now().Unix())
+	s.release(ev)
 }
 
 // underVersion returns the class that computed a row and the row read
@@ -233,24 +248,38 @@ func (s *Store) underVersion(ctx context.Context, c *class, row *docRow, history
 	return old, row, nil
 }
 
-// Version reads one committed version of a document from its history.
+// Version reads one committed version of a document from its history,
+// projected for the principal under the state and the values it had
+// (ADR-0041).
 func (s *Store) Version(ctx context.Context, class, id string, version int64, opts ...Option) (*HistoryRow, error) {
 	c, e := s.class(class)
 	if e != nil {
 		return nil, e
 	}
-	_ = apply(opts)
+	o := apply(opts)
+	vc, row, err := s.version(ctx, c, id, version)
+	if err != nil {
+		return nil, err
+	}
+	h, err := vc.historyRow(ctx, row)
+	if err != nil {
+		return nil, err
+	}
+	s.projectRead(c, vc, row, &h.Document, o.principal)
+	return h, nil
+}
+
+// version reads one history row of a document under the class version
+// that computed it, through the pool.
+func (s *Store) version(ctx context.Context, c *class, id string, version int64) (*class, *docRow, error) {
 	row, err := c.scanRow(c.r.getVersion.QueryRowContext(ctx, id, version), true)
 	if err != nil {
 		if err == sql.ErrNoRows {
-			return nil, errf(CodeUnknownDocument, "", "no version %d of document %s of class %s", version, id, c.cls.Name)
+			return nil, nil, errf(CodeUnknownDocument, "", "no version %d of document %s of class %s", version, id, c.cls.Name)
 		}
-		return nil, storageErr("read the version", err)
+		return nil, nil, storageErr("read the version", err)
 	}
-	if c, row, err = s.underVersion(ctx, c, row, true); err != nil {
-		return nil, err
-	}
-	return c.historyRow(ctx, row)
+	return s.underVersion(ctx, c, row, true)
 }
 
 func (c *class) historyRow(ctx context.Context, row *docRow) (*HistoryRow, error) {
@@ -261,14 +290,15 @@ func (c *class) historyRow(ctx context.Context, row *docRow) (*HistoryRow, error
 	return &HistoryRow{Document: *c.document(row, kids), ValidFrom: row.validFrom, ValidTo: row.validTo, ActorID: row.actor, EventID: row.eventID}, nil
 }
 
-// History reads every committed version of a document, oldest first. A
-// deleted document keeps its history.
+// History reads every committed version of a document, oldest first,
+// each projected for the principal under its own state and values
+// (ADR-0041). A deleted document keeps its history.
 func (s *Store) History(ctx context.Context, class, id string, opts ...Option) ([]*HistoryRow, error) {
 	c, e := s.class(class)
 	if e != nil {
 		return nil, e
 	}
-	_ = apply(opts)
+	o := apply(opts)
 	rows, err := c.r.listHistory.QueryContext(ctx, id)
 	if err != nil {
 		return nil, storageErr("read the history", err)
@@ -286,6 +316,9 @@ func (s *Store) History(ctx context.Context, class, id string, opts ...Option) (
 	if err := rows.Err(); err != nil {
 		return nil, storageErr("read the history", err)
 	}
+	ev := s.reader()
+	defer s.release(ev)
+	now := s.now().Unix()
 	out := make([]*HistoryRow, 0, len(raw))
 	for _, row := range raw {
 		vc, row, err := s.underVersion(ctx, c, row, true)
@@ -296,6 +329,7 @@ func (s *Store) History(ctx context.Context, class, id string, opts ...Option) (
 		if err != nil {
 			return nil, err
 		}
+		s.project(ev, c, vc, row, &h.Document, o.principal, now)
 		out = append(out, h)
 	}
 	return out, nil

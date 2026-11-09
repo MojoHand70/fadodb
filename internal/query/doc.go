@@ -20,6 +20,11 @@
 // allowed; reads of the physical tables, writes, schema changes, pragmas
 // and attachments are refused.
 //
-// Access rules and field rights (Phases 5) are not applied yet: a filter
-// and a SQL statement see every row and every column.
+// The read rights of ADR-0028 are compiled into a filter for its
+// principal (ADR-0041): a variable the where or the order names matches
+// and sorts only in the rows whose state lets the principal read it, and
+// a variable the principal may read in no state refuses the filter with
+// forbidden. The class-level access rules, the row predicates of
+// ADR-0010, wait for Phase 5; a SQL statement sees every row and every
+// column, as ADR-0028 decided for the views.
 package query

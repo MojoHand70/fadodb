@@ -112,6 +112,10 @@ const (
 	// CodeTooManyTransitions: more than eight eventless transitions fired
 	// after one command (ADR-0008).
 	CodeTooManyTransitions = "too_many_transitions"
+	// CodeForbidden: the principal may not set the variable in the
+	// document's state, may not take the transition, or may read the
+	// variable a filter names in no state at all (ADR-0041).
+	CodeForbidden = "forbidden"
 )
 
 func errf(code, variable, format string, args ...any) *Error {

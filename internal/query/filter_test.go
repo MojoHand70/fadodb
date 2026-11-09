@@ -1,6 +1,7 @@
 package query
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
@@ -18,7 +19,7 @@ func compile(t *testing.T, f Filter) (*Plan, error) {
 	if len(diags) > 0 {
 		t.Fatal(diags)
 	}
-	return Compile(f, cls, nil)
+	return Compile(f, cls, nil, Principal{})
 }
 
 func TestCompile_Prefilter(t *testing.T) {
@@ -105,5 +106,96 @@ func TestIsPhysical(t *testing.T) {
 		if IsPhysical(name) != want {
 			t.Errorf("IsPhysical(%s) = %v", name, !want)
 		}
+	}
+}
+
+// The read rights of ADR-0041 compile into the predicate for the
+// principal: a CASE over the state column with the resolved rule of each
+// state, a group list as a literal, a formula through the generator; a
+// variable readable in every state adds nothing, one readable in no
+// state refuses the filter.
+func TestCompile_ReadRights(t *testing.T) {
+	cls, diags := model.Define([]byte(`{"name": "Ticket", "variables": {
+	  "owner": {"type": "text"}, "note": {"type": "text"}, "secret": {"type": "text"}, "amount": {"type": "number"}},
+	  "states": {"initial": "open", "list": ["open", "review"]},
+	  "rights": {"*": {"secret": {"read": ["finance"]}}, "review": {"note": {"read": "owner = USER() OR INGROUP(\"finance\")"}}}}`), nil)
+	if len(diags) > 0 {
+		t.Fatal(diags)
+	}
+	alice := Principal{ID: "alice", Groups: []string{"sales"}}
+	fin := Principal{ID: "fin", Groups: []string{"finance"}}
+	admin := Principal{ID: "root", Admin: true}
+	for _, tc := range []struct {
+		name  string
+		f     Filter
+		p     Principal
+		want  string // a fragment the WHERE must contain, or "" for no rights predicate
+		never bool   // the filter is refused with forbidden
+	}{
+		{"no right on the variable", Filter{Class: "Ticket", Where: `amount > 1`}, alice, "", false},
+		{"a group list the principal fails in every state", Filter{Class: "Ticket", Where: `secret = "x"`}, alice, "", true},
+		{"a group list the principal is in", Filter{Class: "Ticket", Where: `secret = "x"`}, fin, "", false},
+		{"a formula in one state", Filter{Class: "Ticket", Where: `note = "n"`}, alice, `(CASE "state" WHEN 'open' THEN (1) WHEN 'review' THEN (`, false},
+		{"the formula binds the principal", Filter{Class: "Ticket", Where: `note = "n"`}, alice, `:user`, false},
+		{"order alone compiles the right", Filter{Class: "Ticket", Order: []string{"-note"}}, alice, `CASE "state"`, false},
+		{"an administrator reads everything", Filter{Class: "Ticket", Where: `secret = "x"`}, admin, "", false},
+		{"nobody is refused where every state needs a group", Filter{Class: "Ticket", Order: []string{"secret"}}, Principal{}, "", true},
+	} {
+		plan, err := Compile(tc.f, cls, nil, tc.p)
+		if tc.never {
+			var qe *Error
+			if err == nil || !errorsAs(err, &qe) || qe.Code != CodeForbidden || qe.Variable != "secret" {
+				t.Errorf("%s: want forbidden naming secret, got %v", tc.name, err)
+			}
+			continue
+		}
+		if err != nil {
+			t.Errorf("%s: %v", tc.name, err)
+			continue
+		}
+		switch {
+		case tc.want == "" && strings.Contains(plan.Where, "CASE"):
+			t.Errorf("%s: no rights predicate expected, got %s", tc.name, plan.Where)
+		case tc.want != "" && !strings.Contains(plan.Where, tc.want):
+			t.Errorf("%s: want %q in %s", tc.name, tc.want, plan.Where)
+		}
+	}
+}
+
+func errorsAs(err error, target **Error) bool {
+	e, ok := err.(*Error)
+	if ok {
+		*target = e
+	}
+	return ok
+}
+
+// BenchmarkCompile is the compiler alone on the indexed equality of
+// BenchmarkFilter, without and with a formula read right on the filtered
+// variable (ADR-0041): the right's share of the filter's budget.
+func BenchmarkCompile(b *testing.B) {
+	const ticket = `{"name": "%s", "variables": {"number": {"type": "text", "index": true}, "priority": {"type": "number"}, "owner": {"type": "text"}}, "states": {"initial": "open", "list": ["open"]}%s}`
+	plain, diags := model.Define([]byte(fmt.Sprintf(ticket, "Ticket", "")), nil)
+	if len(diags) > 0 {
+		b.Fatal(diags)
+	}
+	guarded, diags := model.Define([]byte(fmt.Sprintf(ticket, "Guarded", `, "rights": {"*": {"number": {"read": "INGROUP(\"support\") OR owner = USER()"}}}`)), nil)
+	if len(diags) > 0 {
+		b.Fatal(diags)
+	}
+	support := Principal{ID: "agent", Groups: []string{"support"}}
+	for _, bc := range []struct {
+		name string
+		cls  *model.Class
+	}{{"plain", plain}, {"with a read right", guarded}} {
+		b.Run(bc.name, func(b *testing.B) {
+			f := Filter{Class: bc.cls.Name, Where: `number = "T-0000500"`}
+			b.ReportAllocs()
+			for b.Loop() {
+				if _, err := Compile(f, bc.cls, nil, support); err != nil {
+					b.Fatal(err)
+				}
+			}
+		})
 	}
 }

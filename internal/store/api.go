@@ -26,8 +26,9 @@ type Principal struct {
 type Values map[string]any
 
 // Document is a document at one version: the system variables of
-// ADR-0013 and the declared variables under Values, every variable
-// present, blank as nil.
+// ADR-0013 and the declared variables under Values, blank as nil. Every
+// variable the principal may read in the document's state is present and
+// a hidden one absent (ADR-0041).
 type Document struct {
 	Class   string `json:"class"`
 	ID      string `json:"id"`
@@ -87,7 +88,8 @@ const (
 // TransitionInfo is one named transition leaving a document's state, as
 // Transitions and Preview list them (ADR-0040): its name and target,
 // whether the principal may take it now and, when not, the code that
-// says why, guard_false today and forbidden with the access rules, with
+// says why, forbidden when its access rule is not TRUE for the principal
+// (ADR-0041) and guard_false when its guard is not, with the rule's or
 // the guard's error when it errored.
 type TransitionInfo struct {
 	Name    string `json:"name"`
@@ -99,9 +101,10 @@ type TransitionInfo struct {
 
 // Preview is what a commit would do, without having done it (ADR-0025):
 // the document as it would be, and the error of every variable whose
-// formula failed, each with its code; for a class with states, the states
-// the command visited, the state before first, and the named transitions
-// leaving the resulting state (ADR-0040). Rules arrive with Phase 4.
+// formula failed or whose value the principal may not set, each with its
+// code; for a class with states, the states the command visited, the
+// state before first, and the named transitions leaving the resulting
+// state (ADR-0040). Rules arrive with Phase 4.
 type Preview struct {
 	Document    *Document        `json:"document"`
 	Errors      []*Error         `json:"errors,omitempty"`

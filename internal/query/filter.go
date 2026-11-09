@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/MojoHand70/fadodb/internal/formula"
 	"github.com/MojoHand70/fadodb/internal/model"
@@ -51,15 +52,26 @@ type Plan struct {
 	Prog *formula.Program
 }
 
+// Principal is who a filter runs for (ADR-0041): the id and the groups
+// its read rights are compiled with, and whether it is an administrator,
+// who reads everything.
+type Principal struct {
+	ID     string
+	Groups []string
+	Admin  bool
+}
+
 // Error is a refusal of a filter: a code of the store's list, the element
-// of the filter it is about, the byte offset inside where when the
-// finding is in the formula, a message and a hint.
+// of the filter it is about, the variable when the finding is about one,
+// the byte offset inside where when the finding is in the formula, a
+// message and a hint.
 type Error struct {
-	Code    string
-	Element string
-	Pos     int
-	Message string
-	Hint    string
+	Code     string
+	Element  string
+	Variable string
+	Pos      int
+	Message  string
+	Hint     string
 }
 
 func (e *Error) Error() string {
@@ -80,6 +92,9 @@ const (
 	CodeNotAllowed      = "not_allowed"
 	CodeUnknownVariable = "unknown_variable"
 	CodeBadValue        = "bad_value"
+	// CodeForbidden: the where or the order names a variable the
+	// principal may read in no state at all (ADR-0041).
+	CodeForbidden = "forbidden"
 )
 
 // systemColumns are the columns every document has, as the filter scope
@@ -104,8 +119,10 @@ type column struct {
 // Compile binds a filter against a class and translates it for SQLite.
 // sources are the explicit tables the store has, so that a lookup in the
 // where is refused as a lookup and not as an unknown name; nil is none.
-// The context parameters of the dialect are bound by the caller.
-func Compile(f Filter, cls *model.Class, sources formula.Sources) (*Plan, error) {
+// The read rights of the variables the where and the order name are
+// compiled into the predicate for the principal (ADR-0041). The context
+// parameters of the dialect are bound by the caller.
+func Compile(f Filter, cls *model.Class, sources formula.Sources, p Principal) (*Plan, error) {
 	cols := map[string]column{}
 	vars := make([]formula.Variable, 0, len(systemColumns)+len(cls.Variables))
 	for _, sc := range systemColumns {
@@ -213,6 +230,64 @@ func Compile(f Filter, cls *model.Class, sources formula.Sources) (*Plan, error)
 		order = append(order, `"id"`)
 	}
 	plan.Order = strings.Join(order, ", ")
+	// The read rights (ADR-0041): a variable the where or the order names
+	// matches and sorts only in the rows whose state lets the principal
+	// read it, so the engine never compares a value the caller may not
+	// see. The right is one predicate per variable, conjoined with the
+	// rest; a variable readable in no state at all refuses the filter.
+	if cls.Rights != nil && !p.Admin && cls.States != nil {
+		rights := rightsPlanFor(cls, d, quoted)
+		var named []*varRights
+		var preds []string
+		consider := func(name string, order int) *Error {
+			if j := strings.IndexByte(name, '.'); j >= 0 {
+				name = name[:j]
+			}
+			for _, vr := range rights.vars {
+				if !strings.EqualFold(vr.v.Name, name) {
+					continue
+				}
+				for _, seen := range named {
+					if seen == vr {
+						return nil
+					}
+				}
+				named = append(named, vr)
+				pred, err := vr.predicate(p, d)
+				if err != nil {
+					err.Element = "where"
+					if order >= 0 {
+						err.Element = fmt.Sprintf("order/%d", order)
+					}
+					return err
+				}
+				if pred != "" {
+					preds = append(preds, pred)
+				}
+			}
+			return nil
+		}
+		if plan.Prog != nil {
+			for _, sl := range plan.Prog.Slots {
+				if err := consider(sl.Name, -1); err != nil {
+					return nil, err
+				}
+			}
+		}
+		for i, o := range f.Order {
+			if err := consider(strings.TrimSpace(strings.TrimLeft(strings.TrimSpace(o), "-+")), i); err != nil {
+				return nil, err
+			}
+		}
+		if len(preds) > 0 {
+			conj := strings.Join(preds, " AND ")
+			if plan.Where == "" {
+				plan.Where = conj
+			} else {
+				plan.Where += " AND " + conj
+			}
+		}
+	}
 	// Fields: variables by declared name.
 	if len(f.Fields) > 0 {
 		plan.Fields = make([]string, 0, len(f.Fields))
@@ -230,6 +305,144 @@ func Compile(f Filter, cls *model.Class, sources formula.Sources) (*Plan, error)
 		}
 	}
 	return plan, nil
+}
+
+// rightsPlans caches, per class, the read rights as the compiler needs
+// them (ADR-0041): for every variable with a read rule in some state, per
+// state the group list or the SQL of the formula, and the predicate text
+// ready when every rule is a formula, since it then depends on the
+// principal through parameters alone. A class is compiled once and lives
+// as long as the store holds it; Forget drops a class the store let go.
+var rightsPlans sync.Map // *model.Class → *rightsPlan
+
+type rightsPlan struct {
+	vars []*varRights // the variables with a read rule, in declaration order
+}
+
+// varRights is the read right of one variable over the class's states.
+type varRights struct {
+	v      *model.Variable
+	states []stateRight
+	// decided is set when the predicate needs no principal: text is then
+	// the whole of it, or "" when every state lets everyone read.
+	decided bool
+	text    string
+	err     error
+}
+
+// stateRight is the rule in one state: a group list, a formula's
+// condition, or neither for no rule.
+type stateRight struct {
+	state  string
+	groups []string
+	sql    string
+}
+
+func rightsPlanFor(cls *model.Class, d formula.Dialect, column func(formula.Slot) string) *rightsPlan {
+	if p, ok := rightsPlans.Load(cls); ok {
+		return p.(*rightsPlan)
+	}
+	plan := &rightsPlan{}
+	for _, v := range cls.Variables {
+		vr := &varRights{v: v}
+		any, formulas := false, true
+		for _, st := range cls.States.List {
+			sr := stateRight{state: st}
+			switch rule := cls.ReadRule(st, v.Name); {
+			case rule == nil:
+			case rule.Groups != nil:
+				sr.groups, any, formulas = rule.Groups, true, false
+			default:
+				any = true
+				stmt, err := formula.GenerateSQLBound(rule.Formula, d, formula.SQLBinding{Column: column, Row: quoteIdent})
+				if err != nil {
+					vr.err = fmt.Errorf("the read right of %s in %s: %w", v.Name, st, err)
+					break
+				}
+				sr.sql = d.Cond(formula.SQLExpr{Val: stmt.Value, Kind: formula.KindBool})
+				if stmt.Error != "" {
+					sr.sql = "(" + stmt.Error + ") IS NULL AND " + sr.sql
+				}
+			}
+			vr.states = append(vr.states, sr)
+		}
+		if !any {
+			continue
+		}
+		if formulas && vr.err == nil {
+			vr.text, _ = vr.compose(Principal{}, d)
+			vr.decided = true
+		}
+		plan.vars = append(plan.vars, vr)
+	}
+	rightsPlans.Store(cls, plan)
+	return plan
+}
+
+// Forget drops the cached rights of a class the store no longer holds.
+func Forget(cls *model.Class) { rightsPlans.Delete(cls) }
+
+// predicate is the condition over the row for the principal: "" when
+// every state lets the principal read the variable, forbidden when none
+// does, which is decided without a row.
+func (vr *varRights) predicate(p Principal, d formula.Dialect) (string, *Error) {
+	if vr.err != nil {
+		return "", &Error{Code: CodeBadFormula, Variable: vr.v.Name, Pos: -1, Message: vr.err.Error()}
+	}
+	if vr.decided {
+		return vr.text, nil
+	}
+	text, readable := vr.compose(p, d)
+	if !readable {
+		who := p.ID
+		if who == "" {
+			who = "a call without a principal"
+		}
+		return "", &Error{Code: CodeForbidden, Variable: vr.v.Name, Pos: -1, Message: who + " may read " + vr.v.Name + " in no state",
+			Hint: "leave the variable out of where and order, or run the filter as a principal who may read it"}
+	}
+	return text, nil
+}
+
+// compose writes the predicate as a CASE over the state column, the rule
+// of each state resolved for the principal: a group list the literal
+// test of the principal's groups, a formula its condition. It returns ""
+// when every state reads TRUE, and readable false when none can.
+func (vr *varRights) compose(p Principal, d formula.Dialect) (text string, readable bool) {
+	var b strings.Builder
+	allTrue := true
+	for _, sr := range vr.states {
+		cond := d.True()
+		switch {
+		case sr.groups != nil:
+			if !inGroups(sr.groups, p.Groups) {
+				cond = d.False()
+			}
+		case sr.sql != "":
+			cond = sr.sql
+		}
+		allTrue = allTrue && cond == d.True()
+		readable = readable || cond != d.False()
+		b.WriteString(" WHEN " + d.TextLit(sr.state) + " THEN (" + cond + ")")
+	}
+	if allTrue {
+		return "", true
+	}
+	if !readable {
+		return "", false
+	}
+	return `(CASE "state"` + b.String() + " ELSE " + d.False() + " END)", true
+}
+
+func inGroups(list, groups []string) bool {
+	for _, g := range list {
+		for _, h := range groups {
+			if g == h {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func formulaError(err error) *Error {

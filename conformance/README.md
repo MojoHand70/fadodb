@@ -82,10 +82,11 @@ Numbers compare exactly on every target.
 
 ## Statechart cases: `statechart/*.json`
 
-The specification of the statechart's behaviour (ADR-0040): a class, a
-script of commands with their principals, and the expected outcome of
-each. The store runs every suite in CI; the server and the browser VM
-run them with their phases.
+The specification of the statechart's behaviour (ADR-0040), and of the
+rights and transition rules enforced around it (ADR-0041, the `rights`
+suite): a class, a script of commands with their principals, and the
+expected outcome of each. The store runs every suite in CI; the server
+and the browser VM run them with their phases.
 
 ```json
 {
@@ -107,21 +108,25 @@ run them with their phases.
   names the principals steps run as, each with `id`, `groups` and
   `admin`. A step without `as` runs as nobody.
 - A step's `do` is `create`, `set`, `transition`, `preview`,
-  `transitions` or `visits`. `values` are the assignments, `transition`
-  the name of the transition a `transition` or `preview` step takes,
-  `key` the command's idempotency key. On a `create`, `doc` labels the
-  document made; on another step it names the document acted on, the
-  last one created when absent.
+  `transitions`, `visits`, `get`, `query` or `count`. `values` are the
+  assignments, `transition` the name of the transition a `transition` or
+  `preview` step takes, `key` the command's idempotency key; `where`,
+  `order` and `fields` are the filter of a `query` or a `count`. On a
+  `create`, `doc` labels the document made; on another step it names the
+  document acted on, the last one created when absent.
 - `expect` is checked after the step. `code` is the refusal expected,
   and nothing else is then checked. Otherwise `state` and `version` are
   the document's after the step, `values` a subset of its values in the
-  notation of the evaluation cases, `path` the states a preview visited
+  notation of the evaluation cases, `absent` and `present` variables that
+  must be missing from or found in the values of the document, or of
+  every document a query returned, `path` the states a preview visited
   with the state before first, `transitions` the listing by name, target,
   `enabled` and `code`, `history` the states of every history row of the
   document so far, `events` the kind of every event so far with a
-  transition written `transition:name`, and `visits` the rows of the
+  transition written `transition:name`, `visits` the rows of the
   `_states` view as `[state, entry_version, exit_version]`, the exit
-  `null` while the visit is current.
+  `null` while the visit is current, `docs` the labels of the documents a
+  query returned in order, and `count` the count.
 
 ## Binding cases: `binding/*.json`
 

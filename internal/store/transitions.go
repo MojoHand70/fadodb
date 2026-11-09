@@ -35,11 +35,13 @@ func (s *Store) Transition(ctx context.Context, class, id, name string, values V
 
 // Transitions lists the named transitions leaving the document's state,
 // in definition order, each with whether the principal may take it now
-// and, when not, why (ADR-0040): guard_false, with the guard's error when
-// it errored. It evaluates the guards over the stored document and writes
-// nothing. Eventless transitions are not listed. The guards run on the
-// writer's VM, since a guard may look a table up through the writer's
-// statements, so the listing takes the writer's turn; it is short.
+// and, when not, why (ADR-0040, ADR-0041): forbidden when the
+// transition's access rule is not TRUE for the principal, else
+// guard_false, with the rule's or the guard's error when it errored. It
+// evaluates them over the stored document and writes nothing. Eventless
+// transitions are not listed. The rules and guards run on the writer's
+// VM, since they may look a table up through the writer's statements, so
+// the listing takes the writer's turn; it is short.
 func (s *Store) Transitions(ctx context.Context, class, id string, opts ...Option) ([]TransitionInfo, error) {
 	c, e := s.class(class)
 	if e != nil {
@@ -62,16 +64,25 @@ func (s *Store) Transitions(ctx context.Context, class, id string, opts ...Optio
 		return []TransitionInfo{}, nil
 	}
 	evalCtx := &formula.Context{User: o.principal.ID, Groups: o.principal.Groups, Now: s.now().Unix(), State: row.state, ID: row.id}
-	return s.listTransitions(c, row, evalCtx), nil
+	return s.listTransitions(c, row, evalCtx, o.principal), nil
 }
 
 // listTransitions is the listing of Transitions and Preview over a row in
-// its state, which evalCtx.State names.
-func (s *Store) listTransitions(c *class, row *docRow, evalCtx *formula.Context) []TransitionInfo {
+// its state, which evalCtx.State names, for the principal: the access
+// rule first, then the guard.
+func (s *Store) listTransitions(c *class, row *docRow, evalCtx *formula.Context, p Principal) []TransitionInfo {
 	leaving := state.Leaving(c.cls, row.state)
 	out := make([]TransitionInfo, 0, len(leaving))
 	for _, t := range leaving {
 		info := TransitionInfo{Name: t.Name, To: t.To}
+		if ok, err := s.permitted(&s.wev, c, t, row, evalCtx, p); !ok {
+			info.Code = CodeForbidden
+			if err != nil {
+				info.Message = "the rule failed: " + guardFailure(err)
+			}
+			out = append(out, info)
+			continue
+		}
 		held, err := s.holds(c, t, row, evalCtx)
 		switch {
 		case held:

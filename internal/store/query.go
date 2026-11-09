@@ -28,14 +28,18 @@ type Rows struct {
 const MaxSQLRows = 10000
 
 // Query reads the documents of a class that match a filter, in its order,
-// at most its limit, with the fields it names (ADR-0038).
+// at most its limit, with the fields it names (ADR-0038), each projected
+// for the principal (ADR-0041): a variable the principal may not read in
+// a row's state is absent from that document, and a variable the where
+// or the order names matches and sorts only where the principal may read
+// it.
 func (s *Store) Query(ctx context.Context, f Filter, opts ...Option) ([]*Document, error) {
 	c, e := s.class(f.Class)
 	if e != nil {
 		return nil, e
 	}
-	_ = apply(opts)
-	plan, err := query.Compile(f, c.cls, s.sources())
+	o := apply(opts)
+	plan, err := query.Compile(f, c.cls, s.sources(), caller(o))
 	if err != nil {
 		return nil, filterErr(err)
 	}
@@ -46,7 +50,12 @@ func (s *Store) Query(ctx context.Context, f Filter, opts ...Option) ([]*Documen
 	}
 	text += " ORDER BY " + plan.Order + " LIMIT " + fmt.Sprint(plan.Limit) + " OFFSET " + fmt.Sprint(plan.Offset)
 	args := append(plan.Args, contextArgs(opts)...)
-	rows, err := s.db.QueryContext(ctx, text, args...)
+	st, err := s.filters.acquire(ctx, s.db, text)
+	if err != nil {
+		return nil, storageErr("prepare the query of "+c.cls.Name, err)
+	}
+	defer s.filters.release(st)
+	rows, err := st.stmt.QueryContext(ctx, args...)
 	if err != nil {
 		return nil, storageErr("query "+c.cls.Name, err)
 	}
@@ -85,8 +94,12 @@ func (s *Store) Query(ctx context.Context, f Filter, opts ...Option) ([]*Documen
 		}
 		kids[ch] = byDoc
 	}
+	ev := s.reader()
+	defer s.release(ev)
+	now := s.now().Unix()
 	docs := make([]*Document, len(found))
 	for i, row := range found {
+		var d *Document
 		if row.classVersion != c.cls.Version && row.classVersion != 0 {
 			// A document computed by an older version is read under it.
 			vc, vrow, err := s.underVersion(ctx, c, row, false)
@@ -97,34 +110,35 @@ func (s *Store) Query(ctx context.Context, f Filter, opts ...Option) ([]*Documen
 			if err != nil {
 				return nil, err
 			}
-			d := vc.document(vrow, vkids)
-			if plan.Fields != nil {
-				values := make(Values, len(plan.Fields))
-				for _, f := range plan.Fields {
-					if v, ok := d.Values[f]; ok {
-						values[f] = v
-					}
-				}
-				d.Values = values
+			d = vc.document(vrow, vkids)
+			s.project(ev, c, vc, vrow, d, o.principal, now)
+		} else {
+			have := map[*child][]childRow{}
+			for ch := range wanted {
+				have[ch] = kids[ch][row.id]
 			}
-			docs[i] = d
-			continue
+			d = c.document(row, have)
+			s.project(ev, c, c, row, d, o.principal, now)
 		}
-		have := map[*child][]childRow{}
-		for ch := range wanted {
-			have[ch] = kids[ch][row.id]
-		}
-		d := c.document(row, have)
 		if plan.Fields != nil {
+			// A hidden variable is absent from the fields as from the
+			// document, with no refusal.
 			values := make(Values, len(plan.Fields))
 			for _, f := range plan.Fields {
-				values[f] = d.Values[f]
+				if v, ok := d.Values[f]; ok {
+					values[f] = v
+				}
 			}
 			d.Values = values
 		}
 		docs[i] = d
 	}
 	return docs, nil
+}
+
+// caller is the principal as the filter compiler sees it.
+func caller(o options) query.Principal {
+	return query.Principal{ID: o.principal.ID, Groups: o.principal.Groups, Admin: o.principal.Admin}
 }
 
 // Count counts the documents of a class that match a filter's where.
@@ -134,7 +148,7 @@ func (s *Store) Count(ctx context.Context, f Filter, opts ...Option) (int64, err
 		return 0, e
 	}
 	f.Order, f.Fields, f.Limit, f.Offset = nil, nil, 0, 0
-	plan, err := query.Compile(f, c.cls, s.sources())
+	plan, err := query.Compile(f, c.cls, s.sources(), caller(apply(opts)))
 	if err != nil {
 		return 0, filterErr(err)
 	}
@@ -142,8 +156,13 @@ func (s *Store) Count(ctx context.Context, f Filter, opts ...Option) (int64, err
 	if plan.Where != "" {
 		text += " WHERE " + plan.Where
 	}
+	st, err := s.filters.acquire(ctx, s.db, text)
+	if err != nil {
+		return 0, storageErr("prepare the count of "+c.cls.Name, err)
+	}
+	defer s.filters.release(st)
 	var n int64
-	if err := s.db.QueryRowContext(ctx, text, append(plan.Args, contextArgs(opts)...)...).Scan(&n); err != nil {
+	if err := st.stmt.QueryRowContext(ctx, append(plan.Args, contextArgs(opts)...)...).Scan(&n); err != nil {
 		return 0, storageErr("count "+c.cls.Name, err)
 	}
 	return n, nil
@@ -204,7 +223,11 @@ func contextArgs(opts []Option) []any {
 func filterErr(err error) error {
 	var qe *query.Error
 	if errors.As(err, &qe) {
-		return &Error{Code: qe.Code, Variable: qe.Element, Pos: qe.Pos, Message: qe.Message, Hint: qe.Hint}
+		variable := qe.Element
+		if qe.Variable != "" {
+			variable = qe.Variable
+		}
+		return &Error{Code: qe.Code, Variable: variable, Pos: qe.Pos, Message: qe.Message, Hint: qe.Hint}
 	}
 	return err
 }

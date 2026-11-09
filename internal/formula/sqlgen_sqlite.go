@@ -2,7 +2,6 @@ package formula
 
 import (
 	"database/sql"
-	"encoding/json"
 	"fmt"
 	"strconv"
 	"strings"
@@ -92,16 +91,28 @@ func (SQLite) ColumnType(k Kind) string {
 }
 
 // ContextArgs implements Dialect: now is always bound, user is text or
-// NULL, groups is a JSON array or NULL.
+// NULL, groups is the text groupsArg makes or NULL.
 func (SQLite) ContextArgs(ctx *Context) []any {
 	now, user, state, id, groups := contextValues(ctx)
-	var g any
-	if groups != nil {
-		b, _ := json.Marshal(groups)
-		g = string(b)
-	}
-	return []any{sql.Named("now", now), sql.Named("user", user), sql.Named("groups", g), sql.Named("state", state), sql.Named("id", id)}
+	return []any{sql.Named("now", now), sql.Named("user", user), sql.Named("groups", groupsArg(groups)), sql.Named("state", state), sql.Named("id", id)}
 }
+
+// groupsArg binds the principal's groups as one text, each group between
+// unit separators, char(31), so that INGROUP is an instr over it: a plain
+// function call where a JSON array needs a json_each subquery, which
+// costs a microsecond per statement run. nil groups bind NULL; an empty
+// list binds one separator, which no group name is found in.
+func groupsArg(groups []string) any {
+	if groups == nil {
+		return nil
+	}
+	if len(groups) == 0 {
+		return groupSep
+	}
+	return groupSep + strings.Join(groups, groupSep) + groupSep
+}
+
+const groupSep = "\x1f"
 
 // ContextArgsFor appends to dst the context parameters a statement
 // uses, by name as SQL.Params lists them, bound as ContextArgs binds them.
@@ -124,9 +135,8 @@ func (d SQLite) ContextArgsFor(ctx *Context, names []string, dst []any) []any {
 			dst = append(dst, sql.Named("id", textOrNil(ctx, func(c *Context) string { return c.ID })))
 		case "groups":
 			var g any
-			if ctx != nil && ctx.Groups != nil {
-				b, _ := json.Marshal(ctx.Groups)
-				g = string(b)
+			if ctx != nil {
+				g = groupsArg(ctx.Groups)
 			}
 			dst = append(dst, sql.Named("groups", g))
 		}
@@ -802,7 +812,10 @@ func (d SQLite) Call(name string, args []SQLExpr, params *Params) (SQLExpr, erro
 	case "ID":
 		return SQLExpr{Val: params.Use("id"), Kind: KindText}, nil
 	case "INGROUP":
-		return SQLExpr{Val: "EXISTS (SELECT 1 FROM json_each(" + params.Use("groups") + ") WHERE json_each.value = " + d.Text(args[0]) + ")", Kind: KindBool, Sure: true}, nil
+		// The groups are bound as one text with char(31) around each
+		// group (groupsArg); a group is in it when the name between two
+		// separators is a substring. NULL groups are no groups.
+		return SQLExpr{Val: "COALESCE(instr(" + params.Use("groups") + ", char(31) || " + d.Text(args[0]) + " || char(31)) > 0, 0)", Kind: KindBool, Sure: true}, nil
 	case "LEFT":
 		n := intArg(d.Num(args[1]))
 		return SQLExpr{Val: "substr(" + d.Text(args[0]) + ", 1, " + n + ")", Err: countErr(n), Kind: KindText, Sure: true}, nil

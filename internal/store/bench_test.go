@@ -189,35 +189,49 @@ func BenchmarkFilter(b *testing.B) {
 	}
 	defer s.Close()
 	ctx := context.Background()
-	if _, err := s.DefineClass(ctx, []byte(`{"name": "Ticket", "variables": {"number": {"type": "text", "index": true}, "priority": {"type": "number"}, "owner": {"type": "text"}}, "states": {"initial": "open", "list": ["open"]}}`)); err != nil {
+	// Ticket has no rights; Guarded is the same class with a formula read
+	// right on the indexed variable, which the filter compiles into its
+	// predicate (ADR-0041), the budget being under 5% on the indexed
+	// filter.
+	const ticket = `{"name": "%s", "variables": {"number": {"type": "text", "index": true}, "priority": {"type": "number"}, "owner": {"type": "text"}}, "states": {"initial": "open", "list": ["open"]}%s}`
+	if _, err := s.DefineClass(ctx, []byte(fmt.Sprintf(ticket, "Ticket", ""))); err != nil {
 		b.Fatal(err)
 	}
+	if _, err := s.DefineClass(ctx, []byte(fmt.Sprintf(ticket, "Guarded", `, "rights": {"*": {"number": {"read": "INGROUP(\"support\") OR owner = USER()"}}}`))); err != nil {
+		b.Fatal(err)
+	}
+	support := As(Principal{ID: "agent", Groups: []string{"support"}})
 	start := time.Now()
-	for i := 0; i < n; i++ {
-		if _, err := s.Create(ctx, "Ticket", Values{"number": fmt.Sprintf("T-%07d", i), "priority": float64(i % 7), "owner": fmt.Sprintf("u%d", i%100)}); err != nil {
-			b.Fatal(err)
+	for _, class := range []string{"Ticket", "Guarded"} {
+		for i := 0; i < n; i++ {
+			if _, err := s.Create(ctx, class, Values{"number": fmt.Sprintf("T-%07d", i), "priority": float64(i % 7), "owner": fmt.Sprintf("u%d", i%100)}); err != nil {
+				b.Fatal(err)
+			}
 		}
 	}
-	b.Logf("%d documents created in %s", n, time.Since(start).Round(time.Millisecond))
+	b.Logf("%d documents of two classes created in %s", 2*n, time.Since(start).Round(time.Millisecond))
 	for _, bc := range []struct {
 		name string
 		f    Filter
+		opts []Option
 	}{
-		{"indexed equality", Filter{Class: "Ticket", Where: fmt.Sprintf("number = \"T-%07d\"", n/2)}},
-		{"indexed range", Filter{Class: "Ticket", Where: fmt.Sprintf("number >= \"T-%07d\" AND number < \"T-%07d\"", n/2, n/2+10), Limit: 10}},
-		{"plain column, first 10", Filter{Class: "Ticket", Where: "priority = 3 AND owner = \"u7\"", Limit: 10}},
-		{"count over a plain column", Filter{Class: "Ticket", Where: "priority = 3"}},
+		{"indexed equality", Filter{Class: "Ticket", Where: fmt.Sprintf("number = \"T-%07d\"", n/2)}, nil},
+		{"indexed range", Filter{Class: "Ticket", Where: fmt.Sprintf("number >= \"T-%07d\" AND number < \"T-%07d\"", n/2, n/2+10), Limit: 10}, nil},
+		{"plain column, first 10", Filter{Class: "Ticket", Where: "priority = 3 AND owner = \"u7\"", Limit: 10}, nil},
+		{"count over a plain column", Filter{Class: "Ticket", Where: "priority = 3"}, nil},
+		{"indexed equality with a read right", Filter{Class: "Guarded", Where: fmt.Sprintf("number = \"T-%07d\"", n/2)}, []Option{support}},
+		{"indexed range with a read right", Filter{Class: "Guarded", Where: fmt.Sprintf("number >= \"T-%07d\" AND number < \"T-%07d\"", n/2, n/2+10), Limit: 10}, []Option{support}},
 	} {
 		b.Run(bc.name, func(b *testing.B) {
 			b.ReportAllocs()
 			for b.Loop() {
 				if strings.HasPrefix(bc.name, "count") {
-					if _, err := s.Count(ctx, bc.f); err != nil {
+					if _, err := s.Count(ctx, bc.f, bc.opts...); err != nil {
 						b.Fatal(err)
 					}
 					continue
 				}
-				docs, err := s.Query(ctx, bc.f)
+				docs, err := s.Query(ctx, bc.f, bc.opts...)
 				if err != nil || len(docs) == 0 {
 					b.Fatalf("%v, %d documents", err, len(docs))
 				}
@@ -430,6 +444,104 @@ func BenchmarkGuardLoop(b *testing.B) {
 			if _, err := s.holds(c, t, row, evalCtx); err != nil {
 				b.Fatal(err)
 			}
+		}
+	}
+}
+
+// fiftyRights is a class of an owner and fifty numbers with a rights cell
+// each: the odd ones a group list, the even ones a formula over the
+// document, read and write alike (ADR-0041).
+func fiftyRights() string {
+	var b strings.Builder
+	b.WriteString(`{"name": "Guarded", "variables": {"owner": {"type": "text", "default": "USER()"}`)
+	for k := 1; k <= 50; k++ {
+		fmt.Fprintf(&b, `, "v%02d": {"type": "number"}`, k)
+	}
+	b.WriteString(`}, "states": {"initial": "open", "list": ["open"]}, "rights": {"*": {`)
+	for k := 1; k <= 50; k++ {
+		if k > 1 {
+			b.WriteString(", ")
+		}
+		if k%2 == 1 {
+			fmt.Fprintf(&b, `"v%02d": {"read": ["sales", "finance"], "write": ["sales"]}`, k)
+		} else {
+			fmt.Fprintf(&b, `"v%02d": {"read": "owner = USER() OR v%02d > 1000", "write": "owner = USER()"}`, k, k)
+		}
+	}
+	b.WriteString(`}}}`)
+	return b.String()
+}
+
+func openGuarded(b *testing.B) (*Store, *class, *docRow) {
+	b.Helper()
+	s, err := Open(filepath.Join(b.TempDir(), "bench.fado"), Options{})
+	if err != nil {
+		b.Fatal(err)
+	}
+	b.Cleanup(func() { s.Close() })
+	ctx := context.Background()
+	if _, err := s.DefineClass(ctx, []byte(fiftyRights())); err != nil {
+		b.Fatal(err)
+	}
+	values := Values{}
+	for k := 1; k <= 50; k++ {
+		values[fmt.Sprintf("v%02d", k)] = float64(k)
+	}
+	doc, err := s.Create(ctx, "Guarded", values, As(alice))
+	if err != nil {
+		b.Fatal(err)
+	}
+	c, _ := s.class("Guarded")
+	row, err := c.scanRow(c.w.selectCurrent.QueryRowContext(ctx, doc.ID), false)
+	if err != nil {
+		b.Fatal(err)
+	}
+	return s, c, row
+}
+
+// BenchmarkProject is the read projection of ADR-0041 over a document of
+// fifty variables with a rights cell each, group lists and formulas
+// alike: the budget of ADR-0028 is 5 µs per document, and the loop must
+// not allocate.
+func BenchmarkProject(b *testing.B) {
+	s, c, row := openGuarded(b)
+	doc := c.document(row, nil)
+	template := make(Values, len(doc.Values))
+	for k, v := range doc.Values {
+		template[k] = v
+	}
+	ev := s.reader()
+	defer s.release(ev)
+	p := Principal{ID: "bob", Groups: []string{"finance"}}
+	now := time.Now().Unix()
+	b.ReportAllocs()
+	b.ResetTimer()
+	for b.Loop() {
+		for k, v := range template {
+			doc.Values[k] = v
+		}
+		s.project(ev, c, c, row, doc, p, now)
+	}
+}
+
+// BenchmarkWriteCheck is the write check of ADR-0041 over a command that
+// sets ten variables, five under a group list and five under a formula:
+// one formula per set variable inside the commit budget, allocating
+// nothing.
+func BenchmarkWriteCheck(b *testing.B) {
+	s, c, row := openGuarded(b)
+	values := Values{}
+	for k := 1; k <= 10; k++ {
+		values[fmt.Sprintf("v%02d", k)] = float64(k)
+	}
+	cmd := command{op: opSet, c: c, values: values, o: options{principal: alice}}
+	evalCtx := &formula.Context{User: "alice", Groups: alice.Groups, Now: time.Now().Unix(), State: row.state, ID: row.id}
+	res := &result{}
+	b.ReportAllocs()
+	b.ResetTimer()
+	for b.Loop() {
+		if err := s.checkWrites(c, &cmd, row, evalCtx, res); err != nil {
+			b.Fatal(err)
 		}
 	}
 }

@@ -34,7 +34,8 @@ type scriptPrincipal struct {
 
 type scriptStep struct {
 	Name string `json:"name,omitempty"`
-	// Do is create, set, transition, preview, transitions or visits.
+	// Do is create, set, transition, preview, transitions, visits, get,
+	// query or count.
 	Do string `json:"do"`
 	// Doc labels the document a create makes, and names the document
 	// another step acts on; the last created document when absent.
@@ -44,6 +45,10 @@ type scriptStep struct {
 	Transition string       `json:"transition,omitempty"`
 	Values     Values       `json:"values,omitempty"`
 	Expect     scriptExpect `json:"expect"`
+	// Where, Order and Fields are the filter of a query or a count.
+	Where  string   `json:"where,omitempty"`
+	Order  []string `json:"order,omitempty"`
+	Fields []string `json:"fields,omitempty"`
 }
 
 type scriptExpect struct {
@@ -65,6 +70,15 @@ type scriptExpect struct {
 	// Visits are the rows of the _states view: state, entry version, exit
 	// version or null.
 	Visits [][]any `json:"visits,omitempty"`
+	// Absent and Present are variables that must be missing from, or
+	// found in, the values of the document, or of every document a query
+	// returned (ADR-0041).
+	Absent  []string `json:"absent,omitempty"`
+	Present []string `json:"present,omitempty"`
+	// Docs are the labels of the documents a query returned, in order;
+	// Count the count.
+	Docs  []string `json:"docs,omitempty"`
+	Count *int64   `json:"count,omitempty"`
 }
 
 func TestStatechartConformance(t *testing.T) {
@@ -121,7 +135,16 @@ func runStatechartSuite(t *testing.T, suite *statechartSuite) {
 		var pv *Preview
 		var infos []TransitionInfo
 		var visitsGot [][]any
+		var found []*Document
+		var count int64
+		filter := Filter{Class: cls.Name, Where: step.Where, Order: step.Order, Fields: step.Fields}
 		switch step.Do {
+		case "get":
+			doc, err = s.Get(ctx, cls.Name, id, opts...)
+		case "query":
+			found, err = s.Query(ctx, filter, opts...)
+		case "count":
+			count, err = s.Count(ctx, filter, opts...)
 		case "create":
 			doc, err = s.Create(ctx, cls.Name, step.Values, opts...)
 			if err == nil {
@@ -169,6 +192,37 @@ func runStatechartSuite(t *testing.T, suite *statechartSuite) {
 					t.Errorf("%s: %s = %s, want %s", name, vname, dump(doc.Values[vname]), raw)
 				}
 			}
+		}
+		for _, d := range append(found, doc) {
+			if d == nil {
+				continue
+			}
+			for _, v := range want.Absent {
+				if _, ok := d.Values[v]; ok {
+					t.Errorf("%s: %s is present in %s, want it absent", name, v, d.ID)
+				}
+			}
+			for _, v := range want.Present {
+				if _, ok := d.Values[v]; !ok {
+					t.Errorf("%s: %s is absent from %s, want it present", name, v, d.ID)
+				}
+			}
+		}
+		if want.Docs != nil {
+			labels := map[string]string{}
+			for label, docID := range docs {
+				labels[docID] = label
+			}
+			got := []string{}
+			for _, d := range found {
+				got = append(got, labels[d.ID])
+			}
+			if !reflect.DeepEqual(got, want.Docs) {
+				t.Errorf("%s: documents %v, want %v", name, got, want.Docs)
+			}
+		}
+		if want.Count != nil && count != *want.Count {
+			t.Errorf("%s: count %d, want %d", name, count, *want.Count)
 		}
 		if want.Path != nil {
 			if pv == nil {

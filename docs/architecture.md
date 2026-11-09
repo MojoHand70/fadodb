@@ -446,6 +446,13 @@ table's index above that; every other condition runs as a statement
   stack, so a formula can never see a row its author could not.
 - `create`, `update`, `delete` and transition rules run in the VM at commit time.
 - Admins bypass rules. Everyone else gets exactly what the rules say.
+- Today the Go API enforces the per-transition rules and the rights table
+  (ADR-0041): a transition's rule and the write rights are evaluated over
+  the stored document before the assignments, every document returned is
+  projected for the principal, and a filter compiles the read right of
+  the variables it names into its predicate. The class-level `read`,
+  `create`, `update` and `delete` rules, their predicates and the change
+  stream arrive with Phase 5. A call without a principal is nobody.
 
 ### Querying
 
@@ -465,8 +472,12 @@ and answers documents in the wire shape; `Count` counts; `SQL` runs one
 physical tables, writes, pragmas and attachments, at most 10,000 rows. A
 filter means what the same expression means in a formula, and beside that
 exact predicate the compiler adds, for each comparison of a column with a
-literal, the comparison on the bare column so that SQLite uses the index.
-Access rules and field rights are not applied until Phase 5.
+literal, the comparison on the bare column so that SQLite uses the index;
+a repeated filter runs a cached prepared statement, so it pays SQLite's
+parse once. The read right of every variable a filter's `where` or `order` names is
+compiled into its predicate for the principal, and the documents come
+back projected (ADR-0041); the class-level access rules are not applied
+until Phase 5, and the SQL endpoint stays row-level.
 
 ### Layouts
 
@@ -702,8 +713,11 @@ package has `Open`, `DefineClass`, `ValidateClass`, `DefineSchema`,
 `Transition`, `Transitions`, `Delete`, `Migrate`, `Get`, `Version`,
 `History`, `Events`, `Query`, `Count`, `SQL`, `PutBlob`, `OpenFile`,
 `OpenBlob`, `CheckBlobs`, and `Preview` and `PreviewDraft` of a create, a
-set or a transition; every refusal is a `fado.Error` with a stable code
-and the variable it is about, or the `Diagnostics` of a definition.
+set or a transition. The principal decides what a call may set and sees
+(ADR-0041): a right or a transition rule that is not TRUE for it refuses
+with `forbidden`, and every document comes back projected. Every refusal
+is a `fado.Error` with a stable code and the variable it is about, or the
+`Diagnostics` of a definition.
 Layouts, refresh, `QUERY`, subscriptions and executors arrive with their
 phases.
 

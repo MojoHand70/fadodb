@@ -331,3 +331,62 @@ func TestTypeFits(t *testing.T) {
 		}
 	}
 }
+
+// The rights table resolves by the named state's cell for the variable,
+// then that state's "*", then the "*" state's cell, then its "*"; the
+// first cell declaring the rule decides (ADR-0028, ADR-0041). Keys are
+// the variables' canonical names, and a rule keeps its source.
+func TestRights_Resolution(t *testing.T) {
+	cls := mustDefine(t, `{"name": "T", "variables": {"a": {"type": "int"}, "b": {"type": "int"}, "c": {"type": "int"}},
+	  "states": {"initial": "s", "list": ["s", "u"]},
+	  "rights": {
+	    "*": {"*": {"read": ["everyone"]}, "A": {"write": "a > 0"}},
+	    "s": {"*": {"write": ["clerks"]}, "b": {"read": "FALSE"}}
+	  }}`)
+	if r := cls.Rights["*"]["a"]; r == nil || r.Write == nil || r.Write.Src != "a > 0" {
+		t.Fatalf("the cell is keyed by the canonical name and keeps its source: %+v", cls.Rights["*"])
+	}
+	cases := []struct {
+		state, variable, kind, want string
+	}{
+		{"s", "b", "read", "FALSE"},    // the named cell
+		{"s", "a", "read", "everyone"}, // the named state has no read for a: the * state's *
+		{"s", "a", "write", "clerks"},  // the named state's * comes before the * state's cell of the variable
+		{"s", "c", "write", "clerks"},  // the state's *
+		{"u", "c", "write", ""},        // nothing declares it
+		{"u", "a", "write", "a > 0"},   // the * state's cell of the variable
+		{"u", "b", "read", "everyone"}, // the * state's *
+		{"", "a", "write", "a > 0"},    // no state: the * row alone
+		{"", "b", "read", "everyone"},
+	}
+	for _, tc := range cases {
+		var rule *RightRule
+		if tc.kind == "read" {
+			rule = cls.ReadRule(tc.state, tc.variable)
+		} else {
+			rule = cls.WriteRule(tc.state, tc.variable)
+		}
+		got := ""
+		if rule != nil {
+			got = rule.Src
+		}
+		if got != tc.want {
+			t.Errorf("%s right of %s in %q = %q, want %q", tc.kind, tc.variable, tc.state, got, tc.want)
+		}
+	}
+	// A read right is compiled into every filter and may not look up.
+	src := &formula.Source{Name: "Fx", Columns: []formula.Field{{Name: "code", Type: formula.Scalar(formula.KindText)}, {Name: "rate", Type: formula.Scalar(formula.KindNumber)}}, Key: []string{"code"}}
+	env := Env{Sources: formula.NewSourceSet(src)}
+	_, diags := DefineIn([]byte(`{"name": "T", "variables": {"a": {"type": "text"}}, "states": {"initial": "s", "list": ["s"]},
+	  "rights": {"*": {"a": {"read": "LOOKUP(Fx, rate, code = THIS.a) > 1"}}}}`), env)
+	if len(diags) != 1 || diags[0].Code != CodeNotAllowed || diags[0].Path != "/rights/*/a/read" {
+		t.Errorf("read right with a lookup: %v", diags)
+	}
+	if _, diags := DefineIn([]byte(`{"name": "T", "variables": {"a": {"type": "text"}}, "states": {"initial": "s", "list": ["s"]},
+	  "rights": {"*": {"a": {"write": "LOOKUP(Fx, rate, code = THIS.a) > 1"}}}}`), env); len(diags) != 0 {
+		t.Errorf("write right with a lookup: %v", diags)
+	}
+	if _, diags := Define([]byte(`{"name": "T", "variables": {"a": {"type": "int"}}, "rights": {"*": {"a": {"read": "TRUE"}, "A": {"write": "TRUE"}}}}`), nil); len(diags) != 1 || diags[0].Code != CodeDuplicate {
+		t.Errorf("a variable listed twice in different case: %v", diags)
+	}
+}

@@ -8,6 +8,31 @@ All notable changes to FadoDB are recorded here. The format follows
 
 ### Added
 
+- The rights table and the per-transition rules are enforced in the Go
+  API (ADR-0041). A value for a variable whose `write` right is not TRUE
+  for the principal in the document's state is refused with `forbidden`
+  naming the variable, the first in declaration order on a commit and
+  every one under a preview's errors; the right is evaluated over the
+  stored document before the assignments, in the state the command
+  arrives in, and over a new document after its defaults. A transition
+  whose access rule is not TRUE is refused with `forbidden` before its
+  guard, and `Transitions` and a preview list it so. Every document the
+  API returns, from `Get`, `Version`, `History`, `Query`, `Preview` and
+  the commits, is projected for the principal: a variable whose `read`
+  right is not TRUE in the row's state is absent from `Values`, a history
+  row under the state and the values it had, the rights of the current
+  class version applying by name to every row. A filter compiles the read
+  right of each variable its `where` or `order` names into its predicate,
+  so a row whose state hides the variable neither matches nor sorts, and
+  is refused with `forbidden` only when no state lets the principal read
+  it; `fields` are projected as a document is. A read right may use pure
+  and context functions over the document's own variables only, refused
+  at definition with `not_allowed` otherwise; a write right keeps every
+  function. An administrator bypasses the rules and the rights and never
+  a guard; a call without a principal is nobody. A class without rights
+  and transition rules behaves as before. `conformance/statechart/rights.json`
+  is the specification; the runner gained `get`, `query` and `count`
+  steps with `absent`, `present`, `docs` and `count` expectations.
 - The statechart runs (ADR-0040). `Transition(ctx, class, id, name,
   values, opts...)` moves a document along a named transition with the
   assignments applied in the same commit: one version, one history row
@@ -55,6 +80,11 @@ All notable changes to FadoDB are recorded here. The format follows
 
 ### Changed
 
+- `Query` and `Count` keep their prepared statements, at most 64 by SQL
+  text, the least recently used one making room, dropped when a class is
+  redefined: a repeated filter pays SQLite's parse once, which was half
+  of an indexed filter's time, and the read right compiled into a filter
+  (ADR-0041) stays within its budget.
 - A class without states stores no documents (ADR-0040): it is a
   stateless application, evaluated with `Preview` and `PreviewDraft`.
   `Create` and `CreateMany` on such a class are refused with

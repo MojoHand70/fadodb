@@ -48,3 +48,6 @@ line says so. Copy `0000-template.md` to start.
 | [0040](0040-transitions-as-commits.md) | Transitions as commits: the command, eventless chains and state visits | Accepted |
 | [0041](0041-field-rights-and-transition-rules-in-the-go-api.md) | Field rights and transition rules in the Go API | Accepted |
 | [0042](0042-a-moment-the-caller-chooses.md) | A moment the caller chooses, for previews and reads | Accepted |
+| [0043](0043-rules-inside-the-commit.md) | Rules inside the commit: triggers, synchronous actions and triggered variables | Proposed |
+| [0044](0044-the-outbox.md) | The outbox: what a commit queues, the worker and the engine's own actions | Proposed |
+| [0045](0045-actions-are-an-extension-point.md) | Actions are an extension point: definitions, declared HTTP actions, registered Go actions, connections and results | Proposed |

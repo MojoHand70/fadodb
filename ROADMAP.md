@@ -15,11 +15,11 @@ SQLite as the transactional store and the in-memory index for lookups, by
 measurement (ADR-0035, ADR-0036), the compiled `LOOKUP` and explicit
 tables (ADR-0037), the filter and the SQL endpoint (ADR-0038), and class
 versions with terminal states and migrations (ADR-0039). Phase 3 opened
-with its design proposed as three records: ADR-0040, transitions as
-commits, with eventless chains, snapshots, the allowed transitions and
-the `_states` view; ADR-0041, field rights and per-transition rules
-enforced in the Go API; and ADR-0042, a moment the caller chooses for
-previews and reads. This page is updated when a phase starts and when
+with its design in three records, accepted on 2026-11-09: ADR-0040,
+transitions as commits, with eventless chains, snapshots, the allowed
+transitions and the `_states` view; ADR-0041, field rights and
+per-transition rules enforced in the Go API; and ADR-0042, a moment the
+caller chooses for previews and reads. This page is updated when a phase starts and when
 it ends; it never describes a phase as done before its acceptance
 criteria pass.
 

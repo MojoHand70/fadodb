@@ -27,7 +27,7 @@ const order = `{"name": "Order", "variables": {
   "fee":      {"formula": "LOOKUP(Rates, fee, code = THIS.currency)"},
   "unit_price": {"formula": "LOOKUP(Prices, price, sku = THIS.sku AND min_qty <= THIS.qty)"},
   "label":    {"type": "text", "default": "LOOKUP(Rates, name, code = THIS.currency) & \" order\""}
-}}`
+}, "states": {"initial": "open", "list": ["open"]}}`
 
 var rateRows = []Values{
 	{"code": "EUR", "rate": "4.321000", "fee": "1.00 EUR", "name": "Euro"},
@@ -240,7 +240,7 @@ func TestLookup(t *testing.T) {
 	}
 	// A class may not read a table the store lacks, and a table a class
 	// reads is not redefined.
-	_, err = s.DefineClass(ctx, []byte(`{"name": "Quote", "variables": {"c": {"type": "text"}, "r": {"formula": "LOOKUP(Fx, rate, code = THIS.c)"}}}`))
+	_, err = s.DefineClass(ctx, []byte(`{"name": "Quote", "variables": {"c": {"type": "text"}, "r": {"formula": "LOOKUP(Fx, rate, code = THIS.c)"}}, "states": {"initial": "open", "list": ["open"]}}`))
 	var diags model.Diagnostics
 	if !errors.As(err, &diags) || !diags.Has(model.CodeBadFormula) || !strings.Contains(diags.Error(), "unknown source Fx") {
 		t.Errorf("unknown table in a class: %v", err)

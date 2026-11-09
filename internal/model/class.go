@@ -142,6 +142,8 @@ type Transition struct {
 	From  []string
 	To    string
 	Guard *formula.Program
+	// GuardSrc is the guard as written, for the hint of a refusal.
+	GuardSrc string
 }
 
 // Rule is one compiled rule; its actions are kept as written until Phase
@@ -1049,6 +1051,7 @@ func compileTransitions(c *collector, cls *Class, defs []TransitionDef, scope *f
 			}
 		}
 		t.Guard = bindCondition(c, path+"/guard", d.Guard, scope, "a guard")
+		t.GuardSrc = d.Guard
 		cls.Transitions = append(cls.Transitions, t)
 	}
 }

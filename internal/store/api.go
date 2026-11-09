@@ -77,19 +77,36 @@ type Event struct {
 // The event kinds this build writes, and the qualifiers of their
 // event_docs rows.
 const (
-	EventCreated  = "created"
-	EventSet      = "set"
-	EventDeleted  = "deleted"
-	EventMigrated = "migrated"
+	EventCreated    = "created"
+	EventSet        = "set"
+	EventDeleted    = "deleted"
+	EventMigrated   = "migrated"
+	EventTransition = "transition"
 )
+
+// TransitionInfo is one named transition leaving a document's state, as
+// Transitions and Preview list them (ADR-0040): its name and target,
+// whether the principal may take it now and, when not, the code that
+// says why, guard_false today and forbidden with the access rules, with
+// the guard's error when it errored.
+type TransitionInfo struct {
+	Name    string `json:"name"`
+	To      string `json:"to"`
+	Enabled bool   `json:"enabled"`
+	Code    string `json:"code,omitempty"`
+	Message string `json:"message,omitempty"`
+}
 
 // Preview is what a commit would do, without having done it (ADR-0025):
 // the document as it would be, and the error of every variable whose
-// formula failed, each with its code. Transitions and rules arrive with
-// their phases.
+// formula failed, each with its code; for a class with states, the states
+// the command visited, the state before first, and the named transitions
+// leaving the resulting state (ADR-0040). Rules arrive with Phase 4.
 type Preview struct {
-	Document *Document `json:"document"`
-	Errors   []*Error  `json:"errors,omitempty"`
+	Document    *Document        `json:"document"`
+	Errors      []*Error         `json:"errors,omitempty"`
+	Path        []string         `json:"path,omitempty"`
+	Transitions []TransitionInfo `json:"transitions,omitempty"`
 }
 
 // Option configures one call.

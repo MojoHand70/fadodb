@@ -1,0 +1,20 @@
+{
+  "suite": "stateless",
+  "description": "A class without states is a stateless application: it is evaluated with a preview and stores no documents (ADR-0040).",
+  "class": {
+    "name": "Calculator",
+    "variables": {
+      "net":   {"type": "decimal", "scale": 2},
+      "rate":  {"type": "decimal", "scale": 2, "default": "0.23"},
+      "where": {"type": "text", "default": "STATE()"},
+      "vat":   {"formula": "ROUND(net * rate, 2)"},
+      "gross": {"formula": "net + vat"}
+    }
+  },
+  "script": [
+    {"name": "a create is refused", "do": "create", "values": {"net": "100.00"}, "expect": {"code": "stateless"}},
+    {"name": "a preview evaluates the application", "do": "preview", "values": {"net": "100.00"},
+     "expect": {"version": 1, "values": {"vat": "23.00", "gross": "123.00", "where": null}}},
+    {"name": "a preview with another rate", "do": "preview", "values": {"net": "100.00", "rate": "0.08"}, "expect": {"values": {"vat": "8.00", "gross": "108.00"}}}
+  ]
+}

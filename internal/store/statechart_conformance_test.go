@@ -1,0 +1,312 @@
+package store
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"os"
+	"path/filepath"
+	"reflect"
+	"sort"
+	"strings"
+	"testing"
+)
+
+// The statechart conformance suite (ADR-0040) is the specification of the
+// statechart's behaviour: a class, a script of commands with their
+// principals, and the expected outcome of each. The store runs it here;
+// the server and the browser VM run it with their phases. The format is
+// in conformance/README.md.
+
+type statechartSuite struct {
+	Suite       string                     `json:"suite"`
+	Description string                     `json:"description,omitempty"`
+	Class       json.RawMessage            `json:"class"`
+	Principals  map[string]scriptPrincipal `json:"principals,omitempty"`
+	Script      []scriptStep               `json:"script"`
+}
+
+type scriptPrincipal struct {
+	ID     string   `json:"id"`
+	Groups []string `json:"groups,omitempty"`
+	Admin  bool     `json:"admin,omitempty"`
+}
+
+type scriptStep struct {
+	Name string `json:"name,omitempty"`
+	// Do is create, set, transition, preview, transitions or visits.
+	Do string `json:"do"`
+	// Doc labels the document a create makes, and names the document
+	// another step acts on; the last created document when absent.
+	Doc        string       `json:"doc,omitempty"`
+	As         string       `json:"as,omitempty"`
+	Key        string       `json:"key,omitempty"`
+	Transition string       `json:"transition,omitempty"`
+	Values     Values       `json:"values,omitempty"`
+	Expect     scriptExpect `json:"expect"`
+}
+
+type scriptExpect struct {
+	// Code is the refusal's code; the other fields are then not checked.
+	Code    string `json:"code,omitempty"`
+	State   string `json:"state,omitempty"`
+	Version int64  `json:"version,omitempty"`
+	// Path is the preview's path; History the states of every history
+	// row so far; Events the kind of every event so far, a transition
+	// written kind:name.
+	Path    []string `json:"path,omitempty"`
+	History []string `json:"history,omitempty"`
+	Events  []string `json:"events,omitempty"`
+	// Values are checked against the document's, by name, in the wire
+	// shape; absent names are not checked.
+	Values map[string]json.RawMessage `json:"values,omitempty"`
+	// Transitions is the listing, in order.
+	Transitions []TransitionInfo `json:"transitions,omitempty"`
+	// Visits are the rows of the _states view: state, entry version, exit
+	// version or null.
+	Visits [][]any `json:"visits,omitempty"`
+}
+
+func TestStatechartConformance(t *testing.T) {
+	files, err := filepath.Glob(filepath.Join("..", "..", "conformance", "statechart", "*.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(files) == 0 {
+		t.Fatal("no statechart suites found")
+	}
+	for _, file := range files {
+		raw, err := os.ReadFile(file)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var suite statechartSuite
+		if err := json.Unmarshal(raw, &suite); err != nil {
+			t.Fatalf("%s: %v", file, err)
+		}
+		t.Run(suite.Suite, func(t *testing.T) { runStatechartSuite(t, &suite) })
+	}
+}
+
+func runStatechartSuite(t *testing.T, suite *statechartSuite) {
+	s, _ := openStore(t, Options{})
+	ctx := context.Background()
+	cls, err := s.DefineClass(ctx, suite.Class)
+	if err != nil {
+		t.Fatalf("the class: %v", err)
+	}
+	docs := map[string]string{}
+	last := ""
+	for i, step := range suite.Script {
+		name := step.Name
+		if name == "" {
+			name = fmt.Sprintf("step %d: %s %s", i, step.Do, step.Transition)
+		}
+		var opts []Option
+		if step.As != "" {
+			p, ok := suite.Principals[step.As]
+			if !ok {
+				t.Fatalf("%s: unknown principal %s", name, step.As)
+			}
+			opts = append(opts, As(Principal{ID: p.ID, Groups: p.Groups, Admin: p.Admin}))
+		}
+		if step.Key != "" {
+			opts = append(opts, Key(step.Key))
+		}
+		id := last
+		if step.Do != "create" && step.Doc != "" {
+			id = docs[step.Doc]
+		}
+		var doc *Document
+		var pv *Preview
+		var infos []TransitionInfo
+		var visitsGot [][]any
+		switch step.Do {
+		case "create":
+			doc, err = s.Create(ctx, cls.Name, step.Values, opts...)
+			if err == nil {
+				last, id = doc.ID, doc.ID
+				if step.Doc != "" {
+					docs[step.Doc] = doc.ID
+				}
+			}
+		case "set":
+			doc, err = s.Set(ctx, cls.Name, id, step.Values, opts...)
+		case "transition":
+			doc, err = s.Transition(ctx, cls.Name, id, step.Transition, step.Values, opts...)
+		case "preview":
+			pv, err = s.Preview(ctx, cls.Name, id, step.Values, step.Transition, opts...)
+			if err == nil {
+				doc = pv.Document
+			}
+		case "transitions":
+			infos, err = s.Transitions(ctx, cls.Name, id, opts...)
+		case "visits":
+			visitsGot, err = readVisits(s, cls.Name, id)
+		default:
+			t.Fatalf("%s: unknown command %q", name, step.Do)
+		}
+		want := step.Expect
+		if want.Code != "" {
+			if code(err) != want.Code {
+				t.Errorf("%s: want the refusal %s, got %v", name, want.Code, err)
+			}
+			continue
+		}
+		if err != nil {
+			t.Errorf("%s: %v", name, err)
+			continue
+		}
+		if doc != nil {
+			if want.State != "" && doc.State != want.State {
+				t.Errorf("%s: state %s, want %s", name, doc.State, want.State)
+			}
+			if want.Version != 0 && doc.Version != want.Version {
+				t.Errorf("%s: version %d, want %d", name, doc.Version, want.Version)
+			}
+			for vname, raw := range want.Values {
+				if !sameWire(doc.Values[vname], raw) {
+					t.Errorf("%s: %s = %s, want %s", name, vname, dump(doc.Values[vname]), raw)
+				}
+			}
+		}
+		if want.Path != nil {
+			if pv == nil {
+				t.Errorf("%s: a path is expected of a preview only", name)
+			} else if !reflect.DeepEqual(pv.Path, want.Path) {
+				t.Errorf("%s: path %v, want %v", name, pv.Path, want.Path)
+			}
+		}
+		if want.Transitions != nil {
+			got := infos
+			if pv != nil {
+				got = pv.Transitions
+			}
+			if !sameListing(got, want.Transitions) {
+				t.Errorf("%s: transitions %s, want %s", name, dump(got), dump(want.Transitions))
+			}
+		}
+		if want.History != nil {
+			rows, err := s.History(ctx, cls.Name, id)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var got []string
+			for _, r := range rows {
+				got = append(got, r.State)
+			}
+			if !reflect.DeepEqual(got, want.History) {
+				t.Errorf("%s: history %v, want %v", name, got, want.History)
+			}
+		}
+		if want.Events != nil {
+			events, err := s.Events(ctx, cls.Name, id)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var got []string
+			for _, e := range events {
+				if e.Kind == EventTransition {
+					got = append(got, e.Kind+":"+e.Name)
+				} else {
+					got = append(got, e.Kind)
+				}
+			}
+			if !reflect.DeepEqual(got, want.Events) {
+				t.Errorf("%s: events %v, want %v", name, got, want.Events)
+			}
+		}
+		if want.Visits != nil {
+			if step.Do != "visits" {
+				visitsGot, err = readVisits(s, cls.Name, id)
+				if err != nil {
+					t.Fatal(err)
+				}
+			}
+			if !sameWire(visitsGot, mustJSON(want.Visits)) {
+				t.Errorf("%s: visits %s, want %s", name, dump(visitsGot), dump(want.Visits))
+			}
+		}
+	}
+}
+
+// readVisits reads the _states view of a document: state, entry version
+// and exit version, the last null while the visit is current.
+func readVisits(s *Store, class, id string) ([][]any, error) {
+	rows, err := s.db.Query(`SELECT state, entry_version, exit_version FROM `+quote(class+"_states")+` WHERE id = ? ORDER BY entry_version`, id)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := [][]any{}
+	for rows.Next() {
+		var state string
+		var entry int64
+		var exit *int64
+		if err := rows.Scan(&state, &entry, &exit); err != nil {
+			return nil, err
+		}
+		var x any
+		if exit != nil {
+			x = *exit
+		}
+		out = append(out, []any{state, entry, x})
+	}
+	return out, rows.Err()
+}
+
+// sameWire compares a Go value with a JSON value through their JSON text.
+func sameWire(got any, want json.RawMessage) bool {
+	var g, w any
+	gb, err := json.Marshal(got)
+	if err != nil {
+		return false
+	}
+	if json.Unmarshal(gb, &g) != nil || json.Unmarshal(want, &w) != nil {
+		return false
+	}
+	return reflect.DeepEqual(g, w)
+}
+
+func mustJSON(v any) json.RawMessage {
+	b, _ := json.Marshal(v)
+	return b
+}
+
+// sameListing compares two listings on name, target, enabled and code;
+// the message is for people.
+func sameListing(got, want []TransitionInfo) bool {
+	if len(got) != len(want) {
+		return false
+	}
+	for i := range got {
+		g, w := got[i], want[i]
+		if g.Name != w.Name || g.Enabled != w.Enabled || g.Code != w.Code || (w.To != "" && g.To != w.To) {
+			return false
+		}
+	}
+	return true
+}
+
+// TestStatechartSuitesAreWellFormed keeps the suite files tidy: every
+// step has a command, and the files sort by name.
+func TestStatechartSuitesAreWellFormed(t *testing.T) {
+	files, _ := filepath.Glob(filepath.Join("..", "..", "conformance", "statechart", "*.json"))
+	sort.Strings(files)
+	for _, file := range files {
+		raw, _ := os.ReadFile(file)
+		var suite statechartSuite
+		if err := json.Unmarshal(raw, &suite); err != nil {
+			t.Errorf("%s: %v", file, err)
+			continue
+		}
+		if suite.Suite == "" || !strings.HasSuffix(file, suite.Suite+".json") {
+			t.Errorf("%s: the suite is named %q; the file is named after the suite", file, suite.Suite)
+		}
+		for i, step := range suite.Script {
+			if step.Do == "" {
+				t.Errorf("%s: step %d has no command", file, i)
+			}
+		}
+	}
+}

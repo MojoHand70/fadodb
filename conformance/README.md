@@ -80,6 +80,49 @@ One file per topic:
 
 Numbers compare exactly on every target.
 
+## Statechart cases: `statechart/*.json`
+
+The specification of the statechart's behaviour (ADR-0040): a class, a
+script of commands with their principals, and the expected outcome of
+each. The store runs every suite in CI; the server and the browser VM
+run them with their phases.
+
+```json
+{
+  "suite": "approval",
+  "class": {"name": "Approval", "variables": {"amount": {"type": "number"}},
+            "states": {"initial": "draft", "list": ["draft", "review"]},
+            "transitions": [{"name": "submit", "from": "draft", "to": "review", "guard": "amount > 0"}]},
+  "principals": {"alice": {"id": "alice", "groups": ["sales"]}},
+  "script": [
+    {"do": "create", "doc": "inv", "as": "alice", "values": {"amount": 5}, "expect": {"state": "draft", "version": 1}},
+    {"do": "transitions", "as": "alice", "expect": {"transitions": [{"name": "submit", "to": "review", "enabled": true}]}},
+    {"do": "transition", "transition": "submit", "as": "alice", "expect": {"state": "review", "version": 2, "events": ["created", "transition:submit"]}},
+    {"do": "transition", "transition": "submit", "as": "alice", "expect": {"code": "wrong_state"}}
+  ]
+}
+```
+
+- `class` is the class definition the suite runs against; `principals`
+  names the principals steps run as, each with `id`, `groups` and
+  `admin`. A step without `as` runs as nobody.
+- A step's `do` is `create`, `set`, `transition`, `preview`,
+  `transitions` or `visits`. `values` are the assignments, `transition`
+  the name of the transition a `transition` or `preview` step takes,
+  `key` the command's idempotency key. On a `create`, `doc` labels the
+  document made; on another step it names the document acted on, the
+  last one created when absent.
+- `expect` is checked after the step. `code` is the refusal expected,
+  and nothing else is then checked. Otherwise `state` and `version` are
+  the document's after the step, `values` a subset of its values in the
+  notation of the evaluation cases, `path` the states a preview visited
+  with the state before first, `transitions` the listing by name, target,
+  `enabled` and `code`, `history` the states of every history row of the
+  document so far, `events` the kind of every event so far with a
+  transition written `transition:name`, and `visits` the rows of the
+  `_states` view as `[state, entry_version, exit_version]`, the exit
+  `null` while the visit is current.
+
 ## Binding cases: `binding/*.json`
 
 Formulas the binder must accept and formulas it must refuse at definition

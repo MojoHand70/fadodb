@@ -9,10 +9,11 @@
 // The embedder supplies the principal on every call (ADR-0027), may give
 // every mutating call an idempotency key and a business date (ADR-0026),
 // and can run a change, or a draft class, through the commit pipeline
-// without writing anything (ADR-0025). Not here yet: the statechart
-// (Phase 3), rules and QUERY (Phase 4), access rules and rights (Phase 5)
-// and the server (Phase 6); the principal is recorded as the actor and
-// enforces nothing until Phase 5.
+// without writing anything (ADR-0025). A document moves through its
+// class's statechart with Transition, and Transitions says which moves
+// are open (ADR-0040). Not here yet: rules and QUERY (Phase 4), access
+// rules and rights (Phase 5) and the server (Phase 6); the principal is
+// recorded as the actor and enforces nothing until Phase 5.
 package fado
 
 import (
@@ -39,8 +40,12 @@ type (
 	HistoryRow = store.HistoryRow
 	// Event is one row of the event log.
 	Event = store.Event
-	// Preview is what a commit would do (ADR-0025).
+	// Preview is what a commit would do (ADR-0025): the document, the
+	// errors per variable, the states visited and the transitions open.
 	Preview = store.Preview
+	// TransitionInfo is one named transition leaving a document's state
+	// and whether it may be taken now (ADR-0040).
+	TransitionInfo = store.TransitionInfo
 	// Filter is a query over a class: a where formula, an order, a limit,
 	// an offset and the fields to return (ADR-0038).
 	Filter = store.Filter
@@ -178,6 +183,23 @@ func (db *DB) Set(ctx context.Context, class, id string, values Values, opts ...
 	return db.s.Set(ctx, class, id, values, opts...)
 }
 
+// Transition moves a document along the named transition of its class,
+// with the assignments in values applied in the same commit (ADR-0040);
+// values may be nil. Every eventless transition that then fires is a
+// further commit in the same transaction. A transition that cannot happen
+// is refused with unknown_transition, wrong_state, guard_false,
+// too_many_transitions or terminal, before anything is written.
+func (db *DB) Transition(ctx context.Context, class, id, name string, values Values, opts ...Option) (*Document, error) {
+	return db.s.Transition(ctx, class, id, name, values, opts...)
+}
+
+// Transitions lists the named transitions leaving the document's state,
+// each with whether the principal may take it now (ADR-0040). It writes
+// nothing.
+func (db *DB) Transitions(ctx context.Context, class, id string, opts ...Option) ([]TransitionInfo, error) {
+	return db.s.Transitions(ctx, class, id, opts...)
+}
+
 // Delete removes a document's current row and appends the event; its
 // history stays.
 func (db *DB) Delete(ctx context.Context, class, id string, opts ...Option) error {
@@ -244,8 +266,10 @@ func (db *DB) CheckBlobs(ctx context.Context) (mismatched []string, checked int,
 	return db.s.CheckBlobs(ctx)
 }
 
-// Preview runs a create (empty id) or a set through the commit pipeline
-// and writes nothing (ADR-0025).
+// Preview runs a create (empty id), a set or a transition through the
+// commit pipeline and writes nothing (ADR-0025): the document as it would
+// be, the states the command would visit and the transitions open from
+// the last of them.
 func (db *DB) Preview(ctx context.Context, class, id string, values Values, transition string, opts ...Option) (*Preview, error) {
 	return db.s.Preview(ctx, class, id, values, transition, opts...)
 }

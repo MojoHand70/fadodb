@@ -1,0 +1,27 @@
+{
+  "suite": "eventless",
+  "description": "Eventless transitions are evaluated after a create, a set and a transition, from the state the commit leaves the document in, in definition order, until none fires; each one that fires is a commit of its own. More than eight after one command refuse the command and write nothing (ADR-0008, ADR-0040).",
+  "class": {
+    "name": "Pong",
+    "variables": {"n": {"type": "number"}, "steps": {"type": "text", "default": "STATE()"}},
+    "states": {"initial": "a", "list": ["a", "b", "c"]},
+    "transitions": [
+      {"from": "a", "to": "b", "guard": "n > 0"},
+      {"from": "b", "to": "a", "guard": "n > 1"},
+      {"name": "stop", "from": ["a", "b"], "to": "c"}
+    ]
+  },
+  "script": [
+    {"name": "a create whose guard holds hops once", "do": "create", "doc": "one", "values": {"n": 1},
+     "expect": {"state": "b", "version": 2, "values": {"steps": "a"}, "history": ["a", "b"], "events": ["created", "transition:"], "visits": [["a", 1, 1], ["b", 2, null]]}},
+    {"name": "a create whose guard does not hold stays", "do": "create", "doc": "zero", "values": {"n": 0}, "expect": {"state": "a", "version": 1, "history": ["a"]}},
+    {"name": "a set that changes nothing moves nothing", "do": "set", "doc": "one", "values": {"n": 1}, "expect": {"state": "b", "version": 2, "history": ["a", "b"]}},
+    {"name": "guards that hold in turn run past the bound", "do": "set", "doc": "one", "values": {"n": 2}, "expect": {"code": "too_many_transitions"}},
+    {"name": "the refused command wrote nothing", "do": "transitions", "doc": "one", "expect": {"history": ["a", "b"], "events": ["created", "transition:"]}},
+    {"name": "a preview past the bound is refused the same way", "do": "preview", "doc": "one", "values": {"n": 2}, "expect": {"code": "too_many_transitions"}},
+    {"name": "a set that makes a guard hold hops", "do": "set", "doc": "zero", "values": {"n": 1}, "expect": {"state": "b", "version": 3, "history": ["a", "a", "b"], "events": ["created", "set", "transition:"]}},
+    {"name": "a preview of a set shows the path", "do": "preview", "doc": "zero", "values": {"n": 0}, "expect": {"state": "b", "version": 4, "path": ["b"], "transitions": [{"name": "stop", "to": "c", "enabled": true}]}},
+    {"name": "a named transition leaves the chain behind", "do": "transition", "doc": "one", "transition": "stop", "expect": {"state": "c", "version": 3, "history": ["a", "b", "c"], "visits": [["a", 1, 1], ["b", 2, 2], ["c", 3, null]]}},
+    {"name": "nothing leaves c", "do": "transitions", "doc": "one", "expect": {"transitions": []}}
+  ]
+}

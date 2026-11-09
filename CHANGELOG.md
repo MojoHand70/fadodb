@@ -8,6 +8,36 @@ All notable changes to FadoDB are recorded here. The format follows
 
 ### Added
 
+- The statechart runs (ADR-0040). `Transition(ctx, class, id, name,
+  values, opts...)` moves a document along a named transition with the
+  assignments applied in the same commit: one version, one history row
+  and one event of kind `transition` with the name, the states and the
+  versions before and after. The guard sees the recalculated document
+  with `STATE()` the state it leaves. Every eventless transition that
+  then fires is a further commit in the same transaction, a version and
+  a history row of its own with the same values and the new state, and a
+  `transition` event without a name caused by the command's event; more
+  than eight refuse the command with `too_many_transitions` and write
+  nothing. Eventless transitions are evaluated after `Create`,
+  `CreateMany`, `Set` and `Transition`, not after `Migrate`. A refusal
+  names its code and the fix: `unknown_transition`, `wrong_state`,
+  `guard_false` (an erroring guard is FALSE, the message carries its
+  code and offset), `too_many_transitions`, and `terminal` for values
+  given with a move out of a terminal state. A keyed command that made a
+  chain replays to the last version it made.
+- `Transitions(ctx, class, id, opts...)` lists the named transitions
+  leaving the document's state with whether the principal may take each
+  one now, and the code when not. `Preview` and `PreviewDraft` take a
+  transition, and a preview of a class with states reports `Path`, the
+  states the command visited, and `Transitions`, the listing from the
+  resulting state.
+- The `<Class>_states` view (ADR-0014, ADR-0040): one row per visit of a
+  document to a state, with `entered_at`, `left_at`, `duration`,
+  `entry_version` and `exit_version`, over the history table.
+- `conformance/statechart/*.json`: scripted suites the store runs in CI,
+  the specification of the statechart's behaviour; the format is in
+  `conformance/README.md`.
+
 - `STATE()` and `ID()` (ADR-0040), the first of Phase 3: context
   functions returning the state and the id of the document a formula
   runs over, blank for a class without states and when there is no
@@ -22,6 +52,14 @@ All notable changes to FadoDB are recorded here. The format follows
   and run through the commit pipeline over an existing document of the
   stored class, or as a create, writing and storing nothing, so that a
   designer tries a draft on real documents, terminal ones included.
+
+### Changed
+
+- A class without states stores no documents (ADR-0040): it is a
+  stateless application, evaluated with `Preview` and `PreviewDraft`.
+  `Create` and `CreateMany` on such a class are refused with
+  `stateless`. Every stored document is created into its class's
+  initial state, and a class with documents keeps its states block.
 
 ### Fixed
 

@@ -1,0 +1,56 @@
+{
+  "suite": "approval",
+  "description": "A document moves through a named transition with values, a guard over the principal, an eventless transition that fires after the named one as a further commit, and two terminal states linked by a transition (ADR-0040). A refusal writes nothing.",
+  "class": {
+    "name": "Approval",
+    "variables": {
+      "amount": {"type": "number"},
+      "note":   {"type": "text"},
+      "big":    {"formula": "amount > 1000"},
+      "trace":  {"type": "text", "default": "STATE()"}
+    },
+    "states": {"initial": "draft", "list": ["draft", "review", "approved", "booked", "rejected", "archived"], "final": ["rejected", "archived"]},
+    "transitions": [
+      {"name": "submit",  "from": "draft",  "to": "review",   "guard": "amount > 0"},
+      {"name": "approve", "from": "review", "to": "approved", "guard": "INGROUP(\"finance\")"},
+      {"name": "reject",  "from": ["draft", "review"], "to": "rejected"},
+      {"from": "approved", "to": "booked", "guard": "NOT big"},
+      {"name": "archive", "from": "rejected", "to": "archived"},
+      {"name": "fail",    "from": "draft",  "to": "review",   "guard": "1 / amount > 0"}
+    ]
+  },
+  "principals": {
+    "alice": {"id": "alice", "groups": ["sales"]},
+    "fin":   {"id": "fin", "groups": ["finance"]}
+  },
+  "script": [
+    {"name": "a document is created into the initial state", "do": "create", "doc": "inv", "as": "alice", "values": {"note": "new"},
+     "expect": {"state": "draft", "version": 1, "values": {"trace": "draft", "amount": null}, "history": ["draft"], "events": ["created"]}},
+    {"name": "the listing from draft: a guard over a blank amount, no guard, an erroring guard", "do": "transitions", "as": "alice",
+     "expect": {"transitions": [{"name": "submit", "to": "review", "enabled": false, "code": "guard_false"}, {"name": "reject", "to": "rejected", "enabled": true}, {"name": "fail", "to": "review", "enabled": false, "code": "guard_false"}]}},
+    {"name": "an unknown transition", "do": "transition", "transition": "fly", "as": "alice", "expect": {"code": "unknown_transition"}},
+    {"name": "a transition that does not leave draft", "do": "transition", "transition": "approve", "as": "alice", "expect": {"code": "wrong_state"}},
+    {"name": "a guard that is not TRUE", "do": "transition", "transition": "submit", "as": "alice", "expect": {"code": "guard_false"}},
+    {"name": "a guard that errors is FALSE", "do": "transition", "transition": "fail", "as": "alice", "expect": {"code": "guard_false"}},
+    {"name": "refusals wrote nothing", "do": "transitions", "as": "alice", "expect": {"history": ["draft"], "events": ["created"]}},
+    {"name": "values and the transition are one commit and one event", "do": "transition", "transition": "submit", "values": {"amount": 500}, "as": "alice", "key": "submit-1",
+     "expect": {"state": "review", "version": 2, "values": {"amount": 500, "trace": "draft"}, "history": ["draft", "review"], "events": ["created", "transition:submit"]}},
+    {"name": "the guard over the principal", "do": "transition", "transition": "approve", "as": "alice", "expect": {"code": "guard_false"}},
+    {"name": "the listing for finance", "do": "transitions", "as": "fin", "expect": {"transitions": [{"name": "approve", "enabled": true}, {"name": "reject", "enabled": true}]}},
+    {"name": "a preview shows the chain and writes nothing", "do": "preview", "transition": "approve", "values": {"note": "ok"}, "as": "fin",
+     "expect": {"state": "booked", "version": 4, "path": ["review", "approved", "booked"], "transitions": [], "values": {"note": "ok"}, "history": ["draft", "review"], "events": ["created", "transition:submit"]}},
+    {"name": "the eventless transition fires as a further commit", "do": "transition", "transition": "approve", "as": "fin", "key": "approve-1",
+     "expect": {"state": "booked", "version": 4, "history": ["draft", "review", "approved", "booked"], "events": ["created", "transition:submit", "transition:approve", "transition:"],
+                "visits": [["draft", 1, 1], ["review", 2, 2], ["approved", 3, 3], ["booked", 4, null]]}},
+    {"name": "the keyed command replays to the last version it made", "do": "transition", "transition": "approve", "as": "fin", "key": "approve-1",
+     "expect": {"state": "booked", "version": 4, "events": ["created", "transition:submit", "transition:approve", "transition:"]}},
+    {"name": "nothing leaves booked", "do": "transitions", "as": "fin", "expect": {"transitions": []}},
+    {"name": "a second document is rejected with a note", "do": "create", "doc": "other", "as": "alice", "values": {"amount": 10}, "expect": {"state": "draft", "version": 1}},
+    {"do": "transition", "doc": "other", "transition": "reject", "values": {"note": "no"}, "as": "alice", "expect": {"state": "rejected", "version": 2, "values": {"note": "no"}}},
+    {"name": "a terminal document does not change", "do": "set", "doc": "other", "values": {"note": "yes"}, "as": "alice", "expect": {"code": "terminal"}},
+    {"name": "a terminal document moves without values only", "do": "transition", "doc": "other", "transition": "archive", "values": {"note": "yes"}, "as": "alice", "expect": {"code": "terminal"}},
+    {"do": "transitions", "doc": "other", "as": "alice", "expect": {"transitions": [{"name": "archive", "to": "archived", "enabled": true}]}},
+    {"name": "a move between terminal states keeps the values", "do": "transition", "doc": "other", "transition": "archive", "as": "alice",
+     "expect": {"state": "archived", "version": 3, "values": {"note": "no", "amount": 10}, "history": ["draft", "rejected", "archived"], "visits": [["draft", 1, 1], ["rejected", 2, 2], ["archived", 3, null]]}}
+  ]
+}

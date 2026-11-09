@@ -97,6 +97,21 @@ const (
 	// CodeTerminal: the document is in a terminal state and cannot change
 	// (ADR-0039).
 	CodeTerminal = "terminal"
+	// CodeStateless: Create or CreateMany on a class without states, a
+	// stateless application that stores no documents (ADR-0040).
+	CodeStateless = "stateless"
+	// CodeUnknownTransition: the class has no named transition of that
+	// name (ADR-0040).
+	CodeUnknownTransition = "unknown_transition"
+	// CodeWrongState: the transition exists and does not leave the
+	// document's state.
+	CodeWrongState = "wrong_state"
+	// CodeGuardFalse: the transition's guard did not evaluate TRUE; an
+	// erroring guard is FALSE.
+	CodeGuardFalse = "guard_false"
+	// CodeTooManyTransitions: more than eight eventless transitions fired
+	// after one command (ADR-0008).
+	CodeTooManyTransitions = "too_many_transitions"
 )
 
 func errf(code, variable, format string, args ...any) *Error {

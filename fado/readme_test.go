@@ -54,4 +54,12 @@ func TestReadmeClass(t *testing.T) {
 	if history, err := db.History(ctx, "Invoice", doc.ID); err != nil || len(history) != 2 {
 		t.Errorf("the README's history: %v", err)
 	}
+	moved, err := db.Transition(ctx, "Invoice", doc.ID, "submit", nil, fado.As(alice))
+	if err != nil || moved.Version != 3 || moved.State != "submitted" {
+		t.Errorf("the README's transition: %v %+v", err, moved)
+	}
+	infos, err := db.Transitions(ctx, "Invoice", doc.ID, fado.As(alice))
+	if err != nil || len(infos) != 1 || infos[0].Name != "approve" || infos[0].Enabled || infos[0].Code != "guard_false" {
+		t.Errorf("the README's listing: %v %+v", err, infos)
+	}
 }

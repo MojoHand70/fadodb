@@ -17,8 +17,8 @@ import (
 // a terminal document may be looked at this way, since nothing changes.
 // A draft that does not compile returns its Diagnostics.
 func (s *Store) PreviewDraft(ctx context.Context, definition []byte, id string, values Values, transition string, opts ...Option) (*Preview, error) {
-	if transition != "" {
-		return nil, errf(CodeNotSupported, "", "previewing a transition arrives with the statechart (Phase 3)")
+	if transition != "" && id == "" {
+		return nil, hintf(CodeBadValue, "", "a transition moves an existing document; no id was given", "name a document of the stored class, or preview the create alone")
 	}
 	compact, err := compactJSON(definition)
 	if err != nil {
@@ -44,7 +44,10 @@ func (s *Store) PreviewDraft(ctx context.Context, definition []byte, id string, 
 		return nil, err
 	}
 	o := apply(opts)
-	cmd := command{op: opSet, c: draft, stored: stored, id: id, values: values, o: o, preview: true}
+	cmd := command{op: opSet, c: draft, stored: stored, id: id, transition: transition, values: values, o: o, preview: true}
+	if transition != "" {
+		cmd.op = opTransition
+	}
 	if id == "" {
 		// A create under the draft: nothing is read, so the stored class
 		// is not needed, and the draft has no statements of its own.
@@ -55,7 +58,7 @@ func (s *Store) PreviewDraft(ctx context.Context, definition []byte, id string, 
 	if err != nil {
 		return nil, err
 	}
-	return &Preview{Document: res.doc, Errors: res.errs}, nil
+	return &Preview{Document: res.doc, Errors: res.errs, Path: res.path, Transitions: res.transitions}, nil
 }
 
 // dropPlansOf forgets the lookup plans made for a draft's programs, with

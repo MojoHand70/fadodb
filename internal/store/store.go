@@ -93,6 +93,7 @@ type Store struct {
 	qvm         *formula.VM // runs the key expressions of indexed lookups while vm runs the formula
 	vars        []formula.Value
 	dirty       []bool
+	visits      []string // the states one command visits, reused under the writer's lock
 	ids         idGen
 	stmts       engineStmts
 	plans       map[*formula.QuerySlot]*lookupPlan
@@ -117,11 +118,11 @@ type Store struct {
 }
 
 type engineStmts struct {
-	lookupKey, insertEvent, insertEventDoc, listEvents *sql.Stmt
+	lookupKey, lastOfCommand, insertEvent, insertEventDoc, listEvents *sql.Stmt
 }
 
 func (e *engineStmts) close() {
-	for _, st := range []*sql.Stmt{e.lookupKey, e.insertEvent, e.insertEventDoc, e.listEvents} {
+	for _, st := range []*sql.Stmt{e.lookupKey, e.lastOfCommand, e.insertEvent, e.insertEventDoc, e.listEvents} {
 		if st != nil {
 			st.Close()
 		}
@@ -363,7 +364,8 @@ func (s *Store) prepareEngine(ctx context.Context) error {
 		}
 		*dst, err = s.writer.PrepareContext(ctx, text)
 	}
-	prep(&s.stmts.lookupKey, "SELECT kind, class, doc_id, after_version, command_hash FROM events WHERE command_key = ?")
+	prep(&s.stmts.lookupKey, "SELECT kind, class, doc_id, after_version, command_hash, event_id FROM events WHERE command_key = ?")
+	prep(&s.stmts.lastOfCommand, "SELECT max(after_version) FROM events WHERE cause_event_id = ?")
 	prep(&s.stmts.insertEvent, "INSERT INTO events (event_id, class, doc_id, kind, name, from_state, to_state, actor_id, before_version, after_version, cause_event_id, command_key, command_hash, business_date, ts)"+
 		" VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
 	prep(&s.stmts.insertEventDoc, "INSERT INTO event_docs (event_id, class, doc_id, qualifier) VALUES (?, ?, ?, ?)")

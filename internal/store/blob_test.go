@@ -18,7 +18,7 @@ const claim = `{"name": "Claim", "variables": {
   "scan":     {"type": "object", "schema": "File"},
   "receipts": {"type": "rows", "schema": "File"},
   "scanned":  {"formula": "NOT ISBLANK(scan.hash)"}
-}}`
+}, "states": {"initial": "open", "list": ["open"]}}`
 
 func sha(b []byte) string {
 	h := sha256.Sum256(b)

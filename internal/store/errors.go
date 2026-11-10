@@ -127,8 +127,21 @@ const (
 	// MaxActionDepth (ADR-0044); its row is written dead.
 	CodeTooDeep = "too_deep"
 	// CodeUnknownAction: no action of the outbox has that key, or the
-	// engine does not run an action of that name.
+	// database has no action of that name.
 	CodeUnknownAction = "unknown_action"
+	// CodeUnknownParameter: an argument names a parameter the action's
+	// definition does not have (ADR-0045).
+	CodeUnknownParameter = "unknown_parameter"
+	// CodeNotRegistered: the action is defined and nothing in this process
+	// implements it: its Go function was not given to Open (ADR-0027).
+	CodeNotRegistered = "not_registered"
+	// CodeActionError: the Go function of an action returned an error, or
+	// panicked; Message carries its words. A function that returns an
+	// error of the store keeps that error's code.
+	CodeActionError = "action_error"
+	// CodeBadResult: what an action returned does not fit what its
+	// definition declares under returns.
+	CodeBadResult = "bad_result"
 	// CodeUnknownRow: a table.update addresses a row the table does not
 	// have (ADR-0044).
 	CodeUnknownRow = "unknown_row"

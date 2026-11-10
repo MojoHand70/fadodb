@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "FadoDB action call",
+  "description": "What an action is called with (ADR-0045, item 4). A Go function registered for the action receives it as a value. A call may arrive more than once, after a crash or a failure of the store between the action's effect and its mark, each time with the same key: the receiver makes twice once by the key.",
+  "type": "object",
+  "required": ["key", "attempt", "action", "args"],
+  "additionalProperties": false,
+  "properties": {
+    "key": {
+      "description": "The key of the queued action, the same at every attempt: the id of the event that fired the rule, a colon, and the position of the action among those the event queued. The key of a trial starts with try: and names no event.",
+      "type": "string",
+      "minLength": 1
+    },
+    "attempt": {"description": "The count of the calls of this action, from 1.", "type": "integer", "minimum": 1},
+    "action": {"description": "The action, as its definition names it.", "type": "string", "minLength": 1},
+    "args": {
+      "description": "The arguments as the commit evaluated them, one for each parameter of the definition by its declared name, a parameter not given as null. Each is in the shape of a document's values: a bool, a number, text for an exact value, a money, a date and a ref, integer seconds for a datetime, any JSON for a json parameter.",
+      "type": "object"
+    },
+    "event": {"description": "The event that fired the rule. Absent in a trial, which belongs to no document.", "$ref": "event.schema.json"}
+  }
+}

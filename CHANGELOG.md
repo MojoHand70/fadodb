@@ -98,8 +98,59 @@ All notable changes to FadoDB are recorded here. The format follows
   inside and after each of the five actions one commit queued and counts
   that each happened once.
 
+- Actions are an extension point (ADR-0045, items 1, 4, 5 and 9): an
+  action a rule names is the engine's own or has a definition, and the
+  host program implements a definition with a Go function.
+  - `DefineAction` stores an action definition, JSON like a class: a
+    name of a namespace and a verb, such as `books.post`, with `params`
+    and `returns` by scalar type, `required` and a `description`.
+    `ValidateAction` reports what it would refuse. A redefinition is the
+    next version of the action.
+  - `Options.Actions` gives `Open` the Go functions of the process, each
+    under the name of its action. A function receives a
+    `fado.ActionCall`: the key of the queued action, the same at every
+    attempt; the attempt; the arguments by parameter; and the event that
+    fired the rule, with the document at that version.
+  - A rule calls a defined action with `"args"`, a formula for each
+    parameter, or for a `json` parameter a template with a formula in
+    the place of every string. The commit evaluates them and queues a
+    row; the worker calls the function outside any transaction, at
+    least once. No error is `action_run`; an error is tried again with
+    the usual wait; an error wrapped with `fado.Permanent` is a refusal,
+    dead at once. A function may call the database.
+  - `Actions` lists every action a rule may name, the engine's own and
+    the defined ones, with their parameters; `Action` returns one.
+    `PreviewAction` shows the call an action would receive for given
+    values and calls nothing; `TryAction` runs an action once outside
+    any document and answers what it returned or how it failed.
+  - `api/`, with the JSON schemas of an action definition, of a call
+    and of the delivered event, held to the engine by `TestAPISchemas`.
+  - The conformance suite `conformance/rules/calls.json`, and
+    `BenchmarkOutboxRegistered`.
+  - New codes: `unknown_parameter`, `not_registered`, `action_error` and
+    `bad_result` for the store; `unknown_action` and `unknown_parameter`
+    for a definition.
+
 ### Changed
 
+- A rule that names an action nobody defined is refused with
+  `unknown_action`, a parameter the action lacks with
+  `unknown_parameter`, a required one left out with `missing` and a
+  formula of another type with `type_mismatch`, all when the class is
+  defined. Before, any action name was accepted and not run. `http.call`
+  alone is still accepted and not run, until the step that sends
+  requests; so are `into` on an action and `request` in a definition,
+  which are refused with `not_supported` until theirs.
+- A redefinition of an action that would break a rule of a class is
+  refused with `not_allowed` naming that rule, as a redefinition of a
+  class or of a table is.
+- The worker runs the engine's own actions one at a time and up to
+  `Options.Outbox.Workers` actions that leave the database at once, and
+  a call that takes long holds back neither a commit nor the engine's
+  actions of other documents. `Drain` still runs every action one at a
+  time on the caller's goroutine.
+- `actions` and `action_versions` are names of the database's own tables
+  and no class may take them.
 - A `create` is checked when the rule's class is defined: the class it
   names must exist and have states, its values must be scalar inputs of
   that class with formulas of their types, and an input the class
@@ -130,10 +181,6 @@ All notable changes to FadoDB are recorded here. The format follows
   document or on `delete`; a rule on `schedule`, with `not_supported`
   until it is built; a misspelt property of a synchronous action. An
   `emit` names its event under `event`.
-- An action that leaves the database (`http.call`, `slack.post` and the
-  like) is still checked for its name alone and is not queued: those are
-  the next step of Phase 4 (ADR-0045).
-
 ## [0.3.0] - 2026-11-09
 
 ### Added

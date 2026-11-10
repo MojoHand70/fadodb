@@ -89,20 +89,23 @@ func (s *Store) redefinitionDiagnostics(ctx context.Context, old *class, cls *mo
 }
 
 // brokenRules says which rules of other classes a new version of a class,
-// or of a table, would break (ADR-0044, item 7): an action of theirs
-// names a variable, a transition or a column the new version lacks, or
-// gives one a value its new type does not take. Each is refused with
-// not_allowed naming the rule, and the fix is to change that rule first.
-// It compiles every class whose rules act on the target against the
-// stored definitions and against the new one, and reports what only the
-// new one breaks. An input the new version requires and a create does not
-// give is not among them: that rule cannot be changed first, since the
-// variable does not exist yet, and its action is refused with required
-// when it runs. The caller holds cmu.
-func (s *Store) brokenRules(cls *model.Class, tbl *model.Table) model.Diagnostics {
+// of a table or of an action definition would break (ADR-0044, item 7):
+// an action of theirs names a variable, a transition, a column or a
+// parameter the new version lacks, or gives one a value its new type does
+// not take. Each is refused with not_allowed naming the rule, and the fix
+// is to change that rule first. It compiles every class whose rules act
+// on the target against the stored definitions and against the new one,
+// and reports what only the new one breaks. An input the new version
+// requires and a create does not give, and a parameter it requires and a
+// call does not give, are not among them: that rule cannot be changed
+// first, since the variable or the parameter does not exist yet, and its
+// action is refused with required when it runs. One of cls, tbl and act
+// is given. The caller holds cmu.
+func (s *Store) brokenRules(cls *model.Class, tbl *model.Table, act *model.ActionSpec) model.Diagnostics {
 	env := s.env()
 	next, target := env, ""
-	if cls != nil {
+	switch {
+	case cls != nil:
 		target = cls.Name
 		next.Classes = func(name string) (*model.Class, bool) {
 			if strings.EqualFold(name, cls.Name) {
@@ -110,7 +113,7 @@ func (s *Store) brokenRules(cls *model.Class, tbl *model.Table) model.Diagnostic
 			}
 			return env.Classes(name)
 		}
-	} else {
+	case tbl != nil:
 		target = tbl.Name
 		set := formula.NewSourceSet()
 		for _, name := range s.tableOrder {
@@ -118,12 +121,23 @@ func (s *Store) brokenRules(cls *model.Class, tbl *model.Table) model.Diagnostic
 		}
 		set.Add(tbl.Source())
 		next.Sources = set
+	default:
+		target = act.Name
+		next.Actions = func(name string) (*model.ActionSpec, bool) {
+			if strings.EqualFold(name, act.Name) {
+				return act, true
+			}
+			return env.Actions(name)
+		}
 	}
 	var out model.Diagnostics
 	for _, name := range s.order {
 		dep := s.classes[strings.ToUpper(name)]
 		// The rules of the class itself compile with its new definition.
-		if cls != nil && strings.EqualFold(name, target) || !actsOn(dep.cls, target, tbl != nil) {
+		switch {
+		case cls != nil && strings.EqualFold(name, target):
+			continue
+		case act != nil && !calls(dep.cls, target), act == nil && !actsOn(dep.cls, target, tbl != nil):
 			continue
 		}
 		_, before := model.DefineIn(dep.json, env)
@@ -133,7 +147,8 @@ func (s *Store) brokenRules(cls *model.Class, tbl *model.Table) model.Diagnostic
 			had[d.Code+" "+d.Path] = true
 		}
 		for _, d := range after {
-			if had[d.Code+" "+d.Path] || !strings.HasPrefix(d.Path, "/rules/") || d.Code == model.CodeMissing && strings.HasSuffix(d.Path, "/values") {
+			if had[d.Code+" "+d.Path] || !strings.HasPrefix(d.Path, "/rules/") ||
+				d.Code == model.CodeMissing && (strings.HasSuffix(d.Path, "/values") || strings.HasSuffix(d.Path, "/args")) {
 				continue
 			}
 			out = append(out, model.Diagnostic{Code: model.CodeNotAllowed, Path: changedPath(d.Path), Pos: -1,
@@ -157,9 +172,22 @@ func actsOn(cls *model.Class, target string, table bool) bool {
 	return false
 }
 
-// changedPath is where, in the definition of a class or a table, the
-// thing is that a finding at path in another class's action is about:
-// /rules/0/do/1/values/amount is about /variables/amount.
+// calls reports whether a rule of the class calls the defined action of
+// that name.
+func calls(cls *model.Class, action string) bool {
+	for _, r := range cls.Rules {
+		for _, a := range r.Actions {
+			if a.Call && strings.EqualFold(a.Name, action) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// changedPath is where, in the definition of a class, a table or an
+// action, the thing is that a finding at path in another class's action
+// is about: /rules/0/do/1/values/amount is about /variables/amount.
 func changedPath(path string) string {
 	parts := strings.Split(path, "/") // "", rules, i, do, j, part, name
 	if len(parts) < 6 {
@@ -183,6 +211,8 @@ func changedPath(path string) string {
 			return "/key"
 		}
 		return "/columns" + name
+	case "args":
+		return "/params" + name
 	}
 	return ""
 }

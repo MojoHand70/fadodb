@@ -49,8 +49,8 @@ type caction struct {
 	// refresh are the triggered variables a refresh recomputes, in
 	// declaration order.
 	refresh []*cvar
-	// out is the layout of an action of the outbox the engine runs itself,
-	// nil for any other action.
+	// out is the layout of an action of the outbox, nil for any other
+	// action.
 	out *cqueued
 }
 
@@ -124,7 +124,8 @@ func (c *class) layoutRules() error {
 			ca := caction{a: a}
 			if a.Queued {
 				// The formulas of an outbox action fill something else: another
-				// class's variables, or a table's columns.
+				// class's variables, a table's columns, or the parameters of a
+				// defined action.
 				out, err := c.layoutQueued(a)
 				if err != nil {
 					return err
@@ -307,16 +308,16 @@ func (s *Store) runRule(run *ruleRun, row *docRow, cr *crule) *Error {
 		var err *Error
 		switch {
 		case act.a.Queued:
-			// An action of the outbox the engine runs itself: the commit
-			// evaluates its arguments now and writes its row with the
-			// commit (ADR-0043, item 7); a preview reports them.
+			// An action of the outbox, the engine's own or a defined one:
+			// the commit evaluates its arguments now and writes its row
+			// with the commit (ADR-0043, item 7); a preview reports them.
 			if err := s.queueAction(run, row, act, at); err != nil {
 				return err
 			}
 			continue
 		case !act.a.Sync:
-			// Any other action of the outbox is kept as written until the
-			// step that runs it: a preview names it and nothing is queued.
+			// http.call is kept as written until the step that sends
+			// requests (ADR-0045): a preview names it and nothing is queued.
 		case act.a.Name == model.ActionSet:
 			args, err = s.runSet(run, row, act)
 		case act.a.Name == model.ActionReset:

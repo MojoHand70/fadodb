@@ -874,3 +874,46 @@ func BenchmarkOutboxEach10(b *testing.B) {
 		}
 	}
 }
+
+// BenchmarkOutboxRegistered measures an action a Go function implements,
+// end to end (ADR-0045): a transition whose rule queues the call, which
+// is the insert of the row with its arguments, and the drain that makes
+// it, which reads the event and the document at that version, calls a
+// function that does nothing, and marks the row with the event of the
+// outcome. ADR-0044 asks 2,000 such actions a second of the drain; the
+// campaign of the release measures that on disk. It is outside the gate.
+func BenchmarkOutboxRegistered(b *testing.B) {
+	calls := 0
+	s, err := Open(filepath.Join(b.TempDir(), "bench.fado"), Options{Outbox: OutboxOptions{Manual: true},
+		Actions: map[string]ActionFunc{"books.post": func(context.Context, *ActionCall) (Values, error) { calls++; return nil, nil }}})
+	if err != nil {
+		b.Fatal(err)
+	}
+	defer s.Close()
+	ctx := context.Background()
+	if _, err := s.DefineAction(ctx, []byte(`{"name": "books.post", "params": {"job": {"type": "text", "required": true}, "amount": "number"}}`)); err != nil {
+		b.Fatal(err)
+	}
+	if _, err := s.DefineClass(ctx, []byte(`{"name": "Job", "variables": {"amount": {"type": "number"}},
+ "states": {"initial": "open", "list": ["open"]}, "transitions": [{"name": "book", "from": "open", "to": "open"}],
+ "rules": [{"on": "transition", "name": "book", "do": [{"action": "books.post", "args": {"job": "ID()", "amount": "amount"}}]}]}`)); err != nil {
+		b.Fatal(err)
+	}
+	doc, err := s.Create(ctx, "Job", Values{"amount": 500})
+	if err != nil {
+		b.Fatal(err)
+	}
+	b.ReportAllocs()
+	b.ResetTimer()
+	for b.Loop() {
+		if _, err := s.Transition(ctx, "Job", doc.ID, "book", nil, As(alice)); err != nil {
+			b.Fatal(err)
+		}
+		if n, err := s.Drain(ctx); err != nil || n != 1 {
+			b.Fatalf("drained %d, %v", n, err)
+		}
+	}
+	if calls != b.N {
+		b.Fatalf("%d calls for %d transitions", calls, b.N)
+	}
+}

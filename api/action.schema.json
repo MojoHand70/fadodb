@@ -1,0 +1,71 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "FadoDB action definition",
+  "description": "The definition of an action a rule may name (ADR-0045, item 1): its name, its parameters and what it returns. It holds no code and no secret. A definition as this schema describes it is the contract of a Go function the host program registers under the same name; the properties of an action the engine sends as an HTTP request (request, connection, ok, result) join the schema with the release that sends them.",
+  "type": "object",
+  "required": ["name"],
+  "additionalProperties": false,
+  "properties": {
+    "name": {
+      "description": "A namespace and a verb joined by a dot, such as books.post. A name without a dot, and the namespaces table and http, are the engine's. Names match without regard to case.",
+      "type": "string",
+      "maxLength": 100,
+      "pattern": "^[A-Za-z_][A-Za-z0-9_]*(\\.[A-Za-z_][A-Za-z0-9_]*)+$"
+    },
+    "version": {
+      "description": "The version of the definition, from 1. The database counts it: a redefinition is the next version, and a definition that gives a version gives that one.",
+      "type": "integer",
+      "minimum": 1
+    },
+    "label": {"description": "A short name for people.", "type": "string"},
+    "description": {"description": "What the action does, for the person or the agent who chooses it.", "type": "string"},
+    "params": {
+      "description": "The parameters, by name. A rule gives each a formula of its type under args; a json parameter also takes a template, the JSON it becomes with a formula in the place of every string.",
+      "type": "object",
+      "additionalProperties": {"$ref": "#/$defs/param"}
+    },
+    "returns": {
+      "description": "The values the action returns, by name.",
+      "type": "object",
+      "additionalProperties": {"$ref": "#/$defs/returned"}
+    }
+  },
+  "$defs": {
+    "type": {
+      "description": "A scalar type (ADR-0013). int is decimal(0); decimal and money without a scale keep two places.",
+      "type": "string",
+      "pattern": "^(bool|number|int|text|date|datetime|ref|json|(decimal|money)(\\((0|[1-9]|1[0-8])\\))?)$"
+    },
+    "param": {
+      "description": "A parameter: its type alone, or its type with whether a call must give it and what it is for.",
+      "anyOf": [
+        {"$ref": "#/$defs/type"},
+        {
+          "type": "object",
+          "required": ["type"],
+          "additionalProperties": false,
+          "properties": {
+            "type": {"$ref": "#/$defs/type"},
+            "required": {"description": "A call whose argument is blank is refused with required.", "type": "boolean"},
+            "description": {"type": "string"}
+          }
+        }
+      ]
+    },
+    "returned": {
+      "description": "A returned value: its type alone, or its type with what it is.",
+      "anyOf": [
+        {"$ref": "#/$defs/type"},
+        {
+          "type": "object",
+          "required": ["type"],
+          "additionalProperties": false,
+          "properties": {
+            "type": {"$ref": "#/$defs/type"},
+            "description": {"type": "string"}
+          }
+        }
+      ]
+    }
+  }
+}

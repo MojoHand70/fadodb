@@ -14,8 +14,12 @@
 // caller that drives the engine without a person watching reads the code
 // and the path; a person reads the message.
 //
-// The statechart (Phase 3), rules and actions (Phase 4) and access rules
-// and rights (Phase 5) are part of the class format already. Compile
-// checks their structure and binds their formulas so that a definition is
-// valid as a whole, and the engine runs them when their phase arrives.
+// The statechart, the rules with their actions, and the rights are
+// compiled here and run by the store. An action a rule names is the
+// engine's own or has a definition, an ActionSpec compiled from its own
+// JSON (ADR-0045), against which the rule's arguments are typed. The
+// class-level access rules (Phase 5) are part of the class format
+// already: Compile checks their structure and binds their formulas so
+// that a definition is valid as a whole, and the engine enforces them
+// when their phase arrives.
 package model

@@ -181,6 +181,80 @@ JSON in and diagnostics out, and to try it without moving a document.
     designed here and not scheduled; the format is the part that must
     not change under them.
 
+## Details settled while building
+
+The first step built items 1, 4 and 9, and of items 2 and 5 the Go
+function, on 2026-11-10, and settled these points.
+
+- **Where a function comes from.** `Options.Actions` maps an action's
+  name to its Go function and is given at every `Open`, so the worker
+  has every function before it runs its first row; the definition comes
+  through `DefineAction`. The process that defines a definition without
+  a `request` must have its function, else the definition is refused
+  with `not_supported`. A process that opens the file without the
+  function lists the action as not available, takes classes that name
+  it, and gets no answer for its rows, with the code `not_registered`
+  and the usual retries (ADR-0027).
+- **Names.** Identifiers joined by dots, a namespace before a verb, at
+  most 100 characters, compared without regard to case like every name.
+  A name the engine keeps is `reserved_name`.
+- **Types.** A parameter and a returned value take any scalar type of
+  ADR-0013, `ref` included, written as the type alone or as an object
+  with `type`, `required` and `description`. `required` on a returned
+  value is `not_allowed`.
+- **Arguments.** A string is a formula, typed against its parameter. A
+  `json` parameter takes a formula of type json or a template, nested at
+  most 16 deep. The row and the call hold the arguments as an object by
+  parameter in the wire shape; the function receives every parameter,
+  one not given as null.
+- **A required argument that is blank** is the action's refusal, not the
+  command's, as ADR-0044 settled for a blank id: the row is queued and
+  is dead with `required`, and the function is not called.
+- **The arguments are read against the definition as it is when the
+  action runs.** A redefinition may not take away or retype a parameter
+  a rule gives; it is refused with `not_allowed` naming the rule, as for
+  a class or a table. It may add a required parameter, since the rule
+  cannot give it before it exists: until the rule is changed its actions
+  are dead with `required`. A row that holds an argument the action has
+  lost is dead with `unknown_parameter`.
+- **What a function's error is.** The row records `action_error` with
+  the error's words; an error of the store that the function passes on
+  keeps its code; a panic is an error. The context of a call ends when
+  the database closes, and a call cut short that way counts no attempt.
+- **What a function returns** is read against `returns` by `TryAction`,
+  which reports `bad_result`. The worker does not read it yet: nothing
+  uses a result before `into`.
+- **The JSON of a call** has `key`, `attempt`, `action`, `args` and
+  `event`. The event has `event_id`, `kind`, `class`, `class_version`,
+  `doc_id`, `name`, `from_state`, `to_state`, `version`, `document`,
+  `actor_id`, `business_date`, `command_key` and `ts`. Its kind is one
+  of `created`, `set`, `reset`, `refresh`, `transition` and `deleted`.
+  The event of an eventless transition carries the key of the command
+  that caused it. For a delete, `version` and `document` are the last
+  version there was. The schemas are `api/action.schema.json`,
+  `api/call.schema.json` and `api/event.schema.json`.
+- **The worker** runs the engine's own actions one at a time and every
+  other action on a goroutine of its own, up to `Workers` at once. A
+  call in flight holds one worker and the later actions of its document,
+  and nothing else. `Drain` runs calls one at a time on the caller's
+  goroutine, and beside a running worker it leaves alone a document
+  whose action is in flight.
+- **A trial and a preview** take the arguments as values. The call of a
+  trial has no event and a key that starts with `try:`. `TryAction`
+  answers `ok`, the `result`, and for a failure the `code`, the
+  `message` and whether the outbox would ask again. An engine action is
+  not tried alone (`not_allowed`).
+- **The catalogue** lists an engine action with the properties it is
+  written with, each of the type `name`, `names`, `formula` or
+  `formulas`.
+- **Until the later steps of the phase.** A definition with `request`,
+  `connection`, `ok` or `result`, and `into` on an action, are refused
+  with `not_supported`. `http.call` in a rule is accepted and not run,
+  as it was. Any other action without a definition is `unknown_action`.
+- **The registry** is the tables `actions` and `action_versions`, names
+  no class may take. The engine schema stays at 3: tables are added and
+  none is changed.
+
 ## Consequences
 
 - An integration is a named thing with typed parameters. A rule that

@@ -299,10 +299,11 @@ The eventless transitions are then evaluated over the document the rules
 left, bounded to eight per command. Each one that fires is a commit of its
 own that repeats steps 4 to 6 with its own triggers. A rule's action
 raises no trigger, so one command runs at most nine commits and each rule
-at most once in each (ADR-0040, ADR-0043). Today steps 4 and 5 run, with
-the synchronous actions `set`, `reset`, `refresh` and `emit`, and a
-`create` goes into the outbox; the other actions of the outbox arrive
-with the next steps of Phase 4.
+at most once in each (ADR-0040, ADR-0043). Today steps 4 and 5 run: the
+synchronous actions `set`, `reset`, `refresh` and `emit` change the
+document in the commit, and the engine's own actions on other documents
+and tables and the actions the host program defines go into the outbox.
+An action sent as an HTTP request arrives with a later step of Phase 4.
 
 A triggered variable keeps its value between its triggers and carries the
 moment it was computed: the version of the document whose commit computed
@@ -412,7 +413,8 @@ until the phase that runs it.
 | `create` document | outbox | Idempotency key = event id + action index |
 | `transition` document | outbox | Same key |
 | `table.insert / update / delete` | outbox | Explicit tables, see below |
-| `http.call` | outbox | Retries with backoff, dead letter after N |
+| a defined action, such as `books.post` | outbox | Its definition is stored with `DefineAction`; a Go function of the host program implements it (ADR-0045) |
+| `http.call` | outbox | Planned: a request the engine sends, with retries and dead letter after N |
 
 Outbox execution results are events (`action_run`, `action_failed`), so the
 audit trail covers side effects. `reset` and `refresh` are also commands a
@@ -447,8 +449,44 @@ transitions. A table action inserts, updates or deletes one row by its
 key. What an action names, the class, the transition, the variables, the
 table and its columns, is checked when the rule's class is defined, and a
 redefinition that would break such a rule is refused until the rule is
-changed. The actions that leave the database are the next step
-(ADR-0045).
+changed.
+
+Actions are an extension point (ADR-0045). Beside the engine's own, a
+rule may name an action that has a definition: JSON, like a class, with
+a name of a namespace and a verb, parameters and returned values by
+scalar type. `DefineAction` stores it with its version, `Actions` lists
+every action a rule may name, and a rule gives the arguments as formulas
+under `args`, typed against the parameters when the class is defined:
+
+```json
+{"name": "books.post", "label": "Post to the books",
+ "params": {"invoice": {"type": "text", "required": true}, "amount": "money(2)"},
+ "returns": {"entry": "text"}}
+```
+
+```json
+{"on": "enter", "state": "approved",
+ "do": [{"action": "books.post", "args": {"invoice": "ID()", "amount": "total"}}]}
+```
+
+What implements a definition lives outside the engine. Today that is a
+Go function the host program gives to `Open` under the action's name
+(ADR-0027). The worker calls it after the commit, outside any
+transaction, with the key of the queued action, the attempt, the
+arguments and the event that fired the rule, the document at that
+version included; the JSON of that call is published under `api/`. No
+error is `action_run`; an error is tried again with a doubling wait; an
+error marked permanent is a refusal and the action is dead at once. The
+call happens at least once, each time with the same key, so the
+function makes twice once by the key. Up to `Outbox.Workers` such calls
+run at once, and none of them holds back a commit or the engine's own
+actions of other documents. `PreviewAction` shows the call for given
+values and `TryAction` runs an action once outside any document.
+Planned, with the next steps of Phase 4: a definition that carries a
+`request`, which the engine sends as HTTP with secrets the host supplies
+and the network off until the host allows it; `into`, which writes what
+an action returned back to the document; and `http.call`, which is
+accepted in a rule today and not run.
 
 ### Explicit tables
 
@@ -747,7 +785,12 @@ held one. History and events are never rewritten.
 ### Go API
 
 ```go
-db, err := fado.Open("app.fado", fado.Options{})
+db, err := fado.Open("app.fado", fado.Options{
+    Actions: map[string]fado.ActionFunc{"books.post": func(ctx context.Context, call *fado.ActionCall) (fado.Values, error) {
+        return post(ctx, call.Key, call.Args, call.Event)
+    }},
+})
+act, err := db.DefineAction(ctx, actionJSON)
 cls, err := db.DefineClass(ctx, classJSON)
 err  = db.DefineLayout(ctx, "Invoice", layoutJSON)
 p := fado.Principal{ID: "alice", Groups: []string{"finance"}}
@@ -760,17 +803,18 @@ preview, err := db.Preview(ctx, "Invoice", doc.ID, fado.Values{"discount": "0.20
 history, err := db.History(ctx, "Invoice", doc.ID, fado.As(p))
 rows, err := db.Query(ctx, `SELECT id, total FROM Invoice WHERE state = 'approved'`, fado.As(p))
 sub  := db.Subscribe(ctx, fado.Filter{Class: "Invoice"}, fado.As(p))
-db.RegisterExecutor("books", func(ctx context.Context, a fado.Action) error { return post(a.Event) })
 ```
 
 The principal is the embedder's (ADR-0027); every mutating call takes an
 optional idempotency key and a business date (ADR-0026); `Preview` runs the
-commit pipeline and writes nothing (ADR-0025); a registered executor
-receives the transition event from the outbox (ADR-0027). Today the `fado`
+commit pipeline and writes nothing (ADR-0025); a Go function registered
+for an action receives the event that fired the rule from the outbox
+(ADR-0027, ADR-0045). Today the `fado`
 package has `Open`, `DefineClass`, `ValidateClass`, `DefineSchema`,
 `DefineTable`, `ImportRows`, `TableRows`, `Create`, `CreateMany`, `Set`,
 `Reset`, `Refresh`, `Transition`, `Transitions`, `Delete`, `Migrate`,
-`Drain`, `Outbox`, `RetryAction`, `Get`, `Version`,
+`Drain`, `Outbox`, `RetryAction`, `DefineAction`, `ValidateAction`,
+`Actions`, `Action`, `PreviewAction`, `TryAction`, `Get`, `Version`,
 `History`, `Events`, `Query`, `Count`, `SQL`, `PutBlob`, `OpenFile`,
 `OpenBlob`, `CheckBlobs`, and `Preview` and `PreviewDraft` of a create, a
 set or a transition; a preview, a listing or a read runs at a moment the
@@ -780,8 +824,8 @@ The principal decides what a call may set and sees
 with `forbidden`, and every document comes back projected. Every refusal
 is a `fado.Error` with a stable code and the variable it is about, or the
 `Diagnostics` of a definition.
-Layouts, `QUERY`, subscriptions and executors arrive with their
-phases.
+Layouts, `QUERY`, subscriptions and actions sent as HTTP requests
+arrive with their phases.
 
 ### JSON command set
 

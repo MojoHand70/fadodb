@@ -113,6 +113,12 @@ const (
 	// CodeUnknownTable: an action names a table the database does not
 	// have (ADR-0044).
 	CodeUnknownTable = "unknown_table"
+	// CodeUnknownAction: a rule names an action that has no definition
+	// (ADR-0045).
+	CodeUnknownAction = "unknown_action"
+	// CodeUnknownParameter: a rule gives an action a parameter its
+	// definition does not have (ADR-0045).
+	CodeUnknownParameter = "unknown_parameter"
 	// CodeBadTrigger: a trigger of a triggered variable is malformed.
 	CodeBadTrigger = "bad_trigger"
 	// CodeBadValue: an enum value, a range bound or a literal is wrong.

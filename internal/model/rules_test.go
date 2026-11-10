@@ -34,7 +34,7 @@ func TestRules_Compile(t *testing.T) {
 	   "do": [{"action": "set", "values": {"note": "\"held\"", "a": "a + 1"}},
 	          {"action": "reset", "variables": ["note", "lines", "who"]},
 	          {"action": "emit", "event": "ticket.held"},
-	          {"action": "slack.post", "args": {"text": "note"}},
+	          {"action": "http.call", "url": "note"},
 	          {"action": "refresh", "variables": ["stamp", "snap"]},
 	          {"action": "refresh"},
 	          {"action": "refresh", "id": "note", "variables": ["STAMP"]}]},
@@ -78,8 +78,9 @@ func TestRules_Compile(t *testing.T) {
 	if !emit.Sync || emit.Event != "ticket.held" {
 		t.Errorf("emit %+v", emit)
 	}
-	if post.Sync || post.Name != "slack.post" || post.Path() != "/rules/0/do/3" || !strings.Contains(string(post.Raw), "args") {
-		t.Errorf("an action of the outbox is kept as written: %+v", post)
+	// http.call is the engine's and is not run yet: kept as written.
+	if post.Sync || post.Queued || post.Name != ActionHTTPCall || post.Path() != "/rules/0/do/3" || !strings.Contains(string(post.Raw), "url") {
+		t.Errorf("http.call is kept as written: %+v", post)
 	}
 	if cls.Rules[1].Index != 1 || len(cls.Rules[1].Variables) != 2 {
 		t.Errorf("rule %+v", cls.Rules[1])

@@ -30,7 +30,8 @@ read the diagnostics, fix, preview against live data, define.
 | formulas, exact money, calendar days, `IFERROR` | shipped |
 | states, transitions, guards, eventless chains, `STATE()` and `ID()` | shipped |
 | field rights per state, per-transition rules | shipped with Phase 3 |
-| rules and actions | in progress, Phase 4: rules fire inside the commit with `set`, `reset`, `refresh` and `emit`, a preview lists them, and triggered variables are computed at their triggers; what a rule does beyond its own document runs through the outbox, exactly once and as the person who caused it: `create` (with `each`, one document per element of a list), `transition` and `refresh` of another document, `table.insert`, `table.update`, `table.delete`; the actions that leave the database are checked by name and not queued yet |
+| rules and actions | in progress, Phase 4: rules fire inside the commit with `set`, `reset`, `refresh` and `emit`, a preview lists them, and triggered variables are computed at their triggers; what a rule does beyond its own document runs through the outbox, exactly once and as the person who caused it: `create` (with `each`, one document per element of a list), `transition` and `refresh` of another document, `table.insert`, `table.update`, `table.delete`; a rule may also call an action the host program defined and implements with a Go function, with typed `args`, and `Actions` lists every action a rule may name; an action sent as an HTTP request, `http.call` and `into`, which writes a result back, are planned |
+| action definitions: `DefineAction`, `ValidateAction`, `Actions`, `PreviewAction`, `TryAction` | in progress, Phase 4: for actions a Go function of the host program implements; a definition with a `request` is planned |
 | the class-level access rule | designed, Phase 5: it compiles, it is not enforced |
 | class versions, terminal states, migrations | designed, ADR-0039 |
 
@@ -53,8 +54,12 @@ read the diagnostics, fix, preview against live data, define.
    (`INGROUP("finance")`). A terminal state freezes the document.
 5. **Write the rights per state.** Which fields are read-only once
    approved, which group may write a discount.
-6. **Write the rules and the access rule**, marked as what they are
-   today: checked, not run.
+6. **Write the rules.** They run. Read `Actions` first: a rule names an
+   engine action or one the catalogue lists, and gives a defined action
+   its arguments under `args`, a formula for each parameter. Try a
+   defined action with `TryAction` before a document depends on it.
+   **Write the access rule**, marked as what it is today: checked, not
+   enforced.
 7. **Validate.** Today through `ValidateClass` on the Go API; a
    `fadodb class check FILE` subcommand is planned so this needs no Go.
    Each diagnostic carries a stable code, a JSON pointer to the element,

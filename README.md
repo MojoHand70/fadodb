@@ -22,8 +22,11 @@ Website: [fadodb.org](https://fadodb.org).
 > does beyond its own document runs through the outbox, exactly once
 > and as the person who caused it: it creates a document, or one for
 > each element of a list, moves or refreshes another document, and
-> changes a row of a table. The actions that leave the database, the
-> row-level access rules, `QUERY`
+> changes a row of a table. A rule can also call an action of the host
+> program's own: a definition with typed parameters, stored in the
+> database, and a Go function the outbox calls with the event that fired
+> the rule. Actions sent as HTTP requests, results written back to the
+> document, `QUERY`, time, the row-level access rules
 > and the server come with their steps and phases. The numbers are in
 > [docs/perf/](docs/perf/), the plan in [ROADMAP.md](ROADMAP.md).
 
@@ -117,7 +120,16 @@ caused it; a refusal leaves a dead action with its code, `Outbox` lists
 them and `RetryAction` tries one again. Beside `create`, which with
 `each` makes one document for each element of a list, a rule can take a
 `transition` of another document, `refresh` it so that it moves by its
-own guards, and insert, update or delete a row of a table. A preview, a listing or a read
+own guards, and insert, update or delete a row of a table. Other
+actions are the host program's: `DefineAction` stores a definition with
+a name such as `books.post`, typed parameters and what it returns; the
+program gives `Open` a Go function under that name; and a rule calls it
+with `"args"`, a formula for each parameter, checked when the class is
+defined. The outbox calls the function after the commit with the
+arguments and the event that fired the rule, the document included, at
+least once and each time with the same key; an error is tried again and
+`fado.Permanent` marks a refusal. `Actions` lists what a rule may name
+and `TryAction` runs one outside any document. A preview, a listing or a read
 may be asked at a moment the caller chooses, `fado.At(t)`, and a preview
 reports the moment it ran under; a commit runs at the database's clock.
 A refusal is a `fado.Error` with a stable code and the variable it
@@ -210,7 +222,8 @@ internal/model/    document classes, schemas, tables, rules, validation, the dif
 internal/store/    SQLite store: documents, history, events, rules in the commit, the outbox, tables, lookups, filters, blobs, class versions
 internal/query/    the filter compiler and the SQL endpoint's authorizer
 internal/state/    statechart engine (Phase 3)
-internal/rules/    the actions that leave the database (Phase 4)
+internal/rules/    actions sent as HTTP requests (Phase 4)
+api/               JSON schemas of an action definition, of the call an action receives and of the delivered event
 internal/auth/     users, groups, access rules as predicates (Phase 5)
 internal/server/   HTTP and WebSocket (Phase 6)
 analytics/         the DuckDB module: conformance and store benchmarks today, the projection in Phase 8

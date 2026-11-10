@@ -1,0 +1,64 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "FadoDB delivered event",
+  "description": "An event as an action receives it (ADR-0026, ADR-0045, item 4): the event of the commit whose rule queued the action, with the document at the version that commit made, so that the receiver needs no second request. No principal's read rights apply to the document: it is what the author of the class chose to hand to the action.",
+  "type": "object",
+  "required": ["event_id", "kind", "class", "class_version", "doc_id", "version", "document", "business_date", "ts"],
+  "additionalProperties": false,
+  "properties": {
+    "event_id": {"description": "The id of the event, which sorts by time.", "type": "string", "minLength": 1},
+    "kind": {
+      "description": "What the commit did. A transition without a name is an eventless one, which the engine took after the command.",
+      "type": "string",
+      "enum": ["created", "set", "reset", "refresh", "transition", "deleted"]
+    },
+    "class": {"description": "The class of the document.", "type": "string", "minLength": 1},
+    "class_version": {"description": "The version of the class whose rule queued the action.", "type": "integer", "minimum": 1},
+    "doc_id": {"type": "string", "minLength": 1},
+    "name": {"description": "The transition taken, on an event of kind transition that has a name.", "type": "string"},
+    "from_state": {"description": "The state a transition left.", "type": "string"},
+    "to_state": {"description": "The state a transition entered.", "type": "string"},
+    "version": {"description": "The version of the document the commit made; for a delete, the last version there was.", "type": "integer", "minimum": 1},
+    "document": {"$ref": "#/$defs/document"},
+    "actor_id": {"description": "The principal whose command caused the event; absent when the command had none.", "type": "string"},
+    "business_date": {"description": "The business date of the event as YYYY-MM-DD (ADR-0026).", "type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"},
+    "command_key": {"description": "The idempotency key of the command that caused the event, when it had one. A key that starts with outbox: is the engine's own: the command was an action's.", "type": "string"},
+    "ts": {"description": "When the commit was made, in seconds since the epoch, UTC.", "type": "integer"}
+  },
+  "$defs": {
+    "document": {
+      "description": "The document at the event's version, in the wire shape (ADR-0018).",
+      "type": "object",
+      "required": ["class", "id", "title", "state", "version", "class_version", "created_at", "updated_at", "values"],
+      "additionalProperties": false,
+      "properties": {
+        "class": {"type": "string"},
+        "id": {"type": "string"},
+        "title": {"type": "string"},
+        "state": {"type": "string"},
+        "version": {"type": "integer", "minimum": 1},
+        "class_version": {"description": "The version of the class that computed this version of the document.", "type": "integer", "minimum": 1},
+        "created_at": {"type": "integer"},
+        "updated_at": {"type": "integer"},
+        "state_entered_at": {"type": "integer"},
+        "values": {
+          "description": "The variables by declared name: null for a blank, a bool, a number, text for an exact value, a money, a date and a ref, integer seconds for a datetime, any JSON for a json value, an object for an object, a list of objects for rows and a list of scalars for an array.",
+          "type": "object"
+        },
+        "computed": {
+          "description": "For every triggered variable that has been computed or has failed to: the version whose commit computed its value, when, and the error of a recomputation that failed since.",
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "version": {"type": "integer", "minimum": 1},
+              "at": {"type": "integer"},
+              "error": {"type": "string"}
+            }
+          }
+        }
+      }
+    }
+  }
+}

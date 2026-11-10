@@ -1,6 +1,6 @@
 {
   "suite": "queued",
-  "description": "An action that changes something other than the rule's own document belongs to the outbox (ADR-0043 item 7, ADR-0044). The commit evaluates its arguments over the document as the rules before it left it and writes a row with the commit; a preview reports what would be queued, with those arguments, and writes nothing. An argument that errors refuses the command with the action's path. An action the engine does not run yet is named by the preview and not queued.",
+  "description": "An action that changes something other than the rule's own document belongs to the outbox (ADR-0043 item 7, ADR-0044). The commit evaluates its arguments over the document as the rules before it left it and writes a row with the commit; a preview reports what would be queued, with those arguments, and writes nothing. An argument that errors refuses the command with the action's path. http.call, which the engine does not send yet, is named by the preview and not queued; any other action a rule names has a definition (the suite calls).",
   "clock": "2026-03-01 12:00:00",
   "classes": [
     {"name": "Receipt", "variables": {"invoice": {"type": "text", "required": true}, "amount": {"type": "number"}, "share": {"type": "number"}},
@@ -15,7 +15,7 @@
       {"on": "enter", "state": "paid",
        "do": [{"action": "set", "values": {"paid_at": "NOW()", "total": "total + 10"}},
               {"action": "create", "class": "Receipt", "values": {"invoice": "ID()", "amount": "total"}},
-              {"action": "slack.post", "args": {"channel": "\"#finance\"", "text": "\"paid\""}}]},
+              {"action": "http.call", "url": "\"https://hooks.example/paid\""}]},
       {"on": "enter", "state": "split",
        "do": [{"action": "create", "class": "Receipt", "id": "\"R-\" & ID()", "values": {"invoice": "ID()", "share": "total / parts"}}]}
     ]
@@ -23,7 +23,7 @@
   "script": [
     {"do": "create", "doc": "i", "values": {"total": 90}, "expect": {"state": "open", "version": 1, "outbox": []}},
     {"name": "a preview names what would be queued and queues nothing", "do": "preview", "transition": "pay",
-     "expect": {"state": "paid", "rules": ["/rules/0"], "queued": [{"action": "create"}, {"action": "slack.post"}], "values": {"paid_at": 1772366400, "total": 100}, "outbox": []}},
+     "expect": {"state": "paid", "rules": ["/rules/0"], "queued": [{"action": "create"}, {"action": "http.call"}], "values": {"paid_at": 1772366400, "total": 100}, "outbox": []}},
     {"name": "the commit writes the row with the arguments of that moment: the total the set before it left", "do": "transition", "transition": "pay",
      "expect": {"state": "paid", "version": 2, "values": {"paid_at": 1772366400, "total": 100}, "events": ["created", "transition:pay"],
                 "outbox": [{"action": "create", "status": "pending", "attempts": 0, "depth": 0}]}},

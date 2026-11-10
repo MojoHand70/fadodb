@@ -1,0 +1,24 @@
+{
+  "name": "Invoice",
+  "title": "\"Invoice for \" & customer",
+  "variables": {
+    "customer": {"type": "text", "required": true},
+    "due":      {"type": "date", "default": "ADDDAYS(TODAY(), 30)"},
+    "discount": {"type": "decimal", "scale": 2, "default": "0", "min": 0, "max": "0.50"},
+    "net":      {"type": "money", "scale": 2},
+    "lines":    {"type": "rows", "schema": {"sku": "text", "qty": "int", "price": "money"}},
+    "total":    {"formula": "ROUND(net * (1 - discount), 2)"}
+  },
+  "states": {"initial": "draft", "list": ["draft", "submitted", "approved", "paid"], "final": ["paid"]},
+  "transitions": [
+    {"name": "submit",  "from": "draft",     "to": "submitted", "guard": "total > 0"},
+    {"name": "approve", "from": "submitted", "to": "approved",  "guard": "INGROUP(\"finance\")"},
+    {"name": "pay",     "from": "approved",  "to": "paid"}
+  ],
+  "rules": [
+    {"on": "enter", "state": "paid",
+     "do": [{"action": "create", "class": "Receipt", "values": {"invoice": "ID()", "amount": "total"}}]}
+  ],
+  "access": {"read": "INGROUP(\"finance\") OR customer = USER()"},
+  "rights": {"*": {"discount": {"write": ["sales"]}}, "approved": {"discount": {"read": ["finance"]}}}
+}

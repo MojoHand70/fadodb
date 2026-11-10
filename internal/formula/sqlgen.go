@@ -117,6 +117,15 @@ type Dialect interface {
 	// NotFinite is the condition that a numeric value is not a finite
 	// number, the overflow check of ADR-0019.
 	NotFinite(val string) string
+	// ExactRowSum and NumberRowSum spell SUM over the rows of an aggregate
+	// query (ADR-0046), each as the value and its error check. mant is
+	// the raw mantissa of an exact expression, NULL for a blank: the value
+	// is the total, NULL when no row has one, and the sum fails only when
+	// the total does not fit. num is a number, NULL for a blank, and order
+	// the ORDER BY clause of the source's key, or "": the rows are added
+	// one by one in that order from zero, as the VM adds them.
+	ExactRowSum(mant string) (val, err string)
+	NumberRowSum(num, order string) (val, err string)
 	// Pow spells x to the power y as the VM computes it.
 	Pow(x, y string) string
 	// Render applies the TEXT rule of ADR-0019 to a scalar.
@@ -962,17 +971,82 @@ func (p *Program) Calls(name string) bool {
 
 // LookupSQL translates one lookup slot into a correlated scalar subquery
 // (ADR-0020): the column of the first row of the source, in key order, on
-// which the condition holds, NULL when none does. A row on which the
-// condition would stop with an error does not match. arg gives the
-// expression of the i-th THIS argument, and of its currency column when
-// currency is set; table the expression of the source. The store's
-// statement path and the generator's lookup instruction share it.
+// which the condition holds, NULL when none does, or the slot's aggregate
+// over those rows (ADR-0046). A row on which the condition would stop
+// with an error does not match. arg gives the expression of the i-th THIS
+// argument, and of its currency column when currency is set; table the
+// expression of the source. The store's statement path and the
+// generator's lookup instruction share it.
 func LookupSQL(q *QuerySlot, d Dialect, arg func(i int, currency bool) string, table func(string) string, params *Params) (SQLExpr, error) {
-	const alias = "q"
+	r, err := lookupRows(q, d, arg, table, params)
+	if err != nil {
+		return SQLExpr{}, err
+	}
+	if q.Agg != "" {
+		a, err := r.aggregate()
+		if err != nil {
+			return SQLExpr{}, err
+		}
+		e := SQLExpr{Val: "(SELECT " + a.val + r.from + ")", Kind: q.Type.Kind, Scale: q.Type.Scale}
+		if a.cur != "" {
+			e.Cur = "(SELECT " + a.cur + r.from + ")"
+		}
+		errs := []string{a.rowErr}
+		for _, x := range a.errs {
+			errs = append(errs, "(SELECT "+x+r.from+")")
+		}
+		e.Err = coalesceErr(errs...)
+		return e, nil
+	}
+	from := r.from + r.order + " LIMIT 1)"
+	e := SQLExpr{Val: "(SELECT " + d.Load(lookupAlias+"."+quoteIdent(q.Column), q.Type.Kind) + from, Kind: q.Type.Kind, Scale: q.Type.Scale}
+	if q.Type.Kind == KindMoney {
+		e.Cur = "(SELECT " + lookupAlias + "." + quoteIdent(q.Column+CurrencySuffix) + from
+	}
+	return e, nil
+}
+
+// AggregateSQL translates an aggregate slot into one statement over the
+// matching rows, for an executor that runs the lookup by itself: one row
+// with the value as v, the currency of a money value as c and the error
+// code as e, each NULL when there is none. The arguments are those of
+// LookupSQL.
+func AggregateSQL(q *QuerySlot, d Dialect, arg func(i int, currency bool) string, table func(string) string, params *Params) (string, error) {
+	r, err := lookupRows(q, d, arg, table, params)
+	if err != nil {
+		return "", err
+	}
+	a, err := r.aggregate()
+	if err != nil {
+		return "", err
+	}
+	orNull := func(x string) string {
+		if x == "" {
+			return "NULL"
+		}
+		return x
+	}
+	return "SELECT " + a.val + " AS v, " + orNull(a.cur) + " AS c, " + orNull(coalesceErr(append([]string{a.rowErr}, a.errs...)...)) + " AS e" + r.from, nil
+}
+
+// lookupAlias names the source inside a lookup's subquery.
+const lookupAlias = "q"
+
+// rowsSQL is the matching rows of a lookup: the FROM and WHERE of its
+// subquery, the order of the source's key, and what translates a program
+// of the slot.
+type rowsSQL struct {
+	q           *QuerySlot
+	d           Dialect
+	from, order string
+	sub         func(p *Program) (SQLExpr, error)
+}
+
+func lookupRows(q *QuerySlot, d Dialect, arg func(i int, currency bool) string, table func(string) string, params *Params) (*rowsSQL, error) {
 	inner := func(s Slot) string {
 		name, ok := strings.CutPrefix(s.Name, "THIS.")
 		if !ok {
-			return alias + "." + quoteIdent(s.Name)
+			return lookupAlias + "." + quoteIdent(s.Name)
 		}
 		if i := q.ArgIndex(s.Name); i >= 0 {
 			return arg(i, false)
@@ -981,29 +1055,95 @@ func LookupSQL(q *QuerySlot, d Dialect, arg func(i int, currency bool) string, t
 		if i := q.ArgIndex("THIS." + base); i >= 0 && base != name {
 			return arg(i, true)
 		}
-		return alias + "." + quoteIdent(name)
+		return lookupAlias + "." + quoteIdent(name)
 	}
-	sub := &sqlTranslator{p: q.Cond, d: d, column: inner, table: table, params: params}
-	cond, err := sub.block(0, len(q.Cond.Code)-1)
+	r := &rowsSQL{q: q, d: d}
+	r.sub = func(p *Program) (SQLExpr, error) {
+		t := &sqlTranslator{p: p, d: d, column: inner, table: table, params: params}
+		return t.block(0, len(p.Code)-1)
+	}
+	cond, err := r.sub(q.Cond)
 	if err != nil {
-		return SQLExpr{}, fmt.Errorf("sqlgen: LOOKUP condition: %w", err)
+		return nil, fmt.Errorf("sqlgen: LOOKUP condition: %w", err)
 	}
 	where := d.Cond(cond)
 	if cond.Err != "" {
 		where = "(" + cond.Err + ") IS NULL AND " + where
 	}
-	var order string
 	if len(q.Order) > 0 {
 		keys := make([]string, len(q.Order))
 		for i, k := range q.Order {
-			keys[i] = alias + "." + quoteIdent(k)
+			keys[i] = lookupAlias + "." + quoteIdent(k)
 		}
-		order = " ORDER BY " + strings.Join(keys, ", ")
+		r.order = " ORDER BY " + strings.Join(keys, ", ")
 	}
-	from := " FROM " + table(q.Source) + " AS " + alias + " WHERE " + where + order + " LIMIT 1)"
-	e := SQLExpr{Val: "(SELECT " + d.Load(alias+"."+quoteIdent(q.Column), q.Type.Kind) + from, Kind: q.Type.Kind, Scale: q.Type.Scale}
-	if q.Type.Kind == KindMoney {
-		e.Cur = "(SELECT " + alias + "." + quoteIdent(q.Column+CurrencySuffix) + from
+	r.from = " FROM " + table(q.Source) + " AS " + lookupAlias + " WHERE " + where
+	return r, nil
+}
+
+// aggregateSQL is an aggregate over the matching rows: val, cur and errs
+// are expressions of one SELECT over them, and rowErr a subquery of its
+// own, the error of the first row in key order on which the aggregated
+// expression fails.
+type aggregateSQL struct {
+	val, cur, rowErr string
+	errs             []string
+}
+
+// aggregate spells the slot's aggregate with the engine's own aggregate
+// functions, so that nothing crosses to the engine per row, and so that
+// the answer is the one QuerySlot.Aggregate gives (ADR-0046).
+func (r *rowsSQL) aggregate() (aggregateSQL, error) {
+	q, d := r.q, r.d
+	x, err := r.sub(q.Value)
+	if err != nil {
+		return aggregateSQL{}, fmt.Errorf("sqlgen: LOOKUP %s: %w", q.Agg, err)
 	}
-	return e, nil
+	var a aggregateSQL
+	if x.Err != "" {
+		a.rowErr = "(SELECT " + x.Err + r.from + " AND (" + x.Err + ") IS NOT NULL" + r.order + " LIMIT 1)"
+	}
+	exact := x.Kind.IsExact()
+	// num is the value as a number and mant as a mantissa, each NULL for
+	// a blank, which the engine's aggregates skip.
+	num := x.Val
+	switch x.Kind {
+	case KindNull:
+		num = "NULL"
+	case KindBool:
+		num = "(CASE WHEN " + x.Val + " IS NULL THEN NULL ELSE " + d.Num(x) + " END)"
+	}
+	mant := d.RawMant(x)
+	if exact && x.Kind == KindMoney && q.Agg != "COUNT" {
+		a.cur = "MIN(" + x.Cur + ")"
+		a.errs = append(a.errs, "CASE WHEN COUNT(DISTINCT "+x.Cur+") > 1 THEN 'currency_mismatch' END")
+	}
+	switch q.Agg {
+	case "COUNT":
+		seen := x.Val
+		if x.Kind == KindNull {
+			seen = "NULL"
+		}
+		a.val = "CAST(COUNT(" + seen + ") AS " + d.ColumnType(KindNumber) + ")"
+	case "MIN", "MAX":
+		if exact {
+			a.val = d.Narrow(q.Agg + "(" + mant + ")")
+		} else {
+			a.val = q.Agg + "(" + num + ")"
+		}
+	case "SUM":
+		var e string
+		if exact {
+			a.val, e = d.ExactRowSum(mant)
+			if x.Kind != KindMoney {
+				a.val = "COALESCE(" + a.val + ", " + d.IntLit(0) + ")"
+			}
+		} else {
+			a.val, e = d.NumberRowSum(num, r.order)
+		}
+		a.errs = append(a.errs, e)
+	default:
+		return aggregateSQL{}, fmt.Errorf("sqlgen: LOOKUP: unknown aggregate %s", q.Agg)
+	}
+	return a, nil
 }

@@ -59,7 +59,7 @@ func TestProgram_DebugForm(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{`"format":"FADO v3"`, `"result":"number"`, `load 0 (qty)`, `call`, `(ROUND/2)`, `jump.if.false`, `return`, `"classes":["pure"]`} {
+	for _, want := range []string{`"format":"FADO v4"`, `"result":"number"`, `load 0 (qty)`, `call`, `(ROUND/2)`, `jump.if.false`, `return`, `"classes":["pure"]`} {
 		if !strings.Contains(string(out), want) {
 			t.Errorf("debug form lacks %s:\n%s", want, out)
 		}
@@ -108,14 +108,60 @@ func TestProgram_LookupRoundTrip(t *testing.T) {
 	if len(indexed.Slots) != 1 || len(indexed.Classes) != 2 || indexed.Classes[1] != ClassLookup {
 		t.Errorf("program: slots %v classes %v", indexed.Slots, indexed.Classes)
 	}
-	scan, err := Bind("LOOKUP(Rates, rate, code = THIS.code AND min_qty <= THIS.qty)", scope, opts)
+	if q.KeyPart || q.Agg != "" || q.Value != nil {
+		t.Errorf("a whole equality is not a part, and a column is no aggregate: %+v", q)
+	}
+	// The first equality of a conjunction with an expression of the
+	// document alone is the key, and the slot says the condition still
+	// decides (ADR-0046).
+	narrowed, err := Bind("LOOKUP(Rates, rate, min_qty <= THIS.qty AND code = THIS.code AND rate = DECIMAL(THIS.qty, 6))", scope, opts)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if q := scan.Queries[0]; q.Key != nil || q.IndexColumn != "" || len(q.Args) != 2 || len(q.Cond.Slots) != 4 {
+	if q := narrowed.Queries[0]; q.Key == nil || q.IndexColumn != "code" || !q.KeyPart || len(q.Args) != 2 || len(q.Cond.Slots) != 5 {
+		t.Errorf("narrowed slot: %+v", q)
+	}
+	scan, err := Bind("LOOKUP(Rates, rate, code = THIS.code OR min_qty <= THIS.qty)", scope, opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if q := scan.Queries[0]; q.Key != nil || q.IndexColumn != "" || q.KeyPart || len(q.Args) != 2 || len(q.Cond.Slots) != 4 {
 		t.Errorf("statement slot: %+v", q)
 	}
-	for _, p := range []*Program{indexed, scan} {
+	// An aggregate in the column position: no column, the function and
+	// the expression it runs over, and the function's type.
+	agg, err := Bind("LOOKUP(Rates, SUM(rate + rate), code = THIS.code AND min_qty > 0)", scope, opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if q := agg.Queries[0]; q.Column != "" || q.Agg != "SUM" || q.Value == nil || q.Type.String() != "decimal(6)" || !agg.Result.Equal(q.Type) ||
+		len(q.Value.Slots) != 1 || q.Key == nil || !q.KeyPart {
+		t.Errorf("aggregate slot: %+v", q)
+	}
+	count, err := Bind("LOOKUP(Rates, COUNT(code), TRUE)", scope, opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if q := count.Queries[0]; q.Agg != "COUNT" || q.Type.String() != "number" || q.Key != nil {
+		t.Errorf("count slot: %+v", q)
+	}
+	// A slot that is neither a column nor an aggregate, or both, or whose
+	// key is a part of nothing, is not a program.
+	for name, spoil := range map[string]func(q *QuerySlot){
+		"an aggregate with a column":   func(q *QuerySlot) { q.Column = "rate" },
+		"an aggregate nobody knows":    func(q *QuerySlot) { q.Agg = "AVERAGE" },
+		"an aggregate over nothing":    func(q *QuerySlot) { q.Value = nil },
+		"neither column nor aggregate": func(q *QuerySlot) { q.Agg, q.Value = "", nil },
+		"a part of no key":             func(q *QuerySlot) { q.Key, q.IndexColumn = nil, "" },
+	} {
+		bad := *agg
+		bad.Queries = append([]QuerySlot(nil), agg.Queries...)
+		spoil(&bad.Queries[0])
+		if _, err := Decode(bad.Encode()); err == nil {
+			t.Errorf("%s was decoded", name)
+		}
+	}
+	for _, p := range []*Program{indexed, narrowed, scan, agg, count} {
 		back, err := Decode(p.Encode())
 		if err != nil {
 			t.Fatal(err)

@@ -73,8 +73,12 @@ an action for any REST API. By the owner's ruling of 2026-11-10 the
 phase writes no definitions for particular services, which come with
 real needs, and the package format waits for the first of them. Its
 sixth step, formulas that read other documents, has its design in
-ADR-0046, accepted on 2026-11-10, and is not built yet: a class as the
-source of `LOOKUP`, with a count, a sum, the smallest and the largest.
+ADR-0046, accepted on 2026-11-10: a class as the source of `LOOKUP`,
+with a count, a sum, the smallest and the largest. Its first part is
+built: `COUNT`, `SUM`, `MIN` and `MAX` in a `LOOKUP` of a table, with
+one answer on the Go VM, SQLite and DuckDB, and a lookup narrowed by an
+equality that is one term of an `AND`. A class as the source is not
+built yet.
 By the owner's rulings of that day a formula sees every document, and
 `QUERY`, which returns lists, is built with the first layout or report
 that needs one; tables stored outside the file come with the analytical

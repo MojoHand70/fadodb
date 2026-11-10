@@ -71,6 +71,23 @@ func (SQLite) OverflowErr(val string) string {
 	return "CASE WHEN typeof(" + val + ") = 'real' THEN 'overflow' END"
 }
 
+// ExactRowSum implements Dialect. SQLite's SUM over integers fails the
+// statement when a partial sum overflows, in whatever order it met the
+// rows, so the mantissas are added as two halves, which cannot overflow,
+// and fado_dec_total joins them and says whether the total fits.
+func (SQLite) ExactRowSum(mant string) (string, string) {
+	halves := "SUM((" + mant + ") >> 32), SUM((" + mant + ") & 4294967295)"
+	return "fado_dec_total(" + halves + ")", "fado_dec_total_err(" + halves + ")"
+}
+
+// NumberRowSum implements Dialect. SQLite's own SUM compensates as it
+// adds, which is not the plain addition of the VM, so the rows go in key
+// order to fado_sum_rows, the VM's own sum.
+func (SQLite) NumberRowSum(num, order string) (string, string) {
+	rows := num + order
+	return "fado_sum_rows(" + rows + ")", "fado_sum_rows_err(" + rows + ")"
+}
+
 // Pow implements Dialect: the engine's own power function, not SQLite's.
 func (SQLite) Pow(x, y string) string { return "fado_power(" + x + ", " + y + ")" }
 
@@ -287,6 +304,22 @@ var limitedFunctions = map[string]bool{
 	"REPLACE": true, "SUBSTITUTE": true, "REPEAT": true, "PAD": true, "REGEXREPLACE": true, "URLENCODE": true,
 }
 
+// RegisteredAggregate describes an aggregate over rows that the SQLite
+// dialect calls back into Go (ADR-0046), registered as Name and Name_err:
+// Fn folds the values of one evaluation in the order the rows arrived.
+type RegisteredAggregate struct {
+	Name string
+	// Kind is the kind of the one argument.
+	Kind Kind
+	Fn   func(vals []Value) (Value, *EvalError)
+}
+
+// SQLiteAggregates lists the aggregate functions the SQLite dialect
+// expects to be registered. The sqlitefn package registers them.
+func SQLiteAggregates() []RegisteredAggregate {
+	return []RegisteredAggregate{{Name: "fado_sum_rows", Kind: KindNumber, Fn: SumRows}}
+}
+
 // RegisteredFunc describes an engine function a SQL dialect calls back into
 // Go (ADR-0019).
 type RegisteredFunc struct {
@@ -436,6 +469,20 @@ var sqliteExact = []RegisteredFunc{
 				return Value{}, err
 			}
 			return Decimal(r, 0), nil
+		}},
+	// fado_dec_total(hi, lo): the total of a sum of mantissas from the sum
+	// of their upper parts and the sum of their lower 32 bits, blank when
+	// no row had a value (ADR-0046).
+	{Name: "fado_dec_total", NArgs: 2, Kinds: []Kind{KindDecimal},
+		Fn: func(_ *VM, args []Value) (Value, *EvalError) {
+			if args[0].kind == KindNull || args[1].kind == KindNull {
+				return Blank(), nil
+			}
+			m, ok := wideTotal(args[0].Mant(), args[1].Mant())
+			if !ok {
+				return Value{}, overflow()
+			}
+			return Decimal(m, 0), nil
 		}},
 	// fado_dec_min and fado_dec_max over aligned mantissas, blanks skipped;
 	// the mantissas are at one scale already, which the VM's functions

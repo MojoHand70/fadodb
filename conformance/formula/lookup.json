@@ -1,6 +1,6 @@
 {
   "suite": "lookup",
-  "description": "LOOKUP(source, column, condition) returns one column of the first row of an explicit table, in the table's key order, on which the condition holds, and blank when no row does (ADR-0016, ADR-0020). Inside the condition a bare name is a column of the source and THIS.name a variable of the document; a row on which the condition stops with an error does not match. An equality of one column with an expression of the document alone is the shape an index serves (ADR-0036); every other condition runs as a statement; both answer the same.",
+  "description": "LOOKUP(source, column, condition) returns one column of the first row of an explicit table, in the table's key order, on which the condition holds, and blank when no row does (ADR-0016, ADR-0020). In place of the column COUNT, SUM, MIN or MAX may stand over an expression of the source's columns, and the answer is what the same function gives over the same values inside one document: blanks skipped, exact values exact, numbers added one by one in key order, and an exact sum failing only when the total does not fit (ADR-0046). Inside the condition a bare name is a column of the source and THIS.name a variable of the document; a row on which the condition stops with an error does not match. An equality of one column with an expression of the document alone is the shape an index serves (ADR-0036); every other condition runs as a statement; both answer the same.",
   "variables": {"code": "text", "qty": "number", "day": "date", "amount": "money(2)", "limit": "decimal(2)", "k": "number"},
   "sources": {
     "Rates": {
@@ -20,6 +20,29 @@
         {"sku": "A1", "min_qty": 1, "price": "9.50 PLN", "divisor": 0},
         {"sku": "A1", "min_qty": 10, "price": "8.00 PLN", "divisor": 1},
         {"sku": "B2", "min_qty": 1, "price": "4.00 PLN", "divisor": 2}
+      ]
+    },
+    "Orders": {
+      "key": ["id"],
+      "columns": {"id": "text", "customer": "text", "qty": "number", "total": "decimal(2)", "fee": "money(2)", "paid": "bool", "divisor": "number"},
+      "rows": [
+        {"id": "O3", "customer": "acme", "qty": 2.5, "total": "0.25", "fee": "2.50 PLN", "paid": true, "divisor": 2},
+        {"id": "O1", "customer": "acme", "qty": 3, "total": "10.50", "fee": "1.00 PLN", "paid": true, "divisor": 1},
+        {"id": "O2", "customer": "acme", "qty": null, "total": null, "fee": null, "paid": false, "divisor": 0},
+        {"id": "O4", "customer": "bolt", "qty": 7, "total": "99.99", "fee": "3.00 EUR", "paid": null, "divisor": 4},
+        {"id": "O6", "customer": "core", "qty": 1, "total": "92233720368547758.07", "fee": "5.00 PLN", "paid": true, "divisor": 1},
+        {"id": "O7", "customer": "core", "qty": 1, "total": "-92233720368547758.07", "fee": "5.00 PLN", "paid": true, "divisor": 1},
+        {"id": "O5", "customer": "core", "qty": 1, "total": "92233720368547758.07", "fee": "5.00 PLN", "paid": true, "divisor": 1}
+      ]
+    },
+    "Drift": {
+      "key": ["n"],
+      "columns": {"n": "number", "x": "number", "huge": "number"},
+      "rows": [
+        {"n": 3, "x": -1e16, "huge": null},
+        {"n": 1, "x": 1e16, "huge": 1.7e308},
+        {"n": 4, "x": 1, "huge": null},
+        {"n": 2, "x": 1, "huge": 1.7e308}
       ]
     }
   },
@@ -50,6 +73,69 @@
     {"name": "a blank number variable reads as 0", "formula": "LOOKUP(Prices, sku, divisor = THIS.k)", "expected": "A1"},
     {"name": "a lookup inside IFERROR", "formula": "IFERROR(LOOKUP(Rates, rate, code = THIS.code), 0)", "inputs": {"code": "EUR"}, "type": "decimal(6)", "expected": "4.321000"},
     {"name": "a blank lookup under ISBLANK", "formula": "ISBLANK(LOOKUP(Rates, rate, code = THIS.code))", "inputs": {"code": "CHF"}, "expected": true},
-    {"name": "two lookups in one formula", "formula": "LOOKUP(Rates, name, code = THIS.code) & \" \" & LOOKUP(Prices, sku, TRUE)", "inputs": {"code": "GBP"}, "expected": "Pound A1"}
+    {"name": "two lookups in one formula", "formula": "LOOKUP(Rates, name, code = THIS.code) & \" \" & LOOKUP(Prices, sku, TRUE)", "inputs": {"code": "GBP"}, "expected": "Pound A1"},
+
+    {"name": "COUNT of the matching rows (ADR-0046)", "formula": "LOOKUP(Orders, COUNT(id), customer = THIS.code)", "inputs": {"code": "acme"}, "type": "number", "expected": 3},
+    {"name": "COUNT of no row is 0", "formula": "LOOKUP(Orders, COUNT(id), customer = THIS.code)", "inputs": {"code": "nope"}, "expected": 0},
+    {"name": "COUNT of every row", "formula": "LOOKUP(Orders, COUNT(id), TRUE)", "expected": 7},
+    {"name": "COUNT skips a blank number", "formula": "LOOKUP(Orders, COUNT(qty), customer = THIS.code)", "inputs": {"code": "acme"}, "expected": 2},
+    {"name": "COUNT skips a blank money", "formula": "LOOKUP(Orders, COUNT(fee), customer = THIS.code)", "inputs": {"code": "acme"}, "expected": 2},
+    {"name": "COUNT skips a blank bool", "formula": "LOOKUP(Orders, COUNT(paid), customer = THIS.code)", "inputs": {"code": "bolt"}, "expected": 0},
+    {"name": "COUNT of a text column", "formula": "LOOKUP(Rates, COUNT(name), active)", "expected": 2},
+    {"name": "the key may be one term of an AND", "formula": "LOOKUP(Orders, COUNT(id), customer = THIS.code AND paid)", "inputs": {"code": "acme"}, "expected": 2},
+    {"name": "the key may be the second term", "formula": "LOOKUP(Orders, COUNT(id), paid AND customer = THIS.code)", "inputs": {"code": "acme"}, "expected": 2},
+    {"name": "a key term of a column lookup: the first row of that key on which the rest holds", "formula": "LOOKUP(Orders, id, customer = THIS.code AND qty < 3 AND paid)", "inputs": {"code": "acme"}, "expected": "O3"},
+    {"name": "a blank key in an AND still reads as the empty text", "formula": "LOOKUP(Orders, COUNT(id), customer = THIS.code AND paid)", "expected": 0},
+
+    {"name": "SUM of numbers", "formula": "LOOKUP(Orders, SUM(qty), customer = THIS.code)", "inputs": {"code": "acme"}, "type": "number", "expected": 5.5},
+    {"name": "SUM of no row is 0", "formula": "LOOKUP(Orders, SUM(qty), customer = THIS.code)", "inputs": {"code": "nope"}, "expected": 0},
+    {"name": "SUM of exact values is exact and keeps the type", "formula": "LOOKUP(Orders, SUM(total), customer = THIS.code)", "inputs": {"code": "acme"}, "type": "decimal(2)", "expected": "10.75"},
+    {"name": "SUM of no exact value is an exact zero", "formula": "LOOKUP(Orders, SUM(total), customer = THIS.code)", "inputs": {"code": "nope"}, "type": "decimal(2)", "expected": "0.00"},
+    {"name": "SUM of blanks alone is zero", "formula": "LOOKUP(Orders, SUM(total), id = \"O2\")", "type": "decimal(2)", "expected": "0.00"},
+    {"name": "SUM of money in one currency", "formula": "LOOKUP(Orders, SUM(fee), customer = THIS.code)", "inputs": {"code": "acme"}, "type": "money(2)", "expected": "3.50 PLN"},
+    {"name": "SUM of no money is blank", "formula": "LOOKUP(Orders, SUM(fee), customer = THIS.code)", "inputs": {"code": "nope"}, "type": "money(2)", "expected": null},
+    {"name": "SUM of blank money alone is blank", "formula": "LOOKUP(Orders, SUM(fee), id = \"O2\")", "type": "money(2)", "expected": null},
+    {"name": "SUM over two currencies fails", "formula": "LOOKUP(Orders, SUM(fee), customer <> \"core\")", "error": "currency_mismatch"},
+    {"name": "SUM of an expression over the columns", "formula": "LOOKUP(Orders, SUM(qty * 2), customer = THIS.code)", "inputs": {"code": "acme"}, "expected": 11},
+    {"name": "SUM of an exact expression", "formula": "LOOKUP(Orders, SUM(total + total), customer = THIS.code)", "inputs": {"code": "acme"}, "type": "decimal(2)", "expected": "21.50"},
+    {"name": "the expression may read the document", "formula": "LOOKUP(Orders, SUM(qty * THIS.qty), customer = THIS.code)", "inputs": {"code": "acme", "qty": 10}, "expected": 55},
+    {"name": "an expression of the document alone is added once per row", "formula": "LOOKUP(Orders, SUM(THIS.qty), customer = THIS.code)", "inputs": {"code": "acme", "qty": 2}, "expected": 6},
+    {"name": "SUM of a bool counts the true ones", "formula": "LOOKUP(Orders, SUM(paid), customer = THIS.code)", "inputs": {"code": "acme"}, "expected": 2},
+    {"name": "an exact sum too large fails", "formula": "LOOKUP(Orders, SUM(total), id = \"O5\" OR id = \"O6\")", "error": "overflow"},
+    {"name": "an exact sum fails only when the total does not fit, whatever the order", "formula": "LOOKUP(Orders, SUM(total), customer = \"core\")", "type": "decimal(2)", "expected": "92233720368547758.07"},
+    {"name": "one unit above the largest total fails", "formula": "LOOKUP(Orders, SUM(IF(id = \"O5\", total, DECIMAL(0.01, 2))), id = \"O5\" OR id = \"O3\")", "error": "overflow"},
+    {"name": "the smallest total fits", "formula": "LOOKUP(Orders, SUM(IF(id = \"O5\", -total, DECIMAL(-0.01, 2))), id = \"O5\" OR id = \"O3\")", "type": "decimal(2)", "expected": "-92233720368547758.08"},
+    {"name": "one unit below it fails", "formula": "LOOKUP(Orders, SUM(IF(id = \"O5\", -total, DECIMAL(-0.02, 2))), id = \"O5\" OR id = \"O3\")", "error": "overflow"},
+    {"name": "numbers are added in key order, one by one", "formula": "LOOKUP(Drift, SUM(x), TRUE)", "expected": 1},
+    {"name": "a sum of numbers that leaves the range fails", "formula": "LOOKUP(Drift, SUM(huge), TRUE)", "error": "not_a_number"},
+
+    {"name": "MIN and MAX of numbers", "formula": "LOOKUP(Orders, MIN(qty), customer = THIS.code) & \"/\" & LOOKUP(Orders, MAX(qty), customer = THIS.code)", "inputs": {"code": "acme"}, "expected": "2.5/3"},
+    {"name": "MIN of no row is blank", "formula": "LOOKUP(Orders, MIN(qty), customer = THIS.code)", "inputs": {"code": "nope"}, "expected": null},
+    {"name": "MAX of blanks alone is blank", "formula": "LOOKUP(Orders, MAX(qty), id = \"O2\")", "expected": null},
+    {"name": "MIN of exact values", "formula": "LOOKUP(Orders, MIN(total), customer = THIS.code)", "inputs": {"code": "acme"}, "type": "decimal(2)", "expected": "0.25"},
+    {"name": "MAX of exact values", "formula": "LOOKUP(Orders, MAX(total), customer = THIS.code)", "inputs": {"code": "acme"}, "type": "decimal(2)", "expected": "10.50"},
+    {"name": "MIN of exact values below zero", "formula": "LOOKUP(Orders, MIN(total), customer = \"core\")", "type": "decimal(2)", "expected": "-92233720368547758.07"},
+    {"name": "MIN of money", "formula": "LOOKUP(Orders, MIN(fee), customer = THIS.code)", "inputs": {"code": "acme"}, "type": "money(2)", "expected": "1.00 PLN"},
+    {"name": "MAX of no money is blank", "formula": "LOOKUP(Orders, MAX(fee), customer = THIS.code)", "inputs": {"code": "nope"}, "type": "money(2)", "expected": null},
+    {"name": "MAX over two currencies fails", "formula": "LOOKUP(Orders, MAX(fee), customer <> \"core\")", "error": "currency_mismatch"},
+    {"name": "MIN and MAX of a bool read TRUE as 1", "formula": "LOOKUP(Orders, MIN(paid), customer = THIS.code) + 10 * LOOKUP(Orders, MAX(paid), customer = THIS.code)", "inputs": {"code": "acme"}, "expected": 10},
+    {"name": "MIN skips a blank bool", "formula": "LOOKUP(Orders, MIN(paid), customer = THIS.code)", "inputs": {"code": "bolt"}, "expected": null},
+    {"name": "MIN of an expression, in which a blank number reads as 0", "formula": "LOOKUP(Orders, MIN(qty - 10), customer = THIS.code)", "inputs": {"code": "acme"}, "expected": -10},
+
+    {"name": "the expression failing on a matching row fails the aggregate", "formula": "LOOKUP(Orders, SUM(10 / divisor), customer = THIS.code)", "inputs": {"code": "acme"}, "error": "div_by_zero"},
+    {"name": "it fails COUNT too", "formula": "LOOKUP(Orders, COUNT(10 / divisor), customer = THIS.code)", "inputs": {"code": "acme"}, "error": "div_by_zero"},
+    {"name": "a row that does not match cannot fail it", "formula": "LOOKUP(Orders, SUM(10 / divisor), customer = THIS.code AND divisor > 0)", "inputs": {"code": "acme"}, "expected": 15},
+    {"name": "the error of the row comes before the error of the sum", "formula": "LOOKUP(Orders, SUM(fee / DECIMAL(divisor, 0)), customer <> \"core\")", "error": "div_by_zero"},
+    {"name": "when two rows fail differently, the first in key order says how", "formula": "LOOKUP(Orders, SUM(IF(id = \"O3\", SQRT(-1), 10 / divisor)), customer = THIS.code)", "inputs": {"code": "acme"}, "error": "div_by_zero"},
+    {"name": "and the other way round", "formula": "LOOKUP(Orders, SUM(IF(id = \"O2\", SQRT(-1), 1 / (divisor - 2))), customer = THIS.code)", "inputs": {"code": "acme"}, "error": "not_a_number"},
+    {"name": "a key that fails matches no row, so the count is 0", "formula": "LOOKUP(Orders, COUNT(id), customer = LEFT(THIS.code, 1 / THIS.k))", "inputs": {"code": "acme"}, "expected": 0},
+    {"name": "and the sum of money is blank", "formula": "LOOKUP(Orders, SUM(fee), customer = LEFT(THIS.code, 1 / THIS.k))", "inputs": {"code": "acme"}, "type": "money(2)", "expected": null},
+    {"name": "a key with more places than the column keeps equals no row", "formula": "LOOKUP(Rates, COUNT(code), rate = DECIMAL(4.3210001, 7)) + LOOKUP(Rates, COUNT(code), rate = DECIMAL(4.321, 7))", "expected": 1},
+    {"name": "and the count of no row is still 0, not blank", "formula": "ISBLANK(LOOKUP(Rates, COUNT(code), rate = DECIMAL(4.3210001, 7)))", "expected": false},
+    {"name": "the expression may read money of the document", "formula": "LOOKUP(Prices, SUM(price + THIS.amount), TRUE)", "inputs": {"amount": "8.00 PLN"}, "type": "money(2)", "expected": "45.50 PLN"},
+    {"name": "money of the document in another currency fails every row", "formula": "LOOKUP(Prices, SUM(price + THIS.amount), TRUE)", "inputs": {"amount": "8.00 EUR"}, "error": "currency_mismatch"},
+    {"name": "IFERROR catches a failed aggregate", "formula": "IFERROR(LOOKUP(Orders, SUM(10 / divisor), customer = THIS.code), -1)", "inputs": {"code": "acme"}, "expected": -1},
+    {"name": "an aggregate joins arithmetic", "formula": "LOOKUP(Orders, COUNT(id), customer = THIS.code) * 2 + LOOKUP(Orders, SUM(qty), customer = THIS.code)", "inputs": {"code": "acme"}, "expected": 11.5},
+    {"name": "names are not case-sensitive", "formula": "lookup(orders, sum(QTY), Customer = this.CODE)", "inputs": {"code": "acme"}, "expected": 5.5}
   ]
 }

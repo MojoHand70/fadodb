@@ -27,6 +27,8 @@ read the diagnostics, fix, preview against live data, define.
 | Part of a class | Mark |
 |---|---|
 | variables, types, defaults, ranges, named schemas, objects, attachments, tables and `LOOKUP` | shipped |
+| `COUNT`, `SUM`, `MIN` and `MAX` in a `LOOKUP` of a table, as in `LOOKUP(Stock, SUM(qty), sku = THIS.sku)` | in `main`, ships with v0.4.0 |
+| a formula that reads the documents of another class, `LOOKUP(Approval, COUNT(id), ...)` | designed, ADR-0046: not built yet |
 | formulas, exact money, calendar days, `IFERROR` | shipped |
 | states, transitions, guards, eventless chains, `STATE()` and `ID()` | shipped |
 | field rights per state, per-transition rules | shipped with Phase 3 |

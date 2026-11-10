@@ -1,6 +1,6 @@
 {
   "suite": "lookup-auto",
-  "description": "An auto formula may call LOOKUP against an explicit table (ADR-0015), and its condition is bound in the same mode, so a context function inside it is refused as it would be outside.",
+  "description": "An auto formula may call LOOKUP against an explicit table (ADR-0015), with a column or an aggregate (ADR-0046), and its condition and the aggregate's expression are bound in the same mode, so a context function inside it is refused as it would be outside.",
   "mode": "auto",
   "variables": {"code": "text"},
   "sources": {
@@ -8,9 +8,12 @@
   },
   "accept": [
     "LOOKUP(Rates, rate, code = THIS.code)",
-    "LOOKUP(Rates, rate, code = UPPER(THIS.code))"
+    "LOOKUP(Rates, rate, code = UPPER(THIS.code))",
+    "LOOKUP(Rates, COUNT(code), owner = THIS.code)",
+    "LOOKUP(Rates, SUM(rate), TRUE)"
   ],
   "reject": [
+    {"formula": "LOOKUP(Rates, COUNT(owner = USER()), TRUE)", "reason": "a context function inside the aggregate of an auto formula's lookup"},
     {"formula": "LOOKUP(Rates, rate, owner = USER())", "reason": "a context function inside an auto formula's lookup"},
     {"formula": "LOOKUP(Rates, rate, code = THIS.code) & USER()", "reason": "a context function in an auto formula"}
   ]

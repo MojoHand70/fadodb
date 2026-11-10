@@ -95,6 +95,11 @@ func BenchmarkCommit(b *testing.B) {
 const lookupClass = `{"name": "Quote", "variables": {"currency": {"type": "text"}, "net": {"type": "decimal(2)"},
   "rate": {"formula": "LOOKUP(Fx, rate, code = THIS.currency)"}, "net_pln": {"formula": "ROUND(net * rate, 2)"}}, "states": {"initial": "open", "list": ["open"]}}`
 const lookupScanClass = `{"name": "Quote", "variables": {"currency": {"type": "text"}, "net": {"type": "decimal(2)"},
+  "rate": {"formula": "LOOKUP(Fx, rate, code >= THIS.currency AND rate > 0)"}, "net_pln": {"formula": "ROUND(net * rate, 2)"}}, "states": {"initial": "open", "list": ["open"]}}`
+
+// lookupNarrowedClass has the key as one term of an AND (ADR-0046): the
+// statement is narrowed by it and the condition decides among its rows.
+const lookupNarrowedClass = `{"name": "Quote", "variables": {"currency": {"type": "text"}, "net": {"type": "decimal(2)"},
   "rate": {"formula": "LOOKUP(Fx, rate, code = THIS.currency AND rate > 0)"}, "net_pln": {"formula": "ROUND(net * rate, 2)"}}, "states": {"initial": "open", "list": ["open"]}}`
 
 func benchLookup(b *testing.B, class string, o Options) {
@@ -152,9 +157,76 @@ func benchLookup(b *testing.B, class string, o Options) {
 func BenchmarkLookupIndexed(b *testing.B) { benchLookup(b, lookupClass, Options{}) }
 
 // BenchmarkLookupStatement is the same recalculation through the prepared
-// statement for a condition that is not one equality, which runs the
-// condition over the table.
+// statement for a condition that holds no equality to narrow by, which
+// runs the condition over the table.
 func BenchmarkLookupStatement(b *testing.B) { benchLookup(b, lookupScanClass, Options{}) }
+
+// BenchmarkLookupNarrowed is the recalculation with the key as one term
+// of an AND: a statement narrowed to the key through the table's index,
+// whatever the size of the table (ADR-0046).
+func BenchmarkLookupNarrowed(b *testing.B) { benchLookup(b, lookupNarrowedClass, Options{}) }
+
+// benchAggregate is the recalculation of a class with one aggregate over
+// ten rows of a table of 1,000, narrowed by the key (ADR-0046).
+func benchAggregate(b *testing.B, expr string, want any) {
+	s, err := Open(filepath.Join(b.TempDir(), "bench.fado"), Options{})
+	if err != nil {
+		b.Fatal(err)
+	}
+	defer s.Close()
+	ctx := context.Background()
+	if _, err := s.DefineTable(ctx, []byte(`{"name": "Lines", "columns": {"ord": "text", "n": "number", "qty": "number", "amount": "decimal(2)"}, "key": ["ord", "n"]}`)); err != nil {
+		b.Fatal(err)
+	}
+	rows := make([]Values, 1000)
+	for i := range rows {
+		rows[i] = Values{"ord": fmt.Sprintf("O%03d", i/10), "n": i % 10, "qty": float64(i%10) + 0.5, "amount": fmt.Sprintf("%d.%02d", i%10, i%100)}
+	}
+	if _, err := s.ImportRows(ctx, "Lines", rows); err != nil {
+		b.Fatal(err)
+	}
+	class := `{"name": "Bill", "variables": {"ord": {"type": "text"}, "x": {"formula": "LOOKUP(Lines, ` + expr + `, ord = THIS.ord)"}}, "states": {"initial": "open", "list": ["open"]}}`
+	if _, err := s.DefineClass(ctx, []byte(class)); err != nil {
+		b.Fatal(err)
+	}
+	doc, err := s.Create(ctx, "Bill", Values{"ord": "O050"})
+	if err != nil {
+		b.Fatal(err)
+	}
+	if doc.Values["x"] != want {
+		b.Fatalf("x is %v, want %v", doc.Values["x"], want)
+	}
+	c, _ := s.class("Bill")
+	row, err := c.scanRow(c.w.selectCurrent.QueryRowContext(ctx, doc.ID), false)
+	if err != nil {
+		b.Fatal(err)
+	}
+	if _, err := s.writer.ExecContext(ctx, "BEGIN"); err != nil {
+		b.Fatal(err)
+	}
+	defer s.writer.ExecContext(ctx, "ROLLBACK")
+	evalCtx := &formula.Context{Now: time.Now().Unix()}
+	var errs []*Error
+	b.ReportAllocs()
+	b.ResetTimer()
+	for b.Loop() {
+		dirty := s.dirtyFor(c)
+		if err := s.recalc(c, row, dirty, true, evalCtx, false, &errs); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+// BenchmarkLookupCount counts ten rows of a key.
+func BenchmarkLookupCount(b *testing.B) { benchAggregate(b, "COUNT(n)", 10.0) }
+
+// BenchmarkLookupSumExact adds ten exact values with the engine's own
+// aggregate, in two halves.
+func BenchmarkLookupSumExact(b *testing.B) { benchAggregate(b, "SUM(amount)", "45.45") }
+
+// BenchmarkLookupSumNumber adds ten numbers in key order, each handed to
+// the Go function the dialect registers.
+func BenchmarkLookupSumNumber(b *testing.B) { benchAggregate(b, "SUM(qty)", 50.0) }
 
 // BenchmarkLookupKeyedStatement is the equality shape above
 // MaxIndexedRows: the statement narrowed to the key through the table's

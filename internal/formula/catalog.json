@@ -259,7 +259,7 @@
 
     {"name": "LOOKUP", "class": "lookup", "category": "data", "returns": "scalar",
      "params": [{"name": "source", "type": "source"}, {"name": "column", "type": "column"}, {"name": "condition", "type": "condition"}],
-     "summary": "One column of the first row of the source, in key order, that matches the condition; blank when none does. Inside, bare names are the source's columns and THIS.name reaches the document."},
+     "summary": "One column of the first row of the source, in key order, that matches the condition; blank when none does. In place of the column, COUNT, SUM, MIN or MAX over one expression of the source's columns answers for every matching row. Inside, bare names are the source's columns and THIS.name reaches the document."},
     {"name": "QUERY", "class": "query", "category": "data", "returns": "rows",
      "params": [{"name": "source", "type": "source"}, {"name": "columns", "type": "columns"}, {"name": "condition", "type": "condition", "optional": true}, {"name": "sort", "type": "sort", "optional": true}, {"name": "groupby", "type": "groupby", "optional": true}, {"name": "limit", "type": "number", "optional": true}],
      "summary": "The rows of the source matching the condition, with the given columns, which may be aggregates, in the given sort, grouped by the given columns, at most limit rows (1,000 by default, 10,000 at most)."}

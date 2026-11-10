@@ -121,7 +121,7 @@ func TestFormulaEval_SQLAndBytecode(t *testing.T) {
 		t.Errorf("limit in SQL: exit %d, stdout %q", code, out)
 	}
 	code, out, _ = evalCmd(t, "-bytecode", "-var", "qty:number", "qty + 1")
-	if code != 0 || !strings.Contains(out, `"format": "FADO v3"`) || !strings.Contains(out, "load 0 (qty)") || !strings.Contains(out, `"result": "number"`) {
+	if code != 0 || !strings.Contains(out, `"format": "FADO v4"`) || !strings.Contains(out, "load 0 (qty)") || !strings.Contains(out, `"result": "number"`) {
 		t.Errorf("bytecode: exit %d, stdout %q", code, out)
 	}
 }

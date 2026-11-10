@@ -790,10 +790,20 @@ func (s *Store) runCall(ctx context.Context, row *outboxRow) (bool, error) {
 		}
 		return false, nil
 	}
+	// The mark, the event of the outcome and, when the action has ended,
+	// its result written back to the document: one transaction.
+	var ended string
 	if failure == nil {
-		err = s.finish(ctx, row, ActionDone, attempts+1, nil, c.day, now)
+		ended, err = s.finish(ctx, row, ActionDone, attempts+1, nil, c.day, now)
 	} else {
-		err = s.failed(ctx, row, attempts, failure, did.retry, did.after, c.day, now)
+		ended, err = s.failed(ctx, row, attempts, failure, did.retry, did.after, c.day, now)
+	}
+	queuedMore := false
+	if err == nil && ended != "" {
+		queuedMore, err = s.applyInto(ctx, row, ended, did, nil, c.day, now)
+	}
+	if e := s.at("marked", row); err == nil && e != nil {
+		err = e
 	}
 	if err != nil {
 		_, _ = w.ExecContext(ctx, "ROLLBACK")
@@ -806,6 +816,9 @@ func (s *Store) runCall(ctx context.Context, row *outboxRow) (bool, error) {
 	if failure == nil {
 		_ = s.at("committed", row)
 	}
+	if queuedMore {
+		s.wakeWorker()
+	}
 	return true, nil
 }
 
@@ -814,8 +827,8 @@ func (s *Store) runCall(ctx context.Context, row *outboxRow) (bool, error) {
 // fired the rule, and then the function or the request. What the row
 // cannot be called with is a refusal; what this process lacks to run the
 // action, its function or the leave to send requests, and a store that
-// fails are no answer. What the action returns is read by into, which
-// arrives with a later step.
+// fails are no answer. What the action returns is written back to the
+// document by the row's into, when it has one.
 func (s *Store) call(ctx context.Context, row *outboxRow, c *calling) outcome {
 	a := s.actionNamed(row.action)
 	if a == nil {

@@ -26,8 +26,9 @@ Website: [fadodb.org](https://fadodb.org).
 > somebody else defined: a definition with typed parameters, stored in
 > the database, implemented by a Go function of the host program or sent
 > by the engine as an HTTP request, to the hosts the host program allows
-> and with secrets it supplies. Results written back to the
-> document, `QUERY`, time, the row-level access rules
+> and with secrets it supplies, and what the action returns is written
+> back to the document, so a process goes on from the answer. `QUERY`,
+> time, the row-level access rules
 > and the server come with their steps and phases. The numbers are in
 > [docs/perf/](docs/perf/), the plan in [ROADMAP.md](ROADMAP.md).
 
@@ -139,9 +140,13 @@ nothing until its host program opens it with `outbound.Allow` and the
 hosts that may be called, and a connection's secret goes only to that
 connection's hosts. A request without a body of its own carries the
 call, signed, which is what a developer's own service receives, and
-`http.call` sends a one-off request written in the rule. `Actions`
-lists what a rule may name, `PreviewAction` shows what would be sent
-and `TryAction` runs one outside any document. A preview, a listing or a read
+`http.call` sends a one-off request written in the rule. An action may
+carry `into`, which writes what it returned, or the code it failed
+with, to variables of the document when it has ended; the eventless
+transitions follow, so the document moves on by its own guards.
+`Actions` lists what a rule may name, `PreviewAction` shows what would
+be sent and `TryAction` runs one outside any document.
+[docs/actions.md](docs/actions.md) is the guide to writing one. A preview, a listing or a read
 may be asked at a moment the caller chooses, `fado.At(t)`, and a preview
 reports the moment it ran under; a commit runs at the database's clock.
 A refusal is a `fado.Error` with a stable code and the variable it

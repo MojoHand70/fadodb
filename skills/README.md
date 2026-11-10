@@ -62,8 +62,8 @@ otherwise.
 Nothing in a skill describes as working what does not. Each section
 carries one of the project's marks, shipped, in progress or designed, the
 same marks the README, the ROADMAP and fadodb.org use, so an agent does
-not write `into` on an action expecting the answer to come back before
-Phase 4 builds it. A pull request that changes what works moves these
+not write a rule on a schedule expecting it to fire before the phase
+that builds timers. A pull request that changes what works moves these
 marks in the same change; CLAUDE.md and CONTRIBUTING.md say so. Every class under
 `examples/classes/` is validated and defined by `TestExampleClasses` in
 `fado/` on every push, so an engine change that breaks a sample fails CI

@@ -247,11 +247,11 @@ function, on 2026-11-10, and settled these points.
 - **The catalogue** lists an engine action with the properties it is
   written with, each of the type `name`, `names`, `formula` or
   `formulas`.
-- **Until the later steps of the phase.** `into` on an action is refused
-  with `not_supported`. Any action without a definition is
-  `unknown_action`. Until the second step a definition with `request`,
-  `connection`, `ok` or `result` was `not_supported` too, and
-  `http.call` in a rule was accepted and not run.
+- **Until the later steps of the phase.** Any action without a
+  definition is `unknown_action`. Until the second step a definition
+  with `request`, `connection`, `ok` or `result` was `not_supported`,
+  and `http.call` in a rule was accepted and not run; until the third,
+  `into` on an action was `not_supported`.
 - **The registry** is the tables `actions` and `action_versions`, names
   no class may take. The engine schema stays at 3: tables are added and
   none is changed.
@@ -334,7 +334,77 @@ points.
   other byte as `%XX` in upper case; its result counts against the text
   limit.
 
+The third step built item 8, on 2026-11-10, and with the owner's
+rulings below a sample definition and a guide in the place of the
+packages of item 10. It settled these points.
+
+- **Which actions carry `into`.** Every action of the outbox: one that
+  has a definition, `http.call`, and the engine's own. A `create`
+  returns `id`, a `transition` returns `state` and `version`, the state
+  after the eventless transitions that followed; a `refresh` of another
+  document and the table actions return nothing, and their `into` reads
+  `OK` and `ERROR` alone. `into` on a synchronous action and beside
+  `each` is `not_allowed`.
+- **What `into` reads.** The returned values by name, `OK` and `ERROR`,
+  with pure functions, and nothing of the document. A returned value may
+  therefore not be named `OK` or `ERROR` (`reserved_name`). The targets
+  are scalar input variables of the rule's class, typed when the class
+  is defined.
+- **`OK` and `ERROR`.** `OK` is TRUE when the action ran. `ERROR` is the
+  code the action died with, and blank when it ran. When it ran and what
+  it returned does not fit its definition, the returned values are
+  blank, `OK` is TRUE, `ERROR` is `bad_result`, and the row says so.
+- **When the result is written.** When the row is done or dead, never
+  between attempts. A row written dead as too deep was never run and
+  writes nothing back. A dead row that is retried by hand writes again
+  when it ends again.
+- **The commit of a result** is a set under the class as it is now, with
+  the formulas of the rule as it was when the action was queued. Its
+  event names the event of the action's outcome as its cause, carries
+  the business date of the event that fired the rule, the principal
+  whose command it was and the key `outbox:into:<outcome event>`. No
+  write right is consulted. What its rules queue is one deeper in the
+  chain than the action. A result that changes nothing commits nothing.
+- **A result that cannot be stored** leaves the action's outcome as it
+  stands: the document is in a terminal state (`terminal`), is gone
+  (`unknown_document`), or refuses a value, with the code of that
+  refusal. Nothing of the result is stored then, not the values that
+  would have fitted. The row records the code and the message in two
+  new columns, `into_code` and `into_message`, which `Outbox` and the
+  view `<Class>_actions` show. **The engine schema is therefore 4.**
+- **A rule that could never store its result** is refused when its class
+  is defined (`not_allowed`): one on `delete`, on the entry of a
+  terminal state, or on a transition into one. The exit of a state and a
+  change of values say nothing of where the document ends, so they are
+  taken, and the document answers when the result arrives.
+- **A preview** lists the variables a queued action's result will go to;
+  it runs nothing, so it has no result.
+- **A preview of a request whose address is a secret** shows the address
+  masked and does not judge it against the hosts.
+
 ## Rulings
+
+**No definitions for particular services, for now.** Item 10 promised
+three sample packages, `webhook`, `slack` and `sheets`. Asked on
+2026-11-10 how the last two should be verified, the owner ruled that
+they are not to be written: what the phase prepares is the extension
+point and the generic ways in, a webhook and a call to any REST API, and
+a definition for a particular service comes when a real user needs it.
+He also named the services that take one webhook and pass it on to many
+applications as a route to look at; the generic webhook is how one is
+reached, and none has been tried. The repository gains
+`examples/actions/webhook.json`, one definition whose address and
+signing key are the connection's secrets, and `docs/actions.md`, which
+says how to write a definition for any API.
+
+**The package format waits for the first real integration.** Item 10
+describes a package as a publisher's namespace, a version and a list of
+definitions, installed by one call. Asked on 2026-11-10 whether to build
+it now with the webhook as its only content, the owner ruled that it
+waits: a real package will show what the format must carry, such as the
+hosts each connection needs. Until then one definition is one JSON
+document, which `DefineAction` takes. Item 10 is not built in this
+phase.
 
 **A secret goes only to the hosts of its connection.** The draft of the
 second step put this to the owner on 2026-11-10: as items 6 and 7 read,

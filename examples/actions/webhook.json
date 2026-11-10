@@ -1,0 +1,16 @@
+{
+  "name": "webhook.send",
+  "label": "Send the event to a webhook",
+  "description": "Sends the call to one receiver: the arguments below and the event that fired the rule, with the document at that version, as JSON, signed. The address and the signing key are secrets of the connection \"webhook\", which the host program supplies, so nothing about the receiver is in the database. A receiver that does not check signatures ignores the FadoDB-Signature header.",
+  "params": {
+    "topic": {"type": "text", "description": "What the receiver should take this for, such as invoice.approved."},
+    "data": {"type": "json", "description": "Anything else the receiver needs beside the document."}
+  },
+  "returns": {
+    "status": {"type": "number", "description": "The status of the receiver's reply."},
+    "reply": {"type": "json", "description": "The receiver's reply, when it is JSON."}
+  },
+  "connection": {"name": "webhook", "secrets": ["url", "signing_key"]},
+  "request": {"method": "POST", "url": "SECRET(\"url\")", "sign": "signing_key"},
+  "result": {"status": "STATUS", "reply": "BODY"}
+}

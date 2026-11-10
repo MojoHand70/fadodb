@@ -169,8 +169,30 @@ All notable changes to FadoDB are recorded here. The format follows
     and `reply_too_large` for the store; `unknown_secret` and
     `unknown_connection` for a definition.
 
+- The result of an action comes back to the document (ADR-0045, item
+  8). An action of the outbox may carry `into`, a map from input
+  variables of the rule's own document to formulas over what the action
+  returns, with `OK` and `ERROR`. When the action is done or dead the
+  engine writes the values as a set of its own, in the transaction that
+  marks the action; the eventless transitions follow it, so a process
+  goes on from the answer and from a failure. A `create` returns `id`
+  and a `transition` returns `state` and `version`. A document that is
+  frozen or gone, or that refuses a value, keeps what it has, and
+  `QueuedAction` says why under `IntoCode` and `IntoMessage`. A preview
+  lists the variables a result will go to.
+- `examples/actions/webhook.json`, a generic webhook definition whose
+  address and signing key are the connection's secrets, and
+  `docs/actions.md`, a guide to writing an action for any REST API. Both
+  are run against the engine by the tests of `fado/outbound`.
+- The conformance suite `conformance/rules/into.json`.
+
 ### Changed
 
+- **The engine schema is version 4**, for the two columns of the outbox
+  that say why a result was not stored. A file made by an earlier
+  pre-release engine is refused and recreated.
+- A returned value of an action definition may not be named `OK` or
+  `ERROR`, which `into` reads beside the returned values.
 - `http.call` is a call like any other and takes its arguments under
   `args`. Before it was accepted in any shape and not run; the old
   shape, with `url` beside `action`, is refused with `bad_json`. In a
@@ -182,8 +204,7 @@ All notable changes to FadoDB are recorded here. The format follows
   `unknown_action`, a parameter the action lacks with
   `unknown_parameter`, a required one left out with `missing` and a
   formula of another type with `type_mismatch`, all when the class is
-  defined. Before, any action name was accepted and not run. `into` on
-  an action is refused with `not_supported` until its step.
+  defined. Before, any action name was accepted and not run.
 - A redefinition of an action that would break a rule of a class is
   refused with `not_allowed` naming that rule, as a redefinition of a
   class or of a table is.
@@ -211,9 +232,8 @@ All notable changes to FadoDB are recorded here. The format follows
   give it is refused with `required` when it runs.
 - A command key may not start with `outbox:`, the prefix of the commits
   the outbox makes.
-- **The engine schema is version 3**, for the moment columns. A file made
-  by an earlier pre-release engine is refused and recreated; there is no
-  upgrade path before 1.0.
+- The engine schema went to version 3 for the moment columns, before it
+  went to 4; there is no upgrade path before 1.0.
 - A triggered variable's `table:` and `schedule:` triggers are refused
   with `not_supported` until the phase that runs them; before, they were
   accepted and never fired. A trigger that can fire on a move out of a

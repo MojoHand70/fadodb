@@ -24,8 +24,10 @@
 // the rule (ADR-0045). A definition may instead carry a request, which
 // the engine sends as HTTP through Options.Outbound, with the secrets
 // Options.Secrets supplies; package fado/outbound makes the sender, and a
-// database opened without one sends nothing. Not here yet: an action's
-// result written back to the document, QUERY and time (Phase 4),
+// database opened without one sends nothing. An action may carry into,
+// which writes what it returned back to the document when it has ended,
+// so a process goes on from the answer. Not here yet: QUERY and time
+// (Phase 4),
 // the class-level access rules compiled to row predicates (Phase 5) and
 // the server (Phase 6).
 package fado

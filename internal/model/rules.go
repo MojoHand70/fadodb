@@ -60,6 +60,15 @@ type Action struct {
 	Call bool
 	Spec *ActionSpec
 	Args []Argument
+	// Into are the input variables of the rule's own document that the
+	// action's result is written to when the action has ended, each with
+	// its formula over Returns, OK and ERROR (ADR-0045, item 8), in the
+	// order written. Returns are the values the action returns: those of
+	// its definition, or of an engine action the id of the document a
+	// create made, and the state and the version a transition left its
+	// document in.
+	Into    []IntoValue
+	Returns []Param
 	// Target is what a queued action acts on, by its declared name: the
 	// class a create makes a document of, the class of the document a
 	// transition moves or a refresh recomputes, the table a table action
@@ -111,6 +120,36 @@ type Assignment struct {
 	Formula  *formula.Program
 	Src      string
 }
+
+// IntoValue is one variable an action's result is written to: an input
+// of the rule's class, and the formula of its value over what the action
+// returned.
+type IntoValue struct {
+	Name     string
+	Variable *Variable
+	Formula  *formula.Program
+	Src      string
+}
+
+// The names an into formula reads beside the returned values (ADR-0045,
+// item 8): whether the action ran, a bool, and the code it failed with,
+// a text, blank when it ran and its result was read.
+const (
+	ResultOK    = "OK"
+	ResultError = "ERROR"
+)
+
+// engineReturns are what the engine's own outbox actions return.
+var engineReturns = map[string][]Param{
+	ActionCreate: {{Name: "id", Type: formula.Scalar(formula.KindText), Description: "The id of the document it made."}},
+	ActionTransition: {
+		{Name: "state", Type: formula.Scalar(formula.KindText), Description: "The state the document is left in, after the eventless transitions that followed."},
+		{Name: "version", Type: formula.Scalar(formula.KindNumber), Description: "The version the document is left at."}},
+}
+
+// EngineReturns are the values an engine action returns, which its into
+// may read; none for an action that returns nothing.
+func EngineReturns(action string) []Param { return engineReturns[action] }
 
 // Argument is one argument of an action that names a definition
 // (ADR-0045, item 1): the parameter it gives and the formula of its
@@ -223,6 +262,7 @@ func compileRules(c *collector, cls *Class, defs []RuleDef, scope *formula.Scope
 				continue
 			}
 			a.Rule, a.Index = r, j
+			compileInto(c, apath, raw, cls, d, a)
 			if frozen != "" && a.Sync && a.Name != ActionEmit {
 				c.hint(CodeNotAllowed, apath, "a "+a.Name+" cannot run here: "+frozen+", and a frozen document computes nothing (ADR-0039)",
 					"hang the rule on the transition that arrives from a live state; emit and the actions of the outbox may stay")
@@ -231,6 +271,130 @@ func compileRules(c *collector, cls *Class, defs []RuleDef, scope *formula.Scope
 		}
 		cls.Rules = append(cls.Rules, r)
 	}
+}
+
+// compileInto reads the into of an action (ADR-0045, item 8): the input
+// variables of the rule's own document its result is written to when it
+// has ended, each a pure formula over what the action returns, with OK
+// and ERROR, typed against the variable. Only an action of the outbox
+// returns anything to write back, and a create that makes many documents
+// has no one result. A rule whose trigger leaves the document gone or
+// frozen is told so now, since its result could never be stored.
+func compileInto(c *collector, path string, raw json.RawMessage, cls *Class, d RuleDef, a *Action) {
+	var peek struct {
+		Into json.RawMessage `json:"into"`
+	}
+	if json.Unmarshal(raw, &peek) != nil || len(peek.Into) == 0 {
+		return
+	}
+	path += "/into"
+	lenient := c.env.Lenient
+	switch {
+	case lenient:
+	case !a.Queued:
+		// A synchronous action was refused for the property already; this
+		// is for an action that is kept as written.
+		return
+	case a.Each != nil:
+		c.hint(CodeNotAllowed, path, "a create with each makes many documents, and many results have no one variable to go to (ADR-0044)", "drop into; each document has its own action_run or action_failed")
+		return
+	}
+	if why := neverStored(cls, d); why != "" && !lenient {
+		c.hint(CodeNotAllowed, path, "the result could never be written back: "+why,
+			"fire the rule where the document stays live, such as on the entry of a state that waits for the answer, and let the answer move it on")
+		return
+	}
+	a.Returns = EngineReturns(a.Name)
+	if a.Spec != nil {
+		a.Returns = a.Spec.Returns
+	}
+	vars := make([]formula.Variable, 0, len(a.Returns)+2)
+	for _, r := range a.Returns {
+		vars = append(vars, formula.Variable{Name: r.Name, Type: r.Type})
+	}
+	vars = append(vars, formula.Variable{Name: ResultOK, Type: formula.Scalar(formula.KindBool)}, formula.Variable{Name: ResultError, Type: formula.Scalar(formula.KindText)})
+	scope, err := formula.NewScope(vars...)
+	if err != nil {
+		c.add(CodeBadName, path, err.Error())
+		return
+	}
+	names, err := orderedKeys(peek.Into)
+	var formulas map[string]string
+	if err == nil {
+		err = json.Unmarshal(peek.Into, &formulas)
+	}
+	switch {
+	case err != nil:
+		c.hint(CodeBadValue, path, "into is an object of formulas by variable", `"into": {"payment_id": "id", "payment_error": "ERROR"}`)
+		return
+	case len(names) == 0:
+		c.hint(CodeMissing, path, "into names at least one variable", `"into": {"payment_id": "id"}`)
+		return
+	}
+	seen := map[string]bool{}
+	for _, name := range names {
+		vpath := path + "/" + name
+		v, ok := cls.Variable(name)
+		composite := ok && !v.Type.IsScalar()
+		if lenient {
+			// A stored class is taken as it is: what no longer fits is found
+			// when the result arrives.
+			if prog, err := formula.Bind(formulas[name], scope, formula.BindOptions{Mode: formula.ModePure}); err == nil && ok && !composite && !seen[upper(name)] {
+				seen[upper(name)] = true
+				a.Into = append(a.Into, IntoValue{Name: v.Name, Variable: v, Formula: prog, Src: formulas[name]})
+			}
+			continue
+		}
+		switch {
+		case !ok:
+			c.addf(CodeUnknownVariable, vpath, "unknown variable %s", quote(name))
+			continue
+		case seen[upper(name)]:
+			c.addf(CodeDuplicate, vpath, "%s is written twice; names differ in case only", quote(name))
+			continue
+		case v.Computed:
+			c.hint(CodeNotAllowed, vpath, "a result is written to input variables; "+v.Name+" is computed", "its formula gives its value; write the result to an input and let the formula read it")
+			continue
+		case composite:
+			c.hint(CodeNotSupported, vpath, "a result cannot be written to "+v.Name+": no formula gives "+article(v.Type.String())+" in this build", "write to scalar variables")
+			continue
+		}
+		seen[upper(name)] = true
+		prog, err := formula.Bind(formulas[name], scope, formula.BindOptions{Mode: formula.ModePure})
+		if err != nil {
+			c.formulaErr(vpath, err)
+			continue
+		}
+		prog.ClaimExact(v.Type)
+		if msg, hint := typeFits(v.Type, prog.Result); msg != "" {
+			c.hint(CodeTypeMismatch, vpath, msg, hint)
+			continue
+		}
+		a.Into = append(a.Into, IntoValue{Name: v.Name, Variable: v, Formula: prog, Src: formulas[name]})
+	}
+}
+
+// neverStored says why the result of an action of the rule could never
+// be written back to the document, or "" when it could: after a delete
+// the document is gone, and in a terminal state it is frozen and takes no
+// value (ADR-0039). The action runs after the commit that fired the rule,
+// so it is the state that commit leaves the document in that counts.
+func neverStored(cls *Class, d RuleDef) string {
+	switch d.On {
+	case "delete":
+		return "a rule on delete fires when the document is gone"
+	case "enter":
+		if cls.States.IsFinal(d.State) {
+			return quote(d.State) + " is a terminal state, and a document in one takes no value"
+		}
+	case "transition":
+		for _, t := range cls.Transitions {
+			if t.Name == d.Name && cls.States.IsFinal(t.To) {
+				return "the transition " + t.Name + " leaves the document in the terminal state " + quote(t.To) + ", where it takes no value"
+			}
+		}
+	}
+	return ""
 }
 
 // frozenTrigger says why a rule's trigger may fire over a document that
@@ -275,11 +439,22 @@ func frozenTrigger(cls *Class, d RuleDef) string {
 // engine runs itself, or one that names a definition.
 func compileAction(c *collector, path string, raw json.RawMessage, cls *Class, scope *formula.Scope) *Action {
 	var head struct {
-		Action string `json:"action"`
+		Action string          `json:"action"`
+		ID     json.RawMessage `json:"id"`
+		Into   json.RawMessage `json:"into"`
 	}
 	if err := json.Unmarshal(raw, &head); err != nil || head.Action == "" {
 		c.add(CodeMissing, path+"/action", "an action names what it does")
 		return nil
+	}
+	// An action that changes the rule's own document inside the commit
+	// returns nothing to write back (ADR-0045, item 8).
+	switch head.Action {
+	case ActionSet, ActionReset, ActionEmit, ActionRefresh:
+		if len(head.Into) > 0 && (head.Action != ActionRefresh || len(head.ID) == 0) {
+			c.hint(CodeNotAllowed, path+"/into", "a "+head.Action+" changes the document inside the commit and returns nothing to write back", "into belongs to an action that is queued: one on another document, on a table, or one that has a definition")
+			return nil
+		}
 	}
 	a := &Action{Name: head.Action, Raw: raw}
 	switch head.Action {
@@ -464,9 +639,6 @@ func compileCall(c *collector, path string, raw json.RawMessage, scope *formula.
 		}
 		c.hint(CodeUnknownAction, path+"/action", "unknown action "+quote(def.Action), hint)
 		return nil
-	}
-	if len(def.Into) > 0 && !lenient {
-		c.hint(CodeNotSupported, path+"/into", "this build does not write what an action returns back to the document: into arrives with a later step of Phase 4 (ADR-0045)", "drop it for now")
 	}
 	if len(def.Args) == 0 {
 		def.Args = json.RawMessage("{}")
@@ -654,6 +826,7 @@ func compileCreate(c *collector, path string, raw json.RawMessage, cls *Class, s
 		Values json.RawMessage `json:"values"`
 		Each   *string         `json:"each"`
 		As     *string         `json:"as"`
+		Into   json.RawMessage `json:"into"`
 	}
 	if !decodeAction(c, path, raw, &def) {
 		return nil
@@ -750,6 +923,7 @@ func compileMove(c *collector, path string, raw json.RawMessage, cls *Class, sco
 		ID     string          `json:"id"`
 		Name   string          `json:"name"`
 		Values json.RawMessage `json:"values"`
+		Into   json.RawMessage `json:"into"`
 	}
 	if !decodeAction(c, path, raw, &def) {
 		return nil
@@ -781,10 +955,11 @@ func compileMove(c *collector, path string, raw json.RawMessage, cls *Class, sco
 // refresh; with none named, every one that does recomputes.
 func compileRefreshOther(c *collector, path string, raw json.RawMessage, cls *Class, scope *formula.Scope, a *Action) *Action {
 	var def struct {
-		Action    string   `json:"action"`
-		Class     string   `json:"class"`
-		ID        string   `json:"id"`
-		Variables []string `json:"variables"`
+		Action    string          `json:"action"`
+		Class     string          `json:"class"`
+		ID        string          `json:"id"`
+		Variables []string        `json:"variables"`
+		Into      json.RawMessage `json:"into"`
 	}
 	if !decodeAction(c, path, raw, &def) {
 		return nil
@@ -837,6 +1012,7 @@ func compileTableAction(c *collector, path string, raw json.RawMessage, scope *f
 		Row    json.RawMessage `json:"row"`
 		Key    json.RawMessage `json:"key"`
 		Set    json.RawMessage `json:"set"`
+		Into   json.RawMessage `json:"into"`
 	}
 	if !decodeAction(c, path, raw, &def) {
 		return nil

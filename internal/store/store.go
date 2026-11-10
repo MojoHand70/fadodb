@@ -34,7 +34,7 @@ const DefaultMaxIndexedRows = 100000
 // engineSchema is the version of the store's own tables. A database made
 // by another engine schema is refused: before 1.0 there is no upgrade
 // path, and a pre-release file is recreated.
-const engineSchema = 3
+const engineSchema = 4
 
 // Options configure Open. The ones that are properties of the database,
 // Synchronous and MaxText, are read at creation and kept in the metadata
@@ -149,6 +149,10 @@ type Store struct {
 	schemaJSON map[string][]byte
 	classes    map[string]*class
 	versions   map[string]map[int]*class // every compiled version of a class, by upper-cased name
+	// writesBack names the classes of which some version has an action
+	// with an into (ADR-0045, item 8), by declared name as an outbox row
+	// carries it: the worker looks no further for a row of any other.
+	writesBack map[string]bool
 	order      []string
 	tables     map[string]*table
 	tableOrder []string
@@ -247,7 +251,7 @@ func Open(path string, o Options) (*Store, error) {
 		path: path, db: db, now: o.Now, vm: formula.NewVM(), qvm: formula.NewVM(),
 		schemas: model.NewSchemaSet(), schemaJSON: map[string][]byte{}, classes: map[string]*class{}, versions: map[string]map[int]*class{},
 		tables: map[string]*table{}, plans: map[*formula.QuerySlot]*lookupPlan{},
-		actions: map[string]*action{}, funcs: funcs, inFlight: map[flight]struct{}{},
+		actions: map[string]*action{}, funcs: funcs, inFlight: map[flight]struct{}{}, writesBack: map[string]bool{},
 		outbound: o.Outbound, secretFn: o.Secrets,
 		stop: make(chan struct{}), done: make(chan struct{}),
 		outbox: o.Outbox, wake: make(chan struct{}, 1), workDone: make(chan struct{}),
@@ -694,6 +698,13 @@ func (s *Store) keepVersion(c *class) {
 		s.versions[key] = map[int]*class{}
 	}
 	s.versions[key][c.cls.Version] = c
+	for _, r := range c.cls.Rules {
+		for _, a := range r.Actions {
+			if len(a.Into) > 0 {
+				s.writesBack[c.cls.Name] = true
+			}
+		}
+	}
 }
 
 // classAt returns a compiled version of a class, nil when the store does

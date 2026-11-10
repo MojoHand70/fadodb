@@ -102,6 +102,13 @@ type QueuedAction struct {
 	FinishedAt   int64  `json:"finished_at,omitempty"`
 	// OutcomeEvent is the action_run or action_failed event of the row.
 	OutcomeEvent string `json:"outcome_event,omitempty"`
+	// IntoCode and IntoMessage say why the result of an action that has an
+	// into was not written back to the document (ADR-0045, item 8): the
+	// document was frozen or gone, or refused a value. Empty when the
+	// result was stored, and for an action without an into. The action's
+	// own outcome stands either way.
+	IntoCode    string `json:"into_code,omitempty"`
+	IntoMessage string `json:"into_message,omitempty"`
 }
 
 // OutboxFilter selects rows of the outbox: by status, by the class and by
@@ -365,7 +372,11 @@ func (s *Store) queueOne(run *ruleRun, row *docRow, act *caction, at int, elem c
 		s.queued = append(s.queued, queued{commit: run.commit, act: act, args: raw})
 	}
 	if run.preview {
-		run.res.rules[at].Actions = append(run.res.rules[at].Actions, ActionRun{Action: act.a.Name, Queued: true, Args: args})
+		var into []string
+		for _, iv := range act.a.Into {
+			into = append(into, iv.Name)
+		}
+		run.res.rules[at].Actions = append(run.res.rules[at].Actions, ActionRun{Action: act.a.Name, Queued: true, Args: args, Into: into})
 	}
 	return nil
 }
@@ -675,15 +686,27 @@ func (s *Store) runAction(ctx context.Context, row *outboxRow) (bool, error) {
 		return false, nil
 	}
 	var queuedMore bool
+	var made *Document
 	failure := s.at("perform", row)
 	if failure == nil {
-		queuedMore, failure = s.perform(ctx, row, day, now)
+		made, queuedMore, failure = s.perform(ctx, row, day, now)
 	}
 	if failure == nil {
 		failure = s.at("performed", row)
 	}
 	if failure == nil {
-		if err := s.finish(ctx, row, ActionDone, attempts+1, nil, day, now); err != nil {
+		// The action's commit, the mark, the event of the outcome and the
+		// result written back are one transaction.
+		ended, err := s.finish(ctx, row, ActionDone, attempts+1, nil, day, now)
+		if err == nil {
+			var more bool
+			more, err = s.applyInto(ctx, row, ended, outcome{}, made, day, now)
+			queuedMore = queuedMore || more
+		}
+		if e := s.at("marked", row); err == nil && e != nil {
+			err = e
+		}
+		if err != nil {
 			_, _ = w.ExecContext(ctx, "ROLLBACK")
 			return false, err
 		}
@@ -709,13 +732,21 @@ func (s *Store) runAction(ctx context.Context, row *outboxRow) (bool, error) {
 	if _, err := w.ExecContext(ctx, "BEGIN IMMEDIATE"); err != nil {
 		return false, storageErr("begin", err)
 	}
-	if err := s.failed(ctx, row, attempts, failure, noAnswer(failure), 0, day, now); err != nil {
+	ended, err := s.failed(ctx, row, attempts, failure, noAnswer(failure), 0, day, now)
+	if err == nil && ended != "" {
+		// The action is dead: its document hears of that too.
+		queuedMore, err = s.applyInto(ctx, row, ended, outcome{failure: failure}, nil, day, now)
+	}
+	if err != nil {
 		_, _ = w.ExecContext(ctx, "ROLLBACK")
 		return false, err
 	}
 	if _, err := w.ExecContext(ctx, "COMMIT"); err != nil {
 		_, _ = w.ExecContext(ctx, "ROLLBACK")
 		return false, storageErr("commit", err)
+	}
+	if queuedMore {
+		s.wakeWorker()
 	}
 	return true, nil
 }
@@ -724,10 +755,11 @@ func (s *Store) runAction(ctx context.Context, row *outboxRow) (bool, error) {
 // transaction the caller began; attempts counts the ones before it. A
 // question that got no answer is asked again later, with retry, until
 // MaxAttempts; any other failure, and the last attempt, leave the row
-// dead with its event (ADR-0044, item 4). after is how long the receiver
-// asked to be left alone, which moves the next attempt later and never
-// sooner (ADR-0045, item 5).
-func (s *Store) failed(ctx context.Context, row *outboxRow, attempts int, failure *Error, retry bool, after time.Duration, day int64, now time.Time) error {
+// dead with its event (ADR-0044, item 4), which it returns: "" says the
+// row waits for another attempt. after is how long the receiver asked to
+// be left alone, which moves the next attempt later and never sooner
+// (ADR-0045, item 5).
+func (s *Store) failed(ctx context.Context, row *outboxRow, attempts int, failure *Error, retry bool, after time.Duration, day int64, now time.Time) (string, error) {
 	attempts++
 	if !retry || attempts >= s.outbox.MaxAttempts {
 		return s.finish(ctx, row, ActionDead, attempts, failure, day, now)
@@ -739,15 +771,16 @@ func (s *Store) failed(ctx context.Context, row *outboxRow, attempts int, failur
 	}
 	if _, err := s.writer.ExecContext(ctx, `UPDATE outbox SET attempts = ?, due_at = ?, error_code = ?, error_message = ? WHERE event_id = ? AND idx = ?`,
 		attempts, due, failure.Code, failure.Message, row.eventID, row.idx); err != nil {
-		return storageErr("record the attempt", err)
+		return "", storageErr("record the attempt", err)
 	}
-	return nil
+	return "", nil
 }
 
 // at is the tests' window into the steps of an action: before it is
-// performed, after it is and before its mark, and after the commit of
-// both. A test makes a step fail, or stops the process there
-// (ADR-0044, item 10). nil outside tests.
+// performed, after it is and before its mark, after the mark and the
+// result written back and before their commit, and after the commit of
+// all. A test makes a step fail, or stops the process there (ADR-0044,
+// item 10). nil outside tests.
 func (s *Store) at(step string, row *outboxRow) *Error {
 	if s.testStep == nil {
 		return nil
@@ -764,8 +797,9 @@ func noAnswer(e *Error) bool {
 
 // finish marks a row done or dead and appends the event of the outcome,
 // on the document whose commit queued the action: its name is the
-// action's and its cause the event of that commit.
-func (s *Store) finish(ctx context.Context, row *outboxRow, status string, attempts int, failure *Error, day int64, now time.Time) error {
+// action's and its cause the event of that commit. It returns the id of
+// that event.
+func (s *Store) finish(ctx context.Context, row *outboxRow, status string, attempts int, failure *Error, day int64, now time.Time) (string, error) {
 	secs := now.Unix()
 	kind := EventActionRun
 	var code, message any
@@ -773,20 +807,22 @@ func (s *Store) finish(ctx context.Context, row *outboxRow, status string, attem
 		kind, code, message = EventActionFailed, failure.Code, failure.Message
 	}
 	id := s.ids.next(now)
-	if _, err := s.writer.ExecContext(ctx, `UPDATE outbox SET status = ?, attempts = ?, finished_at = ?, error_code = ?, error_message = ?, outcome_event = ? WHERE event_id = ? AND idx = ?`,
+	if _, err := s.writer.ExecContext(ctx, `UPDATE outbox SET status = ?, attempts = ?, finished_at = ?, error_code = ?, error_message = ?, outcome_event = ?, into_code = NULL, into_message = NULL WHERE event_id = ? AND idx = ?`,
 		status, attempts, secs, code, message, id, row.eventID, row.idx); err != nil {
-		return storageErr("mark the action", err)
+		return "", storageErr("mark the action", err)
 	}
 	ev := eventInfo{kind: kind, qualifier: "caused", name: row.action, cause: row.eventID}
-	return s.writeEvent(ctx, id, row.class, row.docID, ev, row.principal.ID, nil, nil, "", "", day, secs)
+	return id, s.writeEvent(ctx, id, row.class, row.docID, ev, row.principal.ID, nil, nil, "", "", day, secs)
 }
 
 // perform does what an action stands for, inside the worker's
 // transaction, as the principal of the command whose commit queued it
 // (ADR-0044, item 11): the field rights and the transition rules of the
 // target apply to that person, and what they may not do is a refusal. It
-// reports whether the action's own commit queued further actions.
-func (s *Store) perform(ctx context.Context, row *outboxRow, day int64, now time.Time) (bool, *Error) {
+// returns the document the action's commit left, from which what the
+// action returns is read (ADR-0045, item 8), nil for a table action, and
+// reports whether that commit queued further actions.
+func (s *Store) perform(ctx context.Context, row *outboxRow, day int64, now time.Time) (*Document, bool, *Error) {
 	var args struct {
 		Class     string   `json:"class"`
 		ID        string   `json:"id"`
@@ -799,7 +835,7 @@ func (s *Store) perform(ctx context.Context, row *outboxRow, day int64, now time
 		Set       Values   `json:"set"`
 	}
 	if err := json.Unmarshal(row.args, &args); err != nil {
-		return false, errf(CodeBadValue, "", "the arguments of the action do not read: %v", err)
+		return nil, false, errf(CodeBadValue, "", "the arguments of the action do not read: %v", err)
 	}
 	// The command the action stands for: the worker's own, caused by the
 	// event that queued it, on that event's business day.
@@ -815,25 +851,25 @@ func (s *Store) perform(ctx context.Context, row *outboxRow, day int64, now time
 	case model.ActionTableInsert, model.ActionTableUpdate, model.ActionTableDelete:
 		t, e := s.table(args.Table)
 		if e != nil {
-			return false, e
+			return nil, false, e
 		}
-		return false, s.tableAction(ctx, t, row.action, args.Row, args.Key, args.Set)
+		return nil, false, s.tableAction(ctx, t, row.action, args.Row, args.Key, args.Set)
 	default:
-		return false, hintf(CodeUnknownAction, "", "the engine does not run the action "+row.action, "the actions it runs are in the class's rules as the definition accepted them; this row was queued by another build")
+		return nil, false, hintf(CodeUnknownAction, "", "the engine does not run the action "+row.action, "the actions it runs are in the class's rules as the definition accepted them; this row was queued by another build")
 	}
 	c, e := s.class(args.Class)
 	if e != nil {
-		return false, e
+		return nil, false, e
 	}
 	if cmd.op != opCreate && args.ID == "" {
-		return false, hintf(CodeUnknownDocument, "", "the action names no document of "+c.cls.Name+": its id is blank", "the id is a formula over the document that fired the rule; it gave no value there")
+		return nil, false, hintf(CodeUnknownDocument, "", "the action names no document of "+c.cls.Name+": its id is blank", "the id is a formula over the document that fired the rule; it gave no value there")
 	}
 	cmd.c = c
 	res, err := s.run(ctx, cmd, now)
 	if err != nil {
-		return false, asError(err)
+		return nil, false, asError(err)
 	}
-	return res.queued > 0, nil
+	return res.doc, res.queued > 0, nil
 }
 
 // tableAction writes one row of an explicit table, addressed by its key
@@ -973,7 +1009,7 @@ func (s *Store) Outbox(ctx context.Context, f OutboxFilter) ([]QueuedAction, err
 		where = append(where, "doc_id = ?")
 		args = append(args, f.DocID)
 	}
-	text := `SELECT event_id, idx, class, doc_id, version, rule, action, args, principal_id, depth, status, attempts, due_at, error_code, error_message, created_at, finished_at, outcome_event FROM outbox`
+	text := `SELECT event_id, idx, class, doc_id, version, rule, action, args, principal_id, depth, status, attempts, due_at, error_code, error_message, created_at, finished_at, outcome_event, into_code, into_message FROM outbox`
 	if len(where) > 0 {
 		text += " WHERE " + strings.Join(where, " AND ")
 	}
@@ -992,12 +1028,13 @@ func (s *Store) Outbox(ctx context.Context, f OutboxFilter) ([]QueuedAction, err
 		var q QueuedAction
 		var eventID, argsText string
 		var idx int64
-		var principal, code, message, outcome sql.NullString
+		var principal, code, message, outcome, intoCode, intoMessage sql.NullString
 		var finished sql.NullInt64
 		if err := rows.Scan(&eventID, &idx, &q.Class, &q.DocID, &q.Version, &q.Rule, &q.Action, &argsText, &principal, &q.Depth, &q.Status, &q.Attempts, &q.DueAt,
-			&code, &message, &q.CreatedAt, &finished, &outcome); err != nil {
+			&code, &message, &q.CreatedAt, &finished, &outcome, &intoCode, &intoMessage); err != nil {
 			return nil, storageErr("read the outbox", err)
 		}
+		q.IntoCode, q.IntoMessage = intoCode.String, intoMessage.String
 		q.Key = eventID + ":" + strconv.FormatInt(idx, 10)
 		q.Args = json.RawMessage(argsText)
 		q.PrincipalID, q.ErrorCode, q.ErrorMessage, q.OutcomeEvent, q.FinishedAt = principal.String, code.String, message.String, outcome.String, finished.Int64
@@ -1030,7 +1067,7 @@ func (s *Store) RetryAction(ctx context.Context, key string) error {
 	case status != ActionDead:
 		return hintf(CodeNotAllowed, "", "the action is "+status+"; only a dead action is retried", "a pending action runs by itself, and a done one has run")
 	}
-	if _, err := s.writer.ExecContext(ctx, `UPDATE outbox SET status = ?, attempts = 0, due_at = ?, finished_at = NULL WHERE event_id = ? AND idx = ? AND status = ?`,
+	if _, err := s.writer.ExecContext(ctx, `UPDATE outbox SET status = ?, attempts = 0, due_at = ?, finished_at = NULL, into_code = NULL, into_message = NULL WHERE event_id = ? AND idx = ? AND status = ?`,
 		ActionPending, s.now().Unix(), key[:i], idx, ActionDead); err != nil {
 		return storageErr("retry the action", err)
 	}

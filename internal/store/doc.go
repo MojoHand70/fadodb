@@ -64,6 +64,11 @@
 // nothing is sent. Actions lists what a rule may name, and PreviewAction
 // and TryAction show and run an action outside any document.
 //
-// Not here yet: results written back to the document (Phase 4), the
-// class-level access rules (Phase 5), and the server (Phase 6).
+// The result of an action comes back with into: when the row is done or
+// dead the worker writes the values to the document that caused it, as a
+// set of the engine's own in the transaction that marks the row, and the
+// eventless transitions follow.
+//
+// Not here yet: the class-level access rules (Phase 5), and the server
+// (Phase 6).
 package store

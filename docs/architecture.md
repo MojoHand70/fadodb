@@ -534,8 +534,33 @@ JSON. `http.call` is the engine's own declared action, for one request
 written in a rule, to the hosts listed for requests without a
 connection.
 
-Planned, with the next step of Phase 4: `into`, which writes what an
-action returned back to the document, and the sample packages.
+The answer comes back. An action of the outbox may carry `into`, a map
+from input variables of the rule's own document to formulas over what
+the action returns, with `OK` and `ERROR`:
+
+```json
+{"on": "enter", "state": "charging",
+ "do": [{"action": "pay.charge", "args": {"amount": "total"},
+         "into": {"payment_id": "payment", "pay_error": "ERROR"}}]}
+```
+
+When the action is done or dead, the engine writes those values to the
+document as a set of its own, in the transaction that marks the action,
+with an event caused by the action's outcome. It is the engine's write,
+so no write right is consulted. Like any set it raises `values_change`
+and is followed by the eventless transitions: a transition guarded by
+`NOT ISBLANK(payment_id)` moves the document on from the answer, and one
+guarded by `NOT ISBLANK(pay_error)` from the failure. A `create` returns
+the `id` of the document it made and a `transition` the `state` and the
+`version` it left its document in. A document that is frozen or gone
+when the result arrives keeps what it has, and the queued action says
+why.
+
+[`docs/actions.md`](actions.md) is the guide to writing a definition,
+and `examples/actions/webhook.json` a generic webhook. Definitions for
+particular services are not part of the repository: by the owner's
+ruling they come with real needs, and the format for publishing several
+definitions together waits for the first of them.
 
 ### Explicit tables
 

@@ -203,6 +203,10 @@ type scriptAction struct {
 	Depth    *int            `json:"depth,omitempty"`
 	As       string          `json:"as,omitempty"`
 	Args     json.RawMessage `json:"args,omitempty"`
+	// IntoCode is why the action's result was not written back to the
+	// document (ADR-0045, item 8), checked when given: "" says it was
+	// stored, or that the action has no into.
+	IntoCode *string `json:"into_code,omitempty"`
 }
 
 type scriptFound struct {
@@ -219,8 +223,10 @@ type scriptMoment struct {
 type scriptQueued struct {
 	Action string `json:"action"`
 	// Args are the arguments as the preview evaluated them, checked when
-	// given.
+	// given; Into the variables the action's result will be written to,
+	// checked when given.
 	Args json.RawMessage `json:"args,omitempty"`
+	Into []string        `json:"into,omitempty"`
 }
 
 type scriptError struct {
@@ -605,7 +611,8 @@ func runStatechartSuite(t *testing.T, suite *statechartSuite) {
 					g := rows[i]
 					if g.Action != w.Action || g.Status != w.Status || g.ErrorCode != w.Code ||
 						w.Attempts != nil && g.Attempts != *w.Attempts || w.Depth != nil && g.Depth != *w.Depth ||
-						w.As != "" && g.PrincipalID != suite.Principals[w.As].ID || w.Args != nil && !sameWire(g.Args, w.Args) {
+						w.As != "" && g.PrincipalID != suite.Principals[w.As].ID || w.Args != nil && !sameWire(g.Args, w.Args) ||
+						w.IntoCode != nil && g.IntoCode != *w.IntoCode {
 						t.Errorf("%s: action %d is %s, want %s", name, i, dump(g), dump(w))
 					}
 				}
@@ -640,6 +647,9 @@ func runStatechartSuite(t *testing.T, suite *statechartSuite) {
 							if !sameWire(a.Args, want.Queued[n].Args) {
 								got.Args = mustJSON(a.Args)
 							}
+						}
+						if n := len(queued); n < len(want.Queued) && want.Queued[n].Into != nil {
+							got.Into = a.Into
 						}
 						queued = append(queued, got)
 					}

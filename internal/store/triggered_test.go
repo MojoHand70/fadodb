@@ -280,16 +280,18 @@ func TestTriggered_Redefinition(t *testing.T) {
 // before 1.0 there is no upgrade path (ADR-0043).
 func TestTriggered_EngineSchema(t *testing.T) {
 	s, path := openStore(t, Options{})
-	if engineSchema != 3 {
-		t.Fatalf("the engine schema is %d; ADR-0043 made it 3", engineSchema)
+	// ADR-0043 made it 3, for the moment columns; the columns of an
+	// action's result that was not stored made it 4 (ADR-0045, item 8).
+	if engineSchema != 4 {
+		t.Fatalf("the engine schema is %d, want 4", engineSchema)
 	}
-	if _, err := s.writer.ExecContext(context.Background(), "UPDATE schema_version SET version = 2"); err != nil {
+	if _, err := s.writer.ExecContext(context.Background(), "UPDATE schema_version SET version = 3"); err != nil {
 		t.Fatal(err)
 	}
 	s.Close()
 	_, err := Open(path, Options{})
-	if code(err) != CodeNotSupported || !strings.Contains(err.Error(), "schema 2") {
-		t.Errorf("a schema 2 file: %v", err)
+	if code(err) != CodeNotSupported || !strings.Contains(err.Error(), "schema 3") {
+		t.Errorf("a schema 3 file: %v", err)
 	}
 }
 

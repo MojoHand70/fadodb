@@ -38,9 +38,10 @@ go test -count=1 -run TestName ./internal/formula/
    generator and the browser VM. The suite is the specification.
 4. **Decisions are ADRs.** A change to a contract (class format, bytecode,
    storage schema, command set) or to a budget needs an ADR under `docs/adr/`.
-5. **Honest status.** README, ROADMAP and docs describe what works today.
-   Mark planned behaviour as planned. Never mark a phase done before its
-   acceptance criteria pass.
+5. **Honest status.** README, ROADMAP, docs and `skills/` describe what works
+   today. Mark planned behaviour as planned. A change to what works moves
+   the marks in `skills/` in the same pull request. Never mark a phase done
+   before its acceptance criteria pass.
 6. **`private/` is personal and gitignored.** Never stage, commit, reference
    or copy its contents into tracked files.
 

@@ -1,6 +1,6 @@
 # Roadmap
 
-**Current status: Phase 3, the statechart, done on 2026-11-09 and released as v0.3.0. Phase 4, rules and actions, is next.**
+**Current status: Phase 3, the statechart, done on 2026-11-09 and released as v0.3.0. Phase 4, rules and actions, started on 2026-11-09.**
 The Go API (`fado`) opens a database file, defines schemas, classes and
 explicit tables, and creates, changes, reads and deletes documents as
 commits: assignments and defaults, the auto recalculation, typed history
@@ -26,9 +26,15 @@ listing of open transitions, the preview of a transition and the
 `_states` view (#42), the rights table and the per-transition rules
 enforced on every path for the principal (#43), `At(t)` for previews and
 reads (#44), and the measurements of `docs/perf/v0.3.0.md` against every
-budget of the three records (#45). This page is updated when a phase
-starts and when it ends; it never describes a phase as done before its
-acceptance criteria pass.
+budget of the three records (#45). Phase 4 opened with its design
+proposed as three records: ADR-0043, rules inside the commit, with the
+synchronous actions and triggered variables; ADR-0044, the outbox, its
+worker and the engine's own actions; and ADR-0045, actions as an
+extension point, with declared HTTP actions, Go actions an embedder
+registers, connections and results written back to the document.
+`QUERY` and the binding interface get their record before that step of
+the phase. This page is updated when a phase starts and when it ends;
+it never describes a phase as done before its acceptance criteria pass.
 
 Legend: ✅ done · 🚧 in progress · ⬜ not started
 
@@ -38,7 +44,7 @@ Legend: ✅ done · 🚧 in progress · ⬜ not started
 | 1 | Formula engine: lexer, parser, binder, bytecode, Go VM, SQL generator with SQLite and DuckDB dialects, conformance suite | ✅ |
 | 2 | Document model and store: primary-store benchmark, variables with defaults, `json` type, enum values, range constraints, named schemas and object values with the predefined vocabulary, attachments as `File` values with a blob store, class metadata and title, current, history and child tables, commits with idempotency keys and business dates, preview and validate without writing, event log, migrations, LOOKUP, queries | ✅ |
 | 3 | Statechart: the transition command with guards, eventless chains, exit and entry snapshots and the `_states` view, allowed transitions and the preview of a transition, `STATE()` and `ID()`, per-transition access rules and field-level rights per state, statechart conformance cases | ✅ |
-| 4 | Rules and actions: event-condition-action rules, built-in actions incl. reset and refresh, transactional outbox, executors the embedder registers, the transition event, explicit tables with storage bindings, QUERY | ⬜ |
+| 4 | Rules and actions: event-condition-action rules run inside the commit, the synchronous actions `set`, `reset`, `refresh` and `emit`, triggered variables with their moment, the transactional outbox with its worker, retries and dead rows, the engine's actions on other documents and tables, actions as an extension point with definitions, declared HTTP actions, Go actions the embedder registers, connections and results written back, the delivered event, explicit tables with storage bindings, QUERY | 🚧 |
 | 5 | Security: the principal from the embedder on every call, access rules compiled to SQL predicates, an optional package of users, groups and API keys for the server | ⬜ |
 | 6 | Server and CLI: JSON command set over HTTP and WebSocket, documents on the wire, layouts, OpenAPI, `fadodb serve` | ⬜ |
 | 7 | Browser VM and reference frontend: TypeScript VM on the same bytecode shipped as one plain JavaScript file, class bundle, layout renderer with the chip, card, coins and rating components, TypeScript client | ⬜ |

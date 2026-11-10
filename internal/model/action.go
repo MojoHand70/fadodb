@@ -538,6 +538,10 @@ func compileParams(c *collector, path string, defs map[string]json.RawMessage, o
 			c.addf(CodeDuplicate, ppath, "%s is declared twice; names differ in case only", quote(name))
 			continue
 		}
+		if !params && (upper(name) == ResultOK || upper(name) == ResultError) {
+			c.hint(CodeReservedName, ppath, quote(name)+" is what an into reads beside the returned values: whether the action ran, and the code it failed with", "give the returned value another name")
+			continue
+		}
 		seen[upper(name)] = true
 		raw := bytes.TrimSpace(defs[name])
 		var pd ParamDef

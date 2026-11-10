@@ -281,6 +281,22 @@ slots:
 	return val, nil
 }
 
+// secretAddress reports whether the address of the request reads a
+// secret: the host program keeps the address itself, as it does for a
+// receiver whose address is its credential.
+func (x *sending) secretAddress() bool {
+	rd := x.spec.Request
+	if rd.Dynamic || rd.URL == nil {
+		return false
+	}
+	for _, slot := range rd.URL.Slots {
+		if strings.HasPrefix(slot.Name, formula.SecretSlot) {
+			return true
+		}
+	}
+	return false
+}
+
 // template makes the JSON value of a body template over the parameters.
 func (x *sending) template(t *model.Template) (any, *Error) {
 	switch {
@@ -417,7 +433,9 @@ func (x *sending) request(preview bool) (*OutboundRequest, *Error) {
 			}
 		}
 	}
-	if reason := model.URLReason(req.URL); reason != "" {
+	// An address that is a secret of the connection is masked in a
+	// preview, which cannot judge it.
+	if reason := model.URLReason(req.URL); reason != "" && !(preview && x.secretAddress()) {
 		return bad("url", reason)
 	}
 	for _, h := range req.Headers {
@@ -568,7 +586,7 @@ func (s *Store) previewRequest(a *action, call *ActionCall) (*RequestPreview, *E
 	if fail != nil {
 		return nil, fail
 	}
-	if s.outbound != nil {
+	if s.outbound != nil && !x.secretAddress() {
 		if err := s.outbound.Check(req.Connection, req.URL); err != nil {
 			return nil, asError(err)
 		}

@@ -169,11 +169,15 @@ type RuleRun struct {
 // whether it is queued for the outbox or synchronous, and its evaluated
 // arguments in the shape the action is written in: the values of a set
 // by variable, the variables of a reset, the event of an emit. The
-// arguments of a queued action arrive with the outbox.
+// arguments of a queued action arrive with the outbox. Into are the
+// variables the result of a queued action will be written to when it has
+// ended (ADR-0045, item 8); a preview runs nothing, so it has no result
+// to show.
 type ActionRun struct {
-	Action string `json:"action"`
-	Queued bool   `json:"queued,omitempty"`
-	Args   Values `json:"args,omitempty"`
+	Action string   `json:"action"`
+	Queued bool     `json:"queued,omitempty"`
+	Args   Values   `json:"args,omitempty"`
+	Into   []string `json:"into,omitempty"`
 }
 
 // Option configures one call.

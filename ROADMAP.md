@@ -14,9 +14,9 @@ variables are computed at their triggers; what a rule does to other
 documents and to tables runs through the outbox; and a rule can call an
 action that has a definition, implemented by a Go function of the host
 program or sent by the engine as an HTTP request to the hosts the host
-program allows. Results written back to the document, `QUERY`, time,
-the row-level access rules and the server come with their steps and
-phases.
+program allows, with its result written back to the document. `QUERY`,
+time, the row-level access rules and the server come with their steps
+and phases.
 Since v0.1.0 the records ADR-0022 to
 ADR-0038 fixed what the first embedder needs and what Phase 2 measured:
 SQLite as the transactional store and the in-memory index for lookups, by
@@ -66,8 +66,12 @@ sends an action as an HTTP request: a definition with a `request`,
 `http.call`, secrets the host supplies at the moment of sending and that
 go only to the hosts of their connection, the signed call for a
 developer's own service, and `fado/outbound`, without which a database
-sends nothing. The third writes an action's result back to the document
-and adds the sample packages. This page is updated when a phase starts and when it ends;
+sends nothing (#58). The third, built too, writes an action's result
+back to the document with `into`, so that a process goes on from the
+answer, and adds one generic webhook definition and a guide to writing
+an action for any REST API. By the owner's ruling of 2026-11-10 the
+phase writes no definitions for particular services, which come with
+real needs, and the package format waits for the first of them. This page is updated when a phase starts and when it ends;
 it never describes a phase as done before its acceptance criteria pass.
 
 Legend: ✅ done · 🚧 in progress · ⬜ not started

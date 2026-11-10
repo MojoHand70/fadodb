@@ -226,6 +226,11 @@ suites', with these additions:
   that is not JSON. A property expected as `null` must be absent.
   `request` is the request a `preview_action` would send, in the same
   shape, with every secret masked.
+- Of an action in `outbox`, `into_code` is why its result was not
+  written back to the document (ADR-0045, item 8), checked when given:
+  `""` says the result was stored, or that the action has no `into`. Of
+  an action in a preview's `queued`, `into` are the variables its result
+  will be written to, checked when given.
 
 The store runs every suite in CI.
 

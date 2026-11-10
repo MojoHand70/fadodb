@@ -148,7 +148,7 @@ func (s *Store) project(e *evaluator, c, vc *class, row *docRow, d *Document, p 
 // errors. A value for a name the class does not have is left to assign,
 // which refuses it.
 func (s *Store) checkWrites(c *class, cmd *command, row *docRow, evalCtx *formula.Context, res *result) *Error {
-	if c.rights == nil || cmd.o.principal.Admin || len(cmd.values) == 0 && cmd.op != opReset {
+	if c.rights == nil || cmd.o.principal.Admin || cmd.engine || len(cmd.values) == 0 && cmd.op != opReset {
 		return nil
 	}
 	cells := c.cells(row.state)

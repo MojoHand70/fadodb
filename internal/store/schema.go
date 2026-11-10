@@ -32,6 +32,7 @@ var engineDDL = []string{
 	`CREATE TABLE IF NOT EXISTS outbox (event_id TEXT NOT NULL, idx INTEGER NOT NULL, class TEXT NOT NULL, doc_id TEXT NOT NULL, version INTEGER NOT NULL, class_version INTEGER NOT NULL,
 		rule TEXT NOT NULL, action TEXT NOT NULL, args TEXT NOT NULL, principal_id TEXT, principal_groups TEXT, principal_admin INTEGER NOT NULL, depth INTEGER NOT NULL,
 		status TEXT NOT NULL, attempts INTEGER NOT NULL, due_at INTEGER NOT NULL, error_code TEXT, error_message TEXT, created_at INTEGER NOT NULL, finished_at INTEGER, outcome_event TEXT,
+		into_code TEXT, into_message TEXT,
 		PRIMARY KEY (event_id, idx))`,
 	`CREATE INDEX IF NOT EXISTS outbox_due ON outbox (status, due_at, event_id, idx)`,
 	`CREATE INDEX IF NOT EXISTS outbox_doc ON outbox (class, doc_id, status)`,
@@ -154,7 +155,7 @@ func (c *class) viewDDL() []string {
 		"CREATE VIEW " + quote(cls.Name+"_history") + " AS SELECT " + all(append(append([]string{}, systemColumns...), historyColumns...), c.history) + " FROM " + quote(c.history),
 		"CREATE VIEW " + quote(cls.Name+"_events") + ` AS SELECT e.*, d."qualifier" FROM "events" e JOIN "event_docs" d ON d."event_id" = e."event_id" WHERE d."class" = ` + lit(cls.Name),
 		// The actions the documents of the class queued (ADR-0044).
-		"CREATE VIEW " + quote(cls.Name+"_actions") + ` AS SELECT "event_id" || ':' || "idx" AS "key", "doc_id", "version", "rule", "action", "args", "principal_id", "depth", "status", "attempts", "due_at", "error_code", "error_message", "created_at", "finished_at", "outcome_event" FROM "outbox" WHERE "class" = ` + lit(cls.Name),
+		"CREATE VIEW " + quote(cls.Name+"_actions") + ` AS SELECT "event_id" || ':' || "idx" AS "key", "doc_id", "version", "rule", "action", "args", "principal_id", "depth", "status", "attempts", "due_at", "error_code", "error_message", "created_at", "finished_at", "outcome_event", "into_code", "into_message" FROM "outbox" WHERE "class" = ` + lit(cls.Name),
 	}
 	if cls.States != nil {
 		ddl = append(ddl, c.statesViewDDL())

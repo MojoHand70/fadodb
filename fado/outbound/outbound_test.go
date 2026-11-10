@@ -9,6 +9,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -435,5 +436,178 @@ func TestDatabaseSendsARequest(t *testing.T) {
 	mu.Lock()
 	if err1 != nil || first.OK || first.Code != "try_later" || !first.Retry || len(failures) != 0 || asked != 3 {
 		t.Errorf("a trial the receiver was busy for: %+v, %v; the receiver said %v", first, err1, failures)
+	}
+}
+
+// TestExampleActions keeps examples/actions honest: every sample
+// definition is defined against the engine as it is and sent to a local
+// receiver, so a change that breaks a sample fails here before a reader
+// meets it.
+func TestExampleActions(t *testing.T) {
+	files, err := filepath.Glob(filepath.Join("..", "..", "examples", "actions", "*.json"))
+	if err != nil || len(files) == 0 {
+		t.Fatalf("no sample actions under examples/actions: %v", err)
+	}
+	tested := map[string]func(*testing.T, []byte){"webhook.json": exampleWebhook}
+	for _, file := range files {
+		run, ok := tested[filepath.Base(file)]
+		if !ok {
+			t.Errorf("%s has no test: add one to TestExampleActions", filepath.Base(file))
+			continue
+		}
+		def, err := os.ReadFile(file)
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Run(filepath.Base(file), func(t *testing.T) { run(t, def) })
+	}
+}
+
+// The generic webhook: one definition for any receiver. The address and
+// the signing key are the host program's, the request carries the signed
+// call, and the rule keeps what it wants of the answer.
+func exampleWebhook(t *testing.T, def []byte) {
+	const key = "whsec-example"
+	var mu sync.Mutex
+	var got []fado.ActionCall
+	srv, entry := local(t, func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		if err := fado.VerifySignature(key, r.Header.Get("FadoDB-Signature"), body, time.Now(), time.Minute); err != nil || r.URL.Path != "/hooks/in/s3cr3t-path" {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		var call fado.ActionCall
+		_ = json.Unmarshal(body, &call)
+		mu.Lock()
+		got = append(got, call)
+		mu.Unlock()
+		w.WriteHeader(http.StatusAccepted)
+		_, _ = w.Write([]byte(`{"status": "success", "id": "evt_1"}`))
+	})
+	out, err := Allow(Options{Connections: map[string][]string{"webhook": {entry}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	db, err := fado.Open(filepath.Join(t.TempDir(), "webhook.fado"), fado.Options{
+		Outbox: fado.OutboxOptions{Manual: true}, Outbound: out,
+		Secrets: func(_ context.Context, connection, name string) (string, error) {
+			return map[string]string{"webhook/url": srv.URL + "/hooks/in/s3cr3t-path", "webhook/signing_key": key}[connection+"/"+name], nil
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	ctx := context.Background()
+	info, err := db.DefineAction(ctx, def)
+	if err != nil {
+		t.Fatalf("the sample does not define: %v", err)
+	}
+	if info.Name != "webhook.send" || info.Kind != "declared" || info.Connection != "webhook" || !info.Available || len(info.Secrets) != 2 {
+		t.Errorf("the sample as the catalogue lists it: %+v", info)
+	}
+	if _, err := db.DefineClass(ctx, []byte(`{"name": "Invoice",
+ "variables": {"number": {"type": "text"}, "sent": {"type": "bool"}, "send_error": {"type": "text"}, "receipt": {"type": "text"}},
+ "states": {"initial": "draft", "list": ["draft", "approved", "announced"]},
+ "transitions": [{"name": "approve", "from": "draft", "to": "approved"}, {"from": "approved", "to": "announced", "guard": "sent"}],
+ "rules": [{"on": "enter", "state": "approved",
+            "do": [{"action": "webhook.send", "args": {"topic": "\"invoice.approved\"", "data": {"number": "number"}},
+                    "into": {"sent": "OK", "send_error": "ERROR", "receipt": "JSONVALUE(reply, \"id\")"}}]}]}`)); err != nil {
+		t.Fatal(err)
+	}
+	// A preview shows the request and keeps the address to itself.
+	pv, err := db.PreviewAction(ctx, "webhook.send", fado.Values{"topic": "invoice.approved"})
+	if err != nil || pv.Request.URL != "***" || pv.Request.Method != "POST" || strings.Contains(fmt.Sprint(pv), "s3cr3t") {
+		t.Errorf("a preview of the sample: %+v, %v", pv, err)
+	}
+	doc, err := db.Create(ctx, "Invoice", fado.Values{"number": "INV-7"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Transition(ctx, "Invoice", doc.ID, "approve", nil); err != nil {
+		t.Fatal(err)
+	}
+	if n, err := db.Drain(ctx); err != nil || n != 1 {
+		t.Fatalf("drain: %d, %v", n, err)
+	}
+	// The receiver took the signed call, and the invoice went on from its
+	// answer.
+	mu.Lock()
+	defer mu.Unlock()
+	if len(got) != 1 || got[0].Action != "webhook.send" || got[0].Args["topic"] != "invoice.approved" || got[0].Event.Document.Values["number"] != "INV-7" {
+		t.Fatalf("what the receiver took: %+v", got)
+	}
+	after, _ := db.Get(ctx, "Invoice", doc.ID)
+	if after.State != "announced" || after.Values["sent"] != true || after.Values["send_error"] != nil || after.Values["receipt"] != "evt_1" {
+		t.Errorf("the invoice after the answer: %+v", after)
+	}
+	rows, _ := db.Outbox(ctx, fado.OutboxFilter{})
+	if len(rows) != 1 || rows[0].Status != "done" || strings.Contains(fmt.Sprint(rows), "s3cr3t") {
+		t.Errorf("the row: %+v", rows)
+	}
+}
+
+// TestActionsGuide keeps docs/actions.md honest: every definition, class
+// and rule the guide shows is taken by the engine as it is, under the
+// hosts the guide's own program allows.
+func TestActionsGuide(t *testing.T) {
+	guide, err := os.ReadFile(filepath.Join("..", "..", "docs", "actions.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	out, err := Allow(Options{
+		Hosts:       []string{"hooks.partner.example"},
+		Connections: map[string][]string{"tickets": {"api.example.com"}, "rates": {"rates.example.com"}, "sms": {"sms.example.com"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	db, err := fado.Open(filepath.Join(t.TempDir(), "guide.fado"), fado.Options{
+		Outbox: fado.OutboxOptions{Manual: true}, Outbound: out,
+		Secrets: func(context.Context, string, string) (string, error) { return "a-secret", nil },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	ctx := context.Background()
+	var definitions, classes, fragments int
+	blocks := strings.Split(strings.ReplaceAll(string(guide), "\r\n", "\n"), "```json\n")[1:]
+	for i, block := range blocks {
+		src, _, _ := strings.Cut(block, "\n```")
+		var head map[string]json.RawMessage
+		if err := json.Unmarshal([]byte(src), &head); err != nil {
+			t.Errorf("block %d of the guide is not JSON: %v\n%s", i, err, src)
+			continue
+		}
+		switch {
+		case head["variables"] != nil:
+			classes++
+			if _, err := db.DefineClass(ctx, []byte(src)); err != nil {
+				t.Errorf("the class of block %d does not define: %v", i, err)
+			}
+		case head["action"] != nil:
+			// One action of a rule: it stands in a class of its own.
+			fragments++
+			class := `{"name": "Fragment", "variables": {"subject": {"type": "text"}, "ticket_error": {"type": "text"}},
+ "states": {"initial": "a", "list": ["a", "b"]}, "transitions": [{"name": "go", "from": "a", "to": "b"}],
+ "rules": [{"on": "enter", "state": "b", "do": [` + src + `]}]}`
+			if diags := db.ValidateClass([]byte(class)); len(diags) > 0 {
+				t.Errorf("the action of block %d is refused: %v", i, diags)
+			}
+		default:
+			definitions++
+			if _, err := db.DefineAction(ctx, []byte(src)); err != nil {
+				t.Errorf("the definition of block %d does not define: %v", i, err)
+			}
+		}
+	}
+	if definitions != 3 || classes != 1 || fragments != 1 {
+		t.Errorf("the guide has %d definitions, %d classes and %d actions; the test expects 3, 1 and 1", definitions, classes, fragments)
+	}
+	// The request of the guide's first definition is the one it describes.
+	pv, err := db.PreviewAction(ctx, "tickets.create", fado.Values{"subject": "printer"})
+	if err != nil || pv.Request.Method != "POST" || pv.Request.URL != "https://api.example.com/v1/tickets" || pv.Request.Body != `{"priority":"normal","subject":"printer"}` {
+		t.Errorf("the request of tickets.create: %+v, %v", pv, err)
 	}
 }

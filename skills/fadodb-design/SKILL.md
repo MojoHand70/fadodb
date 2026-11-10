@@ -30,8 +30,8 @@ read the diagnostics, fix, preview against live data, define.
 | formulas, exact money, calendar days, `IFERROR` | shipped |
 | states, transitions, guards, eventless chains, `STATE()` and `ID()` | shipped |
 | field rights per state, per-transition rules | shipped with Phase 3 |
-| rules and actions | in progress, Phase 4: rules fire inside the commit with `set`, `reset`, `refresh` and `emit`, a preview lists them, and triggered variables are computed at their triggers; what a rule does beyond its own document runs through the outbox, exactly once and as the person who caused it: `create` (with `each`, one document per element of a list), `transition` and `refresh` of another document, `table.insert`, `table.update`, `table.delete`; a rule may also call an action that has a definition, with typed `args`, whether a Go function of the host program implements it or the engine sends it as an HTTP request, and `http.call` for one request written in the rule; `Actions` lists every action a rule may name and whether this process can run it; `into`, which writes a result back, is planned |
-| action definitions: `DefineAction`, `ValidateAction`, `Actions`, `PreviewAction`, `TryAction` | in progress, Phase 4: a definition with a `request` needs no code and reads secrets with `SECRET("name")`; it can be defined only where the host program allows outbound calls and names the definition's connection; the sample packages are planned |
+| rules and actions | in progress, Phase 4: rules fire inside the commit with `set`, `reset`, `refresh` and `emit`, a preview lists them, and triggered variables are computed at their triggers; what a rule does beyond its own document runs through the outbox, exactly once and as the person who caused it: `create` (with `each`, one document per element of a list), `transition` and `refresh` of another document, `table.insert`, `table.update`, `table.delete`; a rule may also call an action that has a definition, with typed `args`, whether a Go function of the host program implements it or the engine sends it as an HTTP request, and `http.call` for one request written in the rule; `Actions` lists every action a rule may name and whether this process can run it; `into` writes what an action returned, or the code it failed with, back to the document, and the eventless transitions follow |
+| action definitions: `DefineAction`, `ValidateAction`, `Actions`, `PreviewAction`, `TryAction` | in progress, Phase 4: a definition with a `request` needs no code and reads secrets with `SECRET("name")`; it can be defined only where the host program allows outbound calls and names the definition's connection; `docs/actions.md` is the guide and `examples/actions/webhook.json` a generic webhook; definitions for particular services come with real needs, and a format for packages of them is planned |
 | the class-level access rule | designed, Phase 5: it compiles, it is not enforced |
 | class versions, terminal states, migrations | designed, ADR-0039 |
 
@@ -62,7 +62,10 @@ read the diagnostics, fix, preview against live data, define.
    `PreviewAction`, and run it once with `TryAction` before a document
    depends on it. Never write a token into a definition or a class: a
    request reads it with `SECRET("name")`, and the host program
-   supplies it.
+   supplies it. To go on from the answer, give the action an `into`
+   and guard the next transition on the variable it fills; guard
+   another on the error variable, so that a failure is a state and not
+   a document that waits for ever.
    **Write the access rule**, marked as what it is today: checked, not
    enforced.
 7. **Validate.** Today through `ValidateClass` on the Go API; a

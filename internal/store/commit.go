@@ -80,6 +80,12 @@ type command struct {
 	depth    int
 	day      int64
 	hasDay   bool
+	// engine marks a write of the engine's own: the result an action
+	// writes back to the document that caused it (ADR-0045, item 8). Like
+	// a rule's set it consults no write right; the principal is the one
+	// whose command caused the action, for the record and for the actions
+	// the write queues in its turn.
+	engine bool
 }
 
 type result struct {

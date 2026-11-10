@@ -439,6 +439,8 @@ func (d DuckDB) Call(name string, args []SQLExpr, params *Params) (SQLExpr, erro
 		return concatExpr(d, args, false), nil
 	case "REPEAT":
 		return macro(KindText, true, d.Text(args[0]), d.Num(args[1])), nil
+	case "URLENCODE":
+		return macro(KindText, true, d.Text(args[0])), nil
 	case "FINDFIRST":
 		return SQLExpr{Val: "CAST(strpos(" + d.Text(args[1]) + ", " + d.Text(args[0]) + ") AS DOUBLE)", Kind: KindNumber, Sure: true}, nil
 	case "FINDLAST":
@@ -652,6 +654,12 @@ var duckdbMacros = []string{
 	`CREATE OR REPLACE MACRO fado_substitute_err(t, p, n, m) AS CASE WHEN p::VARCHAR <> '' AND fado_substitute_len(t, p, n) > m THEN 'out_of_range' END`,
 	`CREATE OR REPLACE MACRO fado_repeat(t, n, m) AS repeat(t::VARCHAR, CAST(CASE WHEN trunc(n::DOUBLE) < 0 OR length(t::VARCHAR) = 0 OR trunc(n::DOUBLE) * length(t::VARCHAR) > m THEN 0 ELSE trunc(n::DOUBLE) END AS INTEGER))`,
 	`CREATE OR REPLACE MACRO fado_repeat_err(t, n, m) AS CASE WHEN trunc(n::DOUBLE) < 0 OR trunc(n::DOUBLE) * length(t::VARCHAR) > m THEN 'out_of_range' END`,
+	// URLENCODE: every byte that is not unreserved becomes three
+	// characters, so the length is known from the bytes and the unreserved
+	// characters among them.
+	`CREATE OR REPLACE MACRO fado_urlencode_len(t) AS 3 * strlen(t::VARCHAR) - 2 * length(regexp_replace(t::VARCHAR, '[^A-Za-z0-9._~-]', '', 'g'))`,
+	`CREATE OR REPLACE MACRO fado_urlencode(t, m) AS CASE WHEN fado_urlencode_len(t) > m THEN '' ELSE url_encode(t::VARCHAR) END`,
+	`CREATE OR REPLACE MACRO fado_urlencode_err(t, m) AS CASE WHEN fado_urlencode_len(t) > m THEN 'out_of_range' END`,
 	`CREATE OR REPLACE MACRO fado_pad_width(w, m) AS CASE WHEN trunc(w::DOUBLE) < 0 OR trunc(w::DOUBLE) > m THEN 0 ELSE trunc(w::DOUBLE) END`,
 	`CREATE OR REPLACE MACRO fado_pad(t, w, f, m) AS CASE WHEN length(t::VARCHAR) >= fado_pad_width(w, m) THEN t::VARCHAR ELSE lpad(t::VARCHAR, CAST(fado_pad_width(w, m) AS INTEGER), COALESCE(NULLIF(substr(f::VARCHAR, 1, 1), ''), ' ')) END`,
 	`CREATE OR REPLACE MACRO fado_pad_err(t, w, f, m) AS CASE WHEN trunc(w::DOUBLE) < 0 OR trunc(w::DOUBLE) > m THEN 'out_of_range' END`,

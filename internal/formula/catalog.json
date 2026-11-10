@@ -4,7 +4,8 @@
     "pure": "A function of its arguments only. Allowed everywhere.",
     "context": "Reads the caller's context: the user, the clock, the document's state and id. Not allowed in auto formulas.",
     "lookup": "Reads one value from a table or stack. In auto formulas only against explicit tables.",
-    "query": "Reads rows from a table or stack. Not allowed in auto formulas."
+    "query": "Reads rows from a table or stack. Not allowed in auto formulas.",
+    "secret": "Reads a secret the host program supplies for a connection. Allowed only in the request of an action definition."
   },
   "functions": [
     {"name": "IF", "class": "pure", "category": "logic", "returns": "any",
@@ -196,6 +197,9 @@
     {"name": "PROPER", "class": "pure", "category": "text", "returns": "text",
      "params": [{"name": "text", "type": "text"}],
      "summary": "The first letter of every word in upper case and the rest in lower case."},
+    {"name": "URLENCODE", "class": "pure", "category": "text", "returns": "text",
+     "params": [{"name": "text", "type": "text"}],
+     "summary": "The text made safe for a URL: letters, digits and - . _ ~ stay, and every other character becomes its UTF-8 bytes as %XX with upper-case hex digits, so a space is %20. A result longer than the text limit is the error out_of_range."},
     {"name": "REPLACE", "class": "pure", "category": "text", "returns": "text",
      "params": [{"name": "text", "type": "text"}, {"name": "position", "type": "number"}, {"name": "length", "type": "number"}, {"name": "new_text", "type": "text"}],
      "summary": "The text with length characters from the 1-based position replaced by the new text. A result longer than the text limit is the error out_of_range."},
@@ -248,6 +252,10 @@
     {"name": "JSONVALUE", "class": "pure", "category": "composite", "returns": "scalar",
      "params": [{"name": "json", "type": "json"}, {"name": "path", "type": "text"}],
      "summary": "One value read from a json value at a dotted path such as address.city or items.0.sku, as text: numbers as TEXT renders them, booleans as TRUE and FALSE. Blank when the path is absent or null; an object or array at the path is the error bad_text. Convert with VALUE or DATEVALUE."},
+
+    {"name": "SECRET", "class": "secret", "category": "context", "returns": "text",
+     "params": [{"name": "name", "type": "text"}],
+     "summary": "The secret of that name, which the connection of an action definition declares and the host program supplies when the request is sent. The name is a text literal. Only the request of an action definition may use it; the engine stores no secret."},
 
     {"name": "LOOKUP", "class": "lookup", "category": "data", "returns": "scalar",
      "params": [{"name": "source", "type": "source"}, {"name": "column", "type": "column"}, {"name": "condition", "type": "condition"}],

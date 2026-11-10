@@ -243,7 +243,7 @@ separator (ADR-0031).
 Excel-like syntax, case-insensitive functions, the operator set
 `+ - * / \ ^ % &`, comparisons, `AND OR NOT`, `IF(...)` and
 `IF ... THEN ... ELSE`. The function catalog is a JSON file that generates
-documentation, editor hints and conformance tests. Functions fall into four
+documentation, editor hints and conformance tests. Functions fall into
 classes, and where a formula may use them depends on what happens to its
 result:
 
@@ -253,6 +253,7 @@ result:
 | Context | `USER() INGROUP() NOW() TODAY() STATE() ID()` | defaults, triggered formulas, guards, rules, access rules, layouts; not in auto formulas |
 | Lookup | `LOOKUP(source, column, condition)` | everywhere; in auto formulas only against explicit tables |
 | Query | `QUERY(source, columns, condition, sort, groupby, limit)` | defaults, triggered formulas, rules, layouts; not in auto formulas |
+| Secret | `SECRET("token")` | the request of an action definition, and nowhere else (ADR-0045) |
 
 The rule behind the table: the stored value of an auto variable must be a
 function of the document itself, so it may not depend on who is looking,

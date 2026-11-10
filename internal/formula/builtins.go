@@ -105,6 +105,8 @@ var builtins = []*builtin{
 	{name: "DATETIMEVALUE", class: ClassPure, args: []argKind{akText}, result: KindDateTime, fn: fnDateTimeValue},
 	{name: "DATEOF", class: ClassPure, args: []argKind{akDateTime}, result: KindDate, fn: fnDateOf},
 	{name: "DATETIME", class: ClassPure, args: []argKind{akDate}, result: KindDateTime, fn: fnDateTime},
+	// Text made safe for a URL (ADR-0045)
+	{name: "URLENCODE", class: ClassPure, args: []argKind{akText}, result: KindText, fn: fnURLEncode},
 }
 
 // builtinByName indexes the table by canonical name.
@@ -117,8 +119,8 @@ var builtinByName = func() map[string]int {
 }()
 
 // specialForms are catalog functions the parser or the binder turns into
-// control flow rather than calls.
-var specialForms = map[string]bool{"IF": true, "AND": true, "OR": true, "NOT": true, "IFERROR": true}
+// control flow, or for SECRET into the read of a slot, rather than calls.
+var specialForms = map[string]bool{"IF": true, "AND": true, "OR": true, "NOT": true, "IFERROR": true, "SECRET": true}
 
 // notYetImplemented lists the catalog functions the binder refuses for now:
 // the composite functions and the query functions of ADR-0020.

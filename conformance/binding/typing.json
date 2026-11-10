@@ -136,6 +136,8 @@
     {"formula": "SUM(tags)", "reason": "composite values are not supported yet"},
     {"formula": "INDEX(tags, 1)", "reason": "not implemented yet"},
     {"formula": "LOOKUP(Rates, rate, code = THIS.code)", "reason": "not implemented yet"},
-    {"formula": "QUERY(Invoice, total)", "reason": "not implemented yet"}
+    {"formula": "QUERY(Invoice, total)", "reason": "not implemented yet"},
+    {"formula": "SECRET(\"token\")", "reason": "a secret is read only in the request of an action definition (ADR-0045)"},
+    {"formula": "\"Bearer \" & SECRET(\"token\")", "reason": "a secret is read only in the request of an action definition"}
   ]
 }

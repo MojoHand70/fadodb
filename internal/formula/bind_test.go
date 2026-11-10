@@ -191,3 +191,60 @@ func TestBuiltins_MatchTheCatalog(t *testing.T) {
 		}
 	}
 }
+
+// SECRET is the read of a slot, never a constant (ADR-0045): the program
+// of a request names the secrets it reads, whoever runs it fills them in,
+// and nothing of a secret is in the bytecode.
+func TestBind_SecretIsASlot(t *testing.T) {
+	scope, err := NewScope(Variable{Name: "channel", Type: Scalar(KindText)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	opts := BindOptions{Mode: ModePure, Secrets: []string{"token", "key"}}
+	prog, err := Bind(`"Bearer " & SECRET("TOKEN") & "/" & channel & SECRET("token")`, scope, opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// One slot for the secret however often and however cased it is read,
+	// named as the connection declares it.
+	if len(prog.Slots) != 2 || prog.Slots[0].Name != SecretSlot+"token" || prog.Slots[0].Type.Kind != KindText || prog.Slots[1].Name != "channel" {
+		t.Fatalf("slots %+v", prog.Slots)
+	}
+	if len(prog.Classes) != 1 || prog.Classes[0] != ClassSecret {
+		t.Errorf("classes %v", prog.Classes)
+	}
+	back, err := Decode(prog.Encode())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, p := range []*Program{prog, back} {
+		got, err := NewVM().Run(p, []Value{Text("s3cr3t"), Text("#ops")}, &Context{})
+		if err != nil || got.Str() != "Bearer s3cr3t/#opss3cr3t" {
+			t.Errorf("the request formula: %v, %v", got, err)
+		}
+	}
+	if strings.Contains(string(prog.Encode()), "s3cr3t") {
+		t.Error("a secret is in the bytecode")
+	}
+	// A formula that reads no secret says so.
+	plain, _ := Bind(`"x" & channel`, scope, opts)
+	for _, c := range plain.Classes {
+		if c == ClassSecret {
+			t.Error("a formula without SECRET has the secret class")
+		}
+	}
+	// Outside a request, in every mode, SECRET is refused; and inside one
+	// the functions that are not pure still are.
+	for _, mode := range []Mode{ModeAny, ModeAuto, ModePure} {
+		if _, err := Bind(`SECRET("token")`, scope, BindOptions{Mode: mode}); err == nil || !strings.Contains(err.Error(), "only in the request of an action definition") {
+			t.Errorf("mode %s: %v", mode, err)
+		}
+	}
+	if _, err := Bind(`SECRET("token") & USER()`, scope, opts); err == nil {
+		t.Error("a request formula took a context function")
+	}
+	// An empty list allows the form and knows no name.
+	if _, err := Bind(`SECRET("token")`, scope, BindOptions{Mode: ModePure, Secrets: []string{}}); err == nil || !strings.Contains(err.Error(), "names no connection") {
+		t.Errorf("a definition without a connection: %v", err)
+	}
+}

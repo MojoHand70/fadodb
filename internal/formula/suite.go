@@ -245,10 +245,14 @@ type BindingSuite struct {
 	// suite; their rows are not needed to bind.
 	Sources map[string]*SuiteSource `json:"sources,omitempty"`
 	// Mode is "any" (the default), "auto" (ADR-0015) or "pure" (ADR-0018).
-	Mode   string       `json:"mode,omitempty"`
-	Accept []string     `json:"accept"`
-	Reject []RejectCase `json:"reject"`
-	File   string       `json:"-"`
+	Mode string `json:"mode,omitempty"`
+	// Secrets are the secrets SECRET may name (ADR-0045): present, even
+	// empty, for the formulas of the request of an action definition, and
+	// absent everywhere else, where SECRET is refused.
+	Secrets []string     `json:"secrets,omitempty"`
+	Accept  []string     `json:"accept"`
+	Reject  []RejectCase `json:"reject"`
+	File    string       `json:"-"`
 }
 
 // SourceSet resolves the suite's sources.

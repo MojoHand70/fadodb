@@ -134,6 +134,23 @@
     {"formula": "LEN(REPLACE(REPEAT(\"x\", 60000), 1, 10000, REPEAT(\"y\", 10000)))", "expected": 60000},
     {"formula": "REGEXREPLACE(REPEAT(\"a\", 10000), \"a\", \"bbbbbbbbbb\")", "error": "out_of_range"},
     {"formula": "LEN(REGEXREPLACE(REPEAT(\"a\", 6000), \"a\", \"bbbbbbbbbb\"))", "expected": 60000},
-    {"formula": "REGEXREPLACE(REPEAT(\"a\", 30000), \"\", \"--\")", "error": "out_of_range"}
+    {"formula": "REGEXREPLACE(REPEAT(\"a\", 30000), \"\", \"--\")", "error": "out_of_range"},
+
+    {"name": "URLENCODE keeps letters, digits and - . _ ~ and writes every other byte as %XX", "formula": "URLENCODE(\"AZaz09-._~\")", "expected": "AZaz09-._~"},
+    {"formula": "URLENCODE(\"a b\")", "expected": "a%20b"},
+    {"formula": "URLENCODE(\"a+b&c=d/e?f#g\")", "expected": "a%2Bb%26c%3Dd%2Fe%3Ff%23g"},
+    {"formula": "URLENCODE(\"100%\")", "expected": "100%25"},
+    {"formula": "URLENCODE(\"!*'();:@$,[]\")", "expected": "%21%2A%27%28%29%3B%3A%40%24%2C%5B%5D"},
+    {"formula": "URLENCODE(\"\"\"<>\\^`{|}\")", "expected": "%22%3C%3E%5C%5E%60%7B%7C%7D"},
+    {"name": "a character outside ASCII is its UTF-8 bytes, upper-case hex", "formula": "URLENCODE(\"zażółć\")", "expected": "za%C5%BC%C3%B3%C5%82%C4%87"},
+    {"formula": "URLENCODE(\"€ 😀\")", "expected": "%E2%82%AC%20%F0%9F%98%80"},
+    {"name": "it is not applied twice by itself: a percent sign is encoded like any other", "formula": "URLENCODE(URLENCODE(\"a b\"))", "expected": "a%2520b"},
+    {"formula": "URLENCODE(\"\")", "expected": ""},
+    {"name": "a blank is the empty text", "formula": "URLENCODE(BLANK)", "expected": ""},
+    {"formula": "URLENCODE(Code)", "inputs": {"Code": null}, "expected": ""},
+    {"formula": "\"https://example.test/find?q=\" & URLENCODE(Code) & \"&n=\" & Amount", "inputs": {"Code": "tea & milk", "Amount": 2}, "expected": "https://example.test/find?q=tea%20%26%20milk&n=2"},
+    {"name": "the result counts against the text limit", "formula": "LEN(URLENCODE(REPEAT(\" \", 21845)))", "expected": 65535},
+    {"formula": "URLENCODE(REPEAT(\" \", 21846))", "error": "out_of_range"},
+    {"formula": "LEN(URLENCODE(REPEAT(\"a\", 65536)))", "expected": 65536}
   ]
 }

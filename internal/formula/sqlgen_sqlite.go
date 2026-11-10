@@ -276,7 +276,7 @@ var sqliteRegistered = []string{
 	"ROUND", "FLOOR", "CEILING", "TRUNC", "MIN", "MAX", "SUM", "AVERAGE", "COUNT", "POWER", "LN", "LOG",
 	"DATE", "DATEVALUE", "ADDMONTHS", "ADDYEARS",
 	"TRIM", "UPPER", "LOWER", "PROPER", "REPLACE", "SUBSTITUTE", "REPEAT", "FINDLAST", "PAD", "REGEXREPLACE",
-	"TEXT", "VALUE", "JSONVALUE", "DATETIMEVALUE",
+	"TEXT", "VALUE", "JSONVALUE", "DATETIMEVALUE", "URLENCODE",
 }
 
 // limitedFunctions names the builtins whose result can be longer than
@@ -284,7 +284,7 @@ var sqliteRegistered = []string{
 // extra trailing argument, an integer literal, since a registered function
 // and a macro have no VM to read it from.
 var limitedFunctions = map[string]bool{
-	"REPLACE": true, "SUBSTITUTE": true, "REPEAT": true, "PAD": true, "REGEXREPLACE": true,
+	"REPLACE": true, "SUBSTITUTE": true, "REPEAT": true, "PAD": true, "REGEXREPLACE": true, "URLENCODE": true,
 }
 
 // RegisteredFunc describes an engine function a SQL dialect calls back into
@@ -844,6 +844,8 @@ func (d SQLite) Call(name string, args []SQLExpr, params *Params) (SQLExpr, erro
 		return concatExpr(d, args, false), nil
 	case "REPEAT":
 		return reg(KindText, true, d.Text(args[0]), d.Num(args[1])), nil
+	case "URLENCODE":
+		return reg(KindText, true, d.Text(args[0])), nil
 	case "FINDFIRST":
 		return SQLExpr{Val: "CAST(instr(" + d.Text(args[1]) + ", " + d.Text(args[0]) + ") AS REAL)", Kind: KindNumber, Sure: true}, nil
 	case "FINDLAST":

@@ -18,6 +18,7 @@
     {"formula": "IF(INGROUP(\"admins\"), 1, 0)", "reason": "context function in an auto formula"},
     {"formula": "STATE()", "reason": "context function in an auto formula"},
     {"formula": "IF(STATE() = \"paid\", 1, 0)", "reason": "context function in an auto formula"},
-    {"formula": "ID()", "reason": "context function in an auto formula"}
+    {"formula": "ID()", "reason": "context function in an auto formula"},
+    {"formula": "SECRET(\"token\")", "reason": "a secret is read only in the request of an action definition (ADR-0045)"}
   ]
 }

@@ -218,7 +218,10 @@ time by the static typing rules of ADR-0019, in a `mode` of `any` (the
 default), `auto` (ADR-0015) or `pure` (the class title of ADR-0018 and
 the presentation formulas of ADR-0032). Same shape as the syntax cases,
 plus `mode` and, as in the evaluation cases, `schemas` and `sources`
-(whose rows may be left out).
+(whose rows may be left out). A suite with `secrets`, a list of names,
+binds its formulas as the request of an action definition binds them
+(ADR-0045): `SECRET("name")` reads one of those secrets. Without
+`secrets`, as everywhere else, `SECRET` is refused.
 
 ## Syntax cases: `syntax/*.json`
 

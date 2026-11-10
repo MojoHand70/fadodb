@@ -120,7 +120,7 @@ func TestConformance_Binding(t *testing.T) {
 		if err != nil {
 			t.Fatalf("%s: %v", s.File, err)
 		}
-		opts := BindOptions{Mode: s.BindMode(), Sources: sources}
+		opts := BindOptions{Mode: s.BindMode(), Sources: sources, Secrets: s.Secrets}
 		for _, f := range s.Accept {
 			accepted++
 			if _, err := Bind(f, scope, opts); err != nil {

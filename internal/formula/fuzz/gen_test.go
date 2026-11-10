@@ -12,6 +12,8 @@ import (
 var notGenerated = map[string]bool{
 	"INDEX": true, "FILTER": true, "FIRST": true, "LAST": true, "CONTAINS": true, "JOIN": true,
 	"LOOKUP": true, "QUERY": true, "IF": true, "AND": true, "OR": true, "NOT": true, "IFERROR": true,
+	// SECRET binds only in the request of an action definition (ADR-0045).
+	"SECRET": true,
 }
 
 func TestGenerator_FormulasBindAndRun(t *testing.T) {

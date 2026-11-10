@@ -223,6 +223,43 @@ func fnRepeat(vm *VM, args []Value) (Value, *EvalError) {
 	return Text(strings.Repeat(args[0].str, int(n))), nil
 }
 
+// fnURLEncode makes a text safe for a URL (RFC 3986): the unreserved
+// characters, which are the ASCII letters and digits and - . _ ~, stay,
+// and every other character becomes its UTF-8 bytes as %XX with
+// upper-case hex digits. The length is worked out before the result is
+// built (ADR-0021).
+func fnURLEncode(vm *VM, args []Value) (Value, *EvalError) {
+	s := args[0].str
+	n := 0
+	for i := 0; i < len(s); i++ {
+		if unreserved(s[i]) {
+			n++
+		} else {
+			n += 3
+		}
+	}
+	if n == len(s) {
+		return Text(s), nil
+	}
+	if n > vm.maxText() {
+		return Value{}, tooLong()
+	}
+	const hex = "0123456789ABCDEF"
+	b := make([]byte, 0, n)
+	for i := 0; i < len(s); i++ {
+		if c := s[i]; unreserved(c) {
+			b = append(b, c)
+		} else {
+			b = append(b, '%', hex[c>>4], hex[c&15])
+		}
+	}
+	return Text(string(b)), nil
+}
+
+func unreserved(c byte) bool {
+	return c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || c == '-' || c == '.' || c == '_' || c == '~'
+}
+
 func runePos(s string, byteIndex int) float64 {
 	if byteIndex < 0 {
 		return 0

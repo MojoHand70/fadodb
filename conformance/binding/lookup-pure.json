@@ -10,6 +10,7 @@
     "\"Rate \" & code"
   ],
   "reject": [
-    {"formula": "LOOKUP(Rates, name, code = THIS.code)", "reason": "a lookup in a pure formula"}
+    {"formula": "LOOKUP(Rates, name, code = THIS.code)", "reason": "a lookup in a pure formula"},
+    {"formula": "SECRET(\"token\")", "reason": "a secret is read only in the request of an action definition (ADR-0045)"}
   ]
 }

@@ -22,8 +22,9 @@ catalogue.
 
 ## What a sample may use
 
-A sample uses what validates today. Rules and access rules compile and
-are checked, so a sample may declare them, but rules do not fire before
-Phase 4 and the class-level access rule is not enforced before Phase 5.
+A sample uses what validates today. Rules run inside the commit with
+`set`, `reset` and `emit`. An action for the outbox, such as `create`,
+is checked by name and not queued until Phase 4 builds the outbox, and
+the class-level access rule is not enforced before Phase 5.
 A sample that depends on them says so in a `"description"` the reader
 sees, never silently.

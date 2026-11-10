@@ -46,8 +46,13 @@ type (
 	// Event is one row of the event log.
 	Event = store.Event
 	// Preview is what a commit would do (ADR-0025): the document, the
-	// errors per variable, the states visited and the transitions open.
+	// errors per variable, the states visited, the transitions open and
+	// the rules the command would run.
 	Preview = store.Preview
+	// RuleRun is one rule whose trigger a previewed command raised, and
+	// ActionRun one action of a rule that ran (ADR-0043).
+	RuleRun   = store.RuleRun
+	ActionRun = store.ActionRun
 	// TransitionInfo is one named transition leaving a document's state
 	// and whether it may be taken now (ADR-0040).
 	TransitionInfo = store.TransitionInfo

@@ -60,6 +60,20 @@ func Leaving(cls *model.Class, state string) []*model.Transition {
 	return out
 }
 
+// Next is one step of the chain: the first eventless transition in
+// definition order that leaves the state and whose guard holds, as fires
+// reports it, or nil when none does. A commit takes the steps one at a
+// time, since each one that fires is a commit of its own whose rules may
+// change what the next guard reads (ADR-0043).
+func Next(cls *model.Class, from string, fires func(t *model.Transition) bool) *model.Transition {
+	for _, t := range cls.Transitions {
+		if t.Name == "" && From(t, from) && fires(t) {
+			return t
+		}
+	}
+	return nil
+}
+
 // Chain follows the eventless transitions from a state: at every step the
 // first one in definition order that leaves the current state and whose
 // guard holds, as fires reports it, until none does. The states entered
@@ -68,13 +82,7 @@ func Leaving(cls *model.Class, state string) []*model.Transition {
 // the bound. The loop allocates nothing beyond the growth of path.
 func Chain(cls *model.Class, from string, path []string, fires func(t *model.Transition, from string) bool) (_ []string, ok bool) {
 	for n := 0; ; n++ {
-		var next *model.Transition
-		for _, t := range cls.Transitions {
-			if t.Name == "" && From(t, from) && fires(t, from) {
-				next = t
-				break
-			}
-		}
+		next := Next(cls, from, func(t *model.Transition) bool { return fires(t, from) })
 		if next == nil {
 			return path, true
 		}

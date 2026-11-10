@@ -15,10 +15,12 @@ Website: [fadodb.org](https://fadodb.org).
 > with attachments, lookups into reference tables, filters and read-only
 > SQL; moves them through their statecharts with guards and eventless
 > transitions; enforces field rights and transition rules for the
-> principal; and previews any change at a moment the caller chooses.
-> Rules, the row-level access rules, `QUERY` and the server come with
-> their phases. The numbers are in [docs/perf/](docs/perf/), the plan in
-> [ROADMAP.md](ROADMAP.md).
+> principal; previews any change at a moment the caller chooses; and
+> runs the rules of a class inside the commit, with the actions `set`,
+> `reset` and `emit`. Triggered variables, the outbox with the actions
+> that leave the database, the row-level access rules, `QUERY` and the
+> server come with their steps and phases. The numbers are in
+> [docs/perf/](docs/perf/), the plan in [ROADMAP.md](ROADMAP.md).
 
 ## What it is
 
@@ -32,9 +34,10 @@ Analytics and process mining are SQL over the event log.
 
 A class is one JSON document. This one defines, stores, computes and
 moves through its states today, and its rights and transition rules are
-enforced; its rules are compiled and checked now and run with Phase 4,
-the class-level access rule with Phase 5, and formulas over `lines`
-arrive with composites:
+enforced. Rules run inside the commit; this one's `create` is an action
+for the outbox, checked by name now and queued once the outbox of Phase 4
+is built. The class-level access rule comes with Phase 5, and formulas
+over `lines` arrive with composites:
 
 ```json
 {
@@ -92,9 +95,13 @@ moves are open. The principal decides what a call may set and sees: a
 value a right refuses, or a transition its rule refuses, comes back as
 `forbidden`, and a variable the principal may not read in the document's
 state is absent from what they get back; the row-level access rule waits
-for Phase 5. A preview, a listing or a read may be asked at a moment the
-caller chooses, `fado.At(t)`, and a preview reports the moment it ran
-under; a commit runs at the database's clock. A refusal is a `fado.Error` with a stable code and the
+for Phase 5. The rules of a class run inside the commit: a `set` or a
+`reset` changes the document before it is written, an `emit` appends a
+custom event, an action that fails refuses the command with its place in
+the definition, and a preview lists the rules a command would run. A
+preview, a listing or a read may be asked at a moment the caller
+chooses, `fado.At(t)`, and a preview reports the moment it ran under; a
+commit runs at the database's clock. A refusal is a `fado.Error` with a stable code and the
 variable it names; a definition's problems come back at once as
 `Diagnostics`, each with a code and the place. Files are attached as
 `File` values behind a blob store, reference data lives in explicit tables
@@ -180,11 +187,11 @@ make gates    # what CI runs
 cmd/fadodb/        command-line tool: formula eval, check; the server later
 fado/              public Go API
 internal/formula/  lexer, parser, binder, bytecode, VM, SQL generator
-internal/model/    document classes, schemas, tables, validation, the diff between class versions
-internal/store/    SQLite store: documents, history, events, tables, lookups, filters, blobs, class versions
+internal/model/    document classes, schemas, tables, rules, validation, the diff between class versions
+internal/store/    SQLite store: documents, history, events, rules in the commit, tables, lookups, filters, blobs, class versions
 internal/query/    the filter compiler and the SQL endpoint's authorizer
 internal/state/    statechart engine (Phase 3)
-internal/rules/    event-condition-action rules and built-in actions (Phase 4)
+internal/rules/    the outbox worker and the actions that leave the commit (Phase 4)
 internal/auth/     users, groups, access rules as predicates (Phase 5)
 internal/server/   HTTP and WebSocket (Phase 6)
 analytics/         the DuckDB module: conformance and store benchmarks today, the projection in Phase 8

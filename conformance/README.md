@@ -133,6 +133,31 @@ and the browser VM run them with their phases.
   query returned in order, `count` the count, and `now` the moment a
   preview reports, in the notation of `at`.
 
+## Rules cases: `rules/*.json`
+
+The specification of the rules inside the commit (ADR-0043): which
+triggers a commit raises and in which order, what a rule sees, the
+synchronous actions, that rules do not cascade, what a failing action
+does, and what a frozen document allows. The format is the statechart
+suites', with these additions:
+
+- A step's `do` may be `delete`.
+- In `events`, a custom event is written `custom:name`, after the event
+  of the commit whose rule emitted it.
+- Beside `code`, `action` is the path in the definition of the rule's
+  action that refused the command, such as `/rules/2/do/0`.
+- Of a `preview` step: `rules` are the paths of the rules that ran, in
+  the order they ran across the command's commits; `skipped` the paths of
+  the rules whose trigger was raised and whose condition was not TRUE;
+  `queued` the actions for the outbox, each by its `action` name, in the
+  order they would be queued; `errors` what the preview recorded and went
+  on from, each by `code` and, where given, by `variable` and by the
+  `action` path.
+
+The store runs every suite in CI. The expectation `computed`, the moment
+of a triggered variable, and the arguments of a queued action arrive with
+the steps of Phase 4 that build them.
+
 ## Binding cases: `binding/*.json`
 
 Formulas the binder must accept and formulas it must refuse at definition

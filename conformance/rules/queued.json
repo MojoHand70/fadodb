@@ -1,0 +1,24 @@
+{
+  "suite": "queued",
+  "description": "An action that is not synchronous belongs to the outbox (ADR-0043 item 7, ADR-0044). Until the outbox is built a commit queues nothing for it and a preview names it as queued, in the order it would be queued, beside the synchronous actions of the same rule.",
+  "class": {
+    "name": "Invoice",
+    "variables": {"total": {"type": "number"}, "paid_at": {"type": "datetime"}},
+    "states": {"initial": "open", "list": ["open", "paid"]},
+    "transitions": [{"name": "pay", "from": "open", "to": "paid"}],
+    "rules": [
+      {"on": "enter", "state": "paid",
+       "do": [{"action": "set", "values": {"paid_at": "NOW()"}},
+              {"action": "create", "class": "Receipt", "values": {"invoice": "ID()", "amount": "total"}},
+              {"action": "slack.post", "args": {"channel": "\"#finance\"", "text": "\"paid\""}}]}
+    ]
+  },
+  "clock": "2026-03-01 12:00:00",
+  "script": [
+    {"do": "create", "doc": "i", "values": {"total": 90}, "expect": {"state": "open", "version": 1}},
+    {"name": "a preview names what would be queued", "do": "preview", "transition": "pay",
+     "expect": {"state": "paid", "rules": ["/rules/0"], "queued": [{"action": "create"}, {"action": "slack.post"}], "values": {"paid_at": 1772366400}}},
+    {"name": "the commit runs the synchronous action and writes no other event", "do": "transition", "transition": "pay",
+     "expect": {"state": "paid", "version": 2, "values": {"paid_at": 1772366400}, "events": ["created", "transition:pay"]}}
+  ]
+}

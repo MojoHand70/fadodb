@@ -100,6 +100,16 @@ type Store struct {
 	dirty       []bool
 	given       []bool   // the variables one command sets, for the write check
 	visits      []string // the states one command visits, reused under the writer's lock
+	// The scratch of the rules of one command (ADR-0043), reused under the
+	// writer's lock: the eventless commits, the custom events to append,
+	// the values of a set before they are assigned, the composites a reset
+	// emptied, and the variables and the composites that changed.
+	hops        []hop
+	emits       []emitted
+	setVals     []formula.Value
+	emptied     []*child
+	changed     []bool
+	changedKids []*child
 	ids         idGen
 	stmts       engineStmts
 	plans       map[*formula.QuerySlot]*lookupPlan

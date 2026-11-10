@@ -17,9 +17,11 @@ import (
 
 // The statechart conformance suite (ADR-0040) is the specification of the
 // statechart's behaviour: a class, a script of commands with their
-// principals, and the expected outcome of each. The store runs it here;
-// the server and the browser VM run it with their phases. The format is
-// in conformance/README.md.
+// principals, and the expected outcome of each. The rules suite
+// (ADR-0043) is the specification of the rules inside the commit, in the
+// same script format. The store runs both here; the server and the
+// browser VM run them with their phases. The format is in
+// conformance/README.md.
 
 type statechartSuite struct {
 	Suite       string `json:"suite"`
@@ -40,8 +42,8 @@ type scriptPrincipal struct {
 
 type scriptStep struct {
 	Name string `json:"name,omitempty"`
-	// Do is create, set, transition, preview, transitions, visits, get,
-	// query or count.
+	// Do is create, set, transition, delete, preview, transitions, visits,
+	// get, query or count.
 	Do string `json:"do"`
 	// Doc labels the document a create makes, and names the document
 	// another step acts on; the last created document when absent.
@@ -61,8 +63,10 @@ type scriptStep struct {
 }
 
 type scriptExpect struct {
-	// Code is the refusal's code; the other fields are then not checked.
+	// Code is the refusal's code; the other fields are then not checked,
+	// but Action, the path of the rule's action that refused the command.
 	Code    string `json:"code,omitempty"`
+	Action  string `json:"action,omitempty"`
 	State   string `json:"state,omitempty"`
 	Version int64  `json:"version,omitempty"`
 	// Path is the preview's path; History the states of every history
@@ -90,6 +94,25 @@ type scriptExpect struct {
 	Count *int64   `json:"count,omitempty"`
 	// Now is the moment a preview reports, in the notation of At.
 	Now string `json:"now,omitempty"`
+	// Rules are the paths of the rules that ran in a preview, in order
+	// (ADR-0043); Skipped the paths of the rules whose trigger was raised
+	// and that did not run; Queued the actions for the outbox, by name;
+	// Errors what the preview recorded and went on from, each by code and,
+	// where given, by variable and by the path of the action.
+	Rules   []string       `json:"rules,omitempty"`
+	Skipped []string       `json:"skipped,omitempty"`
+	Queued  []scriptQueued `json:"queued,omitempty"`
+	Errors  []scriptError  `json:"errors,omitempty"`
+}
+
+type scriptQueued struct {
+	Action string `json:"action"`
+}
+
+type scriptError struct {
+	Code     string `json:"code"`
+	Variable string `json:"variable,omitempty"`
+	Action   string `json:"action,omitempty"`
 }
 
 // moment reads a step's or a suite's instant.
@@ -102,13 +125,19 @@ func moment(t *testing.T, s string) time.Time {
 	return time.Unix(secs, 0).UTC()
 }
 
-func TestStatechartConformance(t *testing.T) {
-	files, err := filepath.Glob(filepath.Join("..", "..", "conformance", "statechart", "*.json"))
+func TestStatechartConformance(t *testing.T) { runScriptSuites(t, "statechart") }
+
+// TestRulesConformance runs conformance/rules, the specification of the
+// rules inside the commit (ADR-0043).
+func TestRulesConformance(t *testing.T) { runScriptSuites(t, "rules") }
+
+func runScriptSuites(t *testing.T, dir string) {
+	files, err := filepath.Glob(filepath.Join("..", "..", "conformance", dir, "*.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(files) == 0 {
-		t.Fatal("no statechart suites found")
+		t.Fatalf("no %s suites found", dir)
 	}
 	for _, file := range files {
 		raw, err := os.ReadFile(file)
@@ -186,6 +215,8 @@ func runStatechartSuite(t *testing.T, suite *statechartSuite) {
 			doc, err = s.Set(ctx, cls.Name, id, step.Values, opts...)
 		case "transition":
 			doc, err = s.Transition(ctx, cls.Name, id, step.Transition, step.Values, opts...)
+		case "delete":
+			err = s.Delete(ctx, cls.Name, id, opts...)
 		case "preview":
 			pv, err = s.Preview(ctx, cls.Name, id, step.Values, step.Transition, opts...)
 			if err == nil {
@@ -202,6 +233,8 @@ func runStatechartSuite(t *testing.T, suite *statechartSuite) {
 		if want.Code != "" {
 			if code(err) != want.Code {
 				t.Errorf("%s: want the refusal %s, got %v", name, want.Code, err)
+			} else if se, _ := err.(*Error); want.Action != "" && (se == nil || se.Path != want.Action) {
+				t.Errorf("%s: want the refusal in %s, got %v", name, want.Action, err)
 			}
 			continue
 		}
@@ -260,6 +293,47 @@ func runStatechartSuite(t *testing.T, suite *statechartSuite) {
 				t.Errorf("%s: now %d, want %d", name, pv.Now, at)
 			}
 		}
+		if want.Rules != nil || want.Skipped != nil || want.Queued != nil || want.Errors != nil {
+			if pv == nil {
+				t.Errorf("%s: rules, queued actions and errors are expected of a preview only", name)
+			} else {
+				ran, skipped, queued, errs := []string{}, []string{}, []scriptQueued{}, []scriptError{}
+				for _, r := range pv.Rules {
+					if !r.Ran {
+						skipped = append(skipped, r.Path)
+						continue
+					}
+					ran = append(ran, r.Path)
+					for _, a := range r.Actions {
+						if a.Queued {
+							queued = append(queued, scriptQueued{Action: a.Action})
+						}
+					}
+				}
+				for i, e := range pv.Errors {
+					got := scriptError{Code: e.Code}
+					if i < len(want.Errors) && want.Errors[i].Variable != "" {
+						got.Variable = e.Variable
+					}
+					if i < len(want.Errors) && want.Errors[i].Action != "" {
+						got.Action = e.Path
+					}
+					errs = append(errs, got)
+				}
+				if want.Rules != nil && !reflect.DeepEqual(ran, want.Rules) {
+					t.Errorf("%s: the rules that ran %v, want %v", name, ran, want.Rules)
+				}
+				if want.Skipped != nil && !reflect.DeepEqual(skipped, want.Skipped) {
+					t.Errorf("%s: the rules that did not run %v, want %v", name, skipped, want.Skipped)
+				}
+				if want.Queued != nil && !reflect.DeepEqual(queued, want.Queued) {
+					t.Errorf("%s: queued %v, want %v", name, queued, want.Queued)
+				}
+				if want.Errors != nil && !reflect.DeepEqual(errs, want.Errors) {
+					t.Errorf("%s: errors %v, want %v", name, dump(pv.Errors), dump(want.Errors))
+				}
+			}
+		}
 		if want.Path != nil {
 			if pv == nil {
 				t.Errorf("%s: a path is expected of a preview only", name)
@@ -296,7 +370,7 @@ func runStatechartSuite(t *testing.T, suite *statechartSuite) {
 			}
 			var got []string
 			for _, e := range events {
-				if e.Kind == EventTransition {
+				if e.Kind == EventTransition || e.Kind == EventCustom {
 					got = append(got, e.Kind+":"+e.Name)
 				} else {
 					got = append(got, e.Kind)
@@ -378,10 +452,12 @@ func sameListing(got, want []TransitionInfo) bool {
 	return true
 }
 
-// TestStatechartSuitesAreWellFormed keeps the suite files tidy: every
-// step has a command, and the files sort by name.
+// TestStatechartSuitesAreWellFormed keeps the suite files of the script
+// format tidy: every step has a command, and the files sort by name.
 func TestStatechartSuitesAreWellFormed(t *testing.T) {
 	files, _ := filepath.Glob(filepath.Join("..", "..", "conformance", "statechart", "*.json"))
+	more, _ := filepath.Glob(filepath.Join("..", "..", "conformance", "rules", "*.json"))
+	files = append(files, more...)
 	sort.Strings(files)
 	for _, file := range files {
 		raw, _ := os.ReadFile(file)

@@ -83,6 +83,10 @@ const (
 	EventDeleted    = "deleted"
 	EventMigrated   = "migrated"
 	EventTransition = "transition"
+	// EventCustom is the event a rule's emit appends (ADR-0043): its name
+	// is the one the rule gives, its after_version the version of the
+	// commit that ran the rule and its cause that commit's event.
+	EventCustom = "custom"
 )
 
 // TransitionInfo is one named transition leaving a document's state, as
@@ -107,14 +111,41 @@ type TransitionInfo struct {
 // state (ADR-0040); and Now, the seconds since the epoch its formulas
 // saw, the moment chosen with At or the database's clock (ADR-0042). A
 // preview of a set that changes nothing reports the path and the
-// transitions all the same, the version as it is. Rules arrive with
-// Phase 4.
+// transitions all the same, the version as it is. Rules lists every rule
+// whose trigger the command raised, in the order it would run (ADR-0043);
+// an action that fails is recorded under Errors with its path and the
+// preview goes on, where a commit would be refused.
 type Preview struct {
 	Document    *Document        `json:"document"`
 	Errors      []*Error         `json:"errors,omitempty"`
 	Path        []string         `json:"path,omitempty"`
 	Transitions []TransitionInfo `json:"transitions,omitempty"`
+	Rules       []RuleRun        `json:"rules,omitempty"`
 	Now         int64            `json:"now"`
+}
+
+// RuleRun is one rule whose trigger a previewed command raised (ADR-0043):
+// the commit it belongs to, 0 for the command's own and n for its n-th
+// eventless transition; its path in the definition, such as /rules/2;
+// whether it ran; the error code when its condition errored, which is
+// FALSE; and its actions when it ran.
+type RuleRun struct {
+	Commit  int         `json:"commit"`
+	Path    string      `json:"path"`
+	Ran     bool        `json:"ran"`
+	Code    string      `json:"code,omitempty"`
+	Actions []ActionRun `json:"actions,omitempty"`
+}
+
+// ActionRun is one action of a rule that ran in a preview: its name,
+// whether it is queued for the outbox or synchronous, and its evaluated
+// arguments in the shape the action is written in: the values of a set
+// by variable, the variables of a reset, the event of an emit. The
+// arguments of a queued action arrive with the outbox.
+type ActionRun struct {
+	Action string `json:"action"`
+	Queued bool   `json:"queued,omitempty"`
+	Args   Values `json:"args,omitempty"`
 }
 
 // Option configures one call.

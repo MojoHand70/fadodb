@@ -8,8 +8,10 @@ rows, child rows for composites, an event log with idempotency keys and
 business dates, attachments behind a blob store, `LOOKUP` against tables,
 a filter over a class and read-only SQL over the views, with previews that
 write nothing. `fadodb formula eval` evaluates a formula and `fadodb
-check` verifies a file. Rules, the row-level access rules, `QUERY` and
-the server come with their phases. Since v0.1.0 the records ADR-0022 to
+check` verifies a file. The rules of a class run inside the commit with
+the actions `set`, `reset` and `emit`; triggered variables, the outbox,
+the row-level access rules, `QUERY` and the server come with their steps
+and phases. Since v0.1.0 the records ADR-0022 to
 ADR-0038 fixed what the first embedder needs and what Phase 2 measured:
 SQLite as the transactional store and the in-memory index for lookups, by
 measurement (ADR-0035, ADR-0036), the compiled `LOOKUP` and explicit
@@ -34,8 +36,10 @@ person whose command queued them; and ADR-0045, actions as an
 extension point, with declared HTTP actions, Go actions an embedder
 registers, connections and results written back to the document.
 `QUERY` and the binding interface get their record before that step of
-the phase; whether the phase builds conditions on time and timers is not
-ruled yet. This page is updated when a phase starts and when it ends;
+the phase, and so do conditions on time and timers, which the owner
+ruled into the phase on 2026-11-10. Its first step runs the rules
+inside the commit: the triggers of each commit, the synchronous actions
+`set`, `reset` and `emit`, and the rules a preview reports (#51). This page is updated when a phase starts and when it ends;
 it never describes a phase as done before its acceptance criteria pass.
 
 Legend: ✅ done · 🚧 in progress · ⬜ not started
@@ -46,7 +50,7 @@ Legend: ✅ done · 🚧 in progress · ⬜ not started
 | 1 | Formula engine: lexer, parser, binder, bytecode, Go VM, SQL generator with SQLite and DuckDB dialects, conformance suite | ✅ |
 | 2 | Document model and store: primary-store benchmark, variables with defaults, `json` type, enum values, range constraints, named schemas and object values with the predefined vocabulary, attachments as `File` values with a blob store, class metadata and title, current, history and child tables, commits with idempotency keys and business dates, preview and validate without writing, event log, migrations, LOOKUP, queries | ✅ |
 | 3 | Statechart: the transition command with guards, eventless chains, exit and entry snapshots and the `_states` view, allowed transitions and the preview of a transition, `STATE()` and `ID()`, per-transition access rules and field-level rights per state, statechart conformance cases | ✅ |
-| 4 | Rules and actions: event-condition-action rules run inside the commit, the synchronous actions `set`, `reset`, `refresh` and `emit`, triggered variables with their moment, the transactional outbox with its worker, retries and dead rows, the engine's actions on other documents and tables, actions as an extension point with definitions, declared HTTP actions, Go actions the embedder registers, connections and results written back, the delivered event, explicit tables with storage bindings, QUERY | 🚧 |
+| 4 | Rules and actions: event-condition-action rules run inside the commit, the synchronous actions `set`, `reset`, `refresh` and `emit`, triggered variables with their moment, the transactional outbox with its worker, retries and dead rows, the engine's actions on other documents and tables, actions as an extension point with definitions, declared HTTP actions, Go actions the embedder registers, connections and results written back, the delivered event, explicit tables with storage bindings, QUERY, conditions on time and timers | 🚧 |
 | 5 | Security: the principal from the embedder on every call, access rules compiled to SQL predicates, an optional package of users, groups and API keys for the server | ⬜ |
 | 6 | Server and CLI: JSON command set over HTTP and WebSocket, documents on the wire, layouts, OpenAPI, `fadodb serve` | ⬜ |
 | 7 | Browser VM and reference frontend: TypeScript VM on the same bytecode shipped as one plain JavaScript file, class bundle, layout renderer with the chip, card, coins and rating components, TypeScript client | ⬜ |

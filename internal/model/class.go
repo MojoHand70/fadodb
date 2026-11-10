@@ -146,17 +146,6 @@ type Transition struct {
 	GuardSrc string
 }
 
-// Rule is one compiled rule; its actions are kept as written until Phase
-// 4 gives them their meaning.
-type Rule struct {
-	On        string
-	State     string
-	Name      string
-	Variables []string
-	If        *formula.Program
-	Actions   []json.RawMessage
-}
-
 // Access holds the compiled class-level access rules.
 type Access struct {
 	Read, Create, Update, Delete *formula.Program
@@ -1095,64 +1084,6 @@ func compileTransitions(c *collector, cls *Class, defs []TransitionDef, scope *f
 		t.GuardSrc = d.Guard
 		cls.Transitions = append(cls.Transitions, t)
 	}
-}
-
-var ruleTriggers = map[string]bool{"create": true, "values_change": true, "exit": true, "enter": true, "transition": true, "delete": true, "schedule": true}
-
-// compileRules checks the rules' structure and binds their conditions.
-func compileRules(c *collector, cls *Class, defs []RuleDef, scope *formula.Scope) {
-	for i, d := range defs {
-		path := fmt.Sprintf("/rules/%d", i)
-		r := &Rule{On: d.On, State: d.State, Name: d.Name, Variables: d.Variables, Actions: d.Do}
-		if !ruleTriggers[d.On] {
-			c.hint(CodeBadValue, path+"/on", "unknown trigger "+quote(d.On), "one of create, values_change, exit, enter, transition, delete, schedule")
-		}
-		switch d.On {
-		case "enter", "exit":
-			if d.State == "" {
-				c.addf(CodeMissing, path+"/state", "a rule on %s names the state", d.On)
-			} else if !cls.States.Has(d.State) {
-				c.addf(CodeUnknownState, path+"/state", "unknown state %s", quote(d.State))
-			}
-		case "transition":
-			if d.Name == "" {
-				c.add(CodeMissing, path+"/name", "a rule on transition names the transition")
-			} else if !hasTransition(cls, d.Name) {
-				c.addf(CodeUnknownTransition, path+"/name", "unknown transition %s", quote(d.Name))
-			}
-		case "values_change":
-			if len(d.Variables) == 0 {
-				c.add(CodeMissing, path+"/variables", "a rule on values_change names the variables")
-			}
-			for j, name := range d.Variables {
-				if _, ok := cls.Variable(name); !ok {
-					c.addf(CodeUnknownVariable, fmt.Sprintf("%s/variables/%d", path, j), "unknown variable %s", quote(name))
-				}
-			}
-		}
-		r.If = bindCondition(c, path+"/if", d.If, scope, "a rule condition")
-		if len(d.Do) == 0 {
-			c.add(CodeMissing, path+"/do", "a rule has at least one action")
-		}
-		for j, raw := range d.Do {
-			var action struct {
-				Action string `json:"action"`
-			}
-			if err := json.Unmarshal(raw, &action); err != nil || action.Action == "" {
-				c.add(CodeMissing, fmt.Sprintf("%s/do/%d/action", path, j), "an action names what it does")
-			}
-		}
-		cls.Rules = append(cls.Rules, r)
-	}
-}
-
-func hasTransition(cls *Class, name string) bool {
-	for _, t := range cls.Def.Transitions {
-		if t.Name == name {
-			return true
-		}
-	}
-	return false
 }
 
 // compileAccess binds the class-level access rules. A read rule compiles

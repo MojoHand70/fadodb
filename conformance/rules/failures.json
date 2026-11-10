@@ -1,0 +1,42 @@
+{
+  "suite": "failures",
+  "description": "An action that fails refuses the whole command, with the error's own code and the path of the action in the definition, and nothing is written (ADR-0043, item 6): an argument that errors, a value the variable refuses, a required input left blank. A preview records the error with its path and goes on.",
+  "class": {
+    "name": "Job",
+    "variables": {
+      "parts":  {"type": "number", "default": "1"},
+      "share":  {"type": "number"},
+      "kind":   {"type": "text", "values": ["small", "large"]},
+      "owner":  {"type": "text", "required": true, "default": "\"ops\""},
+      "limit":  {"type": "int", "max": 10},
+      "label":  {"type": "text"}
+    },
+    "states": {"initial": "new", "list": ["new", "split", "typed", "orphan", "capped", "done"]},
+    "transitions": [
+      {"name": "split", "from": "new", "to": "split"},
+      {"name": "type", "from": "new", "to": "typed"},
+      {"name": "orphan", "from": "new", "to": "orphan"},
+      {"name": "cap", "from": "new", "to": "capped"},
+      {"name": "finish", "from": "new", "to": "done"}
+    ],
+    "rules": [
+      {"on": "transition", "name": "split", "do": [{"action": "set", "values": {"label": "\"splitting\""}}, {"action": "set", "values": {"share": "100 / parts"}}]},
+      {"on": "transition", "name": "type", "do": [{"action": "set", "values": {"kind": "\"huge\""}}]},
+      {"on": "transition", "name": "orphan", "do": [{"action": "set", "values": {"owner": "BLANK"}}]},
+      {"on": "transition", "name": "cap", "do": [{"action": "set", "values": {"limit": "11"}}]},
+      {"on": "transition", "name": "finish", "do": [{"action": "set", "values": {"share": "IFERROR(100 / parts, 0)", "label": "\"done\""}}]}
+    ]
+  },
+  "script": [
+    {"name": "a job with no parts", "do": "create", "doc": "j", "values": {"parts": 0}, "expect": {"state": "new", "version": 1, "values": {"owner": "ops"}}},
+    {"name": "an argument that errors refuses the command, with the action's path", "do": "transition", "transition": "split", "expect": {"code": "div_by_zero", "action": "/rules/0/do/1"}},
+    {"name": "a value outside the enum list", "do": "transition", "transition": "type", "expect": {"code": "not_in_values", "action": "/rules/1/do/0"}},
+    {"name": "a required input set blank", "do": "transition", "transition": "orphan", "expect": {"code": "required", "action": "/rules/2/do/0"}},
+    {"name": "a value outside the range", "do": "transition", "transition": "cap", "expect": {"code": "out_of_range", "action": "/rules/3/do/0"}},
+    {"name": "the refused commands wrote nothing, the earlier action of the rule included", "do": "get", "expect": {"state": "new", "version": 1, "values": {"label": null, "share": null}, "history": ["new"], "events": ["created"]}},
+    {"name": "a preview records the error with its path and goes on", "do": "preview", "transition": "split",
+     "expect": {"state": "split", "version": 2, "rules": ["/rules/0"], "values": {"label": "splitting", "share": null},
+                "errors": [{"code": "div_by_zero", "variable": "share", "action": "/rules/0/do/1"}]}},
+    {"name": "what may fail is wrapped in IFERROR", "do": "transition", "transition": "finish", "expect": {"state": "done", "version": 2, "values": {"share": 0, "label": "done"}}}
+  ]
+}

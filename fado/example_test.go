@@ -120,3 +120,81 @@ func Example() {
 	// /variables/amount/default type_mismatch
 	// /variables/paid/formula type_mismatch
 }
+
+// Rules run inside the commit (ADR-0043): a transition stamps who took it
+// and when, into variables nobody may write by hand, and says so in the
+// event log; a preview reports what would run before anything does.
+func Example_rules() {
+	tmp, err := os.MkdirTemp("", "fado-example")
+	if err != nil {
+		panic(err)
+	}
+	defer os.RemoveAll(tmp)
+	db, err := fado.Open(filepath.Join(tmp, "rules.fado"), fado.Options{
+		Now: func() time.Time { return time.Date(2026, 11, 10, 9, 0, 0, 0, time.UTC) },
+	})
+	if err != nil {
+		panic(err)
+	}
+	defer db.Close()
+	ctx := context.Background()
+
+	_, err = db.DefineClass(ctx, []byte(`{
+	  "name": "Request",
+	  "variables": {
+	    "amount":      {"type": "money", "scale": 2},
+	    "approved_by": {"type": "text"},
+	    "approved_at": {"type": "datetime"},
+	    "large":       {"formula": "AMOUNT(amount) > 1000"}
+	  },
+	  "states": {"initial": "open", "list": ["open", "approved"]},
+	  "transitions": [{"name": "approve", "from": "open", "to": "approved"}],
+	  "rules": [
+	    {"on": "transition", "name": "approve",
+	     "do": [{"action": "set", "values": {"approved_by": "USER()", "approved_at": "NOW()"}}]},
+	    {"on": "enter", "state": "approved", "if": "large",
+	     "do": [{"action": "emit", "event": "request.large_approved"}]}
+	  ],
+	  "rights": {"*": {"approved_by": {"write": "FALSE"}, "approved_at": {"write": "FALSE"}}}
+	}`))
+	if err != nil {
+		panic(err)
+	}
+	fin := fado.Principal{ID: "fin", Groups: []string{"finance"}}
+	doc, err := db.Create(ctx, "Request", fado.Values{"amount": "2500.00 EUR"}, fado.As(fin), fado.WithID("req_1"))
+	if err != nil {
+		panic(err)
+	}
+
+	// Nobody sets the stamp by hand.
+	_, err = db.Set(ctx, "Request", doc.ID, fado.Values{"approved_by": "fin"}, fado.As(fin))
+	var refusal *fado.Error
+	if errors.As(err, &refusal) {
+		fmt.Println("by hand:", refusal.Code)
+	}
+
+	// The preview names the rules the transition would run.
+	preview, _ := db.Preview(ctx, "Request", doc.ID, nil, "approve", fado.As(fin))
+	for _, r := range preview.Rules {
+		fmt.Println("would run:", r.Path, r.Ran, r.Actions[0].Action)
+	}
+
+	doc, err = db.Transition(ctx, "Request", doc.ID, "approve", nil, fado.As(fin))
+	if err != nil {
+		panic(err)
+	}
+	fmt.Println(doc.State, "by", doc.Values["approved_by"], "at", doc.Values["approved_at"], "version", doc.Version)
+
+	events, _ := db.Events(ctx, "Request", doc.ID)
+	for _, e := range events {
+		fmt.Println(e.Kind, e.Name, e.AfterVersion)
+	}
+	// Output:
+	// by hand: forbidden
+	// would run: /rules/0 true set
+	// would run: /rules/1 true emit
+	// approved by fin at 1794301200 version 2
+	// created  1
+	// transition approve 2
+	// custom request.large_approved 2
+}

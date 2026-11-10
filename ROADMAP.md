@@ -43,7 +43,8 @@ inside the commit: the triggers of each commit, the synchronous actions
 `set`, `reset` and `emit`, and the rules a preview reports (#51). Its
 second computes the triggered variables at their triggers, with the
 `refresh` action and the moment of each value, under engine schema 3
-(#52). This page is updated when a phase starts and when it ends;
+(#52). Its third makes `Reset` and `Refresh` commands of the Go API
+(#53). This page is updated when a phase starts and when it ends;
 it never describes a phase as done before its acceptance criteria pass.
 
 Legend: ✅ done · 🚧 in progress · ⬜ not started

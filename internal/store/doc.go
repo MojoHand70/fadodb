@@ -39,6 +39,10 @@
 // refresh action names it; its moment is stored beside it and a document
 // carries it under Computed.
 //
-// Not here yet: Reset and Refresh as commands and the outbox (Phase 4),
-// the class-level access rules (Phase 5), and the server (Phase 6).
+// Reset and Refresh are commands too, each a commit with its own event:
+// a Reset is the caller's write, a Refresh always commits and is
+// followed by the eventless transitions.
+//
+// Not here yet: the outbox (Phase 4), the class-level access rules
+// (Phase 5), and the server (Phase 6).
 package store

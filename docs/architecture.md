@@ -419,8 +419,12 @@ frontend can send directly, which is what a button does.
 
 Today `set`, `reset`, `refresh` and `emit` run inside the commit, and
 `Preview` reports every rule a command would run with the evaluated
-arguments of its actions. `Reset` and `Refresh` as commands are the next
-step. An action of the outbox is checked for its name, named by
+arguments of its actions. `Reset` and `Refresh` are commands of the Go
+API, each a commit with an event of its own kind: a `Reset` is the
+caller's write and is checked against the write rights; a `Refresh`
+always commits and the eventless transitions are evaluated after it,
+which is how a caller makes a document look at the clock. An action of
+the outbox is checked for its name, named by
 a preview as queued, and not queued yet: the outbox, its worker and the
 actions that leave the database are the next steps of Phase 4 (ADR-0044,
 ADR-0045).
@@ -743,7 +747,8 @@ commit pipeline and writes nothing (ADR-0025); a registered executor
 receives the transition event from the outbox (ADR-0027). Today the `fado`
 package has `Open`, `DefineClass`, `ValidateClass`, `DefineSchema`,
 `DefineTable`, `ImportRows`, `TableRows`, `Create`, `CreateMany`, `Set`,
-`Transition`, `Transitions`, `Delete`, `Migrate`, `Get`, `Version`,
+`Reset`, `Refresh`, `Transition`, `Transitions`, `Delete`, `Migrate`,
+`Get`, `Version`,
 `History`, `Events`, `Query`, `Count`, `SQL`, `PutBlob`, `OpenFile`,
 `OpenBlob`, `CheckBlobs`, and `Preview` and `PreviewDraft` of a create, a
 set or a transition; a preview, a listing or a read runs at a moment the
@@ -753,7 +758,7 @@ The principal decides what a call may set and sees
 with `forbidden`, and every document comes back projected. Every refusal
 is a `fado.Error` with a stable code and the variable it is about, or the
 `Diagnostics` of a definition.
-Layouts, refresh, `QUERY`, subscriptions and executors arrive with their
+Layouts, `QUERY`, subscriptions and executors arrive with their
 phases.
 
 ### JSON command set

@@ -1,0 +1,77 @@
+{
+  "suite": "commands",
+  "description": "Reset and Refresh are commands (ADR-0043, item 10), each one commit with its own event. A Reset is the caller's write: it names inputs, the write right of each is checked, defaults are re-evaluated in dependency order and an input without one becomes blank; one that changes nothing commits nothing. A Refresh recomputes the triggered variables it names, each of which lists refresh, or every one that does; it always commits, and the eventless transitions are evaluated after it, so it is how a caller makes a document look at the clock. Both raise values_change of what changed and are refused on a terminal document.",
+  "clock": "2026-03-10 09:00:00",
+  "class": {
+    "name": "Bill",
+    "variables": {
+      "due":      {"type": "date"},
+      "discount": {"type": "decimal", "scale": 2, "default": "0.10"},
+      "note":     {"type": "text"},
+      "code":     {"type": "text", "required": true, "default": "\"B-\" & note"},
+      "net":      {"type": "decimal", "scale": 2, "default": "100.00"},
+      "total":    {"formula": "ROUND(net * (1 - discount), 2)"},
+      "overdue":  {"formula": "TODAY() > due", "mode": "triggered", "on": ["refresh"]},
+      "checked":  {"formula": "NOW()", "mode": "triggered", "on": ["refresh"]},
+      "sent_by":  {"formula": "USER()", "mode": "triggered", "on": ["enter:sent"]}
+    },
+    "states": {"initial": "sent", "list": ["sent", "late", "paid"], "final": ["paid"]},
+    "transitions": [
+      {"from": "sent", "to": "late", "guard": "overdue"},
+      {"name": "pay", "from": ["sent", "late"], "to": "paid"}
+    ],
+    "rules": [
+      {"on": "values_change", "variables": ["overdue"], "do": [{"action": "emit", "event": "bill.overdue_changed"}]},
+      {"on": "values_change", "variables": ["discount"], "do": [{"action": "emit", "event": "bill.discount_changed"}]}
+    ],
+    "rights": {"*": {"discount": {"write": ["sales"]}}}
+  },
+  "principals": {
+    "sam":  {"id": "sam", "groups": ["sales"]},
+    "cleo": {"id": "cleo", "groups": ["clerks"]}
+  },
+  "script": [
+    {"name": "a bill due in two days", "do": "create", "doc": "b", "as": "sam", "values": {"due": "2026-03-12", "discount": "0.25", "note": "x"},
+     "expect": {"state": "sent", "version": 1, "values": {"total": "75.00", "code": "B-x", "overdue": null}, "computed": {"sent_by": {"version": 1}, "overdue": null}}},
+
+    {"name": "a refresh recomputes every variable that lists refresh and always commits", "do": "refresh", "as": "cleo",
+     "expect": {"state": "sent", "version": 2, "values": {"overdue": false, "checked": 1773133200, "sent_by": "sam"},
+                "computed": {"overdue": {"version": 2}, "checked": {"version": 2}, "sent_by": {"version": 1}},
+                "events": ["created", "refresh", "custom:bill.overdue_changed"]}},
+    {"name": "a refresh that changes no value commits all the same and moves the moments", "do": "refresh", "variables": ["overdue"], "as": "cleo",
+     "expect": {"version": 3, "computed": {"overdue": {"version": 3}, "checked": {"version": 2}}, "events": ["created", "refresh", "custom:bill.overdue_changed", "refresh"]}},
+    {"name": "a refresh names only variables that list refresh", "do": "refresh", "variables": ["sent_by"], "expect": {"code": "not_allowed"}},
+    {"do": "refresh", "variables": ["total"], "expect": {"code": "not_allowed"}},
+    {"do": "refresh", "variables": ["nothing"], "expect": {"code": "unknown_variable"}},
+
+    {"name": "a reset re-evaluates defaults in dependency order and blanks an input without one", "do": "reset", "variables": ["code", "note", "discount"], "as": "sam",
+     "expect": {"state": "sent", "version": 4, "values": {"discount": "0.10", "total": "90.00", "note": null, "code": "B-"},
+                "events": ["created", "refresh", "custom:bill.overdue_changed", "refresh", "reset", "custom:bill.discount_changed"]}},
+    {"name": "a reset that changes nothing commits nothing", "do": "reset", "variables": ["discount"], "as": "sam",
+     "expect": {"version": 4, "events": ["created", "refresh", "custom:bill.overdue_changed", "refresh", "reset", "custom:bill.discount_changed"]}},
+    {"name": "a reset is the caller's write", "do": "reset", "variables": ["discount"], "as": "cleo", "expect": {"code": "forbidden"}},
+    {"name": "a reset names inputs, at least one, each once", "do": "reset", "variables": ["total"], "as": "sam", "expect": {"code": "read_only"}},
+    {"do": "reset", "variables": ["overdue"], "as": "sam", "expect": {"code": "read_only"}},
+    {"do": "reset", "as": "sam", "expect": {"code": "bad_value"}},
+    {"do": "reset", "variables": ["note", "NOTE"], "as": "sam", "expect": {"code": "duplicate"}},
+    {"do": "reset", "variables": ["nothing"], "as": "sam", "expect": {"code": "unknown_variable"}},
+    {"name": "the refused commands wrote nothing", "do": "get", "expect": {"version": 4}},
+
+    {"name": "the same key makes the same commit", "do": "refresh", "key": "check-1", "as": "cleo", "expect": {"version": 5}},
+    {"do": "refresh", "key": "check-1", "as": "cleo", "expect": {"version": 5}},
+    {"name": "a key names one command", "do": "refresh", "key": "check-1", "variables": ["overdue"], "as": "cleo", "expect": {"code": "key_reused"}},
+
+    {"name": "a preview on a later day: the stored flag is as it was computed, so the bill stays", "do": "preview", "at": "2026-03-20",
+     "expect": {"state": "sent", "path": ["sent"], "values": {"overdue": false}}},
+    {"name": "the bill becomes due: a set of the date moves nothing by itself", "do": "set", "as": "sam", "values": {"due": "2026-03-01"},
+     "expect": {"state": "sent", "version": 6, "values": {"overdue": false}}},
+    {"name": "the refresh looks at the clock, and the eventless transition follows as a commit of its own", "do": "refresh", "as": "cleo",
+     "expect": {"state": "late", "version": 8, "values": {"overdue": true}, "history": ["sent", "sent", "sent", "sent", "sent", "sent", "sent", "late"],
+                "computed": {"overdue": {"version": 7}},
+                "events": ["created", "refresh", "custom:bill.overdue_changed", "refresh", "reset", "custom:bill.discount_changed", "refresh", "set", "refresh", "custom:bill.overdue_changed", "transition:"]}},
+
+    {"name": "a terminal document is neither reset nor refreshed", "do": "transition", "transition": "pay", "expect": {"state": "paid", "version": 9}},
+    {"do": "refresh", "expect": {"code": "terminal"}},
+    {"do": "reset", "variables": ["note"], "as": "sam", "expect": {"code": "terminal"}}
+  ]
+}

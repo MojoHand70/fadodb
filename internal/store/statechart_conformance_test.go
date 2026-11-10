@@ -42,17 +42,19 @@ type scriptPrincipal struct {
 
 type scriptStep struct {
 	Name string `json:"name,omitempty"`
-	// Do is create, set, transition, delete, preview, transitions, visits,
-	// get, query or count.
+	// Do is create, set, reset, refresh, transition, delete, preview,
+	// transitions, visits, get, query or count.
 	Do string `json:"do"`
 	// Doc labels the document a create makes, and names the document
 	// another step acts on; the last created document when absent.
-	Doc        string       `json:"doc,omitempty"`
-	As         string       `json:"as,omitempty"`
-	Key        string       `json:"key,omitempty"`
-	Transition string       `json:"transition,omitempty"`
-	Values     Values       `json:"values,omitempty"`
-	Expect     scriptExpect `json:"expect"`
+	Doc        string `json:"doc,omitempty"`
+	As         string `json:"as,omitempty"`
+	Key        string `json:"key,omitempty"`
+	Transition string `json:"transition,omitempty"`
+	Values     Values `json:"values,omitempty"`
+	// Variables are the variables a reset or a refresh names.
+	Variables []string     `json:"variables,omitempty"`
+	Expect    scriptExpect `json:"expect"`
 	// At is the moment the step runs at (ADR-0042), as YYYY-MM-DD or
 	// YYYY-MM-DD HH:MM:SS in UTC.
 	At string `json:"at,omitempty"`
@@ -225,6 +227,10 @@ func runStatechartSuite(t *testing.T, suite *statechartSuite) {
 			}
 		case "set":
 			doc, err = s.Set(ctx, cls.Name, id, step.Values, opts...)
+		case "reset":
+			doc, err = s.Reset(ctx, cls.Name, id, step.Variables, opts...)
+		case "refresh":
+			doc, err = s.Refresh(ctx, cls.Name, id, step.Variables, opts...)
 		case "transition":
 			doc, err = s.Transition(ctx, cls.Name, id, step.Transition, step.Values, opts...)
 		case "delete":

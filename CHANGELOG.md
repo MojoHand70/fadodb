@@ -26,7 +26,7 @@ All notable changes to FadoDB are recorded here. The format follows
 - `Preview` and `PreviewDraft` report `Rules`: every rule whose trigger
   the command raised, the commit it belongs to, whether it ran, and its
   actions with their evaluated arguments.
-- `conformance/rules/`, seven suites in the script format of the
+- `conformance/rules/`, eight suites in the script format of the
   statechart suites, and `BenchmarkRules`, which joins the benchmark
   gate: the rules of a commit do not allocate.
 
@@ -42,6 +42,15 @@ All notable changes to FadoDB are recorded here. The format follows
   the code and refuses nothing.
 - The `refresh` action of a rule, which recomputes the triggered
   variables it names, or every one that lists `refresh`.
+- `Reset` and `Refresh` as commands of the Go API (ADR-0043), each one
+  commit with a key, a principal, a business date and an event of kind
+  `reset` or `refresh`. A `Reset` puts the named inputs back to their
+  defaults and is the caller's write, checked against the write rights;
+  one that changes nothing commits nothing. A `Refresh` recomputes the
+  triggered variables it names, or every one that lists `refresh`, always
+  commits, and is followed by the eventless transitions: it is how a
+  caller makes a document look at the clock. Both raise `values_change`
+  of what changed and are refused on a terminal document.
 
 ### Changed
 

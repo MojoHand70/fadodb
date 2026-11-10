@@ -141,7 +141,9 @@ synchronous actions, that rules do not cascade, what a failing action
 does, and what a frozen document allows. The format is the statechart
 suites', with these additions:
 
-- A step's `do` may be `delete`.
+- A step's `do` may be `delete`, `reset` or `refresh`; `variables` are
+  the variables a reset or a refresh names. Their events are written
+  `reset` and `refresh`.
 - In `events`, a custom event is written `custom:name`, after the event
   of the commit whose rule emitted it.
 - Beside `code`, `action` is the path in the definition of the rule's

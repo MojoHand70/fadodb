@@ -260,6 +260,26 @@ and settled these.
 - **A variable made triggered by a redefinition** keeps the value it had
   and has no moment until a trigger computes it.
 
+The third step built item 10, `Reset` and `Refresh` as commands, on
+2026-11-10, and settled these.
+
+- **A `Refresh` on a class with no variable that lists `refresh`** is
+  still a commit: it recomputes nothing, makes a version and an event,
+  and the eventless transitions are evaluated after it. A guard that
+  reads the clock needs no triggered variable to be looked at.
+- **What a `Reset` refuses.** No variable named is `bad_value`; a
+  computed variable is `read_only`, as it is for a set; a variable named
+  twice is `duplicate`. A required input left blank is `required`, and a
+  default that errors is its own code with the variable.
+- **Emptying a composite is a change** only when it held something: a
+  `Reset` of an empty rows value commits nothing.
+- **The events.** Kind `reset` with the qualifier `changed`, kind
+  `refresh` with the qualifier `refreshed`. The key of a command covers
+  the variables it names.
+- **Neither is previewed yet.** `Preview` takes a create, a set or a
+  transition. Whether a refresh can be tried at a chosen moment belongs
+  to the record on time.
+
 ## Consequences
 
 - Which rules a command fires is a property of the class and the

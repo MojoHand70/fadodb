@@ -103,9 +103,11 @@ the definition, and a preview lists the rules a command would run. A
 variable with `"mode": "triggered"` is computed when one of its triggers
 happens, the entry or the exit of a state, a transition or a `refresh`,
 and kept in between; the document says under `computed` at which version
-and when. A preview, a listing or a read may be asked at a moment the
-caller chooses, `fado.At(t)`, and a preview reports the moment it ran
-under; a commit runs at the database's clock. A refusal is a
+and when. `Refresh` recomputes such variables on request and lets the
+document move if a guard now holds, and `Reset` puts inputs back to
+their defaults. A preview, a listing or a read may be asked at a moment
+the caller chooses, `fado.At(t)`, and a preview reports the moment it
+ran under; a commit runs at the database's clock. A refusal is a
 `fado.Error` with a stable code and the variable it names; a
 definition's problems come back at once as `Diagnostics`, each with a
 code and the place. Files are attached as `File` values behind a blob

@@ -263,11 +263,14 @@ on the clock, or on data outside the document beyond a keyed lookup.
 Inside `LOOKUP` and `QUERY`, bare names are columns of the source and the
 document's own variables are reached as `THIS.name`. Columns may be
 aggregates (`COUNT(id)`, `SUM(amount)`) and `groupby` names the grouping
-columns. A source is an explicit table or a document stack view such as
-`Invoice` or `Invoice_history`. The compiler translates the call to the SQL
-dialect of the storage that holds the source, binds the condition to its
-columns, injects the caller's access predicate, and rejects anything else at
-definition time. Formulas never carry raw SQL.
+columns. A source is an explicit table or a class such as `Invoice`; the
+history of a class as a source waits. The compiler translates the call to
+the SQL dialect of the storage that holds the source, binds the condition
+to its columns, and rejects anything else at definition time. Formulas
+never carry raw SQL. A formula that reads the documents of a class sees
+every one of them, whoever caused it to be computed; who may see the
+result is decided by the rights on the variable that holds it (ADR-0046).
+Reading a class is designed and not built yet.
 
 Formulas within a class form a dependency graph. The binder rejects cycles at
 definition time and precomputes the evaluation order.
@@ -593,7 +596,9 @@ Today a table is defined in JSON, `{"name": "Rates", "columns": {"code":
 with the view `Rates`, filled by the Go API's `ImportRows`, and read by
 `LOOKUP` in auto formulas and defaults; a rule changes one row with
 `table.insert`, `table.update` and `table.delete` (ADR-0044); only the
-`sqlite` binding exists, and `QUERY` arrives with Phase 4 (ADR-0037). A lookup
+`sqlite` binding exists; the other bindings come with the analytical
+engine, and `QUERY` with the first layout or report that needs a list of
+rows (ADR-0046). A lookup
 whose condition is one equality of a column with an expression of the
 document is answered from an in-memory index while the table has at most
 `MaxIndexedRows` rows, and through a prepared statement narrowed by the
@@ -612,9 +617,12 @@ table's index above that; every other condition runs as a statement
   set, one whose `read` rule is FALSE is absent from the wire document, the
   change stream and query results; the SQL endpoint and the views stay
   row-level (ADR-0028).
-- `read` compiles to a SQL predicate appended to every query, view,
-  subscription filter, and to every `LOOKUP` and `QUERY` whose source is a
-  stack, so a formula can never see a row its author could not.
+- `read` compiles to a SQL predicate appended to every query, view and
+  subscription filter. A formula that reads the documents of a class is
+  not a caller: it sees every document, and the rights on the variable
+  that holds the result decide who sees it. Whoever may define a class
+  can therefore read through it, and the host program decides who that is
+  (ADR-0046).
 - `create`, `update`, `delete` and transition rules run in the VM at commit time.
 - Admins bypass rules. Everyone else gets exactly what the rules say.
 - Today the Go API enforces the per-transition rules and the rights table

@@ -1,6 +1,6 @@
 # ADR-0010: Security rules compiled to SQL predicates
 
-- Status: Accepted; amended by ADR-0027 (the principal comes from the embedder), ADR-0028 (field-level rights per state), ADR-0041 (the per-transition rules and rights are enforced in the Go API from Phase 3)
+- Status: Accepted; amended by ADR-0027 (the principal comes from the embedder), ADR-0028 (field-level rights per state), ADR-0041 (the per-transition rules and rights are enforced in the Go API from Phase 3), ADR-0046 (a formula reads other documents with the engine's eyes, not the owner's)
 - Date: 2026-11-05
 
 ## Context

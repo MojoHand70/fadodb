@@ -8,24 +8,24 @@ line says so. Copy `0000-template.md` to start.
 |---|---|---|
 | [0001](0001-license-and-name.md) | License and name | Accepted |
 | [0002](0002-pure-go-core-and-dependency-budget.md) | Pure-Go core and dependency budget | Accepted, amended by 0017 |
-| [0003](0003-bytecode-as-interchange-format.md) | Bytecode as the interchange format | Accepted, amended by 0029, 0037 |
+| [0003](0003-bytecode-as-interchange-format.md) | Bytecode as the interchange format | Accepted, amended by 0029, 0037, 0046 |
 | [0004](0004-number-semantics.md) | Number semantics: float64 with Excel rules | Accepted, amended by 0019, 0022, 0024 |
 | [0005](0005-blank-semantics.md) | Blank and null semantics | Accepted |
 | [0006](0006-event-log-as-source-of-truth.md) | Event log as the source of truth | Accepted, amended by 0014, 0026, 0044 |
 | [0007](0007-one-table-per-class.md) | One table per document class | Accepted, amended by 0014 |
 | [0008](0008-statechart-semantics.md) | Statechart semantics, SCXML subset | Accepted, amended by 0039, 0040 |
 | [0009](0009-action-execution-model.md) | Action execution model: synchronous versus outbox | Accepted, amended by 0027, 0044, 0045 |
-| [0010](0010-security-rules-as-predicates.md) | Security rules compiled to SQL predicates | Accepted, amended by 0027, 0028, 0041 |
-| [0011](0011-one-json-command-set.md) | One JSON command set over HTTP, WebSocket and C ABI | Accepted, amended by 0025, 0026, 0027, 0033, 0045 |
+| [0010](0010-security-rules-as-predicates.md) | Security rules compiled to SQL predicates | Accepted, amended by 0027, 0028, 0041, 0046 |
+| [0011](0011-one-json-command-set.md) | One JSON command set over HTTP, WebSocket and C ABI | Accepted, amended by 0025, 0026, 0027, 0033, 0045, 0046 |
 | [0012](0012-performance-gates.md) | Performance budgets and gates | Accepted, amended by 0030 |
 | [0013](0013-document-variables-and-types.md) | Document variables and the type system | Accepted, amended by 0019, 0022, 0023, 0031, 0034 |
 | [0014](0014-document-tables.md) | Document tables: current, history, child tables and views | Accepted, amended by 0026, 0031, 0039, 0040, 0043 |
 | [0015](0015-commits-and-recalculation.md) | Commits, recalculation modes, defaults, reset and refresh | Accepted, amended by 0020, 0025, 0040, 0043 |
-| [0016](0016-explicit-tables-and-query-functions.md) | Explicit tables, storage bindings, LOOKUP and QUERY | Accepted, amended by 0020, 0036, 0037 |
+| [0016](0016-explicit-tables-and-query-functions.md) | Explicit tables, storage bindings, LOOKUP and QUERY | Accepted, amended by 0020, 0036, 0037, 0046 |
 | [0017](0017-duckdb-as-the-analytical-engine.md) | DuckDB as the analytical engine, full and lite builds | Accepted, amended by 0035 |
 | [0018](0018-class-metadata-layouts-and-wire-format.md) | JSON for definitions and interchange: class metadata, layouts and the wire format | Accepted, amended by 0022, 0023, 0028, 0031, 0032, 0033, 0034, 0039, 0043 |
 | [0019](0019-formula-language-semantics.md) | Formula language semantics: grammar, types, coercion, comparison, dates, text, composites and errors | Accepted, amended by 0021, 0022, 0023, 0024, 0031, 0043 |
-| [0020](0020-query-function-execution.md) | LOOKUP and QUERY execution: one engine call per invocation | Accepted, amended by 0036, 0037 |
+| [0020](0020-query-function-execution.md) | LOOKUP and QUERY execution: one engine call per invocation | Accepted, amended by 0036, 0037, 0046 |
 | [0021](0021-size-limits.md) | Size limits: one text limit per database, enforced before building | Accepted, amended by 0033 |
 | [0022](0022-exact-decimal-int-and-money.md) | Exact numbers: decimal, int and money | Accepted |
 | [0023](0023-calendar-day-datetime-and-enum-values.md) | A date is a calendar day, a datetime an instant, an enum a text with a value set | Accepted |
@@ -42,7 +42,7 @@ line says so. Copy `0000-template.md` to start.
 | [0034](0034-range-constraints-on-numeric-variables.md) | Range constraints on numeric variables | Accepted |
 | [0035](0035-sqlite-is-the-transactional-store.md) | SQLite is the transactional store, by measurement | Accepted |
 | [0036](0036-in-memory-index-for-lookups-in-commits.md) | An in-memory index serves LOOKUP inside commits, by measurement | Accepted |
-| [0037](0037-explicit-tables-and-the-compiled-lookup.md) | Explicit tables bound to SQLite and the compiled LOOKUP | Accepted |
+| [0037](0037-explicit-tables-and-the-compiled-lookup.md) | Explicit tables bound to SQLite and the compiled LOOKUP | Accepted, amended by 0046 |
 | [0038](0038-the-filter-and-the-read-only-sql-endpoint.md) | The filter and the read-only SQL endpoint | Accepted |
 | [0039](0039-class-versions-terminal-states-and-migrations.md) | Class versions, terminal states and migrations | Accepted, amended by 0040, 0043 |
 | [0040](0040-transitions-as-commits.md) | Transitions as commits: the command, eventless chains and state visits | Accepted, amended by 0043 |
@@ -51,4 +51,4 @@ line says so. Copy `0000-template.md` to start.
 | [0043](0043-rules-inside-the-commit.md) | Rules inside the commit: triggers, synchronous actions and triggered variables | Accepted, amended by 0044 |
 | [0044](0044-the-outbox.md) | The outbox: what a commit queues, the worker and the engine's own actions | Accepted |
 | [0045](0045-actions-are-an-extension-point.md) | Actions are an extension point: definitions, declared HTTP actions, registered Go actions, connections and results | Accepted |
-| [0046](0046-formulas-that-read-other-documents.md) | Formulas that read other documents: a class as the source of LOOKUP, with COUNT, SUM, MIN and MAX | Proposed |
+| [0046](0046-formulas-that-read-other-documents.md) | Formulas that read other documents: a class as the source of LOOKUP, with COUNT, SUM, MIN and MAX | Accepted |

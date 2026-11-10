@@ -22,12 +22,20 @@ func TestReadmeClass(t *testing.T) {
 	if m == nil {
 		t.Fatal("no json block in the README")
 	}
-	db, err := fado.Open(filepath.Join(t.TempDir(), "readme.fado"), fado.Options{})
+	db, err := fado.Open(filepath.Join(t.TempDir(), "readme.fado"), fado.Options{Outbox: fado.OutboxOptions{Manual: true}})
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer db.Close()
 	ctx := context.Background()
+	// The class its rule creates documents of is the Receipt sample.
+	receipt, err := os.ReadFile(filepath.Join("..", "examples", "classes", "receipt.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.DefineClass(ctx, receipt); err != nil {
+		t.Fatalf("the Receipt sample does not define: %v", err)
+	}
 	if _, err := db.DefineClass(ctx, m[1]); err != nil {
 		t.Fatalf("the README class does not define: %v", err)
 	}
@@ -61,5 +69,24 @@ func TestReadmeClass(t *testing.T) {
 	infos, err := db.Transitions(ctx, "Invoice", doc.ID, fado.As(alice))
 	if err != nil || len(infos) != 1 || infos[0].Name != "approve" || infos[0].Enabled || infos[0].Code != "guard_false" {
 		t.Errorf("the README's listing: %v %+v", err, infos)
+	}
+	// The rule of the class: paying the invoice queues a receipt, and the
+	// outbox makes it, as the person who paid.
+	fin := fado.Principal{ID: "fin", Groups: []string{"finance"}}
+	for _, name := range []string{"approve", "pay"} {
+		if _, err := db.Transition(ctx, "Invoice", doc.ID, name, nil, fado.As(fin)); err != nil {
+			t.Fatalf("the README's %s: %v", name, err)
+		}
+	}
+	waiting, err := db.Outbox(ctx, fado.OutboxFilter{Class: "Invoice", DocID: doc.ID})
+	if err != nil || len(waiting) != 1 || waiting[0].Action != "create" || waiting[0].Status != "pending" || waiting[0].PrincipalID != "fin" {
+		t.Fatalf("the README's queued receipt: %v %+v", err, waiting)
+	}
+	if n, err := db.Drain(ctx); err != nil || n != 1 {
+		t.Fatalf("the README's drain: %d %v", n, err)
+	}
+	receipts, err := db.Query(ctx, fado.Filter{Class: "Receipt"})
+	if err != nil || len(receipts) != 1 || receipts[0].Values["invoice"] != doc.ID || receipts[0].Values["amount"] != "90.00 PLN" || receipts[0].Title != "Receipt for "+doc.ID {
+		t.Errorf("the README's receipt: %v %+v", err, receipts)
 	}
 }

@@ -371,13 +371,16 @@ func (s *Store) Events(ctx context.Context, class, id string, opts ...Option) ([
 	var out []*Event
 	for rows.Next() {
 		var ev Event
-		var name, from, to, actor, cause, key sql.NullString
+		var name, from, to, actor, cause, key, code sql.NullString
 		var before, after sql.NullInt64
 		var day int64
-		if err := rows.Scan(&ev.ID, &ev.Class, &ev.DocID, &ev.Kind, &name, &from, &to, &actor, &before, &after, &cause, &key, &day, &ev.TS); err != nil {
+		if err := rows.Scan(&ev.ID, &ev.Class, &ev.DocID, &ev.Kind, &name, &from, &to, &actor, &before, &after, &cause, &key, &day, &ev.TS, &code); err != nil {
 			return nil, storageErr("read the events", err)
 		}
 		ev.Name, ev.FromState, ev.ToState, ev.ActorID, ev.CauseEventID, ev.CommandKey = name.String, from.String, to.String, actor.String, cause.String, key.String
+		if ev.Kind == EventActionFailed {
+			ev.Code = code.String
+		}
 		ev.BeforeVersion, ev.AfterVersion = before.Int64, after.Int64
 		ev.BusinessDate = formula.Render(formula.Date(day))
 		out = append(out, &ev)

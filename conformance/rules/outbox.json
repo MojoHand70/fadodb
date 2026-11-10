@@ -1,0 +1,66 @@
+{
+  "suite": "outbox",
+  "description": "The outbox runs what commits queued (ADR-0044). A drain runs every action that is due, the actions of one document in the order they were queued. The engine's own actions happen exactly once: the action's commit, the mark of the row and the event of the outcome are one transaction. An action runs as the person whose command queued it, so the rights of the class it touches apply to that person; what they may not do is a refusal, which is dead at once and says why. The document that caused the action gets one event, action_run or action_failed. A dead action waits to be retried by hand.",
+  "clock": "2026-03-01 12:00:00",
+  "classes": [
+    {"name": "Receipt",
+     "variables": {"invoice": {"type": "text", "required": true}, "amount": {"type": "number"}, "kind": {"type": "text", "values": ["full", "part"]},
+                   "issued_by": {"type": "text", "default": "USER()"}, "note": {"type": "text"}},
+     "states": {"initial": "issued", "list": ["issued"]},
+     "rules": [{"on": "create", "do": [{"action": "set", "values": {"note": "\"made by a rule\""}}]}],
+     "rights": {"*": {"amount": {"write": ["finance"]}}}}
+  ],
+  "class": {
+    "name": "Invoice",
+    "variables": {"total": {"type": "number"}, "kind": {"type": "text", "default": "\"full\""}},
+    "states": {"initial": "open", "list": ["open", "paid"]},
+    "transitions": [{"name": "pay", "from": "open", "to": "paid"}, {"name": "again", "from": "paid", "to": "paid"}],
+    "rules": [
+      {"on": "enter", "state": "paid",
+       "do": [{"action": "create", "class": "Receipt", "id": "\"R-\" & ID()", "values": {"invoice": "ID()", "amount": "total", "kind": "kind"}},
+              {"action": "emit", "event": "invoice.paid"}]}
+    ]
+  },
+  "principals": {
+    "fin":   {"id": "fin", "groups": ["finance"]},
+    "clerk": {"id": "clerk", "groups": ["clerks"]},
+    "root":  {"id": "root", "admin": true}
+  },
+  "script": [
+    {"name": "finance pays: the commit queues the receipt", "do": "create", "doc": "a", "as": "fin", "values": {"total": 90}, "expect": {"version": 1}},
+    {"do": "transition", "doc": "a", "transition": "pay", "as": "fin",
+     "expect": {"state": "paid", "version": 2, "events": ["created", "transition:pay", "custom:invoice.paid"],
+                "outbox": [{"action": "create", "status": "pending", "as": "fin"}]}},
+    {"name": "a drain runs it, once, as the person: the receipt's default reads USER(), and the receipt's own rule runs", "do": "drain", "doc": "a",
+     "expect": {"drained": 1, "outbox": [{"action": "create", "status": "done", "attempts": 1}],
+                "events": ["created", "transition:pay", "custom:invoice.paid", "action_run:create"]}},
+    {"do": "query", "class": "Receipt", "expect": {"found": [{"state": "issued", "values": {"amount": 90, "kind": "full", "issued_by": "fin", "note": "made by a rule"}}]}},
+    {"name": "nothing is left to run", "do": "drain", "expect": {"drained": 0}},
+
+    {"name": "a clerk pays: the clerk may not write the amount of a receipt, so the action is refused and dead at once", "do": "create", "doc": "b", "as": "clerk", "values": {"total": 50}, "expect": {"version": 1}},
+    {"do": "transition", "doc": "b", "transition": "pay", "as": "clerk", "expect": {"state": "paid", "version": 2}},
+    {"do": "drain", "doc": "b",
+     "expect": {"drained": 1, "outbox": [{"action": "create", "status": "dead", "code": "forbidden", "attempts": 1, "as": "clerk"}],
+                "events": ["created", "transition:pay", "custom:invoice.paid", "action_failed:create"]}},
+    {"name": "the refused action made nothing, and the invoice stays paid", "do": "count", "class": "Receipt", "expect": {"count": 1}},
+    {"do": "get", "doc": "b", "expect": {"state": "paid", "version": 2}},
+    {"name": "a dead action is not run again by itself", "do": "drain", "expect": {"drained": 0}},
+    {"name": "retried by hand it is refused again, with a further event", "do": "retry", "doc": "b", "row": 0,
+     "expect": {"outbox": [{"action": "create", "status": "pending", "code": "forbidden", "attempts": 0}]}},
+    {"do": "drain", "doc": "b",
+     "expect": {"drained": 1, "outbox": [{"action": "create", "status": "dead", "code": "forbidden", "attempts": 1}],
+                "events": ["created", "transition:pay", "custom:invoice.paid", "action_failed:create", "action_failed:create"]}},
+    {"name": "only a dead action is retried", "do": "retry", "doc": "a", "row": 0, "expect": {"code": "not_allowed"}},
+
+    {"name": "a refusal of the document itself: a value its class does not take", "do": "create", "doc": "c", "as": "fin", "values": {"total": 10, "kind": "odd"}, "expect": {"version": 1}},
+    {"do": "transition", "doc": "c", "transition": "pay", "as": "fin", "expect": {"state": "paid"}},
+    {"do": "drain", "doc": "c", "expect": {"drained": 1, "outbox": [{"action": "create", "status": "dead", "code": "not_in_values"}]}},
+
+    {"name": "the actions of one document run in the order they were queued: the second create of the same id is the one refused", "do": "transition", "doc": "a", "transition": "again", "as": "root",
+     "expect": {"state": "paid", "version": 3, "outbox": [{"action": "create", "status": "done"}, {"action": "create", "status": "pending", "as": "root"}]}},
+    {"do": "drain", "doc": "a",
+     "expect": {"drained": 1, "outbox": [{"action": "create", "status": "done"}, {"action": "create", "status": "dead", "code": "duplicate"}],
+                "events": ["created", "transition:pay", "custom:invoice.paid", "action_run:create", "transition:again", "custom:invoice.paid", "action_failed:create"]}},
+    {"do": "count", "class": "Receipt", "expect": {"count": 1}}
+  ]
+}

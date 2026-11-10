@@ -795,3 +795,41 @@ func BenchmarkTriggered(b *testing.B) {
 		}
 	}
 }
+
+// BenchmarkOutbox measures an action of the outbox end to end
+// (ADR-0044): a transition whose rule queues a create, which is the
+// insert of the row in the commit's transaction, and the drain that runs
+// it, which is the created document's commit, the mark of the row and
+// the event of the outcome in one transaction.
+func BenchmarkOutbox(b *testing.B) {
+	s, err := Open(filepath.Join(b.TempDir(), "bench.fado"), Options{Outbox: OutboxOptions{Manual: true}})
+	if err != nil {
+		b.Fatal(err)
+	}
+	defer s.Close()
+	ctx := context.Background()
+	for _, def := range []string{
+		`{"name": "Entry", "variables": {"job": {"type": "text", "required": true}, "amount": {"type": "number"}}, "states": {"initial": "booked", "list": ["booked"]}}`,
+		`{"name": "Job", "variables": {"amount": {"type": "number"}},
+ "states": {"initial": "open", "list": ["open"]}, "transitions": [{"name": "book", "from": "open", "to": "open"}],
+ "rules": [{"on": "transition", "name": "book", "do": [{"action": "create", "class": "Entry", "values": {"job": "ID()", "amount": "amount"}}]}]}`,
+	} {
+		if _, err := s.DefineClass(ctx, []byte(def)); err != nil {
+			b.Fatal(err)
+		}
+	}
+	doc, err := s.Create(ctx, "Job", Values{"amount": 500})
+	if err != nil {
+		b.Fatal(err)
+	}
+	b.ReportAllocs()
+	b.ResetTimer()
+	for b.Loop() {
+		if _, err := s.Transition(ctx, "Job", doc.ID, "book", nil, As(alice)); err != nil {
+			b.Fatal(err)
+		}
+		if n, err := s.Drain(ctx); err != nil || n != 1 {
+			b.Fatalf("drained %d, %v", n, err)
+		}
+	}
+}

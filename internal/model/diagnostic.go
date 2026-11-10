@@ -107,6 +107,9 @@ const (
 	CodeUnknownState      = "unknown_state"
 	CodeUnknownVariable   = "unknown_variable"
 	CodeUnknownTransition = "unknown_transition"
+	// CodeUnknownClass: an action names a class the database does not
+	// have (ADR-0044).
+	CodeUnknownClass = "unknown_class"
 	// CodeBadTrigger: a trigger of a triggered variable is malformed.
 	CodeBadTrigger = "bad_trigger"
 	// CodeBadValue: an enum value, a range bound or a literal is wrong.

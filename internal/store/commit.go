@@ -69,6 +69,17 @@ type command struct {
 	// stored is the class the document is read from when c is a draft
 	// compiled for one preview (ADR-0025); nil otherwise.
 	stored *class
+	// The worker's commands (ADR-0044): internal marks one, whose key may
+	// carry the outbox prefix; cause is the event of the commit that
+	// queued the action, which the command's own event names; depth is
+	// the depth the actions this command queues will have; and day, when
+	// hasDay, the business date of the causing event, which the action's
+	// commit takes.
+	internal bool
+	cause    string
+	depth    int
+	day      int64
+	hasDay   bool
 }
 
 type result struct {
@@ -76,6 +87,8 @@ type result struct {
 	eventID string
 	noop    bool
 	errs    []*Error
+	// queued is how many actions the command wrote to the outbox.
+	queued int
 	// path and transitions are a preview's: the states the command
 	// visited and the named transitions leaving the last one; now the
 	// seconds its formulas saw (ADR-0042); rules the rules whose triggers
@@ -204,6 +217,9 @@ func (s *Store) commit(ctx context.Context, cmd command) (*result, error) {
 		_, _ = s.writer.ExecContext(ctx, "ROLLBACK")
 		return nil, storageErr("commit", err)
 	}
+	if res.queued > 0 {
+		s.wakeWorker()
+	}
 	return res, nil
 }
 
@@ -225,8 +241,12 @@ func (s *Store) run(ctx context.Context, cmd command, now time.Time) (*result, e
 		return nil, hintf(CodeStateless, "", c.cls.Name+" declares no states: it is a stateless application and stores no documents", "add a states block with an initial state, or evaluate it with Preview")
 	}
 
-	// The idempotency key (ADR-0026).
+	// The idempotency key (ADR-0026). The keys of the worker's own commits
+	// have a prefix a caller may not use (ADR-0044).
 	var hash string
+	if !cmd.internal && strings.HasPrefix(cmd.o.key, outboxKeyPrefix) {
+		return nil, hintf(CodeBadValue, "", "a key may not start with "+outboxKeyPrefix+", the prefix of the commits the outbox makes", "choose another key")
+	}
 	if cmd.o.key != "" {
 		hash = commandHash(cmd)
 		var kind, class, docID, keyed string
@@ -314,8 +334,12 @@ func (s *Store) run(ctx context.Context, cmd command, now time.Time) (*result, e
 	eventID := s.ids.next(now)
 	actor := cmd.o.principal.ID
 	day := businessDay(cmd.o, now)
+	if cmd.hasDay {
+		day = cmd.day
+	}
 	evalCtx := &formula.Context{User: actor, Groups: cmd.o.principal.Groups, Now: clock}
 	s.emits = s.emits[:0]
+	s.queued = s.queued[:0]
 	rules := ruleRun{c: c, preview: cmd.preview, res: res, evalCtx: evalCtx, secs: secs}
 	if cmd.op == opDelete {
 		// A delete rule sees the document as it was (ADR-0043), under the
@@ -337,6 +361,13 @@ func (s *Store) run(ctx context.Context, cmd command, now time.Time) (*result, e
 			if err := s.writeEmits(ctx, c, 0, before.id, before.version, nil, eventID, actor, day, secs, now); err != nil {
 				return nil, err
 			}
+		}
+		if len(s.queued) > 0 {
+			n, err := s.writeQueued(ctx, c, &cmd, 0, eventID, before.id, before.version, day, secs, now)
+			if err != nil {
+				return nil, err
+			}
+			res.queued += n
 		}
 		res.eventID = eventID
 		return res, nil
@@ -526,13 +557,14 @@ func (s *Store) run(ctx context.Context, cmd command, now time.Time) (*result, e
 		path = append(path, after.state)
 	}
 	ev := eventFor(cmd.op)
+	ev.cause = cmd.cause
 	from := after.state
 	if trans != nil {
 		evalCtx.State = from
 		if err := s.guard(c, trans, after, evalCtx); err != nil {
 			return nil, err
 		}
-		ev = eventInfo{kind: EventTransition, qualifier: "transitioned", name: trans.Name, from: from, to: trans.To}
+		ev = eventInfo{kind: EventTransition, qualifier: "transitioned", name: trans.Name, from: from, to: trans.To, cause: cmd.cause}
 		after.state, after.stateEntered = trans.To, secs
 		path = append(path, after.state)
 	}
@@ -660,6 +692,13 @@ func (s *Store) run(ctx context.Context, cmd command, now time.Time) (*result, e
 			return nil, err
 		}
 	}
+	if len(s.queued) > 0 {
+		n, err := s.writeQueued(ctx, c, &cmd, 0, eventID, after.id, after.version, day, secs, now)
+		if err != nil {
+			return nil, err
+		}
+		res.queued += n
+	}
 	// Every eventless transition that fired is a further commit: a version
 	// and a history row of its own, and a transition event with no name
 	// caused by the command's event.
@@ -673,6 +712,13 @@ func (s *Store) run(ctx context.Context, cmd command, now time.Time) (*result, e
 			if err := s.writeEmits(ctx, c, i+1, h.row.id, nil, h.row.version, hopEvent, actor, day, secs, now); err != nil {
 				return nil, err
 			}
+		}
+		if len(s.queued) > 0 {
+			n, err := s.writeQueued(ctx, c, &cmd, i+1, hopEvent, h.row.id, h.row.version, day, secs, now)
+			if err != nil {
+				return nil, err
+			}
+			res.queued += n
 		}
 		for ch := range h.kids {
 			all[ch] = nil

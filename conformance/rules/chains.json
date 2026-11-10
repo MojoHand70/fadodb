@@ -1,0 +1,19 @@
+{
+  "suite": "chains",
+  "description": "A chain of actions is bounded (ADR-0044, item 6). An action queued by a caller's command has depth 0; one queued by the commit an action of depth d made has depth d + 1; one deeper than 16 is written dead with too_deep and its action_failed event. A class whose rule creates documents of itself therefore stops, with a record of where, and every document of the chain is caused by the one before it.",
+  "class": {
+    "name": "Echo",
+    "variables": {"n": {"type": "number", "default": "0"}},
+    "states": {"initial": "made", "list": ["made"]},
+    "rules": [{"on": "create", "do": [{"action": "create", "class": "Echo", "values": {"n": "n + 1"}}]}]
+  },
+  "script": [
+    {"name": "the first document queues the second", "do": "create", "doc": "first", "values": {"n": 0},
+     "expect": {"version": 1, "outbox": [{"action": "create", "status": "pending", "depth": 0}]}},
+    {"name": "a drain follows the chain to its bound: seventeen actions run", "do": "drain", "doc": "first",
+     "expect": {"drained": 17, "outbox": [{"action": "create", "status": "done", "depth": 0}], "events": ["created", "action_run:create"]}},
+    {"name": "eighteen documents: the first and the seventeen the actions made", "do": "count", "expect": {"count": 18}},
+    {"name": "the last one's action was written dead", "do": "query", "where": "n = 17", "expect": {"found": [{"state": "made", "values": {"n": 17}}]}},
+    {"do": "drain", "expect": {"drained": 0}}
+  ]
+}

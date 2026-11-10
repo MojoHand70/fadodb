@@ -18,10 +18,12 @@ Website: [fadodb.org](https://fadodb.org).
 > principal; previews any change at a moment the caller chooses; runs
 > the rules of a class inside the commit, with the actions `set`,
 > `reset`, `refresh` and `emit`; and computes triggered variables at
-> their triggers, each with the moment it was computed. The outbox with
-> the actions that leave the database, the row-level access rules,
-> `QUERY` and the server come with their steps and phases. The numbers
-> are in [docs/perf/](docs/perf/), the plan in [ROADMAP.md](ROADMAP.md).
+> their triggers, each with the moment it was computed. A rule's
+> `create` of another document runs through the outbox, exactly once
+> and as the person who caused it. The other actions of the outbox and
+> the ones that leave the database, the row-level access rules, `QUERY`
+> and the server come with their steps and phases. The numbers are in
+> [docs/perf/](docs/perf/), the plan in [ROADMAP.md](ROADMAP.md).
 
 ## What it is
 
@@ -35,10 +37,11 @@ Analytics and process mining are SQL over the event log.
 
 A class is one JSON document. This one defines, stores, computes and
 moves through its states today, and its rights and transition rules are
-enforced. Rules run inside the commit; this one's `create` is an action
-for the outbox, checked by name now and queued once the outbox of Phase 4
-is built. The class-level access rule comes with Phase 5, and formulas
-over `lines` arrive with composites:
+enforced. Its rule runs: paying an invoice queues a receipt in the
+outbox, and the outbox creates it. The `Receipt` class the rule names is
+[examples/classes/receipt.json](examples/classes/receipt.json) and is
+defined first. The class-level access rule comes with Phase 5, and
+formulas over `lines` arrive with composites:
 
 ```json
 {
@@ -105,17 +108,21 @@ happens, the entry or the exit of a state, a transition or a `refresh`,
 and kept in between; the document says under `computed` at which version
 and when. `Refresh` recomputes such variables on request and lets the
 document move if a guard now holds, and `Reset` puts inputs back to
-their defaults. A preview, a listing or a read may be asked at a moment
-the caller chooses, `fado.At(t)`, and a preview reports the moment it
-ran under; a commit runs at the database's clock. A refusal is a
-`fado.Error` with a stable code and the variable it names; a
-definition's problems come back at once as `Diagnostics`, each with a
-code and the place. Files are attached as `File` values behind a blob
-store, reference data lives in explicit tables that formulas read with
-`LOOKUP`, and a class can be redefined as a new version that touches no
-existing document. `fadodb check FILE` verifies a database file. The
-full walk-through is `fado/example_test.go`, and `fado/readme_test.go`
-runs the class and the calls above.
+their defaults. An action on another document, such as the `create`
+above, is written to the outbox in the commit's transaction and run
+afterwards by a worker, exactly once and as the person whose command
+caused it; a refusal leaves a dead action with its code, `Outbox` lists
+them and `RetryAction` tries one again. A preview, a listing or a read
+may be asked at a moment the caller chooses, `fado.At(t)`, and a preview
+reports the moment it ran under; a commit runs at the database's clock.
+A refusal is a `fado.Error` with a stable code and the variable it
+names; a definition's problems come back at once as `Diagnostics`, each
+with a code and the place. Files are attached as `File` values behind a
+blob store, reference data lives in explicit tables that formulas read
+with `LOOKUP`, and a class can be redefined as a new version that
+touches no existing document. `fadodb check FILE` verifies a database
+file. The full walk-through is `fado/example_test.go`, and
+`fado/readme_test.go` runs the class and the calls above.
 
 ## Install
 
@@ -195,10 +202,10 @@ cmd/fadodb/        command-line tool: formula eval, check; the server later
 fado/              public Go API
 internal/formula/  lexer, parser, binder, bytecode, VM, SQL generator
 internal/model/    document classes, schemas, tables, rules, validation, the diff between class versions
-internal/store/    SQLite store: documents, history, events, rules in the commit, tables, lookups, filters, blobs, class versions
+internal/store/    SQLite store: documents, history, events, rules in the commit, the outbox, tables, lookups, filters, blobs, class versions
 internal/query/    the filter compiler and the SQL endpoint's authorizer
 internal/state/    statechart engine (Phase 3)
-internal/rules/    the outbox worker and the actions that leave the commit (Phase 4)
+internal/rules/    the actions that leave the database (Phase 4)
 internal/auth/     users, groups, access rules as predicates (Phase 5)
 internal/server/   HTTP and WebSocket (Phase 6)
 analytics/         the DuckDB module: conformance and store benchmarks today, the projection in Phase 8

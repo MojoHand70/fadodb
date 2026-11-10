@@ -164,8 +164,24 @@ suites', with these additions:
   variable has no moment. A variable listed under `absent` must have no
   moment either.
 
-The store runs every suite in CI. The arguments of a queued action arrive
-with the step of Phase 4 that builds the outbox.
+- A suite may carry `classes`, definitions the store takes before
+  `class`, in order: the classes its rules name (ADR-0044). A `query` or
+  a `count` step reads the class its `class` names instead of the
+  suite's own.
+- The step `drain` runs every action of the outbox that is due, and
+  `drained` is how many it attempted. The step `retry` makes the action
+  at position `row` among those the document queued pending again. The
+  runner opens the store with the worker off, so nothing runs between
+  the steps.
+- `outbox` are the actions the document queued, in order, each by
+  `action`, `status` and `code`, the last error, and where given by
+  `attempts`, `depth`, `as`, the principal it runs as, and `args`.
+  `found` are the documents a query returned, in order, each by `state`
+  and a subset of `values`.
+- In `events`, the outcome of an action is written `action_run:name` or
+  `action_failed:name`.
+
+The store runs every suite in CI.
 
 ## Binding cases: `binding/*.json`
 

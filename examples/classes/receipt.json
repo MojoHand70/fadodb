@@ -1,0 +1,13 @@
+{
+  "name": "Receipt",
+  "description": "The receipt of a paid invoice. Nobody writes one by hand in the walk-through: the Invoice sample's rule creates it when an invoice enters paid, through the outbox.",
+  "title": "\"Receipt for \" & invoice",
+  "variables": {
+    "invoice": {"type": "text", "required": true},
+    "amount":  {"type": "money", "scale": 2}
+  },
+  "states": {"initial": "issued", "list": ["issued", "voided"], "final": ["voided"]},
+  "transitions": [
+    {"name": "void", "from": "issued", "to": "voided"}
+  ]
+}

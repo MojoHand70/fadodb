@@ -24,6 +24,15 @@ var engineDDL = []string{
 	`CREATE INDEX IF NOT EXISTS events_business_date ON events (business_date)`,
 	`CREATE TABLE IF NOT EXISTS event_docs (event_id TEXT NOT NULL, class TEXT NOT NULL, doc_id TEXT NOT NULL, qualifier TEXT NOT NULL, PRIMARY KEY (event_id, class, doc_id))`,
 	`CREATE TABLE IF NOT EXISTS blobs (hash TEXT PRIMARY KEY, size INTEGER NOT NULL, bytes BLOB NOT NULL, put_at INTEGER NOT NULL)`,
+	// The outbox (ADR-0044): one row per action a commit queued, keyed by
+	// the commit's event and the action's position among those it queued.
+	`CREATE TABLE IF NOT EXISTS outbox (event_id TEXT NOT NULL, idx INTEGER NOT NULL, class TEXT NOT NULL, doc_id TEXT NOT NULL, version INTEGER NOT NULL, class_version INTEGER NOT NULL,
+		rule TEXT NOT NULL, action TEXT NOT NULL, args TEXT NOT NULL, principal_id TEXT, principal_groups TEXT, principal_admin INTEGER NOT NULL, depth INTEGER NOT NULL,
+		status TEXT NOT NULL, attempts INTEGER NOT NULL, due_at INTEGER NOT NULL, error_code TEXT, error_message TEXT, created_at INTEGER NOT NULL, finished_at INTEGER, outcome_event TEXT,
+		PRIMARY KEY (event_id, idx))`,
+	`CREATE INDEX IF NOT EXISTS outbox_due ON outbox (status, due_at, event_id, idx)`,
+	`CREATE INDEX IF NOT EXISTS outbox_doc ON outbox (class, doc_id, status)`,
+	`CREATE INDEX IF NOT EXISTS outbox_outcome ON outbox (outcome_event)`,
 }
 
 // The system columns of a current row (ADR-0013, ADR-0018) and the ones a
@@ -141,6 +150,8 @@ func (c *class) viewDDL() []string {
 		"CREATE VIEW " + quote(cls.Name) + " AS SELECT " + all(systemColumns, c.table) + " FROM " + quote(c.table),
 		"CREATE VIEW " + quote(cls.Name+"_history") + " AS SELECT " + all(append(append([]string{}, systemColumns...), historyColumns...), c.history) + " FROM " + quote(c.history),
 		"CREATE VIEW " + quote(cls.Name+"_events") + ` AS SELECT e.*, d."qualifier" FROM "events" e JOIN "event_docs" d ON d."event_id" = e."event_id" WHERE d."class" = ` + lit(cls.Name),
+		// The actions the documents of the class queued (ADR-0044).
+		"CREATE VIEW " + quote(cls.Name+"_actions") + ` AS SELECT "event_id" || ':' || "idx" AS "key", "doc_id", "version", "rule", "action", "args", "principal_id", "depth", "status", "attempts", "due_at", "error_code", "error_message", "created_at", "finished_at", "outcome_event" FROM "outbox" WHERE "class" = ` + lit(cls.Name),
 	}
 	if cls.States != nil {
 		ddl = append(ddl, c.statesViewDDL())
@@ -208,7 +219,7 @@ func (c *class) tableNames() []string {
 }
 
 func (c *class) viewNames() []string {
-	names := []string{c.cls.Name, c.cls.Name + "_history", c.cls.Name + "_events"}
+	names := []string{c.cls.Name, c.cls.Name + "_history", c.cls.Name + "_events", c.cls.Name + "_actions"}
 	if c.cls.States != nil {
 		names = append(names, c.cls.Name+"_states")
 	}

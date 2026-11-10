@@ -30,7 +30,7 @@ read the diagnostics, fix, preview against live data, define.
 | formulas, exact money, calendar days, `IFERROR` | shipped |
 | states, transitions, guards, eventless chains, `STATE()` and `ID()` | in progress, Phase 3 |
 | field rights per state, per-transition rules | shipped with Phase 3 |
-| rules and actions | in progress, Phase 4: rules fire inside the commit with `set`, `reset`, `refresh` and `emit`, a preview lists them, and triggered variables are computed at their triggers; an action for the outbox is checked by name and not queued yet |
+| rules and actions | in progress, Phase 4: rules fire inside the commit with `set`, `reset`, `refresh` and `emit`, a preview lists them, and triggered variables are computed at their triggers; a `create` of another document runs through the outbox, as the person who caused it; the other outbox actions are checked by name and not queued yet |
 | the class-level access rule | designed, Phase 5: it compiles, it is not enforced |
 | class versions, terminal states, migrations | designed, ADR-0039 |
 

@@ -123,6 +123,12 @@ const (
 	// document's state, may not take the transition, or may read the
 	// variable a filter names in no state at all (ADR-0041).
 	CodeForbidden = "forbidden"
+	// CodeTooDeep: an action was queued by a chain of actions deeper than
+	// MaxActionDepth (ADR-0044); its row is written dead.
+	CodeTooDeep = "too_deep"
+	// CodeUnknownAction: no action of the outbox has that key, or the
+	// engine does not run an action of that name.
+	CodeUnknownAction = "unknown_action"
 )
 
 func errf(code, variable, format string, args ...any) *Error {

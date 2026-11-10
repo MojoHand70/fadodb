@@ -56,6 +56,12 @@ type (
 	// ActionRun one action of a rule that ran (ADR-0043).
 	RuleRun   = store.RuleRun
 	ActionRun = store.ActionRun
+	// OutboxOptions configure the outbox of an open database, in
+	// Options.Outbox; QueuedAction is one action a commit queued, with
+	// what became of it; OutboxFilter selects them (ADR-0044).
+	OutboxOptions = store.OutboxOptions
+	QueuedAction  = store.QueuedAction
+	OutboxFilter  = store.OutboxFilter
 	// TransitionInfo is one named transition leaving a document's state
 	// and whether it may be taken now (ADR-0040).
 	TransitionInfo = store.TransitionInfo
@@ -220,6 +226,25 @@ func (db *DB) Reset(ctx context.Context, class, id string, variables []string, o
 // TODAY() moves when it is refreshed on the day.
 func (db *DB) Refresh(ctx context.Context, class, id string, variables []string, opts ...Option) (*Document, error) {
 	return db.s.Refresh(ctx, class, id, variables, opts...)
+}
+
+// Drain runs every action of the outbox that is due, on the caller's
+// goroutine, and returns how many it attempted (ADR-0044). The worker
+// does this by itself unless Options.Outbox.Manual is set; a test and a
+// simulation set it and call Drain at the moment they choose.
+func (db *DB) Drain(ctx context.Context) (int, error) { return db.s.Drain(ctx) }
+
+// Outbox lists the actions commits queued, in the order they were
+// queued: what waits, what ran and what is dead, each with its key, its
+// arguments, its attempts and its last error (ADR-0044).
+func (db *DB) Outbox(ctx context.Context, f OutboxFilter) ([]QueuedAction, error) {
+	return db.s.Outbox(ctx, f)
+}
+
+// RetryAction makes a dead action pending again; the outcome it then
+// reaches is a further event. A dead action is never retried by itself.
+func (db *DB) RetryAction(ctx context.Context, key string) error {
+	return db.s.RetryAction(ctx, key)
 }
 
 // Transition moves a document along the named transition of its class,

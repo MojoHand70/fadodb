@@ -72,6 +72,9 @@ type Options struct {
 	// MaxBlob is the blob size limit of a new database in bytes; 0 is
 	// DefaultMaxBlob. It may be raised on open and never lowered.
 	MaxBlob int64
+	// Outbox configures the worker that runs the actions commits queue
+	// (ADR-0044).
+	Outbox OutboxOptions
 	// Now is the clock of the database: it stamps every commit and is
 	// what NOW() and TODAY() read in every formula, unless a call that
 	// reads or previews chooses a moment with At (ADR-0042). nil is
@@ -106,6 +109,7 @@ type Store struct {
 	// emptied, and the variables and the composites that changed.
 	hops        []hop
 	emits       []emitted
+	queued      []queued // the actions for the outbox one command asked for
 	setVals     []formula.Value
 	emptied     []*child
 	changed     []bool
@@ -132,14 +136,27 @@ type Store struct {
 	stop   chan struct{}
 	done   chan struct{}
 	closed bool
+
+	// The outbox (ADR-0044): its options with the defaults filled in, the
+	// lock that makes one drain run at a time, and the worker's wake-up,
+	// stop and end.
+	outbox     OutboxOptions
+	drainMu    sync.Mutex
+	wake       chan struct{}
+	workCancel context.CancelFunc
+	workDone   chan struct{}
+	workStop   sync.Once
+	// testStep is called at the steps of an action when a test sets it.
+	testStep func(step string, row *outboxRow) *Error
 }
 
 type engineStmts struct {
 	lookupKey, lastOfCommand, insertEvent, insertEventDoc, listEvents *sql.Stmt
+	insertOutbox, dueOutbox                                           *sql.Stmt
 }
 
 func (e *engineStmts) close() {
-	for _, st := range []*sql.Stmt{e.lookupKey, e.lastOfCommand, e.insertEvent, e.insertEventDoc, e.listEvents} {
+	for _, st := range []*sql.Stmt{e.lookupKey, e.lastOfCommand, e.insertEvent, e.insertEventDoc, e.listEvents, e.insertOutbox, e.dueOutbox} {
 		if st != nil {
 			st.Close()
 		}
@@ -190,9 +207,19 @@ func Open(path string, o Options) (*Store, error) {
 		schemas: model.NewSchemaSet(), schemaJSON: map[string][]byte{}, classes: map[string]*class{}, versions: map[string]map[int]*class{},
 		tables: map[string]*table{}, plans: map[*formula.QuerySlot]*lookupPlan{},
 		stop: make(chan struct{}), done: make(chan struct{}),
+		outbox: o.Outbox, wake: make(chan struct{}, 1), workDone: make(chan struct{}),
 	}
 	if s.now == nil {
 		s.now = time.Now
+	}
+	if s.outbox.Workers <= 0 {
+		s.outbox.Workers = DefaultOutboxWorkers
+	}
+	if s.outbox.MaxAttempts <= 0 {
+		s.outbox.MaxAttempts = DefaultMaxAttempts
+	}
+	if s.outbox.Backoff <= 0 {
+		s.outbox.Backoff = DefaultBackoff
 	}
 	ctx := context.Background()
 	if s.writer, err = db.Conn(ctx); err != nil {
@@ -243,6 +270,14 @@ func Open(path string, o Options) (*Store, error) {
 		limit = DefaultWALLimit
 	}
 	go s.checkpoint(ckpt, every, limit)
+	// The worker of the outbox, unless the caller drains it by hand.
+	if s.outbox.Manual {
+		close(s.workDone)
+	} else {
+		var wctx context.Context
+		wctx, s.workCancel = context.WithCancel(context.Background())
+		go s.work(wctx)
+	}
 	return s, nil
 }
 
@@ -387,11 +422,26 @@ func (s *Store) prepareEngine(ctx context.Context) error {
 	prep(&s.stmts.insertEvent, "INSERT INTO events (event_id, class, doc_id, kind, name, from_state, to_state, actor_id, before_version, after_version, cause_event_id, command_key, command_hash, business_date, ts)"+
 		" VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
 	prep(&s.stmts.insertEventDoc, "INSERT INTO event_docs (event_id, class, doc_id, qualifier) VALUES (?, ?, ?, ?)")
+	prep(&s.stmts.insertOutbox, "INSERT INTO outbox (event_id, idx, class, doc_id, version, class_version, rule, action, args, principal_id, principal_groups, principal_admin, depth, status, attempts, due_at, error_code, error_message, created_at, finished_at, outcome_event)"+
+		" VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?)")
 	if err != nil {
 		return storageErr("prepare", err)
 	}
-	s.stmts.listEvents, err = s.db.PrepareContext(ctx, "SELECT e.event_id, e.class, e.doc_id, e.kind, e.name, e.from_state, e.to_state, e.actor_id, e.before_version, e.after_version, e.cause_event_id, e.command_key, e.business_date, e.ts"+
-		" FROM events e JOIN event_docs d ON d.event_id = e.event_id WHERE d.class = ? AND d.doc_id = ? ORDER BY e.ts, e.event_id")
+	// An event of kind action_failed is read with the code its action died
+	// with, which the outbox row holds (ADR-0044).
+	if s.stmts.listEvents, err = s.db.PrepareContext(ctx, "SELECT e.event_id, e.class, e.doc_id, e.kind, e.name, e.from_state, e.to_state, e.actor_id, e.before_version, e.after_version, e.cause_event_id, e.command_key, e.business_date, e.ts,"+
+		" (SELECT o.error_code FROM outbox o WHERE o.outcome_event = e.event_id)"+
+		" FROM events e JOIN event_docs d ON d.event_id = e.event_id WHERE d.class = ? AND d.doc_id = ? ORDER BY e.ts, e.event_id"); err != nil {
+		return storageErr("prepare", err)
+	}
+	// The next actions that may run: pending, due, and not behind an
+	// earlier pending action of the same document, so at most one per
+	// document; the index on (status, due_at, event_id, idx) gives them in
+	// order without a sort.
+	s.stmts.dueOutbox, err = s.db.PrepareContext(ctx, "SELECT o.event_id, o.idx, o.class, o.doc_id, o.action, o.args, o.principal_id, o.principal_groups, o.principal_admin, o.depth FROM outbox o"+
+		" WHERE o.status = 'pending' AND o.due_at <= ?"+
+		" AND NOT EXISTS (SELECT 1 FROM outbox p WHERE p.class = o.class AND p.doc_id = o.doc_id AND p.status = 'pending' AND (p.event_id < o.event_id OR (p.event_id = o.event_id AND p.idx < o.idx)))"+
+		" ORDER BY o.due_at, o.event_id, o.idx LIMIT 64")
 	return storageErr("prepare", err)
 }
 
@@ -482,8 +532,27 @@ func (s *Store) load(ctx context.Context) error {
 		olds = append(olds, st)
 	}
 	rows.Close()
+	// A rule may name a class defined after its own (ADR-0044), so the
+	// classes compile in two passes: every one alone, for its variables
+	// and their types, then every one against all of them. A stored
+	// definition was checked when it was defined, and loads leniently.
+	env := s.env()
+	env.Lenient = true
+	alone := map[string]*model.Class{}
+	env.Classes = nil
 	for _, st := range classes {
-		c, err := s.compileStored(ctx, st.name, st.version, st.json)
+		cls, diags := model.DefineIn(st.json, env)
+		if len(diags) > 0 {
+			return &Error{Code: CodeStorage, Message: "the stored class " + st.name + " does not compile: " + diags.Error()}
+		}
+		alone[strings.ToUpper(cls.Name)] = cls
+	}
+	env.Classes = func(name string) (*model.Class, bool) {
+		cls, ok := alone[strings.ToUpper(name)]
+		return cls, ok
+	}
+	for _, st := range classes {
+		c, err := s.compileStored(ctx, st.name, st.version, st.json, env)
 		if err != nil {
 			return err
 		}
@@ -493,26 +562,32 @@ func (s *Store) load(ctx context.Context) error {
 		if cur, ok := s.classes[strings.ToUpper(st.name)]; !ok || cur.cls.Version == st.version {
 			continue
 		}
-		if _, err := s.compileStored(ctx, st.name, st.version, st.json); err != nil {
+		if _, err := s.compileStored(ctx, st.name, st.version, st.json, env); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-// env is what definitions compile against: the schemas and the tables.
+// env is what definitions compile against: the schemas, the tables, and
+// the classes an action may name (ADR-0044). The caller holds cmu.
 func (s *Store) env() model.Env {
 	set := formula.NewSourceSet()
 	for _, name := range s.tableOrder {
 		set.Add(s.tables[strings.ToUpper(name)].src)
 	}
-	return model.Env{Schemas: s.schemas, Sources: set}
+	return model.Env{Schemas: s.schemas, Sources: set, Classes: func(name string) (*model.Class, bool) {
+		if c, ok := s.classes[strings.ToUpper(name)]; ok {
+			return c.cls, true
+		}
+		return nil, false
+	}}
 }
 
 // compileStored compiles one stored version of a class, prepares it and
 // keeps it among the class's versions.
-func (s *Store) compileStored(ctx context.Context, name string, version int, src []byte) (*class, error) {
-	cls, diags := model.DefineIn(src, s.env())
+func (s *Store) compileStored(ctx context.Context, name string, version int, src []byte, env model.Env) (*class, error) {
+	cls, diags := model.DefineIn(src, env)
 	if len(diags) > 0 {
 		return nil, &Error{Code: CodeStorage, Message: "the stored class " + name + " version " + itoa(version) + " does not compile: " + diags.Error()}
 	}
@@ -581,6 +656,14 @@ func (s *Store) checkpoint(conn *sql.Conn, every time.Duration, limit int64) {
 // Close stops the checkpointer, closes every statement before its
 // connection, and closes the database.
 func (s *Store) Close() error {
+	// The worker first, and outside the writer's lock, which an action in
+	// flight holds: Close waits for it (ADR-0044).
+	s.workStop.Do(func() {
+		if s.workCancel != nil {
+			s.workCancel()
+		}
+	})
+	<-s.workDone
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.closed {

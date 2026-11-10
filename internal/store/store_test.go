@@ -68,6 +68,9 @@ func openStore(t *testing.T, o Options) (*Store, string) {
 	if o.Now == nil {
 		o.Now = (&clock{now: start}).Now
 	}
+	// A test runs the outbox when it says so, with Drain; the tests of
+	// the worker open their store themselves.
+	o.Outbox.Manual = true
 	s, err := Open(path, o)
 	if err != nil {
 		t.Fatal(err)
@@ -183,7 +186,7 @@ func TestDefineClass(t *testing.T) {
 	}
 	rows.Close()
 	want := "index:doc_Invoice_history_valid table:doc_Invoice table:doc_Invoice__lines table:doc_Invoice__tags table:doc_Invoice_history " +
-		"view:Invoice view:Invoice_events view:Invoice_history view:Invoice_lines view:Invoice_lines_history view:Invoice_states view:Invoice_tags view:Invoice_tags_history"
+		"view:Invoice view:Invoice_actions view:Invoice_events view:Invoice_history view:Invoice_lines view:Invoice_lines_history view:Invoice_states view:Invoice_tags view:Invoice_tags_history"
 	if got := strings.Join(names, " "); got != want {
 		t.Errorf("objects:\n%s\nwant\n%s", got, want)
 	}

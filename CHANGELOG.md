@@ -6,6 +6,42 @@ All notable changes to FadoDB are recorded here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- Rules run inside the commit (ADR-0043). Every commit raises a fixed
+  list of triggers: `create` and `enter` of the initial state on a
+  create; `values_change` on a set; `values_change`, `exit`,
+  `transition`, `enter` on a transition; `exit` and `enter` on each
+  eventless transition, which is a commit of its own; `delete` on a
+  delete. Rules run trigger by trigger and in declaration order, each
+  over the document as computed so far; a condition that errors is
+  FALSE. Rules do not cascade inside a commit.
+- The synchronous actions `set`, `reset` and `emit`. A `set` evaluates
+  every formula before it assigns any and is the engine's write, so no
+  write right is consulted; a `reset` re-evaluates defaults and blanks an
+  input without one; `emit` appends an event of kind `custom` with the
+  name the rule gives, caused by the commit's event. An action that fails
+  refuses the whole command; `Error` gained `Path`, the place of the
+  action in the definition, such as `/rules/2/do/0`.
+- `Preview` and `PreviewDraft` report `Rules`: every rule whose trigger
+  the command raised, the commit it belongs to, whether it ran, and its
+  actions with their evaluated arguments.
+- `conformance/rules/`, six suites in the script format of the
+  statechart suites, and `BenchmarkRules`, which joins the benchmark
+  gate: the rules of a commit do not allocate.
+
+### Changed
+
+- A class definition is checked for what its rules do, where before only
+  their structure was. Refused now: `rules` in a class without states; a
+  `set`, `reset` or `refresh` on a trigger that can fire over a frozen
+  document or on `delete`; a rule on `schedule` and the `refresh` action,
+  with `not_supported` until they are built; a misspelt property of a
+  synchronous action. An `emit` names its event under `event`.
+- An action for the outbox (`create`, `transition`, `http.call` and the
+  like) is still checked for its name alone and is not queued: the
+  outbox is a later step of Phase 4.
+
 ## [0.3.0] - 2026-11-09
 
 ### Added

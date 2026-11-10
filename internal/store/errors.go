@@ -19,6 +19,9 @@ type Error struct {
 	Pos     int    `json:"pos,omitempty"`
 	Message string `json:"message"`
 	Hint    string `json:"hint,omitempty"`
+	// Path is the place in the class definition of the rule's action that
+	// failed, such as /rules/2/do/0 (ADR-0043); empty otherwise.
+	Path string `json:"path,omitempty"`
 }
 
 func (e *Error) Error() string {
@@ -30,6 +33,9 @@ func (e *Error) Error() string {
 		s = fmt.Sprintf("%s (at offset %d)", s, e.Pos)
 	}
 	s += " [" + e.Code + "]"
+	if e.Path != "" {
+		s += " in " + e.Path
+	}
 	if e.Hint != "" {
 		s += "; " + e.Hint
 	}

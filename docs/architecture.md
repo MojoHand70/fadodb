@@ -287,12 +287,21 @@ Inside a commit the engine:
 1. applies the assignments, or evaluates defaults for a new document;
 2. recalculates **auto** variables whose dependencies changed, in topological
    order, only the dirty part of the graph;
-3. evaluates the requested transition's guard, then eventless transitions
-   until none fires, bounded to eight per commit;
+3. evaluates the requested transition's guard and moves the state;
 4. recalculates **triggered** variables whose trigger fired in this commit
    (`enter`, `exit`, `transition`, `refresh`);
-5. runs rules: synchronous actions now, the rest into the outbox;
+5. runs the rules whose triggers the commit raised, in a fixed order:
+   synchronous actions change the document now, the rest go into the
+   outbox;
 6. writes the current row, the history row, the child rows and the events.
+
+The eventless transitions are then evaluated over the document the rules
+left, bounded to eight per command. Each one that fires is a commit of its
+own that repeats steps 4 to 6 with its own triggers. A rule's action
+raises no trigger, so one command runs at most nine commits and each rule
+at most once in each (ADR-0040, ADR-0043). Today step 5 runs `set`,
+`reset` and `emit`; step 4, the `refresh` action and the outbox arrive
+with the next steps of Phase 4.
 
 Triggered variables also recalculate on `table:<name>` when the named table or
 stack changes, and on `schedule:<spec>`. Those recomputes are **set-wise**:
@@ -375,14 +384,22 @@ What users see are views, never the physical names:
 
 Triggers: `create`, `values_change(variable...)`, `exit(state)`,
 `enter(state)`, `transition(name)`, `delete`, and `schedule` (0.x). Each rule
-has an optional condition formula and a list of actions.
+has an optional condition formula and a list of actions. Which triggers a
+commit raises is fixed by what the command did (ADR-0043): `create` then
+`enter` of the initial state for a create; `values_change` for a set;
+`values_change`, `exit`, `transition`, `enter` for a transition; `exit`
+and `enter` for an eventless transition; `delete` for a delete. Rules run
+trigger by trigger in that order and in declaration order within one. A
+condition that errors is FALSE; an action that fails refuses the whole
+command, with the path of the action. A rule on `schedule` is refused
+until the phase that runs it.
 
 | Action | Sync or outbox | Notes |
 |---|---|---|
 | `set` variables on the same document | sync, same transaction | Deterministic, re-triggers recalculation |
 | `reset` input variables to their defaults | sync | Re-evaluates the named `default` formulas |
 | `refresh` triggered variables | sync | Fires the `refresh` trigger for the named variables |
-| `emit` custom event | sync | For integrations and subscriptions |
+| `emit` custom event | sync | An event of kind `custom` with the name the rule gives; for integrations and subscriptions |
 | `create` document | outbox | Idempotency key = event id + action index |
 | `transition` document | outbox | Same key |
 | `table.insert / update / delete` | outbox | Explicit tables, see below |
@@ -391,6 +408,14 @@ has an optional condition formula and a list of actions.
 Outbox execution results are events (`action_run`, `action_failed`), so the
 audit trail covers side effects. `reset` and `refresh` are also commands a
 frontend can send directly, which is what a button does.
+
+Today `set`, `reset` and `emit` run inside the commit, and `Preview`
+reports every rule a command would run with the evaluated arguments of
+its actions. The `refresh` action is refused until triggered variables
+are computed. An action of the outbox is checked for its name, named by
+a preview as queued, and not queued yet: the outbox, its worker and the
+actions that leave the database are the next steps of Phase 4 (ADR-0044,
+ADR-0045).
 
 ### Explicit tables
 

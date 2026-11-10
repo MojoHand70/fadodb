@@ -605,3 +605,147 @@ func BenchmarkTransitions10(b *testing.B) {
 		}
 	}
 }
+
+// benchRules is what the rules of a commit run with over a row, outside a
+// preview.
+func benchRules(c *class, row *docRow) *ruleRun {
+	evalCtx := &formula.Context{User: "alice", Groups: []string{"sales"}, Now: start.Unix(), ID: row.id, State: row.state}
+	return &ruleRun{c: c, res: &result{}, evalCtx: evalCtx}
+}
+
+// benchRuled is the flow of the transition benchmarks with the rules of
+// ADR-0043's budget on one transition: three rules fire, one of them with
+// a set that makes an auto variable recalculate, one with a condition
+// that is FALSE, one that emits; and ten more rules on triggers the
+// transition does not raise.
+const benchRuled = `{
+ "name": "Ruled",
+ "variables": {
+   "amount":   {"type": "number"},
+   "qty":      {"type": "number"},
+   "note":     {"type": "text"},
+   "owner":    {"type": "text"},
+   "seen_at":  {"type": "datetime"},
+   "big":      {"formula": "amount > 1000"},
+   "total":    {"formula": "amount * qty"}
+ },
+ "states": {"initial": "draft", "list": ["draft", "review", "approved", "closed"]},
+ "transitions": [
+   {"name": "submit",  "from": "draft",  "to": "review", "guard": "amount > 0"},
+   {"name": "back",    "from": "review", "to": "draft"},
+   {"name": "approve", "from": "review", "to": "approved"},
+   {"name": "close",   "from": "approved", "to": "closed"}
+ ],
+ "rules": [
+   {"on": "exit", "state": "draft", "do": [{"action": "set", "values": {"owner": "USER()", "seen_at": "NOW()", "qty": "qty + 1"}}]},
+   {"on": "transition", "name": "submit", "if": "big", "do": [{"action": "set", "values": {"note": "\"big\""}}]},
+   {"on": "enter", "state": "review", "if": "total > 0", "do": [{"action": "emit", "event": "ruled.in_review"}]},
+   {"on": "enter", "state": "approved", "do": [{"action": "emit", "event": "r1"}]},
+   {"on": "enter", "state": "closed", "do": [{"action": "emit", "event": "r2"}]},
+   {"on": "exit", "state": "approved", "do": [{"action": "emit", "event": "r3"}]},
+   {"on": "exit", "state": "closed", "do": [{"action": "emit", "event": "r4"}]},
+   {"on": "transition", "name": "approve", "do": [{"action": "emit", "event": "r5"}]},
+   {"on": "transition", "name": "close", "do": [{"action": "emit", "event": "r6"}]},
+   {"on": "transition", "name": "back", "if": "big", "do": [{"action": "emit", "event": "r7"}]},
+   {"on": "create", "do": [{"action": "emit", "event": "r8"}]},
+   {"on": "delete", "do": [{"action": "emit", "event": "r9"}]},
+   {"on": "enter", "state": "draft", "if": "big", "do": [{"action": "emit", "event": "r10"}]}
+ ]}`
+
+// BenchmarkRules measures the rules of one commit alone, as
+// BenchmarkRecalculate measures its formulas (ADR-0043): the triggers of
+// a transition out of draft, of which three rules fire, a set of three
+// values with the recalculation after it, a condition that is FALSE and
+// an emit. It must not allocate.
+func BenchmarkRules(b *testing.B) {
+	s, err := Open(filepath.Join(b.TempDir(), "bench.fado"), Options{})
+	if err != nil {
+		b.Fatal(err)
+	}
+	defer s.Close()
+	ctx := context.Background()
+	if _, err := s.DefineClass(ctx, []byte(benchRuled)); err != nil {
+		b.Fatal(err)
+	}
+	doc, err := s.Create(ctx, "Ruled", Values{"amount": 500, "qty": 5, "note": "n"})
+	if err != nil {
+		b.Fatal(err)
+	}
+	c, _ := s.class("Ruled")
+	row, err := c.scanRow(c.w.selectCurrent.QueryRowContext(ctx, doc.ID), false)
+	if err != nil {
+		b.Fatal(err)
+	}
+	run := benchRules(c, row)
+	qty := c.byName["QTY"].leaf
+	five := row.vals[qty]
+	row.state = "review"
+	b.ReportAllocs()
+	b.ResetTimer()
+	for b.Loop() {
+		s.emits = s.emits[:0]
+		row.vals[qty] = five
+		if err := s.fireCommit(run, row, commitTransition, "draft", "submit", nil); err != nil {
+			b.Fatal(err)
+		}
+	}
+	if len(s.emits) != 1 {
+		b.Fatalf("%d events emitted per commit, want 1", len(s.emits))
+	}
+}
+
+// BenchmarkTransitionRuled is a transition commit end to end on the class
+// of BenchmarkRules: submit fires three rules and writes a custom event,
+// back fires one whose condition is FALSE.
+func BenchmarkTransitionRuled(b *testing.B) {
+	benchTransitions(b, benchRuled, "Ruled")
+}
+
+// idleRules are ten rules on triggers the submit and back of the
+// transition benchmark never raise.
+const idleRules = `, "rules": [
+   {"on": "enter", "state": "approved", "do": [{"action": "emit", "event": "r1"}]},
+   {"on": "enter", "state": "booked", "if": "big", "do": [{"action": "set", "values": {"note": "\"booked\""}}]},
+   {"on": "enter", "state": "closed", "do": [{"action": "emit", "event": "r3"}]},
+   {"on": "exit", "state": "approved", "do": [{"action": "emit", "event": "r4"}]},
+   {"on": "exit", "state": "closed", "do": [{"action": "emit", "event": "r5"}]},
+   {"on": "transition", "name": "approve", "do": [{"action": "set", "values": {"note": "\"approved\""}}]},
+   {"on": "transition", "name": "close", "do": [{"action": "emit", "event": "r7"}]},
+   {"on": "transition", "name": "reopen", "do": [{"action": "reset", "variables": ["note"]}]},
+   {"on": "create", "do": [{"action": "emit", "event": "r9"}]},
+   {"on": "delete", "do": [{"action": "emit", "event": "r10"}]}
+ ]}`
+
+// BenchmarkTransitionIdleRules is BenchmarkTransition on the same class
+// with ten rules none of whose triggers the commit raises: the budget of
+// ADR-0043 is that they cost the commit nothing, no evaluation and no
+// allocation, so the two benchmarks read the same.
+func BenchmarkTransitionIdleRules(b *testing.B) {
+	benchTransitions(b, strings.TrimSuffix(strings.TrimSpace(benchFlow), "}")+idleRules, "Flow")
+}
+
+// benchTransitions takes submit and back in turn on a document of the
+// class.
+func benchTransitions(b *testing.B, definition, class string) {
+	s, err := Open(filepath.Join(b.TempDir(), "bench.fado"), Options{})
+	if err != nil {
+		b.Fatal(err)
+	}
+	defer s.Close()
+	ctx := context.Background()
+	if _, err := s.DefineClass(ctx, []byte(definition)); err != nil {
+		b.Fatal(err)
+	}
+	doc, err := s.Create(ctx, class, Values{"amount": 500, "qty": 5, "note": "n"})
+	if err != nil {
+		b.Fatal(err)
+	}
+	names := [2]string{"submit", "back"}
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; b.Loop(); i++ {
+		if _, err := s.Transition(ctx, class, doc.ID, names[i%2], nil, As(alice)); err != nil {
+			b.Fatal(err)
+		}
+	}
+}

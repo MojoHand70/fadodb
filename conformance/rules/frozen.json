@@ -1,0 +1,32 @@
+{
+  "suite": "frozen",
+  "description": "A frozen document computes nothing (ADR-0039, ADR-0043 item 8): a move between terminal states raises its exit, transition and enter triggers, the conditions are evaluated over the frozen values, and emit runs. A delete raises delete, and its rule sees the document as it was.",
+  "class": {
+    "name": "Case",
+    "variables": {"amount": {"type": "number"}, "closed_as": {"type": "text"}},
+    "states": {"initial": "open", "list": ["open", "rejected", "archived"], "final": ["rejected", "archived"]},
+    "transitions": [
+      {"name": "reject", "from": "open", "to": "rejected"},
+      {"name": "archive", "from": "rejected", "to": "archived"}
+    ],
+    "rules": [
+      {"on": "transition", "name": "reject", "do": [{"action": "set", "values": {"closed_as": "\"rejected\""}}]},
+      {"on": "exit", "state": "rejected", "do": [{"action": "emit", "event": "case.left_rejected"}]},
+      {"on": "transition", "name": "archive", "if": "amount > 100", "do": [{"action": "emit", "event": "case.large_archived"}]},
+      {"on": "transition", "name": "archive", "if": "closed_as = \"rejected\"", "do": [{"action": "emit", "event": "case.archived"}]},
+      {"on": "delete", "if": "amount > 0", "do": [{"action": "emit", "event": "case.deleted"}]}
+    ]
+  },
+  "script": [
+    {"name": "a live document is deleted, and the rule sees it as it was", "do": "create", "doc": "gone", "values": {"amount": 5}, "expect": {"state": "open", "version": 1}},
+    {"do": "delete", "doc": "gone", "expect": {"events": ["created", "deleted", "custom:case.deleted"]}},
+    {"name": "a delete whose condition is FALSE emits nothing", "do": "create", "doc": "zero", "values": {"amount": 0}, "expect": {"version": 1}},
+    {"do": "delete", "doc": "zero", "expect": {"events": ["created", "deleted"]}},
+    {"name": "a rule on the transition that arrives from a live state may set", "do": "create", "doc": "c", "values": {"amount": 50}, "expect": {"state": "open"}},
+    {"do": "transition", "doc": "c", "transition": "reject", "expect": {"state": "rejected", "version": 2, "values": {"closed_as": "rejected"}}},
+    {"name": "a move between terminal states runs its rules over the frozen values", "do": "transition", "doc": "c", "transition": "archive",
+     "expect": {"state": "archived", "version": 3, "values": {"closed_as": "rejected", "amount": 50},
+                "events": ["created", "transition:reject", "transition:archive", "custom:case.left_rejected", "custom:case.archived"]}},
+    {"name": "a terminal document is not deleted", "do": "delete", "doc": "c", "expect": {"code": "terminal"}}
+  ]
+}

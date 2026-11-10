@@ -29,6 +29,13 @@
 // previews may run at a moment the caller chooses with At, and a preview
 // reports it; a commit runs at the database's clock (ADR-0042).
 //
-// Not here yet: rules (Phase 4), the class-level access rules (Phase 5),
-// and the server (Phase 6).
+// The rules of a class run inside the commit (ADR-0043): every commit
+// raises a fixed list of triggers, the rules of each run in declaration
+// order over the document as computed so far, and the synchronous
+// actions set, reset and emit change it before it is written. An action
+// that fails refuses the command with its path; a preview reports every
+// rule the command would run.
+//
+// Not here yet: triggered variables and the outbox (Phase 4), the
+// class-level access rules (Phase 5), and the server (Phase 6).
 package store

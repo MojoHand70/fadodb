@@ -1,0 +1,59 @@
+{
+  "suite": "actions",
+  "description": "The synchronous actions change the commit's own document before it is written: the same version, the same history row (ADR-0043, items 3 and 4). A set evaluates every formula before it assigns any; a reset re-evaluates defaults in dependency order and blanks an input without one; after each, the auto variables that depend on what changed recalculate. A rule sees the document as computed so far, STATE() is the state left in an exit and a transition rule and the current one elsewhere, and USER() is the command's principal. A rule's write is the engine's: no write right is consulted.",
+  "clock": "2026-03-01 12:00:00",
+  "class": {
+    "name": "Claim",
+    "variables": {
+      "amount":      {"type": "decimal", "scale": 2, "default": "0"},
+      "rate":        {"type": "decimal", "scale": 2, "default": "0.10"},
+      "fee":         {"formula": "ROUND(amount * rate, 2)"},
+      "first":       {"type": "text"},
+      "second":      {"type": "text"},
+      "left":        {"type": "text"},
+      "during":      {"type": "text"},
+      "entered":     {"type": "text"},
+      "approved_by": {"type": "text"},
+      "approved_at": {"type": "datetime"},
+      "fee_seen":    {"type": "decimal", "scale": 2},
+      "memo":        {"type": "text"},
+      "copy":        {"type": "text", "default": "memo"}
+    },
+    "states": {"initial": "open", "list": ["open", "approved", "closed"]},
+    "transitions": [
+      {"name": "approve", "from": "open", "to": "approved"},
+      {"name": "swap", "from": "open", "to": "open"},
+      {"name": "reopen", "from": "approved", "to": "open"},
+      {"name": "close", "from": "approved", "to": "closed"}
+    ],
+    "rules": [
+      {"on": "exit", "state": "open", "do": [{"action": "set", "values": {"left": "STATE()"}}]},
+      {"on": "transition", "name": "approve", "do": [{"action": "set", "values": {"during": "STATE()", "approved_by": "USER()", "approved_at": "NOW()"}}]},
+      {"on": "enter", "state": "approved", "do": [{"action": "set", "values": {"entered": "STATE()", "amount": "amount + 100"}}, {"action": "set", "values": {"fee_seen": "fee"}}]},
+      {"on": "transition", "name": "swap", "do": [{"action": "set", "values": {"first": "second", "second": "first"}}]},
+      {"on": "transition", "name": "reopen", "do": [{"action": "reset", "variables": ["rate", "approved_by", "copy", "memo"]}]},
+      {"on": "enter", "state": "closed", "if": "amount > 1000", "do": [{"action": "set", "values": {"memo": "\"large\""}}]},
+      {"on": "enter", "state": "closed", "if": "1 / (amount - amount) > 0", "do": [{"action": "set", "values": {"memo": "\"never\""}}]}
+    ],
+    "rights": {"*": {"approved_by": {"write": ["nobody"]}, "approved_at": {"write": ["nobody"]}}}
+  },
+  "principals": {"alice": {"id": "alice", "groups": ["claims"]}},
+  "script": [
+    {"name": "a document with its defaults", "do": "create", "doc": "c", "as": "alice", "values": {"amount": "50.00", "first": "a", "second": "b", "memo": "note"},
+     "expect": {"state": "open", "version": 1, "values": {"fee": "5.00", "copy": "note", "approved_by": null}}},
+    {"name": "the person may not write what the rule will", "do": "set", "as": "alice", "values": {"approved_by": "alice"}, "expect": {"code": "forbidden"}},
+    {"name": "a set assigns after it evaluated every formula", "do": "transition", "transition": "swap", "as": "alice",
+     "expect": {"state": "open", "version": 2, "values": {"first": "b", "second": "a", "left": "open"}}},
+    {"name": "the rules of a transition write into its own version; a later action reads what an earlier one left, recalculated", "do": "transition", "transition": "approve", "as": "alice", "values": {"rate": "0.20"},
+     "expect": {"state": "approved", "version": 3, "history": ["open", "open", "approved"],
+                "values": {"left": "open", "during": "open", "entered": "approved", "approved_by": "alice", "approved_at": 1772366400,
+                           "amount": "150.00", "fee": "30.00", "fee_seen": "30.00"}}},
+    {"name": "a reset re-evaluates defaults in dependency order and blanks an input without one", "do": "transition", "transition": "reopen", "as": "alice",
+     "expect": {"state": "open", "version": 4, "values": {"rate": "0.10", "fee": "15.00", "approved_by": null, "memo": null, "copy": null, "amount": "150.00"}}},
+    {"name": "approved again", "do": "transition", "transition": "approve", "as": "alice", "expect": {"state": "approved", "version": 5, "values": {"amount": "250.00"}}},
+    {"name": "a preview reports the rule whose condition is FALSE and the one whose condition errors as not run", "do": "preview", "transition": "close", "as": "alice",
+     "expect": {"state": "closed", "rules": [], "skipped": ["/rules/5", "/rules/6"], "values": {"memo": null}}},
+    {"name": "a condition that errors is FALSE and leaves no trace in the commit", "do": "transition", "transition": "close", "as": "alice",
+     "expect": {"state": "closed", "version": 6, "values": {"memo": null}, "events": ["created", "transition:swap", "transition:approve", "transition:reopen", "transition:approve", "transition:close"]}}
+  ]
+}

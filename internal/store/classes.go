@@ -46,6 +46,9 @@ type class struct {
 	// state of the class, and "" for the "*" row alone, one cell per
 	// variable in declared order; nil when the class declares no rights.
 	rights map[string][]rightCell
+	// rules are the class's rules by trigger (ADR-0043); nil when it has
+	// none, so that a commit of such a class does not look.
+	rules *ruleSet
 
 	w writeStmts
 	r readStmts
@@ -75,7 +78,9 @@ type leaf struct {
 
 // child is the per-version table of a composite variable.
 type child struct {
-	v         *model.Variable
+	v *model.Variable
+	// idx is the variable's place among the class's variables.
+	idx       int
 	def       model.ChildTable
 	table     string
 	leaves    []leaf
@@ -176,7 +181,7 @@ func newClass(cls *model.Class, src []byte) (*class, error) {
 	}
 	for _, ct := range cls.Children {
 		cv := c.byName[strings.ToUpper(ct.Variable)]
-		ch := &child{v: cv.v, def: ct, table: "doc_" + cls.Name + "__" + ct.Variable}
+		ch := &child{v: cv.v, idx: cv.idx, def: ct, table: "doc_" + cls.Name + "__" + ct.Variable}
 		ch.leaves = leavesOf(ct.Columns)
 		for i := range ch.leaves {
 			ch.leaves[i].v = cv.v
@@ -259,6 +264,9 @@ func newClass(cls *model.Class, src []byte) (*class, error) {
 	}
 	for _, name := range cls.DefaultOrder {
 		c.defaults = append(c.defaults, c.byName[strings.ToUpper(name)])
+	}
+	if err := c.layoutRules(); err != nil {
+		return nil, err
 	}
 	if cls.Title != nil {
 		if err := c.bindSlots(cls.Title, "title"); err != nil {

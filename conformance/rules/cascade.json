@@ -1,0 +1,35 @@
+{
+  "suite": "cascade",
+  "description": "Rules do not cascade inside a commit (ADR-0043, item 5): a value a rule sets fires no values_change rule, in that commit or in the eventless ones after it. What follows a commit is the statechart's: the eventless transitions are evaluated over the document the rules left, and each one that fires is a commit of its own with its own rules.",
+  "class": {
+    "name": "Ticket",
+    "variables": {
+      "points": {"type": "number", "default": "0"},
+      "score":  {"type": "number", "default": "0"},
+      "level":  {"type": "text"},
+      "seen":   {"type": "number"}
+    },
+    "states": {"initial": "new", "list": ["new", "hot", "cold"]},
+    "transitions": [
+      {"from": "new", "to": "hot", "guard": "score >= 100"},
+      {"name": "cool", "from": "hot", "to": "cold"}
+    ],
+    "rules": [
+      {"on": "values_change", "variables": ["points"], "do": [{"action": "set", "values": {"score": "points * 10"}}]},
+      {"on": "values_change", "variables": ["score"], "do": [{"action": "emit", "event": "score.changed"}]},
+      {"on": "enter", "state": "hot", "do": [{"action": "set", "values": {"level": "\"hot\"", "seen": "score"}}, {"action": "emit", "event": "ticket.hot"}]}
+    ]
+  },
+  "script": [
+    {"name": "a create raises no values_change", "do": "create", "doc": "t", "values": {"points": 1}, "expect": {"state": "new", "version": 1, "values": {"score": 0}, "events": ["created"]}},
+    {"name": "the value a rule sets fires no rule on that value", "do": "set", "values": {"points": 2},
+     "expect": {"state": "new", "version": 2, "values": {"score": 20}, "events": ["created", "set"]}},
+    {"name": "a caller's change of the same value does", "do": "set", "values": {"score": 30},
+     "expect": {"version": 3, "values": {"score": 30}, "events": ["created", "set", "set", "custom:score.changed"]}},
+    {"name": "a preview shows the eventless commit and its rules", "do": "preview", "values": {"points": 10},
+     "expect": {"state": "hot", "version": 5, "path": ["new", "hot"], "rules": ["/rules/0", "/rules/2"], "values": {"score": 100, "level": "hot", "seen": 100}}},
+    {"name": "the eventless transition reads what the rule left and is a commit with its own rules", "do": "set", "values": {"points": 10},
+     "expect": {"state": "hot", "version": 5, "values": {"score": 100, "level": "hot", "seen": 100}, "history": ["new", "new", "new", "new", "hot"],
+                "events": ["created", "set", "set", "custom:score.changed", "set", "transition:", "custom:ticket.hot"]}}
+  ]
+}

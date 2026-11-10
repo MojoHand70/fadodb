@@ -1,0 +1,44 @@
+{
+  "suite": "triggers",
+  "description": "Every commit raises a fixed list of triggers, decided by what the command did, and the rules of each trigger run in the order the class declares them (ADR-0043, items 1 and 2): create, then enter of the initial state; values_change on a set; values_change, exit, transition, enter on a transition; exit and enter on an eventless transition, which is a commit of its own. Each emit appends a custom event after the event of its commit.",
+  "class": {
+    "name": "Order",
+    "variables": {"amount": {"type": "number"}, "note": {"type": "text"}},
+    "states": {"initial": "draft", "list": ["draft", "review", "small", "done"]},
+    "transitions": [
+      {"name": "submit", "from": "draft", "to": "review"},
+      {"from": "review", "to": "small", "guard": "amount < 10"},
+      {"name": "finish", "from": ["review", "small"], "to": "done"}
+    ],
+    "rules": [
+      {"on": "enter", "state": "review", "do": [{"action": "emit", "event": "review.entered"}]},
+      {"on": "transition", "name": "submit", "do": [{"action": "emit", "event": "submitted"}]},
+      {"on": "exit", "state": "draft", "do": [{"action": "emit", "event": "draft.left"}]},
+      {"on": "values_change", "variables": ["amount"], "do": [{"action": "emit", "event": "amount.changed"}]},
+      {"on": "enter", "state": "draft", "do": [{"action": "emit", "event": "draft.entered"}]},
+      {"on": "create", "do": [{"action": "emit", "event": "order.created"}]},
+      {"on": "exit", "state": "review", "do": [{"action": "emit", "event": "review.left"}]},
+      {"on": "enter", "state": "small", "do": [{"action": "emit", "event": "small.entered"}]},
+      {"on": "values_change", "variables": ["note", "amount"], "do": [{"action": "emit", "event": "something.changed"}]}
+    ]
+  },
+  "script": [
+    {"name": "a create raises create, then enter of the initial state", "do": "create", "doc": "o", "values": {"amount": 50},
+     "expect": {"state": "draft", "version": 1, "events": ["created", "custom:order.created", "custom:draft.entered"]}},
+    {"name": "a set raises values_change of what changed, the rules in declaration order", "do": "set", "values": {"amount": 20},
+     "expect": {"version": 2, "events": ["created", "custom:order.created", "custom:draft.entered", "set", "custom:amount.changed", "custom:something.changed"]}},
+    {"name": "a set that changes nothing commits nothing and raises nothing", "do": "set", "values": {"amount": 20},
+     "expect": {"version": 2, "events": ["created", "custom:order.created", "custom:draft.entered", "set", "custom:amount.changed", "custom:something.changed"]}},
+    {"name": "a rule on several variables runs once when one of them changed", "do": "set", "values": {"note": "x"},
+     "expect": {"version": 3, "events": ["created", "custom:order.created", "custom:draft.entered", "set", "custom:amount.changed", "custom:something.changed", "set", "custom:something.changed"]}},
+    {"name": "a preview names the rules a transition would run, per commit", "do": "preview", "transition": "submit", "values": {"amount": 7},
+     "expect": {"state": "small", "version": 5, "path": ["draft", "review", "small"],
+                "rules": ["/rules/3", "/rules/8", "/rules/2", "/rules/1", "/rules/0", "/rules/6", "/rules/7"]}},
+    {"name": "a transition raises values_change, exit, transition, enter; the eventless one after it exit and enter", "do": "transition", "transition": "submit", "values": {"amount": 7},
+     "expect": {"state": "small", "version": 5, "history": ["draft", "draft", "draft", "review", "small"],
+                "events": ["created", "custom:order.created", "custom:draft.entered", "set", "custom:amount.changed", "custom:something.changed", "set", "custom:something.changed",
+                           "transition:submit", "custom:amount.changed", "custom:something.changed", "custom:draft.left", "custom:submitted", "custom:review.entered",
+                           "transition:", "custom:review.left", "custom:small.entered"]}},
+    {"name": "a transition with no rule on its triggers raises nothing", "do": "preview", "transition": "finish", "expect": {"state": "done", "rules": []}}
+  ]
+}

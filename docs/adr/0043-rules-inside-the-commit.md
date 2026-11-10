@@ -194,6 +194,43 @@ ADR-0044 and the actions that leave the database are ADR-0045.
     `LOOKUP`, and the binding interface: a record of their own before
     that step of the phase. Timers: ADR-0044 puts the question.
 
+## Details settled while building
+
+The first step of the phase built items 1 to 8 and 11, without the
+triggered variables, on 2026-11-10. It settled these points, which the
+items leave open.
+
+- **The auto variables recalculate after each synchronous action** that
+  changed something, not once after the last action of the rule
+  (item 4). The document a rule leaves is the same. A later action of
+  the same rule reads a consistent document, and a formula that fails is
+  the failure of the action that caused it.
+- **A `set` assigns scalar inputs.** An object, an array and a rows
+  variable are refused with `not_supported`, since no formula gives one
+  in this build. A `reset` takes them: an object becomes blank in every
+  field and a composite empty.
+- **An event name** is identifiers joined by single dots, at most 100
+  characters, such as `invoice.flagged`. Its row of `event_docs` has the
+  qualifier `emitted`.
+- **A custom event of a `delete` rule** names the last version as its
+  `before_version` and has no `after_version`, as the delete's own event
+  does: a delete makes no version.
+- **`values_change` across a class version.** A document computed by an
+  older version adopts the current one with its next commit (ADR-0039).
+  A variable changed when it differs from the row as it was, and one the
+  older version did not have was blank.
+- **The path of a failed action** is the field `path` of the refusal. A
+  formula that fails in the recalculation after an action carries the
+  action's path and names its own variable.
+- **The preview's report** is `rules`: each with `commit`, 0 for the
+  command's own and n for its n-th eventless transition, `path`, `ran`,
+  `code` and `actions`; each action with `action`, `queued` and `args`
+  in the shape the action is written in.
+- **Until the next steps.** The `refresh` action is refused with
+  `not_supported` until triggered variables are computed. An action of
+  the outbox is checked by its name, named by a preview as queued, and
+  not queued.
+
 ## Consequences
 
 - Which rules a command fires is a property of the class and the

@@ -50,7 +50,7 @@ const invoice = `{
   "rules": [
     {"on": "enter", "state": "approved", "if": "gross > 10000", "do": [{"action": "http.call", "url": "\"https://hooks.example/approved\""}]},
     {"on": "transition", "name": "cancel", "do": [{"action": "reset", "variables": ["discount"]}]},
-    {"on": "values_change", "variables": ["discount"], "do": [{"action": "emit", "name": "discount_changed"}]}
+    {"on": "values_change", "variables": ["discount"], "do": [{"action": "emit", "event": "discount_changed"}]}
   ],
   "access": {
     "read": "INGROUP(\"finance\") OR owner = USER()",

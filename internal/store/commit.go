@@ -24,11 +24,16 @@ import (
 //  3. the assignments are applied, or the defaults for a new document;
 //  4. the auto variables whose dependencies changed recalculate in the
 //     class's order, and the title with them;
-//  5. the guard of a named transition is evaluated and the eventless
-//     transitions followed from the resulting state (ADR-0040);
-//  6. the current row is upserted, the previous history row closed, the
-//     new history row and the child rows written, the event appended; and
-//     once more for every eventless transition that fired.
+//  5. the guard of a named transition is evaluated and the state changes
+//     (ADR-0040);
+//  6. the rules whose triggers the commit raised run in order, and their
+//     synchronous actions change the document (ADR-0043);
+//  7. the eventless transitions are followed from the resulting state,
+//     one at a time, each a commit of its own with its own rules;
+//  8. the current row is upserted, the previous history row closed, the
+//     new history row and the child rows written, the event appended and
+//     the custom events after it; and once more for every eventless
+//     transition that fired.
 
 type op uint8
 
@@ -65,9 +70,11 @@ type result struct {
 	errs    []*Error
 	// path and transitions are a preview's: the states the command
 	// visited and the named transitions leaving the last one; now the
-	// seconds its formulas saw (ADR-0042).
+	// seconds its formulas saw (ADR-0042); rules the rules whose triggers
+	// it raised (ADR-0043).
 	path        []string
 	transitions []TransitionInfo
+	rules       []RuleRun
 	now         int64
 }
 
@@ -151,7 +158,7 @@ func (s *Store) Preview(ctx context.Context, class, id string, values Values, tr
 	if err != nil {
 		return nil, err
 	}
-	return &Preview{Document: res.doc, Errors: res.errs, Path: res.path, Transitions: res.transitions, Now: res.now}, nil
+	return &Preview{Document: res.doc, Errors: res.errs, Path: res.path, Transitions: res.transitions, Rules: res.rules, Now: res.now}, nil
 }
 
 // commit runs a command in a transaction on the writer.
@@ -295,9 +302,29 @@ func (s *Store) run(ctx context.Context, cmd command, now time.Time) (*result, e
 	eventID := s.ids.next(now)
 	actor := cmd.o.principal.ID
 	day := businessDay(cmd.o, now)
+	evalCtx := &formula.Context{User: actor, Groups: cmd.o.principal.Groups, Now: clock}
+	s.emits = s.emits[:0]
+	rules := ruleRun{c: c, preview: cmd.preview, res: res, evalCtx: evalCtx}
 	if cmd.op == opDelete {
+		// A delete rule sees the document as it was (ADR-0043), under the
+		// current definition's layout; it may emit and queue, nothing else.
+		if c.rules != nil && len(c.rules.delete) > 0 {
+			row := before
+			if beforeClass != c {
+				row = c.adopted(beforeClass, before)
+			}
+			evalCtx.ID = before.id
+			if err := s.fireCommit(&rules, row, commitDelete, "", "", nil); err != nil {
+				return nil, err
+			}
+		}
 		if err := s.writeDelete(ctx, c, before, secs, eventID, actor, cmd.o.key, hash, day); err != nil {
 			return nil, err
+		}
+		if len(s.emits) > 0 {
+			if err := s.writeEmits(ctx, c, 0, before.id, before.version, nil, eventID, actor, day, secs, now); err != nil {
+				return nil, err
+			}
 		}
 		res.eventID = eventID
 		return res, nil
@@ -305,7 +332,8 @@ func (s *Store) run(ctx context.Context, cmd command, now time.Time) (*result, e
 
 	kids := map[*child][]childRow{}
 	dirty := s.dirtyFor(c)
-	evalCtx := &formula.Context{User: actor, Groups: cmd.o.principal.Groups, Now: clock}
+	changedKids := s.changedKids[:0]
+	unchanged := false
 	var after *docRow
 	if cmd.op == opCreate {
 		id := cmd.id
@@ -375,13 +403,7 @@ func (s *Store) run(ctx context.Context, cmd command, now time.Time) (*result, e
 		adopt := beforeClass != c || cmd.op == opMigrate
 		evalCtx.ID, evalCtx.State = before.id, before.state
 		if beforeClass != c {
-			after = &docRow{id: before.id, title: before.title, state: before.state, version: before.version, createdAt: before.createdAt,
-				updatedAt: before.updatedAt, stateEntered: before.stateEntered, vals: make([]formula.Value, len(c.leaves))}
-			for i, l := range c.leaves {
-				if j, ok := beforeClass.leafIndex[strings.ToUpper(l.path)]; ok {
-					after.vals[i] = before.vals[j]
-				}
-			}
+			after = c.adopted(beforeClass, before)
 		} else {
 			after = before.clone()
 		}
@@ -406,7 +428,10 @@ func (s *Store) run(ctx context.Context, cmd command, now time.Time) (*result, e
 		}
 		for ch, rows := range kids {
 			if ch.selectRows == nil {
-				break // a draft has no statements; it adopts anyway
+				// A draft has no statements; it adopts anyway, and a
+				// composite it was given counts as changed.
+				changedKids = append(changedKids, ch)
+				continue
 			}
 			prev, err := ch.load(ctx, ch.selectRows, before.id, before.version)
 			if err != nil {
@@ -414,9 +439,11 @@ func (s *Store) run(ctx context.Context, cmd command, now time.Time) (*result, e
 			}
 			if !sameRows(prev, rows) {
 				changed = true
+				changedKids = append(changedKids, ch)
 			}
 		}
-		unchanged := !changed && !adopt && cmd.op != opTransition
+		s.changedKids = changedKids
+		unchanged = !changed && !adopt && cmd.op != opTransition
 		if unchanged && !cmd.preview {
 			all, err := c.loadChildren(ctx, before.id, before.version, kids, true)
 			if err != nil {
@@ -441,38 +468,88 @@ func (s *Store) run(ctx context.Context, cmd command, now time.Time) (*result, e
 	}
 
 	// The statechart (ADR-0040): the named transition's guard over the
-	// recalculated document, with STATE() the state it leaves; then the
-	// eventless chain from the state the commit leaves the document in.
-	// A migration moves nothing.
+	// recalculated document, with STATE() the state it leaves. A migration
+	// moves nothing.
 	path := s.visits[:0]
 	if c.cls.States != nil {
 		path = append(path, after.state)
 	}
 	ev := eventFor(cmd.op)
+	from := after.state
 	if trans != nil {
-		evalCtx.State = after.state
+		evalCtx.State = from
 		if err := s.guard(c, trans, after, evalCtx); err != nil {
 			return nil, err
 		}
-		ev = eventInfo{kind: EventTransition, qualifier: "transitioned", name: trans.Name, from: after.state, to: trans.To}
+		ev = eventInfo{kind: EventTransition, qualifier: "transitioned", name: trans.Name, from: from, to: trans.To}
 		after.state, after.stateEntered = trans.To, secs
 		path = append(path, after.state)
 	}
-	var hops []string
-	if c.cls.States != nil && cmd.op != opMigrate {
-		base := len(path)
-		var ok bool
-		path, ok = state.Chain(c.cls, after.state, path, func(t *model.Transition, from string) bool {
-			evalCtx.State = from
-			held, _ := s.holds(c, t, after, evalCtx)
-			return held
-		})
-		s.visits = path
-		if !ok {
-			return nil, hintf(CodeTooManyTransitions, "", fmt.Sprintf("more than %d eventless transitions fired after the %s", state.MaxEventless, cmd.op),
-				"the states visited: "+strings.Join(path, " > ")+"; a guard keeps holding, or guards hold in turn")
+
+	// The rules of the command's own commit (ADR-0043), over the document
+	// as computed so far. A preview of a set that changes nothing is no
+	// commit and raises nothing; a migration raises nothing either.
+	if c.rules != nil && !unchanged && cmd.op != opMigrate {
+		var err *Error
+		switch cmd.op {
+		case opCreate:
+			err = s.fireCommit(&rules, after, commitCreate, "", "", nil)
+		case opTransition:
+			err = s.fireCommit(&rules, after, commitTransition, from, trans.Name, s.changesFor(c, beforeClass, before, after, changedKids))
+		default:
+			err = s.fireCommit(&rules, after, commitSet, "", "", s.changesFor(c, beforeClass, before, after, changedKids))
 		}
-		hops = path[base:]
+		if err != nil {
+			return nil, err
+		}
+		for _, ch := range s.emptied {
+			kids[ch] = nil
+		}
+	}
+
+	// The eventless chain, from the state the commit leaves the document
+	// in: every transition that fires is a further commit, the values the
+	// rules of the commit before left, the new state, and its own rules.
+	hops := s.hops[:0]
+	if c.cls.States != nil && cmd.op != opMigrate {
+		cur := after
+		for n := 0; ; n++ {
+			evalCtx.State = cur.state
+			t := state.Next(c.cls, cur.state, func(t *model.Transition) bool {
+				held, _ := s.holds(c, t, cur, evalCtx)
+				return held
+			})
+			if t == nil {
+				break
+			}
+			if n == state.MaxEventless {
+				s.visits, s.hops = path, hops
+				return nil, hintf(CodeTooManyTransitions, "", fmt.Sprintf("more than %d eventless transitions fired after the %s", state.MaxEventless, cmd.op),
+					"the states visited: "+strings.Join(path, " > ")+"; a guard keeps holding, or guards hold in turn")
+			}
+			next := cur.clone()
+			next.version++
+			next.updatedAt = secs
+			next.state, next.stateEntered = t.To, secs
+			path = append(path, next.state)
+			h := hop{row: next}
+			if c.rules != nil {
+				rules.commit = n + 1
+				if err := s.fireCommit(&rules, next, commitHop, cur.state, "", nil); err != nil {
+					s.visits, s.hops = path, hops
+					return nil, err
+				}
+				if len(s.emptied) > 0 {
+					h.kids = make(map[*child][]childRow, len(s.emptied))
+					for _, ch := range s.emptied {
+						h.kids[ch] = nil
+					}
+				}
+			}
+			hops = append(hops, h)
+			cur = next
+		}
+		s.visits, s.hops = path, hops
 	}
 
 	all := kids
@@ -489,10 +566,11 @@ func (s *Store) run(ctx context.Context, cmd command, now time.Time) (*result, e
 	}
 	if cmd.preview {
 		final := after
-		if len(hops) > 0 {
-			final = after.clone()
-			final.version += int64(len(hops))
-			final.state, final.stateEntered = hops[len(hops)-1], secs
+		for _, h := range hops {
+			final = h.row
+			for ch := range h.kids {
+				all[ch] = nil
+			}
 		}
 		res.doc = c.document(final, all)
 		if c.cls.States != nil {
@@ -506,25 +584,57 @@ func (s *Store) run(ctx context.Context, cmd command, now time.Time) (*result, e
 	if err := s.write(ctx, c, before, after, kids, secs, eventID, actor, ev, cmd.o.key, hash, day); err != nil {
 		return nil, err
 	}
-	// Every eventless transition that fired is a further commit: the same
-	// values, the new state, a version and a history row of its own, and
-	// a transition event with no name caused by the command's event.
-	prev := after
-	for _, to := range hops {
-		hop := prev.clone()
-		hop.version++
-		hop.updatedAt = secs
-		hop.state, hop.stateEntered = to, secs
-		hopEvent := s.ids.next(now)
-		if err := s.write(ctx, c, prev, hop, nil, secs, hopEvent, actor, eventInfo{kind: EventTransition, qualifier: "transitioned", from: prev.state, to: to, cause: eventID}, "", "", day); err != nil {
+	if len(s.emits) > 0 {
+		if err := s.writeEmits(ctx, c, 0, after.id, nil, after.version, eventID, actor, day, secs, now); err != nil {
 			return nil, err
 		}
-		prev = hop
+	}
+	// Every eventless transition that fired is a further commit: a version
+	// and a history row of its own, and a transition event with no name
+	// caused by the command's event.
+	prev := after
+	for i, h := range hops {
+		hopEvent := s.ids.next(now)
+		if err := s.write(ctx, c, prev, h.row, h.kids, secs, hopEvent, actor, eventInfo{kind: EventTransition, qualifier: "transitioned", from: prev.state, to: h.row.state, cause: eventID}, "", "", day); err != nil {
+			return nil, err
+		}
+		if len(s.emits) > 0 {
+			if err := s.writeEmits(ctx, c, i+1, h.row.id, nil, h.row.version, hopEvent, actor, day, secs, now); err != nil {
+				return nil, err
+			}
+		}
+		for ch := range h.kids {
+			all[ch] = nil
+		}
+		prev = h.row
 	}
 	res.doc = c.document(prev, all)
 	s.project(&s.wev, c, c, prev, res.doc, cmd.o.principal, clock)
 	res.eventID = eventID
 	return res, nil
+}
+
+// adopted is a row computed by another version of the class, moved to
+// this version's layout by name (ADR-0039): a variable the other version
+// did not have is blank.
+func (c *class) adopted(from *class, row *docRow) *docRow {
+	out := &docRow{id: row.id, title: row.title, state: row.state, version: row.version, createdAt: row.createdAt,
+		updatedAt: row.updatedAt, stateEntered: row.stateEntered, vals: make([]formula.Value, len(c.leaves))}
+	for i, l := range c.leaves {
+		if j, ok := from.leafIndex[strings.ToUpper(l.path)]; ok {
+			out.vals[i] = row.vals[j]
+		}
+	}
+	return out
+}
+
+// changesFor is changes when the class has a rule on values_change, and
+// nil otherwise: no rule would read the answer.
+func (s *Store) changesFor(c, beforeClass *class, before, after *docRow, kids []*child) []bool {
+	if len(c.rules.change) == 0 {
+		return nil
+	}
+	return s.changes(c, beforeClass, before, after, kids)
 }
 
 // eval runs a program over the row.

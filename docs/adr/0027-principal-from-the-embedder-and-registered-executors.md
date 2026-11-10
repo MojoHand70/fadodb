@@ -1,6 +1,6 @@
 # ADR-0027: The principal comes from the embedder; action executors are registered
 
-- Status: Accepted; amends ADR-0009, ADR-0010, ADR-0011
+- Status: Accepted; amends ADR-0009, ADR-0010, ADR-0011; amended by ADR-0044 (how the worker hands a row to an action), ADR-0045 (an action is registered with a definition; `http.call` belongs to the library, behind a switch)
 - Date: 2026-11-06
 
 ## Context

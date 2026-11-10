@@ -1,6 +1,6 @@
 # ADR-0045: Actions are an extension point: definitions, declared HTTP actions, registered Go actions, connections and results
 
-- Status: Proposed; amends ADR-0009 (built-in actions only, external code through `http.call`), ADR-0011 (action definitions join the definitions the command set carries), ADR-0026 (the delivered event is any event, and its schema), ADR-0027 (an action is registered with a definition; `http.call` belongs to the library, behind a switch)
+- Status: Accepted; amends ADR-0009 (built-in actions only, external code through `http.call`), ADR-0011 (action definitions join the definitions the command set carries), ADR-0026 (the delivered event is any event, and its schema), ADR-0027 (an action is registered with a definition; `http.call` belongs to the library, behind a switch)
 - Date: 2026-11-09
 
 ## Context
@@ -154,6 +154,7 @@ JSON in and diagnostics out, and to try it without moving a document.
    process goes on from the answer: a transition guarded by `NOT
    ISBLANK(payment_id)`, a rule on `values_change` of an error variable.
    `create` returns `id`; `transition` returns `state` and `version`.
+   A `create` with `each` carries no `into` (ADR-0044, item 12).
    When the document is frozen or gone, or refuses the values, the
    action's outcome stands and the row records why the result was not
    stored. The depth bound of ADR-0044 counts these commits.
@@ -217,8 +218,8 @@ JSON in and diagnostics out, and to try it without moving a document.
 Budgets. A definition is compiled once, like a class. The commit pays
 the arguments and the outbox row (ADR-0044) and nothing for the kind of
 action. Beside the network, a declared action costs the worker its
-templates, the JSON of the request and the reply, and the mark: proposed
-under 100 µs per call, measured against a server in the same process by
+templates, the JSON of the request and the reply, and the mark: under
+100 µs per call, measured against a server in the same process by
 `BenchmarkDeclaredAction` and published in `docs/perf/v0.4.0.md` with
 the outbox figures. A binary that does not allow outbound calls links no
 HTTP client; the size gate of ADR-0012 measures the `fadodb` binary,

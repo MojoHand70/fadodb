@@ -1,6 +1,6 @@
 # ADR-0043: Rules inside the commit: triggers, synchronous actions and triggered variables
 
-- Status: Proposed; amends ADR-0014 and ADR-0018 (the moment of a triggered value, in the tables and on the wire), ADR-0015 (the order inside a commit, the order of triggered variables, `Reset` and `Refresh` as commands with their events), ADR-0019 (what an error in an action means), ADR-0025 (what a preview reports of the rules), ADR-0039 (rules and a frozen document), ADR-0040 (a hop's commit runs its own triggers and rules)
+- Status: Accepted; amends ADR-0014 and ADR-0018 (the moment of a triggered value, in the tables and on the wire), ADR-0015 (the order inside a commit, the order of triggered variables, `Reset` and `Refresh` as commands with their events), ADR-0019 (what an error in an action means), ADR-0025 (what a preview reports of the rules), ADR-0039 (rules and a frozen document), ADR-0040 (a hop's commit runs its own triggers and rules); amended by ADR-0044 (a `refresh` that names another document is an outbox action; a `create` with `each` queues a row for each element)
 - Date: 2026-11-09
 
 ## Context
@@ -77,6 +77,9 @@ ADR-0044 and the actions that leave the database are ADR-0045.
    | `refresh` | `{"action": "refresh", "variables": ["rate"]}` | recomputes the named triggered variables, each of which lists `refresh` among its triggers |
    | `emit` | `{"action": "emit", "event": "invoice.flagged"}` | appends an event of kind `custom` with that name |
 
+   A `refresh` that carries an `id` names another document and is an
+   outbox action, not one of these (ADR-0044, item 13).
+
    After the synchronous actions of a rule, the auto variables that depend
    on what changed recalculate. The values a rule assigns are checked like
    any others: type and scale, the enum list, the range, `required`. They
@@ -114,9 +117,10 @@ ADR-0044 and the actions that leave the database are ADR-0045.
 
 7. **The other actions are queued by the commit.** For every action of a
    rule that ran that is not synchronous, the commit evaluates the
-   arguments and writes one outbox row in its own transaction (ADR-0044).
-   The action therefore carries the values of the moment that caused it,
-   not of the moment a worker reaches it.
+   arguments and writes one outbox row in its own transaction (ADR-0044),
+   or one for each element when a `create` carries `each` (ADR-0044,
+   item 12). The action therefore carries the values of the moment that
+   caused it, not of the moment a worker reaches it.
 
 8. **A frozen document computes nothing.** A move between terminal states
    raises its `exit`, `transition` and `enter` triggers; the conditions

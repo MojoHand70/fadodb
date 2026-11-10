@@ -1,6 +1,6 @@
 # ADR-0018: JSON for definitions and interchange: class metadata, layouts and the wire format
 
-- Status: Accepted; amended by ADR-0022 (exact values and money on the wire), ADR-0023 (dates and datetimes on the wire, enum values), ADR-0028 (the rights table in the bundle), ADR-0031 (objects on the wire and schemas in the bundle), ADR-0032 (presentation block and object components), ADR-0033 (attachments are File values, not side objects), ADR-0034 (min and max in the bundle), ADR-0039 (what a redefinition may change)
+- Status: Accepted; amended by ADR-0022 (exact values and money on the wire), ADR-0023 (dates and datetimes on the wire, enum values), ADR-0028 (the rights table in the bundle), ADR-0031 (objects on the wire and schemas in the bundle), ADR-0032 (presentation block and object components), ADR-0033 (attachments are File values, not side objects), ADR-0034 (min and max in the bundle), ADR-0039 (what a redefinition may change), ADR-0043 (the moment of a triggered value on the wire)
 - Date: 2026-11-06
 
 ## Context

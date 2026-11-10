@@ -1,6 +1,6 @@
 # ADR-0044: The outbox: what a commit queues, the worker and the engine's own actions
 
-- Status: Proposed, with three questions open for the owner; amends ADR-0006 (which outcomes of an action are events), ADR-0009 (the row, the order, which failures are retried, exactly once for the engine's own actions, a bound on chains), ADR-0026 (the engine's commands carry keys under a reserved prefix), ADR-0027 (how the worker hands a row to an action)
+- Status: Accepted, with the question of time open; amends ADR-0006 (which outcomes of an action are events), ADR-0009 (the row, the order, which failures are retried, exactly once for the engine's own actions, a bound on chains), ADR-0026 (the engine's commands carry keys under a reserved prefix), ADR-0027 (how the worker hands a row to an action), ADR-0043 (a `refresh` that names another document is an outbox action; a `create` with `each` queues a row for each element)
 - Date: 2026-11-09
 
 ## Context
@@ -34,9 +34,9 @@ simulation runs the queue at a moment it chooses.
    the commit made; the class version and the path of the rule; the
    action's name; `args`, the evaluated arguments as JSON in the wire
    shape of ADR-0018; the command's principal, as id, groups and the
-   admin flag; `depth` (item 6); `status`, one of `pending`, `done` and
-   `dead`; `attempts`; `due_at`; `last_error`, a code and a message;
-   `created_at` and `finished_at`. The key of ADR-0009 is the pair,
+   admin flag (item 11); `depth` (item 6); `status`, one of `pending`,
+   `done` and `dead`; `attempts`; `due_at`; `last_error`, a code and a
+   message; `created_at` and `finished_at`. The key of ADR-0009 is the pair,
    written `<event_id>:<idx>`. A done row is kept: it is the record of
    what was asked, with its arguments.
 
@@ -76,8 +76,9 @@ simulation runs the queue at a moment it chooses.
    `<Class>_events`. The attempts in between are state of the row, not
    events: the log says what happened, once.
 
-5. **Exactly once for the engine's own actions.** `create`, `transition`
-   and the `table.*` actions write to the database the outbox is in. The
+5. **Exactly once for the engine's own actions.** `create`,
+   `transition`, `refresh` and the `table.*` actions write to the
+   database the outbox is in. The
    worker makes the action's commit, marks the row done and appends
    `action_run` in one transaction. A crash before it leaves the row
    pending and nothing done; a crash after it leaves both. The commit
@@ -98,8 +99,9 @@ simulation runs the queue at a moment it chooses.
 
    | Action | Arguments | Does |
    |---|---|---|
-   | `create` | `class`, `values`, optionally `id` | creates a document |
+   | `create` | `class`, `values`, optionally `id`, optionally `each` with `as` (item 12) | creates a document, or one for each element of a list |
    | `transition` | `class` (the rule's own by default), `id`, `name`, optionally `values` | takes a named transition on a document |
+   | `refresh` | `class` (the rule's own by default), `id`, optionally `variables` | sends `Refresh` to another document (item 13) |
    | `table.insert` | `table`, `row` | inserts one row; an existing key is the refusal `duplicate` |
    | `table.update` | `table`, `key`, `set` | changes the row with that key; none is `unknown_row` |
    | `table.delete` | `table`, `key` | deletes the row with that key |
@@ -134,62 +136,139 @@ simulation runs the queue at a moment it chooses.
     database reached a test receiver at least once, each time with the
     same key.
 
-## Open questions
+11. **An action runs as the person whose command queued it.** The owner
+    ruled this on 2026-11-10; the draft of this record had recommended
+    the other answer. The worker runs `create`, `transition`, `refresh`
+    and the `table.*` actions as the principal on the row: the id, the
+    groups and the admin flag the command had when its commit queued the
+    row. The engine keeps no users (ADR-0027), so the groups are those of
+    that moment, not of the moment the action runs. The field rights and
+    the transition rules of the target (ADR-0041) apply as if the person
+    had sent the command, and so will the access rules of Phase 5: a
+    rule never does what the person who set it off may not do. What they
+    may not do is a refusal (item 4): the row is dead at once with
+    `forbidden` and the variable or the transition it names. An
+    administrator's command queues actions with an administrator's
+    bypass. A command without a principal queues actions that run as
+    nobody (ADR-0041, item 6). A chain keeps its principal: the worker
+    makes the action's commit as the row's principal, so the rows that
+    commit queues carry the same one.
 
-These three are the owner's to rule. Each states what the rest of the
-record assumes until he does.
+    The rule is about the commands the worker sends. What a rule sets on
+    its own document inside the commit (ADR-0043, item 4) and the result
+    an action writes back (ADR-0045, item 8) stay the engine's writes,
+    as the value of a formula is. A table has no rights of its own
+    today, so a table action is refused only for what the table refuses.
 
-**A. Whose rights does an action on another document run with?** A
-person approves an invoice and the class's rule creates a receipt. The
-row keeps the person's id, groups and admin flag, and the receipt's
-events name the person as actor either way, with the cause and the
-`outbox:` key showing that a rule did it. The question is whether the
-access rules and write rights of `Receipt` apply to that person.
+    Rejected: the class acts, with the person's id on the events and an
+    administrator's bypass. A class could then say "nobody creates a
+    receipt by hand; paying an invoice makes one", and a rule could do
+    what nobody who sets it off may.
 
-- *The class acts.* The worker runs the action with the person's id and
-  groups and the admin bypass. Access rules and write rights do not
-  apply; guards, which nothing bypasses, still do. "Nobody creates a
-  receipt by hand; paying an invoice makes one" can be said. A gate that
-  must hold against a rule is written as a guard.
-- *The person acts.* The worker runs the action as the person. A rule
-  can never do what the person who set it off could not, and every
-  consequence needs its rights granted to everyone who may cause it; a
-  refusal is a dead row with `forbidden`.
+12. **`each` on `create`**, ruled in on 2026-11-10. One child per element
+    of a list:
 
-Recommended: the class acts. A rule is the instruction of whoever
-defined the class, and ADR-0028 already says rights govern what a
-principal sees and sets, not what the engine computes. The record
-assumes it.
+    ```json
+    {"action": "create", "class": "Approval", "each": "approvers", "as": "approver",
+     "values": {"invoice": "ID()", "approver": "approver"}}
+    ```
 
-**B. Do timers belong to this phase?** The architecture page calls
-timers a 0.x feature that runs through the outbox scheduler and assigns
-them to no phase. The mechanism they need is the `due_at` of item 1.
-A timed transition would be `"after": "7d"` on a named transition: a row
-queued when the document enters the source state, which takes the
-transition when due and is cancelled without an event when the document
-has left the state. An action could carry `after` the same way. Timers
-would run by the database's clock, so a simulation is a copy of the file
-opened with `Options.Now` and a `Drain`: commits need no clock of their
-own (ADR-0042 stands). Without timers, time moves a process only when an
-agent polls with a filter on `STATE_ENTERED_AT` and sends the command.
+    `each` names an `array` or a `rows` variable of the rule's class;
+    any other variable is `type_mismatch`. `as`, required with it, names
+    the element for the formulas under `values` and `id`; the name of a
+    variable of the class is `duplicate`. An element of an array is a
+    value of the array's type. An element of a rows variable is an
+    object of its schema, read by field (`line.sku`, ADR-0031). The
+    commit evaluates the arguments once for each element, in the order
+    of the list, and writes one row for each with the next `idx` of
+    item 1. Every child therefore has its own key, its own attempts and
+    its own `action_run` or `action_failed`.
+    A blank or empty list queues nothing. The cap on a composite, 10,000
+    elements (ADR-0013), is the bound. An argument that errors for one
+    element refuses the command and names the element's position
+    (ADR-0043, item 6). `into` beside `each` is refused at definition
+    time with `not_allowed`: many results have no one variable to go to.
+    The preview lists every row.
+
+13. **`refresh` of another document**, ruled in on 2026-11-10. A
+    `refresh` that carries an `id` is an outbox action:
+
+    ```json
+    {"action": "refresh", "class": "Invoice", "id": "invoice", "variables": ["approvals"]}
+    ```
+
+    The worker sends the `Refresh` command of ADR-0043, item 10, to that
+    document: the named triggered variables recompute, or every one that
+    lists `refresh` when none is named; the commit is always made; and
+    the eventless transitions follow it. A child that has finished wakes
+    its parent this way without knowing the parent's transitions, and
+    the parent moves by its own guards. It runs exactly once (item 5),
+    as the person (item 11), under the depth bound (item 6), and its
+    class and variables are checked when the rule's class is defined
+    (item 7). `Refresh` asks no write right, so until the access rules
+    of Phase 5 anybody's child may wake its parent. A target in a
+    terminal state refuses with `terminal`, and the row is dead with it:
+    a child that reports to a closed parent is recorded, not retried.
+    Without an `id`, `refresh` stays the synchronous action of ADR-0043
+    on the rule's own document, and a `class` without an `id` is
+    `missing`.
+
+    The count a parent's guard reads, a `LOOKUP` over its children,
+    needs documents as a lookup source. That is in the record on
+    `QUERY`, and the pattern of parallel approvals is whole only with
+    it.
+
+## Rulings and the open question
+
+The draft of this record put three questions to the owner. He ruled on
+two of them on 2026-11-10. An action on another document runs as the
+person, which is item 11; the draft had recommended that the class act.
+Both additions for parallel approvals are in, which are items 12 and 13.
+The third question is open.
+
+**Time.** The draft asked whether timers belong to this phase. The
+owner's answer is that time has two dimensions here:
+
+1. *Conditions on time*: whether a document could, or should, move from
+   one state to another.
+2. *Timers and a scheduler*: firing a transition at a given time, with
+   its retries.
+
+What the accepted records give the first, for one document. A guard is
+a formula and may read `TODAY()`, `NOW()` and any date the document
+holds. `Transitions`, at the database's clock or at a moment given with
+`At` (ADR-0042), says whether the document could move. An eventless
+transition with such a guard, `TODAY() > due`, says that it should, and
+a preview that changes nothing shows at the same moment where it would
+land. The move itself is made when a commit touches the document
+(ADR-0040, item 4): at the next `Set` or `Refresh`, not when the time
+comes. Two things are missing. The moment a document entered its state
+is a column a filter reads (ADR-0038); ADR-0013 lists it among the
+system variables, and no formula reads it yet, so "seven days in this
+state" cannot be written as a guard. And nothing
+lists the documents of a class whose eventless transition would fire
+now, so a caller cannot ask what is due without asking document by
+document.
+
+What they give the second: nothing fires by itself. The mechanism it
+needs is the `due_at` of item 1: a row queued when a document enters a
+state, which sends the move when it is due, is retried like any row, and
+is cancelled without an event when the document has left the state. A
+timer needs its moment stated, as `"after": "7d"` or as a date the
+document holds, because the engine cannot solve a guard for the time at
+which it turns true. It would run by the database's clock, so a
+simulation is a copy of the file opened with `Options.Now` and a
+`Drain`, and commits need no clock of their own (ADR-0042 stands). Under
+item 11 its row would carry the principal of the commit that queued it.
 `schedule` on a rule and `schedule:` on a variable recompute many
 documents at once and stay with the set-wise work of Phase 8 either way.
 
-Recommended: timed transitions and `after` on actions in this phase, as
-its last step before the measurements. The record assumes neither.
-
-**C. Parallel approvals through child documents.** With this record a
-rule can create a child per approval and a child's rule can move its
-parent. Two things the pattern needs are missing. One child per element
-of a list: an `each` on `create` that names an array or rows variable
-and runs the action once per element. And a way for a child to wake its
-parent without a named transition: `refresh` aimed at another document,
-as an outbox action, after which the parent's eventless transition sees
-the new count. The count itself, a `LOOKUP` over the children, needs
-documents as a lookup source, which is in the record on `QUERY`.
-
-Recommended: both, small as they are, once the worker runs; or neither,
-and the pattern waits. The record assumes neither.
+Not ruled: which of the two this phase builds. Recommended: the first in
+this phase, as the time in state for guards and a listing of what is due
+at a moment the caller chooses, since that is what an agent needs to
+move a process by time with no scheduler, and what a simulation asks;
+the second on top of it, as the last step of the phase or later. The
+record assumes neither.
 
 ## Consequences
 
@@ -208,6 +287,14 @@ and the pattern waits. The record assumes neither.
 - The queue runs under the database's clock, so the previews of ADR-0042
   and a copy of the file cover what happens later as well as what
   happens now.
+- What a rule does to other documents is bounded by the rights of
+  whoever sets it off. The person is not known when a class is defined,
+  so a missing right is found at run time, as a dead row with
+  `forbidden` the first time such a person makes the move. The author
+  grants the target's rights to every group that may cause the action,
+  and a class cannot keep for its rules what it denies to people.
+- One commit queues as many rows as an `each` has elements, and each
+  child is created, retried and reported by itself.
 - A redefinition can be refused because of another class's rule. The
   diagnostic names the rule, and the fix is to change that rule first.
 - The outbox grows with the events. The retention command of ADR-0006
@@ -218,10 +305,12 @@ and the pattern waits. The record assumes neither.
 Budgets. Queuing an action is one insert in the commit's transaction: a
 transition that queues one action stays within the 2 ms p99 of ADR-0006,
 and the campaign gains that row. ADR-0009 asked for the throughput to be
-measured and published without naming a figure; proposed here: at least
-2,000 actions per second for an engine action and for a registered
+measured and published without naming a figure; this record names it:
+at least 2,000 actions per second for an engine action and for a registered
 action that does nothing, the figure ADR-0012 gives transitions, each
 measured with `Drain` over 100,000 rows on disk. The worker finds the
 next due row through an index on `(status, due_at)` and never scans the
 done rows. `BenchmarkOutbox` measures the insert and the run and joins
-the gate. Published as `docs/perf/v0.4.0.md`.
+the gate. A `create` with `each` pays one insert for each element; a
+transition that queues ten children through it is measured and
+published, not budgeted. Published as `docs/perf/v0.4.0.md`.

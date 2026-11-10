@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/MojoHand70/fadodb/internal/formula"
 	"github.com/MojoHand70/fadodb/internal/model"
 )
 
@@ -85,6 +86,105 @@ func (s *Store) redefinitionDiagnostics(ctx context.Context, old *class, cls *mo
 		}
 	}
 	return diags
+}
+
+// brokenRules says which rules of other classes a new version of a class,
+// or of a table, would break (ADR-0044, item 7): an action of theirs
+// names a variable, a transition or a column the new version lacks, or
+// gives one a value its new type does not take. Each is refused with
+// not_allowed naming the rule, and the fix is to change that rule first.
+// It compiles every class whose rules act on the target against the
+// stored definitions and against the new one, and reports what only the
+// new one breaks. An input the new version requires and a create does not
+// give is not among them: that rule cannot be changed first, since the
+// variable does not exist yet, and its action is refused with required
+// when it runs. The caller holds cmu.
+func (s *Store) brokenRules(cls *model.Class, tbl *model.Table) model.Diagnostics {
+	env := s.env()
+	next, target := env, ""
+	if cls != nil {
+		target = cls.Name
+		next.Classes = func(name string) (*model.Class, bool) {
+			if strings.EqualFold(name, cls.Name) {
+				return cls, true
+			}
+			return env.Classes(name)
+		}
+	} else {
+		target = tbl.Name
+		set := formula.NewSourceSet()
+		for _, name := range s.tableOrder {
+			set.Add(s.tables[strings.ToUpper(name)].src)
+		}
+		set.Add(tbl.Source())
+		next.Sources = set
+	}
+	var out model.Diagnostics
+	for _, name := range s.order {
+		dep := s.classes[strings.ToUpper(name)]
+		// The rules of the class itself compile with its new definition.
+		if cls != nil && strings.EqualFold(name, target) || !actsOn(dep.cls, target, tbl != nil) {
+			continue
+		}
+		_, before := model.DefineIn(dep.json, env)
+		_, after := model.DefineIn(dep.json, next)
+		had := map[string]bool{}
+		for _, d := range before {
+			had[d.Code+" "+d.Path] = true
+		}
+		for _, d := range after {
+			if had[d.Code+" "+d.Path] || !strings.HasPrefix(d.Path, "/rules/") || d.Code == model.CodeMissing && strings.HasSuffix(d.Path, "/values") {
+				continue
+			}
+			out = append(out, model.Diagnostic{Code: model.CodeNotAllowed, Path: changedPath(d.Path), Pos: -1,
+				Message: "it would break a rule of the class " + dep.cls.Name + ", at " + d.Path + ": " + d.Message,
+				Hint:    "change that rule first; a redefinition may not break a rule of another class (ADR-0044)"})
+		}
+	}
+	return out
+}
+
+// actsOn reports whether a rule of the class has an outbox action on the
+// class, or with table on the table, of that name.
+func actsOn(cls *model.Class, target string, table bool) bool {
+	for _, r := range cls.Rules {
+		for _, a := range r.Actions {
+			if a.Queued && strings.EqualFold(a.Target, target) && table == strings.HasPrefix(a.Name, "table.") {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// changedPath is where, in the definition of a class or a table, the
+// thing is that a finding at path in another class's action is about:
+// /rules/0/do/1/values/amount is about /variables/amount.
+func changedPath(path string) string {
+	parts := strings.Split(path, "/") // "", rules, i, do, j, part, name
+	if len(parts) < 6 {
+		return ""
+	}
+	name := ""
+	if len(parts) > 6 {
+		name = "/" + parts[6]
+	}
+	switch parts[5] {
+	case "values":
+		return "/variables" + name
+	case "variables":
+		return "/variables"
+	case "name":
+		return "/transitions"
+	case "class":
+		return "/states"
+	case "row", "key", "set":
+		if name == "" {
+			return "/key"
+		}
+		return "/columns" + name
+	}
+	return ""
 }
 
 // alterDDL is the DDL that takes the tables of the old version to the

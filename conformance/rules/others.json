@@ -1,0 +1,98 @@
+{
+  "suite": "others",
+  "description": "A rule acts on another document through the outbox (ADR-0044, items 7, 11 and 13). A transition action takes a named transition of the document its id names, with values; a refresh that carries an id sends the Refresh command to that document, which then moves by its own guards. Each runs exactly once, as the person whose command queued it: the access rule of the transition applies to that person. What the target refuses is an answer, recorded once and never asked again: forbidden, wrong_state, terminal, unknown_document. Without a class the action names a document of the rule's own class, and the action its commit queues is one deeper in the chain.",
+  "clock": "2026-03-01 12:00:00",
+  "classes": [
+    {"name": "Shipment",
+     "variables": {"carrier": {"type": "text"}, "released_by": {"type": "text"}},
+     "states": {"initial": "held", "list": ["held", "released"]},
+     "transitions": [{"name": "release", "from": "held", "to": "released"}],
+     "access": {"transition": {"release": "INGROUP(\"finance\")"}},
+     "rules": [{"on": "transition", "name": "release", "do": [{"action": "set", "values": {"released_by": "USER()"}}]}]},
+    {"name": "Project",
+     "variables": {"nudged": {"formula": "TRUE", "mode": "triggered", "on": ["refresh"]}, "other": {"formula": "NOW()", "mode": "triggered", "on": ["refresh"]}},
+     "states": {"initial": "waiting", "list": ["waiting", "woken", "closed"], "final": ["closed"]},
+     "transitions": [{"from": "waiting", "to": "woken", "guard": "nudged"}, {"name": "close", "from": ["waiting", "woken"], "to": "closed"}]}
+  ],
+  "class": {
+    "name": "Order",
+    "variables": {"shipment": {"type": "text"}, "project": {"type": "text"}, "carrier": {"type": "text", "default": "\"post\""}},
+    "states": {"initial": "open", "list": ["open", "paid", "done"]},
+    "transitions": [
+      {"name": "pay", "from": "open", "to": "paid"},
+      {"name": "finish", "from": ["open", "paid"], "to": "done"},
+      {"name": "auto", "from": "open", "to": "open"}
+    ],
+    "rules": [
+      {"on": "enter", "state": "paid",
+       "do": [{"action": "transition", "class": "Shipment", "id": "shipment", "name": "release", "values": {"carrier": "carrier"}}]},
+      {"on": "enter", "state": "done",
+       "do": [{"action": "refresh", "class": "Project", "id": "project", "variables": ["nudged"]}]},
+      {"on": "transition", "name": "auto",
+       "do": [{"action": "transition", "id": "ID()", "name": "pay"}]}
+    ]
+  },
+  "principals": {
+    "fin":   {"id": "fin", "groups": ["finance"]},
+    "clerk": {"id": "clerk", "groups": ["clerks"]}
+  },
+  "script": [
+    {"do": "create", "class": "Shipment", "id": "S-1", "expect": {"state": "held", "version": 1}},
+    {"do": "create", "class": "Shipment", "id": "S-2", "expect": {"state": "held", "version": 1}},
+    {"do": "create", "class": "Shipment", "id": "S-3", "expect": {"state": "held", "version": 1}},
+    {"do": "create", "class": "Project", "id": "P-1", "expect": {"state": "waiting", "version": 1}},
+    {"do": "create", "class": "Project", "id": "P-2", "expect": {"state": "waiting", "version": 1}},
+    {"do": "transition", "class": "Project", "id": "P-2", "transition": "close", "expect": {"state": "closed", "version": 2}},
+
+    {"name": "paying an order queues the release of its shipment, with the values of that moment", "do": "create", "doc": "a", "as": "fin", "values": {"shipment": "S-1", "project": "P-1"}, "expect": {"version": 1}},
+    {"do": "preview", "doc": "a", "as": "fin", "transition": "pay",
+     "expect": {"state": "paid", "queued": [{"action": "transition", "args": {"class": "Shipment", "id": "S-1", "name": "release", "values": {"carrier": "post"}}}], "outbox": []}},
+    {"do": "transition", "doc": "a", "as": "fin", "transition": "pay",
+     "expect": {"state": "paid", "version": 2,
+                "outbox": [{"action": "transition", "status": "pending", "depth": 0, "as": "fin", "args": {"class": "Shipment", "id": "S-1", "name": "release", "values": {"carrier": "post"}}}]}},
+    {"name": "the worker takes the transition as the person: the shipment's access rule lets finance through, and its own rule reads USER()", "do": "drain", "doc": "a",
+     "expect": {"drained": 1, "outbox": [{"action": "transition", "status": "done", "attempts": 1}], "events": ["created", "transition:pay", "action_run:transition"]}},
+    {"do": "get", "class": "Shipment", "id": "S-1",
+     "expect": {"state": "released", "version": 2, "values": {"carrier": "post", "released_by": "fin"}, "events": ["created", "transition:release"]}},
+
+    {"name": "a clerk may not release a shipment, so the clerk's payment cannot either: the action is dead with forbidden", "do": "create", "doc": "b", "as": "clerk", "values": {"shipment": "S-2"}, "expect": {"version": 1}},
+    {"do": "transition", "doc": "b", "as": "clerk", "transition": "pay", "expect": {"state": "paid", "version": 2}},
+    {"do": "drain", "doc": "b",
+     "expect": {"drained": 1, "outbox": [{"action": "transition", "status": "dead", "code": "forbidden", "attempts": 1, "as": "clerk"}],
+                "events": ["created", "transition:pay", "action_failed:transition"]}},
+    {"do": "get", "class": "Shipment", "id": "S-2", "expect": {"state": "held", "version": 1}},
+
+    {"name": "a shipment that has left the state is a refusal, recorded and not asked again", "do": "create", "doc": "c", "as": "fin", "values": {"shipment": "S-1"}, "expect": {"version": 1}},
+    {"do": "transition", "doc": "c", "as": "fin", "transition": "pay", "expect": {"state": "paid"}},
+    {"do": "drain", "doc": "c", "expect": {"drained": 1, "outbox": [{"action": "transition", "status": "dead", "code": "wrong_state", "attempts": 1}]}},
+    {"do": "drain", "expect": {"drained": 0}},
+
+    {"name": "an id that is blank, or names no document, is a refusal too", "do": "create", "doc": "d", "as": "fin", "expect": {"version": 1}},
+    {"do": "transition", "doc": "d", "as": "fin", "transition": "pay", "expect": {"state": "paid"}},
+    {"do": "create", "doc": "e", "as": "fin", "values": {"shipment": "S-9"}, "expect": {"version": 1}},
+    {"do": "transition", "doc": "e", "as": "fin", "transition": "pay", "expect": {"state": "paid"}},
+    {"do": "drain", "doc": "d", "expect": {"drained": 2, "outbox": [{"action": "transition", "status": "dead", "code": "unknown_document"}]}},
+    {"do": "get", "doc": "e", "expect": {"outbox": [{"action": "transition", "status": "dead", "code": "unknown_document"}]}},
+
+    {"name": "finishing an order wakes its project: the refresh recomputes what it names and the project moves by its own guard", "do": "transition", "doc": "a", "as": "fin", "transition": "finish",
+     "expect": {"state": "done", "version": 3,
+                "outbox": [{"action": "transition", "status": "done"}, {"action": "refresh", "status": "pending", "args": {"class": "Project", "id": "P-1", "variables": ["nudged"]}}]}},
+    {"do": "drain", "doc": "a",
+     "expect": {"drained": 1, "events": ["created", "transition:pay", "action_run:transition", "transition:finish", "action_run:refresh"]}},
+    {"do": "get", "class": "Project", "id": "P-1",
+     "expect": {"state": "woken", "version": 3, "values": {"nudged": true, "other": null}, "history": ["waiting", "waiting", "woken"], "events": ["created", "refresh", "transition:"]}},
+
+    {"name": "a project in a terminal state refuses: a child that reports to a closed parent is recorded, not retried", "do": "create", "doc": "f", "as": "fin", "values": {"project": "P-2"}, "expect": {"version": 1}},
+    {"do": "transition", "doc": "f", "as": "fin", "transition": "finish", "expect": {"state": "done"}},
+    {"do": "drain", "doc": "f", "expect": {"drained": 1, "outbox": [{"action": "refresh", "status": "dead", "code": "terminal"}], "events": ["created", "transition:finish", "action_failed:refresh"]}},
+
+    {"name": "without a class the action names a document of the rule's own class: the order pays itself", "do": "create", "doc": "g", "as": "fin", "values": {"shipment": "S-3"}, "expect": {"version": 1}},
+    {"do": "transition", "doc": "g", "as": "fin", "transition": "auto",
+     "expect": {"state": "open", "version": 2, "outbox": [{"action": "transition", "status": "pending", "depth": 0}]}},
+    {"name": "and the action its commit queues is one deeper in the chain", "do": "drain", "doc": "g",
+     "expect": {"drained": 2, "state": "", "outbox": [{"action": "transition", "status": "done", "depth": 0}, {"action": "transition", "status": "done", "depth": 1, "as": "fin"}],
+                "events": ["created", "transition:auto", "transition:pay", "action_run:transition", "action_run:transition"]}},
+    {"do": "get", "doc": "g", "expect": {"state": "paid", "version": 3}},
+    {"do": "get", "class": "Shipment", "id": "S-3", "expect": {"state": "released", "values": {"released_by": "fin"}}}
+  ]
+}

@@ -1,0 +1,84 @@
+{
+  "suite": "tables",
+  "description": "A rule changes one row of an explicit table through the outbox (ADR-0044, item 7): table.insert adds a row, table.update changes the columns it names of the row with a key, table.delete deletes the row with a key. The row, the key and the set are formulas over the document that fires the rule, evaluated by the commit. An insert of a key the table has is refused with duplicate and an update of a key it lacks with unknown_row; a delete of a key it lacks deletes nothing and is done; a blank key is refused with required. A table action is no event of a table: its action_run on the document that caused it is the record. The next lookup reads the table as the action left it.",
+  "clock": "2026-03-01 12:00:00",
+  "tables": [
+    {"name": "Rates", "columns": {"code": "text", "rate": "decimal(4)", "note": "text"}, "key": ["code"]}
+  ],
+  "class": {
+    "name": "Quote",
+    "variables": {
+      "currency": {"type": "text"},
+      "rate": {"type": "decimal(4)"},
+      "note": {"type": "text"},
+      "known": {"formula": "LOOKUP(Rates, rate, code = THIS.currency)"}
+    },
+    "states": {"initial": "draft", "list": ["draft", "added", "changed", "dropped"]},
+    "transitions": [
+      {"name": "add", "from": ["draft", "added", "changed", "dropped"], "to": "added"},
+      {"name": "change", "from": ["draft", "added", "changed", "dropped"], "to": "changed"},
+      {"name": "drop", "from": ["draft", "added", "changed", "dropped"], "to": "dropped"}
+    ],
+    "rules": [
+      {"on": "transition", "name": "add",
+       "do": [{"action": "table.insert", "table": "Rates", "row": {"code": "currency", "rate": "rate", "note": "note"}}]},
+      {"on": "transition", "name": "change",
+       "do": [{"action": "table.update", "table": "Rates", "key": {"code": "currency"}, "set": {"rate": "rate"}}]},
+      {"on": "transition", "name": "drop",
+       "do": [{"action": "table.delete", "table": "Rates", "key": {"code": "currency"}}]}
+    ]
+  },
+  "script": [
+    {"do": "import", "table": "Rates", "rows": [{"code": "USD", "rate": "3.9876"}], "expect": {}},
+    {"name": "no rate for the euro yet", "do": "create", "doc": "eur", "values": {"currency": "EUR", "rate": "4.3210", "note": "first"},
+     "expect": {"state": "draft", "version": 1, "values": {"known": null}}},
+    {"name": "the preview shows the row the commit would queue", "do": "preview", "doc": "eur", "transition": "add",
+     "expect": {"state": "added", "queued": [{"action": "table.insert", "args": {"table": "Rates", "row": {"code": "EUR", "rate": "4.3210", "note": "first"}}}]}},
+    {"name": "the commit queues the insert, with the row of that moment", "do": "transition", "doc": "eur", "transition": "add",
+     "expect": {"state": "added", "version": 2,
+                "outbox": [{"action": "table.insert", "status": "pending", "args": {"table": "Rates", "row": {"code": "EUR", "rate": "4.3210", "note": "first"}}}]}},
+    {"name": "nothing is in the table until the worker runs", "do": "rows", "table": "Rates", "expect": {"rows": [{"code": "USD", "rate": "3.9876", "note": null}]}},
+    {"do": "drain", "doc": "eur",
+     "expect": {"drained": 1, "outbox": [{"action": "table.insert", "status": "done", "attempts": 1}], "events": ["created", "transition:add", "action_run:table.insert"]}},
+    {"do": "rows", "table": "Rates", "expect": {"rows": [{"code": "EUR", "rate": "4.3210", "note": "first"}, {"code": "USD", "rate": "3.9876", "note": null}]}},
+    {"name": "the next lookup reads the new row", "do": "create", "doc": "second", "values": {"currency": "EUR"}, "expect": {"values": {"known": "4.3210"}}},
+
+    {"name": "an insert of a key the table has is refused", "do": "transition", "doc": "eur", "transition": "add", "values": {"rate": "9"}, "expect": {"state": "added", "version": 3}},
+    {"do": "drain", "doc": "eur",
+     "expect": {"drained": 1, "outbox": [{"action": "table.insert", "status": "done"}, {"action": "table.insert", "status": "dead", "code": "duplicate", "attempts": 1}],
+                "events": ["created", "transition:add", "action_run:table.insert", "transition:add", "action_failed:table.insert"]}},
+    {"do": "rows", "table": "Rates", "expect": {"rows": [{"code": "EUR", "rate": "4.3210", "note": "first"}, {"code": "USD", "rate": "3.9876", "note": null}]}},
+
+    {"name": "an update changes the columns it names and leaves the others", "do": "transition", "doc": "eur", "transition": "change", "values": {"rate": "4.5", "note": "ignored"},
+     "expect": {"state": "changed", "version": 4}},
+    {"do": "drain", "expect": {"drained": 1}},
+    {"do": "rows", "table": "Rates", "expect": {"rows": [{"code": "EUR", "rate": "4.5000", "note": "first"}, {"code": "USD", "rate": "3.9876", "note": null}]}},
+    {"do": "create", "doc": "third", "values": {"currency": "EUR"}, "expect": {"values": {"known": "4.5000"}}},
+
+    {"name": "an update of a key the table lacks is refused", "do": "create", "doc": "gbp", "values": {"currency": "GBP", "rate": "5"}, "expect": {"version": 1}},
+    {"do": "transition", "doc": "gbp", "transition": "change", "expect": {"state": "changed"}},
+    {"do": "drain", "doc": "gbp", "expect": {"drained": 1, "outbox": [{"action": "table.update", "status": "dead", "code": "unknown_row"}]}},
+    {"name": "a delete of a key the table lacks deletes nothing and is done", "do": "transition", "doc": "gbp", "transition": "drop", "expect": {"state": "dropped"}},
+    {"do": "drain", "doc": "gbp",
+     "expect": {"drained": 1, "outbox": [{"action": "table.update", "status": "dead", "code": "unknown_row"}, {"action": "table.delete", "status": "done"}]}},
+    {"do": "rows", "table": "Rates", "expect": {"rows": [{"code": "EUR", "rate": "4.5000", "note": "first"}, {"code": "USD", "rate": "3.9876", "note": null}]}},
+
+    {"name": "a delete removes the row with the key", "do": "transition", "doc": "eur", "transition": "drop",
+     "expect": {"state": "dropped", "outbox": [{"action": "table.insert", "status": "done"}, {"action": "table.insert", "status": "dead", "code": "duplicate"}, {"action": "table.update", "status": "done"},
+                                               {"action": "table.delete", "status": "pending", "args": {"table": "Rates", "key": {"code": "EUR"}}}]}},
+    {"do": "drain", "expect": {"drained": 1}},
+    {"do": "rows", "table": "Rates", "expect": {"rows": [{"code": "USD", "rate": "3.9876", "note": null}]}},
+    {"do": "create", "doc": "fourth", "values": {"currency": "EUR"}, "expect": {"values": {"known": null}}},
+
+    {"name": "a column the row leaves blank is blank in the table", "do": "create", "doc": "pln", "values": {"currency": "PLN", "rate": "1"}, "expect": {"version": 1}},
+    {"do": "transition", "doc": "pln", "transition": "add",
+     "expect": {"state": "added", "outbox": [{"action": "table.insert", "status": "pending", "args": {"table": "Rates", "row": {"code": "PLN", "rate": "1.0000", "note": null}}}]}},
+    {"do": "drain", "expect": {"drained": 1}},
+    {"do": "rows", "table": "Rates", "expect": {"rows": [{"code": "PLN", "rate": "1.0000", "note": null}, {"code": "USD", "rate": "3.9876", "note": null}]}},
+
+    {"name": "a blank key is refused: a key column is never blank", "do": "create", "doc": "blank", "values": {"rate": "1"}, "expect": {"version": 1}},
+    {"do": "transition", "doc": "blank", "transition": "add", "expect": {"state": "added"}},
+    {"do": "drain", "doc": "blank", "expect": {"drained": 1, "outbox": [{"action": "table.insert", "status": "dead", "code": "required"}]}},
+    {"do": "rows", "table": "Rates", "expect": {"rows": [{"code": "PLN", "rate": "1.0000", "note": null}, {"code": "USD", "rate": "3.9876", "note": null}]}}
+  ]
+}

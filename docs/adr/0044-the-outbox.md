@@ -248,10 +248,49 @@ as the first action, on 2026-11-10, and settled these points.
   documents of itself. A stored definition is not checked again when the
   file opens, since a class may name one defined after it: what a later
   redefinition broke is found when the action runs.
-- **Until the second step.** `transition`, `refresh` of another
-  document, `each` and the `table.*` actions are named by a preview and
-  not queued, and a redefinition that breaks another class's rule is not
-  refused yet.
+
+The second step built the rest of items 7, 12 and 13, on 2026-11-10:
+`transition`, `refresh` of another document, `each` on a `create`, the
+`table.*` actions, and the refusal of a redefinition that breaks another
+class's rule. It settled these points.
+
+- **A `table.delete` of a key the table lacks** deletes nothing and is
+  done. Item 7 names a refusal for an insert and for an update and none
+  for a delete: the row is not there, which is what was asked.
+- **A blank id or key is the target's refusal, not the command's.** A
+  `transition` or a `refresh` whose `id` gives no value is queued and
+  dies with `unknown_document`; a table action whose key column is blank
+  dies with `required`. Item 6 of ADR-0043 refuses a command for an
+  argument that errors, and a blank is a value. A rule that should do
+  nothing for a blank says so with its `if`.
+- **Which redefinition breaks a rule.** One after which the rule's class
+  would no longer be accepted: a variable or a column the rule fills is
+  gone, became computed, or takes a type the rule's formula does not
+  have; the transition it takes is gone; a variable it refreshes is no
+  longer triggered or no longer lists `refresh`; the class lost its
+  states; the key of the table changed. A change of type the formula
+  still fits, a wider scale for instance, breaks nothing and is taken.
+  The diagnostic sits at the changed element of the new definition and
+  names the class and the path of the action.
+- **A new input the target requires is not refused.** Item 7 says the
+  fix is to change the rule first, and a rule cannot give a variable
+  that does not exist yet. The redefinition is taken, and a `create`
+  that does not give the input is dead with `required` when it runs,
+  until its rule is changed.
+- **The list an `each` goes over** is the one the commit leaves: the
+  list the command gave, else the one the document held, and empty after
+  a `reset` of it earlier in the same command. A rule on `delete` goes
+  over the list as it was. An element whose argument errors is named in
+  the message by its position from zero, `approvers[2]`, and a preview
+  lists that element without arguments.
+- **`as` is a name like a variable's** and is refused alone, without
+  `each`, with `missing`. `into` beside `each` will be refused with the
+  step that brings `into` (ADR-0045); today no action has that property.
+- **A table action** names every column of the key under `key`, or
+  under `row` for an insert, and nothing but key columns under `key`. An
+  update changes no key column (`not_allowed`): the row is deleted and
+  another inserted. Only a table the database file holds can be written
+  by a rule, which today is every table.
 
 ## Rulings
 

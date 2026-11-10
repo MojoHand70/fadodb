@@ -110,6 +110,9 @@ const (
 	// CodeUnknownClass: an action names a class the database does not
 	// have (ADR-0044).
 	CodeUnknownClass = "unknown_class"
+	// CodeUnknownTable: an action names a table the database does not
+	// have (ADR-0044).
+	CodeUnknownTable = "unknown_table"
 	// CodeBadTrigger: a trigger of a triggered variable is malformed.
 	CodeBadTrigger = "bad_trigger"
 	// CodeBadValue: an enum value, a range bound or a literal is wrong.

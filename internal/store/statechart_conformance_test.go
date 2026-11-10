@@ -29,8 +29,9 @@ type statechartSuite struct {
 	// Clock is the database's clock while the suite runs, as
 	// YYYY-MM-DD HH:MM:SS in UTC; the runner's default when absent.
 	Clock string `json:"clock,omitempty"`
-	// Classes are defined before Class, in order: the classes its rules
-	// name (ADR-0044).
+	// Tables and Classes are defined before Class, in order: the tables
+	// its rules write and the classes they name (ADR-0044).
+	Tables     []json.RawMessage          `json:"tables,omitempty"`
 	Classes    []json.RawMessage          `json:"classes,omitempty"`
 	Class      json.RawMessage            `json:"class"`
 	Principals map[string]scriptPrincipal `json:"principals,omitempty"`
@@ -46,11 +47,15 @@ type scriptPrincipal struct {
 type scriptStep struct {
 	Name string `json:"name,omitempty"`
 	// Do is create, set, reset, refresh, transition, delete, preview,
-	// transitions, visits, get, query, count, drain or retry.
+	// transitions, visits, get, query, count, drain, retry, import or
+	// rows.
 	Do string `json:"do"`
 	// Doc labels the document a create makes, and names the document
-	// another step acts on; the last created document when absent.
+	// another step acts on; the last created document when absent. ID is
+	// the id a create gives its document, and the id of a document the
+	// script did not create: one an action made.
 	Doc        string `json:"doc,omitempty"`
+	ID         string `json:"id,omitempty"`
 	As         string `json:"as,omitempty"`
 	Key        string `json:"key,omitempty"`
 	Transition string `json:"transition,omitempty"`
@@ -62,11 +67,15 @@ type scriptStep struct {
 	// YYYY-MM-DD HH:MM:SS in UTC.
 	At string `json:"at,omitempty"`
 	// Where, Order and Fields are the filter of a query or a count, and
-	// Class the class it reads when that is not the suite's own.
+	// Class the class a step acts on when that is not the suite's own.
 	Where  string   `json:"where,omitempty"`
 	Order  []string `json:"order,omitempty"`
 	Fields []string `json:"fields,omitempty"`
 	Class  string   `json:"class,omitempty"`
+	// Table is the table of an import or of a rows step, and Rows the rows
+	// an import writes.
+	Table string   `json:"table,omitempty"`
+	Rows  []Values `json:"rows,omitempty"`
 	// Row is, for a retry, the position of the action among the ones the
 	// document queued.
 	Row int `json:"row,omitempty"`
@@ -126,6 +135,8 @@ type scriptExpect struct {
 	Drained *int           `json:"drained,omitempty"`
 	Outbox  []scriptAction `json:"outbox,omitempty"`
 	Found   []scriptFound  `json:"found,omitempty"`
+	// Rows are the rows of the step's table, in key order.
+	Rows json.RawMessage `json:"rows,omitempty"`
 }
 
 type scriptAction struct {
@@ -151,6 +162,9 @@ type scriptMoment struct {
 
 type scriptQueued struct {
 	Action string `json:"action"`
+	// Args are the arguments as the preview evaluated them, checked when
+	// given.
+	Args json.RawMessage `json:"args,omitempty"`
 }
 
 type scriptError struct {
@@ -204,6 +218,11 @@ func runStatechartSuite(t *testing.T, suite *statechartSuite) {
 	}
 	s, _ := openStore(t, o)
 	ctx := context.Background()
+	for i, table := range suite.Tables {
+		if _, err := s.DefineTable(ctx, table); err != nil {
+			t.Fatalf("table %d of the suite's tables: %v", i, err)
+		}
+	}
 	for i, other := range suite.Classes {
 		if _, err := s.DefineClass(ctx, other); err != nil {
 			t.Fatalf("class %d of the suite's classes: %v", i, err)
@@ -235,8 +254,20 @@ func runStatechartSuite(t *testing.T, suite *statechartSuite) {
 			opts = append(opts, At(moment(t, step.At)))
 		}
 		id := last
-		if step.Do != "create" && step.Doc != "" {
+		switch {
+		case step.Do == "create":
+			if step.ID != "" {
+				opts = append(opts, WithID(step.ID))
+			}
+		case step.ID != "":
+			id = step.ID
+		case step.Doc != "":
 			id = docs[step.Doc]
+		}
+		// The class a step acts on, the suite's own unless it names one.
+		class := cls.Name
+		if step.Class != "" {
+			class = step.Class
 		}
 		var doc *Document
 		var pv *Preview
@@ -245,19 +276,17 @@ func runStatechartSuite(t *testing.T, suite *statechartSuite) {
 		var found []*Document
 		var count int64
 		drained := -1
-		filter := Filter{Class: cls.Name, Where: step.Where, Order: step.Order, Fields: step.Fields}
-		if step.Class != "" {
-			filter.Class = step.Class
-		}
+		filter := Filter{Class: class, Where: step.Where, Order: step.Order, Fields: step.Fields}
+		var tableRows []Values
 		switch step.Do {
 		case "get":
-			doc, err = s.Get(ctx, cls.Name, id, opts...)
+			doc, err = s.Get(ctx, class, id, opts...)
 		case "query":
 			found, err = s.Query(ctx, filter, opts...)
 		case "count":
 			count, err = s.Count(ctx, filter, opts...)
 		case "create":
-			doc, err = s.Create(ctx, cls.Name, step.Values, opts...)
+			doc, err = s.Create(ctx, class, step.Values, opts...)
 			if err == nil {
 				last, id = doc.ID, doc.ID
 				if step.Doc != "" {
@@ -265,34 +294,38 @@ func runStatechartSuite(t *testing.T, suite *statechartSuite) {
 				}
 			}
 		case "set":
-			doc, err = s.Set(ctx, cls.Name, id, step.Values, opts...)
+			doc, err = s.Set(ctx, class, id, step.Values, opts...)
 		case "reset":
-			doc, err = s.Reset(ctx, cls.Name, id, step.Variables, opts...)
+			doc, err = s.Reset(ctx, class, id, step.Variables, opts...)
 		case "refresh":
-			doc, err = s.Refresh(ctx, cls.Name, id, step.Variables, opts...)
+			doc, err = s.Refresh(ctx, class, id, step.Variables, opts...)
 		case "transition":
-			doc, err = s.Transition(ctx, cls.Name, id, step.Transition, step.Values, opts...)
+			doc, err = s.Transition(ctx, class, id, step.Transition, step.Values, opts...)
 		case "delete":
-			err = s.Delete(ctx, cls.Name, id, opts...)
+			err = s.Delete(ctx, class, id, opts...)
 		case "drain":
 			drained, err = s.Drain(ctx)
 		case "retry":
 			var rows []QueuedAction
-			if rows, err = s.Outbox(ctx, OutboxFilter{Class: cls.Name, DocID: id}); err == nil {
+			if rows, err = s.Outbox(ctx, OutboxFilter{Class: class, DocID: id}); err == nil {
 				if step.Row >= len(rows) {
 					t.Fatalf("%s: the document queued %d actions; no row %d", name, len(rows), step.Row)
 				}
 				err = s.RetryAction(ctx, rows[step.Row].Key)
 			}
+		case "import":
+			_, err = s.ImportRows(ctx, step.Table, step.Rows)
+		case "rows":
+			tableRows, err = s.TableRows(ctx, step.Table)
 		case "preview":
-			pv, err = s.Preview(ctx, cls.Name, id, step.Values, step.Transition, opts...)
+			pv, err = s.Preview(ctx, class, id, step.Values, step.Transition, opts...)
 			if err == nil {
 				doc = pv.Document
 			}
 		case "transitions":
-			infos, err = s.Transitions(ctx, cls.Name, id, opts...)
+			infos, err = s.Transitions(ctx, class, id, opts...)
 		case "visits":
-			visitsGot, err = readVisits(s, cls.Name, id)
+			visitsGot, err = readVisits(s, class, id)
 		default:
 			t.Fatalf("%s: unknown command %q", name, step.Do)
 		}
@@ -390,8 +423,11 @@ func runStatechartSuite(t *testing.T, suite *statechartSuite) {
 				}
 			}
 		}
+		if want.Rows != nil && !sameWire(tableRows, want.Rows) {
+			t.Errorf("%s: the rows of %s are %s, want %s", name, step.Table, dump(tableRows), want.Rows)
+		}
 		if want.Outbox != nil {
-			rows, err := s.Outbox(ctx, OutboxFilter{Class: cls.Name, DocID: id})
+			rows, err := s.Outbox(ctx, OutboxFilter{Class: class, DocID: id})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -427,9 +463,18 @@ func runStatechartSuite(t *testing.T, suite *statechartSuite) {
 					}
 					ran = append(ran, r.Path)
 					for _, a := range r.Actions {
-						if a.Queued {
-							queued = append(queued, scriptQueued{Action: a.Action})
+						if !a.Queued {
+							continue
 						}
+						got := scriptQueued{Action: a.Action}
+						// The arguments are compared where the suite gives them.
+						if n := len(queued); n < len(want.Queued) && want.Queued[n].Args != nil {
+							got.Args = want.Queued[n].Args
+							if !sameWire(a.Args, want.Queued[n].Args) {
+								got.Args = mustJSON(a.Args)
+							}
+						}
+						queued = append(queued, got)
 					}
 				}
 				for i, e := range pv.Errors {
@@ -449,7 +494,7 @@ func runStatechartSuite(t *testing.T, suite *statechartSuite) {
 					t.Errorf("%s: the rules that did not run %v, want %v", name, skipped, want.Skipped)
 				}
 				if want.Queued != nil && !reflect.DeepEqual(queued, want.Queued) {
-					t.Errorf("%s: queued %v, want %v", name, queued, want.Queued)
+					t.Errorf("%s: queued %s, want %s", name, dump(queued), dump(want.Queued))
 				}
 				if want.Errors != nil && !reflect.DeepEqual(errs, want.Errors) {
 					t.Errorf("%s: errors %v, want %v", name, dump(pv.Errors), dump(want.Errors))
@@ -473,7 +518,7 @@ func runStatechartSuite(t *testing.T, suite *statechartSuite) {
 			}
 		}
 		if want.History != nil {
-			rows, err := s.History(ctx, cls.Name, id)
+			rows, err := s.History(ctx, class, id)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -486,7 +531,7 @@ func runStatechartSuite(t *testing.T, suite *statechartSuite) {
 			}
 		}
 		if want.Events != nil {
-			events, err := s.Events(ctx, cls.Name, id)
+			events, err := s.Events(ctx, class, id)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -504,7 +549,7 @@ func runStatechartSuite(t *testing.T, suite *statechartSuite) {
 		}
 		if want.Visits != nil {
 			if step.Do != "visits" {
-				visitsGot, err = readVisits(s, cls.Name, id)
+				visitsGot, err = readVisits(s, class, id)
 				if err != nil {
 					t.Fatal(err)
 				}

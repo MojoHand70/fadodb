@@ -2,7 +2,6 @@ package store
 
 import (
 	"context"
-	"encoding/json"
 	"strings"
 	"time"
 
@@ -26,6 +25,10 @@ import (
 type ruleSet struct {
 	create, delete, change  []*crule
 	enter, exit, transition map[string][]*crule
+	// lists are the composites a create with each reads (ADR-0044,
+	// item 12), which a commit loads before its rules run; nil when no
+	// rule has one.
+	lists []*child
 }
 
 // crule is one rule laid out for the commit.
@@ -46,8 +49,9 @@ type caction struct {
 	// refresh are the triggered variables a refresh recomputes, in
 	// declaration order.
 	refresh []*cvar
-	// create is the create of the outbox, nil for any other action.
-	create *ccreate
+	// out is the layout of an action of the outbox the engine runs itself,
+	// nil for any other action.
+	out *cqueued
 }
 
 // cset is one assignment of a set.
@@ -118,30 +122,31 @@ func (c *class) layoutRules() error {
 		}
 		for _, a := range r.Actions {
 			ca := caction{a: a}
+			if a.Queued {
+				// The formulas of an outbox action fill something else: another
+				// class's variables, or a table's columns.
+				out, err := c.layoutQueued(a)
+				if err != nil {
+					return err
+				}
+				if out.each != nil {
+					listed := false
+					for _, ch := range rs.lists {
+						listed = listed || ch == out.each
+					}
+					if !listed {
+						rs.lists = append(rs.lists, out.each)
+					}
+				}
+				ca.out = out
+				cr.acts = append(cr.acts, ca)
+				continue
+			}
 			for _, set := range a.Sets {
 				if err := c.bindSlots(set.Formula, a.Path()+"/values/"+set.Name); err != nil {
 					return err
 				}
-				if a.Name == model.ActionCreate {
-					// The values of a create fill another class's variables.
-					if ca.create == nil {
-						ca.create = &ccreate{}
-					}
-					ca.create.values = append(ca.create.values, cvalue{name: set.Name, prog: set.Formula})
-					continue
-				}
 				ca.sets = append(ca.sets, cset{cv: c.byName[strings.ToUpper(set.Name)], prog: set.Formula})
-			}
-			if a.Name == model.ActionCreate && a.Queued {
-				if ca.create == nil {
-					ca.create = &ccreate{}
-				}
-				if a.ID != nil {
-					if err := c.bindSlots(a.ID, a.Path()+"/id"); err != nil {
-						return err
-					}
-					ca.create.id = a.ID
-				}
 			}
 			named := map[*cvar]bool{}
 			for _, v := range a.Variables {
@@ -305,17 +310,10 @@ func (s *Store) runRule(run *ruleRun, row *docRow, cr *crule) *Error {
 			// An action of the outbox the engine runs itself: the commit
 			// evaluates its arguments now and writes its row with the
 			// commit (ADR-0043, item 7); a preview reports them.
-			if args, err = s.createArgs(run, row, act); err != nil {
-				args, err = nil, run.fail(act, err)
-			} else if !preview {
-				raw, jerr := json.Marshal(args)
-				if jerr != nil {
-					err = errf(CodeBadValue, "", "the arguments of the action do not encode: %v", jerr)
-					err.Path = act.a.Path()
-				} else {
-					s.queued = append(s.queued, queued{commit: run.commit, act: act, args: raw})
-				}
+			if err := s.queueAction(run, row, act, at); err != nil {
+				return err
 			}
+			continue
 		case !act.a.Sync:
 			// Any other action of the outbox is kept as written until the
 			// step that runs it: a preview names it and nothing is queued.
@@ -442,6 +440,12 @@ func (s *Store) resetVars(c *class, row *docRow, resets, defaults []*cvar, evalC
 		}
 		if cv.child != nil {
 			s.emptied = append(s.emptied, cv.child)
+			// A create with each that runs after this reads the list empty.
+			for i := range s.lists {
+				if s.lists[i].ch == cv.child {
+					s.lists[i].rows = nil
+				}
+			}
 			continue
 		}
 		for _, li := range cv.leaves {

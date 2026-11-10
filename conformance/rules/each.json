@@ -1,0 +1,91 @@
+{
+  "suite": "each",
+  "description": "A create with each makes one document for each element of a list of the rule's document (ADR-0044, item 12). each names an array or a rows variable and as names the element for the formulas under values and id: an element of an array is a value, an element of a rows variable is read by field. The commit evaluates the arguments once for each element, in the order of the list, and writes one row of the outbox for each, so every child has its own key, its own attempts and its own outcome event. A blank or empty list queues nothing. An argument that errors for one element refuses the command and names the element. A reset that empties the list before the create leaves it nothing to go over. The preview lists every row.",
+  "clock": "2026-03-01 12:00:00",
+  "classes": [
+    {"name": "Approval",
+     "variables": {"invoice": {"type": "text", "required": true}, "approver": {"type": "text", "required": true}},
+     "states": {"initial": "asked", "list": ["asked"]}},
+    {"name": "Pick",
+     "variables": {"invoice": {"type": "text"}, "sku": {"type": "text", "required": true}, "qty": {"type": "number"}, "share": {"type": "number"}},
+     "states": {"initial": "open", "list": ["open"]}}
+  ],
+  "class": {
+    "name": "Invoice",
+    "variables": {
+      "total": {"type": "number"},
+      "approvers": {"type": "array<text>"},
+      "lines": {"type": "rows", "schema": {"sku": "text", "qty": "number"}}
+    },
+    "states": {"initial": "draft", "list": ["draft", "submitted", "ordered", "cleared"]},
+    "transitions": [
+      {"name": "submit", "from": "draft", "to": "submitted"},
+      {"name": "order", "from": ["draft", "submitted"], "to": "ordered"},
+      {"name": "clear", "from": "draft", "to": "cleared"}
+    ],
+    "rules": [
+      {"on": "transition", "name": "submit",
+       "do": [{"action": "create", "class": "Approval", "each": "approvers", "as": "approver", "id": "ID() & \"-\" & approver",
+               "values": {"invoice": "ID()", "approver": "approver"}}]},
+      {"on": "enter", "state": "ordered",
+       "do": [{"action": "create", "class": "Pick", "each": "lines", "as": "line",
+               "values": {"invoice": "ID()", "sku": "line.sku", "qty": "line.qty", "share": "total / line.qty"}}]},
+      {"on": "enter", "state": "cleared",
+       "do": [{"action": "reset", "variables": ["approvers"]},
+              {"action": "create", "class": "Approval", "each": "approvers", "as": "approver", "values": {"invoice": "ID()", "approver": "approver"}}]}
+    ]
+  },
+  "script": [
+    {"do": "create", "doc": "a", "id": "INV-1", "values": {"total": 60, "approvers": ["ann", "bob"], "lines": [{"sku": "desk", "qty": 2}, {"sku": "lamp", "qty": 3}]},
+     "expect": {"state": "draft", "version": 1, "outbox": []}},
+    {"name": "the preview lists a row for each approver, with the arguments of each", "do": "preview", "doc": "a", "transition": "submit",
+     "expect": {"state": "submitted", "rules": ["/rules/0"], "outbox": [],
+                "queued": [{"action": "create", "args": {"class": "Approval", "id": "INV-1-ann", "values": {"invoice": "INV-1", "approver": "ann"}}},
+                           {"action": "create", "args": {"class": "Approval", "id": "INV-1-bob", "values": {"invoice": "INV-1", "approver": "bob"}}}]}},
+    {"name": "the commit writes one row for each element, in the order of the list", "do": "transition", "doc": "a", "transition": "submit",
+     "expect": {"state": "submitted", "version": 2,
+                "outbox": [{"action": "create", "status": "pending", "args": {"class": "Approval", "id": "INV-1-ann", "values": {"invoice": "INV-1", "approver": "ann"}}},
+                           {"action": "create", "status": "pending", "args": {"class": "Approval", "id": "INV-1-bob", "values": {"invoice": "INV-1", "approver": "bob"}}}]}},
+    {"name": "each child is created by itself and reported by itself", "do": "drain", "doc": "a",
+     "expect": {"drained": 2, "outbox": [{"action": "create", "status": "done", "attempts": 1}, {"action": "create", "status": "done", "attempts": 1}],
+                "events": ["created", "transition:submit", "action_run:create", "action_run:create"]}},
+    {"do": "query", "class": "Approval", "order": ["approver"],
+     "expect": {"found": [{"state": "asked", "values": {"invoice": "INV-1", "approver": "ann"}}, {"state": "asked", "values": {"invoice": "INV-1", "approver": "bob"}}]}},
+    {"name": "an element of a rows variable is read by field", "do": "transition", "doc": "a", "transition": "order",
+     "expect": {"state": "ordered", "version": 3,
+                "outbox": [{"action": "create", "status": "done"}, {"action": "create", "status": "done"},
+                           {"action": "create", "status": "pending", "args": {"class": "Pick", "values": {"invoice": "INV-1", "sku": "desk", "qty": 2, "share": 30}}},
+                           {"action": "create", "status": "pending", "args": {"class": "Pick", "values": {"invoice": "INV-1", "sku": "lamp", "qty": 3, "share": 20}}}]}},
+    {"do": "drain", "expect": {"drained": 2}},
+    {"do": "query", "class": "Pick", "order": ["sku"],
+     "expect": {"found": [{"values": {"sku": "desk", "qty": 2, "share": 30}}, {"values": {"sku": "lamp", "qty": 3, "share": 20}}]}},
+
+    {"name": "an empty list queues nothing", "do": "create", "doc": "none", "values": {"total": 5, "approvers": []}, "expect": {"version": 1}},
+    {"do": "transition", "doc": "none", "transition": "submit", "expect": {"state": "submitted", "version": 2, "outbox": []}},
+    {"name": "and so does a list that was never given", "do": "create", "doc": "blank", "values": {"total": 5}, "expect": {"version": 1}},
+    {"do": "preview", "doc": "blank", "transition": "submit", "expect": {"state": "submitted", "rules": ["/rules/0"], "queued": []}},
+    {"do": "transition", "doc": "blank", "transition": "order", "expect": {"state": "ordered", "outbox": []}},
+
+    {"name": "the list of the command itself is the one gone over", "do": "create", "doc": "late", "id": "INV-2", "values": {"total": 5, "approvers": ["ann"]}, "expect": {"version": 1}},
+    {"do": "transition", "doc": "late", "transition": "submit", "values": {"approvers": ["cy", "dee", "eve"]},
+     "expect": {"state": "submitted", "version": 2,
+                "outbox": [{"action": "create", "status": "pending", "args": {"class": "Approval", "id": "INV-2-cy", "values": {"invoice": "INV-2", "approver": "cy"}}},
+                           {"action": "create", "status": "pending"}, {"action": "create", "status": "pending"}]}},
+    {"do": "drain", "expect": {"drained": 3}},
+
+    {"name": "one child that is refused leaves the others: the second ann is a duplicate id", "do": "create", "doc": "twice", "id": "INV-3", "values": {"total": 5, "approvers": ["ann", "bob", "ann"]}, "expect": {"version": 1}},
+    {"do": "transition", "doc": "twice", "transition": "submit", "expect": {"state": "submitted", "version": 2}},
+    {"do": "drain", "doc": "twice",
+     "expect": {"drained": 3, "outbox": [{"action": "create", "status": "done"}, {"action": "create", "status": "done"}, {"action": "create", "status": "dead", "code": "duplicate"}],
+                "events": ["created", "transition:submit", "action_run:create", "action_run:create", "action_failed:create"]}},
+
+    {"name": "an argument that errors for one element refuses the command, and nothing is queued", "do": "create", "doc": "zero", "values": {"total": 60, "lines": [{"sku": "desk", "qty": 2}, {"sku": "lamp", "qty": 0}]}, "expect": {"version": 1}},
+    {"do": "transition", "doc": "zero", "transition": "order", "expect": {"code": "div_by_zero", "action": "/rules/1/do/0"}},
+    {"do": "get", "doc": "zero", "expect": {"state": "draft", "version": 1, "outbox": []}},
+    {"name": "a preview records it and lists the element without arguments", "do": "preview", "doc": "zero", "transition": "order",
+     "expect": {"state": "ordered", "errors": [{"code": "div_by_zero", "variable": "share", "action": "/rules/1/do/0"}], "queued": [{"action": "create"}, {"action": "create"}]}},
+
+    {"name": "a reset that empties the list before the create leaves it nothing to go over", "do": "create", "doc": "gone", "values": {"total": 5, "approvers": ["ann", "bob"]}, "expect": {"version": 1}},
+    {"do": "transition", "doc": "gone", "transition": "clear", "expect": {"state": "cleared", "version": 2, "values": {"approvers": []}, "outbox": []}}
+  ]
+}

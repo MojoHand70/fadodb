@@ -46,6 +46,25 @@ func (e *evaluator) run(c *class, prog *formula.Program, row *docRow, ctx *formu
 	return e.vm.Run(prog, vars, ctx)
 }
 
+// runWith evaluates a formula of a create with each over the row and one
+// element of the list (ADR-0044, item 12): a slot below zero reads the
+// element, -1 its first leaf.
+func (e *evaluator) runWith(c *class, prog *formula.Program, row *docRow, elem childRow, ctx *formula.Context) (formula.Value, error) {
+	idx := c.slots[prog]
+	if cap(e.vars) < len(idx) {
+		e.vars = make([]formula.Value, max(len(idx), c.maxSlots))
+	}
+	vars := e.vars[:len(idx)]
+	for i, li := range idx {
+		if li < 0 {
+			vars[i] = elem[-1-li]
+			continue
+		}
+		vars[i] = row.vals[li]
+	}
+	return e.vm.Run(prog, vars, ctx)
+}
+
 // allowed evaluates a right over the row for the principal of ctx: a
 // group list holds when the principal is in any of its groups, a formula
 // when it is TRUE; a formula that errors is FALSE (ADR-0019), its error

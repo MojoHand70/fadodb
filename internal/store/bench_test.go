@@ -833,3 +833,44 @@ func BenchmarkOutbox(b *testing.B) {
 		}
 	}
 }
+
+// BenchmarkOutboxEach10 measures a create with each over ten elements
+// (ADR-0044, item 12): a transition whose rule queues ten children, one
+// row each, and the drain that makes them. It is measured and published,
+// not budgeted, so it is outside the gate.
+func BenchmarkOutboxEach10(b *testing.B) {
+	s, err := Open(filepath.Join(b.TempDir(), "bench.fado"), Options{Outbox: OutboxOptions{Manual: true}})
+	if err != nil {
+		b.Fatal(err)
+	}
+	defer s.Close()
+	ctx := context.Background()
+	for _, def := range []string{
+		`{"name": "Entry", "variables": {"job": {"type": "text", "required": true}, "who": {"type": "text"}}, "states": {"initial": "booked", "list": ["booked"]}}`,
+		`{"name": "Job", "variables": {"crew": {"type": "array<text>"}},
+ "states": {"initial": "open", "list": ["open"]}, "transitions": [{"name": "book", "from": "open", "to": "open"}],
+ "rules": [{"on": "transition", "name": "book", "do": [{"action": "create", "class": "Entry", "each": "crew", "as": "member", "values": {"job": "ID()", "who": "member"}}]}]}`,
+	} {
+		if _, err := s.DefineClass(ctx, []byte(def)); err != nil {
+			b.Fatal(err)
+		}
+	}
+	crew := make([]any, 10)
+	for i := range crew {
+		crew[i] = "member-" + itoa(i)
+	}
+	doc, err := s.Create(ctx, "Job", Values{"crew": crew})
+	if err != nil {
+		b.Fatal(err)
+	}
+	b.ReportAllocs()
+	b.ResetTimer()
+	for b.Loop() {
+		if _, err := s.Transition(ctx, "Job", doc.ID, "book", nil, As(alice)); err != nil {
+			b.Fatal(err)
+		}
+		if n, err := s.Drain(ctx); err != nil || n != 10 {
+			b.Fatalf("drained %d, %v", n, err)
+		}
+	}
+}

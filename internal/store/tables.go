@@ -28,12 +28,13 @@ type table struct {
 	leafIndex map[string]int
 	src       *formula.Source
 
-	upsert, deleteAll, selectAll *sql.Stmt // on the writer
-	readAll                      *sql.Stmt // on the pool
+	upsert, insert, deleteAll, selectAll *sql.Stmt // on the writer
+	readAll                              *sql.Stmt // on the pool
 
 	// cache holds the rows while the table is small enough (ADR-0036);
-	// nil until a lookup needs it, dropped by an import. tooBig says the
-	// last build found more rows than the limit.
+	// nil until a lookup needs it, dropped by an import and by a rule's
+	// table action. tooBig says the last build found more rows than the
+	// limit.
 	cache  *tableCache
 	tooBig bool
 }
@@ -131,6 +132,8 @@ func (t *table) prepare(ctx context.Context, writer *sql.Conn, db *sql.DB) error
 		}
 	}
 	prep(&t.upsert, writer, "INSERT INTO "+quote(t.name)+" ("+strings.Join(cols, ", ")+") VALUES ("+marks(len(cols))+") ON CONFLICT ("+strings.Join(quoteAll(t.def.Key), ", ")+")"+conflict)
+	// The insert of a rule's table.insert, which an existing key refuses.
+	prep(&t.insert, writer, "INSERT INTO "+quote(t.name)+" ("+strings.Join(cols, ", ")+") VALUES ("+marks(len(cols))+") ON CONFLICT ("+strings.Join(quoteAll(t.def.Key), ", ")+") DO NOTHING")
 	prep(&t.deleteAll, writer, "DELETE FROM "+quote(t.name))
 	prep(&t.selectAll, writer, selectAll)
 	prep(&t.readAll, db, selectAll)
@@ -142,11 +145,26 @@ func (t *table) prepare(ctx context.Context, writer *sql.Conn, db *sql.DB) error
 }
 
 func (t *table) close() {
-	for _, st := range []*sql.Stmt{t.upsert, t.deleteAll, t.selectAll, t.readAll} {
+	for _, st := range []*sql.Stmt{t.upsert, t.insert, t.deleteAll, t.selectAll, t.readAll} {
 		if st != nil {
 			st.Close()
 		}
 	}
+}
+
+// keyFields are the columns of the key, or with key false the others.
+func (t *table) keyFields(key bool) []formula.Field {
+	var out []formula.Field
+	for _, f := range t.def.Fields {
+		isKey := false
+		for _, k := range t.def.Key {
+			isKey = isKey || strings.EqualFold(k, f.Name)
+		}
+		if isKey == key {
+			out = append(out, f)
+		}
+	}
+	return out
 }
 
 // scanRows reads every row of the table in key order with the statement.
@@ -255,6 +273,9 @@ func (s *Store) DefineTable(ctx context.Context, data []byte) (*model.Table, err
 				break
 			}
 		}
+		// A rule of a class may write the table (ADR-0044): a new shape
+		// may not break it.
+		diags = append(diags, s.brokenRules(nil, def)...)
 		var n int64
 		if err := s.writer.QueryRowContext(ctx, "SELECT count(*) FROM "+quote(old.name)).Scan(&n); err == nil && n > 0 {
 			diags = append(diags, model.Diagnostic{Code: model.CodeNotSupported, Path: "/name", Pos: -1,

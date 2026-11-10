@@ -116,17 +116,36 @@ type queued struct {
 	args   []byte
 }
 
-// ccreate is a create laid out for the commit.
-type ccreate struct {
-	id     *formula.Program
-	values []cvalue
+// cqueued is an action of the outbox the engine runs itself, laid out
+// for the commit: the formulas of its arguments over the document that
+// fires the rule.
+type cqueued struct {
+	// id gives the id of the document: of the one a create makes, nil when
+	// the engine gives it, and of the one a transition or a refresh acts
+	// on.
+	id *formula.Program
+	// values are the values of a create or a transition, the row of a
+	// table.insert or the columns a table.update changes; key the key of
+	// the row a table.update or a table.delete addresses.
+	values, key []cvalue
+	// each is the composite a create makes one document for each element
+	// of, nil for one document (ADR-0044, item 12). Its formulas then
+	// read the element too.
+	each *child
 }
 
-// cvalue is one value of a create: the variable of the class it fills
-// and the formula over the document that fires the rule.
+// cvalue is one argument of a queued action: the variable or the column
+// it fills and the formula that gives its value.
 type cvalue struct {
 	name string
 	prog *formula.Program
+}
+
+// list is a composite a create with each reads, as the command leaves
+// it.
+type list struct {
+	ch   *child
+	rows []childRow
 }
 
 // outboxRow is a row as the worker reads it.
@@ -143,31 +162,251 @@ type outboxRow struct {
 
 func (r *outboxRow) key() string { return r.eventID + ":" + strconv.FormatInt(r.idx, 10) }
 
-// createArgs evaluates the arguments of a create over the document that
-// fires the rule (ADR-0043, item 7): the action carries the values of the
-// moment that caused it, not of the moment a worker reaches it.
-func (s *Store) createArgs(run *ruleRun, row *docRow, act *caction) (Values, *Error) {
-	values := make(Values, len(act.create.values))
-	for _, cv := range act.create.values {
-		val, err := s.eval(run.c, cv.prog, row, run.evalCtx)
-		if err != nil {
-			err.Variable = cv.name
+// layoutQueued binds the slots of the formulas of an outbox action. The
+// formulas of a create with each read the element of the list beside the
+// document.
+func (c *class) layoutQueued(a *model.Action) (*cqueued, error) {
+	out := &cqueued{}
+	if a.Each != nil {
+		out.each = c.byName[strings.ToUpper(a.Each.Name)].child
+	}
+	bind := func(prog *formula.Program, part, name string) error {
+		owner := a.Path() + "/" + part
+		if name != "" {
+			owner += "/" + name
+		}
+		if out.each != nil {
+			return c.bindElemSlots(prog, owner, a.As, out.each)
+		}
+		return c.bindSlots(prog, owner)
+	}
+	part := "values"
+	switch a.Name {
+	case model.ActionTableInsert:
+		part = "row"
+	case model.ActionTableUpdate:
+		part = "set"
+	}
+	for _, set := range a.Sets {
+		if err := bind(set.Formula, part, set.Name); err != nil {
 			return nil, err
 		}
-		values[cv.name] = valueOut(val)
+		out.values = append(out.values, cvalue{name: set.Name, prog: set.Formula})
 	}
-	args := Values{"class": act.a.Target, "values": values}
-	if act.create.id != nil {
-		val, err := s.eval(run.c, act.create.id, row, run.evalCtx)
+	for _, key := range a.Keys {
+		if err := bind(key.Formula, "key", key.Name); err != nil {
+			return nil, err
+		}
+		out.key = append(out.key, cvalue{name: key.Name, prog: key.Formula})
+	}
+	if a.ID != nil {
+		if err := bind(a.ID, "id", ""); err != nil {
+			return nil, err
+		}
+		out.id = a.ID
+	}
+	return out, nil
+}
+
+// bindElemSlots resolves the slots of a formula of a create with each: a
+// slot that reads the element, under the name as gives it, resolves to a
+// leaf of the composite's rows and is kept below zero, -1 for the first;
+// any other is a leaf of the document.
+func (c *class) bindElemSlots(p *formula.Program, owner, as string, ch *child) error {
+	idx := make([]int, len(p.Slots))
+	elem := strings.ToUpper(as)
+	for i, s := range p.Slots {
+		name := strings.ToUpper(s.Name)
+		li, ok := 0, false
+		switch {
+		case name == elem:
+			// An element of an array is its one column.
+			if li, ok = ch.leafIndex["VALUE"]; ok {
+				li = -1 - li
+			}
+		case strings.HasPrefix(name, elem+"."):
+			if li, ok = ch.leafIndex[name[len(elem)+1:]]; ok {
+				li = -1 - li
+			}
+		default:
+			li, ok = c.leafIndex[name]
+		}
+		if !ok {
+			return hintf(CodeNotSupported, owner, "the formula reads "+s.Name+", which is not a stored scalar", "only scalar variables, object fields and the fields of the element can be read in this build")
+		}
+		idx[i] = li
+	}
+	c.slots[p] = idx
+	c.maxSlots = max(c.maxSlots, len(idx))
+	return nil
+}
+
+// loadLists reads the composites the class's creates with each go over,
+// as the command leaves them, before its rules run: the rows the command
+// gave, else the rows of the version before it, and none for a new
+// document. stored is the class a draft reads its documents from. A
+// reset that empties one afterwards empties it here too.
+func (s *Store) loadLists(ctx context.Context, c, stored *class, before *docRow, kids map[*child][]childRow) error {
+	s.lists = s.lists[:0]
+	for _, ch := range c.rules.lists {
+		rows, given := kids[ch]
+		if !given && before != nil {
+			from := ch
+			if stored != nil {
+				// A draft has no statements: the stored class reads the rows,
+				// when it has the composite in the same shape.
+				prev, ok := stored.childOfName(ch.v.Name)
+				if from = prev; !ok || !sameLeaves(prev.leaves, ch.leaves) {
+					from = nil
+				}
+			}
+			if from != nil {
+				var err error
+				if rows, err = from.load(ctx, from.selectRows, before.id, before.version); err != nil {
+					return err
+				}
+			}
+		}
+		s.lists = append(s.lists, list{ch: ch, rows: rows})
+	}
+	return nil
+}
+
+// queueAction evaluates the arguments of an outbox action over the
+// document that fires the rule and queues it with the commit (ADR-0043,
+// item 7): once, or once for each element of the list a create's each
+// names, in the order of the list, so that every child has a row of its
+// own (ADR-0044, item 12). A blank or empty list queues nothing. A
+// preview reports each with its arguments and queues none.
+func (s *Store) queueAction(run *ruleRun, row *docRow, act *caction, at int) *Error {
+	if act.out.each == nil {
+		return s.queueOne(run, row, act, at, nil, -1)
+	}
+	for i := range s.lists {
+		if s.lists[i].ch != act.out.each {
+			continue
+		}
+		for pos, elem := range s.lists[i].rows {
+			if err := s.queueOne(run, row, act, at, elem, pos); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// queueOne queues the action once: for the element at pos of its list,
+// or with pos below zero for an action without one. An argument that
+// errors is the action's failure, and names the element.
+func (s *Store) queueOne(run *ruleRun, row *docRow, act *caction, at int, elem childRow, pos int) *Error {
+	args, err := s.actionArgs(run, row, act, elem)
+	switch {
+	case err != nil:
+		if pos >= 0 {
+			err.Message = act.out.each.v.Name + "[" + strconv.Itoa(pos) + "]: " + err.Message
+		}
+		if err = run.fail(act, err); err != nil {
+			return err
+		}
+		args = nil
+	case !run.preview:
+		raw, jerr := json.Marshal(args)
+		if jerr != nil {
+			err = errf(CodeBadValue, "", "the arguments of the action do not encode: %v", jerr)
+			err.Path = act.a.Path()
+			return err
+		}
+		s.queued = append(s.queued, queued{commit: run.commit, act: act, args: raw})
+	}
+	if run.preview {
+		run.res.rules[at].Actions = append(run.res.rules[at].Actions, ActionRun{Action: act.a.Name, Queued: true, Args: args})
+	}
+	return nil
+}
+
+// actionArgs evaluates the arguments of an outbox action, in the shape
+// the worker reads them back in: the action carries the values of the
+// moment that caused it, not of the moment a worker reaches it. elem is
+// the element of the list for a create with each.
+func (s *Store) actionArgs(run *ruleRun, row *docRow, act *caction, elem childRow) (Values, *Error) {
+	a, out := act.a, act.out
+	values, err := s.argValues(run, row, out.values, elem)
+	if err != nil {
+		return nil, err
+	}
+	var id string
+	if out.id != nil {
+		val, err := s.evalArg(run, row, out.id, elem)
 		if err != nil {
 			err.Variable = "id"
 			return nil, err
 		}
 		if !val.IsBlank() {
-			args["id"] = formula.Render(val)
+			id = formula.Render(val)
 		}
 	}
-	return args, nil
+	switch a.Name {
+	case model.ActionCreate:
+		args := Values{"class": a.Target, "values": values}
+		if id != "" {
+			args["id"] = id
+		}
+		return args, nil
+	case model.ActionTransition:
+		args := Values{"class": a.Target, "id": id, "name": a.Transition}
+		if len(values) > 0 {
+			args["values"] = values
+		}
+		return args, nil
+	case model.ActionRefresh:
+		args := Values{"class": a.Target, "id": id}
+		if len(a.Names) > 0 {
+			names := make([]any, len(a.Names))
+			for i, name := range a.Names {
+				names[i] = name
+			}
+			args["variables"] = names
+		}
+		return args, nil
+	case model.ActionTableInsert:
+		return Values{"table": a.Target, "row": values}, nil
+	}
+	key, err := s.argValues(run, row, out.key, elem)
+	if err != nil {
+		return nil, err
+	}
+	if a.Name == model.ActionTableUpdate {
+		return Values{"table": a.Target, "key": key, "set": values}, nil
+	}
+	return Values{"table": a.Target, "key": key}, nil
+}
+
+// argValues evaluates the formulas of one part of an action's arguments,
+// by the name of what each fills, in the wire shape.
+func (s *Store) argValues(run *ruleRun, row *docRow, vals []cvalue, elem childRow) (Values, *Error) {
+	out := make(Values, len(vals))
+	for _, cv := range vals {
+		val, err := s.evalArg(run, row, cv.prog, elem)
+		if err != nil {
+			err.Variable = cv.name
+			return nil, err
+		}
+		out[cv.name] = valueOut(val)
+	}
+	return out, nil
+}
+
+// evalArg runs a formula of an outbox action over the row, and over the
+// element of the list when the action has one.
+func (s *Store) evalArg(run *ruleRun, row *docRow, prog *formula.Program, elem childRow) (formula.Value, *Error) {
+	if elem == nil {
+		return s.eval(run.c, prog, row, run.evalCtx)
+	}
+	val, err := s.wev.runWith(run.c, prog, row, elem, run.evalCtx)
+	if err != nil {
+		return formula.Value{}, evalErr("", err)
+	}
+	return val, nil
 }
 
 // writeQueued writes the outbox rows of one commit of a command, in the
@@ -409,29 +648,159 @@ func (s *Store) finish(ctx context.Context, row *outboxRow, status string, attem
 // target apply to that person, and what they may not do is a refusal. It
 // reports whether the action's own commit queued further actions.
 func (s *Store) perform(ctx context.Context, row *outboxRow, day int64, now time.Time) (bool, *Error) {
+	var args struct {
+		Class     string   `json:"class"`
+		ID        string   `json:"id"`
+		Name      string   `json:"name"`
+		Values    Values   `json:"values"`
+		Variables []string `json:"variables"`
+		Table     string   `json:"table"`
+		Row       Values   `json:"row"`
+		Key       Values   `json:"key"`
+		Set       Values   `json:"set"`
+	}
+	if err := json.Unmarshal(row.args, &args); err != nil {
+		return false, errf(CodeBadValue, "", "the arguments of the action do not read: %v", err)
+	}
+	// The command the action stands for: the worker's own, caused by the
+	// event that queued it, on that event's business day.
+	cmd := command{o: options{principal: row.principal, key: outboxKeyPrefix + row.key()},
+		cause: row.eventID, depth: row.depth + 1, internal: true, day: day, hasDay: true}
 	switch row.action {
 	case model.ActionCreate:
-		var args struct {
-			Class  string `json:"class"`
-			ID     string `json:"id"`
-			Values Values `json:"values"`
-		}
-		if err := json.Unmarshal(row.args, &args); err != nil {
-			return false, errf(CodeBadValue, "", "the arguments of the action do not read: %v", err)
-		}
-		c, e := s.class(args.Class)
+		cmd.op, cmd.id, cmd.values = opCreate, args.ID, args.Values
+	case model.ActionTransition:
+		cmd.op, cmd.id, cmd.transition, cmd.values = opTransition, args.ID, args.Name, args.Values
+	case model.ActionRefresh:
+		cmd.op, cmd.id, cmd.variables = opRefresh, args.ID, args.Variables
+	case model.ActionTableInsert, model.ActionTableUpdate, model.ActionTableDelete:
+		t, e := s.table(args.Table)
 		if e != nil {
 			return false, e
 		}
-		cmd := command{op: opCreate, c: c, id: args.ID, values: args.Values, o: options{principal: row.principal, key: outboxKeyPrefix + row.key()},
-			cause: row.eventID, depth: row.depth + 1, internal: true, day: day, hasDay: true}
-		res, err := s.run(ctx, cmd, now)
-		if err != nil {
-			return false, asError(err)
-		}
-		return res.queued > 0, nil
+		return false, s.tableAction(ctx, t, row.action, args.Row, args.Key, args.Set)
+	default:
+		return false, hintf(CodeUnknownAction, "", "the engine does not run the action "+row.action, "the actions it runs are in the class's rules as the definition accepted them; this row was queued by another build")
 	}
-	return false, hintf(CodeUnknownAction, "", "the engine does not run the action "+row.action, "the actions it runs are in the class's rules as the definition accepted them; this row was queued by another build")
+	c, e := s.class(args.Class)
+	if e != nil {
+		return false, e
+	}
+	if cmd.op != opCreate && args.ID == "" {
+		return false, hintf(CodeUnknownDocument, "", "the action names no document of "+c.cls.Name+": its id is blank", "the id is a formula over the document that fired the rule; it gave no value there")
+	}
+	cmd.c = c
+	res, err := s.run(ctx, cmd, now)
+	if err != nil {
+		return false, asError(err)
+	}
+	return res.queued > 0, nil
+}
+
+// tableAction writes one row of an explicit table, addressed by its key
+// (ADR-0044, item 7): an insert of a key the table has is refused with
+// duplicate, an update of one it lacks with unknown_row, and a delete of
+// one it lacks deletes nothing and is done. The values are read as an
+// import reads them, each against its column. The table's index is
+// dropped, as an import drops it (ADR-0036). A table has no rights of its
+// own, so the principal is not consulted.
+func (s *Store) tableAction(ctx context.Context, t *table, action string, row, key, set Values) *Error {
+	vals := make([]formula.Value, len(t.leaves))
+	read := func(fields []formula.Field, from Values) *Error {
+		for i := range vals {
+			vals[i] = formula.Blank()
+		}
+		if err := setFields(vals, t.leafIndex, "", fields, from, "", s.limits); err != nil {
+			err.Variable = t.def.Name + "." + err.Variable
+			return err
+		}
+		return nil
+	}
+	// keyOf is the condition that addresses the row by the key columns
+	// among the values read, with its arguments; a key column is never
+	// blank. A money key is its amount, as the table's primary key is.
+	keyOf := func() (string, []any, *Error) {
+		terms := make([]string, len(t.def.Key))
+		args := make([]any, len(t.def.Key))
+		for i, k := range t.def.Key {
+			li := t.leafIndex[strings.ToUpper(k)]
+			if vals[li].IsBlank() {
+				return "", nil, errf(CodeRequired, t.def.Name+"."+k, "a key column is not blank")
+			}
+			terms[i] = quote(t.leaves[li].column) + " = ?"
+			args[i] = encode(nil, t.leaves[li], vals[li])[0]
+		}
+		return " WHERE " + strings.Join(terms, " AND "), args, nil
+	}
+	var res sql.Result
+	var err error
+	switch action {
+	case model.ActionTableInsert:
+		if e := read(t.def.Fields, row); e != nil {
+			return e
+		}
+		if _, _, e := keyOf(); e != nil {
+			return e
+		}
+		args := make([]any, 0, len(t.def.Columns))
+		for i, l := range t.leaves {
+			args = encode(args, l, vals[i])
+		}
+		if res, err = t.insert.ExecContext(ctx, args...); err == nil {
+			if n, _ := res.RowsAffected(); n == 0 {
+				return hintf(CodeDuplicate, "", "the table "+t.def.Name+" has a row with that key", "table.update changes a row that exists")
+			}
+		}
+	case model.ActionTableUpdate:
+		if e := read(t.keyFields(true), key); e != nil {
+			return e
+		}
+		where, keyArgs, e := keyOf()
+		if e != nil {
+			return e
+		}
+		if e := read(t.keyFields(false), set); e != nil {
+			return e
+		}
+		given := make(map[string]bool, len(set))
+		for name := range set {
+			given[strings.ToUpper(name)] = true
+		}
+		var sets []string
+		var args []any
+		for li, l := range t.leaves {
+			if !given[strings.ToUpper(l.path)] {
+				continue
+			}
+			sets = append(sets, quote(l.column)+" = ?")
+			if l.typ.Kind == formula.KindMoney {
+				sets = append(sets, quote(l.column+formula.CurrencySuffix)+" = ?")
+			}
+			args = encode(args, l, vals[li])
+		}
+		if len(sets) == 0 {
+			return errf(CodeBadValue, "", "the update of %s changes no column", t.def.Name)
+		}
+		if res, err = s.writer.ExecContext(ctx, "UPDATE "+quote(t.name)+" SET "+strings.Join(sets, ", ")+where, append(args, keyArgs...)...); err == nil {
+			if n, _ := res.RowsAffected(); n == 0 {
+				return hintf(CodeUnknownRow, "", "the table "+t.def.Name+" has no row with that key", "table.insert adds a row")
+			}
+		}
+	case model.ActionTableDelete:
+		if e := read(t.keyFields(true), key); e != nil {
+			return e
+		}
+		where, keyArgs, e := keyOf()
+		if e != nil {
+			return e
+		}
+		_, err = s.writer.ExecContext(ctx, "DELETE FROM "+quote(t.name)+where, keyArgs...)
+	}
+	if err != nil {
+		return asError(storageErr("write "+t.def.Name, err))
+	}
+	t.cache, t.tooBig = nil, false
+	return nil
 }
 
 // asError is the store's error of a failure, a storage one when the

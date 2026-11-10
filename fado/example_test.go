@@ -254,3 +254,96 @@ func Example_triggered() {
 	// later: 0.5 100 version 3 computed at version 2
 	// refreshed: 0.75 150 computed at version 4
 }
+
+// A rule acts on other documents through the outbox (ADR-0044): a
+// purchase asks each of its approvers, and the first approval that is
+// granted approves the purchase. The actions run after the commit that
+// queued them, exactly once, as the person whose command it was. Here
+// the queue is run by hand with Drain; without Outbox.Manual a worker
+// runs it.
+func Example_approvals() {
+	tmp, err := os.MkdirTemp("", "fado-example")
+	if err != nil {
+		panic(err)
+	}
+	defer os.RemoveAll(tmp)
+	db, err := fado.Open(filepath.Join(tmp, "approvals.fado"), fado.Options{Outbox: fado.OutboxOptions{Manual: true}})
+	if err != nil {
+		panic(err)
+	}
+	defer db.Close()
+	ctx := context.Background()
+
+	purchase := func(rules string) string {
+		return `{
+	  "name": "Purchase",
+	  "variables": {"approvers": {"type": "array<text>"}, "approved_by": {"type": "text"}},
+	  "states": {"initial": "draft", "list": ["draft", "waiting", "approved"]},
+	  "transitions": [{"name": "submit", "from": "draft", "to": "waiting"},
+	                  {"name": "approve", "from": "waiting", "to": "approved"}]` + rules + `
+	}`
+	}
+	// One approval for each element of the list, the element read as "who".
+	const asks = `,
+	  "rules": [{"on": "transition", "name": "submit",
+	             "do": [{"action": "create", "class": "Approval", "each": "approvers", "as": "who",
+	                     "id": "ID() & \"/\" & who", "values": {"purchase": "ID()", "approver": "who"}}]}]`
+	// Granting an approval takes the purchase's own transition.
+	const approval = `{
+	  "name": "Approval",
+	  "variables": {"purchase": {"type": "text", "required": true}, "approver": {"type": "text", "required": true}},
+	  "states": {"initial": "asked", "list": ["asked", "granted"]},
+	  "transitions": [{"name": "grant", "from": "asked", "to": "granted"}],
+	  "access": {"transition": {"grant": "approver = USER()"}},
+	  "rules": [{"on": "enter", "state": "granted",
+	             "do": [{"action": "transition", "class": "Purchase", "id": "purchase", "name": "approve",
+	                     "values": {"approved_by": "approver"}}]}]
+	}`
+	// The two classes name each other, and a rule's target is checked when
+	// its class is defined: the purchase comes first without its rule.
+	for _, def := range []string{purchase(""), approval, purchase(asks)} {
+		if _, err := db.DefineClass(ctx, []byte(def)); err != nil {
+			panic(err)
+		}
+	}
+
+	sam, bob := fado.Principal{ID: "sam"}, fado.Principal{ID: "bob"}
+	doc, err := db.Create(ctx, "Purchase", fado.Values{"approvers": []any{"ann", "bob"}}, fado.As(sam), fado.WithID("po_1"))
+	if err != nil {
+		panic(err)
+	}
+	if _, err := db.Transition(ctx, "Purchase", doc.ID, "submit", nil, fado.As(sam)); err != nil {
+		panic(err)
+	}
+	asked, _ := db.Drain(ctx)
+	fmt.Println("approvals asked:", asked)
+
+	// Sam may not grant Bob's approval; Bob may.
+	_, err = db.Transition(ctx, "Approval", "po_1/bob", "grant", nil, fado.As(sam))
+	var refusal *fado.Error
+	if errors.As(err, &refusal) {
+		fmt.Println("sam grants:", refusal.Code)
+	}
+	if _, err := db.Transition(ctx, "Approval", "po_1/bob", "grant", nil, fado.As(bob)); err != nil {
+		panic(err)
+	}
+	if _, err := db.Drain(ctx); err != nil {
+		panic(err)
+	}
+
+	doc, _ = db.Get(ctx, "Purchase", "po_1")
+	fmt.Println(doc.State, "by", doc.Values["approved_by"])
+	events, _ := db.Events(ctx, "Purchase", "po_1")
+	for _, e := range events {
+		fmt.Println(e.Kind, e.Name, "as", e.ActorID)
+	}
+	// Output:
+	// approvals asked: 2
+	// sam grants: forbidden
+	// approved by bob
+	// created  as sam
+	// transition submit as sam
+	// action_run create as sam
+	// action_run create as sam
+	// transition approve as bob
+}

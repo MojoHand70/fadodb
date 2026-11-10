@@ -25,9 +25,12 @@ catalogue.
 
 A sample uses what validates today. Rules run inside the commit with
 `set`, `reset`, `refresh` and `emit`, and triggered variables are
-computed at their triggers. A `create` of another document runs through
-the outbox; the other outbox actions are checked by name and not queued
-until their step of Phase 4, and the class-level access rule is not
-enforced before Phase 5.
+computed at their triggers. What a rule does beyond its own document
+runs through the outbox: `create`, also with `each` for one document
+per element of a list, `transition` and `refresh` of another document,
+and `table.insert`, `table.update` and `table.delete`. The actions that
+leave the database, such as `http.call`, are checked by name and not
+queued until their step of Phase 4, and the class-level access rule is
+not enforced before Phase 5.
 A sample that depends on them says so in a `"description"` the reader
 sees, never silently.

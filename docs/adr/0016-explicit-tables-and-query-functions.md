@@ -1,6 +1,6 @@
 # ADR-0016: Explicit tables, storage bindings, LOOKUP and QUERY
 
-- Status: Accepted; amended by ADR-0020 (run-time execution of LOOKUP and QUERY), ADR-0036 (the in-memory index), ADR-0037 (the table definition and the compiled LOOKUP)
+- Status: Accepted; amended by ADR-0020 (run-time execution of LOOKUP and QUERY), ADR-0036 (the in-memory index), ADR-0037 (the table definition and the compiled LOOKUP), ADR-0046 (no access predicate on a class a formula reads; `QUERY` and the bindings leave Phase 4)
 - Date: 2026-11-05
 
 ## Context

@@ -27,8 +27,8 @@ Website: [fadodb.org](https://fadodb.org).
 > the database, implemented by a Go function of the host program or sent
 > by the engine as an HTTP request, to the hosts the host program allows
 > and with secrets it supplies, and what the action returns is written
-> back to the document, so a process goes on from the answer. `QUERY`,
-> time, the row-level access rules
+> back to the document, so a process goes on from the answer. Formulas
+> that read other documents, time, the row-level access rules
 > and the server come with their steps and phases. The numbers are in
 > [docs/perf/](docs/perf/), the plan in [ROADMAP.md](ROADMAP.md).
 

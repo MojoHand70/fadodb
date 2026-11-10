@@ -14,9 +14,9 @@ variables are computed at their triggers; what a rule does to other
 documents and to tables runs through the outbox; and a rule can call an
 action that has a definition, implemented by a Go function of the host
 program or sent by the engine as an HTTP request to the hosts the host
-program allows, with its result written back to the document. `QUERY`,
-time, the row-level access rules and the server come with their steps
-and phases.
+program allows, with its result written back to the document. Formulas
+that read other documents, time, the row-level access rules and the
+server come with their steps and phases.
 Since v0.1.0 the records ADR-0022 to
 ADR-0038 fixed what the first embedder needs and what Phase 2 measured:
 SQLite as the transactional store and the in-memory index for lookups, by
@@ -41,9 +41,9 @@ the outbox, its worker and the engine's own actions, which run as the
 person whose command queued them; and ADR-0045, actions as an
 extension point, with declared HTTP actions, Go actions an embedder
 registers, connections and results written back to the document.
-`QUERY` and the binding interface get their record before that step of
-the phase, and so do conditions on time and timers, which the owner
-ruled into the phase on 2026-11-10. Its first step runs the rules
+Formulas that read other documents got their record, ADR-0046,
+accepted on 2026-11-10; conditions on time and timers, which the owner
+ruled into the phase that day, get theirs before that step. Its first step runs the rules
 inside the commit: the triggers of each commit, the synchronous actions
 `set`, `reset` and `emit`, and the rules a preview reports (#51). Its
 second computes the triggered variables at their triggers, with the
@@ -72,13 +72,13 @@ answer, and adds one generic webhook definition and a guide to writing
 an action for any REST API. By the owner's ruling of 2026-11-10 the
 phase writes no definitions for particular services, which come with
 real needs, and the package format waits for the first of them. Its
-sixth step, formulas that read other documents, has its design proposed
-as ADR-0046 on 2026-11-10 and is not built: a class as the source of
-`LOOKUP`, with a count, a sum, the smallest and the largest. By the
-owner's rulings of that day a formula sees every document, and `QUERY`,
-which returns lists, is built with the first layout or report that
-needs one; the record also proposes that tables stored outside the file
-come with the analytical engine in Phase 8. This page is updated when a phase starts and when it ends;
+sixth step, formulas that read other documents, has its design in
+ADR-0046, accepted on 2026-11-10, and is not built yet: a class as the
+source of `LOOKUP`, with a count, a sum, the smallest and the largest.
+By the owner's rulings of that day a formula sees every document, and
+`QUERY`, which returns lists, is built with the first layout or report
+that needs one; tables stored outside the file come with the analytical
+engine in Phase 8. This page is updated when a phase starts and when it ends;
 it never describes a phase as done before its acceptance criteria pass.
 
 Legend: ✅ done · 🚧 in progress · ⬜ not started
@@ -89,9 +89,9 @@ Legend: ✅ done · 🚧 in progress · ⬜ not started
 | 1 | Formula engine: lexer, parser, binder, bytecode, Go VM, SQL generator with SQLite and DuckDB dialects, conformance suite | ✅ |
 | 2 | Document model and store: primary-store benchmark, variables with defaults, `json` type, enum values, range constraints, named schemas and object values with the predefined vocabulary, attachments as `File` values with a blob store, class metadata and title, current, history and child tables, commits with idempotency keys and business dates, preview and validate without writing, event log, migrations, LOOKUP, queries | ✅ |
 | 3 | Statechart: the transition command with guards, eventless chains, exit and entry snapshots and the `_states` view, allowed transitions and the preview of a transition, `STATE()` and `ID()`, per-transition access rules and field-level rights per state, statechart conformance cases | ✅ |
-| 4 | Rules and actions: event-condition-action rules run inside the commit, the synchronous actions `set`, `reset`, `refresh` and `emit`, triggered variables with their moment, the transactional outbox with its worker, retries and dead rows, the engine's actions on other documents and tables, actions as an extension point with definitions, declared HTTP actions, Go actions the embedder registers, connections and results written back, the delivered event, explicit tables with storage bindings, QUERY, conditions on time and timers | 🚧 |
+| 4 | Rules and actions: event-condition-action rules run inside the commit, the synchronous actions `set`, `reset`, `refresh` and `emit`, triggered variables with their moment, the transactional outbox with its worker, retries and dead rows, the engine's actions on other documents and tables, actions as an extension point with definitions, declared HTTP actions, Go actions the embedder registers, connections and results written back, the delivered event, formulas that read other documents (`LOOKUP` over a class, with a count, a sum, the smallest and the largest), conditions on time and timers | 🚧 |
 | 5 | Security: the principal from the embedder on every call, access rules compiled to SQL predicates, an optional package of users, groups and API keys for the server | ⬜ |
-| 6 | Server and CLI: JSON command set over HTTP and WebSocket, documents on the wire, layouts, OpenAPI, `fadodb serve` | ⬜ |
+| 6 | Server and CLI: JSON command set over HTTP and WebSocket, documents on the wire, layouts, `QUERY` when the first layout needs a list of rows (otherwise with the reports of Phase 8), OpenAPI, `fadodb serve` | ⬜ |
 | 7 | Browser VM and reference frontend: TypeScript VM on the same bytecode shipped as one plain JavaScript file, class bundle, layout renderer with the chip, card, coins and rating components, TypeScript client | ⬜ |
 | 8 | Analytical engine: DuckDB projection of document tables, native and attached bindings, set-wise recompute, mining views, full build per OS | ⬜ |
 | 9 | Embedding: C ABI, Python client, embedding guides | ⬜ |

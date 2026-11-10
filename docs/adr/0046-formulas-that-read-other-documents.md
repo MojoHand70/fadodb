@@ -1,6 +1,6 @@
 # ADR-0046: Formulas that read other documents: a class as the source of LOOKUP, with COUNT, SUM, MIN and MAX
 
-- Status: Proposed; amends ADR-0003 (bytecode format v4), ADR-0010 (with whose access a formula reads other documents), ADR-0011 (several classes defined in one call), ADR-0016 (no access predicate on a class a formula reads; `QUERY` and the bindings leave Phase 4), ADR-0020 (a class is answered by the transactional store; the type of an aggregate), ADR-0037 (the query slot carries an aggregate, the key is found inside a conjunction, an aggregate may fail)
+- Status: Accepted; amends ADR-0003 (bytecode format v4), ADR-0010 (with whose access a formula reads other documents), ADR-0011 (several classes defined in one call), ADR-0016 (no access predicate on a class a formula reads; `QUERY` and the bindings leave Phase 4), ADR-0020 (a class is answered by the transactional store; the type of an aggregate), ADR-0037 (the query slot carries an aggregate, the key is found inside a conjunction, an aggregate may fail)
 - Date: 2026-11-10
 
 ## Context

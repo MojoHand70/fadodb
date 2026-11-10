@@ -18,8 +18,8 @@
 # docs/architecture.md "Initial budgets" and of the records of each phase,
 # not every benchmark in the tree: the VM's arithmetic, the recalculation,
 # the lookups, the transition commit, the listing, the guard loop, the
-# projection, the write check and the rules of a commit. The others run
-# by hand and for a release's perf page. BENCH_PATTERN overrides the set;
+# projection, the write check, the rules of a commit and an action of
+# the outbox. The others run by hand and for a release's perf page. BENCH_PATTERN overrides the set;
 # BENCH_PATTERN=. runs every benchmark of BENCH_PACKAGES.
 #
 # Usage:
@@ -34,7 +34,7 @@ TIME_PCT="${BENCH_TIME_PCT:-5}"
 BYTES_PCT="${BENCH_BYTES_PCT:-5}"
 COUNT="${BENCH_COUNT:-5}"
 PLACEMENTS="${BENCH_PLACEMENTS:-5}"
-PATTERN="${BENCH_PATTERN:-^Benchmark(VM_Arithmetic5|VM_Exact5|Recalculate|Recalculate50|LookupIndexed|LookupKeyedStatement|Transition|Transitions10|GuardLoop|Project|WriteCheck|Rules)$}"
+PATTERN="${BENCH_PATTERN:-^Benchmark(VM_Arithmetic5|VM_Exact5|Recalculate|Recalculate50|LookupIndexed|LookupKeyedStatement|Transition|Transitions10|GuardLoop|Project|WriteCheck|Rules|Outbox)$}"
 PACKAGES="${BENCH_PACKAGES:-./internal/formula/ ./internal/store/}"
 
 # evaluate_csv prints every regression found in a benchstat CSV and returns 1

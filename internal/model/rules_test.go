@@ -216,3 +216,101 @@ func TestTriggers_Diagnostics(t *testing.T) {
 		t.Errorf("want two findings, got: %s", diags.Error())
 	}
 }
+
+// A create is checked against the class it names when the rule's class
+// is defined (ADR-0044, item 7): the class, its variables, the types of
+// the formulas, and the inputs it requires.
+func TestRules_Create(t *testing.T) {
+	receipt, diags := Define([]byte(`{"name": "Receipt",
+ "variables": {"invoice": {"type": "text", "required": true}, "amount": {"type": "money", "scale": 2}, "count": {"type": "int", "default": "1"},
+               "twice": {"formula": "count * 2"}, "lines": {"type": "rows", "schema": {"sku": "text"}}},
+ "states": {"initial": "issued", "list": ["issued"]}}`), nil)
+	if len(diags) > 0 {
+		t.Fatal(diags.Error())
+	}
+	sheet, diags := Define([]byte(`{"name": "Sheet", "variables": {"a": {"type": "int"}}}`), nil)
+	if len(diags) > 0 {
+		t.Fatal(diags.Error())
+	}
+	env := Env{Classes: func(name string) (*Class, bool) {
+		switch strings.ToUpper(name) {
+		case "RECEIPT":
+			return receipt, true
+		case "SHEET":
+			return sheet, true
+		}
+		return nil, false
+	}}
+	invoice := func(action string) string {
+		return `{"name": "Invoice", "variables": {"total": {"type": "money", "scale": 2}, "n": {"type": "int"}, "note": {"type": "text"}},
+ "states": {"initial": "open", "list": ["open", "paid"]}, "transitions": [{"name": "pay", "from": "open", "to": "paid"}],
+ "rules": [{"on": "enter", "state": "paid", "do": [` + action + `]}]}`
+	}
+	cls, diags := DefineIn([]byte(invoice(`{"action": "create", "class": "receipt", "id": "\"R-\" & ID()", "values": {"invoice": "ID()", "amount": "total", "count": "n + 1"}}`)), env)
+	if len(diags) > 0 {
+		t.Fatal(diags.Error())
+	}
+	a := cls.Rules[0].Actions[0]
+	if a.Sync || !a.Queued || a.Name != ActionCreate || a.Target != "Receipt" || a.ID == nil || len(a.Sets) != 3 ||
+		a.Sets[1].Name != "amount" || a.Sets[1].Variable != receipt.Variables[1] || a.Sets[2].Formula.Result.String() != "int" {
+		t.Errorf("the compiled create: %+v", a)
+	}
+	// A class may create documents of itself.
+	if _, diags := DefineIn([]byte(`{"name": "Echo", "variables": {"n": {"type": "int"}}, "states": {"initial": "s", "list": ["s"]},
+ "rules": [{"on": "create", "do": [{"action": "create", "class": "Echo", "values": {"n": "n + 1"}}]}]}`), env); len(diags) > 0 {
+		t.Errorf("a class that creates itself: %s", diags.Error())
+	}
+	for _, tc := range []struct{ name, action, code, path string }{
+		{"no class", `{"action": "create", "values": {"invoice": "ID()"}}`, CodeMissing, "/rules/0/do/0/class"},
+		{"an unknown class", `{"action": "create", "class": "Voucher", "values": {}}`, CodeUnknownClass, "/rules/0/do/0/class"},
+		{"a class that stores no documents", `{"action": "create", "class": "Sheet", "values": {"a": "1"}}`, CodeNotAllowed, "/rules/0/do/0/class"},
+		{"an unknown variable", `{"action": "create", "class": "Receipt", "values": {"invoice": "ID()", "price": "total"}}`, CodeUnknownVariable, "/rules/0/do/0/values/price"},
+		{"a computed variable", `{"action": "create", "class": "Receipt", "values": {"invoice": "ID()", "twice": "2"}}`, CodeNotAllowed, "/rules/0/do/0/values/twice"},
+		{"a rows variable", `{"action": "create", "class": "Receipt", "values": {"invoice": "ID()", "lines": "1"}}`, CodeNotSupported, "/rules/0/do/0/values/lines"},
+		{"a formula of the wrong type", `{"action": "create", "class": "Receipt", "values": {"invoice": "ID()", "amount": "note"}}`, CodeTypeMismatch, "/rules/0/do/0/values/amount"},
+		{"a formula that does not bind", `{"action": "create", "class": "Receipt", "values": {"invoice": "missing"}}`, CodeBadFormula, "/rules/0/do/0/values/invoice"},
+		{"a variable given twice", `{"action": "create", "class": "Receipt", "values": {"invoice": "ID()", "INVOICE": "ID()"}}`, CodeDuplicate, "/rules/0/do/0/values/INVOICE"},
+		{"a required input not given", `{"action": "create", "class": "Receipt", "values": {"amount": "total"}}`, CodeMissing, "/rules/0/do/0/values"},
+		{"no values where one is required", `{"action": "create", "class": "Receipt"}`, CodeMissing, "/rules/0/do/0/values"},
+		{"a value that is not a formula", `{"action": "create", "class": "Receipt", "values": {"invoice": 7}}`, CodeBadValue, "/rules/0/do/0/values"},
+		{"an id that is not text", `{"action": "create", "class": "Receipt", "id": "n", "values": {"invoice": "ID()"}}`, CodeTypeMismatch, "/rules/0/do/0/id"},
+		{"a misspelt property", `{"action": "create", "class": "Receipt", "value": {"invoice": "ID()"}}`, CodeBadJSON, "/rules/0/do/0"},
+		{"each, which waits", `{"action": "create", "class": "Receipt", "each": "note", "as": "x", "values": {"invoice": "ID()"}}`, CodeNotSupported, "/rules/0/do/0/each"},
+	} {
+		_, diags := DefineIn([]byte(invoice(tc.action)), env)
+		found := false
+		for _, d := range diags {
+			if d.Code == tc.code && d.Path == tc.path {
+				found = true
+			}
+		}
+		if !found {
+			t.Errorf("%s: want %s at %s, got:\n%s", tc.name, tc.code, tc.path, diags.Error())
+		}
+	}
+	// A stored definition loads whatever became of the class it names: a
+	// class the environment does not have yet, a variable it lost, a type
+	// that no longer fits. What it cannot check it leaves to the action.
+	lenient := env
+	lenient.Lenient = true
+	for name, action := range map[string]string{
+		"an unknown class":    `{"action": "create", "class": "Voucher", "values": {"x": "n"}}`,
+		"an unknown variable": `{"action": "create", "class": "Receipt", "values": {"invoice": "ID()", "price": "total"}}`,
+		"a type that changed": `{"action": "create", "class": "Receipt", "values": {"invoice": "ID()", "amount": "note"}}`,
+		"a required input":    `{"action": "create", "class": "Receipt", "values": {"amount": "total"}}`,
+	} {
+		cls, diags := DefineIn([]byte(invoice(action)), lenient)
+		if len(diags) > 0 {
+			t.Errorf("%s, loaded leniently: %s", name, diags.Error())
+			continue
+		}
+		if a := cls.Rules[0].Actions[0]; !a.Queued || len(a.Sets) == 0 || a.Sets[len(a.Sets)-1].Formula == nil {
+			t.Errorf("%s, loaded leniently: %+v", name, a)
+		}
+	}
+	// A formula that does not bind is a finding even so: the definition
+	// itself is broken.
+	if _, diags := DefineIn([]byte(invoice(`{"action": "create", "class": "Voucher", "values": {"x": "missing"}}`)), lenient); len(diags) == 0 {
+		t.Error("a formula that does not bind loaded leniently")
+	}
+}

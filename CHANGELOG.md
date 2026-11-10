@@ -26,7 +26,7 @@ All notable changes to FadoDB are recorded here. The format follows
 - `Preview` and `PreviewDraft` report `Rules`: every rule whose trigger
   the command raised, the commit it belongs to, whether it ran, and its
   actions with their evaluated arguments.
-- `conformance/rules/`, eight suites in the script format of the
+- `conformance/rules/`, ten suites in the script format of the
   statechart suites, and `BenchmarkRules`, which joins the benchmark
   gate: the rules of a commit do not allocate.
 
@@ -52,8 +52,36 @@ All notable changes to FadoDB are recorded here. The format follows
   caller makes a document look at the clock. Both raise `values_change`
   of what changed and are refused on a terminal document.
 
+- The outbox (ADR-0044), with `create` as its first action. A rule's
+  `create` of a document of another class is evaluated by the commit and
+  written as a row of the `outbox` table in the commit's transaction. A
+  worker, started by `Open` unless `Options.Outbox.Manual` is set, or
+  `Drain` on the caller's goroutine, makes the new document's commit,
+  marks the row done and appends `action_run` to the causing document in
+  one transaction: the action happens exactly once, which
+  `TestOutbox_SurvivesACrashAtEveryStep` shows by stopping the process
+  after the commit, inside the action and after it. The action runs as
+  the person whose command queued it, on the business day of the event
+  that caused it; what the engine refuses is a dead row with the code
+  and an `action_failed` event; a failure of the store is tried again
+  with a doubling wait, `Options.Outbox.MaxAttempts` times. A chain of
+  actions stops sixteen deep with `too_deep`.
+- `Outbox` lists the queued actions, `RetryAction` makes a dead one
+  pending again, and every class has the view `<Class>_actions`.
+  `Preview` reports what a command would queue with the evaluated
+  arguments. `Event` gained `Code`, the code an action died with.
+- `examples/classes/receipt.json`, the class the README's Invoice
+  creates a document of.
+
 ### Changed
 
+- A `create` is checked when the rule's class is defined: the class it
+  names must exist and have states, its values must be scalar inputs of
+  that class with formulas of their types, and an input the class
+  requires without a default must be given. A class that names another
+  is defined after it; `each` is refused until the next step.
+- A command key may not start with `outbox:`, the prefix of the commits
+  the outbox makes.
 - **The engine schema is version 3**, for the moment columns. A file made
   by an earlier pre-release engine is refused and recreated; there is no
   upgrade path before 1.0.
@@ -67,9 +95,9 @@ All notable changes to FadoDB are recorded here. The format follows
   document or on `delete`; a rule on `schedule`, with `not_supported`
   until it is built; a misspelt property of a synchronous action. An
   `emit` names its event under `event`.
-- An action for the outbox (`create`, `transition`, `http.call` and the
-  like) is still checked for its name alone and is not queued: the
-  outbox is a later step of Phase 4.
+- An action for the outbox other than `create` (`transition`,
+  `http.call` and the like) is still checked for its name alone and is
+  not queued: they are later steps of Phase 4.
 
 ## [0.3.0] - 2026-11-09
 

@@ -218,6 +218,41 @@ simulation runs the queue at a moment it chooses.
     `QUERY`, and the pattern of parallel approvals is whole only with
     it.
 
+## Details settled while building
+
+The first step of the outbox built items 1 to 6 and 8 to 11 with `create`
+as the first action, on 2026-11-10, and settled these points.
+
+- **The code of an `action_failed` event** is read from the row of the
+  outbox, which names the event of its outcome in a column
+  `outcome_event`; the `events` table gains no column. `Events` returns
+  it as `code`, and `<Class>_actions` shows it beside the row. The event
+  is linked to the document that caused the action with the qualifier
+  `caused`.
+- **The business date of an action's commit** is that of the event that
+  queued it, and so is the business date of the outcome's event: a
+  consequence belongs to the day of its cause, whenever the worker
+  reaches it.
+- **The engine's "no answer"** is a failure of the store. Every code
+  with which the engine refuses a command is an answer.
+- **The row's `rule`** is the path of the action, `/rules/2/do/0`. A row
+  that is retried keeps its last error until the next attempt replaces
+  it.
+- **The wait before attempt n** is `Backoff` doubled n − 2 times,
+  counted on the database's clock in whole seconds. A drain counts a row
+  it attempted whether the row then ran, waits or died.
+- **What is checked when the rule's class is defined.** The class a
+  `create` names exists and has states; each value is a scalar input of
+  it and its formula has the variable's type; an input the class
+  requires and has no default for is given. A class may create
+  documents of itself. A stored definition is not checked again when the
+  file opens, since a class may name one defined after it: what a later
+  redefinition broke is found when the action runs.
+- **Until the second step.** `transition`, `refresh` of another
+  document, `each` and the `table.*` actions are named by a preview and
+  not queued, and a redefinition that breaks another class's rule is not
+  refused yet.
+
 ## Rulings
 
 The draft of this record put three questions to the owner. He ruled on

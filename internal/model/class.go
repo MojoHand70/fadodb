@@ -248,6 +248,15 @@ func (c *Class) Variable(name string) (*Variable, bool) {
 type Env struct {
 	Schemas *SchemaSet
 	Sources formula.Sources
+	// Classes finds a defined class by name, for an action that names
+	// another class (ADR-0044); nil when there are none.
+	Classes func(name string) (*Class, bool)
+	// Lenient compiles a stored definition, which was checked when it was
+	// defined: what an action says about another class is taken as it is,
+	// typed against that class where the environment has it and left
+	// untyped where it does not, and is never a finding. A class may name
+	// one defined after it, and loading must not depend on the order.
+	Lenient bool
 }
 
 // Define parses and compiles a class definition in one step, against the

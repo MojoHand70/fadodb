@@ -300,8 +300,9 @@ left, bounded to eight per command. Each one that fires is a commit of its
 own that repeats steps 4 to 6 with its own triggers. A rule's action
 raises no trigger, so one command runs at most nine commits and each rule
 at most once in each (ADR-0040, ADR-0043). Today steps 4 and 5 run, with
-the synchronous actions `set`, `reset`, `refresh` and `emit`; the outbox
-arrives with the next steps of Phase 4.
+the synchronous actions `set`, `reset`, `refresh` and `emit`, and a
+`create` goes into the outbox; the other actions of the outbox arrive
+with the next steps of Phase 4.
 
 A triggered variable keeps its value between its triggers and carries the
 moment it was computed: the version of the document whose commit computed
@@ -423,11 +424,21 @@ arguments of its actions. `Reset` and `Refresh` are commands of the Go
 API, each a commit with an event of its own kind: a `Reset` is the
 caller's write and is checked against the write rights; a `Refresh`
 always commits and the eventless transitions are evaluated after it,
-which is how a caller makes a document look at the clock. An action of
-the outbox is checked for its name, named by
-a preview as queued, and not queued yet: the outbox, its worker and the
-actions that leave the database are the next steps of Phase 4 (ADR-0044,
-ADR-0045).
+which is how a caller makes a document look at the clock.
+
+The outbox runs today with `create` as its first action (ADR-0044). The
+commit evaluates the action's arguments and writes a row in its own
+transaction; a worker, or `Drain` when the embedder asks for it, makes
+the new document's commit, marks the row and appends `action_run` to the
+causing document in one transaction, so the action happens exactly once.
+It runs as the person whose command queued it: what that person may not
+do is a refusal, the row is dead at once with the code, and the causing
+document gets `action_failed`. A failure of the store is tried again
+with a doubling wait. `Outbox` lists the rows, `RetryAction` makes a
+dead one pending again, and the view `<Class>_actions` shows them to
+SQL. A chain of actions stops sixteen deep. `transition`, `refresh` of
+another document, `each` and the `table.*` actions are the next step;
+the actions that leave the database follow it (ADR-0045).
 
 ### Explicit tables
 
@@ -748,7 +759,7 @@ receives the transition event from the outbox (ADR-0027). Today the `fado`
 package has `Open`, `DefineClass`, `ValidateClass`, `DefineSchema`,
 `DefineTable`, `ImportRows`, `TableRows`, `Create`, `CreateMany`, `Set`,
 `Reset`, `Refresh`, `Transition`, `Transitions`, `Delete`, `Migrate`,
-`Get`, `Version`,
+`Drain`, `Outbox`, `RetryAction`, `Get`, `Version`,
 `History`, `Events`, `Query`, `Count`, `SQL`, `PutBlob`, `OpenFile`,
 `OpenBlob`, `CheckBlobs`, and `Preview` and `PreviewDraft` of a create, a
 set or a transition; a preview, a listing or a read runs at a moment the

@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 	"time"
 
@@ -45,6 +46,8 @@ type caction struct {
 	// refresh are the triggered variables a refresh recomputes, in
 	// declaration order.
 	refresh []*cvar
+	// create is the create of the outbox, nil for any other action.
+	create *ccreate
 }
 
 // cset is one assignment of a set.
@@ -116,10 +119,29 @@ func (c *class) layoutRules() error {
 		for _, a := range r.Actions {
 			ca := caction{a: a}
 			for _, set := range a.Sets {
-				if err := c.bindSlots(set.Formula, a.Path()+"/values/"+set.Variable.Name); err != nil {
+				if err := c.bindSlots(set.Formula, a.Path()+"/values/"+set.Name); err != nil {
 					return err
 				}
-				ca.sets = append(ca.sets, cset{cv: c.byName[strings.ToUpper(set.Variable.Name)], prog: set.Formula})
+				if a.Name == model.ActionCreate {
+					// The values of a create fill another class's variables.
+					if ca.create == nil {
+						ca.create = &ccreate{}
+					}
+					ca.create.values = append(ca.create.values, cvalue{name: set.Name, prog: set.Formula})
+					continue
+				}
+				ca.sets = append(ca.sets, cset{cv: c.byName[strings.ToUpper(set.Name)], prog: set.Formula})
+			}
+			if a.Name == model.ActionCreate && a.Queued {
+				if ca.create == nil {
+					ca.create = &ccreate{}
+				}
+				if a.ID != nil {
+					if err := c.bindSlots(a.ID, a.Path()+"/id"); err != nil {
+						return err
+					}
+					ca.create.id = a.ID
+				}
 			}
 			named := map[*cvar]bool{}
 			for _, v := range a.Variables {
@@ -279,9 +301,24 @@ func (s *Store) runRule(run *ruleRun, row *docRow, cr *crule) *Error {
 		var args Values
 		var err *Error
 		switch {
+		case act.a.Queued:
+			// An action of the outbox the engine runs itself: the commit
+			// evaluates its arguments now and writes its row with the
+			// commit (ADR-0043, item 7); a preview reports them.
+			if args, err = s.createArgs(run, row, act); err != nil {
+				args, err = nil, run.fail(act, err)
+			} else if !preview {
+				raw, jerr := json.Marshal(args)
+				if jerr != nil {
+					err = errf(CodeBadValue, "", "the arguments of the action do not encode: %v", jerr)
+					err.Path = act.a.Path()
+				} else {
+					s.queued = append(s.queued, queued{commit: run.commit, act: act, args: raw})
+				}
+			}
 		case !act.a.Sync:
-			// An action of the outbox: the commit queues it once the outbox
-			// is built; until then a preview names it and nothing runs.
+			// Any other action of the outbox is kept as written until the
+			// step that runs it: a preview names it and nothing is queued.
 		case act.a.Name == model.ActionSet:
 			args, err = s.runSet(run, row, act)
 		case act.a.Name == model.ActionReset:

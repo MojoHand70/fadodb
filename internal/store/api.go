@@ -88,6 +88,9 @@ type Event struct {
 	// BusinessDate is the calendar day as YYYY-MM-DD.
 	BusinessDate string `json:"business_date"`
 	TS           int64  `json:"ts"`
+	// Code is the code an action died with, on an event of kind
+	// action_failed (ADR-0044); empty otherwise.
+	Code string `json:"code,omitempty"`
 }
 
 // The event kinds this build writes, and the qualifiers of their
@@ -102,6 +105,12 @@ const (
 	// Refresh commands (ADR-0043).
 	EventReset   = "reset"
 	EventRefresh = "refresh"
+	// EventActionRun and EventActionFailed are the outcome of an action of
+	// the outbox (ADR-0044), on the document whose commit queued it: the
+	// name is the action's and the cause the event of that commit. An
+	// action that is retried has no event until it runs or dies.
+	EventActionRun    = "action_run"
+	EventActionFailed = "action_failed"
 	// EventCustom is the event a rule's emit appends (ADR-0043): its name
 	// is the one the rule gives, its after_version the version of the
 	// commit that ran the rule and its cause that commit's event.

@@ -39,6 +39,7 @@ func (s *Store) CreateMany(ctx context.Context, class string, docs []Values, opt
 		return nil, storageErr("begin", err)
 	}
 	out := make([]*Document, 0, len(docs))
+	queued := 0
 	for i, values := range docs {
 		res, err := s.run(ctx, command{op: opCreate, c: c, values: values, o: o}, now)
 		if err != nil {
@@ -53,10 +54,14 @@ func (s *Store) CreateMany(ctx context.Context, class string, docs []Values, opt
 			return nil, err
 		}
 		out = append(out, res.doc)
+		queued += res.queued
 	}
 	if _, err := s.writer.ExecContext(ctx, "COMMIT"); err != nil {
 		_, _ = s.writer.ExecContext(ctx, "ROLLBACK")
 		return nil, storageErr("commit", err)
+	}
+	if queued > 0 {
+		s.wakeWorker()
 	}
 	return out, nil
 }

@@ -10,8 +10,9 @@ a filter over a class and read-only SQL over the views, with previews that
 write nothing. `fadodb formula eval` evaluates a formula and `fadodb
 check` verifies a file. The rules of a class run inside the commit with
 the actions `set`, `reset`, `refresh` and `emit`, and triggered
-variables are computed at their triggers; the outbox, the row-level
-access rules, `QUERY` and the server come with their steps and phases.
+variables are computed at their triggers; a rule's `create` runs
+through the outbox. The other actions, the row-level access rules,
+`QUERY` and the server come with their steps and phases.
 Since v0.1.0 the records ADR-0022 to
 ADR-0038 fixed what the first embedder needs and what Phase 2 measured:
 SQLite as the transactional store and the in-memory index for lookups, by
@@ -44,7 +45,10 @@ inside the commit: the triggers of each commit, the synchronous actions
 second computes the triggered variables at their triggers, with the
 `refresh` action and the moment of each value, under engine schema 3
 (#52). Its third makes `Reset` and `Refresh` commands of the Go API
-(#53). This page is updated when a phase starts and when it ends;
+(#53). Its fourth is the outbox, in two parts: first the rows a commit
+writes, the worker and `Drain`, retries and dead actions, their events,
+the listing and the retry by hand, with `create` as the first action and
+the test that stops the process at every step (#54). This page is updated when a phase starts and when it ends;
 it never describes a phase as done before its acceptance criteria pass.
 
 Legend: ✅ done · 🚧 in progress · ⬜ not started

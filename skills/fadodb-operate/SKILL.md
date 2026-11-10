@@ -23,7 +23,7 @@ obstacle. The guards hold whoever is asking, the agent included.
 
 | Surface | Mark |
 |---|---|
-| the Go API: `Create`, `CreateMany`, `Set`, `Reset`, `Refresh`, `Transition`, `Transitions`, `Get`, `Delete`, `Query`, `Count`, `SQL`, `History`, `Events`, `Preview` | shipped |
+| the Go API: `Create`, `CreateMany`, `Set`, `Reset`, `Refresh`, `Transition`, `Transitions`, `Drain`, `Outbox`, `RetryAction`, `Get`, `Delete`, `Query`, `Count`, `SQL`, `History`, `Events`, `Preview` | shipped |
 | the principal on every call, `As`; the idempotency key, `Key`; a moment for reads and previews, `At` | shipped |
 | the JSON command set over HTTP and WebSocket | designed, Phase 6 |
 | the MCP server | designed, Phase 11 |

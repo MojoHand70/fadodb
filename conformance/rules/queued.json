@@ -1,24 +1,37 @@
 {
   "suite": "queued",
-  "description": "An action that is not synchronous belongs to the outbox (ADR-0043 item 7, ADR-0044). Until the outbox is built a commit queues nothing for it and a preview names it as queued, in the order it would be queued, beside the synchronous actions of the same rule.",
+  "description": "An action that changes something other than the rule's own document belongs to the outbox (ADR-0043 item 7, ADR-0044). The commit evaluates its arguments over the document as the rules before it left it and writes a row with the commit; a preview reports what would be queued, with those arguments, and writes nothing. An argument that errors refuses the command with the action's path. An action the engine does not run yet is named by the preview and not queued.",
+  "clock": "2026-03-01 12:00:00",
+  "classes": [
+    {"name": "Receipt", "variables": {"invoice": {"type": "text", "required": true}, "amount": {"type": "number"}, "share": {"type": "number"}},
+     "states": {"initial": "issued", "list": ["issued"]}}
+  ],
   "class": {
     "name": "Invoice",
-    "variables": {"total": {"type": "number"}, "paid_at": {"type": "datetime"}},
-    "states": {"initial": "open", "list": ["open", "paid"]},
-    "transitions": [{"name": "pay", "from": "open", "to": "paid"}],
+    "variables": {"total": {"type": "number"}, "parts": {"type": "number", "default": "1"}, "paid_at": {"type": "datetime"}},
+    "states": {"initial": "open", "list": ["open", "paid", "split"]},
+    "transitions": [{"name": "pay", "from": "open", "to": "paid"}, {"name": "split", "from": "open", "to": "split"}],
     "rules": [
       {"on": "enter", "state": "paid",
-       "do": [{"action": "set", "values": {"paid_at": "NOW()"}},
+       "do": [{"action": "set", "values": {"paid_at": "NOW()", "total": "total + 10"}},
               {"action": "create", "class": "Receipt", "values": {"invoice": "ID()", "amount": "total"}},
-              {"action": "slack.post", "args": {"channel": "\"#finance\"", "text": "\"paid\""}}]}
+              {"action": "slack.post", "args": {"channel": "\"#finance\"", "text": "\"paid\""}}]},
+      {"on": "enter", "state": "split",
+       "do": [{"action": "create", "class": "Receipt", "id": "\"R-\" & ID()", "values": {"invoice": "ID()", "share": "total / parts"}}]}
     ]
   },
-  "clock": "2026-03-01 12:00:00",
   "script": [
-    {"do": "create", "doc": "i", "values": {"total": 90}, "expect": {"state": "open", "version": 1}},
-    {"name": "a preview names what would be queued", "do": "preview", "transition": "pay",
-     "expect": {"state": "paid", "rules": ["/rules/0"], "queued": [{"action": "create"}, {"action": "slack.post"}], "values": {"paid_at": 1772366400}}},
-    {"name": "the commit runs the synchronous action and writes no other event", "do": "transition", "transition": "pay",
-     "expect": {"state": "paid", "version": 2, "values": {"paid_at": 1772366400}, "events": ["created", "transition:pay"]}}
+    {"do": "create", "doc": "i", "values": {"total": 90}, "expect": {"state": "open", "version": 1, "outbox": []}},
+    {"name": "a preview names what would be queued and queues nothing", "do": "preview", "transition": "pay",
+     "expect": {"state": "paid", "rules": ["/rules/0"], "queued": [{"action": "create"}, {"action": "slack.post"}], "values": {"paid_at": 1772366400, "total": 100}, "outbox": []}},
+    {"name": "the commit writes the row with the arguments of that moment: the total the set before it left", "do": "transition", "transition": "pay",
+     "expect": {"state": "paid", "version": 2, "values": {"paid_at": 1772366400, "total": 100}, "events": ["created", "transition:pay"],
+                "outbox": [{"action": "create", "status": "pending", "attempts": 0, "depth": 0}]}},
+    {"name": "nothing has run yet: the receipt does not exist", "do": "count", "class": "Receipt", "expect": {"count": 0}},
+    {"name": "an argument that errors refuses the command and queues nothing", "do": "create", "doc": "zero", "values": {"total": 50, "parts": 0}, "expect": {"version": 1}},
+    {"do": "transition", "doc": "zero", "transition": "split", "expect": {"code": "div_by_zero", "action": "/rules/1/do/0"}},
+    {"do": "get", "doc": "zero", "expect": {"state": "open", "version": 1, "outbox": []}},
+    {"name": "a preview records it and goes on", "do": "preview", "doc": "zero", "transition": "split",
+     "expect": {"state": "split", "errors": [{"code": "div_by_zero", "variable": "share", "action": "/rules/1/do/0"}], "queued": [{"action": "create"}]}}
   ]
 }

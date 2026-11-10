@@ -62,8 +62,8 @@ otherwise.
 Nothing in a skill describes as working what does not. Each section
 carries one of the project's marks, shipped, in progress or designed, the
 same marks the README, the ROADMAP and fadodb.org use, so an agent does
-not write an action for the outbox expecting it to run before Phase 4
-builds the outbox. Every class under
+not write an action that leaves the database expecting it to run before
+Phase 4 builds it. Every class under
 `examples/classes/` is validated and defined by `TestExampleClasses` in
 `fado/` on every push, so an engine change that breaks a sample fails CI
 before a reader meets it.

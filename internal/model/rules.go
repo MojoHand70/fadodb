@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strconv"
+	"strings"
 
 	"github.com/MojoHand70/fadodb/internal/formula"
 )
@@ -44,7 +45,17 @@ type Action struct {
 	// document; a refresh that names another document belongs to the
 	// outbox (ADR-0044).
 	Sync bool
-	// Sets are the assignments of a set, in the order written.
+	// Queued is true for an action of the outbox the engine runs itself
+	// (ADR-0044): the commit evaluates its arguments and writes a row.
+	// An action that is neither Sync nor Queued is kept as written.
+	Queued bool
+	// Target is the class a create makes a document of, by its declared
+	// name, and ID the formula of the new document's id, nil when the
+	// engine gives one.
+	Target string
+	ID     *formula.Program
+	// Sets are the assignments of a set, or the values of a create, in
+	// the order written.
 	Sets []Assignment
 	// Variables are the inputs a reset names, in the order written, or the
 	// triggered variables a refresh recomputes, in declaration order.
@@ -58,20 +69,25 @@ type Action struct {
 // Path is the action's place in the definition, "/rules/2/do/0".
 func (a *Action) Path() string { return a.Rule.Path() + "/do/" + strconv.Itoa(a.Index) }
 
-// Assignment is one variable of a set with the formula that gives its
-// value.
+// Assignment is one variable of a set, or of the document a create
+// makes, with the formula that gives its value. Name is the variable as
+// its class declares it; Variable is nil when a stored definition names
+// one the target class no longer has.
 type Assignment struct {
+	Name     string
 	Variable *Variable
 	Formula  *formula.Program
 	Src      string
 }
 
-// The names of the synchronous actions.
+// The names of the synchronous actions, and of the outbox actions the
+// engine runs itself.
 const (
 	ActionSet     = "set"
 	ActionReset   = "reset"
 	ActionRefresh = "refresh"
 	ActionEmit    = "emit"
+	ActionCreate  = "create"
 )
 
 var ruleTriggers = map[string]bool{"create": true, "values_change": true, "exit": true, "enter": true, "transition": true, "delete": true, "schedule": true}
@@ -229,7 +245,7 @@ func compileAction(c *collector, path string, raw json.RawMessage, cls *Class, s
 			}
 			seen[upper(name)] = true
 			if prog := bindAs(c, vpath, formulas[name], scope, formula.ModeAny, v.Type); prog != nil {
-				a.Sets = append(a.Sets, Assignment{Variable: v, Formula: prog, Src: formulas[name]})
+				a.Sets = append(a.Sets, Assignment{Name: v.Name, Variable: v, Formula: prog, Src: formulas[name]})
 			}
 		}
 	case ActionReset:
@@ -277,6 +293,8 @@ func compileAction(c *collector, path string, raw json.RawMessage, cls *Class, s
 			c.add(CodeBadName, path+"/event", reason+": "+quote(def.Event))
 		}
 		a.Event = def.Event
+	case ActionCreate:
+		return compileCreate(c, path, raw, cls, scope, a)
 	case ActionRefresh:
 		// A refresh that carries an id names another document and belongs
 		// to the outbox (ADR-0044, item 13); it is kept as written.
@@ -326,6 +344,139 @@ func compileAction(c *collector, path string, raw json.RawMessage, cls *Class, s
 		}
 		if len(def.Variables) == 0 && len(a.Variables) == 0 {
 			c.hint(CodeNotAllowed, path, "no variable of the class lists refresh among its triggers, so the action would recompute nothing", `give a triggered variable "on": ["refresh"], or drop the action`)
+		}
+	}
+	return a
+}
+
+// compileCreate reads a create (ADR-0044, item 7): the class is a name,
+// the values and the id are formulas over the document that fires the
+// rule, typed against the variables of the class they fill. The class and
+// its variables are checked now, when the rule's class is defined.
+func compileCreate(c *collector, path string, raw json.RawMessage, cls *Class, scope *formula.Scope, a *Action) *Action {
+	var def struct {
+		Action string          `json:"action"`
+		Class  string          `json:"class"`
+		ID     string          `json:"id"`
+		Values json.RawMessage `json:"values"`
+		Each   json.RawMessage `json:"each"`
+		As     json.RawMessage `json:"as"`
+	}
+	if !decodeAction(c, path, raw, &def) {
+		return nil
+	}
+	a.Queued = true
+	if len(def.Each) > 0 || len(def.As) > 0 {
+		c.hint(CodeNotSupported, path+"/each", "this build does not run each on a create yet", "it arrives with the next step of Phase 4; until then a rule creates one document")
+	}
+	if def.Class == "" {
+		c.hint(CodeMissing, path+"/class", "a create names the class of the document it makes", `"class": "Receipt"`)
+		return nil
+	}
+	// The class under definition may create documents of itself.
+	target, ok := cls, upper(def.Class) == upper(cls.Name)
+	if !ok && c.env.Classes != nil {
+		target, ok = c.env.Classes(def.Class)
+	}
+	lenient := c.env.Lenient
+	a.Target = def.Class
+	switch {
+	case ok:
+		a.Target = target.Name
+		if target.States == nil && !lenient {
+			c.hint(CodeNotAllowed, path+"/class", target.Name+" declares no states: it is a stateless application and stores no documents (ADR-0040)", "create documents of a class that has a states block")
+		}
+	case !lenient:
+		c.hint(CodeUnknownClass, path+"/class", "unknown class "+quote(def.Class), "define it before the class whose rule creates its documents")
+		return nil
+	}
+	var names []string
+	formulas := map[string]string{}
+	if len(def.Values) > 0 {
+		var err error
+		if names, err = orderedKeys(def.Values); err != nil {
+			c.add(CodeBadValue, path+"/values", "the values of a create are an object of formulas by variable")
+			return nil
+		}
+		if err := json.Unmarshal(def.Values, &formulas); err != nil {
+			c.hint(CodeBadValue, path+"/values", "every value of a create is a formula, written as text", `a literal text is "\"new\"", a number "0"`)
+			return nil
+		}
+	}
+	text := formula.Scalar(formula.KindText)
+	// untyped binds a formula whose variable the environment does not
+	// have, for a stored definition.
+	untyped := func(vpath, src string) *formula.Program {
+		prog, err := c.bind(src, scope, formula.ModeAny)
+		if err != nil {
+			c.formulaErr(vpath, err)
+			return nil
+		}
+		return prog
+	}
+	given := map[string]bool{}
+	for _, name := range names {
+		vpath := path + "/values/" + name
+		if given[upper(name)] {
+			c.addf(CodeDuplicate, vpath, "%s is given twice; names differ in case only", quote(name))
+			continue
+		}
+		given[upper(name)] = true
+		var v *Variable
+		if ok {
+			v, _ = target.Variable(name)
+		}
+		composite := v != nil && (v.Type.Kind == formula.KindRows || v.Type.Kind == formula.KindArray || v.Type.Kind == formula.KindObject)
+		if lenient && (v == nil || v.Computed || composite) {
+			if prog := untyped(vpath, formulas[name]); prog != nil {
+				a.Sets = append(a.Sets, Assignment{Name: name, Formula: prog, Src: formulas[name]})
+			}
+			continue
+		}
+		switch {
+		case v == nil:
+			c.addf(CodeUnknownVariable, vpath, "the class %s has no variable %s", target.Name, quote(name))
+			continue
+		case v.Computed:
+			c.hint(CodeNotAllowed, vpath, "a create gives input variables; "+v.Name+" of "+target.Name+" is computed", "its formula gives its value")
+			continue
+		case composite:
+			c.hint(CodeNotSupported, vpath, "a rule cannot give "+v.Name+": no formula gives "+article(v.Type.String())+" in this build", "give scalar variables")
+			continue
+		}
+		var prog *formula.Program
+		if lenient {
+			// A type that no longer fits is found when the action runs.
+			var probe collector
+			probe.env = c.env
+			if prog = bindAs(&probe, vpath, formulas[name], scope, formula.ModeAny, v.Type); prog == nil {
+				prog = untyped(vpath, formulas[name])
+			}
+		} else {
+			prog = bindAs(c, vpath, formulas[name], scope, formula.ModeAny, v.Type)
+		}
+		if prog != nil {
+			a.Sets = append(a.Sets, Assignment{Name: v.Name, Variable: v, Formula: prog, Src: formulas[name]})
+		}
+	}
+	// A required input the create does not give and the class does not
+	// default would refuse every document: say so now.
+	if ok && !lenient {
+		var missing []string
+		for _, v := range target.Variables {
+			if !v.Computed && v.Required && v.Default == nil && !given[upper(v.Name)] && v.Type.IsScalar() {
+				missing = append(missing, v.Name)
+			}
+		}
+		if len(missing) > 0 {
+			c.hint(CodeMissing, path+"/values", "the create gives no value for "+strings.Join(missing, ", ")+", which "+target.Name+" requires and has no default for", "give each a formula under values")
+		}
+	}
+	if def.ID != "" {
+		if lenient {
+			a.ID = untyped(path+"/id", def.ID)
+		} else {
+			a.ID = bindAs(c, path+"/id", def.ID, scope, formula.ModeAny, text)
 		}
 	}
 	return a

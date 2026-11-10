@@ -110,6 +110,7 @@ type Store struct {
 	hops        []hop
 	emits       []emitted
 	queued      []queued // the actions for the outbox one command asked for
+	lists       []list   // the composites the creates with each of one command read
 	setVals     []formula.Value
 	emptied     []*child
 	changed     []bool

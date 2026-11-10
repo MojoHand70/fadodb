@@ -151,8 +151,9 @@ suites', with these additions:
 - Of a `preview` step: `rules` are the paths of the rules that ran, in
   the order they ran across the command's commits; `skipped` the paths of
   the rules whose trigger was raised and whose condition was not TRUE;
-  `queued` the actions for the outbox, each by its `action` name, in the
-  order they would be queued; `errors` what the preview recorded and went
+  `queued` the actions for the outbox, each by its `action` name and,
+  where given, by the `args` the preview evaluated, in the order they
+  would be queued; `errors` what the preview recorded and went
   on from, each by `code` and, where given, by `variable` and by the
   `action` path.
 
@@ -164,10 +165,14 @@ suites', with these additions:
   variable has no moment. A variable listed under `absent` must have no
   moment either.
 
-- A suite may carry `classes`, definitions the store takes before
-  `class`, in order: the classes its rules name (ADR-0044). A `query` or
-  a `count` step reads the class its `class` names instead of the
-  suite's own.
+- A suite may carry `tables` and `classes`, definitions the store takes
+  before `class`, in order: the tables its rules write and the classes
+  they name (ADR-0044). A step acts on the class its `class` names
+  instead of the suite's own. A `create` may give its document an `id`,
+  and any other step may name by `id` a document the script did not
+  create: one an action made.
+- The step `import` writes `rows` into `table`, and the step `rows`
+  reads `table`; its `rows` are the rows expected, in key order.
 - The step `drain` runs every action of the outbox that is due, and
   `drained` is how many it attempted. The step `retry` makes the action
   at position `row` among those the document queued pending again. The

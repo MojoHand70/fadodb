@@ -463,6 +463,7 @@ func (s *Store) compileClass(ctx context.Context, data []byte) (*model.Class, mo
 				Hint:    "omit version, or write " + itoa(version)})
 		}
 		diags = append(diags, s.redefinitionDiagnostics(ctx, old, cls)...)
+		diags = append(diags, s.brokenRules(cls, nil)...)
 	}
 	return cls, diags, version
 }

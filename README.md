@@ -18,10 +18,12 @@ Website: [fadodb.org](https://fadodb.org).
 > principal; previews any change at a moment the caller chooses; runs
 > the rules of a class inside the commit, with the actions `set`,
 > `reset`, `refresh` and `emit`; and computes triggered variables at
-> their triggers, each with the moment it was computed. A rule's
-> `create` of another document runs through the outbox, exactly once
-> and as the person who caused it. The other actions of the outbox and
-> the ones that leave the database, the row-level access rules, `QUERY`
+> their triggers, each with the moment it was computed. What a rule
+> does beyond its own document runs through the outbox, exactly once
+> and as the person who caused it: it creates a document, or one for
+> each element of a list, moves or refreshes another document, and
+> changes a row of a table. The actions that leave the database, the
+> row-level access rules, `QUERY`
 > and the server come with their steps and phases. The numbers are in
 > [docs/perf/](docs/perf/), the plan in [ROADMAP.md](ROADMAP.md).
 
@@ -108,11 +110,14 @@ happens, the entry or the exit of a state, a transition or a `refresh`,
 and kept in between; the document says under `computed` at which version
 and when. `Refresh` recomputes such variables on request and lets the
 document move if a guard now holds, and `Reset` puts inputs back to
-their defaults. An action on another document, such as the `create`
+their defaults. An action on something else, such as the `create`
 above, is written to the outbox in the commit's transaction and run
 afterwards by a worker, exactly once and as the person whose command
 caused it; a refusal leaves a dead action with its code, `Outbox` lists
-them and `RetryAction` tries one again. A preview, a listing or a read
+them and `RetryAction` tries one again. Beside `create`, which with
+`each` makes one document for each element of a list, a rule can take a
+`transition` of another document, `refresh` it so that it moves by its
+own guards, and insert, update or delete a row of a table. A preview, a listing or a read
 may be asked at a moment the caller chooses, `fado.At(t)`, and a preview
 reports the moment it ran under; a commit runs at the database's clock.
 A refusal is a `fado.Error` with a stable code and the variable it

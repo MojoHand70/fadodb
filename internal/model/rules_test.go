@@ -3,6 +3,8 @@ package model
 import (
 	"strings"
 	"testing"
+
+	"github.com/MojoHand70/fadodb/internal/formula"
 )
 
 // flow is a class with states for the rule tests. open and held are
@@ -35,7 +37,7 @@ func TestRules_Compile(t *testing.T) {
 	          {"action": "slack.post", "args": {"text": "note"}},
 	          {"action": "refresh", "variables": ["stamp", "snap"]},
 	          {"action": "refresh"},
-	          {"action": "refresh", "class": "Other", "id": "note", "variables": ["count"]}]},
+	          {"action": "refresh", "id": "note", "variables": ["STAMP"]}]},
 	  {"on": "values_change", "variables": ["a", "sum"], "do": [{"action": "emit", "event": "changed"}]}`)), nil)
 	if len(diags) > 0 {
 		t.Fatal(diags.Error())
@@ -63,8 +65,8 @@ func TestRules_Compile(t *testing.T) {
 	if a := r.Actions[5]; !a.Sync || names(a) != "snap stamp" {
 		t.Errorf("refresh of all: sync %v, variables %q", a.Sync, names(a))
 	}
-	if a := r.Actions[6]; a.Sync || a.Name != ActionRefresh || len(a.Variables) != 0 {
-		t.Errorf("a refresh of another document is kept as written for the outbox: %+v", a)
+	if a := r.Actions[6]; a.Sync || !a.Queued || a.Name != ActionRefresh || a.Target != "T" || a.ID == nil || len(a.Variables) != 0 || strings.Join(a.Names, " ") != "stamp" {
+		t.Errorf("a refresh of another document is an action of the outbox: %+v", a)
 	}
 	set, reset, emit, post := r.Actions[0], r.Actions[1], r.Actions[2], r.Actions[3]
 	if !set.Sync || len(set.Sets) != 2 || set.Sets[0].Variable.Name != "note" || set.Sets[1].Variable.Name != "a" || set.Sets[1].Formula == nil || set.Path() != "/rules/0/do/0" {
@@ -275,7 +277,6 @@ func TestRules_Create(t *testing.T) {
 		{"a value that is not a formula", `{"action": "create", "class": "Receipt", "values": {"invoice": 7}}`, CodeBadValue, "/rules/0/do/0/values"},
 		{"an id that is not text", `{"action": "create", "class": "Receipt", "id": "n", "values": {"invoice": "ID()"}}`, CodeTypeMismatch, "/rules/0/do/0/id"},
 		{"a misspelt property", `{"action": "create", "class": "Receipt", "value": {"invoice": "ID()"}}`, CodeBadJSON, "/rules/0/do/0"},
-		{"each, which waits", `{"action": "create", "class": "Receipt", "each": "note", "as": "x", "values": {"invoice": "ID()"}}`, CodeNotSupported, "/rules/0/do/0/each"},
 	} {
 		_, diags := DefineIn([]byte(invoice(tc.action)), env)
 		found := false
@@ -312,5 +313,259 @@ func TestRules_Create(t *testing.T) {
 	// itself is broken.
 	if _, diags := DefineIn([]byte(invoice(`{"action": "create", "class": "Voucher", "values": {"x": "missing"}}`)), lenient); len(diags) == 0 {
 		t.Error("a formula that does not bind loaded leniently")
+	}
+}
+
+// A create with each (ADR-0044, item 12): each names an array or a rows
+// variable of the rule's class, as names the element, and the formulas
+// under values and id read the element beside the document.
+func TestRules_Each(t *testing.T) {
+	approval, diags := Define([]byte(`{"name": "Approval",
+ "variables": {"invoice": {"type": "text"}, "approver": {"type": "text"}, "qty": {"type": "int"}, "price": {"type": "money", "scale": 2}},
+ "states": {"initial": "asked", "list": ["asked"]}}`), nil)
+	if len(diags) > 0 {
+		t.Fatal(diags.Error())
+	}
+	env := Env{Classes: func(name string) (*Class, bool) { return approval, strings.EqualFold(name, "Approval") }}
+	invoice := func(action string) string {
+		return `{"name": "Invoice",
+ "variables": {"note": {"type": "text"}, "approvers": {"type": "array<text>"}, "counts": {"type": "array<int>"},
+               "lines": {"type": "rows", "schema": {"sku": "text", "qty": "int", "price": "money"}}},
+ "states": {"initial": "open", "list": ["open", "sent"]}, "transitions": [{"name": "send", "from": "open", "to": "sent"}],
+ "rules": [{"on": "enter", "state": "sent", "do": [` + action + `]}]}`
+	}
+	cls, diags := DefineIn([]byte(invoice(`{"action": "create", "class": "Approval", "each": "APPROVERS", "as": "who", "id": "ID() & \"-\" & who",
+ "values": {"invoice": "ID()", "approver": "who & note"}}`)), env)
+	if len(diags) > 0 {
+		t.Fatal(diags.Error())
+	}
+	a := cls.Rules[0].Actions[0]
+	if !a.Queued || a.Each == nil || a.Each.Name != "approvers" || a.As != "who" || a.ID == nil || len(a.Sets) != 2 {
+		t.Fatalf("the compiled create: %+v", a)
+	}
+	// The element is a slot of its formulas, under the name as gives it.
+	slots := func(a Assignment) string {
+		var names []string
+		for _, s := range a.Formula.Slots {
+			names = append(names, s.Name)
+		}
+		return strings.Join(names, " ")
+	}
+	if got := slots(a.Sets[1]); got != "who note" {
+		t.Errorf("the slots of a formula over an element: %q", got)
+	}
+	// An element of a rows variable is read by field, and typed by it.
+	cls, diags = DefineIn([]byte(invoice(`{"action": "create", "class": "Approval", "each": "lines", "as": "line",
+ "values": {"approver": "line.sku", "qty": "line.qty + 1", "price": "line.price"}}`)), env)
+	if len(diags) > 0 {
+		t.Fatal(diags.Error())
+	}
+	if a := cls.Rules[0].Actions[0]; a.Each.Name != "lines" || slots(a.Sets[0]) != "line.sku" || a.Sets[1].Formula.Result.String() != "int" {
+		t.Errorf("the compiled create over rows: %+v", a)
+	}
+	for _, tc := range []struct{ name, action, code, path string }{
+		{"as without each", `{"action": "create", "class": "Approval", "as": "x", "values": {}}`, CodeMissing, "/rules/0/do/0/each"},
+		{"each without as", `{"action": "create", "class": "Approval", "each": "approvers", "values": {}}`, CodeMissing, "/rules/0/do/0/as"},
+		{"each of an unknown variable", `{"action": "create", "class": "Approval", "each": "people", "as": "x", "values": {}}`, CodeUnknownVariable, "/rules/0/do/0/each"},
+		{"each of a scalar", `{"action": "create", "class": "Approval", "each": "note", "as": "x", "values": {}}`, CodeTypeMismatch, "/rules/0/do/0/each"},
+		{"as that is a variable of the class", `{"action": "create", "class": "Approval", "each": "approvers", "as": "Note", "values": {}}`, CodeDuplicate, "/rules/0/do/0/as"},
+		{"as that is no name", `{"action": "create", "class": "Approval", "each": "approvers", "as": "the one", "values": {}}`, CodeBadName, "/rules/0/do/0/as"},
+		{"as that is a keyword", `{"action": "create", "class": "Approval", "each": "approvers", "as": "and", "values": {}}`, CodeReservedName, "/rules/0/do/0/as"},
+		{"each that is no name", `{"action": "create", "class": "Approval", "each": 3, "as": "x", "values": {}}`, CodeBadJSON, "/rules/0/do/0"},
+		{"an element of the wrong type", `{"action": "create", "class": "Approval", "each": "counts", "as": "n", "values": {"approver": "n"}}`, CodeTypeMismatch, "/rules/0/do/0/values/approver"},
+		{"a whole element of a rows variable", `{"action": "create", "class": "Approval", "each": "lines", "as": "line", "values": {"approver": "line"}}`, CodeBadFormula, "/rules/0/do/0/values/approver"},
+		{"a field the element lacks", `{"action": "create", "class": "Approval", "each": "lines", "as": "line", "values": {"approver": "line.name"}}`, CodeBadFormula, "/rules/0/do/0/values/approver"},
+		{"the element outside a create with each", `{"action": "create", "class": "Approval", "values": {"approver": "who"}}`, CodeBadFormula, "/rules/0/do/0/values/approver"},
+	} {
+		_, diags := DefineIn([]byte(invoice(tc.action)), env)
+		if !hasDiag(diags, tc.code, tc.path) {
+			t.Errorf("%s: want %s at %s, got:\n%s", tc.name, tc.code, tc.path, diags.Error())
+		}
+	}
+}
+
+func hasDiag(diags Diagnostics, code, path string) bool {
+	for _, d := range diags {
+		if d.Code == code && d.Path == path {
+			return true
+		}
+	}
+	return false
+}
+
+// A transition action and a refresh of another document (ADR-0044, items
+// 7 and 13): the class is the rule's own unless named, the transition and
+// the variables are the target's, and the id is a formula over the
+// document that fires the rule.
+func TestRules_OtherDocuments(t *testing.T) {
+	parent, diags := Define([]byte(`{"name": "Parent",
+ "variables": {"n": {"type": "int"}, "label": {"type": "text"}, "twice": {"formula": "n * 2"},
+               "count": {"formula": "n + 1", "mode": "triggered", "on": ["refresh"]},
+               "entered": {"formula": "NOW()", "mode": "triggered", "on": ["enter:busy"]}},
+ "states": {"initial": "idle", "list": ["idle", "busy"]},
+ "transitions": [{"name": "start", "from": "idle", "to": "busy"}, {"from": "busy", "to": "idle", "guard": "n > 9"}]}`), nil)
+	if len(diags) > 0 {
+		t.Fatal(diags.Error())
+	}
+	sheet, _ := Define([]byte(`{"name": "Sheet", "variables": {"a": {"type": "int"}}}`), nil)
+	env := Env{Classes: func(name string) (*Class, bool) {
+		switch strings.ToUpper(name) {
+		case "PARENT":
+			return parent, true
+		case "SHEET":
+			return sheet, true
+		}
+		return nil, false
+	}}
+	child := func(action string) string {
+		return `{"name": "Child", "variables": {"parent": {"type": "text"}, "n": {"type": "int"}, "note": {"type": "text"},
+               "seen": {"formula": "NOW()", "mode": "triggered", "on": ["refresh"]}},
+ "states": {"initial": "open", "list": ["open", "done"]}, "transitions": [{"name": "finish", "from": "open", "to": "done"}],
+ "rules": [{"on": "enter", "state": "done", "do": [` + action + `]}]}`
+	}
+	cls, diags := DefineIn([]byte(child(`{"action": "transition", "class": "parent", "id": "parent", "name": "start", "values": {"n": "n + 1", "label": "note"}},
+ {"action": "transition", "id": "ID()", "name": "finish"},
+ {"action": "refresh", "class": "Parent", "id": "parent", "variables": ["COUNT"]},
+ {"action": "refresh", "class": "Parent", "id": "parent"},
+ {"action": "refresh", "id": "parent", "variables": ["seen"]}`)), env)
+	if len(diags) > 0 {
+		t.Fatal(diags.Error())
+	}
+	acts := cls.Rules[0].Actions
+	if a := acts[0]; a.Sync || !a.Queued || a.Target != "Parent" || a.Transition != "start" || a.ID == nil || len(a.Sets) != 2 || a.Sets[0].Variable != parent.Variables[0] {
+		t.Errorf("a transition of another document: %+v", a)
+	}
+	if a := acts[1]; !a.Queued || a.Target != "Child" || a.Transition != "finish" || len(a.Sets) != 0 {
+		t.Errorf("a transition of a document of the rule's own class: %+v", a)
+	}
+	if a := acts[2]; a.Sync || !a.Queued || a.Target != "Parent" || strings.Join(a.Names, " ") != "count" || a.ID == nil {
+		t.Errorf("a refresh of another document: %+v", a)
+	}
+	if a := acts[3]; !a.Queued || len(a.Names) != 0 {
+		t.Errorf("a refresh of another document that names no variable: %+v", a)
+	}
+	if a := acts[4]; !a.Queued || a.Target != "Child" || strings.Join(a.Names, " ") != "seen" {
+		t.Errorf("a refresh of a document of the rule's own class: %+v", a)
+	}
+	for _, tc := range []struct{ name, action, code, path string }{
+		{"a transition of an unknown class", `{"action": "transition", "class": "Voucher", "id": "parent", "name": "start"}`, CodeUnknownClass, "/rules/0/do/0/class"},
+		{"a transition of a class that stores no documents", `{"action": "transition", "class": "Sheet", "id": "parent", "name": "start"}`, CodeNotAllowed, "/rules/0/do/0/class"},
+		{"a transition without a name", `{"action": "transition", "class": "Parent", "id": "parent"}`, CodeMissing, "/rules/0/do/0/name"},
+		{"a transition the class lacks", `{"action": "transition", "class": "Parent", "id": "parent", "name": "finish"}`, CodeUnknownTransition, "/rules/0/do/0/name"},
+		{"a transition without an id", `{"action": "transition", "class": "Parent", "name": "start"}`, CodeMissing, "/rules/0/do/0/id"},
+		{"an id that is not text", `{"action": "transition", "class": "Parent", "id": "n", "name": "start"}`, CodeTypeMismatch, "/rules/0/do/0/id"},
+		{"a value of an unknown variable", `{"action": "transition", "class": "Parent", "id": "parent", "name": "start", "values": {"note": "note"}}`, CodeUnknownVariable, "/rules/0/do/0/values/note"},
+		{"a value of a computed variable", `{"action": "transition", "class": "Parent", "id": "parent", "name": "start", "values": {"twice": "n"}}`, CodeNotAllowed, "/rules/0/do/0/values/twice"},
+		{"a value of the wrong type", `{"action": "transition", "class": "Parent", "id": "parent", "name": "start", "values": {"n": "note"}}`, CodeTypeMismatch, "/rules/0/do/0/values/n"},
+		{"a transition with a misspelt property", `{"action": "transition", "class": "Parent", "id": "parent", "transition": "start"}`, CodeBadJSON, "/rules/0/do/0"},
+		{"a refresh of an unknown class", `{"action": "refresh", "class": "Voucher", "id": "parent"}`, CodeUnknownClass, "/rules/0/do/0/class"},
+		{"a refresh that names a class and no document", `{"action": "refresh", "class": "Parent"}`, CodeMissing, "/rules/0/do/0/id"},
+		{"a refresh with a blank id", `{"action": "refresh", "class": "Parent", "id": ""}`, CodeMissing, "/rules/0/do/0/id"},
+		{"a refresh of a variable the class lacks", `{"action": "refresh", "class": "Parent", "id": "parent", "variables": ["seen"]}`, CodeUnknownVariable, "/rules/0/do/0/variables/0"},
+		{"a refresh of an auto variable", `{"action": "refresh", "class": "Parent", "id": "parent", "variables": ["twice"]}`, CodeNotAllowed, "/rules/0/do/0/variables/0"},
+		{"a refresh of a variable that does not list refresh", `{"action": "refresh", "class": "Parent", "id": "parent", "variables": ["count", "entered"]}`, CodeNotAllowed, "/rules/0/do/0/variables/1"},
+		{"a refresh of one variable twice", `{"action": "refresh", "class": "Parent", "id": "parent", "variables": ["count", "Count"]}`, CodeDuplicate, "/rules/0/do/0/variables/1"},
+	} {
+		_, diags := DefineIn([]byte(child(tc.action)), env)
+		if !hasDiag(diags, tc.code, tc.path) {
+			t.Errorf("%s: want %s at %s, got:\n%s", tc.name, tc.code, tc.path, diags.Error())
+		}
+	}
+	// A stored definition loads whatever became of what it names.
+	lenient := env
+	lenient.Lenient = true
+	for name, action := range map[string]string{
+		"an unknown class":      `{"action": "transition", "class": "Voucher", "id": "parent", "name": "start", "values": {"x": "n"}}`,
+		"a transition it lost":  `{"action": "transition", "class": "Parent", "id": "parent", "name": "stop"}`,
+		"a variable it lost":    `{"action": "transition", "class": "Parent", "id": "parent", "name": "start", "values": {"gone": "n"}}`,
+		"a type that changed":   `{"action": "transition", "class": "Parent", "id": "parent", "name": "start", "values": {"n": "note"}}`,
+		"a refresh it lost":     `{"action": "refresh", "class": "Parent", "id": "parent", "variables": ["gone", "entered"]}`,
+		"a refresh of no class": `{"action": "refresh", "class": "Voucher", "id": "parent"}`,
+	} {
+		cls, diags := DefineIn([]byte(child(action)), lenient)
+		if len(diags) > 0 {
+			t.Errorf("%s, loaded leniently: %s", name, diags.Error())
+			continue
+		}
+		if a := cls.Rules[0].Actions[0]; !a.Queued || a.ID == nil || a.Target == "" {
+			t.Errorf("%s, loaded leniently: %+v", name, a)
+		}
+	}
+}
+
+// The table actions (ADR-0044, item 7): one row of an explicit table,
+// addressed by its key, each formula typed against its column.
+func TestRules_TableActions(t *testing.T) {
+	tbl, diags := DefineTable([]byte(`{"name": "Prices", "columns": {"sku": "text", "min_qty": "int", "price": "money(2)", "note": "text"}, "key": ["sku", "min_qty"]}`))
+	if len(diags) > 0 {
+		t.Fatal(diags)
+	}
+	env := Env{Sources: formula.NewSourceSet(tbl.Source())}
+	item := func(action string) string {
+		return `{"name": "Item", "variables": {"sku": {"type": "text"}, "qty": {"type": "int"}, "price": {"type": "money", "scale": 2}, "note": {"type": "text"}},
+ "states": {"initial": "open", "list": ["open", "listed"]}, "transitions": [{"name": "list", "from": "open", "to": "listed"}],
+ "rules": [{"on": "enter", "state": "listed", "do": [` + action + `]}]}`
+	}
+	cls, diags := DefineIn([]byte(item(`{"action": "table.insert", "table": "prices", "row": {"SKU": "sku", "min_qty": "qty", "price": "price"}},
+ {"action": "table.update", "table": "Prices", "key": {"sku": "sku", "min_qty": "1"}, "set": {"price": "price", "note": "note"}},
+ {"action": "table.delete", "table": "Prices", "key": {"min_qty": "qty", "sku": "sku"}}`)), env)
+	if len(diags) > 0 {
+		t.Fatal(diags.Error())
+	}
+	acts := cls.Rules[0].Actions
+	if a := acts[0]; a.Sync || !a.Queued || a.Target != "Prices" || len(a.Sets) != 3 || a.Sets[0].Name != "sku" || len(a.Keys) != 0 {
+		t.Errorf("a table.insert: %+v", a)
+	}
+	if a := acts[1]; !a.Queued || len(a.Keys) != 2 || len(a.Sets) != 2 || a.Sets[1].Name != "note" || a.Keys[1].Formula.Result.String() != "int" {
+		t.Errorf("a table.update: %+v", a)
+	}
+	if a := acts[2]; !a.Queued || len(a.Keys) != 2 || a.Keys[0].Name != "min_qty" || len(a.Sets) != 0 {
+		t.Errorf("a table.delete: %+v", a)
+	}
+	for _, tc := range []struct{ name, action, code, path string }{
+		{"no table", `{"action": "table.insert", "row": {"sku": "sku"}}`, CodeMissing, "/rules/0/do/0/table"},
+		{"an unknown table", `{"action": "table.insert", "table": "Costs", "row": {"sku": "sku"}}`, CodeUnknownTable, "/rules/0/do/0/table"},
+		{"an insert without a row", `{"action": "table.insert", "table": "Prices"}`, CodeMissing, "/rules/0/do/0/row"},
+		{"an insert with a key", `{"action": "table.insert", "table": "Prices", "row": {"sku": "sku", "min_qty": "1"}, "key": {"sku": "sku"}}`, CodeNotAllowed, "/rules/0/do/0/key"},
+		{"an insert that leaves a key column out", `{"action": "table.insert", "table": "Prices", "row": {"sku": "sku", "price": "price"}}`, CodeMissing, "/rules/0/do/0/row"},
+		{"an insert of an unknown column", `{"action": "table.insert", "table": "Prices", "row": {"sku": "sku", "min_qty": "1", "cost": "price"}}`, CodeUnknownVariable, "/rules/0/do/0/row/cost"},
+		{"an insert of the wrong type", `{"action": "table.insert", "table": "Prices", "row": {"sku": "sku", "min_qty": "note"}}`, CodeTypeMismatch, "/rules/0/do/0/row/min_qty"},
+		{"a column given twice", `{"action": "table.insert", "table": "Prices", "row": {"sku": "sku", "min_qty": "1", "SKU": "sku"}}`, CodeDuplicate, "/rules/0/do/0/row/SKU"},
+		{"a row that is not formulas", `{"action": "table.insert", "table": "Prices", "row": {"sku": "sku", "min_qty": 1}}`, CodeBadValue, "/rules/0/do/0/row"},
+		{"an empty row", `{"action": "table.insert", "table": "Prices", "row": {}}`, CodeMissing, "/rules/0/do/0/row"},
+		{"an update without a key", `{"action": "table.update", "table": "Prices", "set": {"price": "price"}}`, CodeMissing, "/rules/0/do/0/key"},
+		{"an update without a set", `{"action": "table.update", "table": "Prices", "key": {"sku": "sku", "min_qty": "1"}}`, CodeMissing, "/rules/0/do/0/set"},
+		{"an update with an empty set", `{"action": "table.update", "table": "Prices", "key": {"sku": "sku", "min_qty": "1"}, "set": {}}`, CodeMissing, "/rules/0/do/0/set"},
+		{"an update with a row", `{"action": "table.update", "table": "Prices", "key": {"sku": "sku", "min_qty": "1"}, "set": {"price": "price"}, "row": {"sku": "sku"}}`, CodeNotAllowed, "/rules/0/do/0/row"},
+		{"an update with half a key", `{"action": "table.update", "table": "Prices", "key": {"sku": "sku"}, "set": {"price": "price"}}`, CodeMissing, "/rules/0/do/0/key"},
+		{"an update whose key names another column", `{"action": "table.update", "table": "Prices", "key": {"sku": "sku", "min_qty": "1", "note": "note"}, "set": {"price": "price"}}`, CodeNotAllowed, "/rules/0/do/0/key/note"},
+		{"an update that changes a key column", `{"action": "table.update", "table": "Prices", "key": {"sku": "sku", "min_qty": "1"}, "set": {"min_qty": "2"}}`, CodeNotAllowed, "/rules/0/do/0/set/min_qty"},
+		{"an update of the wrong type", `{"action": "table.update", "table": "Prices", "key": {"sku": "sku", "min_qty": "1"}, "set": {"price": "qty"}}`, CodeTypeMismatch, "/rules/0/do/0/set/price"},
+		{"a delete with a set", `{"action": "table.delete", "table": "Prices", "key": {"sku": "sku", "min_qty": "1"}, "set": {"price": "price"}}`, CodeNotAllowed, "/rules/0/do/0/set"},
+		{"a delete without a key", `{"action": "table.delete", "table": "Prices"}`, CodeMissing, "/rules/0/do/0/key"},
+		{"a misspelt property", `{"action": "table.delete", "table": "Prices", "keys": {"sku": "sku"}}`, CodeBadJSON, "/rules/0/do/0"},
+	} {
+		_, diags := DefineIn([]byte(item(tc.action)), env)
+		if !hasDiag(diags, tc.code, tc.path) {
+			t.Errorf("%s: want %s at %s, got:\n%s", tc.name, tc.code, tc.path, diags.Error())
+		}
+	}
+	// A stored definition loads whatever became of the table.
+	lenient := env
+	lenient.Lenient = true
+	for name, action := range map[string]string{
+		"an unknown table":    `{"action": "table.insert", "table": "Costs", "row": {"sku": "sku"}}`,
+		"a column it lost":    `{"action": "table.update", "table": "Prices", "key": {"sku": "sku", "min_qty": "1"}, "set": {"cost": "price"}}`,
+		"a key that changed":  `{"action": "table.delete", "table": "Prices", "key": {"sku": "sku"}}`,
+		"a type that changed": `{"action": "table.insert", "table": "Prices", "row": {"sku": "sku", "min_qty": "note"}}`,
+	} {
+		cls, diags := DefineIn([]byte(item(action)), lenient)
+		if len(diags) > 0 {
+			t.Errorf("%s, loaded leniently: %s", name, diags.Error())
+			continue
+		}
+		if a := cls.Rules[0].Actions[0]; !a.Queued || a.Target == "" || len(a.Sets)+len(a.Keys) == 0 {
+			t.Errorf("%s, loaded leniently: %+v", name, a)
+		}
 	}
 }

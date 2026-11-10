@@ -685,18 +685,24 @@ func rowsColumns(c *collector, path string, vd *VariableDef, schemas *SchemaSet,
 // yet. Names were checked already, so a failure here is a programming
 // error.
 func scopeOf(vars []*Variable) *formula.Scope {
-	fv := make([]formula.Variable, 0, len(vars))
+	scope, err := formula.NewScope(scopeVariables(vars)...)
+	if err != nil {
+		panic("model: scope of checked variables: " + err.Error())
+	}
+	return scope
+}
+
+// scopeVariables are the variables of a class as the binder takes them,
+// leaving out the ones whose type is not known yet.
+func scopeVariables(vars []*Variable) []formula.Variable {
+	fv := make([]formula.Variable, 0, len(vars)+1)
 	for _, v := range vars {
 		if v.Type.Kind == formula.KindNull {
 			continue
 		}
 		fv = append(fv, formula.Variable{Name: v.Name, Type: v.Type})
 	}
-	scope, err := formula.NewScope(fv...)
-	if err != nil {
-		panic("model: scope of checked variables: " + err.Error())
-	}
-	return scope
+	return fv
 }
 
 // inferTypes binds the computed variables that declared no type, each

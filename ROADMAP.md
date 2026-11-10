@@ -48,7 +48,10 @@ second computes the triggered variables at their triggers, with the
 (#53). Its fourth is the outbox, in two parts: first the rows a commit
 writes, the worker and `Drain`, retries and dead actions, their events,
 the listing and the retry by hand, with `create` as the first action and
-the test that stops the process at every step (#54). This page is updated when a phase starts and when it ends;
+the test that stops the process at every step (#54); then the rest of
+the engine's own actions, `transition` and `refresh` of another
+document, `each` on a `create` and the `table.*` actions, and the
+refusal of a redefinition that would break another class's rule. This page is updated when a phase starts and when it ends;
 it never describes a phase as done before its acceptance criteria pass.
 
 Legend: ✅ done · 🚧 in progress · ⬜ not started

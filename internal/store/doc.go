@@ -43,14 +43,15 @@
 // a Reset is the caller's write, a Refresh always commits and is
 // followed by the eventless transitions.
 //
-// The outbox (ADR-0044): a rule's create of another document is
+// The outbox (ADR-0044): what a rule does beyond its own document is
 // evaluated by the commit and written as a row in its transaction; the
-// worker, or Drain, makes the new document's commit, marks the row and
-// appends the outcome's event in one transaction, as the person whose
-// command queued it. Outbox lists the rows and RetryAction retries a
-// dead one.
+// worker, or Drain, does it, marks the row and appends the outcome's
+// event in one transaction, as the person whose command queued it. The
+// actions are create, for one document or for each element of a list,
+// transition and refresh of another document, and table.insert,
+// table.update and table.delete. Outbox lists the rows and RetryAction
+// retries a dead one.
 //
-// Not here yet: the other actions of the outbox and the ones that leave
-// the database (Phase 4), the class-level access rules (Phase 5), and
-// the server (Phase 6).
+// Not here yet: the actions that leave the database (Phase 4), the
+// class-level access rules (Phase 5), and the server (Phase 6).
 package store

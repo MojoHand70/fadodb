@@ -426,19 +426,29 @@ caller's write and is checked against the write rights; a `Refresh`
 always commits and the eventless transitions are evaluated after it,
 which is how a caller makes a document look at the clock.
 
-The outbox runs today with `create` as its first action (ADR-0044). The
-commit evaluates the action's arguments and writes a row in its own
-transaction; a worker, or `Drain` when the embedder asks for it, makes
-the new document's commit, marks the row and appends `action_run` to the
-causing document in one transaction, so the action happens exactly once.
+The outbox runs today with the engine's own actions (ADR-0044):
+`create`, `transition`, `refresh` of another document and the `table.*`
+actions. The commit evaluates the action's arguments and writes a row in
+its own transaction; a worker, or `Drain` when the embedder asks for it,
+does what the action stands for, marks the row and appends `action_run`
+to the causing document in one transaction, so the action happens exactly
+once.
 It runs as the person whose command queued it: what that person may not
 do is a refusal, the row is dead at once with the code, and the causing
 document gets `action_failed`. A failure of the store is tried again
 with a doubling wait. `Outbox` lists the rows, `RetryAction` makes a
 dead one pending again, and the view `<Class>_actions` shows them to
-SQL. A chain of actions stops sixteen deep. `transition`, `refresh` of
-another document, `each` and the `table.*` actions are the next step;
-the actions that leave the database follow it (ADR-0045).
+SQL. A chain of actions stops sixteen deep. A `create` with `each` and
+`as` makes one document for each element of a list, each a row of its
+own. A `transition` moves the document its `id` names. A `refresh` with
+an `id` sends `Refresh` to another document, which then moves by its own
+guards: a child wakes its parent without knowing the parent's
+transitions. A table action inserts, updates or deletes one row by its
+key. What an action names, the class, the transition, the variables, the
+table and its columns, is checked when the rule's class is defined, and a
+redefinition that would break such a rule is refused until the rule is
+changed. The actions that leave the database are the next step
+(ADR-0045).
 
 ### Explicit tables
 
@@ -469,8 +479,9 @@ SQLite with a documented subset of capabilities.
 Today a table is defined in JSON, `{"name": "Rates", "columns": {"code":
 "text", "rate": "decimal(6)"}, "key": ["code"]}`, stored as `tbl_Rates`
 with the view `Rates`, filled by the Go API's `ImportRows`, and read by
-`LOOKUP` in auto formulas and defaults; only the `sqlite` binding exists,
-`QUERY` and the `table.*` actions arrive with Phase 4 (ADR-0037). A lookup
+`LOOKUP` in auto formulas and defaults; a rule changes one row with
+`table.insert`, `table.update` and `table.delete` (ADR-0044); only the
+`sqlite` binding exists, and `QUERY` arrives with Phase 4 (ADR-0037). A lookup
 whose condition is one equality of a column with an expression of the
 document is answered from an in-memory index while the table has at most
 `MaxIndexedRows` rows, and through a prepared statement narrowed by the

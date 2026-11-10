@@ -350,6 +350,11 @@ func (s *Store) run(ctx context.Context, cmd command, now time.Time) (*result, e
 				row = c.adopted(beforeClass, before)
 			}
 			evalCtx.ID = before.id
+			if len(c.rules.lists) > 0 {
+				if err := s.loadLists(ctx, c, nil, before, nil); err != nil {
+					return nil, err
+				}
+			}
 			if err := s.fireCommit(&rules, row, commitDelete, "", "", nil); err != nil {
 				return nil, err
 			}
@@ -579,6 +584,14 @@ func (s *Store) run(ctx context.Context, cmd command, now time.Time) (*result, e
 			kind, name = commitTransition, trans.Name
 		}
 		if err := s.recomputeFor(c, after, kind, from, name, evalCtx, secs, cmd.preview, &res.errs); err != nil {
+			return nil, err
+		}
+	}
+
+	// The lists the class's creates with each go over (ADR-0044), as the
+	// command leaves them, for the rules of every commit that follows.
+	if c.rules != nil && len(c.rules.lists) > 0 && cmd.op != opMigrate {
+		if err := s.loadLists(ctx, c, cmd.stored, before, kids); err != nil {
 			return nil, err
 		}
 	}

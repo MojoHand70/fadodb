@@ -26,9 +26,9 @@ All notable changes to FadoDB are recorded here. The format follows
 - `Preview` and `PreviewDraft` report `Rules`: every rule whose trigger
   the command raised, the commit it belongs to, whether it ran, and its
   actions with their evaluated arguments.
-- `conformance/rules/`, ten suites in the script format of the
-  statechart suites, and `BenchmarkRules`, which joins the benchmark
-  gate: the rules of a commit do not allocate.
+- `conformance/rules/`, suites in the script format of the statechart
+  suites, and `BenchmarkRules`, which joins the benchmark gate: the
+  rules of a commit do not allocate.
 
 - Triggered variables are computed (ADR-0043). A variable with
   `"mode": "triggered"` recomputes in the commit that raises one of its
@@ -73,13 +73,48 @@ All notable changes to FadoDB are recorded here. The format follows
 - `examples/classes/receipt.json`, the class the README's Invoice
   creates a document of.
 
+- The rest of the engine's own outbox actions (ADR-0044, items 7, 12
+  and 13), each run exactly once and as the person whose command queued
+  it:
+  - `transition` takes a named transition of the document its `id`
+    names, of the rule's own class unless it names another, with
+    `values`. The access rule of the transition and the write rights of
+    the target apply to the person.
+  - `refresh` with an `id` sends the `Refresh` command to another
+    document: the triggered variables it names recompute, and the
+    document then moves by its own guards. A child wakes its parent
+    this way.
+  - `create` with `each` and `as` makes one document for each element of
+    an array or a rows variable: `"each": "approvers", "as": "approver"`.
+    The formulas under `values` and `id` read the element by that name,
+    a rows element by field, `line.sku`. Every child is a row of the
+    outbox of its own, with its own outcome event.
+  - `table.insert`, `table.update` and `table.delete` change one row of
+    an explicit table, addressed by its key. An insert of an existing
+    key is refused with `duplicate`, an update of a missing one with the
+    new code `unknown_row`.
+- Three conformance suites under `conformance/rules/`: `each`, `others`
+  and `tables`. `TestOutbox_EveryActionSurvivesACrash` stops the process
+  inside and after each of the five actions one commit queued and counts
+  that each happened once.
+
 ### Changed
 
 - A `create` is checked when the rule's class is defined: the class it
   names must exist and have states, its values must be scalar inputs of
   that class with formulas of their types, and an input the class
   requires without a default must be given. A class that names another
-  is defined after it; `each` is refused until the next step.
+  is defined after it. The same holds for what the other actions name:
+  the class and the transition of a `transition`, the class and the
+  variables of a `refresh` of another document, the table and the
+  columns of a table action.
+- A redefinition of a class or of a table that would break a rule of
+  another class is refused with `not_allowed` naming that rule: a
+  variable or a column the rule fills is removed or takes a type the
+  formula does not have, the transition it takes is removed, a variable
+  it refreshes no longer lists `refresh`. The fix is to change that rule
+  first. A new required input is not refused; the create that does not
+  give it is refused with `required` when it runs.
 - A command key may not start with `outbox:`, the prefix of the commits
   the outbox makes.
 - **The engine schema is version 3**, for the moment columns. A file made
@@ -95,9 +130,9 @@ All notable changes to FadoDB are recorded here. The format follows
   document or on `delete`; a rule on `schedule`, with `not_supported`
   until it is built; a misspelt property of a synchronous action. An
   `emit` names its event under `event`.
-- An action for the outbox other than `create` (`transition`,
-  `http.call` and the like) is still checked for its name alone and is
-  not queued: they are later steps of Phase 4.
+- An action that leaves the database (`http.call`, `slack.post` and the
+  like) is still checked for its name alone and is not queued: those are
+  the next step of Phase 4 (ADR-0045).
 
 ## [0.3.0] - 2026-11-09
 

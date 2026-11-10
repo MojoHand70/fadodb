@@ -129,6 +129,9 @@ const (
 	// CodeUnknownAction: no action of the outbox has that key, or the
 	// engine does not run an action of that name.
 	CodeUnknownAction = "unknown_action"
+	// CodeUnknownRow: a table.update addresses a row the table does not
+	// have (ADR-0044).
+	CodeUnknownRow = "unknown_row"
 )
 
 func errf(code, variable, format string, args ...any) *Error {

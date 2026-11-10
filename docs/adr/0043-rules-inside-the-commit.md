@@ -192,7 +192,8 @@ ADR-0044 and the actions that leave the database are ADR-0045.
 
 13. **What waits.** `QUERY`, documents of a class as the source of a
     `LOOKUP`, and the binding interface: a record of their own before
-    that step of the phase. Timers: ADR-0044 puts the question.
+    that step of the phase. Time: ADR-0044 records the ruling, and
+    conditions on time and timers get a record of their own.
 
 ## Details settled while building
 
@@ -200,6 +201,9 @@ The first step of the phase built items 1 to 8 and 11, without the
 triggered variables, on 2026-11-10. It settled these points, which the
 items leave open.
 
+- **The notation stands.** The owner confirmed on 2026-11-10 that a
+  rule is written as built: a trigger, an optional condition and a list
+  of actions, in the `rules` list of the class, beside the transitions.
 - **The auto variables recalculate after each synchronous action** that
   changed something, not once after the last action of the rule
   (item 4). The document a rule leaves is the same. A later action of

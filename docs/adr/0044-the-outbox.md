@@ -1,6 +1,6 @@
 # ADR-0044: The outbox: what a commit queues, the worker and the engine's own actions
 
-- Status: Accepted, with the question of time open; amends ADR-0006 (which outcomes of an action are events), ADR-0009 (the row, the order, which failures are retried, exactly once for the engine's own actions, a bound on chains), ADR-0026 (the engine's commands carry keys under a reserved prefix), ADR-0027 (how the worker hands a row to an action), ADR-0043 (a `refresh` that names another document is an outbox action; a `create` with `each` queues a row for each element)
+- Status: Accepted; amends ADR-0006 (which outcomes of an action are events), ADR-0009 (the row, the order, which failures are retried, exactly once for the engine's own actions, a bound on chains), ADR-0026 (the engine's commands carry keys under a reserved prefix), ADR-0027 (how the worker hands a row to an action), ADR-0043 (a `refresh` that names another document is an outbox action; a `create` with `each` queues a row for each element)
 - Date: 2026-11-09
 
 ## Context
@@ -218,13 +218,13 @@ simulation runs the queue at a moment it chooses.
     `QUERY`, and the pattern of parallel approvals is whole only with
     it.
 
-## Rulings and the open question
+## Rulings
 
 The draft of this record put three questions to the owner. He ruled on
-two of them on 2026-11-10. An action on another document runs as the
+all three on 2026-11-10. An action on another document runs as the
 person, which is item 11; the draft had recommended that the class act.
 Both additions for parallel approvals are in, which are items 12 and 13.
-The third question is open.
+And time is in this phase, in the two dimensions he named.
 
 **Time.** The draft asked whether timers belong to this phase. The
 owner's answer is that time has two dimensions here:
@@ -233,6 +233,12 @@ owner's answer is that time has two dimensions here:
    one state to another.
 2. *Timers and a scheduler*: firing a transition at a given time, with
    its retries.
+
+Ruled: the phase builds both, the first before the second, and the
+second as its last step before the measurements. Neither is designed
+here. A record of their own, put to the owner before that step, says
+how each is written and what it does. What follows is where they start
+from.
 
 What the accepted records give the first, for one document. A guard is
 a formula and may read `TODAY()`, `NOW()` and any date the document
@@ -245,10 +251,9 @@ land. The move itself is made when a commit touches the document
 comes. Two things are missing. The moment a document entered its state
 is a column a filter reads (ADR-0038); ADR-0013 lists it among the
 system variables, and no formula reads it yet, so "seven days in this
-state" cannot be written as a guard. And nothing
-lists the documents of a class whose eventless transition would fire
-now, so a caller cannot ask what is due without asking document by
-document.
+state" cannot be written as a guard. And nothing lists the documents of
+a class whose eventless transition would fire now, so a caller cannot
+ask what is due without asking document by document.
 
 What they give the second: nothing fires by itself. The mechanism it
 needs is the `due_at` of item 1: a row queued when a document enters a
@@ -262,13 +267,6 @@ simulation is a copy of the file opened with `Options.Now` and a
 item 11 its row would carry the principal of the commit that queued it.
 `schedule` on a rule and `schedule:` on a variable recompute many
 documents at once and stay with the set-wise work of Phase 8 either way.
-
-Not ruled: which of the two this phase builds. Recommended: the first in
-this phase, as the time in state for guards and a listing of what is due
-at a moment the caller chooses, since that is what an agent needs to
-move a process by time with no scheduler, and what a simulation asks;
-the second on top of it, as the last step of the phase or later. The
-record assumes neither.
 
 ## Consequences
 

@@ -1,6 +1,6 @@
 # ADR-0009: Action execution model: synchronous versus outbox
 
-- Status: Accepted; amended by ADR-0027 (executors the embedder registers)
+- Status: Accepted; amended by ADR-0027 (executors the embedder registers), ADR-0044 (the outbox row, the order, which failures are retried, exactly once for the engine's own actions, a bound on chains), ADR-0045 (actions have definitions; declared HTTP actions beside `http.call`)
 - Date: 2026-11-05
 
 ## Context

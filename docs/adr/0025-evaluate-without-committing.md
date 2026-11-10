@@ -1,6 +1,6 @@
 # ADR-0025: Evaluate a class or a document without committing
 
-- Status: Accepted; amends ADR-0011, ADR-0015; amended by ADR-0042 (a preview may run at a chosen moment)
+- Status: Accepted; amends ADR-0011, ADR-0015; amended by ADR-0042 (a preview may run at a chosen moment), ADR-0043 (what a preview reports of the rules)
 - Date: 2026-11-06
 
 ## Context

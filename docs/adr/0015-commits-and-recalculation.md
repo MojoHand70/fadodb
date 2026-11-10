@@ -1,6 +1,6 @@
 # ADR-0015: Commits, recalculation modes, defaults, reset and refresh
 
-- Status: Accepted; amended by ADR-0020 (how recomputes and query functions reach their engine), ADR-0025 (preview runs the pipeline without the write), ADR-0040 (one command may make several commits)
+- Status: Accepted; amended by ADR-0020 (how recomputes and query functions reach their engine), ADR-0025 (preview runs the pipeline without the write), ADR-0040 (one command may make several commits), ADR-0043 (rules and triggered variables inside the commit, `Reset` and `Refresh` as commands with their events)
 - Date: 2026-11-05
 
 ## Context

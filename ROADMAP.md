@@ -26,14 +26,16 @@ listing of open transitions, the preview of a transition and the
 `_states` view (#42), the rights table and the per-transition rules
 enforced on every path for the principal (#43), `At(t)` for previews and
 reads (#44), and the measurements of `docs/perf/v0.3.0.md` against every
-budget of the three records (#45). Phase 4 opened with its design
-proposed as three records: ADR-0043, rules inside the commit, with the
-synchronous actions and triggered variables; ADR-0044, the outbox, its
-worker and the engine's own actions; and ADR-0045, actions as an
+budget of the three records (#45). Phase 4 opened with its design in
+three records, accepted on 2026-11-10: ADR-0043, rules inside the
+commit, with the synchronous actions and triggered variables; ADR-0044,
+the outbox, its worker and the engine's own actions, which run as the
+person whose command queued them; and ADR-0045, actions as an
 extension point, with declared HTTP actions, Go actions an embedder
 registers, connections and results written back to the document.
 `QUERY` and the binding interface get their record before that step of
-the phase. This page is updated when a phase starts and when it ends;
+the phase; whether the phase builds conditions on time and timers is not
+ruled yet. This page is updated when a phase starts and when it ends;
 it never describes a phase as done before its acceptance criteria pass.
 
 Legend: ✅ done · 🚧 in progress · ⬜ not started

@@ -1,6 +1,6 @@
 # ADR-0040: Transitions as commits: the command, eventless chains and state visits
 
-- Status: Accepted; amends ADR-0008 (what a chain of eventless transitions writes), ADR-0014 (the `_states` view defined), ADR-0015 (one command may make several commits), ADR-0026 (the key of a command that made a chain), ADR-0039 (a class without states has no documents, not only live ones)
+- Status: Accepted; amends ADR-0008 (what a chain of eventless transitions writes), ADR-0014 (the `_states` view defined), ADR-0015 (one command may make several commits), ADR-0026 (the key of a command that made a chain), ADR-0039 (a class without states has no documents, not only live ones); amended by ADR-0043 (a hop's commit runs its own triggers and rules)
 - Date: 2026-11-08
 
 ## Context

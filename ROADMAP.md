@@ -12,10 +12,11 @@ check` verifies a file. The rules of a class run inside the commit with
 the actions `set`, `reset`, `refresh` and `emit`, and triggered
 variables are computed at their triggers; what a rule does to other
 documents and to tables runs through the outbox; and a rule can call an
-action the host program defines and implements with a Go function.
-Actions sent as HTTP requests, results written back to the document,
-`QUERY`, time, the row-level access rules and the server come with
-their steps and phases.
+action that has a definition, implemented by a Go function of the host
+program or sent by the engine as an HTTP request to the hosts the host
+program allows. Results written back to the document, `QUERY`, time,
+the row-level access rules and the server come with their steps and
+phases.
 Since v0.1.0 the records ADR-0022 to
 ADR-0038 fixed what the first embedder needs and what Phase 2 measured:
 SQLite as the transactional store and the in-memory index for lookups, by
@@ -60,10 +61,13 @@ which the first is built: action definitions with typed parameters,
 stored with `DefineAction`; Go functions the host program gives to
 `Open`, called by the outbox with the arguments and the event that
 fired the rule; the catalogue, the preview and the trial of an action;
-and the published schemas under `api/`. The second sends an action as an
-HTTP request, with the secrets from the host and the network off until
-the host allows it; the third writes an action's result back to the
-document and adds the sample packages. This page is updated when a phase starts and when it ends;
+and the published schemas under `api/` (#57). The second, built too,
+sends an action as an HTTP request: a definition with a `request`,
+`http.call`, secrets the host supplies at the moment of sending and that
+go only to the hosts of their connection, the signed call for a
+developer's own service, and `fado/outbound`, without which a database
+sends nothing. The third writes an action's result back to the document
+and adds the sample packages. This page is updated when a phase starts and when it ends;
 it never describes a phase as done before its acceptance criteria pass.
 
 Legend: ✅ done · 🚧 in progress · ⬜ not started

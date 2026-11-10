@@ -38,11 +38,27 @@ type statechartSuite struct {
 	// defined before the classes. The runner implements each with a
 	// function that records its calls and does what Functions says for
 	// the action's name: by default it runs and returns nothing.
-	Actions    []json.RawMessage          `json:"actions,omitempty"`
-	Functions  map[string]scriptFunction  `json:"functions,omitempty"`
-	Class      json.RawMessage            `json:"class"`
-	Principals map[string]scriptPrincipal `json:"principals,omitempty"`
-	Script     []scriptStep               `json:"script"`
+	Actions   []json.RawMessage         `json:"actions,omitempty"`
+	Functions map[string]scriptFunction `json:"functions,omitempty"`
+	// Outbound allows the suite's store to send the requests of declared
+	// actions (ADR-0045, item 7), to a network the runner stands in for:
+	// hosts are the hosts a request without a connection may go to, and
+	// connections the hosts of each connection. Absent, the store sends
+	// nothing. Secrets are the secrets the runner supplies, by connection
+	// and name. Replies are what the network answers, each to the next
+	// request to its url, or to the next request at all without one; a
+	// request no reply is left for is answered 200 with no body.
+	Outbound   *scriptOutbound              `json:"outbound,omitempty"`
+	Secrets    map[string]map[string]string `json:"secrets,omitempty"`
+	Replies    []*fakeReply                 `json:"replies,omitempty"`
+	Class      json.RawMessage              `json:"class"`
+	Principals map[string]scriptPrincipal   `json:"principals,omitempty"`
+	Script     []scriptStep                 `json:"script"`
+}
+
+type scriptOutbound struct {
+	Hosts       []string            `json:"hosts,omitempty"`
+	Connections map[string][]string `json:"connections,omitempty"`
 }
 
 // scriptFunction is what the runner's function of an action does when it
@@ -171,6 +187,12 @@ type scriptExpect struct {
 	Outcome   json.RawMessage `json:"outcome,omitempty"`
 	Call      json.RawMessage `json:"call,omitempty"`
 	Catalogue json.RawMessage `json:"catalogue,omitempty"`
+	// Requests are the requests the store sent during the step, in order,
+	// each by the fields given: method, url, connection, headers by name,
+	// and body, the JSON sent, or text for a body that is none. Request is
+	// the request a preview_action would send, in the same shape.
+	Requests json.RawMessage `json:"requests,omitempty"`
+	Request  json.RawMessage `json:"request,omitempty"`
 }
 
 type scriptAction struct {
@@ -258,10 +280,15 @@ func runStatechartSuite(t *testing.T, suite *statechartSuite) {
 	o.Actions = map[string]ActionFunc{}
 	for i, def := range suite.Actions {
 		var head struct {
-			Name string `json:"name"`
+			Name    string          `json:"name"`
+			Request json.RawMessage `json:"request"`
 		}
 		if err := json.Unmarshal(def, &head); err != nil || head.Name == "" {
 			t.Fatalf("action %d of the suite's actions has no name: %v", i, err)
+		}
+		if head.Request != nil {
+			// A declared action is sent, not called.
+			continue
 		}
 		does := suite.Functions[head.Name]
 		o.Actions[head.Name] = func(_ context.Context, call *ActionCall) (Values, error) {
@@ -275,6 +302,19 @@ func runStatechartSuite(t *testing.T, suite *statechartSuite) {
 				return nil, Permanent(fmt.Errorf("%s", does.Refuses))
 			}
 			return does.Returns, nil
+		}
+	}
+	var network *fakeOutbound
+	if suite.Outbound != nil {
+		network = &fakeOutbound{hosts: suite.Outbound.Hosts, connections: suite.Outbound.Connections, replies: suite.Replies}
+		o.Outbound = network
+	}
+	if suite.Secrets != nil {
+		o.Secrets = func(_ context.Context, connection, name string) (string, error) {
+			if value, ok := suite.Secrets[connection][name]; ok {
+				return value, nil
+			}
+			return "", fmt.Errorf("the suite has no secret %s of %s", name, connection)
 		}
 	}
 	s, _ := openStore(t, o)
@@ -349,6 +389,9 @@ func runStatechartSuite(t *testing.T, suite *statechartSuite) {
 		mu.Lock()
 		calls = []json.RawMessage{}
 		mu.Unlock()
+		if network != nil {
+			network.take()
+		}
 		switch step.Do {
 		case "wait":
 			if suite.Clock == "" {
@@ -509,6 +552,24 @@ func runStatechartSuite(t *testing.T, suite *statechartSuite) {
 		}
 		if want.Outcome != nil && !subsetOf(want.Outcome, mustJSON(outcome)) {
 			t.Errorf("%s: the trial answered %s, want %s", name, dump(outcome), want.Outcome)
+		}
+		if want.Requests != nil {
+			if network == nil {
+				t.Fatalf("%s: requests are expected of a suite with outbound", name)
+			}
+			if sent := requestsJSON(network.take()); !subsetOf(want.Requests, sent) {
+				t.Errorf("%s: the requests sent were %s, want %s", name, sent, want.Requests)
+			}
+		}
+		if want.Request != nil {
+			var got json.RawMessage
+			if called != nil && called.Request != nil {
+				r := called.Request
+				got = requestJSON(r.Method, r.URL, r.Connection, r.Headers, []byte(r.Body))
+			}
+			if got == nil || !subsetOf(want.Request, got) {
+				t.Errorf("%s: the action would send %s, want %s", name, got, want.Request)
+			}
 		}
 		if want.Call != nil && (called == nil || !subsetOf(want.Call, mustJSON(called.Call))) {
 			t.Errorf("%s: the action would be called with %s, want %s", name, dump(called), want.Call)

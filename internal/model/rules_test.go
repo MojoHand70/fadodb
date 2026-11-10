@@ -34,7 +34,7 @@ func TestRules_Compile(t *testing.T) {
 	   "do": [{"action": "set", "values": {"note": "\"held\"", "a": "a + 1"}},
 	          {"action": "reset", "variables": ["note", "lines", "who"]},
 	          {"action": "emit", "event": "ticket.held"},
-	          {"action": "http.call", "url": "note"},
+	          {"action": "http.call", "args": {"url": "note", "body": {"a": "a"}}},
 	          {"action": "refresh", "variables": ["stamp", "snap"]},
 	          {"action": "refresh"},
 	          {"action": "refresh", "id": "note", "variables": ["STAMP"]}]},
@@ -78,9 +78,9 @@ func TestRules_Compile(t *testing.T) {
 	if !emit.Sync || emit.Event != "ticket.held" {
 		t.Errorf("emit %+v", emit)
 	}
-	// http.call is the engine's and is not run yet: kept as written.
-	if post.Sync || post.Queued || post.Name != ActionHTTPCall || post.Path() != "/rules/0/do/3" || !strings.Contains(string(post.Raw), "url") {
-		t.Errorf("http.call is kept as written: %+v", post)
+	// http.call is the engine's own declared action, defined everywhere.
+	if post.Sync || !post.Queued || !post.Call || post.Name != ActionHTTPCall || post.Spec != HTTPCall() || len(post.Args) != 2 || post.Args[1].Template == nil || post.Path() != "/rules/0/do/3" {
+		t.Errorf("http.call is a call of the engine's declared action: %+v", post)
 	}
 	if cls.Rules[1].Index != 1 || len(cls.Rules[1].Variables) != 2 {
 		t.Errorf("rule %+v", cls.Rules[1])
@@ -154,7 +154,7 @@ func TestRules_FrozenAllows(t *testing.T) {
 		"set on the entry of a terminal state only live states lead to": `{"on": "enter", "state": "done", "do": [{"action": "set", "values": {"note": "\"closed\""}}]}`,
 		"set on the transition into a terminal state":                   `{"on": "transition", "name": "close", "do": [{"action": "reset", "variables": ["note"]}]}`,
 		"emit on the exit of a terminal state":                          `{"on": "exit", "state": "done", "do": [{"action": "emit", "event": "left.done"}]}`,
-		"an outbox action on a move between terminal states":            `{"on": "transition", "name": "file", "do": [{"action": "http.call", "url": "\"https://example.test\""}]}`,
+		"an outbox action on a move between terminal states":            `{"on": "transition", "name": "file", "do": [{"action": "http.call", "args": {"url": "\"https://example.test\""}}]}`,
 		"emit on delete": `{"on": "delete", "do": [{"action": "emit", "event": "gone"}]}`,
 	} {
 		if _, diags := Define([]byte(flow(rules)), nil); len(diags) > 0 {

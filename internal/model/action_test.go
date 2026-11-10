@@ -67,10 +67,11 @@ func TestAction_Diagnostics(t *testing.T) {
 		{"a parameter that is a number", `{"name": "a.b", "params": {"x": 1}}`, CodeBadJSON, "/params/x"},
 		{"a required returned value", `{"name": "a.b", "returns": {"x": {"type": "text", "required": true}}}`, CodeNotAllowed, "/returns/x/required"},
 		{"a returned value of an unknown type", `{"name": "a.b", "returns": {"x": "object"}}`, CodeUnknownType, "/returns/x"},
-		// A declared action is read and refused: this build sends nothing.
-		{"a request", `{"name": "a.b", "request": {"method": "POST", "url": "\"https://example.test\""}}`, CodeNotSupported, "/request"},
-		{"a connection", `{"name": "a.b", "connection": {"name": "slack", "secrets": ["token"]}}`, CodeNotSupported, "/connection"},
-		{"a result", `{"name": "a.b", "result": {"ts": "JSONVALUE(BODY, \"ts\")"}}`, CodeNotSupported, "/result"},
+		// What reads a request or its reply belongs to a definition that has
+		// a request.
+		{"a connection without a request", `{"name": "a.b", "connection": {"name": "slack", "secrets": ["token"]}}`, CodeNotAllowed, "/connection"},
+		{"ok without a request", `{"name": "a.b", "ok": "STATUS = 200"}`, CodeNotAllowed, "/ok"},
+		{"a result without a request", `{"name": "a.b", "returns": {"ts": "text"}, "result": {"ts": "JSONVALUE(BODY, \"ts\")"}}`, CodeNotAllowed, "/result"},
 	} {
 		a, diags := DefineAction([]byte(tc.src))
 		if a != nil || !hasDiag(diags, tc.code, tc.path) {
@@ -201,5 +202,150 @@ func TestRules_Calls(t *testing.T) {
 	// What does not parse is a finding even of a stored class.
 	if _, diags := DefineIn([]byte(inv(`{"action": "books.post", "args": {"invoice": "nmber"}}`)), lenient); !hasDiag(diags, CodeBadFormula, "/rules/0/do/0/args/invoice") {
 		t.Errorf("a formula that does not bind: %v", diags)
+	}
+}
+
+// A declared action (ADR-0045, items 3, 4 and 6): a definition with a
+// request the engine sends. The url, the headers and every string of the
+// body are pure formulas over the parameters and the secrets of the
+// connection; ok and result are pure formulas over the reply.
+func TestAction_Declared(t *testing.T) {
+	a, diags := DefineAction([]byte(`{"name": "slack.post", "version": 1, "label": "Post a message to Slack",
+ "params": {"channel": {"type": "text", "required": true}, "text": {"type": "text", "required": true}, "urgent": "bool"},
+ "returns": {"ts": "text", "code": "number"},
+ "connection": {"name": "slack", "secrets": ["token", "signing_key"]},
+ "request": {"method": "post",
+             "url": "\"https://slack.com/api/chat.postMessage\"",
+             "headers": {"Authorization": "\"Bearer \" & SECRET(\"token\")", "X-Channel": "channel"},
+             "body": {"channel": "channel", "text": "IF(urgent, \"! \", \"\") & text", "blocks": [{"type": "\"section\"", "n": 1}]},
+             "sign": "SIGNING_KEY"},
+ "ok": "JSONVALUE(BODY, \"ok\") = \"TRUE\"",
+ "result": {"ts": "JSONVALUE(BODY, \"ts\")", "code": "STATUS"}}`))
+	if len(diags) > 0 {
+		t.Fatal(diags.Error())
+	}
+	req := a.Request
+	if !a.Declared() || a.Connection != "slack" || strings.Join(a.Secrets, " ") != "token signing_key" || req == nil {
+		t.Fatalf("the definition: %+v", a)
+	}
+	if req.Method != "POST" || req.ConstURL != "https://slack.com/api/chat.postMessage" || req.Sign != "signing_key" || req.Dynamic {
+		t.Errorf("the request: %+v", req)
+	}
+	if len(req.Headers) != 2 || req.Headers[0].Name != "Authorization" || len(req.Headers[0].Value.Slots) != 1 || req.Headers[0].Value.Slots[0].Name != formula.SecretSlot+"token" || req.Headers[1].Name != "X-Channel" {
+		t.Errorf("the headers, in the order written: %+v", req.Headers)
+	}
+	if req.Body == nil || !req.Body.Object || len(req.Body.Fields) != 3 || req.Body.Fields[1].Value.Formula == nil || !req.Body.Fields[2].Value.Array {
+		t.Errorf("the body: %+v", req.Body)
+	}
+	if a.OK == nil || len(a.Result) != 2 || a.Result[0].Name != "ts" || a.Result[1].Formula.Result.Kind != formula.KindNumber {
+		t.Errorf("the reply: ok %v, result %+v", a.OK, a.Result)
+	}
+	// The smallest declared action: an address. POST, no connection, the
+	// call itself as the body, any 2xx a success.
+	a, diags = DefineAction([]byte(`{"name": "hook.send", "params": {"path": "text"}, "request": {"url": "\"https://hooks.example/\" & URLENCODE(path)"}}`))
+	if len(diags) > 0 || a.Request.Method != "POST" || a.Request.Body != nil || a.Request.ConstURL != "" || a.Connection != "" || len(a.Secrets) != 0 || a.OK != nil {
+		t.Errorf("the smallest declared action: %+v, %v", a, diags)
+	}
+	// A GET says everything in its address.
+	if a, diags := DefineAction([]byte(`{"name": "rates.get", "params": {"code": "text"}, "returns": {"rate": "decimal(4)"},
+ "request": {"method": "GET", "url": "\"https://rates.example/v1?code=\" & URLENCODE(code)"}, "result": {"rate": "DECIMALVALUE(JSONVALUE(BODY, \"rate\"), 4)"}}`)); len(diags) > 0 || a.Request.Method != "GET" {
+		t.Errorf("a GET: %v", diags)
+	}
+
+	slack := func(change string) string {
+		def := `{"name": "slack.post", "params": {"channel": "text", "n": "number"}, "returns": {"ts": "text"},
+ "connection": {"name": "slack", "secrets": ["token"]},
+ "request": {"method": "POST", "url": "\"https://slack.com/api\"", "headers": {"Authorization": "SECRET(\"token\")"}, "body": {"channel": "channel"}},
+ "ok": "STATUS = 200", "result": {"ts": "JSONVALUE(BODY, \"ts\")"}}`
+		old, new, _ := strings.Cut(change, " => ")
+		if !strings.Contains(def, old) {
+			t.Fatalf("the definition has no %q", old)
+		}
+		return strings.Replace(def, old, new, 1)
+	}
+	for _, tc := range []struct{ name, change, code, path string }{
+		{"no url", `"url": "\"https://slack.com/api\"", => `, CodeMissing, "/request/url"},
+		{"an unknown method", `"method": "POST" => "method": "FETCH"`, CodeBadValue, "/request/method"},
+		{"a url that is no text", `"\"https://slack.com/api\"" => "n"`, CodeTypeMismatch, "/request/url"},
+		{"a constant url that is no address", `"\"https://slack.com/api\"" => "\"slack.com/api\""`, CodeBadValue, "/request/url"},
+		{"a constant url of another scheme", `"\"https://slack.com/api\"" => "\"ftp://slack.com/api\""`, CodeBadValue, "/request/url"},
+		{"a constant url with a password", `"\"https://slack.com/api\"" => "\"https://bot:pw@slack.com/api\""`, CodeBadValue, "/request/url"},
+		{"a url that reads the document's context", `"\"https://slack.com/api\"" => "\"https://slack.com/\" & USER()"`, CodeBadFormula, "/request/url"},
+		{"a url that reads the clock", `"\"https://slack.com/api\"" => "\"https://slack.com/\" & TEXT(NOW())"`, CodeBadFormula, "/request/url"},
+		{"a url that reads an unknown parameter", `"\"https://slack.com/api\"" => "\"https://slack.com/\" & team"`, CodeBadFormula, "/request/url"},
+		{"a header that is no text", `"SECRET(\"token\")" => "n"`, CodeTypeMismatch, "/request/headers/Authorization"},
+		{"a header the engine sets", `"Authorization": "SECRET(\"token\")" => "Idempotency-Key": "channel"`, CodeReservedName, "/request/headers/Idempotency-Key"},
+		{"the signature header", `"Authorization": "SECRET(\"token\")" => "fadodb-signature": "channel"`, CodeReservedName, "/request/headers/fadodb-signature"},
+		{"a header name that is no token", `"Authorization": => "Auth orization":`, CodeBadName, "/request/headers/Auth orization"},
+		{"a header given twice", `"Authorization": "SECRET(\"token\")" => "X-A": "channel", "x-a": "channel"`, CodeDuplicate, "/request/headers/x-a"},
+		{"a secret the connection does not declare", `SECRET(\"token\") => SECRET(\"password\")`, CodeBadFormula, "/request/headers/Authorization"},
+		{"a secret named by a formula", `SECRET(\"token\") => SECRET(channel)`, CodeBadFormula, "/request/headers/Authorization"},
+		{"a secret without a connection", `"connection": {"name": "slack", "secrets": ["token"]}, => `, CodeBadFormula, "/request/headers/Authorization"},
+		{"a body formula that does not bind", `{"channel": "channel"} => {"channel": ["chanel"]}`, CodeBadFormula, "/request/body/channel/0"},
+		{"a body on a GET", `"method": "POST" => "method": "GET"`, CodeNotAllowed, "/request/body"},
+		{"a secret in the body of another connection's name", `{"channel": "channel"} => {"key": "SECRET(\"other\")"}`, CodeBadFormula, "/request/body/key"},
+		{"sign with a secret the connection lacks", `"method": "POST", => "method": "POST", "sign": "signing_key",`, CodeUnknownSecret, "/request/sign"},
+		{"a connection without a name", `{"name": "slack", "secrets": ["token"]} => {"secrets": ["token"]}`, CodeBadName, "/connection/name"},
+		{"a secret that is no name", `"secrets": ["token"] => "secrets": ["token", "my key"]`, CodeBadName, "/connection/secrets/1"},
+		{"a secret declared twice", `"secrets": ["token"] => "secrets": ["token", "Token"]`, CodeDuplicate, "/connection/secrets/1"},
+		{"a misspelt property of the connection", `"secrets": ["token"] => "secrets": ["token"], "hosts": ["slack.com"]`, CodeBadJSON, ""},
+		{"a misspelt property of the request", `"method": "POST", => "verb": "POST",`, CodeBadJSON, ""},
+		{"ok that is no condition", `"STATUS = 200" => "STATUS"`, CodeNotACondition, "/ok"},
+		{"ok that reads a parameter", `"STATUS = 200" => "channel = \"x\""`, CodeBadFormula, "/ok"},
+		{"ok that reads a secret", `"STATUS = 200" => "SECRET(\"token\") = \"x\""`, CodeBadFormula, "/ok"},
+		{"a result the action does not return", `{"ts": "JSONVALUE(BODY, \"ts\")"} => {"id": "JSONVALUE(BODY, \"ts\")"}`, CodeUnknownParameter, "/result/id"},
+		{"a result of another type", `"JSONVALUE(BODY, \"ts\")" => "STATUS"`, CodeTypeMismatch, "/result/ts"},
+		{"a result given twice", `{"ts": "JSONVALUE(BODY, \"ts\")"} => {"ts": "\"a\"", "TS": "\"b\""}`, CodeDuplicate, "/result/TS"},
+		{"a result that is not formulas", `{"ts": "JSONVALUE(BODY, \"ts\")"} => {"ts": 7}`, CodeBadValue, "/result"},
+	} {
+		a, diags := DefineAction([]byte(slack(tc.change)))
+		if a != nil || !hasDiag(diags, tc.code, tc.path) {
+			t.Errorf("%s: want %s at %q, got %+v:\n%s", tc.name, tc.code, tc.path, a, diags.Error())
+		}
+	}
+	// The message of a secret used where it may not be says where it may.
+	_, diags = DefineAction([]byte(slack(`"STATUS = 200" => "SECRET(\"token\") = \"x\""`)))
+	if len(diags) != 1 || !strings.Contains(diags[0].Message, "only in the request") {
+		t.Errorf("a secret outside the request: %v", diags)
+	}
+}
+
+// http.call is the declared action the engine defines (ADR-0045, item
+// 3): the address, the method, the headers and the body are arguments.
+// It is defined everywhere, and nobody defines an action in its
+// namespace.
+func TestAction_HTTPCall(t *testing.T) {
+	a := HTTPCall()
+	if a != HTTPCall() || a.Name != "http.call" || !a.Declared() || !a.Request.Dynamic || a.Connection != "" || len(a.Params) != 4 || !a.Params[0].Required || len(a.Returns) != 2 {
+		t.Fatalf("http.call: %+v", a)
+	}
+	inv := func(action string) string {
+		return `{"name": "Inv", "variables": {"number": {"type": "text"}, "total": {"type": "number"}, "hook": {"type": "text"}},
+ "states": {"initial": "open", "list": ["open", "sent"]}, "transitions": [{"name": "send", "from": "open", "to": "sent"}],
+ "rules": [{"on": "enter", "state": "sent", "do": [` + action + `]}]}`
+	}
+	cls, diags := Define([]byte(inv(`{"action": "HTTP.Call", "args": {"url": "hook & \"/\" & URLENCODE(number)", "method": "\"PUT\"",
+   "headers": {"X-Number": "number"}, "body": {"number": "number", "total": "total", "by": "USER()"}}}`)), nil)
+	if len(diags) > 0 {
+		t.Fatal(diags.Error())
+	}
+	if c := cls.Rules[0].Actions[0]; !c.Call || c.Name != "http.call" || c.Spec != a || len(c.Args) != 4 || c.Args[2].Template == nil {
+		t.Errorf("a call of http.call: %+v", c)
+	}
+	for _, tc := range []struct{ name, action, code, path string }{
+		{"no address", `{"action": "http.call", "args": {"method": "\"GET\""}}`, CodeMissing, "/rules/0/do/0/args"},
+		{"an address that is no text", `{"action": "http.call", "args": {"url": "total"}}`, CodeTypeMismatch, "/rules/0/do/0/args/url"},
+		{"an unknown argument", `{"action": "http.call", "args": {"url": "hook", "timeout": "5"}}`, CodeUnknownParameter, "/rules/0/do/0/args/timeout"},
+		{"the shape of before the definitions", `{"action": "http.call", "url": "hook"}`, CodeBadJSON, "/rules/0/do/0"},
+		{"a secret, which no rule reads", `{"action": "http.call", "args": {"url": "hook", "headers": {"Authorization": "SECRET(\"token\")"}}}`, CodeBadFormula, "/rules/0/do/0/args/headers/Authorization"},
+	} {
+		if _, diags := Define([]byte(inv(tc.action)), nil); !hasDiag(diags, tc.code, tc.path) {
+			t.Errorf("%s: want %s at %s, got:\n%s", tc.name, tc.code, tc.path, diags.Error())
+		}
+	}
+	for _, name := range []string{"http.call", "http.get", "HTTP.post"} {
+		if _, diags := DefineAction([]byte(`{"name": "` + name + `", "request": {"url": "\"https://example.test\""}}`)); !hasDiag(diags, CodeReservedName, "/name") {
+			t.Errorf("a definition named %s: %v", name, diags)
+		}
 	}
 }

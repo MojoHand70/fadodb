@@ -19,12 +19,12 @@ import (
 // either the engine's own or has a definition: JSON, like a class, with a
 // name of a namespace and a verb, typed parameters and what it returns.
 // The definition is data and lives in the database; what implements it
-// lives in the process. This build implements a definition with a Go
-// function the host program registers under the action's name
-// (ADR-0027): the commit evaluates the arguments and queues a row, and the
-// worker calls the function with them and with the event that fired the
-// rule, outside any transaction, at least once. An action the engine
-// sends as an HTTP request arrives with a later step.
+// lives in the process: a Go function the host program registers under
+// the action's name (ADR-0027), or for a definition with a request the
+// Outbound the host program allows requests through (requests.go). The
+// commit evaluates the arguments and queues a row, and the worker calls
+// the function, or sends the request, with them and with the event that
+// fired the rule, outside any transaction, at least once.
 
 // ActionFunc is a Go function that implements an action (ADR-0027,
 // ADR-0045). The outbox worker calls it once for each queued action, on
@@ -116,13 +116,16 @@ const (
 	// ActionRegistered is an action a Go function of the host program
 	// implements.
 	ActionRegistered = "registered"
+	// ActionDeclared is an action the engine sends as an HTTP request: a
+	// definition with a request, and the engine's own http.call.
+	ActionDeclared = "declared"
 )
 
 // ActionInfo is one action a rule may name, as the catalogue lists it
 // (ADR-0045, item 9), and what DefineAction returns.
 type ActionInfo struct {
 	Name string `json:"name"`
-	// Kind is engine or registered.
+	// Kind is engine, registered or declared.
 	Kind string `json:"kind"`
 	// Version is the version of the definition; an engine action has none.
 	Version     int    `json:"version,omitempty"`
@@ -132,12 +135,18 @@ type ActionInfo struct {
 	// each in the order declared.
 	Params  []ActionParam `json:"params,omitempty"`
 	Returns []ActionParam `json:"returns,omitempty"`
+	// Connection is the connection the request of a declared action goes
+	// over, and Secrets the secrets of it the request reads; both absent
+	// when it has none.
+	Connection string   `json:"connection,omitempty"`
+	Secrets    []string `json:"secrets,omitempty"`
 	// Sync is true for an action that runs inside the commit, on the
 	// rule's own document; every other action is queued and runs after it.
 	Sync bool `json:"sync,omitempty"`
 	// Available says whether this process can run the action: always for
-	// an engine action, and for a registered one when its function was
-	// given to Open.
+	// an engine action; for a registered one when its function was given
+	// to Open; for a declared one when the host program allows outbound
+	// calls, knows its connection and supplies secrets if it reads any.
 	Available bool `json:"available"`
 }
 
@@ -153,13 +162,17 @@ type ActionParam struct {
 	Description string `json:"description,omitempty"`
 }
 
-// ActionPreview is what an action would be called with (ADR-0045, item
-// 9); nothing was called.
+// ActionPreview is what an action would be called with or would send
+// (ADR-0045, item 9); nothing was called and nothing sent.
 type ActionPreview struct {
 	Action string `json:"action"`
 	Kind   string `json:"kind"`
-	// Call is the call a registered action would receive.
+	// Call is the call: what a registered action would receive, and what
+	// the request of a declared one is made from.
 	Call *ActionCall `json:"call,omitempty"`
+	// Request is the request a declared action would send, with every
+	// secret masked.
+	Request *RequestPreview `json:"request,omitempty"`
 }
 
 // ActionOutcome is what became of one run of an action outside any
@@ -179,19 +192,37 @@ type ActionOutcome struct {
 	Retry   bool   `json:"retry,omitempty"`
 }
 
-// action is a stored action definition, with the function this process
-// runs it with.
+// action is an action definition, with what this process runs it with:
+// the function of a registered action, and for a declared one the secrets
+// its request reads.
 type action struct {
-	spec *model.ActionSpec
-	json []byte
-	fn   ActionFunc
+	spec  *model.ActionSpec
+	json  []byte
+	fn    ActionFunc
+	reads []string
+}
+
+// kind says what implements the action.
+func (a *action) kind() string {
+	if a.spec.Declared() {
+		return ActionDeclared
+	}
+	return ActionRegistered
 }
 
 // info is the action as the catalogue lists it.
-func (a *action) info() *ActionInfo {
+func (s *Store) info(a *action) *ActionInfo {
 	spec := a.spec
-	return &ActionInfo{Name: spec.Name, Kind: ActionRegistered, Version: spec.Version, Label: spec.Label, Description: spec.Description,
-		Params: paramsOut(spec.Params), Returns: paramsOut(spec.Returns), Available: a.fn != nil}
+	info := &ActionInfo{Name: spec.Name, Kind: a.kind(), Version: spec.Version, Label: spec.Label, Description: spec.Description,
+		Params: paramsOut(spec.Params), Returns: paramsOut(spec.Returns), Connection: spec.Connection, Secrets: a.reads, Available: a.fn != nil}
+	if spec.Declared() {
+		info.Available = s.outbound != nil && s.outbound.Check(spec.Connection, "") == nil && (len(a.reads) == 0 || s.secretFn != nil)
+	}
+	if spec.Name == model.ActionHTTPCall {
+		// The engine's own: it has no version of a definition.
+		info.Version = 0
+	}
+	return info
 }
 
 func paramsOut(list []model.Param) []ActionParam {
@@ -258,7 +289,7 @@ func (s *Store) registerAction(a *action) {
 	if _, exists := s.actions[key]; !exists {
 		s.actionOrder = append(s.actionOrder, a.spec.Name)
 	}
-	a.fn = s.funcs[key]
+	a.fn, a.reads = s.funcs[key], secretsRead(a.spec)
 	s.actions[key] = a
 }
 
@@ -270,16 +301,18 @@ func (s *Store) actionNamed(name string) *action {
 }
 
 // Actions lists every action a rule may name in this database and this
-// process (ADR-0045, item 9): the engine's own first, then the defined
-// ones in the order they were defined, each with its parameters, what it
-// returns and whether this process can run it.
+// process (ADR-0045, item 9): the engine's own first, http.call last
+// among them, then the defined ones in the order they were defined, each
+// with its parameters, what it returns and whether this process can run
+// it.
 func (s *Store) Actions() []ActionInfo {
 	s.cmu.RLock()
 	defer s.cmu.RUnlock()
-	out := make([]ActionInfo, 0, len(engineCatalogue)+len(s.actionOrder))
+	out := make([]ActionInfo, 0, len(engineCatalogue)+1+len(s.actionOrder))
 	out = append(out, engineCatalogue...)
+	out = append(out, *s.info(s.actions[strings.ToUpper(model.ActionHTTPCall)]))
 	for _, name := range s.actionOrder {
-		out = append(out, *s.actions[strings.ToUpper(name)].info())
+		out = append(out, *s.info(s.actions[strings.ToUpper(name)]))
 	}
 	return out
 }
@@ -295,7 +328,7 @@ func (s *Store) Action(name string) (*ActionInfo, bool) {
 		}
 	}
 	if a := s.actionNamed(name); a != nil {
-		return a.info(), true
+		return s.info(a), true
 	}
 	return nil, false
 }
@@ -334,12 +367,42 @@ func (s *Store) compileAction(data []byte) (*model.ActionSpec, model.Diagnostics
 		// it (ADR-0044, item 7).
 		diags = append(diags, s.brokenRules(nil, nil, spec)...)
 	}
-	// A definition without a request is the contract of a Go function, and
-	// the process that defines it has the function (ADR-0027).
-	if s.funcs[strings.ToUpper(spec.Name)] == nil {
-		diags = append(diags, model.Diagnostic{Code: model.CodeNotSupported, Path: "/name", Pos: -1,
-			Message: "nothing in this process implements " + spec.Name + ": the definition is the contract of a Go function, and none is registered under that name",
-			Hint:    "the host program gives the function to Open, in Options.Actions"})
+	add := func(code, path, message, hint string) {
+		diags = append(diags, model.Diagnostic{Code: code, Path: path, Pos: -1, Message: message, Hint: hint})
+	}
+	fn := s.funcs[strings.ToUpper(spec.Name)]
+	switch {
+	case !spec.Declared():
+		// A definition without a request is the contract of a Go function,
+		// and the process that defines it has the function (ADR-0027).
+		if fn == nil {
+			add(model.CodeNotSupported, "/name", "nothing in this process implements "+spec.Name+": the definition has no request, so it is the contract of a Go function, and none is registered under that name",
+				"the host program gives the function to Open, in Options.Actions; or the definition gives a request for the engine to send")
+		}
+	case s.outbound == nil:
+		// Whether this process may reach the network is its host program's
+		// decision (ADR-0045, item 7).
+		add(model.CodeNotSupported, "/request", "this process sends no requests, so it cannot take a definition that has one",
+			"the host program allows outbound calls when it opens the database, with Options.Outbound")
+	default:
+		if fn != nil {
+			add(model.CodeNotAllowed, "/request", "a Go function is registered under "+spec.Name+" in this process, and the definition has a request: an action is one or the other",
+				"drop the request, or the function")
+		}
+		// The request goes over the definition's connection, to the hosts
+		// the host program names for it, and reads its secrets only.
+		if refused := s.outbound.Check(spec.Connection, spec.Request.ConstURL); refused != nil {
+			switch err := asError(refused); err.Code {
+			case CodeUnknownConnection:
+				add(model.CodeUnknownConnection, "/connection/name", err.Message, err.Hint)
+			default:
+				add(model.CodeNotAllowed, "/request/url", err.Message, err.Hint)
+			}
+		}
+		if len(secretsRead(spec)) > 0 && s.secretFn == nil {
+			add(model.CodeNotSupported, "/connection/secrets", "this process supplies no secrets, and the request reads "+strings.Join(secretsRead(spec), ", "),
+				"the host program gives Open a function for them, Options.Secrets")
+		}
 	}
 	return spec, diags, version
 }
@@ -349,9 +412,12 @@ func (s *Store) compileAction(data []byte) (*model.ActionSpec, model.Diagnostics
 // Defining the same definition again is a no-op. A redefinition is the
 // next version: it may add a parameter or a returned value, and may not
 // take away or retype what a rule of a class gives, which is refused with
-// not_allowed naming the rule. A definition is the contract of a Go
-// function, so the process that defines it must have been given the
-// function, in Options.Actions.
+// not_allowed naming the rule. A definition without a request is the
+// contract of a Go function, so the process that defines it must have
+// been given the function, in Options.Actions. A definition with a
+// request is sent by the engine, so the process must allow outbound
+// calls, with Options.Outbound, know the definition's connection and, if
+// the request reads a secret, supply secrets.
 func (s *Store) DefineAction(ctx context.Context, data []byte) (*ActionInfo, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -365,7 +431,7 @@ func (s *Store) DefineAction(ctx context.Context, data []byte) (*ActionInfo, err
 		return nil, model.Diagnostics{{Code: model.CodeBadJSON, Pos: -1, Message: err.Error()}}
 	}
 	if old := s.actions[upperName(data)]; old != nil && bytes.Equal(old.json, compact) {
-		return old.info(), nil
+		return s.info(old), nil
 	}
 	spec, diags, version := s.compileAction(data)
 	if len(diags) > 0 {
@@ -394,7 +460,7 @@ func (s *Store) DefineAction(ctx context.Context, data []byte) (*ActionInfo, err
 	}
 	a := &action{spec: spec, json: compact}
 	s.registerAction(a)
-	return a.info(), nil
+	return s.info(a), nil
 }
 
 // loadActions reads the stored action definitions in the order they were
@@ -554,15 +620,25 @@ func (s *Store) trial(name string, args Values) (*action, Values, *Error) {
 }
 
 // PreviewAction answers what an action would be called with for the
-// arguments, given as values in the wire shape, and calls nothing
-// (ADR-0045, item 9). The arguments are checked as the worker checks them:
-// unknown_parameter, bad_value, required.
+// arguments, given as values in the wire shape, and for a declared action
+// the request it would send, with secrets masked; it calls and sends
+// nothing (ADR-0045, item 9). The arguments are checked as the worker
+// checks them: unknown_parameter, bad_value, required.
 func (s *Store) PreviewAction(ctx context.Context, name string, args Values) (*ActionPreview, error) {
 	a, vals, err := s.trial(name, args)
 	if err != nil {
 		return nil, err
 	}
-	return &ActionPreview{Action: a.spec.Name, Kind: ActionRegistered, Call: &ActionCall{Attempt: 1, Action: a.spec.Name, Args: vals}}, nil
+	pv := &ActionPreview{Action: a.spec.Name, Kind: a.kind(), Call: &ActionCall{Attempt: 1, Action: a.spec.Name, Args: vals}}
+	if a.spec.Declared() {
+		// The request as it would be sent, every secret masked and none
+		// asked for; a request the outbound rules would refuse is refused
+		// here.
+		if pv.Request, err = s.previewRequest(a, pv.Call); err != nil {
+			return nil, err
+		}
+	}
+	return pv, nil
 }
 
 // TryAction runs an action once outside any document, for the arguments
@@ -570,27 +646,46 @@ func (s *Store) PreviewAction(ctx context.Context, name string, args Values) (*A
 // nothing, writes no event and answers what the action returned, or how
 // it failed. The call carries no event and a key of its own. The error is
 // a refusal of the trial itself: an unknown action, arguments that do not
-// fit, or an action this process cannot run.
+// fit, or an action this process cannot run. The request of a declared
+// action is sent for real, to its receiver.
 func (s *Store) TryAction(ctx context.Context, name string, args Values) (*ActionOutcome, error) {
 	a, vals, e := s.trial(name, args)
 	if e != nil {
 		return nil, e
 	}
-	if a.fn == nil {
+	switch {
+	case a.spec.Declared() && s.outbound == nil:
+		return nil, outboundOff(a.spec.Name)
+	case !a.spec.Declared() && a.fn == nil:
 		return nil, notRegistered(a.spec.Name)
 	}
-	call := &ActionCall{Key: "try:" + s.ids.next(s.now()), Attempt: 1, Action: a.spec.Name, Args: vals}
-	result, failure, retry := invoke(ctx, a.fn, call)
+	did := s.act(ctx, a, &ActionCall{Key: "try:" + s.ids.next(s.now()), Attempt: 1, Action: a.spec.Name, Args: vals})
 	out := &ActionOutcome{Action: a.spec.Name}
-	if failure != nil {
-		out.Code, out.Message, out.Retry = failure.Code, failure.Message, retry
+	if did.failed() {
+		out.Code, out.Message, out.Retry = did.failure.Code, did.failure.Message, did.retry
 		return out, nil
 	}
-	out.OK = true
-	if out.Result, failure = s.readResult(a.spec, result); failure != nil {
-		out.Code, out.Message = failure.Code, failure.Message
+	out.OK, out.Result = true, did.result
+	if did.badResult != nil {
+		out.Result, out.Code, out.Message = nil, did.badResult.Code, did.badResult.Message
 	}
 	return out, nil
+}
+
+// act does what an action stands for, for one call: the request of a
+// declared action is sent, the function of a registered one is called,
+// and what either returns is read against the definition.
+func (s *Store) act(ctx context.Context, a *action, call *ActionCall) outcome {
+	if a.spec.Declared() {
+		return s.send(ctx, a, call)
+	}
+	result, failure, retry := invoke(ctx, a.fn, call)
+	if failure != nil {
+		return outcome{failure: failure, retry: retry}
+	}
+	out := outcome{}
+	out.result, out.badResult = s.readResult(a.spec, result)
+	return out
 }
 
 func notRegistered(name string) *Error {
@@ -658,17 +753,18 @@ func (s *Store) runCall(ctx context.Context, row *outboxRow) (bool, error) {
 	if err != nil {
 		return false, storageErr("read the action", err)
 	}
-	failure, retry := s.at("perform", row), false
-	if failure == nil {
-		failure, retry = s.call(ctx, row, &c)
+	did := outcome{failure: s.at("perform", row)}
+	if did.failure == nil {
+		did = s.call(ctx, row, &c)
 	} else {
-		retry = noAnswer(failure)
+		did.retry = noAnswer(did.failure)
 	}
-	if failure == nil {
-		if failure = s.at("performed", row); failure != nil {
-			retry = noAnswer(failure)
+	if did.failure == nil {
+		if did.failure = s.at("performed", row); did.failure != nil {
+			did.retry = noAnswer(did.failure)
 		}
 	}
+	failure := did.failure
 	if ctx.Err() != nil {
 		// The caller gave up; the row is as it was.
 		return false, ctx.Err()
@@ -697,7 +793,7 @@ func (s *Store) runCall(ctx context.Context, row *outboxRow) (bool, error) {
 	if failure == nil {
 		err = s.finish(ctx, row, ActionDone, attempts+1, nil, c.day, now)
 	} else {
-		err = s.failed(ctx, row, attempts, failure, retry, c.day, now)
+		err = s.failed(ctx, row, attempts, failure, did.retry, did.after, c.day, now)
 	}
 	if err != nil {
 		_, _ = w.ExecContext(ctx, "ROLLBACK")
@@ -713,31 +809,34 @@ func (s *Store) runCall(ctx context.Context, row *outboxRow) (bool, error) {
 	return true, nil
 }
 
-// call makes the call of a row: the definition and the function of its
-// action, its arguments read against the definition as it is now, and the
-// event that fired the rule. What the row cannot be called with is a
-// refusal; a function this process lacks and a store that fails are no
-// answer. What the function returns is read by into, which arrives with a
-// later step.
-func (s *Store) call(ctx context.Context, row *outboxRow, c *calling) (failure *Error, retry bool) {
+// call makes the call of a row: the definition of its action, its
+// arguments read against the definition as it is now, the event that
+// fired the rule, and then the function or the request. What the row
+// cannot be called with is a refusal; what this process lacks to run the
+// action, its function or the leave to send requests, and a store that
+// fails are no answer. What the action returns is read by into, which
+// arrives with a later step.
+func (s *Store) call(ctx context.Context, row *outboxRow, c *calling) outcome {
 	a := s.actionNamed(row.action)
 	if a == nil {
-		return hintf(CodeUnknownAction, "", "the database has no action "+row.action, "the row was queued when it had one; define the action again and retry the row"), false
+		return refusal(hintf(CodeUnknownAction, "", "the database has no action "+row.action, "the row was queued when it had one; define the action again and retry the row"))
 	}
 	args, e := s.rowArgs(a.spec, row.args)
 	if e != nil {
-		return e, false
+		return refusal(e)
 	}
-	if a.fn == nil {
-		return notRegistered(a.spec.Name), true
+	switch {
+	case a.spec.Declared() && s.outbound == nil:
+		return noReply(outboundOff(a.spec.Name))
+	case !a.spec.Declared() && a.fn == nil:
+		return noReply(notRegistered(a.spec.Name))
 	}
 	ev, err := s.delivered(ctx, row, c)
 	if err != nil {
-		failure = asError(err)
-		return failure, noAnswer(failure)
+		failure := asError(err)
+		return outcome{failure: failure, retry: noAnswer(failure)}
 	}
-	_, failure, retry = invoke(ctx, a.fn, &ActionCall{Key: row.key(), Attempt: c.attempts + 1, Action: a.spec.Name, Args: args, Event: ev})
-	return failure, retry
+	return s.act(ctx, a, &ActionCall{Key: row.key(), Attempt: c.attempts + 1, Action: a.spec.Name, Args: args, Event: ev})
 }
 
 // delivered builds the event a row's action receives (ADR-0026,

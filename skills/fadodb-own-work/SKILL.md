@@ -27,7 +27,7 @@ from the state the documents hold.
 | the agent as a principal with an id and groups, `As`; the log records it | shipped |
 | a guard that keeps a transition from the agent's group; field rights per state | shipped with Phase 3 |
 | idempotent retries, `Key`; the filter to poll for work | shipped |
-| rules that call the agent's program back when a state is entered | in progress, Phase 4: a Go function the host program gives to `Open` in `Options.Actions`, with a definition stored by `DefineAction`, is called through the outbox with the event and the document; a call over HTTP is planned |
+| rules that call the agent's program back when a state is entered | in progress, Phase 4: a Go function the host program gives to `Open` in `Options.Actions`, with a definition stored by `DefineAction`, is called through the outbox with the event and the document; an agent in another process is called over HTTP by a definition with a `request` that points at its endpoint, signed, where the host program allows that host |
 | subscriptions over the WebSocket instead of polling | designed, Phase 6 |
 
 ## Procedure, in outline
@@ -47,17 +47,19 @@ from the state the documents hold.
    queries for running tasks and resumes.
 4. **The saga.** One document per operation across services: each step a
    state, each failure a compensating transition, the log the saga's
-   history. Where a Go function of the host program makes a step's
-   call, the step is an outbox action with retries today; a call the
-   engine sends over HTTP is planned.
+   history. Each step's call is an outbox action with retries: a Go
+   function of the host program, or a request the engine sends.
 5. **Retry with the key.** The same key makes the retry the same commit,
    so a lost answer is asked again without a duplicate.
 6. **Be called back, or poll.** Where the agent's program embeds the
    engine, a rule on entering a state calls its Go function: the
    function receives the event and the document at that version, makes
    twice once by the call's key, and returns an error to be asked again
-   later. An agent outside that process polls with the filter until
-   actions over HTTP ship.
+   later. An agent outside that process is called over HTTP: a
+   definition with a `request` points at its endpoint, the request
+   carries the call, signed, and the agent answers 2xx, or 5xx to be
+   asked again. Polling with the filter still works where no endpoint
+   can be reached.
 
 ## Worked examples, planned
 

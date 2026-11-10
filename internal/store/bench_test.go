@@ -917,3 +917,50 @@ func BenchmarkOutboxRegistered(b *testing.B) {
 		b.Fatalf("%d calls for %d transitions", calls, b.N)
 	}
 }
+
+// BenchmarkOutboxDeclared measures what an action sent as a request costs
+// the engine beside the network (ADR-0045, Performance): a transition
+// whose rule queues the call, and the drain that reads the secret, builds
+// the request from the definition's templates, hands it to a sender that
+// answers at once, reads the JSON reply with ok and result, and marks the
+// row. BenchmarkDeclaredAction, in fado/outbound, adds a real round trip
+// to a receiver in the same process. It is outside the gate.
+func BenchmarkOutboxDeclared(b *testing.B) {
+	net := &fakeOutbound{connections: map[string][]string{"slack": {"slack.com"}}}
+	s, err := Open(filepath.Join(b.TempDir(), "bench.fado"), Options{Outbox: OutboxOptions{Manual: true}, Outbound: net,
+		Secrets: func(context.Context, string, string) (string, error) { return "xoxb-bench", nil }})
+	if err != nil {
+		b.Fatal(err)
+	}
+	defer s.Close()
+	ctx := context.Background()
+	if _, err := s.DefineAction(ctx, []byte(slackPost)); err != nil {
+		b.Fatal(err)
+	}
+	if _, err := s.DefineClass(ctx, []byte(`{"name": "Job", "variables": {"note": {"type": "text"}},
+ "states": {"initial": "open", "list": ["open"]}, "transitions": [{"name": "tell", "from": "open", "to": "open"}],
+ "rules": [{"on": "transition", "name": "tell", "do": [{"action": "slack.post", "args": {"channel": "\"#ops\"", "text": "note"}}]}]}`)); err != nil {
+		b.Fatal(err)
+	}
+	doc, err := s.Create(ctx, "Job", Values{"note": "done"})
+	if err != nil {
+		b.Fatal(err)
+	}
+	reply := &fakeReply{Body: []byte(`{"ok": true, "ts": "1700000000.000100"}`)}
+	b.ReportAllocs()
+	b.ResetTimer()
+	for b.Loop() {
+		reply.used = false
+		net.replies, net.sent = []*fakeReply{reply}, net.sent[:0]
+		if _, err := s.Transition(ctx, "Job", doc.ID, "tell", nil, As(alice)); err != nil {
+			b.Fatal(err)
+		}
+		if n, err := s.Drain(ctx); err != nil || n != 1 {
+			b.Fatalf("drained %d, %v", n, err)
+		}
+	}
+	b.StopTimer()
+	if dead, err := s.Outbox(ctx, OutboxFilter{Status: ActionDead}); err != nil || len(dead) != 0 {
+		b.Fatalf("%d actions died: %v", len(dead), err)
+	}
+}

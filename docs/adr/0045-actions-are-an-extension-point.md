@@ -247,13 +247,105 @@ function, on 2026-11-10, and settled these points.
 - **The catalogue** lists an engine action with the properties it is
   written with, each of the type `name`, `names`, `formula` or
   `formulas`.
-- **Until the later steps of the phase.** A definition with `request`,
-  `connection`, `ok` or `result`, and `into` on an action, are refused
-  with `not_supported`. `http.call` in a rule is accepted and not run,
-  as it was. Any other action without a definition is `unknown_action`.
+- **Until the later steps of the phase.** `into` on an action is refused
+  with `not_supported`. Any action without a definition is
+  `unknown_action`. Until the second step a definition with `request`,
+  `connection`, `ok` or `result` was `not_supported` too, and
+  `http.call` in a rule was accepted and not run.
 - **The registry** is the tables `actions` and `action_versions`, names
   no class may take. The engine schema stays at 3: tables are added and
   none is changed.
+
+The second step built items 3, 6 and 7, and of items 4 and 5 the
+request, on 2026-11-10, with the owner's ruling below, and settled these
+points.
+
+- **What sends.** `Options.Outbound` is an interface of two calls, one
+  that says whether a request may go to an address and one that sends
+  it. Package `fado/outbound` makes the one the record describes, from a
+  list of hosts and, for each connection, its hosts. The store builds
+  the request and reads the reply and never touches the network: a
+  program that does not import `fado/outbound` links no HTTP client,
+  which the dependency gate checks on the `fadodb` binary. `Options.Secrets`
+  is a function of the connection and the secret's name.
+- **A host entry** is a name, `.suffix` for every host under it,
+  `name:port`, or `http://name` for a host that may be called without
+  TLS. Without a port an entry admits the port of its scheme and no
+  other. An entry by the host's own name wins over one by suffix. A host
+  that only a suffix admits is refused when the address it connects to
+  is loopback, private, link-local, shared or multicast; one listed by
+  its own name may be inside the network. The address is judged when the
+  connection is made, not at a lookup before it. No proxy of the
+  environment is used.
+- **What is checked when.** A definition with a request needs a process
+  with `Options.Outbound` (`not_supported`), a connection that process
+  names (`unknown_connection`), and `Options.Secrets` if the request
+  reads a secret (`not_supported`). An address that reads no parameter
+  and no secret is checked against the hosts when the action is defined
+  (`not_allowed`); any other when the request is sent, where a host that
+  is not allowed is a refusal, `host_not_allowed`, and nothing leaves.
+  What a process lacks to send a row's request, the leave to send, the
+  connection or a secret, is no answer, as a missing Go function is.
+  A definition has a request or a Go function of its name, not both.
+- **The request.** `method` is GET, POST, PUT, PATCH or DELETE, POST
+  when absent. `url` and every header are formulas that give a text; a
+  header whose formula gives a blank is not sent. `body` is a template
+  like a json argument; a body that is one formula giving a text is sent
+  as that text, for a receiver that does not read JSON, and the
+  definition gives its `Content-Type`. A GET and a DELETE carry no body
+  and may not have one, so the call of item 4 is the body of a POST, a
+  PUT and a PATCH that give none. The engine adds `Content-Type` and
+  `User-Agent: FadoDB` unless the definition gives them, and a
+  definition may not give the engine's own headers, `Host` or
+  `Content-Length`.
+- **`SECRET("name")`** is a function class of its own in the catalogue.
+  The name is a text literal and one the connection declares, so the
+  secrets a request reads are known when it is defined. It compiles to
+  the read of a slot that the store fills when it sends: a secret is no
+  constant of a program. A secret the host does not supply, or supplies
+  empty, is no answer, `secret_unavailable`.
+- **The signature** is `FadoDB-Signature: t=<seconds>,v1=<hex>`, the
+  HMAC-SHA256 of the timestamp, a dot and the body, keyed with the
+  `sign` secret, at the database's clock. `fado.VerifySignature` is the
+  receiver's check in Go.
+- **Replies.** `STATUS` is a number and `BODY` the reply as json, blank
+  when the reply is not JSON. The row records `no_reply` for no reply,
+  `try_later` for 408, 429 and 5xx, `refused` for any other status that
+  is no success, `not_ok` for a 2xx whose `ok` is not TRUE, and
+  `reply_too_large`. A `Retry-After` moves the next attempt later, never
+  sooner, and by a day at most. `ok` and `result` read the reply and
+  nothing else: no parameter, no secret.
+- **What a failure says.** The message quotes the first 200 characters
+  of the reply on one line, since that is where a receiver says what was
+  wrong. Every secret the request read, and every text built from one,
+  is masked in it first; a failure to reach a receiver names the host
+  and never the rest of the address.
+- **`http.call`** is defined in every database and listed in the
+  catalogue as a declared action. A rule gives it `url`, `method`,
+  `headers` and `body` under `args`; it returns `status` and `body`. It
+  has no connection: it goes to the open list of hosts and carries no
+  secret. In a process that sends nothing, a class that names it is
+  taken, and its rows get no answer, `outbound_off`, with the usual
+  retries.
+- **A preview** shows the request with `***` in the place of every
+  secret and of the signature, asks the host for no secret, and is
+  refused where the request would be.
+- **`URLENCODE`** keeps letters, digits and `- . _ ~` and writes every
+  other byte as `%XX` in upper case; its result counts against the text
+  limit.
+
+## Rulings
+
+**A secret goes only to the hosts of its connection.** The draft of the
+second step put this to the owner on 2026-11-10: as items 6 and 7 read,
+the hosts a process may call are one list, so a definition, which is
+data and may be an agent's, could send the secret of one service to
+another allowed host. He ruled that a secret is tied to its service. The
+host program names the hosts of every connection; a request of a
+definition that names a connection goes to those hosts and to no other;
+and a request without a connection reads no secret and goes to the
+hosts listed for such requests. This narrows item 7 and is how
+`fado/outbound` is built.
 
 ## Consequences
 

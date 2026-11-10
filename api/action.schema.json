@@ -1,9 +1,11 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "FadoDB action definition",
-  "description": "The definition of an action a rule may name (ADR-0045, item 1): its name, its parameters and what it returns. It holds no code and no secret. A definition as this schema describes it is the contract of a Go function the host program registers under the same name; the properties of an action the engine sends as an HTTP request (request, connection, ok, result) join the schema with the release that sends them.",
+  "description": "The definition of an action a rule may name (ADR-0045, items 1 and 3): its name, its parameters and what it returns, and what implements it. A definition without a request is the contract of a Go function the host program registers under the same name. A definition with a request is sent by the engine as HTTP, over its connection, with the secrets the host program supplies; ok and result read the reply. A definition holds no code and no secret.",
   "type": "object",
-  "required": ["name"],
+  "required": [
+    "name"
+  ],
   "additionalProperties": false,
   "properties": {
     "name": {
@@ -17,17 +19,95 @@
       "type": "integer",
       "minimum": 1
     },
-    "label": {"description": "A short name for people.", "type": "string"},
-    "description": {"description": "What the action does, for the person or the agent who chooses it.", "type": "string"},
+    "label": {
+      "description": "A short name for people.",
+      "type": "string"
+    },
+    "description": {
+      "description": "What the action does, for the person or the agent who chooses it.",
+      "type": "string"
+    },
     "params": {
       "description": "The parameters, by name. A rule gives each a formula of its type under args; a json parameter also takes a template, the JSON it becomes with a formula in the place of every string.",
       "type": "object",
-      "additionalProperties": {"$ref": "#/$defs/param"}
+      "additionalProperties": {
+        "$ref": "#/$defs/param"
+      }
     },
     "returns": {
       "description": "The values the action returns, by name.",
       "type": "object",
-      "additionalProperties": {"$ref": "#/$defs/returned"}
+      "additionalProperties": {
+        "$ref": "#/$defs/returned"
+      }
+    },
+    "connection": {
+      "description": "The connection the request goes over. The host program names the hosts of each connection and supplies its secrets: a request with a connection goes to those hosts and to no other, and a request without one reads no secret.",
+      "type": "object",
+      "required": [
+        "name"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "description": "The name by which the host program knows the connection.",
+          "type": "string",
+          "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+        },
+        "secrets": {
+          "description": "The secrets of the connection the request may read with SECRET(\"name\"), and sign with.",
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+          }
+        }
+      }
+    },
+    "request": {
+      "description": "The request the engine sends. Its formulas are pure: they read the parameters and, with SECRET(\"name\"), the secrets of the connection, so every attempt sends the same request. The engine adds Idempotency-Key, the key of the queued action; FadoDB-Event, the id of the event that fired the rule; FadoDB-Attempt; and Content-Type and User-Agent unless the definition gives them.",
+      "type": "object",
+      "required": [
+        "url"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "method": {
+          "description": "GET, POST, PUT, PATCH or DELETE, in any case; POST when absent.",
+          "type": "string",
+          "pattern": "^([Gg][Ee][Tt]|[Pp][Oo][Ss][Tt]|[Pp][Uu][Tt]|[Pp][Aa][Tt][Cc][Hh]|[Dd][Ee][Ll][Ee][Tt][Ee])$"
+        },
+        "url": {
+          "description": "A formula that gives the address, http or https, as text. URLENCODE makes a value safe for it.",
+          "type": "string",
+          "minLength": 1
+        },
+        "headers": {
+          "description": "Header names to formulas that give their values as text. A header whose formula gives a blank is not sent.",
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "body": {
+          "description": "A template: the JSON to send, with a formula in the place of every string. A body that is one formula giving a text is sent as that text, for a receiver that does not read JSON. Without a body, a POST, a PUT and a PATCH send the call itself (call.schema.json); a GET and a DELETE send none and may not have one."
+        },
+        "sign": {
+          "description": "A secret of the connection. The request then carries FadoDB-Signature: t=<seconds since the epoch>,v1=<hex HMAC-SHA256 of the timestamp, a dot and the body, keyed with the secret>.",
+          "type": "string"
+        }
+      }
+    },
+    "ok": {
+      "description": "A condition over the reply, pure, over STATUS, a number, and BODY, the reply as a json value, blank when it is not JSON. A 2xx reply for which it is TRUE is the action run; one for which it is not is a refusal. Without it any 2xx reply is the action run.",
+      "type": "string"
+    },
+    "result": {
+      "description": "The returned values, each a formula over STATUS and BODY of the type returns declares.",
+      "type": "object",
+      "additionalProperties": {
+        "type": "string"
+      }
     }
   },
   "$defs": {
@@ -39,15 +119,26 @@
     "param": {
       "description": "A parameter: its type alone, or its type with whether a call must give it and what it is for.",
       "anyOf": [
-        {"$ref": "#/$defs/type"},
+        {
+          "$ref": "#/$defs/type"
+        },
         {
           "type": "object",
-          "required": ["type"],
+          "required": [
+            "type"
+          ],
           "additionalProperties": false,
           "properties": {
-            "type": {"$ref": "#/$defs/type"},
-            "required": {"description": "A call whose argument is blank is refused with required.", "type": "boolean"},
-            "description": {"type": "string"}
+            "type": {
+              "$ref": "#/$defs/type"
+            },
+            "required": {
+              "description": "A call whose argument is blank is refused with required.",
+              "type": "boolean"
+            },
+            "description": {
+              "type": "string"
+            }
           }
         }
       ]
@@ -55,14 +146,22 @@
     "returned": {
       "description": "A returned value: its type alone, or its type with what it is.",
       "anyOf": [
-        {"$ref": "#/$defs/type"},
+        {
+          "$ref": "#/$defs/type"
+        },
         {
           "type": "object",
-          "required": ["type"],
+          "required": [
+            "type"
+          ],
           "additionalProperties": false,
           "properties": {
-            "type": {"$ref": "#/$defs/type"},
-            "description": {"type": "string"}
+            "type": {
+              "$ref": "#/$defs/type"
+            },
+            "description": {
+              "type": "string"
+            }
           }
         }
       ]

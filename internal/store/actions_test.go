@@ -124,16 +124,24 @@ func TestActions_Registry(t *testing.T) {
 		t.Errorf("a function given under another case: %v, %s", err, dump(ping))
 	}
 
-	// The catalogue: the engine's own actions first, then the defined
-	// ones in the order they were defined.
+	// The catalogue: the engine's own actions first, http.call last among
+	// them, then the defined ones in the order they were defined.
 	var names []string
 	for _, a := range s.Actions() {
 		names = append(names, a.Name)
+		if a.Name == model.ActionHTTPCall {
+			// The engine's own declared action: defined everywhere, and this
+			// process, which sends nothing, cannot run it.
+			if a.Kind != ActionDeclared || a.Available || a.Version != 0 || len(a.Params) != 4 || a.Description == "" {
+				t.Errorf("the entry of http.call: %s", dump(a))
+			}
+			continue
+		}
 		if model.EngineAction(a.Name) != (a.Kind == ActionEngine) || !a.Available || a.Kind == ActionEngine && (a.Version != 0 || a.Description == "") {
 			t.Errorf("the entry of %s: %s", a.Name, dump(a))
 		}
 	}
-	if got := strings.Join(names, " "); got != "set reset refresh emit create transition table.insert table.update table.delete books.post audit.ping" {
+	if got := strings.Join(names, " "); got != "set reset refresh emit create transition table.insert table.update table.delete http.call books.post audit.ping" {
 		t.Errorf("the catalogue: %s", got)
 	}
 	if set, ok := s.Action("set"); !ok || !set.Sync || set.Params[0].Type != "formulas" {

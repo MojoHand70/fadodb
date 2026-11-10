@@ -1,6 +1,6 @@
 {
   "suite": "queued",
-  "description": "An action that changes something other than the rule's own document belongs to the outbox (ADR-0043 item 7, ADR-0044). The commit evaluates its arguments over the document as the rules before it left it and writes a row with the commit; a preview reports what would be queued, with those arguments, and writes nothing. An argument that errors refuses the command with the action's path. http.call, which the engine does not send yet, is named by the preview and not queued; any other action a rule names has a definition (the suite calls).",
+  "description": "An action that changes something other than the rule's own document belongs to the outbox (ADR-0043 item 7, ADR-0044). The commit evaluates its arguments over the document as the rules before it left it and writes a row with the commit; a preview reports what would be queued, with those arguments, and writes nothing. An argument that errors refuses the command with the action's path. An action that leaves the database is queued the same way: http.call, the engine's own, here, an action with a definition in the suites calls and requests.",
   "clock": "2026-03-01 12:00:00",
   "classes": [
     {"name": "Receipt", "variables": {"invoice": {"type": "text", "required": true}, "amount": {"type": "number"}, "share": {"type": "number"}},
@@ -15,7 +15,7 @@
       {"on": "enter", "state": "paid",
        "do": [{"action": "set", "values": {"paid_at": "NOW()", "total": "total + 10"}},
               {"action": "create", "class": "Receipt", "values": {"invoice": "ID()", "amount": "total"}},
-              {"action": "http.call", "url": "\"https://hooks.example/paid\""}]},
+              {"action": "http.call", "args": {"url": "\"https://hooks.example/paid\"", "body": {"total": "total"}}}]},
       {"on": "enter", "state": "split",
        "do": [{"action": "create", "class": "Receipt", "id": "\"R-\" & ID()", "values": {"invoice": "ID()", "share": "total / parts"}}]}
     ]
@@ -23,10 +23,11 @@
   "script": [
     {"do": "create", "doc": "i", "values": {"total": 90}, "expect": {"state": "open", "version": 1, "outbox": []}},
     {"name": "a preview names what would be queued and queues nothing", "do": "preview", "transition": "pay",
-     "expect": {"state": "paid", "rules": ["/rules/0"], "queued": [{"action": "create"}, {"action": "http.call"}], "values": {"paid_at": 1772366400, "total": 100}, "outbox": []}},
+     "expect": {"state": "paid", "rules": ["/rules/0"], "queued": [{"action": "create"}, {"action": "http.call", "args": {"url": "https://hooks.example/paid", "body": {"total": 100}}}], "values": {"paid_at": 1772366400, "total": 100}, "outbox": []}},
     {"name": "the commit writes the row with the arguments of that moment: the total the set before it left", "do": "transition", "transition": "pay",
      "expect": {"state": "paid", "version": 2, "values": {"paid_at": 1772366400, "total": 100}, "events": ["created", "transition:pay"],
-                "outbox": [{"action": "create", "status": "pending", "attempts": 0, "depth": 0}]}},
+                "outbox": [{"action": "create", "status": "pending", "attempts": 0, "depth": 0},
+                           {"action": "http.call", "status": "pending", "attempts": 0, "args": {"url": "https://hooks.example/paid", "body": {"total": 100}}}]}},
     {"name": "nothing has run yet: the receipt does not exist", "do": "count", "class": "Receipt", "expect": {"count": 0}},
     {"name": "an argument that errors refuses the command and queues nothing", "do": "create", "doc": "zero", "values": {"total": 50, "parts": 0}, "expect": {"version": 1}},
     {"do": "transition", "doc": "zero", "transition": "split", "expect": {"code": "div_by_zero", "action": "/rules/1/do/0"}},

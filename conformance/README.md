@@ -209,6 +209,24 @@ suites', with these additions:
   entries of it, each found by its `name` and compared by the properties
   given.
 
+- A suite with `outbound` lets its store send the requests of declared
+  actions (ADR-0045, item 7), to a network the runner stands in for:
+  `hosts` are the hosts a request without a connection may go to and
+  `connections` the hosts of each connection. Without it the store sends
+  nothing. `secrets` are the secrets the runner supplies, by connection
+  and name. `replies` are what the network answers: each has a `status`,
+  200 when absent, a `body` in JSON or a `text`, a `retry_after` in
+  seconds, or `no_reply` with the words of a failure to reach the
+  receiver; a reply answers the next request to its `url`, or the next
+  request at all when it has none, and a request no reply is left for is
+  answered 200 with no body.
+- `requests` are the requests the store sent during the step, in order,
+  each by the properties given: `method`, `url`, `connection`, `headers`
+  as an object by name, and `body`, the JSON sent, or `text` for a body
+  that is not JSON. A property expected as `null` must be absent.
+  `request` is the request a `preview_action` would send, in the same
+  shape, with every secret masked.
+
 The store runs every suite in CI.
 
 ## Binding cases: `binding/*.json`

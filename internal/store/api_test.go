@@ -182,7 +182,9 @@ func TestAPISchemas(t *testing.T) {
 		"the event":       {propertyNames(eventSchema), jsonFields(DeliveredEvent{})},
 		"the document":    {propertyNames(eventSchema["$defs"].(map[string]any)["document"].(map[string]any)), jsonFields(Document{})},
 		"a moment":        {propertyNames(eventSchema["$defs"].(map[string]any)["document"].(map[string]any)["properties"].(map[string]any)["computed"].(map[string]any)["additionalProperties"].(map[string]any)), jsonFields(Moment{})},
-		"the definition":  {propertyNames(actionSchema), []string{"description", "label", "name", "params", "returns", "version"}},
+		"the definition":  {propertyNames(actionSchema), []string{"connection", "description", "label", "name", "ok", "params", "request", "result", "returns", "version"}},
+		"the request":     {propertyNames(actionSchema["properties"].(map[string]any)["request"].(map[string]any)), []string{"body", "headers", "method", "sign", "url"}},
+		"the connection":  {propertyNames(actionSchema["properties"].(map[string]any)["connection"].(map[string]any)), []string{"name", "secrets"}},
 		"the event kinds": {kindsOf(eventSchema), {EventCreated, EventDeleted, EventRefresh, EventReset, EventSet, EventTransition}},
 	} {
 		if !reflect.DeepEqual(pair[0], pair[1]) {
@@ -192,7 +194,11 @@ func TestAPISchemas(t *testing.T) {
 
 	// A definition the engine takes is one the schema takes, and the other
 	// way round, for the definitions of the tests and of every suite.
-	defs := map[string]string{"books.post": booksPost, "audit.ping": auditPing,
+	defs := map[string]string{"books.post": booksPost, "audit.ping": auditPing, "slack.post": slackPost,
+		"a request in full": `{"name": "a.b", "params": {"x": "text"}, "returns": {"r": "number"}, "connection": {"name": "c", "secrets": ["k", "s"]},
+ "request": {"method": "patch", "url": "\"https://example.test/\" & URLENCODE(x)", "headers": {"X-K": "SECRET(\"k\")"}, "body": [{"x": "x"}, 1, null], "sign": "s"},
+ "ok": "STATUS < 300", "result": {"r": "STATUS"}}`,
+		"a body that is one text": `{"name": "a.c", "params": {"x": "text"}, "request": {"url": "\"https://example.test\"", "body": "\"x=\" & URLENCODE(x)"}}`,
 		"every type": `{"name": "a.b_c.d9", "version": 2, "label": "l", "description": "d",
  "params": {"a": "bool", "b": "number", "c": "int", "d": "text", "e": "date", "f": "datetime", "g": "ref", "h": "json", "i": "decimal", "j": "decimal(0)", "k": "money(18)", "l": {"type": "money", "required": true, "description": "x"}},
  "returns": {"r": {"type": "decimal(4)", "description": "y"}}}`}
@@ -231,7 +237,13 @@ func TestAPISchemas(t *testing.T) {
 		"a parameter without a type":       `{"name": "a.b", "params": {"x": {"required": true}}}`,
 		"an unknown property of a param":   `{"name": "a.b", "params": {"x": {"type": "text", "default": "1"}}}`,
 		"a required returned value":        `{"name": "a.b", "returns": {"x": {"type": "text", "required": true}}}`,
-		"a request, which is not sent yet": `{"name": "a.b", "request": {"method": "POST", "url": "\"https://example.test\""}}`,
+		"a request without an address":     `{"name": "a.b", "request": {"method": "POST"}}`,
+		"an unknown method":                `{"name": "a.b", "request": {"method": "FETCH", "url": "\"https://example.test\""}}`,
+		"an unknown property of a request": `{"name": "a.b", "request": {"url": "\"https://example.test\"", "timeout": 5}}`,
+		"a header that is no formula":      `{"name": "a.b", "request": {"url": "\"https://example.test\"", "headers": {"X-N": 7}}}`,
+		"a connection without a name":      `{"name": "a.b", "connection": {"secrets": ["token"]}, "request": {"url": "\"https://example.test\""}}`,
+		"a secret that is no name":         `{"name": "a.b", "connection": {"name": "c", "secrets": ["my key"]}, "request": {"url": "\"https://example.test\""}}`,
+		"a result that is no formula":      `{"name": "a.b", "returns": {"x": "text"}, "request": {"url": "\"https://example.test\""}, "result": {"x": 7}}`,
 	} {
 		if a, _ := model.DefineAction([]byte(def)); a != nil {
 			t.Errorf("%s: the engine takes it", name)

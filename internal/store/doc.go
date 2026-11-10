@@ -54,14 +54,16 @@
 //
 // Actions are an extension point (ADR-0045): DefineAction stores the
 // definition of an action, its name, its parameters and what it returns;
-// Options.Actions gives Open the Go function that implements it; a rule
-// names it and gives its arguments as formulas; and the worker calls the
-// function outside any transaction, at least once, with the arguments
-// and the event that fired the rule. Actions lists what a rule may name,
-// and PreviewAction and TryAction show and run an action outside any
-// document.
+// a rule names it and gives its arguments as formulas; and the worker
+// runs it outside any transaction, at least once, with the arguments and
+// the event that fired the rule. What runs it is a Go function,
+// Options.Actions, or for a definition with a request the store itself:
+// it builds the request from the definition's formulas and the secrets
+// Options.Secrets supplies, hands it to Options.Outbound and reads the
+// reply. The store never touches the network; without an Outbound
+// nothing is sent. Actions lists what a rule may name, and PreviewAction
+// and TryAction show and run an action outside any document.
 //
-// Not here yet: actions sent as HTTP requests and results written back
-// to the document (Phase 4), the class-level access rules (Phase 5), and
-// the server (Phase 6).
+// Not here yet: results written back to the document (Phase 4), the
+// class-level access rules (Phase 5), and the server (Phase 6).
 package store

@@ -71,7 +71,14 @@ back to the document with `into`, so that a process goes on from the
 answer, and adds one generic webhook definition and a guide to writing
 an action for any REST API. By the owner's ruling of 2026-11-10 the
 phase writes no definitions for particular services, which come with
-real needs, and the package format waits for the first of them. This page is updated when a phase starts and when it ends;
+real needs, and the package format waits for the first of them. Its
+sixth step, formulas that read other documents, has its design proposed
+as ADR-0046 on 2026-11-10 and is not built: a class as the source of
+`LOOKUP`, with a count, a sum, the smallest and the largest. By the
+owner's rulings of that day a formula sees every document, and `QUERY`,
+which returns lists, is built with the first layout or report that
+needs one; the record also proposes that tables stored outside the file
+come with the analytical engine in Phase 8. This page is updated when a phase starts and when it ends;
 it never describes a phase as done before its acceptance criteria pass.
 
 Legend: ✅ done · 🚧 in progress · ⬜ not started

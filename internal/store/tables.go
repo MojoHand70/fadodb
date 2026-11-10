@@ -275,7 +275,7 @@ func (s *Store) DefineTable(ctx context.Context, data []byte) (*model.Table, err
 		}
 		// A rule of a class may write the table (ADR-0044): a new shape
 		// may not break it.
-		diags = append(diags, s.brokenRules(nil, def)...)
+		diags = append(diags, s.brokenRules(nil, def, nil)...)
 		var n int64
 		if err := s.writer.QueryRowContext(ctx, "SELECT count(*) FROM "+quote(old.name)).Scan(&n); err == nil && n > 0 {
 			diags = append(diags, model.Diagnostic{Code: model.CodeNotSupported, Path: "/name", Pos: -1,

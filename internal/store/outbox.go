@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"strconv"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/MojoHand70/fadodb/internal/formula"
@@ -19,9 +21,12 @@ import (
 // invented, and a worker runs the row afterwards. The engine's own
 // actions write to the same database: the worker makes the action's
 // commit, marks the row done and appends the outcome's event in one
-// transaction, so each happens exactly once. An action that got no answer
-// is tried again later; one that was refused is dead at once and says
-// why. Either way the document that caused it gets one event.
+// transaction, so each happens exactly once. An action that leaves the
+// database (ADR-0045) is called outside any transaction and marked
+// afterwards, so it happens at least once, each time with the same key.
+// An action that got no answer is tried again later; one that was refused
+// is dead at once and says why. Either way the document that caused it
+// gets one event.
 
 // OutboxOptions configure the outbox of an open database.
 type OutboxOptions struct {
@@ -29,9 +34,10 @@ type OutboxOptions struct {
 	// that runs actions. A test, a simulation and a copy of a file opened
 	// under a chosen clock run the queue at the moment they choose.
 	Manual bool
-	// Workers is how many actions that leave the database run at once; 0
-	// is DefaultOutboxWorkers. The engine's own actions run one at a
-	// time, since they take the writer.
+	// Workers is how many actions that leave the database the worker runs
+	// at once; 0 is DefaultOutboxWorkers. The engine's own actions run one
+	// at a time, since they take the writer, and Drain runs every action
+	// one at a time on the caller's goroutine.
 	Workers int
 	// MaxAttempts is how often an action that gets no answer is tried
 	// before it is dead; 0 is DefaultMaxAttempts.
@@ -132,6 +138,18 @@ type cqueued struct {
 	// of, nil for one document (ADR-0044, item 12). Its formulas then
 	// read the element too.
 	each *child
+	// args are the arguments of an action that names a definition
+	// (ADR-0045), in the order written.
+	args []carg
+}
+
+// carg is one argument of a defined action: the parameter it gives and
+// the formula of its value, or for a json parameter the template that
+// makes it.
+type carg struct {
+	name string
+	prog *formula.Program
+	tmpl *model.Template
 }
 
 // cvalue is one argument of a queued action: the variable or the column
@@ -180,6 +198,16 @@ func (c *class) layoutQueued(a *model.Action) (*cqueued, error) {
 		}
 		return c.bindSlots(prog, owner)
 	}
+	for _, arg := range a.Args {
+		if arg.Formula != nil {
+			if err := bind(arg.Formula, "args", arg.Name); err != nil {
+				return nil, err
+			}
+		} else if err := c.bindTemplate(arg.Template, a.Path()+"/args/"+arg.Name); err != nil {
+			return nil, err
+		}
+		out.args = append(out.args, carg{name: arg.Name, prog: arg.Formula, tmpl: arg.Template})
+	}
 	part := "values"
 	switch a.Name {
 	case model.ActionTableInsert:
@@ -206,6 +234,24 @@ func (c *class) layoutQueued(a *model.Action) (*cqueued, error) {
 		out.id = a.ID
 	}
 	return out, nil
+}
+
+// bindTemplate binds the slots of every formula of a template.
+func (c *class) bindTemplate(t *model.Template, owner string) error {
+	if t.Formula != nil {
+		return c.bindSlots(t.Formula, owner)
+	}
+	for _, f := range t.Fields {
+		if err := c.bindTemplate(f.Value, owner+"/"+f.Name); err != nil {
+			return err
+		}
+	}
+	for i, item := range t.Items {
+		if err := c.bindTemplate(item, owner+"/"+strconv.Itoa(i)); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // bindElemSlots resolves the slots of a formula of a create with each: a
@@ -330,6 +376,26 @@ func (s *Store) queueOne(run *ruleRun, row *docRow, act *caction, at int, elem c
 // the element of the list for a create with each.
 func (s *Store) actionArgs(run *ruleRun, row *docRow, act *caction, elem childRow) (Values, *Error) {
 	a, out := act.a, act.out
+	if a.Call {
+		// The arguments of a defined action, by parameter (ADR-0045).
+		args := make(Values, len(out.args))
+		for _, arg := range out.args {
+			var err *Error
+			if arg.prog != nil {
+				var val formula.Value
+				if val, err = s.evalArg(run, row, arg.prog, nil); err == nil {
+					args[arg.name] = valueOut(val)
+				}
+			} else {
+				args[arg.name], err = s.evalTemplate(run, row, arg.tmpl)
+			}
+			if err != nil {
+				err.Variable = arg.name
+				return nil, err
+			}
+		}
+		return args, nil
+	}
 	values, err := s.argValues(run, row, out.values, elem)
 	if err != nil {
 		return nil, err
@@ -409,6 +475,41 @@ func (s *Store) evalArg(run *ruleRun, row *docRow, prog *formula.Program, elem c
 	return val, nil
 }
 
+// evalTemplate makes the JSON value of a template over the row: every
+// formula evaluated and rendered in the wire shape, in the place its
+// string had.
+func (s *Store) evalTemplate(run *ruleRun, row *docRow, t *model.Template) (any, *Error) {
+	switch {
+	case t.Formula != nil:
+		val, err := s.evalArg(run, row, t.Formula, nil)
+		if err != nil {
+			return nil, err
+		}
+		return valueOut(val), nil
+	case t.Object:
+		out := make(map[string]any, len(t.Fields))
+		for _, f := range t.Fields {
+			val, err := s.evalTemplate(run, row, f.Value)
+			if err != nil {
+				return nil, err
+			}
+			out[f.Name] = val
+		}
+		return out, nil
+	case t.Array:
+		out := make([]any, len(t.Items))
+		for i, item := range t.Items {
+			val, err := s.evalTemplate(run, row, item)
+			if err != nil {
+				return nil, err
+			}
+			out[i] = val
+		}
+		return out, nil
+	}
+	return t.Literal, nil
+}
+
 // writeQueued writes the outbox rows of one commit of a command, in the
 // commit's transaction: commit is 0 for the command's own and n for its
 // n-th eventless transition, eventID that commit's event and version the
@@ -448,11 +549,12 @@ func (s *Store) writeQueued(ctx context.Context, c *class, cmd *command, commit 
 }
 
 // Drain runs every action of the outbox that is due by the database's
-// clock, on the caller's goroutine, and returns how many it attempted
-// (ADR-0044). The actions of one document run in the order they were
-// queued, and one that waits for a retry holds back the later ones of its
-// document. With OutboxOptions.Manual it is the only thing that runs
-// actions; otherwise the worker calls it.
+// clock, one at a time on the caller's goroutine, and returns how many it
+// attempted (ADR-0044). The actions of one document run in the order they
+// were queued, and one that waits for a retry holds back the later ones
+// of its document. With OutboxOptions.Manual it is the only thing that
+// runs actions; beside a running worker it leaves alone the documents
+// whose action the worker has in flight.
 func (s *Store) Drain(ctx context.Context) (int, error) {
 	s.drainMu.Lock()
 	defer s.drainMu.Unlock()
@@ -461,19 +563,20 @@ func (s *Store) Drain(ctx context.Context) (int, error) {
 		if err := ctx.Err(); err != nil {
 			return n, err
 		}
-		batch, err := s.dueRows(ctx)
+		batch, err := s.dueRows(ctx, s.stmts.dueOutbox)
 		if err != nil {
 			return n, err
-		}
-		if len(batch) == 0 {
-			return n, nil
 		}
 		progress := false
 		for _, row := range batch {
 			if err := ctx.Err(); err != nil {
 				return n, err
 			}
+			if !s.claim(row) {
+				continue
+			}
 			ran, err := s.runAction(ctx, row)
+			s.unclaim(row)
 			if err != nil {
 				return n, err
 			}
@@ -488,12 +591,36 @@ func (s *Store) Drain(ctx context.Context) (int, error) {
 	}
 }
 
-// dueRows reads the next actions that may run: pending, due by the
-// database's clock, and not behind an earlier pending action of the same
-// document. There is at most one per document, so a batch may run in any
-// order.
-func (s *Store) dueRows(ctx context.Context) ([]*outboxRow, error) {
-	rows, err := s.stmts.dueOutbox.QueryContext(ctx, s.now().Unix())
+// claim takes the row's document for one runner: the actions of a
+// document run one at a time (ADR-0044, item 3), and a call is in flight
+// outside the writer, where the worker and a drain by hand could both
+// reach its row. It reports false when another runner has the document.
+func (s *Store) claim(row *outboxRow) bool {
+	s.flightMu.Lock()
+	defer s.flightMu.Unlock()
+	key := flight{class: row.class, docID: row.docID}
+	if _, taken := s.inFlight[key]; taken {
+		return false
+	}
+	s.inFlight[key] = struct{}{}
+	return true
+}
+
+func (s *Store) unclaim(row *outboxRow) {
+	s.flightMu.Lock()
+	defer s.flightMu.Unlock()
+	delete(s.inFlight, flight{class: row.class, docID: row.docID})
+}
+
+// flight names a document that has an action in flight.
+type flight struct{ class, docID string }
+
+// dueRows reads the next actions that may run, with one of the three
+// statements that select them: pending, due by the database's clock, and
+// not behind an earlier pending action of the same document. There is at
+// most one per document, so a batch may run in any order.
+func (s *Store) dueRows(ctx context.Context, due *sql.Stmt) ([]*outboxRow, error) {
+	rows, err := due.QueryContext(ctx, s.now().Unix())
 	if err != nil {
 		return nil, storageErr("read the outbox", err)
 	}
@@ -517,11 +644,15 @@ func (s *Store) dueRows(ctx context.Context) ([]*outboxRow, error) {
 	return out, storageErr("read the outbox", rows.Err())
 }
 
-// runAction runs one row under the writer. For an action the engine runs
-// itself the action's commit, the mark and the event of the outcome are
-// one transaction (ADR-0044, item 5). It reports whether the row was
+// runAction runs one row. For an action the engine runs itself it holds
+// the writer, and the action's commit, the mark and the event of the
+// outcome are one transaction (ADR-0044, item 5); any other action is
+// called outside it, by runCall. It reports whether the row was
 // attempted: a row another runner has taken in the meantime is not.
 func (s *Store) runAction(ctx context.Context, row *outboxRow) (bool, error) {
+	if !model.EngineAction(row.action) {
+		return s.runCall(ctx, row)
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.closed {
@@ -578,23 +709,7 @@ func (s *Store) runAction(ctx context.Context, row *outboxRow) (bool, error) {
 	if _, err := w.ExecContext(ctx, "BEGIN IMMEDIATE"); err != nil {
 		return false, storageErr("begin", err)
 	}
-	attempts++
-	if noAnswer(failure) && attempts < s.outbox.MaxAttempts {
-		// A question that got no answer is asked again, later.
-		wait := s.outbox.Backoff << (attempts - 1)
-		due := now.Add(wait).Unix()
-		if due <= now.Unix() {
-			due = now.Unix() + 1
-		}
-		_, err = w.ExecContext(ctx, `UPDATE outbox SET attempts = ?, due_at = ?, error_code = ?, error_message = ? WHERE event_id = ? AND idx = ?`,
-			attempts, due, failure.Code, failure.Message, row.eventID, row.idx)
-		if err != nil {
-			err = storageErr("record the attempt", err)
-		}
-	} else {
-		err = s.finish(ctx, row, ActionDead, attempts, failure, day, now)
-	}
-	if err != nil {
+	if err := s.failed(ctx, row, attempts, failure, noAnswer(failure), day, now); err != nil {
 		_, _ = w.ExecContext(ctx, "ROLLBACK")
 		return false, err
 	}
@@ -603,6 +718,28 @@ func (s *Store) runAction(ctx context.Context, row *outboxRow) (bool, error) {
 		return false, storageErr("commit", err)
 	}
 	return true, nil
+}
+
+// failed records an attempt that did not run the action, in the
+// transaction the caller began; attempts counts the ones before it. A
+// question that got no answer is asked again later, with retry, until
+// MaxAttempts; any other failure, and the last attempt, leave the row
+// dead with its event (ADR-0044, item 4).
+func (s *Store) failed(ctx context.Context, row *outboxRow, attempts int, failure *Error, retry bool, day int64, now time.Time) error {
+	attempts++
+	if !retry || attempts >= s.outbox.MaxAttempts {
+		return s.finish(ctx, row, ActionDead, attempts, failure, day, now)
+	}
+	wait := s.outbox.Backoff << (attempts - 1)
+	due := now.Add(wait).Unix()
+	if due <= now.Unix() {
+		due = now.Unix() + 1
+	}
+	if _, err := s.writer.ExecContext(ctx, `UPDATE outbox SET attempts = ?, due_at = ?, error_code = ?, error_message = ? WHERE event_id = ? AND idx = ?`,
+		attempts, due, failure.Code, failure.Message, row.eventID, row.idx); err != nil {
+		return storageErr("record the attempt", err)
+	}
+	return nil
 }
 
 // at is the tests' window into the steps of an action: before it is
@@ -908,18 +1045,27 @@ func (s *Store) wakeWorker() {
 	}
 }
 
-// work is the worker (ADR-0044, item 2): it drains the outbox when a
-// commit queued something and when the earliest pending action falls
-// due, until the store closes. A failure of the store is tried again
+// work is the worker (ADR-0044, item 2): it runs what is due when a
+// commit queued something, when a call in flight ends and when the
+// earliest waiting action falls due, until the store closes; then it
+// waits for the calls in flight. A failure of the store is tried again
 // after a pause.
 func (s *Store) work(ctx context.Context) {
 	defer close(s.workDone)
+	var calls sync.WaitGroup
+	defer calls.Wait()
+	// free holds a token for every call in flight; ended says that one
+	// ended since the worker last looked, and failed that the store could
+	// not mark one.
+	free := make(chan struct{}, s.outbox.Workers)
+	ended := make(chan struct{}, 1)
+	var failed atomic.Bool
 	for {
 		// The wait is counted on the database's clock, which is what makes
 		// a row due, and bounded so that a clock that stands still or
 		// jumps is looked at again.
 		wait := time.Minute
-		if _, err := s.Drain(ctx); err != nil {
+		if err := s.dispatch(ctx, free, ended, &failed, &calls); err != nil {
 			wait = time.Second
 		} else if next, ok := s.nextDue(ctx); ok {
 			wait = min(max(time.Duration(next-s.now().Unix())*time.Second, 10*time.Millisecond), time.Minute)
@@ -931,15 +1077,96 @@ func (s *Store) work(ctx context.Context) {
 			return
 		case <-s.wake:
 			timer.Stop()
+		case <-ended:
+			timer.Stop()
+			if failed.Swap(false) {
+				// A call was made and its mark was not: the row is asked
+				// again, and not at once.
+				select {
+				case <-ctx.Done():
+					return
+				case <-time.After(time.Second):
+				}
+			}
 		case <-timer.C:
 		}
 	}
 }
 
-// nextDue is when the earliest pending action falls due, in seconds.
+// dispatch runs what is due and returns when nothing more can start: the
+// engine's own actions here, one at a time, since they take the writer,
+// and the actions that leave the database each on a goroutine of its
+// own, up to Workers at once (ADR-0044, item 2). A call that takes long
+// holds one worker and the later actions of its document, and neither a
+// commit nor the engine's own actions of other documents (ADR-0027).
+func (s *Store) dispatch(ctx context.Context, free, ended chan struct{}, failed *atomic.Bool, calls *sync.WaitGroup) error {
+	for {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		progress := false
+		batch, err := s.dueRows(ctx, s.stmts.dueEngine)
+		if err != nil {
+			return err
+		}
+		for _, row := range batch {
+			if err := ctx.Err(); err != nil {
+				return err
+			}
+			if !s.claim(row) {
+				continue
+			}
+			ran, err := s.runAction(ctx, row)
+			s.unclaim(row)
+			if err != nil {
+				return err
+			}
+			progress = progress || ran
+		}
+		if len(free) < cap(free) {
+			if batch, err = s.dueRows(ctx, s.stmts.dueCalls); err != nil {
+				return err
+			}
+		start:
+			for _, row := range batch {
+				if !s.claim(row) {
+					continue
+				}
+				select {
+				case free <- struct{}{}:
+				default:
+					// Every worker is busy; the call that ends next looks again.
+					s.unclaim(row)
+					break start
+				}
+				progress = true
+				calls.Add(1)
+				go func() {
+					defer calls.Done()
+					if _, err := s.runCall(ctx, row); err != nil && ctx.Err() == nil {
+						failed.Store(true)
+					}
+					s.unclaim(row)
+					<-free
+					select {
+					case ended <- struct{}{}:
+					default:
+					}
+				}()
+			}
+		}
+		if !progress {
+			return nil
+		}
+	}
+}
+
+// nextDue is when the earliest action that is not due yet falls due, in
+// seconds. What is due already runs, waits for a worker or waits behind
+// an action of its document, and each of those ends with a wake-up.
 func (s *Store) nextDue(ctx context.Context) (int64, bool) {
 	var due sql.NullInt64
-	if err := s.db.QueryRowContext(ctx, `SELECT min(due_at) FROM outbox WHERE status = ?`, ActionPending).Scan(&due); err != nil || !due.Valid {
+	if err := s.db.QueryRowContext(ctx, `SELECT min(due_at) FROM outbox WHERE status = ? AND due_at > ?`, ActionPending, s.now().Unix()).Scan(&due); err != nil || !due.Valid {
 		return 0, false
 	}
 	return due.Int64, true

@@ -10,9 +10,12 @@ a filter over a class and read-only SQL over the views, with previews that
 write nothing. `fadodb formula eval` evaluates a formula and `fadodb
 check` verifies a file. The rules of a class run inside the commit with
 the actions `set`, `reset`, `refresh` and `emit`, and triggered
-variables are computed at their triggers; a rule's `create` runs
-through the outbox. The other actions, the row-level access rules,
-`QUERY` and the server come with their steps and phases.
+variables are computed at their triggers; what a rule does to other
+documents and to tables runs through the outbox; and a rule can call an
+action the host program defines and implements with a Go function.
+Actions sent as HTTP requests, results written back to the document,
+`QUERY`, time, the row-level access rules and the server come with
+their steps and phases.
 Since v0.1.0 the records ADR-0022 to
 ADR-0038 fixed what the first embedder needs and what Phase 2 measured:
 SQLite as the transactional store and the in-memory index for lookups, by
@@ -51,7 +54,16 @@ the listing and the retry by hand, with `create` as the first action and
 the test that stops the process at every step (#54); then the rest of
 the engine's own actions, `transition` and `refresh` of another
 document, `each` on a `create` and the `table.*` actions, and the
-refusal of a redefinition that would break another class's rule (#56). This page is updated when a phase starts and when it ends;
+refusal of a redefinition that would break another class's rule (#56).
+Its fifth opens the engine to actions others write, in three parts, of
+which the first is built: action definitions with typed parameters,
+stored with `DefineAction`; Go functions the host program gives to
+`Open`, called by the outbox with the arguments and the event that
+fired the rule; the catalogue, the preview and the trial of an action;
+and the published schemas under `api/`. The second sends an action as an
+HTTP request, with the secrets from the host and the network off until
+the host allows it; the third writes an action's result back to the
+document and adds the sample packages. This page is updated when a phase starts and when it ends;
 it never describes a phase as done before its acceptance criteria pass.
 
 Legend: ✅ done · 🚧 in progress · ⬜ not started

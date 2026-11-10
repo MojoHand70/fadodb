@@ -9,6 +9,7 @@ import (
 	"reflect"
 	"sort"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -31,11 +32,27 @@ type statechartSuite struct {
 	Clock string `json:"clock,omitempty"`
 	// Tables and Classes are defined before Class, in order: the tables
 	// its rules write and the classes they name (ADR-0044).
-	Tables     []json.RawMessage          `json:"tables,omitempty"`
-	Classes    []json.RawMessage          `json:"classes,omitempty"`
+	Tables  []json.RawMessage `json:"tables,omitempty"`
+	Classes []json.RawMessage `json:"classes,omitempty"`
+	// Actions are the action definitions the rules name (ADR-0045),
+	// defined before the classes. The runner implements each with a
+	// function that records its calls and does what Functions says for
+	// the action's name: by default it runs and returns nothing.
+	Actions    []json.RawMessage          `json:"actions,omitempty"`
+	Functions  map[string]scriptFunction  `json:"functions,omitempty"`
 	Class      json.RawMessage            `json:"class"`
 	Principals map[string]scriptPrincipal `json:"principals,omitempty"`
 	Script     []scriptStep               `json:"script"`
+}
+
+// scriptFunction is what the runner's function of an action does when it
+// is called: it gets no answer at its first Fails attempts, then refuses
+// with the words of Refuses when there are any, and else runs and
+// returns Returns.
+type scriptFunction struct {
+	Fails   int    `json:"fails,omitempty"`
+	Refuses string `json:"refuses,omitempty"`
+	Returns Values `json:"returns,omitempty"`
 }
 
 type scriptPrincipal struct {
@@ -47,8 +64,8 @@ type scriptPrincipal struct {
 type scriptStep struct {
 	Name string `json:"name,omitempty"`
 	// Do is create, set, reset, refresh, transition, delete, preview,
-	// transitions, visits, get, query, count, drain, retry, import or
-	// rows.
+	// transitions, visits, get, query, count, drain, retry, import, rows,
+	// wait, actions, try or preview_action.
 	Do string `json:"do"`
 	// Doc labels the document a create makes, and names the document
 	// another step acts on; the last created document when absent. ID is
@@ -79,6 +96,12 @@ type scriptStep struct {
 	// Row is, for a retry, the position of the action among the ones the
 	// document queued.
 	Row int `json:"row,omitempty"`
+	// Seconds is how far a wait moves the database's clock on.
+	Seconds int `json:"seconds,omitempty"`
+	// Action and Args are the action a try or a preview_action names and
+	// the values it gives it.
+	Action string `json:"action,omitempty"`
+	Args   Values `json:"args,omitempty"`
 }
 
 type scriptExpect struct {
@@ -137,6 +160,17 @@ type scriptExpect struct {
 	Found   []scriptFound  `json:"found,omitempty"`
 	// Rows are the rows of the step's table, in key order.
 	Rows json.RawMessage `json:"rows,omitempty"`
+	// Calls are the calls the functions of the suite's actions received
+	// during the step, in order, each by the fields given: key, attempt,
+	// action, args and event, and of the event and its document any part
+	// (ADR-0045, item 4). An empty list says nothing was called.
+	Calls json.RawMessage `json:"calls,omitempty"`
+	// Outcome is what a try answered and Call what a preview_action would
+	// call, by the fields given. Catalogue are entries of the listing of
+	// actions, each found by its name and compared by the fields given.
+	Outcome   json.RawMessage `json:"outcome,omitempty"`
+	Call      json.RawMessage `json:"call,omitempty"`
+	Catalogue json.RawMessage `json:"catalogue,omitempty"`
 }
 
 type scriptAction struct {
@@ -212,12 +246,44 @@ func runScriptSuites(t *testing.T, dir string) {
 
 func runStatechartSuite(t *testing.T, suite *statechartSuite) {
 	var o Options
+	var now time.Time
 	if suite.Clock != "" {
-		at := moment(t, suite.Clock)
-		o.Now = func() time.Time { return at }
+		now = moment(t, suite.Clock)
+		o.Now = func() time.Time { return now }
+	}
+	// The functions of the suite's actions: each records the call it
+	// received, as its JSON, and does what the suite says.
+	var mu sync.Mutex
+	var calls []json.RawMessage
+	o.Actions = map[string]ActionFunc{}
+	for i, def := range suite.Actions {
+		var head struct {
+			Name string `json:"name"`
+		}
+		if err := json.Unmarshal(def, &head); err != nil || head.Name == "" {
+			t.Fatalf("action %d of the suite's actions has no name: %v", i, err)
+		}
+		does := suite.Functions[head.Name]
+		o.Actions[head.Name] = func(_ context.Context, call *ActionCall) (Values, error) {
+			mu.Lock()
+			calls = append(calls, mustJSON(call))
+			mu.Unlock()
+			switch {
+			case call.Attempt <= does.Fails:
+				return nil, fmt.Errorf("no answer at attempt %d", call.Attempt)
+			case does.Refuses != "":
+				return nil, Permanent(fmt.Errorf("%s", does.Refuses))
+			}
+			return does.Returns, nil
+		}
 	}
 	s, _ := openStore(t, o)
 	ctx := context.Background()
+	for i, def := range suite.Actions {
+		if _, err := s.DefineAction(ctx, def); err != nil {
+			t.Fatalf("action %d of the suite's actions: %v", i, err)
+		}
+	}
 	for i, table := range suite.Tables {
 		if _, err := s.DefineTable(ctx, table); err != nil {
 			t.Fatalf("table %d of the suite's tables: %v", i, err)
@@ -278,7 +344,22 @@ func runStatechartSuite(t *testing.T, suite *statechartSuite) {
 		drained := -1
 		filter := Filter{Class: class, Where: step.Where, Order: step.Order, Fields: step.Fields}
 		var tableRows []Values
+		var outcome *ActionOutcome
+		var called *ActionPreview
+		mu.Lock()
+		calls = []json.RawMessage{}
+		mu.Unlock()
 		switch step.Do {
+		case "wait":
+			if suite.Clock == "" {
+				t.Fatalf("%s: a wait moves the suite's clock, and the suite has none", name)
+			}
+			now = now.Add(time.Duration(step.Seconds) * time.Second)
+		case "actions":
+		case "try":
+			outcome, err = s.TryAction(ctx, step.Action, step.Args)
+		case "preview_action":
+			called, err = s.PreviewAction(ctx, step.Action, step.Args)
 		case "get":
 			doc, err = s.Get(ctx, class, id, opts...)
 		case "query":
@@ -420,6 +501,31 @@ func runStatechartSuite(t *testing.T, suite *statechartSuite) {
 							t.Errorf("%s: document %d has %s = %s, want %s", name, i, vname, dump(found[i].Values[vname]), raw)
 						}
 					}
+				}
+			}
+		}
+		if want.Calls != nil && !subsetOf(want.Calls, mustJSON(calls)) {
+			t.Errorf("%s: the calls were %s, want %s", name, dump(calls), want.Calls)
+		}
+		if want.Outcome != nil && !subsetOf(want.Outcome, mustJSON(outcome)) {
+			t.Errorf("%s: the trial answered %s, want %s", name, dump(outcome), want.Outcome)
+		}
+		if want.Call != nil && (called == nil || !subsetOf(want.Call, mustJSON(called.Call))) {
+			t.Errorf("%s: the action would be called with %s, want %s", name, dump(called), want.Call)
+		}
+		if want.Catalogue != nil {
+			var entries []json.RawMessage
+			if err := json.Unmarshal(want.Catalogue, &entries); err != nil {
+				t.Fatalf("%s: the catalogue is a list of entries: %v", name, err)
+			}
+			for _, entry := range entries {
+				var head struct {
+					Name string `json:"name"`
+				}
+				_ = json.Unmarshal(entry, &head)
+				info, ok := s.Action(head.Name)
+				if !ok || !subsetOf(entry, mustJSON(info)) {
+					t.Errorf("%s: the catalogue has %s, want %s", name, dump(info), entry)
 				}
 			}
 		}
@@ -597,6 +703,46 @@ func sameWire(got any, want json.RawMessage) bool {
 		return false
 	}
 	return reflect.DeepEqual(g, w)
+}
+
+// subsetOf reports whether got has everything want gives: an object every
+// property of want's, compared the same way, a list the same number of
+// elements, each compared the same way, and anything else an equal value.
+func subsetOf(want, got json.RawMessage) bool {
+	var w, g any
+	if json.Unmarshal(want, &w) != nil || json.Unmarshal(got, &g) != nil {
+		return false
+	}
+	var within func(w, g any) bool
+	within = func(w, g any) bool {
+		switch w := w.(type) {
+		case map[string]any:
+			g, ok := g.(map[string]any)
+			if !ok {
+				return false
+			}
+			for k, v := range w {
+				gv, has := g[k]
+				if !has && v != nil || !within(v, gv) {
+					return false
+				}
+			}
+			return true
+		case []any:
+			g, ok := g.([]any)
+			if !ok || len(g) != len(w) {
+				return false
+			}
+			for i := range w {
+				if !within(w[i], g[i]) {
+					return false
+				}
+			}
+			return true
+		}
+		return reflect.DeepEqual(w, g)
+	}
+	return within(w, g)
 }
 
 func mustJSON(v any) json.RawMessage {

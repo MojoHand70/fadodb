@@ -347,3 +347,103 @@ func Example_approvals() {
 	// action_run create as sam
 	// transition approve as bob
 }
+
+// An action of the host program's own (ADR-0045). The definition says
+// what the action takes and returns, and is stored in the database like a
+// class; a Go function given to Open does the work; a rule names the
+// action and gives its arguments as formulas. After the commit the outbox
+// calls the function with the arguments and with the event that fired
+// the rule, the document included. A misspelt parameter is refused when
+// the class is defined, and an agent can list the action and try it
+// before any document uses it.
+func Example_goAction() {
+	tmp, err := os.MkdirTemp("", "fado-example")
+	if err != nil {
+		panic(err)
+	}
+	defer os.RemoveAll(tmp)
+	// The function: here it prints; a real one posts the message.
+	notify := func(_ context.Context, call *fado.ActionCall) (fado.Values, error) {
+		fmt.Printf("%s to %v: %v\n", call.Action, call.Args["channel"], call.Args["text"])
+		if ev := call.Event; ev != nil {
+			fmt.Printf("  fired by %s %s of %s, now %s, as %s\n", ev.Kind, ev.Name, ev.Class, ev.Document.State, ev.ActorID)
+		}
+		return fado.Values{"ts": "1767225600.000100"}, nil
+	}
+	db, err := fado.Open(filepath.Join(tmp, "actions.fado"), fado.Options{
+		Outbox:  fado.OutboxOptions{Manual: true},
+		Actions: map[string]fado.ActionFunc{"team.notify": notify},
+	})
+	if err != nil {
+		panic(err)
+	}
+	defer db.Close()
+	ctx := context.Background()
+
+	if _, err := db.DefineAction(ctx, []byte(`{
+	  "name": "team.notify",
+	  "label": "Notify the team",
+	  "params": {"channel": {"type": "text", "required": true, "description": "Where to post"},
+	             "text":    {"type": "text", "required": true}},
+	  "returns": {"ts": "text"}
+	}`)); err != nil {
+		panic(err)
+	}
+	invoice := func(args string) []byte {
+		return []byte(`{
+	  "name": "Invoice",
+	  "variables": {"number": {"type": "text"}},
+	  "states": {"initial": "draft", "list": ["draft", "approved"]},
+	  "transitions": [{"name": "approve", "from": "draft", "to": "approved"}],
+	  "rules": [{"on": "enter", "state": "approved",
+	             "do": [{"action": "team.notify", "args": ` + args + `}]}]
+	}`)
+	}
+	// The arguments are checked against the definition now, not when the
+	// first invoice is approved.
+	for _, d := range db.ValidateClass(invoice(`{"channel": "\"#finance\"", "txt": "number"}`)) {
+		fmt.Println(d.Code, d.Path)
+	}
+	if _, err := db.DefineClass(ctx, invoice(`{"channel": "\"#finance\"", "text": "\"Approved: \" & number"}`)); err != nil {
+		panic(err)
+	}
+
+	// The catalogue says what a rule may name, and a trial runs an action
+	// outside any document.
+	info, _ := db.Action("team.notify")
+	fmt.Println(info.Name, "is", info.Kind, "and takes", info.Params[0].Name, "and", info.Params[1].Name)
+	trial, err := db.TryAction(ctx, "team.notify", fado.Values{"channel": "#test", "text": "hello"})
+	if err != nil {
+		panic(err)
+	}
+	fmt.Println("trial ok:", trial.OK, "ts:", trial.Result["ts"])
+
+	ann := fado.Principal{ID: "ann"}
+	doc, err := db.Create(ctx, "Invoice", fado.Values{"number": "INV-7"}, fado.As(ann))
+	if err != nil {
+		panic(err)
+	}
+	if _, err := db.Transition(ctx, "Invoice", doc.ID, "approve", nil, fado.As(ann)); err != nil {
+		panic(err)
+	}
+	fmt.Println("committed; the action is queued")
+	if _, err := db.Drain(ctx); err != nil {
+		panic(err)
+	}
+	events, _ := db.Events(ctx, "Invoice", doc.ID)
+	for _, e := range events {
+		fmt.Println(e.Kind + ":" + e.Name)
+	}
+	// Output:
+	// unknown_parameter /rules/0/do/0/args/txt
+	// missing /rules/0/do/0/args
+	// team.notify is registered and takes channel and text
+	// team.notify to #test: hello
+	// trial ok: true ts: 1767225600.000100
+	// committed; the action is queued
+	// team.notify to #finance: Approved: INV-7
+	//   fired by transition approve of Invoice, now approved, as ann
+	// created:
+	// transition:approve
+	// action_run:team.notify
+}

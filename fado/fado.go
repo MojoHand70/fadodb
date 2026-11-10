@@ -16,9 +16,15 @@
 // ran under (ADR-0042). The principal decides what a call may set and
 // sees: the rights table and the per-transition rules are enforced on
 // every call, a refusal being forbidden and a hidden variable absent
-// (ADR-0041). Not here yet: rules and QUERY (Phase 4), the class-level
-// access rules compiled to row predicates (Phase 5) and the server
-// (Phase 6).
+// (ADR-0041). The rules of a class run inside the commit (ADR-0043), and
+// what they do to other documents and tables is queued and run by the
+// outbox (ADR-0044). An action may also be the host program's own: a
+// definition, stored with DefineAction, and a Go function given to Open
+// in Options.Actions, which the outbox calls with the event that fired
+// the rule (ADR-0045). Not here yet: actions sent as HTTP requests, an
+// action's result written back to the document, QUERY and time (Phase 4),
+// the class-level access rules compiled to row predicates (Phase 5) and
+// the server (Phase 6).
 package fado
 
 import (
@@ -62,6 +68,21 @@ type (
 	OutboxOptions = store.OutboxOptions
 	QueuedAction  = store.QueuedAction
 	OutboxFilter  = store.OutboxFilter
+	// ActionFunc is a Go function that implements an action, given to Open
+	// in Options.Actions under the action's name (ADR-0027, ADR-0045);
+	// ActionCall is what it is called with, and DeliveredEvent the event
+	// that fired the rule, with the document at that version.
+	ActionFunc     = store.ActionFunc
+	ActionCall     = store.ActionCall
+	DeliveredEvent = store.DeliveredEvent
+	// ActionInfo is one action a rule may name, as Actions lists it, with
+	// its parameters and what it returns, each an ActionParam.
+	ActionInfo  = store.ActionInfo
+	ActionParam = store.ActionParam
+	// ActionPreview is what an action would be called with, and
+	// ActionOutcome what became of one trial of it.
+	ActionPreview = store.ActionPreview
+	ActionOutcome = store.ActionOutcome
 	// TransitionInfo is one named transition leaving a document's state
 	// and whether it may be taken now (ADR-0040).
 	TransitionInfo = store.TransitionInfo
@@ -86,8 +107,9 @@ type (
 	Table = model.Table
 	// Schema is a resolved named schema (ADR-0031).
 	Schema = model.Schema
-	// Diagnostics are the findings of a class or schema definition; the
-	// error DefineClass, DefineSchema and ValidateClass return.
+	// Diagnostics are the findings of a definition: the error DefineClass,
+	// DefineSchema, DefineTable and DefineAction return, and what
+	// ValidateClass and ValidateAction answer.
 	Diagnostics = model.Diagnostics
 	// Diagnostic is one finding: a code, the JSON pointer of the element,
 	// the position in a formula, a message and a hint.
@@ -120,6 +142,11 @@ func AtVersion(version int64) Option { return store.AtVersion(version) }
 // that writes refuses it with not_allowed: a change is previewed at a
 // moment, or made in a copy of the database opened with Options.Now set.
 func At(t time.Time) Option { return store.At(t) }
+
+// Permanent marks an error a Go action returns as a refusal: the action
+// is dead at once with it, where any other error is tried again later
+// (ADR-0045).
+func Permanent(err error) error { return store.Permanent(err) }
 
 // DB is an open database.
 type DB struct {
@@ -245,6 +272,44 @@ func (db *DB) Outbox(ctx context.Context, f OutboxFilter) ([]QueuedAction, error
 // reaches is a further event. A dead action is never retried by itself.
 func (db *DB) RetryAction(ctx context.Context, key string) error {
 	return db.s.RetryAction(ctx, key)
+}
+
+// DefineAction compiles an action definition in JSON and stores it
+// (ADR-0045): a name of a namespace and a verb, such as "books.post", its
+// parameters and what it returns, each by scalar type. A rule may name
+// the action from then on and gives its arguments under args. The
+// definition is the contract of a Go function, so the function must have
+// been given to Open, in Options.Actions, under the same name. The same
+// definition again is a no-op; a redefinition is the next version and may
+// not break a rule that calls the action. The error is Diagnostics when
+// the definition is refused.
+func (db *DB) DefineAction(ctx context.Context, definition []byte) (*ActionInfo, error) {
+	return db.s.DefineAction(ctx, definition)
+}
+
+// ValidateAction reports what DefineAction would refuse, storing nothing.
+func (db *DB) ValidateAction(definition []byte) Diagnostics { return db.s.ValidateAction(definition) }
+
+// Actions lists every action a rule may name in this database and this
+// process: the engine's own, then the defined ones, each with its
+// parameters, their types and descriptions, what it returns and whether
+// this process can run it (ADR-0045).
+func (db *DB) Actions() []ActionInfo { return db.s.Actions() }
+
+// Action returns one action of the catalogue by name.
+func (db *DB) Action(name string) (*ActionInfo, bool) { return db.s.Action(name) }
+
+// PreviewAction answers what a defined action would be called with for
+// the arguments, given as values, and calls nothing (ADR-0045).
+func (db *DB) PreviewAction(ctx context.Context, name string, args Values) (*ActionPreview, error) {
+	return db.s.PreviewAction(ctx, name, args)
+}
+
+// TryAction runs a defined action once outside any document, for the
+// arguments given as values: it queues nothing, writes no event and
+// answers what the action returned or how it failed (ADR-0045).
+func (db *DB) TryAction(ctx context.Context, name string, args Values) (*ActionOutcome, error) {
+	return db.s.TryAction(ctx, name, args)
 }
 
 // Transition moves a document along the named transition of its class,

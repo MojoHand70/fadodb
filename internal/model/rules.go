@@ -32,9 +32,10 @@ func (r *Rule) Path() string { return "/rules/" + strconv.Itoa(r.Index) }
 
 // Action is one compiled action of a rule. A synchronous action changes
 // the commit's own document before it is written (ADR-0043, item 4); an
-// action of the outbox the engine runs itself is queued by the commit
-// with its evaluated arguments (ADR-0044, item 7); any other is kept as
-// written until the step of Phase 4 that runs it.
+// action of the outbox is queued by the commit with its evaluated
+// arguments, whether the engine runs it itself (ADR-0044, item 7) or it
+// names a definition (ADR-0045, item 1); http.call alone is kept as
+// written until the step of Phase 4 that sends requests.
 type Action struct {
 	// Rule and Index place the action: "/rules/2/do/0".
 	Rule  *Rule
@@ -46,11 +47,19 @@ type Action struct {
 	// document; a refresh that names another document belongs to the
 	// outbox (ADR-0044).
 	Sync bool
-	// Queued is true for an action of the outbox the engine runs itself
-	// (ADR-0044): create, transition, a refresh of another document and
-	// the table actions. The commit evaluates its arguments and writes a
-	// row. An action that is neither Sync nor Queued is kept as written.
+	// Queued is true for an action of the outbox: one the engine runs
+	// itself (ADR-0044), which is create, transition, a refresh of another
+	// document and the table actions, and one that names a definition
+	// (ADR-0045). The commit evaluates its arguments and writes a row. An
+	// action that is neither Sync nor Queued is kept as written.
 	Queued bool
+	// Call is true for an action that names a definition: Name is then the
+	// action as its definition declares it, Spec the definition, nil when a
+	// stored class names one the database no longer has, and Args its
+	// arguments in the order written.
+	Call bool
+	Spec *ActionSpec
+	Args []Argument
 	// Target is what a queued action acts on, by its declared name: the
 	// class a create makes a document of, the class of the document a
 	// transition moves or a refresh recomputes, the table a table action
@@ -102,6 +111,47 @@ type Assignment struct {
 	Formula  *formula.Program
 	Src      string
 }
+
+// Argument is one argument of an action that names a definition
+// (ADR-0045, item 1): the parameter it gives and the formula of its
+// value, or for a json parameter the template that makes it. Name is the
+// parameter as the definition declares it; Param is nil when a stored
+// class gives one the definition no longer has.
+type Argument struct {
+	Name     string
+	Param    *Param
+	Formula  *formula.Program
+	Template *Template
+	Src      string
+}
+
+// Template makes a JSON value from the document (ADR-0045, item 1): the
+// argument of a json parameter, written as the JSON it becomes with a
+// formula in the place of every string. It is one of an object, an
+// array, a formula, or a number, true, false or null as written.
+type Template struct {
+	// Formula is the formula of a string, and Src its text.
+	Formula *formula.Program
+	Src     string
+	// Fields are the properties of an object in the order written, when
+	// Object is set; Items the elements of an array, when Array is.
+	Object bool
+	Fields []TemplateField
+	Array  bool
+	Items  []*Template
+	// Literal is a number, true, false or null.
+	Literal json.RawMessage
+}
+
+// TemplateField is one property of an object in a template.
+type TemplateField struct {
+	Name  string
+	Value *Template
+}
+
+// MaxTemplateDepth is how deep the objects and arrays of a template may
+// nest.
+const MaxTemplateDepth = 16
 
 // The names of the synchronous actions, and of the outbox actions the
 // engine runs itself.
@@ -221,8 +271,8 @@ func frozenTrigger(cls *Class, d RuleDef) string {
 	return ""
 }
 
-// compileAction reads one action: the synchronous ones and the outbox
-// actions the engine runs itself in full, any other by its name alone.
+// compileAction reads one action: a synchronous one, an outbox action the
+// engine runs itself, or one that names a definition.
 func compileAction(c *collector, path string, raw json.RawMessage, cls *Class, scope *formula.Scope) *Action {
 	var head struct {
 		Action string `json:"action"`
@@ -376,8 +426,213 @@ func compileAction(c *collector, path string, raw json.RawMessage, cls *Class, s
 		if len(def.Variables) == 0 && len(a.Variables) == 0 {
 			c.hint(CodeNotAllowed, path, "no variable of the class lists refresh among its triggers, so the action would recompute nothing", `give a triggered variable "on": ["refresh"], or drop the action`)
 		}
+	case ActionHTTPCall:
+		// The engine's own declared action arrives with the step that sends
+		// requests (ADR-0045, item 3); until then it is kept as written.
+	default:
+		return compileCall(c, path, raw, scope, a)
 	}
 	return a
+}
+
+// compileCall reads an action that names a definition (ADR-0045, item 1):
+// its arguments under args, each a formula over the document typed against
+// the parameter it gives, or for a json parameter a template. The action,
+// its parameters and their types are checked now, when the rule's class is
+// defined: unknown_action, unknown_parameter, missing, type_mismatch.
+func compileCall(c *collector, path string, raw json.RawMessage, scope *formula.Scope, a *Action) *Action {
+	var def struct {
+		Action string          `json:"action"`
+		Args   json.RawMessage `json:"args"`
+		Into   json.RawMessage `json:"into"`
+	}
+	if !decodeAction(c, path, raw, &def) {
+		return nil
+	}
+	a.Queued, a.Call = true, true
+	lenient := c.env.Lenient
+	if c.env.Actions != nil {
+		a.Spec, _ = c.env.Actions(def.Action)
+	}
+	switch {
+	case a.Spec != nil:
+		a.Name = a.Spec.Name
+	case !lenient:
+		hint := "define it with DefineAction before the class whose rule names it; Actions lists what a rule may name"
+		if EngineAction(strings.ToLower(def.Action)) {
+			hint = "the engine's own actions are written in lower case: " + strings.ToLower(def.Action)
+		}
+		c.hint(CodeUnknownAction, path+"/action", "unknown action "+quote(def.Action), hint)
+		return nil
+	}
+	if len(def.Into) > 0 && !lenient {
+		c.hint(CodeNotSupported, path+"/into", "this build does not write what an action returns back to the document: into arrives with a later step of Phase 4 (ADR-0045)", "drop it for now")
+	}
+	if len(def.Args) == 0 {
+		def.Args = json.RawMessage("{}")
+	}
+	names, err := orderedKeys(def.Args)
+	var values map[string]json.RawMessage
+	if err == nil {
+		err = json.Unmarshal(def.Args, &values)
+	}
+	if err != nil {
+		c.hint(CodeBadValue, path+"/args", "the arguments of an action are an object of formulas by parameter", `"args": {"channel": "\"#finance\"", "text": "\"Approved: \" & number"}`)
+		return nil
+	}
+	given := map[string]bool{}
+	for _, name := range names {
+		vpath := path + "/args/" + name
+		if given[upper(name)] {
+			c.addf(CodeDuplicate, vpath, "%s is given twice; names differ in case only", quote(name))
+			continue
+		}
+		given[upper(name)] = true
+		var p *Param
+		if a.Spec != nil {
+			p, _ = a.Spec.Param(name)
+		}
+		if p == nil && !lenient {
+			c.hint(CodeUnknownParameter, vpath, "the action "+a.Name+" has no parameter "+quote(name), "its parameters are "+paramList(a.Spec))
+			continue
+		}
+		arg := Argument{Name: name, Param: p}
+		if p != nil {
+			arg.Name = p.Name
+		}
+		value := bytes.TrimSpace(values[name])
+		switch {
+		case len(value) > 0 && value[0] == '"':
+			_ = json.Unmarshal(value, &arg.Src)
+			if arg.Formula = bindArg(c, vpath, arg.Src, scope, p); arg.Formula == nil {
+				continue
+			}
+		case p != nil && p.Type.Kind != formula.KindJSON && !lenient:
+			c.hint(CodeBadValue, vpath, "the argument of "+article(p.Type.String())+" parameter is a formula, written as text", `a literal text is "\"paid\"", a number "0"; only a json parameter takes a template`)
+			continue
+		default:
+			if arg.Template = compileTemplate(c, vpath, value, scope, 1); arg.Template == nil {
+				continue
+			}
+		}
+		a.Args = append(a.Args, arg)
+	}
+	if a.Spec != nil && !lenient {
+		var missing []string
+		for _, p := range a.Spec.Params {
+			if p.Required && !given[upper(p.Name)] {
+				missing = append(missing, p.Name)
+			}
+		}
+		if len(missing) > 0 {
+			c.hint(CodeMissing, path+"/args", "the action gives no value for "+strings.Join(missing, ", ")+", which "+a.Name+" requires", "give each a formula under args")
+		}
+	}
+	return a
+}
+
+// paramList names the parameters of an action for a hint.
+func paramList(a *ActionSpec) string {
+	if len(a.Params) == 0 {
+		return "none"
+	}
+	names := make([]string, len(a.Params))
+	for i, p := range a.Params {
+		names[i] = p.Name
+	}
+	return strings.Join(names, ", ")
+}
+
+// bindArg binds the formula of an argument against its parameter's type;
+// p is nil when a stored class gives a parameter the definition no longer
+// has. A stored class is never a finding for what it says of an action:
+// an argument that no longer fits is refused when the action runs.
+func bindArg(c *collector, path, src string, scope *formula.Scope, p *Param) *formula.Program {
+	if p == nil || c.env.Lenient {
+		return bindFill(c, path, src, scope, nil)
+	}
+	prog, err := c.bind(src, scope, formula.ModeAny)
+	if err != nil {
+		c.formulaErr(path, err)
+		return nil
+	}
+	prog.ClaimExact(p.Type)
+	if msg, hint := typeFits(p.Type, prog.Result); msg != "" {
+		c.hint(CodeTypeMismatch, path, strings.Replace(msg, "the variable is", "the parameter "+p.Name+" is", 1), hint)
+		return nil
+	}
+	return prog
+}
+
+// compileTemplate reads the template of a json argument: every string a
+// formula over the document, of any scalar type.
+func compileTemplate(c *collector, path string, raw json.RawMessage, scope *formula.Scope, depth int) *Template {
+	raw = bytes.TrimSpace(raw)
+	if depth > MaxTemplateDepth {
+		c.addf(CodeTooDeep, path, "a template nests at most %d deep", MaxTemplateDepth)
+		return nil
+	}
+	if len(raw) == 0 {
+		c.add(CodeMissing, path, "an argument has a value")
+		return nil
+	}
+	switch raw[0] {
+	case '"':
+		t := &Template{}
+		_ = json.Unmarshal(raw, &t.Src)
+		prog, err := c.bind(t.Src, scope, formula.ModeAny)
+		if err != nil {
+			c.formulaErr(path, err)
+			return nil
+		}
+		t.Formula = prog
+		return t
+	case '{':
+		names, err := orderedKeys(raw)
+		var values map[string]json.RawMessage
+		if err == nil {
+			err = json.Unmarshal(raw, &values)
+		}
+		if err != nil {
+			c.add(CodeBadJSON, path, jsonMessage(err))
+			return nil
+		}
+		t := &Template{Object: true}
+		ok := true
+		for _, name := range names {
+			value := compileTemplate(c, path+"/"+name, values[name], scope, depth+1)
+			if value == nil {
+				ok = false
+				continue
+			}
+			t.Fields = append(t.Fields, TemplateField{Name: name, Value: value})
+		}
+		if !ok {
+			return nil
+		}
+		return t
+	case '[':
+		var items []json.RawMessage
+		if err := json.Unmarshal(raw, &items); err != nil {
+			c.add(CodeBadJSON, path, jsonMessage(err))
+			return nil
+		}
+		t := &Template{Array: true}
+		ok := true
+		for i, item := range items {
+			value := compileTemplate(c, fmt.Sprintf("%s/%d", path, i), item, scope, depth+1)
+			if value == nil {
+				ok = false
+				continue
+			}
+			t.Items = append(t.Items, value)
+		}
+		if !ok {
+			return nil
+		}
+		return t
+	}
+	return &Template{Literal: append(json.RawMessage(nil), raw...)}
 }
 
 // The outbox actions the engine runs itself (ADR-0044, item 7). The

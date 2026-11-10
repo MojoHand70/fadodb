@@ -186,6 +186,29 @@ suites', with these additions:
 - In `events`, the outcome of an action is written `action_run:name` or
   `action_failed:name`.
 
+- A suite may carry `actions`, action definitions the store takes before
+  the classes (ADR-0045). The runner implements each with a function
+  that records every call it receives and then does what `functions`
+  says for the action's name: `fails` is how many attempts get no answer
+  first, `refuses` the words of a refusal, and `returns` what it returns
+  when it runs. An action `functions` does not name runs and returns
+  nothing.
+- `calls` are the calls those functions received during the step, in
+  order, each by the properties given, to any depth: `key`, `attempt`,
+  `action`, `args` and `event`, and of the event and of its `document`
+  any part, in the published shape of `api/call.schema.json`. A property
+  expected as `null` may be absent. `"calls": []` says nothing was
+  called.
+- The step `wait` moves the database's clock on by `seconds`, so that an
+  action waiting for its next attempt falls due.
+- The step `try` runs the action `action` once with the values under
+  `args`, and `outcome` is what the trial answered, by the properties
+  given; a refusal of the trial itself is a `code`. The step
+  `preview_action` asks what the action would be called with, and `call`
+  is that call. The step `actions` reads the catalogue: `catalogue` are
+  entries of it, each found by its `name` and compared by the properties
+  given.
+
 The store runs every suite in CI.
 
 ## Binding cases: `binding/*.json`

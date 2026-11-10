@@ -75,6 +75,15 @@ type Options struct {
 	// Outbox configures the worker that runs the actions commits queue
 	// (ADR-0044).
 	Outbox OutboxOptions
+	// Actions are the Go functions of this process that implement actions,
+	// each under the name of the action its definition gives (ADR-0027,
+	// ADR-0045). The definition is data and travels with the database;
+	// the function is the host program's and is given at every Open, so
+	// that the worker has it before it runs the first row. A function
+	// under a name no definition has yet waits for DefineAction. A
+	// function that calls the database captures the variable the result
+	// of Open is assigned to.
+	Actions map[string]ActionFunc
 	// Now is the clock of the database: it stamps every commit and is
 	// what NOW() and TODAY() read in every formula, unless a call that
 	// reads or previews chooses a moment with At (ADR-0042). nil is
@@ -128,6 +137,11 @@ type Store struct {
 	order      []string
 	tables     map[string]*table
 	tableOrder []string
+	// actions are the action definitions by upper-cased name (ADR-0045),
+	// and funcs the functions Open was given, which never change.
+	actions     map[string]*action
+	actionOrder []string
+	funcs       map[string]ActionFunc
 
 	// sqlConn is the read-only SQL endpoint's connection, with its
 	// authorizer, made on first use; sqlMu serialises its statements.
@@ -139,10 +153,12 @@ type Store struct {
 	closed bool
 
 	// The outbox (ADR-0044): its options with the defaults filled in, the
-	// lock that makes one drain run at a time, and the worker's wake-up,
-	// stop and end.
+	// lock that makes one drain by hand run at a time, the documents that
+	// have an action in flight, and the worker's wake-up, stop and end.
 	outbox     OutboxOptions
 	drainMu    sync.Mutex
+	flightMu   sync.Mutex
+	inFlight   map[flight]struct{}
 	wake       chan struct{}
 	workCancel context.CancelFunc
 	workDone   chan struct{}
@@ -153,11 +169,11 @@ type Store struct {
 
 type engineStmts struct {
 	lookupKey, lastOfCommand, insertEvent, insertEventDoc, listEvents *sql.Stmt
-	insertOutbox, dueOutbox                                           *sql.Stmt
+	insertOutbox, dueOutbox, dueEngine, dueCalls, callOutbox          *sql.Stmt
 }
 
 func (e *engineStmts) close() {
-	for _, st := range []*sql.Stmt{e.lookupKey, e.lastOfCommand, e.insertEvent, e.insertEventDoc, e.listEvents, e.insertOutbox, e.dueOutbox} {
+	for _, st := range []*sql.Stmt{e.lookupKey, e.lastOfCommand, e.insertEvent, e.insertEventDoc, e.listEvents, e.insertOutbox, e.dueOutbox, e.dueEngine, e.dueCalls, e.callOutbox} {
 		if st != nil {
 			st.Close()
 		}
@@ -188,6 +204,10 @@ func Open(path string, o Options) (*Store, error) {
 	if o.MaxBlob < 0 {
 		return nil, errf(CodeBadValue, "", "the blob limit is not negative")
 	}
+	funcs, err := checkFuncs(o.Actions)
+	if err != nil {
+		return nil, err
+	}
 	// The SQL the filter and the views run calls the engine's functions,
 	// fado_upper and the rest; they are registered with the driver once
 	// per process, before the first connection opens.
@@ -207,6 +227,7 @@ func Open(path string, o Options) (*Store, error) {
 		path: path, db: db, now: o.Now, vm: formula.NewVM(), qvm: formula.NewVM(),
 		schemas: model.NewSchemaSet(), schemaJSON: map[string][]byte{}, classes: map[string]*class{}, versions: map[string]map[int]*class{},
 		tables: map[string]*table{}, plans: map[*formula.QuerySlot]*lookupPlan{},
+		actions: map[string]*action{}, funcs: funcs, inFlight: map[flight]struct{}{},
 		stop: make(chan struct{}), done: make(chan struct{}),
 		outbox: o.Outbox, wake: make(chan struct{}, 1), workDone: make(chan struct{}),
 	}
@@ -438,11 +459,30 @@ func (s *Store) prepareEngine(ctx context.Context) error {
 	// The next actions that may run: pending, due, and not behind an
 	// earlier pending action of the same document, so at most one per
 	// document; the index on (status, due_at, event_id, idx) gives them in
-	// order without a sort.
-	s.stmts.dueOutbox, err = s.db.PrepareContext(ctx, "SELECT o.event_id, o.idx, o.class, o.doc_id, o.action, o.args, o.principal_id, o.principal_groups, o.principal_admin, o.depth FROM outbox o"+
-		" WHERE o.status = 'pending' AND o.due_at <= ?"+
-		" AND NOT EXISTS (SELECT 1 FROM outbox p WHERE p.class = o.class AND p.doc_id = o.doc_id AND p.status = 'pending' AND (p.event_id < o.event_id OR (p.event_id = o.event_id AND p.idx < o.idx)))"+
-		" ORDER BY o.due_at, o.event_id, o.idx LIMIT 64")
+	// order without a sort. A drain by hand takes them all; the worker
+	// takes the engine's own actions and the ones that leave the database
+	// apart, so that the second, which may take long, never stand in the
+	// way of the first.
+	engine := "'" + strings.Join([]string{model.ActionCreate, model.ActionTransition, model.ActionRefresh, model.ActionTableInsert, model.ActionTableUpdate, model.ActionTableDelete}, "', '") + "'"
+	for _, due := range []struct {
+		dst  **sql.Stmt
+		only string
+	}{{&s.stmts.dueOutbox, ""}, {&s.stmts.dueEngine, " AND o.action IN (" + engine + ")"}, {&s.stmts.dueCalls, " AND o.action NOT IN (" + engine + ")"}} {
+		*due.dst, err = s.db.PrepareContext(ctx, "SELECT o.event_id, o.idx, o.class, o.doc_id, o.action, o.args, o.principal_id, o.principal_groups, o.principal_admin, o.depth FROM outbox o"+
+			" WHERE o.status = 'pending' AND o.due_at <= ?"+due.only+
+			" AND NOT EXISTS (SELECT 1 FROM outbox p WHERE p.class = o.class AND p.doc_id = o.doc_id AND p.status = 'pending' AND (p.event_id < o.event_id OR (p.event_id = o.event_id AND p.idx < o.idx)))"+
+			" ORDER BY o.due_at, o.event_id, o.idx LIMIT 64")
+		if err != nil {
+			return storageErr("prepare", err)
+		}
+	}
+	// What the call of an action carries beside its arguments: the row's
+	// state and the event that fired the rule (ADR-0045, item 4). The
+	// event of an eventless transition has no key of its own; the command
+	// that caused it has.
+	s.stmts.callOutbox, err = s.db.PrepareContext(ctx, "SELECT o.status, o.attempts, o.version, o.class_version, e.kind, e.name, e.from_state, e.to_state, e.actor_id,"+
+		" coalesce(e.command_key, (SELECT c.command_key FROM events c WHERE c.event_id = e.cause_event_id)), e.business_date, e.ts"+
+		" FROM outbox o JOIN events e ON e.event_id = o.event_id WHERE o.event_id = ? AND o.idx = ?")
 	return storageErr("prepare", err)
 }
 
@@ -533,6 +573,11 @@ func (s *Store) load(ctx context.Context) error {
 		olds = append(olds, st)
 	}
 	rows.Close()
+	// The action definitions, which the rules of the classes name
+	// (ADR-0045).
+	if err := s.loadActions(ctx); err != nil {
+		return err
+	}
 	// A rule may name a class defined after its own (ADR-0044), so the
 	// classes compile in two passes: every one alone, for its variables
 	// and their types, then every one against all of them. A stored
@@ -570,8 +615,9 @@ func (s *Store) load(ctx context.Context) error {
 	return nil
 }
 
-// env is what definitions compile against: the schemas, the tables, and
-// the classes an action may name (ADR-0044). The caller holds cmu.
+// env is what definitions compile against: the schemas, the tables, the
+// classes an action may name (ADR-0044) and the action definitions a rule
+// may name (ADR-0045). The caller holds cmu.
 func (s *Store) env() model.Env {
 	set := formula.NewSourceSet()
 	for _, name := range s.tableOrder {
@@ -580,6 +626,11 @@ func (s *Store) env() model.Env {
 	return model.Env{Schemas: s.schemas, Sources: set, Classes: func(name string) (*model.Class, bool) {
 		if c, ok := s.classes[strings.ToUpper(name)]; ok {
 			return c.cls, true
+		}
+		return nil, false
+	}, Actions: func(name string) (*model.ActionSpec, bool) {
+		if a, ok := s.actions[strings.ToUpper(name)]; ok {
+			return a.spec, true
 		}
 		return nil, false
 	}}

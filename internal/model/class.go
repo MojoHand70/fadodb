@@ -251,11 +251,15 @@ type Env struct {
 	// Classes finds a defined class by name, for an action that names
 	// another class (ADR-0044); nil when there are none.
 	Classes func(name string) (*Class, bool)
+	// Actions finds an action definition by name, for a rule that names
+	// one (ADR-0045); nil when there are none.
+	Actions func(name string) (*ActionSpec, bool)
 	// Lenient compiles a stored definition, which was checked when it was
-	// defined: what an action says about another class is taken as it is,
-	// typed against that class where the environment has it and left
-	// untyped where it does not, and is never a finding. A class may name
-	// one defined after it, and loading must not depend on the order.
+	// defined: what an action says about another class, or about the
+	// definition of an action, is taken as it is, typed against it where
+	// the environment has it and left untyped where it does not, and is
+	// never a finding. A class may name one defined after it, and loading
+	// must not depend on the order.
 	Lenient bool
 }
 
@@ -286,6 +290,7 @@ func Compile(def *Definition, schemas *SchemaSet) (*Class, Diagnostics) {
 var reservedClassNames = map[string]bool{
 	"events": true, "event_docs": true, "classes": true, "class_versions": true, "schemas": true,
 	"layouts": true, "outbox": true, "blobs": true, "tables_registry": true, "schema_version": true, "metadata": true,
+	"actions": true, "action_versions": true,
 }
 
 // CompileIn validates a definition against the environment and compiles

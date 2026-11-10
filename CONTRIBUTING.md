@@ -44,13 +44,15 @@ Every pull request must pass:
 - **Design decisions are ADRs.** Anything that changes a contract or a budget
   gets a file under `docs/adr/`. Use `docs/adr/0000-template.md`.
 - **Honest status.** Documentation describes what works today. Planned features
-  are labelled as planned.
+  are labelled as planned. The skills under `skills/` carry the same marks.
 
 ## Pull requests
 
 - Small, focused, one topic per pull request.
 - Imperative commit subjects under 72 characters: "Add lexer for text literals".
 - Fill the template, including the performance section.
+- A change to what works today also moves the marks in `skills/`, the pages
+  agents load; a stale mark there makes an agent act on it.
 - A maintainer reviews within a week. Early-stage priorities may mean a good
   change waits for its phase in the roadmap.
 

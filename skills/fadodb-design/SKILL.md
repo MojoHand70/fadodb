@@ -28,7 +28,7 @@ read the diagnostics, fix, preview against live data, define.
 |---|---|
 | variables, types, defaults, ranges, named schemas, objects, attachments, tables and `LOOKUP` | shipped |
 | formulas, exact money, calendar days, `IFERROR` | shipped |
-| states, transitions, guards, eventless chains, `STATE()` and `ID()` | in progress, Phase 3 |
+| states, transitions, guards, eventless chains, `STATE()` and `ID()` | shipped |
 | field rights per state, per-transition rules | shipped with Phase 3 |
 | rules and actions | in progress, Phase 4: rules fire inside the commit with `set`, `reset`, `refresh` and `emit`, a preview lists them, and triggered variables are computed at their triggers; a `create` of another document runs through the outbox, as the person who caused it; the other outbox actions are checked by name and not queued yet |
 | the class-level access rule | designed, Phase 5: it compiles, it is not enforced |

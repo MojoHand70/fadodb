@@ -25,7 +25,7 @@ so the right one loads for the task at hand.
 
 | Hat | Skill | What it does | Today |
 |---|---|---|---|
-| Designer | [`fadodb-design/`](fadodb-design/SKILL.md) | drafts a class from a process description, validates it, previews it against live data | variables, formulas and the store shipped; statechart in progress; rules in progress; access designed |
+| Designer | [`fadodb-design/`](fadodb-design/SKILL.md) | drafts a class from a process description, validates it, previews it against live data | variables, formulas and the store shipped; statechart shipped; rules in progress; access designed |
 | Operator | [`fadodb-operate/`](fadodb-operate/SKILL.md) | creates, sets and transitions documents on behalf of a person or a system, as a principal, with a key and a preview | Go API only; command set and MCP designed |
 | Simulator | [`fadodb-simulate/`](fadodb-simulate/SKILL.md) | replays a scenario in a scratch database and keeps the class that worked | scratch files and `At` work; replay is by hand |
 | Analyst | [`fadodb-mine/`](fadodb-mine/SKILL.md) | mines the event log and the views in SQL and feeds the finding back into the class | filter and read-only SQL shipped; `Events` on the Go API; DuckDB views designed |
@@ -63,7 +63,8 @@ Nothing in a skill describes as working what does not. Each section
 carries one of the project's marks, shipped, in progress or designed, the
 same marks the README, the ROADMAP and fadodb.org use, so an agent does
 not write an action that leaves the database expecting it to run before
-Phase 4 builds it. Every class under
+Phase 4 builds it. A pull request that changes what works moves these
+marks in the same change; CLAUDE.md and CONTRIBUTING.md say so. Every class under
 `examples/classes/` is validated and defined by `TestExampleClasses` in
 `fado/` on every push, so an engine change that breaks a sample fails CI
 before a reader meets it.

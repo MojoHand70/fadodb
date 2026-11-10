@@ -26,11 +26,13 @@ import (
 //     class's order, and the title with them;
 //  5. the guard of a named transition is evaluated and the state changes
 //     (ADR-0040);
-//  6. the rules whose triggers the commit raised run in order, and their
-//     synchronous actions change the document (ADR-0043);
-//  7. the eventless transitions are followed from the resulting state,
-//     one at a time, each a commit of its own with its own rules;
-//  8. the current row is upserted, the previous history row closed, the
+//  6. the triggered variables whose trigger the commit raised recompute
+//     in declaration order (ADR-0043);
+//  7. the rules whose triggers the commit raised run in order, and their
+//     synchronous actions change the document;
+//  8. the eventless transitions are followed from the resulting state,
+//     one at a time, each a commit of its own that repeats 6 and 7;
+//  9. the current row is upserted, the previous history row closed, the
 //     new history row and the child rows written, the event appended and
 //     the custom events after it; and once more for every eventless
 //     transition that fired.
@@ -304,7 +306,7 @@ func (s *Store) run(ctx context.Context, cmd command, now time.Time) (*result, e
 	day := businessDay(cmd.o, now)
 	evalCtx := &formula.Context{User: actor, Groups: cmd.o.principal.Groups, Now: clock}
 	s.emits = s.emits[:0]
-	rules := ruleRun{c: c, preview: cmd.preview, res: res, evalCtx: evalCtx}
+	rules := ruleRun{c: c, preview: cmd.preview, res: res, evalCtx: evalCtx, secs: secs}
 	if cmd.op == opDelete {
 		// A delete rule sees the document as it was (ADR-0043), under the
 		// current definition's layout; it may emit and queue, nothing else.
@@ -349,6 +351,9 @@ func (s *Store) run(ctx context.Context, cmd command, now time.Time) (*result, e
 			}
 		}
 		after = &docRow{id: id, version: 1, classVersion: c.cls.Version, createdAt: secs, updatedAt: secs, vals: make([]formula.Value, len(c.leaves))}
+		if len(c.triggered) > 0 {
+			after.ats = make([]int64, len(c.triggered))
+		}
 		if c.cls.States != nil {
 			after.state, after.stateEntered = c.cls.States.Initial, secs
 		}
@@ -486,6 +491,20 @@ func (s *Store) run(ctx context.Context, cmd command, now time.Time) (*result, e
 		path = append(path, after.state)
 	}
 
+	// The triggered variables whose trigger the command's own commit
+	// raised (ADR-0043), after the state change and before the rules: the
+	// entry of the initial state for a create, and exit, transition and
+	// entry for a transition. A set raises none of their triggers.
+	if c.triggered != nil && (cmd.op == opCreate || cmd.op == opTransition) {
+		kind, name := commitCreate, ""
+		if trans != nil {
+			kind, name = commitTransition, trans.Name
+		}
+		if err := s.recomputeFor(c, after, kind, from, name, evalCtx, secs, cmd.preview, &res.errs); err != nil {
+			return nil, err
+		}
+	}
+
 	// The rules of the command's own commit (ADR-0043), over the document
 	// as computed so far. A preview of a set that changes nothing is no
 	// commit and raises nothing; a migration raises nothing either.
@@ -533,6 +552,12 @@ func (s *Store) run(ctx context.Context, cmd command, now time.Time) (*result, e
 			next.state, next.stateEntered = t.To, secs
 			path = append(path, next.state)
 			h := hop{row: next}
+			if c.triggered != nil {
+				if err := s.recomputeFor(c, next, commitHop, cur.state, "", evalCtx, secs, cmd.preview, &res.errs); err != nil {
+					s.visits, s.hops = path, hops
+					return nil, err
+				}
+			}
 			if c.rules != nil {
 				rules.commit = n + 1
 				if err := s.fireCommit(&rules, next, commitHop, cur.state, "", nil); err != nil {
@@ -623,6 +648,15 @@ func (c *class) adopted(from *class, row *docRow) *docRow {
 	for i, l := range c.leaves {
 		if j, ok := from.leafIndex[strings.ToUpper(l.path)]; ok {
 			out.vals[i] = row.vals[j]
+		}
+	}
+	// The times of the moments follow their variables by name.
+	if len(c.triggered) > 0 {
+		out.ats = make([]int64, len(c.triggered))
+		for i, cv := range c.triggered {
+			if ocv, ok := from.byName[strings.ToUpper(cv.v.Name)]; ok && ocv.tidx >= 0 && ocv.tidx < len(row.ats) {
+				out.ats[i] = row.ats[ocv.tidx]
+			}
 		}
 	}
 	return out

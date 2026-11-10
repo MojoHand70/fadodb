@@ -230,10 +230,35 @@ items leave open.
   command's own and n for its n-th eventless transition, `path`, `ran`,
   `code` and `actions`; each action with `action`, `queued` and `args`
   in the shape the action is written in.
-- **Until the next steps.** The `refresh` action is refused with
-  `not_supported` until triggered variables are computed. An action of
-  the outbox is checked by its name, named by a preview as queued, and
-  not queued.
+- **Until the next steps.** An action of the outbox is checked by its
+  name, named by a preview as queued, and not queued.
+
+The second step built item 9 and the `refresh` action, on 2026-11-10,
+and settled these.
+
+- **`STATE()` in a triggered formula** is decided by the first of the
+  commit's triggers the variable lists, in the commit's order: the state
+  left for `exit:` and `transition:`, the state entered for `enter:`. A
+  variable recomputes once in a commit, whichever of its triggers the
+  commit raised.
+- **A recomputation that errors** leaves the moment as it was together
+  with the value: `<name>__asof` still names the version that computed
+  the value the document holds. A variable that has only ever failed has
+  an error and no version. A value the variable refuses, by its range or
+  its enum list, is such an error. A preview does not list it under its
+  errors, which are what would refuse a commit; the document's
+  `computed` shows it.
+- **A recomputation that gives the same value** moves the moment to its
+  commit.
+- **The time of a moment** is read with the row, from the history row at
+  that version, and is not stored a second time. The views show it as
+  `<name>__at`, beside the two stored columns.
+- **The `refresh` action without `variables`** recomputes every variable
+  of the class that lists `refresh`. Naming a variable that is not
+  triggered, or does not list `refresh`, is `not_allowed`. It recomputes
+  in declaration order, whatever order the action names them in.
+- **A variable made triggered by a redefinition** keeps the value it had
+  and has no moment until a trigger computes it.
 
 ## Consequences
 

@@ -116,6 +116,7 @@ func (s *Store) project(e *evaluator, c, vc *class, row *docRow, d *Document, p 
 		}
 		if ok, _ := e.allowed(c, cell.read, row, &e.ctx); !ok {
 			delete(d.Values, c.vars[i].v.Name)
+			delete(d.Computed, c.vars[i].v.Name)
 		}
 	}
 }

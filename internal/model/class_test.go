@@ -37,7 +37,7 @@ const invoice = `{
     "vat":      {"type": "money(2)", "formula": "ROUND(total * 0.23, 2)"},
     "gross":    {"formula": "total + vat"},
     "ship_city": {"formula": "shipping.city"},
-    "overdue":  {"formula": "TODAY() > due AND NOT paid", "mode": "triggered", "on": ["schedule:daily", "enter:approved", "refresh"]}
+    "overdue":  {"formula": "TODAY() > due AND NOT paid", "mode": "triggered", "on": ["transition:submit", "enter:approved", "refresh"]}
   },
   "states": {"initial": "draft", "list": ["draft", "submitted", "approved", "paid", "cancelled"], "final": ["paid", "cancelled"]},
   "transitions": [
@@ -123,10 +123,19 @@ func TestDefine_Invoice(t *testing.T) {
 	for _, col := range cls.Columns {
 		cols[col.Name] = col
 	}
-	for _, want := range []string{"number", "net", "net_currency", "shipping__city", "shipping__country", "contact__email", "scan__hash", "scan__size", "total", "total_currency", "ship_city", "overdue", "rating", "payload"} {
+	for _, want := range []string{"number", "net", "net_currency", "shipping__city", "shipping__country", "contact__email", "scan__hash", "scan__size", "total", "total_currency", "ship_city", "overdue", "overdue__asof", "overdue__error", "rating", "payload"} {
 		if _, ok := cols[want]; !ok {
 			t.Errorf("no column %s", want)
 		}
+	}
+	// A triggered variable has its moment beside it (ADR-0043); an auto
+	// one has none.
+	if asof, errc := cols["overdue__asof"], cols["overdue__error"]; asof.Moment != MomentAsOf || asof.Type.String() != "int" || asof.Variable != "overdue" ||
+		errc.Moment != MomentError || errc.Type.Kind != formula.KindText {
+		t.Errorf("the moment columns of overdue: %+v %+v", asof, errc)
+	}
+	if _, ok := cols["total__asof"]; ok {
+		t.Error("an auto variable has a moment column")
 	}
 	for _, absent := range []string{"lines", "tags", "shipping"} {
 		if _, ok := cols[absent]; ok {

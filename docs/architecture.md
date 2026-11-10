@@ -99,7 +99,7 @@ A class is one JSON document.
     "rate":      {"formula": "LOOKUP(Rates, rate, code = THIS.currency)"},
     "total_eur": {"formula": "ROUND(total * rate, 2)"},
     "overdue":   {"formula": "TODAY() > due AND STATE() <> \"paid\"",
-                  "mode": "triggered", "on": ["schedule:daily", "enter:approved"]},
+                  "mode": "triggered", "on": ["enter:approved", "refresh"]},
     "backlog":   {"formula": "LOOKUP(Invoice, COUNT(id), customer = THIS.customer AND state <> \"paid\")",
                   "mode": "triggered", "on": ["refresh", "enter:submitted"]}
   },
@@ -299,17 +299,25 @@ The eventless transitions are then evaluated over the document the rules
 left, bounded to eight per command. Each one that fires is a commit of its
 own that repeats steps 4 to 6 with its own triggers. A rule's action
 raises no trigger, so one command runs at most nine commits and each rule
-at most once in each (ADR-0040, ADR-0043). Today step 5 runs `set`,
-`reset` and `emit`; step 4, the `refresh` action and the outbox arrive
-with the next steps of Phase 4.
+at most once in each (ADR-0040, ADR-0043). Today steps 4 and 5 run, with
+the synchronous actions `set`, `reset`, `refresh` and `emit`; the outbox
+arrives with the next steps of Phase 4.
 
-Triggered variables also recalculate on `table:<name>` when the named table or
-stack changes, and on `schedule:<spec>`. Those recomputes are **set-wise**:
-one query per class computes the new value for every affected document, and
-the results are applied as system commits, never one query per document. A
-triggered variable stores the version and time at which it was computed, and
-documentation states plainly that such values are consistent as of that
-moment.
+A triggered variable keeps its value between its triggers and carries the
+moment it was computed: the version of the document whose commit computed
+it, the time of that commit, and the code of a recomputation that failed
+since, which leaves the value as it was and refuses nothing. The moment
+is two columns beside the value, `<name>__asof` and `<name>__error`; the
+views add the time as `<name>__at`, and a document carries all three
+under `computed`. Such a value is consistent as of that moment, and the
+document says which.
+
+Triggered variables are also to recalculate on `table:<name>` when the
+named table or stack changes, and on `schedule:<spec>`. Those recomputes
+are **set-wise**: one query per class computes the new value for every
+affected document, and the results are applied as system commits, never
+one query per document. They arrive with the set-wise work of Phase 8;
+until then a class that names either trigger is refused.
 
 The browser evaluates auto formulas live while a user edits, from the same
 bytecode, so the user sees totals change before saving. The server's result
@@ -409,10 +417,10 @@ Outbox execution results are events (`action_run`, `action_failed`), so the
 audit trail covers side effects. `reset` and `refresh` are also commands a
 frontend can send directly, which is what a button does.
 
-Today `set`, `reset` and `emit` run inside the commit, and `Preview`
-reports every rule a command would run with the evaluated arguments of
-its actions. The `refresh` action is refused until triggered variables
-are computed. An action of the outbox is checked for its name, named by
+Today `set`, `reset`, `refresh` and `emit` run inside the commit, and
+`Preview` reports every rule a command would run with the evaluated
+arguments of its actions. `Reset` and `Refresh` as commands are the next
+step. An action of the outbox is checked for its name, named by
 a preview as queued, and not queued yet: the outbox, its worker and the
 actions that leave the database are the next steps of Phase 4 (ADR-0044,
 ADR-0045).

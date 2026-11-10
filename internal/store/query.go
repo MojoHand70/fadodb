@@ -44,6 +44,7 @@ func (s *Store) Query(ctx context.Context, f Filter, opts ...Option) ([]*Documen
 		return nil, filterErr(err)
 	}
 	cols := append(quoteAll(systemColumns), quoteAll(columnNames(c.cls.Columns))...)
+	cols = append(cols, quoteAll(c.atNames())...)
 	text := "SELECT " + strings.Join(cols, ", ") + " FROM " + quote(c.cls.Name)
 	if plan.Where != "" {
 		text += " WHERE " + plan.Where
@@ -124,12 +125,19 @@ func (s *Store) Query(ctx context.Context, f Filter, opts ...Option) ([]*Documen
 			// A hidden variable is absent from the fields as from the
 			// document, with no refusal.
 			values := make(Values, len(plan.Fields))
+			var computed map[string]Moment
 			for _, f := range plan.Fields {
 				if v, ok := d.Values[f]; ok {
 					values[f] = v
 				}
+				if m, ok := d.Computed[f]; ok {
+					if computed == nil {
+						computed = map[string]Moment{}
+					}
+					computed[f] = m
+				}
 			}
-			d.Values = values
+			d.Values, d.Computed = values, computed
 		}
 		docs[i] = d
 	}

@@ -49,6 +49,9 @@ type class struct {
 	// rules are the class's rules by trigger (ADR-0043); nil when it has
 	// none, so that a commit of such a class does not look.
 	rules *ruleSet
+	// triggered are the triggered variables in declaration order, the
+	// order they recompute in (ADR-0043); nil when the class has none.
+	triggered []*cvar
 
 	w writeStmts
 	r readStmts
@@ -66,6 +69,10 @@ type cvar struct {
 	child *child
 	// deps are the variables the formula or the default reads, by index.
 	deps []int
+	// asof and errLeaf are the moment leaves of a triggered variable
+	// (ADR-0043) and tidx its place among the triggered ones; -1 for any
+	// other variable.
+	asof, errLeaf, tidx int
 }
 
 // leaf is one stored scalar of a row.
@@ -74,6 +81,10 @@ type leaf struct {
 	column string
 	typ    formula.Type
 	v      *model.Variable
+	// owner is the variable the column belongs to, by name; moment marks a
+	// moment column of a triggered variable, which is no leaf of its
+	// value.
+	owner, moment string
 }
 
 // child is the per-version table of a composite variable.
@@ -112,11 +123,18 @@ type docRow struct {
 	validFrom, validTo                 int64
 	actor, eventID                     string
 	vals                               []formula.Value
+	// ats are the times the class's triggered variables were last
+	// computed, one per variable of class.triggered and 0 for none: the
+	// valid_from of the history row at the version the moment leaf names.
+	// It is read with the row and never stored (ADR-0043). nil for a
+	// class without triggered variables.
+	ats []int64
 }
 
 func (r *docRow) clone() *docRow {
 	c := *r
 	c.vals = append([]formula.Value(nil), r.vals...)
+	c.ats = append([]int64(nil), r.ats...)
 	return &c
 }
 
@@ -131,7 +149,7 @@ func leavesOf(cols []model.Column) []leaf {
 		if i > 0 && col.Path == cols[i-1].Path && cols[i-1].Type.Kind == formula.KindMoney && strings.HasSuffix(col.Name, formula.CurrencySuffix) {
 			continue
 		}
-		out = append(out, leaf{path: col.Path, column: col.Name, typ: col.Type})
+		out = append(out, leaf{path: col.Path, column: col.Name, typ: col.Type, owner: col.Variable, moment: col.Moment})
 	}
 	return out
 }
@@ -156,13 +174,29 @@ func newClass(cls *model.Class, src []byte) (*class, error) {
 	c.leaves = leavesOf(cls.Columns)
 	c.leafIndex = indexOf(c.leaves)
 	for i, v := range cls.Variables {
-		cv := &cvar{v: v, idx: i, leaf: -1}
+		cv := &cvar{v: v, idx: i, leaf: -1, asof: -1, errLeaf: -1, tidx: -1}
 		c.vars = append(c.vars, cv)
 		c.byName[strings.ToUpper(v.Name)] = cv
 		c.exact[v.Name] = cv
+		if v.Triggered() {
+			cv.tidx = len(c.triggered)
+			c.triggered = append(c.triggered, cv)
+		}
 	}
 	for i := range c.leaves {
 		l := &c.leaves[i]
+		// The moment of a triggered variable is stored beside its value
+		// and is no part of it.
+		switch l.moment {
+		case model.MomentAsOf:
+			cv := c.byName[strings.ToUpper(l.owner)]
+			l.v, cv.asof = cv.v, i
+			continue
+		case model.MomentError:
+			cv := c.byName[strings.ToUpper(l.owner)]
+			l.v, cv.errLeaf = cv.v, i
+			continue
+		}
 		name := l.path
 		if j := strings.IndexByte(name, '.'); j >= 0 {
 			name = name[:j]
@@ -326,15 +360,18 @@ func (c *class) prepare(ctx context.Context, writer *sql.Conn, db *sql.DB) error
 			*dst, err = db.PrepareContext(ctx, text)
 		}
 	}
-	selectCurrent := "SELECT " + strings.Join(current, ", ") + " FROM " + quote(c.table) + ` WHERE "id" = ?`
+	// The reads take the time of each triggered variable's moment with the
+	// row; the writes store the two moment columns alone.
+	historySelect := strings.Join(append(append([]string{}, history...), c.atExprs(c.history)...), ", ")
+	selectCurrent := "SELECT " + strings.Join(append(append([]string{}, current...), c.atExprs(c.table)...), ", ") + " FROM " + quote(c.table) + ` WHERE "id" = ?`
 	prepW(&c.w.selectCurrent, selectCurrent)
 	prepW(&c.w.upsert, "INSERT INTO "+quote(c.table)+" ("+strings.Join(current, ", ")+") VALUES ("+marks(len(current))+`) ON CONFLICT ("id") DO UPDATE SET `+strings.Join(sets, ", "))
 	prepW(&c.w.closeHistory, "UPDATE "+quote(c.history)+` SET "valid_to" = ? WHERE "id" = ? AND "version" = ?`)
 	prepW(&c.w.insertHistory, "INSERT INTO "+quote(c.history)+" ("+strings.Join(history, ", ")+") VALUES ("+marks(len(history))+")")
 	prepW(&c.w.deleteCurrent, "DELETE FROM "+quote(c.table)+` WHERE "id" = ?`)
 	prepR(&c.r.getCurrent, selectCurrent)
-	prepR(&c.r.getVersion, "SELECT "+strings.Join(history, ", ")+" FROM "+quote(c.history)+` WHERE "id" = ? AND "version" = ?`)
-	prepR(&c.r.listHistory, "SELECT "+strings.Join(history, ", ")+" FROM "+quote(c.history)+` WHERE "id" = ? ORDER BY "version"`)
+	prepR(&c.r.getVersion, "SELECT "+historySelect+" FROM "+quote(c.history)+` WHERE "id" = ? AND "version" = ?`)
+	prepR(&c.r.listHistory, "SELECT "+historySelect+" FROM "+quote(c.history)+` WHERE "id" = ? ORDER BY "version"`)
 	for _, ch := range c.children {
 		ccols := quoteAll(columnNames(ch.def.Columns))
 		all := append(quoteAll(childKey), ccols...)
@@ -349,6 +386,28 @@ func (c *class) prepare(ctx context.Context, writer *sql.Conn, db *sql.DB) error
 		return storageErr("prepare the statements of "+c.cls.Name, err)
 	}
 	return nil
+}
+
+// atExprs are, for each triggered variable in order, the expression that
+// gives the time of its moment over a row of the table, the current or
+// the history one: the valid_from of the history row at the version the
+// value was computed in, null when it never was (ADR-0043).
+func (c *class) atExprs(table string) []string {
+	out := make([]string, len(c.triggered))
+	for i, cv := range c.triggered {
+		out[i] = `(SELECT m."valid_from" FROM ` + quote(c.history) + ` m WHERE m."id" = ` + quote(table) + `."id" AND m."version" = ` + quote(table) + "." + quote(c.leaves[cv.asof].column) + ")"
+	}
+	return out
+}
+
+// atNames are the columns the views give those times under:
+// <variable>__at.
+func (c *class) atNames() []string {
+	out := make([]string, len(c.triggered))
+	for i, cv := range c.triggered {
+		out[i] = model.MomentColumn(cv.v.Name, "at")
+	}
+	return out
 }
 
 func joinWithPrefix(cols []string) string {

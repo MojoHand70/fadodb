@@ -34,8 +34,11 @@
 // order over the document as computed so far, and the synchronous
 // actions set, reset and emit change it before it is written. An action
 // that fails refuses the command with its path; a preview reports every
-// rule the command would run.
+// rule the command would run. A triggered variable recomputes in the
+// commit that raises one of its triggers, before the rules, and when the
+// refresh action names it; its moment is stored beside it and a document
+// carries it under Computed.
 //
-// Not here yet: triggered variables and the outbox (Phase 4), the
-// class-level access rules (Phase 5), and the server (Phase 6).
+// Not here yet: Reset and Refresh as commands and the outbox (Phase 4),
+// the class-level access rules (Phase 5), and the server (Phase 6).
 package store

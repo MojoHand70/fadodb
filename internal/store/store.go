@@ -34,7 +34,7 @@ const DefaultMaxIndexedRows = 100000
 // engineSchema is the version of the store's own tables. A database made
 // by another engine schema is refused: before 1.0 there is no upgrade
 // path, and a pre-release file is recreated.
-const engineSchema = 2
+const engineSchema = 3
 
 // Options configure Open. The ones that are properties of the database,
 // Synchronous and MaxText, are read at creation and kept in the metadata

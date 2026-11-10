@@ -1,0 +1,70 @@
+{
+  "suite": "triggered",
+  "description": "A triggered variable is computed in the commit that raises one of its triggers, after the state change and before the rules, and when a refresh names it; it keeps its value in between and carries the moment it was computed (ADR-0043, items 1, 4 and 9). A set raises none of its triggers. STATE() is the state left for an exit and a transition and the state entered for an entry, the first of the commit's triggers the variable lists deciding. A recomputation that errors leaves the value and its moment as they were, records the code and never refuses the command. What a rule's refresh changes fires no rule; what the commit's own trigger changed does.",
+  "clock": "2026-03-01 12:00:00",
+  "class": {
+    "name": "Loan",
+    "variables": {
+      "amount": {"type": "number"},
+      "rate":   {"type": "number"},
+      "parts":  {"type": "number", "default": "0"},
+      "opened": {"formula": "STATE()", "mode": "triggered", "on": ["enter:draft"]},
+      "locked": {"formula": "rate", "mode": "triggered", "on": ["transition:submit", "refresh"]},
+      "cost":   {"formula": "amount * locked"},
+      "left":   {"formula": "STATE()", "mode": "triggered", "on": ["exit:draft"]},
+      "seen":   {"formula": "STATE()", "mode": "triggered", "on": ["enter:review", "exit:draft"]},
+      "share":  {"formula": "100 / parts", "mode": "triggered", "on": ["enter:review"]},
+      "quota":  {"formula": "100 / parts", "mode": "triggered", "on": ["refresh"]},
+      "booked": {"formula": "cost", "mode": "triggered", "on": ["enter:small"]}
+    },
+    "states": {"initial": "draft", "list": ["draft", "review", "small", "done"]},
+    "transitions": [
+      {"name": "submit", "from": "draft", "to": "review"},
+      {"name": "recheck", "from": "review", "to": "review"},
+      {"from": "review", "to": "small", "guard": "cost < 10"},
+      {"name": "finish", "from": ["review", "small"], "to": "done"}
+    ],
+    "rules": [
+      {"on": "transition", "name": "recheck", "do": [{"action": "refresh", "variables": ["quota", "locked"]}]},
+      {"on": "values_change", "variables": ["locked"], "do": [{"action": "emit", "event": "loan.rate_locked"}]}
+    ]
+  },
+  "script": [
+    {"name": "a create raises the entry of the initial state; the others have no moment", "do": "create", "doc": "big", "values": {"amount": 1000, "rate": 0.25},
+     "expect": {"state": "draft", "version": 1, "values": {"opened": "draft", "locked": null, "left": null},
+                "computed": {"opened": {"version": 1, "at": "2026-03-01 12:00:00"}, "locked": null, "left": null, "seen": null, "share": null, "quota": null, "booked": null}}},
+    {"name": "a set raises no trigger of a variable: the value stays and so does its moment", "do": "set", "values": {"rate": 0.5},
+     "expect": {"version": 2, "values": {"locked": null, "opened": "draft"}, "computed": {"opened": {"version": 1}, "locked": null}, "events": ["created", "set"]}},
+    {"name": "a transition raises exit, transition and entry; a formula that errors is recorded and refuses nothing", "do": "transition", "transition": "submit",
+     "expect": {"state": "review", "version": 3,
+                "values": {"left": "draft", "seen": "draft", "locked": 0.5, "cost": 500, "share": null},
+                "computed": {"opened": {"version": 1}, "left": {"version": 3}, "seen": {"version": 3}, "locked": {"version": 3, "at": "2026-03-01 12:00:00"},
+                             "share": {"error": "div_by_zero"}, "quota": null, "booked": null},
+                "events": ["created", "set", "transition:submit", "custom:loan.rate_locked"]}},
+    {"name": "the source of a locked value moves on and the value does not", "do": "set", "values": {"rate": 0.75, "parts": 4},
+     "expect": {"version": 4, "values": {"locked": 0.5, "cost": 500}, "computed": {"locked": {"version": 3}, "share": {"error": "div_by_zero"}}}},
+    {"name": "a preview shows the moments a command would leave and writes none", "do": "preview", "transition": "recheck",
+     "expect": {"state": "review", "version": 5, "rules": ["/rules/0"], "values": {"locked": 0.75, "quota": 25, "share": 25},
+                "computed": {"locked": {"version": 5}, "quota": {"version": 5}, "share": {"version": 5}}}},
+    {"name": "the entry recomputes with STATE() the state entered; the refresh recomputes what it names; what a rule's refresh changed fires no rule", "do": "transition", "transition": "recheck",
+     "expect": {"state": "review", "version": 5,
+                "values": {"seen": "review", "share": 25, "locked": 0.75, "quota": 25, "cost": 750, "left": "draft"},
+                "computed": {"seen": {"version": 5}, "share": {"version": 5}, "locked": {"version": 5}, "quota": {"version": 5}, "left": {"version": 3}, "opened": {"version": 1}},
+                "events": ["created", "set", "transition:submit", "custom:loan.rate_locked", "set", "transition:recheck"]}},
+    {"do": "set", "values": {"parts": 0}, "expect": {"version": 6, "values": {"share": 25, "quota": 25}}},
+    {"name": "a recomputation that errors keeps the value and its moment and records the code; one that gives the same value moves its moment", "do": "transition", "transition": "recheck",
+     "expect": {"state": "review", "version": 7,
+                "values": {"share": 25, "quota": 25, "locked": 0.75},
+                "computed": {"share": {"version": 5, "error": "div_by_zero"}, "quota": {"version": 5, "error": "div_by_zero"}, "locked": {"version": 7}}}},
+    {"name": "the document read back says the same", "do": "get",
+     "expect": {"version": 7, "computed": {"share": {"version": 5, "error": "div_by_zero", "at": "2026-03-01 12:00:00"}, "locked": {"version": 7}, "booked": null}}},
+    {"name": "an eventless transition is a commit of its own and recomputes on its own triggers, with its own version", "do": "create", "doc": "small", "values": {"amount": 16, "rate": 0.5},
+     "expect": {"state": "draft", "version": 1}},
+    {"do": "transition", "doc": "small", "transition": "submit",
+     "expect": {"state": "small", "version": 3, "values": {"locked": 0.5, "cost": 8, "booked": 8},
+                "computed": {"locked": {"version": 2}, "left": {"version": 2}, "booked": {"version": 3}},
+                "events": ["created", "transition:submit", "custom:loan.rate_locked", "transition:"]}},
+    {"name": "a query returns the moments with the documents", "do": "query", "where": "state = \"small\"",
+     "expect": {"docs": ["small"], "computed": {"booked": {"version": 3, "at": "2026-03-01 12:00:00"}, "locked": {"version": 2}, "share": {"error": "div_by_zero"}, "quota": null}}}
+  ]
+}

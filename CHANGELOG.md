@@ -26,18 +26,38 @@ All notable changes to FadoDB are recorded here. The format follows
 - `Preview` and `PreviewDraft` report `Rules`: every rule whose trigger
   the command raised, the commit it belongs to, whether it ran, and its
   actions with their evaluated arguments.
-- `conformance/rules/`, six suites in the script format of the
+- `conformance/rules/`, seven suites in the script format of the
   statechart suites, and `BenchmarkRules`, which joins the benchmark
   gate: the rules of a commit do not allocate.
 
+- Triggered variables are computed (ADR-0043). A variable with
+  `"mode": "triggered"` recomputes in the commit that raises one of its
+  triggers, `enter:`, `exit:` or `transition:`, after the state change
+  and before the rules, and when the `refresh` action names it; it keeps
+  its value in between. Its moment is stored beside it in two columns,
+  `<name>__asof` and `<name>__error`; the views add the time as
+  `<name>__at`, and `Document` gained `Computed`, the version, the time
+  and the error per variable, hidden with the variable by its read
+  right. A recomputation that errors leaves the value as it was, records
+  the code and refuses nothing.
+- The `refresh` action of a rule, which recomputes the triggered
+  variables it names, or every one that lists `refresh`.
+
 ### Changed
 
+- **The engine schema is version 3**, for the moment columns. A file made
+  by an earlier pre-release engine is refused and recreated; there is no
+  upgrade path before 1.0.
+- A triggered variable's `table:` and `schedule:` triggers are refused
+  with `not_supported` until the phase that runs them; before, they were
+  accepted and never fired. A trigger that can fire on a move out of a
+  terminal state is refused, since a frozen document computes nothing.
 - A class definition is checked for what its rules do, where before only
   their structure was. Refused now: `rules` in a class without states; a
   `set`, `reset` or `refresh` on a trigger that can fire over a frozen
-  document or on `delete`; a rule on `schedule` and the `refresh` action,
-  with `not_supported` until they are built; a misspelt property of a
-  synchronous action. An `emit` names its event under `event`.
+  document or on `delete`; a rule on `schedule`, with `not_supported`
+  until it is built; a misspelt property of a synchronous action. An
+  `emit` names its event under `event`.
 - An action for the outbox (`create`, `transition`, `http.call` and the
   like) is still checked for its name alone and is not queued: the
   outbox is a later step of Phase 4.

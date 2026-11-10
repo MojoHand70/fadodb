@@ -43,6 +43,21 @@ type Document struct {
 	UpdatedAt      int64  `json:"updated_at"`
 	StateEnteredAt int64  `json:"state_entered_at,omitempty"`
 	Values         Values `json:"values"`
+	// Computed says, for every triggered variable that has been computed
+	// or has failed to, when its value was computed (ADR-0043). A variable
+	// the principal may not read is absent here as it is from Values.
+	Computed map[string]Moment `json:"computed,omitempty"`
+}
+
+// Moment is when a triggered variable's value was computed: the version
+// of the document whose commit computed it and the time of that commit,
+// in seconds since the epoch. Error is the code of a recomputation that
+// failed since then, which left the value as it was; a variable that has
+// only ever failed has an Error and no Version.
+type Moment struct {
+	Version int64  `json:"version,omitempty"`
+	At      int64  `json:"at,omitempty"`
+	Error   string `json:"error,omitempty"`
 }
 
 // HistoryRow is one committed version: the document as it was, when it

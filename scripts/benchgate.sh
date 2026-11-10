@@ -14,6 +14,14 @@
 # runner's drift lands on both alike. Per benchmark and per tree, the
 # placement with the lowest median time is the one compared.
 #
+# The gate runs the benchmarks the budgets name, the hot paths of
+# docs/architecture.md "Initial budgets" and of the records of each phase,
+# not every benchmark in the tree: the VM's arithmetic, the recalculation,
+# the lookups, the transition commit, the listing, the guard loop, the
+# projection and the write check. The others run by hand and for a
+# release's perf page. BENCH_PATTERN overrides the set; BENCH_PATTERN=.
+# runs every benchmark of BENCH_PACKAGES.
+#
 # Usage:
 #   scripts/benchgate.sh [base-ref]     default base-ref: origin/main
 #   scripts/benchgate.sh --csv FILE     evaluate an existing benchstat CSV
@@ -26,6 +34,8 @@ TIME_PCT="${BENCH_TIME_PCT:-5}"
 BYTES_PCT="${BENCH_BYTES_PCT:-5}"
 COUNT="${BENCH_COUNT:-5}"
 PLACEMENTS="${BENCH_PLACEMENTS:-5}"
+PATTERN="${BENCH_PATTERN:-^Benchmark(VM_Arithmetic5|VM_Exact5|Recalculate|Recalculate50|LookupIndexed|LookupKeyedStatement|Transition|Transitions10|GuardLoop|Project|WriteCheck)$}"
+PACKAGES="${BENCH_PACKAGES:-./internal/formula/ ./internal/store/}"
 
 # evaluate_csv prints every regression found in a benchstat CSV and returns 1
 # when there is at least one.
@@ -138,9 +148,10 @@ cleanup() {
 }
 trap cleanup EXIT
 
-# One round of every benchmark in the tree at $1.
+# One round of the gate's benchmarks in the tree at $1.
 run_bench() {
-  (cd "$1" && go test -run '^$' -bench . -benchmem -count 1 ./... 2>&1) || true
+  # shellcheck disable=SC2086
+  (cd "$1" && go test -run '^$' -bench "$PATTERN" -benchmem -count 1 $PACKAGES 2>&1) || true
 }
 
 if find . -name a_layoutpad.go -not -path './.git/*' | grep -q .; then
@@ -198,7 +209,7 @@ benchstat "$work/old.txt" "$work/new.txt" 2>/dev/null || true
 benchstat -format csv "$work/old.txt" "$work/new.txt" > "$work/cmp.csv" 2>/dev/null || true
 
 if evaluate_csv "$work/cmp.csv"; then
-  echo "benchgate: ok (base $BASE, $PLACEMENTS placements, $COUNT rounds each; limits sec/op +${TIME_PCT}%, B/op +${BYTES_PCT}%, allocs/op +0)"
+  echo "benchgate: ok (base $BASE, $PLACEMENTS placements, $COUNT rounds each, benchmarks $PATTERN; limits sec/op +${TIME_PCT}%, B/op +${BYTES_PCT}%, allocs/op +0)"
 else
   echo "benchgate: failed, see the regressions above"
   exit 1

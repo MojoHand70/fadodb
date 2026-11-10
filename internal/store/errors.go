@@ -142,6 +142,34 @@ const (
 	// CodeBadResult: what an action returned does not fit what its
 	// definition declares under returns.
 	CodeBadResult = "bad_result"
+	// CodeOutboundOff: the action is sent as an HTTP request and this
+	// process sends none: it was opened without Options.Outbound
+	// (ADR-0045, item 7).
+	CodeOutboundOff = "outbound_off"
+	// CodeUnknownConnection: the host program gave this process no
+	// connection of that name.
+	CodeUnknownConnection = "unknown_connection"
+	// CodeHostNotAllowed: the outbound rules of this process do not let a
+	// request go to that host, over that scheme or port, or to the address
+	// it resolves to; or the host is not one of the request's connection.
+	CodeHostNotAllowed = "host_not_allowed"
+	// CodeSecretUnavailable: the host program did not supply a secret a
+	// request reads. No answer: the request is tried again.
+	CodeSecretUnavailable = "secret_unavailable"
+	// CodeNoReply: a request got no reply: the receiver was not reached, or
+	// did not answer in time. Tried again.
+	CodeNoReply = "no_reply"
+	// CodeTryLater: the receiver answered 408, 429 or 5xx. Tried again, no
+	// sooner than the reply's Retry-After asks.
+	CodeTryLater = "try_later"
+	// CodeRefused: the receiver answered with a status that is neither a
+	// success nor a request to try again. A refusal.
+	CodeRefused = "refused"
+	// CodeNotOK: the receiver answered 2xx and the definition's ok is not
+	// TRUE for the reply. A refusal.
+	CodeNotOK = "not_ok"
+	// CodeReplyTooLarge: the reply is larger than the outbound rules read.
+	CodeReplyTooLarge = "reply_too_large"
 	// CodeUnknownRow: a table.update addresses a row the table does not
 	// have (ADR-0044).
 	CodeUnknownRow = "unknown_row"

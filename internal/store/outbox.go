@@ -709,7 +709,7 @@ func (s *Store) runAction(ctx context.Context, row *outboxRow) (bool, error) {
 	if _, err := w.ExecContext(ctx, "BEGIN IMMEDIATE"); err != nil {
 		return false, storageErr("begin", err)
 	}
-	if err := s.failed(ctx, row, attempts, failure, noAnswer(failure), day, now); err != nil {
+	if err := s.failed(ctx, row, attempts, failure, noAnswer(failure), 0, day, now); err != nil {
 		_, _ = w.ExecContext(ctx, "ROLLBACK")
 		return false, err
 	}
@@ -724,13 +724,15 @@ func (s *Store) runAction(ctx context.Context, row *outboxRow) (bool, error) {
 // transaction the caller began; attempts counts the ones before it. A
 // question that got no answer is asked again later, with retry, until
 // MaxAttempts; any other failure, and the last attempt, leave the row
-// dead with its event (ADR-0044, item 4).
-func (s *Store) failed(ctx context.Context, row *outboxRow, attempts int, failure *Error, retry bool, day int64, now time.Time) error {
+// dead with its event (ADR-0044, item 4). after is how long the receiver
+// asked to be left alone, which moves the next attempt later and never
+// sooner (ADR-0045, item 5).
+func (s *Store) failed(ctx context.Context, row *outboxRow, attempts int, failure *Error, retry bool, after time.Duration, day int64, now time.Time) error {
 	attempts++
 	if !retry || attempts >= s.outbox.MaxAttempts {
 		return s.finish(ctx, row, ActionDead, attempts, failure, day, now)
 	}
-	wait := s.outbox.Backoff << (attempts - 1)
+	wait := max(s.outbox.Backoff<<(attempts-1), after)
 	due := now.Add(wait).Unix()
 	if due <= now.Unix() {
 		due = now.Unix() + 1

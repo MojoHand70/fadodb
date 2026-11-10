@@ -648,7 +648,7 @@ func (g *Generator) text(d int) {
 	case r < 32:
 		g.call("MID", g.quietArg(formula.KindText, d), func() { g.smallInt(d, 6) }, g.optional(func() { g.smallInt(d, 6) }))
 	case r < 42:
-		g.call(g.pick("TRIM", "UPPER", "LOWER", "PROPER"), g.arg(formula.KindText, d))
+		g.call(g.pick("TRIM", "UPPER", "LOWER", "PROPER", "URLENCODE"), g.arg(formula.KindText, d))
 	case r < 47:
 		g.call("REPLACE", g.quietArg(formula.KindText, d), func() { g.smallInt(d, 6) }, func() { g.smallInt(d, 6) }, g.quietArg(formula.KindText, d))
 	case r < 53:

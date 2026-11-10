@@ -20,12 +20,15 @@ var catalogJSON []byte
 // decides where a formula using the function may appear.
 type Class string
 
-// The four evaluation classes.
+// The evaluation classes. ClassSecret is SECRET's alone: it reads a
+// secret the host program supplies, and only the request of an action
+// definition may use it (ADR-0045).
 const (
 	ClassPure    Class = "pure"
 	ClassContext Class = "context"
 	ClassLookup  Class = "lookup"
 	ClassQuery   Class = "query"
+	ClassSecret  Class = "secret"
 )
 
 // Param is one argument of a function.

@@ -22,10 +22,11 @@ Website: [fadodb.org](https://fadodb.org).
 > does beyond its own document runs through the outbox, exactly once
 > and as the person who caused it: it creates a document, or one for
 > each element of a list, moves or refreshes another document, and
-> changes a row of a table. A rule can also call an action of the host
-> program's own: a definition with typed parameters, stored in the
-> database, and a Go function the outbox calls with the event that fired
-> the rule. Actions sent as HTTP requests, results written back to the
+> changes a row of a table. A rule can also call an action that
+> somebody else defined: a definition with typed parameters, stored in
+> the database, implemented by a Go function of the host program or sent
+> by the engine as an HTTP request, to the hosts the host program allows
+> and with secrets it supplies. Results written back to the
 > document, `QUERY`, time, the row-level access rules
 > and the server come with their steps and phases. The numbers are in
 > [docs/perf/](docs/perf/), the plan in [ROADMAP.md](ROADMAP.md).
@@ -128,7 +129,18 @@ with `"args"`, a formula for each parameter, checked when the class is
 defined. The outbox calls the function after the commit with the
 arguments and the event that fired the rule, the document included, at
 least once and each time with the same key; an error is tried again and
-`fado.Permanent` marks a refusal. `Actions` lists what a rule may name
+`fado.Permanent` marks a refusal. A definition may instead carry a
+`request`: a method, an address, headers and a body, each a formula over
+the parameters, with `ok` and `result` to read the reply. The engine
+sends it, so an API with a token needs no code: the token is
+`SECRET("token")` in the definition and comes from the host program at
+the moment of sending, never from the database. A database sends
+nothing until its host program opens it with `outbound.Allow` and the
+hosts that may be called, and a connection's secret goes only to that
+connection's hosts. A request without a body of its own carries the
+call, signed, which is what a developer's own service receives, and
+`http.call` sends a one-off request written in the rule. `Actions`
+lists what a rule may name, `PreviewAction` shows what would be sent
 and `TryAction` runs one outside any document. A preview, a listing or a read
 may be asked at a moment the caller chooses, `fado.At(t)`, and a preview
 reports the moment it ran under; a commit runs at the database's clock.
@@ -222,7 +234,7 @@ internal/model/    document classes, schemas, tables, rules, validation, the dif
 internal/store/    SQLite store: documents, history, events, rules in the commit, the outbox, tables, lookups, filters, blobs, class versions
 internal/query/    the filter compiler and the SQL endpoint's authorizer
 internal/state/    statechart engine (Phase 3)
-internal/rules/    actions sent as HTTP requests (Phase 4)
+fado/outbound/     what a host program imports to let a database send the HTTP requests of actions
 api/               JSON schemas of an action definition, of the call an action receives and of the delivered event
 internal/auth/     users, groups, access rules as predicates (Phase 5)
 internal/server/   HTTP and WebSocket (Phase 6)

@@ -21,8 +21,11 @@
 // outbox (ADR-0044). An action may also be the host program's own: a
 // definition, stored with DefineAction, and a Go function given to Open
 // in Options.Actions, which the outbox calls with the event that fired
-// the rule (ADR-0045). Not here yet: actions sent as HTTP requests, an
-// action's result written back to the document, QUERY and time (Phase 4),
+// the rule (ADR-0045). A definition may instead carry a request, which
+// the engine sends as HTTP through Options.Outbound, with the secrets
+// Options.Secrets supplies; package fado/outbound makes the sender, and a
+// database opened without one sends nothing. Not here yet: an action's
+// result written back to the document, QUERY and time (Phase 4),
 // the class-level access rules compiled to row predicates (Phase 5) and
 // the server (Phase 6).
 package fado
@@ -83,6 +86,17 @@ type (
 	// ActionOutcome what became of one trial of it.
 	ActionPreview = store.ActionPreview
 	ActionOutcome = store.ActionOutcome
+	// Outbound sends the HTTP requests of declared actions, in
+	// Options.Outbound (ADR-0045, item 7); package fado/outbound makes one
+	// that calls only the hosts a program lists. OutboundRequest and
+	// OutboundReply are what it is handed and what it answers, Header one
+	// header of a request, and RequestPreview the request PreviewAction
+	// shows, with secrets masked.
+	Outbound        = store.Outbound
+	OutboundRequest = store.OutboundRequest
+	OutboundReply   = store.OutboundReply
+	Header          = store.Header
+	RequestPreview  = store.RequestPreview
 	// TransitionInfo is one named transition leaving a document's state
 	// and whether it may be taken now (ADR-0040).
 	TransitionInfo = store.TransitionInfo
@@ -147,6 +161,20 @@ func At(t time.Time) Option { return store.At(t) }
 // is dead at once with it, where any other error is tried again later
 // (ADR-0045).
 func Permanent(err error) error { return store.Permanent(err) }
+
+// Sign is the signature the engine puts on a request whose definition
+// names a sign secret (ADR-0045, item 4): the HMAC-SHA256, in hex, of the
+// timestamp, a dot and the body, keyed with the secret. The request
+// carries it as "FadoDB-Signature: t=<timestamp>,v1=<signature>".
+func Sign(secret, timestamp string, body []byte) string { return store.Sign(secret, timestamp, body) }
+
+// VerifySignature is what a receiver written in Go calls on a request it
+// was sent: it checks the FadoDB-Signature header against the body as
+// received and the shared secret, and that the timestamp is within the
+// tolerance of now.
+func VerifySignature(secret, header string, body []byte, now time.Time, tolerance time.Duration) error {
+	return store.VerifySignature(secret, header, body, now, tolerance)
+}
 
 // DB is an open database.
 type DB struct {
@@ -278,11 +306,14 @@ func (db *DB) RetryAction(ctx context.Context, key string) error {
 // (ADR-0045): a name of a namespace and a verb, such as "books.post", its
 // parameters and what it returns, each by scalar type. A rule may name
 // the action from then on and gives its arguments under args. The
-// definition is the contract of a Go function, so the function must have
-// been given to Open, in Options.Actions, under the same name. The same
-// definition again is a no-op; a redefinition is the next version and may
-// not break a rule that calls the action. The error is Diagnostics when
-// the definition is refused.
+// definition without a request is the contract of a Go function, which
+// must have been given to Open, in Options.Actions, under the same name.
+// A definition with a request is sent by the engine: the database must
+// have been opened with Options.Outbound, which must know the
+// definition's connection, and with Options.Secrets if the request reads
+// a secret. The same definition again is a no-op; a redefinition is the
+// next version and may not break a rule that calls the action. The error
+// is Diagnostics when the definition is refused.
 func (db *DB) DefineAction(ctx context.Context, definition []byte) (*ActionInfo, error) {
 	return db.s.DefineAction(ctx, definition)
 }
@@ -300,14 +331,17 @@ func (db *DB) Actions() []ActionInfo { return db.s.Actions() }
 func (db *DB) Action(name string) (*ActionInfo, bool) { return db.s.Action(name) }
 
 // PreviewAction answers what a defined action would be called with for
-// the arguments, given as values, and calls nothing (ADR-0045).
+// the arguments, given as values, and for a declared action the request
+// it would send, with every secret masked; it calls and sends nothing
+// (ADR-0045).
 func (db *DB) PreviewAction(ctx context.Context, name string, args Values) (*ActionPreview, error) {
 	return db.s.PreviewAction(ctx, name, args)
 }
 
 // TryAction runs a defined action once outside any document, for the
 // arguments given as values: it queues nothing, writes no event and
-// answers what the action returned or how it failed (ADR-0045).
+// answers what the action returned or how it failed (ADR-0045). The
+// request of a declared action is sent for real.
 func (db *DB) TryAction(ctx context.Context, name string, args Values) (*ActionOutcome, error) {
 	return db.s.TryAction(ctx, name, args)
 }

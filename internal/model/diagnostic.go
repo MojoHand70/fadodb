@@ -119,6 +119,12 @@ const (
 	// CodeUnknownParameter: a rule gives an action a parameter its
 	// definition does not have (ADR-0045).
 	CodeUnknownParameter = "unknown_parameter"
+	// CodeUnknownSecret: a request names a secret its connection does not
+	// declare (ADR-0045).
+	CodeUnknownSecret = "unknown_secret"
+	// CodeUnknownConnection: a definition names a connection the host
+	// program did not give this process (ADR-0045).
+	CodeUnknownConnection = "unknown_connection"
 	// CodeBadTrigger: a trigger of a triggered variable is malformed.
 	CodeBadTrigger = "bad_trigger"
 	// CodeBadValue: an enum value, a range bound or a literal is wrong.

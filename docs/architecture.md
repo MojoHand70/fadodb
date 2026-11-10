@@ -116,8 +116,9 @@ A class is one JSON document.
   ],
   "rules": [
     {"on": "enter", "state": "approved", "if": "total_eur > 10000",
-     "do": [{"action": "http.call", "url": "\"https://hooks.example/approved\"",
-             "body": {"id": "ID()", "total": "total_eur"}}]},
+     "do": [{"action": "http.call",
+             "args": {"url": "\"https://hooks.example/approved\"",
+                      "body": {"id": "ID()", "total": "total_eur"}}}]},
     {"on": "enter", "state": "paid",
      "do": [{"action": "create", "class": "Receipt",
              "values": {"invoice": "ID()", "amount": "total"}}]},
@@ -243,7 +244,7 @@ separator (ADR-0031).
 Excel-like syntax, case-insensitive functions, the operator set
 `+ - * / \ ^ % &`, comparisons, `AND OR NOT`, `IF(...)` and
 `IF ... THEN ... ELSE`. The function catalog is a JSON file that generates
-documentation, editor hints and conformance tests. Functions fall into four
+documentation, editor hints and conformance tests. Functions fall into
 classes, and where a formula may use them depends on what happens to its
 result:
 
@@ -253,6 +254,7 @@ result:
 | Context | `USER() INGROUP() NOW() TODAY() STATE() ID()` | defaults, triggered formulas, guards, rules, access rules, layouts; not in auto formulas |
 | Lookup | `LOOKUP(source, column, condition)` | everywhere; in auto formulas only against explicit tables |
 | Query | `QUERY(source, columns, condition, sort, groupby, limit)` | defaults, triggered formulas, rules, layouts; not in auto formulas |
+| Secret | `SECRET("token")` | the request of an action definition, and nowhere else (ADR-0045) |
 
 The rule behind the table: the stored value of an auto variable must be a
 function of the document itself, so it may not depend on who is looking,
@@ -413,8 +415,8 @@ until the phase that runs it.
 | `create` document | outbox | Idempotency key = event id + action index |
 | `transition` document | outbox | Same key |
 | `table.insert / update / delete` | outbox | Explicit tables, see below |
-| a defined action, such as `books.post` | outbox | Its definition is stored with `DefineAction`; a Go function of the host program implements it (ADR-0045) |
-| `http.call` | outbox | Planned: a request the engine sends, with retries and dead letter after N |
+| a defined action, such as `books.post` or `slack.post` | outbox | Its definition is stored with `DefineAction`; a Go function of the host program implements it, or the engine sends its `request` as HTTP (ADR-0045) |
+| `http.call` | outbox | One request written in the rule: `url`, `method`, `headers` and `body` under `args`; retried when there is no answer, dead when refused |
 
 Outbox execution results are events (`action_run`, `action_failed`), so the
 audit trail covers side effects. `reset` and `refresh` are also commands a
@@ -469,9 +471,9 @@ under `args`, typed against the parameters when the class is defined:
  "do": [{"action": "books.post", "args": {"invoice": "ID()", "amount": "total"}}]}
 ```
 
-What implements a definition lives outside the engine. Today that is a
-Go function the host program gives to `Open` under the action's name
-(ADR-0027). The worker calls it after the commit, outside any
+What implements a definition lives outside the engine, in one of two
+places. The first is a Go function the host program gives to `Open`
+under the action's name (ADR-0027). The worker calls it after the commit, outside any
 transaction, with the key of the queued action, the attempt, the
 arguments and the event that fired the rule, the document at that
 version included; the JSON of that call is published under `api/`. No
@@ -482,11 +484,58 @@ function makes twice once by the key. Up to `Outbox.Workers` such calls
 run at once, and none of them holds back a commit or the engine's own
 actions of other documents. `PreviewAction` shows the call for given
 values and `TryAction` runs an action once outside any document.
-Planned, with the next steps of Phase 4: a definition that carries a
-`request`, which the engine sends as HTTP with secrets the host supplies
-and the network off until the host allows it; `into`, which writes what
-an action returned back to the document; and `http.call`, which is
-accepted in a rule today and not run.
+
+The second is no code at all: a definition that carries a `request`,
+which the engine sends as HTTP.
+
+```json
+{"name": "slack.post",
+ "params": {"channel": {"type": "text", "required": true}, "text": {"type": "text", "required": true}},
+ "returns": {"ts": "text"},
+ "connection": {"name": "slack", "secrets": ["token"]},
+ "request": {"method": "POST",
+             "url": "\"https://slack.com/api/chat.postMessage\"",
+             "headers": {"Authorization": "\"Bearer \" & SECRET(\"token\")"},
+             "body": {"channel": "channel", "text": "text"}},
+ "ok": "JSONVALUE(BODY, \"ok\") = \"TRUE\"",
+ "result": {"ts": "JSONVALUE(BODY, \"ts\")"}}
+```
+
+The address, the headers and every string of the body are pure formulas
+over the parameters, so every attempt sends the same request; `ok` and
+`result` are formulas over `STATUS` and `BODY`, the reply. A reply of
+2xx for which `ok` is TRUE is the action run; no reply, 408, 429 and
+5xx are tried again, no sooner than `Retry-After` asks; anything else is
+a refusal. Three things keep this safe when the definition is data that
+an agent may have written:
+
+- **The network is the host program's.** A database sends nothing until
+  the program opens it with `Options.Outbound`, which package
+  `fado/outbound` makes from the hosts that may be called: https only
+  unless a host is listed with `http://`, no redirects, no address
+  inside the network unless its host is listed by name, ten seconds and
+  one megabyte. A program that does not import the package links no
+  HTTP client.
+- **Secrets are the host program's.** `SECRET("token")` is filled in
+  from `Options.Secrets` at the moment of sending, at every attempt, and
+  is stored nowhere: not in the definition, the row, the event, a
+  preview or an error.
+- **A secret goes only to its service.** The host program names the
+  hosts of each connection. A request with a connection goes to those
+  hosts and to no other; a request without one reads no secret.
+
+A request that gives no body carries the call itself, the same JSON a Go
+function receives, with `Idempotency-Key`, `FadoDB-Event` and
+`FadoDB-Attempt` as headers and, when the definition names a `sign`
+secret, an HMAC signature in `FadoDB-Signature`. That is the whole
+protocol of a developer's own action: an HTTPS endpoint in any language
+that checks the signature, makes twice once by the key and answers with
+JSON. `http.call` is the engine's own declared action, for one request
+written in a rule, to the hosts listed for requests without a
+connection.
+
+Planned, with the next step of Phase 4: `into`, which writes what an
+action returned back to the document, and the sample packages.
 
 ### Explicit tables
 
@@ -785,10 +834,13 @@ held one. History and events are never rewritten.
 ### Go API
 
 ```go
+out, err := outbound.Allow(outbound.Options{Connections: map[string][]string{"slack": {"slack.com"}}})
 db, err := fado.Open("app.fado", fado.Options{
     Actions: map[string]fado.ActionFunc{"books.post": func(ctx context.Context, call *fado.ActionCall) (fado.Values, error) {
         return post(ctx, call.Key, call.Args, call.Event)
     }},
+    Outbound: out,
+    Secrets:  func(ctx context.Context, connection, name string) (string, error) { return vault.Get(ctx, connection, name) },
 })
 act, err := db.DefineAction(ctx, actionJSON)
 cls, err := db.DefineClass(ctx, classJSON)
@@ -824,8 +876,7 @@ The principal decides what a call may set and sees
 with `forbidden`, and every document comes back projected. Every refusal
 is a `fado.Error` with a stable code and the variable it is about, or the
 `Diagnostics` of a definition.
-Layouts, `QUERY`, subscriptions and actions sent as HTTP requests
-arrive with their phases.
+Layouts, `QUERY` and subscriptions arrive with their phases.
 
 ### JSON command set
 
@@ -997,7 +1048,7 @@ fadodb/
   internal/model/        class definitions, layouts, variables, defaults, validation, migrations
   internal/store/        sqlite store, history, child tables, events, outbox, schema
   internal/state/        statechart engine
-  internal/rules/        ECA rules, built-in actions, outbox worker
+  fado/outbound/         the sender of an action's HTTP requests; only a program that allows outbound calls imports it
   internal/auth/         users, groups, tokens, predicate compilation
   internal/query/        LOOKUP/QUERY compilation, filter DSL, SQL endpoint, authorizer
   internal/server/       http, websocket, command dispatch

@@ -131,16 +131,59 @@ All notable changes to FadoDB are recorded here. The format follows
     `bad_result` for the store; `unknown_action` and `unknown_parameter`
     for a definition.
 
+- Actions the engine sends as HTTP requests (ADR-0045, items 3 to 7).
+  - A definition may carry a `request`: `method`, `url`, `headers` and
+    `body`, each a pure formula over the parameters, or a template for
+    the body. `ok` is a condition over the reply and `result` gives the
+    returned values, over `STATUS` and `BODY`. `DefineAction` stores it
+    like any definition, and a rule calls it with `args`.
+  - `http.call`, the engine's own declared action, for a request written
+    in the rule: `url`, `method`, `headers` and `body` under `args`.
+  - `Options.Outbound` is what sends. Package `fado/outbound` makes it:
+    `outbound.Allow` takes the hosts a database may call and, for every
+    connection a definition may name, that connection's hosts. A
+    database opened without it sends nothing. Only https, unless a host
+    is listed with `http://`; no redirect is followed; an address inside
+    the network is refused unless its host is listed by name; ten
+    seconds for a call and one megabyte of a reply.
+  - `Options.Secrets` supplies the secrets of a connection when a
+    request is sent. A definition reads one with `SECRET("name")`, a new
+    function that binds only in a request. No secret is stored: not in a
+    definition, a row, an event, a preview or an error. A connection's
+    secret goes only to the hosts of that connection.
+  - A request without a body of its own carries the call as JSON, the
+    arguments and the event that fired the rule, with `Idempotency-Key`,
+    `FadoDB-Event` and `FadoDB-Attempt` as headers. With `sign` it also
+    carries `FadoDB-Signature`, which `fado.VerifySignature` checks.
+  - No reply, 408, 429 and 5xx are tried again, no sooner than
+    `Retry-After` asks; any other reply that is no success, and a 2xx
+    for which `ok` is not TRUE, is a refusal.
+  - `PreviewAction` shows the request with secrets masked; `TryAction`
+    sends it for real.
+  - `URLENCODE(text)`, a pure function, on the Go VM, SQLite and DuckDB.
+  - The conformance suites `requests` and `outbound-off` under
+    `conformance/rules/`, `conformance/binding/secret.json`,
+    `BenchmarkOutboxDeclared` and `BenchmarkDeclaredAction`.
+  - New codes: `outbound_off`, `unknown_connection`, `host_not_allowed`,
+    `secret_unavailable`, `no_reply`, `try_later`, `refused`, `not_ok`
+    and `reply_too_large` for the store; `unknown_secret` and
+    `unknown_connection` for a definition.
+
 ### Changed
 
+- `http.call` is a call like any other and takes its arguments under
+  `args`. Before it was accepted in any shape and not run; the old
+  shape, with `url` beside `action`, is refused with `bad_json`. In a
+  process that sends nothing its row gets no answer, `outbound_off`.
+- The dependency gate checks that the `fadodb` binary links no HTTP
+  client. The placeholder package `internal/rules` is gone; the sender
+  is `fado/outbound`.
 - A rule that names an action nobody defined is refused with
   `unknown_action`, a parameter the action lacks with
   `unknown_parameter`, a required one left out with `missing` and a
   formula of another type with `type_mismatch`, all when the class is
-  defined. Before, any action name was accepted and not run. `http.call`
-  alone is still accepted and not run, until the step that sends
-  requests; so are `into` on an action and `request` in a definition,
-  which are refused with `not_supported` until theirs.
+  defined. Before, any action name was accepted and not run. `into` on
+  an action is refused with `not_supported` until its step.
 - A redefinition of an action that would break a rule of a class is
   refused with `not_allowed` naming that rule, as a redefinition of a
   class or of a table is.

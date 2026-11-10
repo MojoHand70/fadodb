@@ -426,9 +426,6 @@ func compileAction(c *collector, path string, raw json.RawMessage, cls *Class, s
 		if len(def.Variables) == 0 && len(a.Variables) == 0 {
 			c.hint(CodeNotAllowed, path, "no variable of the class lists refresh among its triggers, so the action would recompute nothing", `give a triggered variable "on": ["refresh"], or drop the action`)
 		}
-	case ActionHTTPCall:
-		// The engine's own declared action arrives with the step that sends
-		// requests (ADR-0045, item 3); until then it is kept as written.
 	default:
 		return compileCall(c, path, raw, scope, a)
 	}
@@ -451,7 +448,10 @@ func compileCall(c *collector, path string, raw json.RawMessage, scope *formula.
 	}
 	a.Queued, a.Call = true, true
 	lenient := c.env.Lenient
-	if c.env.Actions != nil {
+	if strings.EqualFold(def.Action, ActionHTTPCall) {
+		// The engine's own declared action is defined in every database.
+		a.Spec = HTTPCall()
+	} else if c.env.Actions != nil {
 		a.Spec, _ = c.env.Actions(def.Action)
 	}
 	switch {
@@ -511,7 +511,8 @@ func compileCall(c *collector, path string, raw json.RawMessage, scope *formula.
 			c.hint(CodeBadValue, vpath, "the argument of "+article(p.Type.String())+" parameter is a formula, written as text", `a literal text is "\"paid\"", a number "0"; only a json parameter takes a template`)
 			continue
 		default:
-			if arg.Template = compileTemplate(c, vpath, value, scope, 1); arg.Template == nil {
+			over := func(src string) (*formula.Program, error) { return c.bind(src, scope, formula.ModeAny) }
+			if arg.Template = compileTemplate(c, vpath, value, over, 1); arg.Template == nil {
 				continue
 			}
 		}
@@ -564,9 +565,11 @@ func bindArg(c *collector, path, src string, scope *formula.Scope, p *Param) *fo
 	return prog
 }
 
-// compileTemplate reads the template of a json argument: every string a
-// formula over the document, of any scalar type.
-func compileTemplate(c *collector, path string, raw json.RawMessage, scope *formula.Scope, depth int) *Template {
+// compileTemplate reads a template, the JSON it becomes with a formula in
+// the place of every string: the argument of a json parameter, over the
+// document, or the body of a request, over the action's parameters. bind
+// binds one of its formulas, of any scalar type.
+func compileTemplate(c *collector, path string, raw json.RawMessage, bind func(src string) (*formula.Program, error), depth int) *Template {
 	raw = bytes.TrimSpace(raw)
 	if depth > MaxTemplateDepth {
 		c.addf(CodeTooDeep, path, "a template nests at most %d deep", MaxTemplateDepth)
@@ -580,7 +583,7 @@ func compileTemplate(c *collector, path string, raw json.RawMessage, scope *form
 	case '"':
 		t := &Template{}
 		_ = json.Unmarshal(raw, &t.Src)
-		prog, err := c.bind(t.Src, scope, formula.ModeAny)
+		prog, err := bind(t.Src)
 		if err != nil {
 			c.formulaErr(path, err)
 			return nil
@@ -600,7 +603,7 @@ func compileTemplate(c *collector, path string, raw json.RawMessage, scope *form
 		t := &Template{Object: true}
 		ok := true
 		for _, name := range names {
-			value := compileTemplate(c, path+"/"+name, values[name], scope, depth+1)
+			value := compileTemplate(c, path+"/"+name, values[name], bind, depth+1)
 			if value == nil {
 				ok = false
 				continue
@@ -620,7 +623,7 @@ func compileTemplate(c *collector, path string, raw json.RawMessage, scope *form
 		t := &Template{Array: true}
 		ok := true
 		for i, item := range items {
-			value := compileTemplate(c, fmt.Sprintf("%s/%d", path, i), item, scope, depth+1)
+			value := compileTemplate(c, fmt.Sprintf("%s/%d", path, i), item, bind, depth+1)
 			if value == nil {
 				ok = false
 				continue

@@ -84,6 +84,21 @@ type Options struct {
 	// function that calls the database captures the variable the result
 	// of Open is assigned to.
 	Actions map[string]ActionFunc
+	// Outbound sends the HTTP requests of declared actions (ADR-0045, item
+	// 7). nil, the default, sends nothing: a definition with a request
+	// cannot be defined, and an action that needs one gets no answer and
+	// dies saying so. A host program that allows outbound calls gives the
+	// result of outbound.Allow, of package fado/outbound, with the hosts
+	// that may be called.
+	Outbound Outbound
+	// Secrets gives the value of a secret of a connection at the moment a
+	// request that reads it is sent (ADR-0045, item 6). It is asked at
+	// every attempt, so a provider that renews a token serves it as it
+	// serves a fixed one, and an error or an empty value is no answer. The
+	// engine keeps what it returns for the one request and stores it
+	// nowhere. nil supplies none: only definitions that read no secret can
+	// be defined.
+	Secrets func(ctx context.Context, connection, name string) (string, error)
 	// Now is the clock of the database: it stamps every commit and is
 	// what NOW() and TODAY() read in every formula, unless a call that
 	// reads or previews chooses a moment with At (ADR-0042). nil is
@@ -142,6 +157,11 @@ type Store struct {
 	actions     map[string]*action
 	actionOrder []string
 	funcs       map[string]ActionFunc
+	// outbound sends the requests of declared actions and secretFn
+	// supplies their secrets (ADR-0045); both are the host program's, and
+	// nil when it gave none.
+	outbound Outbound
+	secretFn func(ctx context.Context, connection, name string) (string, error)
 
 	// sqlConn is the read-only SQL endpoint's connection, with its
 	// authorizer, made on first use; sqlMu serialises its statements.
@@ -228,6 +248,7 @@ func Open(path string, o Options) (*Store, error) {
 		schemas: model.NewSchemaSet(), schemaJSON: map[string][]byte{}, classes: map[string]*class{}, versions: map[string]map[int]*class{},
 		tables: map[string]*table{}, plans: map[*formula.QuerySlot]*lookupPlan{},
 		actions: map[string]*action{}, funcs: funcs, inFlight: map[flight]struct{}{},
+		outbound: o.Outbound, secretFn: o.Secrets,
 		stop: make(chan struct{}), done: make(chan struct{}),
 		outbox: o.Outbox, wake: make(chan struct{}, 1), workDone: make(chan struct{}),
 	}
@@ -574,7 +595,8 @@ func (s *Store) load(ctx context.Context) error {
 	}
 	rows.Close()
 	// The action definitions, which the rules of the classes name
-	// (ADR-0045).
+	// (ADR-0045): the engine's own http.call, then the stored ones.
+	s.actions[strings.ToUpper(model.ActionHTTPCall)] = &action{spec: model.HTTPCall()}
 	if err := s.loadActions(ctx); err != nil {
 		return err
 	}

@@ -1,0 +1,31 @@
+{
+  "suite": "outbound-off",
+  "description": "A process that was not opened with leave to send requests sends none (ADR-0045, item 7). A class that names http.call is defined all the same, since the definition is the engine's and travels with every database, and its commit queues the action. The worker gets no answer for it, with the code outbound_off and the usual retries, so that a process that may send can still run it. A trial is refused, and a preview shows the request without judging its address.",
+  "clock": "2026-03-01 12:00:00",
+  "class": {
+    "name": "Ticket",
+    "variables": {"subject": {"type": "text"}},
+    "states": {"initial": "open", "list": ["open", "sent"]},
+    "transitions": [{"name": "send", "from": "open", "to": "sent"}],
+    "rules": [
+      {"on": "transition", "name": "send",
+       "do": [{"action": "http.call", "args": {"url": "\"https://hooks.example/tickets\"", "method": "\"PUT\"", "body": {"subject": "subject"}}}]}
+    ]
+  },
+  "script": [
+    {"do": "create", "doc": "t", "values": {"subject": "printer"}, "expect": {"state": "open", "version": 1}},
+    {"do": "preview", "doc": "t", "transition": "send",
+     "expect": {"state": "sent", "queued": [{"action": "http.call", "args": {"url": "https://hooks.example/tickets", "method": "PUT", "body": {"subject": "printer"}}}]}},
+    {"do": "transition", "doc": "t", "transition": "send",
+     "expect": {"state": "sent", "version": 2, "outbox": [{"action": "http.call", "status": "pending", "attempts": 0}]}},
+    {"name": "no answer: this process sends nothing", "do": "drain", "doc": "t",
+     "expect": {"drained": 1, "outbox": [{"action": "http.call", "status": "pending", "code": "outbound_off", "attempts": 1}], "events": ["created", "transition:send"]}},
+    {"do": "wait", "seconds": 1, "expect": {}},
+    {"do": "drain", "doc": "t", "expect": {"drained": 1, "outbox": [{"action": "http.call", "status": "pending", "code": "outbound_off", "attempts": 2}]}},
+    {"name": "a trial is refused", "do": "try", "action": "http.call", "args": {"url": "https://hooks.example/tickets"}, "expect": {"code": "outbound_off"}},
+    {"name": "a preview shows the request", "do": "preview_action", "action": "http.call", "args": {"url": "https://hooks.example/tickets", "method": "PUT", "body": {"subject": "x"}},
+     "expect": {"request": {"method": "PUT", "url": "https://hooks.example/tickets", "headers": {"Content-Type": "application/json"}, "body": {"subject": "x"}}}},
+    {"name": "the catalogue says the action is defined and cannot run here", "do": "actions",
+     "expect": {"catalogue": [{"name": "http.call", "kind": "declared", "available": false}]}}
+  ]
+}

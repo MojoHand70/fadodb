@@ -139,7 +139,18 @@ type BindOptions struct {
 	// Sources are the explicit tables LOOKUP may read (ADR-0016); nil
 	// means none, and every LOOKUP is an unknown source.
 	Sources Sources
+	// Secrets are the secrets SECRET may name, as their connection
+	// declares them (ADR-0045). nil refuses SECRET, which is so everywhere
+	// but in the request of an action definition; an empty list allows it
+	// and knows no name.
+	Secrets []string
 }
+
+// SecretSlot starts the name of the slot a SECRET call reads. The binder
+// turns SECRET("token") into the read of a text variable SECRET.token,
+// which whoever runs the program fills in when it runs: a secret is never
+// a constant of a program, and the VM needs no way to fetch one.
+const SecretSlot = "SECRET."
 
 // Bind parses and binds a formula against a scope.
 func Bind(src string, scope *Scope, opts BindOptions) (*Program, error) {
@@ -170,7 +181,7 @@ func BindNode(src string, n Node, scope *Scope, opts BindOptions) (*Program, err
 	return b.prog, nil
 }
 
-var classOrder = map[Class]int{ClassPure: 0, ClassContext: 1, ClassLookup: 2, ClassQuery: 3}
+var classOrder = map[Class]int{ClassPure: 0, ClassContext: 1, ClassLookup: 2, ClassQuery: 3, ClassSecret: 4}
 
 // maxTries bounds the nesting of IFERROR, which is the VM's handler stack.
 const maxTries = 16
@@ -878,12 +889,44 @@ func (b *binder) ifError(n *Call) (Type, error) {
 	return b.branches("IFERROR", n.P, vt, vlit, n.Args[0], ft, flit, n.Args[1])
 }
 
+// secret binds SECRET("name") (ADR-0045): the read of a slot the caller
+// fills with the secret's value. The name is a literal, so that which
+// secrets a request reads is known when its action is defined, and it is
+// one the connection declares.
+func (b *binder) secret(n *Call) (Type, error) {
+	if b.opts.Secrets == nil {
+		return Type{}, b.errAt(n.P, "SECRET may be used only in the request of an action definition (ADR-0045)")
+	}
+	if err := LookupFunction("SECRET").checkArity("SECRET", len(n.Args)); err != nil {
+		return Type{}, b.errAt(n.P, "%v", err)
+	}
+	lit, ok := n.Args[0].(*TextLit)
+	if !ok {
+		return Type{}, b.errAt(n.Args[0].Pos(), "SECRET: the name of the secret is a text literal, such as SECRET(\"token\")")
+	}
+	for _, name := range b.opts.Secrets {
+		if strings.EqualFold(name, lit.Value) {
+			b.classes[ClassSecret] = true
+			b.emit(OpLoad, b.slot(Variable{Name: SecretSlot + name, Type: Scalar(KindText)}), n.P)
+			b.push(1)
+			return Scalar(KindText), nil
+		}
+	}
+	if len(b.opts.Secrets) == 0 {
+		return Type{}, b.errAt(n.Args[0].Pos(), "SECRET: the definition names no connection that declares the secret %q", lit.Value)
+	}
+	return Type{}, b.errAt(n.Args[0].Pos(), "SECRET: the connection declares no secret %q; it declares %s", lit.Value, strings.Join(b.opts.Secrets, ", "))
+}
+
 func (b *binder) call(n *Call) (Type, error) {
 	if n.Name == "IFERROR" {
 		return b.ifError(n)
 	}
 	if n.Name == "LOOKUP" {
 		return b.lookup(n)
+	}
+	if n.Name == "SECRET" {
+		return b.secret(n)
 	}
 	id, ok := builtinByName[n.Name]
 	if !ok {

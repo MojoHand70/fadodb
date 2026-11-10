@@ -109,8 +109,11 @@ func alterDDL(old, c *class) []string {
 		}
 	}
 	for _, table := range []string{old.table, old.history} {
+		// The moment columns of a triggered variable (ADR-0043) keep their
+		// types whatever the variable becomes, and the version that had
+		// them still reads them, so a retype leaves them in place.
 		for _, col := range old.cls.Columns {
-			if retyped[strings.ToUpper(col.Variable)] {
+			if retyped[strings.ToUpper(col.Variable)] && col.Moment == "" {
 				if col.Index && table == old.table {
 					ddl = append(ddl, "DROP INDEX IF EXISTS "+quote(old.table+"_"+col.Name))
 				}
@@ -118,7 +121,7 @@ func alterDDL(old, c *class) []string {
 			}
 		}
 		for _, col := range c.cls.Columns {
-			if _, had := oldCols[strings.ToUpper(col.Name)]; !had || retyped[strings.ToUpper(col.Variable)] {
+			if _, had := oldCols[strings.ToUpper(col.Name)]; !had || retyped[strings.ToUpper(col.Variable)] && col.Moment == "" {
 				ddl = append(ddl, "ALTER TABLE "+quote(table)+" ADD COLUMN "+quote(col.Name)+" "+sqlType(col.Type.Kind))
 			}
 		}

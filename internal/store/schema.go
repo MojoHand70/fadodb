@@ -127,12 +127,19 @@ func (ch *child) tableDDL() string {
 func (c *class) viewDDL() []string {
 	cls := c.cls
 	cols := quoteAll(columnNames(cls.Columns))
-	all := func(prefix []string) string {
-		return strings.Join(append(quoteAll(prefix), cols...), ", ")
+	// A view shows the time of a triggered variable's moment as
+	// <name>__at beside the stored <name>__asof and <name>__error.
+	all := func(prefix []string, table string) string {
+		list := append(quoteAll(prefix), cols...)
+		names := c.atNames()
+		for i, expr := range c.atExprs(table) {
+			list = append(list, expr+" AS "+quote(names[i]))
+		}
+		return strings.Join(list, ", ")
 	}
 	ddl := []string{
-		"CREATE VIEW " + quote(cls.Name) + " AS SELECT " + all(systemColumns) + " FROM " + quote(c.table),
-		"CREATE VIEW " + quote(cls.Name+"_history") + " AS SELECT " + all(append(append([]string{}, systemColumns...), historyColumns...)) + " FROM " + quote(c.history),
+		"CREATE VIEW " + quote(cls.Name) + " AS SELECT " + all(systemColumns, c.table) + " FROM " + quote(c.table),
+		"CREATE VIEW " + quote(cls.Name+"_history") + " AS SELECT " + all(append(append([]string{}, systemColumns...), historyColumns...), c.history) + " FROM " + quote(c.history),
 		"CREATE VIEW " + quote(cls.Name+"_events") + ` AS SELECT e.*, d."qualifier" FROM "events" e JOIN "event_docs" d ON d."event_id" = e."event_id" WHERE d."class" = ` + lit(cls.Name),
 	}
 	if cls.States != nil {

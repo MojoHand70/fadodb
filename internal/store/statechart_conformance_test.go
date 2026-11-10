@@ -103,6 +103,18 @@ type scriptExpect struct {
 	Skipped []string       `json:"skipped,omitempty"`
 	Queued  []scriptQueued `json:"queued,omitempty"`
 	Errors  []scriptError  `json:"errors,omitempty"`
+	// Computed are the moments of triggered variables, by name (ADR-0043):
+	// the version whose commit computed the value, the error of a
+	// recomputation that failed since, and the time in the notation of
+	// At where given; null for a variable that has no moment. They are
+	// checked on the document, or on every document a query returned.
+	Computed map[string]*scriptMoment `json:"computed,omitempty"`
+}
+
+type scriptMoment struct {
+	Version int64  `json:"version,omitempty"`
+	Error   string `json:"error,omitempty"`
+	At      string `json:"at,omitempty"`
 }
 
 type scriptQueued struct {
@@ -262,6 +274,24 @@ func runStatechartSuite(t *testing.T, suite *statechartSuite) {
 			for _, v := range want.Absent {
 				if _, ok := d.Values[v]; ok {
 					t.Errorf("%s: %s is present in %s, want it absent", name, v, d.ID)
+				}
+				if _, ok := d.Computed[v]; ok {
+					t.Errorf("%s: the moment of %s is present in %s, want it absent with the variable", name, v, d.ID)
+				}
+			}
+			for v, m := range want.Computed {
+				got, ok := d.Computed[v]
+				switch {
+				case m == nil:
+					if ok {
+						t.Errorf("%s: %s has the moment %+v, want none", name, v, got)
+					}
+				case !ok:
+					t.Errorf("%s: %s has no moment, want %+v", name, v, *m)
+				case got.Version != m.Version || got.Error != m.Error:
+					t.Errorf("%s: the moment of %s is %+v, want %+v", name, v, got, *m)
+				case m.At != "" && got.At != moment(t, m.At).Unix():
+					t.Errorf("%s: %s was computed at %d, want %s", name, v, got.At, m.At)
 				}
 			}
 			for _, v := range want.Present {

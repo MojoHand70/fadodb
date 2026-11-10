@@ -41,6 +41,9 @@ type (
 	Values = store.Values
 	// Document is a document at one version.
 	Document = store.Document
+	// Moment is when a triggered variable's value was computed
+	// (ADR-0043): Document.Computed has one per such variable.
+	Moment = store.Moment
 	// HistoryRow is one committed version with its validity and actor.
 	HistoryRow = store.HistoryRow
 	// Event is one row of the event log.

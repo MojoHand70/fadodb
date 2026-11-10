@@ -89,7 +89,8 @@ const (
 )
 
 // Trigger is one trigger of a triggered variable: refresh, enter:<state>,
-// exit:<state>, transition:<name>, table:<name> or schedule:<spec>.
+// exit:<state> or transition:<name>. table:<name> and schedule:<spec>
+// are refused until the phase that runs them (ADR-0043).
 type Trigger struct {
 	Kind string
 	Arg  string
@@ -106,6 +107,35 @@ type Column struct {
 	Variable string
 	Path     string
 	Index    bool
+	// Moment marks one of the two system columns of a triggered variable
+	// (ADR-0043): MomentAsOf, the version of the document whose commit
+	// last computed the value, or MomentError, the code of a failed
+	// recomputation since then. Its Path is its own name. "" otherwise.
+	Moment string
+}
+
+// The moment columns of a triggered variable are <name>__asof and
+// <name>__error; __ is reserved in every name, so none collides.
+const (
+	MomentAsOf  = "asof"
+	MomentError = "error"
+)
+
+// MomentColumn names a moment column of a triggered variable.
+func MomentColumn(variable, moment string) string { return variable + PathSeparator + moment }
+
+// Triggered reports whether the variable is computed on triggers.
+func (v *Variable) Triggered() bool { return v.Computed && v.Mode == ModeTriggered }
+
+// On reports whether the variable lists the trigger: On("refresh", ""),
+// On("enter", "approved").
+func (v *Variable) On(kind, arg string) bool {
+	for _, t := range v.Triggers {
+		if t.Kind == kind && t.Arg == arg {
+			return true
+		}
+	}
+	return false
 }
 
 // ChildTable is the per-version table of a composite variable
@@ -321,9 +351,6 @@ func CompileIn(def *Definition, env Env) (*Class, Diagnostics) {
 					v.Sources = sourcesOf(prog)
 				}
 			}
-			for i, t := range v.Def.On {
-				checkTrigger(c, fmt.Sprintf("%s/on/%d", path, i), t, cls, v)
-			}
 			continue
 		}
 		if v.Def.Default != "" {
@@ -361,6 +388,16 @@ func CompileIn(def *Definition, env Env) (*Class, Diagnostics) {
 	// The statechart, rules, access rules and rights: structure and
 	// formulas now, behaviour in their phases.
 	compileTransitions(c, cls, def.Transitions, scope)
+	// The triggers of the triggered variables name states and transitions
+	// and are checked against the ones a frozen document passes through,
+	// so they wait for the transitions.
+	for _, v := range cls.Variables {
+		if v.Computed {
+			for i, t := range v.Def.On {
+				checkTrigger(c, fmt.Sprintf("/variables/%s/on/%d", v.Name, i), t, cls, v)
+			}
+		}
+	}
 	compileRules(c, cls, def.Rules, scope)
 	compileAccess(c, cls, def.Access, scope)
 	compileRights(c, cls, def, scope)
@@ -910,12 +947,19 @@ func checkTrigger(c *collector, path, text string, cls *Class, v *Variable) {
 			return
 		}
 	case "table", "schedule":
-		if arg == "" {
-			c.addf(CodeBadTrigger, path, "%s takes an argument: %s:<%s>", kind, kind, map[string]string{"table": "name", "schedule": "spec"}[kind])
-			return
-		}
+		// Accepted and never fired until ADR-0043; refused until the
+		// phase that runs them, as a binding a build lacks is.
+		c.hint(CodeNotSupported, path, "this build does not recompute a variable on "+kind+":", "use refresh, and send the command when the "+map[string]string{"table": "table changes", "schedule": "time comes"}[kind]+"; "+kind+": arrives with the set-wise work of a later phase")
+		return
 	default:
-		c.hint(CodeBadTrigger, path, "unknown trigger "+quote(text), "one of refresh, enter:<state>, exit:<state>, transition:<name>, table:<name>, schedule:<spec>")
+		c.hint(CodeBadTrigger, path, "unknown trigger "+quote(text), "one of refresh, enter:<state>, exit:<state>, transition:<name>")
+		return
+	}
+	// A frozen document computes nothing (ADR-0043, item 8): a trigger
+	// that can fire on a move out of a terminal state is refused.
+	if why := frozenTrigger(cls, RuleDef{On: kind, State: arg, Name: arg}); why != "" {
+		c.hint(CodeNotAllowed, path, "a variable cannot recompute on "+text+": "+why+", and a frozen document computes nothing (ADR-0039)",
+			"name the transition that arrives from a live state, or the entry of a state only live states lead to")
 		return
 	}
 	v.Triggers = append(v.Triggers, t)
@@ -1022,6 +1066,13 @@ func compileColumns(c *collector, cls *Class) {
 			cls.Children = append(cls.Children, ChildTable{Variable: v.Name, Columns: columnsOf("value", elem, v.Name, false)})
 		default:
 			cls.Columns = append(cls.Columns, columnsOf(v.Name, v.Type, v.Name, v.Index)...)
+			if v.Triggered() {
+				// The moment of a triggered value, beside it (ADR-0043).
+				asof, errc := MomentColumn(v.Name, MomentAsOf), MomentColumn(v.Name, MomentError)
+				cls.Columns = append(cls.Columns,
+					Column{Name: asof, Type: formula.DecimalType(0), Variable: v.Name, Path: asof, Moment: MomentAsOf},
+					Column{Name: errc, Type: textType, Variable: v.Name, Path: errc, Moment: MomentError})
+			}
 		}
 	}
 	const systemColumns = 7

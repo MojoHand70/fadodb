@@ -42,6 +42,9 @@ type caction struct {
 	// resets are the inputs a reset names, in the order written; defaults
 	// the ones among them that have a default, in dependency order.
 	resets, defaults []*cvar
+	// refresh are the triggered variables a refresh recomputes, in
+	// declaration order.
+	refresh []*cvar
 }
 
 // cset is one assignment of a set.
@@ -88,6 +91,9 @@ type ruleRun struct {
 	res     *result
 	commit  int
 	evalCtx *formula.Context
+	// secs is the commit's time, the time of the moment of a variable a
+	// refresh recomputes.
+	secs int64
 }
 
 // layoutRules binds the slots of the rules' formulas and indexes the
@@ -118,6 +124,10 @@ func (c *class) layoutRules() error {
 			named := map[*cvar]bool{}
 			for _, v := range a.Variables {
 				cv := c.byName[strings.ToUpper(v.Name)]
+				if a.Name == model.ActionRefresh {
+					ca.refresh = append(ca.refresh, cv)
+					continue
+				}
 				ca.resets = append(ca.resets, cv)
 				named[cv] = true
 			}
@@ -276,6 +286,8 @@ func (s *Store) runRule(run *ruleRun, row *docRow, cr *crule) *Error {
 			args, err = s.runSet(run, row, act)
 		case act.a.Name == model.ActionReset:
 			args, err = s.runReset(run, row, act)
+		case act.a.Name == model.ActionRefresh:
+			args, err = s.runRefresh(run, row, act)
 		case act.a.Name == model.ActionEmit:
 			s.emits = append(s.emits, emitted{commit: run.commit, name: act.a.Event})
 			if preview {
@@ -418,6 +430,31 @@ func (s *Store) runReset(run *ruleRun, row *docRow, act *caction) (Values, *Erro
 		}
 	}
 	return args, nil
+}
+
+// runRefresh recomputes the triggered variables the action names, in
+// declaration order, each with the moment of this commit. A recomputation
+// that errors leaves its value as it was and is recorded beside it; it is
+// no failure of the action (ADR-0043, item 9).
+func (s *Store) runRefresh(run *ruleRun, row *docRow, act *caction) (Values, *Error) {
+	had := len(run.res.errs)
+	for _, cv := range act.refresh {
+		if err := s.recompute(run.c, cv, row, run.evalCtx, run.secs, run.preview, &run.res.errs); err != nil {
+			err.Path = act.a.Path()
+			return nil, err
+		}
+	}
+	for _, e := range run.res.errs[had:] {
+		e.Path = act.a.Path()
+	}
+	if !run.preview {
+		return nil, nil
+	}
+	names := make([]any, len(act.refresh))
+	for i, cv := range act.refresh {
+		names[i] = cv.v.Name
+	}
+	return Values{"variables": names}, nil
 }
 
 // recalcAfter recalculates the auto variables that depend on what an

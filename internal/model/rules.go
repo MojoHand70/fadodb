@@ -37,14 +37,17 @@ type Action struct {
 	// Rule and Index place the action: "/rules/2/do/0".
 	Rule  *Rule
 	Index int
-	// Name is the action as written: set, reset, emit, or an action of the
-	// outbox.
+	// Name is the action as written: set, reset, refresh, emit, or an
+	// action of the outbox.
 	Name string
-	// Sync is true for set, reset and emit.
+	// Sync is true for set, reset, emit and a refresh of the rule's own
+	// document; a refresh that names another document belongs to the
+	// outbox (ADR-0044).
 	Sync bool
 	// Sets are the assignments of a set, in the order written.
 	Sets []Assignment
-	// Variables are the inputs a reset names, in the order written.
+	// Variables are the inputs a reset names, in the order written, or the
+	// triggered variables a refresh recomputes, in declaration order.
 	Variables []*Variable
 	// Event is the name the custom event of an emit carries.
 	Event string
@@ -275,8 +278,55 @@ func compileAction(c *collector, path string, raw json.RawMessage, cls *Class, s
 		}
 		a.Event = def.Event
 	case ActionRefresh:
-		c.hint(CodeNotSupported, path+"/action", "this build does not run the refresh action yet", "it arrives with the triggered variables, the next step of Phase 4")
-		return nil
+		// A refresh that carries an id names another document and belongs
+		// to the outbox (ADR-0044, item 13); it is kept as written.
+		var other struct {
+			Class json.RawMessage `json:"class"`
+			ID    json.RawMessage `json:"id"`
+		}
+		_ = json.Unmarshal(raw, &other)
+		if len(other.ID) > 0 {
+			return a
+		}
+		if len(other.Class) > 0 {
+			c.hint(CodeMissing, path+"/id", "a refresh that names a class names the document too", `"id" is a formula that gives the document's id; without class and id a refresh recomputes the rule's own document`)
+			return nil
+		}
+		a.Sync = true
+		var def struct {
+			Action    string   `json:"action"`
+			Variables []string `json:"variables"`
+		}
+		if !decodeAction(c, path, raw, &def) {
+			return nil
+		}
+		named := map[string]bool{}
+		for k, name := range def.Variables {
+			vpath := fmt.Sprintf("%s/variables/%d", path, k)
+			v, ok := cls.Variable(name)
+			switch {
+			case !ok:
+				c.addf(CodeUnknownVariable, vpath, "unknown variable %s", quote(name))
+			case named[upper(name)]:
+				c.addf(CodeDuplicate, vpath, "%s is named twice", quote(name))
+			case !v.Triggered():
+				c.hint(CodeNotAllowed, vpath, "a refresh recomputes triggered variables; "+v.Name+" is not one", `a triggered variable has "mode": "triggered" and lists its triggers under "on"`)
+			case !v.On("refresh", ""):
+				c.hint(CodeNotAllowed, vpath, v.Name+" does not list refresh among its triggers", `add "refresh" to its "on"`)
+			default:
+				named[upper(name)] = true
+			}
+		}
+		// In declaration order, which is the order they recompute in; with
+		// no variable named, every one that lists refresh.
+		for _, v := range cls.Variables {
+			if v.Triggered() && v.On("refresh", "") && (len(def.Variables) == 0 || named[upper(v.Name)]) {
+				a.Variables = append(a.Variables, v)
+			}
+		}
+		if len(def.Variables) == 0 && len(a.Variables) == 0 {
+			c.hint(CodeNotAllowed, path, "no variable of the class lists refresh among its triggers, so the action would recompute nothing", `give a triggered variable "on": ["refresh"], or drop the action`)
+		}
 	}
 	return a
 }

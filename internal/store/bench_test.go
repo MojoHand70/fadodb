@@ -749,3 +749,49 @@ func benchTransitions(b *testing.B, definition, class string) {
 		}
 	}
 }
+
+// BenchmarkTriggered measures the triggered variables of one commit
+// alone (ADR-0043): a transition that raises the triggers of two, one of
+// which an auto variable reads and so recalculates. It must not allocate.
+func BenchmarkTriggered(b *testing.B) {
+	s, err := Open(filepath.Join(b.TempDir(), "bench.fado"), Options{})
+	if err != nil {
+		b.Fatal(err)
+	}
+	defer s.Close()
+	ctx := context.Background()
+	if _, err := s.DefineClass(ctx, []byte(`{
+ "name": "Locked",
+ "variables": {
+   "amount": {"type": "number"},
+   "rate":   {"type": "number"},
+   "locked": {"formula": "rate", "mode": "triggered", "on": ["transition:send", "refresh"]},
+   "price":  {"formula": "amount * locked"},
+   "by":     {"formula": "USER()", "mode": "triggered", "on": ["enter:sent"]}
+ },
+ "states": {"initial": "draft", "list": ["draft", "sent"]},
+ "transitions": [{"name": "send", "from": "draft", "to": "sent"}]}`)); err != nil {
+		b.Fatal(err)
+	}
+	doc, err := s.Create(ctx, "Locked", Values{"amount": 200, "rate": 0.5})
+	if err != nil {
+		b.Fatal(err)
+	}
+	c, _ := s.class("Locked")
+	row, err := c.scanRow(c.w.selectCurrent.QueryRowContext(ctx, doc.ID), false)
+	if err != nil {
+		b.Fatal(err)
+	}
+	evalCtx := &formula.Context{User: "alice", Now: start.Unix(), ID: row.id}
+	var errs []*Error
+	row.state = "sent"
+	rate := c.byName["RATE"].leaf
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; b.Loop(); i++ {
+		row.vals[rate] = formula.Number(float64(i&1) + 0.5) // the value changes every time
+		if err := s.recomputeFor(c, row, commitTransition, "draft", "send", evalCtx, start.Unix(), false, &errs); err != nil {
+			b.Fatal(err)
+		}
+	}
+}

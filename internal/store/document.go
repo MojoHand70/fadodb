@@ -16,7 +16,7 @@ type scanner interface {
 // scanRow reads a current row, or a history row with its four extra
 // columns, as the statements of prepare select them.
 func (c *class) scanRow(sc scanner, history bool) (*docRow, error) {
-	n := len(systemColumns) + len(c.cls.Columns)
+	n := len(systemColumns) + len(c.cls.Columns) + len(c.triggered)
 	if history {
 		n += len(historyColumns)
 	}
@@ -38,6 +38,12 @@ func (c *class) scanRow(sc scanner, history bool) (*docRow, error) {
 	r.vals = make([]formula.Value, len(c.leaves))
 	for i, l := range c.leaves {
 		r.vals[i], rest = decode(l, rest)
+	}
+	if len(c.triggered) > 0 {
+		r.ats = make([]int64, len(c.triggered))
+		for i := range r.ats {
+			r.ats[i] = toInt64(rest[i])
+		}
 	}
 	return r, nil
 }
@@ -116,6 +122,21 @@ func (c *class) document(r *docRow, kids map[*child][]childRow) *Document {
 		default:
 			d.Values[v.Name] = valueOut(r.vals[cv.leaf])
 		}
+	}
+	// The moment of every triggered variable that has one (ADR-0043).
+	for i, cv := range c.triggered {
+		asof, failed := r.vals[cv.asof], r.vals[cv.errLeaf]
+		if asof.IsBlank() && failed.IsBlank() {
+			continue
+		}
+		if d.Computed == nil {
+			d.Computed = make(map[string]Moment, len(c.triggered))
+		}
+		m := Moment{Error: failed.Str()}
+		if !asof.IsBlank() {
+			m.Version, m.At = asof.Mant(), r.ats[i]
+		}
+		d.Computed[cv.v.Name] = m
 	}
 	return d
 }

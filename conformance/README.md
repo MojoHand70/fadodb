@@ -154,9 +154,16 @@ suites', with these additions:
   on from, each by `code` and, where given, by `variable` and by the
   `action` path.
 
-The store runs every suite in CI. The expectation `computed`, the moment
-of a triggered variable, and the arguments of a queued action arrive with
-the steps of Phase 4 that build them.
+- `computed` are the moments of triggered variables by name, checked on
+  the document a step returned or on every document a query returned:
+  `version`, the version whose commit computed the value; `error`, the
+  code of a recomputation that failed since; and, where given, `at`, the
+  time of that commit in the notation of a step's `at`. `null` says the
+  variable has no moment. A variable listed under `absent` must have no
+  moment either.
+
+The store runs every suite in CI. The arguments of a queued action arrive
+with the step of Phase 4 that builds the outbox.
 
 ## Binding cases: `binding/*.json`
 

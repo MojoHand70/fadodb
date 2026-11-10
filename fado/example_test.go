@@ -198,3 +198,53 @@ func Example_rules() {
 	// transition approve 2
 	// custom request.large_approved 2
 }
+
+// A triggered variable is computed when one of its triggers happens and
+// kept in between (ADR-0043): the rate of a quote is locked when the
+// quote is sent, and the document says at which version and when.
+func Example_triggered() {
+	tmp, err := os.MkdirTemp("", "fado-example")
+	if err != nil {
+		panic(err)
+	}
+	defer os.RemoveAll(tmp)
+	db, err := fado.Open(filepath.Join(tmp, "triggered.fado"), fado.Options{
+		Now: func() time.Time { return time.Date(2026, 11, 10, 9, 0, 0, 0, time.UTC) },
+	})
+	if err != nil {
+		panic(err)
+	}
+	defer db.Close()
+	ctx := context.Background()
+
+	_, err = db.DefineClass(ctx, []byte(`{
+	  "name": "Quote",
+	  "variables": {
+	    "amount": {"type": "number"},
+	    "rate":   {"type": "number"},
+	    "locked": {"formula": "rate", "mode": "triggered", "on": ["transition:send"]},
+	    "price":  {"formula": "amount * locked"}
+	  },
+	  "states": {"initial": "draft", "list": ["draft", "sent"]},
+	  "transitions": [{"name": "send", "from": "draft", "to": "sent"}]
+	}`))
+	if err != nil {
+		panic(err)
+	}
+	doc, err := db.Create(ctx, "Quote", fado.Values{"amount": 200, "rate": 0.5}, fado.WithID("q_1"))
+	if err != nil {
+		panic(err)
+	}
+	fmt.Println("draft:", doc.Values["locked"], len(doc.Computed))
+
+	doc, _ = db.Transition(ctx, "Quote", doc.ID, "send", nil)
+	fmt.Println("sent:", doc.Values["locked"], doc.Values["price"], "computed at version", doc.Computed["locked"].Version)
+
+	// The rate moves on; the locked value and its moment stay.
+	doc, _ = db.Set(ctx, "Quote", doc.ID, fado.Values{"rate": 0.75})
+	fmt.Println("later:", doc.Values["locked"], doc.Values["price"], "version", doc.Version, "computed at version", doc.Computed["locked"].Version)
+	// Output:
+	// draft: <nil> 0
+	// sent: 0.5 100 computed at version 2
+	// later: 0.5 100 version 3 computed at version 2
+}

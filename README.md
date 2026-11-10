@@ -15,12 +15,13 @@ Website: [fadodb.org](https://fadodb.org).
 > with attachments, lookups into reference tables, filters and read-only
 > SQL; moves them through their statecharts with guards and eventless
 > transitions; enforces field rights and transition rules for the
-> principal; previews any change at a moment the caller chooses; and
-> runs the rules of a class inside the commit, with the actions `set`,
-> `reset` and `emit`. Triggered variables, the outbox with the actions
-> that leave the database, the row-level access rules, `QUERY` and the
-> server come with their steps and phases. The numbers are in
-> [docs/perf/](docs/perf/), the plan in [ROADMAP.md](ROADMAP.md).
+> principal; previews any change at a moment the caller chooses; runs
+> the rules of a class inside the commit, with the actions `set`,
+> `reset`, `refresh` and `emit`; and computes triggered variables at
+> their triggers, each with the moment it was computed. The outbox with
+> the actions that leave the database, the row-level access rules,
+> `QUERY` and the server come with their steps and phases. The numbers
+> are in [docs/perf/](docs/perf/), the plan in [ROADMAP.md](ROADMAP.md).
 
 ## What it is
 
@@ -99,16 +100,20 @@ for Phase 5. The rules of a class run inside the commit: a `set` or a
 `reset` changes the document before it is written, an `emit` appends a
 custom event, an action that fails refuses the command with its place in
 the definition, and a preview lists the rules a command would run. A
-preview, a listing or a read may be asked at a moment the caller
-chooses, `fado.At(t)`, and a preview reports the moment it ran under; a
-commit runs at the database's clock. A refusal is a `fado.Error` with a stable code and the
-variable it names; a definition's problems come back at once as
-`Diagnostics`, each with a code and the place. Files are attached as
-`File` values behind a blob store, reference data lives in explicit tables
-that formulas read with `LOOKUP`, and a class can be redefined as a new
-version that touches no existing document. `fadodb check FILE` verifies
-a database file. The full walk-through is `fado/example_test.go`, and
-`fado/readme_test.go` runs the class and the calls above.
+variable with `"mode": "triggered"` is computed when one of its triggers
+happens, the entry or the exit of a state, a transition or a `refresh`,
+and kept in between; the document says under `computed` at which version
+and when. A preview, a listing or a read may be asked at a moment the
+caller chooses, `fado.At(t)`, and a preview reports the moment it ran
+under; a commit runs at the database's clock. A refusal is a
+`fado.Error` with a stable code and the variable it names; a
+definition's problems come back at once as `Diagnostics`, each with a
+code and the place. Files are attached as `File` values behind a blob
+store, reference data lives in explicit tables that formulas read with
+`LOOKUP`, and a class can be redefined as a new version that touches no
+existing document. `fadodb check FILE` verifies a database file. The
+full walk-through is `fado/example_test.go`, and `fado/readme_test.go`
+runs the class and the calls above.
 
 ## Install
 

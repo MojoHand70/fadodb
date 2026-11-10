@@ -8,13 +8,16 @@
 An embeddable **active document database**, written in Go, MIT licensed.
 Website: [fadodb.org](https://fadodb.org).
 
-> **Status: Phase 2, the document model and store, is done and released
-> as v0.2.0; Phase 3, the statechart, is in progress.** The Go API stores
-> documents of typed classes as commits with recalculation, history and an
-> event log, with attachments, lookups into reference tables, filters and
-> read-only SQL. The statechart, rules, access rules and the server come
-> with their phases. The numbers are in [docs/perf/](docs/perf/), the plan
-> in [ROADMAP.md](ROADMAP.md).
+> **Status: Phase 3, the statechart, is done and released as v0.3.0;
+> Phase 4, rules and actions, is next.** The Go API stores documents of
+> typed classes as commits with recalculation, history and an event log,
+> with attachments, lookups into reference tables, filters and read-only
+> SQL; moves them through their statecharts with guards and eventless
+> transitions; enforces field rights and transition rules for the
+> principal; and previews any change at a moment the caller chooses.
+> Rules, the row-level access rules, `QUERY` and the server come with
+> their phases. The numbers are in [docs/perf/](docs/perf/), the plan in
+> [ROADMAP.md](ROADMAP.md).
 
 ## What it is
 

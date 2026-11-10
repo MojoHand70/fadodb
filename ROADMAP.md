@@ -1,6 +1,6 @@
 # Roadmap
 
-**Current status: Phase 2, the document model and store, done on 2026-11-08 and released as v0.2.0. Phase 3, the statechart, started on 2026-11-08.**
+**Current status: Phase 3, the statechart, done on 2026-11-09 and released as v0.3.0. Phase 4, rules and actions, is next.**
 The Go API (`fado`) opens a database file, defines schemas, classes and
 explicit tables, and creates, changes, reads and deletes documents as
 commits: assignments and defaults, the auto recalculation, typed history
@@ -8,7 +8,7 @@ rows, child rows for composites, an event log with idempotency keys and
 business dates, attachments behind a blob store, `LOOKUP` against tables,
 a filter over a class and read-only SQL over the views, with previews that
 write nothing. `fadodb formula eval` evaluates a formula and `fadodb
-check` verifies a file. The statechart, rules, access rules, `QUERY` and
+check` verifies a file. Rules, the row-level access rules, `QUERY` and
 the server come with their phases. Since v0.1.0 the records ADR-0022 to
 ADR-0038 fixed what the first embedder needs and what Phase 2 measured:
 SQLite as the transactional store and the in-memory index for lookups, by
@@ -19,9 +19,16 @@ with its design in three records, accepted on 2026-11-09: ADR-0040,
 transitions as commits, with eventless chains, snapshots, the allowed
 transitions and the `_states` view; ADR-0041, field rights and
 per-transition rules enforced in the Go API; and ADR-0042, a moment the
-caller chooses for previews and reads. This page is updated when a phase starts and when
-it ends; it never describes a phase as done before its acceptance
-criteria pass.
+caller chooses for previews and reads. It closed on 2026-11-09 with the
+statechart running in the Go API: `STATE()` and `ID()` (#40), the
+transition command with guards, eventless chains as further commits, the
+listing of open transitions, the preview of a transition and the
+`_states` view (#42), the rights table and the per-transition rules
+enforced on every path for the principal (#43), `At(t)` for previews and
+reads (#44), and the measurements of `docs/perf/v0.3.0.md` against every
+budget of the three records (#45). This page is updated when a phase
+starts and when it ends; it never describes a phase as done before its
+acceptance criteria pass.
 
 Legend: ✅ done · 🚧 in progress · ⬜ not started
 
@@ -30,7 +37,7 @@ Legend: ✅ done · 🚧 in progress · ⬜ not started
 | 0 | Foundations: module, gates, CI, release pipeline, ADRs, docs | ✅ |
 | 1 | Formula engine: lexer, parser, binder, bytecode, Go VM, SQL generator with SQLite and DuckDB dialects, conformance suite | ✅ |
 | 2 | Document model and store: primary-store benchmark, variables with defaults, `json` type, enum values, range constraints, named schemas and object values with the predefined vocabulary, attachments as `File` values with a blob store, class metadata and title, current, history and child tables, commits with idempotency keys and business dates, preview and validate without writing, event log, migrations, LOOKUP, queries | ✅ |
-| 3 | Statechart: the transition command with guards, eventless chains, exit and entry snapshots and the `_states` view, allowed transitions and the preview of a transition, `STATE()` and `ID()`, per-transition access rules and field-level rights per state, statechart conformance cases | 🚧 |
+| 3 | Statechart: the transition command with guards, eventless chains, exit and entry snapshots and the `_states` view, allowed transitions and the preview of a transition, `STATE()` and `ID()`, per-transition access rules and field-level rights per state, statechart conformance cases | ✅ |
 | 4 | Rules and actions: event-condition-action rules, built-in actions incl. reset and refresh, transactional outbox, executors the embedder registers, the transition event, explicit tables with storage bindings, QUERY | ⬜ |
 | 5 | Security: the principal from the embedder on every call, access rules compiled to SQL predicates, an optional package of users, groups and API keys for the server | ⬜ |
 | 6 | Server and CLI: JSON command set over HTTP and WebSocket, documents on the wire, layouts, OpenAPI, `fadodb serve` | ⬜ |

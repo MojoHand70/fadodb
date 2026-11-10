@@ -367,54 +367,13 @@ func (s *Store) runSet(run *ruleRun, row *docRow, act *caction) (Values, *Error)
 	return args, nil
 }
 
-// runReset re-evaluates the defaults of the named inputs in dependency
-// order; an input without a default becomes blank, an object in every
-// field and a composite empty. Then it recalculates what depends on what
-// changed. A required input left blank refuses the command.
+// runReset is the reset action of a rule: resetVars over the inputs it
+// names, then the recalculation of what depends on what changed.
 func (s *Store) runReset(run *ruleRun, row *docRow, act *caction) (Values, *Error) {
-	c := run.c
-	dirty := s.dirtyFor(c)
-	touched := false
-	for _, cv := range act.resets {
-		if cv.v.Default != nil {
-			continue
-		}
-		if cv.child != nil {
-			s.emptied = append(s.emptied, cv.child)
-			continue
-		}
-		for _, li := range cv.leaves {
-			if !row.vals[li].IsBlank() {
-				row.vals[li] = formula.Blank()
-				dirty[cv.idx] = true
-				touched = true
-			}
-		}
-	}
-	for _, cv := range act.defaults {
-		val, err := s.eval(c, cv.v.Default, row, run.evalCtx)
-		if err == nil {
-			val, err = fit(cv.v, val)
-		}
-		if err != nil {
-			err.Variable = cv.v.Name
-			if err := run.fail(act, err); err != nil {
-				return nil, err
-			}
-			continue
-		}
-		if !formula.Equal(row.vals[cv.leaf], val) {
-			row.vals[cv.leaf] = val
-			dirty[cv.idx] = true
-			touched = true
-		}
-	}
-	for _, cv := range act.resets {
-		if v := cv.v; v.Required && cv.leaf >= 0 && row.vals[cv.leaf].IsBlank() {
-			if err := run.fail(act, errf(CodeRequired, v.Name, "%s is required and the reset leaves it blank", v.Name)); err != nil {
-				return nil, err
-			}
-		}
+	dirty := s.dirtyFor(run.c)
+	touched, err := s.resetVars(run.c, row, act.resets, act.defaults, run.evalCtx, dirty, run, act)
+	if err != nil {
+		return nil, err
 	}
 	var args Values
 	if run.preview {
@@ -430,6 +389,67 @@ func (s *Store) runReset(run *ruleRun, row *docRow, act *caction) (Values, *Erro
 		}
 	}
 	return args, nil
+}
+
+// resetVars re-evaluates the defaults of the named inputs in dependency
+// order; an input without a default becomes blank, an object in every
+// field, and a composite empty, which it leaves in s.emptied for the
+// caller to apply. It marks what changed dirty and reports whether a
+// stored scalar did. A required input left blank is a failure, and so is
+// a default that errors: the command's own when the reset is a command,
+// with run and act nil; the action's when a rule runs it (ADR-0043).
+func (s *Store) resetVars(c *class, row *docRow, resets, defaults []*cvar, evalCtx *formula.Context, dirty []bool, run *ruleRun, act *caction) (touched bool, _ *Error) {
+	for _, cv := range resets {
+		if cv.v.Default != nil {
+			continue
+		}
+		if cv.child != nil {
+			s.emptied = append(s.emptied, cv.child)
+			continue
+		}
+		for _, li := range cv.leaves {
+			if !row.vals[li].IsBlank() {
+				row.vals[li] = formula.Blank()
+				dirty[cv.idx] = true
+				touched = true
+			}
+		}
+	}
+	for _, cv := range defaults {
+		val, err := s.eval(c, cv.v.Default, row, evalCtx)
+		if err == nil {
+			val, err = fit(cv.v, val)
+		}
+		if err != nil {
+			err.Variable = cv.v.Name
+			if err := resetFail(run, act, err); err != nil {
+				return touched, err
+			}
+			continue
+		}
+		if !formula.Equal(row.vals[cv.leaf], val) {
+			row.vals[cv.leaf] = val
+			dirty[cv.idx] = true
+			touched = true
+		}
+	}
+	for _, cv := range resets {
+		if v := cv.v; v.Required && cv.leaf >= 0 && row.vals[cv.leaf].IsBlank() {
+			if err := resetFail(run, act, errf(CodeRequired, v.Name, "%s is required and the reset leaves it blank", v.Name)); err != nil {
+				return touched, err
+			}
+		}
+	}
+	return touched, nil
+}
+
+// resetFail is what a failure inside a reset does: the command's error
+// when the reset is a command, the action's failure when a rule runs it.
+func resetFail(run *ruleRun, act *caction, err *Error) *Error {
+	if run == nil {
+		return err
+	}
+	return run.fail(act, err)
 }
 
 // runRefresh recomputes the triggered variables the action names, in

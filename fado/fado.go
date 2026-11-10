@@ -203,6 +203,25 @@ func (db *DB) Set(ctx context.Context, class, id string, values Values, opts ...
 	return db.s.Set(ctx, class, id, values, opts...)
 }
 
+// Reset puts the named input variables of a document back to their
+// defaults, as a new version (ADR-0043): a default is re-evaluated and an
+// input without one becomes blank. It is the caller's write, checked
+// against the write rights as a set is; a reset that changes nothing
+// commits nothing.
+func (db *DB) Reset(ctx context.Context, class, id string, variables []string, opts ...Option) (*Document, error) {
+	return db.s.Reset(ctx, class, id, variables, opts...)
+}
+
+// Refresh recomputes the named triggered variables of a document, as a
+// new version (ADR-0043); each must list refresh among its triggers, and
+// with none named every variable that does recomputes. It always commits
+// and the eventless transitions are evaluated after it, so it is how a
+// caller makes a document look at the clock: an invoice whose guard reads
+// TODAY() moves when it is refreshed on the day.
+func (db *DB) Refresh(ctx context.Context, class, id string, variables []string, opts ...Option) (*Document, error) {
+	return db.s.Refresh(ctx, class, id, variables, opts...)
+}
+
 // Transition moves a document along the named transition of its class,
 // with the assignments in values applied in the same commit (ADR-0040);
 // values may be nil. Every eventless transition that then fires is a

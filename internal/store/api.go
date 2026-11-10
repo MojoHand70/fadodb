@@ -98,6 +98,10 @@ const (
 	EventDeleted    = "deleted"
 	EventMigrated   = "migrated"
 	EventTransition = "transition"
+	// EventReset and EventRefresh are the events of the Reset and the
+	// Refresh commands (ADR-0043).
+	EventReset   = "reset"
+	EventRefresh = "refresh"
 	// EventCustom is the event a rule's emit appends (ADR-0043): its name
 	// is the one the rule gives, its after_version the version of the
 	// commit that ran the rule and its cause that commit's event.

@@ -201,7 +201,8 @@ func Example_rules() {
 
 // A triggered variable is computed when one of its triggers happens and
 // kept in between (ADR-0043): the rate of a quote is locked when the
-// quote is sent, and the document says at which version and when.
+// quote is sent, and again when a Refresh asks, and the document says at
+// which version and when.
 func Example_triggered() {
 	tmp, err := os.MkdirTemp("", "fado-example")
 	if err != nil {
@@ -222,7 +223,7 @@ func Example_triggered() {
 	  "variables": {
 	    "amount": {"type": "number"},
 	    "rate":   {"type": "number"},
-	    "locked": {"formula": "rate", "mode": "triggered", "on": ["transition:send"]},
+	    "locked": {"formula": "rate", "mode": "triggered", "on": ["transition:send", "refresh"]},
 	    "price":  {"formula": "amount * locked"}
 	  },
 	  "states": {"initial": "draft", "list": ["draft", "sent"]},
@@ -243,8 +244,13 @@ func Example_triggered() {
 	// The rate moves on; the locked value and its moment stay.
 	doc, _ = db.Set(ctx, "Quote", doc.ID, fado.Values{"rate": 0.75})
 	fmt.Println("later:", doc.Values["locked"], doc.Values["price"], "version", doc.Version, "computed at version", doc.Computed["locked"].Version)
+
+	// Until somebody asks for it again.
+	doc, _ = db.Refresh(ctx, "Quote", doc.ID, []string{"locked"})
+	fmt.Println("refreshed:", doc.Values["locked"], doc.Values["price"], "computed at version", doc.Computed["locked"].Version)
 	// Output:
 	// draft: <nil> 0
 	// sent: 0.5 100 computed at version 2
 	// later: 0.5 100 version 3 computed at version 2
+	// refreshed: 0.75 150 computed at version 4
 }

@@ -45,10 +45,12 @@ const (
 	opDelete
 	opMigrate
 	opTransition
+	opReset
+	opRefresh
 )
 
 func (o op) String() string {
-	return [...]string{"create", "set", "delete", "migrate", "transition"}[o]
+	return [...]string{"create", "set", "delete", "migrate", "transition", "reset", "refresh"}[o]
 }
 
 type command struct {
@@ -58,8 +60,12 @@ type command struct {
 	values Values
 	// transition names the transition of an opTransition.
 	transition string
-	o          options
-	preview    bool
+	// variables are the inputs an opReset resets, or the triggered
+	// variables an opRefresh recomputes, none meaning every one that
+	// lists refresh.
+	variables []string
+	o         options
+	preview   bool
 	// stored is the class the document is read from when c is a draft
 	// compiled for one preview (ADR-0025); nil otherwise.
 	stored *class
@@ -92,6 +98,10 @@ func eventFor(o op) eventInfo {
 		return eventInfo{kind: EventCreated, qualifier: "created"}
 	case opMigrate:
 		return eventInfo{kind: EventMigrated, qualifier: "migrated"}
+	case opReset:
+		return eventInfo{kind: EventReset, qualifier: "changed"}
+	case opRefresh:
+		return eventInfo{kind: EventRefresh, qualifier: "refreshed"}
 	}
 	return eventInfo{kind: EventSet, qualifier: "changed"}
 }
@@ -421,12 +431,39 @@ func (s *Store) run(ctx context.Context, cmd command, now time.Time) (*result, e
 				return nil, err
 			}
 		}
+		// The variables a Reset or a Refresh names (ADR-0043, item 10).
+		var resets, refreshes []*cvar
+		switch cmd.op {
+		case opReset:
+			var e *Error
+			if resets, e = c.resetTargets(cmd.variables); e != nil {
+				return nil, e
+			}
+		case opRefresh:
+			var e *Error
+			if refreshes, e = c.refreshTargets(cmd.variables); e != nil {
+				return nil, e
+			}
+		}
 		if err := s.checkWrites(c, &cmd, after, evalCtx, res); err != nil {
 			return nil, err
 		}
 		changed, err := c.assign(after, kids, cmd.values, dirty, s.limits)
 		if err != nil {
 			return nil, err
+		}
+		if cmd.op == opReset {
+			// The caller's write, like the assignments of a set: the
+			// defaults re-evaluated, the rest blank, a composite empty.
+			s.emptied = s.emptied[:0]
+			touched, err := s.resetVars(c, after, resets, c.defaultsAmong(resets), evalCtx, dirty, nil, nil)
+			if err != nil {
+				return nil, err
+			}
+			changed = changed || touched
+			for _, ch := range s.emptied {
+				kids[ch] = nil
+			}
 		}
 		if err := s.checkFiles(ctx, c, after, dirty, kids); err != nil {
 			return nil, err
@@ -448,7 +485,9 @@ func (s *Store) run(ctx context.Context, cmd command, now time.Time) (*result, e
 			}
 		}
 		s.changedKids = changedKids
-		unchanged = !changed && !adopt && cmd.op != opTransition
+		// A refresh always commits: the moment of the value is what it
+		// changes.
+		unchanged = !changed && !adopt && cmd.op != opTransition && cmd.op != opRefresh
 		if unchanged && !cmd.preview {
 			all, err := c.loadChildren(ctx, before.id, before.version, kids, true)
 			if err != nil {
@@ -469,6 +508,13 @@ func (s *Store) run(ctx context.Context, cmd command, now time.Time) (*result, e
 		}
 		if err := s.recalc(c, after, dirty, adopt, evalCtx, cmd.preview, &res.errs); err != nil {
 			return nil, err
+		}
+		// The triggered variables a Refresh names, in declaration order,
+		// each with the moment of this commit.
+		for _, cv := range refreshes {
+			if err := s.recompute(c, cv, after, evalCtx, secs, cmd.preview, &res.errs); err != nil {
+				return nil, err
+			}
 		}
 	}
 
@@ -880,12 +926,16 @@ func businessDay(o options, now time.Time) int64 {
 }
 
 // commandHash identifies a command's body for the key check of
-// ADR-0026: the operation, the class, the document and the values.
+// ADR-0026: the operation, the class, the document, the transition or
+// the variables named, and the values.
 func commandHash(cmd command) string {
 	h := sha256.New()
 	fmt.Fprintf(h, "%s\x00%s\x00%s\x00", cmd.op, strings.ToUpper(cmd.c.cls.Name), cmd.id)
 	if cmd.transition != "" {
 		fmt.Fprintf(h, "%s\x00", cmd.transition)
+	}
+	for _, name := range cmd.variables {
+		fmt.Fprintf(h, "%s\x00", strings.ToUpper(name))
 	}
 	if b, err := json.Marshal(cmd.values); err == nil {
 		h.Write(b)

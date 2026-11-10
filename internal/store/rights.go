@@ -122,14 +122,14 @@ func (s *Store) project(e *evaluator, c, vc *class, row *docRow, d *Document, p 
 }
 
 // checkWrites refuses, with forbidden naming the variable, a value for a
-// variable whose write right in the document's state is not TRUE for the
-// principal (ADR-0041): over the stored document before the assignments,
+// variable, or the reset of one, whose write right in the document's
+// state is not TRUE for the principal (ADR-0041): over the stored document before the assignments,
 // or over the new document after its defaults. A commit reports the first
 // such variable in declaration order, a preview every one under its
 // errors. A value for a name the class does not have is left to assign,
 // which refuses it.
 func (s *Store) checkWrites(c *class, cmd *command, row *docRow, evalCtx *formula.Context, res *result) *Error {
-	if c.rights == nil || cmd.o.principal.Admin || len(cmd.values) == 0 {
+	if c.rights == nil || cmd.o.principal.Admin || len(cmd.values) == 0 && cmd.op != opReset {
 		return nil
 	}
 	cells := c.cells(row.state)
@@ -141,6 +141,14 @@ func (s *Store) checkWrites(c *class, cmd *command, row *docRow, evalCtx *formul
 		}
 		if ok {
 			given[cv.idx] = true
+		}
+	}
+	// A reset writes the variables it names: the caller's write.
+	if cmd.op == opReset {
+		for _, name := range cmd.variables {
+			if cv, ok := c.byName[strings.ToUpper(name)]; ok {
+				given[cv.idx] = true
+			}
 		}
 	}
 	for i, cv := range c.vars {

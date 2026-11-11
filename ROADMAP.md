@@ -44,7 +44,8 @@ extension point, with declared HTTP actions, Go actions an embedder
 registers, connections and results written back to the document.
 Formulas that read other documents got their record, ADR-0046,
 accepted on 2026-11-10; conditions on time and timers, which the owner
-ruled into the phase that day, get theirs before that step. Its first step runs the rules
+ruled into the phase that day, got theirs, ADR-0047, accepted on
+2026-11-11. Its first step runs the rules
 inside the commit: the triggers of each commit, the synchronous actions
 `set`, `reset` and `emit`, and the rules a preview reports (#51). Its
 second computes the triggered variables at their triggers, with the
@@ -88,12 +89,13 @@ third closes the step: `DefineClasses` defines several classes in one
 call, all or none, so that classes which name each other can be defined
 at all, and the Purchase and Approval samples under `examples/classes/`
 are the pattern written out (#64). Its seventh step, time, has its
-design proposed as ADR-0047 on 2026-11-11 and is not built: a formula
-reads the life of its document, when and by whom it was created,
-changed and moved into each state; `Due` lists the documents that would
-move now; and a transition may carry `after` or `at`, so that the
-engine moves the document when the time comes. By the owner's ruling of
-that day a timer is written on a transition.
+design in ADR-0047, accepted on 2026-11-11, and is not built yet: a
+formula reads the life of its document, when and by whom it was
+created, changed and moved into and out of each state; every entry into
+a state is recorded, a return into the same state too; `Due` lists the
+documents that would move now; and a transition may carry `after` or
+`at`, so that the engine moves the document when the time comes. By the
+owner's ruling of that day a timer is written on a transition.
 By the owner's rulings of that day a formula sees every document, and
 `QUERY`, which returns lists, is built with the first layout or report
 that needs one; tables stored outside the file come with the analytical

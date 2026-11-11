@@ -6,10 +6,17 @@ API's `DefineClass` takes. `TestExampleClasses` in `fado/` validates and
 defines every file on each push, so a sample that no longer holds against
 the engine fails CI rather than misleading a reader. A sample may name
 another, as the Invoice's rule names the Receipt it creates; the test
-defines them in an order that works.
+defines them in an order that works. Samples that name each other, so
+that neither could be first, are defined together with `DefineClasses`,
+which takes several definitions in one call.
 
-**Status on 2026-11-10:** two samples, the Invoice from the README as
-`invoice.json` and the Receipt its rule creates as `receipt.json`.
+**Status on 2026-11-11:** four samples. The Invoice from the README is
+`invoice.json` and the Receipt its rule creates `receipt.json`.
+`purchase.json` and `approval.json` are parallel approvals: submitting a
+purchase creates one approval for each approver, each approver answers
+their own, and the purchase counts them with a `LOOKUP` over the
+Approval class and moves by its own guards. The two name each other.
+`TestExampleApprovals` walks them through.
 
 ## Naming
 

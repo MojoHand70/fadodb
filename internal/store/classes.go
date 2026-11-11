@@ -442,35 +442,147 @@ func (c *class) close() {
 func (s *Store) Validate(data []byte) model.Diagnostics {
 	s.cmu.RLock()
 	defer s.cmu.RUnlock()
-	_, diags, _ := s.compileClass(context.Background(), data)
+	_, diags := s.compileClasses(context.Background(), [][]byte{data}, false)
 	return diags
 }
 
-// compileClass compiles a definition against the stored schemas and
-// checks it against the stored class of the same name. It returns the
-// version the class would get. The document count reads through the
-// pool, so that Validate needs no writer.
-func (s *Store) compileClass(ctx context.Context, data []byte) (*model.Class, model.Diagnostics, int) {
-	cls, diags := model.DefineIn(data, s.env())
-	if cls == nil {
-		return nil, diags, 0
+// ValidateClasses reports what DefineClasses would refuse, without
+// storing anything (ADR-0046, item 12). The path of every finding starts
+// with the position of its definition in the call: /1/variables/total.
+func (s *Store) ValidateClasses(datas [][]byte) model.Diagnostics {
+	s.cmu.RLock()
+	defer s.cmu.RUnlock()
+	_, diags := s.compileClasses(context.Background(), datas, true)
+	return diags
+}
+
+// pending is one class of a definition call: what was sent, what it
+// compiled to, the stored class it replaces and the version it gets.
+// same says the definition is the stored one, and nothing is to do.
+type pending struct {
+	data, compact []byte
+	cls           *model.Class
+	c, old        *class
+	version       int
+	same          bool
+}
+
+// compileClasses compiles the definitions of one call against the stored
+// schemas, tables, classes and actions, and against each other when set
+// is given, and checks each against the stored class of its name. The
+// document counts read through the pool, so that a validation needs no
+// writer. The caller holds cmu.
+//
+// Classes that name each other, the approval whose rule refreshes the
+// purchase and the purchase whose formula counts approvals, compile as a
+// file loads (ADR-0046): every definition alone first, for its variables,
+// states and transitions, with what it says about other classes left
+// open; then every one in full against those. In a set the path of a
+// finding starts with the position of its definition.
+func (s *Store) compileClasses(ctx context.Context, datas [][]byte, set bool) ([]*pending, model.Diagnostics) {
+	var diags model.Diagnostics
+	at := func(i int, found ...model.Diagnostic) {
+		for _, d := range found {
+			if set {
+				d.Path = "/" + itoa(i) + d.Path
+			}
+			diags = append(diags, d)
+		}
 	}
-	version := cls.Version
-	if old, ok := s.classes[strings.ToUpper(cls.Name)]; ok {
+	ps := make([]*pending, len(datas))
+	seen := map[string]int{}
+	for i, data := range datas {
+		compact, err := compactJSON(data)
+		if err != nil {
+			at(i, model.Diagnostic{Code: model.CodeBadJSON, Pos: -1, Message: err.Error()})
+			continue
+		}
+		p := &pending{data: data, compact: compact}
+		ps[i] = p
+		name := upperName(data)
+		if first, twice := seen[name]; twice && name != "" {
+			at(i, model.Diagnostic{Code: model.CodeDuplicate, Path: "/name", Pos: -1,
+				Message: "the call defines this class twice, at " + itoa(first) + " and at " + itoa(i),
+				Hint:    "a call defines each class once; a second version is a second call"})
+			continue
+		}
+		seen[name] = i
+		if old, ok := s.classes[name]; ok && bytes.Equal(old.json, compact) {
+			p.same, p.cls, p.old = true, old.cls, old
+		}
+	}
+	if len(diags) > 0 {
+		return nil, diags
+	}
+	env := s.env()
+	// wrong marks the definitions that do not compile even alone. Their
+	// findings are reported and the others' are not: a class that names a
+	// wrong one would only say that it does not know it.
+	wrong := map[int]bool{}
+	if set && len(datas) > 1 {
+		shallow := env
+		shallow.Lenient, shallow.Shallow = true, true
+		alone := map[string]*model.Class{}
+		for i, p := range ps {
+			if p.same {
+				continue
+			}
+			if cls, _ := model.DefineIn(p.data, shallow); cls != nil {
+				alone[strings.ToUpper(cls.Name)] = cls
+			} else {
+				wrong[i] = true
+			}
+		}
+		stored := env.Classes
+		env.Classes = func(name string) (*model.Class, bool) {
+			if cls, ok := alone[strings.ToUpper(name)]; ok {
+				return cls, true
+			}
+			return stored(name)
+		}
+	}
+	// names are the classes the call defines, whether they compile or
+	// not: none of them is held to the stored definition of another.
+	var names []string
+	for i, p := range ps {
+		names = append(names, upperName(p.data))
+		if p.same {
+			continue
+		}
+		cls, found := model.DefineIn(p.data, env)
+		if len(wrong) == 0 || wrong[i] {
+			at(i, found...)
+		}
+		p.cls = cls
+	}
+	if len(wrong) > 0 {
+		return nil, diags
+	}
+	for i, p := range ps {
+		if p.same || p.cls == nil {
+			continue
+		}
+		cls := p.cls
+		p.version = cls.Version
+		old, ok := s.classes[strings.ToUpper(cls.Name)]
+		if !ok {
+			continue
+		}
+		p.old = old
 		if old.cls.Name != cls.Name {
-			diags = append(diags, model.Diagnostic{Code: model.CodeDuplicate, Path: "/name", Pos: -1,
+			at(i, model.Diagnostic{Code: model.CodeDuplicate, Path: "/name", Pos: -1,
 				Message: "a class " + old.cls.Name + " exists; names differ in case only"})
 		}
-		version = old.cls.Version + 1
-		if cls.Def.Version != 0 && cls.Def.Version != version {
-			diags = append(diags, model.Diagnostic{Code: model.CodeBadValue, Path: "/version", Pos: -1,
-				Message: "the stored class is at version " + itoa(old.cls.Version) + "; a redefinition is version " + itoa(version),
-				Hint:    "omit version, or write " + itoa(version)})
+		p.version = old.cls.Version + 1
+		if cls.Def.Version != 0 && cls.Def.Version != p.version {
+			at(i, model.Diagnostic{Code: model.CodeBadValue, Path: "/version", Pos: -1,
+				Message: "the stored class is at version " + itoa(old.cls.Version) + "; a redefinition is version " + itoa(p.version),
+				Hint:    "omit version, or write " + itoa(p.version)})
 		}
-		diags = append(diags, s.redefinitionDiagnostics(ctx, old, cls)...)
-		diags = append(diags, s.brokenRules(cls, nil, nil)...)
+		at(i, s.redefinitionDiagnostics(ctx, old, cls)...)
+		at(i, s.brokenRules(cls, nil, nil, names...)...)
 	}
-	return cls, diags, version
+	return ps, diags
 }
 
 // DefineClass compiles a class definition, creates its tables and views
@@ -485,6 +597,26 @@ func (s *Store) compileClass(ctx context.Context, data []byte) (*model.Class, mo
 // redefinitionDiagnostics. A class with no history at all is dropped
 // and made again.
 func (s *Store) DefineClass(ctx context.Context, data []byte) (*model.Class, error) {
+	out, err := s.defineClasses(ctx, [][]byte{data}, false)
+	if err != nil {
+		return nil, err
+	}
+	return out[0], nil
+}
+
+// DefineClasses defines several classes in one call (ADR-0046, item 12):
+// each is checked against the others and against what is stored, and all
+// are stored or none is, each as DefineClass would store it. It is how
+// classes that name each other are defined, since neither could be first.
+// The classes come back in the order of the definitions; one whose
+// definition is the stored one is left as it is. The error is
+// Diagnostics when a definition is refused, and the path of each finding
+// starts with the position of its definition in the call.
+func (s *Store) DefineClasses(ctx context.Context, datas [][]byte) ([]*model.Class, error) {
+	return s.defineClasses(ctx, datas, true)
+}
+
+func (s *Store) defineClasses(ctx context.Context, datas [][]byte, set bool) ([]*model.Class, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.closed {
@@ -492,37 +624,68 @@ func (s *Store) DefineClass(ctx context.Context, data []byte) (*model.Class, err
 	}
 	s.cmu.Lock()
 	defer s.cmu.Unlock()
-	compact, err := compactJSON(data)
-	if err != nil {
-		return nil, model.Diagnostics{{Code: model.CodeBadJSON, Pos: -1, Message: err.Error()}}
-	}
-	if old, ok := s.classes[upperName(data)]; ok && bytes.Equal(old.json, compact) {
-		return old.cls, nil
-	}
-	cls, diags, version := s.compileClass(ctx, data)
+	ps, diags := s.compileClasses(ctx, datas, set)
 	if len(diags) > 0 {
 		return nil, diags
 	}
-	cls.Version = version
-	c, err := newClass(cls, compact)
-	if err != nil {
-		return nil, err
+	out := make([]*model.Class, len(ps))
+	todo := 0
+	for i, p := range ps {
+		out[i] = p.cls
+		if p.same {
+			continue
+		}
+		todo++
+		p.cls.Version = p.version
+		var err error
+		if p.c, err = newClass(p.cls, p.compact); err != nil {
+			return nil, err
+		}
 	}
-	old := s.classes[strings.ToUpper(cls.Name)]
+	if todo == 0 {
+		return out, nil
+	}
 	now := s.now().Unix()
 	w := s.writer
 	if _, err := w.ExecContext(ctx, "BEGIN IMMEDIATE"); err != nil {
 		return nil, storageErr("begin", err)
 	}
-	rollback := func(err error) (*model.Class, error) {
-		_, _ = w.ExecContext(ctx, "ROLLBACK")
-		return nil, err
+	fresh := make([]bool, len(ps))
+	for i, p := range ps {
+		if p.same {
+			continue
+		}
+		var err error
+		if fresh[i], err = s.writeClass(ctx, p, now); err != nil {
+			_, _ = w.ExecContext(ctx, "ROLLBACK")
+			return nil, err
+		}
 	}
+	if _, err := w.ExecContext(ctx, "COMMIT"); err != nil {
+		return nil, storageErr("commit", err)
+	}
+	for i, p := range ps {
+		if p.same {
+			continue
+		}
+		if err := s.adoptClass(ctx, p, fresh[i]); err != nil {
+			return nil, err
+		}
+	}
+	return out, nil
+}
+
+// writeClass writes one class of a definition call inside the call's
+// transaction: its tables and views, and its definition in the registry.
+// It reports whether the class is fresh, new or with no history at all,
+// which is dropped and made again.
+func (s *Store) writeClass(ctx context.Context, p *pending, now int64) (bool, error) {
+	c, old, cls, w := p.c, p.old, p.cls, s.writer
 	fresh := old == nil
 	if old != nil {
 		var n int64
 		if err := w.QueryRowContext(ctx, "SELECT count(*) FROM "+quote(old.history)).Scan(&n); err != nil {
-			return rollback(storageErr("count the history", err))
+			return false, storageErr("count the history", err)
 		}
 		fresh = n == 0
 	}
@@ -541,30 +704,30 @@ func (s *Store) DefineClass(ctx context.Context, data []byte) (*model.Class, err
 	if old != nil {
 		for _, ddl := range old.dropViewDDL() {
 			if _, err := w.ExecContext(ctx, ddl); err != nil {
-				return rollback(storageErr("drop the views of "+old.cls.Name, err))
+				return false, storageErr("drop the views of "+old.cls.Name, err)
 			}
 		}
 	}
 	for _, name := range names {
 		var n int64
 		if err := w.QueryRowContext(ctx, "SELECT count(*) FROM sqlite_master WHERE name = ? COLLATE NOCASE", name).Scan(&n); err != nil {
-			return rollback(storageErr("check the names", err))
+			return false, storageErr("check the names", err)
 		}
 		if n > 0 && !(fresh && old != nil && isOwn(old, name)) {
-			return rollback(hintf(CodeDuplicate, "", "the name "+name+" is taken by another table or view", "rename the class or the variable"))
+			return false, hintf(CodeDuplicate, "", "the name "+name+" is taken by another table or view", "rename the class or the variable")
 		}
 	}
 	switch {
 	case fresh && old != nil:
 		for _, ddl := range old.dropDDL() {
 			if _, err := w.ExecContext(ctx, ddl); err != nil {
-				return rollback(storageErr("drop the tables of "+old.cls.Name, err))
+				return false, storageErr("drop the tables of "+old.cls.Name, err)
 			}
 		}
 	case old != nil:
 		for _, ddl := range alterDDL(old, c) {
 			if _, err := w.ExecContext(ctx, ddl); err != nil {
-				return rollback(storageErr("alter the tables of "+old.cls.Name, err))
+				return false, storageErr("alter the tables of "+old.cls.Name, err)
 			}
 		}
 	}
@@ -574,23 +737,28 @@ func (s *Store) DefineClass(ctx context.Context, data []byte) (*model.Class, err
 	}
 	for _, d := range ddl {
 		if _, err := w.ExecContext(ctx, d); err != nil {
-			return rollback(storageErr("create the tables of "+cls.Name, err))
+			return false, storageErr("create the tables of "+cls.Name, err)
 		}
 	}
+	var err error
 	if old == nil {
-		_, err = w.ExecContext(ctx, "INSERT INTO classes (name, version, json, created_at, updated_at) VALUES (?, ?, ?, ?, ?)", cls.Name, version, string(compact), now, now)
+		_, err = w.ExecContext(ctx, "INSERT INTO classes (name, version, json, created_at, updated_at) VALUES (?, ?, ?, ?, ?)", cls.Name, p.version, string(p.compact), now, now)
 	} else {
-		_, err = w.ExecContext(ctx, "UPDATE classes SET name = ?, version = ?, json = ?, updated_at = ? WHERE name = ?", cls.Name, version, string(compact), now, old.cls.Name)
+		_, err = w.ExecContext(ctx, "UPDATE classes SET name = ?, version = ?, json = ?, updated_at = ? WHERE name = ?", cls.Name, p.version, string(p.compact), now, old.cls.Name)
 	}
 	if err != nil {
-		return rollback(storageErr("store the class", err))
+		return false, storageErr("store the class", err)
 	}
-	if _, err := w.ExecContext(ctx, "INSERT INTO class_versions (class, version, json, created_at) VALUES (?, ?, ?, ?)", cls.Name, version, string(compact), now); err != nil {
-		return rollback(storageErr("store the class version", err))
+	if _, err := w.ExecContext(ctx, "INSERT INTO class_versions (class, version, json, created_at) VALUES (?, ?, ?, ?)", cls.Name, p.version, string(p.compact), now); err != nil {
+		return false, storageErr("store the class version", err)
 	}
-	if _, err := w.ExecContext(ctx, "COMMIT"); err != nil {
-		return nil, storageErr("commit", err)
-	}
+	return fresh, nil
+}
+
+// adoptClass makes a class the store wrote the current one of its name,
+// after the transaction of its call.
+func (s *Store) adoptClass(ctx context.Context, p *pending, fresh bool) error {
+	c, old, cls, w := p.c, p.old, p.cls, s.writer
 	if old != nil {
 		s.closePlans()
 		s.filters.clear()
@@ -607,7 +775,7 @@ func (s *Store) DefineClass(ctx context.Context, data []byte) (*model.Class, err
 			// the documents it computed.
 			old.close()
 			if err := old.prepare(ctx, w, s.db); err != nil {
-				return nil, err
+				return err
 			}
 		}
 	}
@@ -616,10 +784,10 @@ func (s *Store) DefineClass(ctx context.Context, data []byte) (*model.Class, err
 		// which only a driver fault explains. Leave the class out of the
 		// map so that the error is visible on the next definition.
 		delete(s.classes, strings.ToUpper(cls.Name))
-		return nil, err
+		return err
 	}
 	s.register(c)
-	return cls, nil
+	return nil
 }
 
 // isOwn reports whether a name is one of the class's own tables, which a

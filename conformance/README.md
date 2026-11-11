@@ -144,6 +144,9 @@ synchronous actions, that rules do not cascade, what a failing action
 does, and what a frozen document allows. The format is the statechart
 suites', with these additions:
 
+- A suite with `"together": true` defines its `classes` and its `class`
+  in one call (ADR-0046, item 12), as classes that name each other must
+  be.
 - `reads.json` is the suite of formulas that read the documents of a
   class (ADR-0046): parallel approvals, a class that counts over itself,
   what a lookup sees of its own document and of deleted and finished

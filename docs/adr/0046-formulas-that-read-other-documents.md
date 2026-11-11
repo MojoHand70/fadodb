@@ -288,6 +288,37 @@ The second part built a class as the source, items 3 and 5 to 11, on
   with 10,000 approvals. What a statement costs that no index narrows
   waits for the campaign of the last step.
 
+The third part built item 12 on 2026-11-11 and settled these points.
+With it the step is whole.
+
+- **The calls.** `DefineClasses` takes the definitions as a list and
+  answers the classes in the same order; `ValidateClasses` answers the
+  findings and stores nothing. `DefineClass` is a call with one
+  definition and behaves as it did.
+- **How a set compiles.** As a file loads: every definition alone
+  first, for its variables, states and transitions, with what it says
+  about other classes left open; then every one in full against those
+  and against what is stored. A class of the set that is already stored
+  is seen by the others as it is about to become.
+- **Where a finding is.** Its path starts with the position of its
+  definition in the call: `/1/variables/total` is in the second. A
+  definition that is not JSON is at `/1`.
+- **One wrong definition does not accuse the others.** When a definition
+  does not compile even alone, only the findings of such definitions
+  are reported: a class that names a wrong one would say no more than
+  that it does not know it.
+- **All or none.** The tables, views and registry rows of the whole call
+  are one transaction. A name taken, by a table of another class of the
+  same call too, rolls all of it back.
+- **What a set may not do.** Define a class twice. Break a stored class
+  outside the set: each redefinition in it is held to what a
+  redefinition alone is (ADR-0039, ADR-0044, item 11 above), with the
+  other classes of the call as they are about to become, so that a
+  purchase may drop a transition when the approval that named it is
+  redefined in the same call.
+- **A definition that is the stored one is left alone**, in a set as in
+  a single call, and gets no new version; the others of the set do.
+
 ## Consequences
 
 - **Parallel approvals are whole.** Each approval is a document that

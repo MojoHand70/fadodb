@@ -411,3 +411,177 @@ func openHandles(t *testing.T, path string) int {
 	}
 	return n
 }
+
+// TestDefineClasses is several classes defined in one call (ADR-0046,
+// item 12): classes that name each other compile against each other,
+// all are stored or none is, a finding says which definition it is in,
+// and the single call still behaves as it did.
+func TestDefineClasses(t *testing.T) {
+	s, path := openStore(t, Options{})
+	ctx := context.Background()
+	pair := [][]byte{[]byte(lkPurchase), []byte(lkApproval)}
+	// Alone, neither of the two can be defined: each names the other.
+	for i, def := range pair {
+		var diags model.Diagnostics
+		if _, err := s.DefineClass(ctx, def); !errors.As(err, &diags) {
+			t.Fatalf("definition %d alone: %v", i, err)
+		}
+	}
+	if diags := s.ValidateClasses(pair); len(diags) != 0 {
+		t.Fatalf("the pair validates with %v", diags)
+	}
+	// A definition that is wrong by itself is the one reported: the class
+	// that names it would only say that it does not know it.
+	wrong := strings.Replace(lkPurchase, `"default": "2"`, `"default": "2 +"`, 1)
+	if diags := s.ValidateClasses([][]byte{[]byte(lkApproval), []byte(wrong)}); len(diags) != 1 || diags[0].Path != "/1/variables/needed/default" {
+		t.Errorf("a pair with one wrong definition: %v", diags)
+	}
+	if len(s.Classes()) != 0 {
+		t.Fatalf("a validation stored %v", s.Classes())
+	}
+	// Together they are, in either order, as version 1 each.
+	classes, err := s.DefineClasses(ctx, pair)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(classes) != 2 || classes[0].Name != "Purchase" || classes[1].Name != "Approval" || classes[0].Version != 1 || classes[1].Version != 1 {
+		t.Fatalf("defined %v", classes)
+	}
+	if got := strings.Join(s.Classes(), ","); got != "Purchase,Approval" {
+		t.Errorf("classes %s", got)
+	}
+	// They run: two approvals granted, the purchase approved.
+	if _, err := s.Create(ctx, "Purchase", Values{}, WithID("P-1")); err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []string{"A-1", "A-2"} {
+		if _, err := s.Create(ctx, "Approval", Values{"purchase": "P-1", "amount": "5.00"}, WithID(id)); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := s.Transition(ctx, "Approval", id, "grant", nil); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := s.Drain(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if p, _ := s.Get(ctx, "Purchase", "P-1"); p.State != "approved" || p.Values["sum"] != "10.00" {
+		t.Errorf("the purchase: %s", dump(p))
+	}
+	// The same definitions again are a no-op, alone or together.
+	again, err := s.DefineClasses(ctx, [][]byte{[]byte(lkApproval), []byte(lkPurchase)})
+	if err != nil || again[0].Version != 1 || again[1].Version != 1 || again[0].Name != "Approval" {
+		t.Errorf("the same pair again: %v %v", again, err)
+	}
+
+	// A set is all or nothing. The purchase gains a variable the approval
+	// starts to set; the third definition is wrong, so nothing is stored
+	// and both findings say where they are.
+	purchase2 := strings.Replace(lkPurchase, `"needed":  {"type": "number", "default": "2"},`, `"needed":  {"type": "number", "default": "2"}, "last": {"type": "text"},`, 1)
+	approval2 := strings.Replace(lkApproval, `"do": [{"action": "refresh", "class": "Purchase", "id": "purchase"}]`,
+		`"do": [{"action": "refresh", "class": "Purchase", "id": "purchase"}, {"action": "transition", "class": "Purchase", "id": "purchase", "name": "note", "values": {"last": "ID()"}}]`, 1)
+	purchase2 = strings.Replace(purchase2, `"transitions": [`, `"transitions": [{"name": "note", "from": "waiting", "to": "waiting"}, `, 1)
+	const broken = `{"name": "Ledger", "variables": {"n": {"formula": "LOOKUP(Approval, COUNT(id), nope = 1)", "mode": "triggered", "on": ["refresh"]}, "m": {"type": "number", "formula": "missing + 1"}},
+ "states": {"initial": "open", "list": ["open"]}}`
+	_, err = s.DefineClasses(ctx, [][]byte{[]byte(purchase2), []byte(approval2), []byte(broken)})
+	var diags model.Diagnostics
+	if !errors.As(err, &diags) || len(diags) != 2 || diags[0].Path != "/2/variables/n/formula" || diags[1].Path != "/2/variables/m/formula" {
+		t.Fatalf("a set with one wrong definition: %v", err)
+	}
+	if c, _ := s.class("Purchase"); c.cls.Version != 1 {
+		t.Errorf("a refused set stored version %d of the purchase", c.cls.Version)
+	}
+	if c, _ := s.class("Approval"); c.cls.Version != 1 || len(s.Classes()) != 2 {
+		t.Errorf("a refused set stored something: %v", s.Classes())
+	}
+	// Alone, the new approval is refused: the stored purchase has no
+	// transition note. Together with the new purchase it goes through,
+	// and both are version 2.
+	if _, err := s.DefineClass(ctx, []byte(approval2)); !errors.As(err, &diags) || !strings.Contains(diags.Error(), "note") {
+		t.Errorf("the new approval alone: %v", err)
+	}
+	classes, err = s.DefineClasses(ctx, [][]byte{[]byte(approval2), []byte(purchase2)})
+	if err != nil || classes[0].Version != 2 || classes[1].Version != 2 {
+		t.Fatalf("the two redefined together: %v %v", classes, err)
+	}
+	// One of a set unchanged and one changed: only the changed one moves.
+	purchase3 := strings.Replace(purchase2, `"last": {"type": "text"},`, `"last": {"type": "text"}, "memo": {"type": "text"},`, 1)
+	classes, err = s.DefineClasses(ctx, [][]byte{[]byte(approval2), []byte(purchase3)})
+	if err != nil || classes[0].Version != 2 || classes[1].Version != 3 {
+		t.Fatalf("one unchanged, one changed: %v %v", classes, err)
+	}
+
+	// What a set may not do. A class twice in one call.
+	_, err = s.DefineClasses(ctx, [][]byte{[]byte(purchase3), []byte(strings.Replace(purchase3, `"memo"`, `"memo2"`, 1))})
+	if !errors.As(err, &diags) || diags[0].Code != model.CodeDuplicate || diags[0].Path != "/1/name" {
+		t.Errorf("a class twice in one call: %v", err)
+	}
+	// Bad JSON says which definition.
+	_, err = s.DefineClasses(ctx, [][]byte{[]byte(purchase3), []byte(`{"name": `)})
+	if !errors.As(err, &diags) || diags[0].Code != model.CodeBadJSON || diags[0].Path != "/1" {
+		t.Errorf("bad JSON in a set: %v", err)
+	}
+	// A redefinition inside a set is held to what a redefinition alone is:
+	// the purchase may not drop a transition a stored class outside the
+	// set names, and may when that class is redefined with it.
+	purchase4 := strings.Replace(purchase3, `{"name": "note", "from": "waiting", "to": "waiting"}, `, ``, 1)
+	const other = `{"name": "Other", "variables": {"x": {"type": "text"}}, "states": {"initial": "open", "list": ["open"]}}`
+	_, err = s.DefineClasses(ctx, [][]byte{[]byte(purchase4), []byte(other)})
+	if !errors.As(err, &diags) || diags[0].Code != model.CodeNotAllowed || !strings.HasPrefix(diags[0].Path, "/0/") || !strings.Contains(diags[0].Message, "it would break a rule of the class Approval") {
+		t.Errorf("a set that breaks a class outside it: %v", err)
+	}
+	if _, err := s.class("Other"); err == nil {
+		t.Error("the refused set stored its second class")
+	}
+	classes, err = s.DefineClasses(ctx, [][]byte{[]byte(purchase4), []byte(lkApproval), []byte(other)})
+	if err != nil || classes[0].Version != 4 || classes[1].Version != 3 || classes[2].Version != 1 {
+		t.Fatalf("the purchase and the approval changed together: %v %v", classes, err)
+	}
+	// and to what the documents allow (ADR-0039): the approval may not
+	// drop a variable its documents hold values for.
+	_, err = s.DefineClasses(ctx, [][]byte{[]byte(other), []byte(strings.Replace(lkApproval, `, "amount": {"type": "decimal(2)"}`, ``, 1)), []byte(strings.Replace(purchase4, `"sum":`, `"sum2":`, 1))})
+	held := false
+	if errors.As(err, &diags) {
+		for _, d := range diags {
+			held = held || d.Code == model.CodeNotAllowed && d.Path == "/1/variables/amount" && strings.Contains(d.Message, "documents hold a value")
+		}
+	}
+	// The purchase is in the set too, so it is judged by its own new
+	// definition and not as a reader the approval breaks.
+	if !held || strings.Contains(err.Error(), "it would break a formula of the class Purchase") {
+		t.Errorf("a set that drops a variable with values: %v", err)
+	}
+	// An empty call does nothing; a single definition in a set is a set.
+	if out, err := s.DefineClasses(ctx, nil); err != nil || len(out) != 0 {
+		t.Errorf("an empty call: %v %v", out, err)
+	}
+	_, err = s.DefineClasses(ctx, [][]byte{[]byte(broken)})
+	if !errors.As(err, &diags) || diags[0].Path != "/0/variables/n/formula" {
+		t.Errorf("a set of one says where: %v", err)
+	}
+	// A name taken by a table of another class of the same call rolls the
+	// whole call back.
+	_, err = s.DefineClasses(ctx, [][]byte{
+		[]byte(`{"name": "Box", "variables": {"x": {"type": "text"}}, "states": {"initial": "open", "list": ["open"]}}`),
+		[]byte(`{"name": "Box_history", "variables": {"x": {"type": "text"}}, "states": {"initial": "open", "list": ["open"]}}`)})
+	if err == nil {
+		t.Error("two classes whose tables collide were both stored")
+	}
+	if _, err := s.class("Box"); err == nil {
+		t.Error("the first class of a call that failed while writing was kept")
+	}
+
+	// Everything comes back after a reopen, and the documents still move.
+	s.Close()
+	s2, err := Open(path, Options{Outbox: OutboxOptions{Manual: true}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s2.Close()
+	if got := strings.Join(s2.Classes(), ","); got != "Purchase,Approval,Other" {
+		t.Errorf("classes after the reopen: %s", got)
+	}
+	if p, err := s2.Refresh(ctx, "Purchase", "P-1", nil); err != nil || p.Values["granted"] != 2.0 || p.ClassVersion != 4 {
+		t.Errorf("the purchase after the reopen: %v %s", err, dump(p))
+	}
+}

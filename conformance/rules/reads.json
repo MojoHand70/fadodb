@@ -1,11 +1,9 @@
 {
   "suite": "reads",
-  "description": "A formula reads the documents of a class (ADR-0046): LOOKUP names the class, takes one of its columns or COUNT, SUM, MIN or MAX over them, and a condition in which a bare name is a column of that class, THIS.name a variable of the document, and ID() and STATE() the document's own. It sees every document of the class, whoever caused it to be computed and whatever the rights say, those in a terminal state included and deleted ones not. It reads what was stored before the command began, the document's own row among it. Nothing recomputes by itself: the approval's rule refreshes the purchase, the purchase counts, and its own guard moves it.",
+  "description": "A formula reads the documents of a class (ADR-0046): LOOKUP names the class, takes one of its columns or COUNT, SUM, MIN or MAX over them, and a condition in which a bare name is a column of that class, THIS.name a variable of the document, and ID() and STATE() the document's own. It sees every document of the class, whoever caused it to be computed and whatever the rights say, those in a terminal state included and deleted ones not. It reads what was stored before the command began, the document's own row among it. Nothing recomputes by itself: the approval's rule refreshes the purchase, the purchase counts, and its own guard moves it. The approval names the purchase and the purchase the approval, so the classes of the suite are defined in one call.",
   "clock": "2026-03-01 12:00:00",
+  "together": true,
   "classes": [
-    {"name": "Purchase",
-     "variables": {"needed": {"type": "number", "default": "2"}},
-     "states": {"initial": "waiting", "list": ["waiting", "approved"]}},
     {"name": "Approval",
      "variables": {"purchase": {"type": "text", "required": true, "index": true}, "amount": {"type": "decimal(2)"}, "by": {"type": "text", "default": "USER()"}},
      "states": {"initial": "asked", "list": ["asked", "granted", "refused", "void"], "final": ["void"]},

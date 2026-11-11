@@ -1,6 +1,6 @@
 # ADR-0044: The outbox: what a commit queues, the worker and the engine's own actions
 
-- Status: Accepted; amends ADR-0006 (which outcomes of an action are events), ADR-0009 (the row, the order, which failures are retried, exactly once for the engine's own actions, a bound on chains), ADR-0026 (the engine's commands carry keys under a reserved prefix), ADR-0027 (how the worker hands a row to an action), ADR-0043 (a `refresh` that names another document is an outbox action; a `create` with `each` queues a row for each element)
+- Status: Accepted; amends ADR-0006 (which outcomes of an action are events), ADR-0009 (the row, the order, which failures are retried, exactly once for the engine's own actions, a bound on chains), ADR-0026 (the engine's commands carry keys under a reserved prefix), ADR-0027 (how the worker hands a row to an action), ADR-0043 (a `refresh` that names another document is an outbox action; a `create` with `each` queues a row for each element); amended by ADR-0047 (the wake-up row of a timed transition)
 - Date: 2026-11-09
 
 ## Context

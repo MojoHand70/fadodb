@@ -261,6 +261,18 @@ The rule behind the table: the stored value of an auto variable must be a
 function of the document itself, so it may not depend on who is looking,
 on the clock, or on data outside the document beyond a keyed lookup.
 
+The context functions grow by the life of the document (ADR-0047,
+designed and not built yet): `CREATEDAT()` and `CREATEDBY()`,
+`UPDATEDAT()` and `UPDATEDBY()`, `ENTEREDAT()` and `ENTEREDBY()` for the
+state it is in, and for any state by name `FIRSTENTERED`, `LASTENTERED`,
+`FIRSTLEFT` and `LASTLEFT`, each with a `...BY` beside it for who, and
+`ENTRIES`, `DAYSIN`, `FIRSTEDITOR` and `LASTEDITOR`. The document will
+keep who created it, last changed it and moved it into its state, and
+the state it came from, as the system variables `created_by`,
+`updated_by`, `state_entered_by` and `state_entered_from`, the last
+read with `ENTEREDFROM()`. Every event of an entry will say how the move
+came about, under `origin`: `command`, `action`, `guard` or `timer`.
+
 Inside `LOOKUP` and `QUERY`, bare names are columns of the source and the
 document's own variables are reached as `THIS.name`. Columns may be
 aggregates (`COUNT(id)`, `SUM(amount)`) and `groupby` names the grouping
@@ -370,7 +382,14 @@ on commit is authoritative; the conformance suite guarantees the two agree.
   document are listed on request (ADR-0040).
 - A class without states is a stateless application: it is evaluated
   with a preview and stores no documents (ADR-0040).
-- Timers (`after: "7d"`) are a 0.x feature implemented through the outbox scheduler.
+- A transition may fire by time: `"after": "30d"`, a length of stay in
+  the state, or `"at"`, a formula that gives the moment. Its meaning is
+  that of an eventless transition whose guard also says the time has
+  come, and the engine queues a wake-up in the outbox for that moment,
+  so the document moves when the time comes and not only when it is next
+  touched. A transition back into the same state is an entry like any
+  other, which is how a reminder repeats. Designed in ADR-0047, not
+  built yet.
 
 ### Document tables
 
@@ -407,7 +426,7 @@ What users see are views, never the physical names:
 |---|---|
 | `Invoice` | document, current values |
 | `Invoice_history` | committed version, with `valid_from` and `valid_to` |
-| `Invoice_states` | state visit: `state`, `entered_at`, `left_at`, `duration`, entry and exit versions |
+| `Invoice_states` | state visit: `state`, `entered_at`, `left_at`, `duration`, entry and exit versions; with ADR-0047, not built yet, one row for every entry, a return into the same state too, with who made the move, by which transition, from which state and how, for the entry and for the leaving |
 | `Invoice_events` | event touching the class |
 | `Invoice_lines` | element of the composite variable `lines`, current version |
 | `Invoice_lines_history` | element per version |

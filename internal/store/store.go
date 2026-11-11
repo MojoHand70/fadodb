@@ -34,7 +34,7 @@ const DefaultMaxIndexedRows = 100000
 // engineSchema is the version of the store's own tables. A database made
 // by another engine schema is refused: before 1.0 there is no upgrade
 // path, and a pre-release file is recreated.
-const engineSchema = 4
+const engineSchema = 5
 
 // Options configure Open. The ones that are properties of the database,
 // Synchronous and MaxText, are read at creation and kept in the metadata
@@ -123,10 +123,16 @@ type Store struct {
 	vm          *formula.VM
 	qvm         *formula.VM // runs the key expressions of indexed lookups while vm runs the formula
 	wev         evaluator   // the writer's evaluator over vm, with its scratch
-	readers     sync.Pool   // evaluators for the read paths' projections (ADR-0041)
-	dirty       []bool
-	given       []bool   // the variables one command sets, for the write check
-	visits      []string // the states one command visits, reused under the writer's lock
+	// curArgs, histArgs and eventArgs are the write step's argument
+	// lists, kept between commits; dayArg is the business day of dayOf,
+	// boxed.
+	curArgs, updArgs, histArgs, eventArgs []any
+	dayOf                                 int64
+	dayArg                                any
+	readers                               sync.Pool // evaluators for the read paths' projections (ADR-0041)
+	dirty                                 []bool
+	given                                 []bool   // the variables one command sets, for the write check
+	visits                                []string // the states one command visits, reused under the writer's lock
 	// The scratch of the rules of one command (ADR-0043), reused under the
 	// writer's lock: the eventless commits, the custom events to append,
 	// the values of a set before they are assigned, the composites a reset
@@ -480,8 +486,8 @@ func (s *Store) prepareEngine(ctx context.Context) error {
 	}
 	prep(&s.stmts.lookupKey, "SELECT kind, class, doc_id, after_version, command_hash, event_id FROM events WHERE command_key = ?")
 	prep(&s.stmts.lastOfCommand, "SELECT max(after_version) FROM events WHERE cause_event_id = ?")
-	prep(&s.stmts.insertEvent, "INSERT INTO events (event_id, class, doc_id, kind, name, from_state, to_state, actor_id, before_version, after_version, cause_event_id, command_key, command_hash, business_date, ts)"+
-		" VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
+	prep(&s.stmts.insertEvent, "INSERT INTO events (event_id, class, doc_id, kind, name, from_state, to_state, actor_id, before_version, after_version, cause_event_id, command_key, command_hash, business_date, ts, origin)"+
+		" VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
 	prep(&s.stmts.insertEventDoc, "INSERT INTO event_docs (event_id, class, doc_id, qualifier) VALUES (?, ?, ?, ?)")
 	prep(&s.stmts.insertOutbox, "INSERT INTO outbox (event_id, idx, class, doc_id, version, class_version, rule, action, args, principal_id, principal_groups, principal_admin, depth, status, attempts, due_at, error_code, error_message, created_at, finished_at, outcome_event)"+
 		" VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?)")
@@ -491,7 +497,7 @@ func (s *Store) prepareEngine(ctx context.Context) error {
 	// An event of kind action_failed is read with the code its action died
 	// with, which the outbox row holds (ADR-0044).
 	if s.stmts.listEvents, err = s.db.PrepareContext(ctx, "SELECT e.event_id, e.class, e.doc_id, e.kind, e.name, e.from_state, e.to_state, e.actor_id, e.before_version, e.after_version, e.cause_event_id, e.command_key, e.business_date, e.ts,"+
-		" (SELECT o.error_code FROM outbox o WHERE o.outcome_event = e.event_id)"+
+		" (SELECT o.error_code FROM outbox o WHERE o.outcome_event = e.event_id), e.origin"+
 		" FROM events e JOIN event_docs d ON d.event_id = e.event_id WHERE d.class = ? AND d.doc_id = ? ORDER BY e.ts, e.event_id"); err != nil {
 		return storageErr("prepare", err)
 	}
@@ -520,7 +526,7 @@ func (s *Store) prepareEngine(ctx context.Context) error {
 	// event of an eventless transition has no key of its own; the command
 	// that caused it has.
 	s.stmts.callOutbox, err = s.db.PrepareContext(ctx, "SELECT o.status, o.attempts, o.version, o.class_version, e.kind, e.name, e.from_state, e.to_state, e.actor_id,"+
-		" coalesce(e.command_key, (SELECT c.command_key FROM events c WHERE c.event_id = e.cause_event_id)), e.business_date, e.ts"+
+		" coalesce(e.command_key, (SELECT c.command_key FROM events c WHERE c.event_id = e.cause_event_id)), e.business_date, e.ts, e.origin"+
 		" FROM outbox o JOIN events e ON e.event_id = o.event_id WHERE o.event_id = ? AND o.idx = ?")
 	return storageErr("prepare", err)
 }

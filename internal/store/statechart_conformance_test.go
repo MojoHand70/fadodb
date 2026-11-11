@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -145,6 +146,17 @@ type scriptExpect struct {
 	// Visits are the rows of the _states view: state, entry version, exit
 	// version or null.
 	Visits [][]any `json:"visits,omitempty"`
+	// Stays are the rows of the _states view again, for who and how
+	// (ADR-0047, item 3): state, then for the entry that began the stay
+	// who made it, the state the document came from, the transition and
+	// the origin, then for the move that ended it who, the transition and
+	// the origin; null where there is none. Origins are the origins of
+	// the events that enter a state, created and transition, in order.
+	// Life is what the document keeps of its life, by name: created_by,
+	// updated_by, state_entered_by, state_entered_from; "" for none.
+	Stays   [][]any           `json:"stays,omitempty"`
+	Origins []string          `json:"origins,omitempty"`
+	Life    map[string]string `json:"life,omitempty"`
 	// Absent and Present are variables that must be missing from, or
 	// found in, the values of the document, or of every document a query
 	// returned (ADR-0041).
@@ -497,6 +509,13 @@ func runStatechartSuite(t *testing.T, suite *statechartSuite) {
 			if want.Version != 0 && doc.Version != want.Version {
 				t.Errorf("%s: version %d, want %d", name, doc.Version, want.Version)
 			}
+			for field, w := range want.Life {
+				got, known := map[string]string{"created_by": doc.CreatedBy, "updated_by": doc.UpdatedBy,
+					"state_entered_by": doc.StateEnteredBy, "state_entered_from": doc.StateEnteredFrom}[field]
+				if !known || got != w {
+					t.Errorf("%s: %s is %q, want %q", name, field, got, w)
+				}
+			}
 			for vname, raw := range want.Values {
 				if !sameWire(doc.Values[vname], raw) {
 					t.Errorf("%s: %s = %s, want %s", name, vname, dump(doc.Values[vname]), raw)
@@ -742,6 +761,30 @@ func runStatechartSuite(t *testing.T, suite *statechartSuite) {
 				t.Errorf("%s: events %v, want %v", name, got, want.Events)
 			}
 		}
+		if want.Origins != nil {
+			events, err := s.Events(ctx, class, id)
+			if err != nil {
+				t.Fatal(err)
+			}
+			got := []string{}
+			for _, e := range events {
+				if e.Kind == EventCreated || e.Kind == EventTransition {
+					got = append(got, e.Origin)
+				}
+			}
+			if !reflect.DeepEqual(got, want.Origins) {
+				t.Errorf("%s: origins %v, want %v", name, got, want.Origins)
+			}
+		}
+		if want.Stays != nil {
+			got, err := readStays(s, class, id)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !sameWire(got, mustJSON(want.Stays)) {
+				t.Errorf("%s: stays %s, want %s", name, dump(got), dump(want.Stays))
+			}
+		}
 		if want.Visits != nil {
 			if step.Do != "visits" {
 				visitsGot, err = readVisits(s, class, id)
@@ -777,6 +820,36 @@ func readVisits(s *Store, class, id string) ([][]any, error) {
 			x = *exit
 		}
 		out = append(out, []any{state, entry, x})
+	}
+	return out, rows.Err()
+}
+
+// readStays reads the _states view of a document for who and how: state,
+// entered_by, entered_from, entered_via, entered_how, left_by, left_via
+// and left_how, null where there is none.
+func readStays(s *Store, class, id string) ([][]any, error) {
+	rows, err := s.db.Query(`SELECT state, entered_by, entered_from, entered_via, entered_how, left_by, left_via, left_how FROM `+quote(class+"_states")+` WHERE id = ? ORDER BY entry_version`, id)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := [][]any{}
+	for rows.Next() {
+		cols := make([]sql.NullString, 8)
+		dest := make([]any, 8)
+		for i := range cols {
+			dest[i] = &cols[i]
+		}
+		if err := rows.Scan(dest...); err != nil {
+			return nil, err
+		}
+		row := make([]any, 8)
+		for i, c := range cols {
+			if c.Valid {
+				row[i] = c.String
+			}
+		}
+		out = append(out, row)
 	}
 	return out, rows.Err()
 }

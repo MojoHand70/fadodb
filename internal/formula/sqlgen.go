@@ -422,6 +422,16 @@ func (t *sqlTranslator) block(start, end int) (SQLExpr, error) {
 				// Over document rows the state and the id are columns of
 				// the row (ADR-0040); the dialect binds a parameter otherwise.
 				e = SQLExpr{Val: d.Load(t.row(strings.ToLower(name)), KindText), Kind: KindText}
+			case LifeColumns[name] != "":
+				// A fact of the document's life is a system column of its
+				// row (ADR-0047), and a parameter of that name where the
+				// statement runs over no row.
+				column, kind := LifeColumns[name], builtins[in.Arg>>8].result
+				if t.row != nil {
+					e = SQLExpr{Val: d.Load(t.row(column), kind), Kind: kind}
+				} else {
+					e = SQLExpr{Val: d.Load(t.params.Use(column), kind), Kind: kind}
+				}
 			default:
 				e, err = d.Call(name, args, t.params)
 				if err != nil {

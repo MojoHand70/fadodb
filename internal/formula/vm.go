@@ -30,6 +30,71 @@ type Context struct {
 	// ID is the id of the document the formula runs over, for ID(); empty
 	// when there is no document.
 	ID string
+	// Doc is what the document the formula runs over keeps of its own
+	// life (ADR-0047); nil when there is no document.
+	Doc *Life
+}
+
+// Life is what a document keeps of its own life (ADR-0047, items 4 and
+// 5): its version, the moments it was created, its current version was
+// made and it entered the state it is in, in seconds since the epoch, who
+// did each, and the state it came from. A zero moment and an empty text
+// are blank.
+type Life struct {
+	Version                         int64
+	CreatedAt, UpdatedAt, EnteredAt int64
+	CreatedBy, UpdatedBy, EnteredBy string
+	EnteredFrom                     string
+}
+
+// LifeColumns names, for each function of the row, the system column
+// that holds its answer, which is also the name its parameter is bound
+// under when a statement runs over no document row.
+var LifeColumns = map[string]string{
+	"CREATEDAT": "created_at", "CREATEDBY": "created_by",
+	"UPDATEDAT": "updated_at", "UPDATEDBY": "updated_by",
+	"ENTEREDAT": "state_entered_at", "ENTEREDBY": "state_entered_by",
+	"ENTEREDFROM": "state_entered_from", "VERSION": "version",
+}
+
+// lifeValue reads one fact of the document's life by its column, as a
+// database driver takes it: nil for a blank.
+func lifeValue(ctx *Context, column string) any {
+	if ctx == nil || ctx.Doc == nil {
+		return nil
+	}
+	moment := func(secs int64) any {
+		if secs == 0 {
+			return nil
+		}
+		return secs
+	}
+	text := func(s string) any {
+		if s == "" {
+			return nil
+		}
+		return s
+	}
+	d := ctx.Doc
+	switch column {
+	case "created_at":
+		return moment(d.CreatedAt)
+	case "updated_at":
+		return moment(d.UpdatedAt)
+	case "state_entered_at":
+		return moment(d.EnteredAt)
+	case "version":
+		return moment(d.Version)
+	case "created_by":
+		return text(d.CreatedBy)
+	case "updated_by":
+		return text(d.UpdatedBy)
+	case "state_entered_by":
+		return text(d.EnteredBy)
+	case "state_entered_from":
+		return text(d.EnteredFrom)
+	}
+	return nil
 }
 
 // EvalError is an evaluation error: a code from the closed list, the byte

@@ -19,6 +19,19 @@ type class struct {
 	cls            *model.Class
 	json           []byte
 	table, history string
+	// nameArg is the class's name boxed once, for the statements of the
+	// write step.
+	nameArg any
+	// who says a formula of the class reads who created, changed or moved
+	// the document, or where it came from (ADR-0047, item 5).
+	who bool
+	// life says a formula of the class reads the document's life at all,
+	// so that a commit of a class that does not is spared what only such
+	// a formula needs: the stay a transition ended, put before the rules
+	// and the triggered variables of the state left.
+	life bool
+	// wraw and wdest are the lists the writer scans a current row into.
+	wraw, wdest []any
 	// leaves are the stored scalars of a current or history row, in
 	// column order: one per column, a money's two columns one leaf.
 	leaves    []leaf
@@ -108,21 +121,52 @@ type child struct {
 
 type writeStmts struct {
 	selectCurrent, upsert, closeHistory, insertHistory, deleteCurrent *sql.Stmt
+	// selectLean reads the current row without who made it and where it
+	// came from (ADR-0047, item 4), for a read that only evaluates
+	// formulas of a class none of which asks for them.
+	selectLean *sql.Stmt
+	// update writes an existing row and updateSystem its system columns
+	// alone; upsert writes a new one.
+	update, updateSystem *sql.Stmt
 }
 
 type readStmts struct {
 	getCurrent, getVersion, listHistory *sql.Stmt
 }
 
+// stay is the entry that began a document's stay in a state (ADR-0047):
+// when, by whom and from which state.
+type stay struct {
+	at       int64
+	by, from string
+}
+
+// swapStay exchanges the entry the row's life tells of with the one of
+// the stay its commit ended, so that a rule or a triggered variable of an
+// exit or of a transition, for which STATE() is the state left, reads
+// that stay; a second call puts the new one back.
+func (r *docRow) swapStay() {
+	l := &r.life
+	l.EnteredAt, l.EnteredBy, l.EnteredFrom, r.ended = r.ended.at, r.ended.by, r.ended.from, stay{l.EnteredAt, l.EnteredBy, l.EnteredFrom}
+}
+
 // docRow is a current or history row in memory.
 type docRow struct {
-	id, title, state                   string
-	version                            int64
-	classVersion                       int
-	createdAt, updatedAt, stateEntered int64
-	validFrom, validTo                 int64
-	actor, eventID                     string
-	vals                               []formula.Value
+	id, title, state string
+	version          int64
+	classVersion     int
+	// life is what the document keeps of its own life (ADR-0047): the
+	// moments it was created, this version was made and it entered its
+	// state, who did each, and the state it came from. Its Version follows
+	// version.
+	// ended is the stay a transition of this commit ended: when the
+	// document entered the state it left, who moved it there and where
+	// from, which a formula that speaks of the state left reads.
+	life               formula.Life
+	ended              stay
+	validFrom, validTo int64
+	actor, eventID     string
+	vals               []formula.Value
 	// ats are the times the class's triggered variables were last
 	// computed, one per variable of class.triggered and 0 for none: the
 	// valid_from of the history row at the version the moment leaf names.
@@ -164,7 +208,7 @@ func indexOf(leaves []leaf) map[string]int {
 
 // newClass lays a compiled class out for storage.
 func newClass(cls *model.Class, src []byte) (*class, error) {
-	c := &class{cls: cls, json: src, table: "doc_" + cls.Name, history: "doc_" + cls.Name + "_history",
+	c := &class{cls: cls, json: src, table: "doc_" + cls.Name, history: "doc_" + cls.Name + "_history", nameArg: cls.Name,
 		byName: map[string]*cvar{}, exact: map[string]*cvar{}, slots: map[*formula.Program][]int{}, sources: map[string]bool{}}
 	for _, v := range cls.Variables {
 		for _, name := range v.Sources {
@@ -329,6 +373,14 @@ func (c *class) bindSlots(p *formula.Program, owner string) error {
 		// class and was left unbound (ADR-0046): it no longer runs.
 		return nil
 	}
+	if p.ReadsLife {
+		c.life = true
+	}
+	for _, fn := range whoFunctions {
+		if p.Calls(fn) {
+			c.who = true
+		}
+	}
 	idx := make([]int, len(p.Slots))
 	for i, s := range p.Slots {
 		li, ok := c.leafIndex[strings.ToUpper(s.Name)]
@@ -341,6 +393,19 @@ func (c *class) bindSlots(p *formula.Program, owner string) error {
 	c.maxSlots = max(c.maxSlots, len(idx))
 	return nil
 }
+
+// whoFunctions are the functions of the row that read a text the
+// document keeps of its life (ADR-0047, item 5), and whoColumns the
+// system columns that hold them.
+var (
+	whoFunctions = []string{"CREATEDBY", "UPDATEDBY", "ENTEREDBY", "ENTEREDFROM"}
+	whoColumns   = map[string]bool{`"created_by"`: true, `"updated_by"`: true, `"state_entered_by"`: true, `"state_entered_from"`: true}
+)
+
+// updatedSystem lists, by their place among systemColumns, the system
+// columns a commit of an existing document writes: every one but the id,
+// which finds the row, and when and by whom it was created.
+var updatedSystem = []int{1, 2, 3, 4, 6, 7, 9, 10, 11}
 
 func marks(n int) string { return strings.TrimSuffix(strings.Repeat("?, ", n), ", ") }
 
@@ -370,9 +435,37 @@ func (c *class) prepare(ctx context.Context, writer *sql.Conn, db *sql.DB) error
 	historySelect := strings.Join(append(append([]string{}, history...), c.atExprs(c.history)...), ", ")
 	selectCurrent := "SELECT " + strings.Join(append(append([]string{}, current...), c.atExprs(c.table)...), ", ") + " FROM " + quote(c.table) + ` WHERE "id" = ?`
 	prepW(&c.w.selectCurrent, selectCurrent)
+	lean := make([]string, 0, len(current))
+	for _, col := range current {
+		if !whoColumns[col] {
+			lean = append(lean, col)
+		}
+	}
+	prepW(&c.w.selectLean, "SELECT "+strings.Join(append(lean, c.atExprs(c.table)...), ", ")+" FROM "+quote(c.table)+` WHERE "id" = ?`)
 	prepW(&c.w.upsert, "INSERT INTO "+quote(c.table)+" ("+strings.Join(current, ", ")+") VALUES ("+marks(len(current))+`) ON CONFLICT ("id") DO UPDATE SET `+strings.Join(sets, ", "))
 	prepW(&c.w.closeHistory, "UPDATE "+quote(c.history)+` SET "valid_to" = ? WHERE "id" = ? AND "version" = ?`)
-	prepW(&c.w.insertHistory, "INSERT INTO "+quote(c.history)+" ("+strings.Join(history, ", ")+") VALUES ("+marks(len(history))+")")
+	// An existing row is updated, which costs SQLite less than an insert
+	// that meets the row and turns into an update. When and by whom the
+	// document was created never changes and is left out; updateSystem
+	// leaves out the values too, for a commit that changed none of them.
+	system, values := make([]string, 0, len(systemColumns)), make([]string, 0, len(cols))
+	for _, i := range updatedSystem {
+		system = append(system, current[i]+" = ?")
+	}
+	for _, col := range cols {
+		values = append(values, col+" = ?")
+	}
+	prepW(&c.w.update, "UPDATE "+quote(c.table)+" SET "+strings.Join(append(append([]string{}, system...), values...), ", ")+` WHERE "id" = ?`)
+	prepW(&c.w.updateSystem, "UPDATE "+quote(c.table)+" SET "+strings.Join(system, ", ")+` WHERE "id" = ?`)
+	// A history row is written open: valid_to is set when the next
+	// version closes it, so the insert leaves it out.
+	written := make([]string, 0, len(history))
+	for _, col := range history {
+		if col != `"valid_to"` {
+			written = append(written, col)
+		}
+	}
+	prepW(&c.w.insertHistory, "INSERT INTO "+quote(c.history)+" ("+strings.Join(written, ", ")+") VALUES ("+marks(len(written))+")")
 	prepW(&c.w.deleteCurrent, "DELETE FROM "+quote(c.table)+` WHERE "id" = ?`)
 	prepR(&c.r.getCurrent, selectCurrent)
 	prepR(&c.r.getVersion, "SELECT "+historySelect+" FROM "+quote(c.history)+` WHERE "id" = ? AND "version" = ?`)
@@ -423,7 +516,7 @@ func joinWithPrefix(cols []string) string {
 }
 
 func (c *class) close() {
-	for _, st := range []*sql.Stmt{c.w.selectCurrent, c.w.upsert, c.w.closeHistory, c.w.insertHistory, c.w.deleteCurrent, c.r.getCurrent, c.r.getVersion, c.r.listHistory} {
+	for _, st := range []*sql.Stmt{c.w.selectCurrent, c.w.selectLean, c.w.update, c.w.updateSystem, c.w.upsert, c.w.closeHistory, c.w.insertHistory, c.w.deleteCurrent, c.r.getCurrent, c.r.getVersion, c.r.listHistory} {
 		if st != nil {
 			st.Close()
 		}

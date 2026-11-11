@@ -16,7 +16,18 @@ type scanner interface {
 // scanRow reads a current row, or a history row with its four extra
 // columns, as the statements of prepare select them.
 func (c *class) scanRow(sc scanner, history bool) (*docRow, error) {
-	n := len(systemColumns) + len(c.cls.Columns) + len(c.triggered)
+	return c.scan(sc, history, false)
+}
+
+// scan reads a row. lean says the statement left out who made the
+// document and where it came from, the last four system columns
+// (ADR-0047, item 4): the row then has them blank.
+func (c *class) scan(sc scanner, history, lean bool) (*docRow, error) {
+	sys := len(systemColumns)
+	if lean {
+		sys -= len(whoColumns)
+	}
+	n := sys + len(c.cls.Columns) + len(c.triggered)
 	if history {
 		n += len(historyColumns)
 	}
@@ -25,12 +36,39 @@ func (c *class) scanRow(sc scanner, history bool) (*docRow, error) {
 	for i := range raw {
 		dest[i] = &raw[i]
 	}
+	return c.scanInto(sc, history, lean, sys, raw, dest)
+}
+
+// scanW reads a current row through a statement of the writer. The
+// writer reads one row at a time, so it keeps the two lists a scan needs
+// between rows instead of making them for each.
+func (c *class) scanW(sc scanner, lean bool) (*docRow, error) {
+	sys := len(systemColumns)
+	if lean {
+		sys -= len(whoColumns)
+	}
+	n := sys + len(c.cls.Columns) + len(c.triggered)
+	if len(c.wraw) < n {
+		c.wraw, c.wdest = make([]any, n), make([]any, n)
+		for i := range c.wraw {
+			c.wdest[i] = &c.wraw[i]
+		}
+	}
+	return c.scanInto(sc, false, lean, sys, c.wraw[:n], c.wdest[:n])
+}
+
+// scanInto scans a row into raw through dest, whose elements point at
+// raw's, and reads the row out of it.
+func (c *class) scanInto(sc scanner, history, lean bool, sys int, raw, dest []any) (*docRow, error) {
 	if err := sc.Scan(dest...); err != nil {
 		return nil, err
 	}
 	r := &docRow{id: toString(raw[0]), title: toString(raw[1]), state: toString(raw[2]), version: toInt64(raw[3]), classVersion: int(toInt64(raw[4])),
-		createdAt: toInt64(raw[5]), updatedAt: toInt64(raw[6]), stateEntered: toInt64(raw[7])}
-	rest := raw[len(systemColumns):]
+		life: formula.Life{Version: toInt64(raw[3]), CreatedAt: toInt64(raw[5]), UpdatedAt: toInt64(raw[6]), EnteredAt: toInt64(raw[7])}}
+	if !lean {
+		r.life.CreatedBy, r.life.UpdatedBy, r.life.EnteredBy, r.life.EnteredFrom = toString(raw[8]), toString(raw[9]), toString(raw[10]), toString(raw[11])
+	}
+	rest := raw[sys:]
 	if history {
 		r.validFrom, r.validTo, r.actor, r.eventID = toInt64(rest[0]), toInt64(rest[1]), toString(rest[2]), toString(rest[3])
 		rest = rest[len(historyColumns):]
@@ -103,7 +141,9 @@ func (c *class) loadChildren(ctx context.Context, id string, version int64, have
 // document renders a row and its composites in the wire shape.
 func (c *class) document(r *docRow, kids map[*child][]childRow) *Document {
 	d := &Document{Class: c.cls.Name, ID: r.id, Title: r.title, State: r.state, Version: r.version, ClassVersion: r.classVersion,
-		CreatedAt: r.createdAt, UpdatedAt: r.updatedAt, StateEnteredAt: r.stateEntered, Values: make(Values, len(c.cls.Variables))}
+		CreatedAt: r.life.CreatedAt, UpdatedAt: r.life.UpdatedAt, StateEnteredAt: r.life.EnteredAt,
+		CreatedBy: r.life.CreatedBy, UpdatedBy: r.life.UpdatedBy, StateEnteredBy: r.life.EnteredBy, StateEnteredFrom: r.life.EnteredFrom,
+		Values: make(Values, len(c.cls.Variables))}
 	if d.Title == "" {
 		d.Title = r.id
 	}
@@ -372,12 +412,13 @@ func (s *Store) Events(ctx context.Context, class, id string, opts ...Option) ([
 	for rows.Next() {
 		var ev Event
 		var name, from, to, actor, cause, key, code sql.NullString
-		var before, after sql.NullInt64
+		var before, after, origin sql.NullInt64
 		var day int64
-		if err := rows.Scan(&ev.ID, &ev.Class, &ev.DocID, &ev.Kind, &name, &from, &to, &actor, &before, &after, &cause, &key, &day, &ev.TS, &code); err != nil {
+		if err := rows.Scan(&ev.ID, &ev.Class, &ev.DocID, &ev.Kind, &name, &from, &to, &actor, &before, &after, &cause, &key, &day, &ev.TS, &code, &origin); err != nil {
 			return nil, storageErr("read the events", err)
 		}
 		ev.Name, ev.FromState, ev.ToState, ev.ActorID, ev.CauseEventID, ev.CommandKey = name.String, from.String, to.String, actor.String, cause.String, key.String
+		ev.Origin = originOf(origin.Int64)
 		if ev.Kind == EventActionFailed {
 			ev.Code = code.String
 		}

@@ -194,7 +194,7 @@ func TestLookup_ClassDefinition(t *testing.T) {
 		model.CodeMissing, "/variables/n/type", `"type": "decimal(2)"`)
 	// The columns are the system columns and the scalar variables.
 	refused(`{"name": "Wrong", "variables": {"n": {"type": "number", "formula": "LOOKUP(Approval, COUNT(id), nope = 1)", "mode": "triggered", "on": ["refresh"]}}, `+states,
-		model.CodeBadFormula, "/variables/n/formula", "unknown column nope of Approval; its columns are id, title, state, version, created_at, updated_at, state_entered_at, purchase, amount")
+		model.CodeBadFormula, "/variables/n/formula", "unknown column nope of Approval; its columns are id, title, state, version, created_at, updated_at, state_entered_at, created_by, updated_by, state_entered_by, state_entered_from, purchase, amount")
 	refused(`{"name": "Unknown", "variables": {"n": {"type": "number", "formula": "LOOKUP(Nobody, COUNT(id), TRUE)", "mode": "triggered", "on": ["refresh"]}}, `+states,
 		model.CodeBadFormula, "/variables/n/formula", "unknown source Nobody")
 	// A redefinition may not take away, or retype, what another class's
@@ -215,7 +215,7 @@ func TestLookup_ClassDefinition(t *testing.T) {
 		t.Fatal(err)
 	}
 	refused(`{"name": "Visit", "variables": {"n": {"type": "number", "formula": "LOOKUP(Site, COUNT(address), TRUE)", "mode": "triggered", "on": ["refresh"]}}, `+states,
-		model.CodeBadFormula, "/variables/n/formula", "unknown column address of Site; its columns are id, title, state, version, created_at, updated_at, state_entered_at, kind")
+		model.CodeBadFormula, "/variables/n/formula", "unknown column address of Site; its columns are id, title, state, version, created_at, updated_at, state_entered_at, created_by, updated_by, state_entered_by, state_entered_from, kind")
 	visit, err := s.DefineClass(ctx, []byte(`{"name": "Visit", "variables": {"site": {"type": "text"},
   "kind": {"type": "text", "formula": "LOOKUP(Site, kind, kind <> \"\" AND state = \"open\" AND id = THIS.site)", "mode": "triggered", "on": ["refresh"]}}, `+states))
 	if err != nil {

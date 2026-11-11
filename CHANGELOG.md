@@ -8,6 +8,32 @@ All notable changes to FadoDB are recorded here. The format follows
 
 ### Added
 
+- The document keeps who, and where from (ADR-0047, items 3 and 4):
+  `created_by`, `updated_by`, `state_entered_by` and
+  `state_entered_from` join the system variables, on the document, on
+  every version in the history, in the views, as columns a `LOOKUP`
+  over the class reads, and in the document on the wire. Each is the
+  principal of the command, blank when it named none. The names are
+  reserved.
+- A transition back into the same state is an entry like any other, and
+  the `_states` view has a row for every entry. It gains `entered_by`,
+  `entered_from`, `entered_via` and `entered_how` for the move that
+  began the stay, and `left_by`, `left_via` and `left_how` for the one
+  that ended it.
+- Every event that enters a state says how the move came about, under
+  `origin`: `command` when somebody asked for it, `action` when a rule
+  of a document did through the outbox, `guard` when an eventless
+  transition fired. `Events`, the event an action receives and the
+  `_events` view carry it.
+- The functions of the row (ADR-0047, item 5): `CREATEDAT()`,
+  `CREATEDBY()`, `UPDATEDAT()`, `UPDATEDBY()`, `ENTEREDAT()`,
+  `ENTEREDBY()`, `ENTEREDFROM()` and `VERSION()`, context functions
+  like `STATE()` and `ID()`, on the Go VM, SQLite and DuckDB. "Seven
+  days in this state" is `NOW() >= ADDDAYS(ENTEREDAT(), 7)`; four eyes
+  is `CREATEDBY() <> USER()`. In a rule or a triggered variable of an
+  exit or of a transition they tell of the stay that ends, as `STATE()`
+  does of the state left.
+
 - `COUNT`, `SUM`, `MIN` and `MAX` in the column position of a `LOOKUP`
   (ADR-0046), over an explicit table: `LOOKUP(Stock, SUM(qty), sku =
   THIS.sku)`. The function runs over one expression of the table's
@@ -247,6 +273,15 @@ All notable changes to FadoDB are recorded here. The format follows
 - The conformance suite `conformance/rules/into.json`.
 
 ### Changed
+
+- The engine schema is 5, for the four system columns and the origin of
+  an event. A database made before does not open: before 1.0 there is
+  no upgrade path, and no database exists yet.
+- The write step of a commit costs less, which pays for the four
+  columns: an existing document is updated in place, a commit that left
+  every value as it was writes its system columns alone, and every
+  value is boxed once for the current row, the history row and the
+  event. A transition allocates 159 times where it allocated 168.
 
 - The bytecode format is version 4: a query slot may carry an aggregate
   and the expression it runs over, and says when its key is one term of

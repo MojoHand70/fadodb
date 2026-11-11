@@ -43,6 +43,10 @@ func (e *evaluator) run(c *class, prog *formula.Program, row *docRow, ctx *formu
 	for i, li := range idx {
 		vars[i] = row.vals[li]
 	}
+	if prog.ReadsLife && ctx != nil {
+		// The functions of the row read the row (ADR-0047, item 5).
+		ctx.Doc = &row.life
+	}
 	return e.vm.Run(prog, vars, ctx)
 }
 
@@ -61,6 +65,9 @@ func (e *evaluator) runWith(c *class, prog *formula.Program, row *docRow, elem c
 			continue
 		}
 		vars[i] = row.vals[li]
+	}
+	if prog.ReadsLife && ctx != nil {
+		ctx.Doc = &row.life
 	}
 	return e.vm.Run(prog, vars, ctx)
 }

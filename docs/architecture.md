@@ -226,14 +226,16 @@ Variables come in three kinds:
   `auto` (the default) or `triggered`; see Commits and recalculation.
 - **System** variables exist on every document and cannot be declared:
   `ID`, `TITLE`, `STATE`, `VERSION`, `CREATED_AT`, `UPDATED_AT`,
-  `STATE_ENTERED_AT`. `TITLE` comes from the class's `title` formula and
-  equals `ID` when the class declares none.
+  `STATE_ENTERED_AT`, `CREATED_BY`, `UPDATED_BY`, `STATE_ENTERED_BY` and
+  `STATE_ENTERED_FROM`. `TITLE` comes from the class's `title` formula
+  and equals `ID` when the class declares none.
 
 Names are identifiers, resolved case-insensitively in formulas and shown as
 declared in tables and views. The columns the generated tables and views add
 are reserved and rejected as variable and schema column names at definition
 time: `id`, `title`, `state`, `version`, `created_at`, `updated_at`,
-`state_entered_at`, `valid_from`, `valid_to`, `actor_id`, `event_id`,
+`state_entered_at`, `created_by`, `updated_by`, `state_entered_by`,
+`state_entered_from`, `valid_from`, `valid_to`, `actor_id`, `event_id`,
 `doc_id`, `idx` and `value`; a name may not end in `_currency`, the suffix of
 a money variable's currency column. A schema field reserves only the child
 table's own columns, `doc_id`, `version`, `idx` and `value`, since fields
@@ -261,17 +263,22 @@ The rule behind the table: the stored value of an auto variable must be a
 function of the document itself, so it may not depend on who is looking,
 on the clock, or on data outside the document beyond a keyed lookup.
 
-The context functions grow by the life of the document (ADR-0047,
-designed and not built yet): `CREATEDAT()` and `CREATEDBY()`,
-`UPDATEDAT()` and `UPDATEDBY()`, `ENTEREDAT()` and `ENTEREDBY()` for the
-state it is in, and for any state by name `FIRSTENTERED`, `LASTENTERED`,
-`FIRSTLEFT` and `LASTLEFT`, each with a `...BY` beside it for who, and
-`ENTRIES`, `DAYSIN`, `FIRSTEDITOR` and `LASTEDITOR`. The document will
-keep who created it, last changed it and moved it into its state, and
-the state it came from, as the system variables `created_by`,
-`updated_by`, `state_entered_by` and `state_entered_from`, the last
-read with `ENTEREDFROM()`. Every event of an entry will say how the move
-came about, under `origin`: `command`, `action`, `guard` or `timer`.
+Among the context functions are those of the document's own life
+(ADR-0047). The functions of the row run today: `CREATEDAT()` and
+`CREATEDBY()`, `UPDATEDAT()` and `UPDATEDBY()`, `ENTEREDAT()`,
+`ENTEREDBY()` and `ENTEREDFROM()` for the state it is in, and
+`VERSION()`. So "seven days in this state" is
+`NOW() >= ADDDAYS(ENTEREDAT(), 7)` and four eyes is
+`CREATEDBY() <> USER()`. The document keeps who created it, last changed
+it and moved it into its state, and the state it came from, as the
+system variables `created_by`, `updated_by`, `state_entered_by` and
+`state_entered_from`, on the document, in its history and in the views.
+Every event that enters a state says how the move came about, under
+`origin`: `command`, `action` or `guard`, and `timer` once timed
+transitions are built. The functions of a named state are designed and
+not built yet: `FIRSTENTERED`, `LASTENTERED`, `FIRSTLEFT` and
+`LASTLEFT`, each with a `...BY` beside it for who, and `ENTRIES`,
+`DAYSIN`, `FIRSTEDITOR` and `LASTEDITOR`.
 
 Inside `LOOKUP` and `QUERY`, bare names are columns of the source and the
 document's own variables are reached as `THIS.name`. Columns may be
@@ -288,8 +295,9 @@ one column or with `COUNT`, `SUM`, `MIN` or `MAX` over one expression of
 the columns; `QUERY` is designed and not built yet.
 
 A class as a source is its documents as they are now: the system columns
-`id`, `title`, `state`, `version`, `created_at`, `updated_at` and
-`state_entered_at`, and every scalar variable, ordered by `id`. Inside
+`id`, `title`, `state`, `version`, `created_at`, `updated_at`,
+`state_entered_at`, `created_by`, `updated_by`, `state_entered_by` and
+`state_entered_from`, and every scalar variable, ordered by `id`. Inside
 the call `ID()` and `STATE()` are the reading document's own, so
 `id <> ID()` leaves it out. Such a formula may stand in a triggered
 variable, a default, a guard, a rule or an access rule other than
@@ -426,7 +434,7 @@ What users see are views, never the physical names:
 |---|---|
 | `Invoice` | document, current values |
 | `Invoice_history` | committed version, with `valid_from` and `valid_to` |
-| `Invoice_states` | state visit: `state`, `entered_at`, `left_at`, `duration`, entry and exit versions; with ADR-0047, not built yet, one row for every entry, a return into the same state too, with who made the move, by which transition, from which state and how, for the entry and for the leaving |
+| `Invoice_states` | stay in a state, one for every entry, a return into the same state too: `state`, `entered_at`, `left_at`, `duration`, entry and exit versions, and for the entry and for the leaving who made the move, by which transition and how, with the state come from (ADR-0047) |
 | `Invoice_events` | event touching the class |
 | `Invoice_lines` | element of the composite variable `lines`, current version |
 | `Invoice_lines_history` | element per version |
@@ -994,6 +1002,8 @@ is blank, `json` variables embedded as they are.
   "class": "Invoice", "id": "inv_01JC3X5M8K", "version": 7, "state": "approved",
   "title": "INV-2026-0042",
   "created_at": 1762300800, "updated_at": 1762387200, "state_entered_at": 1762387200,
+  "created_by": "bob", "updated_by": "alice", "state_entered_by": "alice",
+  "state_entered_from": "submitted",
   "values": {
     "number": "2026-0042", "customer": "Customer:42", "owner": "User:7",
     "issued": 1762300800, "due": 1764892800, "currency": "EUR", "discount": 0,

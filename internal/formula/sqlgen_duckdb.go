@@ -134,7 +134,7 @@ func (DuckDB) ContextArgs(ctx *Context) []any {
 	if groups != nil {
 		g = groups
 	}
-	return []any{sql.Named("now", now), sql.Named("user", user), sql.Named("groups", g), sql.Named("state", state), sql.Named("id", id)}
+	return lifeArgs(ctx, []any{sql.Named("now", now), sql.Named("user", user), sql.Named("groups", g), sql.Named("state", state), sql.Named("id", id)})
 }
 
 // Setup implements Dialect: the macro definitions.

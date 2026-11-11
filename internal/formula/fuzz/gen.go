@@ -209,6 +209,8 @@ func (g *Generator) leaf(k formula.Kind) {
 			g.w(g.pick("n1", "n2", "n3"))
 		case 4:
 			g.w("BLANK")
+		case 5:
+			g.w(g.pick("VERSION()", "n1"))
 		default:
 			g.numberLit()
 		}
@@ -230,7 +232,7 @@ func (g *Generator) leaf(k formula.Kind) {
 		case 5:
 			g.w("USER()")
 		case 6:
-			g.w(g.pick("STATE()", "ID()"))
+			g.w(g.pick("STATE()", "ID()", "CREATEDBY()", "UPDATEDBY()", "ENTEREDBY()", "ENTEREDFROM()"))
 		default:
 			g.textLit(g.someText())
 		}
@@ -254,7 +256,7 @@ func (g *Generator) leaf(k formula.Kind) {
 		case 5:
 			g.w("BLANK")
 		case 6:
-			g.w("NOW()")
+			g.w(g.pick("NOW()", "CREATEDAT()", "UPDATEDAT()", "ENTEREDAT()"))
 		default:
 			g.w("DATETIMEVALUE(")
 			g.textLit(g.dateTimeText())
@@ -457,6 +459,16 @@ func (g *Generator) context() formula.Context {
 		ctx.Groups = []string{"finance", "admin"}
 	case 3:
 		ctx.Groups = []string{}
+	}
+	// The life of the document (ADR-0047): none, or one with some of its
+	// facts blank.
+	if g.n(4) > 0 {
+		ctx.Doc = &formula.Life{Version: int64(g.n(5)), CreatedAt: g.someSecs(), UpdatedAt: g.someSecs(),
+			CreatedBy: g.pick("", "alice", "bob"), UpdatedBy: g.pick("", "alice", "carol"),
+			EnteredBy: g.pick("", "bob"), EnteredFrom: g.pick("", "draft", "paid")}
+		if g.n(3) > 0 {
+			ctx.Doc.EnteredAt = g.someSecs()
+		}
 	}
 	return ctx
 }

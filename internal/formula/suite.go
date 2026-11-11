@@ -220,6 +220,17 @@ type CaseContext struct {
 	Now    string   `json:"now,omitempty"`
 	State  string   `json:"state,omitempty"`
 	ID     string   `json:"id,omitempty"`
+	// The life of the document (ADR-0047): its version, the moments it
+	// was created, last changed and entered its state, written as Now is,
+	// who did each, and the state it came from.
+	Version     int64  `json:"version,omitempty"`
+	CreatedAt   string `json:"created_at,omitempty"`
+	CreatedBy   string `json:"created_by,omitempty"`
+	UpdatedAt   string `json:"updated_at,omitempty"`
+	UpdatedBy   string `json:"updated_by,omitempty"`
+	EnteredAt   string `json:"entered_at,omitempty"`
+	EnteredBy   string `json:"entered_by,omitempty"`
+	EnteredFrom string `json:"entered_from,omitempty"`
 }
 
 // SyntaxSuite is one file of definition-time cases: formulas the parser
@@ -632,6 +643,24 @@ func (c *CaseContext) Context() (*Context, error) {
 			return nil, fmt.Errorf("context now: %w", err)
 		}
 		ctx.Now = secs
+	}
+	life := Life{Version: c.Version, CreatedBy: c.CreatedBy, UpdatedBy: c.UpdatedBy, EnteredBy: c.EnteredBy, EnteredFrom: c.EnteredFrom}
+	for _, m := range []struct {
+		text string
+		to   *int64
+		name string
+	}{{c.CreatedAt, &life.CreatedAt, "created_at"}, {c.UpdatedAt, &life.UpdatedAt, "updated_at"}, {c.EnteredAt, &life.EnteredAt, "entered_at"}} {
+		if m.text == "" {
+			continue
+		}
+		secs, err := ParseCaseDate(m.text)
+		if err != nil {
+			return nil, fmt.Errorf("context %s: %w", m.name, err)
+		}
+		*m.to = secs
+	}
+	if life != (Life{}) {
+		ctx.Doc = &life
 	}
 	return ctx, nil
 }

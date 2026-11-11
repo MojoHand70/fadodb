@@ -204,7 +204,9 @@ func TestDefineClass(t *testing.T) {
 	wantCols := "id TEXT title TEXT state TEXT version INTEGER class_version INTEGER created_at INTEGER updated_at INTEGER state_entered_at INTEGER valid_from INTEGER valid_to INTEGER actor_id TEXT event_id TEXT " +
 		"number TEXT customer TEXT issued INTEGER due INTEGER owner TEXT status TEXT discount INTEGER net INTEGER net_currency TEXT priority REAL parts REAL notes TEXT settings TEXT " +
 		"shipping__line1 TEXT shipping__line2 TEXT shipping__city TEXT shipping__postal_code TEXT shipping__region TEXT shipping__country TEXT " +
-		"contact__id TEXT contact__name TEXT contact__email TEXT contact__phone TEXT contact__avatar TEXT total INTEGER total_currency TEXT ship_city TEXT per_part REAL label TEXT"
+		"contact__id TEXT contact__name TEXT contact__email TEXT contact__phone TEXT contact__avatar TEXT total INTEGER total_currency TEXT ship_city TEXT per_part REAL label TEXT " +
+		// who made the document and where it came from, after the variables (ADR-0047)
+		"created_by TEXT updated_by TEXT state_entered_by TEXT state_entered_from TEXT"
 	if got := strings.Join(colList, " "); got != wantCols {
 		t.Errorf("history columns:\n%s\nwant\n%s", got, wantCols)
 	}

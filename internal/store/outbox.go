@@ -541,7 +541,7 @@ func (s *Store) writeQueued(ctx context.Context, c *class, cmd *command, commit 
 			id := s.ids.next(now)
 			status, code, finished, outcome = ActionDead, CodeTooDeep, secs, id
 			message = "the action is " + strconv.Itoa(cmd.depth) + " actions deep in a chain; the bound is " + strconv.Itoa(MaxActionDepth)
-			ev := eventInfo{kind: EventActionFailed, qualifier: "caused", name: q.act.a.Name, cause: eventID}
+			ev := eventInfo{kind: EventActionFailed, name: q.act.a.Name, cause: eventID}
 			if err := s.writeEvent(ctx, id, c.cls.Name, docID, ev, p.ID, nil, nil, "", "", day, secs); err != nil {
 				return n, err
 			}
@@ -811,7 +811,7 @@ func (s *Store) finish(ctx context.Context, row *outboxRow, status string, attem
 		status, attempts, secs, code, message, id, row.eventID, row.idx); err != nil {
 		return "", storageErr("mark the action", err)
 	}
-	ev := eventInfo{kind: kind, qualifier: "caused", name: row.action, cause: row.eventID}
+	ev := eventInfo{kind: kind, name: row.action, cause: row.eventID}
 	return id, s.writeEvent(ctx, id, row.class, row.docID, ev, row.principal.ID, nil, nil, "", "", day, secs)
 }
 

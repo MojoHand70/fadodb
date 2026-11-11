@@ -17,6 +17,7 @@ var (
 	reservedVariableNames = map[string]bool{
 		"id": true, "title": true, "state": true, "version": true, "created_at": true,
 		"updated_at": true, "state_entered_at": true, "valid_from": true, "valid_to": true,
+		"created_by": true, "updated_by": true, "state_entered_by": true, "state_entered_from": true,
 		"actor_id": true, "event_id": true, "doc_id": true, "idx": true, "value": true,
 	}
 	reservedFieldNames = map[string]bool{"doc_id": true, "version": true, "idx": true}

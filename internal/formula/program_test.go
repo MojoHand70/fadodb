@@ -174,6 +174,29 @@ func TestProgram_LookupRoundTrip(t *testing.T) {
 	if _, err := Bind("LOOKUP(Approval, COUNT(id), TRUE)", scope, BindOptions{Sources: NewSourceSet(approvals), Mode: ModeAuto}); err == nil || !strings.Contains(err.Error(), "an auto formula may not read other documents") {
 		t.Errorf("a class in an auto formula: %v", err)
 	}
+	// A program knows whether it reads the life of its document, itself or
+	// in the condition of a lookup, bound or decoded (ADR-0047).
+	for src, reads := range map[string]bool{
+		`CREATEDBY() & code`:                                       true,
+		`NOW() >= ADDDAYS(ENTEREDAT(), 7)`:                         true,
+		`LOOKUP(Rates, rate, code = UPDATEDBY())`:                  true,
+		`LOOKUP(Rates, COUNT(code), code = THIS.code) + VERSION()`: true,
+		`LOOKUP(Rates, SUM(rate), code = ENTEREDFROM())`:           true,
+		`STATE() & ID() & USER()`:                                  false,
+		`LOOKUP(Rates, rate, code = THIS.code)`:                    false,
+	} {
+		p, err := Bind(src, scope, opts)
+		if err != nil {
+			t.Fatalf("%s: %v", src, err)
+		}
+		back, err := Decode(p.Encode())
+		if err != nil {
+			t.Fatal(err)
+		}
+		if p.ReadsLife != reads || back.ReadsLife != reads {
+			t.Errorf("%s: reads the life %v bound, %v decoded, want %v", src, p.ReadsLife, back.ReadsLife, reads)
+		}
+	}
 	// A slot that is neither a column nor an aggregate, or both, or whose
 	// key is a part of nothing, is not a program.
 	for name, spoil := range map[string]func(q *QuerySlot){

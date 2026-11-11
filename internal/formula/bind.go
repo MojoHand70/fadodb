@@ -986,6 +986,9 @@ func (b *binder) call(n *Call) (Type, error) {
 		b.push(1)
 		argc++
 	}
+	if LifeColumns[n.Name] != "" {
+		b.prog.ReadsLife = true
+	}
 	b.pop(argc)
 	b.emit(OpCall, int32(id)<<8|int32(argc), n.P)
 	b.push(1)
@@ -1328,6 +1331,9 @@ func (b *binder) subProgram(n Node, src *Source, q *QuerySlot, argOf map[string]
 	}
 	sub.emit(OpReturn, 0, n.Pos())
 	sub.prog.Result = t
+	if sub.prog.ReadsLife {
+		b.prog.ReadsLife = true
+	}
 	for c := range sub.classes {
 		b.classes[c] = true
 		sub.prog.Classes = append(sub.prog.Classes, c)

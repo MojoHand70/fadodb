@@ -39,10 +39,17 @@ type Document struct {
 	// of the document (ADR-0039).
 	ClassVersion int `json:"class_version"`
 	// Seconds since the epoch, UTC.
-	CreatedAt      int64  `json:"created_at"`
-	UpdatedAt      int64  `json:"updated_at"`
-	StateEnteredAt int64  `json:"state_entered_at,omitempty"`
-	Values         Values `json:"values"`
+	CreatedAt      int64 `json:"created_at"`
+	UpdatedAt      int64 `json:"updated_at"`
+	StateEnteredAt int64 `json:"state_entered_at,omitempty"`
+	// Who created the document, made this version and moved it into its
+	// state, each the id of the principal of that command and empty when
+	// it named none, and the state it was in before (ADR-0047, item 4).
+	CreatedBy        string `json:"created_by,omitempty"`
+	UpdatedBy        string `json:"updated_by,omitempty"`
+	StateEnteredBy   string `json:"state_entered_by,omitempty"`
+	StateEnteredFrom string `json:"state_entered_from,omitempty"`
+	Values           Values `json:"values"`
 	// Computed says, for every triggered variable that has been computed
 	// or has failed to, when its value was computed (ADR-0043). A variable
 	// the principal may not read is absent here as it is from Values.
@@ -91,6 +98,9 @@ type Event struct {
 	// Code is the code an action died with, on an event of kind
 	// action_failed (ADR-0044); empty otherwise.
 	Code string `json:"code,omitempty"`
+	// Origin says, on an event that enters a state, how the move came
+	// about (ADR-0047, item 3): command, action, guard or timer.
+	Origin string `json:"origin,omitempty"`
 }
 
 // The event kinds this build writes, and the qualifiers of their

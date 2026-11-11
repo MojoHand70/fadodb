@@ -111,7 +111,7 @@ func (SQLite) ColumnType(k Kind) string {
 // NULL, groups is the text groupsArg makes or NULL.
 func (SQLite) ContextArgs(ctx *Context) []any {
 	now, user, state, id, groups := contextValues(ctx)
-	return []any{sql.Named("now", now), sql.Named("user", user), sql.Named("groups", groupsArg(groups)), sql.Named("state", state), sql.Named("id", id)}
+	return lifeArgs(ctx, []any{sql.Named("now", now), sql.Named("user", user), sql.Named("groups", groupsArg(groups)), sql.Named("state", state), sql.Named("id", id)})
 }
 
 // groupsArg binds the principal's groups as one text, each group between
@@ -156,10 +156,24 @@ func (d SQLite) ContextArgsFor(ctx *Context, names []string, dst []any) []any {
 				g = groupsArg(ctx.Groups)
 			}
 			dst = append(dst, sql.Named("groups", g))
+		default:
+			// A fact of the document's life (ADR-0047).
+			dst = append(dst, sql.Named(name, lifeValue(ctx, name)))
 		}
 	}
 	return dst
 }
+
+// lifeArgs binds every fact of the document's life by its column name.
+func lifeArgs(ctx *Context, dst []any) []any {
+	for _, column := range lifeColumnNames {
+		dst = append(dst, sql.Named(column, lifeValue(ctx, column)))
+	}
+	return dst
+}
+
+// lifeColumnNames lists the columns of LifeColumns in a fixed order.
+var lifeColumnNames = []string{"created_at", "created_by", "updated_at", "updated_by", "state_entered_at", "state_entered_by", "state_entered_from", "version"}
 
 // textOrNil reads a text of the context, nil when the context or the
 // text is empty.

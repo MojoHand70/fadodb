@@ -107,22 +107,58 @@ type result struct {
 
 // eventInfo is what the event of a commit says beyond its versions.
 type eventInfo struct {
-	kind, qualifier, name, from, to, cause string
+	kind, name, from, to, cause string
+	// origin says how an entry into a state came about (ADR-0047, item
+	// 3); empty for an event that is no entry.
+	origin string
+}
+
+// How an entry into a state came about (ADR-0047, item 3): somebody asked
+// for it, by creating the document or taking a named transition; a rule
+// of a document asked for it through the outbox; an eventless transition
+// fired in the chain of a commit; or a timed transition did.
+const (
+	OriginCommand = "command"
+	OriginAction  = "action"
+	OriginGuard   = "guard"
+	OriginTimer   = "timer"
+)
+
+// origins lists the origins by the number the events table keeps each
+// under; 0 is none.
+var origins = []string{"", OriginCommand, OriginAction, OriginGuard, OriginTimer}
+
+// originCode is the number an origin is stored as, nil for none.
+func originCode(origin string) any {
+	for i, o := range origins {
+		if o == origin && i > 0 {
+			return i
+		}
+	}
+	return nil
+}
+
+// originOf is the origin a stored number stands for.
+func originOf(code int64) string {
+	if code > 0 && int(code) < len(origins) {
+		return origins[code]
+	}
+	return ""
 }
 
 // eventFor is the event of a commit that moves no state.
 func eventFor(o op) eventInfo {
 	switch o {
 	case opCreate:
-		return eventInfo{kind: EventCreated, qualifier: "created"}
+		return eventInfo{kind: EventCreated}
 	case opMigrate:
-		return eventInfo{kind: EventMigrated, qualifier: "migrated"}
+		return eventInfo{kind: EventMigrated}
 	case opReset:
-		return eventInfo{kind: EventReset, qualifier: "changed"}
+		return eventInfo{kind: EventReset}
 	case opRefresh:
-		return eventInfo{kind: EventRefresh, qualifier: "refreshed"}
+		return eventInfo{kind: EventRefresh}
 	}
-	return eventInfo{kind: EventSet, qualifier: "changed"}
+	return eventInfo{kind: EventSet}
 }
 
 // Create makes a document: the values given, the defaults of the inputs
@@ -301,7 +337,7 @@ func (s *Store) run(ctx context.Context, cmd command, now time.Time) (*result, e
 			reader = cmd.stored
 		}
 		var err error
-		if before, err = reader.scanRow(reader.w.selectCurrent.QueryRowContext(ctx, cmd.id), false); err != nil {
+		if before, err = reader.scanW(reader.w.selectCurrent.QueryRowContext(ctx, cmd.id), false); err != nil {
 			if err == sql.ErrNoRows {
 				return nil, errf(CodeUnknownDocument, "", "no document %s of class %s", cmd.id, reader.cls.Name)
 			}
@@ -331,7 +367,7 @@ func (s *Store) run(ctx context.Context, cmd command, now time.Time) (*result, e
 			if old == nil {
 				return nil, errf(CodeStorage, "", "the document %s was computed by version %d of %s, which the store does not have", before.id, before.classVersion, c.cls.Name)
 			}
-			if before, err = old.scanRow(old.w.selectCurrent.QueryRowContext(ctx, cmd.id), false); err != nil {
+			if before, err = old.scanW(old.w.selectCurrent.QueryRowContext(ctx, cmd.id), false); err != nil {
 				return nil, storageErr("read the document under its class version", err)
 			}
 			beforeClass = old
@@ -402,12 +438,13 @@ func (s *Store) run(ctx context.Context, cmd command, now time.Time) (*result, e
 				return nil, errf(CodeDuplicate, "", "a document %s of class %s exists, or existed", id, c.cls.Name)
 			}
 		}
-		after = &docRow{id: id, version: 1, classVersion: c.cls.Version, createdAt: secs, updatedAt: secs, vals: make([]formula.Value, len(c.leaves))}
+		after = &docRow{id: id, version: 1, classVersion: c.cls.Version, vals: make([]formula.Value, len(c.leaves)),
+			life: formula.Life{Version: 1, CreatedAt: secs, UpdatedAt: secs, CreatedBy: actor, UpdatedBy: actor}}
 		if len(c.triggered) > 0 {
 			after.ats = make([]int64, len(c.triggered))
 		}
 		if c.cls.States != nil {
-			after.state, after.stateEntered = c.cls.States.Initial, secs
+			after.state, after.life.EnteredAt, after.life.EnteredBy = c.cls.States.Initial, secs, actor
 		}
 		evalCtx.ID, evalCtx.State = after.id, after.state
 		if _, err := c.assign(after, kids, cmd.values, dirty, s.limits); err != nil {
@@ -546,7 +583,7 @@ func (s *Store) run(ctx context.Context, cmd command, now time.Time) (*result, e
 		// is.
 		if !unchanged {
 			after.version++
-			after.updatedAt = secs
+			after.life.Version, after.life.UpdatedAt, after.life.UpdatedBy = after.version, secs, actor
 		}
 		if err := s.recalc(c, after, dirty, adopt, evalCtx, cmd.preview, &res.errs); err != nil {
 			return nil, err
@@ -575,8 +612,12 @@ func (s *Store) run(ctx context.Context, cmd command, now time.Time) (*result, e
 		if err := s.guard(c, trans, after, evalCtx); err != nil {
 			return nil, err
 		}
-		ev = eventInfo{kind: EventTransition, qualifier: "transitioned", name: trans.Name, from: from, to: trans.To, cause: cmd.cause}
-		after.state, after.stateEntered = trans.To, secs
+		ev = eventInfo{kind: EventTransition, name: trans.Name, from: from, to: trans.To, cause: cmd.cause}
+		// Any transition is an entry, one back into the same state too
+		// (ADR-0047, item 3). The stay it ends is kept for the rules of
+		// the exit and of the transition.
+		after.ended = stay{after.life.EnteredAt, after.life.EnteredBy, after.life.EnteredFrom}
+		after.state, after.life.EnteredAt, after.life.EnteredBy, after.life.EnteredFrom = trans.To, secs, actor, from
 		path = append(path, after.state)
 	}
 
@@ -645,8 +686,10 @@ func (s *Store) run(ctx context.Context, cmd command, now time.Time) (*result, e
 			}
 			next := cur.clone()
 			next.version++
-			next.updatedAt = secs
-			next.state, next.stateEntered = t.To, secs
+			next.life.Version, next.life.UpdatedAt, next.life.UpdatedBy = next.version, secs, actor
+			next.ended = stay{cur.life.EnteredAt, cur.life.EnteredBy, cur.life.EnteredFrom}
+			next.life.EnteredFrom = cur.state
+			next.state, next.life.EnteredAt, next.life.EnteredBy = t.To, secs, actor
 			path = append(path, next.state)
 			h := hop{row: next}
 			if c.triggered != nil {
@@ -703,6 +746,13 @@ func (s *Store) run(ctx context.Context, cmd command, now time.Time) (*result, e
 		s.project(&s.wev, c, c, final, res.doc, cmd.o.principal, clock)
 		return res, nil
 	}
+	if ev.kind == EventCreated || ev.kind == EventTransition {
+		// The log says how the entry came about (ADR-0047, item 3).
+		ev.origin = OriginCommand
+		if cmd.internal {
+			ev.origin = OriginAction
+		}
+	}
 	if err := s.write(ctx, c, before, after, kids, secs, eventID, actor, ev, cmd.o.key, hash, day); err != nil {
 		return nil, err
 	}
@@ -724,7 +774,7 @@ func (s *Store) run(ctx context.Context, cmd command, now time.Time) (*result, e
 	prev := after
 	for i, h := range hops {
 		hopEvent := s.ids.next(now)
-		if err := s.write(ctx, c, prev, h.row, h.kids, secs, hopEvent, actor, eventInfo{kind: EventTransition, qualifier: "transitioned", from: prev.state, to: h.row.state, cause: eventID}, "", "", day); err != nil {
+		if err := s.write(ctx, c, prev, h.row, h.kids, secs, hopEvent, actor, eventInfo{kind: EventTransition, from: prev.state, to: h.row.state, cause: eventID, origin: OriginGuard}, "", "", day); err != nil {
 			return nil, err
 		}
 		if len(s.emits) > 0 {
@@ -754,8 +804,8 @@ func (s *Store) run(ctx context.Context, cmd command, now time.Time) (*result, e
 // this version's layout by name (ADR-0039): a variable the other version
 // did not have is blank.
 func (c *class) adopted(from *class, row *docRow) *docRow {
-	out := &docRow{id: row.id, title: row.title, state: row.state, version: row.version, createdAt: row.createdAt,
-		updatedAt: row.updatedAt, stateEntered: row.stateEntered, vals: make([]formula.Value, len(c.leaves))}
+	out := &docRow{id: row.id, title: row.title, state: row.state, version: row.version, life: row.life,
+		vals: make([]formula.Value, len(c.leaves))}
 	for i, l := range c.leaves {
 		if j, ok := from.leafIndex[strings.ToUpper(l.path)]; ok {
 			out.vals[i] = row.vals[j]
@@ -892,22 +942,48 @@ func sameRows(a, b []childRow) bool {
 // rows and the event. With kids nil and a before row, every composite is
 // carried forward from the previous version.
 func (s *Store) write(ctx context.Context, c *class, before, after *docRow, kids map[*child][]childRow, secs int64, eventID, actor string, ev eventInfo, key, hash string, day int64) error {
-	args := make([]any, 0, len(systemColumns)+len(historyColumns)+len(c.cls.Columns))
-	args = append(args, after.id, nullText(after.title), nullText(after.state), after.version, after.classVersion, after.createdAt, after.updatedAt, nullInt(after.stateEntered))
+	// Every value is boxed once and bound wherever it goes: to the current
+	// row, to the history row and to the event. The buffers are the
+	// writer's, which writes one row at a time.
+	life := &after.life
+	idArg, actorArg, eventArg, secsArg := any(after.id), nullText(actor), any(eventID), any(secs)
+	args := append(s.curArgs[:0], idArg, nullText(after.title), nullText(after.state), after.version, after.classVersion, life.CreatedAt, life.UpdatedAt, nullInt(life.EnteredAt),
+		// Who, and where from (ADR-0047, item 4).
+		sameText(life.CreatedBy, actor, actorArg), sameText(life.UpdatedBy, actor, actorArg), sameText(life.EnteredBy, actor, actorArg), nullText(life.EnteredFrom))
 	args = c.encodeVals(args, after)
-	if _, err := c.w.upsert.ExecContext(ctx, args...); err != nil {
-		return storageErr("write the current row", err)
-	}
-	if before != nil {
-		if _, err := c.w.closeHistory.ExecContext(ctx, secs, before.id, before.version); err != nil {
+	s.curArgs = args
+	sys := len(systemColumns)
+	if before == nil {
+		if _, err := c.w.upsert.ExecContext(ctx, args...); err != nil {
+			return storageErr("write the current row", err)
+		}
+	} else {
+		// An existing row: its system columns, and its values unless the
+		// commit left every one as it was, then the id that finds it.
+		upd, stmt := s.updArgs[:0], c.w.updateSystem
+		for _, i := range updatedSystem {
+			upd = append(upd, args[i])
+		}
+		if !sameValues(before, after) {
+			upd, stmt = append(upd, args[sys:]...), c.w.update
+		}
+		upd = append(upd, idArg)
+		s.updArgs = upd
+		if _, err := stmt.ExecContext(ctx, upd...); err != nil {
+			return storageErr("write the current row", err)
+		}
+		if _, err := c.w.closeHistory.ExecContext(ctx, secsArg, idArg, before.version); err != nil {
 			return storageErr("close the history row", err)
 		}
 	}
-	args = args[:0]
-	args = append(args, after.id, nullText(after.title), nullText(after.state), after.version, after.classVersion, after.createdAt, after.updatedAt, nullInt(after.stateEntered),
-		secs, nil, nullText(actor), eventID)
-	args = c.encodeVals(args, after)
-	if _, err := c.w.insertHistory.ExecContext(ctx, args...); err != nil {
+	// The history row holds the same values, with its own after the
+	// system columns: when it begins, who made it and its event. It is
+	// written open.
+	hist := append(s.histArgs[:0], args[:sys]...)
+	hist = append(hist, secsArg, actorArg, eventArg)
+	hist = append(hist, args[sys:]...)
+	s.histArgs = hist
+	if _, err := c.w.insertHistory.ExecContext(ctx, hist...); err != nil {
 		return storageErr("write the history row", err)
 	}
 	for _, ch := range c.children {
@@ -932,7 +1008,34 @@ func (s *Store) write(ctx context.Context, c *class, before, after *docRow, kids
 	if before != nil {
 		beforeVersion = before.version
 	}
-	return s.writeEvent(ctx, eventID, c.cls.Name, after.id, ev, actor, beforeVersion, after.version, key, hash, day, secs)
+	return s.writeEventArgs(ctx, eventArg, c.nameArg, idArg, ev, actorArg, beforeVersion, after.version, key, hash, day, secsArg)
+}
+
+// sameValues reports whether a commit left every stored value of the
+// document as it was: the two rows are of one version of the class and
+// hold the same value in every column. The same is what formula.Equal
+// says, as for a set that changes nothing: an exact value keeps its
+// mantissa in the bits of a number, where the smallest one reads as a
+// negative zero, so the numbers are not what is compared.
+func sameValues(before, after *docRow) bool {
+	if before.classVersion != after.classVersion || len(before.vals) != len(after.vals) {
+		return false
+	}
+	for i := range after.vals {
+		if !formula.Equal(before.vals[i], after.vals[i]) {
+			return false
+		}
+	}
+	return true
+}
+
+// sameText boxes a text for a statement, nil when it is empty, and takes
+// the box of an equal text that is boxed already.
+func sameText(s, boxed string, box any) any {
+	if s == boxed {
+		return box
+	}
+	return nullText(s)
 }
 
 func (s *Store) writeDelete(ctx context.Context, c *class, before *docRow, secs int64, eventID, actor, key, hash string, day int64) error {
@@ -942,17 +1045,56 @@ func (s *Store) writeDelete(ctx context.Context, c *class, before *docRow, secs 
 	if _, err := c.w.deleteCurrent.ExecContext(ctx, before.id); err != nil {
 		return storageErr("delete the current row", err)
 	}
-	return s.writeEvent(ctx, eventID, c.cls.Name, before.id, eventInfo{kind: EventDeleted, qualifier: "deleted"}, actor, before.version, nil, key, hash, day, secs)
+	return s.writeEvent(ctx, eventID, c.cls.Name, before.id, eventInfo{kind: EventDeleted}, actor, before.version, nil, key, hash, day, secs)
 }
 
 func (s *Store) writeEvent(ctx context.Context, eventID, class, docID string, ev eventInfo, actor string, before, after any, key, hash string, day, secs int64) error {
-	if _, err := s.stmts.insertEvent.ExecContext(ctx, eventID, class, docID, ev.kind, nullText(ev.name), nullText(ev.from), nullText(ev.to), nullText(actor), before, after, nullText(ev.cause), nullText(key), nullText(hash), day, secs); err != nil {
+	return s.writeEventArgs(ctx, eventID, class, docID, ev, nullText(actor), before, after, key, hash, day, secs)
+}
+
+// writeEventArgs writes an event whose id, class, document, actor and
+// time are boxed already, as the write step has them. The kind and the
+// origin are of a closed list and boxed once for all, and so is the
+// qualifier of its event_docs row; the business day changes once a day.
+func (s *Store) writeEventArgs(ctx context.Context, eventID, class, docID any, ev eventInfo, actor, before, after any, key, hash string, day int64, secs any) error {
+	if s.dayArg == nil || s.dayOf != day {
+		s.dayOf, s.dayArg = day, day
+	}
+	args := append(s.eventArgs[:0], eventID, class, docID, word(ev.kind), nullText(ev.name), word(ev.from), word(ev.to), actor, before, after, nullText(ev.cause), nullText(key), nullText(hash), s.dayArg, secs, originCode(ev.origin))
+	s.eventArgs = args
+	if _, err := s.stmts.insertEvent.ExecContext(ctx, args...); err != nil {
 		return storageErr("write the event", err)
 	}
-	if _, err := s.stmts.insertEventDoc.ExecContext(ctx, eventID, class, docID, ev.qualifier); err != nil {
+	args = append(s.eventArgs[:0], eventID, class, docID, word(qualifierOf(ev.kind)))
+	s.eventArgs = args
+	if _, err := s.stmts.insertEventDoc.ExecContext(ctx, args...); err != nil {
 		return storageErr("write the event's documents", err)
 	}
 	return nil
+}
+
+// words holds the texts of the closed lists the log is written in, each
+// boxed once, so that binding one allocates nothing.
+var words = func() map[string]any {
+	m := map[string]any{}
+	for _, w := range []string{EventCreated, EventSet, EventDeleted, EventMigrated, EventTransition, EventReset, EventRefresh, EventActionRun, EventActionFailed, EventCustom,
+		"caused", "changed", "created", "deleted", "emitted", "migrated", "refreshed", "transitioned"} {
+		m[w] = w
+	}
+	return m
+}()
+
+// word boxes a text for a statement: nil when it is empty, the shared box
+// when it is one of words, and a box of its own otherwise, as a state's
+// name is.
+func word(s string) any {
+	if s == "" {
+		return nil
+	}
+	if w, ok := words[s]; ok {
+		return w
+	}
+	return s
 }
 
 func (c *class) encodeVals(args []any, row *docRow) []any {

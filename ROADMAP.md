@@ -89,13 +89,20 @@ third closes the step: `DefineClasses` defines several classes in one
 call, all or none, so that classes which name each other can be defined
 at all, and the Purchase and Approval samples under `examples/classes/`
 are the pattern written out (#64). Its seventh step, time, has its
-design in ADR-0047, accepted on 2026-11-11, and is not built yet: a
-formula reads the life of its document, when and by whom it was
-created, changed and moved into and out of each state; every entry into
-a state is recorded, a return into the same state too; `Due` lists the
-documents that would move now; and a transition may carry `after` or
-`at`, so that the engine moves the document when the time comes. By the
-owner's ruling of that day a timer is written on a transition.
+design in ADR-0047, accepted on 2026-11-11: a formula reads the life of
+its document, when and by whom it was created, changed and moved into
+and out of each state; every entry into a state is recorded, a return
+into the same state too; `Due` lists the documents that would move now;
+and a transition may carry `after` or `at`, so that the engine moves
+the document when the time comes. By the owner's ruling of that day a
+timer is written on a transition. Its first part is built: the document
+keeps who created it, last changed it and moved it into its state, and
+where it came from; the log says how each entry came about; the
+`_states` view has a row for every entry, with who and how at both
+ends; and a formula reads the row with `CREATEDAT()`, `CREATEDBY()`,
+`UPDATEDAT()`, `UPDATEDBY()`, `ENTEREDAT()`, `ENTEREDBY()`,
+`ENTEREDFROM()` and `VERSION()`, under engine schema 5. The functions
+of a named state, `Due` and timed transitions are not built yet.
 By the owner's rulings of that day a formula sees every document, and
 `QUERY`, which returns lists, is built with the first layout or report
 that needs one; tables stored outside the file come with the analytical

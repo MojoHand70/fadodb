@@ -224,8 +224,9 @@ func (s *Store) changes(c, beforeClass *class, before, after *docRow, kids []*ch
 // the state a transition or a hop left and name the named transition
 // taken; changed are the variables that changed, for a set and a
 // transition. STATE() is the state left in an exit and a transition rule
-// and the state the document is in everywhere else. It leaves the
-// context's state at the document's.
+// and the state the document is in everywhere else, and ENTEREDAT(),
+// ENTEREDBY() and ENTEREDFROM() go with it. It leaves the context's
+// state at the document's.
 func (s *Store) fireCommit(run *ruleRun, row *docRow, kind commitKind, from, name string, changed []bool) *Error {
 	rs, state := run.c.rules, row.state
 	run.evalCtx.State = state
@@ -254,14 +255,22 @@ func (s *Store) fireCommit(run *ruleRun, row *docRow, kind commitKind, from, nam
 	if kind == commitSet {
 		return nil
 	}
+	// The rules of the exit and of the transition speak of the state
+	// left: STATE() is that state, and the entry the row tells of is the
+	// one that began the stay there (ADR-0047, item 5).
 	run.evalCtx.State = from
-	if err := s.fire(run, row, rs.exit[from]); err != nil {
-		return err
+	if run.c.life {
+		row.swapStay()
 	}
-	if kind == commitTransition {
-		if err := s.fire(run, row, rs.transition[name]); err != nil {
-			return err
-		}
+	err := s.fire(run, row, rs.exit[from])
+	if err == nil && kind == commitTransition {
+		err = s.fire(run, row, rs.transition[name])
+	}
+	if run.c.life {
+		row.swapStay()
+	}
+	if err != nil {
+		return err
 	}
 	run.evalCtx.State = state
 	return s.fire(run, row, rs.enter[state])
@@ -544,7 +553,7 @@ func (s *Store) writeEmits(ctx context.Context, c *class, commit int, docID stri
 		if e.commit != commit {
 			continue
 		}
-		ev := eventInfo{kind: EventCustom, qualifier: "emitted", name: e.name, cause: cause}
+		ev := eventInfo{kind: EventCustom, name: e.name, cause: cause}
 		if err := s.writeEvent(ctx, s.ids.next(now), c.cls.Name, docID, ev, actor, before, after, "", "", day, secs); err != nil {
 			return err
 		}

@@ -53,7 +53,13 @@ func (s *Store) Transitions(ctx context.Context, class, id string, opts ...Optio
 	if s.closed {
 		return nil, errf(CodeClosed, "", "the store is closed")
 	}
-	row, err := c.scanRow(c.w.selectCurrent.QueryRowContext(ctx, id), false)
+	// The listing returns no document, so it reads who made it only when
+	// a formula of the class asks.
+	read := c.w.selectLean
+	if c.who {
+		read = c.w.selectCurrent
+	}
+	row, err := c.scanW(read.QueryRowContext(ctx, id), !c.who)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return nil, errf(CodeUnknownDocument, "", "no document %s of class %s", id, c.cls.Name)

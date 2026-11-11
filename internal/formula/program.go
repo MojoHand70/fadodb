@@ -185,6 +185,11 @@ type Program struct {
 	Result  Type
 	Classes []Class // function classes used, in catalog order
 	Queries []QuerySlot
+	// ReadsLife says the program, or a program nested in one of its
+	// lookups, calls a function of the document's life (ADR-0047), so
+	// that whoever runs it knows to give the context that life. It is
+	// worked out when the program is bound or decoded, not stored.
+	ReadsLife bool
 	// MaxStack is the stack depth the program needs.
 	MaxStack int
 }
@@ -209,6 +214,24 @@ func (p *Program) ClaimExact(t Type) bool {
 	p.Code[0] = Instr{Op: OpConstDec, Arg: int32(len(p.Decs) - 1)}
 	p.Result = t
 	return true
+}
+
+// readsLife reports whether the program or a program nested in one of
+// its lookups calls a function of the document's life (ADR-0047).
+func (p *Program) readsLife() bool {
+	for _, in := range p.Code {
+		if in.Op == OpCall && LifeColumns[builtins[in.Arg>>8].name] != "" {
+			return true
+		}
+	}
+	for i := range p.Queries {
+		for _, nested := range []*Program{p.Queries[i].Cond, p.Queries[i].Key, p.Queries[i].Value} {
+			if nested != nil && nested.readsLife() {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // Format constants.
@@ -381,6 +404,7 @@ func Decode(data []byte) (*Program, error) {
 	if err := p.validate(); err != nil {
 		return nil, fmt.Errorf("bytecode: %w", err)
 	}
+	p.ReadsLife = p.readsLife()
 	return p, nil
 }
 

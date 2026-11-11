@@ -423,7 +423,7 @@ func TestShallow(t *testing.T) {
 		t.Errorf("top %v %s, twice %v %s, guard %v", top.Formula, top.Type, twice.Formula, twice.Type, cls.Transitions[0].Guard)
 	}
 	src := cls.Source()
-	if !src.Class || len(src.Columns) != 9 || src.Columns[7].Name != "top" || src.Key[0] != "id" {
+	if !src.Class || len(src.Columns) != 13 || src.Columns[11].Name != "top" || src.Key[0] != "id" {
 		t.Errorf("the source of a class compiled alone: %+v", src)
 	}
 	// What does not read a class is judged as ever.

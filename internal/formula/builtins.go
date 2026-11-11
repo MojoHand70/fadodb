@@ -107,6 +107,15 @@ var builtins = []*builtin{
 	{name: "DATETIME", class: ClassPure, args: []argKind{akDate}, result: KindDateTime, fn: fnDateTime},
 	// Text made safe for a URL (ADR-0045)
 	{name: "URLENCODE", class: ClassPure, args: []argKind{akText}, result: KindText, fn: fnURLEncode},
+	// The life of the document, from its row (ADR-0047, item 5)
+	{name: "CREATEDAT", class: ClassContext, args: []argKind{}, result: KindDateTime, fn: lifeMoment(func(d *Life) int64 { return d.CreatedAt })},
+	{name: "CREATEDBY", class: ClassContext, args: []argKind{}, result: KindText, fn: lifeText(func(d *Life) string { return d.CreatedBy })},
+	{name: "UPDATEDAT", class: ClassContext, args: []argKind{}, result: KindDateTime, fn: lifeMoment(func(d *Life) int64 { return d.UpdatedAt })},
+	{name: "UPDATEDBY", class: ClassContext, args: []argKind{}, result: KindText, fn: lifeText(func(d *Life) string { return d.UpdatedBy })},
+	{name: "ENTEREDAT", class: ClassContext, args: []argKind{}, result: KindDateTime, fn: lifeMoment(func(d *Life) int64 { return d.EnteredAt })},
+	{name: "ENTEREDBY", class: ClassContext, args: []argKind{}, result: KindText, fn: lifeText(func(d *Life) string { return d.EnteredBy })},
+	{name: "ENTEREDFROM", class: ClassContext, args: []argKind{}, result: KindText, fn: lifeText(func(d *Life) string { return d.EnteredFrom })},
+	{name: "VERSION", class: ClassContext, args: []argKind{}, result: KindNumber, fn: fnVersion},
 }
 
 // builtinByName indexes the table by canonical name.
@@ -1093,6 +1102,40 @@ func fnID(vm *VM, _ []Value) (Value, *EvalError) {
 		return Blank(), nil
 	}
 	return Text(vm.ctx.ID), nil
+}
+
+// lifeMoment makes the function of one moment of the document's life,
+// blank when there is no document or the moment is not set.
+func lifeMoment(get func(*Life) int64) func(*VM, []Value) (Value, *EvalError) {
+	return func(vm *VM, _ []Value) (Value, *EvalError) {
+		if vm.ctx == nil || vm.ctx.Doc == nil {
+			return Blank(), nil
+		}
+		if secs := get(vm.ctx.Doc); secs != 0 {
+			return DateTime(secs), nil
+		}
+		return Blank(), nil
+	}
+}
+
+// lifeText makes the function of one text of the document's life.
+func lifeText(get func(*Life) string) func(*VM, []Value) (Value, *EvalError) {
+	return func(vm *VM, _ []Value) (Value, *EvalError) {
+		if vm.ctx == nil || vm.ctx.Doc == nil {
+			return Blank(), nil
+		}
+		if s := get(vm.ctx.Doc); s != "" {
+			return Text(s), nil
+		}
+		return Blank(), nil
+	}
+}
+
+func fnVersion(vm *VM, _ []Value) (Value, *EvalError) {
+	if vm.ctx == nil || vm.ctx.Doc == nil || vm.ctx.Doc.Version == 0 {
+		return Blank(), nil
+	}
+	return Number(float64(vm.ctx.Doc.Version)), nil
 }
 
 func fnInGroup(vm *VM, args []Value) (Value, *EvalError) {

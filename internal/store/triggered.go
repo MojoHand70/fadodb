@@ -21,12 +21,22 @@ import (
 // leaves the context's state at the document's.
 func (s *Store) recomputeFor(c *class, row *docRow, kind commitKind, from, name string, evalCtx *formula.Context, secs int64, preview bool, errs *[]*Error) *Error {
 	for _, cv := range c.triggered {
-		state, ok := triggerState(cv.v, kind, from, name, row.state)
+		state, leaving, ok := triggerState(cv.v, kind, from, name, row.state)
 		if !ok {
 			continue
 		}
 		evalCtx.State = state
-		if err := s.recompute(c, cv, row, evalCtx, secs, preview, errs); err != nil {
+		// A variable of an exit or of a transition speaks of the state
+		// left, and of the stay there (ADR-0047, item 5).
+		leaving = leaving && c.life
+		if leaving {
+			row.swapStay()
+		}
+		err := s.recompute(c, cv, row, evalCtx, secs, preview, errs)
+		if leaving {
+			row.swapStay()
+		}
+		if err != nil {
 			evalCtx.State = row.state
 			return err
 		}
@@ -40,25 +50,25 @@ func (s *Store) recomputeFor(c *class, row *docRow, kind commitKind, from, name 
 // commit's triggers the variable lists, in the commit's order exit,
 // transition, enter, decides, and STATE() is the state left for an exit
 // and a transition and the state the document is in for an enter, as for
-// a rule (ADR-0043, item 3).
-func triggerState(v *model.Variable, kind commitKind, from, name, state string) (string, bool) {
+// a rule (ADR-0043, item 3). leaving says it is the state left.
+func triggerState(v *model.Variable, kind commitKind, from, name, state string) (st string, leaving, ok bool) {
 	switch kind {
 	case commitCreate:
 		if v.On("enter", state) {
-			return state, true
+			return state, false, true
 		}
 	case commitTransition, commitHop:
 		if v.On("exit", from) {
-			return from, true
+			return from, true, true
 		}
 		if kind == commitTransition && v.On("transition", name) {
-			return from, true
+			return from, true, true
 		}
 		if v.On("enter", state) {
-			return state, true
+			return state, false, true
 		}
 	}
-	return "", false
+	return "", false, false
 }
 
 // recompute evaluates one triggered variable over the row and stores the

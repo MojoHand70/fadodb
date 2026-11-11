@@ -59,6 +59,10 @@ var systemFields = []formula.Field{
 	{Name: "created_at", Type: formula.Scalar(formula.KindDateTime)},
 	{Name: "updated_at", Type: formula.Scalar(formula.KindDateTime)},
 	{Name: "state_entered_at", Type: formula.Scalar(formula.KindDateTime)},
+	{Name: "created_by", Type: formula.Scalar(formula.KindText)},
+	{Name: "updated_by", Type: formula.Scalar(formula.KindText)},
+	{Name: "state_entered_by", Type: formula.Scalar(formula.KindText)},
+	{Name: "state_entered_from", Type: formula.Scalar(formula.KindText)},
 }
 
 // Source is the documents of the class as a LOOKUP reads them
@@ -1144,7 +1148,7 @@ func compileColumns(c *collector, cls *Class) {
 			}
 		}
 	}
-	const systemColumns = 7
+	const systemColumns = 11
 	if len(cls.Columns)+systemColumns > MaxColumns {
 		c.addf(CodeTooManyColumns, "/variables", "the document table would have %d columns; at most %d", len(cls.Columns)+systemColumns, MaxColumns)
 	}

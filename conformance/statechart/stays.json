@@ -1,0 +1,73 @@
+{
+  "suite": "stays",
+  "description": "Entering a state, and what is kept of it (ADR-0047, items 3 to 5). A document enters a state when it is created in it and when a transition lands in it, named or eventless, from another state or from the same one; each entry begins a stay and ends the one before it. The document keeps who created it, who made its current version, who moved it into its state and the state it came from. The log says how each entry came about: command, guard, or action when a rule of another document asked for it. The _states view has a row for every entry, with who made the move, by which transition, from where and how, for its beginning and for its end. A guard, an access rule and a default read all of this with the functions of the row.",
+  "clock": "2026-03-01 12:00:00",
+  "class": {
+    "name": "Claim",
+    "variables": {
+      "amount": {"type": "number"},
+      "raised": {"type": "text", "default": "CREATEDBY()"},
+      "note":   {"type": "text"}
+    },
+    "states": {"initial": "draft", "list": ["draft", "review", "approved"]},
+    "transitions": [
+      {"name": "submit", "from": "draft", "to": "review"},
+      {"name": "back", "from": "review", "to": "draft"},
+      {"name": "again", "from": "review", "to": "review"},
+      {"name": "approve", "from": "review", "to": "approved", "guard": "ENTEREDBY() <> \"\" AND VERSION() > 1"},
+      {"from": "draft", "to": "review", "guard": "amount > 1000 AND ENTEREDFROM() = \"review\""}
+    ],
+    "access": {"transition": {"approve": "CREATEDBY() <> USER()"}}
+  },
+  "principals": {
+    "ann": {"id": "ann", "groups": ["sales"]},
+    "bob": {"id": "bob", "groups": ["finance"]}
+  },
+  "script": [
+    {"name": "a document keeps who created it; it came from nowhere", "do": "create", "doc": "a", "as": "ann", "values": {"amount": 250},
+     "expect": {"state": "draft", "version": 1, "values": {"raised": "ann"}, "life": {"created_by": "ann", "updated_by": "ann", "state_entered_by": "ann", "state_entered_from": ""}}},
+    {"name": "a change says who made the version and moves nobody", "do": "set", "doc": "a", "as": "bob", "values": {"note": "checked"},
+     "expect": {"version": 2, "life": {"created_by": "ann", "updated_by": "bob", "state_entered_by": "ann", "state_entered_from": ""}}},
+    {"name": "a change by nobody has no who", "do": "set", "doc": "a", "values": {"note": "checked twice"},
+     "expect": {"version": 3, "life": {"created_by": "ann", "updated_by": "", "state_entered_by": "ann"}}},
+    {"name": "a transition is an entry: who moved the document and where from", "do": "transition", "doc": "a", "as": "bob", "transition": "submit",
+     "expect": {"state": "review", "version": 4, "life": {"updated_by": "bob", "state_entered_by": "bob", "state_entered_from": "draft"}}},
+    {"name": "a transition back into the same state is an entry too: a stay of its own, come from that state", "do": "transition", "doc": "a", "as": "ann", "transition": "again",
+     "expect": {"state": "review", "version": 5, "life": {"state_entered_by": "ann", "state_entered_from": "review"},
+                "visits": [["draft", 1, 3], ["review", 4, 4], ["review", 5, null]]}},
+    {"name": "four eyes: who created the document may not approve it", "do": "transition", "doc": "a", "as": "ann", "transition": "approve", "expect": {"code": "forbidden"}},
+    {"name": "the listing reads who created the document too", "do": "transitions", "doc": "a", "as": "ann",
+     "expect": {"transitions": [{"name": "back", "to": "draft", "enabled": true}, {"name": "again", "to": "review", "enabled": true}, {"name": "approve", "to": "approved", "enabled": false, "code": "forbidden"}]}},
+    {"do": "transitions", "doc": "a", "as": "bob",
+     "expect": {"transitions": [{"name": "back", "to": "draft", "enabled": true}, {"name": "again", "to": "review", "enabled": true}, {"name": "approve", "to": "approved", "enabled": true}]}},
+    {"name": "another may, and the guard read the row", "do": "transition", "doc": "a", "as": "bob", "transition": "approve",
+     "expect": {"state": "approved", "version": 6, "life": {"created_by": "ann", "updated_by": "bob", "state_entered_by": "bob", "state_entered_from": "review"},
+                "events": ["created", "set", "set", "transition:submit", "transition:again", "transition:approve"],
+                "origins": ["command", "command", "command", "command"],
+                "stays": [["draft", "ann", null, null, "command", "bob", "submit", "command"],
+                          ["review", "bob", "draft", "submit", "command", "ann", "again", "command"],
+                          ["review", "ann", "review", "again", "command", "bob", "approve", "command"],
+                          ["approved", "bob", "review", "approve", "command", null, null, null]]}},
+
+    {"name": "an eventless transition is an entry made by the guard, as the person whose command set it off", "do": "create", "doc": "b", "as": "ann", "values": {"amount": 5000}, "expect": {"state": "draft", "version": 1}},
+    {"do": "transition", "doc": "b", "as": "ann", "transition": "submit", "expect": {"state": "review", "version": 2}},
+    {"name": "back from review above the limit: the guard reads where the document came from and sends it on", "do": "transition", "doc": "b", "as": "bob", "transition": "back",
+     "expect": {"state": "review", "version": 4, "life": {"updated_by": "bob", "state_entered_by": "bob", "state_entered_from": "draft"},
+                "origins": ["command", "command", "command", "guard"],
+                "visits": [["draft", 1, 1], ["review", 2, 2], ["draft", 3, 3], ["review", 4, null]],
+                "stays": [["draft", "ann", null, null, "command", "ann", "submit", "command"],
+                          ["review", "ann", "draft", "submit", "command", "bob", "back", "command"],
+                          ["draft", "bob", "review", "back", "command", "bob", null, "guard"],
+                          ["review", "bob", "draft", null, "guard", null, null, null]]}},
+    {"name": "a preview shows who would have moved it and writes nothing", "do": "preview", "doc": "b", "as": "ann", "transition": "again",
+     "expect": {"state": "review", "version": 5, "life": {"updated_by": "ann", "state_entered_by": "ann", "state_entered_from": "review"}}},
+    {"do": "get", "doc": "b", "expect": {"version": 4, "life": {"state_entered_by": "bob", "state_entered_from": "draft"}}},
+
+    {"name": "who makes the move of an eventless transition is who set it off, not who put the document where it was", "do": "create", "doc": "c", "as": "ann", "values": {"amount": 10}, "expect": {"state": "draft"}},
+    {"do": "transition", "doc": "c", "as": "ann", "transition": "submit", "expect": {"state": "review"}},
+    {"do": "transition", "doc": "c", "as": "ann", "transition": "back", "expect": {"state": "draft", "version": 3, "life": {"state_entered_by": "ann", "state_entered_from": "review"}}},
+    {"name": "bob raises the amount; the guard holds, and the move is his", "do": "set", "doc": "c", "as": "bob", "values": {"amount": 5000},
+     "expect": {"state": "review", "version": 5, "life": {"created_by": "ann", "updated_by": "bob", "state_entered_by": "bob", "state_entered_from": "draft"},
+                "origins": ["command", "command", "command", "guard"]}}
+  ]
+}

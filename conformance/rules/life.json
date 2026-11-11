@@ -1,0 +1,65 @@
+{
+  "suite": "life",
+  "description": "The functions of the row in triggered variables, rules and actions (ADR-0047, items 4 and 5), and how an entry that a rule asked for is recorded. A triggered variable and a rule's set read the row as the commit computed it: on the entry of a state, ENTEREDBY() is who makes this move and ENTEREDFROM() the state just left. What a rule does to another document through the outbox it does as the person whose command queued it, so that person is who created or moved the other document, and the event of that entry says action. The two classes name each other and are defined in one call.",
+  "clock": "2026-03-01 12:00:00",
+  "together": true,
+  "classes": [
+    {"name": "Job",
+     "variables": {"order": {"type": "text", "required": true}, "owner": {"type": "text"}, "made_by": {"type": "text", "default": "CREATEDBY()"}},
+     "states": {"initial": "open", "list": ["open", "done"]},
+     "transitions": [{"name": "finish", "from": "open", "to": "done"}],
+     "rules": [{"on": "enter", "state": "done", "do": [{"action": "transition", "class": "Order", "id": "order", "name": "close"}]}]}
+  ],
+  "class": {
+    "name": "Order",
+    "variables": {
+      "moved_by": {"type": "text", "formula": "ENTEREDBY()", "mode": "triggered", "on": ["enter:paid", "enter:closed"]},
+      "came":     {"type": "text", "formula": "ENTEREDFROM()", "mode": "triggered", "on": ["enter:paid", "enter:closed"]},
+      "age":      {"type": "number", "formula": "DAYSBETWEEN(CREATEDAT(), UPDATEDAT()) + VERSION()", "mode": "triggered", "on": ["refresh"]},
+      "left_by":  {"type": "text", "formula": "ENTEREDBY() & \"/\" & STATE()", "mode": "triggered", "on": ["exit:open"]},
+      "paid_by":  {"type": "text"},
+      "before":   {"type": "text"}
+    },
+    "states": {"initial": "open", "list": ["open", "paid", "closed"]},
+    "transitions": [
+      {"name": "pay", "from": "open", "to": "paid"},
+      {"name": "close", "from": "paid", "to": "closed"}
+    ],
+    "rules": [
+      {"on": "exit", "state": "open", "do": [{"action": "set", "values": {"before": "ENTEREDBY() & \" from \" & TEXT(ENTEREDFROM())"}}]},
+      {"on": "enter", "state": "paid",
+       "do": [{"action": "set", "values": {"paid_by": "ENTEREDBY()"}},
+              {"action": "create", "class": "Job", "id": "ID() & \"-job\"", "values": {"order": "ID()", "owner": "CREATEDBY()"}}]}
+    ]
+  },
+  "principals": {
+    "ann": {"id": "ann", "groups": ["sales"]},
+    "bob": {"id": "bob", "groups": ["finance"]}
+  },
+  "script": [
+    {"do": "create", "id": "O-1", "doc": "o", "as": "ann", "expect": {"state": "open", "version": 1, "life": {"created_by": "ann", "state_entered_by": "ann"}}},
+    {"name": "on the way out a rule still sees the stay that ends; on the way in, the one that begins", "do": "transition", "doc": "o", "as": "bob", "transition": "pay",
+     "expect": {"state": "paid", "version": 2, "values": {"before": "ann from ", "left_by": "ann/open", "moved_by": "bob", "came": "open", "paid_by": "bob"},
+                "life": {"created_by": "ann", "updated_by": "bob", "state_entered_by": "bob", "state_entered_from": "open"},
+                "outbox": [{"action": "create", "status": "pending", "as": "bob"}]}},
+    {"do": "drain", "doc": "o", "expect": {"drained": 1, "outbox": [{"action": "create", "status": "done"}]}},
+    {"name": "the job was made by the rule, as the person who paid: he is who created it, and the log says action", "do": "get", "class": "Job", "id": "O-1-job",
+     "expect": {"state": "open", "version": 1, "values": {"order": "O-1", "owner": "ann", "made_by": "bob"},
+                "life": {"created_by": "bob", "updated_by": "bob", "state_entered_by": "bob", "state_entered_from": ""},
+                "origins": ["action"],
+                "stays": [["open", "bob", null, null, "action", null, null, null]]}},
+    {"name": "finishing the job closes the order, through the outbox, as the person who finished it", "do": "transition", "class": "Job", "id": "O-1-job", "as": "ann", "transition": "finish",
+     "expect": {"state": "done", "origins": ["action", "command"]}},
+    {"do": "drain", "class": "Job", "id": "O-1-job", "expect": {"drained": 1}},
+    {"do": "get", "doc": "o",
+     "expect": {"state": "closed", "version": 3, "values": {"moved_by": "ann", "came": "paid", "paid_by": "bob"},
+                "life": {"created_by": "ann", "updated_by": "ann", "state_entered_by": "ann", "state_entered_from": "paid"},
+                "events": ["created", "transition:pay", "action_run:create", "transition:close"],
+                "origins": ["command", "command", "action"],
+                "stays": [["open", "ann", null, null, "command", "bob", "pay", "command"],
+                          ["paid", "bob", "open", "pay", "command", "ann", "close", "action"],
+                          ["closed", "ann", "paid", "close", "action", null, null, null]]}},
+    {"name": "a refresh computes from the moments of the row and its version", "do": "refresh", "doc": "o", "as": "bob",
+     "expect": {"version": 4, "values": {"age": 4}, "life": {"updated_by": "bob", "state_entered_by": "ann"}}}
+  ]
+}

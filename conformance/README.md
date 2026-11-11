@@ -144,6 +144,14 @@ synchronous actions, that rules do not cascade, what a failing action
 does, and what a frozen document allows. The format is the statechart
 suites', with these additions:
 
+- `life.json` is the suite of the functions of the row in triggered
+  variables, rules and actions (ADR-0047), and `statechart/stays.json`
+  the one of entering a state. Three expectations serve them: `life`
+  checks what the document keeps of its life, by name; `origins` the
+  origin of every event that enters a state, in order; `stays` the rows
+  of the `_states` view as state, then who, from where, by which
+  transition and how for the entry, then who, by which transition and
+  how for the leaving.
 - A suite with `"together": true` defines its `classes` and its `class`
   in one call (ADR-0046, item 12), as classes that name each other must
   be.

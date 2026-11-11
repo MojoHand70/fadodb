@@ -92,6 +92,42 @@ func TestGenerateSQLBound_RowBindsStateAndID(t *testing.T) {
 	}
 }
 
+// Over document rows the life of the document is the row's system
+// columns too, by the names LifeColumns gives them, and a statement over
+// no row takes a parameter of the same name for each (ADR-0047).
+func TestGenerateSQLBound_RowBindsTheLife(t *testing.T) {
+	scope := mustScope(t, Variable{Name: "qty", Type: Scalar(KindNumber)})
+	p := mustBind(t, `CREATEDBY() <> USER() AND NOW() >= ADDDAYS(ENTEREDAT(), 7) AND ENTEREDFROM() = "review" AND UPDATEDBY() = ENTEREDBY() AND VERSION() > 1 AND UPDATEDAT() >= CREATEDAT()`, scope)
+	columns := []string{"created_by", "state_entered_at", "state_entered_from", "updated_by", "state_entered_by", "version", "updated_at", "created_at"}
+	for _, d := range []Dialect{NewSQLite(), NewDuckDB()} {
+		stmt, err := GenerateSQLBound(p, d, SQLBinding{Column: quoteSlot, Row: func(name string) string { return "d." + quoteIdent(name) }})
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, c := range columns {
+			if !strings.Contains(stmt.Value, `d."`+c+`"`) {
+				t.Errorf("%s: value %s\n  lacks the column %s", d.Name(), stmt.Value, c)
+			}
+		}
+		if got := strings.Join(stmt.Params, ","); got != "user,now" {
+			t.Errorf("%s: params %v, want user and now", d.Name(), stmt.Params)
+		}
+		free, err := GenerateSQL(p, d, quoteSlot)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, c := range columns {
+			found := false
+			for _, name := range free.Params {
+				found = found || name == c
+			}
+			if !found || strings.Contains(free.Value, `d."`+c+`"`) {
+				t.Errorf("%s: over no row %s is a parameter: params %v", d.Name(), c, free.Params)
+			}
+		}
+	}
+}
+
 func TestGenerateSQL_RefusesUnstructuredBytecode(t *testing.T) {
 	scope := mustScope(t, Variable{Name: "qty", Type: Scalar(KindNumber)})
 	p := mustBind(t, "IF(qty > 0, 1, 2)", scope)

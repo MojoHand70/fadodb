@@ -7,6 +7,44 @@ import (
 	"github.com/MojoHand70/fadodb/internal/model"
 )
 
+// qualifiers gives, for each kind of event, how its event_docs row
+// qualifies the document: what the event did to it. A kind that is not
+// here, an action's outcome, was caused by it.
+var qualifiers = [][2]string{
+	{EventCreated, "created"}, {EventSet, "changed"}, {EventReset, "changed"}, {EventRefresh, "refreshed"},
+	{EventTransition, "transitioned"}, {EventDeleted, "deleted"}, {EventMigrated, "migrated"}, {EventCustom, "emitted"},
+}
+
+// qualifierOf is how the event_docs row of an event of the kind
+// qualifies the document.
+func qualifierOf(kind string) string {
+	for _, q := range qualifiers {
+		if q[0] == kind {
+			return q[1]
+		}
+	}
+	return "caused"
+}
+
+// originSQL spells, over the events table under an alias, the origin of
+// an entry as the log's readers see it (ADR-0047, item 3). The table
+// keeps it as a small number, which costs the write step nothing; every
+// view and every read gives the word.
+func originSQL(alias string) string {
+	expr := "CASE " + alias + `."origin"`
+	for i, o := range origins {
+		if i > 0 {
+			expr += " WHEN " + itoa(i) + " THEN " + lit(o)
+		}
+	}
+	return expr + " END"
+}
+
+// eventViewColumns are the columns of the events table as a class's
+// _events view shows them: every one as it is, and the origin as a word.
+var eventViewColumns = `e."event_id", e."class", e."doc_id", e."kind", e."name", e."from_state", e."to_state", e."actor_id", e."before_version", e."after_version",` +
+	` e."cause_event_id", e."command_key", e."command_hash", e."business_date", e."ts", ` + originSQL("e") + ` AS "origin"`
+
 // engineDDL makes the tables every database has (docs/architecture.md,
 // ADR-0006, ADR-0014, ADR-0026). Every statement is idempotent, since Open
 // runs them on every start.
@@ -21,7 +59,7 @@ var engineDDL = []string{
 	`CREATE TABLE IF NOT EXISTS actions (name TEXT PRIMARY KEY COLLATE NOCASE, version INTEGER NOT NULL, json TEXT NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)`,
 	`CREATE TABLE IF NOT EXISTS action_versions (action TEXT NOT NULL COLLATE NOCASE, version INTEGER NOT NULL, json TEXT NOT NULL, created_at INTEGER NOT NULL, PRIMARY KEY (action, version))`,
 	`CREATE TABLE IF NOT EXISTS events (event_id TEXT PRIMARY KEY, class TEXT NOT NULL, doc_id TEXT NOT NULL, kind TEXT NOT NULL, name TEXT, from_state TEXT, to_state TEXT,
-		actor_id TEXT, before_version INTEGER, after_version INTEGER, cause_event_id TEXT, command_key TEXT, command_hash TEXT, business_date INTEGER NOT NULL, ts INTEGER NOT NULL)`,
+		actor_id TEXT, before_version INTEGER, after_version INTEGER, cause_event_id TEXT, command_key TEXT, command_hash TEXT, business_date INTEGER NOT NULL, ts INTEGER NOT NULL, origin INTEGER)`,
 	`CREATE UNIQUE INDEX IF NOT EXISTS events_command_key ON events (command_key)`,
 	`CREATE INDEX IF NOT EXISTS events_class_doc ON events (class, doc_id, ts)`,
 	`CREATE INDEX IF NOT EXISTS events_business_date ON events (business_date)`,
@@ -42,7 +80,7 @@ var engineDDL = []string{
 // The system columns of a current row (ADR-0013, ADR-0018) and the ones a
 // history row adds (ADR-0014).
 var (
-	systemColumns  = []string{"id", "title", "state", "version", "class_version", "created_at", "updated_at", "state_entered_at"}
+	systemColumns  = []string{"id", "title", "state", "version", "class_version", "created_at", "updated_at", "state_entered_at", "created_by", "updated_by", "state_entered_by", "state_entered_from"}
 	historyColumns = []string{"valid_from", "valid_to", "actor_id", "event_id"}
 	childKey       = []string{"doc_id", "version", "idx"}
 )
@@ -50,7 +88,11 @@ var (
 const (
 	currentSystemDDL = `"id" TEXT NOT NULL, "title" TEXT, "state" TEXT, "version" INTEGER NOT NULL, "class_version" INTEGER NOT NULL, "created_at" INTEGER NOT NULL, "updated_at" INTEGER NOT NULL, "state_entered_at" INTEGER`
 	historySystemDDL = currentSystemDDL + `, "valid_from" INTEGER NOT NULL, "valid_to" INTEGER, "actor_id" TEXT, "event_id" TEXT NOT NULL`
-	childKeyDDL      = `"doc_id" TEXT NOT NULL, "version" INTEGER NOT NULL, "idx" INTEGER NOT NULL`
+	// Who made the document and where it came from (ADR-0047, item 4)
+	// stand after the variables in the two tables: a column SQLite reads
+	// costs by its place in the row, and these are read least.
+	whoDDL      = `, "created_by" TEXT, "updated_by" TEXT, "state_entered_by" TEXT, "state_entered_from" TEXT`
+	childKeyDDL = `"doc_id" TEXT NOT NULL, "version" INTEGER NOT NULL, "idx" INTEGER NOT NULL`
 )
 
 // sqlType is SQLite's storage class for values of the kind: a date as
@@ -111,8 +153,8 @@ func (c *class) tableDDL() []string {
 		vars = ", " + vars
 	}
 	ddl := []string{
-		"CREATE TABLE " + quote(c.table) + " (" + currentSystemDDL + vars + `, PRIMARY KEY ("id"))`,
-		"CREATE TABLE " + quote(c.history) + " (" + historySystemDDL + vars + `, PRIMARY KEY ("id", "version"))`,
+		"CREATE TABLE " + quote(c.table) + " (" + currentSystemDDL + vars + whoDDL + `, PRIMARY KEY ("id"))`,
+		"CREATE TABLE " + quote(c.history) + " (" + historySystemDDL + vars + whoDDL + `, PRIMARY KEY ("id", "version"))`,
 		"CREATE INDEX " + quote(c.history+"_valid") + " ON " + quote(c.history) + ` ("id", "valid_from")`,
 	}
 	for _, col := range cls.Columns {
@@ -153,7 +195,7 @@ func (c *class) viewDDL() []string {
 	ddl := []string{
 		"CREATE VIEW " + quote(cls.Name) + " AS SELECT " + all(systemColumns, c.table) + " FROM " + quote(c.table),
 		"CREATE VIEW " + quote(cls.Name+"_history") + " AS SELECT " + all(append(append([]string{}, systemColumns...), historyColumns...), c.history) + " FROM " + quote(c.history),
-		"CREATE VIEW " + quote(cls.Name+"_events") + ` AS SELECT e.*, d."qualifier" FROM "events" e JOIN "event_docs" d ON d."event_id" = e."event_id" WHERE d."class" = ` + lit(cls.Name),
+		"CREATE VIEW " + quote(cls.Name+"_events") + ` AS SELECT ` + eventViewColumns + `, d."qualifier" FROM "events" e JOIN "event_docs" d ON d."event_id" = e."event_id" WHERE d."class" = ` + lit(cls.Name),
 		// The actions the documents of the class queued (ADR-0044).
 		"CREATE VIEW " + quote(cls.Name+"_actions") + ` AS SELECT "event_id" || ':' || "idx" AS "key", "doc_id", "version", "rule", "action", "args", "principal_id", "depth", "status", "attempts", "due_at", "error_code", "error_message", "created_at", "finished_at", "outcome_event", "into_code", "into_message" FROM "outbox" WHERE "class" = ` + lit(cls.Name),
 	}
@@ -179,12 +221,14 @@ func (c *class) viewDDL() []string {
 // the leaving transition's guard saw. A visit of zero duration inside a
 // chain is a row like any other.
 func (c *class) statesViewDDL() string {
-	window := `OVER (PARTITION BY "id" ORDER BY "version")`
-	return "CREATE VIEW " + quote(c.cls.Name+"_states") + " AS WITH h AS (" +
-		`SELECT "id", "state", "version", "valid_from", lag("state") ` + window + ` AS prev_state FROM ` + quote(c.history) +
-		`), e AS (SELECT "id", "state", "version", "valid_from", lead("version") ` + window + ` AS next_version, lead("valid_from") ` + window + ` AS next_from` +
-		` FROM h WHERE prev_state IS NULL OR prev_state IS NOT "state")` +
-		` SELECT "id", "state", "valid_from" AS "entered_at", next_from AS "left_at", next_from - "valid_from" AS "duration", "version" AS "entry_version", next_version - 1 AS "exit_version" FROM e`
+	window := `OVER (PARTITION BY h."id" ORDER BY h."version")`
+	return "CREATE VIEW " + quote(c.cls.Name+"_states") + " AS WITH e AS (" +
+		`SELECT h."id", h."state", h."version", h."valid_from", h."actor_id" AS by_id, ev."name" AS via, ` + originSQL("ev") + ` AS how, ev."from_state" AS came_from,` +
+		` lead(h."version") ` + window + ` AS next_version, lead(h."valid_from") ` + window + ` AS next_from,` +
+		` lead(h."actor_id") ` + window + ` AS next_by, lead(ev."name") ` + window + ` AS next_via, lead(` + originSQL("ev") + `) ` + window + ` AS next_how` +
+		` FROM ` + quote(c.history) + ` h JOIN "events" ev ON ev."event_id" = h."event_id" AND ev."kind" IN ('` + EventCreated + `', '` + EventTransition + `'))` +
+		` SELECT "id", "state", "valid_from" AS "entered_at", next_from AS "left_at", next_from - "valid_from" AS "duration", "version" AS "entry_version", next_version - 1 AS "exit_version",` +
+		` by_id AS "entered_by", came_from AS "entered_from", via AS "entered_via", how AS "entered_how", next_by AS "left_by", next_via AS "left_via", next_how AS "left_how" FROM e`
 }
 
 // prefixed qualifies every column of a comma-separated quoted list.

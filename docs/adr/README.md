@@ -52,3 +52,4 @@ line says so. Copy `0000-template.md` to start.
 | [0044](0044-the-outbox.md) | The outbox: what a commit queues, the worker and the engine's own actions | Accepted |
 | [0045](0045-actions-are-an-extension-point.md) | Actions are an extension point: definitions, declared HTTP actions, registered Go actions, connections and results | Accepted |
 | [0046](0046-formulas-that-read-other-documents.md) | Formulas that read other documents: a class as the source of LOOKUP, with COUNT, SUM, MIN and MAX | Accepted |
+| [0047](0047-time.md) | Time: a document's life in formulas, what is due, and timed transitions | Proposed |

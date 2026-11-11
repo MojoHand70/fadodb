@@ -87,7 +87,13 @@ of parallel approvals runs in `conformance/rules/reads.json` (#63). Its
 third closes the step: `DefineClasses` defines several classes in one
 call, all or none, so that classes which name each other can be defined
 at all, and the Purchase and Approval samples under `examples/classes/`
-are the pattern written out.
+are the pattern written out (#64). Its seventh step, time, has its
+design proposed as ADR-0047 on 2026-11-11 and is not built: a formula
+reads the life of its document, when and by whom it was created,
+changed and moved into each state; `Due` lists the documents that would
+move now; and a transition may carry `after` or `at`, so that the
+engine moves the document when the time comes. By the owner's ruling of
+that day a timer is written on a transition.
 By the owner's rulings of that day a formula sees every document, and
 `QUERY`, which returns lists, is built with the first layout or report
 that needs one; tables stored outside the file come with the analytical

@@ -1,6 +1,6 @@
 module github.com/MojoHand70/fadodb/analytics
 
-go 1.26.10
+go 1.26.11
 
 require (
 	github.com/MojoHand70/fadodb v0.0.0

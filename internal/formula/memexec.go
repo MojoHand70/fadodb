@@ -1,6 +1,7 @@
 package formula
 
 import (
+	"errors"
 	"sort"
 	"strings"
 )
@@ -63,32 +64,37 @@ func (m *MemoryExecutor) AddTable(src *Source, rows [][]Value) {
 	m.tables[strings.ToUpper(src.Name)] = t
 }
 
-// Lookup implements QueryExecutor.
+// Lookup implements QueryExecutor: the column of the first matching row,
+// or the slot's aggregate over the matching rows in key order.
 func (m *MemoryExecutor) Lookup(q *QuerySlot, args []Value, ctx *Context) (Value, *EvalError) {
 	t, ok := m.tables[strings.ToUpper(q.Source)]
 	if !ok {
 		return Value{}, &EvalError{Code: ErrQueryFailed, Pos: -1, Msg: "unknown source " + q.Source}
 	}
-	ci, ok := t.cols[strings.ToUpper(q.Column)]
-	if !ok {
-		return Value{}, &EvalError{Code: ErrQueryFailed, Pos: -1, Msg: "unknown column " + q.Column + " of " + q.Source}
-	}
-	// Each slot of the condition is a column of the row or one of the
-	// arguments.
-	from := make([]int, len(q.Cond.Slots))
-	for i, s := range q.Cond.Slots {
-		if j := q.ArgIndex(s.Name); j >= 0 {
-			from[i] = -1 - j
-			continue
+	ci := -1
+	if q.Agg == "" {
+		if ci, ok = t.cols[strings.ToUpper(q.Column)]; !ok {
+			return Value{}, &EvalError{Code: ErrQueryFailed, Pos: -1, Msg: "unknown column " + q.Column + " of " + q.Source}
 		}
-		cj, ok := t.cols[strings.ToUpper(s.Name)]
-		if !ok {
-			return Value{}, &EvalError{Code: ErrQueryFailed, Pos: -1, Msg: "unknown column " + s.Name + " of " + q.Source}
-		}
-		from[i] = cj
 	}
-	vars := make([]Value, len(from))
-	for _, row := range t.rows {
+	// Each slot of a program of the slot is a column of the row or one of
+	// the arguments.
+	places := func(p *Program) ([]int, *EvalError) {
+		from := make([]int, len(p.Slots))
+		for i, s := range p.Slots {
+			if j := q.ArgIndex(s.Name); j >= 0 {
+				from[i] = -1 - j
+				continue
+			}
+			cj, ok := t.cols[strings.ToUpper(s.Name)]
+			if !ok {
+				return nil, &EvalError{Code: ErrQueryFailed, Pos: -1, Msg: "unknown column " + s.Name + " of " + q.Source}
+			}
+			from[i] = cj
+		}
+		return from, nil
+	}
+	fill := func(vars []Value, from []int, row []Value) {
 		for i, f := range from {
 			if f < 0 {
 				vars[i] = args[-1-f]
@@ -96,11 +102,47 @@ func (m *MemoryExecutor) Lookup(q *QuerySlot, args []Value, ctx *Context) (Value
 				vars[i] = row[f]
 			}
 		}
+	}
+	from, perr := places(q.Cond)
+	if perr != nil {
+		return Value{}, perr
+	}
+	vars := make([]Value, len(from))
+	var (
+		valFrom []int
+		valVars []Value
+		vals    []Value
+	)
+	if q.Agg != "" {
+		if valFrom, perr = places(q.Value); perr != nil {
+			return Value{}, perr
+		}
+		valVars = make([]Value, len(valFrom))
+	}
+	for _, row := range t.rows {
+		fill(vars, from, row)
 		v, err := m.vm.Run(q.Cond, vars, ctx)
 		if err != nil || !v.Truth() {
 			continue
 		}
-		return row[ci], nil
+		if q.Agg == "" {
+			return row[ci], nil
+		}
+		// The expression of an aggregate failing on a matching row fails
+		// the aggregate, with the error of the first such row.
+		fill(valVars, valFrom, row)
+		x, err := m.vm.Run(q.Value, valVars, ctx)
+		if err != nil {
+			var ee *EvalError
+			if !errors.As(err, &ee) {
+				ee = &EvalError{Code: ErrQueryFailed, Pos: -1, Msg: err.Error()}
+			}
+			return Value{}, ee
+		}
+		vals = append(vals, x)
+	}
+	if q.Agg != "" {
+		return q.Aggregate(vals)
 	}
 	return Blank(), nil
 }

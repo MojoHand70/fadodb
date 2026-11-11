@@ -1144,14 +1144,16 @@ func checkRegexLiteral(n *Call) error {
 }
 
 // lookup binds LOOKUP(source, column, condition) (ADR-0016, ADR-0020): the
-// source is a table of the options, the column one of its columns, and
-// the condition a program of its own over the source's columns and the
-// document variables it names as THIS.name. The call becomes one lookup
-// instruction over a query slot; the VM hands the slot and the values of
-// the THIS variables to the executor, and the SQL generator writes a
-// correlated subquery. A condition that is one equality of a column with
-// an expression of the document alone also records that expression, so
-// that an index on the column can serve the lookup (ADR-0036).
+// source is a table of the options, the column one of its columns or an
+// aggregate over them (ADR-0046), and the condition a program of its own
+// over the source's columns and the document variables it names as
+// THIS.name. The call becomes one lookup instruction over a query slot;
+// the VM hands the slot and the values of the THIS variables to the
+// executor, and the SQL generator writes a correlated subquery. A
+// condition that is, or holds as a term of a conjunction, an equality of
+// a column with an expression of the document alone also records that
+// expression, so that an index on the column can serve the lookup
+// (ADR-0036, ADR-0046).
 func (b *binder) lookup(n *Call) (Type, error) {
 	if b.source != nil {
 		return Type{}, b.errAt(n.P, "a query function may not be used inside another's arguments (ADR-0020)")
@@ -1175,16 +1177,22 @@ func (b *binder) lookup(n *Call) (Type, error) {
 	if !ok {
 		return Type{}, b.errAt(srcName.P, "unknown source %s", srcName.Name)
 	}
-	colName, ok := n.Args[1].(*Ident)
-	if !ok {
-		return Type{}, b.errAt(n.Args[1].Pos(), "LOOKUP: the column is the name of a column of %s", src.Name)
-	}
-	col, ok := src.Column(colName.Name)
-	if !ok {
-		return Type{}, b.errAt(colName.P, "unknown column %s of %s; its columns are %s", colName.Name, src.Name, strings.Join(src.ColumnNames(), ", "))
-	}
-	q := &QuerySlot{Source: src.Name, Column: col.Name, Type: col.Type, Order: append([]string(nil), src.Key...)}
+	q := &QuerySlot{Source: src.Name, Order: append([]string(nil), src.Key...)}
 	argOf := map[string]int{}
+	switch c := n.Args[1].(type) {
+	case *Ident:
+		col, ok := src.Column(c.Name)
+		if !ok {
+			return Type{}, b.errAt(c.P, "unknown column %s of %s; its columns are %s", c.Name, src.Name, strings.Join(src.ColumnNames(), ", "))
+		}
+		q.Column, q.Type = col.Name, col.Type
+	case *Call:
+		if err := b.aggregate(c, src, q, argOf); err != nil {
+			return Type{}, err
+		}
+	default:
+		return Type{}, b.errAt(n.Args[1].Pos(), "LOOKUP: the column is the name of a column of %s, or COUNT, SUM, MIN or MAX over its columns", src.Name)
+	}
 	cond, ct, err := b.subProgram(n.Args[2], src, q, argOf)
 	if err != nil {
 		return Type{}, err
@@ -1198,26 +1206,17 @@ func (b *binder) lookup(n *Call) (Type, error) {
 		v, _ := b.scope.Lookup(name)
 		q.Args = append(q.Args, b.slot(v))
 	}
-	if eq, ok := n.Args[2].(*Binary); ok && eq.Op == TokEq {
-		for _, side := range [][2]Node{{eq.L, eq.R}, {eq.R, eq.L}} {
-			id, ok := side[0].(*Ident)
-			if !ok || mentionsColumn(side[1]) {
-				continue
-			}
-			kcol, ok := src.Column(id.Name)
-			if !ok {
-				continue
-			}
-			key, kt, err := b.subProgram(side[1], src, q, argOf)
-			if err != nil {
-				return Type{}, err
-			}
-			if kt.Kind == KindNumber && kcol.Type.Kind == KindDecimal && key.ClaimExact(kcol.Type) {
-				kt = key.Result
-			}
-			if kt.Kind == kcol.Type.Kind {
-				q.Key, q.IndexColumn = key, kcol.Name
-			}
+	// The key: the condition when it is one equality, or else the first
+	// such term of a conjunction, which narrows the rows and leaves the
+	// decision to the condition (ADR-0037, ADR-0046).
+	terms := conjuncts(n.Args[2], nil)
+	for _, term := range terms {
+		found, err := b.lookupKey(term, src, q, argOf)
+		if err != nil {
+			return Type{}, err
+		}
+		if found {
+			q.KeyPart = len(terms) > 1
 			break
 		}
 	}
@@ -1226,7 +1225,88 @@ func (b *binder) lookup(n *Call) (Type, error) {
 	b.classes[ClassLookup] = true
 	b.emit(OpLookup, idx, n.P)
 	b.push(1)
-	return col.Type, nil
+	return q.Type, nil
+}
+
+// rowAggregates are the functions that may stand in the column position
+// of a LOOKUP (ADR-0046).
+var rowAggregates = map[string]bool{"COUNT": true, "SUM": true, "MIN": true, "MAX": true}
+
+// aggregate binds COUNT, SUM, MIN or MAX in the column position of a
+// LOOKUP: the expression it runs over is a program of its own, like the
+// condition, and its type is what the same function gives one value of
+// that type.
+func (b *binder) aggregate(n *Call, src *Source, q *QuerySlot, argOf map[string]int) error {
+	if !rowAggregates[n.Name] {
+		if n.Name == "AVERAGE" {
+			return b.errAt(n.P, "LOOKUP: AVERAGE over a source is not built yet; divide a SUM by a COUNT")
+		}
+		return b.errAt(n.P, "LOOKUP: %s cannot stand where the column stands; a column of %s can, and COUNT, SUM, MIN or MAX over its columns", n.Name, src.Name)
+	}
+	if len(n.Args) != 1 {
+		return b.errAt(n.P, "LOOKUP: %s over a source takes one expression, such as %s(%s)", n.Name, n.Name, src.Columns[0].Name)
+	}
+	val, vt, err := b.subProgram(n.Args[0], src, q, argOf)
+	if err != nil {
+		return err
+	}
+	spec := builtins[builtinByName[n.Name]]
+	if k := spec.args[0]; !k.accepts(vt) {
+		return b.errAt(n.Args[0].Pos(), "%s: argument 1 must be %s, got %s%s", n.Name, k, vt, k.hint(vt))
+	}
+	rt, err := b.resultType(spec, n, []Type{vt}, []litInfo{{}})
+	if err != nil {
+		return err
+	}
+	q.Agg, q.Value, q.Type = n.Name, val, rt
+	return nil
+}
+
+// conjuncts appends the terms of a top-level AND to out: the expression
+// itself when it is not one.
+func conjuncts(n Node, out []Node) []Node {
+	if and, ok := n.(*Binary); ok && and.Op == TokAnd {
+		return conjuncts(and.R, conjuncts(and.L, out))
+	}
+	return append(out, n)
+}
+
+// lookupKey records a term as the key of the slot when it is an equality
+// of a column with an expression of the document alone, of the column's
+// kind.
+func (b *binder) lookupKey(term Node, src *Source, q *QuerySlot, argOf map[string]int) (bool, error) {
+	eq, ok := term.(*Binary)
+	if !ok || eq.Op != TokEq {
+		return false, nil
+	}
+	for _, side := range [][2]Node{{eq.L, eq.R}, {eq.R, eq.L}} {
+		id, ok := side[0].(*Ident)
+		if !ok || mentionsColumn(side[1]) {
+			continue
+		}
+		kcol, ok := src.Column(id.Name)
+		if !ok {
+			continue
+		}
+		if kcol.Type.Kind == KindMoney {
+			// Money equals a decimal by its amount and money of another
+			// currency not at all, so an amount is no key (ADR-0037).
+			return false, nil
+		}
+		key, kt, err := b.subProgram(side[1], src, q, argOf)
+		if err != nil {
+			return false, err
+		}
+		if kt.Kind == KindNumber && kcol.Type.Kind == KindDecimal && key.ClaimExact(kcol.Type) {
+			kt = key.Result
+		}
+		if kt.Kind == kcol.Type.Kind {
+			q.Key, q.IndexColumn = key, kcol.Name
+			return true, nil
+		}
+		return false, nil
+	}
+	return false, nil
 }
 
 // subProgram binds an expression of a LOOKUP as a program of its own,

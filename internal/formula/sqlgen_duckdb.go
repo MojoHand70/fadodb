@@ -90,6 +90,22 @@ func (DuckDB) OverflowErr(val string) string {
 	return "CASE WHEN (" + val + ") IS NOT NULL AND TRY_CAST(" + val + " AS BIGINT) IS NULL THEN 'overflow' END"
 }
 
+// ExactRowSum implements Dialect: the mantissas are HUGEINT, so their
+// sum is exact, and it fails when it does not narrow.
+func (d DuckDB) ExactRowSum(mant string) (string, string) {
+	total := "SUM(" + mant + ")"
+	return d.Narrow(total), d.OverflowErr(total)
+}
+
+// NumberRowSum implements Dialect. DuckDB's sum adds in no fixed order,
+// so the rows are listed in key order and folded from zero with the plain
+// addition the VM uses.
+func (d DuckDB) NumberRowSum(num, order string) (string, string) {
+	rows := "COALESCE(list(" + num + order + ") FILTER (WHERE " + num + " IS NOT NULL), CAST([] AS DOUBLE[]))"
+	val := "list_reduce(list_prepend(" + d.NumberLit(0) + ", " + rows + "), lambda a, b: a + b)"
+	return val, notFiniteErr(d, val)
+}
+
 // Pow implements Dialect: DuckDB's pow is the C library's, which the VM's
 // double-double power matches.
 func (DuckDB) Pow(x, y string) string { return "pow(" + x + ", " + y + ")" }

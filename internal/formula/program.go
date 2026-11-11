@@ -50,7 +50,7 @@ const (
 	OpOrJump      // when the top is TRUE, pc = arg; else pop
 	OpToBool      // replace a blank top by FALSE
 	OpCall        // call builtin arg>>8 with arg&0xff arguments from the stack
-	OpLookup      // reserved: LOOKUP through query slot arg (ADR-0020)
+	OpLookup      // LOOKUP through query slot arg (ADR-0020)
 	OpQuery       // reserved: QUERY through query slot arg (ADR-0020)
 	OpReturn      // the top is the result
 	OpConstDec    // push Decs[arg] (ADR-0022)
@@ -114,10 +114,12 @@ type Slot struct {
 // column it returns; the condition as a program of its own over the
 // source's columns, named by column, and the document variables it reads
 // as THIS.name, named "THIS.<variable>"; the slots of the enclosing
-// program those variables live in; and, when the condition is one
-// equality of a column with an expression of the document alone, that
+// program those variables live in; and, when the condition is or holds
+// an equality of a column with an expression of the document alone, that
 // expression as a program, so that an index on the column can serve the
-// lookup (ADR-0036). QUERY arrives with Phase 4.
+// lookup (ADR-0036, ADR-0046). In place of the column the slot may carry
+// an aggregate over an expression (ADR-0046). QUERY gets a slot shape of
+// its own when it is built.
 type QuerySlot struct {
 	Source string
 	Column string
@@ -134,10 +136,21 @@ type QuerySlot struct {
 	// Cond is the condition; a row matches when it is TRUE, and a row on
 	// which it stops with an error does not match.
 	Cond *Program
-	// Key is the compared expression of an equality condition, nil for
-	// any other shape, and IndexColumn the column it is compared with.
+	// Key is the compared expression of an equality of a column with an
+	// expression of the document alone, nil when the condition has none,
+	// and IndexColumn the column it is compared with. The equality is the
+	// whole condition, or, when KeyPart is set, the first such term of a
+	// conjunction (ADR-0046): the rows whose column equals the key are
+	// then the only candidates, and the condition still decides.
 	Key         *Program
 	IndexColumn string
+	KeyPart     bool
+	// Agg names the aggregate that stands in the column position, COUNT,
+	// SUM, MIN or MAX, and Value is the expression it runs over, a program
+	// over the source's columns and the THIS arguments like Cond
+	// (ADR-0046). Column is then empty and Type the aggregate's type.
+	Agg   string
+	Value *Program
 }
 
 // ArgIndex returns the position in Args of a "THIS.<name>" slot of Cond or
@@ -201,7 +214,7 @@ func (p *Program) ClaimExact(t Type) bool {
 // Format constants.
 const (
 	formatMagic   = "FADO"
-	formatVersion = 3
+	formatVersion = 4
 )
 
 // Encode serializes the program in the binary format.
@@ -260,6 +273,13 @@ func (p *Program) Encode() []byte {
 		w.program(q.Cond)
 		w.program(q.Key)
 		w.str(q.IndexColumn)
+		part := uint8(0)
+		if q.KeyPart {
+			part = 1
+		}
+		w.u8(part)
+		w.str(q.Agg)
+		w.program(q.Value)
 	}
 	w.u32(uint32(p.MaxStack))
 	return b.Bytes()
@@ -349,6 +369,9 @@ func Decode(data []byte) (*Program, error) {
 		q.Cond = r.program()
 		q.Key = r.program()
 		q.IndexColumn = r.str()
+		q.KeyPart = r.u8() != 0
+		q.Agg = r.str()
+		q.Value = r.program()
 		p.Queries = append(p.Queries, q)
 	}
 	p.MaxStack = int(r.u32())
@@ -405,7 +428,8 @@ func (p *Program) validate() error {
 				return fmt.Errorf("instruction %d: query slot %d out of range", i, in.Arg)
 			}
 			q := &p.Queries[in.Arg]
-			if q.Cond == nil || q.Column == "" || len(q.Args) != len(q.ArgNames) || q.Key != nil && q.IndexColumn == "" {
+			if q.Cond == nil || len(q.Args) != len(q.ArgNames) || q.Key != nil && q.IndexColumn == "" || q.Key == nil && q.KeyPart ||
+				(q.Agg == "") != (q.Value == nil) || (q.Agg == "") == (q.Column == "") || q.Agg != "" && !rowAggregates[q.Agg] {
 				return fmt.Errorf("instruction %d: query slot %d is incomplete", i, in.Arg)
 			}
 			for _, a := range q.Args {

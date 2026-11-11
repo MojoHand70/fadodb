@@ -7,6 +7,7 @@ package sqlitefn
 
 import (
 	"database/sql/driver"
+	"errors"
 	"sync"
 
 	"modernc.org/sqlite"
@@ -32,6 +33,11 @@ func Register() error {
 	once.Do(func() {
 		for _, f := range formula.SQLiteFunctions() {
 			if regErr = register(f); regErr != nil {
+				return
+			}
+		}
+		for _, a := range formula.SQLiteAggregates() {
+			if regErr = registerAggregate(a); regErr != nil {
 				return
 			}
 		}
@@ -76,6 +82,57 @@ func register(f formula.RegisteredFunc) error {
 	}
 	return sqlite.RegisterDeterministicScalarFunction(f.Name+"_err", int32(f.NArgs), code)
 }
+
+// registerAggregate registers an aggregate over rows and its _err twin
+// (ADR-0046): each keeps the values of one evaluation in the order the
+// rows arrive and folds them at the end with the engine's own function.
+func registerAggregate(a formula.RegisteredAggregate) error {
+	for _, twin := range []struct {
+		name string
+		code bool
+	}{{a.Name, false}, {a.Name + "_err", true}} {
+		impl := &sqlite.FunctionImpl{
+			NArgs:         1,
+			Deterministic: true,
+			MakeAggregate: func(sqlite.FunctionContext) (sqlite.AggregateFunction, error) {
+				return &rowsAggregate{agg: a, code: twin.code}, nil
+			},
+		}
+		if err := sqlite.RegisterFunction(twin.name, impl); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// rowsAggregate is one evaluation of a registered aggregate.
+type rowsAggregate struct {
+	agg  formula.RegisteredAggregate
+	code bool
+	vals []formula.Value
+}
+
+func (r *rowsAggregate) Step(_ *sqlite.FunctionContext, args []driver.Value) error {
+	r.vals = append(r.vals, formula.ValueFromDriver(args[0], r.agg.Kind))
+	return nil
+}
+
+func (r *rowsAggregate) WindowInverse(*sqlite.FunctionContext, []driver.Value) error {
+	return errors.New(r.agg.Name + " is not a window function")
+}
+
+func (r *rowsAggregate) WindowValue(*sqlite.FunctionContext) (driver.Value, error) {
+	v, err := r.agg.Fn(r.vals)
+	switch {
+	case r.code && err != nil:
+		return err.Code, nil
+	case r.code || err != nil:
+		return nil, nil
+	}
+	return v.DriverValue(), nil
+}
+
+func (r *rowsAggregate) Final(*sqlite.FunctionContext) {}
 
 // limitArg reads the text limit the dialect passes, an integer literal.
 func limitArg(v driver.Value) int {

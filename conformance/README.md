@@ -73,7 +73,10 @@ One file per topic:
   name, `columns` as name to scalar type, `key` as the columns that order
   the table and identify a row, and `rows` as objects in the notation of
   `inputs`, an absent column blank. Inside a `LOOKUP` a bare name is a
-  column of the source and `THIS.name` a declared variable.
+  column of the source and `THIS.name` a declared variable. In place of
+  the column, `COUNT`, `SUM`, `MIN` or `MAX` stands over one expression
+  of the columns (ADR-0046). The `lookup` suite also runs against the
+  store, whose tables answer from an index or a prepared statement.
 - `limits` sets the size limits the suite evaluates under, `{"max_text":
   N}` code points (ADR-0021); absent, the defaults. The `limits` suite runs
   at a small limit so that short texts reach the boundary.

@@ -424,8 +424,12 @@ func (s *Store) TableRows(ctx context.Context, name string) ([]Values, error) {
 // result column, the argument of each slot of the key expression, and
 // the prepared statement of the statement path, made on first use.
 type lookupPlan struct {
-	tbl     *table
+	tbl *table
+	// col is the result column, -1 for an aggregate. rows says the slot
+	// needs every row of its key, not the first, so the index of first
+	// rows cannot answer it.
 	col     int
+	rows    bool
 	keyArgs []int
 	keyVars []formula.Value
 	// idxCol is the upper-cased index column and idxType its type, for
@@ -462,17 +466,32 @@ func (e *executor) Lookup(q *formula.QuerySlot, args []formula.Value, ctx *formu
 		var kerr error
 		if key, kerr = s.qvm.Run(q.Key, plan.keyVars, ctx); kerr != nil {
 			// The key expression fails on every row, so no row matches.
-			return formula.Blank(), nil
+			return plan.none(q)
 		}
-		if cache, ok := plan.tbl.cacheFor(s); ok {
-			pos, found := cache.index(plan.tbl, plan.idxCol)[canonKey(key, plan.idxType)]
-			if !found {
-				return formula.Blank(), nil
+		// The index holds the first row of each key, which answers the
+		// lookup when the equality is the whole condition. A key that is
+		// one term of a conjunction, and an aggregate, need every row of
+		// the key: the statement reads them (ADR-0046).
+		if !plan.rows {
+			if cache, ok := plan.tbl.cacheFor(s); ok {
+				pos, found := cache.index(plan.tbl, plan.idxCol)[canonKey(key, plan.idxType)]
+				if !found {
+					return formula.Blank(), nil
+				}
+				return cache.rows[pos][plan.col], nil
 			}
-			return cache.rows[pos][plan.col], nil
 		}
 	}
 	return s.lookupStatement(plan, q, args, key, ctx)
+}
+
+// none is the answer of a slot no row matches: blank for a column, and
+// what the aggregate gives no values.
+func (p *lookupPlan) none(q *formula.QuerySlot) (formula.Value, *formula.EvalError) {
+	if q.Agg == "" {
+		return formula.Blank(), nil
+	}
+	return q.Aggregate(nil)
 }
 
 // plan finds or makes the plan of a slot.
@@ -484,11 +503,13 @@ func (s *Store) plan(q *formula.QuerySlot) (*lookupPlan, *formula.EvalError) {
 	if !ok {
 		return nil, &formula.EvalError{Code: formula.ErrQueryFailed, Pos: -1, Msg: "unknown table " + q.Source}
 	}
-	col, ok := t.leafIndex[strings.ToUpper(q.Column)]
-	if !ok {
-		return nil, &formula.EvalError{Code: formula.ErrQueryFailed, Pos: -1, Msg: "unknown column " + q.Column + " of " + q.Source}
+	col := -1
+	if q.Agg == "" {
+		if col, ok = t.leafIndex[strings.ToUpper(q.Column)]; !ok {
+			return nil, &formula.EvalError{Code: formula.ErrQueryFailed, Pos: -1, Msg: "unknown column " + q.Column + " of " + q.Source}
+		}
 	}
-	p := &lookupPlan{tbl: t, col: col, nargs: len(q.Args), money: make([]bool, len(q.Args))}
+	p := &lookupPlan{tbl: t, col: col, rows: q.KeyPart || q.Agg != "", nargs: len(q.Args), money: make([]bool, len(q.Args))}
 	if q.Key != nil {
 		p.keyArgs = make([]int, len(q.Key.Slots))
 		p.keyVars = make([]formula.Value, len(q.Key.Slots))
@@ -498,9 +519,14 @@ func (s *Store) plan(q *formula.QuerySlot) (*lookupPlan, *formula.EvalError) {
 		p.idxCol = strings.ToUpper(q.IndexColumn)
 		p.idxType = t.leaves[t.leafIndex[p.idxCol]].typ
 	}
-	for _, sl := range q.Cond.Slots {
-		if i := q.ArgIndex(sl.Name); i >= 0 && sl.Type.Kind == formula.KindMoney {
-			p.money[i] = true
+	for _, prog := range []*formula.Program{q.Cond, q.Value} {
+		if prog == nil {
+			continue
+		}
+		for _, sl := range prog.Slots {
+			if i := q.ArgIndex(sl.Name); i >= 0 && sl.Type.Kind == formula.KindMoney {
+				p.money[i] = true
+			}
 		}
 	}
 	s.plans[q] = p
@@ -519,7 +545,8 @@ func (s *Store) closePlans() {
 }
 
 // lookupStatement runs the lookup as a prepared statement on the writer
-// (ADR-0036): the subquery of LookupSQL with the arguments as parameters.
+// (ADR-0036): the subquery of LookupSQL with the arguments as parameters,
+// or the statement of AggregateSQL for an aggregate (ADR-0046).
 // For the equality shape with a key that is neither blank nor the zero of
 // its kind, the table is first narrowed to the rows whose index column
 // equals the key, which is exact, since a non-zero key equals no blank
@@ -534,7 +561,7 @@ func (s *Store) lookupStatement(p *lookupPlan, q *formula.QuerySlot, args []form
 		case p.idxType.Kind == formula.KindDecimal:
 			k, err := formula.Rescale(key, int(p.idxType.Scale))
 			if err != nil {
-				return formula.Blank(), nil // more places than the column keeps: equal to no row
+				return p.none(q) // more places than the column keeps: equal to no row
 			}
 			keyed, keyArg = k.Mant() != 0, k.Mant()
 		case p.idxType.Kind == formula.KindText || p.idxType.Kind == formula.KindRef || p.idxType.Kind == formula.KindJSON:
@@ -562,16 +589,27 @@ func (s *Store) lookupStatement(p *lookupPlan, q *formula.QuerySlot, args []form
 				return "(SELECT * FROM " + quote(p.tbl.name) + " WHERE " + quote(q.IndexColumn) + " = " + d.Param("k") + ")"
 			}
 		}
-		e, err := formula.LookupSQL(q, d, arg, table, params)
-		if err != nil {
-			return formula.Value{}, &formula.EvalError{Code: formula.ErrQueryFailed, Pos: -1, Msg: err.Error()}
+		// A column is the subquery of LookupSQL; an aggregate is one
+		// statement over the matching rows, with its error beside it.
+		var text string
+		if q.Agg != "" {
+			var err error
+			if text, err = formula.AggregateSQL(q, d, arg, table, params); err != nil {
+				return formula.Value{}, &formula.EvalError{Code: formula.ErrQueryFailed, Pos: -1, Msg: err.Error()}
+			}
+		} else {
+			e, err := formula.LookupSQL(q, d, arg, table, params)
+			if err != nil {
+				return formula.Value{}, &formula.EvalError{Code: formula.ErrQueryFailed, Pos: -1, Msg: err.Error()}
+			}
+			cur := "NULL"
+			if e.Cur != "" {
+				cur = e.Cur
+			}
+			text = "SELECT (" + e.Val + ") AS v, (" + cur + ") AS c"
 		}
 		p.params = params.Names()
-		cur := "NULL"
-		if e.Cur != "" {
-			cur = e.Cur
-		}
-		prepared, err := s.writer.PrepareContext(context.Background(), "SELECT ("+e.Val+") AS v, ("+cur+") AS c")
+		prepared, err := s.writer.PrepareContext(context.Background(), text)
 		if err != nil {
 			return formula.Value{}, &formula.EvalError{Code: formula.ErrQueryFailed, Pos: -1, Msg: "prepare the lookup: " + err.Error()}
 		}
@@ -593,6 +631,16 @@ func (s *Store) lookupStatement(p *lookupPlan, q *formula.QuerySlot, args []form
 	}
 	named = formula.NewSQLite().ContextArgsFor(ctx, p.params, named)
 	var v, c any
+	if q.Agg != "" {
+		var code sql.NullString
+		if err := (*stmt).QueryRowContext(context.Background(), named...).Scan(&v, &c, &code); err != nil {
+			return formula.Value{}, &formula.EvalError{Code: formula.ErrQueryFailed, Pos: -1, Msg: err.Error()}
+		}
+		if code.Valid {
+			return formula.Value{}, &formula.EvalError{Code: code.String, Pos: -1, Msg: q.Agg + " over " + q.Source + ": " + code.String}
+		}
+		return formula.ValueOfType(v, q.Type, c), nil
+	}
 	if err := (*stmt).QueryRowContext(context.Background(), named...).Scan(&v, &c); err != nil {
 		return formula.Value{}, &formula.EvalError{Code: formula.ErrQueryFailed, Pos: -1, Msg: err.Error()}
 	}

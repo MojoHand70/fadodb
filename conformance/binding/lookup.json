@@ -1,6 +1,6 @@
 {
   "suite": "lookup",
-  "description": "What the binder accepts and refuses in LOOKUP (ADR-0016, ADR-0020): the source is a table by name, the column one of its columns, the condition a condition over the source's columns, with the document's variables as THIS.name; a query function does not nest inside another's arguments.",
+  "description": "What the binder accepts and refuses in LOOKUP (ADR-0016, ADR-0020, ADR-0046): the source is a table by name, the column one of its columns or COUNT, SUM, MIN or MAX over one expression of them, the condition a condition over the source's columns, with the document's variables as THIS.name; a query function does not nest inside another's arguments.",
   "variables": {"code": "text", "qty": "number", "shipping": "object<Address>"},
   "schemas": {"Address": {"city": "text"}},
   "sources": {
@@ -15,7 +15,18 @@
     "LOOKUP(Rates, rate, code = THIS.code AND rate > DECIMAL(THIS.qty, 0))",
     "IFERROR(LOOKUP(Rates, rate, code = THIS.code), 0)",
     "NUMBER(LOOKUP(Rates, rate, code = THIS.code)) * qty",
-    "lookup(rates, RATE, CODE = this.Code)"
+    "lookup(rates, RATE, CODE = this.Code)",
+    "LOOKUP(Rates, COUNT(code), TRUE)",
+    "LOOKUP(Rates, COUNT(active), code = THIS.code)",
+    "LOOKUP(Rates, SUM(rate), active)",
+    "LOOKUP(Rates, SUM(rate + rate), code = THIS.code AND active)",
+    "LOOKUP(Rates, SUM(active), TRUE)",
+    "LOOKUP(Rates, MIN(rate), TRUE)",
+    "LOOKUP(Rates, MAX(NUMBER(rate) * THIS.qty), TRUE)",
+    "LOOKUP(Rates, COUNT(THIS.code), TRUE)",
+    "NUMBER(LOOKUP(Rates, SUM(rate), TRUE)) + LOOKUP(Rates, COUNT(code), TRUE)",
+    "SUM(LOOKUP(Rates, SUM(rate), TRUE), 1)",
+    "lookup(rates, count(CODE), true)"
   ],
   "reject": [
     {"formula": "LOOKUP(Nope, rate, TRUE)", "reason": "unknown source"},
@@ -32,6 +43,18 @@
     {"formula": "LOOKUP(\"Rates\", rate, TRUE)", "reason": "the source is a name, not text"},
     {"formula": "LOOKUP(Rates, \"rate\", TRUE)", "reason": "the column is a name, not text"},
     {"formula": "LOOKUP(Rates, rate, code = THIS.qty)", "reason": "a text column compared with a number"},
+    {"formula": "LOOKUP(Rates, AVERAGE(rate), TRUE)", "reason": "AVERAGE over a source is not built yet (ADR-0046)"},
+    {"formula": "LOOKUP(Rates, UPPER(code), TRUE)", "reason": "only COUNT, SUM, MIN and MAX stand where the column stands"},
+    {"formula": "LOOKUP(Rates, rate + rate, TRUE)", "reason": "the column position takes a column or an aggregate, not an expression"},
+    {"formula": "LOOKUP(Rates, SUM(rate, rate), TRUE)", "reason": "an aggregate over a source takes one expression"},
+    {"formula": "LOOKUP(Rates, COUNT(), TRUE)", "reason": "an aggregate over a source takes one expression"},
+    {"formula": "LOOKUP(Rates, SUM(code), TRUE)", "reason": "SUM of a text"},
+    {"formula": "LOOKUP(Rates, MIN(code), TRUE)", "reason": "MIN of a text"},
+    {"formula": "LOOKUP(Rates, SUM(qty), TRUE)", "reason": "inside the aggregate a bare name is a column; the document's qty is THIS.qty"},
+    {"formula": "LOOKUP(Rates, SUM(nope), TRUE)", "reason": "unknown column inside the aggregate"},
+    {"formula": "LOOKUP(Rates, SUM(LOOKUP(Rates, rate, TRUE)), TRUE)", "reason": "a query function does not nest inside an aggregate"},
+    {"formula": "LOOKUP(Rates, SUM(THIS.shipping), TRUE)", "reason": "only scalar variables are reachable through THIS yet"},
+    {"formula": "LOOKUP(Rates, SUM(rate), SUM(rate))", "reason": "the condition must be a condition"},
     {"formula": "QUERY(Rates, rate)", "reason": "QUERY is not implemented yet"}
   ]
 }

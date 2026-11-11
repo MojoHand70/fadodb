@@ -270,7 +270,9 @@ to its columns, and rejects anything else at definition time. Formulas
 never carry raw SQL. A formula that reads the documents of a class sees
 every one of them, whoever caused it to be computed; who may see the
 result is decided by the rights on the variable that holds it (ADR-0046).
-Reading a class is designed and not built yet.
+Today `LOOKUP` reads explicit tables, with one column or with `COUNT`,
+`SUM`, `MIN` or `MAX` over one expression of the columns; a class as the
+source is designed and not built yet, and so is `QUERY`.
 
 Formulas within a class form a dependency graph. The binder rejects cycles at
 definition time and precomputes the evaluation order.
@@ -602,8 +604,13 @@ rows (ADR-0046). A lookup
 whose condition is one equality of a column with an expression of the
 document is answered from an in-memory index while the table has at most
 `MaxIndexedRows` rows, and through a prepared statement narrowed by the
-table's index above that; every other condition runs as a statement
-(ADR-0036).
+table's index above that (ADR-0036). When such an equality is one term
+of an `AND`, and for every aggregate, the statement is narrowed by it
+and the condition decides among the rows of that key; a condition with
+no such equality runs over the table (ADR-0046). An aggregate is
+computed by SQLite's own aggregate functions, so nothing crosses to Go
+per row, except a `SUM` of plain numbers, whose rows go one by one, in
+key order, to the function the Go VM adds with.
 
 ### Security
 

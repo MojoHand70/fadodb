@@ -8,6 +8,28 @@ All notable changes to FadoDB are recorded here. The format follows
 
 ### Added
 
+- `COUNT`, `SUM`, `MIN` and `MAX` in the column position of a `LOOKUP`
+  (ADR-0046), over an explicit table: `LOOKUP(Stock, SUM(qty), sku =
+  THIS.sku)`. The function runs over one expression of the table's
+  columns, for every matching row, and answers what it answers over the
+  same values inside one document: blanks skipped, exact values exact
+  and of their type, money within one currency. With no matching row
+  `COUNT` is 0, `SUM` is 0, or blank for money, and `MIN` and `MAX` are
+  blank. Numbers are added one by one in key order; an exact sum fails
+  with `overflow` only when the total does not fit. An aggregate fails
+  where its function fails, and with the error of the first matching row
+  on which its expression fails. `AVERAGE` is refused with the hint to
+  divide a `SUM` by a `COUNT`. A class as the source comes with the next
+  part of the step.
+- A lookup is narrowed by its key when the equality of a column with an
+  expression of the document is one term of an `AND`, not only when it
+  is the whole condition: `sku = THIS.sku AND min_qty <= THIS.qty` reads
+  the rows of that `sku` through the table's index, 2.2 µs where the
+  whole table of 1,000 rows took 33 µs.
+- `conformance/formula/lookup.json` gained the aggregates and runs on
+  the Go VM, SQLite and DuckDB, and now against the store's own tables
+  too, with the index and without.
+
 - Rules run inside the commit (ADR-0043). Every commit raises a fixed
   list of triggers: `create` and `enter` of the initial state on a
   create; `values_change` on a set; `values_change`, `exit`,
@@ -188,6 +210,11 @@ All notable changes to FadoDB are recorded here. The format follows
 
 ### Changed
 
+- The bytecode format is version 4: a query slot may carry an aggregate
+  and the expression it runs over, and says when its key is one term of
+  a conjunction (ADR-0046). Classes are compiled from their JSON when a
+  database opens, so no file changes.
+
 - **The engine schema is version 4**, for the two columns of the outbox
   that say why a result was not stored. A file made by an earlier
   pre-release engine is refused and recreated.
@@ -244,6 +271,16 @@ All notable changes to FadoDB are recorded here. The format follows
   document or on `delete`; a rule on `schedule`, with `not_supported`
   until it is built; a misspelt property of a synchronous action. An
   `emit` names its event under `event`.
+
+### Fixed
+
+- A `LOOKUP` of a table by a money column, `price = THIS.amount`,
+  answered from the in-memory index by the amount alone, so money of
+  another currency found a row. ADR-0037 keeps money columns out of the
+  index; the binder now records no key for one, and the statement
+  compares the currencies. Found by running the formula suite's lookups
+  against the store.
+
 ## [0.3.0] - 2026-11-09
 
 ### Added

@@ -192,6 +192,55 @@ The owner ruled on the first two on 2026-11-10. They are items 1 and 2.
     approvals below, a class that counts over itself, and a chain whose
     second commit reads what the first wrote.
 
+## Details settled while building
+
+The first part of the step built items 4, 10, 13 and 14 over explicit
+tables, on 2026-11-10, and settled these points. A class as the source,
+items 3, 6 to 9 and 11, and `DefineClasses`, item 12, follow.
+
+- **An exact sum fails only when the total does not fit**, whatever the
+  order of the rows. Inside one document `SUM(a, b, c)` adds from the
+  left and fails at the first step that overflows; rows have no order a
+  sum should depend on. The Go VM adds the mantissas as two halves and
+  joins them, SQLite adds the same two halves with its own `SUM`, and
+  DuckDB adds in 128 bits.
+- **Numbers are added one by one in key order**, from zero, as
+  `SUM(a, b, c)` adds them: a sum of floating-point numbers depends on
+  the order, so the order is fixed. SQLite's own `SUM` compensates as
+  it adds and DuckDB's adds in no fixed order, so SQLite hands the rows
+  in key order to a Go function the dialect registers, and DuckDB folds
+  an ordered list. It is the one aggregate that crosses to Go per row:
+  10 µs for ten rows, where an exact sum takes 3.7 µs and a count
+  2.5 µs. Amounts that are added belong in `decimal` or `money`.
+- **The errors, in order.** The error of the first matching row, in key
+  order, on which the aggregated expression fails; then
+  `currency_mismatch`; then `overflow`, or `not_a_number` for a sum of
+  numbers that leaves the range. `COUNT` of money in two currencies is
+  no error, as inside one document.
+- **Where an aggregate may be written.** Over a table, wherever a
+  `LOOKUP` of a table may be, an auto formula included. The expression
+  it runs over is bound like the condition: bare names are columns,
+  `THIS.name` the document, and a context function only where the
+  formula's mode allows one. It takes exactly one expression.
+- **`AVERAGE` and every other function are refused** in the column
+  position when the class is defined, `AVERAGE` with the hint to divide
+  a `SUM` by a `COUNT`.
+- **A money column is never a key.** Money equals a decimal by its
+  amount and money of another currency not at all, which ADR-0037,
+  item 5, already said; the binder recorded the key all the same, and
+  the in-memory index answered by the amount alone. Running the formula
+  suite's lookups against the store found it. The binder now records no
+  key for a money column.
+- **The slot says when its key is a part.** `KeyPart` is set when the
+  equality is one term of a conjunction. The index of first rows
+  answers only a key that is the whole condition; a partial key and
+  every aggregate need all the rows of the key and run as the statement
+  narrowed by it. An `OR`, or an equality with a money column, leaves no
+  key, and the statement reads the table.
+- **The store answers the formula suite.** `conformance/formula/lookup.json`
+  runs against the store's own tables as well, once with the index and
+  once without, beside the Go VM, the SQL generator on SQLite and DuckDB.
+
 ## Consequences
 
 - **Parallel approvals are whole.** Each approval is a document that

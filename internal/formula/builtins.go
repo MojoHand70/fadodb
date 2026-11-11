@@ -116,6 +116,19 @@ var builtins = []*builtin{
 	{name: "ENTEREDBY", class: ClassContext, args: []argKind{}, result: KindText, fn: lifeText(func(d *Life) string { return d.EnteredBy })},
 	{name: "ENTEREDFROM", class: ClassContext, args: []argKind{}, result: KindText, fn: lifeText(func(d *Life) string { return d.EnteredFrom })},
 	{name: "VERSION", class: ClassContext, args: []argKind{}, result: KindNumber, fn: fnVersion},
+	// The life of the document by state, from its events (ADR-0047, item 6)
+	{name: "FIRSTENTERED", class: ClassContext, args: []argKind{akText}, result: KindDateTime, fn: stateMoment(func(s *StateLife) int64 { return s.FirstEntered })},
+	{name: "FIRSTENTEREDBY", class: ClassContext, args: []argKind{akText}, result: KindText, fn: stateText(func(s *StateLife) string { return s.FirstEnteredBy })},
+	{name: "LASTENTERED", class: ClassContext, args: []argKind{akText}, result: KindDateTime, fn: stateMoment(func(s *StateLife) int64 { return s.LastEntered })},
+	{name: "LASTENTEREDBY", class: ClassContext, args: []argKind{akText}, result: KindText, fn: stateText(func(s *StateLife) string { return s.LastEnteredBy })},
+	{name: "FIRSTLEFT", class: ClassContext, args: []argKind{akText}, result: KindDateTime, fn: stateMoment(func(s *StateLife) int64 { return s.FirstLeft })},
+	{name: "FIRSTLEFTBY", class: ClassContext, args: []argKind{akText}, result: KindText, fn: stateText(func(s *StateLife) string { return s.FirstLeftBy })},
+	{name: "LASTLEFT", class: ClassContext, args: []argKind{akText}, result: KindDateTime, fn: stateMoment(func(s *StateLife) int64 { return s.LastLeft })},
+	{name: "LASTLEFTBY", class: ClassContext, args: []argKind{akText}, result: KindText, fn: stateText(func(s *StateLife) string { return s.LastLeftBy })},
+	{name: "ENTRIES", class: ClassContext, args: []argKind{akText}, result: KindNumber, fn: fnEntries},
+	{name: "DAYSIN", class: ClassContext, args: []argKind{akText}, result: KindNumber, fn: fnDaysIn},
+	{name: "FIRSTEDITOR", class: ClassContext, args: []argKind{akText}, result: KindText, fn: stateText(func(s *StateLife) string { return s.FirstEditor })},
+	{name: "LASTEDITOR", class: ClassContext, args: []argKind{akText}, result: KindText, fn: stateText(func(s *StateLife) string { return s.LastEditor })},
 }
 
 // builtinByName indexes the table by canonical name.
@@ -1136,6 +1149,71 @@ func fnVersion(vm *VM, _ []Value) (Value, *EvalError) {
 		return Blank(), nil
 	}
 	return Number(float64(vm.ctx.Doc.Version)), nil
+}
+
+// stateOf finds what the document's life says of the state a function
+// of a state names: nil when the document was never in it, and when
+// there is no document.
+func stateOf(vm *VM, args []Value) *StateLife {
+	if vm.ctx == nil || vm.ctx.Doc == nil {
+		return nil
+	}
+	return vm.ctx.Doc.state(args[0].str)
+}
+
+// stateMoment makes the function of one moment of a state: blank when
+// the document was never there, or never left it for a moment of an
+// exit.
+func stateMoment(get func(*StateLife) int64) func(*VM, []Value) (Value, *EvalError) {
+	return func(vm *VM, args []Value) (Value, *EvalError) {
+		if st := stateOf(vm, args); st != nil {
+			if secs := get(st); secs != 0 {
+				return DateTime(secs), nil
+			}
+		}
+		return Blank(), nil
+	}
+}
+
+// stateText makes the function of one text of a state.
+func stateText(get func(*StateLife) string) func(*VM, []Value) (Value, *EvalError) {
+	return func(vm *VM, args []Value) (Value, *EvalError) {
+		if st := stateOf(vm, args); st != nil {
+			if s := get(st); s != "" {
+				return Text(s), nil
+			}
+		}
+		return Blank(), nil
+	}
+}
+
+// fnEntries counts the entries into a state: 0 for a state the document
+// was never in, blank when there is no document.
+func fnEntries(vm *VM, args []Value) (Value, *EvalError) {
+	if vm.ctx == nil || vm.ctx.Doc == nil {
+		return Blank(), nil
+	}
+	if st := stateOf(vm, args); st != nil {
+		return Number(float64(st.Entries)), nil
+	}
+	return Number(0), nil
+}
+
+// fnDaysIn is the time spent in a state in days: the stays that ended,
+// and the one the document is in up to now.
+func fnDaysIn(vm *VM, args []Value) (Value, *EvalError) {
+	if vm.ctx == nil || vm.ctx.Doc == nil {
+		return Blank(), nil
+	}
+	st := stateOf(vm, args)
+	if st == nil {
+		return Number(0), nil
+	}
+	secs := st.Seconds
+	if st.In {
+		secs += vm.now() - st.LastEntered
+	}
+	return Number(float64(secs) / secondsPerDay), nil
 }
 
 func fnInGroup(vm *VM, args []Value) (Value, *EvalError) {

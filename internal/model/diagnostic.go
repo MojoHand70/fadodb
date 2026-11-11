@@ -155,11 +155,25 @@ var errUnbound = errors.New("the formula reads a class and was not bound")
 // its explicit tables and the documents of its classes.
 func (c *collector) bind(src string, scope *formula.Scope, mode formula.Mode) (*formula.Program, error) {
 	r := &envSources{c: c}
-	prog, err := formula.Bind(src, scope, formula.BindOptions{Mode: mode, Sources: r})
+	prog, err := formula.Bind(src, scope, formula.BindOptions{Mode: mode, Sources: r, States: c.states()})
 	if err != nil && r.class && c.env.Shallow {
 		return nil, errUnbound
 	}
 	return prog, err
+}
+
+// states are the states of the class being compiled, which a function
+// of a state may name as text (ADR-0047, item 6): an empty list for a
+// class without states, and nil, which checks no name, where no class is
+// being compiled.
+func (c *collector) states() []string {
+	if c.self == nil {
+		return nil
+	}
+	if c.self.States == nil || c.self.States.List == nil {
+		return []string{}
+	}
+	return c.self.States.List
 }
 
 // envSources resolves the sources a formula names: an explicit table of

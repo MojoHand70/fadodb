@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 )
@@ -144,6 +145,11 @@ type BindOptions struct {
 	// but in the request of an action definition; an empty list allows it
 	// and knows no name.
 	Secrets []string
+	// States are the states of the class the formula belongs to, which a
+	// function of a state may name as text (ADR-0047, item 6). nil means
+	// they are not known and no name is checked; an empty list is a class
+	// without states, which no name is one of.
+	States []string
 }
 
 // SecretSlot starts the name of the slot a SECRET call reads. The binder
@@ -989,6 +995,17 @@ func (b *binder) call(n *Call) (Type, error) {
 	if LifeColumns[n.Name] != "" {
 		b.prog.ReadsLife = true
 	}
+	if StateFunction(n.Name) {
+		// A state written as text is one of the class's (ADR-0047, item
+		// 6); a state that is computed is looked up when the formula runs.
+		if lit, ok := n.Args[0].(*TextLit); ok && b.opts.States != nil && !slices.Contains(b.opts.States, lit.Value) {
+			if len(b.opts.States) == 0 {
+				return Type{}, b.errAt(lit.P, "%s: the class has no states", n.Name)
+			}
+			return Type{}, b.errAt(lit.P, "%s: the class has no state %q; its states are %s", n.Name, lit.Value, strings.Join(b.opts.States, ", "))
+		}
+		b.prog.ReadsLife, b.prog.ReadsStates = true, true
+	}
 	b.pop(argc)
 	b.emit(OpCall, int32(id)<<8|int32(argc), n.P)
 	b.push(1)
@@ -1333,6 +1350,9 @@ func (b *binder) subProgram(n Node, src *Source, q *QuerySlot, argOf map[string]
 	sub.prog.Result = t
 	if sub.prog.ReadsLife {
 		b.prog.ReadsLife = true
+	}
+	if sub.prog.ReadsStates {
+		b.prog.ReadsStates = true
 	}
 	for c := range sub.classes {
 		b.classes[c] = true

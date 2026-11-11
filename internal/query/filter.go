@@ -178,6 +178,13 @@ func Compile(f Filter, cls *model.Class, sources formula.Sources, p Principal) (
 					Hint:    "move the lookup into a computed variable and filter on that variable"}
 			}
 		}
+		if prog.ReadsStates {
+			// What a life says of a state is read from the events of one
+			// document (ADR-0047, item 6); the view of stays has it for all.
+			return nil, &Error{Code: CodeNotAllowed, Element: "where", Pos: -1,
+				Message: "a filter may not call a function of a state; it runs inside the query as a predicate, and those functions read the events of one document",
+				Hint:    "query the " + cls.Name + "_states view, which has every stay of every document, or keep the answer in a triggered variable and filter on that"}
+		}
 		if prog.Result.Kind != formula.KindBool && prog.Result.Kind != formula.KindNull {
 			return nil, &Error{Code: CodeBadFormula, Element: "where", Pos: -1,
 				Message: "the filter must be a condition, got " + prog.Result.String(), Hint: "compare it, for example <> 0 or <> \"\""}

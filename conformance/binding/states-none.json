@@ -1,0 +1,14 @@
+{
+  "suite": "states-none",
+  "description": "In a class without states no text names a state (ADR-0047, item 6). A name that is computed binds, and finds nothing when the formula runs.",
+  "variables": {"note": "text"},
+  "states": [],
+  "accept": [
+    "ENTRIES(STATE())",
+    "ISBLANK(FIRSTENTERED(note))"
+  ],
+  "reject": [
+    {"formula": "ENTRIES(\"draft\")", "reason": "the class has no states"},
+    {"formula": "LASTEDITOR(\"\")", "reason": "the class has no states"}
+  ]
+}

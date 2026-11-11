@@ -101,8 +101,12 @@ where it came from; the log says how each entry came about; the
 `_states` view has a row for every entry, with who and how at both
 ends; and a formula reads the row with `CREATEDAT()`, `CREATEDBY()`,
 `UPDATEDAT()`, `UPDATEDBY()`, `ENTEREDAT()`, `ENTEREDBY()`,
-`ENTEREDFROM()` and `VERSION()`, under engine schema 5. The functions
-of a named state, `Due` and timed transitions are not built yet.
+`ENTEREDFROM()` and `VERSION()`, under engine schema 5. Its second part
+is built too: the functions of a named state, `FIRSTENTERED("approved")`
+and `FIRSTENTEREDBY`, `LASTENTERED`, `FIRSTLEFT` and `LASTLEFT` with
+their `...BY`, `ENTRIES`, `DAYSIN`, `FIRSTEDITOR` and `LASTEDITOR`, read
+from the document's own events once for a command. `Due` and timed
+transitions are not built yet.
 By the owner's rulings of that day a formula sees every document, and
 `QUERY`, which returns lists, is built with the first layout or report
 that needs one; tables stored outside the file come with the analytical

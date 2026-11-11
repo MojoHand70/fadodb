@@ -63,7 +63,17 @@ One file per topic:
   written `YYYY-MM-DD`, datetimes `YYYY-MM-DD HH:MM:SS` in UTC, exact
   values as text such as `"1.250"`, money as `"12.30 PLN"`.
 - `context` sets what the context functions see: `user`, `groups`, `now`,
-  and `state` and `id` for the document the formula runs over.
+  and `state` and `id` for the document the formula runs over. The life
+  of that document (ADR-0047) is given beside them: `version`,
+  `created_at`, `created_by`, `updated_at`, `updated_by`, `entered_at`,
+  `entered_by` and `entered_from` for the functions of the row, and
+  `events` for the functions of a state. `events` lists the events of
+  the document's life in the order they happened, each with a `kind`
+  of `created` (in the state `to`), `moved` (from `from` into `to`) or
+  `changed`, its moment `at` and who made it, `by`, absent for nobody.
+  Every evaluator folds them with the same code, so the cases specify
+  the fold too. An empty list is a document nothing was told of, and no
+  life at all is no document.
 - Exactly one of `expected` and `error`. `expected` is the value in the
   notation of `inputs`; `null` is a blank result. `error` is one of the
   codes in ADR-0019 and ADR-0020.
@@ -152,6 +162,11 @@ suites', with these additions:
   of the `_states` view as state, then who, from where, by which
   transition and how for the entry, then who, by which transition and
   how for the leaving.
+- `states.json` is the suite of the functions of a state (ADR-0047,
+  item 6) in triggered variables, guards, access rules and rules: what
+  the log has and the steps of the command in progress, a transition
+  back into the same state, who counts as an editor, and a filter that
+  is refused them.
 - A suite with `"together": true` defines its `classes` and its `class`
   in one call (ADR-0046, item 12), as classes that name each other must
   be.
@@ -265,7 +280,10 @@ binds its formulas as the request of an action definition binds them
 `secrets`, as everywhere else, `SECRET` is refused. A source with
 `"class": true` stands for the documents of a class (ADR-0046), which
 an auto formula may not read, and `indexed` names its columns that lead
-an index.
+an index. A suite with `states`, a list of names, binds its formulas as
+those of a class with these states (ADR-0047): a function of a state
+that names a state as text must name one of them, and an empty list is
+a class without states. Without `states` no name is checked.
 
 ## Syntax cases: `syntax/*.json`
 

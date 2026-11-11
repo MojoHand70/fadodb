@@ -1144,3 +1144,78 @@ func BenchmarkOutboxDeclared(b *testing.B) {
 		b.Fatalf("%d actions died: %v", len(dead), err)
 	}
 }
+
+// benchLife is a class with a formula that reads what the life says of
+// a state, and a loop of two states to walk. %s is the function the
+// formula calls.
+const benchLife = `{"name": "Case",
+ "variables": {"note": {"type": "text"}, "rounds": {"type": "text", "formula": "TEXT(%s(\"review\"))", "mode": "triggered", "on": ["enter:review"]}},
+ "states": {"initial": "draft", "list": ["draft", "review"]},
+ "transitions": [{"name": "send", "from": "draft", "to": "review"}, {"name": "back", "from": "review", "to": "draft"}]}`
+
+// BenchmarkLifeStates measures what the functions of a state cost a
+// command (ADR-0047, item 6): the one read of the events of a document
+// with a hundred versions, a move in every fourth, folded into what the
+// life says of each state. The budget is the cold lookup's, 100 µs
+// (ADR-0016). A class that asks for no editor reads the moves alone.
+func BenchmarkLifeStates(b *testing.B) { benchLifeStates(b, "ENTRIES") }
+
+// BenchmarkLifeEditors is the same read for a class that asks who
+// changed the document in a state, which takes every change from the log.
+func BenchmarkLifeEditors(b *testing.B) { benchLifeStates(b, "LASTEDITOR") }
+
+func benchLifeStates(b *testing.B, function string) {
+	s, err := Open(filepath.Join(b.TempDir(), "bench.fado"), Options{})
+	if err != nil {
+		b.Fatal(err)
+	}
+	defer s.Close()
+	ctx := context.Background()
+	if _, err := s.DefineClass(ctx, []byte(fmt.Sprintf(benchLife, function))); err != nil {
+		b.Fatal(err)
+	}
+	doc, err := s.Create(ctx, "Case", Values{"note": "0"}, As(ann))
+	if err != nil {
+		b.Fatal(err)
+	}
+	// Another document's events lie between this one's in the log.
+	other, err := s.Create(ctx, "Case", Values{"note": "0"}, As(bob))
+	if err != nil {
+		b.Fatal(err)
+	}
+	for v := 2; v <= 100; v++ {
+		switch {
+		case v%8 == 4:
+			_, err = s.Transition(ctx, "Case", doc.ID, "send", nil, As(ann))
+		case v%8 == 0:
+			_, err = s.Transition(ctx, "Case", doc.ID, "back", nil, As(bob))
+		default:
+			_, err = s.Set(ctx, "Case", doc.ID, Values{"note": fmt.Sprint(v)}, As(bob))
+		}
+		if err == nil {
+			_, err = s.Set(ctx, "Case", other.ID, Values{"note": fmt.Sprint(v)}, As(ann))
+		}
+		if err != nil {
+			b.Fatal(err)
+		}
+	}
+	c, _ := s.class("Case")
+	row, err := c.scanRow(c.w.selectCurrent.QueryRowContext(ctx, doc.ID), false)
+	if err != nil {
+		b.Fatal(err)
+	}
+	if row.version != 100 {
+		b.Fatalf("the document is at version %d, want 100", row.version)
+	}
+	b.ReportAllocs()
+	b.ResetTimer()
+	for b.Loop() {
+		row.told = false
+		if err := s.tellLife(c, row); err != nil {
+			b.Fatal(err)
+		}
+	}
+	if st := row.life.States; len(st) != 2 || st[0].Entries != 13 || (st[0].LastEditor == "bob") != c.editors {
+		b.Fatalf("the life told: %+v", st)
+	}
+}

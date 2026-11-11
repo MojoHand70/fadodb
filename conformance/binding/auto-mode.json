@@ -19,6 +19,8 @@
     {"formula": "STATE()", "reason": "context function in an auto formula"},
     {"formula": "IF(STATE() = \"paid\", 1, 0)", "reason": "context function in an auto formula"},
     {"formula": "ID()", "reason": "context function in an auto formula"},
+    {"formula": "ENTRIES(\"draft\")", "reason": "a function of a state is a context function"},
+    {"formula": "IF(ISBLANK(FIRSTENTERED(\"paid\")), 0, qty)", "reason": "a function of a state is a context function"},
     {"formula": "SECRET(\"token\")", "reason": "a secret is read only in the request of an action definition (ADR-0045)"}
   ]
 }

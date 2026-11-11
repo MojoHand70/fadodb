@@ -196,6 +196,29 @@ func TestProgram_LookupRoundTrip(t *testing.T) {
 		if p.ReadsLife != reads || back.ReadsLife != reads {
 			t.Errorf("%s: reads the life %v bound, %v decoded, want %v", src, p.ReadsLife, back.ReadsLife, reads)
 		}
+		if p.ReadsStates || back.ReadsStates {
+			t.Errorf("%s: reads the states %v bound, %v decoded, and calls no function of a state", src, p.ReadsStates, back.ReadsStates)
+		}
+	}
+	// And whether it reads what the life says of a state (item 6), which
+	// is reading the life.
+	for _, src := range []string{
+		`ENTRIES("review") >= 3`,
+		`FIRSTENTEREDBY(STATE()) & code`,
+		`LOOKUP(Rates, rate, code = LASTEDITOR("draft"))`,
+		`LOOKUP(Rates, COUNT(code), code = THIS.code AND LEN(code) >= ENTRIES("review"))`,
+	} {
+		p, err := Bind(src, scope, opts)
+		if err != nil {
+			t.Fatalf("%s: %v", src, err)
+		}
+		back, err := Decode(p.Encode())
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !p.ReadsStates || !p.ReadsLife || !back.ReadsStates || !back.ReadsLife {
+			t.Errorf("%s: reads the states %v and the life %v bound, %v and %v decoded, want all", src, p.ReadsStates, p.ReadsLife, back.ReadsStates, back.ReadsLife)
+		}
 	}
 	// A slot that is neither a column nor an aggregate, or both, or whose
 	// key is a part of nothing, is not a program.

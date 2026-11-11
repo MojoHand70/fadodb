@@ -1,6 +1,7 @@
 package formula
 
 import (
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -149,6 +150,11 @@ type Dialect interface {
 	// WithLimits returns the dialect under other limits.
 	WithLimits(l Limits) Dialect
 }
+
+// ErrStateOverRows says a function of a state stands in a formula that
+// is translated for a statement over document rows, a filter or a read
+// rule: the view of stays has the same facts for every document.
+var ErrStateOverRows = errors.New("the functions of a state are not translated over the rows of a query; the class's _states view has every stay")
 
 // Params records the context parameters a statement uses.
 type Params struct {
@@ -432,6 +438,11 @@ func (t *sqlTranslator) block(start, end int) (SQLExpr, error) {
 				} else {
 					e = SQLExpr{Val: d.Load(t.params.Use(column), kind), Kind: kind}
 				}
+			case StateFunction(name) && t.row != nil:
+				// What a life says of a state is read from the document's
+				// events, which a statement over document rows does not
+				// have beside each row (ADR-0047, item 6).
+				return SQLExpr{}, fmt.Errorf("sqlgen: %s: %w", name, ErrStateOverRows)
 			default:
 				e, err = d.Call(name, args, t.params)
 				if err != nil {
@@ -965,15 +976,28 @@ func (p *Program) HasOp(op Op) bool {
 	return false
 }
 
-// Calls reports whether the program calls the named builtin.
+// Calls reports whether the program calls the function, itself or in a
+// program nested in one of its lookups: the condition, the key and the
+// value of a LOOKUP are programs of their own.
 func (p *Program) Calls(name string) bool {
 	id, ok := builtinByName[name]
 	if !ok {
 		return false
 	}
+	return p.calls(id)
+}
+
+func (p *Program) calls(id int) bool {
 	for _, in := range p.Code {
 		if in.Op == OpCall && int(in.Arg>>8) == id {
 			return true
+		}
+	}
+	for i := range p.Queries {
+		for _, nested := range []*Program{p.Queries[i].Cond, p.Queries[i].Key, p.Queries[i].Value} {
+			if nested != nil && nested.calls(id) {
+				return true
+			}
 		}
 	}
 	return false

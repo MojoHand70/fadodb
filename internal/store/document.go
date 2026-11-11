@@ -65,6 +65,7 @@ func (c *class) scanInto(sc scanner, history, lean bool, sys int, raw, dest []an
 	}
 	r := &docRow{id: toString(raw[0]), title: toString(raw[1]), state: toString(raw[2]), version: toInt64(raw[3]), classVersion: int(toInt64(raw[4])),
 		life: formula.Life{Version: toInt64(raw[3]), CreatedAt: toInt64(raw[5]), UpdatedAt: toInt64(raw[6]), EnteredAt: toInt64(raw[7])}}
+	r.logged = r.version
 	if !lean {
 		r.life.CreatedBy, r.life.UpdatedBy, r.life.EnteredBy, r.life.EnteredFrom = toString(raw[8]), toString(raw[9]), toString(raw[10]), toString(raw[11])
 	}

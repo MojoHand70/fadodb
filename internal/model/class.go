@@ -1229,6 +1229,11 @@ func compileAccess(c *collector, cls *Class, def *AccessDef, scope *formula.Scop
 			}
 		}
 	}
+	if a.Read != nil && a.Read.ReadsStates {
+		c.hint(CodeNotAllowed, "/access/read", "a read rule may not call a function of a state: it runs inside every query as a predicate, and those functions read the events of one document",
+			"keep the answer in a triggered variable and test that variable")
+		a.Read = nil
+	}
 	a.Create = bindCondition(c, "/access/create", def.Create, scope, "a create rule")
 	a.Update = bindCondition(c, "/access/update", def.Update, scope, "an update rule")
 	a.Delete = bindCondition(c, "/access/delete", def.Delete, scope, "a delete rule")
@@ -1323,6 +1328,11 @@ func rightRule(c *collector, path string, raw json.RawMessage, scope *formula.Sc
 						"move the lookup into a computed variable and test that variable")
 					return nil
 				}
+			}
+			if prog.ReadsStates {
+				c.hint(CodeNotAllowed, path, "a read right may not call a function of a state: it is compiled into every filter as a predicate, and those functions read the events of one document",
+					"keep the answer in a triggered variable and test that variable")
+				return nil
 			}
 		}
 		return &RightRule{Formula: prog, Src: src}

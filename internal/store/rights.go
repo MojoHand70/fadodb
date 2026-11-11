@@ -31,6 +31,9 @@ type evaluator struct {
 	vm   *formula.VM
 	vars []formula.Value
 	ctx  formula.Context
+	// life tells a row what its document's life says of its states
+	// (ADR-0047, item 6); the writer's evaluator has it.
+	life func(c *class, row *docRow) error
 }
 
 // run evaluates a program over the row's values in the class's layout.
@@ -44,10 +47,27 @@ func (e *evaluator) run(c *class, prog *formula.Program, row *docRow, ctx *formu
 		vars[i] = row.vals[li]
 	}
 	if prog.ReadsLife && ctx != nil {
-		// The functions of the row read the row (ADR-0047, item 5).
+		// The functions of the row read the row (ADR-0047, item 5), and
+		// the functions of a state what the log says of the document.
+		if prog.ReadsStates && !row.told {
+			if err := e.tell(c, row); err != nil {
+				return formula.Value{}, err
+			}
+		}
 		ctx.Doc = &row.life
 	}
 	return e.vm.Run(prog, vars, ctx)
+}
+
+// tell reads what the document's life says of its states for the row,
+// with the reader the evaluator was given. A read path has none: its
+// formulas are refused the functions of a state when the class is
+// defined.
+func (e *evaluator) tell(c *class, row *docRow) error {
+	if e.life == nil {
+		return &formula.EvalError{Code: formula.ErrQueryFailed, Pos: -1, Msg: "the functions of a state are not read on this path"}
+	}
+	return e.life(c, row)
 }
 
 // runWith evaluates a formula of a create with each over the row and one
@@ -67,6 +87,11 @@ func (e *evaluator) runWith(c *class, prog *formula.Program, row *docRow, elem c
 		vars[i] = row.vals[li]
 	}
 	if prog.ReadsLife && ctx != nil {
+		if prog.ReadsStates && !row.told {
+			if err := e.tell(c, row); err != nil {
+				return formula.Value{}, err
+			}
+		}
 		ctx.Doc = &row.life
 	}
 	return e.vm.Run(prog, vars, ctx)

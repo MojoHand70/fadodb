@@ -45,6 +45,10 @@ type Life struct {
 	CreatedAt, UpdatedAt, EnteredAt int64
 	CreatedBy, UpdatedBy, EnteredBy string
 	EnteredFrom                     string
+	// States is what the life says of each state the document has been
+	// in (item 6), in the order it first entered them. Whoever runs a
+	// program that reads it, Program.ReadsStates, tells it first.
+	States []StateLife
 }
 
 // LifeColumns names, for each function of the row, the system column

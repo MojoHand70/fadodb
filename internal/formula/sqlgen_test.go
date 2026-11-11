@@ -1,6 +1,7 @@
 package formula
 
 import (
+	"errors"
 	"strings"
 	"testing"
 )
@@ -95,6 +96,28 @@ func TestGenerateSQLBound_RowBindsStateAndID(t *testing.T) {
 // Over document rows the life of the document is the row's system
 // columns too, by the names LifeColumns gives them, and a statement over
 // no row takes a parameter of the same name for each (ADR-0047).
+// TestGenerateSQL_StatesAreOneParameter: a function of a state is
+// translated over no document row, where the states are one parameter,
+// and refused over the rows of a query, which do not have a document's
+// events beside them (ADR-0047, item 6).
+func TestGenerateSQL_StatesAreOneParameter(t *testing.T) {
+	scope := mustScope(t, Variable{Name: "qty", Type: Scalar(KindNumber)})
+	p := mustBind(t, `ENTRIES("review") >= qty AND FIRSTENTEREDBY("review") <> USER() AND DAYSIN(STATE()) > 1`, scope)
+	for _, d := range []Dialect{NewSQLite(), NewDuckDB()} {
+		free, err := GenerateSQL(p, d, quoteSlot)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := strings.Join(free.Params, ","); got != "stays,user,state,now" {
+			t.Errorf("%s: params %v, want stays, user, state and now", d.Name(), free.Params)
+		}
+		_, err = GenerateSQLBound(p, d, SQLBinding{Column: quoteSlot, Row: func(name string) string { return "d." + quoteIdent(name) }})
+		if !errors.Is(err, ErrStateOverRows) {
+			t.Errorf("%s: over the rows of a query: %v, want ErrStateOverRows", d.Name(), err)
+		}
+	}
+}
+
 func TestGenerateSQLBound_RowBindsTheLife(t *testing.T) {
 	scope := mustScope(t, Variable{Name: "qty", Type: Scalar(KindNumber)})
 	p := mustBind(t, `CREATEDBY() <> USER() AND NOW() >= ADDDAYS(ENTEREDAT(), 7) AND ENTEREDFROM() = "review" AND UPDATEDBY() = ENTEREDBY() AND VERSION() > 1 AND UPDATEDAT() >= CREATEDAT()`, scope)

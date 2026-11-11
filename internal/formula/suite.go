@@ -231,6 +231,21 @@ type CaseContext struct {
 	EnteredAt   string `json:"entered_at,omitempty"`
 	EnteredBy   string `json:"entered_by,omitempty"`
 	EnteredFrom string `json:"entered_from,omitempty"`
+	// Events are the events of the document's life in the order they
+	// happened, which the functions of a state read (item 6). An empty
+	// list is a document that was told nothing of.
+	Events []CaseEvent `json:"events,omitempty"`
+}
+
+// CaseEvent is one event of a document's life: the document was created
+// in To, moved from From into To, or changed where it was, at a moment
+// written as Now is, by somebody or by nobody.
+type CaseEvent struct {
+	Kind string `json:"kind"`
+	From string `json:"from,omitempty"`
+	To   string `json:"to,omitempty"`
+	At   string `json:"at"`
+	By   string `json:"by,omitempty"`
 }
 
 // SyntaxSuite is one file of definition-time cases: formulas the parser
@@ -265,10 +280,15 @@ type BindingSuite struct {
 	// Secrets are the secrets SECRET may name (ADR-0045): present, even
 	// empty, for the formulas of the request of an action definition, and
 	// absent everywhere else, where SECRET is refused.
-	Secrets []string     `json:"secrets,omitempty"`
-	Accept  []string     `json:"accept"`
-	Reject  []RejectCase `json:"reject"`
-	File    string       `json:"-"`
+	Secrets []string `json:"secrets,omitempty"`
+	// States are the states of the class the formulas belong to, which a
+	// function of a state may name as text (ADR-0047): present, even
+	// empty, where the class is known, and absent where no name is
+	// checked.
+	States []string     `json:"states,omitempty"`
+	Accept []string     `json:"accept"`
+	Reject []RejectCase `json:"reject"`
+	File   string       `json:"-"`
 }
 
 // SourceSet resolves the suite's sources.
@@ -659,8 +679,34 @@ func (c *CaseContext) Context() (*Context, error) {
 		}
 		*m.to = secs
 	}
-	if life != (Life{}) {
+	for i, e := range c.Events {
+		ev := LifeEvent{From: e.From, To: e.To, By: e.By}
+		switch e.Kind {
+		case "created":
+			ev.Kind = LifeCreated
+		case "moved":
+			ev.Kind = LifeMoved
+		case "changed":
+			ev.Kind = LifeChanged
+		default:
+			return nil, fmt.Errorf("context events[%d]: kind %q is not created, moved or changed", i, e.Kind)
+		}
+		secs, err := ParseCaseDate(e.At)
+		if err != nil {
+			return nil, fmt.Errorf("context events[%d] at: %w", i, err)
+		}
+		ev.At = secs
+		life.States = TellLife(life.States, ev)
+	}
+	if c.hasLife() {
 		ctx.Doc = &life
 	}
 	return ctx, nil
+}
+
+// hasLife reports whether the case gives a document at all: one fact of
+// its life, or its events, an empty list too.
+func (c *CaseContext) hasLife() bool {
+	return c.Version != 0 || c.CreatedAt != "" || c.CreatedBy != "" || c.UpdatedAt != "" || c.UpdatedBy != "" ||
+		c.EnteredAt != "" || c.EnteredBy != "" || c.EnteredFrom != "" || c.Events != nil
 }

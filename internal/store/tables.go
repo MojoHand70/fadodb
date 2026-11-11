@@ -424,12 +424,18 @@ func (s *Store) TableRows(ctx context.Context, name string) ([]Values, error) {
 // result column, the argument of each slot of the key expression, and
 // the prepared statement of the statement path, made on first use.
 type lookupPlan struct {
-	tbl *table
+	// tbl is the explicit table the slot reads, nil when it reads the
+	// documents of a class (ADR-0046), and name the physical table of
+	// either.
+	tbl  *table
+	name string
 	// col is the result column, -1 for an aggregate. rows says the slot
 	// needs every row of its key, not the first, so the index of first
-	// rows cannot answer it.
-	col     int
-	rows    bool
+	// rows cannot answer it; the documents of a class have no such index.
+	col  int
+	rows bool
+	// empty says the source has no rows at all: see plan.
+	empty   bool
 	keyArgs []int
 	keyVars []formula.Value
 	// idxCol is the upper-cased index column and idxType its type, for
@@ -441,9 +447,12 @@ type lookupPlan struct {
 	// table's index (ADR-0036). params are the context parameters the
 	// condition reads, which both statements bind.
 	stmt, keyed *sql.Stmt
-	params      []string
-	nargs       int
-	money       []bool // per argument, whether it is a money value with a currency parameter
+	// keyedSQL is the text of keyed, kept so that a test can ask SQLite
+	// how it runs it.
+	keyedSQL string
+	params   []string
+	nargs    int
+	money    []bool // per argument, whether it is a money value with a currency parameter
 }
 
 // executor is the store as the VM's QueryExecutor (ADR-0020, ADR-0036).
@@ -457,6 +466,9 @@ func (e *executor) Lookup(q *formula.QuerySlot, args []formula.Value, ctx *formu
 	plan, err := s.plan(q)
 	if err != nil {
 		return formula.Value{}, err
+	}
+	if plan.empty {
+		return plan.none(q)
 	}
 	var key formula.Value
 	if q.Key != nil {
@@ -499,17 +511,55 @@ func (s *Store) plan(q *formula.QuerySlot) (*lookupPlan, *formula.EvalError) {
 	if p, ok := s.plans[q]; ok {
 		return p, nil
 	}
-	t, ok := s.tables[strings.ToUpper(q.Source)]
-	if !ok {
-		return nil, &formula.EvalError{Code: formula.ErrQueryFailed, Pos: -1, Msg: "unknown table " + q.Source}
+	p := &lookupPlan{col: -1, nargs: len(q.Args), money: make([]bool, len(q.Args))}
+	// typeOf gives the type of a column of the source.
+	var typeOf func(column string) (formula.Type, bool)
+	if t, ok := s.tables[strings.ToUpper(q.Source)]; ok {
+		p.tbl, p.name, p.rows = t, t.name, q.KeyPart || q.Agg != ""
+		typeOf = func(column string) (formula.Type, bool) {
+			li, ok := t.leafIndex[strings.ToUpper(column)]
+			if !ok {
+				return formula.Type{}, false
+			}
+			if q.Agg == "" && strings.EqualFold(column, q.Column) {
+				p.col = li
+			}
+			return t.leaves[li].typ, true
+		}
+	} else if c, ok := s.classes[strings.ToUpper(q.Source)]; ok {
+		// The documents of a class: its current table, read by a statement
+		// on the writer, inside the transaction of the commit or preview
+		// that evaluates the formula (ADR-0046).
+		src := c.cls.Source()
+		p.name, p.rows = c.table, true
+		typeOf = func(column string) (formula.Type, bool) {
+			f, ok := src.Column(column)
+			return f.Type, ok
+		}
+	} else {
+		// The binder knew the source, and the store does not: the draft of
+		// a class nobody has defined yet reads its own documents, and
+		// there are none (ADR-0025, ADR-0046).
+		p.empty = true
+		s.plans[q] = p
+		return p, nil
 	}
-	col := -1
+	// A draft may read what the stored class does not have yet (ADR-0025).
+	for _, prog := range []*formula.Program{q.Cond, q.Value} {
+		if prog == nil {
+			continue
+		}
+		for _, sl := range prog.Slots {
+			if _, ok := typeOf(sl.Name); !ok && q.ArgIndex(sl.Name) < 0 && !strings.HasPrefix(sl.Name, "THIS.") {
+				return nil, &formula.EvalError{Code: formula.ErrQueryFailed, Pos: -1, Msg: "unknown column " + sl.Name + " of " + q.Source + "; a draft reads the documents of the stored class"}
+			}
+		}
+	}
 	if q.Agg == "" {
-		if col, ok = t.leafIndex[strings.ToUpper(q.Column)]; !ok {
+		if _, ok := typeOf(q.Column); !ok {
 			return nil, &formula.EvalError{Code: formula.ErrQueryFailed, Pos: -1, Msg: "unknown column " + q.Column + " of " + q.Source}
 		}
 	}
-	p := &lookupPlan{tbl: t, col: col, rows: q.KeyPart || q.Agg != "", nargs: len(q.Args), money: make([]bool, len(q.Args))}
 	if q.Key != nil {
 		p.keyArgs = make([]int, len(q.Key.Slots))
 		p.keyVars = make([]formula.Value, len(q.Key.Slots))
@@ -517,7 +567,10 @@ func (s *Store) plan(q *formula.QuerySlot) (*lookupPlan, *formula.EvalError) {
 			p.keyArgs[i] = q.ArgIndex(sl.Name)
 		}
 		p.idxCol = strings.ToUpper(q.IndexColumn)
-		p.idxType = t.leaves[t.leafIndex[p.idxCol]].typ
+		var ok bool
+		if p.idxType, ok = typeOf(q.IndexColumn); !ok {
+			return nil, &formula.EvalError{Code: formula.ErrQueryFailed, Pos: -1, Msg: "unknown column " + q.IndexColumn + " of " + q.Source}
+		}
 	}
 	for _, prog := range []*formula.Program{q.Cond, q.Value} {
 		if prog == nil {
@@ -583,10 +636,10 @@ func (s *Store) lookupStatement(p *lookupPlan, q *formula.QuerySlot, args []form
 			}
 			return d.Param(fmt.Sprintf("a%d", i))
 		}
-		table := func(string) string { return quote(p.tbl.name) }
+		table := func(string) string { return quote(p.name) }
 		if keyed {
 			table = func(string) string {
-				return "(SELECT * FROM " + quote(p.tbl.name) + " WHERE " + quote(q.IndexColumn) + " = " + d.Param("k") + ")"
+				return "(SELECT * FROM " + quote(p.name) + " WHERE " + quote(q.IndexColumn) + " = " + d.Param("k") + ")"
 			}
 		}
 		// A column is the subquery of LookupSQL; an aggregate is one
@@ -609,6 +662,9 @@ func (s *Store) lookupStatement(p *lookupPlan, q *formula.QuerySlot, args []form
 			text = "SELECT (" + e.Val + ") AS v, (" + cur + ") AS c"
 		}
 		p.params = params.Names()
+		if keyed {
+			p.keyedSQL = text
+		}
 		prepared, err := s.writer.PrepareContext(context.Background(), text)
 		if err != nil {
 			return formula.Value{}, &formula.EvalError{Code: formula.ErrQueryFailed, Pos: -1, Msg: "prepare the lookup: " + err.Error()}

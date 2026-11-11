@@ -443,6 +443,31 @@ func TestLookup_StatementPathAgrees(t *testing.T) {
 	}
 }
 
+// TestTableSourceIndexes is which columns of a table lead an index, as
+// the binder asks when it picks the key of a lookup (ADR-0046): the first
+// column of the key and of every index.
+func TestTableSourceIndexes(t *testing.T) {
+	def, diags := model.DefineTable([]byte(`{"name": "Stock", "columns": {"sku": "text", "bin": "text", "region": "text", "qty": "number"}, "key": ["sku", "bin"], "indexes": [["region", "qty"]]}`))
+	if len(diags) > 0 {
+		t.Fatal(diags)
+	}
+	src := def.Source()
+	if strings.Join(src.Indexed, ",") != "sku,region" || src.Class {
+		t.Errorf("indexed %v class %v", src.Indexed, src.Class)
+	}
+	scope, _ := formula.ScopeOf(map[string]string{"sku": "text"}, nil)
+	for cond, key := range map[string]string{
+		`qty = 1 AND sku = THIS.sku`:   "sku",
+		`bin = "b1" AND region = "eu"`: "region",
+		`bin = "b1" AND qty = 1`:       "bin",
+	} {
+		prog, err := formula.Bind("LOOKUP(Stock, COUNT(bin), "+cond+")", scope, formula.BindOptions{Sources: formula.NewSourceSet(src)})
+		if err != nil || prog.Queries[0].IndexColumn != key {
+			t.Errorf("%s: key %v, want %s (%v)", cond, prog, key, err)
+		}
+	}
+}
+
 func TestCanonKey(t *testing.T) {
 	dec := formulaDecimal(2)
 	cases := []struct {

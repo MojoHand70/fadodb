@@ -4,7 +4,8 @@
   "mode": "auto",
   "variables": {"code": "text"},
   "sources": {
-    "Rates": {"key": ["code"], "columns": {"code": "text", "rate": "decimal(6)", "owner": "text"}}
+    "Rates": {"key": ["code"], "columns": {"code": "text", "rate": "decimal(6)", "owner": "text"}},
+    "Approval": {"class": true, "key": ["id"], "indexed": ["id", "purchase"], "columns": {"id": "text", "state": "text", "purchase": "text", "amount": "decimal(2)"}}
   },
   "accept": [
     "LOOKUP(Rates, rate, code = THIS.code)",
@@ -13,6 +14,9 @@
     "LOOKUP(Rates, SUM(rate), TRUE)"
   ],
   "reject": [
+    {"formula": "LOOKUP(Approval, COUNT(id), purchase = THIS.code)", "reason": "an auto formula may not read the documents of a class: its value is a function of its own document (ADR-0046)"},
+    {"formula": "LOOKUP(Approval, state, id = THIS.code)", "reason": "nor one column of one document"},
+    {"formula": "IFERROR(LOOKUP(Approval, SUM(amount), TRUE), 0)", "reason": "nor inside IFERROR"},
     {"formula": "LOOKUP(Rates, COUNT(owner = USER()), TRUE)", "reason": "a context function inside the aggregate of an auto formula's lookup"},
     {"formula": "LOOKUP(Rates, rate, owner = USER())", "reason": "a context function inside an auto formula's lookup"},
     {"formula": "LOOKUP(Rates, rate, code = THIS.code) & USER()", "reason": "a context function in an auto formula"}

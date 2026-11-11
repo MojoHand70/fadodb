@@ -28,7 +28,7 @@ read the diagnostics, fix, preview against live data, define.
 |---|---|
 | variables, types, defaults, ranges, named schemas, objects, attachments, tables and `LOOKUP` | shipped |
 | `COUNT`, `SUM`, `MIN` and `MAX` in a `LOOKUP` of a table, as in `LOOKUP(Stock, SUM(qty), sku = THIS.sku)` | in `main`, ships with v0.4.0 |
-| a formula that reads the documents of another class, `LOOKUP(Approval, COUNT(id), ...)` | designed, ADR-0046: not built yet |
+| a formula that reads the documents of another class, `LOOKUP(Approval, COUNT(id), purchase = ID() AND state = "granted")` | in `main`, ships with v0.4.0: in a triggered variable, a default, a guard or a rule, not in an auto formula; the variable declares its `type`; it sees every document and is computed at its trigger, so the other class's rule refreshes this document; put `"index": true` on the variable the condition compares. Two classes that name each other are defined in three steps until `DefineClasses` is built |
 | formulas, exact money, calendar days, `IFERROR` | shipped |
 | states, transitions, guards, eventless chains, `STATE()` and `ID()` | shipped |
 | field rights per state, per-transition rules | shipped with Phase 3 |

@@ -14,9 +14,10 @@ variables are computed at their triggers; what a rule does to other
 documents and to tables runs through the outbox; and a rule can call an
 action that has a definition, implemented by a Go function of the host
 program or sent by the engine as an HTTP request to the hosts the host
-program allows, with its result written back to the document. Formulas
-that read other documents, time, the row-level access rules and the
-server come with their steps and phases.
+program allows, with its result written back to the document; and a
+formula can read the documents of another class, one value or a count,
+a sum, the smallest or the largest. Time, the row-level access rules and
+the server come with their steps and phases.
 Since v0.1.0 the records ADR-0022 to
 ADR-0038 fixed what the first embedder needs and what Phase 2 measured:
 SQLite as the transactional store and the in-memory index for lookups, by
@@ -77,8 +78,14 @@ ADR-0046, accepted on 2026-11-10: a class as the source of `LOOKUP`,
 with a count, a sum, the smallest and the largest. Its first part is
 built: `COUNT`, `SUM`, `MIN` and `MAX` in a `LOOKUP` of a table, with
 one answer on the Go VM, SQLite and DuckDB, and a lookup narrowed by an
-equality that is one term of an `AND`. A class as the source is not
-built yet.
+equality that is one term of an `AND` (#62). Its second is built too:
+a class as the source, read with the engine's eyes by a statement
+inside the commit and narrowed through the index of an indexed
+variable; a variable computed from other documents declares its type;
+a redefinition may not break another class's formula; and the pattern
+of parallel approvals runs in `conformance/rules/reads.json`. Defining
+two classes that name each other in one call is the third part and is
+not built yet.
 By the owner's rulings of that day a formula sees every document, and
 `QUERY`, which returns lists, is built with the first layout or report
 that needs one; tables stored outside the file come with the analytical

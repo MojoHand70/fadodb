@@ -50,7 +50,17 @@ type Table struct {
 
 // Source is the table as the binder sees it.
 func (t *Table) Source() *formula.Source {
-	return &formula.Source{Name: t.Name, Columns: t.Fields, Key: t.Key, Binding: t.Binding}
+	src := &formula.Source{Name: t.Name, Columns: t.Fields, Key: t.Key, Binding: t.Binding}
+	// The key and every index are led by their first column.
+	if len(t.Key) > 0 {
+		src.Indexed = append(src.Indexed, t.Key[0])
+	}
+	for _, idx := range t.Indexes {
+		if len(idx) > 0 {
+			src.Indexed = append(src.Indexed, idx[0])
+		}
+	}
+	return src
 }
 
 // Field finds a logical column by name, case-insensitively.

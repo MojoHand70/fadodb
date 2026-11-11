@@ -141,11 +141,80 @@ const (
 type collector struct {
 	list Diagnostics
 	env  Env
+	// self is the class being compiled, whose documents its own formulas
+	// may read, and reads the classes its formulas read (ADR-0046).
+	self  *Class
+	reads []string
 }
 
-// bind binds a formula in the mode against the environment's sources.
+// errUnbound says a formula that reads the documents of a class was left
+// unbound in a shallow compilation. It is never a finding.
+var errUnbound = errors.New("the formula reads a class and was not bound")
+
+// bind binds a formula in the mode against the environment's sources:
+// its explicit tables and the documents of its classes.
 func (c *collector) bind(src string, scope *formula.Scope, mode formula.Mode) (*formula.Program, error) {
-	return formula.Bind(src, scope, formula.BindOptions{Mode: mode, Sources: c.env.Sources})
+	r := &envSources{c: c}
+	prog, err := formula.Bind(src, scope, formula.BindOptions{Mode: mode, Sources: r})
+	if err != nil && r.class && c.env.Shallow {
+		return nil, errUnbound
+	}
+	return prog, err
+}
+
+// envSources resolves the sources a formula names: an explicit table of
+// the environment, or else the documents of a class (ADR-0046), the
+// class being compiled among them. class records that a name was not a
+// table, whether a class of that name was found or not.
+type envSources struct {
+	c     *collector
+	class bool
+}
+
+// Source implements formula.Sources.
+func (r *envSources) Source(name string) (*formula.Source, bool) {
+	c := r.c
+	if c.env.Sources != nil {
+		if src, ok := c.env.Sources.Source(name); ok {
+			return src, true
+		}
+	}
+	r.class = true
+	if c.self != nil && upper(name) == upper(c.self.Name) {
+		c.read(c.self.Name)
+		return c.self.Source(), true
+	}
+	if c.env.Classes != nil {
+		if cls, ok := c.env.Classes(name); ok {
+			c.read(cls.Name)
+			return cls.Source(), true
+		}
+	}
+	return nil, false
+}
+
+// read notes a class the compiled class reads.
+func (c *collector) read(name string) {
+	for _, r := range c.reads {
+		if upper(r) == upper(name) {
+			return
+		}
+	}
+	c.reads = append(c.reads, name)
+}
+
+// readsClass reports whether a program reads the documents of a class:
+// a source of its lookups is no explicit table.
+func (c *collector) readsClass(prog *formula.Program) bool {
+	for _, q := range prog.Queries {
+		if c.env.Sources == nil {
+			return true
+		}
+		if _, table := c.env.Sources.Source(q.Source); !table {
+			return true
+		}
+	}
+	return false
 }
 
 func (c *collector) add(code, path, message string) {
@@ -163,6 +232,9 @@ func (c *collector) hint(code, path, message, hint string) {
 // formulaErr records a parse or bind error of the formula at path, with
 // the error's position when it has one.
 func (c *collector) formulaErr(path string, err error) {
+	if err == errUnbound {
+		return
+	}
 	d := Diagnostic{Code: CodeBadFormula, Path: path, Pos: -1, Message: err.Error()}
 	var fe *formula.Error
 	if errors.As(err, &fe) {

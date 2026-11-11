@@ -241,6 +241,53 @@ items 3, 6 to 9 and 11, and `DefineClasses`, item 12, follow.
   runs against the store's own tables as well, once with the index and
   once without, beside the Go VM, the SQL generator on SQLite and DuckDB.
 
+The second part built a class as the source, items 3 and 5 to 11, on
+2026-11-11, and settled these points. `DefineClasses`, item 12, follows.
+
+- **A variable computed from other documents declares its type.**
+  Without one, its type would be what the other class's column is, and
+  would change when that class does, under documents and history rows
+  already stored. So the definition says it, and the engine says which
+  type when it is missing: `missing` at `/variables/granted/type`, with
+  `"type": "number"` as the hint. The purchase of the example above
+  needs `"type": "number"` on `granted`. The same makes a file open in
+  any order: every class has its layout before a formula that reads
+  another class is bound.
+- **A lookup sees what was stored before the command began.** The
+  commits of one command, its own and the eventless transitions that
+  follow, are computed together and written together (ADR-0040). So
+  every lookup of the command sees the same documents, and of its own
+  document the row from before the command, in the later commits of the
+  chain too. Item 7 said the earlier commits of the chain are seen; they
+  are not, and no other document changes inside a chain.
+- **The key is the equality on an indexed column**, wherever it stands
+  in the `AND`, and the first equality when no column of them leads an
+  index. Item 10 said the first term, which made the cost depend on the
+  order of writing. The `id` and every variable with `"index": true`
+  lead an index of a class; the first column of the key and of each
+  index lead one of a table.
+- **The columns.** The seven system columns of item 3 and every scalar
+  variable whose type is known, money and json included. The version of
+  the class is not a column.
+- **Readers are protected in their current version.** A redefinition is
+  compiled against the current version of every class that reads the
+  redefined one, and refused when a formula there no longer compiles or
+  no longer fits its type. An earlier version of a reader holds nothing
+  in place: its formulas no longer run, and when the file opens they are
+  left unbound if they read what has gone.
+- **A draft reads the stored class** (ADR-0025). The draft of a class
+  nobody has defined reads no documents. A draft that reads a variable
+  the stored class lacks is told so in the preview's errors, with
+  `query_failed` on the variable.
+- **Measured** on the machine of ADR-0035, a purchase that counts the
+  granted among its 100 approvals, through the index of the purchase,
+  in a class of 100,000 approvals on disk: 10.7 µs, 29 allocations, for
+  the count; 12.8 µs for the sum of their amounts; 80 µs for the whole
+  `Refresh` that counts, looks at the eventless guard and commits. The
+  budgets are 100 µs and 2 ms. `BenchmarkLookupClass` joined the gate,
+  with 10,000 approvals. What a statement costs that no index narrows
+  waits for the campaign of the last step.
+
 ## Consequences
 
 - **Parallel approvals are whole.** Each approval is a document that

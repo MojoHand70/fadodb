@@ -1177,6 +1177,9 @@ func (b *binder) lookup(n *Call) (Type, error) {
 	if !ok {
 		return Type{}, b.errAt(srcName.P, "unknown source %s", srcName.Name)
 	}
+	if src.Class && b.opts.Mode == ModeAuto {
+		return Type{}, b.errAt(srcName.P, "%s is a class, and an auto formula may not read other documents: its stored value is a function of its own document; make the variable triggered, with \"mode\": \"triggered\" and its triggers under \"on\" (ADR-0046)", src.Name)
+	}
 	q := &QuerySlot{Source: src.Name, Order: append([]string(nil), src.Key...)}
 	argOf := map[string]int{}
 	switch c := n.Args[1].(type) {
@@ -1206,17 +1209,22 @@ func (b *binder) lookup(n *Call) (Type, error) {
 		v, _ := b.scope.Lookup(name)
 		q.Args = append(q.Args, b.slot(v))
 	}
-	// The key: the condition when it is one equality, or else the first
-	// such term of a conjunction, which narrows the rows and leaves the
-	// decision to the condition (ADR-0037, ADR-0046).
+	// The key: the condition when it is one equality, or else such a term
+	// of a conjunction, which narrows the rows and leaves the decision to
+	// the condition (ADR-0037, ADR-0046). Among several the first on a
+	// column that leads an index of the source is taken, and the first of
+	// all when there is none.
 	terms := conjuncts(n.Args[2], nil)
 	for _, term := range terms {
-		found, err := b.lookupKey(term, src, q, argOf)
+		key, col, err := b.lookupKey(term, src, q, argOf)
 		if err != nil {
 			return Type{}, err
 		}
-		if found {
-			q.KeyPart = len(terms) > 1
+		if key == nil || q.Key != nil && !src.indexed(col) {
+			continue
+		}
+		q.Key, q.IndexColumn, q.KeyPart = key, col, len(terms) > 1
+		if src.indexed(col) {
 			break
 		}
 	}
@@ -1271,13 +1279,13 @@ func conjuncts(n Node, out []Node) []Node {
 	return append(out, n)
 }
 
-// lookupKey records a term as the key of the slot when it is an equality
-// of a column with an expression of the document alone, of the column's
-// kind.
-func (b *binder) lookupKey(term Node, src *Source, q *QuerySlot, argOf map[string]int) (bool, error) {
+// lookupKey reads a term as a key of the slot: the compared expression
+// and the column, when the term is an equality of a column with an
+// expression of the document alone, of the column's kind; nil otherwise.
+func (b *binder) lookupKey(term Node, src *Source, q *QuerySlot, argOf map[string]int) (*Program, string, error) {
 	eq, ok := term.(*Binary)
 	if !ok || eq.Op != TokEq {
-		return false, nil
+		return nil, "", nil
 	}
 	for _, side := range [][2]Node{{eq.L, eq.R}, {eq.R, eq.L}} {
 		id, ok := side[0].(*Ident)
@@ -1291,22 +1299,21 @@ func (b *binder) lookupKey(term Node, src *Source, q *QuerySlot, argOf map[strin
 		if kcol.Type.Kind == KindMoney {
 			// Money equals a decimal by its amount and money of another
 			// currency not at all, so an amount is no key (ADR-0037).
-			return false, nil
+			return nil, "", nil
 		}
 		key, kt, err := b.subProgram(side[1], src, q, argOf)
 		if err != nil {
-			return false, err
+			return nil, "", err
 		}
 		if kt.Kind == KindNumber && kcol.Type.Kind == KindDecimal && key.ClaimExact(kcol.Type) {
 			kt = key.Result
 		}
 		if kt.Kind == kcol.Type.Kind {
-			q.Key, q.IndexColumn = key, kcol.Name
-			return true, nil
+			return key, kcol.Name, nil
 		}
-		return false, nil
+		return nil, "", nil
 	}
-	return false, nil
+	return nil, "", nil
 }
 
 // subProgram binds an expression of a LOOKUP as a program of its own,

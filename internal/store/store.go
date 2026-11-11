@@ -274,6 +274,20 @@ func Open(path string, o Options) (*Store, error) {
 		return nil, storageErr("open the writer connection", err)
 	}
 	fail := func(err error) (*Store, error) {
+		// What was prepared before the failure is released, so that the
+		// file is free at once: the classes and tables loaded before the
+		// one that failed hold statements, and SQLite keeps a file open
+		// while a statement on it lives.
+		for _, vs := range s.versions {
+			for _, c := range vs {
+				c.close()
+				query.Forget(c.cls)
+			}
+		}
+		for _, t := range s.tables {
+			t.close()
+		}
+		s.closePlans()
 		s.stmts.close()
 		s.writer.Close()
 		db.Close()
@@ -604,12 +618,16 @@ func (s *Store) load(ctx context.Context) error {
 	if err := s.loadActions(ctx); err != nil {
 		return err
 	}
-	// A rule may name a class defined after its own (ADR-0044), so the
-	// classes compile in two passes: every one alone, for its variables
-	// and their types, then every one against all of them. A stored
-	// definition was checked when it was defined, and loads leniently.
+	// A rule may name a class defined after its own (ADR-0044), and a
+	// formula may read one (ADR-0046), so the classes compile in two
+	// passes: every one alone, for its variables and their types, then
+	// every one against all of them. A stored definition was checked when
+	// it was defined, and loads leniently. Alone, a formula that reads
+	// another class is left unbound: a variable computed from one declares
+	// its type, so the variables are whole without it.
 	env := s.env()
 	env.Lenient = true
+	env.Shallow = true
 	alone := map[string]*model.Class{}
 	env.Classes = nil
 	for _, st := range classes {
@@ -623,6 +641,10 @@ func (s *Store) load(ctx context.Context) error {
 		cls, ok := alone[strings.ToUpper(name)]
 		return cls, ok
 	}
+	// The current version of a class binds every formula: a redefinition
+	// of a class it reads was refused if it broke one. An earlier version
+	// no longer computes anything, and may read what has since gone.
+	env.Shallow = false
 	for _, st := range classes {
 		c, err := s.compileStored(ctx, st.name, st.version, st.json, env)
 		if err != nil {
@@ -630,6 +652,7 @@ func (s *Store) load(ctx context.Context) error {
 		}
 		s.register(c)
 	}
+	env.Shallow = true
 	for _, st := range olds {
 		if cur, ok := s.classes[strings.ToUpper(st.name)]; !ok || cur.cls.Version == st.version {
 			continue

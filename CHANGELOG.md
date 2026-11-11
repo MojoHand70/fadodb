@@ -21,6 +21,33 @@ All notable changes to FadoDB are recorded here. The format follows
   on which its expression fails. `AVERAGE` is refused with the hint to
   divide a `SUM` by a `COUNT`. A class as the source comes with the next
   part of the step.
+- A formula reads the documents of a class (ADR-0046):
+  `LOOKUP(Approval, COUNT(id), purchase = ID() AND state = "granted")`.
+  The source is the class's documents as they are now, those in a
+  terminal state included and deleted ones not: the system columns `id`,
+  `title`, `state`, `version`, `created_at`, `updated_at` and
+  `state_entered_at`, and every scalar variable, ordered by `id`. `ID()`
+  and `STATE()` inside the call are the reading document's own. The
+  formula sees every document, whoever caused it to be computed and
+  whatever the rights say; the rights on the variable that holds the
+  result decide who sees it. It may stand in a triggered variable, a
+  default, a guard, a rule and an access rule other than `read`, and is
+  refused in an auto formula. It reads what was stored before the
+  command began and is recomputed at its own triggers only, so the other
+  class's rule refreshes the reader. It runs as one statement on the
+  writer inside the commit, narrowed through the index of an indexed
+  variable: 10.7 µs to count the approvals of one purchase among
+  100,000, and 80 µs for the whole refresh that counts and commits.
+- A variable computed from the documents of a class declares its `type`
+  (`missing` at `/variables/<name>/type`, with the type in the hint):
+  the layout of its documents must not follow another class. A
+  redefinition of a class that would break a formula of another class
+  which reads it is refused with `not_allowed`, naming the formula.
+- Among the equalities of an `AND`, a lookup takes for its key the one
+  on a column that leads an index, wherever it stands in the condition.
+- `conformance/rules/reads.json`, `conformance/binding/lookup-class.json`,
+  and the formula suite's lookups run against document tables too.
+  `BenchmarkLookupClass` joined the benchmark gate.
 - A lookup is narrowed by its key when the equality of a column with an
   expression of the document is one term of an `AND`, not only when it
   is the whole condition: `sku = THIS.sku AND min_qty <= THIS.qty` reads
@@ -274,6 +301,11 @@ All notable changes to FadoDB are recorded here. The format follows
 
 ### Fixed
 
+- An `Open` that refuses a file, because a stored class does not
+  compile for one, left the file open: the classes and tables loaded
+  before the failure kept their prepared statements. On Windows the file
+  could then not be removed or replaced until the process ended. `Open`
+  releases them now.
 - A `LOOKUP` of a table by a money column, `price = THIS.amount`,
   answered from the in-memory index by the amount alone, so money of
   another currency found a row. ADR-0037 keeps money columns out of the

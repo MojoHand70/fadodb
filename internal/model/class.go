@@ -44,7 +44,41 @@ type Class struct {
 	// Rights is the rights table by state, then variable, "*" included
 	// (ADR-0028); nil when the class declares none.
 	Rights map[string]map[string]*Right
-	Def    *Definition
+	// Reads names the classes whose documents a formula of the class
+	// reads (ADR-0046), itself among them when it reads its own.
+	Reads []string
+	Def   *Definition
+}
+
+// systemFields are the system columns of a class as a source reads them.
+var systemFields = []formula.Field{
+	{Name: "id", Type: formula.Scalar(formula.KindText)},
+	{Name: "title", Type: formula.Scalar(formula.KindText)},
+	{Name: "state", Type: formula.Scalar(formula.KindText)},
+	{Name: "version", Type: formula.Scalar(formula.KindNumber)},
+	{Name: "created_at", Type: formula.Scalar(formula.KindDateTime)},
+	{Name: "updated_at", Type: formula.Scalar(formula.KindDateTime)},
+	{Name: "state_entered_at", Type: formula.Scalar(formula.KindDateTime)},
+}
+
+// Source is the documents of the class as a LOOKUP reads them
+// (ADR-0046): one row per document, the system columns and every scalar
+// variable whose type is known, inputs and computed alike, ordered by id.
+// The id and the indexed variables lead an index. Objects, rows and the
+// history are not read yet.
+func (c *Class) Source() *formula.Source {
+	src := &formula.Source{Name: c.Name, Class: true, Key: []string{"id"}, Indexed: []string{"id"}}
+	src.Columns = append(src.Columns, systemFields...)
+	for _, v := range c.Variables {
+		if v.Type.Kind == formula.KindNull || !v.Type.IsScalar() {
+			continue
+		}
+		src.Columns = append(src.Columns, formula.Field{Name: v.Name, Type: v.Type})
+		if v.Index {
+			src.Indexed = append(src.Indexed, v.Name)
+		}
+	}
+	return src
 }
 
 // Variable is one compiled variable.
@@ -261,6 +295,13 @@ type Env struct {
 	// never a finding. A class may name one defined after it, and loading
 	// must not depend on the order.
 	Lenient bool
+	// Shallow compiles a stored definition for its variables, their types
+	// and what does not read other documents: a formula that reads the
+	// documents of a class and does not bind is left unbound and is no
+	// finding (ADR-0046). It is how a class is compiled before the classes
+	// it reads are, and how an earlier version of a class is, whose
+	// formulas no longer run and may read what a class has since dropped.
+	Shallow bool
 }
 
 // Define parses and compiles a class definition in one step, against the
@@ -304,6 +345,7 @@ func CompileIn(def *Definition, env Env) (*Class, Diagnostics) {
 	c := &collector{env: env}
 	cls := &Class{Name: def.Name, Version: def.Version, Label: def.Label, Plural: def.Plural, Description: def.Description,
 		Icon: def.Icon, Color: def.Color, Def: def, byName: map[string]*Variable{}}
+	c.self = cls
 	if c.checkName("/name", def.Name, reservedClassNames) && strings.HasPrefix(strings.ToLower(def.Name), "doc_") {
 		c.add(CodeReservedName, "/name", "a class name may not start with doc_, the prefix of the generated tables")
 	}
@@ -419,6 +461,7 @@ func CompileIn(def *Definition, env Env) (*Class, Diagnostics) {
 	if c.failed() {
 		return nil, c.list
 	}
+	cls.Reads = c.reads
 	return cls, nil
 }
 
@@ -751,6 +794,12 @@ func inferTypes(c *collector, cls *Class, schemas *SchemaSet) {
 		if prog.Result.Kind == formula.KindNull {
 			c.hint(CodeMissing, path+"/type", "the formula is always blank, so its type cannot be inferred", `declare "type"`)
 			continue
+		}
+		if c.readsClass(prog) {
+			// The type of a stored value may not follow another class: it
+			// is the layout of this class's documents and of their history.
+			c.hint(CodeMissing, path+"/type", "a variable computed from the documents of a class declares its type, which must stay what it is when that class changes (ADR-0046)",
+				fmt.Sprintf(`"type": %q`, prog.Result.String()))
 		}
 		v.Type = prog.Result
 		v.Formula = prog

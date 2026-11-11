@@ -14,6 +14,24 @@ type Source struct {
 	// Binding is sqlite, duckdb or external (ADR-0016); "" is the
 	// store's default.
 	Binding string
+	// Class says the source is the documents of a class, not an explicit
+	// table (ADR-0046): an auto formula may not read it.
+	Class bool
+	// Indexed names the columns that lead an index of the source. Among
+	// the equalities of a conjunction the binder takes one on such a
+	// column for the key, so that the order the author wrote the terms in
+	// does not decide what the lookup costs.
+	Indexed []string
+}
+
+// indexed reports whether the column leads an index of the source.
+func (s *Source) indexed(name string) bool {
+	for _, c := range s.Indexed {
+		if strings.EqualFold(c, name) {
+			return true
+		}
+	}
+	return false
 }
 
 // Column finds a column by name, case-insensitively.

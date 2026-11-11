@@ -1,0 +1,96 @@
+{
+  "suite": "lookup-class",
+  "description": "A LOOKUP whose source is the documents of a class (ADR-0046), in a formula that may read them: a triggered variable, a default, a guard, a rule. The columns are the system columns and the scalar variables of the class; a bare name is one of them, THIS.name a variable of the document the formula belongs to, and ID() and STATE() that document's own. The history of a class is not a source yet.",
+  "variables": {
+    "code": "text",
+    "limit": "decimal(2)",
+    "shipping": "object<Address>"
+  },
+  "schemas": {
+    "Address": {
+      "city": "text"
+    }
+  },
+  "sources": {
+    "Approval": {
+      "class": true,
+      "key": [
+        "id"
+      ],
+      "indexed": [
+        "id",
+        "purchase"
+      ],
+      "columns": {
+        "id": "text",
+        "title": "text",
+        "state": "text",
+        "version": "number",
+        "created_at": "datetime",
+        "updated_at": "datetime",
+        "state_entered_at": "datetime",
+        "purchase": "text",
+        "amount": "decimal(2)",
+        "fee": "money(2)",
+        "urgent": "bool"
+      }
+    }
+  },
+  "accept": [
+    "LOOKUP(Approval, COUNT(id), purchase = ID() AND state = \"granted\")",
+    "LOOKUP(Approval, COUNT(id), state = \"granted\" AND purchase = ID())",
+    "LOOKUP(Approval, SUM(amount), purchase = THIS.code)",
+    "LOOKUP(Approval, SUM(fee), purchase = THIS.code AND urgent)",
+    "LOOKUP(Approval, MAX(amount), TRUE) > limit",
+    "LOOKUP(Approval, state, id = THIS.code)",
+    "LOOKUP(Approval, id, state = STATE() AND id <> ID())",
+    "LOOKUP(Approval, version, id = THIS.code) + 1",
+    "LOOKUP(Approval, title, purchase = THIS.code) & \"\"",
+    "LOOKUP(Approval, COUNT(id), created_at < NOW() AND state_entered_at >= updated_at)",
+    "LOOKUP(Approval, COUNT(id), purchase = USER())",
+    "IF(LOOKUP(Approval, COUNT(id), purchase = ID()) > 2, \"many\", \"few\")",
+    "lookup(approval, count(ID), Purchase = id() and STATE = \"granted\")"
+  ],
+  "reject": [
+    {
+      "formula": "LOOKUP(Approval, class_version, TRUE)",
+      "reason": "the version of the class is not a column"
+    },
+    {
+      "formula": "LOOKUP(Approval, nope, TRUE)",
+      "reason": "unknown column of the class"
+    },
+    {
+      "formula": "LOOKUP(Approval_history, id, TRUE)",
+      "reason": "the history of a class is not a source yet"
+    },
+    {
+      "formula": "LOOKUP(Approval, COUNT(id), THIS.id = id)",
+      "reason": "the document's own id is ID(); THIS names its variables"
+    },
+    {
+      "formula": "LOOKUP(Approval, COUNT(id), THIS.state = state)",
+      "reason": "the document's own state is STATE()"
+    },
+    {
+      "formula": "LOOKUP(Approval, COUNT(id), code = purchase)",
+      "reason": "a bare name is a column of the class; the document's code is THIS.code"
+    },
+    {
+      "formula": "LOOKUP(Approval, COUNT(id), purchase = THIS.shipping)",
+      "reason": "only scalar variables are reachable through THIS yet"
+    },
+    {
+      "formula": "LOOKUP(Approval, SUM(state), TRUE)",
+      "reason": "SUM of a text"
+    },
+    {
+      "formula": "LOOKUP(Approval, COUNT(id), LOOKUP(Approval, COUNT(id), TRUE) > 0)",
+      "reason": "a query function does not nest inside another's arguments"
+    },
+    {
+      "formula": "QUERY(Approval, id)",
+      "reason": "QUERY is not implemented yet"
+    }
+  ]
+}

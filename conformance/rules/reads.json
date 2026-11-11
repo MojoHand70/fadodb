@@ -1,0 +1,104 @@
+{
+  "suite": "reads",
+  "description": "A formula reads the documents of a class (ADR-0046): LOOKUP names the class, takes one of its columns or COUNT, SUM, MIN or MAX over them, and a condition in which a bare name is a column of that class, THIS.name a variable of the document, and ID() and STATE() the document's own. It sees every document of the class, whoever caused it to be computed and whatever the rights say, those in a terminal state included and deleted ones not. It reads what was stored before the command began, the document's own row among it. Nothing recomputes by itself: the approval's rule refreshes the purchase, the purchase counts, and its own guard moves it.",
+  "clock": "2026-03-01 12:00:00",
+  "classes": [
+    {"name": "Purchase",
+     "variables": {"needed": {"type": "number", "default": "2"}},
+     "states": {"initial": "waiting", "list": ["waiting", "approved"]}},
+    {"name": "Approval",
+     "variables": {"purchase": {"type": "text", "required": true, "index": true}, "amount": {"type": "decimal(2)"}, "by": {"type": "text", "default": "USER()"}},
+     "states": {"initial": "asked", "list": ["asked", "granted", "refused", "void"], "final": ["void"]},
+     "transitions": [{"name": "grant", "from": "asked", "to": "granted"},
+                     {"name": "refuse", "from": "asked", "to": "refused"},
+                     {"name": "void", "from": "granted", "to": "void"}],
+     "rights": {"*": {"amount": {"read": ["finance"]}}},
+     "rules": [{"on": "enter", "state": "granted", "do": [{"action": "refresh", "class": "Purchase", "id": "purchase"}]}]},
+    {"name": "Ticket",
+     "variables": {
+       "tag":    {"type": "text", "index": true},
+       "seq":    {"type": "number", "default": "LOOKUP(Ticket, COUNT(id), TRUE) + 1"},
+       "same":   {"type": "number", "formula": "LOOKUP(Ticket, COUNT(id), tag = THIS.tag)", "mode": "triggered", "on": ["refresh"]},
+       "others": {"type": "number", "formula": "LOOKUP(Ticket, COUNT(id), tag = THIS.tag AND id <> ID())", "mode": "triggered", "on": ["refresh"]},
+       "peers":  {"type": "number", "formula": "LOOKUP(Ticket, COUNT(id), state = STATE() AND id <> ID())", "mode": "triggered", "on": ["refresh"]},
+       "first":  {"type": "text", "formula": "LOOKUP(Ticket, id, tag = THIS.tag)", "mode": "triggered", "on": ["refresh"]}},
+     "states": {"initial": "open", "list": ["open", "sent", "closed"], "final": ["closed"]},
+     "transitions": [{"name": "send", "from": "open", "to": "sent", "guard": "LOOKUP(Ticket, COUNT(id), tag = THIS.tag AND state = \"sent\") = 0"},
+                     {"name": "close", "from": ["open", "sent"], "to": "closed"},
+                     {"name": "retag", "from": "open", "to": "open"},
+                     {"from": "open", "to": "sent", "guard": "tag = \"auto\" AND LOOKUP(Ticket, COUNT(id), tag = \"auto\") > 0"}]}
+  ],
+  "class": {
+    "name": "Purchase",
+    "variables": {
+      "needed":  {"type": "number", "default": "2"},
+      "granted": {"type": "number", "formula": "LOOKUP(Approval, COUNT(id), purchase = ID() AND state = \"granted\")", "mode": "triggered", "on": ["refresh"]},
+      "sum":     {"type": "decimal(2)", "formula": "LOOKUP(Approval, SUM(amount), state = \"granted\" AND purchase = ID())", "mode": "triggered", "on": ["refresh"]},
+      "largest": {"type": "decimal(2)", "formula": "LOOKUP(Approval, MAX(amount), purchase = ID())", "mode": "triggered", "on": ["refresh"]},
+      "last_by": {"type": "text", "formula": "LOOKUP(Approval, by, purchase = ID() AND state = \"granted\" AND amount = THIS.largest)", "mode": "triggered", "on": ["refresh"]},
+      "note":    {"type": "text"}
+    },
+    "states": {"initial": "waiting", "list": ["waiting", "approved"]},
+    "transitions": [{"from": "waiting", "to": "approved", "guard": "granted >= needed"}],
+    "rules": [{"on": "enter", "state": "approved", "if": "LOOKUP(Approval, COUNT(id), purchase = ID() AND state = \"refused\") > 0",
+               "do": [{"action": "set", "values": {"note": "\"approved over \" & TEXT(LOOKUP(Approval, COUNT(id), purchase = ID() AND state = \"refused\")) & \" refusal\""}}]}]
+  },
+  "principals": {
+    "fin":   {"id": "fin", "groups": ["finance"]},
+    "clerk": {"id": "clerk", "groups": ["clerks"]}
+  },
+  "script": [
+    {"name": "a new purchase has counted nothing yet", "do": "create", "id": "P-1", "doc": "p1", "expect": {"state": "waiting", "version": 1, "values": {"granted": null, "sum": null}, "computed": {"granted": null}}},
+    {"do": "create", "id": "P-2", "doc": "p2", "expect": {"state": "waiting", "version": 1}},
+    {"do": "create", "class": "Approval", "id": "A-1", "as": "fin", "values": {"purchase": "P-1", "amount": "10.25"}, "expect": {"state": "asked"}},
+    {"do": "create", "class": "Approval", "id": "A-2", "as": "fin", "values": {"purchase": "P-1", "amount": "99.00"}, "expect": {"state": "asked"}},
+    {"do": "create", "class": "Approval", "id": "A-3", "as": "clerk", "values": {"purchase": "P-1", "amount": "0.50"}, "expect": {"state": "asked"}},
+    {"do": "create", "class": "Approval", "id": "A-4", "as": "fin", "values": {"purchase": "P-2", "amount": "7.00"}, "expect": {"state": "asked"}},
+
+    {"name": "nothing recomputes by itself: the approvals exist and the purchase has not been asked", "do": "get", "doc": "p1", "expect": {"version": 1, "values": {"granted": null}}},
+    {"name": "a refresh by hand counts: none is granted, the sum of nothing is zero and the largest of all three is there", "do": "refresh", "doc": "p1",
+     "expect": {"state": "waiting", "version": 2, "values": {"granted": 0, "sum": "0.00", "largest": "99.00", "last_by": null}, "computed": {"granted": {"version": 2}}}},
+
+    {"name": "granting an approval queues the refresh of its purchase", "do": "transition", "class": "Approval", "id": "A-1", "as": "fin", "transition": "grant",
+     "expect": {"state": "granted", "outbox": [{"action": "refresh", "status": "pending"}]}},
+    {"name": "until the outbox runs the purchase shows the old count", "do": "get", "doc": "p1", "expect": {"version": 2, "values": {"granted": 0}}},
+    {"do": "drain", "class": "Approval", "id": "A-1", "expect": {"drained": 1, "outbox": [{"action": "refresh", "status": "done"}]}},
+    {"name": "the purchase counted one, and one is not enough", "do": "get", "doc": "p1", "expect": {"state": "waiting", "version": 3, "values": {"granted": 1, "sum": "10.25"}}},
+
+    {"name": "a refusal refreshes nothing", "do": "transition", "class": "Approval", "id": "A-2", "as": "fin", "transition": "refuse", "expect": {"state": "refused", "outbox": []}},
+    {"name": "an approval of another purchase counts for that one", "do": "transition", "class": "Approval", "id": "A-4", "as": "fin", "transition": "grant", "expect": {"state": "granted"}},
+    {"do": "drain", "class": "Approval", "id": "A-4", "expect": {"drained": 1}},
+    {"do": "get", "doc": "p2", "expect": {"state": "waiting", "values": {"granted": 1, "sum": "7.00", "largest": "7.00", "last_by": "fin"}}},
+    {"do": "get", "doc": "p1", "expect": {"state": "waiting", "version": 3, "values": {"granted": 1}}},
+
+    {"name": "the engine's eyes: a clerk may not read the amount of an approval", "do": "get", "class": "Approval", "id": "A-3", "as": "clerk", "expect": {"absent": ["amount"], "present": ["purchase"]}},
+    {"name": "the clerk grants the second approval; the refresh runs as the clerk, and the sum still adds every amount", "do": "transition", "class": "Approval", "id": "A-3", "as": "clerk", "transition": "grant", "expect": {"state": "granted"}},
+    {"do": "drain", "class": "Approval", "id": "A-3", "expect": {"drained": 1, "outbox": [{"action": "refresh", "status": "done", "as": "clerk"}]}},
+    {"name": "two are granted: the refresh computed the count and the eventless transition of the same command moved the purchase; the rule on its entry read the refusals", "do": "get", "doc": "p1", "as": "clerk",
+     "expect": {"state": "approved", "values": {"granted": 2, "sum": "10.75", "largest": "99.00", "last_by": null, "note": "approved over 1 refusal"},
+                "events": ["created", "refresh", "refresh", "refresh", "transition:"]}},
+
+    {"name": "a document in a terminal state is still read", "do": "transition", "class": "Approval", "id": "A-4", "as": "fin", "transition": "void", "expect": {"state": "void"}},
+    {"do": "refresh", "doc": "p2", "expect": {"values": {"granted": 0, "sum": "0.00", "largest": "7.00"}}},
+    {"name": "a deleted document is not", "do": "delete", "class": "Approval", "id": "A-2", "as": "fin", "expect": {}},
+    {"do": "refresh", "doc": "p1", "expect": {"state": "approved", "values": {"granted": 2, "largest": "10.25", "last_by": "fin"}}},
+
+    {"name": "a class reads itself: while a document is being created it is not among the documents", "do": "create", "class": "Ticket", "id": "T-1", "values": {"tag": "a"}, "expect": {"state": "open", "values": {"seq": 1}}},
+    {"do": "create", "class": "Ticket", "id": "T-2", "values": {"tag": "a"}, "expect": {"values": {"seq": 2}}},
+    {"do": "create", "class": "Ticket", "id": "T-3", "values": {"tag": "b"}, "expect": {"values": {"seq": 3}}},
+    {"name": "once stored the document counts itself, unless the condition leaves it out; ID() and STATE() are its own, id and state the others'", "do": "refresh", "class": "Ticket", "id": "T-1",
+     "expect": {"values": {"same": 2, "others": 1, "peers": 2, "first": "T-1"}}},
+    {"name": "the document's own row is the one stored before the command: retagged to b in the same command as the refresh would be, the count for b does not include it yet", "do": "set", "class": "Ticket", "id": "T-2", "values": {"tag": "b"}, "expect": {"values": {"tag": "b", "same": null}}},
+    {"do": "refresh", "class": "Ticket", "id": "T-2", "expect": {"values": {"same": 2, "others": 1, "first": "T-2"}}},
+    {"name": "a value read from other documents is the value of its moment: T-1 still says two", "do": "get", "class": "Ticket", "id": "T-1", "expect": {"values": {"same": 2, "others": 1}}},
+    {"do": "refresh", "class": "Ticket", "id": "T-1", "expect": {"values": {"same": 1, "others": 0, "first": "T-1"}}},
+
+    {"name": "a guard reads the class: the first ticket of its tag may be sent", "do": "transition", "class": "Ticket", "id": "T-2", "transition": "send", "expect": {"state": "sent"}},
+    {"name": "the second may not", "do": "transition", "class": "Ticket", "id": "T-3", "transition": "send", "expect": {"code": "guard_false"}},
+    {"do": "transitions", "class": "Ticket", "id": "T-3", "expect": {"transitions": [{"name": "send", "to": "sent", "enabled": false, "code": "guard_false"}, {"name": "close", "to": "closed", "enabled": true}, {"name": "retag", "to": "open", "enabled": true}]}},
+    {"name": "a preview reads the documents as they are stored now", "do": "preview", "class": "Ticket", "id": "T-1", "transition": "send", "expect": {"state": "sent"}},
+
+    {"name": "the commits of one command are computed together: the eventless guard of a new ticket does not see the ticket itself", "do": "create", "class": "Ticket", "id": "T-4", "values": {"tag": "auto"}, "expect": {"state": "open", "version": 1}},
+    {"name": "a second ticket sees the first, which is stored, and moves", "do": "create", "class": "Ticket", "id": "T-5", "values": {"tag": "auto"}, "expect": {"state": "sent", "version": 2}}
+  ]
+}

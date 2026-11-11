@@ -48,6 +48,11 @@ type SuiteSource struct {
 	Columns map[string]string            `json:"columns"`
 	Key     []string                     `json:"key"`
 	Rows    []map[string]json.RawMessage `json:"rows,omitempty"`
+	// Class says the source stands for the documents of a class, which
+	// an auto formula may not read, and Indexed names the columns that
+	// lead an index (ADR-0046).
+	Class   bool     `json:"class,omitempty"`
+	Indexed []string `json:"indexed,omitempty"`
 }
 
 // SourceSet resolves the suite's sources.
@@ -109,7 +114,7 @@ func sourcesOf(decl map[string]*SuiteSource) (*SourceSet, error) {
 		if len(ss.Columns) == 0 {
 			return nil, fmt.Errorf("source %s: no columns", name)
 		}
-		src := &Source{Name: name, Key: ss.Key}
+		src := &Source{Name: name, Key: ss.Key, Class: ss.Class, Indexed: ss.Indexed}
 		cols := make([]string, 0, len(ss.Columns))
 		for c := range ss.Columns {
 			cols = append(cols, c)

@@ -27,9 +27,11 @@ Website: [fadodb.org](https://fadodb.org).
 > the database, implemented by a Go function of the host program or sent
 > by the engine as an HTTP request, to the hosts the host program allows
 > and with secrets it supplies, and what the action returns is written
-> back to the document, so a process goes on from the answer. Formulas
-> that read other documents, time, the row-level access rules
-> and the server come with their steps and phases. The numbers are in
+> back to the document, so a process goes on from the answer. A formula
+> can read the documents of another class: one value of one document,
+> or a count, a sum, the smallest or the largest over those that match,
+> which is how a purchase counts its approvals. Time, the row-level
+> access rules and the server come with their steps and phases. The numbers are in
 > [docs/perf/](docs/perf/), the plan in [ROADMAP.md](ROADMAP.md).
 
 ## What it is

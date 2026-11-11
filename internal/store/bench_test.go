@@ -235,6 +235,114 @@ func BenchmarkLookupKeyedStatement(b *testing.B) {
 	benchLookup(b, lookupClass, Options{MaxIndexedRows: 1})
 }
 
+// benchClassLookup evaluates one formula of a purchase that reads its
+// approvals (ADR-0046): docs approvals in all, 100 of them of the
+// purchase, half of those granted. The formula runs as a commit runs it,
+// on the writer inside a transaction. FADODB_BENCH_DOCS sets the size of
+// the class, 10,000 by default and 100,000 for the budget of the record;
+// with FADODB_BENCH_DIR the file is on disk.
+func benchClassLookup(b *testing.B, expr string, want any) {
+	s, doc := classLookupStore(b, expr, want)
+	ctx := context.Background()
+	c, _ := s.class("Purchase")
+	row, err := c.scanRow(c.w.selectCurrent.QueryRowContext(ctx, doc.ID), false)
+	if err != nil {
+		b.Fatal(err)
+	}
+	prog := c.byName["X"].v.Formula
+	if _, err := s.writer.ExecContext(ctx, "BEGIN"); err != nil {
+		b.Fatal(err)
+	}
+	defer s.writer.ExecContext(ctx, "ROLLBACK")
+	evalCtx := &formula.Context{Now: time.Now().Unix(), ID: doc.ID, State: doc.State}
+	b.ReportAllocs()
+	b.ResetTimer()
+	for b.Loop() {
+		if _, err := s.eval(c, prog, row, evalCtx); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+// classLookupStore makes the store of benchClassLookup and the purchase
+// P-00010, refreshed once, whose x is want.
+func classLookupStore(b *testing.B, expr string, want any) (*Store, *Document) {
+	docs := 10000
+	if v := os.Getenv("FADODB_BENCH_DOCS"); v != "" {
+		fmt.Sscanf(v, "%d", &docs)
+	}
+	dir := os.Getenv("FADODB_BENCH_DIR")
+	if dir == "" {
+		dir = b.TempDir()
+	}
+	path := filepath.Join(dir, fmt.Sprintf("reads-%d.fado", time.Now().UnixNano()))
+	s, err := Open(path, Options{Outbox: OutboxOptions{Manual: true}})
+	if err != nil {
+		b.Fatal(err)
+	}
+	b.Cleanup(func() {
+		s.Close()
+		for _, suffix := range []string{"", "-wal", "-shm"} {
+			os.Remove(path + suffix)
+		}
+	})
+	ctx := context.Background()
+	for _, def := range []string{
+		`{"name": "Approval", "variables": {"purchase": {"type": "text", "index": true}, "amount": {"type": "decimal(2)"}, "ok": {"type": "bool"}},
+  "states": {"initial": "asked", "list": ["asked"]}}`,
+		`{"name": "Purchase", "variables": {"x": {"type": "decimal(2)", "formula": "DECIMAL(LOOKUP(Approval, ` + expr + `, purchase = ID() AND ok), 2)", "mode": "triggered", "on": ["refresh"]}},
+  "states": {"initial": "waiting", "list": ["waiting", "approved"]},
+  "transitions": [{"from": "waiting", "to": "approved", "guard": "x > 1000000"}]}`,
+	} {
+		if _, err := s.DefineClass(ctx, []byte(def)); err != nil {
+			b.Fatal(err)
+		}
+	}
+	batch := make([]Values, 0, 1000)
+	for i := 0; i < docs; i++ {
+		batch = append(batch, Values{"purchase": fmt.Sprintf("P-%05d", i/100), "amount": fmt.Sprintf("%d.%02d", i%7, i%100), "ok": i%2 == 0})
+		if len(batch) == cap(batch) || i == docs-1 {
+			if _, err := s.CreateMany(ctx, "Approval", batch); err != nil {
+				b.Fatal(err)
+			}
+			batch = batch[:0]
+		}
+	}
+	doc, err := s.Create(ctx, "Purchase", Values{}, WithID("P-00010"))
+	if err != nil {
+		b.Fatal(err)
+	}
+	if doc, err = s.Refresh(ctx, "Purchase", doc.ID, nil); err != nil || doc.Values["x"] != want {
+		b.Fatalf("x is %v, want %v: %v", doc.Values["x"], want, err)
+	}
+	return s, doc
+}
+
+// BenchmarkRefreshClassCount is the whole command the pattern of
+// parallel approvals runs when an approval is granted: the refresh of
+// the purchase, which counts its approvals, looks at its eventless guard
+// and commits. The budget is the 2 ms of a transition commit.
+func BenchmarkRefreshClassCount(b *testing.B) {
+	s, doc := classLookupStore(b, "COUNT(id)", "50.00")
+	ctx := context.Background()
+	b.ReportAllocs()
+	b.ResetTimer()
+	for b.Loop() {
+		if _, err := s.Refresh(ctx, "Purchase", doc.ID, nil); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+// BenchmarkLookupClass counts the granted approvals of one purchase: 50
+// of its 100, found through the index of the purchase among every
+// approval of the class. The budget of ADR-0046 is under 100 µs with
+// 100,000 approvals; the gate watches it with 10,000.
+func BenchmarkLookupClass(b *testing.B) { benchClassLookup(b, "COUNT(id)", "50.00") }
+
+// BenchmarkLookupClassSum adds their amounts, which are exact.
+func BenchmarkLookupClassSum(b *testing.B) { benchClassLookup(b, "SUM(amount)", "177.50") }
+
 // BenchmarkFilter is the indexed-filter budget of ADR-0012: an equality
 // on an indexed text variable over FADODB_BENCH_DOCS documents (100,000
 // by default), and for contrast the same over a plain number column. It

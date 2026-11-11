@@ -100,7 +100,8 @@ A class is one JSON document.
     "total_eur": {"formula": "ROUND(total * rate, 2)"},
     "overdue":   {"formula": "TODAY() > due AND STATE() <> \"paid\"",
                   "mode": "triggered", "on": ["enter:approved", "refresh"]},
-    "backlog":   {"formula": "LOOKUP(Invoice, COUNT(id), customer = THIS.customer AND state <> \"paid\")",
+    "backlog":   {"type": "number",
+                  "formula": "LOOKUP(Invoice, COUNT(id), customer = THIS.customer AND state <> \"paid\")",
                   "mode": "triggered", "on": ["refresh", "enter:submitted"]}
   },
   "states": {
@@ -270,9 +271,26 @@ to its columns, and rejects anything else at definition time. Formulas
 never carry raw SQL. A formula that reads the documents of a class sees
 every one of them, whoever caused it to be computed; who may see the
 result is decided by the rights on the variable that holds it (ADR-0046).
-Today `LOOKUP` reads explicit tables, with one column or with `COUNT`,
-`SUM`, `MIN` or `MAX` over one expression of the columns; a class as the
-source is designed and not built yet, and so is `QUERY`.
+Today `LOOKUP` reads explicit tables and the documents of a class, with
+one column or with `COUNT`, `SUM`, `MIN` or `MAX` over one expression of
+the columns; `QUERY` is designed and not built yet.
+
+A class as a source is its documents as they are now: the system columns
+`id`, `title`, `state`, `version`, `created_at`, `updated_at` and
+`state_entered_at`, and every scalar variable, ordered by `id`. Inside
+the call `ID()` and `STATE()` are the reading document's own, so
+`id <> ID()` leaves it out. Such a formula may stand in a triggered
+variable, a default, a guard, a rule or an access rule other than
+`read`, and not in an auto formula. It reads what was stored before the
+command began, and nothing recomputes it when the other documents
+change: the author says when, usually with a rule of the other class
+that refreshes this document. A variable computed this way declares its
+`type`, so that its documents keep their layout when the other class
+changes, and a redefinition of a class may not break a formula of
+another class that reads it. The lookup is one statement on the writer,
+inside the commit, narrowed through the index of a variable declared
+with `"index": true` when the condition compares one for equality:
+10.7 µs to count one purchase's approvals among 100,000.
 
 Formulas within a class form a dependency graph. The binder rejects cycles at
 definition time and precomputes the evaluation order.

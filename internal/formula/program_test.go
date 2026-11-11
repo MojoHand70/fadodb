@@ -145,6 +145,35 @@ func TestProgram_LookupRoundTrip(t *testing.T) {
 	if q := count.Queries[0]; q.Agg != "COUNT" || q.Type.String() != "number" || q.Key != nil {
 		t.Errorf("count slot: %+v", q)
 	}
+	// Among the equalities of a conjunction the one on a column that leads
+	// an index is the key, wherever the author wrote it; with no index the
+	// first is. A class is refused in an auto formula.
+	approvals := &Source{Name: "Approval", Class: true, Key: []string{"id"}, Indexed: []string{"id", "purchase"},
+		Columns: []Field{{Name: "id", Type: Scalar(KindText)}, {Name: "state", Type: Scalar(KindText)}, {Name: "purchase", Type: Scalar(KindText)}, {Name: "kind", Type: Scalar(KindText)}}}
+	classes := BindOptions{Sources: NewSourceSet(approvals)}
+	for cond, key := range map[string]string{
+		`state = "granted" AND purchase = THIS.code`:                 "purchase",
+		`purchase = THIS.code AND state = "granted"`:                 "purchase",
+		`state = "granted" AND kind = "a" AND id = THIS.code`:        "id",
+		`state = "granted" AND kind = "a"`:                           "state",
+		`kind = "a" AND state = "granted"`:                           "kind",
+		`state = "granted" AND purchase = THIS.code AND id = "A-1"`:  "purchase",
+		`state = "granted" AND (purchase = THIS.code OR kind = "a")`: "state",
+		`state <> "granted" AND purchase = id AND kind = THIS.code`:  "kind",
+		`purchase = THIS.code`:                                       "purchase",
+		`state <> "granted"`:                                         "",
+	} {
+		p, err := Bind("LOOKUP(Approval, COUNT(id), "+cond+")", scope, classes)
+		if err != nil {
+			t.Fatalf("%s: %v", cond, err)
+		}
+		if q := p.Queries[0]; q.IndexColumn != key || (q.Key != nil) != (key != "") || q.KeyPart != strings.Contains(cond, " AND ") && key != "" {
+			t.Errorf("%s: key %q part %v, want %q", cond, q.IndexColumn, q.KeyPart, key)
+		}
+	}
+	if _, err := Bind("LOOKUP(Approval, COUNT(id), TRUE)", scope, BindOptions{Sources: NewSourceSet(approvals), Mode: ModeAuto}); err == nil || !strings.Contains(err.Error(), "an auto formula may not read other documents") {
+		t.Errorf("a class in an auto formula: %v", err)
+	}
 	// A slot that is neither a column nor an aggregate, or both, or whose
 	// key is a part of nothing, is not a program.
 	for name, spoil := range map[string]func(q *QuerySlot){

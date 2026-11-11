@@ -89,7 +89,8 @@ func (s *Store) redefinitionDiagnostics(ctx context.Context, old *class, cls *mo
 }
 
 // brokenRules says which rules of other classes a new version of a class,
-// of a table or of an action definition would break (ADR-0044, item 7):
+// of a table or of an action definition would break (ADR-0044, item 7),
+// and which of their formulas that read the class (ADR-0046, item 11):
 // an action of theirs names a variable, a transition, a column or a
 // parameter the new version lacks, or gives one a value its new type does
 // not take. Each is refused with not_allowed naming the rule, and the fix
@@ -134,10 +135,13 @@ func (s *Store) brokenRules(cls *model.Class, tbl *model.Table, act *model.Actio
 	for _, name := range s.order {
 		dep := s.classes[strings.ToUpper(name)]
 		// The rules of the class itself compile with its new definition.
-		switch {
-		case cls != nil && strings.EqualFold(name, target):
+		if cls != nil && strings.EqualFold(name, target) {
 			continue
-		case act != nil && !calls(dep.cls, target), act == nil && !actsOn(dep.cls, target, tbl != nil):
+		}
+		// A class that reads the documents of the redefined one has its
+		// formulas compiled against the new columns too (ADR-0046).
+		reader := cls != nil && reads(dep.cls, target)
+		if !reader && (act != nil && !calls(dep.cls, target) || act == nil && !actsOn(dep.cls, target, tbl != nil)) {
 			continue
 		}
 		_, before := model.DefineIn(dep.json, env)
@@ -147,8 +151,21 @@ func (s *Store) brokenRules(cls *model.Class, tbl *model.Table, act *model.Actio
 			had[d.Code+" "+d.Path] = true
 		}
 		for _, d := range after {
-			if had[d.Code+" "+d.Path] || !strings.HasPrefix(d.Path, "/rules/") ||
-				d.Code == model.CodeMissing && (strings.HasSuffix(d.Path, "/values") || strings.HasSuffix(d.Path, "/args")) {
+			if had[d.Code+" "+d.Path] {
+				continue
+			}
+			if !strings.HasPrefix(d.Path, "/rules/") {
+				// Outside the rules only a formula can break: a variable,
+				// a default, a guard, an access rule or a right that reads
+				// the class.
+				if reader && (d.Code == model.CodeBadFormula || d.Code == model.CodeTypeMismatch) {
+					out = append(out, model.Diagnostic{Code: model.CodeNotAllowed, Path: "/variables", Pos: -1,
+						Message: "it would break a formula of the class " + dep.cls.Name + ", at " + d.Path + ": " + d.Message,
+						Hint:    "change that formula first; a redefinition may not break a formula of another class that reads this one (ADR-0046)"})
+				}
+				continue
+			}
+			if d.Code == model.CodeMissing && (strings.HasSuffix(d.Path, "/values") || strings.HasSuffix(d.Path, "/args")) {
 				continue
 			}
 			out = append(out, model.Diagnostic{Code: model.CodeNotAllowed, Path: changedPath(d.Path), Pos: -1,
@@ -157,6 +174,17 @@ func (s *Store) brokenRules(cls *model.Class, tbl *model.Table, act *model.Actio
 		}
 	}
 	return out
+}
+
+// reads reports whether a formula of the class reads the documents of the
+// class of that name.
+func reads(cls *model.Class, target string) bool {
+	for _, name := range cls.Reads {
+		if strings.EqualFold(name, target) {
+			return true
+		}
+	}
+	return false
 }
 
 // actsOn reports whether a rule of the class has an outbox action on the

@@ -144,6 +144,10 @@ synchronous actions, that rules do not cascade, what a failing action
 does, and what a frozen document allows. The format is the statechart
 suites', with these additions:
 
+- `reads.json` is the suite of formulas that read the documents of a
+  class (ADR-0046): parallel approvals, a class that counts over itself,
+  what a lookup sees of its own document and of deleted and finished
+  ones, and that rights do not narrow what a formula reads.
 - A step's `do` may be `delete`, `reset` or `refresh`; `variables` are
   the variables a reset or a refresh names. Their events are written
   `reset` and `refresh`.
@@ -247,7 +251,10 @@ plus `mode` and, as in the evaluation cases, `schemas` and `sources`
 (whose rows may be left out). A suite with `secrets`, a list of names,
 binds its formulas as the request of an action definition binds them
 (ADR-0045): `SECRET("name")` reads one of those secrets. Without
-`secrets`, as everywhere else, `SECRET` is refused.
+`secrets`, as everywhere else, `SECRET` is refused. A source with
+`"class": true` stands for the documents of a class (ADR-0046), which
+an auto formula may not read, and `indexed` names its columns that lead
+an index.
 
 ## Syntax cases: `syntax/*.json`
 

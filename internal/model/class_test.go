@@ -399,3 +399,41 @@ func TestRights_Resolution(t *testing.T) {
 		t.Errorf("a variable listed twice in different case: %v", diags)
 	}
 }
+
+// TestShallow is the compilation of a stored class before the classes it
+// reads are compiled, and of an earlier version of a class (ADR-0046): a
+// formula that reads a class and does not bind is left unbound, with the
+// declared type of its variable; every other finding is still one.
+func TestShallow(t *testing.T) {
+	const reader = `{"name": "Kit", "variables": {
+  "top":   {"type": "decimal(2)", "formula": "LOOKUP(Part, MAX(z), TRUE)", "mode": "triggered", "on": ["refresh"]},
+  "twice": {"formula": "top + top"}},
+ "states": {"initial": "open", "list": ["open", "done"]},
+ "transitions": [{"name": "finish", "from": "open", "to": "done", "guard": "LOOKUP(Part, COUNT(id), TRUE) > 0"}]}`
+	if _, diags := DefineIn([]byte(reader), Env{}); !diags.Has(CodeBadFormula) {
+		t.Errorf("a class nobody defined is an unknown source: %v", diags)
+	}
+	cls, diags := DefineIn([]byte(reader), Env{Shallow: true})
+	if len(diags) > 0 {
+		t.Fatalf("shallow: %v", diags)
+	}
+	top, _ := cls.Variable("top")
+	twice, _ := cls.Variable("twice")
+	if top.Formula != nil || top.Type.String() != "decimal(2)" || twice.Formula == nil || twice.Type.String() != "decimal(2)" || cls.Transitions[0].Guard != nil {
+		t.Errorf("top %v %s, twice %v %s, guard %v", top.Formula, top.Type, twice.Formula, twice.Type, cls.Transitions[0].Guard)
+	}
+	src := cls.Source()
+	if !src.Class || len(src.Columns) != 9 || src.Columns[7].Name != "top" || src.Key[0] != "id" {
+		t.Errorf("the source of a class compiled alone: %+v", src)
+	}
+	// What does not read a class is judged as ever.
+	for _, bad := range []string{
+		strings.Replace(reader, `"top + top"`, `"top + nope"`, 1),
+		strings.Replace(reader, `"top + top"`, `"top +"`, 1),
+		strings.Replace(reader, `"LOOKUP(Part, COUNT(id), TRUE) > 0"`, `"missing > 0"`, 1),
+	} {
+		if _, diags := DefineIn([]byte(bad), Env{Shallow: true}); !diags.Has(CodeBadFormula) {
+			t.Errorf("a shallow compilation passed %s", bad)
+		}
+	}
+}

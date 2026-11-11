@@ -324,6 +324,11 @@ func newClass(cls *model.Class, src []byte) (*class, error) {
 
 // bindSlots resolves a program's slots to leaves.
 func (c *class) bindSlots(p *formula.Program, owner string) error {
+	if p == nil {
+		// A formula of an earlier version of the class that reads another
+		// class and was left unbound (ADR-0046): it no longer runs.
+		return nil
+	}
 	idx := make([]int, len(p.Slots))
 	for i, s := range p.Slots {
 		li, ok := c.leafIndex[strings.ToUpper(s.Name)]

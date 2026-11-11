@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/MojoHand70/fadodb/internal/formula"
+	"github.com/MojoHand70/fadodb/internal/model"
 )
 
 // The statechart conformance suite (ADR-0040) is the specification of the
@@ -34,6 +35,9 @@ type statechartSuite struct {
 	// its rules write and the classes they name (ADR-0044).
 	Tables  []json.RawMessage `json:"tables,omitempty"`
 	Classes []json.RawMessage `json:"classes,omitempty"`
+	// Together defines Classes and Class in one call (ADR-0046, item 12),
+	// as classes that name each other must be.
+	Together bool `json:"together,omitempty"`
 	// Actions are the action definitions the rules name (ADR-0045),
 	// defined before the classes. The runner implements each with a
 	// function that records its calls and does what Functions says for
@@ -335,12 +339,26 @@ func runStatechartSuite(t *testing.T, suite *statechartSuite) {
 			t.Fatalf("table %d of the suite's tables: %v", i, err)
 		}
 	}
-	for i, other := range suite.Classes {
-		if _, err := s.DefineClass(ctx, other); err != nil {
-			t.Fatalf("class %d of the suite's classes: %v", i, err)
+	var cls *model.Class
+	var err error
+	if suite.Together {
+		set := make([][]byte, 0, len(suite.Classes)+1)
+		for _, other := range suite.Classes {
+			set = append(set, other)
 		}
+		defined, derr := s.DefineClasses(ctx, append(set, suite.Class))
+		if derr != nil {
+			t.Fatalf("the classes, together: %v", derr)
+		}
+		cls = defined[len(defined)-1]
+	} else {
+		for i, other := range suite.Classes {
+			if _, err := s.DefineClass(ctx, other); err != nil {
+				t.Fatalf("class %d of the suite's classes: %v", i, err)
+			}
+		}
+		cls, err = s.DefineClass(ctx, suite.Class)
 	}
-	cls, err := s.DefineClass(ctx, suite.Class)
 	if err != nil {
 		t.Fatalf("the class: %v", err)
 	}

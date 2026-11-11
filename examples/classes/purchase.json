@@ -1,0 +1,26 @@
+{
+  "name": "Purchase",
+  "description": "A purchase that needs the yes of several people at once. Submitting it creates one Approval document for each approver, through the outbox. Each approver grants or refuses their own; either refreshes the purchase, which counts with a LOOKUP over the Approval class and moves by its own guards: rejected at the first refusal, approved when as many have granted as it needs, two unless it says otherwise. The Approval sample names this class and this class names it, so the two are defined together, with DefineClasses.",
+  "title": "\"Purchase \" & number",
+  "variables": {
+    "number":    {"type": "text", "required": true},
+    "amount":    {"type": "money", "scale": 2},
+    "approvers": {"type": "array<text>"},
+    "needed":    {"type": "number", "default": "2"},
+    "granted":   {"type": "number", "mode": "triggered", "on": ["refresh"],
+                  "formula": "LOOKUP(Approval, COUNT(id), purchase = ID() AND state = \"granted\")"},
+    "refused":   {"type": "number", "mode": "triggered", "on": ["refresh"],
+                  "formula": "LOOKUP(Approval, COUNT(id), purchase = ID() AND state = \"refused\")"}
+  },
+  "states": {"initial": "draft", "list": ["draft", "waiting", "approved", "rejected"], "final": ["approved", "rejected"]},
+  "transitions": [
+    {"name": "submit", "from": "draft", "to": "waiting", "guard": "needed > 0"},
+    {"from": "waiting", "to": "rejected", "guard": "refused > 0"},
+    {"from": "waiting", "to": "approved", "guard": "granted >= needed"}
+  ],
+  "rules": [
+    {"on": "transition", "name": "submit",
+     "do": [{"action": "create", "class": "Approval", "each": "approvers", "as": "approver", "id": "ID() & \"-\" & approver",
+             "values": {"purchase": "ID()", "approver": "approver"}}]}
+  ]
+}

@@ -206,6 +206,25 @@ func (db *DB) DefineClass(ctx context.Context, definition []byte) (*Class, error
 // ValidateClass reports what DefineClass would refuse, storing nothing.
 func (db *DB) ValidateClass(definition []byte) Diagnostics { return db.s.Validate(definition) }
 
+// DefineClasses defines several classes in one call: each definition is
+// checked against the others and against what is stored, and all are
+// stored or none is. It is how classes that name each other are defined,
+// such as an approval whose rule refreshes its purchase and a purchase
+// whose formula counts its approvals, since neither could be defined
+// first. The classes come back in the order of the definitions. The
+// error is Diagnostics when a definition is refused; the path of each
+// finding starts with the position of its definition, /1/variables/total
+// for the second.
+func (db *DB) DefineClasses(ctx context.Context, definitions [][]byte) ([]*Class, error) {
+	return db.s.DefineClasses(ctx, definitions)
+}
+
+// ValidateClasses reports what DefineClasses would refuse, storing
+// nothing.
+func (db *DB) ValidateClasses(definitions [][]byte) Diagnostics {
+	return db.s.ValidateClasses(definitions)
+}
+
 // DefineSchema compiles a named schema in JSON and stores it.
 func (db *DB) DefineSchema(ctx context.Context, definition []byte) (*Schema, error) {
 	return db.s.DefineSchema(ctx, definition)

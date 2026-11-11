@@ -920,7 +920,8 @@ optional idempotency key and a business date (ADR-0026); `Preview` runs the
 commit pipeline and writes nothing (ADR-0025); a Go function registered
 for an action receives the event that fired the rule from the outbox
 (ADR-0027, ADR-0045). Today the `fado`
-package has `Open`, `DefineClass`, `ValidateClass`, `DefineSchema`,
+package has `Open`, `DefineClass`, `ValidateClass`, `DefineClasses` and
+`ValidateClasses` for classes that name each other, `DefineSchema`,
 `DefineTable`, `ImportRows`, `TableRows`, `Create`, `CreateMany`, `Set`,
 `Reset`, `Refresh`, `Transition`, `Transitions`, `Delete`, `Migrate`,
 `Drain`, `Outbox`, `RetryAction`, `DefineAction`, `ValidateAction`,

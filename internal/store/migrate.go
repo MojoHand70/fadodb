@@ -90,7 +90,9 @@ func (s *Store) redefinitionDiagnostics(ctx context.Context, old *class, cls *mo
 
 // brokenRules says which rules of other classes a new version of a class,
 // of a table or of an action definition would break (ADR-0044, item 7),
-// and which of their formulas that read the class (ADR-0046, item 11):
+// and which of their formulas that read the class (ADR-0046, item 11).
+// with names the classes one call defines together (ADR-0046, item 12):
+// they compile against each other, so none of them is among the others:
 // an action of theirs names a variable, a transition, a column or a
 // parameter the new version lacks, or gives one a value its new type does
 // not take. Each is refused with not_allowed naming the rule, and the fix
@@ -102,7 +104,7 @@ func (s *Store) redefinitionDiagnostics(ctx context.Context, old *class, cls *mo
 // first, since the variable or the parameter does not exist yet, and its
 // action is refused with required when it runs. One of cls, tbl and act
 // is given. The caller holds cmu.
-func (s *Store) brokenRules(cls *model.Class, tbl *model.Table, act *model.ActionSpec) model.Diagnostics {
+func (s *Store) brokenRules(cls *model.Class, tbl *model.Table, act *model.ActionSpec, with ...string) model.Diagnostics {
 	env := s.env()
 	next, target := env, ""
 	switch {
@@ -134,8 +136,9 @@ func (s *Store) brokenRules(cls *model.Class, tbl *model.Table, act *model.Actio
 	var out model.Diagnostics
 	for _, name := range s.order {
 		dep := s.classes[strings.ToUpper(name)]
-		// The rules of the class itself compile with its new definition.
-		if cls != nil && strings.EqualFold(name, target) {
+		// The rules of the class itself compile with its new definition,
+		// and so do those of the other classes of the same call.
+		if cls != nil && strings.EqualFold(name, target) || definedAmong(with, name) {
 			continue
 		}
 		// A class that reads the documents of the redefined one has its
@@ -174,6 +177,17 @@ func (s *Store) brokenRules(cls *model.Class, tbl *model.Table, act *model.Actio
 		}
 	}
 	return out
+}
+
+// definedAmong reports whether a class of that name is among the ones a
+// call defines.
+func definedAmong(names []string, name string) bool {
+	for _, n := range names {
+		if strings.EqualFold(n, name) {
+			return true
+		}
+	}
+	return false
 }
 
 // reads reports whether a formula of the class reads the documents of the

@@ -21,6 +21,17 @@ All notable changes to FadoDB are recorded here. The format follows
   on which its expression fails. `AVERAGE` is refused with the hint to
   divide a `SUM` by a `COUNT`. A class as the source comes with the next
   part of the step.
+- `DefineClasses` and `ValidateClasses` (ADR-0046, item 12): several
+  class definitions in one call, each checked against the others and
+  against what is stored, all stored or none. Classes that name each
+  other, an approval whose rule refreshes its purchase and a purchase
+  whose formula counts its approvals, could not be defined before,
+  since neither could be first. The path of a finding starts with the
+  position of its definition, `/1/variables/total`; when a definition is
+  wrong by itself only its own findings are reported; a definition that
+  is the stored one is left as it is. `DefineClass` behaves as it did.
+- `examples/classes/purchase.json` and `approval.json`: parallel
+  approvals written out, walked through by `TestExampleApprovals`.
 - A formula reads the documents of a class (ADR-0046):
   `LOOKUP(Approval, COUNT(id), purchase = ID() AND state = "granted")`.
   The source is the class's documents as they are now, those in a

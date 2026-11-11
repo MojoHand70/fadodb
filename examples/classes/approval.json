@@ -1,0 +1,20 @@
+{
+  "name": "Approval",
+  "description": "One person's yes or no to a purchase. The Purchase sample's rule creates one for each approver, and only that approver may grant or refuse it. Either refreshes the purchase, which then counts its approvals again. Defined together with the Purchase sample, with DefineClasses, since each names the other.",
+  "title": "approver & \" on \" & purchase",
+  "variables": {
+    "purchase": {"type": "text", "required": true, "index": true},
+    "approver": {"type": "text", "required": true},
+    "comment":  {"type": "text"}
+  },
+  "states": {"initial": "asked", "list": ["asked", "granted", "refused"], "final": ["granted", "refused"]},
+  "transitions": [
+    {"name": "grant", "from": "asked", "to": "granted"},
+    {"name": "refuse", "from": "asked", "to": "refused"}
+  ],
+  "access": {"transition": {"grant": "approver = USER()", "refuse": "approver = USER()"}},
+  "rules": [
+    {"on": "enter", "state": "granted", "do": [{"action": "refresh", "class": "Purchase", "id": "purchase"}]},
+    {"on": "enter", "state": "refused", "do": [{"action": "refresh", "class": "Purchase", "id": "purchase"}]}
+  ]
+}

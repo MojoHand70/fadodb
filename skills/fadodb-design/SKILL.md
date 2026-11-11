@@ -28,7 +28,7 @@ read the diagnostics, fix, preview against live data, define.
 |---|---|
 | variables, types, defaults, ranges, named schemas, objects, attachments, tables and `LOOKUP` | shipped |
 | `COUNT`, `SUM`, `MIN` and `MAX` in a `LOOKUP` of a table, as in `LOOKUP(Stock, SUM(qty), sku = THIS.sku)` | in `main`, ships with v0.4.0 |
-| a formula that reads the documents of another class, `LOOKUP(Approval, COUNT(id), purchase = ID() AND state = "granted")` | in `main`, ships with v0.4.0: in a triggered variable, a default, a guard or a rule, not in an auto formula; the variable declares its `type`; it sees every document and is computed at its trigger, so the other class's rule refreshes this document; put `"index": true` on the variable the condition compares. Two classes that name each other are defined in three steps until `DefineClasses` is built |
+| a formula that reads the documents of another class, `LOOKUP(Approval, COUNT(id), purchase = ID() AND state = "granted")` | in `main`, ships with v0.4.0: in a triggered variable, a default, a guard or a rule, not in an auto formula; the variable declares its `type`; it sees every document and is computed at its trigger, so the other class's rule refreshes this document; put `"index": true` on the variable the condition compares. Two classes that name each other, a purchase and its approvals, are defined in one call with `DefineClasses`; `examples/classes/purchase.json` and `approval.json` are the worked pair |
 | formulas, exact money, calendar days, `IFERROR` | shipped |
 | states, transitions, guards, eventless chains, `STATE()` and `ID()` | shipped |
 | field rights per state, per-transition rules | shipped with Phase 3 |
@@ -70,7 +70,9 @@ read the diagnostics, fix, preview against live data, define.
    a document that waits for ever.
    **Write the access rule**, marked as what it is today: checked, not
    enforced.
-7. **Validate.** Today through `ValidateClass` on the Go API; a
+7. **Validate.** Today through `ValidateClass` on the Go API, and
+   `ValidateClasses` for classes that name each other, whose findings
+   start with the position of the definition, `/1/variables/total`; a
    `fadodb class check FILE` subcommand is planned so this needs no Go.
    Each diagnostic carries a stable code, a JSON pointer to the element,
    an offset inside the formula, a message and often a hint. Fix the

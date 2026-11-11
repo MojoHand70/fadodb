@@ -83,9 +83,11 @@ a class as the source, read with the engine's eyes by a statement
 inside the commit and narrowed through the index of an indexed
 variable; a variable computed from other documents declares its type;
 a redefinition may not break another class's formula; and the pattern
-of parallel approvals runs in `conformance/rules/reads.json`. Defining
-two classes that name each other in one call is the third part and is
-not built yet.
+of parallel approvals runs in `conformance/rules/reads.json` (#63). Its
+third closes the step: `DefineClasses` defines several classes in one
+call, all or none, so that classes which name each other can be defined
+at all, and the Purchase and Approval samples under `examples/classes/`
+are the pattern written out.
 By the owner's rulings of that day a formula sees every document, and
 `QUERY`, which returns lists, is built with the first layout or report
 that needs one; tables stored outside the file come with the analytical

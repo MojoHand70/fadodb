@@ -267,8 +267,11 @@ designed and not built yet): `CREATEDAT()` and `CREATEDBY()`,
 state it is in, and for any state by name `FIRSTENTERED`, `LASTENTERED`,
 `FIRSTLEFT` and `LASTLEFT`, each with a `...BY` beside it for who, and
 `ENTRIES`, `DAYSIN`, `FIRSTEDITOR` and `LASTEDITOR`. The document will
-keep who created it, last changed it and moved it into its state as the
-system variables `created_by`, `updated_by` and `state_entered_by`.
+keep who created it, last changed it and moved it into its state, and
+the state it came from, as the system variables `created_by`,
+`updated_by`, `state_entered_by` and `state_entered_from`, the last
+read with `ENTEREDFROM()`. Every event of an entry will say how the move
+came about, under `origin`: `command`, `action`, `guard` or `timer`.
 
 Inside `LOOKUP` and `QUERY`, bare names are columns of the source and the
 document's own variables are reached as `THIS.name`. Columns may be
@@ -423,7 +426,7 @@ What users see are views, never the physical names:
 |---|---|
 | `Invoice` | document, current values |
 | `Invoice_history` | committed version, with `valid_from` and `valid_to` |
-| `Invoice_states` | state visit: `state`, `entered_at`, `left_at`, `duration`, entry and exit versions; with ADR-0047, not built yet, one row for every entry, a return into the same state too, and `entered_by` and `left_by` |
+| `Invoice_states` | state visit: `state`, `entered_at`, `left_at`, `duration`, entry and exit versions; with ADR-0047, not built yet, one row for every entry, a return into the same state too, with who made the move, by which transition, from which state and how, for the entry and for the leaving |
 | `Invoice_events` | event touching the class |
 | `Invoice_lines` | element of the composite variable `lines`, current version |
 | `Invoice_lines_history` | element per version |

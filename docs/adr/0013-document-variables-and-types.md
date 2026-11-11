@@ -1,6 +1,6 @@
 # ADR-0013: Document variables and the type system
 
-- Status: Accepted; amended by ADR-0019 (formula keywords are reserved names), ADR-0022 (decimal, int and money), ADR-0023 (date is a calendar day, datetime an instant, enum values), ADR-0031 (named schemas and object values), ADR-0034 (range constraints on numeric variables), ADR-0047 (three more system variables: who created, last changed and moved the document)
+- Status: Accepted; amended by ADR-0019 (formula keywords are reserved names), ADR-0022 (decimal, int and money), ADR-0023 (date is a calendar day, datetime an instant, enum values), ADR-0031 (named schemas and object values), ADR-0034 (range constraints on numeric variables), ADR-0047 (four more system variables: who created, last changed and moved the document, and where from)
 - Date: 2026-11-05
 
 ## Context

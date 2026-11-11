@@ -274,6 +274,20 @@ func Open(path string, o Options) (*Store, error) {
 		return nil, storageErr("open the writer connection", err)
 	}
 	fail := func(err error) (*Store, error) {
+		// What was prepared before the failure is released, so that the
+		// file is free at once: the classes and tables loaded before the
+		// one that failed hold statements, and SQLite keeps a file open
+		// while a statement on it lives.
+		for _, vs := range s.versions {
+			for _, c := range vs {
+				c.close()
+				query.Forget(c.cls)
+			}
+		}
+		for _, t := range s.tables {
+			t.close()
+		}
+		s.closePlans()
 		s.stmts.close()
 		s.writer.Close()
 		db.Close()

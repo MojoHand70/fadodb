@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"os"
 	"strings"
 	"testing"
 
@@ -349,11 +350,17 @@ func TestLookup_EarlierVersionsAndReopen(t *testing.T) {
 		}
 	}
 	raw.Close()
+	before := openHandles(t, path)
 	if broken, err := Open(path, Options{Outbox: OutboxOptions{Manual: true}}); err == nil || !strings.Contains(err.Error(), "the stored class Kit version 2 does not compile") {
 		if broken != nil {
 			broken.Close()
 		}
 		t.Fatalf("a file whose current class reads a column that is gone: %v", err)
+	}
+	// The refusal leaves the file free: the classes that did load before
+	// the one that failed had prepared statements, and they are released.
+	if after := openHandles(t, path); after != before {
+		t.Errorf("the refused open left %d handles on the file, %d before it", after, before)
 	}
 	raw, _ = sql.Open("sqlite", path)
 	for _, table := range []string{"classes", "class_versions"} {
@@ -384,4 +391,23 @@ func TestLookup_EarlierVersionsAndReopen(t *testing.T) {
 	if err != nil || len(pv.Errors) != 1 || pv.Errors[0].Variable != "n" || !strings.Contains(pv.Errors[0].Message, "a draft reads the documents of the stored class") {
 		t.Errorf("a draft that reads a variable the stored class lacks: %v %s", err, dump(pv))
 	}
+}
+
+// openHandles counts the file descriptors of this process that are open
+// on the database file or its companions, where the system can say: on
+// Linux, through /proc. Elsewhere it is 0, and Windows says the same in
+// its own way, by refusing to remove a file that is still open.
+func openHandles(t *testing.T, path string) int {
+	t.Helper()
+	entries, err := os.ReadDir("/proc/self/fd")
+	if err != nil {
+		return 0
+	}
+	n := 0
+	for _, e := range entries {
+		if target, err := os.Readlink("/proc/self/fd/" + e.Name()); err == nil && strings.HasPrefix(target, path) {
+			n++
+		}
+	}
+	return n
 }

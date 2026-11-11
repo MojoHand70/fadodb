@@ -301,6 +301,11 @@ All notable changes to FadoDB are recorded here. The format follows
 
 ### Fixed
 
+- An `Open` that refuses a file, because a stored class does not
+  compile for one, left the file open: the classes and tables loaded
+  before the failure kept their prepared statements. On Windows the file
+  could then not be removed or replaced until the process ended. `Open`
+  releases them now.
 - A `LOOKUP` of a table by a money column, `price = THIS.amount`,
   answered from the in-memory index by the amount alone, so money of
   another currency found a row. ADR-0037 keeps money columns out of the

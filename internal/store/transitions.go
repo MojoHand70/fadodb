@@ -37,11 +37,13 @@ func (s *Store) Transition(ctx context.Context, class, id, name string, values V
 // in definition order, each with whether the principal may take it now
 // and, when not, why (ADR-0040, ADR-0041): forbidden when the
 // transition's access rule is not TRUE for the principal, else
-// guard_false, with the rule's or the guard's error when it errored. It
-// evaluates them over the stored document and writes nothing. Eventless
-// transitions are not listed. The rules and guards run on the writer's
-// VM, since they may look a table up through the writer's statements, so
-// the listing takes the writer's turn; it is short.
+// guard_false, with the rule's or the guard's error when it errored. A
+// timed transition is listed with the moment it fires (ADR-0047, item
+// 8), one without a name too, which nobody takes. It evaluates them over
+// the stored document and writes nothing. Eventless transitions are not
+// listed. The rules and guards run on the writer's VM, since they may
+// look a table up through the writer's statements, so the listing takes
+// the writer's turn; it is short.
 func (s *Store) Transitions(ctx context.Context, class, id string, opts ...Option) ([]TransitionInfo, error) {
 	c, e := s.class(class)
 	if e != nil {
@@ -70,17 +72,31 @@ func (s *Store) Transitions(ctx context.Context, class, id string, opts ...Optio
 		return []TransitionInfo{}, nil
 	}
 	evalCtx := &formula.Context{User: o.principal.ID, Groups: o.principal.Groups, Now: s.clock(o), State: row.state, ID: row.id}
-	return s.listTransitions(c, row, evalCtx, o.principal), nil
+	return s.listTransitions(c, row, evalCtx, o.principal, false), nil
 }
 
 // listTransitions is the listing of Transitions and Preview over a row in
 // its state, which evalCtx.State names, for the principal: the access
-// rule first, then the guard.
-func (s *Store) listTransitions(c *class, row *docRow, evalCtx *formula.Context, p Principal) []TransitionInfo {
-	leaving := state.Leaving(c.cls, row.state)
-	out := make([]TransitionInfo, 0, len(leaving))
-	for _, t := range leaving {
+// rule first, then the guard, and for a timed transition the moment it
+// fires. fresh says the command being previewed began the row's stay.
+func (s *Store) listTransitions(c *class, row *docRow, evalCtx *formula.Context, p Principal, fresh bool) []TransitionInfo {
+	out := make([]TransitionInfo, 0, len(c.cls.Transitions))
+	for _, t := range c.cls.Transitions {
+		if !state.From(t, row.state) || t.Name == "" && !t.Timed() {
+			continue
+		}
 		info := TransitionInfo{Name: t.Name, To: t.To}
+		if t.Timed() {
+			at, ok := s.timerOf(c, t, row, evalCtx, fresh)
+			if info.FiresAt = at; t.Name == "" {
+				// Nobody takes it: it is listed for its moment alone, and
+				// not at all when that never comes.
+				if ok {
+					out = append(out, info)
+				}
+				continue
+			}
+		}
 		if ok, err := s.permitted(&s.wev, c, t, row, evalCtx, p); !ok {
 			info.Code = CodeForbidden
 			if err != nil {
@@ -115,6 +131,52 @@ func (s *Store) holds(c *class, t *model.Transition, row *docRow, evalCtx *formu
 		return false, err
 	}
 	return val.Truth(), nil
+}
+
+// timerOf answers the moment a timed transition fires for the row, in
+// seconds (ADR-0047, item 9): the entry into its state and the after, or
+// what the at gives, a date as the first instant of its day in UTC. ok is
+// false when it never comes: the at is blank, or failed.
+//
+// fresh says the command being computed began the row's stay. An after
+// then counts from the command's moment. In a commit that is the time of
+// the entry itself. A preview at a chosen moment stamps the entry with
+// the database's clock (ADR-0042) and asks what a commit at its moment
+// would do: for that commit the stay begins at that moment, and the
+// after has not come.
+func (s *Store) timerOf(c *class, t *model.Transition, row *docRow, evalCtx *formula.Context, fresh bool) (at int64, ok bool) {
+	if t.After > 0 {
+		entered := row.life.EnteredAt
+		if fresh {
+			entered = evalCtx.Now
+		}
+		return entered + t.After, true
+	}
+	val, err := s.evalRaw(c, t.At, row, evalCtx)
+	if err != nil {
+		return 0, false
+	}
+	switch val.Kind() {
+	case formula.KindDate:
+		return val.Days() * 86400, true
+	case formula.KindDateTime:
+		return val.Secs(), true
+	}
+	return 0, false
+}
+
+// fires reports whether a transition of the chain fires for the row at
+// the context's moment (ADR-0047, item 10): an eventless one when its
+// guard holds, a timed one when its time has come and its guard, if it
+// has one, holds too.
+func (s *Store) fires(c *class, t *model.Transition, row *docRow, evalCtx *formula.Context, fresh bool) bool {
+	if t.Timed() {
+		if at, ok := s.timerOf(c, t, row, evalCtx, fresh); !ok || at > evalCtx.Now {
+			return false
+		}
+	}
+	held, _ := s.holds(c, t, row, evalCtx)
+	return held
 }
 
 // guard refuses the command when the named transition's guard does not

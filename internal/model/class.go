@@ -212,6 +212,58 @@ type Transition struct {
 	Guard *formula.Program
 	// GuardSrc is the guard as written, for the hint of a refusal.
 	GuardSrc string
+	// After is the length of time in the state after which a timed
+	// transition fires, in seconds, 0 for none (ADR-0047, item 9).
+	After int64
+	// At gives the moment a timed transition fires: a date, which means
+	// the first instant of that day in UTC, or a datetime; a blank never
+	// comes. nil for none. AtSrc is the formula as written.
+	At    *formula.Program
+	AtSrc string
+}
+
+// Timed reports whether the transition fires by time: it carries an
+// after or an at.
+func (t *Transition) Timed() bool { return t.After > 0 || t.At != nil }
+
+// MaxAfter is the longest time an after may name, in seconds: a thousand
+// years of 365 days. It keeps the moment of a timer inside what a
+// datetime holds.
+const MaxAfter = 1000 * 365 * 86400
+
+// ParseAfter reads a length of time as a transition's after writes it
+// (ADR-0047, item 9): a whole number above zero and d, h, m or s. A day
+// is 24 hours. It answers the seconds, and false for anything else.
+func ParseAfter(s string) (int64, bool) {
+	if len(s) < 2 {
+		return 0, false
+	}
+	var unit int64
+	switch s[len(s)-1] {
+	case 'd':
+		unit = 86400
+	case 'h':
+		unit = 3600
+	case 'm':
+		unit = 60
+	case 's':
+		unit = 1
+	default:
+		return 0, false
+	}
+	var n int64
+	for _, ch := range s[:len(s)-1] {
+		if ch < '0' || ch > '9' {
+			return 0, false
+		}
+		if n = n*10 + int64(ch-'0'); n*unit > MaxAfter {
+			return 0, false
+		}
+	}
+	if n == 0 {
+		return 0, false
+	}
+	return n * unit, true
 }
 
 // Access holds the compiled class-level access rules.
@@ -1171,8 +1223,8 @@ func compileTransitions(c *collector, cls *Class, defs []TransitionDef, scope *f
 				}
 				names[upper(d.Name)] = true
 			}
-		} else if d.Guard == "" {
-			c.hint(CodeMissing, path+"/guard", "an eventless transition, one without a name, needs a guard", "name the transition, or give it a guard")
+		} else if d.Guard == "" && d.After == "" && d.At == "" {
+			c.hint(CodeMissing, path+"/guard", "an eventless transition, one without a name, needs a guard", "name the transition, or give it a guard, an after or an at")
 		}
 		from, err := fromStates(d.From)
 		if err != nil || len(from) == 0 {
@@ -1206,7 +1258,71 @@ func compileTransitions(c *collector, cls *Class, defs []TransitionDef, scope *f
 		}
 		t.Guard = bindCondition(c, path+"/guard", d.Guard, scope, "a guard")
 		t.GuardSrc = d.Guard
+		compileTimer(c, cls, t, d, path, scope)
 		cls.Transitions = append(cls.Transitions, t)
+	}
+}
+
+// compileTimer checks the after or the at of a timed transition
+// (ADR-0047, items 9 and 14). The moment of an at is the document's own:
+// the engine works it out when the document enters the state and again
+// when a commit changes what it reads, so it may read neither the clock,
+// nor who asks, nor anything outside the document.
+func compileTimer(c *collector, cls *Class, t *Transition, d TransitionDef, path string, scope *formula.Scope) {
+	if d.After == "" && d.At == "" {
+		return
+	}
+	if d.After != "" && d.At != "" {
+		c.hint(CodeNotAllowed, path+"/at", "a transition has an after or an at, not both",
+			"after counts from the entry into the state; at is a moment the document holds")
+		return
+	}
+	for _, st := range t.From {
+		if cls.States.IsFinal(st) {
+			c.hint(CodeNotAllowed, path+"/from", "a timed transition may not leave the terminal state "+quote(st)+": a document in a terminal state is frozen, and nothing moves it by itself",
+				"drop the after or the at, and take the transition by its name")
+			break
+		}
+	}
+	if d.After != "" {
+		secs, ok := ParseAfter(d.After)
+		if !ok {
+			c.hint(CodeBadValue, path+"/after", "after is a length of time: a whole number above zero and d, h, m or s; got "+quote(d.After),
+				`"30d" is thirty days of 24 hours, "12h" twelve hours, "90m" ninety minutes and "45s" forty-five seconds; at most a thousand years`)
+			return
+		}
+		t.After = secs
+		return
+	}
+	for _, st := range t.From {
+		if st == t.To {
+			c.hint(CodeNotAllowed, path+"/at", "an at on a transition into its own state would fire again at once: the moment has come, and the document is in "+quote(st)+" again",
+				"after is how a stay repeats: it counts from every entry")
+			return
+		}
+	}
+	prog, err := c.bind(d.At, scope, formula.ModeAny)
+	if err != nil {
+		c.formulaErr(path+"/at", err)
+		return
+	}
+	if k := prog.Result.Kind; k != formula.KindDate && k != formula.KindDateTime {
+		c.hint(CodeTypeMismatch, path+"/at", "an at gives a date or a datetime, got "+prog.Result.String(),
+			"name a date the document holds, or compute one: ADDDAYS(due, 1)")
+		return
+	}
+	switch {
+	case prog.Calls("NOW") || prog.Calls("TODAY"):
+		c.hint(CodeNotAllowed, path+"/at", "an at may not read the clock: its moment is worked out when the document enters the state, and stands until a value it reads changes",
+			`a time counted from the entry is an after: "after": "30d"; a time counted from a date is that date moved: ADDDAYS(due, 30)`)
+	case prog.Calls("USER") || prog.Calls("INGROUP"):
+		c.hint(CodeNotAllowed, path+"/at", "an at may not read who asks: its moment is the document's, the same for everyone",
+			"compute the moment from the document's own values")
+	case len(prog.Queries) > 0:
+		c.hint(CodeNotAllowed, path+"/at", "an at may not read another document or a table: its moment follows from the document's own values, so that a commit of the document is what moves it",
+			"keep the date in a triggered variable of the document, and name that variable")
+	default:
+		t.At, t.AtSrc = prog, d.At
 	}
 }
 

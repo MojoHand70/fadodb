@@ -309,10 +309,10 @@ func TestDue_Principal(t *testing.T) {
 		opts []Option
 		want []DueDocument
 	}{
-		{"ann", []Option{As(ann), at}, []DueDocument{{"T-0", "open", "mine"}, {"T-2", "open", "mine"}}},
+		{"ann", []Option{As(ann), at}, []DueDocument{{"T-0", "open", "mine", 0}, {"T-2", "open", "mine", 0}}},
 		// Bob owns one and is in finance: his own first, as the class
 		// orders the two, and the others that are five days late.
-		{"bob", []Option{As(bob), at}, []DueDocument{{"T-0", "open", "audit"}, {"T-1", "open", "mine"}}},
+		{"bob", []Option{As(bob), at}, []DueDocument{{"T-0", "open", "audit", 0}, {"T-1", "open", "mine", 0}}},
 		{"nobody", []Option{at}, []DueDocument{}},
 	} {
 		got, err := s.Due(ctx, "Task", tc.opts...)
@@ -374,13 +374,14 @@ func TestDue_OlderVersions(t *testing.T) {
 	st := s.duePlan(c).states[0]
 	// The filter reads the current version's documents, and there are
 	// none.
-	if ids, err := s.dueFiltered(ctx, c, st, st.filters[0], options{}, MaxDue); err != nil || len(ids) != 0 {
-		t.Fatalf("the filter found %v, %v", ids, err)
+	found := map[string]dueHit{}
+	if err := s.dueFiltered(ctx, c, st, st.filters[0], options{}, MaxDue, "late", found); err != nil || len(found) != 0 {
+		t.Fatalf("the filter found %v, %v", found, err)
 	}
 	// B-1 and B-4 are past their date with no grace. B-3 is too, but
 	// the commit that adopted it would be refused, since its formula
 	// fails: it is not due, as it cannot be touched.
-	want := []DueDocument{{"B-1", "open", "late"}, {"B-4", "open", "late"}}
+	want := []DueDocument{{"B-1", "open", "late", 0}, {"B-4", "open", "late", 0}}
 	got, err := s.Due(ctx, "Bill")
 	if err != nil {
 		t.Fatal(err)
@@ -422,10 +423,10 @@ func TestDue_OlderVersions(t *testing.T) {
 	}
 	// A migration moves nothing (ADR-0039): the two documents are at the
 	// current version now and still due, and the filter finds them.
-	want = []DueDocument{{"B-3", "open", "late"}, {"B-4", "open", "late"}}
+	want = []DueDocument{{"B-3", "open", "late", 0}, {"B-4", "open", "late", 0}}
 	sameDue(t, "after the migration", got, want)
-	if ids, err := s.dueFiltered(ctx, c, st, st.filters[0], options{}, MaxDue); err != nil || len(ids) != 2 {
-		t.Errorf("the filter found %v, %v", ids, err)
+	if err := s.dueFiltered(ctx, c, st, st.filters[0], options{}, MaxDue, "late", found); err != nil || len(found) != 2 {
+		t.Errorf("the filter found %v, %v", found, err)
 	}
 	if !st.noOlder.Load() {
 		t.Error("the state holds no older document and is not marked")
@@ -435,7 +436,7 @@ func TestDue_OlderVersions(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	sameDue(t, "six days on", got, []DueDocument{{"B-2", "open", "late"}, {"B-3", "open", "late"}, {"B-4", "open", "late"}})
+	sameDue(t, "six days on", got, []DueDocument{{"B-2", "open", "late", 0}, {"B-3", "open", "late", 0}, {"B-4", "open", "late", 0}})
 	sameDue(t, "six days on, against the previews", got, previewed(t, s, "Bill"))
 	// The state is marked, so the older documents were not looked for
 	// again.
@@ -453,7 +454,7 @@ func TestDue_OlderVersions(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	sameDue(t, "under the fourth version", got, []DueDocument{{"B-3", "open", "late"}, {"B-4", "open", "late"}})
+	sameDue(t, "under the fourth version", got, []DueDocument{{"B-3", "open", "late", 0}, {"B-4", "open", "late", 0}})
 	sameDue(t, "under the fourth version, against the previews", got, previewed(t, s, "Bill"))
 	if s.dueLists.Load() == lists {
 		t.Error("the documents of the older version were not looked for")
@@ -592,7 +593,7 @@ func TestDue_Rights(t *testing.T) {
 	if st := s.duePlan(c).states; len(st) != 1 || len(st[0].filters) != 2 {
 		t.Fatalf("the guards over variables with read rights do not run as filters: %+v", st)
 	}
-	want := []DueDocument{{"C-0", "open", "closed"}, {"C-1", "open", "late"}, {"C-2", "open", "late"}}
+	want := []DueDocument{{"C-0", "open", "closed", 0}, {"C-1", "open", "late", 0}, {"C-2", "open", "late", 0}}
 	for _, p := range []Principal{ann, bob, {}} {
 		got, err := s.Due(ctx, "Claim", As(p), At(dueDay.AddDate(0, 0, 12)))
 		if err != nil {
@@ -634,7 +635,7 @@ func TestDue_Who(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		sameDue(t, cls.name, got, []DueDocument{{"W-0", "open", "late"}, {"W-2", "open", "late"}})
+		sameDue(t, cls.name, got, []DueDocument{{"W-0", "open", "late", 0}, {"W-2", "open", "late", 0}})
 	}
 }
 
@@ -679,7 +680,7 @@ func TestDue_Nothing(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	sameDue(t, "one sent, one paid", due, []DueDocument{{"I-1", "sent", "overdue"}})
+	sameDue(t, "one sent, one paid", due, []DueDocument{{"I-1", "sent", "overdue", 0}})
 	// One look: a document that is not there, one that has left the state
 	// it was listed in, and one that is due.
 	c, _ := s.class("Invoice")
@@ -691,15 +692,15 @@ func TestDue_Nothing(t *testing.T) {
 		{"I-1", "sent", "overdue"},
 	} {
 		got, err := s.dueOne(ctx, c, tc.id, tc.in, evalCtx)
-		if err != nil || got != tc.want {
-			t.Errorf("a look at %s in %s: %q %v, want %q", tc.id, tc.in, got, err, tc.want)
+		if err != nil || got != (dueHit{to: tc.want}) {
+			t.Errorf("a look at %s in %s: %+v %v, want %q", tc.id, tc.in, got, err, tc.want)
 		}
 	}
 	// A call that is cancelled stops between two documents: here after
 	// the list was read and before the first document is looked at.
 	st := s.duePlan(c).states[0]
 	stopped := &stopping{Context: ctx}
-	found := map[string]string{}
+	found := map[string]dueHit{}
 	if _, err := s.dueOneByOne(stopped, c, st, options{}, MaxDue, false, found); err != context.Canceled || len(found) != 0 {
 		t.Errorf("a cancelled call went on: %v, found %v", err, found)
 	}

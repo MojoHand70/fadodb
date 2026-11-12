@@ -142,7 +142,7 @@ type scriptExpect struct {
 	// shape; absent names are not checked.
 	Values map[string]json.RawMessage `json:"values,omitempty"`
 	// Transitions is the listing, in order.
-	Transitions []TransitionInfo `json:"transitions,omitempty"`
+	Transitions []scriptTransition `json:"transitions,omitempty"`
 	// Visits are the rows of the _states view: state, entry version, exit
 	// version or null.
 	Visits [][]any `json:"visits,omitempty"`
@@ -167,7 +167,9 @@ type scriptExpect struct {
 	Docs  []string `json:"docs,omitempty"`
 	Count *int64   `json:"count,omitempty"`
 	// Due is what a due step lists: for each document its label in the
-	// script, its state and the state it would move to.
+	// script, its state and the state it would move to, and for one a
+	// timed transition would move the moment of its timer, in the
+	// notation of At with its time.
 	Due [][]string `json:"due,omitempty"`
 	// Now is the moment a preview reports, in the notation of At.
 	Now string `json:"now,omitempty"`
@@ -212,6 +214,20 @@ type scriptExpect struct {
 	// the request a preview_action would send, in the same shape.
 	Requests json.RawMessage `json:"requests,omitempty"`
 	Request  json.RawMessage `json:"request,omitempty"`
+}
+
+// scriptTransition is one entry of a listing as a suite expects it: the
+// store's, and Fires, the moment a timed transition fires, in the
+// notation of At with its time; absent for a transition that is not
+// timed or whose moment never comes.
+type scriptTransition struct {
+	TransitionInfo
+	Fires string `json:"fires,omitempty"`
+}
+
+// stamp writes a moment in the notation of At, with its time.
+func stamp(secs int64) string {
+	return time.Unix(secs, 0).UTC().Format("2006-01-02 15:04:05")
 }
 
 type scriptAction struct {
@@ -581,7 +597,11 @@ func runStatechartSuite(t *testing.T, suite *statechartSuite) {
 			}
 			got := [][]string{}
 			for _, d := range due {
-				got = append(got, []string{labels[d.ID], d.State, d.To})
+				row := []string{labels[d.ID], d.State, d.To}
+				if d.Since != 0 {
+					row = append(row, stamp(d.Since))
+				}
+				got = append(got, row)
 			}
 			if !reflect.DeepEqual(got, want.Due) {
 				t.Errorf("%s: due %v, want %v", name, got, want.Due)
@@ -931,15 +951,22 @@ func mustJSON(v any) json.RawMessage {
 	return b
 }
 
-// sameListing compares two listings on name, target, enabled and code;
-// the message is for people.
-func sameListing(got, want []TransitionInfo) bool {
+// sameListing compares two listings on name, target, enabled, code and
+// the moment a timed transition fires; the message is for people.
+func sameListing(got []TransitionInfo, want []scriptTransition) bool {
 	if len(got) != len(want) {
 		return false
 	}
 	for i := range got {
 		g, w := got[i], want[i]
 		if g.Name != w.Name || g.Enabled != w.Enabled || g.Code != w.Code || (w.To != "" && g.To != w.To) {
+			return false
+		}
+		fires := ""
+		if g.FiresAt != 0 {
+			fires = stamp(g.FiresAt)
+		}
+		if fires != w.Fires {
 			return false
 		}
 	}

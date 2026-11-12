@@ -1,0 +1,111 @@
+{
+  "suite": "timed",
+  "description": "A timed transition carries an after, a length of time in its state, or an at, a moment the document holds (ADR-0047, items 9, 10, 13 and 14). Its meaning is that of an eventless transition whose guard also says that the time has come: it fires in the chain of any commit made once its time has come, in the order of the class with the eventless ones, and its event has the origin timer. A guard beside the timer is still asked. With a name it raises that name's rules, and a command may take it before its time like any named transition. An after counts from every entry into the state, so a transition back into the same state repeats; an at reads the document, so a commit that changes the date moves the moment, and a blank at never comes. Transitions lists a timed transition with the moment it fires, and Due lists the document with the moment since which it has been due. Nothing here moves a document by itself: a commit that touches it does. The suite's clock is the database's.",
+  "clock": "2026-11-02 09:00:00",
+  "class": {
+    "name": "Request",
+    "variables": {
+      "subject":   {"type": "text"},
+      "deadline":  {"type": "date"},
+      "answered":  {"type": "bool", "default": "FALSE"},
+      "reminders": {"type": "number", "default": "0"},
+      "said":      {"type": "text"}
+    },
+    "states": {"initial": "new", "list": ["new", "waiting", "escalated", "expired", "closed"], "final": ["expired", "closed"]},
+    "transitions": [
+      {"name": "ask", "from": "new", "to": "waiting"},
+      {"name": "remind", "from": "waiting", "to": "waiting", "after": "3d", "guard": "NOT answered"},
+      {"from": "waiting", "to": "escalated", "at": "ADDDAYS(FIRSTENTERED(\"waiting\"), 7)"},
+      {"from": ["waiting", "escalated"], "to": "expired", "at": "deadline"},
+      {"name": "close", "from": ["waiting", "escalated"], "to": "closed"}
+    ],
+    "rules": [
+      {"on": "transition", "name": "remind", "do": [{"action": "set", "values": {"reminders": "reminders + 1", "said": "USER()"}}]}
+    ]
+  },
+  "principals": {
+    "ann": {"id": "ann", "groups": ["staff"]},
+    "bob": {"id": "bob", "groups": ["staff"]}
+  },
+  "script": [
+    {"name": "a request is made on a Monday at nine", "do": "create", "doc": "r", "id": "r", "as": "ann", "values": {"subject": "printer", "deadline": "2026-11-20"}, "expect": {"state": "new", "version": 1}},
+    {"name": "and asked: it waits", "do": "transition", "doc": "r", "transition": "ask", "as": "ann", "expect": {"state": "waiting", "version": 2}},
+
+    {"name": "the listing shows each timed transition with the moment it fires: three days after the entry, seven days after the first entry, and the first instant of the deadline's day; one without a name is nobody's to take", "do": "transitions", "doc": "r", "as": "ann",
+     "expect": {"transitions": [
+       {"name": "remind", "to": "waiting", "enabled": true, "fires": "2026-11-05 09:00:00"},
+       {"name": "", "to": "escalated", "enabled": false, "fires": "2026-11-09 09:00:00"},
+       {"name": "", "to": "expired", "enabled": false, "fires": "2026-11-20 00:00:00"},
+       {"name": "close", "to": "closed", "enabled": true}]}},
+    {"name": "nothing is due at the clock", "do": "due", "as": "ann", "expect": {"due": []}},
+    {"name": "nor a second before the three days are over", "do": "due", "as": "ann", "at": "2026-11-05 08:59:59", "expect": {"due": []}},
+    {"name": "at that second it is, and the list says since when", "do": "due", "as": "ann", "at": "2026-11-05 09:00:00", "expect": {"due": [["r", "waiting", "waiting", "2026-11-05 09:00:00"]]}},
+    {"name": "the preview of a commit at that moment agrees: the reminder fires and its rule runs", "do": "preview", "doc": "r", "as": "ann", "at": "2026-11-05 09:00:00",
+     "expect": {"state": "waiting", "version": 3, "path": ["waiting", "waiting"], "rules": ["/rules/0"], "values": {"reminders": 1}}},
+
+    {"name": "the clock moves three days", "do": "wait", "seconds": 259200},
+    {"name": "the time has come and no commit has touched the request: it is as it was", "do": "get", "doc": "r", "as": "ann",
+     "expect": {"state": "waiting", "version": 2, "events": ["created", "transition:ask"], "values": {"reminders": 0}}},
+    {"name": "a commit that touches it fires the reminder in its chain: a version of its own, an event with the transition's name and the origin timer, and the rule of that name, for which USER() is who touched it", "do": "set", "doc": "r", "as": "bob", "values": {"subject": "the printer"},
+     "expect": {"state": "waiting", "version": 4, "history": ["new", "waiting", "waiting", "waiting"], "events": ["created", "transition:ask", "set", "transition:remind"],
+                "origins": ["command", "command", "timer"], "values": {"reminders": 1, "said": "bob"}, "life": {"state_entered_by": "bob", "state_entered_from": "waiting"},
+                "stays": [["new", "ann", null, null, "command", "ann", "ask", "command"],
+                          ["waiting", "ann", "new", "ask", "command", "bob", "remind", "timer"],
+                          ["waiting", "bob", "waiting", "remind", "timer", null, null, null]]}},
+    {"name": "the reminder began a new stay, so its three days count again; the escalation counts from the first entry and has not moved", "do": "transitions", "doc": "r", "as": "ann",
+     "expect": {"transitions": [
+       {"name": "remind", "to": "waiting", "enabled": true, "fires": "2026-11-08 09:00:00"},
+       {"name": "", "to": "escalated", "enabled": false, "fires": "2026-11-09 09:00:00"},
+       {"name": "", "to": "expired", "enabled": false, "fires": "2026-11-20 00:00:00"},
+       {"name": "close", "to": "closed", "enabled": true}]}},
+    {"name": "it has a name, so a person may take it before its time; then somebody asked for it", "do": "transition", "doc": "r", "transition": "remind", "as": "ann",
+     "expect": {"state": "waiting", "version": 5, "events": ["created", "transition:ask", "set", "transition:remind", "transition:remind"],
+                "origins": ["command", "command", "timer", "command"], "values": {"reminders": 2, "said": "ann"}}},
+
+    {"name": "the clock moves four days: the reminder and the escalation have both come", "do": "wait", "seconds": 345600},
+    {"name": "the list names the first in the order of the class", "do": "due", "as": "ann", "expect": {"due": [["r", "waiting", "waiting", "2026-11-08 09:00:00"]]}},
+    {"name": "the preview shows the whole chain: the reminder, and from the new stay the escalation, whose moment does not depend on the stay", "do": "preview", "doc": "r", "as": "ann",
+     "expect": {"state": "escalated", "path": ["waiting", "waiting", "escalated"], "rules": ["/rules/0"]}},
+    {"name": "a refresh is a commit that changes nothing, and both fire", "do": "refresh", "doc": "r", "as": "bob",
+     "expect": {"state": "escalated", "version": 8, "events": ["created", "transition:ask", "set", "transition:remind", "transition:remind", "refresh", "transition:remind", "transition:"],
+                "origins": ["command", "command", "timer", "command", "timer", "timer"], "values": {"reminders": 3, "said": "bob"}}},
+    {"name": "from escalated only the deadline is left", "do": "transitions", "doc": "r", "as": "ann",
+     "expect": {"transitions": [{"name": "", "to": "expired", "enabled": false, "fires": "2026-11-20 00:00:00"}, {"name": "close", "to": "closed", "enabled": true}]}},
+
+    {"name": "the date is changed while the request waits: the moment moves with it", "do": "set", "doc": "r", "as": "ann", "values": {"deadline": "2026-11-10"}, "expect": {"state": "escalated", "version": 9}},
+    {"do": "transitions", "doc": "r", "as": "ann",
+     "expect": {"transitions": [{"name": "", "to": "expired", "enabled": false, "fires": "2026-11-10 00:00:00"}, {"name": "close", "to": "closed", "enabled": true}]}},
+    {"name": "a date is the first instant of its day: not the second before", "do": "due", "as": "ann", "at": "2026-11-09 23:59:59", "expect": {"due": []}},
+    {"name": "but from midnight", "do": "due", "as": "ann", "at": "2026-11-10", "expect": {"due": [["r", "escalated", "expired", "2026-11-10 00:00:00"]]}},
+    {"name": "a date set into the past has come already, and the commit that sets it moves the request", "do": "set", "doc": "r", "as": "ann", "values": {"deadline": "2026-11-08"},
+     "expect": {"state": "expired", "version": 11, "origins": ["command", "command", "timer", "command", "timer", "timer", "timer"]}},
+    {"name": "expired is a terminal state: the request is frozen and never due", "do": "due", "as": "ann", "at": "2030-01-01", "expect": {"due": []}},
+
+    {"name": "a request that is closed before its time", "do": "create", "doc": "s", "id": "s", "as": "ann", "values": {"subject": "badge"}, "expect": {"state": "new", "version": 1}},
+    {"do": "transition", "doc": "s", "transition": "ask", "as": "ann", "expect": {"state": "waiting", "version": 2}},
+    {"do": "transition", "doc": "s", "transition": "close", "as": "ann", "expect": {"state": "closed", "version": 3}},
+    {"name": "the clock moves thirty days", "do": "wait", "seconds": 2592000},
+    {"name": "its timers find nothing: it left the state they count in", "do": "due", "as": "ann", "expect": {"due": []}},
+    {"do": "get", "doc": "s", "as": "ann", "expect": {"state": "closed", "version": 3, "events": ["created", "transition:ask", "transition:close"]}},
+
+    {"name": "a request that is answered, and has no deadline", "do": "create", "doc": "t", "id": "t", "as": "ann", "values": {"subject": "desk"}, "expect": {"state": "new", "version": 1}},
+    {"do": "transition", "doc": "t", "transition": "ask", "as": "ann", "expect": {"state": "waiting", "version": 2}},
+    {"do": "set", "doc": "t", "as": "bob", "values": {"answered": true}, "expect": {"state": "waiting", "version": 3}},
+    {"name": "the clock moves three days", "do": "wait", "seconds": 259200},
+    {"name": "the guard beside the timer is still asked: the reminder's time has come and it does not fire. A blank at never comes and is not listed", "do": "transitions", "doc": "t", "as": "ann",
+     "expect": {"transitions": [
+       {"name": "remind", "to": "waiting", "enabled": false, "code": "guard_false", "fires": "2026-12-12 09:00:00"},
+       {"name": "", "to": "escalated", "enabled": false, "fires": "2026-12-16 09:00:00"},
+       {"name": "close", "to": "closed", "enabled": true}]}},
+    {"do": "due", "as": "ann", "expect": {"due": []}},
+    {"name": "a touch moves nothing", "do": "refresh", "doc": "t", "as": "bob", "expect": {"state": "waiting", "version": 4, "events": ["created", "transition:ask", "set", "refresh"], "values": {"reminders": 0}}},
+    {"name": "the clock moves four days: the escalation has come, and the reminder before it in the class still does not fire", "do": "wait", "seconds": 345600},
+    {"do": "due", "as": "ann", "expect": {"due": [["t", "waiting", "escalated", "2026-12-16 09:00:00"]]}},
+    {"do": "refresh", "doc": "t", "as": "bob", "expect": {"state": "escalated", "version": 6, "events": ["created", "transition:ask", "set", "refresh", "refresh", "transition:"], "origins": ["command", "command", "timer"]}},
+    {"name": "the clock moves a hundred days", "do": "wait", "seconds": 8640000},
+    {"name": "without a deadline nothing is left that fires by itself", "do": "due", "as": "ann", "expect": {"due": []}},
+    {"do": "transitions", "doc": "t", "as": "ann", "expect": {"transitions": [{"name": "close", "to": "closed", "enabled": true}]}},
+    {"name": "a deadline given now, in the past, fires in the commit that gives it", "do": "set", "doc": "t", "as": "ann", "values": {"deadline": "2026-12-01"}, "expect": {"state": "expired", "version": 8}},
+    {"name": "a touch of a terminal request is refused", "do": "refresh", "doc": "t", "as": "ann", "expect": {"code": "terminal"}}
+  ]
+}

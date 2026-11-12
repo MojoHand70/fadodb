@@ -110,8 +110,12 @@ closes the checking half: `Due` lists the documents of a class that a
 commit would move now, or at a moment given with `At`, each with its
 state and the state it would move to; a guard that translates to SQL
 runs as one filter, and a filter that compares an indexed date with the
-clock now uses the index. Timed transitions, the firing half, are not
-built yet.
+clock now uses the index. The firing half has its first part: a
+transition carries `after` or `at`, fires in the chain of the first
+commit that touches the document once its time has come, with the
+origin `timer`, and shows its moment in `Transitions` and in `Due`. The
+wake-up, with which the engine makes that commit itself when the time
+comes, is not built yet.
 By the owner's rulings of that day a formula sees every document, and
 `QUERY`, which returns lists, is built with the first layout or report
 that needs one; tables stored outside the file come with the analytical

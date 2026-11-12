@@ -32,11 +32,13 @@ Website: [fadodb.org](https://fadodb.org).
 > or a count, a sum, the smallest or the largest over those that match,
 > which is how a purchase counts its approvals. A formula reads the
 > life of its document too: when and by whom it was created, changed
-> and moved into and out of each state. `Due` lists the documents that
-> a guard on time would move, so the host program can touch them.
-> Transitions that fire by themselves when their time comes, the
-> row-level access rules and the server come with their steps and
-> phases. The numbers are in
+> and moved into and out of each state. A transition may carry its
+> time, `"after": "30d"` or `"at"` a date the document holds: it fires
+> in the first commit that touches the document once that time has
+> come, and `Due` lists the documents that a timer or a guard on time
+> would move, so the host program can touch them. The engine touching
+> them by itself when the time comes, the row-level access rules and
+> the server come with their steps and phases. The numbers are in
 > [docs/perf/](docs/perf/), the plan in [ROADMAP.md](ROADMAP.md).
 
 ## What it is

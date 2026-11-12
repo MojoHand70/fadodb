@@ -17,7 +17,8 @@ import (
 // recomputeFor recomputes the triggered variables whose trigger a commit
 // of the kind raised: enter of the initial state for a create; exit,
 // transition and enter for a transition; exit and enter for an eventless
-// one. from is the state left and name the named transition taken. It
+// one, and the transition too for a timed one that has a name. from is
+// the state left and name the transition's, "" for one without. It
 // leaves the context's state at the document's.
 func (s *Store) recomputeFor(c *class, row *docRow, kind commitKind, from, name string, evalCtx *formula.Context, secs int64, preview bool, errs *[]*Error) *Error {
 	for _, cv := range c.triggered {
@@ -61,7 +62,7 @@ func triggerState(v *model.Variable, kind commitKind, from, name, state string) 
 		if v.On("exit", from) {
 			return from, true, true
 		}
-		if kind == commitTransition && v.On("transition", name) {
+		if name != "" && v.On("transition", name) {
 			return from, true, true
 		}
 		if v.On("enter", state) {

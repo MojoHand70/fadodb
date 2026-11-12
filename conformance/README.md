@@ -138,20 +138,34 @@ and the browser VM run them with their phases.
   must be missing from or found in the values of the document, or of
   every document a query returned, `path` the states a preview visited
   with the state before first, `transitions` the listing by name, target,
-  `enabled` and `code`, `history` the states of every history row of the
+  `enabled`, `code` and, for a timed transition, `fires`, the moment it
+  fires in the notation of `at` with its time, absent where the
+  transition is not timed or its moment never comes, `history` the
+  states of every history row of the
   document so far, `events` the kind of every event so far with a
   transition written `transition:name`, `visits` the rows of the
   `_states` view as `[state, entry_version, exit_version]`, the exit
   `null` while the visit is current, `docs` the labels of the documents a
   query returned in order, `count` the count, `due` what a `due` step
   listed, each document as `[label, state, the state it would move to]`
-  in order, and `now` the moment a preview reports, in the notation of
-  `at`.
+  in order, with the moment of its timer as a fourth element, in the
+  notation of `at` with its time, when a timed transition would move it,
+  and `now` the moment a preview reports, in the notation of `at`.
 - `due.json` is the suite of the list of what is due (ADR-0047, item
   8): which documents a commit would move at the clock and at a moment,
   that the list moves nothing and a refresh does, the order of two
   guards that hold, a guard that runs as a filter beside one evaluated
   document by document, and a terminal document, which is never due.
+- `timed.json` is the suite of the timed transitions (ADR-0047, items
+  9, 10, 13 and 14), as far as a commit fires them: a reminder with
+  `after` that repeats and raises the rule of its name, an escalation
+  with `at` from a moment that does not move, a deadline that is changed
+  while the document waits, a document that leaves before its time, a
+  guard beside a timer, a blank `at`, the moment each shows in the
+  listing and in the list of what is due, and the origin `timer` of
+  their events. Nothing in it moves a document by itself: the scripts
+  with the worker in them are `rules/timers.json`, which comes with the
+  wake-up.
 
 ## Rules cases: `rules/*.json`
 

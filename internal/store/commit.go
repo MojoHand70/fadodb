@@ -677,21 +677,25 @@ func (s *Store) run(ctx context.Context, cmd command, now time.Time) (*result, e
 	// in: every transition that fires is a further commit, the values the
 	// rules of the commit before left, the new state, and its own rules.
 	hops := s.hops[:0]
+	// fresh says the command itself began the stay the document is in,
+	// by creating it or by moving it: an after out of that state counts
+	// from the command's moment, and so has not come.
+	fresh := cmd.op == opCreate || trans != nil
 	if c.cls.States != nil && cmd.op != opMigrate {
 		cur := after
 		for n := 0; ; n++ {
 			evalCtx.State = cur.state
 			t := state.Next(c.cls, cur.state, func(t *model.Transition) bool {
-				held, _ := s.holds(c, t, cur, evalCtx)
-				return held
+				return s.fires(c, t, cur, evalCtx, fresh)
 			})
 			if t == nil {
 				break
 			}
+			fresh = true
 			if n == state.MaxEventless {
 				s.visits, s.hops = path, hops
-				return nil, hintf(CodeTooManyTransitions, "", fmt.Sprintf("more than %d eventless transitions fired after the %s", state.MaxEventless, cmd.op),
-					"the states visited: "+strings.Join(path, " > ")+"; a guard keeps holding, or guards hold in turn")
+				return nil, hintf(CodeTooManyTransitions, "", fmt.Sprintf("more than %d transitions fired by themselves after the %s", state.MaxEventless, cmd.op),
+					"the states visited: "+strings.Join(path, " > ")+"; a guard keeps holding, guards hold in turn, or timers that have come send the document round")
 			}
 			next := cur.clone()
 			next.version++
@@ -701,16 +705,18 @@ func (s *Store) run(ctx context.Context, cmd command, now time.Time) (*result, e
 			next.state, next.life.EnteredAt, next.life.EnteredBy = t.To, secs, actor
 			next.step(c, formula.LifeEvent{Kind: formula.LifeMoved, From: cur.state, To: t.To, At: secs, By: actor})
 			path = append(path, next.state)
-			h := hop{row: next}
+			// A timed transition with a name raises that name's trigger, as
+			// when a command takes it (ADR-0047, item 13).
+			h := hop{row: next, t: t}
 			if c.triggered != nil {
-				if err := s.recomputeFor(c, next, commitHop, cur.state, "", evalCtx, secs, cmd.preview, &res.errs); err != nil {
+				if err := s.recomputeFor(c, next, commitHop, cur.state, t.Name, evalCtx, secs, cmd.preview, &res.errs); err != nil {
 					s.visits, s.hops = path, hops
 					return nil, err
 				}
 			}
 			if c.rules != nil {
 				rules.commit = n + 1
-				if err := s.fireCommit(&rules, next, commitHop, cur.state, "", nil); err != nil {
+				if err := s.fireCommit(&rules, next, commitHop, cur.state, t.Name, nil); err != nil {
 					s.visits, s.hops = path, hops
 					return nil, err
 				}
@@ -751,7 +757,7 @@ func (s *Store) run(ctx context.Context, cmd command, now time.Time) (*result, e
 		if c.cls.States != nil {
 			res.path = append([]string(nil), path...)
 			evalCtx.State = final.state
-			res.transitions = s.listTransitions(c, final, evalCtx, cmd.o.principal)
+			res.transitions = s.listTransitions(c, final, evalCtx, cmd.o.principal, fresh)
 		}
 		s.project(&s.wev, c, c, final, res.doc, cmd.o.principal, clock)
 		return res, nil
@@ -784,13 +790,19 @@ func (s *Store) run(ctx context.Context, cmd command, now time.Time) (*result, e
 		}
 		res.queued += n
 	}
-	// Every eventless transition that fired is a further commit: a version
-	// and a history row of its own, and a transition event with no name
-	// caused by the command's event.
+	// Every transition of the chain that fired is a further commit: a
+	// version and a history row of its own, and a transition event caused
+	// by the command's event. It has no name and the origin guard for an
+	// eventless one; a timed one has its name, if it has one, and the
+	// origin timer (ADR-0047, item 3).
 	prev := after
 	for i, h := range hops {
 		hopEvent := s.ids.next(now)
-		if err := s.write(ctx, c, prev, h.row, h.kids, secs, hopEvent, actor, eventInfo{kind: EventTransition, from: prev.state, to: h.row.state, cause: eventID, origin: OriginGuard}, "", "", day); err != nil {
+		hopInfo := eventInfo{kind: EventTransition, name: h.t.Name, from: prev.state, to: h.row.state, cause: eventID, origin: OriginGuard}
+		if h.t.Timed() {
+			hopInfo.origin = OriginTimer
+		}
+		if err := s.write(ctx, c, prev, h.row, h.kids, secs, hopEvent, actor, hopInfo, "", "", day); err != nil {
 			return nil, err
 		}
 		if len(s.emits) > 0 {

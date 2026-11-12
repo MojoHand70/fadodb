@@ -25,9 +25,9 @@ obstacle. The guards hold whoever is asking, the agent included.
 |---|---|
 | the Go API: `Create`, `CreateMany`, `Set`, `Reset`, `Refresh`, `Transition`, `Transitions`, `Drain`, `Outbox`, `RetryAction`, `Get`, `Delete`, `Query`, `Count`, `SQL`, `History`, `Events`, `Preview` | shipped |
 | the principal on every call, `As`; the idempotency key, `Key`; a moment for reads and previews, `At` | shipped |
-| `Due`, the documents of a class that a commit would move now, or at a moment with `At`; `since` says since when, for a document a timed transition would move | in `main`, ships with v0.4.0 |
-| a timed transition, `after` or `at`: it fires in the first commit that touches the document once its time has come, and `Transitions` shows the moment as `fires_at` | in `main`, ships with v0.4.0 |
-| the engine moving a document by itself when its timer comes: `Outbox` and `<Class>_actions` list each timer waiting as the action `timer` with its moment in `due_at`; one that died says why, and `RetryAction` asks again | in `main`, ships with v0.4.0 |
+| `Due`, the documents of a class that a commit would move now, or at a moment with `At`; `since` says since when, for a document a timed transition would move | shipped with Phase 4 |
+| a timed transition, `after` or `at`: it fires in the first commit that touches the document once its time has come, and `Transitions` shows the moment as `fires_at` | shipped with Phase 4 |
+| the engine moving a document by itself when its timer comes: `Outbox` and `<Class>_actions` list each timer waiting as the action `timer` with its moment in `due_at`; one that died says why, and `RetryAction` asks again | shipped with Phase 4 |
 | the JSON command set over HTTP and WebSocket | designed, Phase 6 |
 | the MCP server | designed, Phase 11 |
 

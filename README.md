@@ -8,8 +8,8 @@
 An embeddable **active document database**, written in Go, MIT licensed.
 Website: [fadodb.org](https://fadodb.org).
 
-> **Status: Phase 3, the statechart, is done and released as v0.3.0;
-> Phase 4, rules and actions, is in progress.** The Go API stores
+> **Status: Phase 4, rules and actions, is done and released as v0.4.0;
+> Phase 5, security, is next.** The Go API stores
 > documents of typed classes as commits with recalculation, history and
 > an event log,
 > with attachments, lookups into reference tables, filters and read-only

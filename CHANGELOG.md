@@ -6,6 +6,8 @@ All notable changes to FadoDB are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-11-12
+
 ### Added
 
 - A transition may carry its time (ADR-0047, items 9, 13 and 14):
@@ -911,7 +913,8 @@ Project scaffold. Nothing to run beyond `fadodb version`.
 - Contributing guide, code of conduct, security policy, issue and pull request
   templates, roadmap.
 
-[Unreleased]: https://github.com/MojoHand70/fadodb/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/MojoHand70/fadodb/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/MojoHand70/fadodb/releases/tag/v0.4.0
 [0.3.0]: https://github.com/MojoHand70/fadodb/releases/tag/v0.3.0
 [0.2.0]: https://github.com/MojoHand70/fadodb/releases/tag/v0.2.0
 [0.1.0]: https://github.com/MojoHand70/fadodb/releases/tag/v0.1.0

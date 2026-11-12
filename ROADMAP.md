@@ -1,6 +1,6 @@
 # Roadmap
 
-**Current status: Phase 3, the statechart, done on 2026-11-09 and released as v0.3.0. Phase 4, rules and actions, started on 2026-11-09.**
+**Current status: Phase 4, rules and actions, done on 2026-11-12 and released as v0.4.0. Phase 5, security, is next.**
 The Go API (`fado`) opens a database file, defines schemas, classes and
 explicit tables, and creates, changes, reads and deletes documents as
 commits: assignments and defaults, the auto recalculation, typed history
@@ -16,8 +16,10 @@ action that has a definition, implemented by a Go function of the host
 program or sent by the engine as an HTTP request to the hosts the host
 program allows, with its result written back to the document; and a
 formula can read the documents of another class, one value or a count,
-a sum, the smallest or the largest. Time, the row-level access rules and
-the server come with their steps and phases.
+a sum, the smallest or the largest. A formula reads the life of its
+document, a transition may carry its time, and the engine moves the
+document by itself when that time comes. The row-level access rules and
+the server come with their phases.
 Since v0.1.0 the records ADR-0022 to
 ADR-0038 fixed what the first embedder needs and what Phase 2 measured:
 SQLite as the transactional store and the in-memory index for lookups, by
@@ -118,8 +120,14 @@ second part closes the step: a commit that leaves a document in a state
 queues a wake-up in the outbox for each of its timers, and the worker
 touches the document when one is due, as the person whose commit queued
 it, by the owner's ruling of 2026-11-12; `conformance/rules/timers.json`
-is its suite. The phase's last step is left: the measurements and
-`docs/perf/v0.4.0.md`.
+is its suite. The phase closed on 2026-11-12 with its eighth step,
+the measurements of `docs/perf/v0.4.0.md` against every budget of the
+five records (#73). A command that moves many documents in one
+transaction, `TransitionMany`, follows the release as an addendum to
+this phase: its design is proposed as ADR-0048 on 2026-11-12 and it is
+not built. By the owner's ruling of that day a document that is refused
+does not stop the others: they move, and the refused one is reported
+with its reason.
 By the owner's rulings of that day a formula sees every document, and
 `QUERY`, which returns lists, is built with the first layout or report
 that needs one; tables stored outside the file come with the analytical
@@ -134,7 +142,7 @@ Legend: ✅ done · 🚧 in progress · ⬜ not started
 | 1 | Formula engine: lexer, parser, binder, bytecode, Go VM, SQL generator with SQLite and DuckDB dialects, conformance suite | ✅ |
 | 2 | Document model and store: primary-store benchmark, variables with defaults, `json` type, enum values, range constraints, named schemas and object values with the predefined vocabulary, attachments as `File` values with a blob store, class metadata and title, current, history and child tables, commits with idempotency keys and business dates, preview and validate without writing, event log, migrations, LOOKUP, queries | ✅ |
 | 3 | Statechart: the transition command with guards, eventless chains, exit and entry snapshots and the `_states` view, allowed transitions and the preview of a transition, `STATE()` and `ID()`, per-transition access rules and field-level rights per state, statechart conformance cases | ✅ |
-| 4 | Rules and actions: event-condition-action rules run inside the commit, the synchronous actions `set`, `reset`, `refresh` and `emit`, triggered variables with their moment, the transactional outbox with its worker, retries and dead rows, the engine's actions on other documents and tables, actions as an extension point with definitions, declared HTTP actions, Go actions the embedder registers, connections and results written back, the delivered event, formulas that read other documents (`LOOKUP` over a class, with a count, a sum, the smallest and the largest), conditions on time and timers | 🚧 |
+| 4 | Rules and actions: event-condition-action rules run inside the commit, the synchronous actions `set`, `reset`, `refresh` and `emit`, triggered variables with their moment, the transactional outbox with its worker, retries and dead rows, the engine's actions on other documents and tables, actions as an extension point with definitions, declared HTTP actions, Go actions the embedder registers, connections and results written back, the delivered event, formulas that read other documents (`LOOKUP` over a class, with a count, a sum, the smallest and the largest), conditions on time and timers | ✅ |
 | 5 | Security: the principal from the embedder on every call, access rules compiled to SQL predicates, an optional package of users, groups and API keys for the server | ⬜ |
 | 6 | Server and CLI: JSON command set over HTTP and WebSocket, documents on the wire, layouts, `QUERY` when the first layout needs a list of rows (otherwise with the reports of Phase 8), OpenAPI, `fadodb serve` | ⬜ |
 | 7 | Browser VM and reference frontend: TypeScript VM on the same bytecode shipped as one plain JavaScript file, class bundle, layout renderer with the chip, card, coins and rating components, TypeScript client | ⬜ |

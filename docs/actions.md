@@ -7,8 +7,8 @@ system that speaks HTTP, how to use it in a rule, and how to keep its
 answer. The design is in
 [ADR-0045](adr/0045-actions-are-an-extension-point.md).
 
-**Status on 2026-11-10.** Everything on this page runs in `main` and
-ships with v0.4.0. FadoDB carries no ready-made definitions for
+**Status on 2026-11-12.** Everything on this page shipped with v0.4.0.
+FadoDB carries no ready-made definitions for
 particular services: by the owner's ruling they come with real needs,
 and until then an integration is a definition you write, which takes
 about twenty lines. A format for publishing several definitions together

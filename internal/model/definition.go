@@ -89,7 +89,7 @@ type TransitionDef struct {
 }
 
 // RuleDef is one event-condition-action rule (ADR-0009). The actions are
-// kept as written; Phase 4 gives them their meaning.
+// kept as written; the compiled Rule gives them their meaning (ADR-0043).
 type RuleDef struct {
 	On        string            `json:"on"`
 	State     string            `json:"state,omitempty"`

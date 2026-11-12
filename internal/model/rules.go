@@ -34,8 +34,8 @@ func (r *Rule) Path() string { return "/rules/" + strconv.Itoa(r.Index) }
 // the commit's own document before it is written (ADR-0043, item 4); an
 // action of the outbox is queued by the commit with its evaluated
 // arguments, whether the engine runs it itself (ADR-0044, item 7) or it
-// names a definition (ADR-0045, item 1); http.call alone is kept as
-// written until the step of Phase 4 that sends requests.
+// names a definition (ADR-0045, item 1), http.call among them, whose
+// definition is the engine's own.
 type Action struct {
 	// Rule and Index place the action: "/rules/2/do/0".
 	Rule  *Rule

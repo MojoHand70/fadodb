@@ -123,8 +123,11 @@ it, by the owner's ruling of 2026-11-12; `conformance/rules/timers.json`
 is its suite. The phase closed on 2026-11-12 with its eighth step,
 the measurements of `docs/perf/v0.4.0.md` against every budget of the
 five records (#73). A command that moves many documents in one
-transaction, as `CreateMany` creates them, follows the release with a
-record of its own.
+transaction, `TransitionMany`, follows the release as an addendum to
+this phase: its design is proposed as ADR-0048 on 2026-11-12 and it is
+not built. By the owner's ruling of that day a document that is refused
+does not stop the others: they move, and the refused one is reported
+with its reason.
 By the owner's rulings of that day a formula sees every document, and
 `QUERY`, which returns lists, is built with the first layout or report
 that needs one; tables stored outside the file come with the analytical

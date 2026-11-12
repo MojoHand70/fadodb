@@ -1,10 +1,12 @@
 package query
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 	"testing"
 
+	"github.com/MojoHand70/fadodb/internal/formula"
 	"github.com/MojoHand70/fadodb/internal/model"
 )
 
@@ -249,5 +251,67 @@ func TestCompile_PrefilterOfTheClock(t *testing.T) {
 		} else if !strings.HasPrefix(plan.Where, tc.pre) {
 			t.Errorf("%s:\n  %s\nwant a prefix of\n  %s", tc.where, plan.Where, tc.pre)
 		}
+	}
+}
+
+// Value gives the SQL of a formula's value over the rows of a class, for
+// a statement of the store's own (ADR-0047): the columns the formula
+// reads, the system columns for the functions of the row, NULL where it
+// fails, and a refusal of what does not run over rows.
+func TestValue(t *testing.T) {
+	cls, diags := model.Define([]byte(`{"name": "Bill", "variables": {"due": {"type": "date"}, "ring": {"type": "datetime"}, "n": {"type": "number"}},
+	  "states": {"initial": "open", "list": ["open"]}}`), nil)
+	if len(diags) > 0 {
+		t.Fatal(diags)
+	}
+	for _, tc := range []struct {
+		src  string
+		kind formula.Kind
+		has  []string
+	}{
+		{"due", formula.KindDate, []string{`"due"`}},
+		{"ring", formula.KindDateTime, []string{`"ring"`}},
+		{"ADDDAYS(due, 1)", formula.KindDate, []string{`"due"`}},
+		{"ADDDAYS(ENTEREDAT(), 7)", formula.KindDateTime, []string{`"state_entered_at"`}},
+		{"ADDDAYS(CREATEDAT(), 7)", formula.KindDateTime, []string{`"created_at"`}},
+		// A formula that can fail is NULL where it does.
+		{"ADDDAYS(due, 10 / n)", formula.KindDate, []string{"CASE WHEN (", ") IS NULL THEN ", " END"}},
+	} {
+		got, kind, err := Value(tc.src, cls, nil)
+		if err != nil || kind != tc.kind {
+			t.Errorf("%s: kind %v, %v", tc.src, kind, err)
+			continue
+		}
+		for _, part := range tc.has {
+			if !strings.Contains(got, part) {
+				t.Errorf("%s: %s lacks %s", tc.src, got, part)
+			}
+		}
+		if strings.Contains(got, ":created_at") || strings.Contains(got, ":state_entered_at") {
+			t.Errorf("%s reads the life from a parameter, not from the row: %s", tc.src, got)
+		}
+	}
+	for _, tc := range []struct{ src, code string }{
+		{"due +", CodeBadFormula},
+		{"nope", CodeBadFormula},
+		{`ADDDAYS(FIRSTENTERED("open"), 7)`, CodeBadFormula},
+		{`LOOKUP(Rates, since, code = "EUR")`, CodeBadFormula},
+	} {
+		_, _, err := Value(tc.src, cls, nil)
+		var qe *Error
+		if !errors.As(err, &qe) || qe.Code != tc.code {
+			t.Errorf("%s: want %s, got %v", tc.src, tc.code, err)
+		}
+	}
+	// A lookup of a table the database has binds, and is refused as one.
+	rates := formula.NewSourceSet(&formula.Source{Name: "Rates", Key: []string{"code"},
+		Columns: []formula.Field{{Name: "code", Type: formula.Scalar(formula.KindText)}, {Name: "since", Type: formula.Scalar(formula.KindDate)}}})
+	_, _, err := Value(`LOOKUP(Rates, since, code = "EUR")`, cls, rates)
+	var qe *Error
+	if !errors.As(err, &qe) || qe.Code != CodeNotAllowed {
+		t.Errorf("a lookup: %v", err)
+	}
+	if _, kind, err := Value("due", cls, rates); err != nil || kind != formula.KindDate {
+		t.Errorf("a column beside a table: %v %v", kind, err)
 	}
 }

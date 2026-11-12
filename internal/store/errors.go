@@ -116,8 +116,9 @@ const (
 	// CodeGuardFalse: the transition's guard did not evaluate TRUE; an
 	// erroring guard is FALSE.
 	CodeGuardFalse = "guard_false"
-	// CodeTooManyTransitions: more than eight eventless transitions fired
-	// after one command (ADR-0008).
+	// CodeTooManyTransitions: more than eight transitions fired by
+	// themselves after one command, eventless or timed (ADR-0008,
+	// ADR-0047).
 	CodeTooManyTransitions = "too_many_transitions"
 	// CodeForbidden: the principal may not set the variable in the
 	// document's state, may not take the transition, or may read the

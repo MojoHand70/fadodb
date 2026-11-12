@@ -274,9 +274,8 @@ it and moved it into its state, and the state it came from, as the
 system variables `created_by`, `updated_by`, `state_entered_by` and
 `state_entered_from`, on the document, in its history and in the views.
 Every event that enters a state says how the move came about, under
-`origin`: `command`, `action` or `guard`, and `timer` once timed
-transitions are built, and the event of a creation names the state the
-document was created in.
+`origin`: `command`, `action`, `guard` or `timer`, and the event of a
+creation names the state the document was created in.
 
 The functions of a named state run today too. They take the name of a
 state: `FIRSTENTERED`, `LASTENTERED`, `FIRSTLEFT` and `LASTLEFT`, each
@@ -407,19 +406,35 @@ on commit is authoritative; the conformance suite guarantees the two agree.
   at a moment given with `At`, each with its state and the state it
   would move to. A document becomes due when the guard of an eventless
   transition comes to hold with no commit of its own: the clock passed
-  a date, or a document or a table the guard looks up changed. A guard
+  a date, or a document or a table the guard looks up changed; and when
+  the time of a timed transition comes, for which the list says since
+  when. A guard
   that translates to SQL runs as one filter over the documents of its
   state; a guard that looks another document up or calls a function of
   a state is evaluated document by document. The list moves nothing: a
   commit that touches the document does, and a refresh is one.
-- A transition may fire by time: `"after": "30d"`, a length of stay in
-  the state, or `"at"`, a formula that gives the moment. Its meaning is
-  that of an eventless transition whose guard also says the time has
-  come, and the engine queues a wake-up in the outbox for that moment,
-  so the document moves when the time comes and not only when it is next
-  touched. A transition back into the same state is an entry like any
-  other, which is how a reminder repeats. Designed in ADR-0047, not
-  built yet.
+- A transition may carry its time (ADR-0047): `"after": "30d"`, a
+  length of time in the state as a whole number and `d`, `h`, `m` or
+  `s`, or `"at"`, a formula over the document that gives the moment, a
+  date, which means the first instant of that day in UTC, or a
+  datetime; a blank `at` never comes. It needs neither a name nor a
+  guard, and a guard beside it is still asked. Its meaning is that of
+  an eventless transition whose guard also says the time has come: it
+  fires in the chain of any commit made once its time has come, in the
+  order of the class with the eventless ones, and its event has the
+  origin `timer`. With a name it raises the rules of that name, and a
+  command may take it before its time. A transition back into the same
+  state is an entry like any other, so an `after` on it repeats, which
+  is how a reminder is written; an escalation that reminders must not
+  push back is an `at` from a moment that does not move,
+  `ADDDAYS(FIRSTENTERED("waiting"), 14)`. An `at` may not read the
+  clock, the user, another document or a table. `Transitions` shows a
+  timed transition with `fires_at`, and `Due` lists the documents whose
+  timer has come, each with `since`. Built so far: all of the above.
+  Not built yet: the wake-up, a row the engine queues in the outbox for
+  the moment, so that the document moves when the time comes and not
+  only when it is next touched. Until then the host program asks `Due`
+  and touches what it lists.
 
 ### Document tables
 
@@ -472,7 +487,8 @@ has an optional condition formula and a list of actions. Which triggers a
 commit raises is fixed by what the command did (ADR-0043): `create` then
 `enter` of the initial state for a create; `values_change` for a set;
 `values_change`, `exit`, `transition`, `enter` for a transition; `exit`
-and `enter` for an eventless transition; `delete` for a delete. Rules run
+and `enter` for an eventless transition, and `transition` between them
+for a timed one that has a name; `delete` for a delete. Rules run
 trigger by trigger in that order and in declaration order within one. A
 condition that errors is FALSE; an action that fails refuses the whole
 command, with the path of the action. A rule on `schedule` is refused

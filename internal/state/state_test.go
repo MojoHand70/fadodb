@@ -103,3 +103,53 @@ func TestChain(t *testing.T) {
 		t.Errorf("past the bound: ok %v, %d states", ok, len(path))
 	}
 }
+
+// A timed transition fires in the chain with a name or without one
+// (ADR-0047, item 10); a named transition that is not timed never does.
+func TestNext_Timed(t *testing.T) {
+	cls, diags := model.Define([]byte(`{"name": "Wait", "variables": {"due": {"type": "date"}, "n": {"type": "number"}},
+	  "states": {"initial": "a", "list": ["a", "b", "c"]},
+	  "transitions": [
+	    {"name": "go", "from": "a", "to": "b"},
+	    {"name": "remind", "from": "a", "to": "a", "after": "3d"},
+	    {"from": "a", "to": "c", "at": "due"},
+	    {"from": "a", "to": "b", "guard": "n > 0"},
+	    {"name": "back", "from": ["b", "c"], "to": "a", "guard": "n > 5"}
+	  ]}`), model.NewSchemaSet())
+	if len(diags) > 0 {
+		t.Fatal(diags)
+	}
+	var asked []string
+	all := func(tr *model.Transition) bool {
+		asked = append(asked, tr.Name+">"+tr.To)
+		return false
+	}
+	if next := Next(cls, "a", all); next != nil {
+		t.Errorf("nothing fires, and Next is %+v", next)
+	}
+	// The named one that is not timed is never asked; the others are, in
+	// the order of the class.
+	if got := strings.Join(asked, " "); got != "remind>a >c >b" {
+		t.Errorf("asked %q", got)
+	}
+	for _, tr := range cls.Transitions {
+		if want := tr.Name != "go" && tr.Name != "back"; Unasked(tr) != want {
+			t.Errorf("Unasked(%s>%s) = %v", tr.Name, tr.To, !want)
+		}
+	}
+	// The first that fires is taken, a named timed one too.
+	if next := Next(cls, "a", func(tr *model.Transition) bool { return tr.To != "a" }); next == nil || next.To != "c" {
+		t.Errorf("the at: %+v", next)
+	}
+	if next := Next(cls, "a", func(*model.Transition) bool { return true }); next == nil || next.Name != "remind" {
+		t.Errorf("the reminder: %+v", next)
+	}
+	// From b only a named transition leaves: nothing fires by itself.
+	if next := Next(cls, "b", func(*model.Transition) bool { return true }); next != nil {
+		t.Errorf("out of b: %+v", next)
+	}
+	// The named transitions a command may take include the timed one.
+	if got := names(Leaving(cls, "a")); got != "go remind" {
+		t.Errorf("Leaving a: %q", got)
+	}
+}

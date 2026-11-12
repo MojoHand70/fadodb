@@ -527,3 +527,82 @@ func Example_due() {
 	// INV-1 was sent and is overdue
 	// after the touch: 0 due
 }
+
+// A timed transition carries its moment: an after, counted from the
+// entry into the state, or an at, a date the document holds. It fires in
+// the first commit that touches the document once its time has come.
+// Transitions shows the moment, and Due lists the documents whose time
+// has come.
+func Example_timed() {
+	tmp, err := os.MkdirTemp("", "fado-example")
+	if err != nil {
+		panic(err)
+	}
+	defer os.RemoveAll(tmp)
+	start := time.Date(2026, 11, 2, 9, 0, 0, 0, time.UTC)
+	var days atomic.Int64
+	now := func() time.Time { return start.AddDate(0, 0, int(days.Load())) }
+	db, err := fado.Open(filepath.Join(tmp, "example.fado"), fado.Options{Now: now})
+	if err != nil {
+		panic(err)
+	}
+	defer db.Close()
+	ctx := context.Background()
+
+	_, err = db.DefineClass(ctx, []byte(`{
+	  "name": "Request",
+	  "variables": {"deadline": {"type": "date"}, "reminders": {"type": "number", "default": "0"}},
+	  "states": {"initial": "waiting", "list": ["waiting", "expired", "closed"], "final": ["expired", "closed"]},
+	  "transitions": [
+	    {"name": "remind", "from": "waiting", "to": "waiting", "after": "3d"},
+	    {"from": "waiting", "to": "expired", "at": "deadline"},
+	    {"name": "close", "from": "waiting", "to": "closed"}
+	  ],
+	  "rules": [{"on": "transition", "name": "remind", "do": [{"action": "set", "values": {"reminders": "reminders + 1"}}]}]
+	}`))
+	if err != nil {
+		panic(err)
+	}
+	if _, err := db.Create(ctx, "Request", fado.Values{"deadline": "2026-11-10"}, fado.WithID("R-1")); err != nil {
+		panic(err)
+	}
+
+	stamp := func(secs int64) string { return time.Unix(secs, 0).UTC().Format("Mon 2 Jan 15:04") }
+	open, err := db.Transitions(ctx, "Request", "R-1")
+	if err != nil {
+		panic(err)
+	}
+	for _, t := range open {
+		if t.FiresAt != 0 {
+			fmt.Printf("to %s on %s\n", t.To, stamp(t.FiresAt))
+		}
+	}
+
+	// Three days pass. The reminder is due, and a touch fires it.
+	days.Store(3)
+	due, err := db.Due(ctx, "Request")
+	if err != nil {
+		panic(err)
+	}
+	for _, d := range due {
+		doc, err := db.Refresh(ctx, "Request", d.ID, nil)
+		if err != nil {
+			panic(err)
+		}
+		fmt.Printf("%s was due since %s: %v reminder, still %s\n", d.ID, stamp(d.Since), doc.Values["reminders"], doc.State)
+	}
+
+	// On the day of the deadline the next touch moves it on.
+	days.Store(8)
+	doc, err := db.Refresh(ctx, "Request", "R-1", nil)
+	if err != nil {
+		panic(err)
+	}
+	fmt.Println("on the 10th:", doc.State)
+
+	// Output:
+	// to waiting on Thu 5 Nov 09:00
+	// to expired on Tue 10 Nov 00:00
+	// R-1 was due since Thu 5 Nov 09:00: 1 reminder, still waiting
+	// on the 10th: expired
+}

@@ -132,13 +132,19 @@ const (
 // whether the principal may take it now and, when not, the code that
 // says why, forbidden when its access rule is not TRUE for the principal
 // (ADR-0041) and guard_false when its guard is not, with the rule's or
-// the guard's error when it errored.
+// the guard's error when it errored. A timed transition carries FiresAt,
+// the moment its time comes in seconds since the epoch (ADR-0047, item
+// 8), 0 when it never comes; once that is past, the next commit that
+// touches the document fires it, if its guard holds. A timed transition
+// without a name is listed for that moment alone: nobody takes it, so it
+// is not enabled and has no code.
 type TransitionInfo struct {
 	Name    string `json:"name"`
 	To      string `json:"to"`
 	Enabled bool   `json:"enabled"`
 	Code    string `json:"code,omitempty"`
 	Message string `json:"message,omitempty"`
+	FiresAt int64  `json:"fires_at,omitempty"`
 }
 
 // Preview is what a commit would do, without having done it (ADR-0025):

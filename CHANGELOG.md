@@ -343,6 +343,13 @@ All notable changes to FadoDB are recorded here. The format follows
   `docs/actions.md`, a guide to writing an action for any REST API. Both
   are run against the engine by the tests of `fado/outbound`.
 - The conformance suite `conformance/rules/into.json`.
+- `docs/perf/v0.4.0.md`, the Phase 4 measurements against the budgets of
+  ADR-0043 to ADR-0047, with the rows of Phases 2 and 3 run again; and
+  `TestRulesCampaign` in the store package, the campaign of rules and
+  actions that measured them on disk: a transition that fires rules, a
+  refresh, the outbox queued and drained, a count over the documents of
+  another class with and without an index, a formula that reads the
+  life of a document with a long history, and timers.
 
 ### Changed
 

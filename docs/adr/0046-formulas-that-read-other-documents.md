@@ -319,6 +319,17 @@ With it the step is whole.
 - **A definition that is the stored one is left alone**, in a set as in
   a single call, and gets no new version; the others of the set do.
 
+The last step of the phase measured the record on 2026-11-12, on disk
+(`docs/perf/v0.4.0.md`).
+
+- **Through the index** the count costs 10.6 µs over 100,000 approvals
+  and over 1,000,000 alike. The refresh that counts and moves the
+  purchase by its guard takes 0.36 ms at p99, over 10,000 purchases
+  among 1,000,000 approvals.
+- **A statement that no index narrows** costs 85 ms over 1,000,000
+  documents, 85 µs per thousand, where a thousand rows of a table cost
+  35 µs (ADR-0037): a document is a wider row.
+
 ## Consequences
 
 - **Parallel approvals are whole.** Each approval is a document that

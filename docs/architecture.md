@@ -402,6 +402,16 @@ on commit is authoritative; the conformance suite guarantees the two agree.
   document are listed on request (ADR-0040).
 - A class without states is a stateless application: it is evaluated
   with a preview and stores no documents (ADR-0040).
+- What is due is listed on request (ADR-0047): `Due` answers which
+  documents of a class a commit would move if it touched them now, or
+  at a moment given with `At`, each with its state and the state it
+  would move to. A document becomes due when the guard of an eventless
+  transition comes to hold with no commit of its own: the clock passed
+  a date, or a document or a table the guard looks up changed. A guard
+  that translates to SQL runs as one filter over the documents of its
+  state; a guard that looks another document up or calls a function of
+  a state is evaluated document by document. The list moves nothing: a
+  commit that touches the document does, and a refresh is one.
 - A transition may fire by time: `"after": "30d"`, a length of stay in
   the state, or `"at"`, a formula that gives the moment. Its meaning is
   that of an eventless transition whose guard also says the time has
@@ -715,7 +725,9 @@ and answers documents in the wire shape; `Count` counts; `SQL` runs one
 physical tables, writes, pragmas and attachments, at most 10,000 rows. A
 filter means what the same expression means in a formula, and beside that
 exact predicate the compiler adds, for each comparison of a column with a
-literal, the comparison on the bare column so that SQLite uses the index;
+literal, the comparison on the bare column so that SQLite uses the index,
+and the same for a date, a datetime or a number compared with an operand
+that reads no document, as in `due < TODAY()`;
 a repeated filter runs a cached prepared statement, so it pays SQLite's
 parse once. The read right of every variable a filter's `where` or `order` names is
 compiled into its predicate for the principal, and the documents come
@@ -947,6 +959,7 @@ doc, err := db.Create(ctx, "Invoice", fado.Values{"customer": "Customer:42"}, fa
 doc, err  = db.Set(ctx, "Invoice", doc.ID, fado.Values{"discount": "0.10"}, fado.As(p))
 doc, err  = db.Transition(ctx, "Invoice", doc.ID, "approve", nil, fado.As(p), fado.BusinessDate(day))
 open, err := db.Transitions(ctx, "Invoice", doc.ID, fado.As(p))
+due, err  := db.Due(ctx, "Invoice", fado.As(p))
 doc, err  = db.Refresh(ctx, "Invoice", doc.ID, []string{"backlog"}, fado.As(p))
 preview, err := db.Preview(ctx, "Invoice", doc.ID, fado.Values{"discount": "0.20"}, "approve", fado.As(p))
 history, err := db.History(ctx, "Invoice", doc.ID, fado.As(p))

@@ -19,7 +19,10 @@
 // Transition moves a document along a named transition of its class's
 // statechart, with the eventless transitions that follow as further
 // commits in the same transaction, and Transitions lists what may be
-// taken (ADR-0040); a class without states stores no documents.
+// taken (ADR-0040); a class without states stores no documents. Due
+// lists the documents of a class that a commit would move now
+// (ADR-0047): the guards of its eventless transitions as filters where
+// they translate to SQL, document by document where they do not.
 //
 // The rights table and the per-transition rules are enforced on every
 // call (ADR-0041): a transition's rule and the write rights over the

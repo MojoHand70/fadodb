@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sync/atomic"
 	"time"
 
 	"github.com/MojoHand70/fadodb/fado"
@@ -446,4 +447,83 @@ func Example_goAction() {
 	// created:
 	// transition:approve
 	// action_run:team.notify
+}
+
+// What is due (ADR-0047): an invoice passes its date while nothing
+// touches it. Due lists it, now or at a moment ahead, and a refresh, a
+// commit that changes nothing, moves it.
+func Example_due() {
+	tmp, err := os.MkdirTemp("", "fado-example")
+	if err != nil {
+		panic(err)
+	}
+	defer os.RemoveAll(tmp)
+	start := time.Date(2026, 11, 8, 12, 0, 0, 0, time.UTC)
+	var days atomic.Int64
+	now := func() time.Time { return start.AddDate(0, 0, int(days.Load())) }
+	db, err := fado.Open(filepath.Join(tmp, "example.fado"), fado.Options{Now: now})
+	if err != nil {
+		panic(err)
+	}
+	defer db.Close()
+	ctx := context.Background()
+
+	_, err = db.DefineClass(ctx, []byte(`{
+	  "name": "Invoice",
+	  "variables": {"due": {"type": "date", "index": true}},
+	  "states": {"initial": "sent", "list": ["sent", "overdue", "paid"], "final": ["paid"]},
+	  "transitions": [
+	    {"from": "sent", "to": "overdue", "guard": "TODAY() > due"},
+	    {"name": "pay", "from": ["sent", "overdue"], "to": "paid"}
+	  ]
+	}`))
+	if err != nil {
+		panic(err)
+	}
+	for id, due := range map[string]string{"INV-1": "2026-11-10", "INV-2": "2026-11-20"} {
+		if _, err := db.Create(ctx, "Invoice", fado.Values{"due": due}, fado.WithID(id)); err != nil {
+			panic(err)
+		}
+	}
+
+	due, err := db.Due(ctx, "Invoice")
+	if err != nil {
+		panic(err)
+	}
+	fmt.Println("today:", len(due), "due")
+
+	// What will be due in a week, asked today.
+	due, err = db.Due(ctx, "Invoice", fado.At(now().AddDate(0, 0, 7)))
+	if err != nil {
+		panic(err)
+	}
+	for _, d := range due {
+		fmt.Println("in a week:", d.ID, d.State, "->", d.To)
+	}
+
+	// Five days pass. The invoice is as it was written: Due finds it, and
+	// a refresh moves it.
+	days.Store(5)
+	due, err = db.Due(ctx, "Invoice")
+	if err != nil {
+		panic(err)
+	}
+	for _, d := range due {
+		doc, err := db.Refresh(ctx, "Invoice", d.ID, nil)
+		if err != nil {
+			panic(err)
+		}
+		fmt.Println(d.ID, "was", d.State, "and is", doc.State)
+	}
+	due, err = db.Due(ctx, "Invoice")
+	if err != nil {
+		panic(err)
+	}
+	fmt.Println("after the touch:", len(due), "due")
+
+	// Output:
+	// today: 0 due
+	// in a week: INV-1 sent -> overdue
+	// INV-1 was sent and is overdue
+	// after the touch: 0 due
 }

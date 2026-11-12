@@ -123,7 +123,7 @@ and the browser VM run them with their phases.
   clock while the suite runs, as `YYYY-MM-DD HH:MM:SS` in UTC, the
   runner's default when absent.
 - A step's `do` is `create`, `set`, `transition`, `preview`,
-  `transitions`, `visits`, `get`, `query` or `count`. `values` are the
+  `transitions`, `visits`, `get`, `query`, `count` or `due`. `values` are the
   assignments, `transition` the name of the transition a `transition` or
   `preview` step takes, `key` the command's idempotency key, `at` the
   moment the step runs at (ADR-0042) as `YYYY-MM-DD` or `YYYY-MM-DD
@@ -143,8 +143,15 @@ and the browser VM run them with their phases.
   transition written `transition:name`, `visits` the rows of the
   `_states` view as `[state, entry_version, exit_version]`, the exit
   `null` while the visit is current, `docs` the labels of the documents a
-  query returned in order, `count` the count, and `now` the moment a
-  preview reports, in the notation of `at`.
+  query returned in order, `count` the count, `due` what a `due` step
+  listed, each document as `[label, state, the state it would move to]`
+  in order, and `now` the moment a preview reports, in the notation of
+  `at`.
+- `due.json` is the suite of the list of what is due (ADR-0047, item
+  8): which documents a commit would move at the clock and at a moment,
+  that the list moves nothing and a refresh does, the order of two
+  guards that hold, a guard that runs as a filter beside one evaluated
+  document by document, and a terminal document, which is never due.
 
 ## Rules cases: `rules/*.json`
 

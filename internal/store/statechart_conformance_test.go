@@ -166,6 +166,9 @@ type scriptExpect struct {
 	// Count the count.
 	Docs  []string `json:"docs,omitempty"`
 	Count *int64   `json:"count,omitempty"`
+	// Due is what a due step lists: for each document its label in the
+	// script, its state and the state it would move to.
+	Due [][]string `json:"due,omitempty"`
 	// Now is the moment a preview reports, in the notation of At.
 	Now string `json:"now,omitempty"`
 	// Rules are the paths of the rules that ran in a preview, in order
@@ -416,6 +419,7 @@ func runStatechartSuite(t *testing.T, suite *statechartSuite) {
 		var infos []TransitionInfo
 		var visitsGot [][]any
 		var found []*Document
+		var due []DueDocument
 		var count int64
 		drained := -1
 		filter := Filter{Class: class, Where: step.Where, Order: step.Order, Fields: step.Fields}
@@ -445,6 +449,8 @@ func runStatechartSuite(t *testing.T, suite *statechartSuite) {
 			found, err = s.Query(ctx, filter, opts...)
 		case "count":
 			count, err = s.Count(ctx, filter, opts...)
+		case "due":
+			due, err = s.Due(ctx, class, opts...)
 		case "create":
 			doc, err = s.Create(ctx, class, step.Values, opts...)
 			if err == nil {
@@ -566,6 +572,19 @@ func runStatechartSuite(t *testing.T, suite *statechartSuite) {
 			}
 			if !reflect.DeepEqual(got, want.Docs) {
 				t.Errorf("%s: documents %v, want %v", name, got, want.Docs)
+			}
+		}
+		if want.Due != nil {
+			labels := map[string]string{}
+			for label, docID := range docs {
+				labels[docID] = label
+			}
+			got := [][]string{}
+			for _, d := range due {
+				got = append(got, []string{labels[d.ID], d.State, d.To})
+			}
+			if !reflect.DeepEqual(got, want.Due) {
+				t.Errorf("%s: due %v, want %v", name, got, want.Due)
 			}
 		}
 		if want.Count != nil && count != *want.Count {

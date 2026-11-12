@@ -26,6 +26,7 @@ result and discards the file or adopts the class.
 | a scratch database per experiment: `Open` on a temporary path | shipped |
 | seeding: `DefineClass`, `DefineTable`, `ImportRows`, `CreateMany` | shipped |
 | a preview at a chosen moment: `At(t)` on `Preview`, `PreviewDraft`, `Transitions`, `Query`, `Get` and `History` | shipped |
+| what will be due at a chosen moment: `Due` with `At(t)` lists the documents a commit would move then | in `main`, ships with v0.4.0 |
 | a commit at a chosen moment | not designed: a commit runs at the database's clock |
 | scheduled rules that fire with time | designed, Phase 4 |
 | replaying an event log into a database | not designed |

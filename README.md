@@ -30,8 +30,13 @@ Website: [fadodb.org](https://fadodb.org).
 > back to the document, so a process goes on from the answer. A formula
 > can read the documents of another class: one value of one document,
 > or a count, a sum, the smallest or the largest over those that match,
-> which is how a purchase counts its approvals. Time, the row-level
-> access rules and the server come with their steps and phases. The numbers are in
+> which is how a purchase counts its approvals. A formula reads the
+> life of its document too: when and by whom it was created, changed
+> and moved into and out of each state. `Due` lists the documents that
+> a guard on time would move, so the host program can touch them.
+> Transitions that fire by themselves when their time comes, the
+> row-level access rules and the server come with their steps and
+> phases. The numbers are in
 > [docs/perf/](docs/perf/), the plan in [ROADMAP.md](ROADMAP.md).
 
 ## What it is

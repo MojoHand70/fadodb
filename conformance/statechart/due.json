@@ -1,0 +1,62 @@
+{
+  "suite": "due",
+  "description": "Due lists the documents of a class that a commit would move if it touched them now, or at a moment the caller chooses (ADR-0047, item 8): each with its state and the state it would move to, the target of the first eventless transition leaving its state, in definition order, whose guard is TRUE. The list is in the order of the class's states and then of the ids. It writes nothing: the document moves when a commit touches it, and a refresh is such a commit. A guard that translates to SQL is one filter over its state; a guard that calls a function of a state is evaluated document by document; both give one answer. A document in a terminal state is frozen and never due. The suite's clock is the database's.",
+  "clock": "2026-11-06 12:00:00",
+  "class": {
+    "name": "Invoice",
+    "variables": {
+      "due":    {"type": "date"},
+      "amount": {"type": "number"},
+      "note":   {"type": "text"}
+    },
+    "states": {"initial": "sent", "list": ["sent", "overdue", "written_off", "paid", "archived"], "final": ["paid", "archived"]},
+    "transitions": [
+      {"from": "sent", "to": "written_off", "guard": "TODAY() > ADDDAYS(due, 90)"},
+      {"from": "sent", "to": "overdue", "guard": "TODAY() > due"},
+      {"from": "overdue", "to": "written_off", "guard": "DAYSIN(\"overdue\") >= 60 AND amount < 1000"},
+      {"from": "paid", "to": "archived", "guard": "TODAY() > ADDDAYS(due, 365)"},
+      {"name": "pay", "from": ["sent", "overdue"], "to": "paid"}
+    ]
+  },
+  "principals": {
+    "ann": {"id": "ann", "groups": ["staff"]}
+  },
+  "script": [
+    {"name": "three invoices, none past its date", "do": "create", "doc": "a", "id": "a", "as": "ann", "values": {"due": "2026-11-20", "amount": 500}, "expect": {"state": "sent", "version": 1}},
+    {"do": "create", "doc": "b", "id": "b", "as": "ann", "values": {"due": "2026-11-10", "amount": 700}, "expect": {"state": "sent", "version": 1}},
+    {"do": "create", "doc": "c", "id": "c", "as": "ann", "values": {"due": "2026-11-10", "amount": 5000}, "expect": {"state": "sent", "version": 1}},
+
+    {"name": "nothing is due at the clock", "do": "due", "as": "ann", "expect": {"due": []}},
+    {"name": "at a later day the invoices past their date are due, in the order of their ids", "do": "due", "as": "ann", "at": "2026-11-15",
+     "expect": {"due": [["b", "sent", "overdue"], ["c", "sent", "overdue"]]}},
+    {"name": "the day of the date itself is not past it", "do": "due", "as": "ann", "at": "2026-11-20 23:59:59",
+     "expect": {"due": [["b", "sent", "overdue"], ["c", "sent", "overdue"]]}},
+    {"name": "the day after is", "do": "due", "as": "ann", "at": "2026-11-21",
+     "expect": {"due": [["a", "sent", "overdue"], ["b", "sent", "overdue"], ["c", "sent", "overdue"]]}},
+    {"name": "when two guards hold the first transition in the class is the one named", "do": "due", "as": "ann", "at": "2027-02-10",
+     "expect": {"due": [["a", "sent", "overdue"], ["b", "sent", "written_off"], ["c", "sent", "written_off"]]}},
+    {"name": "a call without a principal lists the same", "do": "due", "at": "2026-11-15", "expect": {"due": [["b", "sent", "overdue"], ["c", "sent", "overdue"]]}},
+    {"name": "the list agrees with the preview of one document", "do": "preview", "doc": "b", "as": "ann", "at": "2026-11-15", "expect": {"state": "overdue", "path": ["sent", "overdue"]}},
+    {"name": "and with the preview of one that is not due", "do": "preview", "doc": "a", "as": "ann", "at": "2026-11-15", "expect": {"state": "sent", "path": ["sent"]}},
+
+    {"name": "the clock moves six days", "do": "wait", "seconds": 518400},
+    {"name": "now two are due at the clock", "do": "due", "as": "ann", "expect": {"due": [["b", "sent", "overdue"], ["c", "sent", "overdue"]]}},
+    {"name": "the list moved nothing", "do": "get", "doc": "b", "as": "ann", "expect": {"state": "sent", "version": 1, "events": ["created"]}},
+    {"name": "a refresh is a commit that touches the document, and it moves", "do": "refresh", "doc": "b", "as": "ann",
+     "expect": {"state": "overdue", "version": 3, "history": ["sent", "sent", "overdue"], "events": ["created", "refresh", "transition:"]}},
+    {"name": "a set touches it too", "do": "set", "doc": "c", "as": "ann", "values": {"note": "called"}, "expect": {"state": "overdue", "version": 3}},
+    {"name": "what moved is no longer due", "do": "due", "as": "ann", "expect": {"due": []}},
+
+    {"name": "a guard on the days in a state is not due before its time", "do": "due", "as": "ann", "at": "2027-01-10", "expect": {"due": [["a", "sent", "overdue"]]}},
+    {"name": "after sixty days the small invoice is, and the large one is not; the states come in the class's order", "do": "due", "as": "ann", "at": "2027-01-12",
+     "expect": {"due": [["a", "sent", "overdue"], ["b", "overdue", "written_off"]]}},
+    {"name": "the preview of that document agrees", "do": "preview", "doc": "b", "as": "ann", "at": "2027-01-12", "expect": {"state": "written_off", "path": ["overdue", "written_off"]}},
+
+    {"name": "a paid invoice is in a terminal state", "do": "transition", "doc": "a", "transition": "pay", "as": "ann", "expect": {"state": "paid", "version": 2}},
+    {"name": "it is frozen, so it is never due, though the guard that leaves its state holds", "do": "due", "as": "ann", "at": "2028-06-01",
+     "expect": {"due": [["b", "overdue", "written_off"]]}},
+    {"name": "a touch of it is refused", "do": "refresh", "doc": "a", "as": "ann", "expect": {"code": "terminal"}},
+
+    {"name": "Due of a class the database does not have", "do": "due", "class": "Nope", "expect": {"code": "unknown_class"}}
+  ]
+}

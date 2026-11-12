@@ -105,8 +105,13 @@ ends; and a formula reads the row with `CREATEDAT()`, `CREATEDBY()`,
 is built too: the functions of a named state, `FIRSTENTERED("approved")`
 and `FIRSTENTEREDBY`, `LASTENTERED`, `FIRSTLEFT` and `LASTLEFT` with
 their `...BY`, `ENTRIES`, `DAYSIN`, `FIRSTEDITOR` and `LASTEDITOR`, read
-from the document's own events once for a command. `Due` and timed
-transitions are not built yet.
+from the document's own events once for a command. Its third part
+closes the checking half: `Due` lists the documents of a class that a
+commit would move now, or at a moment given with `At`, each with its
+state and the state it would move to; a guard that translates to SQL
+runs as one filter, and a filter that compares an indexed date with the
+clock now uses the index. Timed transitions, the firing half, are not
+built yet.
 By the owner's rulings of that day a formula sees every document, and
 `QUERY`, which returns lists, is built with the first layout or report
 that needs one; tables stored outside the file come with the analytical

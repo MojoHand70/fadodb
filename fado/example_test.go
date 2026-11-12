@@ -529,10 +529,9 @@ func Example_due() {
 }
 
 // A timed transition carries its moment: an after, counted from the
-// entry into the state, or an at, a date the document holds. It fires in
-// the first commit that touches the document once its time has come.
-// Transitions shows the moment, and Due lists the documents whose time
-// has come.
+// entry into the state, or an at, a date the document holds. When the
+// moment comes the engine moves the document by itself, as the person
+// whose commit set the timer. Transitions shows the moment beforehand.
 func Example_timed() {
 	tmp, err := os.MkdirTemp("", "fado-example")
 	if err != nil {
@@ -542,7 +541,9 @@ func Example_timed() {
 	start := time.Date(2026, 11, 2, 9, 0, 0, 0, time.UTC)
 	var days atomic.Int64
 	now := func() time.Time { return start.AddDate(0, 0, int(days.Load())) }
-	db, err := fado.Open(filepath.Join(tmp, "example.fado"), fado.Options{Now: now})
+	// The worker of an open database runs a timer when its time comes.
+	// This example moves the clock itself, so it runs the queue by hand.
+	db, err := fado.Open(filepath.Join(tmp, "example.fado"), fado.Options{Now: now, Outbox: fado.OutboxOptions{Manual: true}})
 	if err != nil {
 		panic(err)
 	}
@@ -551,19 +552,20 @@ func Example_timed() {
 
 	_, err = db.DefineClass(ctx, []byte(`{
 	  "name": "Request",
-	  "variables": {"deadline": {"type": "date"}, "reminders": {"type": "number", "default": "0"}},
+	  "variables": {"deadline": {"type": "date"}, "reminders": {"type": "number", "default": "0"}, "reminded_by": {"type": "text"}},
 	  "states": {"initial": "waiting", "list": ["waiting", "expired", "closed"], "final": ["expired", "closed"]},
 	  "transitions": [
 	    {"name": "remind", "from": "waiting", "to": "waiting", "after": "3d"},
 	    {"from": "waiting", "to": "expired", "at": "deadline"},
 	    {"name": "close", "from": "waiting", "to": "closed"}
 	  ],
-	  "rules": [{"on": "transition", "name": "remind", "do": [{"action": "set", "values": {"reminders": "reminders + 1"}}]}]
+	  "rules": [{"on": "transition", "name": "remind", "do": [{"action": "set", "values": {"reminders": "reminders + 1", "reminded_by": "USER()"}}]}]
 	}`))
 	if err != nil {
 		panic(err)
 	}
-	if _, err := db.Create(ctx, "Request", fado.Values{"deadline": "2026-11-10"}, fado.WithID("R-1")); err != nil {
+	ann := fado.Principal{ID: "ann"}
+	if _, err := db.Create(ctx, "Request", fado.Values{"deadline": "2026-11-10"}, fado.WithID("R-1"), fado.As(ann)); err != nil {
 		panic(err)
 	}
 
@@ -578,24 +580,23 @@ func Example_timed() {
 		}
 	}
 
-	// Three days pass. The reminder is due, and a touch fires it.
+	// Three days pass, and nobody touches the request.
 	days.Store(3)
-	due, err := db.Due(ctx, "Request")
+	if _, err := db.Drain(ctx); err != nil {
+		panic(err)
+	}
+	doc, err := db.Get(ctx, "Request", "R-1")
 	if err != nil {
 		panic(err)
 	}
-	for _, d := range due {
-		doc, err := db.Refresh(ctx, "Request", d.ID, nil)
-		if err != nil {
-			panic(err)
-		}
-		fmt.Printf("%s was due since %s: %v reminder, still %s\n", d.ID, stamp(d.Since), doc.Values["reminders"], doc.State)
-	}
+	fmt.Printf("on the 5th: %v reminder, made as %v, still %s\n", doc.Values["reminders"], doc.Values["reminded_by"], doc.State)
 
-	// On the day of the deadline the next touch moves it on.
+	// On the day of the deadline it expires.
 	days.Store(8)
-	doc, err := db.Refresh(ctx, "Request", "R-1", nil)
-	if err != nil {
+	if _, err := db.Drain(ctx); err != nil {
+		panic(err)
+	}
+	if doc, err = db.Get(ctx, "Request", "R-1"); err != nil {
 		panic(err)
 	}
 	fmt.Println("on the 10th:", doc.State)
@@ -603,6 +604,6 @@ func Example_timed() {
 	// Output:
 	// to waiting on Thu 5 Nov 09:00
 	// to expired on Tue 10 Nov 00:00
-	// R-1 was due since Thu 5 Nov 09:00: 1 reminder, still waiting
+	// on the 5th: 1 reminder, made as ann, still waiting
 	// on the 10th: expired
 }

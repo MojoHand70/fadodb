@@ -164,8 +164,7 @@ and the browser VM run them with their phases.
   guard beside a timer, a blank `at`, the moment each shows in the
   listing and in the list of what is due, and the origin `timer` of
   their events. Nothing in it moves a document by itself: the scripts
-  with the worker in them are `rules/timers.json`, which comes with the
-  wake-up.
+  with the worker in them are `rules/timers.json`.
 
 ## Rules cases: `rules/*.json`
 
@@ -234,7 +233,9 @@ suites', with these additions:
   the steps.
 - `outbox` are the actions the document queued, in order, each by
   `action`, `status` and `code`, the last error, and where given by
-  `attempts`, `depth`, `as`, the principal it runs as, and `args`.
+  `attempts`, `depth`, `as`, the principal it runs as, `args`, and
+  `due`, the moment it may next run, in the notation of `at` with its
+  time: for a wake-up, the action `timer`, the moment of its timer.
   `found` are the documents a query returned, in order, each by `state`
   and a subset of `values`.
 - In `events`, the outcome of an action is written `action_run:name` or
@@ -254,7 +255,16 @@ suites', with these additions:
   expected as `null` may be absent. `"calls": []` says nothing was
   called.
 - The step `wait` moves the database's clock on by `seconds`, so that an
-  action waiting for its next attempt falls due.
+  action waiting for its next attempt, or a wake-up waiting for its
+  moment, falls due.
+- `timers.json` is the suite of the wake-up (ADR-0047, items 10 to 12
+  and 17), with scripts that move the clock and drain: a transition
+  after a time, at a date the document holds, a reminder that repeats,
+  a date that is changed while the document waits, a document that
+  leaves before its time, a worker that was stopped, and a commit that
+  touches the document first; the wake-ups each commit queues, with
+  their moments and who they act as; and that a wake-up with nothing to
+  do writes nothing.
 - The step `try` runs the action `action` once with the values under
   `args`, and `outcome` is what the trial answered, by the properties
   given; a refusal of the trial itself is a `code`. The step

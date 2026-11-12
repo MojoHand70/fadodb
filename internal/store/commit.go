@@ -47,10 +47,14 @@ const (
 	opTransition
 	opReset
 	opRefresh
+	// opWake is the engine's touch of a document whose timer has come
+	// (ADR-0047, item 11): no commit of its own, only the chain. What
+	// fires is written, and nothing when nothing does.
+	opWake
 )
 
 func (o op) String() string {
-	return [...]string{"create", "set", "delete", "migrate", "transition", "reset", "refresh"}[o]
+	return [...]string{"create", "set", "delete", "migrate", "transition", "reset", "refresh", "wake"}[o]
 }
 
 type command struct {
@@ -259,9 +263,7 @@ func (s *Store) commit(ctx context.Context, cmd command) (*result, error) {
 		_, _ = s.writer.ExecContext(ctx, "ROLLBACK")
 		return nil, storageErr("commit", err)
 	}
-	if res.queued > 0 {
-		s.wakeWorker()
-	}
+	s.wakeQueued(res.queued > 0, false)
 	return res, nil
 }
 
@@ -566,9 +568,11 @@ func (s *Store) run(ctx context.Context, cmd command, now time.Time) (*result, e
 		}
 		s.changedKids = changedKids
 		// A refresh always commits: the moment of the value is what it
-		// changes.
-		unchanged = !changed && !adopt && cmd.op != opTransition && cmd.op != opRefresh
-		if unchanged && !cmd.preview {
+		// changes. A wake-up never does: it is no version of its own, and
+		// a document of an older class version is adopted by the first
+		// transition that fires, or left as it is.
+		unchanged = !changed && !adopt && cmd.op != opTransition && cmd.op != opRefresh || cmd.op == opWake
+		if unchanged && !cmd.preview && cmd.op != opWake {
 			all, err := c.loadChildren(ctx, before.id, before.version, kids, true)
 			if err != nil {
 				return nil, err
@@ -732,6 +736,12 @@ func (s *Store) run(ctx context.Context, cmd command, now time.Time) (*result, e
 		}
 		s.visits, s.hops = path, hops
 	}
+	if cmd.op == opWake && len(hops) == 0 {
+		// Nothing fired: the moment has moved to later, or a guard beside
+		// the timer does not hold. Nothing is written.
+		res.noop = true
+		return res, nil
+	}
 
 	all := kids
 	if before != nil {
@@ -775,36 +785,57 @@ func (s *Store) run(ctx context.Context, cmd command, now time.Time) (*result, e
 			ev.origin = OriginAction
 		}
 	}
-	if err := s.write(ctx, c, before, after, kids, secs, eventID, actor, ev, cmd.o.key, hash, day); err != nil {
-		return nil, err
-	}
-	if len(s.emits) > 0 {
-		if err := s.writeEmits(ctx, c, 0, after.id, nil, after.version, eventID, actor, day, secs, now); err != nil {
+	// lastEvent is the event of the last commit the command writes, and
+	// lastQueued how many rows of the outbox it queued: the wake-ups of
+	// the stay the command leaves the document in follow them.
+	prev, lastEvent, lastQueued := after, eventID, 0
+	// The key of the command and the event that caused it stand on the
+	// first event it writes; every later one names that event as its
+	// cause.
+	key, cause := "", eventID
+	if cmd.op == opWake {
+		// A wake-up writes no commit of its own. The first transition
+		// that fires takes the document from the stored row, carries the
+		// row's key and names the event that queued the wake-up as its
+		// cause (ADR-0047, item 12).
+		prev, key, cause = before, cmd.o.key, cmd.cause
+	} else {
+		if err := s.write(ctx, c, before, after, kids, secs, eventID, actor, ev, cmd.o.key, hash, day); err != nil {
 			return nil, err
 		}
-	}
-	if len(s.queued) > 0 {
-		n, err := s.writeQueued(ctx, c, &cmd, 0, eventID, after.id, after.version, day, secs, now)
-		if err != nil {
-			return nil, err
+		if len(s.emits) > 0 {
+			if err := s.writeEmits(ctx, c, 0, after.id, nil, after.version, eventID, actor, day, secs, now); err != nil {
+				return nil, err
+			}
 		}
-		res.queued += n
+		if len(s.queued) > 0 {
+			n, err := s.writeQueued(ctx, c, &cmd, 0, eventID, after.id, after.version, day, secs, now)
+			if err != nil {
+				return nil, err
+			}
+			res.queued += n
+			lastQueued = n
+		}
 	}
 	// Every transition of the chain that fired is a further commit: a
 	// version and a history row of its own, and a transition event caused
 	// by the command's event. It has no name and the origin guard for an
 	// eventless one; a timed one has its name, if it has one, and the
 	// origin timer (ADR-0047, item 3).
-	prev := after
 	for i, h := range hops {
-		hopEvent := s.ids.next(now)
-		hopInfo := eventInfo{kind: EventTransition, name: h.t.Name, from: prev.state, to: h.row.state, cause: eventID, origin: OriginGuard}
+		hopEvent, hopHash := s.ids.next(now), ""
+		if i == 0 && cmd.op == opWake {
+			eventID, hopHash = hopEvent, hash
+		}
+		hopInfo := eventInfo{kind: EventTransition, name: h.t.Name, from: prev.state, to: h.row.state, cause: cause, origin: OriginGuard}
 		if h.t.Timed() {
 			hopInfo.origin = OriginTimer
 		}
-		if err := s.write(ctx, c, prev, h.row, h.kids, secs, hopEvent, actor, hopInfo, "", "", day); err != nil {
+		if err := s.write(ctx, c, prev, h.row, h.kids, secs, hopEvent, actor, hopInfo, key, hopHash, day); err != nil {
 			return nil, err
 		}
+		key, cause = "", eventID
+		lastEvent, lastQueued = hopEvent, 0
 		if len(s.emits) > 0 {
 			if err := s.writeEmits(ctx, c, i+1, h.row.id, nil, h.row.version, hopEvent, actor, day, secs, now); err != nil {
 				return nil, err
@@ -816,11 +847,19 @@ func (s *Store) run(ctx context.Context, cmd command, now time.Time) (*result, e
 				return nil, err
 			}
 			res.queued += n
+			lastQueued = n
 		}
 		for ch := range h.kids {
 			all[ch] = nil
 		}
 		prev = h.row
+	}
+	// The wake-ups of the stay the command leaves the document in
+	// (ADR-0047, item 10), in the same transaction.
+	if c.timers {
+		if _, err := s.queueWakes(ctx, c, &cmd, beforeClass, before, prev, fresh, evalCtx, lastEvent, lastQueued, secs); err != nil {
+			return nil, err
+		}
 	}
 	res.doc = c.document(prev, all)
 	s.project(&s.wev, c, c, prev, res.doc, cmd.o.principal, clock)

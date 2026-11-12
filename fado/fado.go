@@ -27,13 +27,13 @@
 // database opened without one sends nothing. An action may carry into,
 // which writes what it returned back to the document when it has ended,
 // so a process goes on from the answer. A formula reads the life of its
-// document. A transition may carry its time, an after or an at: it
-// fires in the first commit that touches the document once that time
-// has come, Transitions shows the moment, and Due lists the documents a
-// guard on time or a timer would move, for the host program to touch
-// (ADR-0047). Not here yet: QUERY, and the engine touching a document
-// by itself when a timer comes (Phase 4), the class-level access rules
-// compiled to row predicates (Phase 5) and the server (Phase 6).
+// document. A transition may carry its time, an after or an at: the
+// engine moves the document by itself when that time comes, as the
+// person whose commit set the timer; Transitions shows the moment, and
+// Due lists the documents a guard on time would move, for the host
+// program to touch (ADR-0047). Not here yet: QUERY, the class-level
+// access rules compiled to row predicates (Phase 5) and the server
+// (Phase 6).
 package fado
 
 import (

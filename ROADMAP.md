@@ -113,9 +113,13 @@ runs as one filter, and a filter that compares an indexed date with the
 clock now uses the index. The firing half has its first part: a
 transition carries `after` or `at`, fires in the chain of the first
 commit that touches the document once its time has come, with the
-origin `timer`, and shows its moment in `Transitions` and in `Due`. The
-wake-up, with which the engine makes that commit itself when the time
-comes, is not built yet.
+origin `timer`, and shows its moment in `Transitions` and in `Due`. Its
+second part closes the step: a commit that leaves a document in a state
+queues a wake-up in the outbox for each of its timers, and the worker
+touches the document when one is due, as the person whose commit queued
+it, by the owner's ruling of 2026-11-12; `conformance/rules/timers.json`
+is its suite. The phase's last step is left: the measurements and
+`docs/perf/v0.4.0.md`.
 By the owner's rulings of that day a formula sees every document, and
 `QUERY`, which returns lists, is built with the first layout or report
 that needs one; tables stored outside the file come with the analytical

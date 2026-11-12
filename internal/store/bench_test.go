@@ -908,9 +908,10 @@ func BenchmarkTransitionIdleRules(b *testing.B) {
 // BenchmarkTransitionTimers is BenchmarkTransition on the same class
 // with two timed transitions out of each of the two states the document
 // moves between, an after and an at over a date it computes, none of
-// which has come (ADR-0047): what a commit pays to ask each whether its
-// time has come, one addition for an after and one evaluation of its
-// formula for an at. It allocates what BenchmarkTransition allocates.
+// which has come (ADR-0047): what a commit that enters a state pays for
+// its timers. It asks each whether its time has come, one addition for
+// an after and one evaluation of its formula for an at, and queues a
+// wake-up for each, two rows of the outbox in the commit's transaction.
 func BenchmarkTransitionTimers(b *testing.B) {
 	timers := `,
    {"from": ["draft", "review"], "to": "closed", "after": "30d"},
@@ -1023,6 +1024,77 @@ func BenchmarkOutbox(b *testing.B) {
 		if _, err := s.Transition(ctx, "Job", doc.ID, "book", nil, As(alice)); err != nil {
 			b.Fatal(err)
 		}
+		if n, err := s.Drain(ctx); err != nil || n != 1 {
+			b.Fatalf("drained %d, %v", n, err)
+		}
+	}
+}
+
+// BenchmarkTimer measures a timer end to end (ADR-0047, items 10 and
+// 11): the wake-up that is due, the engine's touch of the document, the
+// transition that fires as a version with its event, and the wake-up of
+// the stay that begins, queued in the same transaction. Every turn the
+// clock moves a minute and one reminder is made. The budget is the
+// transition's: a commit that queues a wake-up stays inside 2 ms.
+func BenchmarkTimer(b *testing.B) {
+	var mins atomic.Int64
+	s, err := Open(filepath.Join(b.TempDir(), "bench.fado"), Options{Outbox: OutboxOptions{Manual: true},
+		Now: func() time.Time { return start.Add(time.Duration(mins.Load()) * time.Minute) }})
+	if err != nil {
+		b.Fatal(err)
+	}
+	defer s.Close()
+	ctx := context.Background()
+	if _, err := s.DefineClass(ctx, []byte(`{"name": "Job", "variables": {"amount": {"type": "number"}},
+ "states": {"initial": "idle", "list": ["idle"]}, "transitions": [{"name": "run", "from": "idle", "to": "idle", "after": "1m"}]}`)); err != nil {
+		b.Fatal(err)
+	}
+	if _, err := s.Create(ctx, "Job", Values{"amount": 500}, As(alice)); err != nil {
+		b.Fatal(err)
+	}
+	b.ReportAllocs()
+	b.ResetTimer()
+	for b.Loop() {
+		mins.Add(1)
+		if n, err := s.Drain(ctx); err != nil || n != 1 {
+			b.Fatalf("drained %d, %v", n, err)
+		}
+	}
+}
+
+// BenchmarkTimerIdle measures a wake-up that finds nothing to do
+// (ADR-0047, item 11): its document left the state before the time
+// came. The budget is one read and one update, and no event. The moves
+// that queue the wake-up and leave the state are outside the measure.
+func BenchmarkTimerIdle(b *testing.B) {
+	var mins atomic.Int64
+	s, err := Open(filepath.Join(b.TempDir(), "bench.fado"), Options{Outbox: OutboxOptions{Manual: true},
+		Now: func() time.Time { return start.Add(time.Duration(mins.Load()) * time.Minute) }})
+	if err != nil {
+		b.Fatal(err)
+	}
+	defer s.Close()
+	ctx := context.Background()
+	if _, err := s.DefineClass(ctx, []byte(`{"name": "Job", "variables": {"amount": {"type": "number"}},
+ "states": {"initial": "busy", "list": ["busy", "idle"]},
+ "transitions": [{"name": "rest", "from": "busy", "to": "idle"}, {"name": "work", "from": "idle", "to": "busy"}, {"from": "idle", "to": "busy", "after": "1m"}]}`)); err != nil {
+		b.Fatal(err)
+	}
+	doc, err := s.Create(ctx, "Job", Values{"amount": 500}, As(alice))
+	if err != nil {
+		b.Fatal(err)
+	}
+	b.ReportAllocs()
+	b.ResetTimer()
+	for b.Loop() {
+		b.StopTimer()
+		for _, name := range [2]string{"rest", "work"} {
+			if _, err := s.Transition(ctx, "Job", doc.ID, name, nil, As(alice)); err != nil {
+				b.Fatal(err)
+			}
+		}
+		mins.Add(1)
+		b.StartTimer()
 		if n, err := s.Drain(ctx); err != nil || n != 1 {
 			b.Fatalf("drained %d, %v", n, err)
 		}

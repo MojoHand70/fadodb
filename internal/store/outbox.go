@@ -71,6 +71,12 @@ const (
 // a caller's key may not use it.
 const outboxKeyPrefix = "outbox:"
 
+// ActionTimer is the action of a wake-up (ADR-0047, item 10): the row a
+// commit queues for the moment of a timed transition, with which the
+// engine touches the document when the time comes. No rule names it, and
+// no definition can: a name without a dot is the engine's.
+const ActionTimer = "timer"
+
 // QueuedAction is one row of the outbox: an action a commit queued, with
 // what became of it. A done row is kept: it is the record of what was
 // asked, with its arguments.
@@ -587,7 +593,7 @@ func (s *Store) Drain(ctx context.Context) (int, error) {
 			if !s.claim(row) {
 				continue
 			}
-			ran, err := s.runAction(ctx, row)
+			ran, err := s.runAction(ctx, row, false)
 			s.unclaim(row)
 			if err != nil {
 				return n, err
@@ -630,8 +636,9 @@ type flight struct{ class, docID string }
 // dueRows reads the next actions that may run, with one of the three
 // statements that select them: pending, due at now, a reading of the
 // database's clock in seconds, and not behind an earlier pending action
-// of the same document. There is at most one per document, so a batch
-// may run in any order.
+// of the same document. There is at most one action per document, so a
+// batch may run in any order; a wake-up stands outside the order of its
+// document's actions, and does nothing when the document has moved on.
 func (s *Store) dueRows(ctx context.Context, due *sql.Stmt, now int64) ([]*outboxRow, error) {
 	rows, err := due.QueryContext(ctx, now)
 	if err != nil {
@@ -661,9 +668,11 @@ func (s *Store) dueRows(ctx context.Context, due *sql.Stmt, now int64) ([]*outbo
 // the writer, and the action's commit, the mark and the event of the
 // outcome are one transaction (ADR-0044, item 5); any other action is
 // called outside it, by runCall. It reports whether the row was
-// attempted: a row another runner has taken in the meantime is not.
-func (s *Store) runAction(ctx context.Context, row *outboxRow) (bool, error) {
-	if !model.EngineAction(row.action) {
+// attempted: a row another runner has taken in the meantime is not. own
+// says the worker itself runs the row, in a look of its own.
+func (s *Store) runAction(ctx context.Context, row *outboxRow, own bool) (bool, error) {
+	timer := row.action == ActionTimer
+	if !timer && !model.EngineAction(row.action) {
 		return s.runCall(ctx, row)
 	}
 	s.mu.Lock()
@@ -687,23 +696,39 @@ func (s *Store) runAction(ctx context.Context, row *outboxRow) (bool, error) {
 		}
 		return false, nil
 	}
+	if timer {
+		// What a timer does belongs to the day it fires, by the database's
+		// clock, and not to the day of the commit that queued it.
+		day = businessDay(options{}, now)
+	}
 	var queuedMore bool
 	var made *Document
+	var moved string
 	failure := s.at("perform", row)
 	if failure == nil {
-		made, queuedMore, failure = s.perform(ctx, row, day, now)
+		if timer {
+			moved, queuedMore, failure = s.touch(ctx, row, now)
+		} else {
+			made, queuedMore, failure = s.perform(ctx, row, day, now)
+		}
 	}
 	if failure == nil {
 		failure = s.at("performed", row)
 	}
 	if failure == nil {
 		// The action's commit, the mark, the event of the outcome and the
-		// result written back are one transaction.
-		ended, err := s.finish(ctx, row, ActionDone, attempts+1, nil, day, now)
-		if err == nil {
-			var more bool
-			more, err = s.applyInto(ctx, row, ended, outcome{}, made, day, now)
-			queuedMore = queuedMore || more
+		// result written back are one transaction. A wake-up has neither
+		// an event of its outcome nor a result.
+		var err error
+		if timer {
+			err = s.woke(ctx, row, attempts+1, moved, now)
+		} else {
+			var ended string
+			if ended, err = s.finish(ctx, row, ActionDone, attempts+1, nil, day, now); err == nil {
+				var more bool
+				more, err = s.applyInto(ctx, row, ended, outcome{}, made, day, now)
+				queuedMore = queuedMore || more
+			}
 		}
 		if e := s.at("marked", row); err == nil && e != nil {
 			err = e
@@ -717,9 +742,7 @@ func (s *Store) runAction(ctx context.Context, row *outboxRow) (bool, error) {
 			return false, storageErr("commit", err)
 		}
 		_ = s.at("committed", row)
-		if queuedMore {
-			s.wakeWorker()
-		}
+		s.wakeQueued(queuedMore, own)
 		return true, nil
 	}
 	// The action's commit is undone; what became of the action is written
@@ -735,7 +758,7 @@ func (s *Store) runAction(ctx context.Context, row *outboxRow) (bool, error) {
 		return false, storageErr("begin", err)
 	}
 	ended, err := s.failed(ctx, row, attempts, failure, noAnswer(failure), 0, day, now)
-	if err == nil && ended != "" {
+	if err == nil && ended != "" && !timer {
 		// The action is dead: its document hears of that too.
 		queuedMore, err = s.applyInto(ctx, row, ended, outcome{failure: failure}, nil, day, now)
 	}
@@ -747,9 +770,7 @@ func (s *Store) runAction(ctx context.Context, row *outboxRow) (bool, error) {
 		_, _ = w.ExecContext(ctx, "ROLLBACK")
 		return false, storageErr("commit", err)
 	}
-	if queuedMore {
-		s.wakeWorker()
-	}
+	s.wakeQueued(queuedMore, own)
 	return true, nil
 }
 
@@ -1109,6 +1130,7 @@ func (s *Store) work(ctx context.Context) {
 		// with: a row whose second begins between two readings would be
 		// due for neither, and would wait out the bound.
 		wait := time.Minute
+		s.looks.Add(1)
 		looked, err := s.dispatch(ctx, free, ended, &failed, &calls)
 		if err != nil {
 			wait = time.Second
@@ -1117,6 +1139,9 @@ func (s *Store) work(ctx context.Context) {
 		} else if ok {
 			wait = min(max(time.Unix(next, 0).Sub(s.now()), 10*time.Millisecond), time.Minute)
 		}
+		// A commit that queues a wake-up for a later second than this
+		// sleep ends at leaves the worker asleep: it looks then anyway.
+		s.sleepUntil.Store(s.now().Add(wait).Unix())
 		timer := time.NewTimer(wait)
 		select {
 		case <-ctx.Done():
@@ -1124,7 +1149,9 @@ func (s *Store) work(ctx context.Context) {
 			return
 		case <-s.wake:
 			timer.Stop()
+			s.sleepUntil.Store(0)
 		case <-ended:
+			s.sleepUntil.Store(0)
 			timer.Stop()
 			if failed.Swap(false) {
 				// A call was made and its mark was not: the row is asked
@@ -1136,6 +1163,7 @@ func (s *Store) work(ctx context.Context) {
 				}
 			}
 		case <-timer.C:
+			s.sleepUntil.Store(0)
 		}
 	}
 }
@@ -1168,7 +1196,7 @@ func (s *Store) dispatch(ctx context.Context, free, ended chan struct{}, failed 
 			if !s.claim(row) {
 				continue
 			}
-			ran, err := s.runAction(ctx, row)
+			ran, err := s.runAction(ctx, row, true)
 			s.unclaim(row)
 			if err != nil {
 				return 0, err

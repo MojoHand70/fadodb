@@ -242,6 +242,9 @@ type scriptAction struct {
 	// document (ADR-0045, item 8), checked when given: "" says it was
 	// stored, or that the action has no into.
 	IntoCode *string `json:"into_code,omitempty"`
+	// Due is when the row may next run, in the notation of At with its
+	// time, checked when given: the moment of a wake-up (ADR-0047).
+	Due string `json:"due,omitempty"`
 }
 
 type scriptFound struct {
@@ -688,7 +691,7 @@ func runStatechartSuite(t *testing.T, suite *statechartSuite) {
 					if g.Action != w.Action || g.Status != w.Status || g.ErrorCode != w.Code ||
 						w.Attempts != nil && g.Attempts != *w.Attempts || w.Depth != nil && g.Depth != *w.Depth ||
 						w.As != "" && g.PrincipalID != suite.Principals[w.As].ID || w.Args != nil && !sameWire(g.Args, w.Args) ||
-						w.IntoCode != nil && g.IntoCode != *w.IntoCode {
+						w.IntoCode != nil && g.IntoCode != *w.IntoCode || w.Due != "" && stamp(g.DueAt) != w.Due {
 						t.Errorf("%s: action %d is %s, want %s", name, i, dump(g), dump(w))
 					}
 				}

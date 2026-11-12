@@ -7,6 +7,8 @@ Published per tagged release, with the budgets from
 - [v0.2.0](v0.2.0.md): the document model and store, Phase 2.
 - [v0.3.0](v0.3.0.md): the statechart, the rights and the chosen moment,
   Phase 3.
+- [v0.4.0](v0.4.0.md): rules, actions, formulas that read other
+  documents, and time, Phase 4.
 
 The end-to-end suite is the `bench` package: scenarios written against
 database/sql so that the same one runs on every storage engine. Each
@@ -28,6 +30,22 @@ filtered variable (ADR-0041):
 FADODB_BENCH_DIR=/path/on/disk FADODB_BENCH_COMMITS=100000 go test -count=1 -v -run TestCommitCampaign ./internal/store/
 FADODB_BENCH_DIR=/path/on/disk FADODB_BENCH_DOCS=1000000 go test -run '^$' -bench 'Filter|Commit' -benchmem ./internal/store/
 ```
+
+The campaign of rules and actions runs beside it since v0.4.0: a
+transition that fires rules, a refresh, the outbox queued and drained
+(ADR-0043 to ADR-0045), a count over the documents of another class
+(ADR-0046), a formula that reads the life of a document with a long
+history, and timers (ADR-0047). `BenchmarkDue` measures the list of
+what is due, and `BenchmarkLookupClass` a count over a class, at the
+size `FADODB_BENCH_DOCS` gives:
+
+```
+FADODB_BENCH_DIR=/path/on/disk FADODB_BENCH_COMMITS=100000 go test -count=1 -timeout 2h -v -run TestRulesCampaign ./internal/store/
+FADODB_BENCH_DIR=/path/on/disk FADODB_BENCH_DOCS=1000000 go test -run '^$' -bench 'Due|LookupClass' -benchmem ./internal/store/
+```
+
+A campaign of a million commits a row runs longer than the ten minutes
+`go test` allows by default, so give it a `-timeout`.
 
 `FADODB_BENCH_COMMITS` sizes the store campaign (default 100,000),
 `FADODB_BENCH_ITERS` the lookups per table size (default 50,000),

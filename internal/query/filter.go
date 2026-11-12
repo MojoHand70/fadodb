@@ -199,7 +199,26 @@ func Compile(f Filter, cls *model.Class, sources formula.Sources, p Principal) (
 		if stmt.Error != "" {
 			where = "(" + stmt.Error + ") IS NULL AND " + where
 		}
-		pre, args := prefilter(node, f.Where, cols, d)
+		// An operand that reads no document, the clock or the principal
+		// alone, is a constant of the statement: its SQL, for the
+		// prefilter to compare an indexed column with.
+		constant := func(n formula.Node) (string, formula.Kind, bool) {
+			p, err := formula.BindNode(f.Where, n, scope, formula.BindOptions{Sources: sources})
+			if err != nil || len(p.Slots) != 0 || p.ReadsLife || p.Calls("STATE") || p.Calls("ID") {
+				return "", 0, false
+			}
+			for _, c := range p.Classes {
+				if c != formula.ClassPure && c != formula.ClassContext {
+					return "", 0, false
+				}
+			}
+			stmt, err := formula.GenerateSQLBound(p, d, formula.SQLBinding{Column: quoted, Row: quoteIdent})
+			if err != nil {
+				return "", 0, false
+			}
+			return stmt.Value, stmt.Kind, true
+		}
+		pre, args := prefilter(node, f.Where, cols, d, constant)
 		if pre != "" {
 			where = pre + " AND (" + where + ")"
 		}
@@ -464,7 +483,7 @@ func formulaError(err error) *Error {
 // an index answers. When a blank would satisfy the comparison, the blank
 // rows are kept with "OR column IS NULL". Money columns, and literals that
 // do not fit the column's scale, are left to the exact predicate.
-func prefilter(n formula.Node, src string, cols map[string]column, d formula.Dialect) (string, []any) {
+func prefilter(n formula.Node, src string, cols map[string]column, d formula.Dialect, constant func(formula.Node) (string, formula.Kind, bool)) (string, []any) {
 	var terms []string
 	var args []any
 	var walk func(formula.Node)
@@ -484,6 +503,30 @@ func prefilter(n formula.Node, src string, cols map[string]column, d formula.Dia
 		}
 		col, lit, flipped := columnAndLiteral(b, cols)
 		if col == nil {
+			// A date, a datetime or a number column against an operand
+			// that reads no document, such as due < TODAY(): the operand
+			// is one value for the whole statement, so the comparison can
+			// seek an index as one with a literal does. Both are stored
+			// and computed as plain numbers, and a blank on either side
+			// compares as zero.
+			c, expr, fl := columnAndOperand(b, cols)
+			if c == nil {
+				return
+			}
+			switch c.typ.Kind {
+			case formula.KindDate, formula.KindDateTime, formula.KindNumber:
+			default:
+				return
+			}
+			val, kind, ok := constant(expr)
+			if !ok || kind != c.typ.Kind {
+				return
+			}
+			if fl {
+				op = flip[op]
+			}
+			val = "COALESCE(" + val + ", 0)"
+			terms = append(terms, "("+quoteIdent(c.name)+" "+op+" "+val+" OR ("+quoteIdent(c.name)+" IS NULL AND 0 "+op+" "+val+"))")
 			return
 		}
 		if flipped {
@@ -518,6 +561,18 @@ func columnAndLiteral(b *formula.Binary, cols map[string]column) (*column, formu
 		return c, b.R, false
 	}
 	if c := columnOf(b.R, cols); c != nil && isLiteral(b.L) {
+		return c, b.L, true
+	}
+	return nil, nil, false
+}
+
+// columnAndOperand is the column of a comparison and its other operand,
+// whatever it is, and whether the column stands on the right.
+func columnAndOperand(b *formula.Binary, cols map[string]column) (*column, formula.Node, bool) {
+	if c := columnOf(b.L, cols); c != nil {
+		return c, b.R, false
+	}
+	if c := columnOf(b.R, cols); c != nil {
 		return c, b.L, true
 	}
 	return nil, nil, false

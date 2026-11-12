@@ -8,6 +8,20 @@ All notable changes to FadoDB are recorded here. The format follows
 
 ### Added
 
+- `Due` lists the documents of a class that a commit would move if it
+  touched them now, or at the moment given with `At` (ADR-0047, item
+  8): each with its state and the state it would move to, the target of
+  the first eventless transition leaving its state whose guard is TRUE.
+  A document becomes due when a guard comes to hold with no commit of
+  its own: the clock passed a date, or a document or a table the guard
+  looks up changed. The list is in the order of the class's states and
+  then of the ids, at most 10,000 documents in one call, and it writes
+  nothing: a commit that touches the document moves it, and a refresh
+  is one. A guard that translates to SQL runs as one filter over the
+  documents of its state; a guard that looks another document up or
+  calls a function of a state is evaluated document by document, as is
+  a document an older version of the class computed. A terminal
+  document is never due.
 - The functions of a state (ADR-0047, item 6). Each takes the name of a
   state: `FIRSTENTERED` and `FIRSTENTEREDBY`, `LASTENTERED` and
   `LASTENTEREDBY`, `FIRSTLEFT` and `FIRSTLEFTBY`, `LASTLEFT` and
@@ -295,6 +309,12 @@ All notable changes to FadoDB are recorded here. The format follows
 
 ### Changed
 
+- A filter that compares a date, a datetime or a number variable with
+  an operand that reads no document, as in `due < TODAY()` or
+  `seen >= ADDDAYS(NOW(), -7)`, now lets SQLite seek the variable's
+  index, as a comparison with a literal already did. The answer is the
+  same; a `Count` over 100,000 documents and the list of what is due
+  read the hundred that match and not every row.
 - The engine schema is 5, for the four system columns and the origin of
   an event. A database made before does not open: before 1.0 there is
   no upgrade path, and no database exists yet.

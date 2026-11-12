@@ -1219,3 +1219,93 @@ func benchLifeStates(b *testing.B, function string) {
 		b.Fatalf("the life told: %+v", st)
 	}
 }
+
+// BenchmarkDue is the budget of ADR-0047 for the list of what is due:
+// over FADODB_BENCH_DOCS documents (100,000 by default) of which 100 are
+// due, a guard on the clock that compares an indexed date, the budget
+// being the indexed filter's of ADR-0012; for contrast the same guard
+// over a date with no index, which reads every document of the state;
+// and a guard that calls a function of a state, which is evaluated
+// document by document, over a hundredth of the documents; and a
+// backlog, every document due. It writes to disk and runs only with
+// FADODB_BENCH_DIR, like BenchmarkFilter.
+func BenchmarkDue(b *testing.B) {
+	dir := os.Getenv("FADODB_BENCH_DIR")
+	if dir == "" {
+		b.Skip("set FADODB_BENCH_DIR to a directory on disk to run the benchmark of what is due")
+	}
+	n := 100000
+	if v := os.Getenv("FADODB_BENCH_DOCS"); v != "" {
+		fmt.Sscanf(v, "%d", &n)
+	}
+	path := filepath.Join(dir, fmt.Sprintf("due-%d.fado", time.Now().UnixNano()))
+	defer func() {
+		for _, suffix := range []string{"", "-wal", "-shm"} {
+			os.Remove(path + suffix)
+		}
+	}()
+	day := time.Date(2026, 11, 8, 12, 0, 0, 0, time.UTC)
+	s, err := Open(path, Options{Now: func() time.Time { return day }})
+	if err != nil {
+		b.Fatal(err)
+	}
+	defer s.Close()
+	ctx := context.Background()
+	const invoice = `{"name": "%s", "variables": {"due": {"type": "date"%s}, "amount": {"type": "number"}},
+ "states": {"initial": "sent", "list": ["sent", "overdue"]},
+ "transitions": [{"from": "sent", "to": "overdue", "guard": "%s"}]}`
+	classes := []struct {
+		name, index, guard string
+		docs               int
+	}{
+		{"Indexed", `, "index": true`, "TODAY() > due", n},
+		{"Plain", "", "TODAY() > due", n},
+		{"Aged", "", `DAYSIN(\"sent\") >= 3 AND TODAY() > due`, n / 100},
+	}
+	start := time.Now()
+	for _, c := range classes {
+		if _, err := s.DefineClass(ctx, []byte(fmt.Sprintf(invoice, c.name, c.index, c.guard))); err != nil {
+			b.Fatal(err)
+		}
+		// Of every class a hundred documents pass their date in two days;
+		// the others have a month and more.
+		every := max(c.docs/100, 1)
+		batch := make([]Values, 0, 1000)
+		for i := 0; i < c.docs; i++ {
+			due := day.AddDate(0, 0, 30+i%300)
+			if i%every == 0 {
+				due = day.AddDate(0, 0, 1)
+			}
+			batch = append(batch, Values{"due": due.Format(time.DateOnly), "amount": i})
+			if len(batch) == cap(batch) || i == c.docs-1 {
+				if _, err := s.CreateMany(ctx, c.name, batch); err != nil {
+					b.Fatal(err)
+				}
+				batch = batch[:0]
+			}
+		}
+	}
+	b.Logf("%d documents of three classes created in %s", 2*n+n/100, time.Since(start).Round(time.Millisecond))
+	soon, late := At(day.AddDate(0, 0, 4)), At(day.AddDate(0, 0, 400))
+	for _, bc := range []struct {
+		name, class string
+		at          Option
+		want        int
+	}{
+		{"indexed date, 100 due", "Indexed", soon, 100},
+		{"plain date, 100 due", "Plain", soon, 100},
+		{"document by document, 100 due", "Aged", soon, 100},
+		// A backlog: every document is due, and the call lists its bound.
+		{"indexed date, all due", "Indexed", late, min(n, MaxDue)},
+	} {
+		b.Run(bc.name, func(b *testing.B) {
+			b.ReportAllocs()
+			for b.Loop() {
+				due, err := s.Due(ctx, bc.class, bc.at)
+				if err != nil || len(due) != bc.want {
+					b.Fatalf("%v, %d documents", err, len(due))
+				}
+			}
+		})
+	}
+}

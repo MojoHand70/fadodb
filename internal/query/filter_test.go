@@ -199,3 +199,55 @@ func BenchmarkCompile(b *testing.B) {
 		})
 	}
 }
+
+// TestCompile_PrefilterOfTheClock is the prefilter of a comparison whose
+// other operand reads no document, the clock or a constant expression:
+// one value for the whole statement, so the comparison seeks an index as
+// one with a literal does. A blank on either side compares as zero.
+func TestCompile_PrefilterOfTheClock(t *testing.T) {
+	cls, diags := model.Define([]byte(`{"name": "Task", "variables": {
+  "due": {"type": "date", "index": true}, "sent": {"type": "datetime"}, "n": {"type": "number"},
+  "owner": {"type": "text"}, "fee": {"type": "decimal(2)"}, "other": {"type": "date"}}}`), nil)
+	if len(diags) > 0 {
+		t.Fatal(diags)
+	}
+	const today = `COALESCE(floor(CAST(:now AS REAL) / 86400.0), 0)`
+	cases := []struct {
+		where string
+		pre   string // what the WHERE must start with; "" for no prefilter
+	}{
+		{`due < TODAY()`, `("due" < ` + today + ` OR ("due" IS NULL AND 0 < ` + today + `)) AND (`},
+		{`TODAY() > due`, `("due" < ` + today + ` OR ("due" IS NULL AND 0 < ` + today + `)) AND (`},
+		{`TODAY() >= due`, `("due" <= ` + today + ` OR ("due" IS NULL AND 0 <= ` + today + `)) AND (`},
+		{`due = TODAY()`, `("due" = ` + today + ` OR ("due" IS NULL AND 0 = ` + today + `)) AND (`},
+		{`due >= TODAY() AND n > 2`, `("due" >= ` + today + ` OR ("due" IS NULL AND 0 >= ` + today + `)) AND "n" > :f0 AND (`},
+		{`due < ADDDAYS(TODAY(), -30)`, `("due" < COALESCE(`},
+		{`sent <= NOW()`, `("sent" <= COALESCE(`},
+		{`n > 2 + 1`, `("n" > COALESCE(`},
+		// Not a prefilter: a text, an exact value, a column or a value of
+		// the row on the other side, an inequality, an OR.
+		{`owner = USER()`, ""},
+		{`fee > 1 + 1`, ""},
+		{`due < other`, ""},
+		{`n > VERSION()`, ""},
+		{`n > LEN(STATE())`, ""},
+		{`n > LEN(ID())`, ""},
+		{`sent < CREATEDAT()`, ""},
+		{`due <> TODAY()`, ""},
+		{`due < TODAY() OR n > 2 + 1`, ""},
+	}
+	for _, tc := range cases {
+		plan, err := Compile(Filter{Class: "Task", Where: tc.where}, cls, nil, Principal{})
+		if err != nil {
+			t.Errorf("%s: %v", tc.where, err)
+			continue
+		}
+		if tc.pre == "" {
+			if strings.Contains(plan.Where, "IS NULL AND 0 ") {
+				t.Errorf("%s: unexpected prefilter in %s", tc.where, plan.Where)
+			}
+		} else if !strings.HasPrefix(plan.Where, tc.pre) {
+			t.Errorf("%s:\n  %s\nwant a prefix of\n  %s", tc.where, plan.Where, tc.pre)
+		}
+	}
+}

@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	_ "modernc.org/sqlite" // the pure-Go driver, the core's one dependency (ADR-0002, ADR-0035)
@@ -202,6 +203,9 @@ type Store struct {
 	// item 6) and the tests of "once per command".
 	life      lifeReader
 	lifeReads int
+	// dueLists counts the lists of documents that Due read to look at
+	// them one by one (ADR-0047, item 8), for the tests of when it does.
+	dueLists atomic.Int64
 	// testStep is called at the steps of an action when a test sets it.
 	testStep func(step string, row *outboxRow) *Error
 }

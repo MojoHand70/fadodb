@@ -26,8 +26,10 @@
 // Options.Secrets supplies; package fado/outbound makes the sender, and a
 // database opened without one sends nothing. An action may carry into,
 // which writes what it returned back to the document when it has ended,
-// so a process goes on from the answer. Not here yet: QUERY and time
-// (Phase 4),
+// so a process goes on from the answer. A formula reads the life of its
+// document, and Due lists the documents that a guard on time would move,
+// for the host program to touch (ADR-0047). Not here yet: QUERY and
+// transitions that fire by themselves when their time comes (Phase 4),
 // the class-level access rules compiled to row predicates (Phase 5) and
 // the server (Phase 6).
 package fado
@@ -102,6 +104,9 @@ type (
 	// TransitionInfo is one named transition leaving a document's state
 	// and whether it may be taken now (ADR-0040).
 	TransitionInfo = store.TransitionInfo
+	// DueDocument is one document a commit would move now, as Due lists
+	// it: its state and the state it would move to (ADR-0047).
+	DueDocument = store.DueDocument
 	// Filter is a query over a class: a where formula, an order, a limit,
 	// an offset and the fields to return (ADR-0038).
 	Filter = store.Filter
@@ -382,6 +387,13 @@ func (db *DB) Transition(ctx context.Context, class, id, name string, values Val
 // nothing.
 func (db *DB) Transitions(ctx context.Context, class, id string, opts ...Option) ([]TransitionInfo, error) {
 	return db.s.Transitions(ctx, class, id, opts...)
+}
+
+// Due lists the documents of a class that a commit would move if it
+// touched them now, or at the moment given with At (ADR-0047): each with
+// its state and the state it would move to. It writes nothing.
+func (db *DB) Due(ctx context.Context, class string, opts ...Option) ([]DueDocument, error) {
+	return db.s.Due(ctx, class, opts...)
 }
 
 // Delete removes a document's current row and appends the event; its

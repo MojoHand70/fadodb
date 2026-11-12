@@ -22,6 +22,9 @@ type class struct {
 	// nameArg is the class's name boxed once, for the statements of the
 	// write step.
 	nameArg any
+	// due is how Due reads the class (ADR-0047, item 8), planned at its
+	// first call.
+	due duePlanned
 	// who says a formula of the class reads who created, changed or moved
 	// the document, or where it came from (ADR-0047, item 5).
 	who bool

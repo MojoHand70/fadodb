@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -1043,6 +1044,56 @@ func TestActions_WorkerAsksAgainWhenDue(t *testing.T) {
 	calls := rec.take()
 	if r := mustRows(t, s, id)[0]; r.Attempts != 2 || len(calls) != 2 || calls[0].Key != calls[1].Key || calls[1].Attempt != 2 {
 		t.Errorf("the row %s after the calls %s", dump(r), dump(calls))
+	}
+}
+
+// A row that falls due while the worker looks is not left waiting. The
+// worker reads what is due, and then when the next row falls due; a row
+// whose second begins between the two was due for neither, and waited
+// for the minute after which the worker looks again whatever happens.
+// The clock of this test turns to the next second after a number of
+// readings, for every place the turn can fall among the worker's.
+func TestActions_WorkerSeesARowFallDueWhileItLooks(t *testing.T) {
+	// The clock stands ten milliseconds before a second.
+	base := time.Date(2026, 11, 8, 10, 0, 0, 990e6, time.UTC)
+	for turn := int64(1); turn <= 6; turn++ {
+		var armed atomic.Bool
+		var read atomic.Int64
+		now := func() time.Time {
+			// The second turns after the given number of readings since
+			// the first attempt failed.
+			if armed.Load() && read.Add(1) > turn {
+				return base.Add(10 * time.Millisecond)
+			}
+			return base
+		}
+		rec := &recorder{do: func(_ context.Context, call *ActionCall) (Values, error) {
+			if call.Attempt < 2 {
+				// The worker has started the call, looked again and waits.
+				time.Sleep(50 * time.Millisecond)
+				armed.Store(true)
+				return nil, errors.New("not yet")
+			}
+			return nil, nil
+		}}
+		s, err := Open(filepath.Join(t.TempDir(), fmt.Sprintf("turn-%d.fado", turn)), Options{Now: now, Actions: map[string]ActionFunc{"books.post": rec.fn, "audit.ping": rec.fn}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		defineShop(t, s)
+		id := place(t, s, Values{"item": "desk"})
+		deadline := time.Now().Add(10 * time.Second)
+		for mustRows(t, s, id)[0].Status != ActionDone {
+			if time.Now().After(deadline) {
+				t.Errorf("the second turned after %d readings of the clock: the worker left the row at %s", turn, dump(mustRows(t, s, id)[0]))
+				break
+			}
+			time.Sleep(5 * time.Millisecond)
+		}
+		if r := mustRows(t, s, id)[0]; r.Attempts != 2 || r.DueAt != base.Unix()+1 {
+			t.Errorf("the second turned after %d readings: the row is %s", turn, dump(r))
+		}
+		s.Close()
 	}
 }
 

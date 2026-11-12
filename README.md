@@ -9,7 +9,7 @@ An embeddable **active document database**, written in Go, MIT licensed.
 Website: [fadodb.org](https://fadodb.org).
 
 > **Status: Phase 4, rules and actions, is done and released as v0.4.0;
-> Phase 5, security, is next.** The Go API stores
+> Phase 5, security, is in progress.** The Go API stores
 > documents of typed classes as commits with recalculation, history and
 > an event log,
 > with attachments, lookups into reference tables, filters and read-only
@@ -250,7 +250,7 @@ internal/query/    the filter compiler and the SQL endpoint's authorizer
 internal/state/    statechart engine (Phase 3)
 fado/outbound/     what a host program imports to let a database send the HTTP requests of actions
 api/               JSON schemas of an action definition, of the call an action receives and of the delivered event
-internal/auth/     users, groups, access rules as predicates (Phase 5)
+internal/auth/     access rules as predicates (Phase 5); users, groups and API keys (Phase 6)
 internal/server/   HTTP and WebSocket (Phase 6)
 analytics/         the DuckDB module: conformance and store benchmarks today, the projection in Phase 8
 bench/             end-to-end performance scenarios behind the budgets

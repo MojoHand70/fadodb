@@ -112,6 +112,10 @@ type (
 	// transition would move it, the moment since which it has been due
 	// (ADR-0047).
 	DueDocument = store.DueDocument
+	// MoveOutcome is what became of one document of a TransitionMany or
+	// a PreviewMany: the document after its move, or the refusal
+	// (ADR-0048).
+	MoveOutcome = store.MoveOutcome
 	// Filter is a query over a class: a where formula, an order, a limit,
 	// an offset and the fields to return (ADR-0038).
 	Filter = store.Filter
@@ -385,6 +389,30 @@ func (db *DB) TryAction(ctx context.Context, name string, args Values) (*ActionO
 // too_many_transitions or terminal, before anything is written.
 func (db *DB) Transition(ctx context.Context, class, id, name string, values Values, opts ...Option) (*Document, error) {
 	return db.s.Transition(ctx, class, id, name, values, opts...)
+}
+
+// MaxMany is the most documents one TransitionMany or PreviewMany takes.
+const MaxMany = store.MaxMany
+
+// TransitionMany moves the documents of one class named by ids along the
+// named transition, in the order given, in one transaction (ADR-0048).
+// Each move is the commit Transition makes. A document that cannot move
+// is refused with the code Transition would give it and left as it was,
+// and the others move: the outcomes say which, one for each id in the
+// order given. The error is the call's own, after which nothing has
+// moved: unknown_class, unknown_transition, too_many_elements for more
+// than MaxMany ids, bad_value for an id named twice, not_allowed for At,
+// or a failure of the database. With Key the batch sent again moves no
+// document twice.
+func (db *DB) TransitionMany(ctx context.Context, class, name string, ids []string, values Values, opts ...Option) ([]MoveOutcome, error) {
+	return db.s.TransitionMany(ctx, class, name, ids, values, opts...)
+}
+
+// PreviewMany runs the batch TransitionMany would run and writes
+// nothing (ADR-0048): the outcomes the call would have now, or at the
+// moment given with At. It holds the writer as long as the batch would.
+func (db *DB) PreviewMany(ctx context.Context, class, name string, ids []string, values Values, opts ...Option) ([]MoveOutcome, error) {
+	return db.s.PreviewMany(ctx, class, name, ids, values, opts...)
 }
 
 // Transitions lists the named transitions leaving the document's state,

@@ -1003,16 +1003,20 @@ for an action receives the event that fired the rule from the outbox
 package has `Open`, `DefineClass`, `ValidateClass`, `DefineClasses` and
 `ValidateClasses` for classes that name each other, `DefineSchema`,
 `DefineTable`, `ImportRows`, `TableRows`, `Create`, `CreateMany`, `Set`,
-`Reset`, `Refresh`, `Transition`, `Transitions`, `Delete`, `Migrate`,
+`Reset`, `Refresh`, `Transition`, `TransitionMany`, `Transitions`,
+`Delete`, `Migrate`,
 `Drain`, `Outbox`, `RetryAction`, `DefineAction`, `ValidateAction`,
 `Actions`, `Action`, `PreviewAction`, `TryAction`, `Get`, `Version`,
 `History`, `Events`, `Query`, `Count`, `SQL`, `PutBlob`, `OpenFile`,
 `OpenBlob`, `CheckBlobs`, and `Preview` and `PreviewDraft` of a create, a
-set or a transition; a preview, a listing or a read runs at a moment the
+set or a transition, and `PreviewMany` of a batch of moves; a preview, a listing or a read runs at a moment the
 caller chooses with `At`, and a preview reports its moment (ADR-0042).
 The principal decides what a call may set and sees
 (ADR-0041): a right or a transition rule that is not TRUE for it refuses
-with `forbidden`, and every document comes back projected. Every refusal
+with `forbidden`, and every document comes back projected.
+`TransitionMany` moves up to 10,000 documents of a class along one
+transition in one transaction, a commit each; a document that cannot
+move is reported with its refusal and the others move (ADR-0048). Every refusal
 is a `fado.Error` with a stable code and the variable it is about, or the
 `Diagnostics` of a definition.
 Layouts, `QUERY` and subscriptions arrive with their phases.

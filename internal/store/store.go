@@ -216,6 +216,10 @@ type Store struct {
 	dueLists atomic.Int64
 	// testStep is called at the steps of an action when a test sets it.
 	testStep func(step string, row *outboxRow) *Error
+	// testMoved, when a test sets it, may refuse a document of a batch of
+	// moves after its commit is written, so that the test sees the batch
+	// take it back.
+	testMoved func(id string) *Error
 }
 
 type engineStmts struct {
@@ -225,10 +229,14 @@ type engineStmts struct {
 	// its moves alone.
 	selectLife, selectMoves                                  *sql.Stmt
 	insertOutbox, dueOutbox, dueEngine, dueCalls, callOutbox *sql.Stmt
+	// mark, unmark and toMark are the savepoint a batch of moves sets
+	// before each document, releases when the document moved and returns
+	// to when it was refused (ADR-0048, item 3).
+	mark, unmark, toMark *sql.Stmt
 }
 
 func (e *engineStmts) close() {
-	for _, st := range []*sql.Stmt{e.lookupKey, e.lastOfCommand, e.insertEvent, e.insertEventDoc, e.listEvents, e.selectLife, e.selectMoves, e.insertOutbox, e.dueOutbox, e.dueEngine, e.dueCalls, e.callOutbox} {
+	for _, st := range []*sql.Stmt{e.lookupKey, e.lastOfCommand, e.insertEvent, e.insertEventDoc, e.listEvents, e.selectLife, e.selectMoves, e.insertOutbox, e.dueOutbox, e.dueEngine, e.dueCalls, e.callOutbox, e.mark, e.unmark, e.toMark} {
 		if st != nil {
 			st.Close()
 		}
@@ -517,6 +525,9 @@ func (s *Store) prepareEngine(ctx context.Context) error {
 	prep(&s.stmts.insertEventDoc, "INSERT INTO event_docs (event_id, class, doc_id, qualifier) VALUES (?, ?, ?, ?)")
 	prep(&s.stmts.selectLife, lifeSQL)
 	prep(&s.stmts.selectMoves, movesSQL)
+	prep(&s.stmts.mark, "SAVEPOINT many")
+	prep(&s.stmts.unmark, "RELEASE many")
+	prep(&s.stmts.toMark, "ROLLBACK TO many")
 	prep(&s.stmts.insertOutbox, "INSERT INTO outbox (event_id, idx, class, doc_id, version, class_version, rule, action, args, principal_id, principal_groups, principal_admin, depth, status, attempts, due_at, error_code, error_message, created_at, finished_at, outcome_event)"+
 		" VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?)")
 	if err != nil {

@@ -536,6 +536,109 @@ func BenchmarkTransition(b *testing.B) {
 	}
 }
 
+// benchMany opens a store with the transition benchmarks' class and n
+// documents of it in draft, with the amount given.
+func benchMany(b *testing.B, n int, amount float64) (*Store, []string) {
+	b.Helper()
+	s, err := Open(filepath.Join(b.TempDir(), "bench.fado"), Options{})
+	if err != nil {
+		b.Fatal(err)
+	}
+	b.Cleanup(func() { s.Close() })
+	ctx := context.Background()
+	if _, err := s.DefineClass(ctx, []byte(benchFlow)); err != nil {
+		b.Fatal(err)
+	}
+	docs := make([]Values, n)
+	for i := range docs {
+		docs[i] = Values{"amount": amount, "qty": 5, "note": "n"}
+	}
+	made, err := s.CreateMany(ctx, "Flow", docs)
+	if err != nil {
+		b.Fatal(err)
+	}
+	ids := make([]string, n)
+	for i, d := range made {
+		ids[i] = d.ID
+	}
+	return s, ids
+}
+
+// BenchmarkTransitionMany measures a batch of 1,000 moves in one
+// transaction (ADR-0048): the documents go submit, back, submit, ... as
+// the one of BenchmarkTransition does, so an iteration is 1,000 of its
+// iterations with one transaction and a savepoint a document.
+func BenchmarkTransitionMany(b *testing.B) {
+	s, ids := benchMany(b, 1000, 500)
+	ctx := context.Background()
+	names := [2]string{"submit", "back"}
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; b.Loop(); i++ {
+		out, err := s.TransitionMany(ctx, "Flow", names[i%2], ids, nil, As(alice))
+		if err != nil {
+			b.Fatal(err)
+		}
+		if !out[len(out)-1].Moved() {
+			b.Fatal(out[len(out)-1].Refusal)
+		}
+	}
+}
+
+// BenchmarkTransitionManyRefused measures a batch of 1,000 documents
+// that are all refused by their guard: what a document that does not
+// move costs the batch.
+func BenchmarkTransitionManyRefused(b *testing.B) {
+	s, ids := benchMany(b, 1000, 0)
+	ctx := context.Background()
+	b.ReportAllocs()
+	b.ResetTimer()
+	for b.Loop() {
+		out, err := s.TransitionMany(ctx, "Flow", "submit", ids, nil, As(alice))
+		if err != nil {
+			b.Fatal(err)
+		}
+		if out[0].Refusal == nil || out[0].Refusal.Code != CodeGuardFalse {
+			b.Fatal(out[0].Refusal)
+		}
+	}
+}
+
+// BenchmarkPreviewMany measures the batch of BenchmarkTransitionMany
+// rolled back.
+func BenchmarkPreviewMany(b *testing.B) {
+	s, ids := benchMany(b, 1000, 500)
+	ctx := context.Background()
+	b.ReportAllocs()
+	b.ResetTimer()
+	for b.Loop() {
+		if _, err := s.PreviewMany(ctx, "Flow", "submit", ids, nil, As(alice)); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+// BenchmarkSavepoint measures the mark a batch of moves sets before a
+// document and releases after it, by itself (ADR-0048, item 3).
+func BenchmarkSavepoint(b *testing.B) {
+	s, _ := benchMany(b, 1, 500)
+	ctx := context.Background()
+	if _, err := s.writer.ExecContext(ctx, "BEGIN IMMEDIATE"); err != nil {
+		b.Fatal(err)
+	}
+	defer s.writer.ExecContext(ctx, "ROLLBACK")
+	b.ReportAllocs()
+	b.ResetTimer()
+	for b.Loop() {
+		if _, err := s.stmts.mark.ExecContext(ctx); err != nil {
+			b.Fatal(err)
+		}
+		if _, err := s.stmts.unmark.ExecContext(ctx); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
 // BenchmarkTransitionChain measures a named transition followed by one
 // eventless hop, two commits in one transaction: approve books, close,
 // reopen, submit, and again.

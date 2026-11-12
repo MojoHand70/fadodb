@@ -205,9 +205,10 @@ func guardFailure(err error) string {
 	return err.Error()
 }
 
-// resolveTransition finds the named transition a command means and
-// checks that it leaves the document's state (ADR-0040).
-func resolveTransition(c *class, name, from string) (*model.Transition, *Error) {
+// namedTransition finds the named transition of a class, whatever state
+// a document is in: unknown_transition when the class has none of that
+// name.
+func namedTransition(c *class, name string) (*model.Transition, *Error) {
 	cls := c.cls
 	if cls.States == nil || len(state.Names(cls)) == 0 {
 		return nil, hintf(CodeUnknownTransition, "", cls.Name+" has no named transitions", "declare states and transitions in the class")
@@ -215,6 +216,17 @@ func resolveTransition(c *class, name, from string) (*model.Transition, *Error) 
 	t := state.Named(cls, name)
 	if t == nil {
 		return nil, hintf(CodeUnknownTransition, "", fmt.Sprintf("%s has no transition %q", cls.Name, name), "the transitions are: "+strings.Join(state.Names(cls), ", "))
+	}
+	return t, nil
+}
+
+// resolveTransition finds the named transition a command means and
+// checks that it leaves the document's state (ADR-0040).
+func resolveTransition(c *class, name, from string) (*model.Transition, *Error) {
+	cls := c.cls
+	t, e := namedTransition(c, name)
+	if e != nil {
+		return nil, e
 	}
 	if !state.From(t, from) {
 		hint := "no transition leaves " + from

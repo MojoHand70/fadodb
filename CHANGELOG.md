@@ -8,6 +8,27 @@ All notable changes to FadoDB are recorded here. The format follows
 
 ### Added
 
+- A transition may carry its time (ADR-0047, items 9, 13 and 14):
+  `"after": "30d"`, a length of time in its state as a whole number and
+  `d`, `h`, `m` or `s`, or `"at"`, a formula over the document that
+  gives a date or a datetime. It needs neither a name nor a guard, and
+  a guard beside the timer is still asked. Such a transition fires in
+  the chain of the first commit that touches the document once its time
+  has come, in the order of the class with the eventless ones; its
+  event has the origin `timer`, and with a name it raises the rules and
+  the triggered variables of that name. A transition back into its own
+  state with an `after` repeats, which is how a reminder is written. A
+  named one may be taken by a command before its time. Refused when the
+  class is defined: both on one transition, an `after` that is no
+  length of time, an `at` that reads the clock, the user, another
+  document or a table, an `at` on a transition into its own state, and
+  a timed transition out of a terminal state. The engine does not yet
+  touch the document by itself when the time comes; `Due` and a
+  refresh do, until the wake-up is built.
+- `Transitions` shows a timed transition with `fires_at`, the moment
+  its time comes, one without a name too. `Due` lists the documents a
+  timed transition would move, each with `since`, the moment since
+  which it has been due.
 - `Due` lists the documents of a class that a commit would move if it
   touched them now, or at the moment given with `At` (ADR-0047, item
   8): each with its state and the state it would move to, the target of

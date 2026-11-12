@@ -68,7 +68,7 @@ const (
 	commitCreate     commitKind = iota // create, then enter of the initial state
 	commitSet                          // values_change
 	commitTransition                   // values_change, exit, transition, enter
-	commitHop                          // an eventless transition: exit, enter
+	commitHop                          // a transition of the chain: exit, transition when it has a name, enter
 	commitDelete                       // delete
 )
 
@@ -80,12 +80,14 @@ type emitted struct {
 	name   string
 }
 
-// hop is one eventless transition of a command, a commit of its own: the
-// row it writes, and the composites a reset of its rules emptied, nil
-// when none did and every composite is carried forward.
+// hop is one transition of a command's chain, eventless or timed, a
+// commit of its own: the row it writes, the composites a reset of its
+// rules emptied, nil when none did and every composite is carried
+// forward, and the transition that fired.
 type hop struct {
 	row  *docRow
 	kids map[*child][]childRow
+	t    *model.Transition
 }
 
 // ruleRun is what the rules of one commit run with, beside the row. The
@@ -222,8 +224,9 @@ func (s *Store) changes(c, beforeClass *class, before, after *docRow, kids []*ch
 // its kind in the order of ADR-0043, the rules of each in declaration
 // order. The composites a reset emptied are left in s.emptied. from is
 // the state a transition or a hop left and name the named transition
-// taken; changed are the variables that changed, for a set and a
-// transition. STATE() is the state left in an exit and a transition rule
+// taken, or the name of a timed transition that fired in the chain, ""
+// for one without; changed are the variables that changed, for a set and
+// a transition. STATE() is the state left in an exit and a transition rule
 // and the state the document is in everywhere else, and ENTEREDAT(),
 // ENTEREDBY() and ENTEREDFROM() go with it. It leaves the context's
 // state at the document's.
@@ -263,7 +266,7 @@ func (s *Store) fireCommit(run *ruleRun, row *docRow, kind commitKind, from, nam
 		row.swapStay()
 	}
 	err := s.fire(run, row, rs.exit[from])
-	if err == nil && kind == commitTransition {
+	if err == nil && name != "" {
 		err = s.fire(run, row, rs.transition[name])
 	}
 	if run.c.life {

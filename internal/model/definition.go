@@ -75,12 +75,17 @@ type StatesDef struct {
 }
 
 // TransitionDef is one transition. From is one state as text or a list
-// of states. A transition without a name is eventless and needs a guard.
+// of states. A transition without a name is eventless and needs a guard,
+// unless it is timed (ADR-0047, item 9): After is a length of time in the
+// state, a whole number and d, h, m or s, and At a formula that gives the
+// moment, a date or a datetime. A transition carries one of them at most.
 type TransitionDef struct {
 	Name  string          `json:"name,omitempty"`
 	From  json.RawMessage `json:"from"`
 	To    string          `json:"to"`
 	Guard string          `json:"guard,omitempty"`
+	After string          `json:"after,omitempty"`
+	At    string          `json:"at,omitempty"`
 }
 
 // RuleDef is one event-condition-action rule (ADR-0009). The actions are

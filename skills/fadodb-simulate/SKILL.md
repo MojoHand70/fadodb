@@ -26,9 +26,11 @@ result and discards the file or adopts the class.
 | a scratch database per experiment: `Open` on a temporary path | shipped |
 | seeding: `DefineClass`, `DefineTable`, `ImportRows`, `CreateMany` | shipped |
 | a preview at a chosen moment: `At(t)` on `Preview`, `PreviewDraft`, `Transitions`, `Query`, `Get` and `History` | shipped |
-| what will be due at a chosen moment: `Due` with `At(t)` lists the documents a commit would move then | in `main`, ships with v0.4.0 |
+| what will be due at a chosen moment: `Due` with `At(t)` lists the documents a commit would move then, by a guard on time or by a timed transition | in `main`, ships with v0.4.0 |
+| what the timers of one document would do by a chosen moment: `Preview` of nothing with `At(t)` shows the chain a commit at that moment would fire, a reminder once, and `Transitions` the moment each timer fires | in `main`, ships with v0.4.0 |
 | a commit at a chosen moment | not designed: a commit runs at the database's clock |
-| scheduled rules that fire with time | designed, Phase 4 |
+| timers that fire by themselves in a scratch database, under a clock the simulation moves | designed, ADR-0047: comes with the wake-up. Until then move the clock with `Options.Now`, ask `Due` and touch what it lists |
+| a rule or a variable on a schedule | designed: it recomputes many documents at once and waits for the analytical engine, Phase 8 |
 | replaying an event log into a database | not designed |
 
 ## Procedure, in outline

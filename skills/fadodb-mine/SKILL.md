@@ -28,7 +28,7 @@ goes back to the designer as a redrafted class.
 | the filter over a class, `Query` and `Count`, with `Where` and `Order` in the formula language | shipped |
 | the read-only `SQL` endpoint with parameters | shipped |
 | the event log, `Events`; the `_states` view of state entries and exits | shipped with Phase 3 |
-| who and how: `created_by`, `updated_by`, `state_entered_by` and `state_entered_from` on every document and version; `origin` on every event that enters a state (`command`, `action`, `guard`); in `_states` one row for every entry, a return into the same state too, with `entered_by`, `entered_from`, `entered_via`, `entered_how`, `left_by`, `left_via`, `left_how` | in `main`, ships with v0.4.0 |
+| who and how: `created_by`, `updated_by`, `state_entered_by` and `state_entered_from` on every document and version; `origin` on every event that enters a state (`command`, `action`, `guard`, `timer`); in `_states` one row for every entry, a return into the same state too, with `entered_by`, `entered_from`, `entered_via`, `entered_how`, `left_by`, `left_via`, `left_how` | in `main`, ships with v0.4.0 |
 | the event of a creation names the state the document was created in, under `to_state`, as the event of a transition names the one it entered; so the log alone tells every entry | in `main`, ships with v0.4.0 |
 | the same facts for one document inside a formula, `FIRSTENTERED("approved")`, `ENTRIES("sent")`, `DAYSIN("review")` and the like | in `main`, ships with v0.4.0: a formula of the class may ask them; a filter may not, so across documents read the `_states` view with `SQL` |
 | a picture as of a moment, `At(t)` on reads | shipped |
@@ -43,8 +43,9 @@ goes back to the designer as a redrafted class.
    `_states` view holds each entry into and exit from a state, with who
    made each move, by which transition and how: `entered_how` and
    `left_how` say `command` for a step somebody asked for, `action` for
-   one a rule of a document asked for, and `guard` for one the document
-   took by its own condition, so the share of a process that runs by
+   one a rule of a document asked for, `guard` for one the document
+   took by its own condition and `timer` for one a timed transition
+   made when its time had come, so the share of a process that runs by
    itself is a count.
 2. **Ask in SQL, read-only.** Time in a state is the gap between an entry
    and the exit that follows it. Rework is a state entered twice by one

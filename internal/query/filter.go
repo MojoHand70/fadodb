@@ -123,26 +123,9 @@ type column struct {
 // compiled into the predicate for the principal (ADR-0041). The context
 // parameters of the dialect are bound by the caller.
 func Compile(f Filter, cls *model.Class, sources formula.Sources, p Principal) (*Plan, error) {
-	cols := map[string]column{}
-	vars := make([]formula.Variable, 0, len(systemColumns)+len(cls.Variables))
-	for _, sc := range systemColumns {
-		vars = append(vars, sc)
-		cols[strings.ToUpper(sc.Name)] = column{name: sc.Name, typ: sc.Type}
-	}
-	for _, v := range cls.Variables {
-		vars = append(vars, formula.Variable{Name: v.Name, Type: v.Type})
-	}
-	for _, c := range cls.Columns {
-		if strings.HasSuffix(c.Name, formula.CurrencySuffix) && c.Type.Kind == formula.KindText {
-			if prev, ok := cols[strings.ToUpper(c.Path)]; ok && prev.typ.Kind == formula.KindMoney {
-				continue
-			}
-		}
-		cols[strings.ToUpper(c.Path)] = column{name: c.Name, typ: c.Type}
-	}
-	scope, err := formula.NewScope(vars...)
+	scope, cols, err := scopeOf(cls)
 	if err != nil {
-		return nil, &Error{Code: CodeBadValue, Element: "class", Pos: -1, Message: err.Error()}
+		return nil, err
 	}
 	d := formula.NewSQLite()
 	plan := &Plan{Limit: f.Limit, Offset: f.Offset}
@@ -155,13 +138,7 @@ func Compile(f Filter, cls *model.Class, sources formula.Sources, p Principal) (
 	if plan.Offset < 0 {
 		return nil, &Error{Code: CodeBadValue, Element: "offset", Pos: -1, Message: fmt.Sprintf("the offset is not negative, got %d", f.Offset)}
 	}
-	quoted := func(s formula.Slot) string {
-		c, ok := cols[strings.ToUpper(s.Name)]
-		if !ok {
-			return quoteIdent(strings.ReplaceAll(s.Name, ".", model.PathSeparator))
-		}
-		return quoteIdent(c.name)
-	}
+	quoted := quoter(cols)
 	if strings.TrimSpace(f.Where) != "" {
 		node, err := formula.Parse(f.Where)
 		if err != nil {
@@ -331,6 +308,78 @@ func Compile(f Filter, cls *model.Class, sources formula.Sources, p Principal) (
 		}
 	}
 	return plan, nil
+}
+
+// scopeOf is what the formulas of a filter over a class bind against: the
+// system columns and the class's variables, and the stored column of
+// each name a formula may compare.
+func scopeOf(cls *model.Class) (*formula.Scope, map[string]column, error) {
+	cols := map[string]column{}
+	vars := make([]formula.Variable, 0, len(systemColumns)+len(cls.Variables))
+	for _, sc := range systemColumns {
+		vars = append(vars, sc)
+		cols[strings.ToUpper(sc.Name)] = column{name: sc.Name, typ: sc.Type}
+	}
+	for _, v := range cls.Variables {
+		vars = append(vars, formula.Variable{Name: v.Name, Type: v.Type})
+	}
+	for _, c := range cls.Columns {
+		if strings.HasSuffix(c.Name, formula.CurrencySuffix) && c.Type.Kind == formula.KindText {
+			if prev, ok := cols[strings.ToUpper(c.Path)]; ok && prev.typ.Kind == formula.KindMoney {
+				continue
+			}
+		}
+		cols[strings.ToUpper(c.Path)] = column{name: c.Name, typ: c.Type}
+	}
+	scope, err := formula.NewScope(vars...)
+	if err != nil {
+		return nil, nil, &Error{Code: CodeBadValue, Element: "class", Pos: -1, Message: err.Error()}
+	}
+	return scope, cols, nil
+}
+
+// quoter gives the SQL of the column a slot reads.
+func quoter(cols map[string]column) func(formula.Slot) string {
+	return func(s formula.Slot) string {
+		c, ok := cols[strings.ToUpper(s.Name)]
+		if !ok {
+			return quoteIdent(strings.ReplaceAll(s.Name, ".", model.PathSeparator))
+		}
+		return quoteIdent(c.name)
+	}
+}
+
+// Value translates a formula over a class's variables and system columns
+// into the SQL of its value over the rows of the class's documents, with
+// the kind of the value: for a statement of the store's own, such as the
+// moment of a timed transition in the list of what is due (ADR-0047,
+// item 8). The expression is NULL in a row where the formula is blank or
+// fails. It applies no read right, since the statement is the engine's,
+// and binds no parameter of its own: the context parameters of the
+// dialect are the caller's to bind. A formula that looks something up or
+// calls a function of a state is refused, as in a filter.
+func Value(src string, cls *model.Class, sources formula.Sources) (string, formula.Kind, error) {
+	scope, cols, err := scopeOf(cls)
+	if err != nil {
+		return "", 0, err
+	}
+	prog, err := formula.Bind(src, scope, formula.BindOptions{Sources: sources})
+	if err != nil {
+		return "", 0, formulaError(err)
+	}
+	for _, c := range prog.Classes {
+		if c != formula.ClassPure && c != formula.ClassContext {
+			return "", 0, &Error{Code: CodeNotAllowed, Element: "value", Pos: -1, Message: "the formula looks something up; it runs over every row of the class"}
+		}
+	}
+	stmt, err := formula.GenerateSQLBound(prog, formula.NewSQLite(), formula.SQLBinding{Column: quoter(cols), Row: quoteIdent})
+	if err != nil {
+		return "", 0, &Error{Code: CodeBadFormula, Element: "value", Pos: -1, Message: err.Error()}
+	}
+	if stmt.Error != "" {
+		return "CASE WHEN (" + stmt.Error + ") IS NULL THEN " + stmt.Value + " END", stmt.Kind, nil
+	}
+	return stmt.Value, stmt.Kind, nil
 }
 
 // rightsPlans caches, per class, the read rights as the compiler needs

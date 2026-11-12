@@ -27,11 +27,13 @@
 // database opened without one sends nothing. An action may carry into,
 // which writes what it returned back to the document when it has ended,
 // so a process goes on from the answer. A formula reads the life of its
-// document, and Due lists the documents that a guard on time would move,
-// for the host program to touch (ADR-0047). Not here yet: QUERY and
-// transitions that fire by themselves when their time comes (Phase 4),
-// the class-level access rules compiled to row predicates (Phase 5) and
-// the server (Phase 6).
+// document. A transition may carry its time, an after or an at: it
+// fires in the first commit that touches the document once that time
+// has come, Transitions shows the moment, and Due lists the documents a
+// guard on time or a timer would move, for the host program to touch
+// (ADR-0047). Not here yet: QUERY, and the engine touching a document
+// by itself when a timer comes (Phase 4), the class-level access rules
+// compiled to row predicates (Phase 5) and the server (Phase 6).
 package fado
 
 import (
@@ -102,10 +104,13 @@ type (
 	Header          = store.Header
 	RequestPreview  = store.RequestPreview
 	// TransitionInfo is one named transition leaving a document's state
-	// and whether it may be taken now (ADR-0040).
+	// and whether it may be taken now (ADR-0040), and for a timed
+	// transition the moment it fires (ADR-0047).
 	TransitionInfo = store.TransitionInfo
 	// DueDocument is one document a commit would move now, as Due lists
-	// it: its state and the state it would move to (ADR-0047).
+	// it: its state, the state it would move to and, when a timed
+	// transition would move it, the moment since which it has been due
+	// (ADR-0047).
 	DueDocument = store.DueDocument
 	// Filter is a query over a class: a where formula, an order, a limit,
 	// an offset and the fields to return (ADR-0038).
@@ -383,15 +388,20 @@ func (db *DB) Transition(ctx context.Context, class, id, name string, values Val
 }
 
 // Transitions lists the named transitions leaving the document's state,
-// each with whether the principal may take it now (ADR-0040). It writes
-// nothing.
+// each with whether the principal may take it now (ADR-0040). A timed
+// transition is listed with the moment it fires, one without a name too
+// (ADR-0047). It writes nothing.
 func (db *DB) Transitions(ctx context.Context, class, id string, opts ...Option) ([]TransitionInfo, error) {
 	return db.s.Transitions(ctx, class, id, opts...)
 }
 
 // Due lists the documents of a class that a commit would move if it
 // touched them now, or at the moment given with At (ADR-0047): each with
-// its state and the state it would move to. It writes nothing.
+// its state and the state it would move to, by an eventless transition
+// whose guard holds or a timed one whose time has come, and for a timed
+// one the moment since which the document has been due. It writes
+// nothing: Refresh with no variables is the touch that moves a due
+// document.
 func (db *DB) Due(ctx context.Context, class string, opts ...Option) ([]DueDocument, error) {
 	return db.s.Due(ctx, class, opts...)
 }

@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -904,6 +905,20 @@ func BenchmarkTransitionIdleRules(b *testing.B) {
 	benchTransitions(b, strings.TrimSuffix(strings.TrimSpace(benchFlow), "}")+idleRules, "Flow")
 }
 
+// BenchmarkTransitionTimers is BenchmarkTransition on the same class
+// with two timed transitions out of each of the two states the document
+// moves between, an after and an at over a date it computes, none of
+// which has come (ADR-0047): what a commit pays to ask each whether its
+// time has come, one addition for an after and one evaluation of its
+// formula for an at. It allocates what BenchmarkTransition allocates.
+func BenchmarkTransitionTimers(b *testing.B) {
+	timers := `,
+   {"from": ["draft", "review"], "to": "closed", "after": "30d"},
+   {"name": "lapse", "from": ["draft", "review"], "to": "closed", "at": "ADDDAYS(CREATEDAT(), 90 + qty)"}
+ ]}`
+	benchTransitions(b, strings.TrimSuffix(strings.TrimSpace(benchFlow), "]}")+timers, "Flow")
+}
+
 // benchTransitions takes submit and back in turn on a document of the
 // class.
 func benchTransitions(b *testing.B, definition, class string) {
@@ -1227,8 +1242,11 @@ func benchLifeStates(b *testing.B, function string) {
 // over a date with no index, which reads every document of the state;
 // and a guard that calls a function of a state, which is evaluated
 // document by document, over a hundredth of the documents; and a
-// backlog, every document due. It writes to disk and runs only with
-// FADODB_BENCH_DIR, like BenchmarkFilter.
+// backlog, every document due. Then the timed transitions: an at over an
+// indexed date, which the same index serves, and an after, which
+// compares the moment of entry and reads every document of the state.
+// It writes to disk and runs only with FADODB_BENCH_DIR, like
+// BenchmarkFilter.
 func BenchmarkDue(b *testing.B) {
 	dir := os.Getenv("FADODB_BENCH_DIR")
 	if dir == "" {
@@ -1245,7 +1263,9 @@ func BenchmarkDue(b *testing.B) {
 		}
 	}()
 	day := time.Date(2026, 11, 8, 12, 0, 0, 0, time.UTC)
-	s, err := Open(path, Options{Now: func() time.Time { return day }})
+	// The clock stands at day, but for the documents created early.
+	var early atomic.Int64
+	s, err := Open(path, Options{Now: func() time.Time { return day.AddDate(0, 0, -int(early.Load())) }})
 	if err != nil {
 		b.Fatal(err)
 	}
@@ -1253,39 +1273,59 @@ func BenchmarkDue(b *testing.B) {
 	ctx := context.Background()
 	const invoice = `{"name": "%s", "variables": {"due": {"type": "date"%s}, "amount": {"type": "number"}},
  "states": {"initial": "sent", "list": ["sent", "overdue"]},
- "transitions": [{"from": "sent", "to": "overdue", "guard": "%s"}]}`
+ "transitions": [{"from": "sent", "to": "overdue", %s}]}`
 	classes := []struct {
-		name, index, guard string
-		docs               int
+		name, index, condition string
+		docs                   int
+		// early is how many days before the clock a hundred documents
+		// are created, for a class whose timer counts from the entry.
+		early int
 	}{
-		{"Indexed", `, "index": true`, "TODAY() > due", n},
-		{"Plain", "", "TODAY() > due", n},
-		{"Aged", "", `DAYSIN(\"sent\") >= 3 AND TODAY() > due`, n / 100},
+		{"Indexed", `, "index": true`, `"guard": "TODAY() > due"`, n, 0},
+		{"Plain", "", `"guard": "TODAY() > due"`, n, 0},
+		{"Aged", "", `"guard": "DAYSIN(\"sent\") >= 3 AND TODAY() > due"`, n / 100, 0},
+		{"Timed", `, "index": true`, `"at": "due"`, n, 0},
+		{"After", "", `"after": "30d"`, n, 28},
 	}
-	start := time.Now()
+	start, made := time.Now(), 0
 	for _, c := range classes {
-		if _, err := s.DefineClass(ctx, []byte(fmt.Sprintf(invoice, c.name, c.index, c.guard))); err != nil {
+		if _, err := s.DefineClass(ctx, []byte(fmt.Sprintf(invoice, c.name, c.index, c.condition))); err != nil {
 			b.Fatal(err)
 		}
-		// Of every class a hundred documents pass their date in two days;
-		// the others have a month and more.
+		// Of every class a hundred documents pass their date in two days,
+		// or their thirty days in the state; the others have a month and
+		// more.
 		every := max(c.docs/100, 1)
 		batch := make([]Values, 0, 1000)
-		for i := 0; i < c.docs; i++ {
-			due := day.AddDate(0, 0, 30+i%300)
-			if i%every == 0 {
-				due = day.AddDate(0, 0, 1)
-			}
-			batch = append(batch, Values{"due": due.Format(time.DateOnly), "amount": i})
-			if len(batch) == cap(batch) || i == c.docs-1 {
+		create := func() {
+			if len(batch) > 0 {
 				if _, err := s.CreateMany(ctx, c.name, batch); err != nil {
 					b.Fatal(err)
 				}
+				made += len(batch)
 				batch = batch[:0]
 			}
 		}
+		for i := 0; i < c.docs; i++ {
+			due := day.AddDate(0, 0, 30+i%300)
+			if i%every == 0 && c.early == 0 {
+				due = day.AddDate(0, 0, 1)
+			}
+			if c.early > 0 && i == 100 {
+				// The first hundred were created early; the rest are of today.
+				create()
+				early.Store(0)
+			} else if c.early > 0 && i == 0 {
+				early.Store(int64(c.early))
+			}
+			if batch = append(batch, Values{"due": due.Format(time.DateOnly), "amount": i}); len(batch) == cap(batch) {
+				create()
+			}
+		}
+		create()
+		early.Store(0)
 	}
-	b.Logf("%d documents of three classes created in %s", 2*n+n/100, time.Since(start).Round(time.Millisecond))
+	b.Logf("%d documents of %d classes created in %s", made, len(classes), time.Since(start).Round(time.Millisecond))
 	soon, late := At(day.AddDate(0, 0, 4)), At(day.AddDate(0, 0, 400))
 	for _, bc := range []struct {
 		name, class string
@@ -1297,6 +1337,8 @@ func BenchmarkDue(b *testing.B) {
 		{"document by document, 100 due", "Aged", soon, 100},
 		// A backlog: every document is due, and the call lists its bound.
 		{"indexed date, all due", "Indexed", late, min(n, MaxDue)},
+		{"timer at an indexed date, 100 due", "Timed", soon, 100},
+		{"timer after a time in the state, 100 due", "After", soon, 100},
 	} {
 		b.Run(bc.name, func(b *testing.B) {
 			b.ReportAllocs()

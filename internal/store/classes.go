@@ -323,15 +323,20 @@ func newClass(cls *model.Class, src []byte) (*class, error) {
 		}
 	}
 	for i, t := range cls.Transitions {
-		if t.Guard == nil {
-			continue
-		}
 		owner := "transition " + t.Name
 		if t.Name == "" {
 			owner = "transitions/" + itoa(i)
 		}
-		if err := c.bindSlots(t.Guard, owner); err != nil {
-			return nil, err
+		if t.Guard != nil {
+			if err := c.bindSlots(t.Guard, owner); err != nil {
+				return nil, err
+			}
+		}
+		// The moment of a timed transition (ADR-0047, item 9).
+		if t.At != nil {
+			if err := c.bindSlots(t.At, owner+"/at"); err != nil {
+				return nil, err
+			}
 		}
 	}
 	// The transition rules and the rights (ADR-0041): their slots bound,

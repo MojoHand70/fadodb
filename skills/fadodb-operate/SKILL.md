@@ -27,7 +27,7 @@ obstacle. The guards hold whoever is asking, the agent included.
 | the principal on every call, `As`; the idempotency key, `Key`; a moment for reads and previews, `At` | shipped |
 | `Due`, the documents of a class that a commit would move now, or at a moment with `At`; `since` says since when, for a document a timed transition would move | in `main`, ships with v0.4.0 |
 | a timed transition, `after` or `at`: it fires in the first commit that touches the document once its time has come, and `Transitions` shows the moment as `fires_at` | in `main`, ships with v0.4.0 |
-| the engine touching a document by itself when its timer comes | designed, ADR-0047: not built yet |
+| the engine moving a document by itself when its timer comes: `Outbox` and `<Class>_actions` list each timer waiting as the action `timer` with its moment in `due_at`; one that died says why, and `RetryAction` asks again | in `main`, ships with v0.4.0 |
 | the JSON command set over HTTP and WebSocket | designed, Phase 6 |
 | the MCP server | designed, Phase 11 |
 
@@ -60,15 +60,18 @@ embeds the engine, or through the embedder's own interface.
 8. **Choose the moment when it matters.** `At(t)` on a read or a preview
    makes `NOW()` and `TODAY()` that moment in every formula the call
    evaluates. A commit always runs at the database's clock.
-9. **Move what is due.** A guard such as `TODAY() > due` comes to hold,
-   and the time of a timed transition comes, while nothing touches the
-   document, and the document stays where it is until a commit touches
-   it. `Due` lists those documents of a class, each with its state and
-   the state it would move to, and `since` for one whose timer has
-   come. Touch each with `Refresh` and the commit moves it. One call
-   lists at most 10,000, so ask again until the list is empty. With
-   `At(t)` it answers what will be due at that moment. `Transitions`
-   shows when the timers of one document fire, as `fires_at`.
+9. **Move what is due.** A timed transition moves by itself: the
+   engine touches the document when its time comes, and `Transitions`
+   shows that moment as `fires_at`. A guard such as `TODAY() > due` is
+   different: it comes to hold while nothing touches the document, and
+   the document stays where it is until a commit touches it. `Due`
+   lists those documents of a class, each with its state and the state
+   it would move to. Touch each with `Refresh` and the commit moves it.
+   One call lists at most 10,000, so ask again until the list is empty.
+   With `At(t)` it answers what will be due at that moment. A document
+   whose timer has come and that `Due` still lists, with `since`, is
+   one the engine could not move: look for a dead `timer` row in
+   `Outbox`.
 
 ## References, to be written
 

@@ -820,9 +820,7 @@ func (s *Store) runCall(ctx context.Context, row *outboxRow) (bool, error) {
 	if failure == nil {
 		_ = s.at("committed", row)
 	}
-	if queuedMore {
-		s.wakeWorker()
-	}
+	s.wakeQueued(queuedMore, false)
 	return true, nil
 }
 

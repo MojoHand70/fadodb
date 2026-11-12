@@ -33,12 +33,12 @@ Website: [fadodb.org](https://fadodb.org).
 > which is how a purchase counts its approvals. A formula reads the
 > life of its document too: when and by whom it was created, changed
 > and moved into and out of each state. A transition may carry its
-> time, `"after": "30d"` or `"at"` a date the document holds: it fires
-> in the first commit that touches the document once that time has
-> come, and `Due` lists the documents that a timer or a guard on time
-> would move, so the host program can touch them. The engine touching
-> them by itself when the time comes, the row-level access rules and
-> the server come with their steps and phases. The numbers are in
+> time, `"after": "30d"` or `"at"` a date the document holds, and the
+> engine moves the document by itself when that time comes, as the
+> person whose commit set the timer; `Due` lists the documents that a
+> guard on time would move, so the host program can touch them. The
+> row-level access rules and the server come with their phases. The
+> numbers are in
 > [docs/perf/](docs/perf/), the plan in [ROADMAP.md](ROADMAP.md).
 
 ## What it is

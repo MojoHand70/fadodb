@@ -1,0 +1,131 @@
+{
+  "suite": "timers",
+  "description": "The wake-up (ADR-0047, items 10 to 12 and 17). When a document enters a state, the commit queues a row of the outbox for each timed transition that leaves it, due at its moment; when a commit changes a date an at reads, it queues one for the new moment. When a row is due the engine touches the document: what fires in the chain is written, each transition a version with the origin timer, and when nothing is to do, because the document has left the state or the stay, the moment has moved to later, or a guard does not hold, the row is done and nothing is written. A wake-up acts as the person whose commit queued it: USER() in the rules of the move is theirs, and so are the actions those rules queue. It stands outside the order of its document's other actions. The scripts move the suite's clock and drain the outbox, which is what the worker does when the time comes.",
+  "clock": "2026-11-02 09:00:00",
+  "classes": [
+    {"name": "Notice", "variables": {"about": {"type": "text"}, "by": {"type": "text"}}, "states": {"initial": "open", "list": ["open"]}}
+  ],
+  "class": {
+    "name": "Request",
+    "variables": {
+      "subject":   {"type": "text"},
+      "deadline":  {"type": "date"},
+      "answered":  {"type": "bool", "default": "FALSE"},
+      "reminders": {"type": "number", "default": "0"},
+      "said":      {"type": "text"}
+    },
+    "states": {"initial": "new", "list": ["new", "waiting", "escalated", "expired", "closed"], "final": ["expired", "closed"]},
+    "transitions": [
+      {"name": "ask", "from": "new", "to": "waiting"},
+      {"name": "remind", "from": "waiting", "to": "waiting", "after": "3d", "guard": "NOT answered"},
+      {"from": "waiting", "to": "escalated", "at": "ADDDAYS(FIRSTENTERED(\"waiting\"), 7)"},
+      {"from": ["waiting", "escalated"], "to": "expired", "at": "deadline"},
+      {"name": "close", "from": ["waiting", "escalated"], "to": "closed"}
+    ],
+    "rules": [
+      {"on": "transition", "name": "remind", "do": [{"action": "set", "values": {"reminders": "reminders + 1", "said": "USER()"}}]},
+      {"on": "enter", "state": "escalated", "do": [{"action": "create", "class": "Notice", "values": {"about": "ID()", "by": "USER()"}}]}
+    ]
+  },
+  "principals": {
+    "ann": {"id": "ann", "groups": ["staff"]},
+    "bob": {"id": "bob", "groups": ["staff"]}
+  },
+  "script": [
+    {"name": "a request is made on a Monday at nine", "do": "create", "doc": "r", "id": "r", "as": "ann", "values": {"subject": "printer", "deadline": "2026-11-20"}, "expect": {"state": "new", "version": 1, "outbox": []}},
+    {"name": "asked, it waits: the commit queues a wake-up for each timed transition leaving the state, due at its moment, as ann", "do": "transition", "doc": "r", "transition": "ask", "as": "ann",
+     "expect": {"state": "waiting", "version": 2, "outbox": [
+       {"action": "timer", "status": "pending", "as": "ann", "depth": 0, "due": "2026-11-05 09:00:00", "args": {"state": "waiting", "to": "waiting", "name": "remind"}},
+       {"action": "timer", "status": "pending", "as": "ann", "depth": 0, "due": "2026-11-09 09:00:00", "args": {"state": "waiting", "to": "escalated"}},
+       {"action": "timer", "status": "pending", "as": "ann", "depth": 0, "due": "2026-11-20 00:00:00", "args": {"state": "waiting", "to": "expired"}}]}},
+    {"name": "nothing is due yet", "do": "drain", "expect": {"drained": 0}},
+    {"name": "a second before the three days are over", "do": "wait", "seconds": 259199},
+    {"do": "drain", "expect": {"drained": 0}},
+    {"do": "wait", "seconds": 1},
+
+    {"name": "the time has come and the engine touches the request: the reminder fires as ann, who began the stay, with the origin timer, and the rule of its name runs", "do": "drain", "expect": {"drained": 1}},
+    {"do": "get", "doc": "r", "as": "bob",
+     "expect": {"state": "waiting", "version": 3, "history": ["new", "waiting", "waiting"], "events": ["created", "transition:ask", "transition:remind"], "origins": ["command", "command", "timer"],
+                "values": {"reminders": 1, "said": "ann"}, "life": {"updated_by": "ann", "state_entered_by": "ann", "state_entered_from": "waiting"},
+                "stays": [["new", "ann", null, null, "command", "ann", "ask", "command"],
+                          ["waiting", "ann", "new", "ask", "command", "ann", "remind", "timer"],
+                          ["waiting", "ann", "waiting", "remind", "timer", null, null, null]]}},
+    {"name": "the wake-up is done, and the new stay has its own: the reminder counts again, the two dates stand", "do": "actions", "doc": "r",
+     "expect": {"outbox": [
+       {"action": "timer", "status": "done", "attempts": 1, "due": "2026-11-05 09:00:00"},
+       {"action": "timer", "status": "pending", "due": "2026-11-09 09:00:00"},
+       {"action": "timer", "status": "pending", "due": "2026-11-20 00:00:00"},
+       {"action": "timer", "status": "pending", "as": "ann", "due": "2026-11-08 09:00:00", "args": {"state": "waiting", "to": "waiting", "name": "remind"}},
+       {"action": "timer", "status": "pending", "as": "ann", "due": "2026-11-09 09:00:00", "args": {"state": "waiting", "to": "escalated"}},
+       {"action": "timer", "status": "pending", "as": "ann", "due": "2026-11-20 00:00:00", "args": {"state": "waiting", "to": "expired"}}]}},
+
+    {"name": "three days on the reminder repeats", "do": "wait", "seconds": 259200},
+    {"do": "drain", "expect": {"drained": 1}},
+    {"do": "get", "doc": "r", "as": "bob", "expect": {"state": "waiting", "version": 4, "values": {"reminders": 2}}},
+
+    {"name": "a day on the escalation comes: seven days after the first entry, whatever the reminders did", "do": "wait", "seconds": 86400},
+    {"name": "the wake-ups of the two stays that ended find a later stay and do nothing; the third fires; and the notice its rule asks for is created in the same drain, as ann", "do": "drain", "expect": {"drained": 4}},
+    {"do": "get", "doc": "r", "as": "bob",
+     "expect": {"state": "escalated", "version": 5, "events": ["created", "transition:ask", "transition:remind", "transition:remind", "transition:", "action_run:create"],
+                "origins": ["command", "command", "timer", "timer", "timer"], "life": {"state_entered_by": "ann", "state_entered_from": "waiting"}}},
+    {"name": "the notice says who the engine acted as", "do": "query", "class": "Notice", "expect": {"found": [{"state": "open", "values": {"about": "r", "by": "ann"}}]}},
+
+    {"name": "bob moves the deadline while the request waits: his commit queues a wake-up for the new moment, as bob", "do": "set", "doc": "r", "as": "bob", "values": {"deadline": "2026-11-12"}, "expect": {"state": "escalated", "version": 6}},
+    {"name": "and later still", "do": "set", "doc": "r", "as": "bob", "values": {"deadline": "2026-11-15"}, "expect": {"state": "escalated", "version": 7}},
+    {"name": "a set of something else queues nothing: the moment is what it was", "do": "set", "doc": "r", "as": "ann", "values": {"subject": "the printer"}, "expect": {"state": "escalated", "version": 8}},
+    {"do": "actions", "doc": "r",
+     "expect": {"outbox": [
+       {"action": "timer", "status": "done"}, {"action": "timer", "status": "done"}, {"action": "timer", "status": "pending", "due": "2026-11-20 00:00:00"},
+       {"action": "timer", "status": "done"}, {"action": "timer", "status": "done"}, {"action": "timer", "status": "pending", "due": "2026-11-20 00:00:00"},
+       {"action": "timer", "status": "pending", "due": "2026-11-11 09:00:00"}, {"action": "timer", "status": "done"}, {"action": "timer", "status": "pending", "due": "2026-11-20 00:00:00"},
+       {"action": "create", "status": "done", "as": "ann", "depth": 1},
+       {"action": "timer", "status": "pending", "as": "ann", "due": "2026-11-20 00:00:00", "args": {"state": "escalated", "to": "expired"}},
+       {"action": "timer", "status": "pending", "as": "bob", "depth": 0, "due": "2026-11-12 00:00:00", "args": {"state": "escalated", "to": "expired"}},
+       {"action": "timer", "status": "pending", "as": "bob", "depth": 0, "due": "2026-11-15 00:00:00", "args": {"state": "escalated", "to": "expired"}}]}},
+    {"name": "the first of his wake-ups comes due on the 12th", "do": "wait", "seconds": 226800},
+    {"name": "his wake-up finds that the moment has moved to later, and a reminder queued before the escalation finds the request in another state: both rows are done and nothing is written", "do": "drain", "expect": {"drained": 2}},
+    {"do": "get", "doc": "r", "as": "bob", "expect": {"state": "escalated", "version": 8, "events": ["created", "transition:ask", "transition:remind", "transition:remind", "transition:", "action_run:create", "set", "set", "set"]}},
+    {"name": "on the 15th the second fires, as bob, who set the date", "do": "wait", "seconds": 259200},
+    {"do": "drain", "expect": {"drained": 1}},
+    {"do": "get", "doc": "r", "as": "ann",
+     "expect": {"state": "expired", "version": 9, "origins": ["command", "command", "timer", "timer", "timer", "timer"], "life": {"updated_by": "bob", "state_entered_by": "bob", "state_entered_from": "escalated"}}},
+    {"name": "the wake-ups for the old date come due on the 20th, find the request gone on, and do nothing", "do": "wait", "seconds": 432000},
+    {"do": "drain", "expect": {"drained": 4}},
+    {"do": "get", "doc": "r", "as": "ann", "expect": {"state": "expired", "version": 9}},
+    {"name": "every row is done, and none is dead", "do": "count", "class": "Request", "where": "state = \"expired\"", "expect": {"count": 1}},
+
+    {"name": "a request that is closed before its time", "do": "create", "doc": "s", "id": "s", "as": "ann", "values": {"subject": "badge"}, "expect": {"state": "new", "version": 1}},
+    {"name": "it has no deadline: a blank at never comes, and no wake-up is queued for it", "do": "transition", "doc": "s", "transition": "ask", "as": "ann",
+     "expect": {"state": "waiting", "version": 2, "outbox": [
+       {"action": "timer", "status": "pending", "due": "2026-11-23 00:00:00", "args": {"state": "waiting", "to": "waiting", "name": "remind"}},
+       {"action": "timer", "status": "pending", "due": "2026-11-27 00:00:00", "args": {"state": "waiting", "to": "escalated"}}]}},
+    {"do": "transition", "doc": "s", "transition": "close", "as": "ann", "expect": {"state": "closed", "version": 3}},
+    {"name": "thirty days on its wake-ups find it closed", "do": "wait", "seconds": 2592000},
+    {"do": "drain", "expect": {"drained": 2}},
+    {"do": "get", "doc": "s", "as": "ann",
+     "expect": {"state": "closed", "version": 3, "events": ["created", "transition:ask", "transition:close"], "outbox": [{"action": "timer", "status": "done", "attempts": 1}, {"action": "timer", "status": "done", "attempts": 1}]}},
+
+    {"name": "a request whose worker was stopped", "do": "create", "doc": "t", "id": "t", "as": "ann", "values": {"subject": "desk"}, "expect": {"state": "new", "version": 1}},
+    {"do": "transition", "doc": "t", "transition": "ask", "as": "ann", "expect": {"state": "waiting", "version": 2}},
+    {"name": "ten days pass and nothing runs", "do": "wait", "seconds": 864000},
+    {"do": "get", "doc": "t", "as": "ann", "expect": {"state": "waiting", "version": 2, "values": {"reminders": 0}}},
+    {"name": "the list says what is waiting to move, and since when", "do": "due", "as": "ann", "expect": {"due": [["t", "waiting", "waiting", "2026-12-23 00:00:00"]]}},
+    {"name": "the worker runs again: one touch fires the reminder once, not once for every three days missed, and from the new stay the escalation, whose moment has come too; the other wake-up finds that done; the notice follows", "do": "drain", "expect": {"drained": 3}},
+    {"do": "get", "doc": "t", "as": "bob",
+     "expect": {"state": "escalated", "version": 4, "events": ["created", "transition:ask", "transition:remind", "transition:", "action_run:create"], "origins": ["command", "command", "timer", "timer"], "values": {"reminders": 1, "said": "ann"}}},
+    {"name": "nothing is left to move", "do": "due", "as": "ann", "expect": {"due": []}},
+
+    {"name": "a request the worker never reaches: a commit that touches it fires the timer itself", "do": "create", "doc": "u", "id": "u", "as": "ann", "values": {"subject": "lamp"}, "expect": {"state": "new", "version": 1}},
+    {"do": "transition", "doc": "u", "transition": "ask", "as": "ann", "expect": {"state": "waiting", "version": 2}},
+    {"do": "wait", "seconds": 259200},
+    {"name": "bob's set fires the reminder in its chain, as bob", "do": "set", "doc": "u", "as": "bob", "values": {"subject": "the lamp"},
+     "expect": {"state": "waiting", "version": 4, "events": ["created", "transition:ask", "set", "transition:remind"], "origins": ["command", "command", "timer"], "values": {"reminders": 1, "said": "bob"}}},
+    {"name": "the wake-up that was due finds a later stay: the reminder is not made twice", "do": "drain", "expect": {"drained": 1}},
+    {"do": "get", "doc": "u", "as": "ann", "expect": {"state": "waiting", "version": 4, "values": {"reminders": 1}}},
+
+    {"name": "an answered request: the guard beside the timer is asked when the wake-up comes", "do": "set", "doc": "u", "as": "ann", "values": {"answered": true}, "expect": {"state": "waiting", "version": 5}},
+    {"do": "wait", "seconds": 259200},
+    {"name": "the reminder's time has come, its guard does not hold, and nothing is written", "do": "drain", "expect": {"drained": 1}},
+    {"do": "get", "doc": "u", "as": "ann", "expect": {"state": "waiting", "version": 5, "events": ["created", "transition:ask", "set", "transition:remind", "set"], "values": {"reminders": 1}}}
+  ]
+}

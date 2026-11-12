@@ -19,7 +19,7 @@
 # not every benchmark in the tree: the VM's arithmetic, the recalculation,
 # the lookups, the transition commit, the listing, the guard loop, the
 # projection, the write check, the rules of a commit, an action of the
-# outbox and the read of a document's life. The others run by hand and for a release's perf page. BENCH_PATTERN overrides the set;
+# outbox, a timer and the read of a document's life. The others run by hand and for a release's perf page. BENCH_PATTERN overrides the set;
 # BENCH_PATTERN=. runs every benchmark of BENCH_PACKAGES.
 #
 # Usage:
@@ -34,7 +34,7 @@ TIME_PCT="${BENCH_TIME_PCT:-5}"
 BYTES_PCT="${BENCH_BYTES_PCT:-5}"
 COUNT="${BENCH_COUNT:-5}"
 PLACEMENTS="${BENCH_PLACEMENTS:-5}"
-PATTERN="${BENCH_PATTERN:-^Benchmark(VM_Arithmetic5|VM_Exact5|Recalculate|Recalculate50|LookupIndexed|LookupKeyedStatement|LookupClass|Transition|Transitions10|GuardLoop|Project|WriteCheck|Rules|Outbox|LifeEditors)$}"
+PATTERN="${BENCH_PATTERN:-^Benchmark(VM_Arithmetic5|VM_Exact5|Recalculate|Recalculate50|LookupIndexed|LookupKeyedStatement|LookupClass|Transition|Transitions10|GuardLoop|Project|WriteCheck|Rules|Outbox|Timer|LifeEditors)$}"
 PACKAGES="${BENCH_PACKAGES:-./internal/formula/ ./internal/store/}"
 
 # evaluate_csv prints every regression found in a benchstat CSV and returns 1

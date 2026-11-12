@@ -396,5 +396,7 @@ func (s *Store) migrateBatch(ctx context.Context, c *class, ids []string, o opti
 		_, _ = s.writer.ExecContext(ctx, "ROLLBACK")
 		return storageErr("commit", err)
 	}
+	// A migrated document may have gained a timer (ADR-0047).
+	s.wakeQueued(false, false)
 	return nil
 }

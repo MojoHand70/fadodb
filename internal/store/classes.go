@@ -76,6 +76,9 @@ type class struct {
 	// triggered are the triggered variables in declaration order, the
 	// order they recompute in (ADR-0043); nil when the class has none.
 	triggered []*cvar
+	// timers says the class has a timed transition (ADR-0047), so that a
+	// commit of a class without one does not ask which wake-ups to queue.
+	timers bool
 
 	w writeStmts
 	r readStmts
@@ -338,6 +341,7 @@ func newClass(cls *model.Class, src []byte) (*class, error) {
 				return nil, err
 			}
 		}
+		c.timers = c.timers || t.Timed()
 	}
 	// The transition rules and the rights (ADR-0041): their slots bound,
 	// and the rights table resolved per state once, so that a projection

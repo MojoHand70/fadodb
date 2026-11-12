@@ -190,11 +190,19 @@ type Store struct {
 	// The outbox (ADR-0044): its options with the defaults filled in, the
 	// lock that makes one drain by hand run at a time, the documents that
 	// have an action in flight, and the worker's wake-up, stop and end.
-	outbox     OutboxOptions
-	drainMu    sync.Mutex
-	flightMu   sync.Mutex
-	inFlight   map[flight]struct{}
-	wake       chan struct{}
+	outbox   OutboxOptions
+	drainMu  sync.Mutex
+	flightMu sync.Mutex
+	inFlight map[flight]struct{}
+	wake     chan struct{}
+	// sleepUntil is the second of the database's clock at which the worker
+	// looks at the outbox again when nothing wakes it, 0 while it is
+	// awake; wakeAt, under the writer's lock, the earliest moment of the
+	// wake-ups the transaction in progress queued, 0 for none (ADR-0047).
+	sleepUntil atomic.Int64
+	wakeAt     int64
+	// looks counts the worker's looks at the outbox, for the tests.
+	looks      atomic.Int64
 	workCancel context.CancelFunc
 	workDone   chan struct{}
 	workStop   sync.Once
@@ -527,15 +535,19 @@ func (s *Store) prepareEngine(ctx context.Context) error {
 	// order without a sort. A drain by hand takes them all; the worker
 	// takes the engine's own actions and the ones that leave the database
 	// apart, so that the second, which may take long, never stand in the
-	// way of the first.
-	engine := "'" + strings.Join([]string{model.ActionCreate, model.ActionTransition, model.ActionRefresh, model.ActionTableInsert, model.ActionTableUpdate, model.ActionTableDelete}, "', '") + "'"
+	// way of the first. A wake-up stands outside that order (ADR-0047):
+	// it waits for its moment, which may be far off, and holds back no
+	// action of its document meanwhile; and it is the document's own
+	// move, which no action of the document holds back.
+	engine := "'" + strings.Join([]string{model.ActionCreate, model.ActionTransition, model.ActionRefresh, model.ActionTableInsert, model.ActionTableUpdate, model.ActionTableDelete, ActionTimer}, "', '") + "'"
 	for _, due := range []struct {
 		dst  **sql.Stmt
 		only string
 	}{{&s.stmts.dueOutbox, ""}, {&s.stmts.dueEngine, " AND o.action IN (" + engine + ")"}, {&s.stmts.dueCalls, " AND o.action NOT IN (" + engine + ")"}} {
 		*due.dst, err = s.db.PrepareContext(ctx, "SELECT o.event_id, o.idx, o.class, o.doc_id, o.action, o.args, o.principal_id, o.principal_groups, o.principal_admin, o.depth FROM outbox o"+
 			" WHERE o.status = 'pending' AND o.due_at <= ?"+due.only+
-			" AND NOT EXISTS (SELECT 1 FROM outbox p WHERE p.class = o.class AND p.doc_id = o.doc_id AND p.status = 'pending' AND (p.event_id < o.event_id OR (p.event_id = o.event_id AND p.idx < o.idx)))"+
+			" AND (o.action = '"+ActionTimer+"' OR NOT EXISTS (SELECT 1 FROM outbox p WHERE p.class = o.class AND p.doc_id = o.doc_id AND p.status = 'pending' AND p.action <> '"+ActionTimer+"'"+
+			" AND (p.event_id < o.event_id OR (p.event_id = o.event_id AND p.idx < o.idx))))"+
 			" ORDER BY o.due_at, o.event_id, o.idx LIMIT 64")
 		if err != nil {
 			return storageErr("prepare", err)

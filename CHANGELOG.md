@@ -22,9 +22,25 @@ All notable changes to FadoDB are recorded here. The format follows
   class is defined: both on one transition, an `after` that is no
   length of time, an `at` that reads the clock, the user, another
   document or a table, an `at` on a transition into its own state, and
-  a timed transition out of a terminal state. The engine does not yet
-  touch the document by itself when the time comes; `Due` and a
-  refresh do, until the wake-up is built.
+  a timed transition out of a terminal state.
+- The engine moves a document by itself when its timer comes
+  (ADR-0047, items 10 to 12). A commit that leaves a document in a
+  state queues a wake-up, a row of the outbox, for each timed
+  transition leaving it, due at its moment; a commit that changes a
+  date an `at` reads queues one for the new moment. When a wake-up is
+  due the worker touches the document: what fires in the chain is
+  written, each transition a version with the origin `timer`, and when
+  nothing is to do, because the document has left the state or the
+  stay, the moment has moved to later or a guard does not hold, the row
+  is done and nothing is written. The touch and the mark are one
+  transaction, so a timer fires exactly once, and a timer the worker
+  missed fires at the next commit, so a stopped worker loses nothing. A
+  wake-up acts as the person whose commit queued it: `USER()` in the
+  rules of the move is theirs, and the actions those rules queue run
+  with their rights. `Outbox` and `<Class>_actions` list wake-ups as
+  the action `timer`, with their moment as `due_at`. `Drain` runs what
+  is due by the database's clock, so a copy of a database opened with
+  `Options.Now` plays its timers at the moment a simulation chooses.
 - `Transitions` shows a timed transition with `fires_at`, the moment
   its time comes, one without a name too. `Due` lists the documents a
   timed transition would move, each with `since`, the moment since

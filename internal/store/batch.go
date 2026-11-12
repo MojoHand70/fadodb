@@ -60,8 +60,6 @@ func (s *Store) CreateMany(ctx context.Context, class string, docs []Values, opt
 		_, _ = s.writer.ExecContext(ctx, "ROLLBACK")
 		return nil, storageErr("commit", err)
 	}
-	if queued > 0 {
-		s.wakeWorker()
-	}
+	s.wakeQueued(queued > 0, false)
 	return out, nil
 }

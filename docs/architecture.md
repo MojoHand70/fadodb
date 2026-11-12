@@ -430,11 +430,23 @@ on commit is authoritative; the conformance suite guarantees the two agree.
   `ADDDAYS(FIRSTENTERED("waiting"), 14)`. An `at` may not read the
   clock, the user, another document or a table. `Transitions` shows a
   timed transition with `fires_at`, and `Due` lists the documents whose
-  timer has come, each with `since`. Built so far: all of the above.
-  Not built yet: the wake-up, a row the engine queues in the outbox for
-  the moment, so that the document moves when the time comes and not
-  only when it is next touched. Until then the host program asks `Due`
-  and touches what it lists.
+  timer has come, each with `since`.
+- The engine makes that commit itself when the time comes, with the
+  wake-up (ADR-0047). A commit that leaves a document in a state queues
+  a row of the outbox for each timed transition leaving it, due at its
+  moment, and a commit that changes a date an `at` reads queues one for
+  the new moment. When a row is due the worker touches the document:
+  what fires in the chain is written, and when nothing is to do, because
+  the document has left the state or the stay, the moment has moved to
+  later or a guard does not hold, the row is done and nothing is
+  written. The touch and the mark are one transaction, so a timer fires
+  exactly once; and since any commit fires a timer that has come, one
+  the worker missed fires at the next commit. A wake-up acts as the
+  person whose commit queued it: who moved the document into the state,
+  or who last changed the date. It stands outside the order of its
+  document's other actions, and is listed with them as the action
+  `timer`. A simulation is a copy of the database opened with
+  `Options.Now` and a `Drain`.
 
 ### Document tables
 

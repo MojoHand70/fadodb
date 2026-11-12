@@ -445,6 +445,7 @@ func (s *Store) run(ctx context.Context, cmd command, now time.Time) (*result, e
 		}
 		if c.cls.States != nil {
 			after.state, after.life.EnteredAt, after.life.EnteredBy = c.cls.States.Initial, secs, actor
+			after.step(c, formula.LifeEvent{Kind: formula.LifeCreated, To: after.state, At: secs, By: actor})
 		}
 		evalCtx.ID, evalCtx.State = after.id, after.state
 		if _, err := c.assign(after, kids, cmd.values, dirty, s.limits); err != nil {
@@ -584,6 +585,13 @@ func (s *Store) run(ctx context.Context, cmd command, now time.Time) (*result, e
 		if !unchanged {
 			after.version++
 			after.life.Version, after.life.UpdatedAt, after.life.UpdatedBy = after.version, secs, actor
+			// A set and a reset change the document where it is
+			// (ADR-0047, item 6). A transition is a move, told below; a
+			// refresh computes again and a migration moves the document
+			// to a new version of the class, and neither is a change.
+			if cmd.op == opSet || cmd.op == opReset {
+				after.step(c, formula.LifeEvent{Kind: formula.LifeChanged, At: secs, By: actor})
+			}
 		}
 		if err := s.recalc(c, after, dirty, adopt, evalCtx, cmd.preview, &res.errs); err != nil {
 			return nil, err
@@ -618,6 +626,7 @@ func (s *Store) run(ctx context.Context, cmd command, now time.Time) (*result, e
 		// the exit and of the transition.
 		after.ended = stay{after.life.EnteredAt, after.life.EnteredBy, after.life.EnteredFrom}
 		after.state, after.life.EnteredAt, after.life.EnteredBy, after.life.EnteredFrom = trans.To, secs, actor, from
+		after.step(c, formula.LifeEvent{Kind: formula.LifeMoved, From: from, To: trans.To, At: secs, By: actor})
 		path = append(path, after.state)
 	}
 
@@ -690,6 +699,7 @@ func (s *Store) run(ctx context.Context, cmd command, now time.Time) (*result, e
 			next.ended = stay{cur.life.EnteredAt, cur.life.EnteredBy, cur.life.EnteredFrom}
 			next.life.EnteredFrom = cur.state
 			next.state, next.life.EnteredAt, next.life.EnteredBy = t.To, secs, actor
+			next.step(c, formula.LifeEvent{Kind: formula.LifeMoved, From: cur.state, To: t.To, At: secs, By: actor})
 			path = append(path, next.state)
 			h := hop{row: next}
 			if c.triggered != nil {
@@ -745,6 +755,12 @@ func (s *Store) run(ctx context.Context, cmd command, now time.Time) (*result, e
 		}
 		s.project(&s.wev, c, c, final, res.doc, cmd.o.principal, clock)
 		return res, nil
+	}
+	if ev.kind == EventCreated {
+		// The event of a creation names the state the document was
+		// created in, as the event of a transition names the one it
+		// entered (ADR-0047, item 3): the log alone tells every entry.
+		ev.to = after.state
 	}
 	if ev.kind == EventCreated || ev.kind == EventTransition {
 		// The log says how the entry came about (ADR-0047, item 3).
@@ -805,6 +821,7 @@ func (s *Store) run(ctx context.Context, cmd command, now time.Time) (*result, e
 // did not have is blank.
 func (c *class) adopted(from *class, row *docRow) *docRow {
 	out := &docRow{id: row.id, title: row.title, state: row.state, version: row.version, life: row.life,
+		logged: row.logged, pending: row.pending, told: row.told,
 		vals: make([]formula.Value, len(c.leaves))}
 	for i, l := range c.leaves {
 		if j, ok := from.leafIndex[strings.ToUpper(l.path)]; ok {
@@ -947,9 +964,9 @@ func (s *Store) write(ctx context.Context, c *class, before, after *docRow, kids
 	// writer's, which writes one row at a time.
 	life := &after.life
 	idArg, actorArg, eventArg, secsArg := any(after.id), nullText(actor), any(eventID), any(secs)
-	args := append(s.curArgs[:0], idArg, nullText(after.title), nullText(after.state), after.version, after.classVersion, life.CreatedAt, life.UpdatedAt, nullInt(life.EnteredAt),
+	args := append(s.curArgs[:0], idArg, nullText(after.title), s.stateArg(after.state), after.version, after.classVersion, life.CreatedAt, life.UpdatedAt, nullInt(life.EnteredAt),
 		// Who, and where from (ADR-0047, item 4).
-		sameText(life.CreatedBy, actor, actorArg), sameText(life.UpdatedBy, actor, actorArg), sameText(life.EnteredBy, actor, actorArg), nullText(life.EnteredFrom))
+		sameText(life.CreatedBy, actor, actorArg), sameText(life.UpdatedBy, actor, actorArg), sameText(life.EnteredBy, actor, actorArg), s.stateArg(life.EnteredFrom))
 	args = c.encodeVals(args, after)
 	s.curArgs = args
 	sys := len(systemColumns)
@@ -1060,7 +1077,7 @@ func (s *Store) writeEventArgs(ctx context.Context, eventID, class, docID any, e
 	if s.dayArg == nil || s.dayOf != day {
 		s.dayOf, s.dayArg = day, day
 	}
-	args := append(s.eventArgs[:0], eventID, class, docID, word(ev.kind), nullText(ev.name), word(ev.from), word(ev.to), actor, before, after, nullText(ev.cause), nullText(key), nullText(hash), s.dayArg, secs, originCode(ev.origin))
+	args := append(s.eventArgs[:0], eventID, class, docID, word(ev.kind), nullText(ev.name), s.stateArg(ev.from), s.stateArg(ev.to), actor, before, after, nullText(ev.cause), nullText(key), nullText(hash), s.dayArg, secs, originCode(ev.origin))
 	s.eventArgs = args
 	if _, err := s.stmts.insertEvent.ExecContext(ctx, args...); err != nil {
 		return storageErr("write the event", err)
@@ -1084,9 +1101,32 @@ var words = func() map[string]any {
 	return m
 }()
 
+// stateArg boxes the name of a state for a statement: nil when it is
+// empty, and one box for each name, made when the name is first written.
+// The classes of a database have few states between them; past a bound
+// a name is boxed for itself, so the list cannot grow without end.
+func (s *Store) stateArg(name string) any {
+	if name == "" {
+		return nil
+	}
+	if box, ok := s.stateArgs[name]; ok {
+		return box
+	}
+	box := any(name)
+	if len(s.stateArgs) < maxStateArgs {
+		if s.stateArgs == nil {
+			s.stateArgs = make(map[string]any)
+		}
+		s.stateArgs[name] = box
+	}
+	return box
+}
+
+// maxStateArgs bounds the names stateArg keeps.
+const maxStateArgs = 4096
+
 // word boxes a text for a statement: nil when it is empty, the shared box
-// when it is one of words, and a box of its own otherwise, as a state's
-// name is.
+// when it is one of words, and a box of its own otherwise.
 func word(s string) any {
 	if s == "" {
 		return nil

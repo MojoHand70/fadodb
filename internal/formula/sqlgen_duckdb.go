@@ -137,6 +137,24 @@ func (DuckDB) ContextArgs(ctx *Context) []any {
 	return lifeArgs(ctx, []any{sql.Named("now", now), sql.Named("user", user), sql.Named("groups", g), sql.Named("state", state), sql.Named("id", id)})
 }
 
+// stateCall translates a function of a state (ADR-0047, item 6) for a
+// statement that runs over no document row, as the SQLite dialect does:
+// the life's states are bound as a JSON array, which the macro
+// fado_stay reads the named state's facts from as a struct.
+func (d DuckDB) stateCall(name string, state SQLExpr, params *Params) SQLExpr {
+	stays := params.Use("stays")
+	get := func(key string) string { return "(fado_stay(" + stays + ", " + d.Text(state) + "))." + key }
+	switch name {
+	case "ENTRIES":
+		return SQLExpr{Val: "(CASE WHEN " + stays + " IS NOT NULL THEN CAST(COALESCE(" + get("n") + ", 0) AS DOUBLE) END)", Kind: KindNumber}
+	case "DAYSIN":
+		secs := get("secs") + " + CASE WHEN " + get("here") + " THEN CAST(" + params.Use("now") + " AS BIGINT) - COALESCE(" + get("le") + ", 0) ELSE 0 END"
+		return SQLExpr{Val: "(CASE WHEN " + stays + " IS NOT NULL THEN COALESCE(CAST(" + secs + " AS DOUBLE), " + d.NumberLit(0) + ") / " + d.NumberLit(secondsPerDay) + " END)", Kind: KindNumber}
+	}
+	kind := builtins[builtinByName[name]].result
+	return SQLExpr{Val: d.Load(get(stateFacts[name]), kind), Kind: kind}
+}
+
 // Setup implements Dialect: the macro definitions.
 func (DuckDB) Setup() []string { return duckdbMacros }
 
@@ -427,6 +445,9 @@ func (d DuckDB) Call(name string, args []SQLExpr, params *Params) (SQLExpr, erro
 		return SQLExpr{Val: "CAST(" + params.Use("state") + " AS VARCHAR)", Kind: KindText}, nil
 	case "ID":
 		return SQLExpr{Val: "CAST(" + params.Use("id") + " AS VARCHAR)", Kind: KindText}, nil
+	case "FIRSTENTERED", "FIRSTENTEREDBY", "LASTENTERED", "LASTENTEREDBY", "FIRSTLEFT", "FIRSTLEFTBY", "LASTLEFT", "LASTLEFTBY",
+		"ENTRIES", "DAYSIN", "FIRSTEDITOR", "LASTEDITOR":
+		return d.stateCall(name, args[0], params), nil
 	case "INGROUP":
 		return SQLExpr{Val: "COALESCE(list_contains(" + params.Use("groups") + ", " + d.Text(args[0]) + "), FALSE)", Kind: KindBool, Sure: true}, nil
 	case "LEFT", "RIGHT":
@@ -549,6 +570,13 @@ const (
 // expression, never a subquery: DuckDB cannot run a subquery macro over
 // more than one row.
 var duckdbMacros = []string{
+	// What a document's life says of one state (ADR-0047, item 6): the
+	// states are bound as a JSON array of objects, as StateLife names
+	// their facts, and the macro gives the object of the named state.
+	// The cast gives the answer its type where the states are a NULL the
+	// binder folds away, which is so when there is no document.
+	`CREATE OR REPLACE MACRO fado_stay(stays, name) AS CAST(list_filter(from_json(CAST(stays AS JSON), '[{"state":"VARCHAR","fe":"BIGINT","feb":"VARCHAR","le":"BIGINT","leb":"VARCHAR","fl":"BIGINT","flb":"VARCHAR","ll":"BIGINT","llb":"VARCHAR","n":"BIGINT","secs":"BIGINT","here":"BOOLEAN","fed":"VARCHAR","led":"VARCHAR"}]'), lambda fado_s: fado_s.state = name)[1]` +
+		` AS STRUCT(state VARCHAR, fe BIGINT, feb VARCHAR, le BIGINT, leb VARCHAR, fl BIGINT, flb VARCHAR, ll BIGINT, llb VARCHAR, n BIGINT, secs BIGINT, here BOOLEAN, fed VARCHAR, led VARCHAR))`,
 	// Rounding, as the VM's roundTo and scaledStep, operation for operation.
 	// The power of ten comes from its decimal spelling beyond 22, where it is
 	// no longer exactly representable: DuckDB's text-to-double conversion is

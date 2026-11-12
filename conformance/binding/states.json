@@ -1,0 +1,37 @@
+{
+  "suite": "states",
+  "description": "The functions of a state take the name of a state (ADR-0047, item 6). A name written as text is one of the class's states, exactly as the class writes it; a name that is computed is looked up when the formula runs.",
+  "variables": {"note": "text", "n": "number", "due": "date"},
+  "states": ["draft", "review", "approved"],
+  "accept": [
+    "FIRSTENTERED(\"draft\")",
+    "FIRSTENTEREDBY(\"review\")",
+    "LASTENTERED(\"review\")",
+    "LASTENTEREDBY(\"approved\")",
+    "FIRSTLEFT(\"draft\")",
+    "FIRSTLEFTBY(\"draft\")",
+    "LASTLEFT(\"review\")",
+    "LASTLEFTBY(\"review\")",
+    "ENTRIES(\"review\") >= 3",
+    "DAYSIN(\"review\") > 2.5",
+    "FIRSTEDITOR(\"draft\")",
+    "LASTEDITOR(\"draft\") <> USER()",
+    "ADDDAYS(FIRSTENTERED(\"review\"), 14)",
+    "NOW() >= ADDDAYS(FIRSTENTERED(\"review\"), 14)",
+    "ENTRIES(STATE())",
+    "LASTENTEREDBY(ENTEREDFROM())",
+    "DAYSIN(note)",
+    "ENTRIES(IF(n > 1, \"draft\", \"review\"))",
+    "entries(\"draft\")"
+  ],
+  "reject": [
+    {"formula": "FIRSTENTERED(\"aproved\")", "reason": "the class has no such state"},
+    {"formula": "ENTRIES(\"Draft\")", "reason": "a state is named exactly as the class writes it"},
+    {"formula": "DAYSIN(\"\")", "reason": "the empty text is no state"},
+    {"formula": "IF(n > 1, LASTLEFT(\"paid\"), NOW())", "reason": "the class has no such state, wherever the call stands"},
+    {"formula": "ENTRIES()", "reason": "the state is missing"},
+    {"formula": "ENTRIES(\"draft\", \"review\")", "reason": "one state"},
+    {"formula": "ENTRIES(due)", "reason": "a state is a text"},
+    {"formula": "FIRSTENTERED(\"draft\") + 1", "reason": "a moment is not a number"}
+  ]
+}

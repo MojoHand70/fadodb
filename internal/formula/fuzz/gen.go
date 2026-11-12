@@ -211,6 +211,8 @@ func (g *Generator) leaf(k formula.Kind) {
 			g.w("BLANK")
 		case 5:
 			g.w(g.pick("VERSION()", "n1"))
+		case 6:
+			g.ofState("ENTRIES", "DAYSIN")
 		default:
 			g.numberLit()
 		}
@@ -233,6 +235,8 @@ func (g *Generator) leaf(k formula.Kind) {
 			g.w("USER()")
 		case 6:
 			g.w(g.pick("STATE()", "ID()", "CREATEDBY()", "UPDATEDBY()", "ENTEREDBY()", "ENTEREDFROM()"))
+		case 7:
+			g.ofState("FIRSTENTEREDBY", "LASTENTEREDBY", "FIRSTLEFTBY", "LASTLEFTBY", "FIRSTEDITOR", "LASTEDITOR")
 		default:
 			g.textLit(g.someText())
 		}
@@ -257,6 +261,8 @@ func (g *Generator) leaf(k formula.Kind) {
 			g.w("BLANK")
 		case 6:
 			g.w(g.pick("NOW()", "CREATEDAT()", "UPDATEDAT()", "ENTEREDAT()"))
+		case 7:
+			g.ofState("FIRSTENTERED", "LASTENTERED", "FIRSTLEFT", "LASTLEFT")
 		default:
 			g.w("DATETIMEVALUE(")
 			g.textLit(g.dateTimeText())
@@ -469,8 +475,37 @@ func (g *Generator) context() formula.Context {
 		if g.n(3) > 0 {
 			ctx.Doc.EnteredAt = g.someSecs()
 		}
+		// What the life says of its states (item 6): nothing, or a
+		// creation and a few moves and changes, by somebody or by nobody,
+		// at moments in any order.
+		if g.n(4) > 0 {
+			at, state := g.someSecs(), g.pick("draft", "paid")
+			ctx.Doc.Tell(formula.LifeEvent{Kind: formula.LifeCreated, To: state, At: at, By: g.pick("", "alice")})
+			for n := g.n(6); n > 0; n-- {
+				if g.chance(80) {
+					at += int64(g.n(200000))
+				} else {
+					at = g.someSecs()
+				}
+				ev := formula.LifeEvent{Kind: formula.LifeChanged, At: at, By: g.pick("", "alice", "bob", "carol")}
+				if g.chance(60) {
+					ev.Kind, ev.From, ev.To = formula.LifeMoved, state, g.pick("draft", "paid", "review")
+					state = ev.To
+				}
+				ctx.Doc.Tell(ev)
+			}
+		}
 	}
 	return ctx
+}
+
+// ofState writes a call of one of the functions of a state (ADR-0047,
+// item 6), the state written as text, known or not, or computed.
+func (g *Generator) ofState(names ...string) {
+	g.w(g.pick(names...))
+	g.w("(")
+	g.w(g.pick(`"draft"`, `"paid"`, `"review"`, `"void"`, `""`, "STATE()", "ENTEREDFROM()", "t1", "BLANK"))
+	g.w(")")
 }
 
 // ---- Productions

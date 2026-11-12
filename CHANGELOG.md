@@ -8,6 +8,27 @@ All notable changes to FadoDB are recorded here. The format follows
 
 ### Added
 
+- The functions of a state (ADR-0047, item 6). Each takes the name of a
+  state: `FIRSTENTERED` and `FIRSTENTEREDBY`, `LASTENTERED` and
+  `LASTENTEREDBY`, `FIRSTLEFT` and `FIRSTLEFTBY`, `LASTLEFT` and
+  `LASTLEFTBY`, when and by whom the document first and last entered
+  the state and left it; `ENTRIES`, how many times it entered it;
+  `DAYSIN`, the days it spent there in all, up to now when it is there;
+  `FIRSTEDITOR` and `LASTEDITOR`, who first and last created the
+  document there or changed it there with a set or a reset; who moved
+  it in or out is not an editor. They are context functions, on
+  the Go VM, SQLite and DuckDB, for a default, a triggered variable, a
+  guard, a rule, a transition rule and a write right. A transition back
+  into the same state is an entry. A state written as text is checked
+  against the class's states when the class is defined; a computed one,
+  as in `DAYSIN(STATE())`, is looked up when the formula runs. They
+  read the document's own events once for a command, with the step the
+  command is making. A read rule, a read right and a filter are refused
+  them: the `_states` view has the same facts for every document.
+- The event of a creation names the state the document was created in,
+  under `to_state`, as the event of a transition names the one it
+  entered.
+
 - The document keeps who, and where from (ADR-0047, items 3 and 4):
   `created_by`, `updated_by`, `state_entered_by` and
   `state_entered_from` join the system variables, on the document, on
@@ -282,6 +303,8 @@ All notable changes to FadoDB are recorded here. The format follows
   every value as it was writes its system columns alone, and every
   value is boxed once for the current row, the history row and the
   event. A transition allocates 159 times where it allocated 168.
+- The write step boxes the name of a state once and keeps it. A
+  transition allocates 155 times where it allocated 159.
 
 - The bytecode format is version 4: a query slot may carry an aggregate
   and the expression it runs over, and says when its key is one term of
@@ -346,6 +369,18 @@ All notable changes to FadoDB are recorded here. The format follows
   `emit` names its event under `event`.
 
 ### Fixed
+
+- The listing of open transitions read a document without who created
+  it, changed it and moved it when the class asked for that only inside
+  the condition of a `LOOKUP`, as in
+  `LOOKUP(Claim, COUNT(id), created_by = CREATEDBY())`: the function
+  answered blank there, and the listing could call a transition closed
+  that the commit allowed. It reads them now.
+- A rule of an exit that creates a document for each element of a list
+  read `ENTEREDAT()`, `ENTEREDBY()` and `ENTEREDFROM()` of the stay that
+  begins, where every other rule of an exit reads the stay that ends,
+  when no other formula of the class called a function of the
+  document's life. It reads the stay that ends.
 
 - An `Open` that refuses a file, because a stored class does not
   compile for one, left the file open: the classes and tables loaded

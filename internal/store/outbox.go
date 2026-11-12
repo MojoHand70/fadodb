@@ -266,6 +266,7 @@ func (c *class) bindTemplate(t *model.Template, owner string) error {
 // leaf of the composite's rows and is kept below zero, -1 for the first;
 // any other is a leaf of the document.
 func (c *class) bindElemSlots(p *formula.Program, owner, as string, ch *child) error {
+	c.asks(p)
 	idx := make([]int, len(p.Slots))
 	elem := strings.ToUpper(as)
 	for i, s := range p.Slots {

@@ -17,7 +17,7 @@
     "doc_id": {"type": "string", "minLength": 1},
     "name": {"description": "The transition taken, on an event of kind transition that has a name.", "type": "string"},
     "from_state": {"description": "The state a transition left.", "type": "string"},
-    "to_state": {"description": "The state a transition entered.", "type": "string"},
+    "to_state": {"description": "The state a transition entered, or the state a document was created in.", "type": "string"},
     "version": {"description": "The version of the document the commit made; for a delete, the last version there was.", "type": "integer", "minimum": 1},
     "document": {"$ref": "#/$defs/document"},
     "actor_id": {"description": "The principal whose command caused the event; absent when the command had none.", "type": "string"},

@@ -127,12 +127,16 @@ type Store struct {
 	// lists, kept between commits; dayArg is the business day of dayOf,
 	// boxed.
 	curArgs, updArgs, histArgs, eventArgs []any
-	dayOf                                 int64
-	dayArg                                any
-	readers                               sync.Pool // evaluators for the read paths' projections (ADR-0041)
-	dirty                                 []bool
-	given                                 []bool   // the variables one command sets, for the write check
-	visits                                []string // the states one command visits, reused under the writer's lock
+	// stateArgs are the names of states boxed once for the statements of
+	// the write step: every commit writes its document's state, and an
+	// entry the state left and the state entered beside it.
+	stateArgs map[string]any
+	dayOf     int64
+	dayArg    any
+	readers   sync.Pool // evaluators for the read paths' projections (ADR-0041)
+	dirty     []bool
+	given     []bool   // the variables one command sets, for the write check
+	visits    []string // the states one command visits, reused under the writer's lock
 	// The scratch of the rules of one command (ADR-0043), reused under the
 	// writer's lock: the eventless commits, the custom events to append,
 	// the values of a set before they are assigned, the composites a reset
@@ -193,17 +197,26 @@ type Store struct {
 	workCancel context.CancelFunc
 	workDone   chan struct{}
 	workStop   sync.Once
+	// life is the writer's scratch for reading a document's events, and
+	// lifeReads counts the reads, for the functions of a state (ADR-0047,
+	// item 6) and the tests of "once per command".
+	life      lifeReader
+	lifeReads int
 	// testStep is called at the steps of an action when a test sets it.
 	testStep func(step string, row *outboxRow) *Error
 }
 
 type engineStmts struct {
 	lookupKey, lastOfCommand, insertEvent, insertEventDoc, listEvents *sql.Stmt
-	insertOutbox, dueOutbox, dueEngine, dueCalls, callOutbox          *sql.Stmt
+	// selectLife reads the events of one document that its life by state
+	// is told from (ADR-0047, item 6), and selectMoves its creation and
+	// its moves alone.
+	selectLife, selectMoves                                  *sql.Stmt
+	insertOutbox, dueOutbox, dueEngine, dueCalls, callOutbox *sql.Stmt
 }
 
 func (e *engineStmts) close() {
-	for _, st := range []*sql.Stmt{e.lookupKey, e.lastOfCommand, e.insertEvent, e.insertEventDoc, e.listEvents, e.insertOutbox, e.dueOutbox, e.dueEngine, e.dueCalls, e.callOutbox} {
+	for _, st := range []*sql.Stmt{e.lookupKey, e.lastOfCommand, e.insertEvent, e.insertEventDoc, e.listEvents, e.selectLife, e.selectMoves, e.insertOutbox, e.dueOutbox, e.dueEngine, e.dueCalls, e.callOutbox} {
 		if st != nil {
 			st.Close()
 		}
@@ -319,6 +332,7 @@ func Open(path string, o Options) (*Store, error) {
 	s.vm.Limits, s.qvm.Limits = s.limits, s.limits
 	s.vm.Executor = (*executor)(s)
 	s.wev.vm = s.vm
+	s.wev.life = s.tellLife
 	if err := s.prepareEngine(ctx); err != nil {
 		return fail(err)
 	}
@@ -489,6 +503,8 @@ func (s *Store) prepareEngine(ctx context.Context) error {
 	prep(&s.stmts.insertEvent, "INSERT INTO events (event_id, class, doc_id, kind, name, from_state, to_state, actor_id, before_version, after_version, cause_event_id, command_key, command_hash, business_date, ts, origin)"+
 		" VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
 	prep(&s.stmts.insertEventDoc, "INSERT INTO event_docs (event_id, class, doc_id, qualifier) VALUES (?, ?, ?, ?)")
+	prep(&s.stmts.selectLife, lifeSQL)
+	prep(&s.stmts.selectMoves, movesSQL)
 	prep(&s.stmts.insertOutbox, "INSERT INTO outbox (event_id, idx, class, doc_id, version, class_version, rule, action, args, principal_id, principal_groups, principal_admin, depth, status, attempts, due_at, error_code, error_message, created_at, finished_at, outcome_event)"+
 		" VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?)")
 	if err != nil {

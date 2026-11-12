@@ -156,6 +156,8 @@ func (d SQLite) ContextArgsFor(ctx *Context, names []string, dst []any) []any {
 				g = groupsArg(ctx.Groups)
 			}
 			dst = append(dst, sql.Named("groups", g))
+		case "stays":
+			dst = append(dst, sql.Named("stays", staysArg(ctx)))
 		default:
 			// A fact of the document's life (ADR-0047).
 			dst = append(dst, sql.Named(name, lifeValue(ctx, name)))
@@ -164,12 +166,36 @@ func (d SQLite) ContextArgsFor(ctx *Context, names []string, dst []any) []any {
 	return dst
 }
 
-// lifeArgs binds every fact of the document's life by its column name.
+// stateCall translates a function of a state (ADR-0047, item 6) for a
+// statement that runs over no document row. What the life says of its
+// states is bound as a JSON array, one object for each state the
+// document has been in (staysArg), and NULL where there is no document;
+// a function reads the fact of the state it names.
+func (d SQLite) stateCall(name string, state SQLExpr, params *Params) SQLExpr {
+	stays := params.Use("stays")
+	get := func(key string) string { return "json_extract(fado_stay.value, '$." + key + "')" }
+	of := func(expr string) string {
+		return "(SELECT " + expr + " FROM json_each(" + stays + ") AS fado_stay WHERE " + get("state") + " = " + d.Text(state) + ")"
+	}
+	switch name {
+	case "ENTRIES":
+		return SQLExpr{Val: "(CASE WHEN " + stays + " IS NOT NULL THEN CAST(COALESCE(" + of(get("n")) + ", 0) AS REAL) END)", Kind: KindNumber}
+	case "DAYSIN":
+		// The stays that ended, and the one the document is in up to now.
+		secs := get("secs") + " + CASE WHEN " + get("here") + " THEN CAST(" + params.Use("now") + " AS INTEGER) - COALESCE(" + get("le") + ", 0) ELSE 0 END"
+		return SQLExpr{Val: "(CASE WHEN " + stays + " IS NOT NULL THEN COALESCE(" + of("CAST("+secs+" AS REAL)") + ", 0.0) / 86400.0 END)", Kind: KindNumber}
+	}
+	kind := builtins[builtinByName[name]].result
+	return SQLExpr{Val: d.Load(of(get(stateFacts[name])), kind), Kind: kind}
+}
+
+// lifeArgs binds every fact of the document's life by its column name,
+// and what the life says of its states as stays.
 func lifeArgs(ctx *Context, dst []any) []any {
 	for _, column := range lifeColumnNames {
 		dst = append(dst, sql.Named(column, lifeValue(ctx, column)))
 	}
-	return dst
+	return append(dst, sql.Named("stays", staysArg(ctx)))
 }
 
 // lifeColumnNames lists the columns of LifeColumns in a fixed order.
@@ -872,6 +898,9 @@ func (d SQLite) Call(name string, args []SQLExpr, params *Params) (SQLExpr, erro
 		return SQLExpr{Val: params.Use("state"), Kind: KindText}, nil
 	case "ID":
 		return SQLExpr{Val: params.Use("id"), Kind: KindText}, nil
+	case "FIRSTENTERED", "FIRSTENTEREDBY", "LASTENTERED", "LASTENTEREDBY", "FIRSTLEFT", "FIRSTLEFTBY", "LASTLEFT", "LASTLEFTBY",
+		"ENTRIES", "DAYSIN", "FIRSTEDITOR", "LASTEDITOR":
+		return d.stateCall(name, args[0], params), nil
 	case "INGROUP":
 		// The groups are bound as one text with char(31) around each
 		// group (groupsArg); a group is in it when the name between two

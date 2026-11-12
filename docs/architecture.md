@@ -275,10 +275,22 @@ system variables `created_by`, `updated_by`, `state_entered_by` and
 `state_entered_from`, on the document, in its history and in the views.
 Every event that enters a state says how the move came about, under
 `origin`: `command`, `action` or `guard`, and `timer` once timed
-transitions are built. The functions of a named state are designed and
-not built yet: `FIRSTENTERED`, `LASTENTERED`, `FIRSTLEFT` and
-`LASTLEFT`, each with a `...BY` beside it for who, and `ENTRIES`,
-`DAYSIN`, `FIRSTEDITOR` and `LASTEDITOR`.
+transitions are built, and the event of a creation names the state the
+document was created in.
+
+The functions of a named state run today too. They take the name of a
+state: `FIRSTENTERED`, `LASTENTERED`, `FIRSTLEFT` and `LASTLEFT`, each
+with a `...BY` beside it for who; `ENTRIES`, how many times the document
+entered the state, and `DAYSIN`, the days it spent there in all; and
+`FIRSTEDITOR` and `LASTEDITOR`, who first and last changed it there. A
+transition back into the same state is an entry. An editor is who
+created the document in the state or changed it there, not who moved it
+in or out. A name written as text is checked against the class's states
+when the class is defined. They are read from the document's own events
+once for a command, with the step the command is making: `ENTRIES` on
+the entry of a state counts that entry. A read rule, a read right and a
+filter are refused them, since those run for every row of a query; the
+`_states` view has the same facts for every document.
 
 Inside `LOOKUP` and `QUERY`, bare names are columns of the source and the
 document's own variables are reached as `THIS.name`. Columns may be

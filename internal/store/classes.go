@@ -30,6 +30,14 @@ type class struct {
 	// a formula needs: the stay a transition ended, put before the rules
 	// and the triggered variables of the state left.
 	life bool
+	// states says a formula of the class calls a function of a state
+	// (ADR-0047, item 6), so that a commit keeps the steps it makes for
+	// the formula that asks.
+	states bool
+	// editors says one of them asks who changed the document in a state,
+	// which takes every change of the document from the log where the
+	// other functions of a state take its moves.
+	editors bool
 	// wraw and wdest are the lists the writer scans a current row into.
 	wraw, wdest []any
 	// leaves are the stored scalars of a current or history row, in
@@ -150,6 +158,21 @@ func (r *docRow) swapStay() {
 	l.EnteredAt, l.EnteredBy, l.EnteredFrom, r.ended = r.ended.at, r.ended.by, r.ended.from, stay{l.EnteredAt, l.EnteredBy, l.EnteredFrom}
 }
 
+// step records a step of the command in progress in the document's
+// life: its creation, a move, or a change that leaves it where it is. A
+// row that was told its states is told the step; one that was not keeps
+// it for when a formula asks. The list is never shared with the row this
+// one was cloned from.
+func (r *docRow) step(c *class, ev formula.LifeEvent) {
+	if !c.states {
+		return
+	}
+	r.pending = append(r.pending[:len(r.pending):len(r.pending)], ev)
+	if r.told {
+		r.life.Tell(ev)
+	}
+}
+
 // docRow is a current or history row in memory.
 type docRow struct {
 	id, title, state string
@@ -162,8 +185,18 @@ type docRow struct {
 	// ended is the stay a transition of this commit ended: when the
 	// document entered the state it left, who moved it there and where
 	// from, which a formula that speaks of the state left reads.
-	life               formula.Life
-	ended              stay
+	life  formula.Life
+	ended stay
+	// What the life says of its states (ADR-0047, item 6) is read from
+	// the log when a formula first asks, and told is set once life.States
+	// holds it as of this row. logged is the version up to which the log
+	// has the document's events, 0 for a document being created, and
+	// pending the steps of the command in progress since, which the log
+	// gets when the command is written. pending is kept only for a class
+	// whose formulas ask.
+	logged             int64
+	pending            []formula.LifeEvent
+	told               bool
 	validFrom, validTo int64
 	actor, eventID     string
 	vals               []formula.Value
@@ -366,6 +399,27 @@ func newClass(cls *model.Class, src []byte) (*class, error) {
 	return c, nil
 }
 
+// asks notes what a formula of the class asks of the document's life
+// (ADR-0047), so that a commit of a class whose formulas ask nothing
+// does none of the work. Every formula the class runs over a row passes
+// here, one that reads an element of a list beside the row too.
+func (c *class) asks(p *formula.Program) {
+	if p.ReadsLife {
+		c.life = true
+	}
+	if p.ReadsStates {
+		c.states = true
+		if p.Calls("FIRSTEDITOR") || p.Calls("LASTEDITOR") {
+			c.editors = true
+		}
+	}
+	for _, fn := range whoFunctions {
+		if p.Calls(fn) {
+			c.who = true
+		}
+	}
+}
+
 // bindSlots resolves a program's slots to leaves.
 func (c *class) bindSlots(p *formula.Program, owner string) error {
 	if p == nil {
@@ -373,14 +427,7 @@ func (c *class) bindSlots(p *formula.Program, owner string) error {
 		// class and was left unbound (ADR-0046): it no longer runs.
 		return nil
 	}
-	if p.ReadsLife {
-		c.life = true
-	}
-	for _, fn := range whoFunctions {
-		if p.Calls(fn) {
-			c.who = true
-		}
-	}
+	c.asks(p)
 	idx := make([]int, len(p.Slots))
 	for i, s := range p.Slots {
 		li, ok := c.leafIndex[strings.ToUpper(s.Name)]

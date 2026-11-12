@@ -29,6 +29,8 @@ goes back to the designer as a redrafted class.
 | the read-only `SQL` endpoint with parameters | shipped |
 | the event log, `Events`; the `_states` view of state entries and exits | shipped with Phase 3 |
 | who and how: `created_by`, `updated_by`, `state_entered_by` and `state_entered_from` on every document and version; `origin` on every event that enters a state (`command`, `action`, `guard`); in `_states` one row for every entry, a return into the same state too, with `entered_by`, `entered_from`, `entered_via`, `entered_how`, `left_by`, `left_via`, `left_how` | in `main`, ships with v0.4.0 |
+| the event of a creation names the state the document was created in, under `to_state`, as the event of a transition names the one it entered; so the log alone tells every entry | in `main`, ships with v0.4.0 |
+| the same facts for one document inside a formula, `FIRSTENTERED("approved")`, `ENTRIES("sent")`, `DAYSIN("review")` and the like | in `main`, ships with v0.4.0: a formula of the class may ask them; a filter may not, so across documents read the `_states` view with `SQL` |
 | a picture as of a moment, `At(t)` on reads | shipped |
 | DuckDB projection and the mining views | designed, Phase 8 |
 | a mining narrative over the views | designed, Phase 11 |

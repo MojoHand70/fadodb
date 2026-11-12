@@ -126,7 +126,7 @@ five records (#73). A command that moves many documents in one
 transaction follows the release as an addendum to this phase, with its
 design in ADR-0048: `TransitionMany` moves up to 10,000 documents of a
 class along one transition, a commit each, and `PreviewMany` tries the
-batch and writes nothing (#78). It is on main and in no release yet.
+batch and writes nothing (#79). It is on main and in no release yet.
 By the owner's ruling of that day a document that is refused
 does not stop the others: they move, and the refused one is reported
 with its reason.

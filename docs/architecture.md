@@ -358,8 +358,8 @@ raises no trigger, so one command runs at most nine commits and each rule
 at most once in each (ADR-0040, ADR-0043). Today steps 4 and 5 run: the
 synchronous actions `set`, `reset`, `refresh` and `emit` change the
 document in the commit, and the engine's own actions on other documents
-and tables and the actions the host program defines go into the outbox.
-An action sent as an HTTP request arrives with a later step of Phase 4.
+and tables and the actions the host program defines go into the outbox,
+an action sent as an HTTP request among them.
 
 A triggered variable keeps its value between its triggers and carries the
 moment it was computed: the version of the document whose commit computed

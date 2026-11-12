@@ -25,7 +25,7 @@ so the right one loads for the task at hand.
 
 | Hat | Skill | What it does | Today |
 |---|---|---|---|
-| Designer | [`fadodb-design/`](fadodb-design/SKILL.md) | drafts a class from a process description, validates it, previews it against live data | variables, formulas and the store shipped; statechart shipped; rules in progress; access designed |
+| Designer | [`fadodb-design/`](fadodb-design/SKILL.md) | drafts a class from a process description, validates it, previews it against live data | variables, formulas and the store shipped; statechart shipped; rules and actions shipped; access designed |
 | Operator | [`fadodb-operate/`](fadodb-operate/SKILL.md) | creates, sets and transitions documents on behalf of a person or a system, as a principal, with a key and a preview | Go API only; command set and MCP designed |
 | Simulator | [`fadodb-simulate/`](fadodb-simulate/SKILL.md) | replays a scenario in a scratch database and keeps the class that worked | scratch files and `At` work; replay is by hand |
 | Analyst | [`fadodb-mine/`](fadodb-mine/SKILL.md) | mines the event log and the views in SQL and feeds the finding back into the class | filter and read-only SQL shipped; `Events` on the Go API; DuckDB views designed |

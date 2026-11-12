@@ -27,7 +27,7 @@ from the state the documents hold.
 | the agent as a principal with an id and groups, `As`; the log records it | shipped |
 | a guard that keeps a transition from the agent's group; field rights per state | shipped with Phase 3 |
 | idempotent retries, `Key`; the filter to poll for work | shipped |
-| rules that call the agent's program back when a state is entered | in progress, Phase 4: a Go function the host program gives to `Open` in `Options.Actions`, with a definition stored by `DefineAction`, is called through the outbox with the event and the document; an agent in another process is called over HTTP by a definition with a `request` that points at its endpoint, signed, where the host program allows that host |
+| rules that call the agent's program back when a state is entered | shipped with Phase 4: a Go function the host program gives to `Open` in `Options.Actions`, with a definition stored by `DefineAction`, is called through the outbox with the event and the document; an agent in another process is called over HTTP by a definition with a `request` that points at its endpoint, signed, where the host program allows that host |
 | subscriptions over the WebSocket instead of polling | designed, Phase 6 |
 
 ## Procedure, in outline

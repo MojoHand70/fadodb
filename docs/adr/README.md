@@ -30,8 +30,8 @@ line says so. Copy `0000-template.md` to start.
 | [0022](0022-exact-decimal-int-and-money.md) | Exact numbers: decimal, int and money | Accepted |
 | [0023](0023-calendar-day-datetime-and-enum-values.md) | A date is a calendar day, a datetime an instant, an enum a text with a value set | Accepted |
 | [0024](0024-division-by-zero-is-an-error-and-iferror.md) | Division by zero is an error, and IFERROR catches one | Accepted |
-| [0025](0025-evaluate-without-committing.md) | Evaluate a class or a document without committing | Accepted, amended by 0042, 0043 |
-| [0026](0026-idempotency-keys-business-dates-and-the-transition-event.md) | Idempotency keys on commands, a business date on events, and the transition event | Accepted, amended by 0040, 0044, 0045, 0047 |
+| [0025](0025-evaluate-without-committing.md) | Evaluate a class or a document without committing | Accepted, amended by 0042, 0043, 0048 |
+| [0026](0026-idempotency-keys-business-dates-and-the-transition-event.md) | Idempotency keys on commands, a business date on events, and the transition event | Accepted, amended by 0040, 0044, 0045, 0047, 0048 |
 | [0027](0027-principal-from-the-embedder-and-registered-executors.md) | The principal comes from the embedder; action executors are registered | Accepted, amended by 0044, 0045 |
 | [0028](0028-field-level-rights-per-state.md) | Field-level rights per state | Accepted, amended by 0041 |
 | [0029](0029-browser-vm-as-one-plain-javascript-file.md) | The browser VM ships as one plain JavaScript file | Accepted |
@@ -45,7 +45,7 @@ line says so. Copy `0000-template.md` to start.
 | [0037](0037-explicit-tables-and-the-compiled-lookup.md) | Explicit tables bound to SQLite and the compiled LOOKUP | Accepted, amended by 0046 |
 | [0038](0038-the-filter-and-the-read-only-sql-endpoint.md) | The filter and the read-only SQL endpoint | Accepted |
 | [0039](0039-class-versions-terminal-states-and-migrations.md) | Class versions, terminal states and migrations | Accepted, amended by 0040, 0043 |
-| [0040](0040-transitions-as-commits.md) | Transitions as commits: the command, eventless chains and state visits | Accepted, amended by 0043, 0047 |
+| [0040](0040-transitions-as-commits.md) | Transitions as commits: the command, eventless chains and state visits | Accepted, amended by 0043, 0047, 0048 |
 | [0041](0041-field-rights-and-transition-rules-in-the-go-api.md) | Field rights and transition rules in the Go API | Accepted |
 | [0042](0042-a-moment-the-caller-chooses.md) | A moment the caller chooses, for previews and reads | Accepted |
 | [0043](0043-rules-inside-the-commit.md) | Rules inside the commit: triggers, synchronous actions and triggered variables | Accepted, amended by 0044 |
@@ -53,4 +53,4 @@ line says so. Copy `0000-template.md` to start.
 | [0045](0045-actions-are-an-extension-point.md) | Actions are an extension point: definitions, declared HTTP actions, registered Go actions, connections and results | Accepted |
 | [0046](0046-formulas-that-read-other-documents.md) | Formulas that read other documents: a class as the source of LOOKUP, with COUNT, SUM, MIN and MAX | Accepted |
 | [0047](0047-time.md) | Time: a document's life in formulas, what is due, and timed transitions | Accepted |
-| [0048](0048-moving-many-documents-in-one-command.md) | Moving many documents in one command: `TransitionMany`, the refused reported and the rest moved | Proposed |
+| [0048](0048-moving-many-documents-in-one-command.md) | Moving many documents in one command: `TransitionMany`, the refused reported and the rest moved | Accepted |

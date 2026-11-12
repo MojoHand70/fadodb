@@ -1,6 +1,6 @@
 # ADR-0048: Moving many documents in one command
 
-- Status: Proposed; amends ADR-0040 (a second command that takes a transition), ADR-0025 (the preview of a batch), ADR-0026 (a key on a batch of moves)
+- Status: Accepted; amends ADR-0040 (a second command that takes a transition), ADR-0025 (the preview of a batch), ADR-0026 (a key on a batch of moves)
 - Date: 2026-11-12
 
 ## Context
@@ -34,7 +34,9 @@ sent twice must not move a document twice, and the call has to be able
 to run without writing.
 
 Items 1 to 3 and 6 below follow from the rulings. Items 4, 5 and 7 to
-12 are proposed here and are the owner's to change.
+12 were proposed with the record. The owner merged the proposal on
+2026-11-12 with none of them changed, and accepted them with the
+record.
 
 ## Decision
 
@@ -190,8 +192,8 @@ Items 1 to 3 and 6 below follow from the rulings. Items 4, 5 and 7 to
 
 ## Performance
 
-Proposed budgets, on the reference machine, on disk, for a plain
-transition in batches of 1,000:
+Budgets, on the reference machine, on disk, for a plain transition in
+batches of 1,000:
 
 - at least 15,000 documents a second, so a million documents in under
   70 seconds, where a command each takes 87;

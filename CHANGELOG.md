@@ -390,6 +390,14 @@ All notable changes to FadoDB are recorded here. The format follows
 
 ### Fixed
 
+- The outbox worker could leave a row that had fallen due waiting for a
+  minute. It read the clock once to look at what is due and again to
+  ask when the next row falls due; a row whose second began between the
+  two readings was due for neither, and the worker waited out its bound.
+  It now asks with one reading. It also wakes when the second of the
+  next row begins and not up to a second later, and waits a second, not
+  a minute, when the store fails while it asks what falls due next
+  (ADR-0044).
 - The listing of open transitions read a document without who created
   it, changed it and moved it when the class asked for that only inside
   the condition of a `LOOKUP`, as in

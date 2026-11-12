@@ -575,7 +575,7 @@ func (s *Store) Drain(ctx context.Context) (int, error) {
 		if err := ctx.Err(); err != nil {
 			return n, err
 		}
-		batch, err := s.dueRows(ctx, s.stmts.dueOutbox)
+		batch, err := s.dueRows(ctx, s.stmts.dueOutbox, s.now().Unix())
 		if err != nil {
 			return n, err
 		}
@@ -628,11 +628,12 @@ func (s *Store) unclaim(row *outboxRow) {
 type flight struct{ class, docID string }
 
 // dueRows reads the next actions that may run, with one of the three
-// statements that select them: pending, due by the database's clock, and
-// not behind an earlier pending action of the same document. There is at
-// most one per document, so a batch may run in any order.
-func (s *Store) dueRows(ctx context.Context, due *sql.Stmt) ([]*outboxRow, error) {
-	rows, err := due.QueryContext(ctx, s.now().Unix())
+// statements that select them: pending, due at now, a reading of the
+// database's clock in seconds, and not behind an earlier pending action
+// of the same document. There is at most one per document, so a batch
+// may run in any order.
+func (s *Store) dueRows(ctx context.Context, due *sql.Stmt, now int64) ([]*outboxRow, error) {
+	rows, err := due.QueryContext(ctx, now)
 	if err != nil {
 		return nil, storageErr("read the outbox", err)
 	}
@@ -1103,12 +1104,18 @@ func (s *Store) work(ctx context.Context) {
 	for {
 		// The wait is counted on the database's clock, which is what makes
 		// a row due, and bounded so that a clock that stands still or
-		// jumps is looked at again.
+		// jumps is looked at again. What falls due next is asked of the
+		// reading of the clock the last look at what is due was made
+		// with: a row whose second begins between two readings would be
+		// due for neither, and would wait out the bound.
 		wait := time.Minute
-		if err := s.dispatch(ctx, free, ended, &failed, &calls); err != nil {
+		looked, err := s.dispatch(ctx, free, ended, &failed, &calls)
+		if err != nil {
 			wait = time.Second
-		} else if next, ok := s.nextDue(ctx); ok {
-			wait = min(max(time.Duration(next-s.now().Unix())*time.Second, 10*time.Millisecond), time.Minute)
+		} else if next, ok, err := s.nextDue(ctx, looked); err != nil {
+			wait = time.Second
+		} else if ok {
+			wait = min(max(time.Unix(next, 0).Sub(s.now()), 10*time.Millisecond), time.Minute)
 		}
 		timer := time.NewTimer(wait)
 		select {
@@ -1138,20 +1145,25 @@ func (s *Store) work(ctx context.Context) {
 // and the actions that leave the database each on a goroutine of its
 // own, up to Workers at once (ADR-0044, item 2). A call that takes long
 // holds one worker and the later actions of its document, and neither a
-// commit nor the engine's own actions of other documents (ADR-0027).
-func (s *Store) dispatch(ctx context.Context, free, ended chan struct{}, failed *atomic.Bool, calls *sync.WaitGroup) error {
+// commit nor the engine's own actions of other documents (ADR-0027). It
+// returns the reading of the clock, in seconds, of its last look, the
+// one that started nothing: every row due by then runs, waits for a
+// worker or waits behind an action of its document.
+func (s *Store) dispatch(ctx context.Context, free, ended chan struct{}, failed *atomic.Bool, calls *sync.WaitGroup) (int64, error) {
 	for {
 		if err := ctx.Err(); err != nil {
-			return err
+			return 0, err
 		}
 		progress := false
-		batch, err := s.dueRows(ctx, s.stmts.dueEngine)
+		// One reading of the clock for the look at both kinds of action.
+		now := s.now().Unix()
+		batch, err := s.dueRows(ctx, s.stmts.dueEngine, now)
 		if err != nil {
-			return err
+			return 0, err
 		}
 		for _, row := range batch {
 			if err := ctx.Err(); err != nil {
-				return err
+				return 0, err
 			}
 			if !s.claim(row) {
 				continue
@@ -1159,13 +1171,13 @@ func (s *Store) dispatch(ctx context.Context, free, ended chan struct{}, failed 
 			ran, err := s.runAction(ctx, row)
 			s.unclaim(row)
 			if err != nil {
-				return err
+				return 0, err
 			}
 			progress = progress || ran
 		}
 		if len(free) < cap(free) {
-			if batch, err = s.dueRows(ctx, s.stmts.dueCalls); err != nil {
-				return err
+			if batch, err = s.dueRows(ctx, s.stmts.dueCalls, now); err != nil {
+				return 0, err
 			}
 		start:
 			for _, row := range batch {
@@ -1196,18 +1208,21 @@ func (s *Store) dispatch(ctx context.Context, free, ended chan struct{}, failed 
 			}
 		}
 		if !progress {
-			return nil
+			return now, nil
 		}
 	}
 }
 
-// nextDue is when the earliest action that is not due yet falls due, in
-// seconds. What is due already runs, waits for a worker or waits behind
-// an action of its document, and each of those ends with a wake-up.
-func (s *Store) nextDue(ctx context.Context) (int64, bool) {
+// nextDue is when the earliest action that was not due at looked falls
+// due, in seconds; looked is the reading of the clock the worker last
+// looked at what is due with. What was due by then runs, waits for a
+// worker or waits behind an action of its document, and each of those
+// ends with a wake-up. A failure of the store is the caller's to wait
+// out for a moment, not for the bound of an empty queue.
+func (s *Store) nextDue(ctx context.Context, looked int64) (int64, bool, error) {
 	var due sql.NullInt64
-	if err := s.db.QueryRowContext(ctx, `SELECT min(due_at) FROM outbox WHERE status = ? AND due_at > ?`, ActionPending, s.now().Unix()).Scan(&due); err != nil || !due.Valid {
-		return 0, false
+	if err := s.db.QueryRowContext(ctx, `SELECT min(due_at) FROM outbox WHERE status = ? AND due_at > ?`, ActionPending, looked).Scan(&due); err != nil {
+		return 0, false, storageErr("read the outbox", err)
 	}
-	return due.Int64, true
+	return due.Int64, due.Valid, nil
 }

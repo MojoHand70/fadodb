@@ -292,6 +292,23 @@ class's rule. It settled these points.
   another inserted. Only a table the database file holds can be written
   by a rule, which today is every table.
 
+A fault of the worker, found on 2026-11-12 when a retry was not made
+for a minute in a test on Windows, and what was settled with it.
+
+- **The worker reads the clock once for a look.** It looks at what is
+  due, and then at when the next row falls due, to know how long to
+  wait. The two looks each read the clock. A row whose second began
+  between the two readings was due for neither: not yet due for the
+  first, no longer "not yet due" for the second. With nothing else in
+  the queue the worker then waited out its bound, a minute, with a due
+  row. The second look now asks with the reading of the first.
+- **The wait ends when the second of the next row begins**, not a whole
+  number of seconds after the look: a row is attempted within some ten
+  milliseconds of falling due, where it could be a second late.
+- **A failure of the store while asking what falls due next** is waited
+  out for a second, like a failure while looking at what is due. It was
+  taken for an empty queue, and waited out for a minute.
+
 ## Rulings
 
 The draft of this record put three questions to the owner. He ruled on

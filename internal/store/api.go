@@ -49,6 +49,11 @@ func checkPrincipal(p Principal) *Error {
 // whose kind is none the engine knows (ADR-0050); a command that writes
 // is refused the same where it begins.
 func asked(opts []Option) (options, *Error) {
+	if len(opts) == 0 {
+		// A call without options is nobody's: nothing to apply, and the
+		// options stay off the heap, which Drain is glad of on every run.
+		return options{}, nil
+	}
 	o := apply(opts)
 	return o, checkPrincipal(o.principal)
 }

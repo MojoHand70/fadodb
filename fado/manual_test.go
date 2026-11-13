@@ -19,10 +19,7 @@ import (
 // chapter cannot show a class the engine refuses, nor a line the class
 // beside it does not have.
 func TestManualExamples(t *testing.T) {
-	pages, err := filepath.Glob(filepath.Join("..", "docs", "manual", "*.md"))
-	if err != nil || len(pages) == 0 {
-		t.Fatalf("no chapters found: %v", err)
-	}
+	pages := manualPages(t)
 	block := regexp.MustCompile("(?s)```json\r?\n(.*?)\r?\n```")
 	space := regexp.MustCompile(`\s+`)
 	squeeze := func(text string) string { return space.ReplaceAllString(text, "") }
@@ -76,8 +73,7 @@ func TestManualExamples(t *testing.T) {
 // TestManualLinks follows every link of the manual that points into the
 // repository: the file it names must exist.
 func TestManualLinks(t *testing.T) {
-	pages, _ := filepath.Glob(filepath.Join("..", "docs", "manual", "*.md"))
-	pages = append(pages, filepath.Join("..", "docs", "README.md"))
+	pages := append(manualPages(t), filepath.Join("..", "docs", "README.md"))
 	link := regexp.MustCompile(`\]\(([^)#\s]+)(#[^)\s]*)?\)`)
 	for _, page := range pages {
 		data, err := os.ReadFile(page)
@@ -94,4 +90,21 @@ func TestManualLinks(t *testing.T) {
 			}
 		}
 	}
+}
+
+// manualPages lists the chapters and the guides of the manual.
+func manualPages(t *testing.T) []string {
+	t.Helper()
+	var pages []string
+	for _, pattern := range []string{"*.md", filepath.Join("guides", "*.md")} {
+		found, err := filepath.Glob(filepath.Join("..", "docs", "manual", pattern))
+		if err != nil {
+			t.Fatal(err)
+		}
+		pages = append(pages, found...)
+	}
+	if len(pages) == 0 {
+		t.Fatal("no chapters found")
+	}
+	return pages
 }

@@ -147,6 +147,11 @@ document and not code.
 - [`../../examples/classes/invoice.json`](../../examples/classes/invoice.json),
   the Invoice from the README: an approval chain with a `rows` variable,
   a rule and rights per state.
+- The guides under [`../../docs/manual/guides/`](../../docs/manual/guides/),
+  one task each with a class that a test runs: editors per state, a
+  field read-only after approval, four eyes, reminders and a deadline,
+  acting for somebody. Take the pattern from the guide before writing
+  your own.
 - The six samples the front page of fadodb.org links to, planned.
 
 ## References, to be written

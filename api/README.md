@@ -10,7 +10,7 @@ checked against what the engine does by `TestAPISchemas` in
 |---|---|---|
 | `action.schema.json` | An action definition: the JSON `DefineAction` takes, for an action a Go function implements and for one the engine sends as a request. | Shipped with v0.4.0. |
 | `call.schema.json` | The call an action receives: the key, the attempt, the arguments and the event. It is also the body of a request whose definition gives none. | Shipped with v0.4.0. |
-| `event.schema.json` | The event that fired the rule, with the document at that version. | Shipped with v0.4.0. |
+| `event.schema.json` | The event that fired the rule, with the document at that version. | Shipped with v0.4.0; what the actor was and for whom it acted since v0.5.0. |
 
 A Go function registered in `Options.Actions` receives the call as a
 `fado.ActionCall`, whose JSON encoding is `call.schema.json`.

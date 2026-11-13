@@ -126,7 +126,7 @@ All notable changes to FadoDB are recorded here. The format follows
   `read` rule. The wake-up of a timer, an eventless transition and the
   result an action writes back ask nothing.
 - **The engine schema is version 6**, for what the actor of an event
-  was and for whom it acted, on the event and on the outbox row. A
+  was and for whom it acted, two columns of the event. A
   database made by an earlier engine, v0.4.0 included, is refused when
   opened, as before 1.0 there is no upgrade path.
 - A class that declared `read`, `create`, `update` or `delete` had them

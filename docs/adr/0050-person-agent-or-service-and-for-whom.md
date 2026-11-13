@@ -130,8 +130,14 @@ function that names it, and leaves the kind as built.
 - **The names.** `Principal.Kind` and `Principal.For`; the constants
   `ActorPerson`, `ActorAgent` and `ActorService`; the functions
   `USERKIND()` and `ACTINGFOR()`; the columns `actor_kind` and
-  `actor_for` on an event, and `principal_kind` and `principal_for` on
-  an outbox row.
+  `actor_for` on an event.
+- **The outbox row gained no column.** It keeps the kind and the id
+  acted for in the text that holds the principal's groups: the array of
+  groups as before for a principal that says neither, an object with
+  the groups, the kind and the id for one that does. Two columns were
+  tried first and cost ten allocations on every action the worker runs,
+  since the driver allocates for every column the statement that reads
+  the due rows returns.
 - **The views.** `_events` shows `actor_kind` and `actor_for`.
   `_states` shows, for the move that began a stay and the one that
   ended it, `entered_by_kind`, `entered_for`, `left_by_kind` and
@@ -145,12 +151,10 @@ function that names it, and leaves the kind as built.
   what v0.4.0 makes, is refused when opened, as every schema change
   before 1.0 has been.
 
-Measured, in memory: `BenchmarkTransition` keeps its 155 allocations
-and takes 128 bytes more a commit, 1.5%, for the two texts in the
-context of its formulas. An action through the outbox takes 469
-allocations where it took 459, and a timer 404 where it took 394: the
-driver allocates for every column a statement returns, and the
-statement that reads the due rows returns two more.
+Measured, in memory: every benchmark of the gate keeps its
+allocations, `BenchmarkTransition` 155, `BenchmarkOutbox` 459 and
+`BenchmarkTimer` 394. A commit takes 128 bytes more, 1.5%, for the two
+texts in the context of its formulas.
 
 ## Open question
 

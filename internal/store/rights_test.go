@@ -121,7 +121,7 @@ func TestRights_WriteCheck(t *testing.T) {
 		t.Errorf("preview forbids %v, want amount and secret; cost %v", names, pv.Document.Values["cost"])
 	}
 	// An administrator bypasses; a call without a principal is nobody.
-	if _, err := s.Set(ctx, "Ticket", doc.ID, Values{"secret": "x"}, As(ticketAdmin)); err != nil {
+	if _, err := s.Set(ctx, "Ticket", doc.ID, Values{"secret": "x"}, As(ticketAdmin), past); err != nil {
 		t.Errorf("admin: %v", err)
 	}
 	_, err = s.Set(ctx, "Ticket", doc.ID, Values{"amount": 13})
@@ -205,7 +205,7 @@ func TestRights_TransitionRule(t *testing.T) {
 	if _, err := s.Transition(ctx, "Ticket", small.ID, "submit", nil, As(ticketOwner)); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.Transition(ctx, "Ticket", small.ID, "approve", nil, As(ticketAdmin)); code(err) != CodeGuardFalse {
+	if _, err := s.Transition(ctx, "Ticket", small.ID, "approve", nil, As(ticketAdmin), past); code(err) != CodeGuardFalse {
 		t.Errorf("admin against the guard: %v", err)
 	}
 	// Finance takes it; the document is closed.

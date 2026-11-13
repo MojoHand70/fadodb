@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"strings"
 	"testing"
@@ -52,6 +53,9 @@ var (
 	// a class hold for it as for anybody.
 	setup   = Principal{ID: "setup", System: []string{GroupAdministrators, GroupDesigners, GroupAnalysts}}
 	asSetup = As(setup)
+	// past is the reason a test gives where it acts past a rule as a
+	// content administrator (ADR-0052, item 4).
+	past = Reason("the test acts past the rule")
 )
 
 // designing is the principal as a designer too, which a caller who
@@ -93,8 +97,8 @@ func TestAccess_Create(t *testing.T) {
 	}
 	refusedBy(t, func() error { _, err := s.Create(ctx, "Claim", Values{"amount": 1}, As(guest)); return err }(), "/access/create")
 	refusedBy(t, func() error { _, err := s.Create(ctx, "Claim", Values{"amount": 1}); return err }(), "/access/create")
-	if _, err := s.Create(ctx, "Claim", Values{"amount": 5000}, As(root)); err != nil {
-		t.Errorf("an administrator passes the rule: %v", err)
+	if _, err := s.Create(ctx, "Claim", Values{"amount": 5000}, As(root), past); err != nil {
+		t.Errorf("a content administrator passes the rule: %v", err)
 	}
 	// A refused create wrote nothing, and a batch is all or none.
 	if n, _ := s.Count(ctx, Filter{Class: "Claim"}, As(root)); n != 2 {
@@ -823,7 +827,7 @@ func TestAccess_LeftOutIsNoted(t *testing.T) {
 	if e, ok := err.(*Error); !ok || e.Code != CodeForbidden || e.Path != "/access/create" || !strings.Contains(e.Hint, "add access.create") {
 		t.Errorf("creating where the class says nothing: %v", err)
 	}
-	doc, err := s.Create(ctx, "Slip", Values{"note": "x"}, As(root))
+	doc, err := s.Create(ctx, "Slip", Values{"note": "x"}, As(root), past)
 	if err != nil {
 		t.Fatalf("a content administrator creates: %v", err)
 	}
@@ -856,5 +860,152 @@ func TestAccess_LeftOutIsNoted(t *testing.T) {
 	}
 	if q, err := s.Create(ctx, "Quote", nil, As(clerkAnn)); err != nil || q.Values["rate"] != 4.3 {
 		t.Errorf("a formula reads the table with the engine's eyes: %v %s", err, dump(q))
+	}
+}
+
+// A content administrator gets past a rule by the group alone, and that
+// is an override (ADR-0052, item 4): it needs a reason, and the event of
+// the commit keeps the reason beside the rules it lifted. A command the
+// rules let through is an ordinary one, whoever sends it.
+func TestAccess_Override(t *testing.T) {
+	s, _ := openStore(t, Options{})
+	ctx := context.Background()
+	for _, def := range []string{
+		`{"name": "Log", "variables": {"about": {"type": "text"}}, "states": {"initial": "kept", "list": ["kept"]},
+ "access": {"read": "INGROUP(\"everyone\")", "create": "FALSE", "update": "FALSE", "delete": "FALSE"}}`,
+		`{"name": "Memo",
+ "variables": {"owner": {"type": "text", "default": "USER()"}, "total": {"type": "number", "default": "0"}, "secret": {"type": "text"}},
+ "states": {"initial": "draft", "list": ["draft", "sent", "filed"]},
+ "transitions": [{"name": "send", "from": "draft", "to": "sent", "guard": "total > 0"}, {"from": "sent", "to": "filed", "guard": "total > 0"}],
+ "rules": [{"on": "transition", "name": "send", "do": [{"action": "create", "class": "Log", "values": {"about": "ID()"}}]}],
+ "access": {"read": "owner = USER()", "create": "INGROUP(\"everyone\")", "update": "owner = USER()", "delete": "FALSE",
+            "transition": {"send": "owner = USER()"}},
+ "rights": {"*": {"secret": {"write": ["hr"]}}}}`,
+	} {
+		if _, err := s.DefineClass(ctx, []byte(def), asSetup); err != nil {
+			t.Fatal(err)
+		}
+	}
+	cora := Principal{ID: "cora", System: []string{GroupContentAdministrators}}
+	why := Reason("the owner left the company")
+	memo, err := s.Create(ctx, "Memo", Values{"total": 5}, As(clerkAnn))
+	if err != nil {
+		t.Fatal(err)
+	}
+	marks := func(class, id string) []string {
+		t.Helper()
+		events, err := s.Events(ctx, class, id, As(cora))
+		if err != nil {
+			t.Fatal(err)
+		}
+		var out []string
+		for _, e := range events {
+			out = append(out, strings.TrimSpace(e.Kind+":"+e.Name+" "+e.ActorID+" ["+e.Override+"] "+e.Reason))
+		}
+		return out
+	}
+	// Without a reason the command is refused, and names the rules.
+	_, err = s.Set(ctx, "Memo", memo.ID, Values{"total": 6}, As(cora))
+	if e, ok := err.(*Error); !ok || e.Code != CodeReasonRequired || e.Path != "/access/read" || !strings.Contains(e.Message, "/access/read and /access/update") || e.Hint == "" {
+		t.Fatalf("an override without a reason: %v", err)
+	}
+	// A preview says which rules the command would lift, and that it
+	// needs a reason; with one it reports no error.
+	pv, err := s.Preview(ctx, "Memo", memo.ID, Values{"total": 6}, "", As(cora))
+	if err != nil || strings.Join(pv.Override, " ") != "/access/read /access/update" || len(pv.Errors) != 1 || pv.Errors[0].Code != CodeReasonRequired {
+		t.Errorf("the preview of an override without a reason: %v %s", err, dump(pv))
+	}
+	pv, err = s.Preview(ctx, "Memo", memo.ID, Values{"total": 6}, "", As(cora), why)
+	if err != nil || strings.Join(pv.Override, " ") != "/access/read /access/update" || len(pv.Errors) != 0 {
+		t.Errorf("the preview of an override with a reason: %v %s", err, dump(pv))
+	}
+	// A read by override asks no reason and leaves no trace.
+	if got, err := s.Get(ctx, "Memo", memo.ID, As(cora)); err != nil || got.Values["total"] != 5.0 {
+		t.Errorf("a content administrator reads: %v %s", err, dump(got))
+	}
+	// With a reason the command is made, and its event keeps both.
+	if _, err := s.Set(ctx, "Memo", memo.ID, Values{"total": 6}, As(cora), why); err != nil {
+		t.Fatalf("an override with a reason: %v", err)
+	}
+	// A write right is a rule too.
+	_, err = s.Set(ctx, "Memo", memo.ID, Values{"secret": "x"}, As(cora))
+	if e, ok := err.(*Error); !ok || e.Code != CodeReasonRequired || !strings.Contains(e.Message, "/rights/draft/secret/write") {
+		t.Errorf("a write past a right, without a reason: %v", err)
+	}
+	// The listing says what taking the transition would lift.
+	infos, err := s.Transitions(ctx, "Memo", memo.ID, As(cora))
+	if err != nil || len(infos) != 1 || infos[0].Name != "send" || !infos[0].Enabled || infos[0].Override != "/access/transition/send" {
+		t.Errorf("the listing for a content administrator: %v %s", err, dump(infos))
+	}
+	if infos, _ := s.Transitions(ctx, "Memo", memo.ID, As(clerkAnn)); len(infos) != 1 || !infos[0].Enabled || infos[0].Override != "" {
+		t.Errorf("the listing for the owner: %s", dump(infos))
+	}
+	// The transition by override: its own event is marked, the eventless
+	// move that follows is the engine's and is not.
+	if _, err := s.Transition(ctx, "Memo", memo.ID, "send", nil, As(cora), why); err != nil {
+		t.Fatal(err)
+	}
+	want := []string{
+		"created: ann []",
+		"set: cora [/access/read /access/update] the owner left the company",
+		"transition:send cora [/access/read /access/transition/send] the owner left the company",
+		"transition: cora []",
+	}
+	if got := marks("Memo", memo.ID); strings.Join(got, "\n") != strings.Join(want, "\n") {
+		t.Errorf("the events of the memo:\n%s\nwant:\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
+	}
+	// What the commit queued acts as the same caller for the same reason:
+	// nobody may create a Log, and the rule's action does by override.
+	if n, err := s.Drain(ctx, asSetup); err != nil || n != 1 {
+		t.Fatalf("draining: %d %v", n, err)
+	}
+	logs, err := s.Query(ctx, Filter{Class: "Log"}, As(clerkAnn))
+	if err != nil || len(logs) != 1 {
+		t.Fatalf("the log the rule made: %v %d", err, len(logs))
+	}
+	if got := marks("Log", logs[0].ID); len(got) != 1 || got[0] != "created: cora [/access/create] the owner left the company" {
+		t.Errorf("the event of the log: %v", got)
+	}
+	// The owner's own transition queues the same action, and it is dead:
+	// she is no content administrator.
+	own, _ := s.Create(ctx, "Memo", Values{"total": 1}, As(clerkAnn))
+	if _, err := s.Transition(ctx, "Memo", own.ID, "send", nil, As(clerkAnn), why); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Drain(ctx, asSetup); err != nil {
+		t.Fatal(err)
+	}
+	if dead, _ := s.Outbox(ctx, OutboxFilter{Status: ActionDead}, asSetup); len(dead) != 1 || dead[0].ErrorCode != CodeForbidden {
+		t.Errorf("the action of the owner's commit: %s", dump(dead))
+	}
+	// A reason given where the rules let the caller through is ignored.
+	if got := marks("Memo", own.ID); got[0] != "created: ann []" || got[1] != "transition:send ann []" {
+		t.Errorf("the events of a memo nobody overrode: %v", got)
+	}
+	// A content administrator's own document is an ordinary one.
+	hers, err := s.Create(ctx, "Memo", Values{"total": 2}, As(cora))
+	if err != nil {
+		t.Fatalf("a content administrator creates by the rule: %v", err)
+	}
+	if _, err := s.Set(ctx, "Memo", hers.ID, Values{"total": 3}, As(cora)); err != nil {
+		t.Errorf("a content administrator changes her own memo, no reason asked: %v", err)
+	}
+	if got := marks("Memo", hers.ID); len(got) != 2 || got[1] != "set: cora []" {
+		t.Errorf("the events of her own memo: %v", got)
+	}
+	// Every override, by whom, of which rule and why, is one statement.
+	rows, err := s.SQL(ctx, `SELECT kind, actor_id, override, reason FROM Memo_events WHERE override IS NOT NULL ORDER BY ts, event_id`, nil, asSetup)
+	if err != nil || len(rows.Rows) != 2 || fmt.Sprint(rows.Rows[0]) != "[set cora /access/read /access/update the owner left the company]" {
+		t.Errorf("the overrides of the class: %v %v", err, rows)
+	}
+	// A delete past the rule that says nobody deletes.
+	if err := s.Delete(ctx, "Memo", hers.ID, As(cora)); code(err) != CodeReasonRequired {
+		t.Errorf("a delete past the rule, without a reason: %v", err)
+	}
+	if err := s.Delete(ctx, "Memo", hers.ID, As(cora), why); err != nil {
+		t.Errorf("a delete past the rule, with a reason: %v", err)
+	}
+	if got := marks("Memo", hers.ID); len(got) != 3 || got[2] != "deleted: cora [/access/delete] the owner left the company" {
+		t.Errorf("the events after the delete: %v", got)
 	}
 }

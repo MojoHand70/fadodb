@@ -99,10 +99,13 @@ type scriptStep struct {
 	// another step acts on; the last created document when absent. ID is
 	// the id a create gives its document, and the id of a document the
 	// script did not create: one an action made.
-	Doc        string `json:"doc,omitempty"`
-	ID         string `json:"id,omitempty"`
-	As         string `json:"as,omitempty"`
-	Key        string `json:"key,omitempty"`
+	Doc string `json:"doc,omitempty"`
+	ID  string `json:"id,omitempty"`
+	As  string `json:"as,omitempty"`
+	Key string `json:"key,omitempty"`
+	// Reason is the reason the step gives for an act past a rule, as a
+	// content administrator (ADR-0052, item 4).
+	Reason     string `json:"reason,omitempty"`
 	Transition string `json:"transition,omitempty"`
 	Values     Values `json:"values,omitempty"`
 	// Variables are the variables a reset or a refresh names.
@@ -168,6 +171,11 @@ type scriptExpect struct {
 	// (ADR-0050): each the actor's id, then what it was and for whom it
 	// acted where the host program said, as "agent-7 agent for ann".
 	Actors []string `json:"actors,omitempty"`
+	// Overrides are the marks of the document's events so far, in order
+	// (ADR-0052, item 4): for an event of a command that got past a rule
+	// as a content administrator the place of the rule, then the reason
+	// given, as "/access/update: the approver left"; "" for any other.
+	Overrides []string `json:"overrides,omitempty"`
 	// Absent and Present are variables that must be missing from, or
 	// found in, the values of the document, or of every document a query
 	// returned (ADR-0041).
@@ -454,6 +462,9 @@ func runStatechartSuite(t *testing.T, suite *statechartSuite) {
 		}
 		if step.Key != "" {
 			opts = append(opts, Key(step.Key))
+		}
+		if step.Reason != "" {
+			opts = append(opts, Reason(step.Reason))
 		}
 		if step.At != "" {
 			opts = append(opts, At(moment(t, step.At)))
@@ -846,6 +857,24 @@ func runStatechartSuite(t *testing.T, suite *statechartSuite) {
 			}
 			if !reflect.DeepEqual(got, want.Actors) {
 				t.Errorf("%s: actors %v, want %v", name, got, want.Actors)
+			}
+		}
+		if want.Overrides != nil {
+			events, err := s.Events(ctx, class, id, As(root))
+			if err != nil {
+				t.Errorf("%s: %v", name, err)
+				continue
+			}
+			got := []string{}
+			for _, e := range events {
+				mark := e.Override
+				if e.Reason != "" {
+					mark += ": " + e.Reason
+				}
+				got = append(got, mark)
+			}
+			if !reflect.DeepEqual(got, want.Overrides) {
+				t.Errorf("%s: overrides %q, want %q", name, got, want.Overrides)
 			}
 		}
 		if want.Events != nil {

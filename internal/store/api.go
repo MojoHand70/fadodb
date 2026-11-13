@@ -211,8 +211,14 @@ type Event struct {
 	// ActorKind is what the actor was, person, agent or service, and
 	// ActorFor the id it acted for (ADR-0050); each empty when the host
 	// program did not say.
-	ActorKind     string `json:"actor_kind,omitempty"`
-	ActorFor      string `json:"actor_for,omitempty"`
+	ActorKind string `json:"actor_kind,omitempty"`
+	ActorFor  string `json:"actor_for,omitempty"`
+	// Override names the rules a content administrator's command got
+	// past, the place of each in the class, separated by a space, as
+	// "/access/update"; Reason is the reason the command gave (ADR-0052,
+	// item 4). Both are empty for a command the rules let through.
+	Override      string `json:"override,omitempty"`
+	Reason        string `json:"reason,omitempty"`
 	BeforeVersion int64  `json:"before_version,omitempty"`
 	AfterVersion  int64  `json:"after_version,omitempty"`
 	CauseEventID  string `json:"cause_event_id,omitempty"`
@@ -270,6 +276,10 @@ type TransitionInfo struct {
 	Code    string `json:"code,omitempty"`
 	Message string `json:"message,omitempty"`
 	FiresAt int64  `json:"fires_at,omitempty"`
+	// Override is the place of the rule the caller would get past by
+	// taking the transition as a content administrator, which needs a
+	// reason (ADR-0052, item 4); empty when the rule lets them through.
+	Override string `json:"override,omitempty"`
 }
 
 // Preview is what a commit would do, without having done it (ADR-0025):
@@ -291,6 +301,11 @@ type Preview struct {
 	Transitions []TransitionInfo `json:"transitions,omitempty"`
 	Rules       []RuleRun        `json:"rules,omitempty"`
 	Now         int64            `json:"now"`
+	// Override lists the places of the rules the command gets past by
+	// the content administrator's group alone (ADR-0052, item 4). Such a
+	// command needs a reason; without one the preview also reports
+	// reason_required under Errors.
+	Override []string `json:"override,omitempty"`
 }
 
 // RuleRun is one rule whose trigger a previewed command raised (ADR-0043):
@@ -333,10 +348,21 @@ type options struct {
 	replace         bool
 	version         int64
 	at              time.Time
+	// reason is why a content administrator acts past a rule (ADR-0052,
+	// item 4): the event of the commit keeps it.
+	reason string
 }
 
 // As runs the call as the principal.
 func As(p Principal) Option { return func(o *options) { o.principal = p } }
+
+// Reason says why the caller acts, for a command that only a content
+// administrator's group lets through (ADR-0052, item 4): such a command
+// is an override of the rule that would have refused it, it is refused
+// with reason_required without a reason, and the event of its commit
+// keeps the reason beside the rule. A command the rules let through
+// ignores it.
+func Reason(text string) Option { return func(o *options) { o.reason = text } }
 
 // Key gives a mutating command its idempotency key (ADR-0026): a repeat
 // with the same key makes no second commit and returns the first one's

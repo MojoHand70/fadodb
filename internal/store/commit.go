@@ -84,6 +84,10 @@ type command struct {
 	depth    int
 	day      int64
 	hasDay   bool
+	// lifted are the places of the rules the command got past by the
+	// content administrator's group alone, in the order it met them
+	// (ADR-0052, item 4): an override, which needs a reason.
+	lifted []string
 	// engine marks a write of the engine's own: the result an action
 	// writes back to the document that caused it (ADR-0045, item 8). Like
 	// a rule's set it consults no write right; the principal is the one
@@ -97,6 +101,8 @@ type result struct {
 	eventID string
 	noop    bool
 	errs    []*Error
+	// lifted are the rules the command got past as an override.
+	lifted []string
 	// queued is how many actions the command wrote to the outbox.
 	queued int
 	// path and transitions are a preview's: the states the command
@@ -229,7 +235,7 @@ func (s *Store) Preview(ctx context.Context, class, id string, values Values, tr
 	if err != nil {
 		return nil, err
 	}
-	return &Preview{Document: res.doc, Errors: res.errs, Path: res.path, Transitions: res.transitions, Rules: res.rules, Now: res.now}, nil
+	return &Preview{Document: res.doc, Errors: res.errs, Path: res.path, Transitions: res.transitions, Rules: res.rules, Now: res.now, Override: res.lifted}, nil
 }
 
 // PreviewDelete answers what a delete of the document would do, and
@@ -247,7 +253,7 @@ func (s *Store) PreviewDelete(ctx context.Context, class, id string, opts ...Opt
 	if err != nil {
 		return nil, err
 	}
-	return &Preview{Document: res.doc, Errors: res.errs, Rules: res.rules, Now: res.now}, nil
+	return &Preview{Document: res.doc, Errors: res.errs, Rules: res.rules, Now: res.now, Override: res.lifted}, nil
 }
 
 // commit runs a command in a transaction on the writer.
@@ -438,6 +444,9 @@ func (s *Store) run(ctx context.Context, cmd command, now time.Time) (*result, e
 		if err := s.checkRule(c, ruleDelete, row, &cmd, evalCtx, res); err != nil {
 			return nil, err
 		}
+		if err := s.overridden(&cmd, res); err != nil {
+			return nil, err
+		}
 		// A delete rule sees the document as it was (ADR-0043), under the
 		// current definition's layout; it may emit and queue, nothing else.
 		if c.rules != nil && len(c.rules.delete) > 0 {
@@ -555,6 +564,9 @@ func (s *Store) run(ctx context.Context, cmd command, now time.Time) (*result, e
 		if err := s.checkRule(c, ruleCreate, after, &cmd, evalCtx, res); err != nil {
 			return nil, err
 		}
+		if err := s.overridden(&cmd, res); err != nil {
+			return nil, err
+		}
 	} else {
 		// A live document computed by an older version adopts the current
 		// one with this commit: its values move to the current layout by
@@ -577,7 +589,7 @@ func (s *Store) run(ctx context.Context, cmd command, now time.Time) (*result, e
 		switch {
 		case trans != nil:
 			if asksRules(&cmd) {
-				if err := s.checkTransition(c, trans, after, evalCtx, cmd.o.principal); err != nil {
+				if err := s.checkTransition(c, trans, after, evalCtx, &cmd); err != nil {
 					return nil, err
 				}
 			}
@@ -601,6 +613,9 @@ func (s *Store) run(ctx context.Context, cmd command, now time.Time) (*result, e
 			}
 		}
 		if err := s.checkWrites(c, &cmd, after, evalCtx, res); err != nil {
+			return nil, err
+		}
+		if err := s.overridden(&cmd, res); err != nil {
 			return nil, err
 		}
 		changed, err := c.assign(after, kids, cmd.values, dirty, s.limits)
@@ -1204,8 +1219,11 @@ func (s *Store) writeEventArgs(ctx context.Context, eventID, class, docID any, e
 		s.dayOf, s.dayArg = day, day
 	}
 	args := append(s.eventArgs[:0], eventID, class, docID, word(ev.kind), nullText(ev.name), s.stateArg(ev.from), s.stateArg(ev.to), actor, before, after, nullText(ev.cause), nullText(key), nullText(hash), s.dayArg, secs, originCode(ev.origin),
-		s.acting.kind, s.acting.acts)
+		s.acting.kind, s.acting.acts, s.acting.override, s.acting.reason)
 	s.eventArgs = args
+	// The override is of the command, and its own event, the first it
+	// writes, keeps it; what follows in its chain is the engine's.
+	s.acting.override, s.acting.reason = nil, nil
 	if _, err := s.stmts.insertEvent.ExecContext(ctx, args...); err != nil {
 		return storageErr("write the event", err)
 	}
@@ -1223,6 +1241,7 @@ func (s *Store) writeEventArgs(ctx context.Context, eventID, class, docID any, e
 // an event for another principal, as the worker does for the outcome of
 // an action, says so first.
 func (s *Store) actAs(p Principal) {
+	s.acting.override, s.acting.reason = nil, nil
 	s.acting.kind = word(p.Kind)
 	if p.For != s.acting.forID || s.acting.acts == nil && p.For != "" {
 		s.acting.forID, s.acting.acts = p.For, nullText(p.For)

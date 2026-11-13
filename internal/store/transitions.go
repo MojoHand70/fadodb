@@ -76,7 +76,8 @@ func (s *Store) Transitions(ctx context.Context, class, id string, opts ...Optio
 	evalCtx.State, evalCtx.ID = row.state, row.id
 	// A document the caller may not see does not exist for them
 	// (ADR-0049, item 3).
-	if ok, _ := s.wev.may(c, ruleRead, row, evalCtx, o.principal); !ok {
+	content := o.principal.content()
+	if ok, _ := s.wev.may(c, ruleRead, row, evalCtx); !ok && !content {
 		return nil, noDocument(c, id)
 	}
 	if c.cls.States == nil {
@@ -107,13 +108,19 @@ func (s *Store) listTransitions(c *class, row *docRow, evalCtx *formula.Context,
 				continue
 			}
 		}
-		if ok, err := s.permitted(&s.wev, c, t, row, evalCtx, p); !ok {
-			info.Code = CodeForbidden
-			if err != nil {
-				info.Message = "the rule failed: " + guardFailure(err)
+		if ok, err := s.permitted(&s.wev, c, t, row, evalCtx); !ok {
+			if !p.content() {
+				info.Code = CodeForbidden
+				if err != nil {
+					info.Message = "the rule failed: " + guardFailure(err)
+				}
+				out = append(out, info)
+				continue
 			}
-			out = append(out, info)
-			continue
+			// A content administrator may take it past the rule, with a
+			// reason: the listing says which rule that would lift
+			// (ADR-0052, item 4).
+			info.Override = transitionRulePath(c, t)
 		}
 		held, err := s.holds(c, t, row, evalCtx)
 		switch {

@@ -35,10 +35,7 @@ func (k accessRule) String() string {
 // may reports whether a rule of the class lets the principal through
 // over the row: TRUE does; FALSE, a blank, a value of another type and an
 // error do not (ADR-0019), the error returned for the message.
-func (e *evaluator) may(c *class, k accessRule, row *docRow, ctx *formula.Context, p Principal) (bool, error) {
-	if p.content() {
-		return true, nil
-	}
+func (e *evaluator) may(c *class, k accessRule, row *docRow, ctx *formula.Context) (bool, error) {
 	prog := c.access[k]
 	if prog == nil {
 		// A rule the class leaves out lets nobody through (ADR-0052,
@@ -53,11 +50,45 @@ func (e *evaluator) may(c *class, k accessRule, row *docRow, ctx *formula.Contex
 }
 
 // asksRules says whether a command asks the rules of the class at all.
-// A content administrator passes them (ADR-0052). The engine's own commands ask nothing
-// (ADR-0049, item 8): the result an action writes back, the wake-up of a
-// timer and a migration.
+// The engine's own commands ask nothing (ADR-0049, item 8): the result
+// an action writes back, the wake-up of a timer and a migration.
 func asksRules(cmd *command) bool {
-	return !cmd.o.principal.content() && !cmd.engine && cmd.op != opWake && cmd.op != opMigrate
+	return !cmd.engine && cmd.op != opWake && cmd.op != opMigrate
+}
+
+// lifts reports whether the caller of a command gets past a rule that
+// refused it: a content administrator does, by the group alone. That is
+// an override of the rule (ADR-0052, item 4), and the command notes the
+// place of the rule for the reason it needs and the event that keeps
+// both. It is asked only of a rule that refused, so that a command the
+// rules let through builds no path.
+func (cmd *command) lifts() bool { return cmd.o.principal.content() }
+
+func (cmd *command) lift(path string) { cmd.lifted = append(cmd.lifted, path) }
+
+// overridden is the answer to a command that got past a rule by the
+// content administrator's group alone (ADR-0052, item 4). It needs a
+// reason, and is refused with reason_required and the place of the rule
+// without one; a preview reports that under its errors and goes on.
+// With a reason, the event of the commit keeps it beside the rules. The
+// result says which rules the command lifted either way.
+func (s *Store) overridden(cmd *command, res *result) *Error {
+	if len(cmd.lifted) == 0 {
+		return nil
+	}
+	res.lifted = cmd.lifted
+	if cmd.o.reason == "" {
+		e := hintf(CodeReasonRequired, "", who(cmd.o.principal)+" gets past "+strings.Join(cmd.lifted, " and ")+" as a content administrator only, and an act past a rule needs a reason",
+			"give the reason with the command; the event keeps it beside the rule")
+		e.Path = cmd.lifted[0]
+		if !cmd.preview {
+			return e
+		}
+		res.errs = append(res.errs, e)
+		return nil
+	}
+	s.acting.override, s.acting.reason = strings.Join(cmd.lifted, " "), cmd.o.reason
+	return nil
 }
 
 // noDocument is the answer for a document that does not exist, and for
@@ -80,8 +111,12 @@ func (s *Store) checkRead(c, beforeClass *class, before *docRow, cmd *command, e
 		row = c.adopted(beforeClass, before)
 	}
 	evalCtx.ID, evalCtx.State = before.id, before.state
-	ok, err := s.wev.may(c, ruleRead, row, evalCtx, cmd.o.principal)
+	ok, err := s.wev.may(c, ruleRead, row, evalCtx)
 	if ok {
+		return nil
+	}
+	if cmd.lifts() {
+		cmd.lift("/access/read")
 		return nil
 	}
 	if cmd.internal {
@@ -97,8 +132,12 @@ func (s *Store) checkRule(c *class, k accessRule, row *docRow, cmd *command, eva
 	if !asksRules(cmd) {
 		return nil
 	}
-	ok, err := s.wev.may(c, k, row, evalCtx, cmd.o.principal)
+	ok, err := s.wev.may(c, k, row, evalCtx)
 	if ok {
+		return nil
+	}
+	if cmd.lifts() {
+		cmd.lift("/access/" + k.String())
 		return nil
 	}
 	e := forbiddenBy(c, k, cmd.o.principal, row.id, err)
@@ -143,11 +182,11 @@ func forbiddenBy(c *class, k accessRule, p Principal, id string, err error) *Err
 // version and the state stay, the values and the title go. The worker's
 // commands answer the engine, not the person, and are left whole.
 func (s *Store) veil(c *class, row *docRow, d *Document, cmd *command, evalCtx *formula.Context) {
-	if !asksRules(cmd) || cmd.internal {
+	if !asksRules(cmd) || cmd.internal || cmd.o.principal.content() {
 		return
 	}
 	evalCtx.ID, evalCtx.State = row.id, row.state
-	if ok, _ := s.wev.may(c, ruleRead, row, evalCtx, cmd.o.principal); !ok {
+	if ok, _ := s.wev.may(c, ruleRead, row, evalCtx); !ok {
 		bare(d)
 	}
 }
@@ -172,7 +211,7 @@ func (s *Store) seesRow(c, vc *class, row *docRow, o options) bool {
 	defer s.release(ev)
 	ev.ctx = contextOf(o.principal, s.clock(o))
 	ev.ctx.State, ev.ctx.ID = row.state, row.id
-	ok, _ := ev.may(c, ruleRead, row, &ev.ctx, o.principal)
+	ok, _ := ev.may(c, ruleRead, row, &ev.ctx)
 	return ok
 }
 

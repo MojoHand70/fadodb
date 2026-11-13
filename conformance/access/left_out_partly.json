@@ -28,7 +28,7 @@
     {"name": "a transition without a rule asks update, and gets the same answer", "do": "transition", "doc": "c1", "as": "ann", "transition": "file", "expect": {"code": "forbidden", "action": "/access/update"}},
     {"name": "nothing says who may delete one", "do": "delete", "doc": "c1", "as": "ann", "expect": {"code": "forbidden", "action": "/access/delete"}},
     {"name": "the transition with a rule of its own is not asked update: another clerk may not stamp", "do": "transition", "doc": "c1", "as": "bob", "transition": "stamp", "expect": {"code": "forbidden", "action": "/access/transition/stamp"}},
-    {"name": "a content administrator changes the card past the rule that is missing", "do": "set", "doc": "c1", "as": "content", "values": {"note": "z"}, "expect": {"version": 2}},
+    {"name": "a content administrator changes the card past the rule that is missing", "do": "set", "doc": "c1", "as": "content", "reason": "asked to by the owner of the process", "values": {"note": "z"}, "expect": {"version": 2}},
     {"name": "and the owner stamps it", "do": "transition", "doc": "c1", "as": "ann", "transition": "stamp", "expect": {"state": "stamped"}}
   ]
 }

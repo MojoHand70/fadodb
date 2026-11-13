@@ -768,10 +768,14 @@ key order, to the function the Go VM adds with.
   among the other groups is refused. `INGROUP` answers a system group
   as any group, and answers `everyone` for every caller that has an id.
   Nobody is in a system group unless the host says so: work nobody was
-  given is done by nobody. Accepted and not built yet (ADR-0052,
-  ADR-0053): the reason a content administrator gives for an act past
-  a rule and the event that keeps it, the record of who defined each
-  version, and
+  given is done by nobody. A content administrator's command that gets
+  past a rule is an override: the rule is asked first, the command
+  needs a reason or is refused with `reason_required`, and its event
+  keeps the places of the rules lifted and the reason, which the
+  `_events` view shows; a preview and the listing of transitions say
+  beforehand that an act would be one. A read by override leaves no
+  trace. Accepted and not built yet (ADR-0052, ADR-0053): the record of
+  who defined each version, and
   substitutions that the engine keeps and checks, where today it
   trusts the host on for whom a caller acts. The change stream comes
   with the server in Phase 6. A call without a principal is nobody.

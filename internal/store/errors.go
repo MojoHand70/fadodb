@@ -124,6 +124,10 @@ const (
 	// document's state, may not take the transition, or may read the
 	// variable a filter names in no state at all (ADR-0041).
 	CodeForbidden = "forbidden"
+	// CodeReasonRequired refuses a command of a content administrator
+	// that gets past a rule and gives no reason (ADR-0052, item 4). The
+	// path is the place of the rule.
+	CodeReasonRequired = "reason_required"
 	// CodeTooDeep: an action was queued by a chain of actions deeper than
 	// MaxActionDepth (ADR-0044); its row is written dead.
 	CodeTooDeep = "too_deep"

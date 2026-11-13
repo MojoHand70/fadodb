@@ -199,6 +199,14 @@ which nobody but a content administrator reaches, and a class that
 writes some of its rules, where the refusal names the one that is
 missing and a transition without a rule of its own asks `update`.
 
+`override.json` is the suite of the content administrator's override
+(ADR-0052, item 4). A step may carry `reason`, the reason it gives for
+an act past a rule, and `overrides` on a step checks the marks of the
+document's events so far, in order: for an event of a command that got
+past a rule the places of the rules, then the reason, as
+`/access/read /access/update: the owner left the company`, and `""` for
+any other.
+
 `groups.json` is the suite of the system groups as the formulas of a
 class see them (ADR-0052): `INGROUP` of a system group and of
 `everyone`, on a read by id, in a command and in a filter; a call

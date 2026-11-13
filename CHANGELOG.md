@@ -100,6 +100,21 @@ All notable changes to FadoDB are recorded here. The format follows
   `table.update` and `table.delete` actions of a rule, as the person
   who set the rule off. A formula goes on reading a table with the
   engine's eyes.
+- A content administrator's act past a rule is an override, with a
+  reason and a mark (ADR-0052, item 4). The rule is asked first: where
+  it lets the caller through, the command is an ordinary one. Where
+  only the group does, the command needs `Reason("...")` or is refused
+  with `reason_required` and the place of the rule, and the event of
+  its commit keeps the rules lifted and the reason: `Event.Override`,
+  as `/access/read /access/update`, and `Event.Reason`, both columns of
+  the `_events` view. A write past a right is one too, as
+  `/rights/draft/secret/write`. `Preview.Override` lists the rules a
+  command would lift and `TransitionInfo.Override` the rule a
+  transition would, so a caller knows before it acts. What the commit
+  queued acts on another document for the same reason. A guard, the
+  statechart and a required value hold as for everyone, and a read by
+  override asks no reason and leaves no trace.
+  `conformance/access/override.json` is the suite.
 - Checking a class notes each access rule it leaves out (ADR-0052, item
   5): `ValidateClass` and `ValidateClasses` answer a finding with the
   code `rule_left_out`, the place of the rule, what it means and what
@@ -124,10 +139,11 @@ All notable changes to FadoDB are recorded here. The format follows
   groups above, and a caller that needs all of it is in all four. A
   program's own setup code names itself as a caller in the groups it
   needs; `fadodb check` acts as a database administrator.
-- **The engine schema is version 7.** Version 6 added what the actor of
+- **The engine schema is version 8.** Version 6 added what the actor of
   an event was and for whom it acted, two columns of the event; version
   7 drops the administrator's flag from the outbox row, which keeps the
-  system groups of whoever queued it with the other groups. A
+  system groups of whoever queued it with the other groups; version 8
+  adds the rules an override lifted and its reason to the event. A
   database made by an earlier engine, v0.4.1 included, is refused when
   opened, as before 1.0 there is no upgrade path.
 - A class that declared `read`, `create`, `update` or `delete` had them

@@ -43,7 +43,7 @@ func originSQL(alias string) string {
 // eventViewColumns are the columns of the events table as a class's
 // _events view shows them: every one as it is, and the origin as a word.
 var eventViewColumns = `e."event_id", e."class", e."doc_id", e."kind", e."name", e."from_state", e."to_state", e."actor_id", e."actor_kind", e."actor_for", e."before_version", e."after_version",` +
-	` e."cause_event_id", e."command_key", e."command_hash", e."business_date", e."ts", ` + originSQL("e") + ` AS "origin"`
+	` e."cause_event_id", e."command_key", e."command_hash", e."business_date", e."ts", ` + originSQL("e") + ` AS "origin", e."override", e."reason"`
 
 // engineDDL makes the tables every database has (docs/architecture.md,
 // ADR-0006, ADR-0014, ADR-0026). Every statement is idempotent, since Open
@@ -59,7 +59,7 @@ var engineDDL = []string{
 	`CREATE TABLE IF NOT EXISTS actions (name TEXT PRIMARY KEY COLLATE NOCASE, version INTEGER NOT NULL, json TEXT NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)`,
 	`CREATE TABLE IF NOT EXISTS action_versions (action TEXT NOT NULL COLLATE NOCASE, version INTEGER NOT NULL, json TEXT NOT NULL, created_at INTEGER NOT NULL, PRIMARY KEY (action, version))`,
 	`CREATE TABLE IF NOT EXISTS events (event_id TEXT PRIMARY KEY, class TEXT NOT NULL, doc_id TEXT NOT NULL, kind TEXT NOT NULL, name TEXT, from_state TEXT, to_state TEXT,
-		actor_id TEXT, actor_kind TEXT, actor_for TEXT, before_version INTEGER, after_version INTEGER, cause_event_id TEXT, command_key TEXT, command_hash TEXT, business_date INTEGER NOT NULL, ts INTEGER NOT NULL, origin INTEGER)`,
+		actor_id TEXT, actor_kind TEXT, actor_for TEXT, before_version INTEGER, after_version INTEGER, cause_event_id TEXT, command_key TEXT, command_hash TEXT, business_date INTEGER NOT NULL, ts INTEGER NOT NULL, origin INTEGER, override TEXT, reason TEXT)`,
 	`CREATE UNIQUE INDEX IF NOT EXISTS events_command_key ON events (command_key)`,
 	`CREATE INDEX IF NOT EXISTS events_class_doc ON events (class, doc_id, ts)`,
 	`CREATE INDEX IF NOT EXISTS events_business_date ON events (business_date)`,

@@ -35,7 +35,7 @@ const DefaultMaxIndexedRows = 100000
 // engineSchema is the version of the store's own tables. A database made
 // by another engine schema is refused: before 1.0 there is no upgrade
 // path, and a pre-release file is recreated.
-const engineSchema = 7
+const engineSchema = 8
 
 // Options configure Open. The ones that are properties of the database,
 // Synchronous and MaxText, are read at creation and kept in the metadata
@@ -134,6 +134,10 @@ type Store struct {
 	acting struct {
 		kind, acts any
 		forID      string
+		// override and reason are the rules the command got past as a
+		// content administrator and why (ADR-0052, item 4), for the
+		// command's own event; nil for a command the rules let through.
+		override, reason any
 	}
 	// stateArgs are the names of states boxed once for the statements of
 	// the write step: every commit writes its document's state, and an
@@ -527,8 +531,8 @@ func (s *Store) prepareEngine(ctx context.Context) error {
 	}
 	prep(&s.stmts.lookupKey, "SELECT kind, class, doc_id, after_version, command_hash, event_id FROM events WHERE command_key = ?")
 	prep(&s.stmts.lastOfCommand, "SELECT max(after_version) FROM events WHERE cause_event_id = ?")
-	prep(&s.stmts.insertEvent, "INSERT INTO events (event_id, class, doc_id, kind, name, from_state, to_state, actor_id, before_version, after_version, cause_event_id, command_key, command_hash, business_date, ts, origin, actor_kind, actor_for)"+
-		" VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
+	prep(&s.stmts.insertEvent, "INSERT INTO events (event_id, class, doc_id, kind, name, from_state, to_state, actor_id, before_version, after_version, cause_event_id, command_key, command_hash, business_date, ts, origin, actor_kind, actor_for, override, reason)"+
+		" VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
 	prep(&s.stmts.insertEventDoc, "INSERT INTO event_docs (event_id, class, doc_id, qualifier) VALUES (?, ?, ?, ?)")
 	prep(&s.stmts.selectLife, lifeSQL)
 	prep(&s.stmts.selectMoves, movesSQL)
@@ -543,7 +547,7 @@ func (s *Store) prepareEngine(ctx context.Context) error {
 	// An event of kind action_failed is read with the code its action died
 	// with, which the outbox row holds (ADR-0044).
 	if s.stmts.listEvents, err = s.db.PrepareContext(ctx, "SELECT e.event_id, e.class, e.doc_id, e.kind, e.name, e.from_state, e.to_state, e.actor_id, e.before_version, e.after_version, e.cause_event_id, e.command_key, e.business_date, e.ts,"+
-		" (SELECT o.error_code FROM outbox o WHERE o.outcome_event = e.event_id), e.origin, e.actor_kind, e.actor_for"+
+		" (SELECT o.error_code FROM outbox o WHERE o.outcome_event = e.event_id), e.origin, e.actor_kind, e.actor_for, e.override, e.reason"+
 		" FROM events e JOIN event_docs d ON d.event_id = e.event_id WHERE d.class = ? AND d.doc_id = ? ORDER BY e.ts, e.event_id"); err != nil {
 		return storageErr("prepare", err)
 	}

@@ -188,6 +188,13 @@ func As(p Principal) Option { return store.As(p) }
 // Key gives a mutating call its idempotency key (ADR-0026).
 func Key(k string) Option { return store.Key(k) }
 
+// Reason says why the caller acts, for a command that only the content
+// administrators' group lets through (ADR-0052): an act past a rule of a
+// class is an override, it is refused with reason_required without a
+// reason, and its event keeps the reason beside the rule it lifted. A
+// command the rules let through ignores it.
+func Reason(text string) Option { return store.Reason(text) }
+
 // BusinessDate gives the commit's event its business date (ADR-0026), a
 // calendar day.
 func BusinessDate(day time.Time) Option { return store.BusinessDate(day) }

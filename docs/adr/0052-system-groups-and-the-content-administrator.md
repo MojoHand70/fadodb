@@ -191,8 +191,8 @@ item 4 only that a content administrator passes.
   README shows it. The suites say what their runner does as that
   caller.
 - **Not in this step:** item 5, which the second step built; the
-  reason and the mark of item 4, so a content administrator passes a
-  rule without either, as the flag did; and item 7.
+  reason and the mark of item 4, which the third step built; and item
+  7.
 
 Measured in memory against the commit before: every benchmark of the
 gate keeps its allocations, the outbox and the timer lose four each
@@ -243,6 +243,45 @@ formula now keeps those positions itself, for the class that bound it,
 and no map is read on a run: the loop takes 30.7 ns, 14% under what it
 took before the rules, and the checks of rights and the rules of a
 commit gained as much.
+
+The third step, the same day, built the rest of item 4.
+
+- **The names.** The option `Reason`; the code `reason_required`, with
+  the place of the first rule the command would lift as its path and
+  every one in its message; `Event.Override` and `Event.Reason`, the
+  columns `override` and `reason` of the event and of the `_events`
+  view; `Preview.Override` and `TransitionInfo.Override`. The engine's
+  schema is 8.
+- **Several rules in one command.** A change to a document its caller
+  may not see lifts the read rule and the update rule, and the event
+  keeps both places in the order they were asked, separated by a
+  space.
+- **A write right is a rule.** A value for a variable the rights table
+  does not let the caller set is an override too, with the state, the
+  variable and `write` as its place: `/rights/draft/secret/write`.
+- **The command's own event carries the mark.** An eventless or a
+  timed transition that follows in the same command is the engine's
+  move and is not marked.
+- **What the commit queued acts for the same reason.** The outbox row
+  keeps the reason of a content administrator's command with its
+  system groups, so the action a rule queued acts on another document
+  as an override with that reason. A caller who is no content
+  administrator leaves no reason on the row.
+- **A reason nobody needed is not kept.** A command the rules let
+  through writes no mark, with or without a reason.
+- **The reason is asked before the guard.** A command by override
+  without a reason is refused with `reason_required`, whatever its
+  guard would say; with one, the guard answers.
+- **A table has no log**, so a content administrator's import past the
+  write rule of a table asks no reason and leaves no mark. The log of
+  privileged reads of question G is the place to settle it.
+- **The delivered event does not carry the mark.** An action receives
+  the event as before; the mark is read from the log.
+
+Measured in memory: every benchmark of the gate keeps its allocations.
+A commit takes 176 bytes more, 2%, for the two values of its event,
+and the listing of ten transitions 144 bytes more, 4%, for the rule
+each entry may name.
 
 ## The owner's rulings
 

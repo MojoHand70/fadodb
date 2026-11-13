@@ -40,7 +40,7 @@
     {"name": "the create rule reads a computed value of the new document", "do": "create", "as": "ann", "values": {"amount": 5000}, "expect": {"code": "forbidden", "action": "/access/create"}},
     {"name": "who is not staff creates none", "do": "create", "as": "eve", "values": {"amount": 1}, "expect": {"code": "forbidden", "action": "/access/create"}},
     {"name": "a call without a principal is nobody", "do": "create", "values": {"amount": 1}, "expect": {"code": "forbidden", "action": "/access/create"}},
-    {"name": "an administrator passes the rule", "do": "create", "doc": "c0", "as": "root", "values": {"amount": 9000, "deadline": "2026-12-31"}, "expect": {"state": "draft", "values": {"owner": "root"}}},
+    {"name": "an administrator passes the rule", "do": "create", "doc": "c0", "as": "root", "reason": "asked to by the owner of the process", "values": {"amount": 9000, "deadline": "2026-12-31"}, "expect": {"state": "draft", "values": {"owner": "root"}}},
     {"name": "a second claim, of another owner", "do": "create", "doc": "c2", "as": "bob", "values": {"amount": 50, "deadline": "2026-12-31"}, "expect": {"state": "draft"}},
 
     {"name": "the owner reads her claim", "do": "get", "doc": "c1", "as": "ann", "expect": {"state": "draft", "values": {"note": "taxi"}}},
@@ -96,7 +96,7 @@
     {"name": "nor for nobody", "do": "due", "at": "2027-01-05", "expect": {"due": []}},
 
     {"name": "HR approves a claim it may not edit: approve does not ask update", "do": "transition", "doc": "c1", "as": "hana", "transition": "approve", "expect": {"state": "closed", "version": 5}},
-    {"name": "an administrator passes the rules and not the terminal state", "do": "set", "doc": "c1", "as": "root", "values": {"note": "z"}, "expect": {"code": "terminal"}},
+    {"name": "an administrator passes the rules and not the terminal state", "do": "set", "doc": "c1", "as": "root", "reason": "asked to by the owner of the process", "values": {"note": "z"}, "expect": {"code": "terminal"}},
 
     {"name": "the owner may not delete", "do": "delete", "doc": "c2", "as": "bob", "expect": {"code": "forbidden", "action": "/access/delete"}},
     {"name": "who cannot see it finds nothing to delete", "do": "delete", "doc": "c2", "as": "ann", "expect": {"code": "unknown_document"}},

@@ -121,8 +121,12 @@ who may see, create, change and delete a document: a document its
 caller may not see is answered as if it did not exist, by a read, a
 command, a filter and a count alike, and a caller who sees it and may
 not change it gets `forbidden` with the rule. A rule a class leaves out
-lets every caller through, and the SQL endpoint reads every row, until
-the records of Phase 5 on both are accepted (ADR-0049, ADR-0051). A
+lets every caller through until the record of Phase 5 on it is
+accepted (ADR-0049). Defining, operating the outbox and running SQL,
+which reads every row, are for an administrator and for the groups the
+host program names when it opens the database; a host program that
+names none is asked nothing, as before (ADR-0051). A table may say who
+reads and who writes its rows. A
 principal may say whether it is a person, an agent or a service, and
 for whom it acts: every event records it, and `USERKIND()` and
 `ACTINGFOR()` let a class keep a step for a person (ADR-0050). The

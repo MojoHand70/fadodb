@@ -26,7 +26,7 @@ goes back to the designer as a redrafted class.
 |---|---|
 | one view per class; the history and child tables | shipped |
 | the filter over a class, `Query` and `Count`, with `Where` and `Order` in the formula language | shipped |
-| the read-only `SQL` endpoint with parameters | shipped |
+| the read-only `SQL` endpoint with parameters | shipped. It reads every row and every variable, so where the host program names analysts (`Options.Analysts`) it is for their groups and for an administrator; a filter, `Query`, is what every caller has |
 | the event log, `Events`; the `_states` view of state entries and exits | shipped with Phase 3 |
 | who and how: `created_by`, `updated_by`, `state_entered_by` and `state_entered_from` on every document and version; `origin` on every event that enters a state (`command`, `action`, `guard`, `timer`); in `_states` one row for every entry, a return into the same state too, with `entered_by`, `entered_from`, `entered_via`, `entered_how`, `left_by`, `left_via`, `left_how` | shipped with Phase 4 |
 | what each actor was and for whom it acted: `actor_kind` (`person`, `agent`, `service`) and `actor_for` on every event and in the `_events` view; `entered_by_kind`, `entered_for`, `left_by_kind` and `left_for` in `_states` | shipped with Phase 5, its third step: `SELECT name, actor_id, actor_for FROM Invoice_events WHERE actor_kind = 'agent'` is which steps an agent took and for whom. Blank where the host program did not say, and for everything before it did |

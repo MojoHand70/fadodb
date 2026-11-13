@@ -611,7 +611,10 @@ func (s *Store) writeQueued(ctx context.Context, c *class, cmd *command, commit 
 // of its document. With OutboxOptions.Manual it is the only thing that
 // runs actions; beside a running worker it leaves alone the documents
 // whose action the worker has in flight.
-func (s *Store) Drain(ctx context.Context) (int, error) {
+func (s *Store) Drain(ctx context.Context, opts ...Option) (int, error) {
+	if _, e := s.worker(workOperate, opts); e != nil {
+		return 0, e
+	}
 	s.drainMu.Lock()
 	defer s.drainMu.Unlock()
 	n := 0
@@ -917,6 +920,11 @@ func (s *Store) perform(ctx context.Context, row *outboxRow, day int64, now time
 		if e != nil {
 			return nil, false, e
 		}
+		// The write rule of the table, asked of the person who set the
+		// rule off (ADR-0051, item 7).
+		if e := s.tableRefusal(t, true, row.principal, now.Unix()); e != nil {
+			return nil, false, e
+		}
 		return nil, false, s.tableAction(ctx, t, row.action, args.Row, args.Key, args.Set)
 	default:
 		return nil, false, hintf(CodeUnknownAction, "", "the engine does not run the action "+row.action, "the actions it runs are in the class's rules as the definition accepted them; this row was queued by another build")
@@ -1054,7 +1062,10 @@ func asError(err error) *Error {
 // Outbox lists rows of the outbox in the order they were queued
 // (ADR-0044, item 8): what is waiting, what ran and what is dead, each
 // with its key, its arguments, its attempts and its last error.
-func (s *Store) Outbox(ctx context.Context, f OutboxFilter) ([]QueuedAction, error) {
+func (s *Store) Outbox(ctx context.Context, f OutboxFilter, opts ...Option) ([]QueuedAction, error) {
+	if _, e := s.worker(workOperate, opts); e != nil {
+		return nil, e
+	}
 	var where []string
 	var args []any
 	if f.Status != "" {
@@ -1115,7 +1126,10 @@ func (s *Store) Outbox(ctx context.Context, f OutboxFilter) ([]QueuedAction, err
 // RetryAction makes a dead action pending again with its attempts at
 // zero (ADR-0044, item 8); the outcome it then reaches is a further
 // event. A dead row is never retried by itself.
-func (s *Store) RetryAction(ctx context.Context, key string) error {
+func (s *Store) RetryAction(ctx context.Context, key string, opts ...Option) error {
+	if _, e := s.worker(workOperate, opts); e != nil {
+		return e
+	}
 	i := strings.LastIndexByte(key, ':')
 	idx, perr := strconv.ParseInt(key[i+1:], 10, 64)
 	if i <= 0 || perr != nil {

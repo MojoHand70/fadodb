@@ -232,8 +232,8 @@ func (db *DB) Close() error { return db.s.Close() }
 // DefineClass compiles a class definition in JSON, creates its tables
 // and views and stores it. The error is Diagnostics when the definition
 // is refused.
-func (db *DB) DefineClass(ctx context.Context, definition []byte) (*Class, error) {
-	return db.s.DefineClass(ctx, definition)
+func (db *DB) DefineClass(ctx context.Context, definition []byte, opts ...Option) (*Class, error) {
+	return db.s.DefineClass(ctx, definition, opts...)
 }
 
 // ValidateClass reports what DefineClass would refuse, storing nothing.
@@ -248,8 +248,8 @@ func (db *DB) ValidateClass(definition []byte) Diagnostics { return db.s.Validat
 // error is Diagnostics when a definition is refused; the path of each
 // finding starts with the position of its definition, /1/variables/total
 // for the second.
-func (db *DB) DefineClasses(ctx context.Context, definitions [][]byte) ([]*Class, error) {
-	return db.s.DefineClasses(ctx, definitions)
+func (db *DB) DefineClasses(ctx context.Context, definitions [][]byte, opts ...Option) ([]*Class, error) {
+	return db.s.DefineClasses(ctx, definitions, opts...)
 }
 
 // ValidateClasses reports what DefineClasses would refuse, storing
@@ -259,8 +259,8 @@ func (db *DB) ValidateClasses(definitions [][]byte) Diagnostics {
 }
 
 // DefineSchema compiles a named schema in JSON and stores it.
-func (db *DB) DefineSchema(ctx context.Context, definition []byte) (*Schema, error) {
-	return db.s.DefineSchema(ctx, definition)
+func (db *DB) DefineSchema(ctx context.Context, definition []byte, opts ...Option) (*Schema, error) {
+	return db.s.DefineSchema(ctx, definition, opts...)
 }
 
 // Classes lists the class names in definition order.
@@ -268,8 +268,8 @@ func (db *DB) Classes() []string { return db.s.Classes() }
 
 // DefineTable compiles an explicit table definition in JSON, creates the
 // table and its view and stores it; formulas read it through LOOKUP.
-func (db *DB) DefineTable(ctx context.Context, definition []byte) (*Table, error) {
-	return db.s.DefineTable(ctx, definition)
+func (db *DB) DefineTable(ctx context.Context, definition []byte, opts ...Option) (*Table, error) {
+	return db.s.DefineTable(ctx, definition, opts...)
 }
 
 // ImportRows writes rows into a table, each a map of column to value,
@@ -279,9 +279,10 @@ func (db *DB) ImportRows(ctx context.Context, table string, rows []Values, opts 
 	return db.s.ImportRows(ctx, table, rows, opts...)
 }
 
-// TableRows reads every row of a table in key order.
-func (db *DB) TableRows(ctx context.Context, table string) ([]Values, error) {
-	return db.s.TableRows(ctx, table)
+// TableRows reads every row of a table in key order, for a principal the
+// table's read rule lets through (ADR-0051).
+func (db *DB) TableRows(ctx context.Context, table string, opts ...Option) ([]Values, error) {
+	return db.s.TableRows(ctx, table, opts...)
 }
 
 // Tables lists the table names in definition order.
@@ -341,19 +342,21 @@ func (db *DB) Refresh(ctx context.Context, class, id string, variables []string,
 // goroutine, and returns how many it attempted (ADR-0044). The worker
 // does this by itself unless Options.Outbox.Manual is set; a test and a
 // simulation set it and call Drain at the moment they choose.
-func (db *DB) Drain(ctx context.Context) (int, error) { return db.s.Drain(ctx) }
+func (db *DB) Drain(ctx context.Context, opts ...Option) (int, error) {
+	return db.s.Drain(ctx, opts...)
+}
 
 // Outbox lists the actions commits queued, in the order they were
 // queued: what waits, what ran and what is dead, each with its key, its
 // arguments, its attempts and its last error (ADR-0044).
-func (db *DB) Outbox(ctx context.Context, f OutboxFilter) ([]QueuedAction, error) {
-	return db.s.Outbox(ctx, f)
+func (db *DB) Outbox(ctx context.Context, f OutboxFilter, opts ...Option) ([]QueuedAction, error) {
+	return db.s.Outbox(ctx, f, opts...)
 }
 
 // RetryAction makes a dead action pending again; the outcome it then
 // reaches is a further event. A dead action is never retried by itself.
-func (db *DB) RetryAction(ctx context.Context, key string) error {
-	return db.s.RetryAction(ctx, key)
+func (db *DB) RetryAction(ctx context.Context, key string, opts ...Option) error {
+	return db.s.RetryAction(ctx, key, opts...)
 }
 
 // DefineAction compiles an action definition in JSON and stores it
@@ -368,8 +371,8 @@ func (db *DB) RetryAction(ctx context.Context, key string) error {
 // a secret. The same definition again is a no-op; a redefinition is the
 // next version and may not break a rule that calls the action. The error
 // is Diagnostics when the definition is refused.
-func (db *DB) DefineAction(ctx context.Context, definition []byte) (*ActionInfo, error) {
-	return db.s.DefineAction(ctx, definition)
+func (db *DB) DefineAction(ctx context.Context, definition []byte, opts ...Option) (*ActionInfo, error) {
+	return db.s.DefineAction(ctx, definition, opts...)
 }
 
 // ValidateAction reports what DefineAction would refuse, storing nothing.
@@ -388,16 +391,16 @@ func (db *DB) Action(name string) (*ActionInfo, bool) { return db.s.Action(name)
 // the arguments, given as values, and for a declared action the request
 // it would send, with every secret masked; it calls and sends nothing
 // (ADR-0045).
-func (db *DB) PreviewAction(ctx context.Context, name string, args Values) (*ActionPreview, error) {
-	return db.s.PreviewAction(ctx, name, args)
+func (db *DB) PreviewAction(ctx context.Context, name string, args Values, opts ...Option) (*ActionPreview, error) {
+	return db.s.PreviewAction(ctx, name, args, opts...)
 }
 
 // TryAction runs a defined action once outside any document, for the
 // arguments given as values: it queues nothing, writes no event and
 // answers what the action returned or how it failed (ADR-0045). The
 // request of a declared action is sent for real.
-func (db *DB) TryAction(ctx context.Context, name string, args Values) (*ActionOutcome, error) {
-	return db.s.TryAction(ctx, name, args)
+func (db *DB) TryAction(ctx context.Context, name string, args Values, opts ...Option) (*ActionOutcome, error) {
+	return db.s.TryAction(ctx, name, args, opts...)
 }
 
 // Transition moves a document along the named transition of its class,
@@ -515,8 +518,8 @@ func (db *DB) OpenBlob(ctx context.Context, hash string, opts ...Option) (io.Rea
 
 // CheckBlobs recomputes the hash of every held blob and returns the ones
 // whose bytes do not match, and how many it checked.
-func (db *DB) CheckBlobs(ctx context.Context) (mismatched []string, checked int, err error) {
-	return db.s.CheckBlobs(ctx)
+func (db *DB) CheckBlobs(ctx context.Context, opts ...Option) (mismatched []string, checked int, err error) {
+	return db.s.CheckBlobs(ctx, opts...)
 }
 
 // Preview runs a create (empty id), a set or a transition through the

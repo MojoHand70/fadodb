@@ -253,7 +253,12 @@ func filterErr(err error) error {
 // parameters bind args. At most MaxSQLRows rows come back; more is the
 // error too_many_rows.
 func (s *Store) SQL(ctx context.Context, text string, args []any, opts ...Option) (*Rows, error) {
-	_ = apply(opts)
+	// A statement its caller writes is given no rule: it reads every row
+	// and every variable, so it is for whoever the host program names an
+	// analyst (ADR-0049, item 12; ADR-0051).
+	if _, e := s.worker(workAnalyse, opts); e != nil {
+		return nil, e
+	}
 	s.sqlMu.Lock()
 	defer s.sqlMu.Unlock()
 	if s.sqlConn == nil {

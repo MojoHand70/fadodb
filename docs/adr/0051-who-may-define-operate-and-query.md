@@ -111,6 +111,36 @@ change.
    - Who may open a database, copy its file or read a blob store from
      outside. That is the host's and the operating system's.
 
+## Details settled while building
+
+Built on 2026-11-13, on the record as proposed, as the fourth step of
+the phase, but for the two things below.
+
+- **A host program that names no list is asked nothing.** Item 1 says
+  a list left empty leaves its work to administrators. Built: a list
+  that is empty and not nil does that, and a host program that gives
+  no list at all is asked nothing, as before these options. One
+  constant holds that answer. The other answer refuses every
+  definition made without an administrator, which is every sample and
+  nearly every test, so it waits for the owner's word with question A
+  of ADR-0049, which has the same price.
+- **Item 5 is not built**: a version does not yet record who defined
+  it. It needs a way to read the record back, which no call has, and
+  that is a decision on the command set.
+- **The names.** `Options.Designers`, `Options.Operators` and
+  `Options.Analysts`. The refusal is `forbidden`, with
+  `/options/Designers` and the like as its path.
+- **`TableRows` is governed by the table's `read` rule**, not by a
+  list: it reads one table, and the table says who may.
+- **A rule of a table is checked when the table is defined.** One that
+  reads a column, another table or a document, or that is no
+  condition, refuses the definition.
+- **A table gains rules when it is defined.** This build redefines a
+  table only while it has no rows and no class reads it (ADR-0037), so
+  a table that is in use keeps the rules it was given.
+- **A rule a table leaves out** answers as a class's does: it lets
+  every caller through until question A of ADR-0049 is ruled.
+
 ## Consequences
 
 - A host that serves several people has to say who its designers,

@@ -155,8 +155,13 @@ on the owner, and a filter with a read rule costs what the same filter
 costs without one. Its third step is built on ADR-0050 as proposed: a
 principal says whether it is a person, an agent or a service, and for
 whom it acts; `USERKIND()` and `ACTINGFOR()` answer both to a formula;
-and every event records them, under engine schema 6. Not built yet: who
-may define, operate and run SQL, and the rules of a table (ADR-0051).
+and every event records them, under engine schema 6. Its fourth step
+is built on ADR-0051 as proposed, but for one item: the host program
+names the groups that may define, operate the queue and run SQL, and a
+table has a read rule and a write rule. A host program that names no
+group is asked nothing, as before, until the owner accepts the record.
+Not built yet: the record of who defined each version of a class, and
+the measurements that close the phase.
 This page is updated when a phase starts and when it ends;
 it never describes a phase as done before its acceptance criteria pass.
 

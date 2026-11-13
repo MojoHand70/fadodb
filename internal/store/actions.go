@@ -426,7 +426,10 @@ func (s *Store) compileAction(data []byte) (*model.ActionSpec, model.Diagnostics
 // request is sent by the engine, so the process must allow outbound
 // calls, with Options.Outbound, know the definition's connection and, if
 // the request reads a secret, supply secrets.
-func (s *Store) DefineAction(ctx context.Context, data []byte) (*ActionInfo, error) {
+func (s *Store) DefineAction(ctx context.Context, data []byte, opts ...Option) (*ActionInfo, error) {
+	if _, e := s.worker(workDesign, opts); e != nil {
+		return nil, e
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.closed {
@@ -632,7 +635,10 @@ func (s *Store) trial(name string, args Values) (*action, Values, *Error) {
 // the request it would send, with secrets masked; it calls and sends
 // nothing (ADR-0045, item 9). The arguments are checked as the worker
 // checks them: unknown_parameter, bad_value, required.
-func (s *Store) PreviewAction(ctx context.Context, name string, args Values) (*ActionPreview, error) {
+func (s *Store) PreviewAction(ctx context.Context, name string, args Values, opts ...Option) (*ActionPreview, error) {
+	if _, e := s.worker(workOperate, opts); e != nil {
+		return nil, e
+	}
 	a, vals, err := s.trial(name, args)
 	if err != nil {
 		return nil, err
@@ -656,7 +662,10 @@ func (s *Store) PreviewAction(ctx context.Context, name string, args Values) (*A
 // a refusal of the trial itself: an unknown action, arguments that do not
 // fit, or an action this process cannot run. The request of a declared
 // action is sent for real, to its receiver.
-func (s *Store) TryAction(ctx context.Context, name string, args Values) (*ActionOutcome, error) {
+func (s *Store) TryAction(ctx context.Context, name string, args Values, opts ...Option) (*ActionOutcome, error) {
+	if _, e := s.worker(workOperate, opts); e != nil {
+		return nil, e
+	}
 	a, vals, e := s.trial(name, args)
 	if e != nil {
 		return nil, e

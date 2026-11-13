@@ -11,6 +11,7 @@ Published per tagged release, with the budgets from
   documents, and time, Phase 4.
 - [v0.4.1](v0.4.1.md): many documents moved by one call, the addendum
   to Phase 4.
+- [v0.5.0](v0.5.0.md): who may see and do what, and for whom, Phase 5.
 
 The end-to-end suite is the `bench` package: scenarios written against
 database/sql so that the same one runs on every storage engine. Each
@@ -46,6 +47,19 @@ size `FADODB_BENCH_DOCS` gives:
 ```
 FADODB_BENCH_DIR=/path/on/disk FADODB_BENCH_COMMITS=100000 go test -count=1 -timeout 2h -v -run TestRulesCampaign ./internal/store/
 FADODB_BENCH_DIR=/path/on/disk FADODB_BENCH_DOCS=1000000 go test -run '^$' -bench 'Due|LookupClass' -benchmem ./internal/store/
+```
+
+The campaign of access runs beside them since v0.5.0: a transition by
+the owner of a document on a class with its four rules, by somebody
+who acts for the owner and by a content administrator past the rule
+(ADR-0049, ADR-0050, ADR-0052), a read by id by a caller who may see
+the document and by one who may not, and substitutions given, read
+and withdrawn (ADR-0053). `BenchmarkFilter` measures the read rule in
+a filter:
+
+```
+FADODB_BENCH_DIR=/path/on/disk FADODB_BENCH_COMMITS=100000 go test -count=1 -timeout 2h -v -run TestAccessCampaign ./internal/store/
+FADODB_BENCH_DIR=/path/on/disk FADODB_BENCH_DOCS=1000000 go test -run '^$' -bench '^BenchmarkFilter$' -benchmem ./internal/store/
 ```
 
 A campaign of a million commits a row runs longer than the ten minutes

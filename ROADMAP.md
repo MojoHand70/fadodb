@@ -198,7 +198,9 @@ act for whom, from when, until when and on which classes, and every
 call that names somebody it acts for is refused unless one says so;
 the person gives one, a database administrator when the person
 cannot, and a host program that keeps its own says so at `Open`.
-Not built yet: the measurements that close the phase.
+The measurements of the phase are in `docs/perf/v0.5.0.md`, on disk
+with a million calls of each kind: every budget of the five records
+holds, and so do those of Phases 2, 3 and 4 on the same build.
 This page is updated when a phase starts and when it ends;
 it never describes a phase as done before its acceptance criteria pass.
 

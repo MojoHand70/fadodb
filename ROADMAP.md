@@ -141,6 +141,12 @@ as three records: ADR-0049, who may see, create, change and delete a
 document, with the read rule in every filter; ADR-0050, whether the
 one who acts is a person, an agent or a service, and for whom; and
 ADR-0051, who may define, operate and query, and the rules of a table.
+Two more records were proposed that day at the owner's request, before
+any of those is accepted: ADR-0052, the system groups that split the
+administrator in four, with a content administrator who acts past the
+rules for a stated reason; and ADR-0053, a substitution the engine
+keeps and checks, for a person who stands in for another and for an
+assistant.
 By the owner's ruling of that day the phase is the engine's part: the
 engine's own users, groups and API keys, and the filter on the change
 stream, come with the server in Phase 6. Its first step is built, on

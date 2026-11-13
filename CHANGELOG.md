@@ -6,6 +6,8 @@ All notable changes to FadoDB are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-11-13
+
 ### Added
 
 - `TransitionMany` moves many documents by one call (ADR-0048): up to
@@ -31,7 +33,8 @@ All notable changes to FadoDB are recorded here. The format follows
   each; a million documents in 37 seconds where they took 80. The
   budget of ADR-0048 is 15,000. `BenchmarkTransitionMany` is in the
   benchmark gate, and the campaign of commits has two more rows: the
-  batch, and single commits made while batches run.
+  batch, and single commits made while batches run. The page is
+  `docs/perf/v0.4.1.md`.
 
 ## [0.4.0] - 2026-11-12
 
@@ -940,7 +943,8 @@ Project scaffold. Nothing to run beyond `fadodb version`.
 - Contributing guide, code of conduct, security policy, issue and pull request
   templates, roadmap.
 
-[Unreleased]: https://github.com/MojoHand70/fadodb/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/MojoHand70/fadodb/compare/v0.4.1...HEAD
+[0.4.1]: https://github.com/MojoHand70/fadodb/releases/tag/v0.4.1
 [0.4.0]: https://github.com/MojoHand70/fadodb/releases/tag/v0.4.0
 [0.3.0]: https://github.com/MojoHand70/fadodb/releases/tag/v0.3.0
 [0.2.0]: https://github.com/MojoHand70/fadodb/releases/tag/v0.2.0

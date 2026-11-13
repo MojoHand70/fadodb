@@ -315,3 +315,120 @@ func TestValue(t *testing.T) {
 		t.Errorf("a column beside a table: %v %v", kind, err)
 	}
 }
+
+// The read rule of a class joins every filter as one more predicate
+// (ADR-0049): none for an administrator, the rule alone for a filter
+// without a where, with its comparisons to literals narrowed as a where's
+// are and its parameters named apart from the where's.
+func TestCompile_ReadRule(t *testing.T) {
+	const ruled = `{"name": "Claim", "variables": {"owner": {"type": "text", "index": true}, "region": {"type": "text", "index": true}, "n": {"type": "number"}},
+  "states": {"initial": "a", "list": ["a"]},
+  "access": {"read": "region = \"EU\" AND (owner = USER() OR INGROUP(\"hr\"))"}}`
+	cls, diags := model.Define([]byte(ruled), nil)
+	if len(diags) > 0 {
+		t.Fatal(diags)
+	}
+	t.Cleanup(func() { Forget(cls) })
+	admin, err := Compile(Filter{Class: "Claim"}, cls, nil, Principal{Admin: true})
+	if err != nil || admin.Where != "" || len(admin.Args) != 0 {
+		t.Errorf("an administrator's filter: %v %q", err, admin.Where)
+	}
+	alone, err := Compile(Filter{Class: "Claim"}, cls, nil, Principal{ID: "ann"})
+	if err != nil || !strings.HasPrefix(alone.Where, `("region" = :r0 AND "owner" = :user AND (`) || len(alone.Args) != 1 {
+		t.Fatalf("the rule alone: %v %q %v", err, alone.Where, alone.Args)
+	}
+	both, err := Compile(Filter{Class: "Claim", Where: `n > 2 OR region = "US"`}, cls, nil, Principal{ID: "ann"})
+	if err != nil || !strings.HasSuffix(both.Where, ") AND "+alone.Where) || !strings.HasPrefix(both.Where, "(") {
+		t.Errorf("the rule beside a where with OR: %v %q", err, both.Where)
+	}
+	narrowed, err := Compile(Filter{Class: "Claim", Where: `n > 2`}, cls, nil, Principal{ID: "ann"})
+	if err != nil || !strings.HasPrefix(narrowed.Where, `("n" > :f0 AND (`) || len(narrowed.Args) != 2 {
+		t.Errorf("the rule beside a narrowed where: %v %q %v", err, narrowed.Where, narrowed.Args)
+	}
+	// A where that compares an indexed column leads by itself: the rule
+	// then stands beside it without its own terms for an index.
+	led, err := Compile(Filter{Class: "Claim", Where: `region = "US" AND n > 2`}, cls, nil, Principal{ID: "ann"})
+	if err != nil || strings.Contains(led.Where, ":r0") || strings.Contains(led.Where, `"owner" = :user`) || !strings.Contains(led.Where, `COALESCE("owner", '') = COALESCE(:user, '')`) || len(led.Args) != 2 {
+		t.Errorf("the rule beside a where that leads to an index: %v %q %v", err, led.Where, led.Args)
+	}
+	// The caller's part is decided before the statement is written: the
+	// owner's test is an index term for ann, as the prefix above has it,
+	// and gone for a member of HR.
+	// A call without a principal has no id: USER() is blank, a blank owner
+	// equals it, and the term says so.
+	nobody, _ := Compile(Filter{Class: "Claim"}, cls, nil, Principal{})
+	if !strings.Contains(nobody.Where, `("owner" = COALESCE(:user, '') OR ("owner" IS NULL AND '' = COALESCE(:user, '')))`) {
+		t.Errorf("the rule for nobody: %s", nobody.Where)
+	}
+	hr, _ := Compile(Filter{Class: "Claim"}, cls, nil, Principal{ID: "hana", Groups: []string{"hr"}})
+	if strings.Contains(hr.Where, "owner") || strings.Contains(hr.Where, ":groups") || !strings.HasPrefix(hr.Where, `("region" = :r0 AND (`) {
+		t.Errorf("the rule for a member of HR: %s", hr.Where)
+	}
+	// One text for each outcome, not for each caller.
+	for _, p := range []Principal{{ID: "bob"}, {ID: "eve", Groups: []string{"sales"}}} {
+		if again, _ := Compile(Filter{Class: "Claim"}, cls, nil, p); again.Where != alone.Where {
+			t.Errorf("the rule for %s is another text:\n %s\n %s", p.ID, again.Where, alone.Where)
+		}
+	}
+}
+
+// The rules a read rule is folded by (ADR-0049, item 5) are the ones the
+// evaluators follow: AND and OR stop at the operand that decides them,
+// left to right, so an operand that may stop with an error is dropped
+// only when it stands right of the constant that decides.
+func TestCompile_ReadRuleFolded(t *testing.T) {
+	hr := Principal{ID: "hana", Groups: []string{"hr"}}
+	ann := Principal{ID: "ann", Groups: []string{"staff"}}
+	const all, none, some = "", "0", "some"
+	for _, tc := range []struct {
+		rule       string
+		hr, ann    string
+		annHasTerm string // a prefilter term ann's predicate must carry
+	}{
+		{`owner = USER() OR INGROUP(\"hr\")`, all, some, `"owner" = :user AND `},
+		{`INGROUP(\"hr\") OR owner = USER()`, all, some, `"owner" = :user AND `},
+		{`INGROUP(\"hr\")`, all, none, ""},
+		{`NOT INGROUP(\"hr\")`, none, all, ""},
+		{`INGROUP(\"hr\") AND n > 0`, some, none, ""},
+		{`n > 0 AND INGROUP(\"hr\")`, some, none, ""},
+		{`INGROUP(\"hr\") OR INGROUP(\"staff\")`, all, all, ""},
+		{`INGROUP(\"hr\") AND INGROUP(\"staff\")`, none, none, ""},
+		{`(owner = USER() OR INGROUP(\"hr\")) AND region = \"EU\"`, some, some, `"owner" = :user AND `},
+		// 1 / n may stop with an error. Left of the constant it is asked
+		// first and stays; right of it, it is never asked.
+		{`1 / n > 0 OR INGROUP(\"hr\")`, some, some, ""},
+		{`INGROUP(\"hr\") OR 1 / n > 0`, all, some, ""},
+		{`1 / n > 0 AND INGROUP(\"hr\")`, some, some, ""},
+		{`INGROUP(\"hr\") AND 1 / n > 0`, some, none, ""},
+		// INGROUP of something computed is left to the statement.
+		{`INGROUP(region)`, some, some, ""},
+	} {
+		def := `{"name": "Claim", "variables": {"owner": {"type": "text", "index": true}, "region": {"type": "text"}, "n": {"type": "number"}},
+  "states": {"initial": "a", "list": ["a"]}, "access": {"read": "` + tc.rule + `"}}`
+		cls, diags := model.Define([]byte(def), nil)
+		if len(diags) > 0 {
+			t.Fatalf("%s: %v", tc.rule, diags)
+		}
+		for _, who := range []struct {
+			p    Principal
+			want string
+		}{{hr, tc.hr}, {ann, tc.ann}} {
+			plan, err := Compile(Filter{Class: "Claim"}, cls, nil, who.p)
+			if err != nil {
+				t.Errorf("%s for %s: %v", tc.rule, who.p.ID, err)
+				continue
+			}
+			got := plan.Where
+			if got != all && got != none {
+				got = some
+			}
+			if got != who.want {
+				t.Errorf("%s for %s: %q, want %s", tc.rule, who.p.ID, plan.Where, who.want)
+			}
+			if who.p.ID == "ann" && tc.annHasTerm != "" && !strings.Contains(plan.Where, tc.annHasTerm) {
+				t.Errorf("%s for ann lacks the term %s: %s", tc.rule, tc.annHasTerm, plan.Where)
+			}
+		}
+		Forget(cls)
+	}
+}

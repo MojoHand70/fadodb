@@ -18,8 +18,9 @@ program allows, with its result written back to the document; and a
 formula can read the documents of another class, one value or a count,
 a sum, the smallest or the largest. A formula reads the life of its
 document, a transition may carry its time, and the engine moves the
-document by itself when that time comes. The row-level access rules and
-the server come with their phases.
+document by itself when that time comes. The access rules of a class
+are enforced, on the records of Phase 5 as proposed; the server comes
+with its phase.
 Since v0.1.0 the records ADR-0022 to
 ADR-0038 fixed what the first embedder needs and what Phase 2 measured:
 SQLite as the transactional store and the in-memory index for lookups, by
@@ -148,7 +149,28 @@ keeps and checks, for a person who stands in for another and for an
 assistant.
 By the owner's ruling of that day the phase is the engine's part: the
 engine's own users, groups and API keys, and the filter on the change
-stream, come with the server in Phase 6. None of it is built yet.
+stream, come with the server in Phase 6. Its first step is built, on
+the records as proposed: the four rules of a class, `read`, `create`,
+`update` and `delete`, are enforced on every call of the Go API; a
+document its caller may not see is answered as one that does not exist
+and left out of every filter, count and list of what is due; a refusal
+names the rule; a transition without a rule of its own asks `update`;
+and `conformance/access/` is the suite. A rule a class leaves out lets
+every caller through, as before, until the owner rules on the question
+ADR-0049 puts to him. Its second step is built too: a filter decides
+the caller's part of a read rule before it writes its statement, so a
+caller who sees only their own documents lists them through the index
+on the owner, and a filter with a read rule costs what the same filter
+costs without one. Its third step is built on ADR-0050 as proposed: a
+principal says whether it is a person, an agent or a service, and for
+whom it acts; `USERKIND()` and `ACTINGFOR()` answer both to a formula;
+and every event records them, under engine schema 6. Its fourth step
+is built on ADR-0051 as proposed, but for one item: the host program
+names the groups that may define, operate the queue and run SQL, and a
+table has a read rule and a write rule. A host program that names no
+group is asked nothing, as before, until the owner accepts the record.
+Not built yet: the record of who defined each version of a class, and
+the measurements that close the phase.
 This page is updated when a phase starts and when it ends;
 it never describes a phase as done before its acceptance criteria pass.
 

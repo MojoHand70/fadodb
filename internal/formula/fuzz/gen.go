@@ -232,7 +232,7 @@ func (g *Generator) leaf(k formula.Kind) {
 		case 4:
 			g.w("BLANK")
 		case 5:
-			g.w("USER()")
+			g.w(g.pick("USER()", "USER()", "USERKIND()", "ACTINGFOR()"))
 		case 6:
 			g.w(g.pick("STATE()", "ID()", "CREATEDBY()", "UPDATEDBY()", "ENTEREDBY()", "ENTEREDFROM()"))
 		case 7:
@@ -457,7 +457,8 @@ func (g *Generator) value(t formula.Type) formula.Value {
 
 func (g *Generator) context() formula.Context {
 	ctx := formula.Context{Now: g.someSecs(), User: g.pick("", "alice", "bob", "Alice"),
-		State: g.pick("", "draft", "paid"), ID: g.pick("", "inv-1", "01J0")}
+		State: g.pick("", "draft", "paid"), ID: g.pick("", "inv-1", "01J0"),
+		Kind: g.pick("", "person", "agent", "service"), For: g.pick("", "", "alice", "carol")}
 	switch g.n(4) {
 	case 1:
 		ctx.Groups = []string{"finance"}
@@ -1172,8 +1173,8 @@ func (f *Formula) DescribeInputs() string {
 
 // DescribeContext renders the context.
 func (f *Formula) DescribeContext() string {
-	return "user=" + strconv.Quote(f.Ctx.User) + " groups=" + strings.Join(f.Ctx.Groups, ",") +
-		" now=" + formula.DateTime(f.Ctx.Now).String()
+	return "user=" + strconv.Quote(f.Ctx.User) + " kind=" + strconv.Quote(f.Ctx.Kind) + " for=" + strconv.Quote(f.Ctx.For) +
+		" groups=" + strings.Join(f.Ctx.Groups, ",") + " now=" + formula.DateTime(f.Ctx.Now).String()
 }
 
 // CaseJSON renders the formula with its inputs and context as a suite case
@@ -1199,6 +1200,12 @@ func (f *Formula) CaseJSON(result formula.Value, code string, t formula.Type) st
 		b.WriteString("}")
 	}
 	b.WriteString(`, "context": {"user": ` + strconv.Quote(f.Ctx.User))
+	if f.Ctx.Kind != "" {
+		b.WriteString(`, "kind": ` + strconv.Quote(f.Ctx.Kind))
+	}
+	if f.Ctx.For != "" {
+		b.WriteString(`, "for": ` + strconv.Quote(f.Ctx.For))
+	}
 	if f.Ctx.Groups != nil {
 		b.WriteString(`, "groups": [`)
 		for i, g := range f.Ctx.Groups {

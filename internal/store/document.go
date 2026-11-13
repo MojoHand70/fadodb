@@ -254,17 +254,25 @@ func (s *Store) Get(ctx context.Context, class, id string, opts ...Option) (*Doc
 	if e != nil {
 		return nil, e
 	}
-	o := apply(opts)
+	o, e := asked(opts)
+	if e != nil {
+		return nil, e
+	}
 	row, err := c.scanRow(c.r.getCurrent.QueryRowContext(ctx, id), false)
 	if err != nil {
 		if err == sql.ErrNoRows {
-			return nil, errf(CodeUnknownDocument, "", "no document %s of class %s", id, c.cls.Name)
+			return nil, noDocument(c, id)
 		}
 		return nil, storageErr("read the document", err)
 	}
 	vc, row, err := s.underVersion(ctx, c, row, false)
 	if err != nil {
 		return nil, err
+	}
+	// A document the caller may not see does not exist for them
+	// (ADR-0049, item 3).
+	if !s.seesRow(c, vc, row, o) {
+		return nil, noDocument(c, id)
 	}
 	kids, err := vc.loadChildren(ctx, id, row.version, nil, false)
 	if err != nil {
@@ -318,7 +326,17 @@ func (s *Store) Version(ctx context.Context, class, id string, version int64, op
 	if e != nil {
 		return nil, e
 	}
-	o := apply(opts)
+	o, e := asked(opts)
+	if e != nil {
+		return nil, e
+	}
+	// The past is read under the rule of today (ADR-0049, item 6): who may
+	// not see the document now is told there is no such version.
+	if seen, err := s.sees(ctx, c, id, o); err != nil {
+		return nil, err
+	} else if !seen {
+		return nil, noVersion(c, id, version)
+	}
 	vc, row, err := s.version(ctx, c, id, version)
 	if err != nil {
 		return nil, err
@@ -331,13 +349,19 @@ func (s *Store) Version(ctx context.Context, class, id string, version int64, op
 	return h, nil
 }
 
+// noVersion is the answer for a version a document does not have, and
+// for any version of a document the caller may not see.
+func noVersion(c *class, id string, version int64) *Error {
+	return errf(CodeUnknownDocument, "", "no version %d of document %s of class %s", version, id, c.cls.Name)
+}
+
 // version reads one history row of a document under the class version
 // that computed it, through the pool.
 func (s *Store) version(ctx context.Context, c *class, id string, version int64) (*class, *docRow, error) {
 	row, err := c.scanRow(c.r.getVersion.QueryRowContext(ctx, id, version), true)
 	if err != nil {
 		if err == sql.ErrNoRows {
-			return nil, nil, errf(CodeUnknownDocument, "", "no version %d of document %s of class %s", version, id, c.cls.Name)
+			return nil, nil, noVersion(c, id, version)
 		}
 		return nil, nil, storageErr("read the version", err)
 	}
@@ -360,7 +384,17 @@ func (s *Store) History(ctx context.Context, class, id string, opts ...Option) (
 	if e != nil {
 		return nil, e
 	}
-	o := apply(opts)
+	o, e := asked(opts)
+	if e != nil {
+		return nil, e
+	}
+	// A document the caller may not see has no history for them, as an id
+	// no document has (ADR-0049, item 6).
+	if seen, err := s.sees(ctx, c, id, o); err != nil {
+		return nil, err
+	} else if !seen {
+		return []*HistoryRow{}, nil
+	}
 	rows, err := c.r.listHistory.QueryContext(ctx, id)
 	if err != nil {
 		return nil, storageErr("read the history", err)
@@ -397,13 +431,22 @@ func (s *Store) History(ctx context.Context, class, id string, opts ...Option) (
 	return out, nil
 }
 
-// Events reads the events that touched a document, oldest first.
+// Events reads the events that touched a document, oldest first; none
+// for a document the principal may not see (ADR-0049, item 6).
 func (s *Store) Events(ctx context.Context, class, id string, opts ...Option) ([]*Event, error) {
 	c, e := s.class(class)
 	if e != nil {
 		return nil, e
 	}
-	_ = apply(opts)
+	o, e := asked(opts)
+	if e != nil {
+		return nil, e
+	}
+	if seen, err := s.sees(ctx, c, id, o); err != nil {
+		return nil, err
+	} else if !seen {
+		return nil, nil
+	}
 	rows, err := s.stmts.listEvents.QueryContext(ctx, c.cls.Name, id)
 	if err != nil {
 		return nil, storageErr("read the events", err)
@@ -412,12 +455,13 @@ func (s *Store) Events(ctx context.Context, class, id string, opts ...Option) ([
 	var out []*Event
 	for rows.Next() {
 		var ev Event
-		var name, from, to, actor, cause, key, code sql.NullString
+		var name, from, to, actor, cause, key, code, kind, acts sql.NullString
 		var before, after, origin sql.NullInt64
 		var day int64
-		if err := rows.Scan(&ev.ID, &ev.Class, &ev.DocID, &ev.Kind, &name, &from, &to, &actor, &before, &after, &cause, &key, &day, &ev.TS, &code, &origin); err != nil {
+		if err := rows.Scan(&ev.ID, &ev.Class, &ev.DocID, &ev.Kind, &name, &from, &to, &actor, &before, &after, &cause, &key, &day, &ev.TS, &code, &origin, &kind, &acts); err != nil {
 			return nil, storageErr("read the events", err)
 		}
+		ev.ActorKind, ev.ActorFor = kind.String, acts.String
 		ev.Name, ev.FromState, ev.ToState, ev.ActorID, ev.CauseEventID, ev.CommandKey = name.String, from.String, to.String, actor.String, cause.String, key.String
 		ev.Origin = originOf(origin.Int64)
 		if ev.Kind == EventActionFailed {

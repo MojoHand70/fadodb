@@ -120,6 +120,42 @@ rule.
      whoever created the document. Item 6 covers the need with what
      exists.
 
+## Details settled while building
+
+Built on 2026-11-13, on the record as proposed, as the third step of
+the phase. Question B is assumed as recommended; the other answer
+changes `For` into the id of the assistant and `ACTINGFOR()` into a
+function that names it, and leaves the kind as built.
+
+- **The names.** `Principal.Kind` and `Principal.For`; the constants
+  `ActorPerson`, `ActorAgent` and `ActorService`; the functions
+  `USERKIND()` and `ACTINGFOR()`; the columns `actor_kind` and
+  `actor_for` on an event.
+- **The outbox row gained no column.** It keeps the kind and the id
+  acted for in the text that holds the principal's groups: the array of
+  groups as before for a principal that says neither, an object with
+  the groups, the kind and the id for one that does. Two columns were
+  tried first and cost ten allocations on every action the worker runs,
+  since the driver allocates for every column the statement that reads
+  the due rows returns.
+- **The views.** `_events` shows `actor_kind` and `actor_for`.
+  `_states` shows, for the move that began a stay and the one that
+  ended it, `entered_by_kind`, `entered_for`, `left_by_kind` and
+  `left_for`.
+- **An unknown kind is refused everywhere**, by a read as by a command,
+  with `bad_value`, so that no formula sees a kind the log would not
+  take.
+- **An `at` may not read them**, as it may not read `USER()`: the
+  moment of a timer is the document's, the same for everyone.
+- **No upgrade.** The schema is 6, and a database of schema 5, which is
+  what v0.4.0 and v0.4.1 make, is refused when opened, as every schema
+  change before 1.0 has been.
+
+Measured, in memory: every benchmark of the gate keeps its
+allocations, `BenchmarkTransition` 155, `BenchmarkOutbox` 459 and
+`BenchmarkTimer` 394. A commit takes 128 bytes more, 1.5%, for the two
+texts in the context of its formulas.
+
 ## Open question
 
 This one is the owner's to rule. The record assumes the first answer

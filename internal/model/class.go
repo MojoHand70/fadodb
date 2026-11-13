@@ -266,6 +266,12 @@ func ParseAfter(s string) (int64, bool) {
 	return n * unit, true
 }
 
+// LeftOutAllows is what a class-level access rule answers that a class
+// leaves out. ADR-0049 puts it to the owner as its open question A. Until
+// he rules, the engine keeps the answer it has given since Phase 2: a
+// class that says nothing lets every caller through.
+const LeftOutAllows = true
+
 // Access holds the compiled class-level access rules.
 type Access struct {
 	Read, Create, Update, Delete *formula.Program
@@ -1315,7 +1321,7 @@ func compileTimer(c *collector, cls *Class, t *Transition, d TransitionDef, path
 	case prog.Calls("NOW") || prog.Calls("TODAY"):
 		c.hint(CodeNotAllowed, path+"/at", "an at may not read the clock: its moment is worked out when the document enters the state, and stands until a value it reads changes",
 			`a time counted from the entry is an after: "after": "30d"; a time counted from a date is that date moved: ADDDAYS(due, 30)`)
-	case prog.Calls("USER") || prog.Calls("INGROUP"):
+	case prog.Calls("USER") || prog.Calls("INGROUP") || prog.Calls("USERKIND") || prog.Calls("ACTINGFOR"):
 		c.hint(CodeNotAllowed, path+"/at", "an at may not read who asks: its moment is the document's, the same for everyone",
 			"compute the moment from the document's own values")
 	case len(prog.Queries) > 0:

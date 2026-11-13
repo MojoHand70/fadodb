@@ -62,7 +62,8 @@ One file per topic:
 - `inputs` gives values; an absent or `null` variable is blank. Dates are
   written `YYYY-MM-DD`, datetimes `YYYY-MM-DD HH:MM:SS` in UTC, exact
   values as text such as `"1.250"`, money as `"12.30 PLN"`.
-- `context` sets what the context functions see: `user`, `groups`, `now`,
+- `context` sets what the context functions see: `user`, `groups`, `kind`
+  and `for`, what the user is and whom it acts for (ADR-0050), `now`,
   and `state` and `id` for the document the formula runs over. The life
   of that document (ADR-0047) is given beside them: `version`,
   `created_at`, `created_by`, `updated_at`, `updated_by`, `entered_at`,
@@ -165,6 +166,23 @@ and the browser VM run them with their phases.
   listing and in the list of what is due, and the origin `timer` of
   their events. Nothing in it moves a document by itself: the scripts
   with the worker in them are `rules/timers.json`.
+
+## Access cases: `access/*.json`
+
+The specification of the four rules of a class (ADR-0049): who may see,
+create, change and delete a document, asked on every path. The format
+is the statechart suites'. `rules.json` takes one class through every
+command as five callers: its owner, another clerk, HR, a stranger and
+an administrator, and a call without a principal. A read, a command,
+the listing of transitions, a filter, a count and the list of what is
+due have to agree on which documents each caller sees; `action` on a
+refusal is the place of the rule, such as `/access/update`.
+
+`actors.json` is the suite of what a principal says of itself
+(ADR-0050): a principal of a suite may carry `kind` and `for`, and
+`actors` on a step checks the actors of the document's events so far,
+each written as its id, then its kind and `for` whom where the host
+said, as `agent-7 agent for ann`.
 
 ## Rules cases: `rules/*.json`
 

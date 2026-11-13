@@ -72,6 +72,21 @@
 // set of the engine's own in the transaction that marks the row, and the
 // eventless transitions follow.
 //
-// Not here yet: the class-level access rules (Phase 5), and the server
-// (Phase 6).
+// The four rules of a class, read, create, update and delete, are
+// enforced on every path (ADR-0049, access.go): a document its caller
+// may not see is answered as one that does not exist, and a caller who
+// sees it and may not do what they ask is refused with forbidden and the
+// rule.
+//
+// A principal says what it is, a person, an agent or a service, and for
+// whom it acts (ADR-0050): every event records both beside the actor's
+// id, an action and a timer run with them, and USERKIND() and
+// ACTINGFOR() answer them to a formula.
+//
+// Defining, operating the queue and running SQL are for an administrator
+// and for the groups the host program names in Options (ADR-0051,
+// roles.go), and a table has a read rule and a write rule.
+//
+// Not here yet: the record of who defined each version (ADR-0051, item
+// 5), and the server (Phase 6).
 package store

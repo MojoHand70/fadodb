@@ -40,9 +40,9 @@ Website: [fadodb.org](https://fadodb.org).
 > guard on time would move, so the host program can touch them. One
 > call, `TransitionMany`, moves many documents, a commit each: those
 > that cannot move are reported with their reason, and the others
-> move. The
-> row-level access rules and the server come with their phases. The
-> numbers are in
+> move. The access rules of a class are enforced, who may see, create,
+> change and delete a document, on the records of Phase 5 as proposed;
+> the server comes with its phase. The numbers are in
 > [docs/perf/](docs/perf/), the plan in [ROADMAP.md](ROADMAP.md).
 
 ## What it is
@@ -56,12 +56,13 @@ enforces user and group access rules that are themselves formulas.
 Analytics and process mining are SQL over the event log.
 
 A class is one JSON document. This one defines, stores, computes and
-moves through its states today, and its rights and transition rules are
-enforced. Its rule runs: paying an invoice queues a receipt in the
-outbox, and the outbox creates it. The `Receipt` class the rule names is
+moves through its states today, and its access rules, its rights and
+its transition rules are enforced: finance, sales and the customer see
+an invoice, and nobody deletes one. Its rule runs: paying an invoice
+queues a receipt in the outbox, and the outbox creates it. The `Receipt`
+class the rule names is
 [examples/classes/receipt.json](examples/classes/receipt.json) and is
-defined first. The class-level access rule comes with Phase 5, and
-formulas over `lines` arrive with composites:
+defined first. Formulas over `lines` arrive with composites:
 
 ```json
 {
@@ -85,7 +86,7 @@ formulas over `lines` arrive with composites:
     {"on": "enter", "state": "paid",
      "do": [{"action": "create", "class": "Receipt", "values": {"invoice": "ID()", "amount": "total"}}]}
   ],
-  "access": {"read": "INGROUP(\"finance\") OR customer = USER()"},
+  "access": {"read": "INGROUP(\"finance\") OR INGROUP(\"sales\") OR customer = USER()", "delete": "FALSE"},
   "rights": {"*": {"discount": {"write": ["sales"]}}, "approved": {"discount": {"read": ["finance"]}}}
 }
 ```
@@ -104,9 +105,10 @@ fmt.Println(doc.Version, doc.Values["total"])             // 2 90.00 PLN
 doc, err = db.Transition(ctx, "Invoice", doc.ID, "submit", nil, fado.As(alice))
 fmt.Println(doc.Version, doc.State)                       // 3 submitted; approve needs finance
 
-open, err := db.Query(ctx, fado.Filter{Class: "Invoice", Where: "state = \"draft\" AND total > 50.00", Order: []string{"-due"}})
+open, err := db.Query(ctx, fado.Filter{Class: "Invoice", Where: "state = \"draft\" AND total > 50.00", Order: []string{"-due"}},
+	fado.As(alice))                                          // the invoices alice may see
 rows, err := db.SQL(ctx, `SELECT count(*), sum(total) FROM Invoice`, nil)
-history, err := db.History(ctx, "Invoice", doc.ID)       // every version, who committed it, when
+history, err := db.History(ctx, "Invoice", doc.ID, fado.As(alice)) // every version, who committed it, when
 preview, err := db.Preview(ctx, "Invoice", doc.ID, fado.Values{"discount": "0.50"}, "", fado.As(alice))
 ```
 
@@ -118,8 +120,21 @@ commit of its own in the same transaction; `Transitions` says which
 moves are open. The principal decides what a call may set and sees: a
 value a right refuses, or a transition its rule refuses, comes back as
 `forbidden`, and a variable the principal may not read in the document's
-state is absent from what they get back; the row-level access rule waits
-for Phase 5. The rules of a class run inside the commit: a `set` or a
+state is absent from what they get back. The four rules of a class say
+who may see, create, change and delete a document: a document its
+caller may not see is answered as if it did not exist, by a read, a
+command, a filter and a count alike, and a caller who sees it and may
+not change it gets `forbidden` with the rule. A rule a class leaves out
+lets every caller through until the record of Phase 5 on it is
+accepted (ADR-0049). Defining, operating the outbox and running SQL,
+which reads every row, are for an administrator and for the groups the
+host program names when it opens the database; a host program that
+names none is asked nothing, as before (ADR-0051). A table may say who
+reads and who writes its rows. A
+principal may say whether it is a person, an agent or a service, and
+for whom it acts: every event records it, and `USERKIND()` and
+`ACTINGFOR()` let a class keep a step for a person (ADR-0050). The
+rules of a class run inside the commit: a `set` or a
 `reset` changes the document before it is written, an `emit` appends a
 custom event, an action that fails refuses the command with its place in
 the definition, and a preview lists the rules a command would run. A
@@ -250,11 +265,11 @@ fado/              public Go API
 internal/formula/  lexer, parser, binder, bytecode, VM, SQL generator
 internal/model/    document classes, schemas, tables, rules, validation, the diff between class versions
 internal/store/    SQLite store: documents, history, events, rules in the commit, the outbox, tables, lookups, filters, blobs, class versions
-internal/query/    the filter compiler and the SQL endpoint's authorizer
+internal/query/    the filter compiler, with the read rule of a class as a predicate, and the SQL endpoint's authorizer
 internal/state/    statechart engine (Phase 3)
 fado/outbound/     what a host program imports to let a database send the HTTP requests of actions
 api/               JSON schemas of an action definition, of the call an action receives and of the delivered event
-internal/auth/     access rules as predicates (Phase 5); users, groups and API keys (Phase 6)
+internal/auth/     users, groups and API keys for the server (Phase 6)
 internal/server/   HTTP and WebSocket (Phase 6)
 analytics/         the DuckDB module: conformance and store benchmarks today, the projection in Phase 8
 bench/             end-to-end performance scenarios behind the budgets

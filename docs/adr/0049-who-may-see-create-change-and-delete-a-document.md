@@ -179,6 +179,88 @@ owner's to change. The question at the end is his to rule.
     - The filter on the change stream, the authenticator and the
       package of users, groups and API keys: Phase 6, with the server.
 
+## Details settled while building
+
+The first step was built on 2026-11-13, on the record as proposed.
+
+- **The question is left open in the code.** A rule a class leaves out
+  lets every caller through, as the engine has always answered, and one
+  constant holds that answer for the store and for the filter compiler
+  (`model.LeftOutAllows`). The other answer is that constant and, with
+  it, rules or an administrator for the samples and the tests.
+- **A set that names no value asks only `read`.** It changes nothing
+  and answers with the document, which is what a read does. `update` is
+  asked of a set that names a value and of every reset.
+- **Where the refusal names the rule.** `Error.Path`, which until now
+  held the place of a rule's action: `/access/create`,
+  `/access/update`, `/access/delete`, `/access/transition/approve`. A
+  transition refused by `update` says so in its message and carries
+  `/access/update`.
+- **`PreviewDelete`** is the preview of item 13 for a delete, a command
+  of its own: the document as it is, the refusal under the errors, the
+  rules the delete would run.
+- **`History` and `Events` of a hidden document** answer an empty list
+  and no error, which is what they answer for an id no document has.
+- **A file in a hidden variable** is answered `unknown_blob`: for that
+  caller the document does not hold it.
+- **`Due` reads each document it found** for a caller who is not an
+  administrator and whose class has a read rule, and leaves out the
+  ones the rule hides. The host program that touches what is due asks
+  as an administrator and pays nothing. The page of `Due` may then come
+  back shorter than its bound while more documents are due.
+- **Not built yet:** the SQL endpoint, which waits for the analysts of
+  ADR-0051 (item 12).
+
+Measured on the reference machine, in memory: a transition on a class
+with a read rule and an update rule takes the time and the allocations
+of the same class without them, 51 µs and 163 allocations
+(`BenchmarkTransitionAccess` against `BenchmarkTransitionOwned`), and
+`BenchmarkTransition` is unchanged at 155 allocations.
+
+The second step, the same day, built the second paragraph of item 5.
+
+- **What the caller decides.** An `INGROUP` of a text written in the
+  rule, standing under `AND`, `OR` and `NOT` alone. Each is answered
+  for the caller, and the rule is folded around the answers by the
+  rules the evaluators follow: `AND` and `OR` stop at the operand that
+  decides them, left to right. So `x OR TRUE` is TRUE only when `x`
+  cannot stop with an error, which the SQL generator knows; where it
+  can, `x` stays and is asked first, as on the Go VM. An `INGROUP` of a
+  computed text is left to the statement.
+- **Whether the caller has an id** is part of the outcome. For a caller
+  with one, `owner = USER()` is written as the bare column against a
+  value, since no blank owner equals it. For a call without a principal
+  the comparison keeps its care for blanks.
+- **A text compared with the caller is an index term in every filter**,
+  in a `where` as in a read rule. Before, `owner = USER()` in a `where`
+  read every document of the class.
+- **The caller's condition leads.** The rule offers its comparisons to
+  an index only when the `where` compares no indexed variable itself.
+  SQLite keeps no statistics in a database of ours, so of two
+  comparisons with an index each it takes one without knowing which
+  finds fewer rows. With both offered, a ticket asked for by its number
+  was found through the owner's index: every ticket of the caller read
+  to find one, 818 µs where 15 µs were due.
+- **Every path agrees, tested.** Beside the suite, a test takes fifteen
+  rules, some of which stop with an error on some rows, eight callers
+  and forty-eight documents, and asks for each whether a read by id, a
+  filter and a count show the same documents.
+
+Measured on disk, 100,000 documents a class, the median of six runs
+(`BenchmarkFilter`):
+
+| Filter | Without a read rule | With one | |
+|---|---|---|---|
+| one ticket by its indexed number, the caller alone decides the rule | 14.65 µs | 14.81 µs | +1.1%, budget 5% |
+| the same, the rule reads the row | 14.65 µs | 15.11 µs | +3.1%, budget 15% |
+| a caller's own tickets, the first 10 of 1,000 | 351 µs, by `owner = "u7"` | 346 µs, by the rule alone | |
+| a count of a caller's own tickets | 30.7 µs, by `owner = "u7"` | 27.4 µs, by the rule alone | |
+
+One finding for the owner's eye: the store runs no `ANALYZE`, so
+SQLite chooses between two indexes blind, in any filter and not only
+here. Keeping statistics is a decision about every database and is not
+taken in this record.
+
 ## Open question
 
 This one is the owner's to rule. The record assumes the first answer

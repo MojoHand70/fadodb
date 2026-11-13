@@ -28,8 +28,18 @@ type TableDef struct {
 	Indexes [][]string `json:"indexes,omitempty"`
 	// Binding is sqlite (the default), duckdb or external (ADR-0016).
 	Binding string `json:"binding,omitempty"`
+	// Access holds the table's two rules (ADR-0051): who may read its
+	// rows and who may write them.
+	Access *TableAccessDef `json:"access,omitempty"`
 	// ColumnOrder lists the columns in the order written.
 	ColumnOrder []string `json:"-"`
+}
+
+// TableAccessDef is the rules of a table: each a condition over the
+// caller and the clock, about the table as a whole.
+type TableAccessDef struct {
+	Read  string `json:"read,omitempty"`
+	Write string `json:"write,omitempty"`
 }
 
 // Table is a compiled table definition.
@@ -45,7 +55,10 @@ type Table struct {
 	Columns []Column
 	Key     []string
 	Indexes [][]string
-	Def     *TableDef
+	// Read and Write are the compiled rules of the table (ADR-0051), nil
+	// for a rule the definition leaves out.
+	Read, Write *formula.Program
+	Def         *TableDef
 }
 
 // Source is the table as the binder sees it.
@@ -214,10 +227,41 @@ func CompileTable(def *TableDef) (*Table, Diagnostics) {
 	if len(t.Columns) > MaxColumns {
 		c.addf(CodeTooManyColumns, "/columns", "the table would have %d columns; at most %d", len(t.Columns), MaxColumns)
 	}
+	// The rules of the table (ADR-0051): conditions over the caller and
+	// the clock. They are about the table as a whole, so they read no
+	// column, and they read no other table or document.
+	if def.Access != nil {
+		t.Read = tableRule(c, "/access/read", def.Access.Read, "a read rule")
+		t.Write = tableRule(c, "/access/write", def.Access.Write, "a write rule")
+	}
 	if c.failed() {
 		return nil, c.list
 	}
 	return t, nil
+}
+
+// noColumns is what a rule of a table binds against: nothing of a row.
+var noColumns = func() *formula.Scope {
+	scope, _ := formula.NewScope()
+	return scope
+}()
+
+// tableRule binds a rule of a table.
+func tableRule(c *collector, path, src, what string) *formula.Program {
+	if src == "" {
+		return nil
+	}
+	prog, err := formula.Bind(src, noColumns, formula.BindOptions{Mode: formula.ModeAny})
+	if err != nil {
+		c.hint(CodeBadFormula, path, what+" of a table: "+err.Error(),
+			"it is a condition over the caller and the clock, such as INGROUP(\"treasury\"); it is about the table as a whole and reads no column, no other table and no document")
+		return nil
+	}
+	if prog.Result.Kind != formula.KindBool && prog.Result.Kind != formula.KindNull {
+		c.hint(CodeNotACondition, path, what+" must be a condition, got "+prog.Result.String(), "compare it, for instance <> 0 or <> \"\"")
+		return nil
+	}
+	return prog
 }
 
 // DefineTable parses and compiles a table definition in one step.

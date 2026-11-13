@@ -104,7 +104,10 @@ func (s *Store) Due(ctx context.Context, class string, opts ...Option) ([]DueDoc
 	if e != nil {
 		return nil, e
 	}
-	o := apply(opts)
+	o, e := asked(opts)
+	if e != nil {
+		return nil, e
+	}
 	plan := s.duePlan(c)
 	out := []DueDocument{}
 	for _, st := range plan.states {
@@ -117,6 +120,23 @@ func (s *Store) Due(ctx context.Context, class string, opts ...Option) ([]DueDoc
 			return nil, err
 		}
 		out = append(out, found...)
+	}
+	// A document the caller may not see is not listed (ADR-0049, item 3).
+	// The host program that touches what is due asks as an administrator,
+	// for whom this costs nothing; for anybody else it is a read of each
+	// document found.
+	if c.ruled(ruleRead) && !o.principal.Admin {
+		seen := out[:0]
+		for _, d := range out {
+			ok, err := s.sees(ctx, c, d.ID, o)
+			if err != nil {
+				return nil, err
+			}
+			if ok {
+				seen = append(seen, d)
+			}
+		}
+		out = seen
 	}
 	return out, nil
 }
@@ -311,7 +331,8 @@ func (s *Store) dueOneByOne(ctx context.Context, c *class, st *dueState, o optio
 		return false, storageErr("prepare the list of "+c.cls.Name, err)
 	}
 	defer s.filters.release(stmt)
-	evalCtx := &formula.Context{User: o.principal.ID, Groups: o.principal.Groups, Now: s.clock(o)}
+	ctxOf := contextOf(o.principal, s.clock(o))
+	evalCtx := &ctxOf
 	seen, found, after := false, 0, ""
 	ids := make([]string, 0, dueBatch)
 	for {

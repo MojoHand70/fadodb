@@ -1,6 +1,11 @@
 package store
 
-import "time"
+import (
+	"strconv"
+	"time"
+
+	"github.com/MojoHand70/fadodb/internal/formula"
+)
 
 // Principal is who a call runs for (ADR-0027): the embedder's id for the
 // actor, the groups INGROUP tests, the admin bypass, and the embedder's
@@ -11,6 +16,53 @@ type Principal struct {
 	Groups []string
 	Admin  bool
 	Today  time.Time
+	// Kind is what the caller is (ADR-0050): ActorPerson, ActorAgent or
+	// ActorService, or empty when the host program does not say. For is
+	// the id of whoever the caller acts for, empty when it acts for
+	// itself. The engine trusts both as it trusts the id, writes them on
+	// every event beside it, and answers them to USERKIND() and
+	// ACTINGFOR().
+	Kind string
+	For  string
+}
+
+// What a caller is, as Principal.Kind says it (ADR-0050): a person who
+// sent the command, an agent that decided to send it, or a service, a
+// program that decides nothing, such as an import or a schedule.
+const (
+	ActorPerson  = "person"
+	ActorAgent   = "agent"
+	ActorService = "service"
+)
+
+// checkPrincipal refuses a principal whose kind is none of the three.
+func checkPrincipal(p Principal) *Error {
+	switch p.Kind {
+	case "", ActorPerson, ActorAgent, ActorService:
+		return nil
+	}
+	return hintf(CodeBadValue, "", "a principal's kind is "+ActorPerson+", "+ActorAgent+" or "+ActorService+", got "+strconv.Quote(p.Kind),
+		"leave the kind empty when the host program does not know what the caller is")
+}
+
+// asked applies the options of a call that reads, and refuses a principal
+// whose kind is none the engine knows (ADR-0050); a command that writes
+// is refused the same where it begins.
+func asked(opts []Option) (options, *Error) {
+	if len(opts) == 0 {
+		// A call without options is nobody's: nothing to apply, and the
+		// options stay off the heap, which Drain is glad of on every run.
+		return options{}, nil
+	}
+	o := apply(opts)
+	return o, checkPrincipal(o.principal)
+}
+
+// contextOf is the context of a formula that runs for the principal at
+// the moment: who asks, in which groups, what they are and for whom they
+// act.
+func contextOf(p Principal, now int64) formula.Context {
+	return formula.Context{User: p.ID, Groups: p.Groups, Kind: p.Kind, For: p.For, Now: now}
 }
 
 // Values are variable values by declared name, in the wire shape of
@@ -80,14 +132,19 @@ type HistoryRow struct {
 
 // Event is one row of the event log (ADR-0006, ADR-0026).
 type Event struct {
-	ID            string `json:"event_id"`
-	Class         string `json:"class"`
-	DocID         string `json:"doc_id"`
-	Kind          string `json:"kind"`
-	Name          string `json:"name,omitempty"`
-	FromState     string `json:"from_state,omitempty"`
-	ToState       string `json:"to_state,omitempty"`
-	ActorID       string `json:"actor_id,omitempty"`
+	ID        string `json:"event_id"`
+	Class     string `json:"class"`
+	DocID     string `json:"doc_id"`
+	Kind      string `json:"kind"`
+	Name      string `json:"name,omitempty"`
+	FromState string `json:"from_state,omitempty"`
+	ToState   string `json:"to_state,omitempty"`
+	ActorID   string `json:"actor_id,omitempty"`
+	// ActorKind is what the actor was, person, agent or service, and
+	// ActorFor the id it acted for (ADR-0050); each empty when the host
+	// program did not say.
+	ActorKind     string `json:"actor_kind,omitempty"`
+	ActorFor      string `json:"actor_for,omitempty"`
 	BeforeVersion int64  `json:"before_version,omitempty"`
 	AfterVersion  int64  `json:"after_version,omitempty"`
 	CauseEventID  string `json:"cause_event_id,omitempty"`

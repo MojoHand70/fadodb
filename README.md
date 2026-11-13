@@ -257,11 +257,11 @@ fado/              public Go API
 internal/formula/  lexer, parser, binder, bytecode, VM, SQL generator
 internal/model/    document classes, schemas, tables, rules, validation, the diff between class versions
 internal/store/    SQLite store: documents, history, events, rules in the commit, the outbox, tables, lookups, filters, blobs, class versions
-internal/query/    the filter compiler and the SQL endpoint's authorizer
+internal/query/    the filter compiler, with the read rule of a class as a predicate, and the SQL endpoint's authorizer
 internal/state/    statechart engine (Phase 3)
 fado/outbound/     what a host program imports to let a database send the HTTP requests of actions
 api/               JSON schemas of an action definition, of the call an action receives and of the delivered event
-internal/auth/     access rules as predicates (Phase 5); users, groups and API keys (Phase 6)
+internal/auth/     users, groups and API keys for the server (Phase 6)
 internal/server/   HTTP and WebSocket (Phase 6)
 analytics/         the DuckDB module: conformance and store benchmarks today, the projection in Phase 8
 bench/             end-to-end performance scenarios behind the budgets

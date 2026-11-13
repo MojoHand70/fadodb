@@ -7,7 +7,8 @@
 
 An embeddable **active document database**, written in Go, MIT licensed.
 Website: [fadodb.org](https://fadodb.org). The manual starts at
-[docs/README.md](docs/README.md), with
+[docs/README.md](docs/README.md): [what FadoDB is](docs/manual/what-is-fadodb.md),
+[how it works](docs/manual/how-it-works.md) and
 [your first application](docs/manual/first-application.md).
 
 > **Status: Phase 5, security, is done and released as v0.5.0;

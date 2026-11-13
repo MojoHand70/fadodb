@@ -161,6 +161,11 @@ All notable changes to FadoDB are recorded here. The format follows
   check is one lookup in memory and allocates nothing.
 - The Approval sample accepts whoever validly acts for the approver,
   with `approver = USER() OR approver = ACTINGFOR()`.
+- `docs/perf/v0.5.0.md` has the measurements of the phase against the
+  budgets of ADR-0049 to ADR-0053, with the campaigns of the earlier
+  phases run again. `TestAccessCampaign` is the campaign of access,
+  and `BenchmarkTransitionOverride` measures a content administrator's
+  transition past a rule.
 
 ### Changed
 

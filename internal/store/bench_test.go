@@ -568,9 +568,10 @@ func BenchmarkTransition(b *testing.B) {
 func benchOwned(b *testing.B, access string) { benchOwnedAs(b, access, alice) }
 
 // benchOwnedAs is benchOwned with the caller of the transitions given:
-// alice, who owns the document, or somebody who acts for her, with the
-// substitution that lets them.
-func benchOwnedAs(b *testing.B, access string, caller Principal) {
+// alice, who owns the document, somebody who acts for her, with the
+// substitution that lets them, or anybody else with the options their
+// call needs.
+func benchOwnedAs(b *testing.B, access string, caller Principal, more ...Option) {
 	s, err := Open(filepath.Join(b.TempDir(), "bench.fado"), Options{})
 	if err != nil {
 		b.Fatal(err)
@@ -592,10 +593,11 @@ func benchOwnedAs(b *testing.B, access string, caller Principal) {
 		}
 	}
 	names := [2]string{"submit", "back"}
+	opts := append([]Option{As(caller)}, more...)
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; b.Loop(); i++ {
-		if _, err := s.Transition(ctx, "Flow", doc.ID, names[i%2], nil, As(caller)); err != nil {
+		if _, err := s.Transition(ctx, "Flow", doc.ID, names[i%2], nil, opts...); err != nil {
 			b.Fatal(err)
 		}
 	}
@@ -624,6 +626,15 @@ func BenchmarkTransitionOwned(b *testing.B) { benchOwned(b, "") }
 func BenchmarkTransitionFor(b *testing.B) {
 	benchOwnedAs(b, `"access": {"read": "owner = USER() OR owner = ACTINGFOR() OR INGROUP(\"finance\")", "update": "(owner = USER() OR owner = ACTINGFOR()) AND amount < 100000", "delete": "FALSE"},
  `, Principal{ID: "bob", For: alice.ID})
+}
+
+// BenchmarkTransitionOverride is the same transition by a content
+// administrator who is neither the owner nor in finance (ADR-0052, item
+// 4): the rules are asked and refuse, the group lets the command
+// through, and the event keeps the two rules lifted and the reason.
+func BenchmarkTransitionOverride(b *testing.B) {
+	benchOwnedAs(b, `"access": {"read": "owner = USER() OR INGROUP(\"finance\")", "update": "owner = USER() AND amount < 100000", "delete": "FALSE"},
+ `, Principal{ID: "cora", System: []string{GroupContentAdministrators}}, Reason("the owner is away and the customer waits"))
 }
 
 // benchMany opens a store with the transition benchmarks' class and n

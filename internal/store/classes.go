@@ -468,9 +468,27 @@ func (c *class) bindSlots(p *formula.Program, owner string) error {
 		}
 		idx[i] = li
 	}
+	c.bind(p, idx)
+	return nil
+}
+
+// bind keeps where a program's slots are in the rows of the class: in
+// the map of the class, and on the program itself for the class that
+// bound it last, where a run finds it without the lookup. A class with
+// more than eight formulas pays for that lookup on every evaluation, and
+// every class has its four access rules beside its own formulas.
+func (c *class) bind(p *formula.Program, idx []int) {
 	c.slots[p] = idx
 	c.maxSlots = max(c.maxSlots, len(idx))
-	return nil
+	p.Bound, p.BoundFor = idx, c
+}
+
+// slotsOf are the leaves of a program's slots in the rows of the class.
+func (c *class) slotsOf(p *formula.Program) []int {
+	if p.BoundFor == any(c) {
+		return p.Bound
+	}
+	return c.slots[p]
 }
 
 // whoFunctions are the functions of the row that read a text the

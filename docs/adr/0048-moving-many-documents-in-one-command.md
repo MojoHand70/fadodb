@@ -266,4 +266,5 @@ the single one, and a move writes about what a create writes, so about
 budgets before it were set under what was later measured. The build
 adds `BenchmarkTransitionMany` to the benchmark gate, a row for the
 batch to the campaign of commits, and the rate of other writers while
-batches run; the results are published with the release.
+batches run; the results are published with the release, v0.4.1, in
+`docs/perf/v0.4.1.md`.

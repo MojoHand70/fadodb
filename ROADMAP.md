@@ -1,6 +1,6 @@
 # Roadmap
 
-**Current status: Phase 4, rules and actions, done on 2026-11-12 and released as v0.4.0. Phase 5, security, started on 2026-11-13.**
+**Current status: Phase 4, rules and actions, done on 2026-11-12 and released as v0.4.0, with its addendum, the command that moves many documents, released as v0.4.1 on 2026-11-13. Phase 5, security, started on 2026-11-13.**
 The Go API (`fado`) opens a database file, defines schemas, classes and
 explicit tables, and creates, changes, reads and deletes documents as
 commits: assignments and defaults, the auto recalculation, typed history
@@ -18,8 +18,9 @@ program allows, with its result written back to the document; and a
 formula can read the documents of another class, one value or a count,
 a sum, the smallest or the largest. A formula reads the life of its
 document, a transition may carry its time, and the engine moves the
-document by itself when that time comes. The row-level access rules and
-the server come with their phases.
+document by itself when that time comes. The access rules of a class
+are enforced, on the records of Phase 5 as proposed; the server comes
+with its phase.
 Since v0.1.0 the records ADR-0022 to
 ADR-0038 fixed what the first embedder needs and what Phase 2 measured:
 SQLite as the transactional store and the in-memory index for lookups, by
@@ -126,7 +127,9 @@ five records (#73). A command that moves many documents in one
 transaction follows the release as an addendum to this phase, with its
 design in ADR-0048: `TransitionMany` moves up to 10,000 documents of a
 class along one transition, a commit each, and `PreviewMany` tries the
-batch and writes nothing (#79). It is on main and in no release yet.
+batch and writes nothing (#79). It is released as v0.4.1, with its
+measurements in `docs/perf/v0.4.1.md`: 27,257 documents a second on
+disk against a budget of 15,000.
 By the owner's ruling of that day a document that is refused
 does not stop the others: they move, and the refused one is reported
 with its reason.

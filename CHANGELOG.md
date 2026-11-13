@@ -8,30 +8,6 @@ All notable changes to FadoDB are recorded here. The format follows
 
 ### Added
 
-- `TransitionMany` moves many documents by one call (ADR-0048): up to
-  10,000 documents of one class, named by their ids, along one
-  transition, in the order given and in one transaction. Each move is
-  the commit `Transition` makes, with its own guard, rights, rules,
-  version, history row and event. A document that cannot move does not
-  stop the others: the reply has one `MoveOutcome` for each id, the
-  document after its move or the refusal with its code, and a refused
-  document is left as it was. The call's own error is for the call:
-  `unknown_class`, `unknown_transition`, `too_many_elements`,
-  `bad_value` for an id named twice, `not_allowed` for `At`, or a
-  failure of the database, after which nothing has moved. `Key` is held
-  for each document, as the key, `#` and the id, so the call sent again
-  moves no document twice. The values are the same for every document,
-  and a guard that counts other documents sees the moves made earlier
-  in the same batch.
-- `PreviewMany` runs the same batch and rolls it back: what the call
-  would answer for every document, now or at a moment given with `At`,
-  with nothing written and no action queued.
-- Measured on disk at 1,000,000 documents: 27,257 documents a second in
-  batches of 1,000, against 12,427 a second by `Transition`, a command
-  each; a million documents in 37 seconds where they took 80. The
-  budget of ADR-0048 is 15,000. `BenchmarkTransitionMany` is in the
-  benchmark gate, and the campaign of commits has two more rows: the
-  batch, and single commits made while batches run.
 - The four rules of a class are enforced (ADR-0049, proposed): `read`,
   `create`, `update` and `delete` under `access`, each a condition over
   the document for the caller. A document its caller may not see is
@@ -127,13 +103,43 @@ All notable changes to FadoDB are recorded here. The format follows
   result an action writes back ask nothing.
 - **The engine schema is version 6**, for what the actor of an event
   was and for whom it acted, two columns of the event. A
-  database made by an earlier engine, v0.4.0 included, is refused when
+  database made by an earlier engine, v0.4.1 included, is refused when
   opened, as before 1.0 there is no upgrade path.
 - A class that declared `read`, `create`, `update` or `delete` had them
   checked and not enforced; they are enforced now. A rule a class
   leaves out lets every caller through, as before, until the owner
   rules on the question ADR-0049 puts to him. The Invoice sample lets
   finance, sales and the customer see an invoice and nobody delete one.
+
+## [0.4.1] - 2026-11-13
+
+### Added
+
+- `TransitionMany` moves many documents by one call (ADR-0048): up to
+  10,000 documents of one class, named by their ids, along one
+  transition, in the order given and in one transaction. Each move is
+  the commit `Transition` makes, with its own guard, rights, rules,
+  version, history row and event. A document that cannot move does not
+  stop the others: the reply has one `MoveOutcome` for each id, the
+  document after its move or the refusal with its code, and a refused
+  document is left as it was. The call's own error is for the call:
+  `unknown_class`, `unknown_transition`, `too_many_elements`,
+  `bad_value` for an id named twice, `not_allowed` for `At`, or a
+  failure of the database, after which nothing has moved. `Key` is held
+  for each document, as the key, `#` and the id, so the call sent again
+  moves no document twice. The values are the same for every document,
+  and a guard that counts other documents sees the moves made earlier
+  in the same batch.
+- `PreviewMany` runs the same batch and rolls it back: what the call
+  would answer for every document, now or at a moment given with `At`,
+  with nothing written and no action queued.
+- Measured on disk at 1,000,000 documents: 27,257 documents a second in
+  batches of 1,000, against 12,427 a second by `Transition`, a command
+  each; a million documents in 37 seconds where they took 80. The
+  budget of ADR-0048 is 15,000. `BenchmarkTransitionMany` is in the
+  benchmark gate, and the campaign of commits has two more rows: the
+  batch, and single commits made while batches run. The page is
+  `docs/perf/v0.4.1.md`.
 
 ## [0.4.0] - 2026-11-12
 
@@ -1042,7 +1048,8 @@ Project scaffold. Nothing to run beyond `fadodb version`.
 - Contributing guide, code of conduct, security policy, issue and pull request
   templates, roadmap.
 
-[Unreleased]: https://github.com/MojoHand70/fadodb/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/MojoHand70/fadodb/compare/v0.4.1...HEAD
+[0.4.1]: https://github.com/MojoHand70/fadodb/releases/tag/v0.4.1
 [0.4.0]: https://github.com/MojoHand70/fadodb/releases/tag/v0.4.0
 [0.3.0]: https://github.com/MojoHand70/fadodb/releases/tag/v0.3.0
 [0.2.0]: https://github.com/MojoHand70/fadodb/releases/tag/v0.2.0

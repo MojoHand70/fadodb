@@ -148,8 +148,8 @@ function that names it, and leaves the kind as built.
 - **An `at` may not read them**, as it may not read `USER()`: the
   moment of a timer is the document's, the same for everyone.
 - **No upgrade.** The schema is 6, and a database of schema 5, which is
-  what v0.4.0 makes, is refused when opened, as every schema change
-  before 1.0 has been.
+  what v0.4.0 and v0.4.1 make, is refused when opened, as every schema
+  change before 1.0 has been.
 
 Measured, in memory: every benchmark of the gate keeps its
 allocations, `BenchmarkTransition` 155, `BenchmarkOutbox` 459 and

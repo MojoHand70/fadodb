@@ -773,7 +773,14 @@ compiled into its predicate for the principal, and the documents come
 back projected (ADR-0041). The read rule of the class joins the
 predicate of every `Query` and `Count` for a caller who is not an
 administrator (ADR-0049), written by the same generator from the
-formula the Go VM runs for a read by id. The SQL endpoint adds no rule
+formula the Go VM runs for a read by id. The caller's part of the rule
+is decided first: an `INGROUP` of a group has one answer for the whole
+statement, so `owner = USER() OR INGROUP("finance")` adds nothing for a
+member of finance and is `owner = USER()` for anybody else, a comparison
+the index on `owner` answers; a statement is kept for each outcome. The
+rule offers its comparisons to an index only where the caller's own
+condition offers none, since SQLite has no statistics to choose between
+two. The SQL endpoint adds no rule
 and reads every row for every caller, until ADR-0051 says who may use
 it.
 

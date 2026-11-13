@@ -61,6 +61,17 @@ All notable changes to FadoDB are recorded here. The format follows
 - `conformance/access/` is the suite of the rules: every path, for every
   caller. `BenchmarkTransitionAccess` is in the benchmark gate: a
   transition on a class with rules allocates what it does without them.
+- A filter decides the caller's part of a read rule before it writes
+  its statement (ADR-0049, item 5). `INGROUP("finance")` has one answer
+  for the whole statement, so `owner = USER() OR INGROUP("finance")` is
+  nothing at all for a member of finance and `owner = USER()` for
+  anybody else, and a statement is kept for each outcome, not for each
+  caller. A caller who sees only their own documents lists and counts
+  them through the index on the owner, at the cost of the same
+  condition written out.
+- A text variable compared with the caller, `owner = USER()`, is
+  answered from the variable's index in any filter, in a `where` as in
+  a read rule. Before, such a filter read every document of the class.
 
 ### Changed
 

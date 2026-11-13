@@ -26,6 +26,9 @@
 // a variable the principal may read in no state refuses the filter with
 // forbidden. The read rule of the class, the row predicate of ADR-0010,
 // joins the where of every filter for a caller who is not an
-// administrator (ADR-0049). A SQL statement sees every row and every
-// column, as ADR-0028 decided for the views.
+// administrator (ADR-0049). The caller's part of the rule, its INGROUP
+// calls, is answered before the statement is written and the rule
+// folded around the answers, so that what is left can seek an index; a
+// predicate is kept for each outcome. A SQL statement sees every row and
+// every column, as ADR-0028 decided for the views.
 package query

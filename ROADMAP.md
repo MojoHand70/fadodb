@@ -148,7 +148,11 @@ and left out of every filter, count and list of what is due; a refusal
 names the rule; a transition without a rule of its own asks `update`;
 and `conformance/access/` is the suite. A rule a class leaves out lets
 every caller through, as before, until the owner rules on the question
-ADR-0049 puts to him. Not built yet: the kind of actor (ADR-0050), who
+ADR-0049 puts to him. Its second step is built too: a filter decides
+the caller's part of a read rule before it writes its statement, so a
+caller who sees only their own documents lists them through the index
+on the owner, and a filter with a read rule costs what the same filter
+costs without one. Not built yet: the kind of actor (ADR-0050), who
 may define, operate and run SQL, and the rules of a table (ADR-0051).
 This page is updated when a phase starts and when it ends;
 it never describes a phase as done before its acceptance criteria pass.

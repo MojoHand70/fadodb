@@ -53,6 +53,8 @@ exactly so in a class or a formula.
 
 ## The codes of a refusal you meet first
 
+The whole list is in [The refusals](refusals.md).
+
 | Code | Meaning |
 |---|---|
 | `forbidden` | the caller may not do this. The refusal names the line of `access` or the variable |

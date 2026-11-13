@@ -60,9 +60,9 @@ the engine on each push.
 |---|---|---|
 | [The class definition](manual/class.md) | every block of a class and every word in it | **written** |
 | The formula language | values, operators, blanks, errors, text, dates, exact numbers | planned; today [ADR-0019](adr/0019-formula-language-semantics.md) and the suites under [conformance](../conformance/README.md) |
-| The functions | every function with its arguments and an example | planned, generated from the engine's own catalogue |
+| [The functions](manual/functions.md) | every function with its arguments and what it answers | **written**, generated from the engine's own catalogue |
 | The calls | every call of the Go package: what it takes, what it answers, what it may refuse with | planned; today the documentation of the `fado` package |
-| The refusals | every code: what it means, the place it names, how to fix it | planned, generated from the engine's own list |
+| [The refusals](manual/refusals.md) | every code and what it means | **written**, generated from the engine's own constants; the fix for each comes with the guides |
 | Tables | reference data: defining, importing, looking up | planned; today [ADR-0037](adr/0037-explicit-tables-and-the-compiled-lookup.md) |
 | [Actions](actions.md) | defining an action, calling another system, secrets | **written** |
 | Views and SQL | the views the engine makes for each class, and reading them with SQL | planned; today [architecture.md](architecture.md) |

@@ -165,6 +165,66 @@ record.
     - The engine's own moves when one timer comes for many documents,
       which the worker makes one transaction each (ADR-0047).
 
+## Details settled while building
+
+- **The names.** The commands are `TransitionMany` and `PreviewMany`.
+  An entry of the reply is a `MoveOutcome`: `ID`, and either `Document`
+  or `Refusal`, with `Moved()` saying which. The bound is the constant
+  `MaxMany`, 10,000.
+- **The stored key.** The commit of a document carries the key of the
+  batch, a `#` and the document's id: `october#INV-417`. A key that
+  begins with the outbox's prefix refuses the whole call with
+  `bad_value`, as it refuses a single command (ADR-0044).
+- **One mark, not one a document.** The savepoint of item 3 is set
+  before a document and released when the document has moved. A refused
+  document returns to it and leaves it standing for the next one, so a
+  run of refused documents costs one mark. Setting and releasing it
+  takes 0.47 µs and 6 allocations (`BenchmarkSavepoint`), a little over
+  one in a hundred of what a move costs.
+- **What stops the batch.** An error of a document with the code
+  `storage`, or the caller's context having ended, takes the whole
+  batch back. A context that has ended comes back with the code
+  `storage`, as it does from a single command.
+- **A preview holds nothing.** The key a preview was given is not held
+  after it, since the commits that carried it are rolled back, and the
+  moment of the earliest wake-up its commits queued is forgotten with
+  them, so the worker is not woken for a row that does not exist.
+- **A refusal that is the same for every document**, such as a value
+  for a variable the class does not have, is found for each document
+  and reported with each. Only the two questions item 5 names are asked
+  once for the call.
+- **A document refused after it was written.** Every refusal the engine
+  makes today comes before the first write of the document. The mark is
+  there all the same, and a test refuses a document after its version,
+  its history row, its event and its action are written, and finds
+  nothing of it left.
+
+The build measured the record on 2026-11-13, on the reference machine,
+with SQLite 1.62.0. On disk, 1,000,000 commits a row, in the campaign
+of commits (`TestCommitCampaign`):
+
+| Work | Rate | p50 | p99 | A million documents |
+|---|---|---|---|---|
+| `Transition`, one transaction each | 12,427 a second | 0.059 ms | 0.169 ms | 80 seconds |
+| `TransitionMany`, 1,000 a call | 27,257 a second | 35.3 ms a call | 49.4 ms a call | 37 seconds |
+
+- **The budget holds**: 27,257 documents a second against the 15,000
+  of the record, 2.2 times a command each.
+- **In memory**, where the transaction costs less, a move of a batch
+  takes 36 µs and 147 allocations (`BenchmarkTransitionMany`, 36.2 ms
+  for 1,000) against 55 µs and 155 for `Transition`. A refused document
+  takes 5.8 µs (`BenchmarkTransitionManyRefused`), a sixth of a moved
+  one, and a previewed move 31 µs (`BenchmarkPreviewMany`).
+- **Another writer while batches run back to back.** 1,000 single sets
+  were made while batches moved 265,000 documents with no pause
+  between them. Half of the sets did not wait: 0.15 ms at the median.
+  One in ten waited two batches, 73 ms; the 99th of a hundred 77 ms,
+  and the slowest 120 ms. A commit that arrives during a batch waits
+  for it to end, and it may wait for the next one as well, since the
+  writer's lock is not handed over in the order of arrival. A caller
+  who moves many documents while people work can leave a pause between
+  two calls.
+
 ## Consequences
 
 - Closing a period is a call for each thousand documents, and its reply

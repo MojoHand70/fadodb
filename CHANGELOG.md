@@ -6,6 +6,33 @@ All notable changes to FadoDB are recorded here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- `TransitionMany` moves many documents by one call (ADR-0048): up to
+  10,000 documents of one class, named by their ids, along one
+  transition, in the order given and in one transaction. Each move is
+  the commit `Transition` makes, with its own guard, rights, rules,
+  version, history row and event. A document that cannot move does not
+  stop the others: the reply has one `MoveOutcome` for each id, the
+  document after its move or the refusal with its code, and a refused
+  document is left as it was. The call's own error is for the call:
+  `unknown_class`, `unknown_transition`, `too_many_elements`,
+  `bad_value` for an id named twice, `not_allowed` for `At`, or a
+  failure of the database, after which nothing has moved. `Key` is held
+  for each document, as the key, `#` and the id, so the call sent again
+  moves no document twice. The values are the same for every document,
+  and a guard that counts other documents sees the moves made earlier
+  in the same batch.
+- `PreviewMany` runs the same batch and rolls it back: what the call
+  would answer for every document, now or at a moment given with `At`,
+  with nothing written and no action queued.
+- Measured on disk at 1,000,000 documents: 27,257 documents a second in
+  batches of 1,000, against 12,427 a second by `Transition`, a command
+  each; a million documents in 37 seconds where they took 80. The
+  budget of ADR-0048 is 15,000. `BenchmarkTransitionMany` is in the
+  benchmark gate, and the campaign of commits has two more rows: the
+  batch, and single commits made while batches run.
+
 ## [0.4.0] - 2026-11-12
 
 ### Added

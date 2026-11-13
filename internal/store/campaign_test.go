@@ -20,7 +20,9 @@ import (
 // (ADR-0012), commits whose formulas look a table up (ADR-0036), the
 // statechart rows of ADR-0040: a transition, a transition with values, a
 // chain of three state changes in one command and the listing of ten
-// candidates; and the time to open the database afterwards. It writes to
+// candidates; the batch of moves of ADR-0048 against its 15,000 documents
+// per second, and single commits made while batches run back to back;
+// and the time to open the database afterwards. It writes to
 // disk and runs only with FADODB_BENCH_DIR set to a directory on a real
 // disk; FADODB_BENCH_COMMITS sizes it, 100,000 by default, and
 // FADODB_BENCH_WAL_MB sets the log size at which the checkpointer
@@ -258,6 +260,83 @@ func TestCommitCampaign(t *testing.T) {
 		lat = append(lat, time.Since(t0))
 	}
 	report("transition with values", n, lat, time.Since(start))
+
+	// 8b. The same transitions in batches of 1,000 (ADR-0048): one
+	// transaction a batch, a commit a document; the latency is the
+	// batch's. The documents of a batch are in one state, since every
+	// pass above went over all of them alike.
+	window := func(done, most int) (string, []string, error) {
+		lo := done % len(flows)
+		hi := min(lo+batch, len(flows), lo+most)
+		name := move(lo)
+		for k := lo + 1; k < hi; k++ {
+			if move(k) != name {
+				return "", nil, fmt.Errorf("the documents of a batch are in different states at %d", k)
+			}
+		}
+		return name, flows[lo:hi], nil
+	}
+	lat = lat[:0]
+	start = time.Now()
+	for done := 0; done < n; {
+		name, many, err := window(done, n-done)
+		if err != nil {
+			t.Fatal(err)
+		}
+		t0 := time.Now()
+		out, err := s.TransitionMany(ctx, "Flow", name, many, nil, As(alice))
+		if err != nil {
+			t.Fatal(err)
+		}
+		lat = append(lat, time.Since(t0))
+		for j := range out {
+			if !out[j].Moved() {
+				t.Fatalf("a document of a batch did not move: %v", out[j].Refusal)
+			}
+		}
+		done += len(many)
+	}
+	report("transition, batched 1,000 per transaction", n, lat, time.Since(start))
+
+	// 8c. Another writer while batches run back to back: single sets on
+	// the invoices, each of which waits its turn behind a batch. The
+	// batches go on until the sets are done.
+	stop, movedBy := make(chan struct{}), make(chan int)
+	go func() {
+		moved := 0
+		for {
+			select {
+			case <-stop:
+				movedBy <- moved
+				return
+			default:
+			}
+			// The batches go on where the row above stopped.
+			name, many, err := window(n+moved, batch)
+			if err == nil {
+				_, err = s.TransitionMany(ctx, "Flow", name, many, nil, As(alice))
+			}
+			if err != nil {
+				t.Error(err)
+				movedBy <- moved
+				return
+			}
+			moved += len(many)
+		}
+	}()
+	between := min(n, 1000)
+	lat = lat[:0]
+	start = time.Now()
+	for i := 0; i < between; i++ {
+		t0 := time.Now()
+		if _, err := s.Set(ctx, "Invoice", ids[i%docs], set(2*n+i), As(alice)); err != nil {
+			t.Fatal(err)
+		}
+		lat = append(lat, time.Since(t0))
+	}
+	elapsed := time.Since(start)
+	close(stop)
+	report(fmt.Sprintf("set, one transaction each, while batches moved %s documents", thousands(<-movedBy)), between, lat, elapsed)
 
 	// 9. A chain of three: every command on the Chain class is a named
 	// transition and two eventless ones, three versions, three history

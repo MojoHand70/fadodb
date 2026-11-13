@@ -607,3 +607,91 @@ func Example_timed() {
 	// on the 5th: 1 reminder, made as ann, still waiting
 	// on the 10th: expired
 }
+
+// Many documents moved by one call (ADR-0048): Ann books the invoices of
+// October. One has no cost centre, so its guard is FALSE: the others are
+// booked, and that one comes back with its reason. PreviewMany says so
+// beforehand and writes nothing, and the key makes the call safe to send
+// again.
+func Example_many() {
+	tmp, err := os.MkdirTemp("", "fado-example")
+	if err != nil {
+		panic(err)
+	}
+	defer os.RemoveAll(tmp)
+	db, err := fado.Open(filepath.Join(tmp, "example.fado"), fado.Options{})
+	if err != nil {
+		panic(err)
+	}
+	defer db.Close()
+	ctx := context.Background()
+
+	_, err = db.DefineClass(ctx, []byte(`{
+	  "name": "Invoice",
+	  "variables": {"cost_centre": {"type": "text"}},
+	  "states": {"initial": "approved", "list": ["approved", "booked"]},
+	  "transitions": [
+	    {"name": "book", "from": "approved", "to": "booked", "guard": "NOT ISBLANK(cost_centre)"}
+	  ]
+	}`))
+	if err != nil {
+		panic(err)
+	}
+	ann := fado.As(fado.Principal{ID: "ann"})
+	ids := []string{"INV-416", "INV-417", "INV-418"}
+	for _, id := range ids {
+		values := fado.Values{"cost_centre": "sales"}
+		if id == "INV-417" {
+			values = nil
+		}
+		if _, err := db.Create(ctx, "Invoice", values, ann, fado.WithID(id)); err != nil {
+			panic(err)
+		}
+	}
+
+	// Tried first: the answer of the call, and nothing written.
+	would, err := db.PreviewMany(ctx, "Invoice", "book", ids, nil, ann)
+	if err != nil {
+		panic(err)
+	}
+	for _, m := range would {
+		if !m.Moved() {
+			fmt.Println("would refuse", m.ID+":", m.Refusal.Code)
+		}
+	}
+
+	// The call: the two that can move do, and the third is reported.
+	out, err := db.TransitionMany(ctx, "Invoice", "book", ids, nil, ann, fado.Key("october"))
+	if err != nil {
+		panic(err)
+	}
+	for _, m := range out {
+		if m.Moved() {
+			fmt.Println(m.ID, "is", m.Document.State)
+		} else {
+			fmt.Println(m.ID, "refused:", m.Refusal.Code)
+		}
+	}
+
+	// Ann gives the invoice its cost centre and sends the same call again
+	// with the same key. The two booked before are not booked twice.
+	if _, err := db.Set(ctx, "Invoice", "INV-417", fado.Values{"cost_centre": "sales"}, ann); err != nil {
+		panic(err)
+	}
+	out, err = db.TransitionMany(ctx, "Invoice", "book", ids, nil, ann, fado.Key("october"))
+	if err != nil {
+		panic(err)
+	}
+	for _, m := range out {
+		fmt.Println(m.ID, "is", m.Document.State, "at version", m.Document.Version)
+	}
+
+	// Output:
+	// would refuse INV-417: guard_false
+	// INV-416 is booked
+	// INV-417 refused: guard_false
+	// INV-418 is booked
+	// INV-416 is booked at version 2
+	// INV-417 is booked at version 3
+	// INV-418 is booked at version 2
+}

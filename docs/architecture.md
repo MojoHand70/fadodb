@@ -717,7 +717,7 @@ key order, to the function the Go VM adds with.
 - The principal comes from the embedder on every call: an id, groups, an
   admin flag and its business day (ADR-0027), and what the caller is, a
   person, an agent or a service, with the id of whoever it acts for
-  (ADR-0050, proposed and built). The engine trusts all of it, writes
+  (ADR-0050). The engine trusts all of it, writes
   the kind and the id acted for on every event beside the actor's id,
   and answers them to `USERKIND()` and `ACTINGFOR()`, so that a class
   can keep a step for a person and the log can say which steps an agent
@@ -744,23 +744,29 @@ key order, to the function the Go VM adds with.
   the stored document before the assignments, every document returned is
   projected for the principal, and a filter compiles the read right of
   the variables it names into its predicate. The class-level `read`,
-  `create`, `update` and `delete` rules are enforced too, on the records
-  of Phase 5 as proposed (ADR-0049): a document its caller may not see
+  `create`, `update` and `delete` rules are enforced too (ADR-0049): a
+  document its caller may not see
   is answered as one that does not exist by every call that names it,
   and left out of a filter, a count and the list of what is due, the
   read rule being one more predicate; a caller who sees a document and
   may not do what they ask is refused with `forbidden` and the place of
   the rule. A named transition without a rule of its own asks `update`.
   What the engine does by itself asks nothing. A rule a class leaves
-  out lets every caller through, until the owner rules on the question
-  ADR-0049 puts to him. Three kinds of work are not about one document:
+  out still lets every caller through; the owner ruled on 2026-11-13
+  that it lets nobody through, and that is built with ADR-0052. Three
+  kinds of work are not about one document:
   defining, operating the queue, and running SQL. The host program
   names the groups that may do each in `Options.Designers`,
   `Options.Operators` and `Options.Analysts`, and an administrator may
-  do all three (ADR-0051, proposed and built). A host program that
-  names no list is asked nothing, as before, until the owner accepts
-  the record. Not built yet: the record of who defined each version. The change stream comes with the server in Phase 6. A
-  call without a principal is nobody.
+  do all three (ADR-0051). A host program that names no list is still
+  asked nothing. Accepted and not built yet (ADR-0052, ADR-0053): four
+  system groups with fixed names in place of the administrator's flag
+  and the three lists, a content administrator whose acts past a rule
+  carry a reason that the event keeps, work nobody was given done by
+  nobody, the record of who defined each version, and substitutions
+  that the engine keeps and checks, where today it trusts the host on
+  for whom a caller acts. The change stream comes with the server in
+  Phase 6. A call without a principal is nobody.
 
 ### Querying
 

@@ -1,6 +1,6 @@
 # ADR-0050: Person, agent or service, and for whom it acts
 
-- Status: Proposed, with one question open for the owner; amends ADR-0027 (two more facts of a principal), ADR-0026 (the delivered event carries them), ADR-0044 (the outbox row carries them), ADR-0019 (two context functions)
+- Status: Accepted; amends ADR-0027 (two more facts of a principal), ADR-0026 (the delivered event carries them), ADR-0044 (the outbox row carries them), ADR-0019 (two context functions); amended by ADR-0053 (the engine checks for whom a caller acts against a recorded substitution)
 - Date: 2026-11-13
 
 ## Context
@@ -28,9 +28,9 @@ that to the host and records the one id it is given, so the log says
 `bob` and not for whom.
 
 The owner agreed on 2026-11-11 that this belongs to Phase 5 (ADR-0047,
-item 16) and on 2026-11-13 that it is in the phase. Everything below is
-proposed here and is his to change. The question at the end is his to
-rule.
+item 16) and on 2026-11-13 that it is in the phase. He accepted the
+record on 2026-11-13 and ruled on the question it put to him. The
+ruling is at the end.
 
 ## Decision
 
@@ -123,9 +123,8 @@ rule.
 ## Details settled while building
 
 Built on 2026-11-13, on the record as proposed, as the third step of
-the phase. Question B is assumed as recommended; the other answer
-changes `For` into the id of the assistant and `ACTINGFOR()` into a
-function that names it, and leaves the kind as built.
+the phase. Question B was assumed as recommended, and the owner then
+ruled it so.
 
 - **The names.** `Principal.Kind` and `Principal.For`; the constants
   `ActorPerson`, `ActorAgent` and `ActorService`; the functions
@@ -156,31 +155,29 @@ allocations, `BenchmarkTransition` 155, `BenchmarkOutbox` 459 and
 `BenchmarkTimer` 394. A commit takes 128 bytes more, 1.5%, for the two
 texts in the context of its formulas.
 
-## Open question
-
-This one is the owner's to rule. The record assumes the first answer
-until he does.
+## The owner's ruling
 
 **B. When Ann's assistant acts for Ann, who has acted: the assistant or
 Ann?** Take a class written for people: `"read": "owner = USER()"`, and
 four eyes on `approve`, `CREATEDBY() <> USER()`.
 
-- *The assistant acts* (items 1 and 3). `USER()` is `agent-7`. The
-  class above does not let it in until its author adds `ACTINGFOR()`.
-  The log reads "agent-7, an agent, for ann". Ann may approve what her
-  assistant drafted, since two different ids are on the document; a
-  class that forbids it says so (item 6).
-- *Ann acts, through an assistant.* `USER()` is `ann`, the kind is
-  `agent`, and a third fact names the assistant. Every class written
-  for people works for their assistants at once, with everything Ann
-  may do, approvals included; a class keeps a step for people by saying
-  `USERKIND() = "person"`. The log reads "ann, through agent-7". Ann
-  may not approve what her assistant drafted, since both are `ann`.
+**Ruled on 2026-11-13: the one who acts** (items 1 and 3). `USER()` is
+`agent-7`. The class above does not let it in until its author adds
+`ACTINGFOR()`. The log reads "agent-7, an agent, for ann". Ann may
+approve what her assistant drafted, since two different ids are on the
+document; a class that forbids it says so (item 6).
 
-Recommended: the assistant acts. What an agent may do is then written
-in the class, where it can be read and checked, and nothing passes to
-an agent because its author forgot a line. It is also what ADR-0027
-says of people: the engine records the id that acted.
+What an agent may do is then written in the class, where it can be read
+and checked, and nothing passes to an agent because its author forgot a
+line. It is also what ADR-0027 says of people: the engine records the
+id that acted. The same answer holds for a person who substitutes for
+another, and ADR-0053 gives the case that needs it: with the other
+answer, Bob could approve his own expense as Ann.
+
+The answer the owner did not take was that Ann acts, through an
+assistant: `USER()` is `ann`, and every class written for people works
+for their assistants at once, with everything Ann may do, approvals
+included.
 
 ## Consequences
 

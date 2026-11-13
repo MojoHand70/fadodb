@@ -1,6 +1,6 @@
 # ADR-0053: Acting for somebody: a recorded substitution for people and assistants
 
-- Status: Proposed, with two questions open for the owner beside question B of ADR-0050; amends ADR-0027 (the engine keeps who may act for whom and checks it, where ADR-0027 left it to the host), ADR-0050 (the claim of its item 1 is checked)
+- Status: Accepted; amends ADR-0027 (the engine keeps who may act for whom and checks it, where ADR-0027 left it to the host), ADR-0050 (the claim of its item 1 is checked)
 - Date: 2026-11-13
 
 ## Context
@@ -24,8 +24,9 @@ somebody acts, for somebody else, because they were allowed to. They
 differ in what the one who acts is, a person or an agent, and in how
 long it lasts.
 
-Everything below is proposed and is the owner's to change. The
-questions at the end are his to rule.
+The owner read the record with its questions on 2026-11-13, said that
+the answers recommended are his own, and accepted it. His rulings are
+at the end.
 
 ## Decision
 
@@ -56,8 +57,8 @@ questions at the end are his to rule.
      that moment.
 
 3. **`USER()` is the one who acts.** This is question B of ADR-0050
-   with its recommended answer, and a substitute gives a second reason
-   for it. Bob files an expense. Ann is its approver, with four eyes on
+   as the owner ruled it, and a substitute gives a second reason for
+   it. Bob files an expense. Ann is its approver, with four eyes on
    `approve`: `CREATEDBY() <> USER()`. Ann goes on leave and Bob
    substitutes for her.
 
@@ -92,7 +93,8 @@ questions at the end are his to rule.
 
    - The person: Ann gives a substitution for Ann and withdraws it at
      any time.
-   - When Ann cannot: question I.
+   - When Ann cannot: a database administrator, never to themselves
+     (question I).
    - Nobody passes one on. Bob, acting for Ann, cannot let Carol act
      for Ann, and nobody acts for somebody who acts for somebody
      (ADR-0050, item 8).
@@ -134,38 +136,27 @@ questions at the end are his to rule.
    - Telling Bob that he now acts for Ann. A rule on the class can, as
      on any class, once the owner wants it.
 
-## Open questions
+## The owner's rulings
 
-These are the owner's to rule, with question B of ADR-0050, which item
-3 answers as recommended there.
+All of 2026-11-13.
 
-**H. Who checks that Bob may act for Ann?**
+**B. When Bob or an assistant acts for Ann, who is `USER()`? The one
+who acts** (item 3, and ADR-0050).
 
-- *The engine, against a recorded substitution, in this phase* (items
-  1, 2, 7 and 8).
-- *The host, as today* (ADR-0027, and ADR-0050 as built). Nothing is
-  built. The database cannot say who allowed it, every host does it in
-  its own way, and what an agent says of "for" is as good as its host.
-- *The engine, with its own users in Phase 6.* Substitutions come with
-  the users and the group lists, in the package of ADR-0027. Phase 5
-  closes sooner, and until then it is as built.
+**H. Who checks that Bob may act for Ann? The engine, against a
+recorded substitution, in this phase** (items 1, 2, 7 and 8). FadoDB
+gives the authority to act and keeps the evidence, and "for whom" was
+the one fact in the log that nobody checked. The answers not taken:
+the host, as before, where the database cannot say who allowed it and
+what an agent says of "for" is as good as its host; and the engine
+with its own users in Phase 6, which closes Phase 5 sooner.
 
-Recommended: the engine, in this phase. FadoDB gives the authority to
-act and keeps the evidence, and "for whom" is the one fact in the log
-that nobody checks.
-
-**I. Who gives a substitution when the person cannot?**
-
-- *A database administrator, never to themselves.* They will keep the
-  users in Phase 6. The substitution says who gave it, and the person
-  sees it and can withdraw it.
-- *A content administrator, never to themselves.* They already act past
-  the rules, with a reason.
-- *Nobody.* Only the person gives one. Where they did not, each
-  document that is stuck needs a content administrator's override
-  (ADR-0052).
-
-Recommended: a database administrator, never to themselves.
+**I. Who gives a substitution when the person cannot? A database
+administrator, never to themselves.** They will keep the users in Phase
+6. The substitution says who gave it, and the person sees it and can
+withdraw it. The answers not taken: a content administrator, who
+already acts past the rules; and nobody, where each document that is
+stuck needs a content administrator's override (ADR-0052).
 
 ## Consequences
 

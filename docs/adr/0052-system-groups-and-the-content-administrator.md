@@ -1,6 +1,6 @@
 # ADR-0052: System groups: who runs the database, who designs, who reads everything and who may act on any document
 
-- Status: Proposed, with four questions open for the owner; amends ADR-0010 and ADR-0027 (the administrator's flag gives way to four system groups), ADR-0041 (who passes the rights on variables), ADR-0033 (who opens a blob by its hash), ADR-0047 (an event says which rule was lifted, and why), ADR-0049 (who passes the rules of a class; a rule left out), ADR-0051 (the three lists the host names become system groups; work nobody was given; a table's rule left out; a version is read back with who defined it)
+- Status: Accepted; amends ADR-0010 and ADR-0027 (the administrator's flag gives way to four system groups), ADR-0041 (who passes the rights on variables), ADR-0033 (who opens a blob by its hash), ADR-0047 (an event says which rule was lifted, and why), ADR-0049 (who passes the rules of a class; a rule left out), ADR-0051 (the three lists the host names become system groups; work nobody was given; a table's rule left out; a version is read back with who defined it)
 - Date: 2026-11-13
 
 ## Context
@@ -37,8 +37,9 @@ A document can be stuck for two reasons, and they have different cures:
   may act past the rules when it was not.
 
 This record is about that somebody, and about keeping the other kinds
-of work away from them. Everything below is proposed and is the owner's
-to change. The four questions at the end are his to rule.
+of work away from them. The owner read it with its questions on
+2026-11-13, said that the answers recommended are his own, and accepted
+it. His rulings are at the end.
 
 ## Decision
 
@@ -102,8 +103,8 @@ to change. The four questions at the end are his to rule.
    - **Asking first says so.** `Preview` and `Transitions` answer that
      the act is open to this caller by override, and of which rule, so
      an agent knows before it acts that it will leave that mark.
-   - **A read by override leaves no trace**, as no read does today.
-     Question G.
+   - **A read by override leaves no trace**, as no read does today
+     (question G).
 
 5. **A rule left out lets nobody through.** This is question A of
    ADR-0049, in the owner's words of 2026-11-13: "a document with no
@@ -150,59 +151,44 @@ to change. The four questions at the end are his to rule.
      host program, reads everything in it. These groups guard the
      calls. Encrypting a database is not decided here.
 
-## Open questions
+## The owner's rulings
 
-These are the owner's to rule. Item 5 answers question A in his words
-of 2026-11-13, and item 6 answers question C in the same way, on which
-he has not spoken. Both wait for his word like the rest.
+All of 2026-11-13. Questions A and C came from ADR-0049 and ADR-0051.
 
-**D. Is the administrator split?**
+**A. What a class allows when it leaves a rule out: nobody** (item 5).
 
-- *Split in four* (items 1 and 3). Who runs the database does not read
-  it, who designs does not act on documents past their rules, and who
-  frees a stuck document cannot change a rule.
-- *One administrator, as today*, beside the three lists of ADR-0051.
-  One flag serves a host's own code. There is no content administrator
-  as a role of its own, and an act past the rules bears no mark.
+**C. Work the host gave to nobody: nobody does it** (item 6).
 
-Recommended: split in four.
+**D. Is the administrator split? In four** (items 1 and 3). Who runs
+the database does not read it, who designs does not act on documents
+past their rules, and who frees a stuck document cannot change a rule.
+The answer not taken was one administrator, as before, beside the three
+lists of ADR-0051: one flag for a host's own code, no content
+administrator as a role of its own, and no mark on an act past the
+rules.
 
-**E. Fixed system groups, or groups the host names?**
+**E. Fixed system groups, or groups the host names? Fixed names** (item
+2), which was the owner's suggestion. The same five words in every
+database, class, sample and skill, and a class can say
+`INGROUP("designers")`. The answer not taken was ADR-0051 as built,
+`Options.Designers` and the like: a host maps its directory without
+code of its own, and no class can speak of a role in words that hold in
+another database.
 
-- *Fixed names* (item 2), the owner's suggestion. The same five words
-  in every database, class, sample and skill, and a class can say
-  `INGROUP("designers")`.
-- *The host names its groups* (ADR-0051 as built: `Options.Designers`
-  and the like). A host maps its directory without code of its own. No
-  class can speak of a role in words that hold in another database.
+**F. How far does a content administrator reach? Everything a rule
+could allow anybody** (item 4): see, create, change values, delete and
+every transition, each with a reason and a mark. The mark is the
+control. The answer not taken was to see and to move only, which sends
+a document that waits for a person who left to a designer, for a
+transition that names somebody else.
 
-Recommended: fixed names.
-
-**F. How far does a content administrator reach?**
-
-- *Everything a rule could allow anybody* (item 4): see, create, change
-  values, delete, and every transition, each with a reason and a mark.
-- *See and move.* They see every document and may make any transition
-  whose guard holds, and may not create, change a value or delete past
-  the rules. A document that waits for a person who left then needs a
-  transition that names somebody else, so a class has to be designed
-  with one.
-
-Recommended: everything, with a reason and a mark. The mark is the
-control. A narrower reach sends an emergency to a designer.
-
-**G. Is a read by override recorded?**
-
-- *Not in this step.* A command by override is recorded and a read is
-  not, as no read is today. A content administrator can open any
-  document, and an analyst can read any through SQL, and the log does
-  not say which.
-- *Yes, now.* Each read that showed a document only by override writes
-  an entry. A read then takes the writer for a moment.
-
-Recommended: not in this step, and a record of its own for a log of
-such reads, SQL statements and reads by override together, before the
-phase is called done or with the server, as the owner chooses.
+**G. Is a read by override recorded? Not in this step.** A command by
+override is recorded and a read is not, as no read is today. A content
+administrator can open any document, and an analyst can read any
+through SQL, and the log does not say which. A log of such reads, SQL
+statements and reads by override together, gets a record of its own,
+before the phase is called done or with the server, as the owner
+chooses then.
 
 ## Consequences
 

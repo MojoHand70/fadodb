@@ -1,6 +1,6 @@
 # ADR-0045: Actions are an extension point: definitions, declared HTTP actions, registered Go actions, connections and results
 
-- Status: Accepted; amends ADR-0009 (built-in actions only, external code through `http.call`), ADR-0011 (action definitions join the definitions the command set carries), ADR-0026 (the delivered event is any event, and its schema), ADR-0027 (an action is registered with a definition; `http.call` belongs to the library, behind a switch)
+- Status: Accepted; amends ADR-0009 (built-in actions only, external code through `http.call`), ADR-0011 (action definitions join the definitions the command set carries), ADR-0026 (the delivered event is any event, and its schema), ADR-0027 (an action is registered with a definition; `http.call` belongs to the library, behind a switch); amended by ADR-0051 (who may define and try an action)
 - Date: 2026-11-09
 
 ## Context

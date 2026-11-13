@@ -1,6 +1,6 @@
 # ADR-0019: Formula language semantics: grammar, types, coercion, comparison, dates, text, composites and errors
 
-- Status: Accepted; amended by ADR-0021, ADR-0022 (exact numbers), ADR-0023 (date and datetime), ADR-0024 (/ by zero, IFERROR), ADR-0031 (field paths, object blankness and equality), ADR-0043 (what an error in an action means), ADR-0047 (the functions of a document's life)
+- Status: Accepted; amended by ADR-0021, ADR-0022 (exact numbers), ADR-0023 (date and datetime), ADR-0024 (/ by zero, IFERROR), ADR-0031 (field paths, object blankness and equality), ADR-0043 (what an error in an action means), ADR-0047 (the functions of a document's life), ADR-0050 (two context functions, `USERKIND()` and `ACTINGFOR()`)
 - Date: 2026-11-06
 
 ## Context

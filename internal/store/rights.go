@@ -181,7 +181,7 @@ func (s *Store) project(e *evaluator, c, vc *class, row *docRow, d *Document, p 
 // errors. A value for a name the class does not have is left to assign,
 // which refuses it.
 func (s *Store) checkWrites(c *class, cmd *command, row *docRow, evalCtx *formula.Context, res *result) *Error {
-	if c.rights == nil || cmd.o.principal.content() || cmd.engine || len(cmd.values) == 0 && cmd.op != opReset {
+	if c.rights == nil || cmd.engine || len(cmd.values) == 0 && cmd.op != opReset {
 		return nil
 	}
 	cells := c.cells(row.state)
@@ -209,6 +209,10 @@ func (s *Store) checkWrites(c *class, cmd *command, row *docRow, evalCtx *formul
 		}
 		held, err := s.wev.allowed(c, cells[i].write, row, evalCtx)
 		if held {
+			continue
+		}
+		if cmd.lifts() {
+			cmd.lift("/rights/" + row.state + "/" + cv.v.Name + "/write")
 			continue
 		}
 		e := forbiddenWrite(cmd.o.principal, cv.v.Name, row.state, cells[i].write, err)
@@ -245,17 +249,14 @@ func transitionRule(c *class, t *model.Transition) *formula.Program {
 
 // permitted evaluates a transition's access rule over the row for the
 // principal: TRUE permits; FALSE, a blank, another type and an error do
-// not, the error returned for the message. Every transition is permitted
-// for a content administrator. A transition without a rule of its own asks the
-// update rule of the class: who may change the document may move it,
-// until the transition says who (ADR-0049, item 2).
-func (s *Store) permitted(e *evaluator, c *class, t *model.Transition, row *docRow, evalCtx *formula.Context, p Principal) (bool, error) {
-	if p.content() {
-		return true, nil
-	}
+// not, the error returned for the message. A transition without a rule
+// of its own asks the update rule of the class: who may change the
+// document may move it, until the transition says who (ADR-0049, item
+// 2). What a content administrator makes of a refusal is the caller's.
+func (s *Store) permitted(e *evaluator, c *class, t *model.Transition, row *docRow, evalCtx *formula.Context) (bool, error) {
 	rule := transitionRule(c, t)
 	if rule == nil {
-		return e.may(c, ruleUpdate, row, evalCtx, p)
+		return e.may(c, ruleUpdate, row, evalCtx)
 	}
 	val, err := e.run(c, rule, row, evalCtx)
 	if err != nil {
@@ -267,9 +268,14 @@ func (s *Store) permitted(e *evaluator, c *class, t *model.Transition, row *docR
 // checkTransition refuses the command with forbidden when the named
 // transition's access rule is not TRUE for the principal over the stored
 // document, in the state it leaves (ADR-0041).
-func (s *Store) checkTransition(c *class, t *model.Transition, row *docRow, evalCtx *formula.Context, p Principal) *Error {
-	ok, err := s.permitted(&s.wev, c, t, row, evalCtx, p)
+func (s *Store) checkTransition(c *class, t *model.Transition, row *docRow, evalCtx *formula.Context, cmd *command) *Error {
+	p := cmd.o.principal
+	ok, err := s.permitted(&s.wev, c, t, row, evalCtx)
 	if ok {
+		return nil
+	}
+	if cmd.lifts() {
+		cmd.lift(transitionRulePath(c, t))
 		return nil
 	}
 	if transitionRule(c, t) == nil {
@@ -279,6 +285,15 @@ func (s *Store) checkTransition(c *class, t *model.Transition, row *docRow, eval
 		return e
 	}
 	return forbiddenTransition(p, t, row.state, c.cls.Def.Access.Transition[t.Name], err)
+}
+
+// transitionRulePath is the place of the rule a transition asks: its own,
+// or the update rule of the class when it has none.
+func transitionRulePath(c *class, t *model.Transition) string {
+	if transitionRule(c, t) == nil {
+		return "/access/update"
+	}
+	return "/access/transition/" + t.Name
 }
 
 // who names the principal in a message.

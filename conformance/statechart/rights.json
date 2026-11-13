@@ -40,7 +40,7 @@
     {"name": "a read as a stranger hides the payout and shows the note in open", "do": "get", "doc": "c1", "as": "bob", "expect": {"absent": ["payout"], "present": ["note", "amount", "owner"]}},
     {"name": "an administrator reads everything", "do": "get", "doc": "c1", "as": "root", "expect": {"present": ["payout", "note"]}},
     {"name": "a call without a principal is nobody", "do": "get", "doc": "c1", "expect": {"absent": ["payout"], "present": ["note"]}},
-    {"name": "an administrator sets what a group list guards", "do": "set", "doc": "c1", "as": "root", "values": {"payout": 10}, "expect": {"version": 3, "present": ["payout"]}},
+    {"name": "an administrator sets what a group list guards", "do": "set", "doc": "c1", "as": "root", "reason": "asked to by the owner of the process", "values": {"payout": 10}, "expect": {"version": 3, "present": ["payout"]}},
     {"name": "nobody may not set the amount", "do": "set", "doc": "c1", "values": {"amount": 1}, "expect": {"code": "forbidden"}},
     {"name": "rights are read in the state the command arrives in: the note is set on the way into review", "do": "transition", "doc": "c1", "transition": "submit", "as": "alice", "values": {"note": "sent"},
      "expect": {"state": "review", "version": 4, "values": {"note": "sent"}, "absent": ["payout"]}},
@@ -70,6 +70,6 @@
     {"name": "finance pays", "do": "transition", "doc": "c1", "transition": "pay", "as": "fin", "expect": {"state": "paid", "version": 5, "present": ["payout", "note"]}},
     {"name": "an administrator never bypasses a guard", "do": "create", "doc": "c3", "as": "alice", "values": {"amount": 1}, "expect": {"state": "open"}},
     {"do": "transition", "doc": "c3", "transition": "submit", "as": "alice", "expect": {"state": "review"}},
-    {"do": "transition", "doc": "c3", "transition": "pay", "as": "root", "expect": {"code": "guard_false"}}
+    {"do": "transition", "doc": "c3", "transition": "pay", "as": "root", "reason": "asked to by the owner of the process", "expect": {"code": "guard_false"}}
   ]
 }

@@ -192,7 +192,10 @@ type outboxRow struct {
 	action    string
 	args      []byte
 	principal Principal
-	depth     int
+	// reason is the reason the command that queued the row gave for an
+	// override, which the action needs for one of its own (ADR-0052).
+	reason string
+	depth  int
 }
 
 func (r *outboxRow) key() string { return r.eventID + ":" + strconv.FormatInt(r.idx, 10) }
@@ -540,12 +543,19 @@ func (s *Store) evalTemplate(run *ruleRun, row *docRow, t *model.Template) (any,
 // read as before: the row gained no column, since the driver allocates
 // for every column the statement that reads the due rows returns, on
 // every action the worker runs.
-func principalText(p Principal) []byte {
+func principalText(p Principal, reason string) []byte {
 	if p.Kind == "" && p.For == "" && len(p.System) == 0 {
 		groups, _ := json.Marshal(p.Groups)
 		return groups
 	}
-	more, _ := json.Marshal(principalMore{Groups: p.Groups, Kind: p.Kind, For: p.For, System: p.System})
+	// The reason a content administrator gave goes with what the commit
+	// queued: its action acts on another document as the same caller,
+	// and where that is an override too it needs the reason (ADR-0052,
+	// item 4).
+	if !p.content() {
+		reason = ""
+	}
+	more, _ := json.Marshal(principalMore{Groups: p.Groups, Kind: p.Kind, For: p.For, System: p.System, Reason: reason})
 	return more
 }
 
@@ -554,18 +564,21 @@ type principalMore struct {
 	Kind   string   `json:"kind,omitempty"`
 	For    string   `json:"for,omitempty"`
 	System []string `json:"system,omitempty"`
+	Reason string   `json:"reason,omitempty"`
 }
 
-// readPrincipalText reads what principalText wrote into the principal.
-func readPrincipalText(text string, p *Principal) {
+// readPrincipalText reads what principalText wrote into the principal,
+// and returns the reason the row carries.
+func readPrincipalText(text string, p *Principal) string {
 	if strings.HasPrefix(text, "{") {
 		var more principalMore
 		if json.Unmarshal([]byte(text), &more) == nil {
 			p.Groups, p.Kind, p.For, p.System = more.Groups, more.Kind, more.For, more.System
 		}
-		return
+		return more.Reason
 	}
 	_ = json.Unmarshal([]byte(text), &p.Groups)
+	return ""
 }
 
 // writeQueued writes the outbox rows of one commit of a command, in the
@@ -575,7 +588,7 @@ func readPrincipalText(text string, p *Principal) {
 // too_deep and its action_failed event.
 func (s *Store) writeQueued(ctx context.Context, c *class, cmd *command, commit int, eventID, docID string, version int64, day, secs int64, now time.Time) (int, error) {
 	p := cmd.o.principal
-	groups := principalText(p)
+	groups := principalText(p, cmd.o.reason)
 	n := 0
 	for i := range s.queued {
 		q := &s.queued[i]
@@ -697,7 +710,7 @@ func (s *Store) dueRows(ctx context.Context, due *sql.Stmt, now int64) ([]*outbo
 		// with what that principal was and for whom it acted (ADR-0050).
 		r.principal = Principal{ID: id.String}
 		if groups.Valid {
-			readPrincipalText(groups.String, &r.principal)
+			r.reason = readPrincipalText(groups.String, &r.principal)
 		}
 		out = append(out, r)
 	}
@@ -903,7 +916,7 @@ func (s *Store) perform(ctx context.Context, row *outboxRow, day int64, now time
 	}
 	// The command the action stands for: the worker's own, caused by the
 	// event that queued it, on that event's business day.
-	cmd := command{o: options{principal: row.principal, key: outboxKeyPrefix + row.key()},
+	cmd := command{o: options{principal: row.principal, key: outboxKeyPrefix + row.key(), reason: row.reason},
 		cause: row.eventID, depth: row.depth + 1, internal: true, day: day, hasDay: true}
 	switch row.action {
 	case model.ActionCreate:

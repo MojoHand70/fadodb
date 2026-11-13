@@ -56,7 +56,7 @@
     {"do": "transition", "doc": "c", "transition": "pay", "as": "fin", "expect": {"state": "paid"}},
     {"do": "drain", "doc": "c", "expect": {"drained": 1, "outbox": [{"action": "create", "status": "dead", "code": "not_in_values"}]}},
 
-    {"name": "the actions of one document run in the order they were queued: the second create of the same id is the one refused", "do": "transition", "doc": "a", "transition": "again", "as": "root",
+    {"name": "the actions of one document run in the order they were queued: the second create of the same id is the one refused", "do": "transition", "doc": "a", "transition": "again", "as": "root", "reason": "asked to by the owner of the process",
      "expect": {"state": "paid", "version": 3, "outbox": [{"action": "create", "status": "done"}, {"action": "create", "status": "pending", "as": "root"}]}},
     {"do": "drain", "doc": "a",
      "expect": {"drained": 1, "outbox": [{"action": "create", "status": "done"}, {"action": "create", "status": "dead", "code": "duplicate"}],

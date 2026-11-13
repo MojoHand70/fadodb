@@ -44,10 +44,10 @@ Website: [fadodb.org](https://fadodb.org).
 > change and delete a document, and four system groups hold the work
 > that is not about one document: who runs the database, who designs,
 > who acts on any document and who runs SQL. A rule a class leaves out
-> lets nobody through, so a class says who may. The reason a content
-> administrator must give for acting past a rule, and substitutions,
-> are accepted and not built yet. The server comes with its phase. The
-> numbers are in
+> lets nobody through, so a class says who may. A content administrator
+> who acts past a rule gives a reason, and the event keeps it.
+> Substitutions are accepted and not built yet. The server comes with
+> its phase. The numbers are in
 > [docs/perf/](docs/perf/), the plan in [ROADMAP.md](ROADMAP.md).
 
 ## What it is
@@ -146,7 +146,10 @@ without refusing the class. Defining, operating the outbox
 and running SQL, which reads every row, are each for a system group:
 `designers`, `administrators` and `analysts`. A fourth,
 `content-administrators`, sees every document and acts on it past the
-rules of its class, never past a guard. The host program gives a caller
+rules of its class, never past a guard. Such an act is an override: the
+command carries a reason, `fado.Reason("the approver left")`, or is
+refused with `reason_required`, and its event records the rules lifted
+and the reason. The host program gives a caller
 its system groups beside its other groups, in `Principal.System`;
 nobody is in one unless it says so, and a call without a principal
 does none of this work. `INGROUP("everyone")` is true for every caller

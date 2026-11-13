@@ -51,10 +51,10 @@
     {"name": "everyone in a where of Ann's own filter", "do": "count", "as": "ann", "where": "INGROUP(\"everyone\") AND NOT INGROUP(\"designers\")", "expect": {"count": 1}},
 
     {"name": "a content administrator sees every memo", "do": "query", "as": "content", "expect": {"docs": ["m1"]}},
-    {"name": "and changes one past the update rule", "do": "set", "doc": "m1", "as": "content", "values": {"total": 0}, "expect": {"version": 3}},
-    {"name": "but never past a guard: nothing to send", "do": "transition", "doc": "m1", "as": "content", "transition": "send", "expect": {"code": "guard_false"}},
-    {"name": "with the guard holding, the content administrator sends it past the rule of the transition", "do": "set", "doc": "m1", "as": "content", "values": {"total": 9}, "expect": {"version": 4}},
-    {"name": "the memo is sent", "do": "transition", "doc": "m1", "as": "content", "transition": "send", "expect": {"state": "sent"}},
+    {"name": "and changes one past the update rule", "do": "set", "doc": "m1", "as": "content", "reason": "asked to by the owner of the process", "values": {"total": 0}, "expect": {"version": 3}},
+    {"name": "but never past a guard: nothing to send", "do": "transition", "doc": "m1", "as": "content", "reason": "asked to by the owner of the process", "transition": "send", "expect": {"code": "guard_false"}},
+    {"name": "with the guard holding, the content administrator sends it past the rule of the transition", "do": "set", "doc": "m1", "as": "content", "reason": "asked to by the owner of the process", "values": {"total": 9}, "expect": {"version": 4}},
+    {"name": "the memo is sent", "do": "transition", "doc": "m1", "as": "content", "reason": "asked to by the owner of the process", "transition": "send", "expect": {"state": "sent"}},
     {"name": "the owner may not delete, as the class says", "do": "delete", "doc": "m1", "as": "ann", "expect": {"code": "forbidden", "action": "/access/delete"}},
     {"name": "the log says who did each step", "do": "get", "doc": "m1", "as": "content", "expect": {"actors": ["ann", "dee", "cora", "cora", "cora"]}}
   ]

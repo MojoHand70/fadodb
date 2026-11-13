@@ -206,6 +206,9 @@ record when the owner asks: a log of the reads a content administrator
 makes past a rule, with the reads of SQL; the engine's own users,
 groups and API keys, and the filter on the change stream, which come
 with the server in Phase 6.
+One record is proposed ahead of the layouts of Phase 6, at the owner's
+request of 2026-11-13: ADR-0054, two properties of a layout component,
+`mobile` and `desktop`, that say on which screen it shows.
 This page is updated when a phase starts and when it ends;
 it never describes a phase as done before its acceptance criteria pass.
 

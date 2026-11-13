@@ -774,10 +774,12 @@ key order, to the function the Go VM adds with.
   keeps the places of the rules lifted and the reason, which the
   `_events` view shows; a preview and the listing of transitions say
   beforehand that an act would be one. A read by override leaves no
-  trace. Accepted and not built yet (ADR-0052, ADR-0053): the record of
-  who defined each version, and
-  substitutions that the engine keeps and checks, where today it
-  trusts the host on for whom a caller acts. The change stream comes
+  trace. Every version of a class, a schema, a table and an action
+  records who defined it, what they were, for whom they acted and
+  when, and `Definitions` lists them: what a designer changes is in
+  sight. Accepted and not built yet (ADR-0053): substitutions that the
+  engine keeps and checks, where today it trusts the host on for whom
+  a caller acts. The change stream comes
   with the server in Phase 6. A call without a principal is nobody.
 
 ### Querying

@@ -812,10 +812,11 @@ func (s *Store) compileClasses(ctx context.Context, datas [][]byte, set bool) ([
 // redefinitionDiagnostics. A class with no history at all is dropped
 // and made again.
 func (s *Store) DefineClass(ctx context.Context, data []byte, opts ...Option) (*model.Class, error) {
-	if _, e := s.worker(workDesign, opts); e != nil {
+	o, e := s.worker(workDesign, opts)
+	if e != nil {
 		return nil, e
 	}
-	out, err := s.defineClasses(ctx, [][]byte{data}, false)
+	out, err := s.defineClasses(ctx, [][]byte{data}, false, o.principal)
 	if err != nil {
 		return nil, err
 	}
@@ -831,13 +832,14 @@ func (s *Store) DefineClass(ctx context.Context, data []byte, opts ...Option) (*
 // Diagnostics when a definition is refused, and the path of each finding
 // starts with the position of its definition in the call.
 func (s *Store) DefineClasses(ctx context.Context, datas [][]byte, opts ...Option) ([]*model.Class, error) {
-	if _, e := s.worker(workDesign, opts); e != nil {
+	o, e := s.worker(workDesign, opts)
+	if e != nil {
 		return nil, e
 	}
-	return s.defineClasses(ctx, datas, true)
+	return s.defineClasses(ctx, datas, true, o.principal)
 }
 
-func (s *Store) defineClasses(ctx context.Context, datas [][]byte, set bool) ([]*model.Class, error) {
+func (s *Store) defineClasses(ctx context.Context, datas [][]byte, set bool, by Principal) ([]*model.Class, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.closed {
@@ -877,7 +879,7 @@ func (s *Store) defineClasses(ctx context.Context, datas [][]byte, set bool) ([]
 			continue
 		}
 		var err error
-		if fresh[i], err = s.writeClass(ctx, p, now); err != nil {
+		if fresh[i], err = s.writeClass(ctx, p, now, by); err != nil {
 			_, _ = w.ExecContext(ctx, "ROLLBACK")
 			return nil, err
 		}
@@ -900,7 +902,7 @@ func (s *Store) defineClasses(ctx context.Context, datas [][]byte, set bool) ([]
 // transaction: its tables and views, and its definition in the registry.
 // It reports whether the class is fresh, new or with no history at all,
 // which is dropped and made again.
-func (s *Store) writeClass(ctx context.Context, p *pending, now int64) (bool, error) {
+func (s *Store) writeClass(ctx context.Context, p *pending, now int64, by Principal) (bool, error) {
 	c, old, cls, w := p.c, p.old, p.cls, s.writer
 	fresh := old == nil
 	if old != nil {
@@ -973,6 +975,12 @@ func (s *Store) writeClass(ctx context.Context, p *pending, now int64) (bool, er
 	if _, err := w.ExecContext(ctx, "INSERT INTO class_versions (class, version, json, created_at) VALUES (?, ?, ?, ?)", cls.Name, p.version, string(p.compact), now); err != nil {
 		return false, storageErr("store the class version", err)
 	}
+	// Who defined this version (ADR-0052, item 7).
+	defined, derr := recordDefinition(ctx, w, DefinitionClass, cls.Name, p.version, by, now)
+	if derr != nil {
+		return false, derr
+	}
+	cls.Defined = defined
 	return fresh, nil
 }
 
@@ -1036,7 +1044,8 @@ func (c *class) childOfName(name string) (*child, bool) {
 // Defining the same definition again is a no-op; a schema a stored class
 // uses cannot be redefined in this build.
 func (s *Store) DefineSchema(ctx context.Context, data []byte, opts ...Option) (*model.Schema, error) {
-	if _, e := s.worker(workDesign, opts); e != nil {
+	o, e := s.worker(workDesign, opts)
+	if e != nil {
 		return nil, e
 	}
 	s.mu.Lock()
@@ -1078,6 +1087,9 @@ func (s *Store) DefineSchema(ctx context.Context, data []byte, opts ...Option) (
 		" ON CONFLICT (name) DO UPDATE SET name = excluded.name, version = excluded.version, json = excluded.json, updated_at = excluded.updated_at",
 		sch.Name, sch.Version, string(compact), now, now); err != nil {
 		return nil, storageErr("store the schema", err)
+	}
+	if _, err := recordDefinition(ctx, s.writer, DefinitionSchema, sch.Name, sch.Version, o.principal, now); err != nil {
+		return nil, err
 	}
 	s.schemaJSON[key] = compact
 	return sch, nil

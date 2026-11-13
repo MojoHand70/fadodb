@@ -187,8 +187,12 @@ Its seventh step is the override: a content administrator's command
 that gets past a rule needs a reason, its event keeps the rules lifted
 and the reason, a preview and the listing of transitions say so
 beforehand, and what the commit queued acts for the same reason.
-Not built yet: the record of who defined each version of a class,
-substitutions (ADR-0053), and the measurements that close the phase.
+Its eighth step keeps what a designer does in sight: every version
+of a class, a schema, a table and an action records who defined it,
+what they were, for whom they acted and when, and one call lists them.
+With it the system groups of ADR-0052 are built.
+Not built yet: substitutions (ADR-0053), and the measurements that
+close the phase.
 This page is updated when a phase starts and when it ends;
 it never describes a phase as done before its acceptance criteria pass.
 

@@ -115,6 +115,14 @@ All notable changes to FadoDB are recorded here. The format follows
   statechart and a required value hold as for everyone, and a read by
   override asks no reason and leaves no trace.
   `conformance/access/override.json` is the suite.
+- Every version of a class, a schema, a table and an action records who
+  defined it (ADR-0052, item 7; ADR-0051, item 5): the caller's id,
+  what it was, a person, an agent or a service, the id it acted for,
+  and when. `Definitions(ctx, what, name)` lists the versions of one,
+  oldest first, and is open to every caller; `Class.Defined`,
+  `Table.Defined` and `ActionInfo.Defined` say it of the current
+  version. A definition that is the stored one is no new version and
+  changes no record.
 - Checking a class notes each access rule it leaves out (ADR-0052, item
   5): `ValidateClass` and `ValidateClasses` answer a finding with the
   code `rule_left_out`, the place of the rule, what it means and what
@@ -139,11 +147,12 @@ All notable changes to FadoDB are recorded here. The format follows
   groups above, and a caller that needs all of it is in all four. A
   program's own setup code names itself as a caller in the groups it
   needs; `fadodb check` acts as a database administrator.
-- **The engine schema is version 8.** Version 6 added what the actor of
+- **The engine schema is version 9.** Version 6 added what the actor of
   an event was and for whom it acted, two columns of the event; version
   7 drops the administrator's flag from the outbox row, which keeps the
   system groups of whoever queued it with the other groups; version 8
-  adds the rules an override lifted and its reason to the event. A
+  adds the rules an override lifted and its reason to the event; version
+  9 adds the table of who defined each version. A
   database made by an earlier engine, v0.4.1 included, is refused when
   opened, as before 1.0 there is no upgrade path.
 - A class that declared `read`, `create`, `update` or `delete` had them

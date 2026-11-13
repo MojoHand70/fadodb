@@ -156,6 +156,9 @@ type ActionInfo struct {
 	// to Open; for a declared one when the host program allows outbound
 	// calls, knows its connection and supplies secrets if it reads any.
 	Available bool `json:"available"`
+	// Defined says who defined this version of the definition, and when
+	// (ADR-0052, item 7); nil for an action of the engine's own.
+	Defined *Defined `json:"defined,omitempty"`
 }
 
 // ActionParam is one parameter of an action, or one value it returns. For
@@ -208,6 +211,8 @@ type action struct {
 	json  []byte
 	fn    ActionFunc
 	reads []string
+	// defined says who defined this version (ADR-0052, item 7).
+	defined Defined
 }
 
 // kind says what implements the action.
@@ -229,6 +234,10 @@ func (s *Store) info(a *action) *ActionInfo {
 	if spec.Name == model.ActionHTTPCall {
 		// The engine's own: it has no version of a definition.
 		info.Version = 0
+	}
+	if a.defined != (Defined{}) {
+		d := a.defined
+		info.Defined = &d
 	}
 	return info
 }
@@ -427,7 +436,8 @@ func (s *Store) compileAction(data []byte) (*model.ActionSpec, model.Diagnostics
 // calls, with Options.Outbound, know the definition's connection and, if
 // the request reads a secret, supply secrets.
 func (s *Store) DefineAction(ctx context.Context, data []byte, opts ...Option) (*ActionInfo, error) {
-	if _, e := s.worker(workDesign, opts); e != nil {
+	o, e := s.worker(workDesign, opts)
+	if e != nil {
 		return nil, e
 	}
 	s.mu.Lock()
@@ -466,10 +476,14 @@ func (s *Store) DefineAction(ctx context.Context, data []byte, opts ...Option) (
 	if _, err := w.ExecContext(ctx, "INSERT INTO action_versions (action, version, json, created_at) VALUES (?, ?, ?, ?)", spec.Name, version, string(compact), now); err != nil {
 		return rollback(storageErr("store the action version", err))
 	}
+	defined, derr := recordDefinition(ctx, w, DefinitionAction, spec.Name, version, o.principal, now)
+	if derr != nil {
+		return rollback(derr)
+	}
 	if _, err := w.ExecContext(ctx, "COMMIT"); err != nil {
 		return nil, storageErr("commit", err)
 	}
-	a := &action{spec: spec, json: compact}
+	a := &action{spec: spec, json: compact, defined: defined}
 	s.registerAction(a)
 	return s.info(a), nil
 }

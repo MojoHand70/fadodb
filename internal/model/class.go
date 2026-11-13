@@ -25,8 +25,11 @@ type Class struct {
 	Variables []*Variable
 	// Notes are the findings that refused nothing when the class was
 	// compiled: each access rule it leaves out (ADR-0052, item 5).
-	Notes  Diagnostics
-	byName map[string]*Variable
+	Notes Diagnostics
+	// Defined says who defined this version of the class, and when
+	// (ADR-0052, item 7); the store sets it.
+	Defined Defined
+	byName  map[string]*Variable
 	// Order lists the auto computed variables, and "title" when there is
 	// a title formula, in an order where every one comes after what it
 	// reads: the full recalculation order of ADR-0015.
@@ -1500,4 +1503,16 @@ func leftOut(def *Definition) Diagnostics {
 			Hint:    "add access." + r.name + ", a condition such as INGROUP(\"everyone\") for every caller that has an id"})
 	}
 	return notes
+}
+
+// Defined says who defined a version of a class, a schema, a table or an
+// action, and when (ADR-0052, item 7): the id of the caller, what it was,
+// a person, an agent or a service, the id it acted for (ADR-0050), and
+// the moment in seconds since the epoch. A redefinition is the strongest
+// act there is in a database, and this is the record of it.
+type Defined struct {
+	By   string `json:"by,omitempty"`
+	Kind string `json:"kind,omitempty"`
+	For  string `json:"for,omitempty"`
+	At   int64  `json:"at,omitempty"`
 }

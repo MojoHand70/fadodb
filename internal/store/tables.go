@@ -237,7 +237,8 @@ func (s *Store) Table(name string) (*model.Table, bool) {
 // no-op. A table with no rows and no class reading it can be redefined;
 // one with rows, or one a class reads, cannot in this build.
 func (s *Store) DefineTable(ctx context.Context, data []byte, opts ...Option) (*model.Table, error) {
-	if _, e := s.worker(workDesign, opts); e != nil {
+	o, e := s.worker(workDesign, opts)
+	if e != nil {
 		return nil, e
 	}
 	s.mu.Lock()
@@ -328,6 +329,11 @@ func (s *Store) DefineTable(ctx context.Context, data []byte, opts ...Option) (*
 		def.Name, version, def.Binding, string(compact), now, now); err != nil {
 		return rollback(storageErr("store the table", err))
 	}
+	defined, derr := recordDefinition(ctx, w, DefinitionTable, def.Name, version, o.principal, now)
+	if derr != nil {
+		return rollback(derr)
+	}
+	def.Defined = defined
 	if _, err := w.ExecContext(ctx, "COMMIT"); err != nil {
 		return nil, storageErr("commit", err)
 	}

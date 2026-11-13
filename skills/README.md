@@ -25,11 +25,11 @@ so the right one loads for the task at hand.
 
 | Hat | Skill | What it does | Today |
 |---|---|---|---|
-| Designer | [`fadodb-design/`](fadodb-design/SKILL.md) | drafts a class from a process description, validates it, previews it against live data | variables, formulas and the store shipped; statechart shipped; rules and actions shipped; access designed |
+| Designer | [`fadodb-design/`](fadodb-design/SKILL.md) | drafts a class from a process description, validates it, previews it against live data | variables, formulas and the store shipped; statechart shipped; rules and actions shipped; access shipped |
 | Operator | [`fadodb-operate/`](fadodb-operate/SKILL.md) | creates, sets and transitions documents on behalf of a person or a system, as a principal, with a key and a preview | Go API only; command set and MCP designed |
 | Simulator | [`fadodb-simulate/`](fadodb-simulate/SKILL.md) | replays a scenario in a scratch database and keeps the class that worked | scratch files and `At` work; replay is by hand |
 | Analyst | [`fadodb-mine/`](fadodb-mine/SKILL.md) | mines the event log and the views in SQL and feeds the finding back into the class | filter and read-only SQL shipped; `Events` on the Go API; DuckDB views designed |
-| Its own principal | [`fadodb-own-work/`](fadodb-own-work/SKILL.md) | runs the agent's own work as documents: the task ledger, the approval inbox, the saga | principal and per-transition rights enforced; a rule calls a Go function of the host program, or the agent's endpoint over HTTP |
+| Its own principal | [`fadodb-own-work/`](fadodb-own-work/SKILL.md) | runs the agent's own work as documents: the task ledger, the approval inbox, the saga | principal, the rules of a class and per-transition rights enforced; acting for a person checked against a substitution; a rule calls a Go function of the host program, or the agent's endpoint over HTTP |
 
 The person who embeds the engine in a Go program is a sixth caller, a
 developer or a coding agent. That is an embedding guide, planned for

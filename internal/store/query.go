@@ -38,7 +38,10 @@ func (s *Store) Query(ctx context.Context, f Filter, opts ...Option) ([]*Documen
 	if e != nil {
 		return nil, e
 	}
-	o := apply(opts)
+	o, e := asked(opts)
+	if e != nil {
+		return nil, e
+	}
 	plan, err := query.Compile(f, c.cls, s.sources(), caller(o))
 	if err != nil {
 		return nil, filterErr(err)
@@ -155,7 +158,10 @@ func (s *Store) Count(ctx context.Context, f Filter, opts ...Option) (int64, err
 	if e != nil {
 		return 0, e
 	}
-	o := apply(opts)
+	o, e := asked(opts)
+	if e != nil {
+		return 0, e
+	}
 	f.Order, f.Fields, f.Limit, f.Offset = nil, nil, 0, 0
 	plan, err := query.Compile(f, c.cls, s.sources(), caller(o))
 	if err != nil {
@@ -226,7 +232,8 @@ func (ch *child) loadCurrent(ctx context.Context, db *sql.DB, c *class, docs []*
 // the principal, and the clock, the moment chosen with At or the
 // database's (ADR-0042).
 func (s *Store) contextArgs(o options) []any {
-	return formula.NewSQLite().ContextArgs(&formula.Context{User: o.principal.ID, Groups: o.principal.Groups, Now: s.clock(o)})
+	ctx := contextOf(o.principal, s.clock(o))
+	return formula.NewSQLite().ContextArgs(&ctx)
 }
 
 func filterErr(err error) error {

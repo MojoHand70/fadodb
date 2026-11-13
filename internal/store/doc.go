@@ -78,7 +78,12 @@
 // sees it and may not do what they ask is refused with forbidden and the
 // rule.
 //
-// Not here yet: the rest of Phase 5, which is the kind of actor
-// (ADR-0050) and who may define, operate and run SQL, with the rules of
-// a table (ADR-0051); and the server (Phase 6).
+// A principal says what it is, a person, an agent or a service, and for
+// whom it acts (ADR-0050): every event records both beside the actor's
+// id, an action and a timer run with them, and USERKIND() and
+// ACTINGFOR() answer them to a formula.
+//
+// Not here yet: the rest of Phase 5, which is who may define, operate
+// and run SQL, with the rules of a table (ADR-0051); and the server
+// (Phase 6).
 package store

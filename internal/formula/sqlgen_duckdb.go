@@ -134,7 +134,8 @@ func (DuckDB) ContextArgs(ctx *Context) []any {
 	if groups != nil {
 		g = groups
 	}
-	return lifeArgs(ctx, []any{sql.Named("now", now), sql.Named("user", user), sql.Named("groups", g), sql.Named("state", state), sql.Named("id", id)})
+	return lifeArgs(ctx, []any{sql.Named("now", now), sql.Named("user", user), sql.Named("groups", g), sql.Named("state", state), sql.Named("id", id),
+		sql.Named("userkind", textOrNil(ctx, func(c *Context) string { return c.Kind })), sql.Named("actingfor", textOrNil(ctx, func(c *Context) string { return c.For }))})
 }
 
 // stateCall translates a function of a state (ADR-0047, item 6) for a
@@ -441,6 +442,10 @@ func (d DuckDB) Call(name string, args []SQLExpr, params *Params) (SQLExpr, erro
 		return SQLExpr{Val: "floor(CAST(" + params.Use("now") + " AS DOUBLE) / " + d.NumberLit(secondsPerDay) + ")", Kind: KindDate, Sure: true}, nil
 	case "USER":
 		return SQLExpr{Val: "CAST(" + params.Use("user") + " AS VARCHAR)", Kind: KindText}, nil
+	case "USERKIND":
+		return SQLExpr{Val: "CAST(" + params.Use("userkind") + " AS VARCHAR)", Kind: KindText}, nil
+	case "ACTINGFOR":
+		return SQLExpr{Val: "CAST(" + params.Use("actingfor") + " AS VARCHAR)", Kind: KindText}, nil
 	case "STATE":
 		return SQLExpr{Val: "CAST(" + params.Use("state") + " AS VARCHAR)", Kind: KindText}, nil
 	case "ID":

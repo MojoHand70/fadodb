@@ -20,7 +20,11 @@
 // and delete a document (ADR-0049): a document its caller may not see is
 // answered as if it did not exist, by a read, a command, a filter and a
 // count alike, and a caller who sees it and may not do what they ask is
-// refused with forbidden and the rule, which Error.Path names. The rules
+// refused with forbidden and the rule, which Error.Path names. A
+// principal may say what it is, a person, an agent or a service, and for
+// whom it acts: every event records both beside the actor's id, and
+// USERKIND() and ACTINGFOR() answer them to a formula, so that a class
+// can keep a step for a person (ADR-0050). The rules
 // of a class run inside the commit (ADR-0043), and
 // what they do to other documents and tables is queued and run by the
 // outbox (ADR-0044). An action may also be the host program's own: a
@@ -37,8 +41,8 @@
 // person whose commit set the timer; Transitions shows the moment, and
 // Due lists the documents a guard on time would move, for the host
 // program to touch (ADR-0047). Not here yet: QUERY, the rest of Phase 5
-// (the kind of actor, who may define, the rules of a table and of the
-// SQL endpoint) and the server (Phase 6).
+// (who may define, the rules of a table and of the SQL endpoint) and
+// the server (Phase 6).
 package fado
 
 import (
@@ -149,6 +153,16 @@ type (
 	// Diagnostic is one finding: a code, the JSON pointer of the element,
 	// the position in a formula, a message and a hint.
 	Diagnostic = model.Diagnostic
+)
+
+// What a caller is, as Principal.Kind says it (ADR-0050): a person who
+// sent the command, an agent that decided to send it, or a service, a
+// program that decides nothing, such as an import or a schedule. A host
+// program that does not know leaves the kind empty.
+const (
+	ActorPerson  = store.ActorPerson
+	ActorAgent   = store.ActorAgent
+	ActorService = store.ActorService
 )
 
 // As runs the call as the principal.

@@ -122,7 +122,10 @@ caller may not see is answered as if it did not exist, by a read, a
 command, a filter and a count alike, and a caller who sees it and may
 not change it gets `forbidden` with the rule. A rule a class leaves out
 lets every caller through, and the SQL endpoint reads every row, until
-the records of Phase 5 on both are accepted (ADR-0049, ADR-0051). The
+the records of Phase 5 on both are accepted (ADR-0049, ADR-0051). A
+principal may say whether it is a person, an agent or a service, and
+for whom it acts: every event records it, and `USERKIND()` and
+`ACTINGFOR()` let a class keep a step for a person (ADR-0050). The
 rules of a class run inside the commit: a `set` or a
 `reset` changes the document before it is written, an `emit` appends a
 custom event, an action that fails refuses the command with its place in

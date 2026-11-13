@@ -25,6 +25,7 @@ from the state the documents hold.
 | Means | Mark |
 |---|---|
 | the agent as a principal with an id and groups, `As`; the log records it | shipped |
+| the principal says it is an agent, and for whom it acts: `Kind: fado.ActorAgent`, `For: "ann"`; every event records both, and a class reads them with `USERKIND()` and `ACTINGFOR()` | shipped with Phase 5, its third step |
 | a guard that keeps a transition from the agent's group; field rights per state | shipped with Phase 3 |
 | idempotent retries, `Key`; the filter to poll for work | shipped |
 | rules that call the agent's program back when a state is entered | shipped with Phase 4: a Go function the host program gives to `Open` in `Options.Actions`, with a definition stored by `DefineAction`, is called through the outbox with the event and the document; an agent in another process is called over HTTP by a definition with a `request` that points at its endpoint, signed, where the host program allows that host |
@@ -34,7 +35,11 @@ from the state the documents hold.
 
 1. **Be a principal.** Take an id and a group of your own, and make every
    call as that principal. The guards hold you like anyone else, and that
-   is the point: the log says what the agent did.
+   is the point: the log says what the agent did. Say what you are: the
+   kind `agent`, and under `For` the id of the person you work for when
+   there is one. The log then tells your steps from a person's, and a
+   class can give you the preparation and keep the decision for them.
+   Do not borrow a person's id to get past a rule.
 2. **The approval inbox.** One class: proposed, awaiting review, approved
    or declined, executed. The agent creates and submits; the approve
    transition's guard requires a human group and excludes the agent's;

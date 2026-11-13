@@ -254,7 +254,7 @@ result:
 | Class | Examples | Allowed in |
 |---|---|---|
 | Pure | `IF IFERROR ROUND SUM LEFT DATE ADDMONTHS DECIMAL MONEY JSONVALUE` | everywhere |
-| Context | `USER() INGROUP() NOW() TODAY() STATE() ID()` | defaults, triggered formulas, guards, rules, access rules, layouts; not in auto formulas |
+| Context | `USER() INGROUP() USERKIND() ACTINGFOR() NOW() TODAY() STATE() ID()` | defaults, triggered formulas, guards, rules, access rules, layouts; not in auto formulas |
 | Lookup | `LOOKUP(source, column, condition)` | everywhere; in auto formulas only against explicit tables |
 | Query | `QUERY(source, columns, condition, sort, groupby, limit)` | defaults, triggered formulas, rules, layouts; not in auto formulas |
 | Secret | `SECRET("token")` | the request of an action definition, and nowhere else (ADR-0045) |
@@ -461,7 +461,8 @@ doc_Invoice__lines        one row per element per version            key: (doc_i
                           + the row schema's columns, or `value` for arrays
 events                    one row per thing that happened            key: event_id
                           class, doc_id, kind, name, from_state, to_state,
-                          actor_id, before_version, after_version, cause_event_id,
+                          actor_id, actor_kind, actor_for,
+                          before_version, after_version, cause_event_id,
                           command_key (unique, the caller's idempotency key),
                           business_date (a calendar day the caller gives)
 event_docs                every document an event touched            (event_id, class, doc_id, qualifier)
@@ -710,7 +711,14 @@ key order, to the function the Go VM adds with.
 ### Security
 
 - The principal comes from the embedder on every call: an id, groups, an
-  admin flag and its business day (ADR-0027). The engine keeps no user
+  admin flag and its business day (ADR-0027), and what the caller is, a
+  person, an agent or a service, with the id of whoever it acts for
+  (ADR-0050, proposed and built). The engine trusts all of it, writes
+  the kind and the id acted for on every event beside the actor's id,
+  and answers them to `USERKIND()` and `ACTINGFOR()`, so that a class
+  can keep a step for a person and the log can say which steps an agent
+  took and for whom. `USER()` stays the one who acts. The engine keeps
+  no user
   tables; an optional package of users, groups and API keys turns a
   credential into a principal for `fadodb serve`.
 - Access rules per class: `read`, `create`, `update`, `delete`, and per-transition rules. Tables have `read` and `write` rules.
@@ -741,9 +749,8 @@ key order, to the function the Go VM adds with.
   the rule. A named transition without a rule of its own asks `update`.
   What the engine does by itself asks nothing. A rule a class leaves
   out lets every caller through, until the owner rules on the question
-  ADR-0049 puts to him. Not built yet: the kind of actor (ADR-0050),
-  who may define, operate and run SQL, and the rules of a table
-  (ADR-0051). The change stream comes with the server in Phase 6. A
+  ADR-0049 puts to him. Not built yet: who may define, operate and run
+  SQL, and the rules of a table (ADR-0051). The change stream comes with the server in Phase 6. A
   call without a principal is nobody.
 
 ### Querying

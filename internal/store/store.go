@@ -35,7 +35,7 @@ const DefaultMaxIndexedRows = 100000
 // engineSchema is the version of the store's own tables. A database made
 // by another engine schema is refused: before 1.0 there is no upgrade
 // path, and a pre-release file is recreated.
-const engineSchema = 5
+const engineSchema = 6
 
 // Options configure Open. The ones that are properties of the database,
 // Synchronous and MaxText, are read at creation and kept in the metadata
@@ -128,6 +128,13 @@ type Store struct {
 	// lists, kept between commits; dayArg is the business day of dayOf,
 	// boxed.
 	curArgs, updArgs, histArgs, eventArgs []any
+	// acting is what the principal of the command in progress is and whom
+	// it acts for, boxed for the events the command writes (ADR-0050);
+	// forID is the id acts boxes.
+	acting struct {
+		kind, acts any
+		forID      string
+	}
 	// stateArgs are the names of states boxed once for the statements of
 	// the write step: every commit writes its document's state, and an
 	// entry the state left and the state entered beside it.
@@ -520,23 +527,23 @@ func (s *Store) prepareEngine(ctx context.Context) error {
 	}
 	prep(&s.stmts.lookupKey, "SELECT kind, class, doc_id, after_version, command_hash, event_id FROM events WHERE command_key = ?")
 	prep(&s.stmts.lastOfCommand, "SELECT max(after_version) FROM events WHERE cause_event_id = ?")
-	prep(&s.stmts.insertEvent, "INSERT INTO events (event_id, class, doc_id, kind, name, from_state, to_state, actor_id, before_version, after_version, cause_event_id, command_key, command_hash, business_date, ts, origin)"+
-		" VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
+	prep(&s.stmts.insertEvent, "INSERT INTO events (event_id, class, doc_id, kind, name, from_state, to_state, actor_id, before_version, after_version, cause_event_id, command_key, command_hash, business_date, ts, origin, actor_kind, actor_for)"+
+		" VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
 	prep(&s.stmts.insertEventDoc, "INSERT INTO event_docs (event_id, class, doc_id, qualifier) VALUES (?, ?, ?, ?)")
 	prep(&s.stmts.selectLife, lifeSQL)
 	prep(&s.stmts.selectMoves, movesSQL)
 	prep(&s.stmts.mark, "SAVEPOINT many")
 	prep(&s.stmts.unmark, "RELEASE many")
 	prep(&s.stmts.toMark, "ROLLBACK TO many")
-	prep(&s.stmts.insertOutbox, "INSERT INTO outbox (event_id, idx, class, doc_id, version, class_version, rule, action, args, principal_id, principal_groups, principal_admin, depth, status, attempts, due_at, error_code, error_message, created_at, finished_at, outcome_event)"+
-		" VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?)")
+	prep(&s.stmts.insertOutbox, "INSERT INTO outbox (event_id, idx, class, doc_id, version, class_version, rule, action, args, principal_id, principal_groups, principal_admin, depth, status, attempts, due_at, error_code, error_message, created_at, finished_at, outcome_event, principal_kind, principal_for)"+
+		" VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?)")
 	if err != nil {
 		return storageErr("prepare", err)
 	}
 	// An event of kind action_failed is read with the code its action died
 	// with, which the outbox row holds (ADR-0044).
 	if s.stmts.listEvents, err = s.db.PrepareContext(ctx, "SELECT e.event_id, e.class, e.doc_id, e.kind, e.name, e.from_state, e.to_state, e.actor_id, e.before_version, e.after_version, e.cause_event_id, e.command_key, e.business_date, e.ts,"+
-		" (SELECT o.error_code FROM outbox o WHERE o.outcome_event = e.event_id), e.origin"+
+		" (SELECT o.error_code FROM outbox o WHERE o.outcome_event = e.event_id), e.origin, e.actor_kind, e.actor_for"+
 		" FROM events e JOIN event_docs d ON d.event_id = e.event_id WHERE d.class = ? AND d.doc_id = ? ORDER BY e.ts, e.event_id"); err != nil {
 		return storageErr("prepare", err)
 	}
@@ -555,7 +562,7 @@ func (s *Store) prepareEngine(ctx context.Context) error {
 		dst  **sql.Stmt
 		only string
 	}{{&s.stmts.dueOutbox, ""}, {&s.stmts.dueEngine, " AND o.action IN (" + engine + ")"}, {&s.stmts.dueCalls, " AND o.action NOT IN (" + engine + ")"}} {
-		*due.dst, err = s.db.PrepareContext(ctx, "SELECT o.event_id, o.idx, o.class, o.doc_id, o.action, o.args, o.principal_id, o.principal_groups, o.principal_admin, o.depth FROM outbox o"+
+		*due.dst, err = s.db.PrepareContext(ctx, "SELECT o.event_id, o.idx, o.class, o.doc_id, o.action, o.args, o.principal_id, o.principal_groups, o.principal_admin, o.depth, o.principal_kind, o.principal_for FROM outbox o"+
 			" WHERE o.status = 'pending' AND o.due_at <= ?"+due.only+
 			" AND (o.action = '"+ActionTimer+"' OR NOT EXISTS (SELECT 1 FROM outbox p WHERE p.class = o.class AND p.doc_id = o.doc_id AND p.status = 'pending' AND p.action <> '"+ActionTimer+"'"+
 			" AND (p.event_id < o.event_id OR (p.event_id = o.event_id AND p.idx < o.idx))))"+
@@ -569,7 +576,7 @@ func (s *Store) prepareEngine(ctx context.Context) error {
 	// event of an eventless transition has no key of its own; the command
 	// that caused it has.
 	s.stmts.callOutbox, err = s.db.PrepareContext(ctx, "SELECT o.status, o.attempts, o.version, o.class_version, e.kind, e.name, e.from_state, e.to_state, e.actor_id,"+
-		" coalesce(e.command_key, (SELECT c.command_key FROM events c WHERE c.event_id = e.cause_event_id)), e.business_date, e.ts, e.origin"+
+		" coalesce(e.command_key, (SELECT c.command_key FROM events c WHERE c.event_id = e.cause_event_id)), e.business_date, e.ts, e.origin, e.actor_kind, e.actor_for"+
 		" FROM outbox o JOIN events e ON e.event_id = o.event_id WHERE o.event_id = ? AND o.idx = ?")
 	return storageErr("prepare", err)
 }

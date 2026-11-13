@@ -104,7 +104,10 @@ func (s *Store) Due(ctx context.Context, class string, opts ...Option) ([]DueDoc
 	if e != nil {
 		return nil, e
 	}
-	o := apply(opts)
+	o, e := asked(opts)
+	if e != nil {
+		return nil, e
+	}
 	plan := s.duePlan(c)
 	out := []DueDocument{}
 	for _, st := range plan.states {
@@ -328,7 +331,8 @@ func (s *Store) dueOneByOne(ctx context.Context, c *class, st *dueState, o optio
 		return false, storageErr("prepare the list of "+c.cls.Name, err)
 	}
 	defer s.filters.release(stmt)
-	evalCtx := &formula.Context{User: o.principal.ID, Groups: o.principal.Groups, Now: s.clock(o)}
+	ctxOf := contextOf(o.principal, s.clock(o))
+	evalCtx := &ctxOf
 	seen, found, after := false, 0, ""
 	ids := make([]string, 0, dueBatch)
 	for {

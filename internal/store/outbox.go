@@ -96,9 +96,13 @@ type QueuedAction struct {
 	// PrincipalID is who the action runs as: the principal of the command
 	// whose commit queued it (ADR-0044, item 11).
 	PrincipalID string `json:"principal_id,omitempty"`
-	Depth       int    `json:"depth"`
-	Status      string `json:"status"`
-	Attempts    int    `json:"attempts"`
+	// PrincipalKind is what that principal was, person, agent or service,
+	// and PrincipalFor the id it acted for (ADR-0050).
+	PrincipalKind string `json:"principal_kind,omitempty"`
+	PrincipalFor  string `json:"principal_for,omitempty"`
+	Depth         int    `json:"depth"`
+	Status        string `json:"status"`
+	Attempts      int    `json:"attempts"`
 	// DueAt is when the next attempt may run, seconds since the epoch.
 	DueAt int64 `json:"due_at"`
 	// ErrorCode and ErrorMessage are the last failure.
@@ -558,7 +562,7 @@ func (s *Store) writeQueued(ctx context.Context, c *class, cmd *command, commit 
 			admin = 1
 		}
 		if _, err := s.stmts.insertOutbox.ExecContext(ctx, eventID, n, c.cls.Name, docID, version, c.cls.Version, q.act.a.Path(), q.act.a.Name, string(q.args),
-			nullText(p.ID), string(groups), admin, cmd.depth, status, secs, code, message, secs, finished, outcome); err != nil {
+			nullText(p.ID), string(groups), admin, cmd.depth, status, secs, code, message, secs, finished, outcome, nullText(p.Kind), nullText(p.For)); err != nil {
 			return n, storageErr("queue the action", err)
 		}
 		n++
@@ -648,14 +652,16 @@ func (s *Store) dueRows(ctx context.Context, due *sql.Stmt, now int64) ([]*outbo
 	var out []*outboxRow
 	for rows.Next() {
 		r := &outboxRow{}
-		var id, groups sql.NullString
+		var id, groups, kind, acts sql.NullString
 		var admin int64
 		var args string
-		if err := rows.Scan(&r.eventID, &r.idx, &r.class, &r.docID, &r.action, &args, &id, &groups, &admin, &r.depth); err != nil {
+		if err := rows.Scan(&r.eventID, &r.idx, &r.class, &r.docID, &r.action, &args, &id, &groups, &admin, &r.depth, &kind, &acts); err != nil {
 			return nil, storageErr("read the outbox", err)
 		}
 		r.args = []byte(args)
-		r.principal = Principal{ID: id.String, Admin: admin != 0}
+		// The row runs as the principal of the command that queued it,
+		// with what that principal was and for whom it acted (ADR-0050).
+		r.principal = Principal{ID: id.String, Admin: admin != 0, Kind: kind.String, For: acts.String}
 		if groups.Valid {
 			_ = json.Unmarshal([]byte(groups.String), &r.principal.Groups)
 		}
@@ -835,6 +841,7 @@ func (s *Store) finish(ctx context.Context, row *outboxRow, status string, attem
 		return "", storageErr("mark the action", err)
 	}
 	ev := eventInfo{kind: kind, name: row.action, cause: row.eventID}
+	s.actAs(row.principal)
 	return id, s.writeEvent(ctx, id, row.class, row.docID, ev, row.principal.ID, nil, nil, "", "", day, secs)
 }
 
@@ -1032,7 +1039,7 @@ func (s *Store) Outbox(ctx context.Context, f OutboxFilter) ([]QueuedAction, err
 		where = append(where, "doc_id = ?")
 		args = append(args, f.DocID)
 	}
-	text := `SELECT event_id, idx, class, doc_id, version, rule, action, args, principal_id, depth, status, attempts, due_at, error_code, error_message, created_at, finished_at, outcome_event, into_code, into_message FROM outbox`
+	text := `SELECT event_id, idx, class, doc_id, version, rule, action, args, principal_id, depth, status, attempts, due_at, error_code, error_message, created_at, finished_at, outcome_event, into_code, into_message, principal_kind, principal_for FROM outbox`
 	if len(where) > 0 {
 		text += " WHERE " + strings.Join(where, " AND ")
 	}
@@ -1051,12 +1058,13 @@ func (s *Store) Outbox(ctx context.Context, f OutboxFilter) ([]QueuedAction, err
 		var q QueuedAction
 		var eventID, argsText string
 		var idx int64
-		var principal, code, message, outcome, intoCode, intoMessage sql.NullString
+		var principal, code, message, outcome, intoCode, intoMessage, kind, acts sql.NullString
 		var finished sql.NullInt64
 		if err := rows.Scan(&eventID, &idx, &q.Class, &q.DocID, &q.Version, &q.Rule, &q.Action, &argsText, &principal, &q.Depth, &q.Status, &q.Attempts, &q.DueAt,
-			&code, &message, &q.CreatedAt, &finished, &outcome, &intoCode, &intoMessage); err != nil {
+			&code, &message, &q.CreatedAt, &finished, &outcome, &intoCode, &intoMessage, &kind, &acts); err != nil {
 			return nil, storageErr("read the outbox", err)
 		}
+		q.PrincipalKind, q.PrincipalFor = kind.String, acts.String
 		q.IntoCode, q.IntoMessage = intoCode.String, intoMessage.String
 		q.Key = eventID + ":" + strconv.FormatInt(idx, 10)
 		q.Args = json.RawMessage(argsText)

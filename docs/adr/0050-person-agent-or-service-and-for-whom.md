@@ -120,6 +120,38 @@ rule.
      whoever created the document. Item 6 covers the need with what
      exists.
 
+## Details settled while building
+
+Built on 2026-11-13, on the record as proposed, as the third step of
+the phase. Question B is assumed as recommended; the other answer
+changes `For` into the id of the assistant and `ACTINGFOR()` into a
+function that names it, and leaves the kind as built.
+
+- **The names.** `Principal.Kind` and `Principal.For`; the constants
+  `ActorPerson`, `ActorAgent` and `ActorService`; the functions
+  `USERKIND()` and `ACTINGFOR()`; the columns `actor_kind` and
+  `actor_for` on an event, and `principal_kind` and `principal_for` on
+  an outbox row.
+- **The views.** `_events` shows `actor_kind` and `actor_for`.
+  `_states` shows, for the move that began a stay and the one that
+  ended it, `entered_by_kind`, `entered_for`, `left_by_kind` and
+  `left_for`.
+- **An unknown kind is refused everywhere**, by a read as by a command,
+  with `bad_value`, so that no formula sees a kind the log would not
+  take.
+- **An `at` may not read them**, as it may not read `USER()`: the
+  moment of a timer is the document's, the same for everyone.
+- **No upgrade.** The schema is 6, and a database of schema 5, which is
+  what v0.4.0 makes, is refused when opened, as every schema change
+  before 1.0 has been.
+
+Measured, in memory: `BenchmarkTransition` keeps its 155 allocations
+and takes 128 bytes more a commit, 1.5%, for the two texts in the
+context of its formulas. An action through the outbox takes 469
+allocations where it took 459, and a timer 404 where it took 394: the
+driver allocates for every column a statement returns, and the
+statement that reads the due rows returns two more.
+
 ## Open question
 
 This one is the owner's to rule. The record assumes the first answer

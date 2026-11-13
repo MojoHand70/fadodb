@@ -20,6 +20,12 @@ type Context struct {
 	User string
 	// Groups are the groups the user belongs to.
 	Groups []string
+	// Kind is what the user is, for USERKIND(): person, agent or service,
+	// or empty when the host program does not say (ADR-0050). For is the
+	// id of whoever the user acts for, for ACTINGFOR(); empty when it acts
+	// for itself.
+	Kind string
+	For  string
 	// Now is the current time in seconds since the epoch, UTC. Zero means
 	// the wall clock.
 	Now int64

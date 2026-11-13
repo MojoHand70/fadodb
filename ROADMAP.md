@@ -152,7 +152,10 @@ ADR-0049 puts to him. Its second step is built too: a filter decides
 the caller's part of a read rule before it writes its statement, so a
 caller who sees only their own documents lists them through the index
 on the owner, and a filter with a read rule costs what the same filter
-costs without one. Not built yet: the kind of actor (ADR-0050), who
+costs without one. Its third step is built on ADR-0050 as proposed: a
+principal says whether it is a person, an agent or a service, and for
+whom it acts; `USERKIND()` and `ACTINGFOR()` answer both to a formula;
+and every event records them, under engine schema 6. Not built yet: who
 may define, operate and run SQL, and the rules of a table (ADR-0051).
 This page is updated when a phase starts and when it ends;
 it never describes a phase as done before its acceptance criteria pass.

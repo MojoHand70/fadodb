@@ -328,7 +328,10 @@ func (s *Store) OpenFile(ctx context.Context, class, id, hash string, opts ...Op
 	if e != nil {
 		return nil, nil, e
 	}
-	o := apply(opts)
+	o, e := asked(opts)
+	if e != nil {
+		return nil, nil, e
+	}
 	if seen, err := s.sees(ctx, c, id, o); err != nil {
 		return nil, nil, err
 	} else if !seen {

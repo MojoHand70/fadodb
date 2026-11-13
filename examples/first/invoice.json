@@ -1,0 +1,29 @@
+{
+  "name": "Invoice",
+  "title": "\"Invoice \" & number",
+  "variables": {
+    "number":   {"type": "text", "required": true},
+    "supplier": {"type": "text", "required": true},
+    "net":      {"type": "money", "scale": 2},
+    "vat_rate": {"type": "decimal", "scale": 2, "default": "0.23"},
+    "gross":    {"formula": "ROUND(net * (1 + vat_rate), 2)"},
+    "account":  {"type": "text"},
+    "note":     {"type": "text"}
+  },
+  "states": {"initial": "INAPPROVAL", "list": ["INAPPROVAL", "INACCOUNTING", "BOOKED"], "final": ["BOOKED"]},
+  "transitions": [
+    {"name": "approve", "from": "INAPPROVAL",   "to": "INACCOUNTING", "guard": "gross > 0"},
+    {"name": "book",    "from": "INACCOUNTING", "to": "BOOKED",       "guard": "NOT ISBLANK(account)"}
+  ],
+  "access": {
+    "read":   "INGROUP(\"everyone\")",
+    "create": "INGROUP(\"everyone\")",
+    "update": "INGROUP(\"everyone\")",
+    "delete": "FALSE",
+    "transition": {"approve": "USER() = \"krzysztof\"", "book": "INGROUP(\"ACCOUNTING\")"}
+  },
+  "rights": {
+    "INAPPROVAL":   {"*": {"write": "USER() = \"krzysztof\""}},
+    "INACCOUNTING": {"*": {"write": ["ACCOUNTING"]}}
+  }
+}

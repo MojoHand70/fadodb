@@ -14,9 +14,10 @@ location rather than guess; the API is what it then calls.
 
 **Status on 2026-11-09: stubs.** Every SKILL.md names its hat, says what
 works today with the project's three marks, and outlines its procedure.
-The shared reference set under `reference/` is not written yet, and the
-sample corpus under `../examples/classes/` holds one class. A stub is
-honest about being one.
+Of the shared reference set only the class format is written, as a
+chapter of the manual under `../docs/manual/`; the sample corpus under
+`../examples/classes/` holds four classes. A stub is honest about
+being one.
 
 ## The five hats
 

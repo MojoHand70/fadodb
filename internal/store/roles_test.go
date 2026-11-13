@@ -18,7 +18,7 @@ func TestRoles_SystemGroups(t *testing.T) {
 	content := As(Principal{ID: "cora", System: []string{GroupContentAdministrators}})
 	const memo = `{"name": "Memo", "variables": {"t": {"type": "text"}}, "states": {"initial": "a", "list": ["a"]}}`
 	const memo2 = `{"name": "Memo", "variables": {"t": {"type": "text"}, "u": {"type": "text"}}, "states": {"initial": "a", "list": ["a"]}}`
-	if _, err := s.DefineClass(ctx, []byte(memo), designer); err != nil {
+	if _, err := s.defineOpen(ctx, []byte(memo), designer); err != nil {
 		t.Fatalf("a designer defines a class: %v", err)
 	}
 	doc, err := s.Create(ctx, "Memo", Values{"t": "x"}, operator)
@@ -97,7 +97,7 @@ func TestRoles_SystemGroups(t *testing.T) {
 	if _, ok := s.Class("Memo"); !ok || len(s.Classes()) != 1 {
 		t.Error("the class is not readable")
 	}
-	if diags := s.Validate([]byte(memo)); len(diags) != 0 {
+	if diags := s.Validate([]byte(memo)); diags.Refuses() {
 		t.Errorf("validating: %v", diags)
 	}
 }
@@ -109,7 +109,7 @@ func TestRoles_TheNamesAreTheEngines(t *testing.T) {
 	s, _ := openStore(t, Options{})
 	ctx := context.Background()
 	const memo = `{"name": "Memo", "variables": {"t": {"type": "text"}}, "states": {"initial": "a", "list": ["a"]}}`
-	if _, err := s.DefineClass(ctx, []byte(memo), asSetup); err != nil {
+	if _, err := s.defineOpen(ctx, []byte(memo), asSetup); err != nil {
 		t.Fatal(err)
 	}
 	doc, err := s.Create(ctx, "Memo", Values{"t": "x"}, As(guest))
@@ -148,7 +148,7 @@ func TestRoles_TheNamesAreTheEngines(t *testing.T) {
 func TestRoles_AClassSpeaksOfSystemGroups(t *testing.T) {
 	s, _ := openStore(t, Options{})
 	ctx := context.Background()
-	if _, err := s.DefineClass(ctx, []byte(`{"name": "Note",
+	if _, err := s.defineOpen(ctx, []byte(`{"name": "Note",
  "variables": {"t": {"type": "text"}, "circle": {"type": "text", "index": true}},
  "states": {"initial": "a", "list": ["a"]},
  "access": {"read": "INGROUP(\"everyone\")", "create": "INGROUP(\"everyone\")", "update": "INGROUP(\"designers\") OR INGROUP(circle)", "delete": "FALSE"}}`), asSetup); err != nil {
@@ -207,7 +207,7 @@ func TestRoles_TableRules(t *testing.T) {
 	ctx := context.Background()
 	treasury := As(Principal{ID: "tess", Groups: []string{"treasury"}})
 	clerk := As(Principal{ID: "carl", Groups: []string{"staff"}})
-	if _, err := s.DefineTable(ctx, []byte(`{"name": "Rates", "columns": {"code": "text", "rate": "number"}, "key": ["code"],
+	if _, err := s.defineOpenTable(ctx, []byte(`{"name": "Rates", "columns": {"code": "text", "rate": "number"}, "key": ["code"],
  "access": {"read": "INGROUP(\"treasury\") OR INGROUP(\"staff\")", "write": "INGROUP(\"treasury\")"}}`), asSetup); err != nil {
 		t.Fatal(err)
 	}
@@ -231,7 +231,7 @@ func TestRoles_TableRules(t *testing.T) {
 	// A formula reads the table with the engine's eyes (ADR-0046): the
 	// stranger's document gets its rate. A rule's table action asks the
 	// write rule of whoever set it off.
-	if _, err := s.DefineClass(ctx, []byte(`{"name": "Quote",
+	if _, err := s.defineOpen(ctx, []byte(`{"name": "Quote",
  "variables": {"code": {"type": "text"}, "rate": {"formula": "LOOKUP(Rates, rate, code = THIS.code)", "type": "number"}},
  "states": {"initial": "a", "list": ["a", "b"]}, "transitions": [{"name": "fix", "from": "a", "to": "b"}],
  "rules": [{"on": "transition", "name": "fix", "do": [{"action": "table.update", "table": "Rates", "key": {"code": "code"}, "set": {"rate": "rate + 1"}}]}]}`), asSetup); err != nil {
@@ -267,12 +267,12 @@ func TestRoles_TableRules(t *testing.T) {
 		"a rule that is no condition": `{"name": "B", "columns": {"code": "text"}, "key": ["code"], "access": {"write": "USER()"}}`,
 		"a rule that reads a table":   `{"name": "C", "columns": {"code": "text"}, "key": ["code"], "access": {"read": "LOOKUP(Rates, rate, TRUE) > 0"}}`,
 	} {
-		if _, err := s.DefineTable(ctx, []byte(def), asSetup); err == nil {
+		if _, err := s.defineOpenTable(ctx, []byte(def), asSetup); err == nil {
 			t.Errorf("%s was accepted", what)
 		}
 	}
 	// A table without rules is as it was.
-	if _, err := s.DefineTable(ctx, []byte(`{"name": "Plain", "columns": {"code": "text"}, "key": ["code"]}`), asSetup); err != nil {
+	if _, err := s.defineOpenTable(ctx, []byte(`{"name": "Plain", "columns": {"code": "text"}, "key": ["code"]}`), asSetup); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := s.ImportRows(ctx, "Plain", []Values{{"code": "x"}}); err != nil {

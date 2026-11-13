@@ -182,7 +182,7 @@ func TestRequests_NoSecretIsStored(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if _, err := s.DefineClass(ctx, []byte(fmt.Sprintf(memoClass, "slack.post", `{"channel": "to", "text": "subject"}`)), asSetup); err != nil {
+	if _, err := s.defineOpen(ctx, []byte(fmt.Sprintf(memoClass, "slack.post", `{"channel": "to", "text": "subject"}`)), asSetup); err != nil {
 		t.Fatal(err)
 	}
 	// The receiver fails and sends the request's own header back; then it
@@ -274,7 +274,7 @@ func TestRequests_SignedEnvelope(t *testing.T) {
  "request": {"url": "\"https://books.example/hooks/fadodb\"", "sign": "signing_key"}}`), asSetup); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.DefineClass(ctx, []byte(fmt.Sprintf(memoClass, "books.post", `{"memo": "ID()", "note": "subject"}`)), asSetup); err != nil {
+	if _, err := s.defineOpen(ctx, []byte(fmt.Sprintf(memoClass, "books.post", `{"memo": "ID()", "note": "subject"}`)), asSetup); err != nil {
 		t.Fatal(err)
 	}
 	id := file(t, s, Values{"subject": "the budget"})
@@ -351,7 +351,7 @@ func TestRequests_RetriesAndTheirBounds(t *testing.T) {
 	now := start
 	s, _ := openStore(t, Options{Now: func() time.Time { return now }, Outbound: net, Outbox: OutboxOptions{MaxAttempts: 3}})
 	ctx := context.Background()
-	if _, err := s.DefineClass(ctx, []byte(fmt.Sprintf(memoClass, "http.call", `{"url": "\"https://hooks.example/memos\"", "body": {"subject": "subject"}}`)), asSetup); err != nil {
+	if _, err := s.defineOpen(ctx, []byte(fmt.Sprintf(memoClass, "http.call", `{"url": "\"https://hooks.example/memos\"", "body": {"subject": "subject"}}`)), asSetup); err != nil {
 		t.Fatal(err)
 	}
 	net.script(&fakeReply{Status: 503, RetryAfter: 10 * 24 * 3600}, &fakeReply{Status: 408}, &fakeReply{Status: 502, Text: "still down"})
@@ -450,7 +450,7 @@ func TestRequests_WhatAProcessLacksIsNoAnswer(t *testing.T) {
 	if _, err := s.DefineAction(ctx, []byte(slackPost), asSetup); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.DefineClass(ctx, []byte(fmt.Sprintf(memoClass, "slack.post", `{"channel": "to", "text": "subject"}`)), asSetup); err != nil {
+	if _, err := s.defineOpen(ctx, []byte(fmt.Sprintf(memoClass, "slack.post", `{"channel": "to", "text": "subject"}`)), asSetup); err != nil {
 		t.Fatal(err)
 	}
 	id := file(t, s, Values{"subject": "x"})

@@ -112,7 +112,7 @@ func TestRulesCampaign(t *testing.T) {
  "states": {"initial": "busy", "list": ["busy", "idle", "over"]},
  "transitions": [{"name": "rest", "from": "busy", "to": "idle"}, {"name": "work", "from": "idle", "to": "busy"}, {"from": "idle", "to": "over", "after": "1h"}]}`,
 	} {
-		if _, err := s.DefineClass(ctx, []byte(def), asSetup); err != nil {
+		if _, err := s.defineOpen(ctx, []byte(def), asSetup); err != nil {
 			t.Fatal(err)
 		}
 	}

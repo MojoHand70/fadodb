@@ -187,6 +187,18 @@ refusal is the place of the rule, such as `/access/update`.
 each written as its id, then its kind and `for` whom where the host
 said, as `agent-7 agent for ann`.
 
+A suite of access cases says `"as_written": true`: its classes are
+defined as they are written. Every other suite is not about who may,
+and its runner writes `TRUE` for each access rule a class or a table
+of the suite leaves out, so that the suite runs open to every caller,
+a step without `as` too.
+
+`left_out.json` and `left_out_partly.json` are the suites of a rule a
+class leaves out (ADR-0052, item 5): a class with no `access` block,
+which nobody but a content administrator reaches, and a class that
+writes some of its rules, where the refusal names the one that is
+missing and a transition without a rule of its own asks `update`.
+
 `groups.json` is the suite of the system groups as the formulas of a
 class see them (ADR-0052): `INGROUP` of a system group and of
 `everyone`, on a read by id, in a command and in a filter; a call

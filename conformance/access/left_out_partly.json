@@ -1,0 +1,34 @@
+{
+  "suite": "left_out_partly",
+  "description": "A class that writes some of its rules and leaves the others out (ADR-0052, item 5). Everyone creates and sees a card; nothing says who may change or delete one, so nobody may, its owner included, and the refusal names the rule that is missing. A transition with a rule of its own is not asked update; one without is.",
+  "as_written": true,
+  "class": {
+    "name": "Card",
+    "variables": {"owner": {"type": "text", "default": "USER()"}, "note": {"type": "text"}},
+    "states": {"initial": "draft", "list": ["draft", "filed", "stamped"]},
+    "transitions": [
+      {"name": "file",  "from": "draft", "to": "filed"},
+      {"name": "stamp", "from": "draft", "to": "stamped"}
+    ],
+    "access": {
+      "read":   "INGROUP(\"everyone\")",
+      "create": "INGROUP(\"everyone\")",
+      "transition": {"stamp": "owner = USER()"}
+    }
+  },
+  "principals": {
+    "ann":     {"id": "ann", "groups": ["staff"]},
+    "bob":     {"id": "bob", "groups": ["staff"]},
+    "content": {"id": "cora", "system": ["content-administrators"]}
+  },
+  "script": [
+    {"name": "everyone creates", "do": "create", "doc": "c1", "as": "ann", "values": {"note": "x"}, "expect": {"state": "draft", "values": {"owner": "ann"}}},
+    {"name": "everyone sees", "do": "get", "doc": "c1", "as": "bob", "expect": {"values": {"note": "x"}}},
+    {"name": "nothing says who may change a card, so its owner may not", "do": "set", "doc": "c1", "as": "ann", "values": {"note": "y"}, "expect": {"code": "forbidden", "action": "/access/update"}},
+    {"name": "a transition without a rule asks update, and gets the same answer", "do": "transition", "doc": "c1", "as": "ann", "transition": "file", "expect": {"code": "forbidden", "action": "/access/update"}},
+    {"name": "nothing says who may delete one", "do": "delete", "doc": "c1", "as": "ann", "expect": {"code": "forbidden", "action": "/access/delete"}},
+    {"name": "the transition with a rule of its own is not asked update: another clerk may not stamp", "do": "transition", "doc": "c1", "as": "bob", "transition": "stamp", "expect": {"code": "forbidden", "action": "/access/transition/stamp"}},
+    {"name": "a content administrator changes the card past the rule that is missing", "do": "set", "doc": "c1", "as": "content", "values": {"note": "z"}, "expect": {"version": 2}},
+    {"name": "and the owner stamps it", "do": "transition", "doc": "c1", "as": "ann", "transition": "stamp", "expect": {"state": "stamped"}}
+  ]
+}

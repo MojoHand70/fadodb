@@ -12,7 +12,13 @@
     {"name": "grant", "from": "asked", "to": "granted"},
     {"name": "refuse", "from": "asked", "to": "refused"}
   ],
-  "access": {"transition": {"grant": "approver = USER()", "refuse": "approver = USER()"}},
+  "access": {
+    "read":   "INGROUP(\"everyone\")",
+    "create": "INGROUP(\"everyone\")",
+    "update": "FALSE",
+    "delete": "FALSE",
+    "transition": {"grant": "approver = USER()", "refuse": "approver = USER()"}
+  },
   "rules": [
     {"on": "enter", "state": "granted", "do": [{"action": "refresh", "class": "Purchase", "id": "purchase"}]},
     {"on": "enter", "state": "refused", "do": [{"action": "refresh", "class": "Purchase", "id": "purchase"}]}

@@ -264,7 +264,7 @@ func TestAPISchemas(t *testing.T) {
 	note := func(what string) string {
 		return `{"action": "audit.note", "args": {"what": "\"` + what + `\"", "at": "NOW()", "n": "qty", "ok": "qty > 1", "sum": "sum", "raw": {"lines": "qty", "tags": ["memo"]}, "day": "TODAY()"}}`
 	}
-	if _, err := s.DefineClass(ctx, []byte(`{"name": "Case", "title": "\"Case \" & memo",
+	if _, err := s.defineOpen(ctx, []byte(`{"name": "Case", "title": "\"Case \" & memo",
  "variables": {"memo": {"type": "text", "default": "\"new\""}, "qty": {"type": "number"}, "sum": {"type": "money", "scale": 2},
    "lines": {"type": "rows", "schema": {"sku": "text", "qty": "number"}}, "tags": {"type": "array<text>"}, "who": {"type": "object", "schema": "Person"},
    "stamp": {"formula": "NOW()", "mode": "triggered", "on": ["refresh"]}, "broken": {"formula": "1 / qty", "mode": "triggered", "on": ["refresh"]}},

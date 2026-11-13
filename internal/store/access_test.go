@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/MojoHand70/fadodb/internal/model"
 	"github.com/MojoHand70/fadodb/internal/query"
 )
 
@@ -64,7 +65,7 @@ func openClaims(t *testing.T) (*Store, context.Context) {
 	t.Helper()
 	s, _ := openStore(t, Options{})
 	ctx := context.Background()
-	if _, err := s.DefineClass(ctx, []byte(claimClass), asSetup); err != nil {
+	if _, err := s.defineOpen(ctx, []byte(claimClass), asSetup); err != nil {
 		t.Fatal(err)
 	}
 	return s, ctx
@@ -311,7 +312,7 @@ func TestAccess_TheBareReply(t *testing.T) {
  "states": {"initial": "filed", "list": ["filed", "heard"]},
  "transitions": [{"name": "hear", "from": "filed", "to": "heard"}],
  "access": {"read": "INGROUP(\"hr\")"}}`
-	if _, err := s.DefineClass(ctx, []byte(complaint), asSetup); err != nil {
+	if _, err := s.defineOpen(ctx, []byte(complaint), asSetup); err != nil {
 		t.Fatal(err)
 	}
 	isBare := func(what string, d *Document, err error) {
@@ -362,7 +363,7 @@ func TestAccess_RulesAndTimers(t *testing.T) {
             "do": [{"action": "create", "class": "Vault", "values": {}},
                    {"action": "refresh", "class": "Vault", "id": "vault"}]}]}`,
 	} {
-		if _, err := s.DefineClass(ctx, []byte(def), asSetup); err != nil {
+		if _, err := s.defineOpen(ctx, []byte(def), asSetup); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -474,10 +475,10 @@ func TestAccess_Due(t *testing.T) {
  "states": {"initial": "open", "list": ["open", "done"]},
  "transitions": [{"from": "open", "to": "done", "guard": "LOOKUP(Flags, on, name = \"go\")"}],
  "access": {"read": "owner = USER()"}}`
-	if _, err := s.DefineTable(ctx, []byte(`{"name": "Flags", "columns": {"name": "text", "on": "bool"}, "key": ["name"]}`), asSetup); err != nil {
+	if _, err := s.defineOpenTable(ctx, []byte(`{"name": "Flags", "columns": {"name": "text", "on": "bool"}, "key": ["name"]}`), asSetup); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.DefineClass(ctx, []byte(task), asSetup); err != nil {
+	if _, err := s.defineOpen(ctx, []byte(task), asSetup); err != nil {
 		t.Fatal(err)
 	}
 	mine, _ := s.Create(ctx, "Task", nil, As(clerkAnn))
@@ -508,7 +509,7 @@ func TestAccess_ARuleLeftOut(t *testing.T) {
 	ctx := context.Background()
 	const memo = `{"name": "Memo", "variables": {"text": {"type": "text"}},
  "states": {"initial": "a", "list": ["a", "b"]}, "transitions": [{"name": "go", "from": "a", "to": "b"}]}`
-	if _, err := s.DefineClass(ctx, []byte(memo), asSetup); err != nil {
+	if _, err := s.defineOpen(ctx, []byte(memo), asSetup); err != nil {
 		t.Fatal(err)
 	}
 	doc, err := s.Create(ctx, "Memo", Values{"text": "hello"})
@@ -567,7 +568,7 @@ func TestAccess_LiteralsAndOlderVersions(t *testing.T) {
 		return `{"name": "Note", "variables": {"region": {"type": "text", "index": true}, "owner": {"type": "text", "default": "USER()"}, "n": {"type": "number"}},
  "states": {"initial": "a", "list": ["a"]}` + access + `}`
 	}
-	if _, err := s.DefineClass(ctx, []byte(note("")), asSetup); err != nil {
+	if _, err := s.defineOpen(ctx, []byte(note("")), asSetup); err != nil {
 		t.Fatal(err)
 	}
 	eu, _ := s.Create(ctx, "Note", Values{"region": "EU", "n": 1}, As(clerkAnn))
@@ -577,7 +578,7 @@ func TestAccess_LiteralsAndOlderVersions(t *testing.T) {
 	}
 	// The class gains a read rule: a new version, which touches no
 	// document.
-	if _, err := s.DefineClass(ctx, []byte(note(`, "access": {"read": "region = \"EU\" AND (n > 0 OR owner = USER())"}`)), asSetup); err != nil {
+	if _, err := s.defineOpen(ctx, []byte(note(`, "access": {"read": "region = \"EU\" AND (n > 0 OR owner = USER())"}`)), asSetup); err != nil {
 		t.Fatal(err)
 	}
 	for _, where := range []string{"", "n > 0", "region <> \"\""} {
@@ -638,7 +639,7 @@ func TestAccess_EveryPathAgrees(t *testing.T) {
 		ctx := context.Background()
 		def := `{"name": "Doc", "variables": {"owner": {"type": "text", "index": true}, "region": {"type": "text"}, "n": {"type": "number"}},
  "states": {"initial": "a", "list": ["a"]}, "access": {"read": "` + rule + `"}}`
-		if _, err := s.DefineClass(ctx, []byte(def), asSetup); err != nil {
+		if _, err := s.defineOpen(ctx, []byte(def), asSetup); err != nil {
 			t.Fatalf("%s: %v", rule, err)
 		}
 		var ids []string
@@ -706,7 +707,7 @@ func TestAccess_OwnDocumentsThroughTheIndex(t *testing.T) {
 	ctx := context.Background()
 	const def = `{"name": "Doc", "variables": {"owner": {"type": "text", "default": "USER()", "index": true}, "n": {"type": "number"}},
  "states": {"initial": "a", "list": ["a"]}, "access": {"read": "owner = USER() OR INGROUP(\"hr\")"}}`
-	if _, err := s.DefineClass(ctx, []byte(def), asSetup); err != nil {
+	if _, err := s.defineOpen(ctx, []byte(def), asSetup); err != nil {
 		t.Fatal(err)
 	}
 	for i := 0; i < 50; i++ {
@@ -760,5 +761,100 @@ func TestAccess_OwnDocumentsThroughTheIndex(t *testing.T) {
 	}
 	if n, err := s.Count(ctx, Filter{Class: "Doc"}, As(guest)); err != nil || n != 0 {
 		t.Errorf("a stranger's count: %v %d", err, n)
+	}
+}
+
+// A rule a class leaves out lets nobody through (ADR-0052, item 5), and
+// the class is accepted with a note for each: a finding that refuses
+// nothing and says what is missing.
+func TestAccess_LeftOutIsNoted(t *testing.T) {
+	s, _ := openStore(t, Options{})
+	ctx := context.Background()
+	const slip = `{"name": "Slip", "variables": {"note": {"type": "text"}}, "states": {"initial": "a", "list": ["a"]}}`
+	notes := s.Validate([]byte(slip))
+	var paths []string
+	for _, d := range notes {
+		if !d.Note || d.Code != model.CodeRuleLeftOut || d.Hint == "" || !strings.Contains(d.Message, "Slip has no ") {
+			t.Errorf("a note of a rule left out: %+v", d)
+		}
+		paths = append(paths, d.Path)
+	}
+	if got := strings.Join(paths, " "); got != "/access/read /access/create /access/update /access/delete" {
+		t.Errorf("the notes of a class with no access block: %s", got)
+	}
+	if notes.Refuses() || notes.Err() != nil {
+		t.Errorf("notes refuse nothing: %v", notes.Err())
+	}
+	// A class that writes two of its rules is noted for the other two, in
+	// a set under the position of its definition; one that writes all four
+	// for none; a class without states for the two its previews ask.
+	for what, want := range map[string]struct {
+		defs  []string
+		paths string
+	}{
+		"two rules written":      {[]string{slip, `{"name": "Half", "variables": {"n": {"type": "number"}}, "states": {"initial": "a", "list": ["a"]}, "access": {"read": "TRUE", "delete": "FALSE"}}`}, "/0/access/read /0/access/create /0/access/update /0/access/delete /1/access/create /1/access/update"},
+		"all four written":       {[]string{`{"name": "Full", "variables": {"n": {"type": "number"}}, "states": {"initial": "a", "list": ["a"]}, "access": {"read": "TRUE", "create": "TRUE", "update": "FALSE", "delete": "FALSE"}}`}, ""},
+		"a class without states": {[]string{`{"name": "Sum", "variables": {"a": {"type": "number"}, "twice": {"formula": "a * 2"}}}`}, "/0/access/read /0/access/create"},
+	} {
+		var defs [][]byte
+		for _, d := range want.defs {
+			defs = append(defs, []byte(d))
+		}
+		var got []string
+		for _, d := range s.ValidateClasses(defs) {
+			got = append(got, d.Path)
+		}
+		if strings.Join(got, " ") != want.paths {
+			t.Errorf("%s: notes at %s, want %s", what, strings.Join(got, " "), want.paths)
+		}
+	}
+	// What refuses a definition is reported alone, without the notes.
+	if diags := s.Validate([]byte(`{"name": "Bad", "variables": {"n": {"formula": "1 +"}}, "states": {"initial": "a", "list": ["a"]}}`)); !diags.Refuses() || diags.Has(model.CodeRuleLeftOut) {
+		t.Errorf("a definition that is refused: %v", diags)
+	}
+	// The class is defined all the same, and carries its notes.
+	cls, err := s.DefineClass(ctx, []byte(slip), asSetup)
+	if err != nil || len(cls.Notes) != 4 {
+		t.Fatalf("defining a class with no access block: %v, %d notes", err, len(cls.Notes))
+	}
+	// Nobody but a content administrator reaches its documents, and the
+	// refusal says which rule is missing and what to add.
+	_, err = s.Create(ctx, "Slip", Values{"note": "x"}, As(clerkAnn))
+	if e, ok := err.(*Error); !ok || e.Code != CodeForbidden || e.Path != "/access/create" || !strings.Contains(e.Hint, "add access.create") {
+		t.Errorf("creating where the class says nothing: %v", err)
+	}
+	doc, err := s.Create(ctx, "Slip", Values{"note": "x"}, As(root))
+	if err != nil {
+		t.Fatalf("a content administrator creates: %v", err)
+	}
+	if _, err := s.Get(ctx, "Slip", doc.ID, As(clerkAnn)); code(err) != CodeUnknownDocument {
+		t.Errorf("seeing where the class says nothing: %v", err)
+	}
+	if n, err := s.Count(ctx, Filter{Class: "Slip"}, As(clerkAnn)); err != nil || n != 0 {
+		t.Errorf("counting where the class says nothing: %v %d", err, n)
+	}
+	if n, err := s.Count(ctx, Filter{Class: "Slip"}, As(root)); err != nil || n != 1 {
+		t.Errorf("a content administrator counts: %v %d", err, n)
+	}
+	// A table that says nothing is the same: no rows for anybody but a
+	// content administrator, and a formula still reads it (ADR-0046).
+	if _, err := s.DefineTable(ctx, []byte(`{"name": "Rates", "columns": {"code": "text", "rate": "number"}, "key": ["code"]}`), asSetup); err != nil {
+		t.Fatal(err)
+	}
+	_, err = s.ImportRows(ctx, "Rates", []Values{{"code": "EUR", "rate": 4.3}}, As(clerkAnn))
+	if e, ok := err.(*Error); !ok || e.Code != CodeForbidden || e.Path != "/access/write" || !strings.Contains(e.Hint, "add access.write") {
+		t.Errorf("writing a table that says nothing: %v", err)
+	}
+	if _, err := s.ImportRows(ctx, "Rates", []Values{{"code": "EUR", "rate": 4.3}}, As(root)); err != nil {
+		t.Fatalf("a content administrator writes the table: %v", err)
+	}
+	if _, err := s.TableRows(ctx, "Rates", As(clerkAnn)); code(err) != CodeForbidden {
+		t.Errorf("reading a table that says nothing: %v", err)
+	}
+	if _, err := s.defineOpen(ctx, []byte(`{"name": "Quote", "variables": {"rate": {"formula": "LOOKUP(Rates, rate, code = \"EUR\")", "type": "number"}}, "states": {"initial": "a", "list": ["a"]}}`), asSetup); err != nil {
+		t.Fatal(err)
+	}
+	if q, err := s.Create(ctx, "Quote", nil, As(clerkAnn)); err != nil || q.Values["rate"] != 4.3 {
+		t.Errorf("a formula reads the table with the engine's eyes: %v %s", err, dump(q))
 	}
 }

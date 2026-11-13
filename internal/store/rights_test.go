@@ -45,7 +45,7 @@ func openTickets(t *testing.T) (*Store, context.Context) {
 	t.Helper()
 	s, _ := openStore(t, Options{})
 	ctx := context.Background()
-	if _, err := s.DefineClass(ctx, []byte(ticketRights), asSetup); err != nil {
+	if _, err := s.defineOpen(ctx, []byte(ticketRights), asSetup); err != nil {
 		t.Fatal(err)
 	}
 	return s, ctx
@@ -146,7 +146,7 @@ func TestRights_WriteCheck(t *testing.T) {
 	_, err = s.Set(ctx, "Ticket", doc.ID, Values{"amount": 15}, As(ticketOwner))
 	forbidden(t, err, "amount")
 	// A class without rights is unchanged: anyone sets anything.
-	if _, err := s.DefineClass(ctx, []byte(`{"name": "Open", "variables": {"a": {"type": "number"}}, "states": {"initial": "s", "list": ["s"]}}`), asSetup); err != nil {
+	if _, err := s.defineOpen(ctx, []byte(`{"name": "Open", "variables": {"a": {"type": "number"}}, "states": {"initial": "s", "list": ["s"]}}`), asSetup); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := s.Create(ctx, "Open", Values{"a": 1}); err != nil {
@@ -311,7 +311,7 @@ func TestRights_OlderVersionRows(t *testing.T) {
 	s, _ := openStore(t, Options{})
 	ctx := context.Background()
 	v1 := `{"name": "Ticket", "variables": {"amount": {"type": "number"}, "secret": {"type": "text"}}, "states": {"initial": "open", "list": ["open"]}}`
-	if _, err := s.DefineClass(ctx, []byte(v1), asSetup); err != nil {
+	if _, err := s.defineOpen(ctx, []byte(v1), asSetup); err != nil {
 		t.Fatal(err)
 	}
 	doc, err := s.Create(ctx, "Ticket", Values{"amount": 1, "secret": "s"}, As(ticketStranger))
@@ -320,7 +320,7 @@ func TestRights_OlderVersionRows(t *testing.T) {
 	}
 	v2 := `{"name": "Ticket", "variables": {"amount": {"type": "number"}, "secret": {"type": "text"}}, "states": {"initial": "open", "list": ["open"]},
 	  "rights": {"*": {"secret": {"read": ["finance"]}}}}`
-	if _, err := s.DefineClass(ctx, []byte(v2), asSetup); err != nil {
+	if _, err := s.defineOpen(ctx, []byte(v2), asSetup); err != nil {
 		t.Fatal(err)
 	}
 	got, err := s.Get(ctx, "Ticket", doc.ID, As(ticketStranger))
@@ -405,17 +405,17 @@ func TestRights_Filter(t *testing.T) {
 func TestRights_ReadRightWithoutLookups(t *testing.T) {
 	s, _ := openStore(t, Options{})
 	ctx := context.Background()
-	if _, err := s.DefineTable(ctx, []byte(`{"name": "Fx", "columns": {"code": "text", "rate": "decimal(6)"}, "key": ["code"]}`), asSetup); err != nil {
+	if _, err := s.defineOpenTable(ctx, []byte(`{"name": "Fx", "columns": {"code": "text", "rate": "decimal(6)"}, "key": ["code"]}`), asSetup); err != nil {
 		t.Fatal(err)
 	}
 	read := `{"name": "Q", "variables": {"cur": {"type": "text"}, "net": {"type": "number"}}, "states": {"initial": "s", "list": ["s"]},
 	  "rights": {"*": {"net": {"read": "LOOKUP(Fx, rate, code = THIS.cur) > 1"}}}}`
-	if diags := s.Validate([]byte(read)); len(diags) != 1 || diags[0].Code != "not_allowed" || diags[0].Path != "/rights/*/net/read" {
+	if diags := s.Validate(opened([]byte(read))); len(diags) != 1 || diags[0].Code != "not_allowed" || diags[0].Path != "/rights/*/net/read" {
 		t.Errorf("read right with a lookup: %v", diags)
 	}
 	write := `{"name": "Q", "variables": {"cur": {"type": "text"}, "net": {"type": "number"}}, "states": {"initial": "s", "list": ["s"]},
 	  "rights": {"*": {"net": {"write": "LOOKUP(Fx, rate, code = THIS.cur) > 1"}}}}`
-	if diags := s.Validate([]byte(write)); len(diags) != 0 {
+	if diags := s.Validate(opened([]byte(write))); len(diags) != 0 {
 		t.Errorf("write right with a lookup: %v", diags)
 	}
 }

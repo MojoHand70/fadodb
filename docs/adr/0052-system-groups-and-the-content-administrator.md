@@ -190,15 +190,49 @@ item 4 only that a content administrator passes.
   three groups that define, operate the queue and run SQL, and the
   README shows it. The suites say what their runner does as that
   caller.
-- **Not in this step:** item 5, so a rule a class leaves out still
-  lets every caller through (`model.LeftOutAllows`); the reason and the
-  mark of item 4, so a content administrator passes a rule without
-  either, as the flag did; and item 7.
+- **Not in this step:** item 5, which the second step built; the
+  reason and the mark of item 4, so a content administrator passes a
+  rule without either, as the flag did; and item 7.
 
 Measured in memory against the commit before: every benchmark of the
 gate keeps its allocations, the outbox and the timer lose four each
 with the column that went, and a commit takes 32 bytes more, 0.4%, for
 the system groups in the context of its formulas.
+
+The second step, the same day, built item 5.
+
+- **A rule left out is FALSE on every path**: a read by id, a command,
+  a filter, a count, the list of what is due, the history, a file, and
+  the read and the write rule of a table. A content administrator
+  passes it as any rule.
+- **The note.** `Diagnostic.Note` marks a finding that refuses nothing,
+  and the code of a rule left out is `rule_left_out`, with the place of
+  the rule, what leaving it out means and what to add. `ValidateClass`
+  and `ValidateClasses` answer the notes when nothing refuses the
+  definition, and what refuses it alone when something does.
+  `Diagnostics.Refuses` tells the two apart, and `Diagnostics.Err` is
+  nil for notes. The class `DefineClass` returns carries its `Notes`.
+- **A class without states** has no documents, and its previews ask
+  `create`, who may run the calculation, and `read`, who may see what
+  it gives. It is noted for those two.
+- **A table is not noted yet.** No call checks a table definition
+  without storing it, so there is nothing to answer a note with; the
+  refusal a caller gets says which rule is missing.
+- **`TRUE` and `everyone`.** `"read": "TRUE"` lets a call without a
+  principal through, and `"read": "INGROUP(\"everyone\")"` only a
+  caller that has an id.
+- **The samples write their rules.** The invoice of the README is
+  created and changed by sales while it is a draft, approved and paid
+  by finance, and deleted by nobody; the receipt is finance's; a
+  purchase and an approval are seen by everyone, and a purchase is
+  changed by whoever created it while it is a draft.
+- **The tests that are not about who may** define their classes
+  through one helper, `internal/testdef`, which writes `TRUE` for every
+  rule a definition leaves out. A suite does the same unless it says
+  `as_written`, which the suites under `conformance/access` do.
+
+Measured in memory: every benchmark of the gate keeps its allocations
+with the rules written into its class.
 
 ## The owner's rulings
 

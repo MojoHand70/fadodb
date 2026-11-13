@@ -44,9 +44,10 @@ Website: [fadodb.org](https://fadodb.org).
 > change and delete a document, and four system groups hold the work
 > that is not about one document: who runs the database, who designs,
 > who acts on any document and who runs SQL. A rule a class leaves out
-> still lets every caller through; the accepted design closes it. That,
-> the reason a content administrator must give, and substitutions are
-> not built yet. The server comes with its phase. The numbers are in
+> lets nobody through, so a class says who may. The reason a content
+> administrator must give for acting past a rule, and substitutions,
+> are accepted and not built yet. The server comes with its phase. The
+> numbers are in
 > [docs/perf/](docs/perf/), the plan in [ROADMAP.md](ROADMAP.md).
 
 ## What it is
@@ -90,7 +91,13 @@ defined first. Formulas over `lines` arrive with composites:
     {"on": "enter", "state": "paid",
      "do": [{"action": "create", "class": "Receipt", "values": {"invoice": "ID()", "amount": "total"}}]}
   ],
-  "access": {"read": "INGROUP(\"finance\") OR INGROUP(\"sales\") OR customer = USER()", "delete": "FALSE"},
+  "access": {
+    "read":   "INGROUP(\"finance\") OR INGROUP(\"sales\") OR customer = USER()",
+    "create": "INGROUP(\"sales\")",
+    "update": "INGROUP(\"sales\") AND STATE() = \"draft\"",
+    "delete": "FALSE",
+    "transition": {"approve": "INGROUP(\"finance\")", "pay": "INGROUP(\"finance\")"}
+  },
   "rights": {"*": {"discount": {"write": ["sales"]}}, "approved": {"discount": {"read": ["finance"]}}}
 }
 ```
@@ -133,8 +140,9 @@ who may see, create, change and delete a document: a document its
 caller may not see is answered as if it did not exist, by a read, a
 command, a filter and a count alike, and a caller who sees it and may
 not change it gets `forbidden` with the rule. A rule a class leaves out
-still lets every caller through; the accepted design closes it
-(ADR-0052), and that is the next step. Defining, operating the outbox
+lets nobody through but a content administrator (ADR-0052): a class
+writes all four, and `ValidateClass` notes each one it leaves out
+without refusing the class. Defining, operating the outbox
 and running SQL, which reads every row, are each for a system group:
 `designers`, `administrators` and `analysts`. A fourth,
 `content-administrators`, sees every document and acts on it past the

@@ -61,7 +61,7 @@ func TestLookup_FormulaSuiteOnTheStore(t *testing.T) {
 			s, _ := openStore(t, mode.opts)
 			for name, src := range raw.Sources {
 				def := fmt.Sprintf(`{"name": %q, "columns": %s, "key": %s}`, name, src.Columns, src.Key)
-				if _, err := s.DefineTable(ctx, []byte(def), asSetup); err != nil {
+				if _, err := s.defineOpenTable(ctx, []byte(def), asSetup); err != nil {
 					t.Fatalf("%s: %v", name, err)
 				}
 				if _, err := s.ImportRows(ctx, name, src.Rows); err != nil {
@@ -176,7 +176,7 @@ func TestLookup_FormulaSuiteOnClasses(t *testing.T) {
 			vars += fmt.Sprintf(`%q: {"type": %q, "index": %v}`, f.Name, f.Type.String(), strings.EqualFold(f.Name, src.Key[0]) && f.Type.Kind != formula.KindMoney)
 		}
 		def := fmt.Sprintf(`{"name": %q, "variables": {%s}, "states": {"initial": "open", "list": ["open"]}}`, src.Name, vars)
-		if _, err := s.DefineClass(ctx, []byte(def), asSetup); err != nil {
+		if _, err := s.defineOpen(ctx, []byte(def), asSetup); err != nil {
 			t.Fatalf("%s: %v", src.Name, err)
 		}
 		// SourceRows gives the rows as declared; the executor in memory

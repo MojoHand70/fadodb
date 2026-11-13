@@ -44,7 +44,7 @@ func setupTables(t *testing.T, s *Store) {
 	t.Helper()
 	ctx := context.Background()
 	for _, def := range []string{ratesTable, pricesTable} {
-		if _, err := s.DefineTable(ctx, []byte(def), asSetup); err != nil {
+		if _, err := s.defineOpenTable(ctx, []byte(def), asSetup); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -137,33 +137,33 @@ func TestDefineTable(t *testing.T) {
 	}
 	// Definitions: the same again is a no-op; a bad one is diagnostics; a
 	// name a class or view holds is taken.
-	if again, err := s.DefineTable(ctx, []byte(ratesTable), asSetup); err != nil || again != tbl {
+	if again, err := s.defineOpenTable(ctx, []byte(ratesTable), asSetup); err != nil || again != tbl {
 		t.Errorf("same table again: %v", err)
 	}
-	_, err = s.DefineTable(ctx, []byte(`{"name": "Bad", "columns": {"a": "text"}}`), asSetup)
+	_, err = s.defineOpenTable(ctx, []byte(`{"name": "Bad", "columns": {"a": "text"}}`), asSetup)
 	var diags model.Diagnostics
 	if !errors.As(err, &diags) || !diags.Has(model.CodeMissing) {
 		t.Errorf("bad table: %v", err)
 	}
 	defineInvoice(t, s)
-	if _, err := s.DefineTable(ctx, []byte(`{"name": "Invoice_lines", "columns": {"a": "text"}, "key": ["a"]}`), asSetup); code(err) != CodeDuplicate {
+	if _, err := s.defineOpenTable(ctx, []byte(`{"name": "Invoice_lines", "columns": {"a": "text"}, "key": ["a"]}`), asSetup); code(err) != CodeDuplicate {
 		t.Errorf("a table named like a view: %v", err)
 	}
-	if _, err := s.DefineTable(ctx, []byte(`{"name": "Invoice", "columns": {"a": "text"}, "key": ["a"]}`), asSetup); !errors.As(err, &diags) || !diags.Has(model.CodeDuplicate) {
+	if _, err := s.defineOpenTable(ctx, []byte(`{"name": "Invoice", "columns": {"a": "text"}, "key": ["a"]}`), asSetup); !errors.As(err, &diags) || !diags.Has(model.CodeDuplicate) {
 		t.Errorf("a table named like a class: %v", err)
 	}
 	// A table with rows is not redefined; an empty one is the next version.
-	_, err = s.DefineTable(ctx, []byte(strings.Replace(ratesTable, `"name": "text"`, `"name": "text", "note": "text"`, 1)), asSetup)
+	_, err = s.defineOpenTable(ctx, []byte(strings.Replace(ratesTable, `"name": "text"`, `"name": "text", "note": "text"`, 1)), asSetup)
 	if !errors.As(err, &diags) || !diags.Has(model.CodeNotSupported) {
 		t.Errorf("redefining with rows: %v", err)
 	}
-	if _, err := s.DefineTable(ctx, []byte(`{"name": "Empty", "columns": {"a": "text"}, "key": ["a"]}`), asSetup); err != nil {
+	if _, err := s.defineOpenTable(ctx, []byte(`{"name": "Empty", "columns": {"a": "text"}, "key": ["a"]}`), asSetup); err != nil {
 		t.Fatal(err)
 	}
-	if v2, err := s.DefineTable(ctx, []byte(`{"name": "Empty", "columns": {"a": "text", "b": "int"}, "key": ["a"]}`), asSetup); err != nil || v2.Version != 2 || len(v2.Columns) != 2 {
+	if v2, err := s.defineOpenTable(ctx, []byte(`{"name": "Empty", "columns": {"a": "text", "b": "int"}, "key": ["a"]}`), asSetup); err != nil || v2.Version != 2 || len(v2.Columns) != 2 {
 		t.Errorf("redefining an empty table: %v %+v", err, v2)
 	}
-	if _, err := s.DefineTable(ctx, []byte(`{"name": "Empty", "version": 9, "columns": {"a": "text"}, "key": ["a"]}`), asSetup); !errors.As(err, &diags) || !diags.Has(model.CodeBadValue) {
+	if _, err := s.defineOpenTable(ctx, []byte(`{"name": "Empty", "version": 9, "columns": {"a": "text"}, "key": ["a"]}`), asSetup); !errors.As(err, &diags) || !diags.Has(model.CodeBadValue) {
 		t.Errorf("wrong version: %v", err)
 	}
 }
@@ -172,7 +172,7 @@ func TestLookup(t *testing.T) {
 	s, _ := openStore(t, Options{})
 	ctx := context.Background()
 	setupTables(t, s)
-	if _, err := s.DefineClass(ctx, []byte(order), asSetup); err != nil {
+	if _, err := s.defineOpen(ctx, []byte(order), asSetup); err != nil {
 		t.Fatal(err)
 	}
 	doc, err := s.Create(ctx, "Order", Values{"currency": "EUR", "net": "100.00", "sku": "A1", "qty": 12})
@@ -244,12 +244,12 @@ func TestLookup(t *testing.T) {
 	}
 	// A class may not read a table the store lacks, and a table a class
 	// reads is not redefined.
-	_, err = s.DefineClass(ctx, []byte(`{"name": "Quote", "variables": {"c": {"type": "text"}, "r": {"formula": "LOOKUP(Fx, rate, code = THIS.c)"}}, "states": {"initial": "open", "list": ["open"]}}`), asSetup)
+	_, err = s.defineOpen(ctx, []byte(`{"name": "Quote", "variables": {"c": {"type": "text"}, "r": {"formula": "LOOKUP(Fx, rate, code = THIS.c)"}}, "states": {"initial": "open", "list": ["open"]}}`), asSetup)
 	var diags model.Diagnostics
 	if !errors.As(err, &diags) || !diags.Has(model.CodeBadFormula) || !strings.Contains(diags.Error(), "unknown source Fx") {
 		t.Errorf("unknown table in a class: %v", err)
 	}
-	_, err = s.DefineTable(ctx, []byte(strings.Replace(ratesTable, `"name": "text"`, `"name": "text", "note": "text"`, 1)), asSetup)
+	_, err = s.defineOpenTable(ctx, []byte(strings.Replace(ratesTable, `"name": "text"`, `"name": "text", "note": "text"`, 1)), asSetup)
 	if !errors.As(err, &diags) || !diags.Has(model.CodeNotSupported) || !strings.Contains(diags.Error(), "the class Order reads the table") {
 		t.Errorf("redefining a table in use: %v", err)
 	}
@@ -279,7 +279,7 @@ func TestLookup(t *testing.T) {
 func TestLookup_Aggregates(t *testing.T) {
 	s, _ := openStore(t, Options{})
 	ctx := context.Background()
-	if _, err := s.DefineTable(ctx, []byte(`{"name": "Stock", "columns": {"sku": "text", "bin": "text", "qty": "number", "value": "money(2)", "cost": "decimal(2)"}, "key": ["sku", "bin"]}`), asSetup); err != nil {
+	if _, err := s.defineOpenTable(ctx, []byte(`{"name": "Stock", "columns": {"sku": "text", "bin": "text", "qty": "number", "value": "money(2)", "cost": "decimal(2)"}, "key": ["sku", "bin"]}`), asSetup); err != nil {
 		t.Fatal(err)
 	}
 	stock := []Values{
@@ -302,7 +302,7 @@ func TestLookup_Aggregates(t *testing.T) {
   "dearest":  {"formula": "LOOKUP(Stock, MAX(value), sku = THIS.sku)"},
   "busy":     {"formula": "bins > 2 AND on_hand >= 12"}
 }, "states": {"initial": "open", "list": ["open"]}}`
-	if _, err := s.DefineClass(ctx, []byte(item), asSetup); err != nil {
+	if _, err := s.defineOpen(ctx, []byte(item), asSetup); err != nil {
 		t.Fatal(err)
 	}
 	doc, err := s.Create(ctx, "Item", Values{"sku": "A1"})
@@ -358,7 +358,7 @@ func TestLookup_Aggregates(t *testing.T) {
 	// An aggregate that fails fails its variable, with the code its
 	// function gives inside one document; IFERROR catches it.
 	const mixed = `{"name": "Mixed", "variables": {"all": {"formula": "LOOKUP(Stock, SUM(value), TRUE)"}}, "states": {"initial": "open", "list": ["open"]}}`
-	if _, err := s.DefineClass(ctx, []byte(mixed), asSetup); err != nil {
+	if _, err := s.defineOpen(ctx, []byte(mixed), asSetup); err != nil {
 		t.Fatal(err)
 	}
 	_, err = s.Create(ctx, "Mixed", Values{})
@@ -366,14 +366,14 @@ func TestLookup_Aggregates(t *testing.T) {
 		t.Errorf("a sum over two currencies: %v", err)
 	}
 	const caught = `{"name": "Caught", "variables": {"all": {"formula": "IFERROR(LOOKUP(Stock, MAX(value), TRUE), MONEY(DECIMAL(0, 2), \"PLN\"))"}}, "states": {"initial": "open", "list": ["open"]}}`
-	if _, err := s.DefineClass(ctx, []byte(caught), asSetup); err != nil {
+	if _, err := s.defineOpen(ctx, []byte(caught), asSetup); err != nil {
 		t.Fatal(err)
 	}
 	if c, err := s.Create(ctx, "Caught", Values{}); err != nil || c.Values["all"] != "0.00 PLN" {
 		t.Errorf("IFERROR over a failed aggregate: %v %s", err, dump(c))
 	}
 	// AVERAGE waits, and says what to write.
-	_, err = s.DefineClass(ctx, []byte(`{"name": "Mean", "variables": {"m": {"formula": "LOOKUP(Stock, AVERAGE(qty), TRUE)"}}, "states": {"initial": "open", "list": ["open"]}}`), asSetup)
+	_, err = s.defineOpen(ctx, []byte(`{"name": "Mean", "variables": {"m": {"formula": "LOOKUP(Stock, AVERAGE(qty), TRUE)"}}, "states": {"initial": "open", "list": ["open"]}}`), asSetup)
 	var diags model.Diagnostics
 	if !errors.As(err, &diags) || !diags.Has(model.CodeBadFormula) || !strings.Contains(diags.Error(), "divide a SUM by a COUNT") {
 		t.Errorf("AVERAGE over a table: %v", err)
@@ -389,7 +389,7 @@ func TestLookup_StatementPathAgrees(t *testing.T) {
 	ctx := context.Background()
 	for _, s := range []*Store{indexed, statements} {
 		setupTables(t, s)
-		if _, err := s.DefineClass(ctx, []byte(order), asSetup); err != nil {
+		if _, err := s.defineOpen(ctx, []byte(order), asSetup); err != nil {
 			t.Fatal(err)
 		}
 	}

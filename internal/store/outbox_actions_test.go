@@ -58,7 +58,7 @@ func TestOutbox_EachOverEveryCommit(t *testing.T) {
 	s, _ := openStore(t, Options{})
 	ctx := context.Background()
 	for _, def := range []string{taskClass, strings.NewReplacer("%s", "").Replace(jobClass)} {
-		if _, err := s.DefineClass(ctx, []byte(def), asSetup); err != nil {
+		if _, err := s.defineOpen(ctx, []byte(def), asSetup); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -89,7 +89,7 @@ func TestOutbox_EachOverEveryCommit(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.DefineClass(ctx, []byte(strings.Replace(strings.Replace(jobClass, "%s", `, "extra": {"type": "text"}`, 1), "%s", "", 1)), asSetup); err != nil {
+	if _, err := s.defineOpen(ctx, []byte(strings.Replace(strings.Replace(jobClass, "%s", `, "extra": {"type": "text"}`, 1), "%s", "", 1)), asSetup); err != nil {
 		t.Fatal(err)
 	}
 	for _, id := range []string{job.ID, old.ID} {
@@ -112,7 +112,7 @@ func TestOutbox_EachOverEveryCommit(t *testing.T) {
 		values Values
 		want   string
 	}{{nil, "eve fay"}, {Values{"crew": []any{"gus"}}, "gus"}} {
-		pv, err := s.PreviewDraft(ctx, []byte(draft), keep.ID, tc.values, "finish", asSetup)
+		pv, err := s.PreviewDraft(ctx, opened([]byte(draft)), keep.ID, tc.values, "finish", asSetup)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -162,7 +162,7 @@ func TestOutbox_RedefinitionMayNotBreakARule(t *testing.T) {
 		noRules = `{"on": "enter", "state": "paid", "do": [{"action": "emit", "event": "invoice.paid"}]}`
 	)
 	for _, def := range []string{receipt(amount, cancel), invoice(create + ", " + moves)} {
-		if _, err := s.DefineClass(ctx, []byte(def), asSetup); err != nil {
+		if _, err := s.defineOpen(ctx, []byte(def), asSetup); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -173,7 +173,7 @@ func TestOutbox_RedefinitionMayNotBreakARule(t *testing.T) {
 		{"the transition an action takes is removed", receipt(amount, ""), "/transitions", "/rules/1/do/0/name"},
 		{"the variable a refresh names no longer lists refresh", receipt(`"amount": {"type": "number"}, "seen": {"formula": "NOW()", "mode": "triggered", "on": ["enter:void"]}`, cancel), "/variables", "/rules/1/do/1/variables/0"},
 	} {
-		_, err := s.DefineClass(ctx, []byte(tc.def), asSetup)
+		_, err := s.defineOpen(ctx, []byte(tc.def), asSetup)
 		var diags model.Diagnostics
 		if !errors.As(err, &diags) {
 			t.Errorf("%s: want the redefinition refused, got %v", tc.name, err)
@@ -187,7 +187,7 @@ func TestOutbox_RedefinitionMayNotBreakARule(t *testing.T) {
 			t.Errorf("%s: want not_allowed at %s naming %s of Invoice, got:\n%s", tc.name, tc.path, tc.action, diags.Error())
 		}
 		// Validate says the same and stores nothing.
-		if got := s.Validate([]byte(tc.def)); !reflect.DeepEqual(got, diags) {
+		if got := s.Validate(opened([]byte(tc.def))); !reflect.DeepEqual(got, diags) {
 			t.Errorf("%s: Validate says %v", tc.name, got)
 		}
 	}
@@ -196,12 +196,12 @@ func TestOutbox_RedefinitionMayNotBreakARule(t *testing.T) {
 	}
 	// What breaks no rule goes through: a further variable, another
 	// transition, and a type the formula still fits.
-	if _, err := s.DefineClass(ctx, []byte(receipt(amount+`, "note": {"type": "text"}`, cancel+`, {"name": "reissue", "from": "void", "to": "issued"}`)), asSetup); err != nil {
+	if _, err := s.defineOpen(ctx, []byte(receipt(amount+`, "note": {"type": "text"}`, cancel+`, {"name": "reissue", "from": "void", "to": "issued"}`)), asSetup); err != nil {
 		t.Fatalf("a redefinition that breaks nothing: %v", err)
 	}
 	// A new required input is no refusal: the create that does not give it
 	// is refused when it runs, and says why.
-	if _, err := s.DefineClass(ctx, []byte(receipt(amount+`, "payer": {"type": "text", "required": true}`, cancel)), asSetup); err != nil {
+	if _, err := s.defineOpen(ctx, []byte(receipt(amount+`, "payer": {"type": "text", "required": true}`, cancel)), asSetup); err != nil {
 		t.Fatalf("a new required input: %v", err)
 	}
 	inv, _ := s.Create(ctx, "Invoice", Values{"total": 10})
@@ -215,10 +215,10 @@ func TestOutbox_RedefinitionMayNotBreakARule(t *testing.T) {
 		t.Errorf("the create that lacks the new input: %s", dump(rows))
 	}
 	// Changing the rule first frees the class.
-	if _, err := s.DefineClass(ctx, []byte(invoice(noRules)), asSetup); err != nil {
+	if _, err := s.defineOpen(ctx, []byte(invoice(noRules)), asSetup); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.DefineClass(ctx, []byte(receipt(`"note": {"type": "text"}`, "")), asSetup); err != nil {
+	if _, err := s.defineOpen(ctx, []byte(receipt(`"note": {"type": "text"}`, "")), asSetup); err != nil {
 		t.Errorf("the redefinition after the rule was changed: %v", err)
 	}
 
@@ -227,21 +227,21 @@ func TestOutbox_RedefinitionMayNotBreakARule(t *testing.T) {
 	rates := func(columns string) string {
 		return `{"name": "Rates", "columns": {"code": "text", ` + columns + `}, "key": ["code"]}`
 	}
-	if _, err := s.DefineTable(ctx, []byte(rates(`"rate": "number"`)), asSetup); err != nil {
+	if _, err := s.defineOpenTable(ctx, []byte(rates(`"rate": "number"`)), asSetup); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.DefineClass(ctx, []byte(`{"name": "Quote", "variables": {"code": {"type": "text"}, "rate": {"type": "number"}},
+	if _, err := s.defineOpen(ctx, []byte(`{"name": "Quote", "variables": {"code": {"type": "text"}, "rate": {"type": "number"}},
  "states": {"initial": "open", "list": ["open"]},
  "rules": [{"on": "create", "do": [{"action": "table.insert", "table": "Rates", "row": {"code": "code", "rate": "rate"}}]}]}`), asSetup); err != nil {
 		t.Fatal(err)
 	}
-	_, err := s.DefineTable(ctx, []byte(rates(`"price": "number"`)), asSetup)
+	_, err := s.defineOpenTable(ctx, []byte(rates(`"price": "number"`)), asSetup)
 	var diags model.Diagnostics
 	if !errors.As(err, &diags) || len(diags) != 1 || diags[0].Code != model.CodeNotAllowed || diags[0].Path != "/columns/rate" ||
 		!strings.Contains(diags[0].Message, "the class Quote") || !strings.Contains(diags[0].Message, "/rules/0/do/0/row/rate") {
 		t.Errorf("a table that loses a column a rule sets: %v", err)
 	}
-	if _, err := s.DefineTable(ctx, []byte(rates(`"rate": "number", "note": "text"`)), asSetup); err != nil {
+	if _, err := s.defineOpenTable(ctx, []byte(rates(`"rate": "number", "note": "text"`)), asSetup); err != nil {
 		t.Errorf("a table that keeps what the rule gives: %v", err)
 	}
 }
@@ -252,13 +252,13 @@ func TestOutbox_RedefinitionMayNotBreakARule(t *testing.T) {
 func TestOutbox_TableActionsKeysAndMoney(t *testing.T) {
 	s, _ := openStore(t, Options{})
 	ctx := context.Background()
-	if _, err := s.DefineTable(ctx, []byte(pricesTable), asSetup); err != nil {
+	if _, err := s.defineOpenTable(ctx, []byte(pricesTable), asSetup); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := s.ImportRows(ctx, "Prices", priceRows); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.DefineClass(ctx, []byte(`{"name": "Offer",
+	if _, err := s.defineOpen(ctx, []byte(`{"name": "Offer",
  "variables": {"sku": {"type": "text"}, "qty": {"type": "number"}, "price": {"type": "money", "scale": 2},
                "listed": {"formula": "LOOKUP(Prices, price, sku = THIS.sku AND min_qty = THIS.qty)"}},
  "states": {"initial": "draft", "list": ["draft", "listed", "repriced", "withdrawn"]},
@@ -340,7 +340,7 @@ func TestOutbox_AChildWakesItsParent(t *testing.T) {
 	}
 	defer s.Close()
 	ctx := context.Background()
-	if _, err := s.DefineTable(ctx, []byte(`{"name": "Granted", "columns": {"invoice": "text", "approver": "text"}, "key": ["invoice", "approver"]}`), asSetup); err != nil {
+	if _, err := s.defineOpenTable(ctx, []byte(`{"name": "Granted", "columns": {"invoice": "text", "approver": "text"}, "key": ["invoice", "approver"]}`), asSetup); err != nil {
 		t.Fatal(err)
 	}
 	// The bill's rule names the approvals and the approval's rule names
@@ -363,7 +363,7 @@ func TestOutbox_AChildWakesItsParent(t *testing.T) {
 		bill(`, "rules": [{"on": "transition", "name": "submit",
  "do": [{"action": "create", "class": "Approval", "each": "approvers", "as": "who", "id": "ID() & \"/\" & who", "values": {"bill": "ID()", "approver": "who"}}]}]`),
 	} {
-		if _, err := s.DefineClass(ctx, []byte(def), asSetup); err != nil {
+		if _, err := s.defineOpen(ctx, []byte(def), asSetup); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -479,7 +479,7 @@ func TestOutboxCrashActionsHelper(t *testing.T) {
 		t.Fatal(err)
 	}
 	ctx := context.Background()
-	if _, err := s.DefineTable(ctx, []byte(`{"name": "Log", "columns": {"id": "text", "text": "text"}, "key": ["id"]}`), asSetup); err != nil {
+	if _, err := s.defineOpenTable(ctx, []byte(`{"name": "Log", "columns": {"id": "text", "text": "text"}, "key": ["id"]}`), asSetup); err != nil {
 		t.Fatal(err)
 	}
 	for _, def := range []string{noteClass,
@@ -492,7 +492,7 @@ func TestOutboxCrashActionsHelper(t *testing.T) {
    {"action": "transition", "class": "Hub", "id": "\"hub\"", "name": "start"},
    {"action": "refresh", "class": "Hub", "id": "\"hub\""},
    {"action": "create", "class": "Note", "each": "tags", "as": "tag", "values": {"about": "ID()", "text": "tag"}}]}]}`} {
-		if _, err := s.DefineClass(ctx, []byte(def), asSetup); err != nil {
+		if _, err := s.defineOpen(ctx, []byte(def), asSetup); err != nil {
 			t.Fatal(err)
 		}
 	}

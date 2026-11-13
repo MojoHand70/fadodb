@@ -35,7 +35,7 @@ func definePurchases(t testing.TB, s *Store) {
 		t.Fatal(err)
 	}
 	for _, def := range []string{noteClass, fmt.Sprintf(purchaseClass, "", purchaseInto)} {
-		if _, err := s.DefineClass(ctx, []byte(def), asSetup); err != nil {
+		if _, err := s.defineOpen(ctx, []byte(def), asSetup); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -195,7 +195,7 @@ func TestInto_TheRuleThatQueuedIt(t *testing.T) {
 	id := submit(t, s, "10")
 	// The class moves on while the action waits: the result now goes to
 	// another variable, and the fee is computed.
-	if _, err := s.DefineClass(ctx, []byte(strings.Replace(fmt.Sprintf(purchaseClass, `, "ref": {"type": "text"}`, `{"ref": "payment", "failed_with": "ERROR"}`),
+	if _, err := s.defineOpen(ctx, []byte(strings.Replace(fmt.Sprintf(purchaseClass, `, "ref": {"type": "text"}`, `{"ref": "payment", "failed_with": "ERROR"}`),
 		`"fee": {"type": "decimal", "scale": 2}`, `"fee": {"formula": "ROUND(amount / 100, 2)"}`, 1)), asSetup); err != nil {
 		t.Fatal(err)
 	}
@@ -235,7 +235,7 @@ func TestInto_AChainOfResultsStops(t *testing.T) {
 	if _, err := s.DefineAction(ctx, []byte(`{"name": "count.next", "params": {"n": "number"}, "returns": {"next": "number"}}`), asSetup); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.DefineClass(ctx, []byte(`{"name": "Counter", "variables": {"n": {"type": "number", "default": "0"}, "stopped": {"type": "text"}},
+	if _, err := s.defineOpen(ctx, []byte(`{"name": "Counter", "variables": {"n": {"type": "number", "default": "0"}, "stopped": {"type": "text"}},
  "states": {"initial": "on", "list": ["on"]},
  "rules": [{"on": "values_change", "variables": ["n"], "do": [{"action": "count.next", "args": {"n": "n"}, "into": {"n": "next", "stopped": "ERROR"}}]}]}`), asSetup); err != nil {
 		t.Fatal(err)

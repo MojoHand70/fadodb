@@ -1,0 +1,36 @@
+{
+  "suite": "left_out",
+  "description": "A rule a class leaves out lets nobody through (ADR-0052, item 5; question A of ADR-0049). The class of this suite has no access block at all: nobody creates, sees or changes its documents but a content administrator, and it is no help to be a designer, a database administrator or an analyst. A caller who may not see a document is told it does not exist, as with any read rule; a caller who may not create is told which rule is missing.",
+  "as_written": true,
+  "class": {
+    "name": "Slip",
+    "variables": {"note": {"type": "text"}},
+    "states": {"initial": "draft", "list": ["draft", "filed"]},
+    "transitions": [{"name": "file", "from": "draft", "to": "filed"}]
+  },
+  "principals": {
+    "ann":      {"id": "ann",  "groups": ["staff"]},
+    "designer": {"id": "dee",  "system": ["designers"]},
+    "operator": {"id": "olaf", "system": ["administrators"]},
+    "analyst":  {"id": "ana",  "system": ["analysts"]},
+    "content":  {"id": "cora", "system": ["content-administrators"]}
+  },
+  "script": [
+    {"name": "nobody creates a document of a class that says nothing", "do": "create", "doc": "s0", "as": "ann", "values": {"note": "x"}, "expect": {"code": "forbidden", "action": "/access/create"}},
+    {"name": "a preview says so before the command is sent", "do": "preview", "as": "ann", "values": {"note": "x"}, "expect": {"errors": [{"code": "forbidden", "action": "/access/create"}]}},
+    {"name": "a call without a principal likewise", "do": "create", "doc": "s0", "expect": {"code": "forbidden", "action": "/access/create"}},
+    {"name": "who defines classes does not use them by that", "do": "create", "doc": "s0", "as": "designer", "expect": {"code": "forbidden", "action": "/access/create"}},
+    {"name": "nor who runs the database", "do": "create", "doc": "s0", "as": "operator", "expect": {"code": "forbidden", "action": "/access/create"}},
+    {"name": "nor who runs SQL", "do": "create", "doc": "s0", "as": "analyst", "expect": {"code": "forbidden", "action": "/access/create"}},
+
+    {"name": "a content administrator creates one", "do": "create", "doc": "s1", "as": "content", "values": {"note": "x"}, "expect": {"state": "draft", "values": {"note": "x"}}},
+    {"name": "nobody else sees it", "do": "get", "doc": "s1", "as": "ann", "expect": {"code": "unknown_document"}},
+    {"name": "nor finds it", "do": "query", "as": "ann", "expect": {"docs": []}},
+    {"name": "nor counts it", "do": "count", "as": "ann", "expect": {"count": 0}},
+    {"name": "nor moves it", "do": "transition", "doc": "s1", "as": "ann", "transition": "file", "expect": {"code": "unknown_document"}},
+    {"name": "the designer does not see it either", "do": "get", "doc": "s1", "as": "designer", "expect": {"code": "unknown_document"}},
+    {"name": "the content administrator sees it", "do": "query", "as": "content", "expect": {"docs": ["s1"]}},
+    {"name": "changes it", "do": "set", "doc": "s1", "as": "content", "values": {"note": "y"}, "expect": {"version": 2}},
+    {"name": "and moves it: the transition has no rule, so it asks update, which is left out too", "do": "transition", "doc": "s1", "as": "content", "transition": "file", "expect": {"state": "filed"}}
+  ]
+}

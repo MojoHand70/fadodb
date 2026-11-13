@@ -754,9 +754,10 @@ key order, to the function the Go VM adds with.
   may not do what they ask is refused with `forbidden` and the place of
   the rule. A named transition without a rule of its own asks `update`.
   What the engine does by itself asks nothing. A rule a class leaves
-  out still lets every caller through; the owner ruled on 2026-11-13
-  that it lets nobody through, and that is built with ADR-0052. Three
-  kinds of work are not about one document:
+  out lets nobody through but a content administrator, and so does a
+  rule a table leaves out (ADR-0052, item 5); checking a class reports
+  each rule it leaves out as a note, a finding that refuses nothing.
+  Three kinds of work are not about one document:
   defining, operating the queue, and running SQL. Each is for one
   system group, `designers`, `administrators` and `analysts`, and a
   fourth, `content-administrators`, sees every document and acts on it
@@ -768,9 +769,9 @@ key order, to the function the Go VM adds with.
   as any group, and answers `everyone` for every caller that has an id.
   Nobody is in a system group unless the host says so: work nobody was
   given is done by nobody. Accepted and not built yet (ADR-0052,
-  ADR-0053): a rule left out letting nobody through, the reason a
-  content administrator gives for an act past a rule and the event
-  that keeps it, the record of who defined each version, and
+  ADR-0053): the reason a content administrator gives for an act past
+  a rule and the event that keeps it, the record of who defined each
+  version, and
   substitutions that the engine keeps and checks, where today it
   trusts the host on for whom a caller acts. The change stream comes
   with the server in Phase 6. A call without a principal is nobody.

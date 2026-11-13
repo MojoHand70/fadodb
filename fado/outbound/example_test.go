@@ -99,6 +99,7 @@ func Example() {
 	}
 	if _, err := db.DefineClass(ctx, []byte(`{
 	  "name": "Invoice",
+	  "access": {"read": "TRUE", "create": "TRUE", "update": "TRUE", "delete": "TRUE"},
 	  "variables": {"number": {"type": "text"}},
 	  "states": {"initial": "draft", "list": ["draft", "approved"]},
 	  "transitions": [{"name": "approve", "from": "draft", "to": "approved"}],
@@ -176,7 +177,7 @@ func BenchmarkDeclaredAction(b *testing.B) {
  "ok": "JSONVALUE(BODY, \"ok\") = \"TRUE\"", "result": {"ts": "JSONVALUE(BODY, \"ts\")"}}`), setup); err != nil {
 		b.Fatal(err)
 	}
-	if _, err := db.DefineClass(ctx, []byte(`{"name": "Job", "variables": {"note": {"type": "text"}},
+	if _, err := db.DefineClass(ctx, []byte(`{"name": "Job", "access": {"read": "TRUE", "create": "TRUE", "update": "TRUE", "delete": "TRUE"}, "variables": {"note": {"type": "text"}},
  "states": {"initial": "open", "list": ["open"]}, "transitions": [{"name": "tell", "from": "open", "to": "open"}],
  "rules": [{"on": "transition", "name": "tell", "do": [{"action": "slack.post", "args": {"channel": "\"#ops\"", "text": "note"}}]}]}`), setup); err != nil {
 		b.Fatal(err)

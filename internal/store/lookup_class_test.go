@@ -40,7 +40,7 @@ const lkPurchase = `{"name": "Purchase",
 func defineApprovals(t testing.TB, s *Store) {
 	t.Helper()
 	for _, def := range []string{lkPurchaseBare, lkApproval, lkPurchase} {
-		if _, err := s.DefineClass(context.Background(), []byte(def), asSetup); err != nil {
+		if _, err := s.defineOpen(context.Background(), []byte(def), asSetup); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -136,7 +136,7 @@ func TestLookup_ParallelApprovals(t *testing.T) {
 	// nothing: a draft whose default counts the granted approvals.
 	const tally = `{"name": "Tally", "variables": {"granted": {"type": "number", "default": "LOOKUP(Approval, COUNT(id), state = \"granted\")"},
   "largest": {"type": "decimal(2)", "default": "LOOKUP(Approval, MAX(amount), TRUE)"}}, "states": {"initial": "open", "list": ["open"]}}`
-	pv, err := s.PreviewDraft(ctx, []byte(tally), "", Values{}, "", asSetup)
+	pv, err := s.PreviewDraft(ctx, opened([]byte(tally)), "", Values{}, "", asSetup)
 	if err != nil || pv.Document.Values["granted"] != 3.0 || pv.Document.Values["largest"] != "10.25" {
 		t.Errorf("preview of a draft: %v %s", err, dump(pv))
 	}
@@ -171,7 +171,7 @@ func TestLookup_ClassDefinition(t *testing.T) {
 	defineApprovals(t, s)
 	refused := func(def, code, path, says string) {
 		t.Helper()
-		_, err := s.DefineClass(ctx, []byte(def), asSetup)
+		_, err := s.defineOpen(ctx, []byte(def), asSetup)
 		var diags model.Diagnostics
 		if !errors.As(err, &diags) {
 			t.Errorf("want a refusal with %q, got %v", says, err)
@@ -206,17 +206,17 @@ func TestLookup_ClassDefinition(t *testing.T) {
 	refused(strings.Replace(lkApproval, `"amount": {"type": "decimal(2)"}`, `"amount": {"type": "decimal(4)"}`, 1),
 		model.CodeNotAllowed, "/variables", "it would break a formula of the class Purchase, at /variables/sum/formula")
 	// One that keeps what is read goes through.
-	if _, err := s.DefineClass(ctx, []byte(strings.Replace(lkApproval, `"amount": {"type": "decimal(2)"}`, `"amount": {"type": "decimal(2)"}, "note": {"type": "text"}`, 1)), asSetup); err != nil {
+	if _, err := s.defineOpen(ctx, []byte(strings.Replace(lkApproval, `"amount": {"type": "decimal(2)"}`, `"amount": {"type": "decimal(2)"}, "note": {"type": "text"}`, 1)), asSetup); err != nil {
 		t.Errorf("adding a variable to a class that is read: %v", err)
 	}
 	// An object is not a column yet, and the id leads an index like an
 	// indexed variable: the key is the equality on it, wherever it stands.
-	if _, err := s.DefineClass(ctx, []byte(`{"name": "Site", "variables": {"address": {"type": "object", "schema": "Address"}, "kind": {"type": "text"}}, `+states), asSetup); err != nil {
+	if _, err := s.defineOpen(ctx, []byte(`{"name": "Site", "variables": {"address": {"type": "object", "schema": "Address"}, "kind": {"type": "text"}}, `+states), asSetup); err != nil {
 		t.Fatal(err)
 	}
 	refused(`{"name": "Visit", "variables": {"n": {"type": "number", "formula": "LOOKUP(Site, COUNT(address), TRUE)", "mode": "triggered", "on": ["refresh"]}}, `+states,
 		model.CodeBadFormula, "/variables/n/formula", "unknown column address of Site; its columns are id, title, state, version, created_at, updated_at, state_entered_at, created_by, updated_by, state_entered_by, state_entered_from, kind")
-	visit, err := s.DefineClass(ctx, []byte(`{"name": "Visit", "variables": {"site": {"type": "text"},
+	visit, err := s.defineOpen(ctx, []byte(`{"name": "Visit", "variables": {"site": {"type": "text"},
   "kind": {"type": "text", "formula": "LOOKUP(Site, kind, kind <> \"\" AND state = \"open\" AND id = THIS.site)", "mode": "triggered", "on": ["refresh"]}}, `+states), asSetup)
 
 	if err != nil {
@@ -232,7 +232,7 @@ func TestLookup_ClassDefinition(t *testing.T) {
  "states": {"initial": "draft", "list": ["draft", "sent"]},
  "transitions": [{"name": "send", "from": "draft", "to": "sent",
                   "guard": "LOOKUP(Invoice, COUNT(id), number = THIS.number AND id <> ID() AND state = \"sent\") = 0"}]}`
-	if _, err := s.DefineClass(ctx, []byte(invoice), asSetup); err != nil {
+	if _, err := s.defineOpen(ctx, []byte(invoice), asSetup); err != nil {
 		t.Fatal(err)
 	}
 	for _, id := range []string{"I-1", "I-2"} {
@@ -262,7 +262,7 @@ func TestLookup_EarlierVersionsAndReopen(t *testing.T) {
 	const states = `"states": {"initial": "open", "list": ["open"]}}`
 	define := func(st *Store, def string) {
 		t.Helper()
-		if _, err := st.DefineClass(ctx, []byte(def), asSetup); err != nil {
+		if _, err := st.defineOpen(ctx, []byte(def), asSetup); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -293,7 +293,7 @@ func TestLookup_EarlierVersionsAndReopen(t *testing.T) {
 	// While the kit reads z, the part may not drop it. The kit stops
 	// reading it, and then the part may; K-1 and K-2 stay on version 1 of
 	// the kit, whose formula now names a column that is gone.
-	_, err = s.DefineClass(ctx, []byte(`{"name": "Part", "variables": {"w": {"type": "number"}}, `+states), asSetup)
+	_, err = s.defineOpen(ctx, []byte(`{"name": "Part", "variables": {"w": {"type": "number"}}, `+states), asSetup)
 	if err == nil || !strings.Contains(err.Error(), "it would break a formula of the class Kit, at /variables/top/formula") {
 		t.Fatalf("the part dropped a variable the kit reads: %v", err)
 	}
@@ -377,19 +377,20 @@ func TestLookup_EarlierVersionsAndReopen(t *testing.T) {
 
 	// A draft reads the documents of the stored class; the draft of a
 	// class nobody has defined reads none.
-	pv, err := s2.PreviewDraft(ctx, []byte(`{"name": "Fresh", "variables": {"seq": {"type": "number", "default": "LOOKUP(Fresh, COUNT(id), TRUE) + 1"},
-  "any": {"type": "text", "default": "LOOKUP(Fresh, id, TRUE)"}}, `+states), "", Values{}, "", asSetup)
+	pv, err := s2.PreviewDraft(ctx, opened([]byte(`{"name": "Fresh", "variables": {"seq": {"type": "number", "default": "LOOKUP(Fresh, COUNT(id), TRUE) + 1"},
+  "any": {"type": "text", "default": "LOOKUP(Fresh, id, TRUE)"}}, `+states)),
+		"", Values{}, "", asSetup)
 
 	if err != nil || pv.Document.Values["seq"] != 1.0 || pv.Document.Values["any"] != nil {
 		t.Errorf("the draft of a new class that reads itself: %v %s", err, dump(pv))
 	}
-	pv, err = s2.PreviewDraft(ctx, []byte(`{"name": "Kit", "variables": {"n": {"type": "number", "default": "LOOKUP(Kit, COUNT(id), TRUE)"}}, `+states), "", Values{}, "", asSetup)
+	pv, err = s2.PreviewDraft(ctx, opened([]byte(`{"name": "Kit", "variables": {"n": {"type": "number", "default": "LOOKUP(Kit, COUNT(id), TRUE)"}}, `+states)), "", Values{}, "", asSetup)
 	if err != nil || pv.Document.Values["n"] != 2.0 {
 		t.Errorf("the draft of a new version counts the stored documents: %v %s", err, dump(pv))
 	}
 	// A draft that reads a variable the stored class lacks is told so: the
 	// preview goes on and reports the variable it could not compute.
-	pv, err = s2.PreviewDraft(ctx, []byte(`{"name": "Kit", "variables": {"tag": {"type": "text"}, "n": {"type": "number", "default": "LOOKUP(Kit, COUNT(id), tag = \"x\")"}}, `+states), "", Values{}, "", asSetup)
+	pv, err = s2.PreviewDraft(ctx, opened([]byte(`{"name": "Kit", "variables": {"tag": {"type": "text"}, "n": {"type": "number", "default": "LOOKUP(Kit, COUNT(id), tag = \"x\")"}}, `+states)), "", Values{}, "", asSetup)
 	if err != nil || len(pv.Errors) != 1 || pv.Errors[0].Variable != "n" || !strings.Contains(pv.Errors[0].Message, "a draft reads the documents of the stored class") {
 		t.Errorf("a draft that reads a variable the stored class lacks: %v %s", err, dump(pv))
 	}
@@ -425,24 +426,24 @@ func TestDefineClasses(t *testing.T) {
 	// Alone, neither of the two can be defined: each names the other.
 	for i, def := range pair {
 		var diags model.Diagnostics
-		if _, err := s.DefineClass(ctx, def, asSetup); !errors.As(err, &diags) {
+		if _, err := s.defineOpen(ctx, def, asSetup); !errors.As(err, &diags) {
 			t.Fatalf("definition %d alone: %v", i, err)
 		}
 	}
-	if diags := s.ValidateClasses(pair); len(diags) != 0 {
+	if diags := s.ValidateClasses(openedAll(pair)); len(diags) != 0 {
 		t.Fatalf("the pair validates with %v", diags)
 	}
 	// A definition that is wrong by itself is the one reported: the class
 	// that names it would only say that it does not know it.
 	wrong := strings.Replace(lkPurchase, `"default": "2"`, `"default": "2 +"`, 1)
-	if diags := s.ValidateClasses([][]byte{[]byte(lkApproval), []byte(wrong)}); len(diags) != 1 || diags[0].Path != "/1/variables/needed/default" {
+	if diags := s.ValidateClasses(openedAll([][]byte{[]byte(lkApproval), []byte(wrong)})); len(diags) != 1 || diags[0].Path != "/1/variables/needed/default" {
 		t.Errorf("a pair with one wrong definition: %v", diags)
 	}
 	if len(s.Classes()) != 0 {
 		t.Fatalf("a validation stored %v", s.Classes())
 	}
 	// Together they are, in either order, as version 1 each.
-	classes, err := s.DefineClasses(ctx, pair, asSetup)
+	classes, err := s.defineOpenAll(ctx, pair, asSetup)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -471,7 +472,7 @@ func TestDefineClasses(t *testing.T) {
 		t.Errorf("the purchase: %s", dump(p))
 	}
 	// The same definitions again are a no-op, alone or together.
-	again, err := s.DefineClasses(ctx, [][]byte{[]byte(lkApproval), []byte(lkPurchase)}, asSetup)
+	again, err := s.defineOpenAll(ctx, [][]byte{[]byte(lkApproval), []byte(lkPurchase)}, asSetup)
 	if err != nil || again[0].Version != 1 || again[1].Version != 1 || again[0].Name != "Approval" {
 		t.Errorf("the same pair again: %v %v", again, err)
 	}
@@ -485,7 +486,7 @@ func TestDefineClasses(t *testing.T) {
 	purchase2 = strings.Replace(purchase2, `"transitions": [`, `"transitions": [{"name": "note", "from": "waiting", "to": "waiting"}, `, 1)
 	const broken = `{"name": "Ledger", "variables": {"n": {"formula": "LOOKUP(Approval, COUNT(id), nope = 1)", "mode": "triggered", "on": ["refresh"]}, "m": {"type": "number", "formula": "missing + 1"}},
  "states": {"initial": "open", "list": ["open"]}}`
-	_, err = s.DefineClasses(ctx, [][]byte{[]byte(purchase2), []byte(approval2), []byte(broken)}, asSetup)
+	_, err = s.defineOpenAll(ctx, [][]byte{[]byte(purchase2), []byte(approval2), []byte(broken)}, asSetup)
 	var diags model.Diagnostics
 	if !errors.As(err, &diags) || len(diags) != 2 || diags[0].Path != "/2/variables/n/formula" || diags[1].Path != "/2/variables/m/formula" {
 		t.Fatalf("a set with one wrong definition: %v", err)
@@ -499,27 +500,27 @@ func TestDefineClasses(t *testing.T) {
 	// Alone, the new approval is refused: the stored purchase has no
 	// transition note. Together with the new purchase it goes through,
 	// and both are version 2.
-	if _, err := s.DefineClass(ctx, []byte(approval2), asSetup); !errors.As(err, &diags) || !strings.Contains(diags.Error(), "note") {
+	if _, err := s.defineOpen(ctx, []byte(approval2), asSetup); !errors.As(err, &diags) || !strings.Contains(diags.Error(), "note") {
 		t.Errorf("the new approval alone: %v", err)
 	}
-	classes, err = s.DefineClasses(ctx, [][]byte{[]byte(approval2), []byte(purchase2)}, asSetup)
+	classes, err = s.defineOpenAll(ctx, [][]byte{[]byte(approval2), []byte(purchase2)}, asSetup)
 	if err != nil || classes[0].Version != 2 || classes[1].Version != 2 {
 		t.Fatalf("the two redefined together: %v %v", classes, err)
 	}
 	// One of a set unchanged and one changed: only the changed one moves.
 	purchase3 := strings.Replace(purchase2, `"last": {"type": "text"},`, `"last": {"type": "text"}, "memo": {"type": "text"},`, 1)
-	classes, err = s.DefineClasses(ctx, [][]byte{[]byte(approval2), []byte(purchase3)}, asSetup)
+	classes, err = s.defineOpenAll(ctx, [][]byte{[]byte(approval2), []byte(purchase3)}, asSetup)
 	if err != nil || classes[0].Version != 2 || classes[1].Version != 3 {
 		t.Fatalf("one unchanged, one changed: %v %v", classes, err)
 	}
 
 	// What a set may not do. A class twice in one call.
-	_, err = s.DefineClasses(ctx, [][]byte{[]byte(purchase3), []byte(strings.Replace(purchase3, `"memo"`, `"memo2"`, 1))}, asSetup)
+	_, err = s.defineOpenAll(ctx, [][]byte{[]byte(purchase3), []byte(strings.Replace(purchase3, `"memo"`, `"memo2"`, 1))}, asSetup)
 	if !errors.As(err, &diags) || diags[0].Code != model.CodeDuplicate || diags[0].Path != "/1/name" {
 		t.Errorf("a class twice in one call: %v", err)
 	}
 	// Bad JSON says which definition.
-	_, err = s.DefineClasses(ctx, [][]byte{[]byte(purchase3), []byte(`{"name": `)}, asSetup)
+	_, err = s.defineOpenAll(ctx, [][]byte{[]byte(purchase3), []byte(`{"name": `)}, asSetup)
 	if !errors.As(err, &diags) || diags[0].Code != model.CodeBadJSON || diags[0].Path != "/1" {
 		t.Errorf("bad JSON in a set: %v", err)
 	}
@@ -528,20 +529,20 @@ func TestDefineClasses(t *testing.T) {
 	// set names, and may when that class is redefined with it.
 	purchase4 := strings.Replace(purchase3, `{"name": "note", "from": "waiting", "to": "waiting"}, `, ``, 1)
 	const other = `{"name": "Other", "variables": {"x": {"type": "text"}}, "states": {"initial": "open", "list": ["open"]}}`
-	_, err = s.DefineClasses(ctx, [][]byte{[]byte(purchase4), []byte(other)}, asSetup)
+	_, err = s.defineOpenAll(ctx, [][]byte{[]byte(purchase4), []byte(other)}, asSetup)
 	if !errors.As(err, &diags) || diags[0].Code != model.CodeNotAllowed || !strings.HasPrefix(diags[0].Path, "/0/") || !strings.Contains(diags[0].Message, "it would break a rule of the class Approval") {
 		t.Errorf("a set that breaks a class outside it: %v", err)
 	}
 	if _, err := s.class("Other"); err == nil {
 		t.Error("the refused set stored its second class")
 	}
-	classes, err = s.DefineClasses(ctx, [][]byte{[]byte(purchase4), []byte(lkApproval), []byte(other)}, asSetup)
+	classes, err = s.defineOpenAll(ctx, [][]byte{[]byte(purchase4), []byte(lkApproval), []byte(other)}, asSetup)
 	if err != nil || classes[0].Version != 4 || classes[1].Version != 3 || classes[2].Version != 1 {
 		t.Fatalf("the purchase and the approval changed together: %v %v", classes, err)
 	}
 	// and to what the documents allow (ADR-0039): the approval may not
 	// drop a variable its documents hold values for.
-	_, err = s.DefineClasses(ctx, [][]byte{[]byte(other), []byte(strings.Replace(lkApproval, `, "amount": {"type": "decimal(2)"}`, ``, 1)), []byte(strings.Replace(purchase4, `"sum":`, `"sum2":`, 1))}, asSetup)
+	_, err = s.defineOpenAll(ctx, [][]byte{[]byte(other), []byte(strings.Replace(lkApproval, `, "amount": {"type": "decimal(2)"}`, ``, 1)), []byte(strings.Replace(purchase4, `"sum":`, `"sum2":`, 1))}, asSetup)
 	held := false
 	if errors.As(err, &diags) {
 		for _, d := range diags {
@@ -554,16 +555,16 @@ func TestDefineClasses(t *testing.T) {
 		t.Errorf("a set that drops a variable with values: %v", err)
 	}
 	// An empty call does nothing; a single definition in a set is a set.
-	if out, err := s.DefineClasses(ctx, nil, asSetup); err != nil || len(out) != 0 {
+	if out, err := s.defineOpenAll(ctx, nil, asSetup); err != nil || len(out) != 0 {
 		t.Errorf("an empty call: %v %v", out, err)
 	}
-	_, err = s.DefineClasses(ctx, [][]byte{[]byte(broken)}, asSetup)
+	_, err = s.defineOpenAll(ctx, [][]byte{[]byte(broken)}, asSetup)
 	if !errors.As(err, &diags) || diags[0].Path != "/0/variables/n/formula" {
 		t.Errorf("a set of one says where: %v", err)
 	}
 	// A name taken by a table of another class of the same call rolls the
 	// whole call back.
-	_, err = s.DefineClasses(ctx, [][]byte{
+	_, err = s.defineOpenAll(ctx, [][]byte{
 		[]byte(`{"name": "Box", "variables": {"x": {"type": "text"}}, "states": {"initial": "open", "list": ["open"]}}`),
 		[]byte(`{"name": "Box_history", "variables": {"x": {"type": "text"}}, "states": {"initial": "open", "list": ["open"]}}`)}, asSetup)
 

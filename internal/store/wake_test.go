@@ -40,7 +40,7 @@ func openWake(t *testing.T) (*Store, *still) {
 	s, _ := openStore(t, Options{Now: cl.Now})
 	ctx := context.Background()
 	for _, def := range []string{wakeLog, wakeTicket} {
-		if _, err := s.DefineClass(ctx, []byte(def), asSetup); err != nil {
+		if _, err := s.defineOpen(ctx, []byte(def), asSetup); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -206,7 +206,7 @@ func TestWake_Rows(t *testing.T) {
 	// A moment that has come while the guard beside it does not hold
 	// gets no wake-up: the commit's own chain asked, and no moment is
 	// left to wait for. The commit that makes the guard hold moves it.
-	if _, err := s.DefineClass(ctx, []byte(`{"name": "Held", "variables": {"limit": {"type": "date"}, "ready": {"type": "bool"}},
+	if _, err := s.defineOpen(ctx, []byte(`{"name": "Held", "variables": {"limit": {"type": "date"}, "ready": {"type": "bool"}},
 	  "states": {"initial": "open", "list": ["open", "late"]},
 	  "transitions": [{"from": "open", "to": "late", "at": "limit", "guard": "ready"}]}`), asSetup); err != nil {
 		t.Fatal(err)
@@ -515,7 +515,7 @@ func TestWake_Dead(t *testing.T) {
 	  "states": {"initial": "set", "list": ["set", "blown"]},
 	  "transitions": [{"name": "blow", "from": "set", "to": "blown", "after": "1m"}],
 	  "rules": [{"on": "transition", "name": "blow", "do": [{"action": "set", "values": {"n": "10 / d"}}]}]}`
-	if _, err := s.DefineClass(ctx, []byte(def), asSetup); err != nil {
+	if _, err := s.defineOpen(ctx, []byte(def), asSetup); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := s.Create(ctx, "Fuse", nil, WithID("F-1"), As(ann), BusinessDate(dueDay.AddDate(0, 0, -40))); err != nil {
@@ -584,7 +584,7 @@ func TestWake_OrderOfTheDocument(t *testing.T) {
 	if _, err := s.DefineAction(ctx, []byte(auditPing), asSetup); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.DefineClass(ctx, []byte(`{"name": "Job", "variables": {"note": {"type": "text"}, "runs": {"type": "number", "default": "0"}},
+	if _, err := s.defineOpen(ctx, []byte(`{"name": "Job", "variables": {"note": {"type": "text"}, "runs": {"type": "number", "default": "0"}},
 	  "states": {"initial": "idle", "list": ["idle"]},
 	  "transitions": [{"name": "run", "from": "idle", "to": "idle", "after": "1m"}],
 	  "rules": [
@@ -649,7 +649,7 @@ func TestWake_ClassVersions(t *testing.T) {
 	def := `{"name": "Lead", "variables": {"n": {"type": "number"}%s},
 	  "states": {"initial": "open", "list": ["open", "stale", "cold"]},
 	  "transitions": [{"name": "drop", "from": "open", "to": "cold"}%s]}`
-	if _, err := s.DefineClass(ctx, []byte(fmt.Sprintf(def, "", "")), asSetup); err != nil {
+	if _, err := s.defineOpen(ctx, []byte(fmt.Sprintf(def, "", "")), asSetup); err != nil {
 		t.Fatal(err)
 	}
 	for i := 0; i < 4; i++ {
@@ -662,7 +662,7 @@ func TestWake_ClassVersions(t *testing.T) {
 	}
 	// The second version says a lead goes stale after two days, and
 	// computes a label.
-	if _, err := s.DefineClass(ctx, []byte(fmt.Sprintf(def, `, "label": {"formula": "\"lead \" & TEXT(n)"}`, `, {"from": "open", "to": "stale", "after": "2d"}`)), asSetup); err != nil {
+	if _, err := s.defineOpen(ctx, []byte(fmt.Sprintf(def, `, "label": {"formula": "\"lead \" & TEXT(n)"}`, `, {"from": "open", "to": "stale", "after": "2d"}`)), asSetup); err != nil {
 		t.Fatal(err)
 	}
 	if rows, _ := s.Outbox(ctx, OutboxFilter{}, asSetup); len(rows) != 0 {
@@ -697,7 +697,7 @@ func TestWake_ClassVersions(t *testing.T) {
 	// A third version, defined while the wake-ups wait: a variable more.
 	// The wake-up of a lead no commit has touched since fires under it:
 	// the move adopts the lead, in the one version it writes.
-	if _, err := s.DefineClass(ctx, []byte(fmt.Sprintf(def, `, "label": {"formula": "\"lead \" & TEXT(n)"}, "twice": {"formula": "n * 2"}`, `, {"from": "open", "to": "stale", "after": "2d"}`)), asSetup); err != nil {
+	if _, err := s.defineOpen(ctx, []byte(fmt.Sprintf(def, `, "label": {"formula": "\"lead \" & TEXT(n)"}, "twice": {"formula": "n * 2"}`, `, {"from": "open", "to": "stale", "after": "2d"}`)), asSetup); err != nil {
 		t.Fatal(err)
 	}
 	cl.days(1)
@@ -714,7 +714,7 @@ func TestWake_ClassVersions(t *testing.T) {
 	if _, err := s.Create(ctx, "Lead", Values{"n": 7}, WithID("L-7"), As(ann)); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.DefineClass(ctx, []byte(fmt.Sprintf(def, `, "label": {"formula": "\"lead \" & TEXT(n)"}, "twice": {"formula": "n * 2"}`, "")), asSetup); err != nil {
+	if _, err := s.defineOpen(ctx, []byte(fmt.Sprintf(def, `, "label": {"formula": "\"lead \" & TEXT(n)"}, "twice": {"formula": "n * 2"}`, "")), asSetup); err != nil {
 		t.Fatal(err)
 	}
 	cl.days(3)
@@ -738,7 +738,7 @@ func TestWake_TheWorker(t *testing.T) {
 	}
 	defer s.Close()
 	ctx := context.Background()
-	if _, err := s.DefineClass(ctx, []byte(`{"name": "Egg", "variables": {"n": {"type": "number"}},
+	if _, err := s.defineOpen(ctx, []byte(`{"name": "Egg", "variables": {"n": {"type": "number"}},
 	  "states": {"initial": "raw", "list": ["raw", "done"]},
 	  "transitions": [{"from": "raw", "to": "done", "after": "1s"}]}`), asSetup); err != nil {
 		t.Fatal(err)
@@ -794,7 +794,7 @@ func TestWake_TellsTheWorkerWhenItMatters(t *testing.T) {
 		`{"name": "Many", "variables": {"n": {"type": "number"}}, "states": {"initial": "a", "list": ["a", "b"]}, "transitions": [{"from": "a", "to": "b", "after": "12s"}]}`,
 		`{"name": "Old", "variables": {"n": {"type": "number"}}, "states": {"initial": "a", "list": ["a", "b"]}, "transitions": [{"name": "go", "from": "a", "to": "b"}]}`,
 	} {
-		if _, err := s.DefineClass(ctx, []byte(def), asSetup); err != nil {
+		if _, err := s.defineOpen(ctx, []byte(def), asSetup); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -867,7 +867,7 @@ func TestWake_TellsTheWorkerWhenItMatters(t *testing.T) {
 	if _, err := s.Create(ctx, "Old", nil); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.DefineClass(ctx, []byte(`{"name": "Old", "variables": {"n": {"type": "number"}}, "states": {"initial": "a", "list": ["a", "b"]},
+	if _, err := s.defineOpen(ctx, []byte(`{"name": "Old", "variables": {"n": {"type": "number"}}, "states": {"initial": "a", "list": ["a", "b"]},
 	  "transitions": [{"name": "go", "from": "a", "to": "b"}, {"from": "a", "to": "b", "after": "6s"}]}`), asSetup); err != nil {
 		t.Fatal(err)
 	}
@@ -964,7 +964,7 @@ func TestWakeCrashHelper(t *testing.T) {
 	}
 	ctx := context.Background()
 	for _, def := range []string{wakeLog, wakeTicket} {
-		if _, err := s.DefineClass(ctx, []byte(def), asSetup); err != nil {
+		if _, err := s.defineOpen(ctx, []byte(def), asSetup); err != nil {
 			t.Fatal(err)
 		}
 	}

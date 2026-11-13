@@ -611,11 +611,35 @@ func (c *class) close() {
 }
 
 // Validate compiles a class definition and reports what DefineClass would
-// refuse, without storing anything (ADR-0025).
+// refuse, without storing anything (ADR-0025). A definition it would
+// accept may still earn notes, findings that refuse nothing: each access
+// rule the class leaves out (ADR-0052, item 5). Diagnostics.Refuses
+// tells the two apart.
 func (s *Store) Validate(data []byte) model.Diagnostics {
 	s.cmu.RLock()
 	defer s.cmu.RUnlock()
-	_, diags := s.compileClasses(context.Background(), [][]byte{data}, false)
+	found, diags := s.compileClasses(context.Background(), [][]byte{data}, false)
+	return withNotes(found, diags, false)
+}
+
+// withNotes is the findings of a definition call: what refuses it, or,
+// when nothing does, the notes of its classes, each under the position
+// of its definition when the call takes several.
+func withNotes(found []*pending, diags model.Diagnostics, set bool) model.Diagnostics {
+	if len(diags) > 0 {
+		return diags
+	}
+	for i, p := range found {
+		if p == nil || p.cls == nil {
+			continue
+		}
+		for _, d := range p.cls.Notes {
+			if set {
+				d.Path = "/" + itoa(i) + d.Path
+			}
+			diags = append(diags, d)
+		}
+	}
 	return diags
 }
 
@@ -625,8 +649,8 @@ func (s *Store) Validate(data []byte) model.Diagnostics {
 func (s *Store) ValidateClasses(datas [][]byte) model.Diagnostics {
 	s.cmu.RLock()
 	defer s.cmu.RUnlock()
-	_, diags := s.compileClasses(context.Background(), datas, true)
-	return diags
+	found, diags := s.compileClasses(context.Background(), datas, true)
+	return withNotes(found, diags, true)
 }
 
 // pending is one class of a definition call: what was sent, what it

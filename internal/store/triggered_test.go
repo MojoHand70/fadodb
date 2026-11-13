@@ -28,7 +28,7 @@ const quote1 = `{
 
 func defineQuote(t *testing.T, s *Store) {
 	t.Helper()
-	if _, err := s.DefineClass(context.Background(), []byte(quote1), asSetup); err != nil {
+	if _, err := s.defineOpen(context.Background(), []byte(quote1), asSetup); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -203,7 +203,7 @@ func TestTriggered_Preview(t *testing.T) {
 	// A draft that adds a triggered variable: the stored document has no
 	// such column, and the preview computes it.
 	draft := strings.Replace(quote1, `"price":`, `"sender": {"formula": "USER()", "mode": "triggered", "on": ["transition:send"]}, "price":`, 1)
-	pv, err = s.PreviewDraft(ctx, []byte(draft), doc.ID, nil, "send", admin)
+	pv, err = s.PreviewDraft(ctx, opened([]byte(draft)), doc.ID, nil, "send", admin)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -221,7 +221,7 @@ func TestTriggered_Redefinition(t *testing.T) {
 	v1 := `{"name": "Meter", "variables": {"n": {"type": "number"}, "snap": {"formula": "n", "mode": "triggered", "on": ["transition:read"]}, "twice": {"formula": "n * 2"}},
  "states": {"initial": "on", "list": ["on"]}, "transitions": [{"name": "read", "from": "on", "to": "on"}]}`
 	v2 := strings.Replace(v1, `"twice": {"formula": "n * 2"}`, `"twice": {"formula": "n * 2", "mode": "triggered", "on": ["transition:read"]}, "note": {"type": "text"}`, 1)
-	if _, err := s.DefineClass(ctx, []byte(v1), asSetup); err != nil {
+	if _, err := s.defineOpen(ctx, []byte(v1), asSetup); err != nil {
 		t.Fatal(err)
 	}
 	doc, err := s.Create(ctx, "Meter", Values{"n": 5})
@@ -235,7 +235,7 @@ func TestTriggered_Redefinition(t *testing.T) {
 	if first.Version != 2 || first.At == 0 {
 		t.Fatalf("snap after the first read: %+v", first)
 	}
-	if _, err := s.DefineClass(ctx, []byte(v2), asSetup); err != nil {
+	if _, err := s.defineOpen(ctx, []byte(v2), asSetup); err != nil {
 		t.Fatal(err)
 	}
 	// Read under the version that computed it: untouched.
@@ -304,7 +304,7 @@ func TestTriggered_EngineSchema(t *testing.T) {
 func TestTriggered_CreateMany(t *testing.T) {
 	s, _ := openStore(t, Options{})
 	ctx := context.Background()
-	if _, err := s.DefineClass(ctx, []byte(`{"name": "Stamp", "variables": {"by": {"formula": "USER()", "mode": "triggered", "on": ["enter:new"]}},
+	if _, err := s.defineOpen(ctx, []byte(`{"name": "Stamp", "variables": {"by": {"formula": "USER()", "mode": "triggered", "on": ["enter:new"]}},
  "states": {"initial": "new", "list": ["new"]}}`), asSetup); err != nil {
 		t.Fatal(err)
 	}
@@ -366,7 +366,7 @@ func TestTriggered_RetypeKeepsTheMoment(t *testing.T) {
 	v1 := `{"name": "Probe", "variables": {"n": {"type": "number"}, "x": {"type": "number", "formula": "n", "mode": "triggered", "on": ["transition:t"]}},
  "states": {"initial": "on", "list": ["on"]}, "transitions": [{"name": "t", "from": "on", "to": "on"}]}`
 	v2 := strings.Replace(v1, `"x": {"type": "number", "formula": "n", "mode": "triggered", "on": ["transition:t"]}`, `"x": {"type": "text", "formula": "TEXT(n)"}`, 1)
-	if _, err := s.DefineClass(ctx, []byte(v1), asSetup); err != nil {
+	if _, err := s.defineOpen(ctx, []byte(v1), asSetup); err != nil {
 		t.Fatal(err)
 	}
 	doc, err := s.Create(ctx, "Probe", Values{})
@@ -380,7 +380,7 @@ func TestTriggered_RetypeKeepsTheMoment(t *testing.T) {
 	if doc.Values["x"] != nil || doc.Computed["x"].Version != 2 {
 		t.Fatalf("x after the transition: %v, %+v", doc.Values["x"], doc.Computed["x"])
 	}
-	if _, err := s.DefineClass(ctx, []byte(v2), asSetup); err != nil {
+	if _, err := s.defineOpen(ctx, []byte(v2), asSetup); err != nil {
 		t.Fatalf("the retype: %v", err)
 	}
 	got, err := s.Get(ctx, "Probe", doc.ID)

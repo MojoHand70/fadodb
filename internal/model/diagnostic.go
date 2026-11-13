@@ -23,6 +23,10 @@ type Diagnostic struct {
 	Message string `json:"message"`
 	// Hint says what to write instead, when the engine knows.
 	Hint string `json:"hint,omitempty"`
+	// Note says that the finding refuses nothing: the definition is
+	// accepted with it. A rule a class leaves out is one (ADR-0052, item
+	// 5).
+	Note bool `json:"note,omitempty"`
 }
 
 func (d Diagnostic) String() string {
@@ -38,8 +42,19 @@ func (d Diagnostic) String() string {
 }
 
 // Diagnostics is the list of findings of one definition. It is an error
-// when it is not empty.
+// when it holds a finding that is not a note.
 type Diagnostics []Diagnostic
+
+// Refuses reports whether the list holds a finding that refuses the
+// definition: any finding that is not a note.
+func (ds Diagnostics) Refuses() bool {
+	for _, d := range ds {
+		if !d.Note {
+			return true
+		}
+	}
+	return false
+}
 
 func (ds Diagnostics) Error() string {
 	parts := make([]string, len(ds))
@@ -49,9 +64,10 @@ func (ds Diagnostics) Error() string {
 	return strings.Join(parts, "\n")
 }
 
-// Err returns the diagnostics as an error, or nil when there are none.
+// Err returns the diagnostics as an error, or nil when none of them
+// refuses the definition.
 func (ds Diagnostics) Err() error {
-	if len(ds) == 0 {
+	if !ds.Refuses() {
 		return nil
 	}
 	return ds
@@ -129,6 +145,10 @@ const (
 	CodeBadTrigger = "bad_trigger"
 	// CodeBadValue: an enum value, a range bound or a literal is wrong.
 	CodeBadValue = "bad_value"
+	// CodeRuleLeftOut is the note of an access rule a class leaves out:
+	// the class is accepted, and nobody but a content administrator
+	// passes that rule (ADR-0052, item 5).
+	CodeRuleLeftOut = "rule_left_out"
 	// CodeTooManyColumns: a generated table would exceed MaxColumns.
 	CodeTooManyColumns = "too_many_columns"
 	// CodeNotSupported: a construct the format allows that the engine

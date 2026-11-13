@@ -72,7 +72,7 @@ func TestReadmeClass(t *testing.T) {
 		t.Errorf("the README's transition: %v %+v", err, moved)
 	}
 	infos, err := db.Transitions(ctx, "Invoice", doc.ID, fado.As(alice))
-	if err != nil || len(infos) != 1 || infos[0].Name != "approve" || infos[0].Enabled || infos[0].Code != "guard_false" {
+	if err != nil || len(infos) != 1 || infos[0].Name != "approve" || infos[0].Enabled || infos[0].Code != "forbidden" {
 		t.Errorf("the README's listing: %v %+v", err, infos)
 	}
 	// The rule of the class: paying the invoice queues a receipt, and the
@@ -90,7 +90,7 @@ func TestReadmeClass(t *testing.T) {
 	if n, err := db.Drain(ctx, setup); err != nil || n != 1 {
 		t.Fatalf("the README's drain: %d %v", n, err)
 	}
-	receipts, err := db.Query(ctx, fado.Filter{Class: "Receipt"})
+	receipts, err := db.Query(ctx, fado.Filter{Class: "Receipt"}, fado.As(fin))
 	if err != nil || len(receipts) != 1 || receipts[0].Values["invoice"] != doc.ID || receipts[0].Values["amount"] != "90.00 PLN" || receipts[0].Title != "Receipt for "+doc.ID {
 		t.Errorf("the README's receipt: %v %+v", err, receipts)
 	}

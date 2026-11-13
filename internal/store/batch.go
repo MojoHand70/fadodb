@@ -123,6 +123,11 @@ func (s *Store) moveMany(ctx context.Context, class, name string, ids []string, 
 	if e := checkPrincipal(o.principal); e != nil {
 		return nil, e
 	}
+	if o.principal.For != "" {
+		if e := s.actsFor(ctx, &o, c.cls.Name); e != nil {
+			return nil, e
+		}
+	}
 	if !preview {
 		if err := refuseAt(o, "batch"); err != nil {
 			return nil, err

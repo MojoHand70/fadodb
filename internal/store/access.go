@@ -61,8 +61,10 @@ func asksRules(cmd *command) bool {
 // an override of the rule (ADR-0052, item 4), and the command notes the
 // place of the rule for the reason it needs and the event that keeps
 // both. It is asked only of a rule that refused, so that a command the
-// rules let through builds no path.
-func (cmd *command) lifts() bool { return cmd.o.principal.content() }
+// rules let through builds no path. A class the engine brings is not
+// theirs to act past: its rules say who gives a substitution, and the
+// owner ruled that a content administrator does not (ADR-0053, item 6).
+func (cmd *command) lifts() bool { return !cmd.c.brought && cmd.o.principal.content() }
 
 func (cmd *command) lift(path string) { cmd.lifted = append(cmd.lifted, path) }
 
@@ -117,6 +119,12 @@ func (s *Store) checkRead(c, beforeClass *class, before *docRow, cmd *command, e
 	}
 	if cmd.lifts() {
 		cmd.lift("/access/read")
+		return nil
+	}
+	if c.brought && cmd.o.principal.content() {
+		// A content administrator sees a document of a class the engine
+		// brings as they see any other, and that is no override: what they
+		// may do with it is what its rules give them.
 		return nil
 	}
 	if cmd.internal {

@@ -97,6 +97,15 @@ read the diagnostics, fix, preview against live data, define.
    Let an assistant in with `owner = USER() OR owner = ACTINGFOR()`.
    `USER()` is always the one who acts, the assistant and not the
    person it works for.
+   **Say where a substitute is accepted.** The engine checks every
+   "for" against a substitution before a formula runs (ADR-0053), so
+   `ACTINGFOR()` is safe to write. A step the approver or their
+   substitute takes, and never the one who filed the document, is
+   `(approver = USER() OR approver = ACTINGFOR()) AND CREATEDBY() <> USER()`.
+   A step that stays personal names `USER()` alone. A group does not
+   pass to a substitute: `INGROUP("managers")` waits for a manager.
+   The class `Substitution` is the engine's; a class of yours may read
+   it, and may not take its name (`reserved_name`).
 7. **Validate.** Today through `ValidateClass` on the Go API, and
    `ValidateClasses` for classes that name each other, whose findings
    start with the position of the definition, `/1/variables/total`; a

@@ -328,7 +328,7 @@ func (s *Store) OpenFile(ctx context.Context, class, id, hash string, opts ...Op
 	if e != nil {
 		return nil, nil, e
 	}
-	o, e := asked(opts)
+	o, e := s.asked(ctx, opts, c.cls.Name)
 	if e != nil {
 		return nil, nil, e
 	}
@@ -403,7 +403,10 @@ func (s *Store) OpenFile(ctx context.Context, class, id, hash string, opts ...Op
 // OpenBlob opens a blob by hash alone, which a content administrator may
 // (ADR-0033); anyone else goes through OpenFile.
 func (s *Store) OpenBlob(ctx context.Context, hash string, opts ...Option) (io.ReadCloser, int64, error) {
-	o := apply(opts)
+	o, e := s.asked(ctx, opts, "")
+	if e != nil {
+		return nil, 0, e
+	}
 	if !o.principal.content() {
 		return nil, 0, hintf(CodeNotAllowed, "", "a blob is served through a document", "use OpenFile with the class and the document that hold it; a content administrator may open a blob by hash")
 	}
@@ -422,7 +425,7 @@ func (s *Store) OpenBlob(ctx context.Context, hash string, opts ...Option) (io.R
 // a restore from an altered backup is found this way. A blob store that
 // cannot list its hashes is the error not_supported.
 func (s *Store) CheckBlobs(ctx context.Context, opts ...Option) (mismatched []string, checked int, err error) {
-	if _, e := s.worker(workOperate, opts); e != nil {
+	if _, e := s.worker(ctx, workOperate, opts); e != nil {
 		return nil, 0, e
 	}
 	lister, ok := s.blobs.(BlobLister)

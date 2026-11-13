@@ -716,3 +716,103 @@ func Example_many() {
 	// INV-417 is booked at version 3
 	// INV-418 is booked at version 2
 }
+
+// A substitute and an assistant (ADR-0053). A caller that names somebody
+// it acts for is let through only while a substitution says so: a
+// document of the class the engine brings to every database. USER() stays
+// the one who acts and ACTINGFOR() is the one acted for, so the class
+// says where a substitute is accepted, and the log says who did what for
+// whom.
+func Example_substitution() {
+	tmp, err := os.MkdirTemp("", "fado-example")
+	if err != nil {
+		panic(err)
+	}
+	defer os.RemoveAll(tmp)
+	start := time.Date(2026, 12, 1, 9, 0, 0, 0, time.UTC)
+	var days atomic.Int64
+	now := func() time.Time { return start.AddDate(0, 0, int(days.Load())) }
+	db, err := fado.Open(filepath.Join(tmp, "example.fado"), fado.Options{Now: now, Outbox: fado.OutboxOptions{Manual: true}})
+	if err != nil {
+		panic(err)
+	}
+	defer db.Close()
+	ctx := context.Background()
+
+	// The approver approves, or whoever validly acts for the approver,
+	// and never the one who filed the expense.
+	_, err = db.DefineClass(ctx, []byte(`{
+	  "name": "Expense",
+	  "variables": {"approver": {"type": "text"}, "total": {"type": "number"}},
+	  "states": {"initial": "filed", "list": ["filed", "approved"]},
+	  "transitions": [{"name": "approve", "from": "filed", "to": "approved"}],
+	  "access": {
+	    "read":   "CREATEDBY() = USER() OR approver = USER() OR approver = ACTINGFOR()",
+	    "create": "INGROUP(\"everyone\")",
+	    "update": "FALSE",
+	    "delete": "FALSE",
+	    "transition": {"approve": "(approver = USER() OR approver = ACTINGFOR()) AND CREATEDBY() <> USER()"}
+	  }
+	}`), setup)
+	if err != nil {
+		panic(err)
+	}
+	ann := fado.As(fado.Principal{ID: "ann", Kind: fado.ActorPerson})
+	bob := fado.As(fado.Principal{ID: "bob", Kind: fado.ActorPerson})
+	carol := fado.As(fado.Principal{ID: "carol", Kind: fado.ActorPerson})
+	bobForAnn := fado.As(fado.Principal{ID: "bob", Kind: fado.ActorPerson, For: "ann"})
+
+	hers, _ := db.Create(ctx, "Expense", fado.Values{"approver": "ann", "total": 300}, carol)
+	his, _ := db.Create(ctx, "Expense", fado.Values{"approver": "ann", "total": 900}, bob)
+
+	// Bob says he acts for Ann, and nothing says he may.
+	_, err = db.Transition(ctx, "Expense", hers.ID, "approve", nil, bobForAnn)
+	var refusal *fado.Error
+	if errors.As(err, &refusal) {
+		fmt.Println("before:", refusal.Code, refusal.Path)
+	}
+
+	// Ann goes on leave and lets Bob act for her until the fifteenth.
+	sub, err := db.Create(ctx, fado.SubstitutionClass, fado.Values{"by": "bob", "until": "2026-12-15 00:00:00"}, ann)
+	if err != nil {
+		panic(err)
+	}
+	fmt.Println("substitution:", sub.Title, "is", sub.State)
+
+	// Bob approves Carol's expense for Ann. His own he may not: USER() is
+	// still Bob.
+	doc, err := db.Transition(ctx, "Expense", hers.ID, "approve", nil, bobForAnn)
+	if err != nil {
+		panic(err)
+	}
+	fmt.Println("carol's expense:", doc.State)
+	_, err = db.Transition(ctx, "Expense", his.ID, "approve", nil, bobForAnn)
+	if errors.As(err, &refusal) {
+		fmt.Println("his own:", refusal.Code, refusal.Path)
+	}
+	events, _ := db.Events(ctx, "Expense", hers.ID, carol)
+	last := events[len(events)-1]
+	fmt.Printf("the log: %s by %s for %s\n", last.Name, last.ActorID, last.ActorFor)
+
+	// On the fifteenth it has ended, by its dates: nothing waits for the
+	// worker, which moves the document to ended when it next runs.
+	days.Store(14)
+	_, err = db.Get(ctx, "Expense", his.ID, bobForAnn)
+	if errors.As(err, &refusal) {
+		fmt.Println("on the fifteenth:", refusal.Code, refusal.Path)
+	}
+	if _, err := db.Drain(ctx, setup); err != nil {
+		panic(err)
+	}
+	sub, _ = db.Get(ctx, fado.SubstitutionClass, sub.ID, ann)
+	fmt.Println("substitution:", sub.State)
+
+	// Output:
+	// before: forbidden /principal/for
+	// substitution: bob for ann is active
+	// carol's expense: approved
+	// his own: forbidden /access/transition/approve
+	// the log: approve by bob for ann
+	// on the fifteenth: forbidden /principal/for
+	// substitution: ended
+}

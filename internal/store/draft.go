@@ -19,7 +19,7 @@ import (
 func (s *Store) PreviewDraft(ctx context.Context, definition []byte, id string, values Values, transition string, opts ...Option) (*Preview, error) {
 	// A draft reads real documents through its formulas, so trying one is
 	// a designer's work (ADR-0051).
-	if _, e := s.worker(workDesign, opts); e != nil {
+	if _, e := s.worker(ctx, workDesign, opts); e != nil {
 		return nil, e
 	}
 	if transition != "" && id == "" {

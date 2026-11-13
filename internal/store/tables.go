@@ -237,7 +237,7 @@ func (s *Store) Table(name string) (*model.Table, bool) {
 // no-op. A table with no rows and no class reading it can be redefined;
 // one with rows, or one a class reads, cannot in this build.
 func (s *Store) DefineTable(ctx context.Context, data []byte, opts ...Option) (*model.Table, error) {
-	o, e := s.worker(workDesign, opts)
+	o, e := s.worker(ctx, workDesign, opts)
 	if e != nil {
 		return nil, e
 	}
@@ -359,7 +359,7 @@ func (s *Store) ImportRows(ctx context.Context, name string, rows []Values, opts
 	if e != nil {
 		return 0, e
 	}
-	o, e := asked(opts)
+	o, e := s.asked(ctx, opts, "")
 	if e != nil {
 		return 0, e
 	}
@@ -425,7 +425,7 @@ func (s *Store) TableRows(ctx context.Context, name string, opts ...Option) ([]V
 	if e != nil {
 		return nil, e
 	}
-	o, e := asked(opts)
+	o, e := s.asked(ctx, opts, "")
 	if e != nil {
 		return nil, e
 	}

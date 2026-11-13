@@ -254,7 +254,7 @@ func (s *Store) Get(ctx context.Context, class, id string, opts ...Option) (*Doc
 	if e != nil {
 		return nil, e
 	}
-	o, e := asked(opts)
+	o, e := s.asked(ctx, opts, c.cls.Name)
 	if e != nil {
 		return nil, e
 	}
@@ -326,7 +326,7 @@ func (s *Store) Version(ctx context.Context, class, id string, version int64, op
 	if e != nil {
 		return nil, e
 	}
-	o, e := asked(opts)
+	o, e := s.asked(ctx, opts, c.cls.Name)
 	if e != nil {
 		return nil, e
 	}
@@ -384,7 +384,7 @@ func (s *Store) History(ctx context.Context, class, id string, opts ...Option) (
 	if e != nil {
 		return nil, e
 	}
-	o, e := asked(opts)
+	o, e := s.asked(ctx, opts, c.cls.Name)
 	if e != nil {
 		return nil, e
 	}
@@ -438,7 +438,7 @@ func (s *Store) Events(ctx context.Context, class, id string, opts ...Option) ([
 	if e != nil {
 		return nil, e
 	}
-	o, e := asked(opts)
+	o, e := s.asked(ctx, opts, c.cls.Name)
 	if e != nil {
 		return nil, e
 	}

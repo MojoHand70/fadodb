@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/MojoHand70/fadodb/internal/formula"
+	"github.com/MojoHand70/fadodb/internal/model"
 )
 
 // BenchmarkRecalculate is the compute step of a commit on the invoice
@@ -564,7 +565,12 @@ func BenchmarkTransition(b *testing.B) {
 
 // benchOwned runs BenchmarkTransition's loop on its class with an owner
 // variable added, and with the access block given.
-func benchOwned(b *testing.B, access string) {
+func benchOwned(b *testing.B, access string) { benchOwnedAs(b, access, alice) }
+
+// benchOwnedAs is benchOwned with the caller of the transitions given:
+// alice, who owns the document, or somebody who acts for her, with the
+// substitution that lets them.
+func benchOwnedAs(b *testing.B, access string, caller Principal) {
 	s, err := Open(filepath.Join(b.TempDir(), "bench.fado"), Options{})
 	if err != nil {
 		b.Fatal(err)
@@ -580,11 +586,16 @@ func benchOwned(b *testing.B, access string) {
 	if err != nil {
 		b.Fatal(err)
 	}
+	if caller.For != "" {
+		if _, err := s.Create(ctx, model.SubstitutionClass, Values{"by": caller.ID}, As(Principal{ID: caller.For})); err != nil {
+			b.Fatal(err)
+		}
+	}
 	names := [2]string{"submit", "back"}
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; b.Loop(); i++ {
-		if _, err := s.Transition(ctx, "Flow", doc.ID, names[i%2], nil, As(alice)); err != nil {
+		if _, err := s.Transition(ctx, "Flow", doc.ID, names[i%2], nil, As(caller)); err != nil {
 			b.Fatal(err)
 		}
 	}
@@ -602,6 +613,18 @@ func BenchmarkTransitionAccess(b *testing.B) {
 }
 
 func BenchmarkTransitionOwned(b *testing.B) { benchOwned(b, "") }
+
+// BenchmarkTransitionFor is BenchmarkTransitionAccess for a caller that
+// acts for the owner (ADR-0053): the rules accept whoever validly acts
+// for her, and every commit asks the substitution, which the engine has
+// in memory after the first: one lookup by the pair, and no allocation.
+// The two allocations it has more than the owner's own commit are those
+// of a caller who names a "for", which the event keeps (ADR-0050): a
+// host that answers for the "for" itself pays the same two.
+func BenchmarkTransitionFor(b *testing.B) {
+	benchOwnedAs(b, `"access": {"read": "owner = USER() OR owner = ACTINGFOR() OR INGROUP(\"finance\")", "update": "(owner = USER() OR owner = ACTINGFOR()) AND amount < 100000", "delete": "FALSE"},
+ `, Principal{ID: "bob", For: alice.ID})
+}
 
 // benchMany opens a store with the transition benchmarks' class and n
 // documents of it in draft, with the amount given.

@@ -94,7 +94,7 @@ func TestRoles_SystemGroups(t *testing.T) {
 		t.Errorf("SQL without a principal: %v", err)
 	}
 	// Reading a definition is open to every caller, and so is checking one.
-	if _, ok := s.Class("Memo"); !ok || len(s.Classes()) != 1 {
+	if _, ok := s.Class("Memo"); !ok || len(s.Classes()) != 2 {
 		t.Error("the class is not readable")
 	}
 	if diags := s.Validate([]byte(memo)); diags.Refuses() {

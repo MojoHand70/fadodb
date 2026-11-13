@@ -52,7 +52,8 @@ All notable changes to FadoDB are recorded here. The format follows
   `Principal.Kind` is `ActorPerson`, `ActorAgent` or
   `ActorService`, or empty when the host program does not know, and
   `Principal.For` is the id of whoever the caller acts for. The engine
-  trusts both as it trusts the id. Any other kind is refused with
+  trusts the kind as it trusts the id, and checks the "for" against a
+  substitution (ADR-0053, below). Any other kind is refused with
   `bad_value`.
 - Two functions answer them to a formula, wherever `USER()` may stand:
   `USERKIND()` and `ACTINGFOR()`, each blank when the host program said
@@ -132,7 +133,42 @@ All notable changes to FadoDB are recorded here. The format follows
   `conformance/access/left_out.json` and `left_out_partly.json` are the
   suites.
 
+- Acting for somebody is checked (ADR-0053). A caller that names
+  somebody in `Principal.For` is let through only while a substitution
+  says so, on every call, a read as a command; otherwise the call is
+  refused with `forbidden`, the path `/principal/for`, and a message
+  that says what is missing: no substitution, one that begins later,
+  one that has ended, or one for other classes. A caller that acts for
+  nobody is asked nothing.
+- A substitution is a document of the class `Substitution`, which the
+  engine brings to every database: `by` may act for `for`, from `from`
+  until `until`, on `classes` or on every class. The person gives one
+  for themselves and withdraws it at any time; a database
+  administrator gives one for somebody who cannot, with a `reason` and
+  never to themselves. Nobody passes one on, nothing changes one and
+  nothing deletes one. It is `planned`, `active`, `ended` or
+  `withdrawn` and moves by itself at its dates, while the check reads
+  the dates and waits for no worker. `fado.SubstitutionClass` and the
+  names of its states are constants.
+- The name `Substitution` is the engine's: a definition of that name is
+  refused with `reserved_name`. A content administrator sees every
+  substitution and acts past no rule of the class.
+- `Options.HostAnswersFor` is for a host program that keeps its own
+  substitutions: the engine records the "for" it is told and checks
+  nothing, as before.
+- `conformance/access/substitution.json` is the suite, and
+  `BenchmarkTransitionFor` measures a transition by a substitute: the
+  check is one lookup in memory and allocates nothing.
+- The Approval sample accepts whoever validly acts for the approver,
+  with `approver = USER() OR approver = ACTINGFOR()`.
+
 ### Changed
+
+- **Breaking for a host that sets `Principal.For`:** the engine now
+  checks it. Give the caller a substitution, or open the database with
+  `Options.HostAnswersFor` when the host program keeps its own.
+- Every database has the class `Substitution`, listed first by
+  `Classes`. `fadodb check` counts it.
 
 - A named transition without a rule of its own asks the `update` rule
   of its class, where the class has one. Before, it was open to every

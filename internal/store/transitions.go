@@ -49,7 +49,7 @@ func (s *Store) Transitions(ctx context.Context, class, id string, opts ...Optio
 	if e != nil {
 		return nil, e
 	}
-	o, e := asked(opts)
+	o, e := s.asked(ctx, opts, c.cls.Name)
 	if e != nil {
 		return nil, e
 	}
@@ -109,7 +109,7 @@ func (s *Store) listTransitions(c *class, row *docRow, evalCtx *formula.Context,
 			}
 		}
 		if ok, err := s.permitted(&s.wev, c, t, row, evalCtx); !ok {
-			if !p.content() {
+			if c.brought || !p.content() {
 				info.Code = CodeForbidden
 				if err != nil {
 					info.Message = "the rule failed: " + guardFailure(err)

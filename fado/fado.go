@@ -187,6 +187,32 @@ const (
 	GroupEveryone              = store.GroupEveryone
 )
 
+// SubstitutionClass is the class the engine brings to every database
+// (ADR-0053): a document of it says who may act for whom, from when,
+// until when and on which classes, and a caller that names somebody in
+// Principal.For is let through only while one says so.
+//
+//	// Ann lets Bob act for her until the fifteenth.
+//	db.Create(ctx, fado.SubstitutionClass, fado.Values{"by": "bob", "until": "2026-12-15 00:00:00"}, fado.As(ann))
+//	// Bob approves for Ann. USER() is bob and ACTINGFOR() is ann.
+//	db.Transition(ctx, "Expense", id, "approve", nil, fado.As(fado.Principal{ID: "bob", For: "ann"}))
+//	// Ann takes it back.
+//	db.Transition(ctx, fado.SubstitutionClass, sub.ID, fado.SubstitutionWithdraw, nil, fado.As(ann))
+//
+// The person gives one for themselves; a database administrator gives
+// one for somebody who cannot, with a reason and never to themselves.
+// The document is planned, active, ended or withdrawn, and moves by
+// itself at its from and its until. A host program that keeps its own
+// substitutions opens the database with Options.HostAnswersFor.
+const (
+	SubstitutionClass     = model.SubstitutionClass
+	SubstitutionPlanned   = model.SubstitutionPlanned
+	SubstitutionActive    = model.SubstitutionActive
+	SubstitutionEnded     = model.SubstitutionEnded
+	SubstitutionWithdrawn = model.SubstitutionWithdrawn
+	SubstitutionWithdraw  = model.SubstitutionWithdraw
+)
+
 // As runs the call as the principal.
 func As(p Principal) Option { return store.As(p) }
 

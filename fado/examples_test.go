@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/MojoHand70/fadodb/fado"
@@ -141,5 +142,22 @@ func TestExampleApprovals(t *testing.T) {
 	answer("P-2-bob", "refuse", bob)
 	if got := state("P-2"); got != "rejected" {
 		t.Errorf("after a refusal the purchase is %s", got)
+	}
+	// Whoever acts for an approver answers for them, once the approver
+	// said so with a substitution, and not before (ADR-0053).
+	carolForAnn := fado.As(fado.Principal{ID: "carol", For: "ann"})
+	if _, err := db.Transition(ctx, "Approval", "P-2-ann", "grant", nil, carolForAnn); err == nil || !strings.Contains(err.Error(), "no substitution lets carol act for ann") {
+		t.Errorf("carol answered for ann with no substitution: %v", err)
+	}
+	if _, err := db.Create(ctx, fado.SubstitutionClass, fado.Values{"by": "carol"}, ann); err != nil {
+		t.Fatal(err)
+	}
+	answer("P-2-ann", "grant", carolForAnn)
+	events, err := db.Events(ctx, "Approval", "P-2-ann", ann)
+	if err != nil || len(events) == 0 {
+		t.Fatal(err)
+	}
+	if last := events[len(events)-1]; last.ActorID != "carol" || last.ActorFor != "ann" {
+		t.Errorf("the approval carol gave for ann is recorded as %s for %s", last.ActorID, last.ActorFor)
 	}
 }

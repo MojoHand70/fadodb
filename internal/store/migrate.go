@@ -333,7 +333,7 @@ func (s *Store) Migrate(ctx context.Context, class string, opts ...Option) (int,
 	if e != nil {
 		return 0, e
 	}
-	o, e := s.worker(workDesign, opts)
+	o, e := s.worker(ctx, workDesign, opts)
 	if e != nil {
 		return 0, e
 	}

@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"testing"
 
 	"github.com/MojoHand70/fadodb/internal/model"
 	"github.com/MojoHand70/fadodb/internal/testdef"
@@ -27,4 +28,16 @@ func (s *Store) defineOpenAll(ctx context.Context, defs [][]byte, opts ...Option
 
 func (s *Store) defineOpenTable(ctx context.Context, def []byte, opts ...Option) (*model.Table, error) {
 	return s.DefineTable(ctx, openedTable(def), opts...)
+}
+
+// gives records that acts lets by act for them on every class, from now
+// until it is withdrawn (ADR-0053): the substitution a test needs before
+// a caller of it names somebody.
+func gives(t *testing.T, s *Store, by, acts string) *Document {
+	t.Helper()
+	d, err := s.Create(context.Background(), model.SubstitutionClass, Values{"by": by}, As(Principal{ID: acts}))
+	if err != nil {
+		t.Fatalf("%s lets %s act for them: %v", acts, by, err)
+	}
+	return d
 }

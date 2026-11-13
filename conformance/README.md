@@ -207,6 +207,15 @@ past a rule the places of the rules, then the reason, as
 `/access/read /access/update: the owner left the company`, and `""` for
 any other.
 
+`substitution.json` is the suite of acting for somebody (ADR-0053). Its
+steps name the class `Substitution`, which the engine brings and no
+suite defines, beside the suite's own. A refusal for a "for" that no
+substitution covers has the code `forbidden` and `/principal/for` as its
+`action`. A suite may say `"host_answers_for": true`: its store is
+opened for a host program that keeps its own substitutions, and no
+"for" is checked. `actors.json` gives its assistants their substitutions
+in its first two steps.
+
 `groups.json` is the suite of the system groups as the formulas of a
 class see them (ADR-0052): `INGROUP` of a system group and of
 `everyone`, on a read by id, in a command and in a filter; a call

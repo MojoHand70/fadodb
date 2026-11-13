@@ -45,9 +45,9 @@ Website: [fadodb.org](https://fadodb.org).
 > that is not about one document: who runs the database, who designs,
 > who acts on any document and who runs SQL. A rule a class leaves out
 > lets nobody through, so a class says who may. A content administrator
-> who acts past a rule gives a reason, and the event keeps it.
-> Substitutions are accepted and not built yet. The server comes with
-> its phase. The numbers are in
+> who acts past a rule gives a reason, and the event keeps it. A caller
+> may act for somebody only while a substitution says so, a document
+> the person gives and withdraws. The server comes with its phase. The numbers are in
 > [docs/perf/](docs/perf/), the plan in [ROADMAP.md](ROADMAP.md).
 
 ## What it is
@@ -157,7 +157,14 @@ that has an id (ADR-0051, ADR-0052). A table may say who
 reads and who writes its rows. A
 principal may say whether it is a person, an agent or a service, and
 for whom it acts: every event records it, and `USERKIND()` and
-`ACTINGFOR()` let a class keep a step for a person (ADR-0050). The
+`ACTINGFOR()` let a class keep a step for a person (ADR-0050). Acting
+for somebody is checked: Ann lets Bob, or her assistant, act for her
+by creating a `Substitution`, a document of a class the engine brings
+to every database, with a `from`, an `until` and the classes it is
+for; a call that names a "for" no substitution covers is refused with
+`forbidden`; `USER()` stays the one who acts, so Bob does not approve
+his own expense as Ann; and a host program that keeps its own
+substitutions opens the database with `HostAnswersFor` (ADR-0053). The
 rules of a class run inside the commit: a `set` or a
 `reset` changes the document before it is written, an `emit` appends a
 custom event, an action that fails refuses the command with its place in

@@ -100,6 +100,13 @@ type Options struct {
 	// nowhere. nil supplies none: only definitions that read no secret can
 	// be defined.
 	Secrets func(ctx context.Context, connection, name string) (string, error)
+	// HostAnswersFor says the host program keeps who may act for whom
+	// itself and answers for Principal.For (ADR-0053, item 8): the engine
+	// records the "for" it is told, as ADR-0050 built, and asks no
+	// substitution. Without it the engine checks every call that names
+	// somebody against the substitutions of the database. It is the host
+	// program's, given at every Open, like its actions.
+	HostAnswersFor bool
 	// Now is the clock of the database: it stamps every commit and is
 	// what NOW() and TODAY() read in every formula, unless a call that
 	// reads or previews chooses a moment with At (ADR-0042). nil is
@@ -225,6 +232,11 @@ type Store struct {
 	// dueLists counts the lists of documents that Due read to look at
 	// them one by one (ADR-0047, item 8), for the tests of when it does.
 	dueLists atomic.Int64
+	// subs is what the check of "for" keeps (ADR-0053), and bringing says
+	// Open is defining a class of the engine's own, which may carry a
+	// name the engine keeps.
+	subs     substitutions
+	bringing bool
 	// testStep is called at the steps of an action when a test sets it.
 	testStep func(step string, row *outboxRow) *Error
 	// testMoved, when a test sets it, may refuse a document of a batch of
@@ -306,6 +318,7 @@ func Open(path string, o Options) (*Store, error) {
 		stop: make(chan struct{}), done: make(chan struct{}),
 		outbox: o.Outbox, wake: make(chan struct{}, 1), workDone: make(chan struct{}),
 	}
+	s.subs.host = o.HostAnswersFor
 	if s.now == nil {
 		s.now = time.Now
 	}
@@ -368,6 +381,11 @@ func Open(path string, o Options) (*Store, error) {
 		return fail(err)
 	}
 	if err := s.load(ctx); err != nil {
+		return fail(err)
+	}
+	// The classes the engine brings (ADR-0053, item 7), once what is
+	// stored is loaded: a new database gets them here.
+	if err := s.bring(ctx); err != nil {
 		return fail(err)
 	}
 	ckpt, err := db.Conn(ctx)
@@ -733,7 +751,7 @@ func (s *Store) env() model.Env {
 	for _, name := range s.tableOrder {
 		set.Add(s.tables[strings.ToUpper(name)].src)
 	}
-	return model.Env{Schemas: s.schemas, Sources: set, Classes: func(name string) (*model.Class, bool) {
+	return model.Env{Schemas: s.schemas, Sources: set, Engine: s.bringing, Classes: func(name string) (*model.Class, bool) {
 		if c, ok := s.classes[strings.ToUpper(name)]; ok {
 			return c.cls, true
 		}

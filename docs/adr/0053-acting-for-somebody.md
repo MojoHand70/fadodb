@@ -136,6 +136,87 @@ at the end.
    - Telling Bob that he now acts for Ann. A rule on the class can, as
      on any class, once the owner wants it.
 
+## Details settled while building
+
+Built on 2026-11-13, in one step. The definition of the class is in
+`internal/model/substitution.go`, and `conformance/access/substitution.json`
+is its suite.
+
+- **The class.** `Substitution` has six variables: `by` and `for`,
+  texts, both required, `for` the caller when left out; `from` and
+  `until`, datetimes, `from` the moment of the commit when left out and
+  `until` blank for "until withdrawn"; `classes`, a list of class
+  names, empty for every class; and `reason`, a text. Who gave it is
+  who created it. Its title is "bob for ann".
+- **`from` and `until` are moments**, in UTC, like every datetime of the
+  engine. The substitution holds from `from` and ends at `until`: a call
+  at the very second of `until` is refused. "Until 14 December" with
+  the day included is written `2026-12-15 00:00:00`.
+- **Its states move by time and say nothing to the check.** `planned`
+  becomes `active` at `from` and `ended` at `until`, by two timed
+  transitions; one given with a `from` that has come is `active` in the
+  commit that made it. The worker moves the document when it next runs,
+  and the check has answered by the dates meanwhile. `ended` and
+  `withdrawn` are terminal.
+- **Who gives one**, as the create formula of the class writes item 6:
+  the person, for themselves; or a database administrator, with a
+  reason and never to themselves. Nobody gives one while acting for
+  somebody, which is how nobody passes one on. The formula also
+  refuses one given to oneself and one that ends before it begins.
+- **Who withdraws one**: the person it is for, and a database
+  administrator. The one who holds it does not: giving one back is not
+  in this record.
+- **Who sees one**: the person it is for, the one who holds it, and a
+  database administrator, who keeps them.
+- **Nothing changes a substitution and nothing deletes it.** It is the
+  evidence of who was allowed. To change one, withdraw it and give
+  another.
+- **A content administrator acts past no formula of this class.** They
+  see every substitution, as they see every document, and give,
+  change and withdraw none past its formulas, with a reason or
+  without: a command of theirs on this class is refused with
+  `forbidden` and never becomes an override. This follows ruling I:
+  the owner did not take "a content administrator gives one". With
+  the override open, a content administrator could have made
+  themselves somebody's substitute once, with one reason, and then
+  acted for them without a reason each time.
+- **The name is the engine's.** A definition named `Substitution`, in
+  any case of the letters, is refused with `reserved_name`, when it is
+  checked, previewed as a draft or defined. The engine defines the
+  class when it opens a database that has none, and defines the next
+  version of it when a later engine brings another text. The list of
+  classes shows it, first, and its definition is recorded as made by
+  `fadodb`, a service. The layout of the engine's own tables does not
+  change.
+- **The refusal** is `forbidden` with the path `/principal/for`. Its
+  message names who, for whom, on which class and at which moment, and
+  what the substitutions of the two say when there are some: that one
+  begins later, has ended, or is for other classes. Its hint says who
+  gives one.
+- **Every call that names a caller is asked**, a read as a command,
+  before anything is said of the document. One call asks nothing, as
+  before: `PutBlob`, which reads no caller at all; the bytes are
+  nobody's until a commit names them, and that commit is asked. A
+  repeat of a command's key is asked again.
+- **A call that names no class needs a substitution for every class**:
+  defining, migrating, operating the queue, SQL, the rows of a table
+  and a blob by its hash. One kept to some classes lets its holder act
+  on documents of those classes and on nothing else.
+- **A call at a moment other than now** (ADR-0042): a preview or a
+  read at a moment to come is asked as of that moment, as item 2 says.
+  One at a past moment is asked of the substitutions that stand now: a
+  substitution that has ended or was withdrawn lets nobody through,
+  whatever moment the call names.
+- **In memory.** The engine keeps, for each pair of who acts and for
+  whom, the substitutions that stood when it last read them, a pair
+  with none included, and reads a pair again only after a commit wrote
+  a substitution. It reads through the index on `by`. It remembers at
+  most 4,096 pairs and starts again past that.
+- **A host that keeps its own** says `HostAnswersFor` in the options of
+  `Open` (item 8). It is the host program's, given at every `Open`
+  like its actions, and not kept in the file. The class is in its
+  database all the same.
+
 ## The owner's rulings
 
 All of 2026-11-13.
@@ -185,3 +266,12 @@ in force there and refreshes them when a commit touches the class. The
 benchmark gate allows no allocation more for a caller that acts for
 nobody (ADR-0030), and a call with a "for" is measured when this is
 built.
+
+Measured on 2026-11-13, on the development machine, with the file in
+memory. No benchmark of the gate allocates more than before. A
+transition by a substitute, `BenchmarkTransitionFor`, takes about 51
+microseconds and 165 allocations; the same transition by the owner
+takes about 51 microseconds and 163. The two allocations are those of
+a caller who names a "for", which the event keeps since ADR-0050: with
+the check switched off by `HostAnswersFor` the numbers are the same,
+so the check itself costs one lookup and allocates nothing.

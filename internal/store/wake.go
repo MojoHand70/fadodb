@@ -101,6 +101,7 @@ func (s *Store) queueWakes(ctx context.Context, c *class, cmd *command, beforeCl
 // falls due next after every look. A commit of a class with timers so
 // costs the worker nothing, where waking it costs three queries.
 func (s *Store) wakeQueued(actions, own bool) {
+	s.committedSubstitutions()
 	at := s.wakeAt
 	s.wakeAt = 0
 	if actions {

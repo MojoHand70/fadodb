@@ -364,6 +364,10 @@ type Env struct {
 	// it reads are, and how an earlier version of a class is, whose
 	// formulas no longer run and may read what a class has since dropped.
 	Shallow bool
+	// Engine compiles a definition of the engine's own, which may carry a
+	// name the engine keeps for itself (ADR-0053, item 7). A stored
+	// definition, compiled leniently, may too: the engine stored it.
+	Engine bool
 }
 
 // Define parses and compiles a class definition in one step, against the
@@ -410,6 +414,10 @@ func CompileIn(def *Definition, env Env) (*Class, Diagnostics) {
 	c.self = cls
 	if c.checkName("/name", def.Name, reservedClassNames) && strings.HasPrefix(strings.ToLower(def.Name), "doc_") {
 		c.add(CodeReservedName, "/name", "a class name may not start with doc_, the prefix of the generated tables")
+	}
+	if engineClass(def.Name) && !env.Engine && !env.Lenient {
+		c.hint(CodeReservedName, "/name", quote(def.Name)+" is a class the engine brings to every database, and its definition is the engine's (ADR-0053)",
+			"give the class another name; a class of the database's own that reads substitutions names "+SubstitutionClass+" as it names any class")
 	}
 	if cls.Version == 0 {
 		cls.Version = 1

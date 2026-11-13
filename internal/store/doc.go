@@ -94,5 +94,11 @@
 // item 7; defined.go): Definitions lists them, and a class, a table and
 // an action say it of their current version.
 //
-// Not here yet: substitutions (ADR-0053), and the server (Phase 6).
+// For whom a caller acts is checked (ADR-0053, substitution.go): the
+// engine brings the class Substitution to every database, and a call
+// that names somebody in Principal.For is refused unless a document of
+// it says the caller may, by its dates. A host program that keeps its
+// own substitutions opens with Options.HostAnswersFor.
+//
+// Not here yet: the server (Phase 6).
 package store

@@ -234,6 +234,16 @@ The second step, the same day, built item 5.
 Measured in memory: every benchmark of the gate keeps its allocations
 with the rules written into its class.
 
+One finding came with the rules. Every evaluation of a formula looked
+up where its variables are in a map of its class, and a class with more
+than eight formulas paid about a nanosecond more for each lookup. Four
+access rules took the class of the guard benchmark over that line: its
+loop of guards went from 35.6 ns to 39.2 ns, and the gate refused it. A
+formula now keeps those positions itself, for the class that bound it,
+and no map is read on a run: the loop takes 30.7 ns, 14% under what it
+took before the rules, and the checks of rights and the rules of a
+commit gained as much.
+
 The third step, the same day, built the rest of item 4.
 
 - **The names.** The option `Reason`; the code `reason_required`, with

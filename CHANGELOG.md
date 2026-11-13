@@ -28,6 +28,10 @@ All notable changes to FadoDB are recorded here. The format follows
   not have yet marked, and every code of a refusal with its meaning.
   `make docs` writes them again, and a test fails when they fall
   behind the engine.
+- Four more guides, each played by a test: look a value up in a
+  reference table, move many documents at once, change a class that
+  already has documents, and do something outside when a document
+  changes.
 
 ## [0.5.0] - 2026-11-13
 

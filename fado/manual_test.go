@@ -29,23 +29,48 @@ func TestManualExamples(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		var classes, pieces []string
+		var classes, tables, actions, pieces []string
 		for _, m := range block.FindAllSubmatch(data, -1) {
-			var whole struct {
-				Name      string          `json:"name"`
-				Variables json.RawMessage `json:"variables"`
-			}
-			if json.Unmarshal(m[1], &whole) == nil && whole.Name != "" && whole.Variables != nil {
+			switch kindOf(m[1]) {
+			case "class":
 				classes = append(classes, string(m[1]))
-			} else {
+			case "table":
+				tables = append(tables, string(m[1]))
+			case "action":
+				actions = append(actions, string(m[1]))
+			default:
 				pieces = append(pieces, string(m[1]))
 			}
 		}
 		name := filepath.Base(page)
+		// An action a page defines with no request is the contract of a
+		// function of the host program, so the test's database is opened
+		// with one that does nothing under each such name.
+		funcs := map[string]fado.ActionFunc{}
+		for _, action := range actions {
+			var def struct {
+				Name    string          `json:"name"`
+				Request json.RawMessage `json:"request"`
+			}
+			if json.Unmarshal([]byte(action), &def) == nil && def.Request == nil {
+				funcs[def.Name] = func(context.Context, *fado.ActionCall) (fado.Values, error) { return nil, nil }
+			}
+		}
 		for i, class := range classes {
-			db, err := fado.Open(filepath.Join(t.TempDir(), "manual.fado"), fado.Options{Outbox: fado.OutboxOptions{Manual: true}})
+			db, err := fado.Open(filepath.Join(t.TempDir(), "manual.fado"), fado.Options{Outbox: fado.OutboxOptions{Manual: true}, Actions: funcs})
 			if err != nil {
 				t.Fatal(err)
+			}
+			// What the classes of the page name is defined before them.
+			for _, table := range tables {
+				if _, err := db.DefineTable(ctx, []byte(table), setup); err != nil {
+					t.Errorf("%s: a table is refused: %v", name, err)
+				}
+			}
+			for _, action := range actions {
+				if _, err := db.DefineAction(ctx, []byte(action), setup); err != nil {
+					t.Errorf("%s: an action is refused: %v", name, err)
+				}
 			}
 			cls, err := db.DefineClass(ctx, []byte(class), setup)
 			if err != nil {
@@ -66,7 +91,10 @@ func TestManualExamples(t *testing.T) {
 				t.Errorf("%s: this piece is in no class of the chapter:\n%s", name, piece)
 			}
 		}
-		t.Logf("%s: %d classes defined, %d pieces found in them", name, len(classes), len(pieces))
+		if len(classes) == 0 && len(tables)+len(actions) > 0 {
+			t.Errorf("%s shows a table or an action and no class that uses it", name)
+		}
+		t.Logf("%s: %d classes, %d tables and %d actions defined, %d pieces found in them", name, len(classes), len(tables), len(actions), len(pieces))
 	}
 }
 
@@ -107,4 +135,28 @@ func manualPages(t *testing.T) []string {
 		t.Fatal("no chapters found")
 	}
 	return pages
+}
+
+// kindOf says what a block of JSON in the manual is: a whole class, a
+// whole table, a whole action definition, or a piece of one of them.
+func kindOf(block []byte) string {
+	var whole struct {
+		Name      string          `json:"name"`
+		Variables json.RawMessage `json:"variables"`
+		Columns   json.RawMessage `json:"columns"`
+		Params    json.RawMessage `json:"params"`
+		Request   json.RawMessage `json:"request"`
+	}
+	if json.Unmarshal(block, &whole) != nil || whole.Name == "" {
+		return "piece"
+	}
+	switch {
+	case whole.Variables != nil:
+		return "class"
+	case whole.Columns != nil:
+		return "table"
+	case whole.Params != nil || whole.Request != nil:
+		return "action"
+	}
+	return "piece"
 }

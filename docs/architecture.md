@@ -718,7 +718,7 @@ key order, to the function the Go VM adds with.
   the system groups it is in (ADR-0052) and its business day
   (ADR-0027), and what the caller is, a
   person, an agent or a service, with the id of whoever it acts for
-  (ADR-0050). The engine trusts all of it, writes
+  (ADR-0050). The engine trusts all of it but the last, writes
   the kind and the id acted for on every event beside the actor's id,
   and answers them to `USERKIND()` and `ACTINGFOR()`, so that a class
   can keep a step for a person and the log can say which steps an agent
@@ -777,9 +777,17 @@ key order, to the function the Go VM adds with.
   trace. Every version of a class, a schema, a table and an action
   records who defined it, what they were, for whom they acted and
   when, and `Definitions` lists them: what a designer changes is in
-  sight. Accepted and not built yet (ADR-0053): substitutions that the
-  engine keeps and checks, where today it trusts the host on for whom
-  a caller acts. The change stream comes
+  sight. For whom a caller acts is checked (ADR-0053): the engine
+  brings a class, `Substitution`, to every database, and a caller that
+  names somebody is let through only while a document of it says so,
+  for the class the call names and at the moment it asks at; the check
+  reads the dates of the substitution, kept in memory for each pair
+  and read again after a commit of the class, and the document moves
+  from `planned` to `active` to `ended` by timed transitions. The
+  person gives and withdraws one, a database administrator gives one
+  when the person cannot, and a content administrator acts past no
+  rule of this class. A host program with its own substitutions says
+  `HostAnswersFor` at `Open` and is trusted as before. The change stream comes
   with the server in Phase 6. A call without a principal is nobody.
 
 ### Querying

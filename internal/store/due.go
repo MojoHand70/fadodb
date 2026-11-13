@@ -104,7 +104,7 @@ func (s *Store) Due(ctx context.Context, class string, opts ...Option) ([]DueDoc
 	if e != nil {
 		return nil, e
 	}
-	o, e := asked(opts)
+	o, e := s.asked(ctx, opts, c.cls.Name)
 	if e != nil {
 		return nil, e
 	}

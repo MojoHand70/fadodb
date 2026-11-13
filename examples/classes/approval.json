@@ -1,6 +1,6 @@
 {
   "name": "Approval",
-  "description": "One person's yes or no to a purchase. The Purchase sample's rule creates one for each approver, and only that approver may grant or refuse it. Either refreshes the purchase, which then counts its approvals again. Defined together with the Purchase sample, with DefineClasses, since each names the other.",
+  "description": "One person's yes or no to a purchase. The Purchase sample's rule creates one for each approver, and only that approver, or whoever acts for them with a substitution, may grant or refuse it. Either refreshes the purchase, which then counts its approvals again. Defined together with the Purchase sample, with DefineClasses, since each names the other.",
   "title": "approver & \" on \" & purchase",
   "variables": {
     "purchase": {"type": "text", "required": true, "index": true},
@@ -17,7 +17,7 @@
     "create": "INGROUP(\"everyone\")",
     "update": "FALSE",
     "delete": "FALSE",
-    "transition": {"grant": "approver = USER()", "refuse": "approver = USER()"}
+    "transition": {"grant": "approver = USER() OR approver = ACTINGFOR()", "refuse": "approver = USER() OR approver = ACTINGFOR()"}
   },
   "rules": [
     {"on": "enter", "state": "granted", "do": [{"action": "refresh", "class": "Purchase", "id": "purchase"}]},

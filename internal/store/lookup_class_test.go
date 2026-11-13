@@ -439,8 +439,8 @@ func TestDefineClasses(t *testing.T) {
 	if diags := s.ValidateClasses(openedAll([][]byte{[]byte(lkApproval), []byte(wrong)})); len(diags) != 1 || diags[0].Path != "/1/variables/needed/default" {
 		t.Errorf("a pair with one wrong definition: %v", diags)
 	}
-	if len(s.Classes()) != 0 {
-		t.Fatalf("a validation stored %v", s.Classes())
+	if got := s.Classes(); len(got) != 1 || got[0] != model.SubstitutionClass {
+		t.Fatalf("a validation stored %v", got)
 	}
 	// Together they are, in either order, as version 1 each.
 	classes, err := s.defineOpenAll(ctx, pair, asSetup)
@@ -450,7 +450,7 @@ func TestDefineClasses(t *testing.T) {
 	if len(classes) != 2 || classes[0].Name != "Purchase" || classes[1].Name != "Approval" || classes[0].Version != 1 || classes[1].Version != 1 {
 		t.Fatalf("defined %v", classes)
 	}
-	if got := strings.Join(s.Classes(), ","); got != "Purchase,Approval" {
+	if got := strings.Join(s.Classes(), ","); got != "Substitution,Purchase,Approval" {
 		t.Errorf("classes %s", got)
 	}
 	// They run: two approvals granted, the purchase approved.
@@ -494,7 +494,7 @@ func TestDefineClasses(t *testing.T) {
 	if c, _ := s.class("Purchase"); c.cls.Version != 1 {
 		t.Errorf("a refused set stored version %d of the purchase", c.cls.Version)
 	}
-	if c, _ := s.class("Approval"); c.cls.Version != 1 || len(s.Classes()) != 2 {
+	if c, _ := s.class("Approval"); c.cls.Version != 1 || len(s.Classes()) != 3 {
 		t.Errorf("a refused set stored something: %v", s.Classes())
 	}
 	// Alone, the new approval is refused: the stored purchase has no
@@ -582,7 +582,7 @@ func TestDefineClasses(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer s2.Close()
-	if got := strings.Join(s2.Classes(), ","); got != "Purchase,Approval,Other" {
+	if got := strings.Join(s2.Classes(), ","); got != "Substitution,Purchase,Approval,Other" {
 		t.Errorf("classes after the reopen: %s", got)
 	}
 	if p, err := s2.Refresh(ctx, "Purchase", "P-1", nil); err != nil || p.Values["granted"] != 2.0 || p.ClassVersion != 4 {

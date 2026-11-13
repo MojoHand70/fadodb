@@ -305,6 +305,14 @@ func (s *Store) run(ctx context.Context, cmd command, now time.Time) (*result, e
 	if e := checkPrincipal(cmd.o.principal); e != nil {
 		return nil, e
 	}
+	// A caller that acts for somebody is asked the substitution, at the
+	// moment the command runs at (ADR-0053, item 2). What a commit queued
+	// is not asked again: the step was decided while it held.
+	if cmd.o.principal.For != "" && !cmd.internal && !cmd.engine && cmd.op != opWake {
+		if e := s.substituted(ctx, cmd.o.principal.ID, cmd.o.principal.For, c.cls.Name, clock, secs); e != nil {
+			return nil, e
+		}
+	}
 
 	// A class without states is a stateless application and stores no
 	// documents (ADR-0040); the previews evaluate it.
@@ -1100,6 +1108,9 @@ func sameRows(a, b []childRow) bool {
 // rows and the event. With kids nil and a before row, every composite is
 // carried forward from the previous version.
 func (s *Store) write(ctx context.Context, c *class, before, after *docRow, kids map[*child][]childRow, secs int64, eventID, actor string, ev eventInfo, key, hash string, day int64) error {
+	if c.brought {
+		s.wroteSubstitution()
+	}
 	// Every value is boxed once and bound wherever it goes: to the current
 	// row, to the history row and to the event. The buffers are the
 	// writer's, which writes one row at a time.
@@ -1197,6 +1208,9 @@ func sameText(s, boxed string, box any) any {
 }
 
 func (s *Store) writeDelete(ctx context.Context, c *class, before *docRow, secs int64, eventID, actor, key, hash string, day int64) error {
+	if c.brought {
+		s.wroteSubstitution()
+	}
 	if _, err := c.w.closeHistory.ExecContext(ctx, secs, before.id, before.version); err != nil {
 		return storageErr("close the history row", err)
 	}

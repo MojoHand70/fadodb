@@ -38,7 +38,7 @@ func (s *Store) Query(ctx context.Context, f Filter, opts ...Option) ([]*Documen
 	if e != nil {
 		return nil, e
 	}
-	o, e := asked(opts)
+	o, e := s.asked(ctx, opts, c.cls.Name)
 	if e != nil {
 		return nil, e
 	}
@@ -158,7 +158,7 @@ func (s *Store) Count(ctx context.Context, f Filter, opts ...Option) (int64, err
 	if e != nil {
 		return 0, e
 	}
-	o, e := asked(opts)
+	o, e := s.asked(ctx, opts, c.cls.Name)
 	if e != nil {
 		return 0, e
 	}
@@ -256,7 +256,7 @@ func (s *Store) SQL(ctx context.Context, text string, args []any, opts ...Option
 	// A statement its caller writes is given no rule: it reads every row
 	// and every variable, so it is for whoever the host program names an
 	// analyst (ADR-0049, item 12; ADR-0051).
-	if _, e := s.worker(workAnalyse, opts); e != nil {
+	if _, e := s.worker(ctx, workAnalyse, opts); e != nil {
 		return nil, e
 	}
 	s.sqlMu.Lock()

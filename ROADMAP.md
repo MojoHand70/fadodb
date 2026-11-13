@@ -22,8 +22,9 @@ document by itself when that time comes. The access rules of a class
 are enforced (ADR-0049), a rule a class leaves out lets nobody
 through, four system groups hold the work that is not about one
 document, and a content administrator's act past a rule carries a
-reason that the event keeps (ADR-0052); substitutions are accepted and
-not built yet, and the server comes with its phase.
+reason that the event keeps (ADR-0052); a caller that acts for
+somebody is let through only while a substitution says so (ADR-0053);
+and the server comes with its phase.
 Since v0.1.0 the records ADR-0022 to
 ADR-0038 fixed what the first embedder needs and what Phase 2 measured:
 SQLite as the transactional store and the in-memory index for lookups, by
@@ -191,8 +192,13 @@ Its eighth step keeps what a designer does in sight: every version
 of a class, a schema, a table and an action records who defined it,
 what they were, for whom they acted and when, and one call lists them.
 With it the system groups of ADR-0052 are built.
-Not built yet: substitutions (ADR-0053), and the measurements that
-close the phase.
+Its ninth step is the substitution of ADR-0053: the engine brings the
+class `Substitution` to every database, a document of it says who may
+act for whom, from when, until when and on which classes, and every
+call that names somebody it acts for is refused unless one says so;
+the person gives one, a database administrator when the person
+cannot, and a host program that keeps its own says so at `Open`.
+Not built yet: the measurements that close the phase.
 This page is updated when a phase starts and when it ends;
 it never describes a phase as done before its acceptance criteria pass.
 

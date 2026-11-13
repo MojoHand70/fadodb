@@ -32,6 +32,10 @@ type statechartSuite struct {
 	AsWritten   bool   `json:"as_written,omitempty"`
 	Suite       string `json:"suite"`
 	Description string `json:"description,omitempty"`
+	// HostAnswersFor opens the suite's store for a host program that
+	// keeps its own substitutions (ADR-0053, item 8): the engine records
+	// the "for" it is told and asks nothing.
+	HostAnswersFor bool `json:"host_answers_for,omitempty"`
 	// Clock is the database's clock while the suite runs, as
 	// YYYY-MM-DD HH:MM:SS in UTC; the runner's default when absent.
 	Clock string `json:"clock,omitempty"`
@@ -410,6 +414,7 @@ func runStatechartSuite(t *testing.T, suite *statechartSuite) {
 			return "", fmt.Errorf("the suite has no secret %s of %s", name, connection)
 		}
 	}
+	o.HostAnswersFor = suite.HostAnswersFor
 	s, _ := openStore(t, o)
 	ctx := context.Background()
 	for i, def := range suite.Actions {
@@ -509,6 +514,7 @@ func runStatechartSuite(t *testing.T, suite *statechartSuite) {
 				t.Fatalf("%s: a wait moves the suite's clock, and the suite has none", name)
 			}
 			now = now.Add(time.Duration(step.Seconds) * time.Second)
+			err = nil
 		case "actions":
 		case "try":
 			outcome, err = s.TryAction(ctx, step.Action, step.Args, asSetup)
@@ -826,7 +832,7 @@ func runStatechartSuite(t *testing.T, suite *statechartSuite) {
 			}
 		}
 		if want.History != nil {
-			rows, err := s.History(ctx, class, id)
+			rows, err := s.History(ctx, class, id, As(root))
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -878,7 +884,7 @@ func runStatechartSuite(t *testing.T, suite *statechartSuite) {
 			}
 		}
 		if want.Events != nil {
-			events, err := s.Events(ctx, class, id)
+			events, err := s.Events(ctx, class, id, As(root))
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -895,7 +901,7 @@ func runStatechartSuite(t *testing.T, suite *statechartSuite) {
 			}
 		}
 		if want.Origins != nil {
-			events, err := s.Events(ctx, class, id)
+			events, err := s.Events(ctx, class, id, As(root))
 			if err != nil {
 				t.Fatal(err)
 			}

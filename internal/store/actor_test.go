@@ -39,6 +39,7 @@ func TestActor_OnEveryEvent(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	gives(t, s, "agent-7", "ann")
 	doc, err := s.Create(ctx, "Trip", Values{"cost": 120}, As(assistant))
 	if err != nil || doc.Values["owner"] != "ann" || doc.CreatedBy != "agent-7" {
 		t.Fatalf("an assistant drafts for ann: %v %s", err, dump(doc))
@@ -175,6 +176,7 @@ func TestActor_TheDeliveredEvent(t *testing.T) {
  "rules": [{"on": "enter", "state": "a", "do": [{"action": "audit.note"}]}]}`), asSetup); err != nil {
 		t.Fatal(err)
 	}
+	gives(t, s, "agent-7", "ann")
 	first, err := s.Create(ctx, "Memo", Values{"t": "x"}, As(assistant))
 	if err != nil {
 		t.Fatal(err)

@@ -1,6 +1,7 @@
 package store
 
 import (
+	"context"
 	"strconv"
 	"time"
 
@@ -27,9 +28,12 @@ type Principal struct {
 	// Kind is what the caller is (ADR-0050): ActorPerson, ActorAgent or
 	// ActorService, or empty when the host program does not say. For is
 	// the id of whoever the caller acts for, empty when it acts for
-	// itself. The engine trusts both as it trusts the id, writes them on
-	// every event beside it, and answers them to USERKIND() and
-	// ACTINGFOR().
+	// itself. The engine trusts the kind as it trusts the id, and checks
+	// the "for": a caller that names somebody is let through only while
+	// a substitution of the database says so (ADR-0053), unless the host
+	// program answers for it itself with Options.HostAnswersFor. It
+	// writes both on every event beside the id, and answers them to
+	// USERKIND() and ACTINGFOR().
 	Kind string
 	For  string
 }
@@ -113,17 +117,25 @@ func checkPrincipal(p Principal) *Error {
 	return nil
 }
 
-// asked applies the options of a call that reads, and refuses a principal
-// whose kind is none the engine knows (ADR-0050); a command that writes
-// is refused the same where it begins.
-func asked(opts []Option) (options, *Error) {
+// asked applies the options of a call that reads, refuses a principal
+// whose kind is none the engine knows (ADR-0050), and refuses a caller
+// that says it acts for somebody and has no substitution for the class
+// the call names, "" when it names none (ADR-0053, item 2); a command
+// that writes is refused the same where it begins.
+func (s *Store) asked(ctx context.Context, opts []Option, class string) (options, *Error) {
 	if len(opts) == 0 {
 		// A call without options is nobody's: nothing to apply, and the
 		// options stay off the heap, which Drain is glad of on every run.
 		return options{}, nil
 	}
 	o := apply(opts)
-	return o, checkPrincipal(o.principal)
+	if e := checkPrincipal(o.principal); e != nil {
+		return o, e
+	}
+	if o.principal.For != "" {
+		return o, s.actsFor(ctx, &o, class)
+	}
+	return o, nil
 }
 
 // contextOf is the context of a formula that runs for the principal at

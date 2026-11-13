@@ -1,6 +1,8 @@
 package store
 
 import (
+	"context"
+
 	"github.com/MojoHand70/fadodb/internal/formula"
 )
 
@@ -44,10 +46,12 @@ func (s *Store) permits(w work, p Principal) *Error {
 }
 
 // worker is the check of a call that does one of the three kinds of
-// work: its options applied, its principal sound, and the work
-// permitted.
-func (s *Store) worker(w work, opts []Option) (options, *Error) {
-	o, e := asked(opts)
+// work: its options applied, its principal sound, its "for" held by a
+// substitution, and the work permitted. Such work names no class, so a
+// caller that does it for somebody needs a substitution for every class
+// (ADR-0053, item 2).
+func (s *Store) worker(ctx context.Context, w work, opts []Option) (options, *Error) {
+	o, e := s.asked(ctx, opts, "")
 	if e != nil {
 		return o, e
 	}

@@ -622,7 +622,7 @@ func (s *Store) writeQueued(ctx context.Context, c *class, cmd *command, commit 
 // runs actions; beside a running worker it leaves alone the documents
 // whose action the worker has in flight.
 func (s *Store) Drain(ctx context.Context, opts ...Option) (int, error) {
-	if _, e := s.worker(workOperate, opts); e != nil {
+	if _, e := s.worker(ctx, workOperate, opts); e != nil {
 		return 0, e
 	}
 	s.drainMu.Lock()
@@ -1072,7 +1072,7 @@ func asError(err error) *Error {
 // (ADR-0044, item 8): what is waiting, what ran and what is dead, each
 // with its key, its arguments, its attempts and its last error.
 func (s *Store) Outbox(ctx context.Context, f OutboxFilter, opts ...Option) ([]QueuedAction, error) {
-	if _, e := s.worker(workOperate, opts); e != nil {
+	if _, e := s.worker(ctx, workOperate, opts); e != nil {
 		return nil, e
 	}
 	var where []string
@@ -1136,7 +1136,7 @@ func (s *Store) Outbox(ctx context.Context, f OutboxFilter, opts ...Option) ([]Q
 // zero (ADR-0044, item 8); the outcome it then reaches is a further
 // event. A dead row is never retried by itself.
 func (s *Store) RetryAction(ctx context.Context, key string, opts ...Option) error {
-	if _, e := s.worker(workOperate, opts); e != nil {
+	if _, e := s.worker(ctx, workOperate, opts); e != nil {
 		return e
 	}
 	i := strings.LastIndexByte(key, ':')

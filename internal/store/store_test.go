@@ -169,7 +169,9 @@ func TestDefineClass(t *testing.T) {
 	s, _ := openStore(t, Options{})
 	ctx := context.Background()
 	cls := defineInvoice(t, s)
-	if cls.Version != 1 || len(s.Classes()) != 1 {
+	// The engine's own class is there before the first of the database's
+	// (ADR-0053, item 7).
+	if got := s.Classes(); cls.Version != 1 || len(got) != 2 || got[0] != model.SubstitutionClass {
 		t.Errorf("version %d, classes %v", cls.Version, s.Classes())
 	}
 	rows, err := s.db.Query("SELECT type, name FROM sqlite_master WHERE name NOT LIKE 'sqlite_%' ORDER BY type, name")
@@ -675,7 +677,7 @@ func TestReopen(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer s2.Close()
-	if got := strings.Join(s2.Classes(), ","); got != "Invoice,Task" {
+	if got := strings.Join(s2.Classes(), ","); got != "Substitution,Invoice,Task" {
 		t.Errorf("classes %s", got)
 	}
 	if sch, ok := s2.Schemas().Lookup("Employee"); !ok || sch.Version != 1 {

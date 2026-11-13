@@ -36,6 +36,7 @@
   },
   "principals": {
     "ann":       {"id": "ann",     "groups": ["staff"], "kind": "person"},
+    "bob":       {"id": "bob",     "groups": ["staff"], "kind": "person"},
     "assistant": {"id": "agent-7", "groups": ["staff"], "kind": "agent", "for": "ann"},
     "other":     {"id": "agent-8", "groups": ["staff"], "kind": "agent", "for": "bob"},
     "boss":      {"id": "mia",     "groups": ["managers"], "kind": "person"},
@@ -45,6 +46,8 @@
     "root":      {"id": "root",    "system": ["content-administrators"]}
   },
   "script": [
+    {"name": "Ann lets her assistant act for her (ADR-0053)", "do": "create", "class": "Substitution", "as": "ann", "values": {"by": "agent-7"}, "expect": {"state": "active", "values": {"for": "ann"}}},
+    {"name": "and Bob his", "do": "create", "class": "Substitution", "as": "bob", "values": {"by": "agent-8"}, "expect": {"state": "active"}},
     {"name": "an assistant files for Ann: the owner is the one it acts for, and the document says an agent made it", "do": "create", "doc": "small", "as": "assistant", "values": {"total": 400},
      "expect": {"state": "draft", "values": {"owner": "ann", "made_by": "agent"}, "life": {"created_by": "agent-7"}}},
     {"name": "Ann sees what her assistant filed", "do": "get", "doc": "small", "as": "ann", "expect": {"values": {"total": 400}}},

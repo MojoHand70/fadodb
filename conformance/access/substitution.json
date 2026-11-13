@@ -1,0 +1,119 @@
+{
+  "suite": "substitution",
+  "description": "Acting for somebody is checked (ADR-0053). A caller that names somebody in its \"for\" is let through only while a substitution says so: a document of the class Substitution, which the engine brings to every database. It holds from its from until its until, by the dates and not by the state of its document, on the classes it names or on every class, and no more from the commit that withdrew it. USER() stays the one who acts, so a substitute does not approve what they filed themselves. The person gives one for themselves; a database administrator gives one for somebody else, with a reason and never to themselves; a content administrator gives none and withdraws none.",
+  "as_written": true,
+  "clock": "2026-03-01 12:00:00",
+  "class": {
+    "name": "Expense",
+    "variables": {
+      "owner":    {"type": "text", "default": "IF(ACTINGFOR() <> \"\", ACTINGFOR(), USER())", "index": true},
+      "approver": {"type": "text"},
+      "total":    {"type": "number"}
+    },
+    "states": {"initial": "draft", "list": ["draft", "filed", "approved"]},
+    "transitions": [
+      {"name": "file",    "from": "draft", "to": "filed"},
+      {"name": "approve", "from": "filed", "to": "approved"}
+    ],
+    "access": {
+      "read":   "owner = USER() OR owner = ACTINGFOR() OR approver = USER() OR approver = ACTINGFOR()",
+      "create": "INGROUP(\"everyone\")",
+      "update": "owner = USER() OR owner = ACTINGFOR()",
+      "delete": "FALSE",
+      "transition": {"approve": "(approver = USER() OR approver = ACTINGFOR()) AND CREATEDBY() <> USER()"}
+    }
+  },
+  "principals": {
+    "ann":         {"id": "ann",     "kind": "person"},
+    "bob":         {"id": "bob",     "kind": "person"},
+    "carol":       {"id": "carol",   "kind": "person"},
+    "dan":         {"id": "dan",     "kind": "person"},
+    "bob_for_ann": {"id": "bob",     "kind": "person", "for": "ann"},
+    "carol_for_ann": {"id": "carol", "kind": "person", "for": "ann"},
+    "bob_for_mia": {"id": "bob",     "kind": "person", "for": "mia"},
+    "ann_for_mia": {"id": "ann",     "kind": "person", "for": "mia"},
+    "assistant":   {"id": "agent-7", "kind": "agent",  "for": "ann"},
+    "olaf":        {"id": "olaf",    "kind": "person", "system": ["administrators"]},
+    "cora":        {"id": "cora",    "kind": "person", "system": ["content-administrators"]}
+  },
+  "script": [
+    {"name": "Carol files an expense that Ann approves", "do": "create", "doc": "hers", "as": "carol", "values": {"approver": "ann", "total": 300}, "expect": {"state": "draft"}},
+    {"do": "transition", "doc": "hers", "as": "carol", "transition": "file", "expect": {"state": "filed"}},
+
+    {"name": "Bob says he acts for Ann, and nothing says he may: a read is refused", "do": "get", "doc": "hers", "as": "bob_for_ann", "expect": {"code": "forbidden", "action": "/principal/for"}},
+    {"name": "and a filter", "do": "query", "as": "bob_for_ann", "expect": {"code": "forbidden", "action": "/principal/for"}},
+    {"name": "and a count", "do": "count", "as": "bob_for_ann", "expect": {"code": "forbidden", "action": "/principal/for"}},
+    {"name": "and the listing of what he may do", "do": "transitions", "doc": "hers", "as": "bob_for_ann", "expect": {"code": "forbidden", "action": "/principal/for"}},
+    {"name": "and a preview, which is how an agent asks first", "do": "preview", "doc": "hers", "as": "bob_for_ann", "transition": "approve", "expect": {"code": "forbidden", "action": "/principal/for"}},
+    {"name": "and a command", "do": "transition", "doc": "hers", "as": "bob_for_ann", "transition": "approve", "expect": {"code": "forbidden", "action": "/principal/for"}},
+    {"name": "and a create", "do": "create", "as": "bob_for_ann", "values": {"total": 1}, "expect": {"code": "forbidden", "action": "/principal/for"}},
+    {"name": "as himself Bob is asked nothing, and the expense is not his", "do": "get", "doc": "hers", "as": "bob", "expect": {"code": "unknown_document"}},
+
+    {"name": "Bob cannot give himself one for Ann", "do": "create", "class": "Substitution", "as": "bob", "values": {"by": "bob", "for": "ann"}, "expect": {"code": "forbidden", "action": "/access/create"}},
+    {"name": "nor can Carol give him one", "do": "create", "class": "Substitution", "as": "carol", "values": {"by": "bob", "for": "ann"}, "expect": {"code": "forbidden", "action": "/access/create"}},
+    {"name": "Ann does not give herself one", "do": "create", "class": "Substitution", "as": "ann", "values": {"by": "ann"}, "expect": {"code": "forbidden", "action": "/access/create"}},
+    {"name": "Ann lets Bob act for her: it holds at once, and for is hers when she leaves it out", "do": "create", "class": "Substitution", "doc": "bobs", "as": "ann", "values": {"by": "bob"},
+     "expect": {"state": "active", "values": {"by": "bob", "for": "ann", "from": 1772366400, "until": null}, "life": {"created_by": "ann"}}},
+
+    {"name": "now Bob sees the expense for Ann", "do": "get", "doc": "hers", "as": "bob_for_ann", "expect": {"values": {"total": 300}}},
+    {"name": "and finds it", "do": "query", "as": "bob_for_ann", "expect": {"docs": ["hers"]}},
+    {"name": "and may approve it", "do": "transitions", "doc": "hers", "as": "bob_for_ann", "expect": {"transitions": [{"name": "approve", "to": "approved", "enabled": true}]}},
+    {"name": "and approves it", "do": "transition", "doc": "hers", "as": "bob_for_ann", "transition": "approve", "expect": {"state": "approved", "life": {"state_entered_by": "bob"}}},
+    {"name": "the log says Bob did, for Ann", "do": "get", "doc": "hers", "as": "carol", "expect": {"actors": ["carol person", "carol person", "bob person for ann"]}},
+
+    {"name": "Bob files an expense of his own, which Ann approves", "do": "create", "doc": "his", "as": "bob", "values": {"approver": "ann", "total": 900}, "expect": {"state": "draft"}},
+    {"do": "transition", "doc": "his", "as": "bob", "transition": "file", "expect": {"state": "filed"}},
+    {"name": "as Ann's substitute he does not approve it: USER() is still Bob, and he made it", "do": "transition", "doc": "his", "as": "bob_for_ann", "transition": "approve",
+     "expect": {"code": "forbidden", "action": "/access/transition/approve"}},
+
+    {"name": "nobody passes a substitution on: Bob, for Ann, cannot let Carol act for Ann", "do": "create", "class": "Substitution", "as": "bob_for_ann", "values": {"by": "carol", "for": "ann"},
+     "expect": {"code": "forbidden", "action": "/access/create"}},
+    {"name": "nobody acts for somebody who acts for somebody: Ann acts for Mia", "do": "create", "class": "Substitution", "as": "ann", "values": {"by": "ann", "for": "mia"}, "expect": {"code": "forbidden", "action": "/access/create"}},
+
+    {"name": "the one who holds it does not withdraw it", "do": "transition", "class": "Substitution", "doc": "bobs", "as": "bob", "transition": "withdraw", "expect": {"code": "forbidden", "action": "/access/transition/withdraw"}},
+    {"name": "nothing changes it", "do": "set", "class": "Substitution", "doc": "bobs", "as": "ann", "values": {"by": "carol"}, "expect": {"code": "forbidden", "action": "/access/update"}},
+    {"name": "nothing deletes it", "do": "delete", "class": "Substitution", "doc": "bobs", "as": "ann", "expect": {"code": "forbidden", "action": "/access/delete"}},
+    {"name": "a content administrator sees it, and changes nothing with a reason either", "do": "set", "class": "Substitution", "doc": "bobs", "as": "cora", "reason": "tidying", "values": {"by": "carol"},
+     "expect": {"code": "forbidden", "action": "/access/update"}},
+    {"name": "nor withdraws it", "do": "transition", "class": "Substitution", "doc": "bobs", "as": "cora", "reason": "tidying", "transition": "withdraw", "expect": {"code": "forbidden", "action": "/access/transition/withdraw"}},
+    {"name": "nor gives one", "do": "create", "class": "Substitution", "as": "cora", "reason": "I need to", "values": {"by": "cora", "for": "ann"}, "expect": {"code": "forbidden", "action": "/access/create"}},
+
+    {"name": "Ann withdraws it", "do": "transition", "class": "Substitution", "doc": "bobs", "as": "ann", "transition": "withdraw", "expect": {"state": "withdrawn"}},
+    {"name": "and Bob acts for her no more, from that commit", "do": "get", "doc": "his", "as": "bob_for_ann", "expect": {"code": "forbidden", "action": "/principal/for"}},
+    {"name": "a withdrawn substitution is frozen", "do": "transition", "class": "Substitution", "doc": "bobs", "as": "ann", "transition": "withdraw", "expect": {"code": "wrong_state"}},
+
+    {"name": "Ann plans one for Carol, from tomorrow for two days", "do": "create", "class": "Substitution", "doc": "carols", "as": "ann",
+     "values": {"by": "carol", "from": "2026-03-02 00:00:00", "until": "2026-03-04 00:00:00"}, "expect": {"state": "planned"}},
+    {"name": "one that ends before it begins is refused", "do": "create", "class": "Substitution", "as": "ann", "values": {"by": "carol", "from": "2026-03-05 00:00:00", "until": "2026-03-04 00:00:00"},
+     "expect": {"code": "forbidden", "action": "/access/create"}},
+    {"name": "today Carol is refused", "do": "get", "doc": "his", "as": "carol_for_ann", "expect": {"code": "forbidden", "action": "/principal/for"}},
+    {"name": "a preview at a moment inside it is asked as of that moment", "do": "preview", "doc": "his", "as": "carol_for_ann", "transition": "approve", "at": "2026-03-02 12:00:00", "expect": {"state": "approved"}},
+    {"name": "and one at a moment past its until is refused", "do": "preview", "doc": "his", "as": "carol_for_ann", "transition": "approve", "at": "2026-03-04 00:00:00", "expect": {"code": "forbidden", "action": "/principal/for"}},
+    {"name": "a day passes", "do": "wait", "seconds": 86400, "expect": {}},
+    {"name": "the document has not moved yet, and Carol is let through by its dates", "do": "get", "class": "Substitution", "doc": "carols", "as": "ann", "expect": {"state": "planned"}},
+    {"name": "Carol approves Bob's expense for Ann", "do": "transition", "doc": "his", "as": "carol_for_ann", "transition": "approve", "expect": {"state": "approved"}},
+    {"name": "the worker moves the substitution at its from", "do": "drain", "expect": {"drained": 1}},
+    {"do": "get", "class": "Substitution", "doc": "carols", "as": "carol", "expect": {"state": "active"}},
+    {"name": "two days pass", "do": "wait", "seconds": 172800, "expect": {}},
+    {"name": "past its until Carol is refused, before the worker ends the document", "do": "get", "doc": "his", "as": "carol_for_ann", "expect": {"code": "forbidden", "action": "/principal/for"}},
+    {"name": "a read at a past moment is asked of the substitutions that stand now", "do": "get", "doc": "his", "as": "carol_for_ann", "at": "2026-03-02 12:00:00", "expect": {"code": "forbidden", "action": "/principal/for"}},
+    {"name": "the worker ends it", "do": "drain", "expect": {"drained": 1}},
+    {"name": "its life: given by Ann, begun and ended by time", "do": "get", "class": "Substitution", "doc": "carols", "as": "ann",
+     "expect": {"state": "ended", "events": ["created", "transition:", "transition:"], "origins": ["command", "timer", "timer"]}},
+
+    {"name": "a database administrator gives none without a reason", "do": "create", "class": "Substitution", "as": "olaf", "values": {"by": "dan", "for": "ann"}, "expect": {"code": "forbidden", "action": "/access/create"}},
+    {"name": "nor to themselves", "do": "create", "class": "Substitution", "as": "olaf", "values": {"by": "olaf", "for": "ann", "reason": "Ann is ill"}, "expect": {"code": "forbidden", "action": "/access/create"}},
+    {"name": "with a reason they give Dan one for Ann", "do": "create", "class": "Substitution", "doc": "dans", "as": "olaf", "values": {"by": "dan", "for": "ann", "reason": "Ann is ill"},
+     "expect": {"state": "active", "life": {"created_by": "olaf"}}},
+    {"name": "Ann sees it, as every substitution for her", "do": "query", "class": "Substitution", "as": "ann", "where": "state = \"active\"", "expect": {"docs": ["dans"]}},
+    {"name": "Dan sees the one he holds", "do": "count", "class": "Substitution", "as": "dan", "expect": {"count": 1}},
+    {"name": "Bob sees the one he held", "do": "count", "class": "Substitution", "as": "bob", "expect": {"count": 1}},
+    {"name": "a database administrator sees them all", "do": "count", "class": "Substitution", "as": "olaf", "expect": {"count": 3}},
+    {"name": "Ann withdraws what was given for her", "do": "transition", "class": "Substitution", "doc": "dans", "as": "ann", "transition": "withdraw", "expect": {"state": "withdrawn"}},
+
+    {"name": "Ann lets her assistant act for her on expenses only", "do": "create", "class": "Substitution", "doc": "assistants", "as": "ann", "values": {"by": "agent-7", "classes": ["Expense"]}, "expect": {"state": "active"}},
+    {"name": "it files one for her", "do": "create", "doc": "filed", "as": "assistant", "values": {"total": 40}, "expect": {"state": "draft", "values": {"owner": "ann"}, "life": {"created_by": "agent-7"}}},
+    {"name": "on another class it is refused: the substitutions themselves", "do": "count", "class": "Substitution", "as": "assistant", "expect": {"code": "forbidden", "action": "/principal/for"}},
+    {"name": "the log of what it filed", "do": "get", "doc": "filed", "as": "ann", "expect": {"actors": ["agent-7 agent for ann"]}}
+  ]
+}

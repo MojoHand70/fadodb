@@ -16,7 +16,9 @@ which takes several definitions in one call.
 purchase creates one approval for each approver, each approver answers
 their own, and the purchase counts them with a `LOOKUP` over the
 Approval class and moves by its own guards. The two name each other.
-`TestExampleApprovals` walks them through.
+An approval is answered by its approver or by whoever acts for them
+with a substitution (ADR-0053): `approver = USER() OR approver =
+ACTINGFOR()`. `TestExampleApprovals` walks them through.
 
 ## Naming
 

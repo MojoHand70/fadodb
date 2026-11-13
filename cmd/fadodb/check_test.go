@@ -30,7 +30,8 @@ func TestCheck(t *testing.T) {
 	s.Close()
 
 	var out, errOut bytes.Buffer
-	if code := run([]string{"check", path}, &out, &errOut); code != 0 || !strings.Contains(out.String(), "1 classes, 0 tables, 1 blobs checked, all match") {
+	// The class of the test and the one the engine brings (ADR-0053).
+	if code := run([]string{"check", path}, &out, &errOut); code != 0 || !strings.Contains(out.String(), "2 classes, 0 tables, 1 blobs checked, all match") {
 		t.Errorf("check: exit %d\n%s%s", code, out.String(), errOut.String())
 	}
 

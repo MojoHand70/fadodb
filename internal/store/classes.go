@@ -25,6 +25,10 @@ type class struct {
 	// due is how Due reads the class (ADR-0047, item 8), planned at its
 	// first call.
 	due duePlanned
+	// brought says the class is one the engine brings (ADR-0053, item 7):
+	// its rules hold for a content administrator too, and a commit of it
+	// is told to the check of "for".
+	brought bool
 	// who says a formula of the class reads who created, changed or moved
 	// the document, or where it came from (ADR-0047, item 5).
 	who bool
@@ -256,7 +260,8 @@ func indexOf(leaves []leaf) map[string]int {
 // newClass lays a compiled class out for storage.
 func newClass(cls *model.Class, src []byte) (*class, error) {
 	c := &class{cls: cls, json: src, table: "doc_" + cls.Name, history: "doc_" + cls.Name + "_history", nameArg: cls.Name,
-		byName: map[string]*cvar{}, exact: map[string]*cvar{}, slots: map[*formula.Program][]int{}, sources: map[string]bool{}}
+		byName: map[string]*cvar{}, exact: map[string]*cvar{}, slots: map[*formula.Program][]int{}, sources: map[string]bool{},
+		brought: strings.EqualFold(cls.Name, model.SubstitutionClass)}
 	for _, v := range cls.Variables {
 		for _, name := range v.Sources {
 			c.sources[strings.ToUpper(name)] = true
@@ -812,7 +817,7 @@ func (s *Store) compileClasses(ctx context.Context, datas [][]byte, set bool) ([
 // redefinitionDiagnostics. A class with no history at all is dropped
 // and made again.
 func (s *Store) DefineClass(ctx context.Context, data []byte, opts ...Option) (*model.Class, error) {
-	o, e := s.worker(workDesign, opts)
+	o, e := s.worker(ctx, workDesign, opts)
 	if e != nil {
 		return nil, e
 	}
@@ -832,7 +837,7 @@ func (s *Store) DefineClass(ctx context.Context, data []byte, opts ...Option) (*
 // Diagnostics when a definition is refused, and the path of each finding
 // starts with the position of its definition in the call.
 func (s *Store) DefineClasses(ctx context.Context, datas [][]byte, opts ...Option) ([]*model.Class, error) {
-	o, e := s.worker(workDesign, opts)
+	o, e := s.worker(ctx, workDesign, opts)
 	if e != nil {
 		return nil, e
 	}
@@ -1044,7 +1049,7 @@ func (c *class) childOfName(name string) (*child, bool) {
 // Defining the same definition again is a no-op; a schema a stored class
 // uses cannot be redefined in this build.
 func (s *Store) DefineSchema(ctx context.Context, data []byte, opts ...Option) (*model.Schema, error) {
-	o, e := s.worker(workDesign, opts)
+	o, e := s.worker(ctx, workDesign, opts)
 	if e != nil {
 		return nil, e
 	}

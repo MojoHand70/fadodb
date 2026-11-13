@@ -436,7 +436,7 @@ func (s *Store) compileAction(data []byte) (*model.ActionSpec, model.Diagnostics
 // calls, with Options.Outbound, know the definition's connection and, if
 // the request reads a secret, supply secrets.
 func (s *Store) DefineAction(ctx context.Context, data []byte, opts ...Option) (*ActionInfo, error) {
-	o, e := s.worker(workDesign, opts)
+	o, e := s.worker(ctx, workDesign, opts)
 	if e != nil {
 		return nil, e
 	}
@@ -650,7 +650,7 @@ func (s *Store) trial(name string, args Values) (*action, Values, *Error) {
 // nothing (ADR-0045, item 9). The arguments are checked as the worker
 // checks them: unknown_parameter, bad_value, required.
 func (s *Store) PreviewAction(ctx context.Context, name string, args Values, opts ...Option) (*ActionPreview, error) {
-	if _, e := s.worker(workOperate, opts); e != nil {
+	if _, e := s.worker(ctx, workOperate, opts); e != nil {
 		return nil, e
 	}
 	a, vals, err := s.trial(name, args)
@@ -677,7 +677,7 @@ func (s *Store) PreviewAction(ctx context.Context, name string, args Values, opt
 // fit, or an action this process cannot run. The request of a declared
 // action is sent for real, to its receiver.
 func (s *Store) TryAction(ctx context.Context, name string, args Values, opts ...Option) (*ActionOutcome, error) {
-	if _, e := s.worker(workOperate, opts); e != nil {
+	if _, e := s.worker(ctx, workOperate, opts); e != nil {
 		return nil, e
 	}
 	a, vals, e := s.trial(name, args)

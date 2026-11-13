@@ -21,6 +21,9 @@ func TestDefined_WhoDefinedEachVersion(t *testing.T) {
 	dan := Principal{ID: "dan", Kind: ActorPerson, System: []string{GroupDesigners}}
 	const memo1 = `{"name": "Memo", "variables": {"t": {"type": "text"}}, "states": {"initial": "a", "list": ["a"]}}`
 	const memo2 = `{"name": "Memo", "variables": {"t": {"type": "text"}, "u": {"type": "text"}}, "states": {"initial": "a", "list": ["a"]}}`
+	// Dee designs for the lead, who said so: design names no class, so the
+	// substitution is for every class (ADR-0053, item 2).
+	gives(t, s, "dee", "lead")
 	cls, err := s.DefineClass(ctx, []byte(memo1), As(dee))
 	if err != nil || cls.Defined.By != "dee" || cls.Defined.Kind != ActorAgent || cls.Defined.For != "lead" || hours(cls.Defined.At) != 0 {
 		t.Fatalf("the class an agent defined: %v %+v", err, cls)

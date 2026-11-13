@@ -196,6 +196,12 @@ type Program struct {
 	ReadsStates bool
 	// MaxStack is the stack depth the program needs.
 	MaxStack int
+	// Bound and BoundFor are the embedder's: where it keeps the value of
+	// each slot, and for which of its layouts that holds, so that it
+	// finds them without a lookup of its own on every run. The VM reads
+	// neither, and neither is stored.
+	Bound    []int
+	BoundFor any
 }
 
 // ClaimExact makes a program that is one number constant into the exact

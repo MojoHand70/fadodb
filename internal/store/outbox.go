@@ -532,6 +532,40 @@ func (s *Store) evalTemplate(run *ruleRun, row *docRow, t *model.Template) (any,
 	return t.Literal, nil
 }
 
+// principalText is what an outbox row keeps of its principal beside the
+// id and the administrator's flag: the groups, as a JSON array, and for a
+// principal that says what it is or for whom it acts (ADR-0050) an object
+// with the groups, the kind and the id acted for. Most rows have neither,
+// and are written and read as before: the row gained no column, since
+// the driver allocates for every column the statement that reads the due
+// rows returns, on every action the worker runs.
+func principalText(p Principal) []byte {
+	if p.Kind == "" && p.For == "" {
+		groups, _ := json.Marshal(p.Groups)
+		return groups
+	}
+	more, _ := json.Marshal(principalMore{Groups: p.Groups, Kind: p.Kind, For: p.For})
+	return more
+}
+
+type principalMore struct {
+	Groups []string `json:"groups"`
+	Kind   string   `json:"kind,omitempty"`
+	For    string   `json:"for,omitempty"`
+}
+
+// readPrincipalText reads what principalText wrote into the principal.
+func readPrincipalText(text string, p *Principal) {
+	if strings.HasPrefix(text, "{") {
+		var more principalMore
+		if json.Unmarshal([]byte(text), &more) == nil {
+			p.Groups, p.Kind, p.For = more.Groups, more.Kind, more.For
+		}
+		return
+	}
+	_ = json.Unmarshal([]byte(text), &p.Groups)
+}
+
 // writeQueued writes the outbox rows of one commit of a command, in the
 // commit's transaction: commit is 0 for the command's own and n for its
 // n-th eventless transition, eventID that commit's event and version the
@@ -539,7 +573,7 @@ func (s *Store) evalTemplate(run *ruleRun, row *docRow, t *model.Template) (any,
 // too_deep and its action_failed event.
 func (s *Store) writeQueued(ctx context.Context, c *class, cmd *command, commit int, eventID, docID string, version int64, day, secs int64, now time.Time) (int, error) {
 	p := cmd.o.principal
-	groups, _ := json.Marshal(p.Groups)
+	groups := principalText(p)
 	n := 0
 	for i := range s.queued {
 		q := &s.queued[i]
@@ -562,7 +596,7 @@ func (s *Store) writeQueued(ctx context.Context, c *class, cmd *command, commit 
 			admin = 1
 		}
 		if _, err := s.stmts.insertOutbox.ExecContext(ctx, eventID, n, c.cls.Name, docID, version, c.cls.Version, q.act.a.Path(), q.act.a.Name, string(q.args),
-			nullText(p.ID), string(groups), admin, cmd.depth, status, secs, code, message, secs, finished, outcome, nullText(p.Kind), nullText(p.For)); err != nil {
+			nullText(p.ID), string(groups), admin, cmd.depth, status, secs, code, message, secs, finished, outcome); err != nil {
 			return n, storageErr("queue the action", err)
 		}
 		n++
@@ -652,18 +686,18 @@ func (s *Store) dueRows(ctx context.Context, due *sql.Stmt, now int64) ([]*outbo
 	var out []*outboxRow
 	for rows.Next() {
 		r := &outboxRow{}
-		var id, groups, kind, acts sql.NullString
+		var id, groups sql.NullString
 		var admin int64
 		var args string
-		if err := rows.Scan(&r.eventID, &r.idx, &r.class, &r.docID, &r.action, &args, &id, &groups, &admin, &r.depth, &kind, &acts); err != nil {
+		if err := rows.Scan(&r.eventID, &r.idx, &r.class, &r.docID, &r.action, &args, &id, &groups, &admin, &r.depth); err != nil {
 			return nil, storageErr("read the outbox", err)
 		}
 		r.args = []byte(args)
 		// The row runs as the principal of the command that queued it,
 		// with what that principal was and for whom it acted (ADR-0050).
-		r.principal = Principal{ID: id.String, Admin: admin != 0, Kind: kind.String, For: acts.String}
+		r.principal = Principal{ID: id.String, Admin: admin != 0}
 		if groups.Valid {
-			_ = json.Unmarshal([]byte(groups.String), &r.principal.Groups)
+			readPrincipalText(groups.String, &r.principal)
 		}
 		out = append(out, r)
 	}
@@ -1039,7 +1073,7 @@ func (s *Store) Outbox(ctx context.Context, f OutboxFilter) ([]QueuedAction, err
 		where = append(where, "doc_id = ?")
 		args = append(args, f.DocID)
 	}
-	text := `SELECT event_id, idx, class, doc_id, version, rule, action, args, principal_id, depth, status, attempts, due_at, error_code, error_message, created_at, finished_at, outcome_event, into_code, into_message, principal_kind, principal_for FROM outbox`
+	text := `SELECT event_id, idx, class, doc_id, version, rule, action, args, principal_id, depth, status, attempts, due_at, error_code, error_message, created_at, finished_at, outcome_event, into_code, into_message, principal_groups FROM outbox`
 	if len(where) > 0 {
 		text += " WHERE " + strings.Join(where, " AND ")
 	}
@@ -1058,13 +1092,17 @@ func (s *Store) Outbox(ctx context.Context, f OutboxFilter) ([]QueuedAction, err
 		var q QueuedAction
 		var eventID, argsText string
 		var idx int64
-		var principal, code, message, outcome, intoCode, intoMessage, kind, acts sql.NullString
+		var principal, code, message, outcome, intoCode, intoMessage, more sql.NullString
 		var finished sql.NullInt64
 		if err := rows.Scan(&eventID, &idx, &q.Class, &q.DocID, &q.Version, &q.Rule, &q.Action, &argsText, &principal, &q.Depth, &q.Status, &q.Attempts, &q.DueAt,
-			&code, &message, &q.CreatedAt, &finished, &outcome, &intoCode, &intoMessage, &kind, &acts); err != nil {
+			&code, &message, &q.CreatedAt, &finished, &outcome, &intoCode, &intoMessage, &more); err != nil {
 			return nil, storageErr("read the outbox", err)
 		}
-		q.PrincipalKind, q.PrincipalFor = kind.String, acts.String
+		if more.Valid {
+			var p Principal
+			readPrincipalText(more.String, &p)
+			q.PrincipalKind, q.PrincipalFor = p.Kind, p.For
+		}
 		q.IntoCode, q.IntoMessage = intoCode.String, intoMessage.String
 		q.Key = eventID + ":" + strconv.FormatInt(idx, 10)
 		q.Args = json.RawMessage(argsText)

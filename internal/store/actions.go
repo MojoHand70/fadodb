@@ -741,7 +741,6 @@ type calling struct {
 	classVersion          int
 	kind                  string
 	name, from, to, actor sql.NullString
-	actorKind, actorFor   sql.NullString
 	commandKey            sql.NullString
 	origin                sql.NullInt64
 	day, ts               int64
@@ -756,7 +755,7 @@ type calling struct {
 func (s *Store) runCall(ctx context.Context, row *outboxRow) (bool, error) {
 	var c calling
 	err := s.stmts.callOutbox.QueryRowContext(ctx, row.eventID, row.idx).Scan(&c.status, &c.attempts, &c.version, &c.classVersion,
-		&c.kind, &c.name, &c.from, &c.to, &c.actor, &c.commandKey, &c.day, &c.ts, &c.origin, &c.actorKind, &c.actorFor)
+		&c.kind, &c.name, &c.from, &c.to, &c.actor, &c.commandKey, &c.day, &c.ts, &c.origin)
 	if err == sql.ErrNoRows || err == nil && c.status != ActionPending {
 		return false, nil
 	}
@@ -878,5 +877,7 @@ func (s *Store) delivered(ctx context.Context, row *outboxRow, c *calling) (*Del
 	}
 	return &DeliveredEvent{ID: row.eventID, Kind: c.kind, Class: cls.cls.Name, ClassVersion: c.classVersion, DocID: row.docID,
 		Name: c.name.String, FromState: c.from.String, ToState: c.to.String, Version: c.version, Document: vc.document(drow, kids),
-		ActorID: c.actor.String, ActorKind: c.actorKind.String, ActorFor: c.actorFor.String, BusinessDate: formula.Render(formula.Date(c.day)), CommandKey: c.commandKey.String, TS: c.ts, Origin: originOf(c.origin.Int64)}, nil
+		// The row's principal is the actor of the event that queued it,
+		// with what it was and for whom it acted (ADR-0050).
+		ActorID: c.actor.String, ActorKind: row.principal.Kind, ActorFor: row.principal.For, BusinessDate: formula.Render(formula.Date(c.day)), CommandKey: c.commandKey.String, TS: c.ts, Origin: originOf(c.origin.Int64)}, nil
 }

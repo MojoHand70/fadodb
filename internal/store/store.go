@@ -535,8 +535,8 @@ func (s *Store) prepareEngine(ctx context.Context) error {
 	prep(&s.stmts.mark, "SAVEPOINT many")
 	prep(&s.stmts.unmark, "RELEASE many")
 	prep(&s.stmts.toMark, "ROLLBACK TO many")
-	prep(&s.stmts.insertOutbox, "INSERT INTO outbox (event_id, idx, class, doc_id, version, class_version, rule, action, args, principal_id, principal_groups, principal_admin, depth, status, attempts, due_at, error_code, error_message, created_at, finished_at, outcome_event, principal_kind, principal_for)"+
-		" VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?)")
+	prep(&s.stmts.insertOutbox, "INSERT INTO outbox (event_id, idx, class, doc_id, version, class_version, rule, action, args, principal_id, principal_groups, principal_admin, depth, status, attempts, due_at, error_code, error_message, created_at, finished_at, outcome_event)"+
+		" VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?)")
 	if err != nil {
 		return storageErr("prepare", err)
 	}
@@ -562,7 +562,7 @@ func (s *Store) prepareEngine(ctx context.Context) error {
 		dst  **sql.Stmt
 		only string
 	}{{&s.stmts.dueOutbox, ""}, {&s.stmts.dueEngine, " AND o.action IN (" + engine + ")"}, {&s.stmts.dueCalls, " AND o.action NOT IN (" + engine + ")"}} {
-		*due.dst, err = s.db.PrepareContext(ctx, "SELECT o.event_id, o.idx, o.class, o.doc_id, o.action, o.args, o.principal_id, o.principal_groups, o.principal_admin, o.depth, o.principal_kind, o.principal_for FROM outbox o"+
+		*due.dst, err = s.db.PrepareContext(ctx, "SELECT o.event_id, o.idx, o.class, o.doc_id, o.action, o.args, o.principal_id, o.principal_groups, o.principal_admin, o.depth FROM outbox o"+
 			" WHERE o.status = 'pending' AND o.due_at <= ?"+due.only+
 			" AND (o.action = '"+ActionTimer+"' OR NOT EXISTS (SELECT 1 FROM outbox p WHERE p.class = o.class AND p.doc_id = o.doc_id AND p.status = 'pending' AND p.action <> '"+ActionTimer+"'"+
 			" AND (p.event_id < o.event_id OR (p.event_id = o.event_id AND p.idx < o.idx))))"+
@@ -576,7 +576,7 @@ func (s *Store) prepareEngine(ctx context.Context) error {
 	// event of an eventless transition has no key of its own; the command
 	// that caused it has.
 	s.stmts.callOutbox, err = s.db.PrepareContext(ctx, "SELECT o.status, o.attempts, o.version, o.class_version, e.kind, e.name, e.from_state, e.to_state, e.actor_id,"+
-		" coalesce(e.command_key, (SELECT c.command_key FROM events c WHERE c.event_id = e.cause_event_id)), e.business_date, e.ts, e.origin, e.actor_kind, e.actor_for"+
+		" coalesce(e.command_key, (SELECT c.command_key FROM events c WHERE c.event_id = e.cause_event_id)), e.business_date, e.ts, e.origin"+
 		" FROM outbox o JOIN events e ON e.event_id = o.event_id WHERE o.event_id = ? AND o.idx = ?")
 	return storageErr("prepare", err)
 }

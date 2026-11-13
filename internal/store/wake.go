@@ -77,7 +77,7 @@ func (s *Store) queueWakes(ctx context.Context, c *class, cmd *command, beforeCl
 		}
 		p := cmd.o.principal
 		if groups == nil {
-			groups, _ = json.Marshal(p.Groups)
+			groups = principalText(p)
 		}
 		admin := 0
 		if p.Admin {
@@ -85,7 +85,7 @@ func (s *Store) queueWakes(ctx context.Context, c *class, cmd *command, beforeCl
 		}
 		// Time breaks a chain of actions: a wake-up has depth 0.
 		if _, err := s.stmts.insertOutbox.ExecContext(ctx, eventID, queued+n, c.cls.Name, final.id, final.version, c.cls.Version, "/transitions/"+strconv.Itoa(i), ActionTimer, string(args),
-			nullText(p.ID), string(groups), admin, 0, ActionPending, at, nil, nil, secs, nil, nil, nullText(p.Kind), nullText(p.For)); err != nil {
+			nullText(p.ID), string(groups), admin, 0, ActionPending, at, nil, nil, secs, nil, nil); err != nil {
 			return n, storageErr("queue the wake-up", err)
 		}
 		if s.wakeAt == 0 || at < s.wakeAt {

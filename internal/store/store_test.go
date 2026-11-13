@@ -81,7 +81,7 @@ func openStore(t *testing.T, o Options) (*Store, string) {
 
 func defineInvoice(t *testing.T, s *Store) *model.Class {
 	t.Helper()
-	cls, err := s.DefineClass(context.Background(), []byte(invoice))
+	cls, err := s.DefineClass(context.Background(), []byte(invoice), asSetup)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -212,13 +212,13 @@ func TestDefineClass(t *testing.T) {
 	}
 
 	// The same definition again is a no-op.
-	again, err := s.DefineClass(ctx, []byte(invoice))
+	again, err := s.DefineClass(ctx, []byte(invoice), asSetup)
 	if err != nil || again != cls {
 		t.Errorf("redefining the same JSON: %v, same %v", err, again == cls)
 	}
 	// A different definition of an empty class is the next version.
 	v2 := strings.Replace(invoice, `"notes":    {"type": "text"},`, `"notes": {"type": "text"}, "memo": {"type": "text"},`, 1)
-	cls2, err := s.DefineClass(ctx, []byte(v2))
+	cls2, err := s.DefineClass(ctx, []byte(v2), asSetup)
 	if err != nil || cls2.Version != 2 {
 		t.Fatalf("redefinition: %v, version %d", err, cls2.Version)
 	}
@@ -231,7 +231,7 @@ func TestDefineClass(t *testing.T) {
 	}
 	// A wrong version number is refused; the right one accepted.
 	v3 := strings.Replace(v2, `"name": "Invoice",`, `"name": "Invoice", "version": 7,`, 1)
-	_, err = s.DefineClass(ctx, []byte(v3))
+	_, err = s.DefineClass(ctx, []byte(v3), asSetup)
 	var diags model.Diagnostics
 	if !errors.As(err, &diags) || !diags.Has(model.CodeBadValue) {
 		t.Errorf("version 7 after 2: %v", err)
@@ -240,7 +240,7 @@ func TestDefineClass(t *testing.T) {
 		t.Errorf("Validate agrees: %v", diags)
 	}
 	v3 = strings.Replace(v2, `"name": "Invoice",`, `"name": "Invoice", "version": 3,`, 1)
-	if cls3, err := s.DefineClass(ctx, []byte(v3)); err != nil || cls3.Version != 3 {
+	if cls3, err := s.DefineClass(ctx, []byte(v3), asSetup); err != nil || cls3.Version != 3 {
 		t.Errorf("version 3 after 2: %v", err)
 	}
 	// With documents, a redefinition is the next version and touches no
@@ -250,32 +250,32 @@ func TestDefineClass(t *testing.T) {
 		t.Fatal(err)
 	}
 	v4 := strings.Replace(v2, `"memo": {"type": "text"},`, `"memo": {"type": "text"}, "note2": {"type": "text"},`, 1)
-	if cls4, err := s.DefineClass(ctx, []byte(v4)); err != nil || cls4.Version != 4 {
+	if cls4, err := s.DefineClass(ctx, []byte(v4), asSetup); err != nil || cls4.Version != 4 {
 		t.Errorf("redefining under documents: %v", err)
 	}
 	if diags := s.Validate([]byte(v4)); len(diags) > 0 {
 		t.Errorf("Validate under documents: %v", diags)
 	}
-	if again, err := s.DefineClass(ctx, []byte(v4)); err != nil || again.Version != 4 {
+	if again, err := s.DefineClass(ctx, []byte(v4), asSetup); err != nil || again.Version != 4 {
 		t.Errorf("the same definition under documents is still a no-op: %v", err)
 	}
 	if got, err := s.Get(ctx, "Invoice", doc.ID); err != nil || got.ClassVersion != 3 || got.Values["note2"] != nil {
 		t.Errorf("the document is read under its version: %v %s", err, dump(got))
 	}
 	// Diagnostics of a bad definition come back as the error.
-	_, err = s.DefineClass(ctx, []byte(`{"name": "Bad", "variables": {"x": {"type": "nope"}}}`))
+	_, err = s.DefineClass(ctx, []byte(`{"name": "Bad", "variables": {"x": {"type": "nope"}}}`), asSetup)
 	if !errors.As(err, &diags) || !diags.Has(model.CodeUnknownType) {
 		t.Errorf("bad class: %v", err)
 	}
-	if _, err := s.DefineClass(ctx, []byte(`{"name": "Bad", "variables": `)); !errors.As(err, &diags) || !diags.Has(model.CodeBadJSON) {
+	if _, err := s.DefineClass(ctx, []byte(`{"name": "Bad", "variables": `), asSetup); !errors.As(err, &diags) || !diags.Has(model.CodeBadJSON) {
 		t.Errorf("bad json: %v", err)
 	}
 	// A view name another class would need is taken.
-	if _, err := s.DefineClass(ctx, []byte(`{"name": "Invoice_lines", "variables": {"x": {"type": "text"}}}`)); code(err) != CodeDuplicate {
+	if _, err := s.DefineClass(ctx, []byte(`{"name": "Invoice_lines", "variables": {"x": {"type": "text"}}}`), asSetup); code(err) != CodeDuplicate {
 		t.Errorf("a class named like a view: %v", err)
 	}
 	// A class in quotes-needing case: a SQL keyword as a name.
-	if _, err := s.DefineClass(ctx, []byte(`{"name": "Order", "variables": {"group": {"type": "text"}, "select": {"type": "number"}}, "states": {"initial": "open", "list": ["open"]}}`)); err != nil {
+	if _, err := s.DefineClass(ctx, []byte(`{"name": "Order", "variables": {"group": {"type": "text"}, "select": {"type": "number"}}, "states": {"initial": "open", "list": ["open"]}}`), asSetup); err != nil {
 		t.Errorf("SQL keywords as names: %v", err)
 	}
 	if doc, err := s.Create(ctx, "Order", Values{"group": "a", "select": 1}); err != nil || doc.Values["select"] != 1.0 {
@@ -286,25 +286,25 @@ func TestDefineClass(t *testing.T) {
 func TestDefineSchema(t *testing.T) {
 	s, _ := openStore(t, Options{})
 	ctx := context.Background()
-	sch, err := s.DefineSchema(ctx, []byte(`{"name": "Employee", "extends": "Person", "fields": {"badge": "text"}}`))
+	sch, err := s.DefineSchema(ctx, []byte(`{"name": "Employee", "extends": "Person", "fields": {"badge": "text"}}`), asSetup)
 	if err != nil || sch.Version != 1 {
 		t.Fatalf("define: %v", err)
 	}
-	if again, err := s.DefineSchema(ctx, []byte(`{"name": "Employee", "extends": "Person", "fields": {"badge": "text"}}`)); err != nil || again != sch {
+	if again, err := s.DefineSchema(ctx, []byte(`{"name": "Employee", "extends": "Person", "fields": {"badge": "text"}}`), asSetup); err != nil || again != sch {
 		t.Errorf("same schema again: %v", err)
 	}
-	if sch2, err := s.DefineSchema(ctx, []byte(`{"name": "Employee", "extends": "Person", "fields": {"badge": "int"}}`)); err != nil || sch2.Version != 2 {
+	if sch2, err := s.DefineSchema(ctx, []byte(`{"name": "Employee", "extends": "Person", "fields": {"badge": "int"}}`), asSetup); err != nil || sch2.Version != 2 {
 		t.Errorf("unused schema redefined: %v", err)
 	}
-	if _, err := s.DefineClass(ctx, []byte(`{"name": "Task", "variables": {"who": {"type": "object", "schema": "Employee"}, "badge": {"formula": "who.badge"}}, "states": {"initial": "open", "list": ["open"]}}`)); err != nil {
+	if _, err := s.DefineClass(ctx, []byte(`{"name": "Task", "variables": {"who": {"type": "object", "schema": "Employee"}, "badge": {"formula": "who.badge"}}, "states": {"initial": "open", "list": ["open"]}}`), asSetup); err != nil {
 		t.Fatal(err)
 	}
-	_, err = s.DefineSchema(ctx, []byte(`{"name": "Employee", "extends": "Person", "fields": {"badge": "text"}}`))
+	_, err = s.DefineSchema(ctx, []byte(`{"name": "Employee", "extends": "Person", "fields": {"badge": "text"}}`), asSetup)
 	var diags model.Diagnostics
 	if !errors.As(err, &diags) || !diags.Has(model.CodeNotSupported) {
 		t.Errorf("schema in use redefined: %v", err)
 	}
-	if _, err := s.DefineSchema(ctx, []byte(`{"name": "Person", "fields": {"x": "text"}}`)); !errors.As(err, &diags) || !diags.Has(model.CodeReservedName) {
+	if _, err := s.DefineSchema(ctx, []byte(`{"name": "Person", "fields": {"x": "text"}}`), asSetup); !errors.As(err, &diags) || !diags.Has(model.CodeReservedName) {
 		t.Errorf("vocabulary name: %v", err)
 	}
 	doc, err := s.Create(ctx, "Task", Values{"who": Values{"name": "Bo", "badge": 7}})
@@ -656,9 +656,9 @@ func TestPreview(t *testing.T) {
 func TestReopen(t *testing.T) {
 	s, path := openStore(t, Options{})
 	ctx := context.Background()
-	s.DefineSchema(ctx, []byte(`{"name": "Employee", "extends": "Person", "fields": {"badge": "text"}}`))
+	s.DefineSchema(ctx, []byte(`{"name": "Employee", "extends": "Person", "fields": {"badge": "text"}}`), asSetup)
 	defineInvoice(t, s)
-	s.DefineClass(ctx, []byte(`{"name": "Task", "variables": {"who": {"type": "object", "schema": "Employee"}}, "states": {"initial": "open", "list": ["open"]}}`))
+	s.DefineClass(ctx, []byte(`{"name": "Task", "variables": {"who": {"type": "object", "schema": "Employee"}}, "states": {"initial": "open", "list": ["open"]}}`), asSetup)
 	doc, _ := s.Create(ctx, "Invoice", sampleValues(), As(alice))
 	task, _ := s.Create(ctx, "Task", Values{"who": Values{"name": "Bo", "badge": "7"}})
 	if err := s.Close(); err != nil {

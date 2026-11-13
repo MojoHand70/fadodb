@@ -33,7 +33,7 @@ func defineOrders(t testing.TB, s *Store) {
 	t.Helper()
 	ctx := context.Background()
 	for _, def := range []string{noteClass, orderClass} {
-		if _, err := s.DefineClass(ctx, []byte(def)); err != nil {
+		if _, err := s.DefineClass(ctx, []byte(def), asSetup); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -70,7 +70,7 @@ func TestOutbox_TheActionsCommit(t *testing.T) {
 	if _, err := s.Transition(ctx, "Order", order.ID, "place", nil, As(alice), BusinessDate(day)); err != nil {
 		t.Fatal(err)
 	}
-	rows, err := s.Outbox(ctx, OutboxFilter{Class: "order", DocID: order.ID, Status: ActionPending})
+	rows, err := s.Outbox(ctx, OutboxFilter{Class: "order", DocID: order.ID, Status: ActionPending}, asSetup)
 	if err != nil || len(rows) != 1 {
 		t.Fatalf("the outbox: %v, %s", err, dump(rows))
 	}
@@ -81,7 +81,7 @@ func TestOutbox_TheActionsCommit(t *testing.T) {
 		string(q.Args) != `{"class":"Note","id":"placed-`+order.ID+`","values":{"about":"`+order.ID+`","text":"placed desk"}}` {
 		t.Errorf("the row: %s", dump(q))
 	}
-	if n, err := s.Drain(ctx); err != nil || n != 1 {
+	if n, err := s.Drain(ctx, asSetup); err != nil || n != 1 {
 		t.Fatalf("drain: %d, %v", n, err)
 	}
 	note, err := s.Get(ctx, "Note", "placed-"+order.ID)
@@ -98,7 +98,7 @@ func TestOutbox_TheActionsCommit(t *testing.T) {
 		t.Errorf("the event of the outcome: %s", dump(ran))
 	}
 	// The view of the class's actions, for the SQL endpoint.
-	view, err := s.SQL(ctx, `SELECT "key", doc_id, action, status, attempts, error_code FROM Order_actions`, nil)
+	view, err := s.SQL(ctx, `SELECT "key", doc_id, action, status, attempts, error_code FROM Order_actions`, nil, asSetup)
 	if err != nil || !reflect.DeepEqual(view.Rows, [][]any{{q.Key, order.ID, "create", "done", int64(1), nil}}) {
 		t.Errorf("Order_actions: %v, %v", err, view)
 	}
@@ -106,10 +106,10 @@ func TestOutbox_TheActionsCommit(t *testing.T) {
 	if _, err := s.Create(ctx, "Order", Values{}, Key("outbox:"+q.Key)); code(err) != CodeBadValue {
 		t.Errorf("a caller's key with the outbox prefix: %v", err)
 	}
-	if err := s.RetryAction(ctx, "nothing"); code(err) != CodeUnknownAction {
+	if err := s.RetryAction(ctx, "nothing", asSetup); code(err) != CodeUnknownAction {
 		t.Errorf("a retry of a key that is none: %v", err)
 	}
-	if err := s.RetryAction(ctx, placed.ID+":7"); code(err) != CodeUnknownAction {
+	if err := s.RetryAction(ctx, placed.ID+":7", asSetup); code(err) != CodeUnknownAction {
 		t.Errorf("a retry of a row that is not there: %v", err)
 	}
 }
@@ -119,7 +119,7 @@ func TestOutbox_TheActionsCommit(t *testing.T) {
 func TestOutbox_EveryCommitQueues(t *testing.T) {
 	s, _ := openStore(t, Options{})
 	ctx := context.Background()
-	if _, err := s.DefineClass(ctx, []byte(noteClass)); err != nil {
+	if _, err := s.DefineClass(ctx, []byte(noteClass), asSetup); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := s.DefineClass(ctx, []byte(`{"name": "Parcel", "variables": {"weight": {"type": "number"}},
@@ -129,7 +129,7 @@ func TestOutbox_EveryCommitQueues(t *testing.T) {
    {"on": "create", "do": [{"action": "create", "class": "Note", "values": {"about": "ID()", "text": "\"made\""}}]},
    {"on": "enter", "state": "heavy", "do": [{"action": "create", "class": "Note", "values": {"about": "ID()", "text": "\"heavy\""}}]},
    {"on": "delete", "do": [{"action": "create", "class": "Note", "values": {"about": "ID()", "text": "\"gone\""}}]}
- ]}`)); err != nil {
+ ]}`), asSetup); err != nil {
 		t.Fatal(err)
 	}
 	docs, err := s.CreateMany(ctx, "Parcel", []Values{{"weight": 20}, {"weight": 1}})
@@ -137,14 +137,14 @@ func TestOutbox_EveryCommitQueues(t *testing.T) {
 		t.Fatal(err)
 	}
 	events, _ := s.Events(ctx, "Parcel", docs[0].ID)
-	rows, _ := s.Outbox(ctx, OutboxFilter{DocID: docs[0].ID})
+	rows, _ := s.Outbox(ctx, OutboxFilter{DocID: docs[0].ID}, asSetup)
 	if len(rows) != 2 || rows[0].Key != events[0].ID+":0" || rows[0].Version != 1 || rows[1].Key != events[1].ID+":0" || rows[1].Version != 2 {
 		t.Fatalf("the rows of a create with an eventless transition: %s\nevents %s", dump(rows), dump(events))
 	}
 	if err := s.Delete(ctx, "Parcel", docs[1].ID); err != nil {
 		t.Fatal(err)
 	}
-	if n, err := s.Drain(ctx); err != nil || n != 4 {
+	if n, err := s.Drain(ctx, asSetup); err != nil || n != 4 {
 		t.Fatalf("drain: %d, %v", n, err)
 	}
 	if got := notes(t, s); strings.Join(got, " ") != "gone heavy made made" {
@@ -189,7 +189,7 @@ func TestOutbox_NoAnswerIsRetried(t *testing.T) {
 		return nil
 	}
 	row := func(id string, i int) QueuedAction {
-		rows, err := s.Outbox(ctx, OutboxFilter{DocID: id})
+		rows, err := s.Outbox(ctx, OutboxFilter{DocID: id}, asSetup)
 		if err != nil || len(rows) != 2 {
 			t.Fatalf("the rows of %s: %v, %s", id, err, dump(rows))
 		}
@@ -197,7 +197,7 @@ func TestOutbox_NoAnswerIsRetried(t *testing.T) {
 	}
 	// First drain: the slow order's first action fails, its second waits
 	// behind it; the fast order's two run.
-	if n, err := s.Drain(ctx); err != nil || n != 3 {
+	if n, err := s.Drain(ctx, asSetup); err != nil || n != 3 {
 		t.Fatalf("drain: %d, %v", n, err)
 	}
 	if got := notes(t, s); strings.Join(got, "|") != "placed fast|shipped" {
@@ -210,7 +210,7 @@ func TestOutbox_NoAnswerIsRetried(t *testing.T) {
 		t.Errorf("the action behind it: %s", dump(q))
 	}
 	// Not due yet: nothing runs.
-	if n, _ := s.Drain(ctx); n != 0 {
+	if n, _ := s.Drain(ctx, asSetup); n != 0 {
 		t.Errorf("a drain before the retry is due attempted %d", n)
 	}
 	// The wait doubles: 1 s, 2 s, 4 s; the fourth failure is the last.
@@ -222,7 +222,7 @@ func TestOutbox_NoAnswerIsRetried(t *testing.T) {
 		if attempt == 2 {
 			want = 2
 		}
-		if n, _ := s.Drain(ctx); n != want {
+		if n, _ := s.Drain(ctx, asSetup); n != want {
 			t.Fatalf("attempt %d: drained %d, want %d", attempt+2, n, want)
 		}
 		q := row(slow.ID, 0)
@@ -251,10 +251,10 @@ func TestOutbox_NoAnswerIsRetried(t *testing.T) {
 	}
 	// Retried by hand once the store answers, the first runs too.
 	busy = false
-	if err := s.RetryAction(ctx, row(slow.ID, 0).Key); err != nil {
+	if err := s.RetryAction(ctx, row(slow.ID, 0).Key, asSetup); err != nil {
 		t.Fatal(err)
 	}
-	if n, _ := s.Drain(ctx); n != 1 || row(slow.ID, 0).Status != ActionDone || row(slow.ID, 0).Attempts != 1 {
+	if n, _ := s.Drain(ctx, asSetup); n != 1 || row(slow.ID, 0).Status != ActionDone || row(slow.ID, 0).Attempts != 1 {
 		t.Errorf("after the retry: drained %d, %s", n, dump(row(slow.ID, 0)))
 	}
 	if got := notes(t, s); len(got) != 4 {
@@ -281,7 +281,7 @@ func TestOutbox_ExactlyOnce(t *testing.T) {
 		}
 		return nil
 	}
-	if n, err := s.Drain(ctx); err != nil || n != 1 {
+	if n, err := s.Drain(ctx, asSetup); err != nil || n != 1 {
 		t.Fatalf("drain: %d, %v", n, err)
 	}
 	if got := notes(t, s); len(got) != 0 {
@@ -289,13 +289,13 @@ func TestOutbox_ExactlyOnce(t *testing.T) {
 	}
 	fail = false
 	now = now.Add(time.Second)
-	if n, err := s.Drain(ctx); err != nil || n != 1 {
+	if n, err := s.Drain(ctx, asSetup); err != nil || n != 1 {
 		t.Fatalf("the second drain: %d, %v", n, err)
 	}
 	if got := notes(t, s); len(got) != 1 {
 		t.Errorf("notes %v, want one", got)
 	}
-	rows, _ := s.Outbox(ctx, OutboxFilter{DocID: order.ID})
+	rows, _ := s.Outbox(ctx, OutboxFilter{DocID: order.ID}, asSetup)
 	if rows[0].Status != ActionDone || rows[0].Attempts != 2 {
 		t.Errorf("the row: %s", dump(rows[0]))
 	}
@@ -323,7 +323,7 @@ func TestOutbox_Worker(t *testing.T) {
 	}
 	deadline := time.Now().Add(10 * time.Second)
 	for {
-		pending, err := s.Outbox(ctx, OutboxFilter{Status: ActionPending})
+		pending, err := s.Outbox(ctx, OutboxFilter{Status: ActionPending}, asSetup)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -356,7 +356,7 @@ func TestOutbox_ClassesThatNameEachOtherLoad(t *testing.T) {
  "rules": [{"on": "create", "if": "n < 3", "do": [{"action": "create", "class": "Ping", "values": {"n": "n + 1"}}]}]}`
 	for _, def := range []string{strings.Replace(ping, "%s", "", 1), pong,
 		strings.Replace(ping, "%s", `, "rules": [{"on": "create", "if": "n < 3", "do": [{"action": "create", "class": "Pong", "values": {"n": "n + 1"}}]}]`, 1)} {
-		if _, err := s.DefineClass(ctx, []byte(def)); err != nil {
+		if _, err := s.DefineClass(ctx, []byte(def), asSetup); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -369,7 +369,7 @@ func TestOutbox_ClassesThatNameEachOtherLoad(t *testing.T) {
 	if _, err := s2.Create(ctx, "Ping", Values{}); err != nil {
 		t.Fatal(err)
 	}
-	if n, err := s2.Drain(ctx); err != nil || n != 3 {
+	if n, err := s2.Drain(ctx, asSetup); err != nil || n != 3 {
 		t.Errorf("drain after the reopen: %d, %v", n, err)
 	}
 	pings, _ := s2.Count(ctx, Filter{Class: "Ping"})
@@ -404,7 +404,7 @@ func TestOutbox_SurvivesACrashAtEveryStep(t *testing.T) {
 			}
 			defer s.Close()
 			ctx := context.Background()
-			n, err := s.Drain(ctx)
+			n, err := s.Drain(ctx, asSetup)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -415,7 +415,7 @@ func TestOutbox_SurvivesACrashAtEveryStep(t *testing.T) {
 			if got := notes(t, s); strings.Join(got, "|") != "placed desk|shipped" {
 				t.Errorf("notes %v, want each once", got)
 			}
-			rows, _ := s.Outbox(ctx, OutboxFilter{})
+			rows, _ := s.Outbox(ctx, OutboxFilter{}, asSetup)
 			if len(rows) != 2 || rows[0].Status != ActionDone || rows[1].Status != ActionDone {
 				t.Errorf("the rows: %s", dump(rows))
 			}
@@ -466,7 +466,7 @@ func TestOutboxCrashHelper(t *testing.T) {
 		}
 		return nil
 	}
-	_, err = s.Drain(ctx)
+	_, err = s.Drain(ctx, asSetup)
 	t.Fatalf("the helper reached the end of the drain: %v", err)
 }
 
@@ -477,17 +477,17 @@ func TestOutbox_TooDeep(t *testing.T) {
 	s, _ := openStore(t, Options{})
 	ctx := context.Background()
 	if _, err := s.DefineClass(ctx, []byte(`{"name": "Echo", "variables": {"n": {"type": "number", "default": "0"}}, "states": {"initial": "made", "list": ["made"]},
- "rules": [{"on": "create", "do": [{"action": "create", "class": "Echo", "id": "\"echo-\" & TEXT(n + 1)", "values": {"n": "n + 1"}}]}]}`)); err != nil {
+ "rules": [{"on": "create", "do": [{"action": "create", "class": "Echo", "id": "\"echo-\" & TEXT(n + 1)", "values": {"n": "n + 1"}}]}]}`), asSetup); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := s.Create(ctx, "Echo", Values{}, WithID("echo-0"), As(alice)); err != nil {
 		t.Fatal(err)
 	}
-	if n, err := s.Drain(ctx); err != nil || n != MaxActionDepth+1 {
+	if n, err := s.Drain(ctx, asSetup); err != nil || n != MaxActionDepth+1 {
 		t.Fatalf("drain: %d, %v", n, err)
 	}
 	last := "echo-" + itoa(MaxActionDepth+1)
-	rows, err := s.Outbox(ctx, OutboxFilter{Status: ActionDead})
+	rows, err := s.Outbox(ctx, OutboxFilter{Status: ActionDead}, asSetup)
 	if err != nil || len(rows) != 1 {
 		t.Fatalf("the dead rows: %v, %s", err, dump(rows))
 	}
@@ -524,7 +524,7 @@ func TestOutbox_Preview(t *testing.T) {
 	if a.Action != "create" || !a.Queued || !reflect.DeepEqual(a.Args, want) {
 		t.Errorf("the queued action of the preview: %s", dump(a))
 	}
-	if rows, _ := s.Outbox(ctx, OutboxFilter{}); len(rows) != 0 {
+	if rows, _ := s.Outbox(ctx, OutboxFilter{}, asSetup); len(rows) != 0 {
 		t.Errorf("the preview queued: %s", dump(rows))
 	}
 }

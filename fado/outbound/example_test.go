@@ -17,6 +17,12 @@ import (
 	"github.com/MojoHand70/fadodb/fado/outbound"
 )
 
+// setup is the caller of a host program's own setup code (ADR-0052): it
+// is in the system groups that define, operate the outbox and run SQL,
+// and in no other, so the rules of a class hold for it as for anybody.
+var setup = fado.As(fado.Principal{ID: "setup", Kind: fado.ActorService,
+	System: []string{fado.GroupDesigners, fado.GroupAdministrators, fado.GroupAnalysts}})
+
 // An action the engine sends as an HTTP request (ADR-0045): the
 // definition is JSON and nothing else, and the receiver is a service in
 // any language. The host program says where the database may send, here
@@ -78,7 +84,7 @@ func Example() {
 	  "connection": {"name": "books", "secrets": ["signing_key"]},
 	  "request": {"url": "\"`+receiver.URL+`/hooks/fadodb\"", "sign": "signing_key"},
 	  "result": {"entry": "JSONVALUE(BODY, \"entry\")"}
-	}`)); err != nil {
+	}`), setup); err != nil {
 		panic(err)
 	}
 	// The same secret, pointed at another host: refused when it is defined.
@@ -86,7 +92,8 @@ func Example() {
 	  "name": "books.leak",
 	  "connection": {"name": "books", "secrets": ["signing_key"]},
 	  "request": {"url": "\"https://elsewhere.example/collect\"", "sign": "signing_key"}
-	}`))
+	}`), setup)
+
 	for _, d := range err.(fado.Diagnostics) {
 		fmt.Println(d.Code, d.Path)
 	}
@@ -97,12 +104,12 @@ func Example() {
 	  "transitions": [{"name": "approve", "from": "draft", "to": "approved"}],
 	  "rules": [{"on": "enter", "state": "approved",
 	             "do": [{"action": "books.post", "args": {"number": "number"}}]}]
-	}`)); err != nil {
+	}`), setup); err != nil {
 		panic(err)
 	}
 
 	// A preview shows the request and sends nothing; the secret is masked.
-	pv, err := db.PreviewAction(ctx, "books.post", fado.Values{"number": "INV-1"})
+	pv, err := db.PreviewAction(ctx, "books.post", fado.Values{"number": "INV-1"}, setup)
 	if err != nil {
 		panic(err)
 	}
@@ -119,7 +126,7 @@ func Example() {
 	if _, err := db.Transition(ctx, "Invoice", doc.ID, "approve", nil); err != nil {
 		panic(err)
 	}
-	if _, err := db.Drain(ctx); err != nil {
+	if _, err := db.Drain(ctx, setup); err != nil {
 		panic(err)
 	}
 	events, _ := db.Events(ctx, "Invoice", doc.ID)
@@ -127,7 +134,7 @@ func Example() {
 	fmt.Println(last.Kind, last.Name)
 
 	// A trial sends the request for real, outside any document.
-	trial, err := db.TryAction(ctx, "books.post", fado.Values{"number": "INV-9"})
+	trial, err := db.TryAction(ctx, "books.post", fado.Values{"number": "INV-9"}, setup)
 	if err != nil {
 		panic(err)
 	}
@@ -166,12 +173,12 @@ func BenchmarkDeclaredAction(b *testing.B) {
 	if _, err := db.DefineAction(ctx, []byte(`{"name": "slack.post", "params": {"channel": {"type": "text", "required": true}, "text": "text"}, "returns": {"ts": "text"},
  "connection": {"name": "slack", "secrets": ["token"]},
  "request": {"url": "\"`+receiver.URL+`/api/chat.postMessage\"", "headers": {"Authorization": "\"Bearer \" & SECRET(\"token\")"}, "body": {"channel": "channel", "text": "text"}},
- "ok": "JSONVALUE(BODY, \"ok\") = \"TRUE\"", "result": {"ts": "JSONVALUE(BODY, \"ts\")"}}`)); err != nil {
+ "ok": "JSONVALUE(BODY, \"ok\") = \"TRUE\"", "result": {"ts": "JSONVALUE(BODY, \"ts\")"}}`), setup); err != nil {
 		b.Fatal(err)
 	}
 	if _, err := db.DefineClass(ctx, []byte(`{"name": "Job", "variables": {"note": {"type": "text"}},
  "states": {"initial": "open", "list": ["open"]}, "transitions": [{"name": "tell", "from": "open", "to": "open"}],
- "rules": [{"on": "transition", "name": "tell", "do": [{"action": "slack.post", "args": {"channel": "\"#ops\"", "text": "note"}}]}]}`)); err != nil {
+ "rules": [{"on": "transition", "name": "tell", "do": [{"action": "slack.post", "args": {"channel": "\"#ops\"", "text": "note"}}]}]}`), setup); err != nil {
 		b.Fatal(err)
 	}
 	doc, err := db.Create(ctx, "Job", fado.Values{"note": "done"})
@@ -184,12 +191,12 @@ func BenchmarkDeclaredAction(b *testing.B) {
 		if _, err := db.Transition(ctx, "Job", doc.ID, "tell", nil); err != nil {
 			b.Fatal(err)
 		}
-		if n, err := db.Drain(ctx); err != nil || n != 1 {
+		if n, err := db.Drain(ctx, setup); err != nil || n != 1 {
 			b.Fatalf("drained %d, %v", n, err)
 		}
 	}
 	b.StopTimer()
-	rows, err := db.Outbox(ctx, fado.OutboxFilter{Status: "dead"})
+	rows, err := db.Outbox(ctx, fado.OutboxFilter{Status: "dead"}, setup)
 	if err != nil || len(rows) != 0 {
 		b.Fatalf("%d actions died: %v", len(rows), err)
 	}

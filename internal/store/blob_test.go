@@ -62,15 +62,15 @@ func TestBlobStores(t *testing.T) {
 			if _, ok, _ := s.Blobs().Stat(ctx, strings.Repeat("0", 64)); ok {
 				t.Error("an unknown hash is held")
 			}
-			// An administrator opens by hash; anyone else does not.
-			rc, size, err := s.OpenBlob(ctx, fact["hash"].(string), As(Principal{ID: "root", Admin: true}))
+			// A content administrator opens by hash; anyone else does not.
+			rc, size, err := s.OpenBlob(ctx, fact["hash"].(string), As(root))
 			if err != nil || size != 12 || readAll(t, rc) != "hello, world" {
 				t.Errorf("admin open: %v %d", err, size)
 			}
 			if _, _, err := s.OpenBlob(ctx, fact["hash"].(string), As(alice)); code(err) != CodeNotAllowed {
 				t.Errorf("open by hash as a user: %v", err)
 			}
-			if _, _, err := s.OpenBlob(ctx, strings.Repeat("0", 64), As(Principal{Admin: true})); code(err) != CodeUnknownBlob {
+			if _, _, err := s.OpenBlob(ctx, strings.Repeat("0", 64), As(root)); code(err) != CodeUnknownBlob {
 				t.Errorf("open an unknown hash: %v", err)
 			}
 			// Past the limit nothing is stored.
@@ -131,7 +131,7 @@ func TestBlobStores(t *testing.T) {
 func TestCommit_Files(t *testing.T) {
 	s, _ := openStore(t, Options{})
 	ctx := context.Background()
-	if _, err := s.DefineClass(ctx, []byte(claim)); err != nil {
+	if _, err := s.DefineClass(ctx, []byte(claim), asSetup); err != nil {
 		t.Fatal(err)
 	}
 	scan, _ := s.PutBlob(ctx, "scan.pdf", "application/pdf", strings.NewReader("%PDF-1.4 scan"))
@@ -216,7 +216,7 @@ func TestCheckBlobs(t *testing.T) {
 			ctx := context.Background()
 			good, _ := s.PutBlob(ctx, "good", "", strings.NewReader("good bytes"))
 			bad, _ := s.PutBlob(ctx, "bad", "", strings.NewReader("bad bytes"))
-			if mism, n, err := s.CheckBlobs(ctx); err != nil || n != 2 || len(mism) != 0 {
+			if mism, n, err := s.CheckBlobs(ctx, asSetup); err != nil || n != 2 || len(mism) != 0 {
 				t.Fatalf("before: %v %d %v", mism, n, err)
 			}
 			h := bad["hash"].(string)
@@ -227,7 +227,7 @@ func TestCheckBlobs(t *testing.T) {
 			} else if err := os.WriteFile(filepath.Join(path+".blobs", h[:2], h), []byte("altered"), 0o644); err != nil {
 				t.Fatal(err)
 			}
-			mism, n, err := s.CheckBlobs(ctx)
+			mism, n, err := s.CheckBlobs(ctx, asSetup)
 			if err != nil || n != 2 || len(mism) != 1 || mism[0] != h || mism[0] == good["hash"] {
 				t.Errorf("after: %v %d %v", mism, n, err)
 			}
@@ -273,7 +273,7 @@ func TestExternalBlobStore(t *testing.T) {
 	mem := &memBlobs{m: map[string][]byte{}}
 	s, path := openStore(t, Options{BlobStore: "external", Blobs: mem})
 	ctx := context.Background()
-	if _, err := s.DefineClass(ctx, []byte(claim)); err != nil {
+	if _, err := s.DefineClass(ctx, []byte(claim), asSetup); err != nil {
 		t.Fatal(err)
 	}
 	fact, err := s.PutBlob(ctx, "x.bin", "application/octet-stream", bytes.NewReader([]byte{1, 2, 3}))
@@ -287,7 +287,7 @@ func TestExternalBlobStore(t *testing.T) {
 	if rc, _, err := s.OpenFile(ctx, "Claim", doc.ID, fact["hash"].(string)); err != nil || readAll(t, rc) != "\x01\x02\x03" {
 		t.Errorf("open: %v", err)
 	}
-	if _, _, err := s.CheckBlobs(ctx); code(err) != CodeNotSupported {
+	if _, _, err := s.CheckBlobs(ctx, asSetup); code(err) != CodeNotSupported {
 		t.Errorf("check without a lister: %v", err)
 	}
 	s.Close()

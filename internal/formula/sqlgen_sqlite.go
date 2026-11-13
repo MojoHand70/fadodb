@@ -110,24 +110,57 @@ func (SQLite) ColumnType(k Kind) string {
 // ContextArgs implements Dialect: now is always bound, user is text or
 // NULL, groups is the text groupsArg makes or NULL.
 func (SQLite) ContextArgs(ctx *Context) []any {
-	now, user, state, id, groups := contextValues(ctx)
-	return lifeArgs(ctx, []any{sql.Named("now", now), sql.Named("user", user), sql.Named("groups", groupsArg(groups)), sql.Named("state", state), sql.Named("id", id),
+	now, user, state, id := contextScalars(ctx)
+	return lifeArgs(ctx, []any{sql.Named("now", now), sql.Named("user", user), sql.Named("groups", groupsArg(ctx)), sql.Named("state", state), sql.Named("id", id),
 		sql.Named("userkind", textOrNil(ctx, func(c *Context) string { return c.Kind })), sql.Named("actingfor", textOrNil(ctx, func(c *Context) string { return c.For }))})
 }
 
-// groupsArg binds the principal's groups as one text, each group between
-// unit separators, char(31), so that INGROUP is an instr over it: a plain
-// function call where a JSON array needs a json_each subquery, which
-// costs a microsecond per statement run. nil groups bind NULL; an empty
-// list binds one separator, which no group name is found in.
-func groupsArg(groups []string) any {
-	if groups == nil {
+// groupsArg binds the groups INGROUP answers for the principal as one
+// text, each group between unit separators, char(31), so that INGROUP is
+// an instr over it: a plain function call where a JSON array needs a
+// json_each subquery, which costs a microsecond per statement run. The
+// groups are the principal's own, its system groups, and everyone for a
+// principal that has an id (ADR-0052). No groups at all bind NULL; an
+// empty list binds one separator, which no group name is found in.
+func groupsArg(ctx *Context) any {
+	if ctx == nil {
 		return nil
 	}
-	if len(groups) == 0 {
-		return groupSep
+	named := ctx.User != ""
+	if len(ctx.System) == 0 && !named {
+		if ctx.Groups == nil {
+			return nil
+		}
+		if len(ctx.Groups) == 0 {
+			return groupSep
+		}
 	}
-	return groupSep + strings.Join(groups, groupSep) + groupSep
+	n := 1
+	for _, g := range ctx.Groups {
+		n += len(g) + 1
+	}
+	for _, g := range ctx.System {
+		n += len(g) + 1
+	}
+	if named {
+		n += len(GroupEveryone) + 1
+	}
+	var b strings.Builder
+	b.Grow(n)
+	b.WriteString(groupSep)
+	for _, g := range ctx.Groups {
+		b.WriteString(g)
+		b.WriteString(groupSep)
+	}
+	for _, g := range ctx.System {
+		b.WriteString(g)
+		b.WriteString(groupSep)
+	}
+	if named {
+		b.WriteString(GroupEveryone)
+		b.WriteString(groupSep)
+	}
+	return b.String()
 }
 
 const groupSep = "\x1f"
@@ -154,7 +187,7 @@ func (d SQLite) ContextArgsFor(ctx *Context, names []string, dst []any) []any {
 		case "groups":
 			var g any
 			if ctx != nil {
-				g = groupsArg(ctx.Groups)
+				g = groupsArg(ctx)
 			}
 			dst = append(dst, sql.Named("groups", g))
 		case "stays":
@@ -218,10 +251,10 @@ func textOrNil(ctx *Context, get func(*Context) string) any {
 // package's registration, not from statements.
 func (SQLite) Setup() []string { return nil }
 
-// contextValues is what every dialect binds: the clock in seconds, always
-// present; the user id, the document's state and id, each or nil; the
-// groups or nil.
-func contextValues(ctx *Context) (now int64, user, state, id any, groups []string) {
+// contextScalars is what every dialect binds beside the groups: the clock
+// in seconds, always present; the user id, the document's state and id,
+// each or nil.
+func contextScalars(ctx *Context) (now int64, user, state, id any) {
 	now = time.Now().Unix()
 	if ctx != nil {
 		if ctx.Now != 0 {
@@ -236,9 +269,15 @@ func contextValues(ctx *Context) (now int64, user, state, id any, groups []strin
 		if ctx.ID != "" {
 			id = ctx.ID
 		}
-		groups = ctx.Groups
 	}
-	return now, user, state, id, groups
+	return now, user, state, id
+}
+
+// contextValues is contextScalars with the groups INGROUP answers for the
+// user as a list, or nil.
+func contextValues(ctx *Context) (now int64, user, state, id any, groups []string) {
+	now, user, state, id = contextScalars(ctx)
+	return now, user, state, id, ctx.AllGroups()
 }
 
 // maxFloat is the largest finite float64, the bound of the overflow checks.

@@ -126,7 +126,7 @@ func TestCompile_ReadRights(t *testing.T) {
 	}
 	alice := Principal{ID: "alice", Groups: []string{"sales"}}
 	fin := Principal{ID: "fin", Groups: []string{"finance"}}
-	admin := Principal{ID: "root", Admin: true}
+	admin := Principal{ID: "root", Content: true}
 	for _, tc := range []struct {
 		name  string
 		f     Filter
@@ -329,7 +329,7 @@ func TestCompile_ReadRule(t *testing.T) {
 		t.Fatal(diags)
 	}
 	t.Cleanup(func() { Forget(cls) })
-	admin, err := Compile(Filter{Class: "Claim"}, cls, nil, Principal{Admin: true})
+	admin, err := Compile(Filter{Class: "Claim"}, cls, nil, Principal{Content: true})
 	if err != nil || admin.Where != "" || len(admin.Args) != 0 {
 		t.Errorf("an administrator's filter: %v %q", err, admin.Where)
 	}

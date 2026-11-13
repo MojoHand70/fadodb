@@ -165,6 +165,23 @@ const (
 	ActorService = store.ActorService
 )
 
+// The system groups (ADR-0052), given to a caller in Principal.System,
+// apart from its other groups. A database administrator operates the
+// outbox and the blobs, a designer defines classes, tables and actions
+// and migrates, a content administrator sees every document and acts on
+// it past the rules of its class, and an analyst runs SQL, which reads
+// everything. Nobody is in one unless the host program says so, and a
+// call without a principal is nobody. GroupEveryone names every caller
+// that has an id: the engine gives it by itself, and a class opens to
+// them with INGROUP("everyone").
+const (
+	GroupAdministrators        = store.GroupAdministrators
+	GroupDesigners             = store.GroupDesigners
+	GroupContentAdministrators = store.GroupContentAdministrators
+	GroupAnalysts              = store.GroupAnalysts
+	GroupEveryone              = store.GroupEveryone
+)
+
 // As runs the call as the principal.
 func As(p Principal) Option { return store.As(p) }
 
@@ -511,7 +528,7 @@ func (db *DB) OpenFile(ctx context.Context, class, id, hash string, opts ...Opti
 	return db.s.OpenFile(ctx, class, id, hash, opts...)
 }
 
-// OpenBlob opens a blob by hash alone, for an administrator.
+// OpenBlob opens a blob by hash alone, for a content administrator.
 func (db *DB) OpenBlob(ctx context.Context, hash string, opts ...Option) (io.ReadCloser, int64, error) {
 	return db.s.OpenBlob(ctx, hash, opts...)
 }

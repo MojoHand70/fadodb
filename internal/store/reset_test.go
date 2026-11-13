@@ -24,7 +24,7 @@ func TestReset_Command(t *testing.T) {
    "contact": {"type": "object", "schema": "Person"},
    "count":   {"formula": "parts + 1"}
  },
- "states": {"initial": "open", "list": ["open"]}}`)); err != nil {
+ "states": {"initial": "open", "list": ["open"]}}`), asSetup); err != nil {
 		t.Fatal(err)
 	}
 	doc, err := s.Create(ctx, "Form", Values{"name": "n", "parts": 5, "share": 7,
@@ -92,7 +92,7 @@ func TestRefresh_MakesADocumentLookAtTheClock(t *testing.T) {
 	ctx := context.Background()
 	if _, err := s.DefineClass(ctx, []byte(`{"name": "Bill", "variables": {"due": {"type": "date"}},
  "states": {"initial": "sent", "list": ["sent", "late"]},
- "transitions": [{"from": "sent", "to": "late", "guard": "TODAY() > due"}]}`)); err != nil {
+ "transitions": [{"from": "sent", "to": "late", "guard": "TODAY() > due"}]}`), asSetup); err != nil {
 		t.Fatal(err)
 	}
 	doc, err := s.Create(ctx, "Bill", Values{"due": "2026-03-12"})
@@ -138,14 +138,14 @@ func TestRefresh_AdoptsTheClassVersion(t *testing.T) {
 	v1 := `{"name": "Meter", "variables": {"n": {"type": "number"}, "twice": {"formula": "n * 2"}}, "states": {"initial": "on", "list": ["on"]}}`
 	v2 := `{"name": "Meter", "variables": {"n": {"type": "number"}, "twice": {"formula": "n * 3"}, "seen": {"formula": "n", "mode": "triggered", "on": ["refresh"]}},
  "states": {"initial": "on", "list": ["on"]}}`
-	if _, err := s.DefineClass(ctx, []byte(v1)); err != nil {
+	if _, err := s.DefineClass(ctx, []byte(v1), asSetup); err != nil {
 		t.Fatal(err)
 	}
 	doc, err := s.Create(ctx, "Meter", Values{"n": 5})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.DefineClass(ctx, []byte(v2)); err != nil {
+	if _, err := s.DefineClass(ctx, []byte(v2), asSetup); err != nil {
 		t.Fatal(err)
 	}
 	doc, err = s.Refresh(ctx, "Meter", doc.ID, []string{"seen"})

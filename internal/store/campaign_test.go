@@ -52,11 +52,11 @@ func TestCommitCampaign(t *testing.T) {
 		t.Fatal(err)
 	}
 	ctx := context.Background()
-	if _, err := s.DefineClass(ctx, []byte(invoice)); err != nil {
+	if _, err := s.DefineClass(ctx, []byte(invoice), asSetup); err != nil {
 		t.Fatal(err)
 	}
 	for _, def := range []string{ratesTable, pricesTable} {
-		if _, err := s.DefineTable(ctx, []byte(def)); err != nil {
+		if _, err := s.DefineTable(ctx, []byte(def), asSetup); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -70,11 +70,11 @@ func TestCommitCampaign(t *testing.T) {
 	if _, err := s.ImportRows(ctx, "Prices", priceRows); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.DefineClass(ctx, []byte(order)); err != nil {
+	if _, err := s.DefineClass(ctx, []byte(order), asSetup); err != nil {
 		t.Fatal(err)
 	}
 	for _, def := range []string{benchFlow, benchChain, benchListing} {
-		if _, err := s.DefineClass(ctx, []byte(def)); err != nil {
+		if _, err := s.DefineClass(ctx, []byte(def), asSetup); err != nil {
 			t.Fatal(err)
 		}
 	}

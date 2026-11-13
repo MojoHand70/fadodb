@@ -8,13 +8,21 @@ import (
 )
 
 // Principal is who a call runs for (ADR-0027): the embedder's id for the
-// actor, the groups INGROUP tests, the admin bypass, and the embedder's
-// business day, the default business date of a commit (ADR-0026). A zero
-// Today means none.
+// actor, the groups INGROUP tests, the system groups the caller is in,
+// and the embedder's business day, the default business date of a commit
+// (ADR-0026). A zero Today means none.
 type Principal struct {
 	ID     string
 	Groups []string
-	Admin  bool
+	// System lists the system groups the caller is in (ADR-0052), which
+	// hold the work a class does not give: GroupAdministrators,
+	// GroupDesigners, GroupContentAdministrators and GroupAnalysts. The
+	// host program gives them here, apart from Groups, so that a group of
+	// its own directory that happens to have one of these names gives
+	// nothing; such a name among Groups is refused. INGROUP answers them
+	// as it answers Groups, and answers GroupEveryone for every caller
+	// that has an id.
+	System []string
 	Today  time.Time
 	// Kind is what the caller is (ADR-0050): ActorPerson, ActorAgent or
 	// ActorService, or empty when the host program does not say. For is
@@ -35,14 +43,74 @@ const (
 	ActorService = "service"
 )
 
-// checkPrincipal refuses a principal whose kind is none of the three.
+// The system groups (ADR-0052). Four hold the work a class does not
+// give, and the host program says who is in them, in Principal.System:
+// a database administrator operates the outbox and the blobs, a designer
+// defines, a content administrator sees every document and acts on it
+// past the rules of its class, and an analyst runs SQL. The fifth names
+// every caller that has an id, and the engine gives it by itself.
+const (
+	GroupAdministrators        = "administrators"
+	GroupDesigners             = "designers"
+	GroupContentAdministrators = "content-administrators"
+	GroupAnalysts              = "analysts"
+	GroupEveryone              = formula.GroupEveryone
+)
+
+// systemGroup reports whether the name is one of the four system groups
+// a host program gives.
+func systemGroup(name string) bool {
+	switch name {
+	case GroupAdministrators, GroupDesigners, GroupContentAdministrators, GroupAnalysts:
+		return true
+	}
+	return false
+}
+
+// in reports whether the principal is in the system group.
+func (p Principal) in(group string) bool {
+	for _, g := range p.System {
+		if g == group {
+			return true
+		}
+	}
+	return false
+}
+
+// content reports whether the principal is a content administrator, who
+// sees every document and acts on it past the rules of its class
+// (ADR-0052, item 4). A guard, the statechart and a required value hold
+// for them as for everyone.
+func (p Principal) content() bool { return p.in(GroupContentAdministrators) }
+
+// checkPrincipal refuses a principal whose kind is none of the three,
+// whose system groups name something else than the four a host gives,
+// or whose own groups carry the name of a system group (ADR-0052, item
+// 2).
 func checkPrincipal(p Principal) *Error {
 	switch p.Kind {
 	case "", ActorPerson, ActorAgent, ActorService:
-		return nil
+	default:
+		return hintf(CodeBadValue, "", "a principal's kind is "+ActorPerson+", "+ActorAgent+" or "+ActorService+", got "+strconv.Quote(p.Kind),
+			"leave the kind empty when the host program does not know what the caller is")
 	}
-	return hintf(CodeBadValue, "", "a principal's kind is "+ActorPerson+", "+ActorAgent+" or "+ActorService+", got "+strconv.Quote(p.Kind),
-		"leave the kind empty when the host program does not know what the caller is")
+	for _, g := range p.System {
+		if systemGroup(g) {
+			continue
+		}
+		hint := "the system groups are " + GroupAdministrators + ", " + GroupDesigners + ", " + GroupContentAdministrators + " and " + GroupAnalysts + "; any other group goes in Principal.Groups"
+		if g == GroupEveryone {
+			hint = "the engine puts every caller that has an id in " + GroupEveryone + " by itself; leave it out"
+		}
+		return hintf(CodeBadValue, "", strconv.Quote(g)+" is not a system group a host program gives", hint)
+	}
+	for _, g := range p.Groups {
+		if systemGroup(g) || g == GroupEveryone {
+			return hintf(CodeBadValue, "", "the group "+strconv.Quote(g)+" has the name of a system group",
+				"give a system group in Principal.System; a group of the host program's own that has this name needs another name here")
+		}
+	}
+	return nil
 }
 
 // asked applies the options of a call that reads, and refuses a principal
@@ -62,7 +130,7 @@ func asked(opts []Option) (options, *Error) {
 // the moment: who asks, in which groups, what they are and for whom they
 // act.
 func contextOf(p Principal, now int64) formula.Context {
-	return formula.Context{User: p.ID, Groups: p.Groups, Kind: p.Kind, For: p.For, Now: now}
+	return formula.Context{User: p.ID, Groups: p.Groups, System: p.System, Kind: p.Kind, For: p.For, Now: now}
 }
 
 // Values are variable values by declared name, in the wire shape of

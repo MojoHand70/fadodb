@@ -30,7 +30,7 @@
     "bob":  {"id": "bob",  "groups": ["staff"]},
     "hana": {"id": "hana", "groups": ["hr"]},
     "eve":  {"id": "eve"},
-    "root": {"id": "root", "admin": true}
+    "root": {"id": "root", "system": ["content-administrators"]}
   },
   "script": [
     {"name": "a preview of a create reports the refusal of the rule and goes on", "do": "preview", "as": "eve", "values": {"amount": 1}, "expect": {"errors": [{"code": "forbidden", "action": "/access/create"}]}},

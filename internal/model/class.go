@@ -267,9 +267,11 @@ func ParseAfter(s string) (int64, bool) {
 }
 
 // LeftOutAllows is what a class-level access rule answers that a class
-// leaves out. ADR-0049 puts it to the owner as its open question A. Until
-// he rules, the engine keeps the answer it has given since Phase 2: a
-// class that says nothing lets every caller through.
+// leaves out, question A of ADR-0049. The owner ruled on 2026-11-13 that
+// it lets nobody through (ADR-0052, item 5). Until the step that builds
+// that, with rules for every sample and test, the engine keeps the
+// answer it has given since Phase 2: a class that says nothing lets
+// every caller through.
 const LeftOutAllows = true
 
 // Access holds the compiled class-level access rules.

@@ -1,0 +1,60 @@
+{
+  "suite": "groups",
+  "description": "The system groups as the formulas of a class see them (ADR-0052). INGROUP answers a system group as it answers any group, and answers everyone for every caller that has an id; a call without a principal is nobody and is in no group. A content administrator passes the rules of a class and never a guard. A designer, a database administrator and an analyst pass no rule by being one: they see and change what the formulas of the class give them.",
+  "clock": "2026-03-01 12:00:00",
+  "class": {
+    "name": "Memo",
+    "variables": {
+      "owner":  {"type": "text", "default": "USER()", "index": true},
+      "total":  {"type": "number", "default": "0"},
+      "circle": {"type": "text"}
+    },
+    "states": {"initial": "draft", "list": ["draft", "sent"]},
+    "transitions": [
+      {"name": "send", "from": "draft", "to": "sent", "guard": "total > 0"}
+    ],
+    "access": {
+      "read":   "owner = USER() OR INGROUP(\"analysts\") OR INGROUP(circle)",
+      "create": "INGROUP(\"everyone\")",
+      "update": "owner = USER() OR INGROUP(circle)",
+      "delete": "FALSE",
+      "transition": {"send": "owner = USER()"}
+    }
+  },
+  "principals": {
+    "ann":      {"id": "ann",  "groups": ["staff"]},
+    "bob":      {"id": "bob",  "groups": ["staff"]},
+    "designer": {"id": "dee",  "system": ["designers"]},
+    "operator": {"id": "olaf", "system": ["administrators"]},
+    "analyst":  {"id": "ana",  "system": ["analysts"]},
+    "content":  {"id": "cora", "system": ["content-administrators"]}
+  },
+  "script": [
+    {"name": "everyone creates: Ann has an id, so she is in the group", "do": "create", "doc": "m1", "as": "ann", "values": {"circle": "designers"},
+     "expect": {"state": "draft", "values": {"owner": "ann", "total": 0}}},
+    {"name": "a call without a principal is nobody, and nobody is not in everyone", "do": "create", "doc": "m0", "expect": {"code": "forbidden", "action": "/access/create"}},
+
+    {"name": "Bob does not see Ann's memo", "do": "get", "doc": "m1", "as": "bob", "expect": {"code": "unknown_document"}},
+    {"name": "an analyst sees it, by the rule that names the system group", "do": "get", "doc": "m1", "as": "analyst", "expect": {"values": {"owner": "ann"}}},
+    {"name": "and finds it with a filter, where the name is decided before the statement", "do": "query", "as": "analyst", "expect": {"docs": ["m1"]}},
+    {"name": "a designer sees it, by the group the memo itself names", "do": "get", "doc": "m1", "as": "designer", "expect": {"values": {"circle": "designers"}}},
+    {"name": "and finds it with a filter, where the group is looked up among the caller's", "do": "query", "as": "designer", "expect": {"docs": ["m1"]}},
+    {"name": "a database administrator does not see a document by running the database", "do": "get", "doc": "m1", "as": "operator", "expect": {"code": "unknown_document"}},
+    {"name": "nor count it", "do": "count", "as": "operator", "expect": {"count": 0}},
+    {"name": "nobody sees it", "do": "get", "doc": "m1", "expect": {"code": "unknown_document"}},
+
+    {"name": "the designer may change it, by the group the memo names", "do": "set", "doc": "m1", "as": "designer", "values": {"total": 5}, "expect": {"version": 2}},
+    {"name": "the analyst sees it and may not change it", "do": "set", "doc": "m1", "as": "analyst", "values": {"total": 6}, "expect": {"code": "forbidden", "action": "/access/update"}},
+    {"name": "the designer may not send it: the rule of the transition names the owner", "do": "transition", "doc": "m1", "as": "designer", "transition": "send",
+     "expect": {"code": "forbidden", "action": "/access/transition/send"}},
+    {"name": "everyone in a where of Ann's own filter", "do": "count", "as": "ann", "where": "INGROUP(\"everyone\") AND NOT INGROUP(\"designers\")", "expect": {"count": 1}},
+
+    {"name": "a content administrator sees every memo", "do": "query", "as": "content", "expect": {"docs": ["m1"]}},
+    {"name": "and changes one past the update rule", "do": "set", "doc": "m1", "as": "content", "values": {"total": 0}, "expect": {"version": 3}},
+    {"name": "but never past a guard: nothing to send", "do": "transition", "doc": "m1", "as": "content", "transition": "send", "expect": {"code": "guard_false"}},
+    {"name": "with the guard holding, the content administrator sends it past the rule of the transition", "do": "set", "doc": "m1", "as": "content", "values": {"total": 9}, "expect": {"version": 4}},
+    {"name": "the memo is sent", "do": "transition", "doc": "m1", "as": "content", "transition": "send", "expect": {"state": "sent"}},
+    {"name": "the owner may not delete, as the class says", "do": "delete", "doc": "m1", "as": "ann", "expect": {"code": "forbidden", "action": "/access/delete"}},
+    {"name": "the log says who did each step", "do": "get", "doc": "m1", "as": "content", "expect": {"actors": ["ann", "dee", "cora", "cora", "cora"]}}
+  ]
+}

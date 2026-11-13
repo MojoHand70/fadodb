@@ -81,7 +81,7 @@ func TestRequests_DefinitionNeedsTheHostsLeave(t *testing.T) {
 
 	// No leave to send: no definition with a request, whatever it says.
 	closed, _ := openStore(t, Options{Secrets: secrets})
-	if _, err := closed.DefineAction(ctx, []byte(slackPost)); diag(err) != "not_supported /request" {
+	if _, err := closed.DefineAction(ctx, []byte(slackPost), asSetup); diag(err) != "not_supported /request" {
 		t.Errorf("a definition with a request in a process that sends none: %v", err)
 	}
 	if diags := closed.ValidateAction([]byte(slackPost)); len(diags) != 1 || diags[0].Code != model.CodeNotSupported {
@@ -89,7 +89,7 @@ func TestRequests_DefinitionNeedsTheHostsLeave(t *testing.T) {
 	}
 
 	s, path := openStore(t, Options{Outbound: network(), Secrets: secrets, Actions: map[string]ActionFunc{"books.post": (&recorder{}).fn}})
-	info, err := s.DefineAction(ctx, []byte(slackPost))
+	info, err := s.DefineAction(ctx, []byte(slackPost), asSetup)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -104,18 +104,18 @@ func TestRequests_DefinitionNeedsTheHostsLeave(t *testing.T) {
 		"no connection, and a host that needs one":      {`{"name": "slack.raw", "request": {"url": "\"https://slack.com/api/x\""}}`, "not_allowed /request/url"},
 		"a request, and a Go function of the same name": {`{"name": "books.post", "request": {"url": "\"https://hooks.example/books\""}}`, "not_allowed /request"},
 	} {
-		if _, err := s.DefineAction(ctx, []byte(tc.def)); diag(err) != tc.want {
+		if _, err := s.DefineAction(ctx, []byte(tc.def), asSetup); diag(err) != tc.want {
 			t.Errorf("%s: want %s, got %v", name, tc.want, err)
 		}
 	}
 	// Without a connection a request goes to the open list, and reads no
 	// secret: the model refuses SECRET there.
-	if a, err := s.DefineAction(ctx, []byte(`{"name": "hook.send", "request": {"url": "\"https://hooks.example/in\""}}`)); err != nil || a.Connection != "" || a.Secrets != nil || !a.Available {
+	if a, err := s.DefineAction(ctx, []byte(`{"name": "hook.send", "request": {"url": "\"https://hooks.example/in\""}}`), asSetup); err != nil || a.Connection != "" || a.Secrets != nil || !a.Available {
 		t.Errorf("a definition without a connection: %v, %s", err, dump(a))
 	}
 	// An address that depends on an argument is judged when it is sent.
 	if _, err := s.DefineAction(ctx, []byte(`{"name": "slack.any", "params": {"host": "text"}, "connection": {"name": "slack", "secrets": ["token"]},
- "request": {"url": "\"https://\" & host & \"/api\"", "headers": {"Authorization": "SECRET(\"token\")"}}}`)); err != nil {
+ "request": {"url": "\"https://\" & host & \"/api\"", "headers": {"Authorization": "SECRET(\"token\")"}}}`), asSetup); err != nil {
 		t.Fatal(err)
 	}
 	// A process that supplies no secrets takes only what reads none.
@@ -124,7 +124,7 @@ func TestRequests_DefinitionNeedsTheHostsLeave(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := bare.DefineAction(ctx, []byte(strings.Replace(slackPost, `"label"`, `"description": "x", "label"`, 1))); diag(err) != "not_supported /connection/secrets" {
+	if _, err := bare.DefineAction(ctx, []byte(strings.Replace(slackPost, `"label"`, `"description": "x", "label"`, 1)), asSetup); diag(err) != "not_supported /connection/secrets" {
 		t.Errorf("a request that reads a secret in a process that supplies none: %v", err)
 	}
 	if a, _ := bare.Action("slack.post"); a.Available || a.Kind != ActionDeclared {
@@ -146,7 +146,7 @@ func TestRequests_DefinitionNeedsTheHostsLeave(t *testing.T) {
 			t.Errorf("%s in a process that sends nothing: %s", name, dump(a))
 		}
 	}
-	if _, err := off.TryAction(ctx, "hook.send", nil); code(err) != CodeOutboundOff {
+	if _, err := off.TryAction(ctx, "hook.send", nil, asSetup); code(err) != CodeOutboundOff {
 		t.Errorf("a trial there: %v", err)
 	}
 }
@@ -178,11 +178,11 @@ func TestRequests_NoSecretIsStored(t *testing.T) {
 		// An address the rule's argument decides, over Slack's connection.
 		`{"name": "slack.any", "params": {"host": {"type": "text", "required": true}}, "connection": {"name": "slack", "secrets": ["token"]},
  "request": {"url": "\"https://\" & host & \"/api?token=\" & URLENCODE(SECRET(\"token\"))", "body": {"auth": "\"t:\" & SECRET(\"token\")"}}}`} {
-		if _, err := s.DefineAction(ctx, []byte(def)); err != nil {
+		if _, err := s.DefineAction(ctx, []byte(def), asSetup); err != nil {
 			t.Fatal(err)
 		}
 	}
-	if _, err := s.DefineClass(ctx, []byte(fmt.Sprintf(memoClass, "slack.post", `{"channel": "to", "text": "subject"}`))); err != nil {
+	if _, err := s.DefineClass(ctx, []byte(fmt.Sprintf(memoClass, "slack.post", `{"channel": "to", "text": "subject"}`)), asSetup); err != nil {
 		t.Fatal(err)
 	}
 	// The receiver fails and sends the request's own header back; then it
@@ -190,7 +190,7 @@ func TestRequests_NoSecretIsStored(t *testing.T) {
 	net.script(&fakeReply{Status: 503, Text: "bad gateway for Authorization: Bearer " + first},
 		&fakeReply{Status: 403, Body: json.RawMessage(`{"error": "invalid_auth", "token": "` + second + `"}`)})
 	id := file(t, s, Values{"subject": "the budget"})
-	if n, err := s.Drain(ctx); err != nil || n != 1 {
+	if n, err := s.Drain(ctx, asSetup); err != nil || n != 1 {
 		t.Fatalf("drain: %d, %v", n, err)
 	}
 	sent := net.take()
@@ -203,7 +203,7 @@ func TestRequests_NoSecretIsStored(t *testing.T) {
 	}
 	// The second attempt asks for the secret again and sends the new one.
 	now = now.Add(time.Second)
-	if n, _ := s.Drain(ctx); n != 1 {
+	if n, _ := s.Drain(ctx, asSetup); n != 1 {
 		t.Fatalf("the second attempt was not made")
 	}
 	if sent = net.take(); len(sent) != 1 || sent[0].Headers[0].Value != "Bearer "+second {
@@ -216,14 +216,14 @@ func TestRequests_NoSecretIsStored(t *testing.T) {
 	// A secret that is part of the address and of the body, sent to a host
 	// outside its connection: refused before anything leaves, and the
 	// message names the host and nothing else of the address.
-	out, err := s.TryAction(ctx, "slack.any", Values{"host": "hooks.example"})
+	out, err := s.TryAction(ctx, "slack.any", Values{"host": "hooks.example"}, asSetup)
 	if err != nil || out.OK || out.Code != CodeHostNotAllowed || out.Retry || strings.Contains(out.Message, "s3cr3t") || len(net.take()) != 0 {
 		t.Errorf("a secret pointed at another host: %v, %s", err, dump(out))
 	}
 	// To a host of its connection it goes, and a failure to reach it says
 	// the host and not the address.
 	net.script(&fakeReply{NoReply: `Post "https://slack.com/api?token=` + second + `": connection reset`})
-	out, _ = s.TryAction(ctx, "slack.any", Values{"host": "slack.com"})
+	out, _ = s.TryAction(ctx, "slack.any", Values{"host": "slack.com"}, asSetup)
 	if out.OK || out.Code != CodeNoReply || !out.Retry || strings.Contains(out.Message, "s3cr3t") || !strings.Contains(out.Message, "no reply from slack.com") {
 		t.Errorf("a request that got no reply: %s", dump(out))
 	}
@@ -232,7 +232,7 @@ func TestRequests_NoSecretIsStored(t *testing.T) {
 	}
 	// A preview masks, and asks the host for nothing.
 	before := asked
-	pv, err := s.PreviewAction(ctx, "slack.any", Values{"host": "slack.com"})
+	pv, err := s.PreviewAction(ctx, "slack.any", Values{"host": "slack.com"}, asSetup)
 	if err != nil || pv.Request.URL != "https://slack.com/api?token=%2A%2A%2A" || pv.Request.Body != `{"auth":"t:***"}` || asked != before {
 		t.Errorf("a preview: %v, %s", err, dump(pv))
 	}
@@ -241,7 +241,7 @@ func TestRequests_NoSecretIsStored(t *testing.T) {
 	}
 	// Nothing the engine wrote holds either secret: not the rows, not the
 	// events, not a byte of the file or of its log.
-	rows, _ := s.Outbox(ctx, OutboxFilter{})
+	rows, _ := s.Outbox(ctx, OutboxFilter{}, asSetup)
 	events, _ := s.Events(ctx, "Memo", id)
 	if text := dump(rows) + dump(events); strings.Contains(text, "s3cr3t") {
 		t.Errorf("a row or an event holds the secret: %s", text)
@@ -271,14 +271,14 @@ func TestRequests_SignedEnvelope(t *testing.T) {
 	ctx := context.Background()
 	if _, err := s.DefineAction(ctx, []byte(`{"name": "books.post", "params": {"memo": {"type": "text", "required": true}, "note": "text"},
  "connection": {"name": "books", "secrets": ["signing_key"]},
- "request": {"url": "\"https://books.example/hooks/fadodb\"", "sign": "signing_key"}}`)); err != nil {
+ "request": {"url": "\"https://books.example/hooks/fadodb\"", "sign": "signing_key"}}`), asSetup); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.DefineClass(ctx, []byte(fmt.Sprintf(memoClass, "books.post", `{"memo": "ID()", "note": "subject"}`))); err != nil {
+	if _, err := s.DefineClass(ctx, []byte(fmt.Sprintf(memoClass, "books.post", `{"memo": "ID()", "note": "subject"}`)), asSetup); err != nil {
 		t.Fatal(err)
 	}
 	id := file(t, s, Values{"subject": "the budget"})
-	if n, err := s.Drain(ctx); err != nil || n != 1 {
+	if n, err := s.Drain(ctx, asSetup); err != nil || n != 1 {
 		t.Fatalf("drain: %d, %v", n, err)
 	}
 	sent := net.take()
@@ -351,26 +351,26 @@ func TestRequests_RetriesAndTheirBounds(t *testing.T) {
 	now := start
 	s, _ := openStore(t, Options{Now: func() time.Time { return now }, Outbound: net, Outbox: OutboxOptions{MaxAttempts: 3}})
 	ctx := context.Background()
-	if _, err := s.DefineClass(ctx, []byte(fmt.Sprintf(memoClass, "http.call", `{"url": "\"https://hooks.example/memos\"", "body": {"subject": "subject"}}`))); err != nil {
+	if _, err := s.DefineClass(ctx, []byte(fmt.Sprintf(memoClass, "http.call", `{"url": "\"https://hooks.example/memos\"", "body": {"subject": "subject"}}`)), asSetup); err != nil {
 		t.Fatal(err)
 	}
 	net.script(&fakeReply{Status: 503, RetryAfter: 10 * 24 * 3600}, &fakeReply{Status: 408}, &fakeReply{Status: 502, Text: "still down"})
 	id := file(t, s, Values{"subject": "x"})
-	if n, _ := s.Drain(ctx); n != 1 {
+	if n, _ := s.Drain(ctx, asSetup); n != 1 {
 		t.Fatal("the first attempt was not made")
 	}
 	if row := mustRows(t, s, id)[0]; row.Status != ActionPending || row.DueAt != start.Add(24*time.Hour).Unix() || row.ErrorCode != CodeTryLater {
 		t.Errorf("a receiver that asks for ten days gets one: %s", dump(row))
 	}
 	now = now.Add(24 * time.Hour)
-	if n, _ := s.Drain(ctx); n != 1 {
+	if n, _ := s.Drain(ctx, asSetup); n != 1 {
 		t.Fatal("the second attempt was not made")
 	}
 	if row := mustRows(t, s, id)[0]; row.Attempts != 2 || row.DueAt != now.Unix()+2 {
 		t.Errorf("after a 408 the engine's own wait: %s", dump(row))
 	}
 	now = now.Add(2 * time.Second)
-	if n, _ := s.Drain(ctx); n != 1 {
+	if n, _ := s.Drain(ctx, asSetup); n != 1 {
 		t.Fatal("the third attempt was not made")
 	}
 	row := mustRows(t, s, id)[0]
@@ -386,16 +386,16 @@ func TestRequests_RetriesAndTheirBounds(t *testing.T) {
 	}
 	// A long reply is quoted to its start, on one line.
 	net.script(&fakeReply{Status: 400, Text: "line one\nline two " + strings.Repeat("x", 500)})
-	out, _ := s.TryAction(ctx, "http.call", Values{"url": "https://hooks.example/memos"})
+	out, _ := s.TryAction(ctx, "http.call", Values{"url": "https://hooks.example/memos"}, asSetup)
 	if out.Code != CodeRefused || strings.Contains(out.Message, "\n") || !strings.HasSuffix(out.Message, "…") || len([]rune(out.Message)) > 260 {
 		t.Errorf("the message of a long reply: %q", out.Message)
 	}
 	// What http.call returns is the status and the reply when it is JSON.
 	net.script(&fakeReply{Status: 201, Body: json.RawMessage(`{"id": 7}`)}, &fakeReply{Status: 204})
-	if out, _ := s.TryAction(ctx, "http.call", Values{"url": "https://hooks.example/memos"}); !out.OK || out.Result["status"] != float64(201) || string(out.Result["body"].(json.RawMessage)) != `{"id": 7}` {
+	if out, _ := s.TryAction(ctx, "http.call", Values{"url": "https://hooks.example/memos"}, asSetup); !out.OK || out.Result["status"] != float64(201) || string(out.Result["body"].(json.RawMessage)) != `{"id": 7}` {
 		t.Errorf("what http.call returns: %s", dump(out))
 	}
-	if out, _ := s.TryAction(ctx, "http.call", Values{"url": "https://hooks.example/memos", "method": "DELETE"}); !out.OK || out.Result["status"] != float64(204) || out.Result["body"] != nil {
+	if out, _ := s.TryAction(ctx, "http.call", Values{"url": "https://hooks.example/memos", "method": "DELETE"}, asSetup); !out.OK || out.Result["status"] != float64(204) || out.Result["body"] != nil {
 		t.Errorf("a reply without a body: %s", dump(out))
 	}
 	if sent := net.take(); len(sent) != 3 || sent[2].Method != "DELETE" || sent[2].Body != nil {
@@ -412,27 +412,27 @@ func TestRequests_AResultThatDoesNotRead(t *testing.T) {
 	if _, err := s.DefineAction(ctx, []byte(`{"name": "rates.get", "params": {"pair": "text"}, "returns": {"rate": "decimal(4)", "day": "date", "raw": "json", "code": "number"},
  "request": {"method": "GET", "url": "\"https://hooks.example/rate?pair=\" & URLENCODE(pair)"},
  "ok": "STATUS = 200",
- "result": {"rate": "DECIMALVALUE(JSONVALUE(BODY, \"rate\"), 4)", "day": "DATEVALUE(JSONVALUE(BODY, \"day\"))", "raw": "BODY", "code": "STATUS"}}`)); err != nil {
+ "result": {"rate": "DECIMALVALUE(JSONVALUE(BODY, \"rate\"), 4)", "day": "DATEVALUE(JSONVALUE(BODY, \"day\"))", "raw": "BODY", "code": "STATUS"}}`), asSetup); err != nil {
 		t.Fatal(err)
 	}
 	net.script(&fakeReply{Body: json.RawMessage(`{"rate": "4.25", "day": "2026-03-01"}`)},
 		&fakeReply{Body: json.RawMessage(`{"rate": "about four", "day": "2026-03-01"}`)},
 		&fakeReply{Text: "<html>not json</html>"},
 		&fakeReply{Status: 202})
-	out, err := s.TryAction(ctx, "rates.get", Values{"pair": "EUR/PLN"})
+	out, err := s.TryAction(ctx, "rates.get", Values{"pair": "EUR/PLN"}, asSetup)
 	if got, _ := json.Marshal(out); err != nil || string(got) != `{"action":"rates.get","ok":true,"result":{"code":200,"day":"2026-03-01","rate":"4.2500","raw":{"rate":"4.25","day":"2026-03-01"}}}` {
 		t.Errorf("a result: %v, %s", err, got)
 	}
-	if out, _ := s.TryAction(ctx, "rates.get", Values{"pair": "EUR/PLN"}); !out.OK || out.Code != CodeBadResult || !strings.Contains(out.Message, "rate") || out.Result != nil {
+	if out, _ := s.TryAction(ctx, "rates.get", Values{"pair": "EUR/PLN"}, asSetup); !out.OK || out.Code != CodeBadResult || !strings.Contains(out.Message, "rate") || out.Result != nil {
 		t.Errorf("a reply the result cannot read: %s", dump(out))
 	}
 	// A reply that is not JSON has a blank body: what reads it is blank.
-	if out, _ := s.TryAction(ctx, "rates.get", Values{"pair": "EUR/PLN"}); !out.OK || out.Code != "" || out.Result["rate"] != nil || out.Result["raw"] != nil || out.Result["code"] != float64(200) {
+	if out, _ := s.TryAction(ctx, "rates.get", Values{"pair": "EUR/PLN"}, asSetup); !out.OK || out.Code != "" || out.Result["rate"] != nil || out.Result["raw"] != nil || out.Result["code"] != float64(200) {
 		t.Errorf("a reply that is not JSON: %s", dump(out))
 	}
 	// ok decides, whatever the status: 202 is a success for the transport
 	// and not for this definition.
-	if out, _ := s.TryAction(ctx, "rates.get", Values{"pair": "EUR/PLN"}); out.OK || out.Code != CodeNotOK || out.Retry {
+	if out, _ := s.TryAction(ctx, "rates.get", Values{"pair": "EUR/PLN"}, asSetup); out.OK || out.Code != CodeNotOK || out.Retry {
 		t.Errorf("a 2xx the definition does not take: %s", dump(out))
 	}
 }
@@ -447,10 +447,10 @@ func TestRequests_WhatAProcessLacksIsNoAnswer(t *testing.T) {
 	full := network()
 	s, path := openStore(t, Options{Now: clock, Outbound: full, Secrets: fixedSecrets(map[string]string{"slack/token": "xoxb-1"})})
 	ctx := context.Background()
-	if _, err := s.DefineAction(ctx, []byte(slackPost)); err != nil {
+	if _, err := s.DefineAction(ctx, []byte(slackPost), asSetup); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.DefineClass(ctx, []byte(fmt.Sprintf(memoClass, "slack.post", `{"channel": "to", "text": "subject"}`))); err != nil {
+	if _, err := s.DefineClass(ctx, []byte(fmt.Sprintf(memoClass, "slack.post", `{"channel": "to", "text": "subject"}`)), asSetup); err != nil {
 		t.Fatal(err)
 	}
 	id := file(t, s, Values{"subject": "x"})
@@ -471,7 +471,7 @@ func TestRequests_WhatAProcessLacksIsNoAnswer(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if n, err := other.Drain(ctx); err != nil || n != 1 {
+		if n, err := other.Drain(ctx, asSetup); err != nil || n != 1 {
 			t.Fatalf("%s: drain %d, %v", tc.name, n, err)
 		}
 		attempt++
@@ -493,7 +493,7 @@ func TestRequests_WhatAProcessLacksIsNoAnswer(t *testing.T) {
 	}
 	defer again.Close()
 	full.script(&fakeReply{Body: json.RawMessage(`{"ok": true}`)})
-	if n, err := again.Drain(ctx); err != nil || n != 1 {
+	if n, err := again.Drain(ctx, asSetup); err != nil || n != 1 {
 		t.Fatalf("drain: %d, %v", n, err)
 	}
 	if row := mustRows(t, again, id)[0]; row.Status != ActionDone || row.Attempts != 5 || len(full.take()) != 1 {

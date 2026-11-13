@@ -217,6 +217,8 @@ type Case struct {
 type CaseContext struct {
 	User   string   `json:"user,omitempty"`
 	Groups []string `json:"groups,omitempty"`
+	// System are the system groups the user is in (ADR-0052).
+	System []string `json:"system,omitempty"`
 	// Kind is what the user is and For whom it acts for (ADR-0050).
 	Kind  string `json:"kind,omitempty"`
 	For   string `json:"for,omitempty"`
@@ -659,7 +661,7 @@ func (c *CaseContext) Context() (*Context, error) {
 	if c == nil {
 		return nil, nil
 	}
-	ctx := &Context{User: c.User, Groups: c.Groups, Kind: c.Kind, For: c.For, State: c.State, ID: c.ID}
+	ctx := &Context{User: c.User, Groups: c.Groups, System: c.System, Kind: c.Kind, For: c.For, State: c.State, ID: c.ID}
 	if c.Now != "" {
 		secs, err := ParseCaseDate(c.Now)
 		if err != nil {

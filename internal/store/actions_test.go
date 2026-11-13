@@ -67,11 +67,11 @@ func defineShop(t testing.TB, s *Store) {
 	t.Helper()
 	ctx := context.Background()
 	for _, def := range []string{booksPost, auditPing} {
-		if _, err := s.DefineAction(ctx, []byte(def)); err != nil {
+		if _, err := s.DefineAction(ctx, []byte(def), asSetup); err != nil {
 			t.Fatal(err)
 		}
 	}
-	if _, err := s.DefineClass(ctx, []byte(fmt.Sprintf(shopOrder, ""))); err != nil {
+	if _, err := s.DefineClass(ctx, []byte(fmt.Sprintf(shopOrder, "")), asSetup); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -105,7 +105,7 @@ func TestActions_Registry(t *testing.T) {
 	if _, ok := s.Action("books.post"); ok {
 		t.Fatal("a validation stores nothing")
 	}
-	info, err := s.DefineAction(ctx, []byte(booksPost))
+	info, err := s.DefineAction(ctx, []byte(booksPost), asSetup)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -115,13 +115,13 @@ func TestActions_Registry(t *testing.T) {
 		t.Errorf("the definition: %s", dump(info))
 	}
 	// The same definition again is a no-op, however it is spaced.
-	again, err := s.DefineAction(ctx, []byte(strings.ReplaceAll(booksPost, "\n", "\n\n  ")))
+	again, err := s.DefineAction(ctx, []byte(strings.ReplaceAll(booksPost, "\n", "\n\n  ")), asSetup)
 	if err != nil || again.Version != 1 {
 		t.Errorf("the same definition again: %v, %s", err, dump(again))
 	}
 	// The function is found whatever the case of the name it was given
 	// under.
-	if ping, err := s.DefineAction(ctx, []byte(auditPing)); err != nil || !ping.Available {
+	if ping, err := s.DefineAction(ctx, []byte(auditPing), asSetup); err != nil || !ping.Available {
 		t.Errorf("a function given under another case: %v, %s", err, dump(ping))
 	}
 
@@ -160,7 +160,7 @@ func TestActions_Registry(t *testing.T) {
 
 	// A redefinition is the next version.
 	wider := strings.Replace(booksPost, `"amount": "decimal(2)"`, `"amount": "decimal(2)", "memo": "text"`, 1)
-	if info, err = s.DefineAction(ctx, []byte(wider)); err != nil || info.Version != 2 || len(info.Params) != 3 {
+	if info, err = s.DefineAction(ctx, []byte(wider), asSetup); err != nil || info.Version != 2 || len(info.Params) != 3 {
 		t.Fatalf("a redefinition: %v, %s", err, dump(info))
 	}
 	for name, tc := range map[string]struct{ def, code, path string }{
@@ -170,7 +170,7 @@ func TestActions_Registry(t *testing.T) {
 		"a definition that does not compile": {`{"name": "books.post", "params": {"order": "string"}}`, model.CodeUnknownType, "/params/order"},
 		"what is not JSON":                   {`{"name": "books.post",`, model.CodeBadJSON, ""},
 	} {
-		_, err := s.DefineAction(ctx, []byte(tc.def))
+		_, err := s.DefineAction(ctx, []byte(tc.def), asSetup)
 		diags, _ := err.(model.Diagnostics)
 		found := false
 		for _, d := range diags {
@@ -183,11 +183,11 @@ func TestActions_Registry(t *testing.T) {
 			t.Errorf("%s: a validation says what a definition would", name)
 		}
 	}
-	if next, err := s.DefineAction(ctx, []byte(strings.Replace(wider, `"label"`, `"version": 3, "label"`, 1))); err != nil || next.Version != 3 {
+	if next, err := s.DefineAction(ctx, []byte(strings.Replace(wider, `"label"`, `"version": 3, "label"`, 1)), asSetup); err != nil || next.Version != 3 {
 		t.Errorf("a redefinition that names the next version: %v, %s", err, dump(next))
 	}
 	// The registry is the database's own: no class takes its name.
-	if _, err := s.DefineClass(ctx, []byte(`{"name": "Actions", "variables": {"a": {"type": "text"}}}`)); err == nil || !err.(model.Diagnostics).Has(model.CodeReservedName) {
+	if _, err := s.DefineClass(ctx, []byte(`{"name": "Actions", "variables": {"a": {"type": "text"}}}`), asSetup); err == nil || !err.(model.Diagnostics).Has(model.CodeReservedName) {
 		t.Errorf("a class named after the registry: %v", err)
 	}
 
@@ -202,13 +202,13 @@ func TestActions_Registry(t *testing.T) {
 	if a, ok := bare.Action("books.post"); !ok || a.Available || a.Version != 3 || len(a.Params) != 3 {
 		t.Errorf("a definition in a process without its function: %s", dump(a))
 	}
-	if _, err := bare.DefineAction(ctx, []byte(booksPost)); err == nil || !err.(model.Diagnostics).Has(model.CodeNotSupported) {
+	if _, err := bare.DefineAction(ctx, []byte(booksPost), asSetup); err == nil || !err.(model.Diagnostics).Has(model.CodeNotSupported) {
 		t.Errorf("a redefinition in a process without the function: %v", err)
 	}
-	if _, err := bare.TryAction(ctx, "books.post", Values{"order": "o"}); code(err) != CodeNotRegistered {
+	if _, err := bare.TryAction(ctx, "books.post", Values{"order": "o"}, asSetup); code(err) != CodeNotRegistered {
 		t.Errorf("a trial in a process without the function: %v", err)
 	}
-	if pv, err := bare.PreviewAction(ctx, "books.post", Values{"order": "o"}); err != nil || pv.Call.Args["order"] != "o" {
+	if pv, err := bare.PreviewAction(ctx, "books.post", Values{"order": "o"}, asSetup); err != nil || pv.Call.Args["order"] != "o" {
 		t.Errorf("a preview needs no function: %v, %s", err, dump(pv))
 	}
 	bare.Close()
@@ -220,7 +220,7 @@ func TestActions_Registry(t *testing.T) {
 	if a, _ := full.Action("books.post"); !a.Available || a.Version != 3 {
 		t.Errorf("the definition, reopened with its function: %s", dump(a))
 	}
-	if a, err := full.DefineAction(ctx, []byte(strings.Replace(wider, `"label"`, `"version": 3, "label"`, 1))); err != nil || a.Version != 3 {
+	if a, err := full.DefineAction(ctx, []byte(strings.Replace(wider, `"label"`, `"version": 3, "label"`, 1)), asSetup); err != nil || a.Version != 3 {
 		t.Errorf("the stored definition again after a reopen: %v, %s", err, dump(a))
 	}
 }
@@ -271,14 +271,14 @@ func TestActions_TheCall(t *testing.T) {
 	if _, err := s.Transition(ctx, "Order", order.ID, "place", nil, As(alice), Key("place-1"), BusinessDate(day)); err != nil {
 		t.Fatal(err)
 	}
-	rows, err := s.Outbox(ctx, OutboxFilter{DocID: order.ID})
+	rows, err := s.Outbox(ctx, OutboxFilter{DocID: order.ID}, asSetup)
 	if err != nil || len(rows) != 2 || rows[0].Action != "books.post" || rows[1].Action != "audit.ping" || rows[0].Version != 2 || rows[1].Version != 3 {
 		t.Fatalf("the rows: %v, %s", err, dump(rows))
 	}
 	if string(rows[0].Args) != `{"amount":"99.50","order":"`+order.ID+`"}` || string(rows[1].Args) != `{"note":"big: desk"}` {
 		t.Errorf("the arguments as the commit stored them: %s, %s", rows[0].Args, rows[1].Args)
 	}
-	if n, err := s.Drain(ctx); err != nil || n != 2 {
+	if n, err := s.Drain(ctx, asSetup); err != nil || n != 2 {
 		t.Fatalf("drain: %d, %v", n, err)
 	}
 	// The order has moved on since: placed, big by itself, booked by the
@@ -338,12 +338,12 @@ func TestActions_TheCall(t *testing.T) {
 
 	// A later version of the class fires the rule of a later document, and
 	// the event says so.
-	if _, err := s.DefineClass(ctx, []byte(fmt.Sprintf(shopOrder, `, "memo": {"type": "text"}`))); err != nil {
+	if _, err := s.DefineClass(ctx, []byte(fmt.Sprintf(shopOrder, `, "memo": {"type": "text"}`)), asSetup); err != nil {
 		t.Fatal(err)
 	}
 	books.do = nil
 	next := place(t, s, Values{"item": "lamp"})
-	if _, err := s.Drain(ctx); err != nil {
+	if _, err := s.Drain(ctx, asSetup); err != nil {
 		t.Fatal(err)
 	}
 	if calls := books.take(); len(calls) != 1 || calls[0].Event.ClassVersion != 2 || calls[0].Event.Document.ClassVersion != 2 || calls[0].Event.DocID != next ||
@@ -354,7 +354,7 @@ func TestActions_TheCall(t *testing.T) {
 
 func mustRows(t testing.TB, s *Store, id string) []QueuedAction {
 	t.Helper()
-	rows, err := s.Outbox(context.Background(), OutboxFilter{DocID: id})
+	rows, err := s.Outbox(context.Background(), OutboxFilter{DocID: id}, asSetup)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -375,7 +375,7 @@ func TestActions_Outcomes(t *testing.T) {
 	ctx := context.Background()
 	drain := func(want int) []*ActionCall {
 		t.Helper()
-		if n, err := s.Drain(ctx); err != nil || n != want {
+		if n, err := s.Drain(ctx, asSetup); err != nil || n != want {
 			t.Fatalf("drain: %d, %v, want %d", n, err, want)
 		}
 		return rec.take()
@@ -477,7 +477,7 @@ func TestActions_Outcomes(t *testing.T) {
 	}
 	gone := place(t, s, Values{"item": "gone"})
 	rec.take()
-	if _, err := s.Drain(cctx); !errors.Is(err, context.Canceled) {
+	if _, err := s.Drain(cctx, asSetup); !errors.Is(err, context.Canceled) {
 		t.Errorf("a drain whose caller gave up: %v", err)
 	}
 	if got := outcome(gone, 0); got != "books.post pending 0 " {
@@ -505,7 +505,7 @@ func TestActions_NotRegistered(t *testing.T) {
 	}
 	// The class loads, and its rule queues: the definition is in the file.
 	other := place(t, bare, Values{"item": "lamp"})
-	if n, err := bare.Drain(ctx); err != nil || n != 2 {
+	if n, err := bare.Drain(ctx, asSetup); err != nil || n != 2 {
 		t.Fatalf("drain without the function: %d, %v", n, err)
 	}
 	for _, doc := range []string{id, other} {
@@ -521,7 +521,7 @@ func TestActions_NotRegistered(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer full.Close()
-	if n, err := full.Drain(ctx); err != nil || n != 2 {
+	if n, err := full.Drain(ctx, asSetup); err != nil || n != 2 {
 		t.Fatalf("drain with the function: %d, %v", n, err)
 	}
 	calls := rec.take()
@@ -552,7 +552,7 @@ func TestActions_RedefinitionMayNotBreakARule(t *testing.T) {
 		"an exact parameter at a coarser scale": {`{"name": "books.post", "params": {"order": {"type": "text", "required": true}, "amount": "decimal(1)"}}`,
 			"/params/amount", "at /rules/0/do/0/args/amount"},
 	} {
-		_, err := s.DefineAction(ctx, []byte(tc.def))
+		_, err := s.DefineAction(ctx, []byte(tc.def), asSetup)
 		diags, _ := err.(model.Diagnostics)
 		if len(diags) != 1 || diags[0].Code != model.CodeNotAllowed || diags[0].Path != tc.path || !strings.Contains(diags[0].Message, tc.says) || !strings.Contains(diags[0].Hint, "change that rule first") {
 			t.Errorf("%s: %v", name, err)
@@ -567,12 +567,12 @@ func TestActions_RedefinitionMayNotBreakARule(t *testing.T) {
 	// A wider scale, another description, other returned values and a new
 	// optional parameter break nothing.
 	if a, err := s.DefineAction(ctx, []byte(`{"name": "books.post", "description": "Books an order.",
- "params": {"order": {"type": "text", "required": true}, "amount": "decimal(4)", "memo": "text"}, "returns": {"entry": "int"}}`)); err != nil || a.Version != 2 {
+ "params": {"order": {"type": "text", "required": true}, "amount": "decimal(4)", "memo": "text"}, "returns": {"entry": "int"}}`), asSetup); err != nil || a.Version != 2 {
 		t.Fatalf("a redefinition that breaks nothing: %v", err)
 	}
 	// The action of an order placed before sees the definition of now.
 	id := place(t, s, Values{"item": "desk", "price": "7.5"})
-	if _, err := s.Drain(ctx); err != nil {
+	if _, err := s.Drain(ctx, asSetup); err != nil {
 		t.Fatal(err)
 	}
 	if calls := rec.take(); len(calls) != 1 || calls[0].Args["amount"] != "7.5000" || len(calls[0].Args) != 3 {
@@ -582,10 +582,10 @@ func TestActions_RedefinitionMayNotBreakARule(t *testing.T) {
 	// is refused until the rule gives it.
 	waiting := place(t, s, Values{"item": "lamp"})
 	if a, err := s.DefineAction(ctx, []byte(`{"name": "books.post",
- "params": {"order": {"type": "text", "required": true}, "amount": "decimal(4)", "memo": "text", "period": {"type": "text", "required": true}}}`)); err != nil || a.Version != 3 {
+ "params": {"order": {"type": "text", "required": true}, "amount": "decimal(4)", "memo": "text", "period": {"type": "text", "required": true}}}`), asSetup); err != nil || a.Version != 3 {
 		t.Fatalf("a redefinition that requires more: %v", err)
 	}
-	if n, err := s.Drain(ctx); err != nil || n != 1 {
+	if n, err := s.Drain(ctx, asSetup); err != nil || n != 1 {
 		t.Fatalf("drain: %d, %v", n, err)
 	}
 	if r := mustRows(t, s, waiting)[0]; r.Status != ActionDead || r.ErrorCode != CodeRequired || !strings.Contains(r.ErrorMessage, "period") || len(rec.take()) != 0 {
@@ -596,31 +596,31 @@ func TestActions_RedefinitionMayNotBreakARule(t *testing.T) {
 	// period. With it, it can.
 	fresh := strings.Replace(fmt.Sprintf(shopOrder, `, "memo": {"type": "text"}`), `"amount": "price"`, `"amount": "price", "period": "\"2026-03\""`, 1)
 	stale := fmt.Sprintf(shopOrder, `, "memo": {"type": "text"}`)
-	if _, err := s.DefineClass(ctx, []byte(stale)); err == nil || !err.(model.Diagnostics).Has(model.CodeMissing) {
+	if _, err := s.DefineClass(ctx, []byte(stale), asSetup); err == nil || !err.(model.Diagnostics).Has(model.CodeMissing) {
 		t.Errorf("a class whose rule leaves a required parameter out: %v", err)
 	}
-	if _, err := s.DefineClass(ctx, []byte(fresh)); err != nil {
+	if _, err := s.DefineClass(ctx, []byte(fresh), asSetup); err != nil {
 		t.Fatal(err)
 	}
 	place(t, s, Values{"item": "chair"})
-	if _, err := s.Drain(ctx); err != nil {
+	if _, err := s.Drain(ctx, asSetup); err != nil {
 		t.Fatal(err)
 	}
 	if calls := rec.take(); len(calls) != 1 || calls[0].Args["period"] != "2026-03" {
 		t.Errorf("the call once the rule gives the parameter: %s", dump(calls))
 	}
 	// A row queued for a parameter the action has since lost is refused.
-	if _, err := s.DefineClass(ctx, []byte(strings.Replace(fresh, `"amount": "price", `, "", 1))); err != nil {
+	if _, err := s.DefineClass(ctx, []byte(strings.Replace(fresh, `"amount": "price", `, "", 1)), asSetup); err != nil {
 		t.Fatal(err)
 	}
 	old := place(t, s, Values{"item": "old"})
 	if _, err := s.writer.ExecContext(ctx, `UPDATE outbox SET args = json_set(args, '$.amount', '1.0000') WHERE doc_id = ?`, old); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.DefineAction(ctx, []byte(`{"name": "books.post", "params": {"order": {"type": "text", "required": true}, "period": {"type": "text", "required": true}}}`)); err != nil {
+	if _, err := s.DefineAction(ctx, []byte(`{"name": "books.post", "params": {"order": {"type": "text", "required": true}, "period": {"type": "text", "required": true}}}`), asSetup); err != nil {
 		t.Fatalf("a parameter no rule gives any more is free to go: %v", err)
 	}
-	if _, err := s.Drain(ctx); err != nil {
+	if _, err := s.Drain(ctx, asSetup); err != nil {
 		t.Fatal(err)
 	}
 	if r := mustRows(t, s, old)[0]; r.Status != ActionDead || r.ErrorCode != CodeUnknownParameter {
@@ -634,17 +634,17 @@ func TestActions_TryAndPreview(t *testing.T) {
 	rec := &recorder{}
 	s, _ := openStore(t, Options{Actions: map[string]ActionFunc{"books.post": rec.fn, "ship.label": rec.fn}})
 	ctx := context.Background()
-	if _, err := s.DefineAction(ctx, []byte(booksPost)); err != nil {
+	if _, err := s.DefineAction(ctx, []byte(booksPost), asSetup); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := s.DefineAction(ctx, []byte(`{"name": "ship.label",
- "params": {"to": "ref", "weight": "number", "at": "datetime", "price": "money(2)", "parcel": "json", "fragile": "bool", "day": "date"}}`)); err != nil {
+ "params": {"to": "ref", "weight": "number", "at": "datetime", "price": "money(2)", "parcel": "json", "fragile": "bool", "day": "date"}}`), asSetup); err != nil {
 		t.Fatal(err)
 	}
 	// Every scalar type arrives in the shape a document's values have on
 	// the way out.
 	at := time.Date(2026, 3, 1, 12, 0, 0, 0, time.UTC)
-	out, err := s.TryAction(ctx, "ship.label", Values{"to": "Customer:42", "weight": 3, "at": at, "price": "12.5 PLN", "parcel": map[string]any{"w": []any{1, "x"}}, "fragile": true, "day": at})
+	out, err := s.TryAction(ctx, "ship.label", Values{"to": "Customer:42", "weight": 3, "at": at, "price": "12.5 PLN", "parcel": map[string]any{"w": []any{1, "x"}}, "fragile": true, "day": at}, asSetup)
 	if err != nil || !out.OK || out.Result != nil || out.Code != "" {
 		t.Fatalf("a trial: %v, %s", err, dump(out))
 	}
@@ -664,12 +664,12 @@ func TestActions_TryAndPreview(t *testing.T) {
 		t.Errorf("a json argument arrives as its JSON: %T", call.Args["parcel"])
 	}
 	// A json value given as its text is the same value.
-	if _, err := s.TryAction(ctx, "ship.label", Values{"parcel": `{"w": 1}`}); err != nil || string(rec.take()[0].Args["parcel"].(json.RawMessage)) != `{"w": 1}` {
+	if _, err := s.TryAction(ctx, "ship.label", Values{"parcel": `{"w": 1}`}, asSetup); err != nil || string(rec.take()[0].Args["parcel"].(json.RawMessage)) != `{"w": 1}` {
 		t.Errorf("a json argument given as text: %v", err)
 	}
 	// Two trials have two keys.
-	s.TryAction(ctx, "ship.label", nil)
-	s.TryAction(ctx, "ship.label", nil)
+	s.TryAction(ctx, "ship.label", nil, asSetup)
+	s.TryAction(ctx, "ship.label", nil, asSetup)
 	if two := rec.take(); len(two) != 2 || two[0].Key == two[1].Key {
 		t.Errorf("the keys of two trials: %s", dump(two))
 	}
@@ -686,24 +686,24 @@ func TestActions_TryAndPreview(t *testing.T) {
 		"a value of another type": {Values{"entry": 7}, `{"action":"books.post","ok":true,"code":"bad_result","message":"what the action returned as entry is no text: want text, got 7 (int)"}`},
 	} {
 		rec.do = func(context.Context, *ActionCall) (Values, error) { return tc.returns, nil }
-		out, err := s.TryAction(ctx, "books.post", Values{"order": "o-1"})
+		out, err := s.TryAction(ctx, "books.post", Values{"order": "o-1"}, asSetup)
 		if got, _ := json.Marshal(out); err != nil || string(got) != tc.want {
 			t.Errorf("%s: %v, %s, want %s", name, err, got, tc.want)
 		}
 	}
 	rec.do = func(context.Context, *ActionCall) (Values, error) { return Values{"receipt": "R-1"}, nil }
-	if out, _ := s.TryAction(ctx, "books.post", Values{"order": "o-1"}); !out.OK || out.Code != CodeBadResult || !strings.Contains(out.Message, `"receipt"`) {
+	if out, _ := s.TryAction(ctx, "books.post", Values{"order": "o-1"}, asSetup); !out.OK || out.Code != CodeBadResult || !strings.Contains(out.Message, `"receipt"`) {
 		t.Errorf("a value the definition does not declare: %s", dump(out))
 	}
 	// How it failed, and whether the outbox would ask again.
 	rec.do = func(context.Context, *ActionCall) (Values, error) { return nil, errors.New("busy") }
-	if out, _ := s.TryAction(ctx, "books.post", Values{"order": "o-1"}); out.OK || out.Code != CodeActionError || out.Message != "busy" || !out.Retry {
+	if out, _ := s.TryAction(ctx, "books.post", Values{"order": "o-1"}, asSetup); out.OK || out.Code != CodeActionError || out.Message != "busy" || !out.Retry {
 		t.Errorf("a trial without an answer: %s", dump(out))
 	}
 	rec.do = func(context.Context, *ActionCall) (Values, error) {
 		return nil, Permanent(&Error{Code: CodeWrongState, Message: "booked already"})
 	}
-	if out, _ := s.TryAction(ctx, "books.post", Values{"order": "o-1"}); out.OK || out.Code != CodeWrongState || out.Retry {
+	if out, _ := s.TryAction(ctx, "books.post", Values{"order": "o-1"}, asSetup); out.OK || out.Code != CodeWrongState || out.Retry {
 		t.Errorf("a trial that was refused: %s", dump(out))
 	}
 	rec.take()
@@ -727,9 +727,9 @@ func TestActions_TryAndPreview(t *testing.T) {
 		for _, try := range []bool{true, false} {
 			var err error
 			if try {
-				_, err = s.TryAction(ctx, tc.action, tc.args)
+				_, err = s.TryAction(ctx, tc.action, tc.args, asSetup)
 			} else {
-				_, err = s.PreviewAction(ctx, tc.action, tc.args)
+				_, err = s.PreviewAction(ctx, tc.action, tc.args, asSetup)
 			}
 			if se, _ := err.(*Error); se == nil || se.Code != tc.code || se.Variable != tc.about {
 				t.Errorf("%s (trial %v): want %s about %q, got %v", name, try, tc.code, tc.about, err)
@@ -737,7 +737,7 @@ func TestActions_TryAndPreview(t *testing.T) {
 		}
 	}
 	// A preview shows the call and calls nothing.
-	pv, err := s.PreviewAction(ctx, "BOOKS.post", Values{"Order": "o-9", "amount": 3})
+	pv, err := s.PreviewAction(ctx, "BOOKS.post", Values{"Order": "o-9", "amount": 3}, asSetup)
 	if err != nil || pv.Action != "books.post" || pv.Kind != ActionRegistered || pv.Call.Attempt != 1 || pv.Call.Key != "" || pv.Call.Event != nil ||
 		pv.Call.Args["order"] != "o-9" || pv.Call.Args["amount"] != "3.00" {
 		t.Errorf("a preview: %v, %s", err, dump(pv))
@@ -788,7 +788,7 @@ func TestActions_Workers(t *testing.T) {
 	for _, def := range []string{noteClass, `{"name": "Memo", "variables": {"text": {"type": "text"}},
  "states": {"initial": "new", "list": ["new", "filed"]}, "transitions": [{"name": "file", "from": "new", "to": "filed"}],
  "rules": [{"on": "enter", "state": "filed", "do": [{"action": "create", "class": "Note", "values": {"about": "ID()", "text": "\"filed\""}}]}]}`} {
-		if _, err := s.DefineClass(ctx, []byte(def)); err != nil {
+		if _, err := s.DefineClass(ctx, []byte(def), asSetup); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -835,7 +835,7 @@ func TestActions_Workers(t *testing.T) {
 	close(gate)
 	deadline := time.Now().Add(10 * time.Second)
 	for {
-		pending, err := s.Outbox(ctx, OutboxFilter{Status: ActionPending})
+		pending, err := s.Outbox(ctx, OutboxFilter{Status: ActionPending}, asSetup)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -873,7 +873,7 @@ func TestActions_DrainRunsOneAtATime(t *testing.T) {
 	for i := 0; i < 6; i++ {
 		place(t, s, Values{"item": "x"})
 	}
-	if n, err := s.Drain(context.Background()); err != nil || n != 6 || peak != 1 {
+	if n, err := s.Drain(context.Background(), asSetup); err != nil || n != 6 || peak != 1 {
 		t.Errorf("a drain by hand: %d actions, %v, %d at once", n, err, peak)
 	}
 }
@@ -944,10 +944,10 @@ func TestActions_AtLeastOnceAcrossACrash(t *testing.T) {
 			}
 			defer s.Close()
 			ctx := context.Background()
-			if _, err := s.Drain(ctx); err != nil {
+			if _, err := s.Drain(ctx, asSetup); err != nil {
 				t.Fatal(err)
 			}
-			rows, _ := s.Outbox(ctx, OutboxFilter{})
+			rows, _ := s.Outbox(ctx, OutboxFilter{}, asSetup)
 			if len(rows) != 1 || rows[0].Status != ActionDone || rows[0].Attempts != 1 {
 				t.Fatalf("the row: %s", dump(rows))
 			}
@@ -1009,7 +1009,7 @@ func TestActionsCrashHelper(t *testing.T) {
 		}
 		return nil
 	}
-	_, err = s.Drain(context.Background())
+	_, err = s.Drain(context.Background(), asSetup)
 	t.Fatalf("the helper reached the end of the drain: %v", err)
 }
 
@@ -1125,7 +1125,7 @@ func TestActions_DrainLeavesACallInFlightAlone(t *testing.T) {
 	// behind it: a drain finds nothing it may run, and returns.
 	drained := make(chan int, 1)
 	go func() {
-		n, _ := s.Drain(context.Background())
+		n, _ := s.Drain(context.Background(), asSetup)
 		drained <- n
 	}()
 	select {

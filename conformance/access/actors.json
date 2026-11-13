@@ -38,7 +38,7 @@
     "approver":  {"id": "agent-9", "groups": ["managers"], "kind": "agent"},
     "legacy":    {"id": "old",     "groups": ["managers"]},
     "import":    {"id": "loader",  "groups": ["staff"], "kind": "service"},
-    "root":      {"id": "root",    "admin": true}
+    "root":      {"id": "root",    "system": ["content-administrators"]}
   },
   "script": [
     {"name": "an assistant files for Ann: the owner is the one it acts for, and the document says an agent made it", "do": "create", "doc": "small", "as": "assistant", "values": {"total": 400},

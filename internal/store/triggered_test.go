@@ -28,7 +28,7 @@ const quote1 = `{
 
 func defineQuote(t *testing.T, s *Store) {
 	t.Helper()
-	if _, err := s.DefineClass(context.Background(), []byte(quote1)); err != nil {
+	if _, err := s.DefineClass(context.Background(), []byte(quote1), asSetup); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -41,7 +41,7 @@ func TestTriggered_MomentAtEveryVersion(t *testing.T) {
 	s, _ := openStore(t, Options{}) // the test clock moves a second per commit
 	defineQuote(t, s)
 	ctx := context.Background()
-	admin := As(Principal{ID: "root", Admin: true})
+	admin := As(root)
 	doc, err := s.Create(ctx, "Quote", Values{"amount": 200, "rate": 0.5}, admin)
 	if err != nil {
 		t.Fatal(err)
@@ -120,7 +120,7 @@ func TestTriggered_Views(t *testing.T) {
 	}
 	history, _ := s.History(ctx, "Quote", doc.ID)
 	sent := history[1].ValidFrom
-	rows, err := s.SQL(ctx, `SELECT locked, locked__asof, locked__error, locked__at, margin, margin__asof, margin__error, margin__at FROM Quote`, nil)
+	rows, err := s.SQL(ctx, `SELECT locked, locked__asof, locked__error, locked__at, margin, margin__asof, margin__error, margin__at FROM Quote`, nil, asSetup)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -128,7 +128,7 @@ func TestTriggered_Views(t *testing.T) {
 	if len(rows.Rows) != 1 || !reflect.DeepEqual(rows.Rows[0], want) {
 		t.Errorf("the view: %v, want %v", rows.Rows, want)
 	}
-	rows, err = s.SQL(ctx, `SELECT version, locked__asof, locked__at FROM Quote_history ORDER BY version`, nil)
+	rows, err = s.SQL(ctx, `SELECT version, locked__asof, locked__at FROM Quote_history ORDER BY version`, nil, asSetup)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -183,7 +183,7 @@ func TestTriggered_Preview(t *testing.T) {
 	s, _ := openStore(t, Options{Now: atStart})
 	defineQuote(t, s)
 	ctx := context.Background()
-	admin := As(Principal{ID: "root", Admin: true})
+	admin := As(root)
 	doc, err := s.Create(ctx, "Quote", Values{"amount": 200, "rate": 0.5}, admin)
 	if err != nil {
 		t.Fatal(err)
@@ -221,7 +221,7 @@ func TestTriggered_Redefinition(t *testing.T) {
 	v1 := `{"name": "Meter", "variables": {"n": {"type": "number"}, "snap": {"formula": "n", "mode": "triggered", "on": ["transition:read"]}, "twice": {"formula": "n * 2"}},
  "states": {"initial": "on", "list": ["on"]}, "transitions": [{"name": "read", "from": "on", "to": "on"}]}`
 	v2 := strings.Replace(v1, `"twice": {"formula": "n * 2"}`, `"twice": {"formula": "n * 2", "mode": "triggered", "on": ["transition:read"]}, "note": {"type": "text"}`, 1)
-	if _, err := s.DefineClass(ctx, []byte(v1)); err != nil {
+	if _, err := s.DefineClass(ctx, []byte(v1), asSetup); err != nil {
 		t.Fatal(err)
 	}
 	doc, err := s.Create(ctx, "Meter", Values{"n": 5})
@@ -235,7 +235,7 @@ func TestTriggered_Redefinition(t *testing.T) {
 	if first.Version != 2 || first.At == 0 {
 		t.Fatalf("snap after the first read: %+v", first)
 	}
-	if _, err := s.DefineClass(ctx, []byte(v2)); err != nil {
+	if _, err := s.DefineClass(ctx, []byte(v2), asSetup); err != nil {
 		t.Fatal(err)
 	}
 	// Read under the version that computed it: untouched.
@@ -285,9 +285,10 @@ func TestTriggered_EngineSchema(t *testing.T) {
 	// who made a version and where the document came from, and the origin
 	// of an entry in the log, made it 5 (ADR-0047, items 3 and 4); what
 	// the actor of an event was and for whom it acted made it 6
-	// (ADR-0050, item 4).
-	if engineSchema != 6 {
-		t.Fatalf("the engine schema is %d, want 6", engineSchema)
+	// (ADR-0050, item 4); the outbox row losing the administrator's flag,
+	// which system groups replace, made it 7 (ADR-0052).
+	if engineSchema != 7 {
+		t.Fatalf("the engine schema is %d, want 7", engineSchema)
 	}
 	if _, err := s.writer.ExecContext(context.Background(), "UPDATE schema_version SET version = 3"); err != nil {
 		t.Fatal(err)
@@ -304,7 +305,7 @@ func TestTriggered_CreateMany(t *testing.T) {
 	s, _ := openStore(t, Options{})
 	ctx := context.Background()
 	if _, err := s.DefineClass(ctx, []byte(`{"name": "Stamp", "variables": {"by": {"formula": "USER()", "mode": "triggered", "on": ["enter:new"]}},
- "states": {"initial": "new", "list": ["new"]}}`)); err != nil {
+ "states": {"initial": "new", "list": ["new"]}}`), asSetup); err != nil {
 		t.Fatal(err)
 	}
 	docs, err := s.CreateMany(ctx, "Stamp", []Values{{}, {}}, As(alice))
@@ -365,7 +366,7 @@ func TestTriggered_RetypeKeepsTheMoment(t *testing.T) {
 	v1 := `{"name": "Probe", "variables": {"n": {"type": "number"}, "x": {"type": "number", "formula": "n", "mode": "triggered", "on": ["transition:t"]}},
  "states": {"initial": "on", "list": ["on"]}, "transitions": [{"name": "t", "from": "on", "to": "on"}]}`
 	v2 := strings.Replace(v1, `"x": {"type": "number", "formula": "n", "mode": "triggered", "on": ["transition:t"]}`, `"x": {"type": "text", "formula": "TEXT(n)"}`, 1)
-	if _, err := s.DefineClass(ctx, []byte(v1)); err != nil {
+	if _, err := s.DefineClass(ctx, []byte(v1), asSetup); err != nil {
 		t.Fatal(err)
 	}
 	doc, err := s.Create(ctx, "Probe", Values{})
@@ -379,7 +380,7 @@ func TestTriggered_RetypeKeepsTheMoment(t *testing.T) {
 	if doc.Values["x"] != nil || doc.Computed["x"].Version != 2 {
 		t.Fatalf("x after the transition: %v, %+v", doc.Values["x"], doc.Computed["x"])
 	}
-	if _, err := s.DefineClass(ctx, []byte(v2)); err != nil {
+	if _, err := s.DefineClass(ctx, []byte(v2), asSetup); err != nil {
 		t.Fatalf("the retype: %v", err)
 	}
 	got, err := s.Get(ctx, "Probe", doc.ID)

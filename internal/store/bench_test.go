@@ -26,7 +26,7 @@ func BenchmarkRecalculate(b *testing.B) {
 	}
 	defer s.Close()
 	ctx := context.Background()
-	if _, err := s.DefineClass(ctx, []byte(invoice)); err != nil {
+	if _, err := s.DefineClass(ctx, []byte(invoice), asSetup); err != nil {
 		b.Fatal(err)
 	}
 	doc, err := s.Create(ctx, "Invoice", sampleValues(), As(alice))
@@ -73,7 +73,7 @@ func BenchmarkCommit(b *testing.B) {
 	}
 	defer s.Close()
 	ctx := context.Background()
-	if _, err := s.DefineClass(ctx, []byte(invoice)); err != nil {
+	if _, err := s.DefineClass(ctx, []byte(invoice), asSetup); err != nil {
 		b.Fatal(err)
 	}
 	doc, err := s.Create(ctx, "Invoice", sampleValues(), As(alice))
@@ -110,7 +110,7 @@ func benchLookup(b *testing.B, class string, o Options) {
 	}
 	defer s.Close()
 	ctx := context.Background()
-	if _, err := s.DefineTable(ctx, []byte(`{"name": "Fx", "columns": {"code": "text", "rate": "decimal(6)"}, "key": ["code"]}`)); err != nil {
+	if _, err := s.DefineTable(ctx, []byte(`{"name": "Fx", "columns": {"code": "text", "rate": "decimal(6)"}, "key": ["code"]}`), asSetup); err != nil {
 		b.Fatal(err)
 	}
 	rows := make([]Values, 1000)
@@ -120,7 +120,7 @@ func benchLookup(b *testing.B, class string, o Options) {
 	if _, err := s.ImportRows(ctx, "Fx", rows); err != nil {
 		b.Fatal(err)
 	}
-	if _, err := s.DefineClass(ctx, []byte(class)); err != nil {
+	if _, err := s.DefineClass(ctx, []byte(class), asSetup); err != nil {
 		b.Fatal(err)
 	}
 	doc, err := s.Create(ctx, "Quote", Values{"currency": "C0500", "net": "100.00"})
@@ -176,7 +176,7 @@ func benchAggregate(b *testing.B, expr string, want any) {
 	}
 	defer s.Close()
 	ctx := context.Background()
-	if _, err := s.DefineTable(ctx, []byte(`{"name": "Lines", "columns": {"ord": "text", "n": "number", "qty": "number", "amount": "decimal(2)"}, "key": ["ord", "n"]}`)); err != nil {
+	if _, err := s.DefineTable(ctx, []byte(`{"name": "Lines", "columns": {"ord": "text", "n": "number", "qty": "number", "amount": "decimal(2)"}, "key": ["ord", "n"]}`), asSetup); err != nil {
 		b.Fatal(err)
 	}
 	rows := make([]Values, 1000)
@@ -187,7 +187,7 @@ func benchAggregate(b *testing.B, expr string, want any) {
 		b.Fatal(err)
 	}
 	class := `{"name": "Bill", "variables": {"ord": {"type": "text"}, "x": {"formula": "LOOKUP(Lines, ` + expr + `, ord = THIS.ord)"}}, "states": {"initial": "open", "list": ["open"]}}`
-	if _, err := s.DefineClass(ctx, []byte(class)); err != nil {
+	if _, err := s.DefineClass(ctx, []byte(class), asSetup); err != nil {
 		b.Fatal(err)
 	}
 	doc, err := s.Create(ctx, "Bill", Values{"ord": "O050"})
@@ -295,7 +295,7 @@ func classLookupStore(b *testing.B, expr string, want any) (*Store, *Document) {
   "states": {"initial": "waiting", "list": ["waiting", "approved"]},
   "transitions": [{"from": "waiting", "to": "approved", "guard": "x > 1000000"}]}`,
 	} {
-		if _, err := s.DefineClass(ctx, []byte(def)); err != nil {
+		if _, err := s.DefineClass(ctx, []byte(def), asSetup); err != nil {
 			b.Fatal(err)
 		}
 	}
@@ -375,10 +375,10 @@ func BenchmarkFilter(b *testing.B) {
 	// predicate (ADR-0041), the budget being under 5% on the indexed
 	// filter.
 	const ticket = `{"name": "%s", "variables": {"number": {"type": "text", "index": true}, "priority": {"type": "number"}, "owner": {"type": "text"}}, "states": {"initial": "open", "list": ["open"]}%s}`
-	if _, err := s.DefineClass(ctx, []byte(fmt.Sprintf(ticket, "Ticket", ""))); err != nil {
+	if _, err := s.DefineClass(ctx, []byte(fmt.Sprintf(ticket, "Ticket", "")), asSetup); err != nil {
 		b.Fatal(err)
 	}
-	if _, err := s.DefineClass(ctx, []byte(fmt.Sprintf(ticket, "Guarded", `, "rights": {"*": {"number": {"read": "INGROUP(\"support\") OR owner = USER()"}}}`))); err != nil {
+	if _, err := s.DefineClass(ctx, []byte(fmt.Sprintf(ticket, "Guarded", `, "rights": {"*": {"number": {"read": "INGROUP(\"support\") OR owner = USER()"}}}`)), asSetup); err != nil {
 		b.Fatal(err)
 	}
 	// Owned is Ticket with an index on the owner, and Ruled the same with
@@ -386,10 +386,10 @@ func BenchmarkFilter(b *testing.B) {
 	// their own. The budgets are under 5% on the indexed filter where the
 	// caller alone decides the rule, and under 15% where it reads the row.
 	const owned = `{"name": "%s", "variables": {"number": {"type": "text", "index": true}, "priority": {"type": "number"}, "owner": {"type": "text", "index": true}}, "states": {"initial": "open", "list": ["open"]}%s}`
-	if _, err := s.DefineClass(ctx, []byte(fmt.Sprintf(owned, "Owned", ""))); err != nil {
+	if _, err := s.DefineClass(ctx, []byte(fmt.Sprintf(owned, "Owned", "")), asSetup); err != nil {
 		b.Fatal(err)
 	}
-	if _, err := s.DefineClass(ctx, []byte(fmt.Sprintf(owned, "Ruled", `, "access": {"read": "INGROUP(\"support\") OR owner = USER()"}`))); err != nil {
+	if _, err := s.DefineClass(ctx, []byte(fmt.Sprintf(owned, "Ruled", `, "access": {"read": "INGROUP(\"support\") OR owner = USER()"}`)), asSetup); err != nil {
 		b.Fatal(err)
 	}
 	support := As(Principal{ID: "agent", Groups: []string{"support"}})
@@ -494,7 +494,7 @@ func BenchmarkRecalculate50(b *testing.B) {
 	}
 	defer s.Close()
 	ctx := context.Background()
-	if _, err := s.DefineClass(ctx, []byte(fiftyFormulas())); err != nil {
+	if _, err := s.DefineClass(ctx, []byte(fiftyFormulas()), asSetup); err != nil {
 		b.Fatal(err)
 	}
 	doc, err := s.Create(ctx, "Model", Values{"a": 1, "b": 2, "c": 3, "d": 4, "e": 5, "f": 6, "g": 7, "h": 8, "i": 9, "j": 10})
@@ -545,7 +545,7 @@ func BenchmarkTransition(b *testing.B) {
 	}
 	defer s.Close()
 	ctx := context.Background()
-	if _, err := s.DefineClass(ctx, []byte(benchFlow)); err != nil {
+	if _, err := s.DefineClass(ctx, []byte(benchFlow), asSetup); err != nil {
 		b.Fatal(err)
 	}
 	doc, err := s.Create(ctx, "Flow", Values{"amount": 500, "qty": 5, "note": "n"})
@@ -573,7 +573,7 @@ func benchOwned(b *testing.B, access string) {
 	ctx := context.Background()
 	owned := strings.Replace(benchFlow, `"variables": {`, `"variables": {"owner": {"type": "text", "default": "USER()"},`, 1)
 	owned = strings.Replace(owned, `"states":`, access+`"states":`, 1)
-	if _, err := s.DefineClass(ctx, []byte(owned)); err != nil {
+	if _, err := s.DefineClass(ctx, []byte(owned), asSetup); err != nil {
 		b.Fatal(err)
 	}
 	doc, err := s.Create(ctx, "Flow", Values{"amount": 500, "qty": 5, "note": "n"}, As(alice))
@@ -613,7 +613,7 @@ func benchMany(b *testing.B, n int, amount float64) (*Store, []string) {
 	}
 	b.Cleanup(func() { s.Close() })
 	ctx := context.Background()
-	if _, err := s.DefineClass(ctx, []byte(benchFlow)); err != nil {
+	if _, err := s.DefineClass(ctx, []byte(benchFlow), asSetup); err != nil {
 		b.Fatal(err)
 	}
 	docs := make([]Values, n)
@@ -716,7 +716,7 @@ func BenchmarkTransitionChain(b *testing.B) {
 	}
 	defer s.Close()
 	ctx := context.Background()
-	if _, err := s.DefineClass(ctx, []byte(benchFlow)); err != nil {
+	if _, err := s.DefineClass(ctx, []byte(benchFlow), asSetup); err != nil {
 		b.Fatal(err)
 	}
 	doc, err := s.Create(ctx, "Flow", Values{"amount": 500, "qty": 5, "note": "n"})
@@ -747,7 +747,7 @@ func BenchmarkTransitions(b *testing.B) {
 	}
 	defer s.Close()
 	ctx := context.Background()
-	if _, err := s.DefineClass(ctx, []byte(benchFlow)); err != nil {
+	if _, err := s.DefineClass(ctx, []byte(benchFlow), asSetup); err != nil {
 		b.Fatal(err)
 	}
 	doc, err := s.Create(ctx, "Flow", Values{"amount": 500, "qty": 5, "note": "n"})
@@ -775,7 +775,7 @@ func BenchmarkGuardLoop(b *testing.B) {
 	}
 	defer s.Close()
 	ctx := context.Background()
-	if _, err := s.DefineClass(ctx, []byte(benchFlow)); err != nil {
+	if _, err := s.DefineClass(ctx, []byte(benchFlow), asSetup); err != nil {
 		b.Fatal(err)
 	}
 	doc, err := s.Create(ctx, "Flow", Values{"amount": 500, "qty": 5, "note": "n"})
@@ -831,7 +831,7 @@ func openGuarded(b *testing.B) (*Store, *class, *docRow) {
 	}
 	b.Cleanup(func() { s.Close() })
 	ctx := context.Background()
-	if _, err := s.DefineClass(ctx, []byte(fiftyRights())); err != nil {
+	if _, err := s.DefineClass(ctx, []byte(fiftyRights()), asSetup); err != nil {
 		b.Fatal(err)
 	}
 	values := Values{}
@@ -940,7 +940,7 @@ func BenchmarkTransitions10(b *testing.B) {
 	}
 	defer s.Close()
 	ctx := context.Background()
-	if _, err := s.DefineClass(ctx, []byte(benchListing)); err != nil {
+	if _, err := s.DefineClass(ctx, []byte(benchListing), asSetup); err != nil {
 		b.Fatal(err)
 	}
 	doc, err := s.Create(ctx, "Hub", benchHubValues, As(alice))
@@ -1015,7 +1015,7 @@ func BenchmarkRules(b *testing.B) {
 	}
 	defer s.Close()
 	ctx := context.Background()
-	if _, err := s.DefineClass(ctx, []byte(benchRuled)); err != nil {
+	if _, err := s.DefineClass(ctx, []byte(benchRuled), asSetup); err != nil {
 		b.Fatal(err)
 	}
 	doc, err := s.Create(ctx, "Ruled", Values{"amount": 500, "qty": 5, "note": "n"})
@@ -1099,7 +1099,7 @@ func benchTransitions(b *testing.B, definition, class string) {
 	}
 	defer s.Close()
 	ctx := context.Background()
-	if _, err := s.DefineClass(ctx, []byte(definition)); err != nil {
+	if _, err := s.DefineClass(ctx, []byte(definition), asSetup); err != nil {
 		b.Fatal(err)
 	}
 	doc, err := s.Create(ctx, class, Values{"amount": 500, "qty": 5, "note": "n"})
@@ -1136,7 +1136,7 @@ func BenchmarkTriggered(b *testing.B) {
    "by":     {"formula": "USER()", "mode": "triggered", "on": ["enter:sent"]}
  },
  "states": {"initial": "draft", "list": ["draft", "sent"]},
- "transitions": [{"name": "send", "from": "draft", "to": "sent"}]}`)); err != nil {
+ "transitions": [{"name": "send", "from": "draft", "to": "sent"}]}`), asSetup); err != nil {
 		b.Fatal(err)
 	}
 	doc, err := s.Create(ctx, "Locked", Values{"amount": 200, "rate": 0.5})
@@ -1180,7 +1180,7 @@ func BenchmarkOutbox(b *testing.B) {
  "states": {"initial": "open", "list": ["open"]}, "transitions": [{"name": "book", "from": "open", "to": "open"}],
  "rules": [{"on": "transition", "name": "book", "do": [{"action": "create", "class": "Entry", "values": {"job": "ID()", "amount": "amount"}}]}]}`,
 	} {
-		if _, err := s.DefineClass(ctx, []byte(def)); err != nil {
+		if _, err := s.DefineClass(ctx, []byte(def), asSetup); err != nil {
 			b.Fatal(err)
 		}
 	}
@@ -1194,7 +1194,7 @@ func BenchmarkOutbox(b *testing.B) {
 		if _, err := s.Transition(ctx, "Job", doc.ID, "book", nil, As(alice)); err != nil {
 			b.Fatal(err)
 		}
-		if n, err := s.Drain(ctx); err != nil || n != 1 {
+		if n, err := s.Drain(ctx, asSetup); err != nil || n != 1 {
 			b.Fatalf("drained %d, %v", n, err)
 		}
 	}
@@ -1216,7 +1216,7 @@ func BenchmarkTimer(b *testing.B) {
 	defer s.Close()
 	ctx := context.Background()
 	if _, err := s.DefineClass(ctx, []byte(`{"name": "Job", "variables": {"amount": {"type": "number"}},
- "states": {"initial": "idle", "list": ["idle"]}, "transitions": [{"name": "run", "from": "idle", "to": "idle", "after": "1m"}]}`)); err != nil {
+ "states": {"initial": "idle", "list": ["idle"]}, "transitions": [{"name": "run", "from": "idle", "to": "idle", "after": "1m"}]}`), asSetup); err != nil {
 		b.Fatal(err)
 	}
 	if _, err := s.Create(ctx, "Job", Values{"amount": 500}, As(alice)); err != nil {
@@ -1226,7 +1226,7 @@ func BenchmarkTimer(b *testing.B) {
 	b.ResetTimer()
 	for b.Loop() {
 		mins.Add(1)
-		if n, err := s.Drain(ctx); err != nil || n != 1 {
+		if n, err := s.Drain(ctx, asSetup); err != nil || n != 1 {
 			b.Fatalf("drained %d, %v", n, err)
 		}
 	}
@@ -1247,7 +1247,7 @@ func BenchmarkTimerIdle(b *testing.B) {
 	ctx := context.Background()
 	if _, err := s.DefineClass(ctx, []byte(`{"name": "Job", "variables": {"amount": {"type": "number"}},
  "states": {"initial": "busy", "list": ["busy", "idle"]},
- "transitions": [{"name": "rest", "from": "busy", "to": "idle"}, {"name": "work", "from": "idle", "to": "busy"}, {"from": "idle", "to": "busy", "after": "1m"}]}`)); err != nil {
+ "transitions": [{"name": "rest", "from": "busy", "to": "idle"}, {"name": "work", "from": "idle", "to": "busy"}, {"from": "idle", "to": "busy", "after": "1m"}]}`), asSetup); err != nil {
 		b.Fatal(err)
 	}
 	doc, err := s.Create(ctx, "Job", Values{"amount": 500}, As(alice))
@@ -1265,7 +1265,7 @@ func BenchmarkTimerIdle(b *testing.B) {
 		}
 		mins.Add(1)
 		b.StartTimer()
-		if n, err := s.Drain(ctx); err != nil || n != 1 {
+		if n, err := s.Drain(ctx, asSetup); err != nil || n != 1 {
 			b.Fatalf("drained %d, %v", n, err)
 		}
 	}
@@ -1288,7 +1288,7 @@ func BenchmarkOutboxEach10(b *testing.B) {
  "states": {"initial": "open", "list": ["open"]}, "transitions": [{"name": "book", "from": "open", "to": "open"}],
  "rules": [{"on": "transition", "name": "book", "do": [{"action": "create", "class": "Entry", "each": "crew", "as": "member", "values": {"job": "ID()", "who": "member"}}]}]}`,
 	} {
-		if _, err := s.DefineClass(ctx, []byte(def)); err != nil {
+		if _, err := s.DefineClass(ctx, []byte(def), asSetup); err != nil {
 			b.Fatal(err)
 		}
 	}
@@ -1306,7 +1306,7 @@ func BenchmarkOutboxEach10(b *testing.B) {
 		if _, err := s.Transition(ctx, "Job", doc.ID, "book", nil, As(alice)); err != nil {
 			b.Fatal(err)
 		}
-		if n, err := s.Drain(ctx); err != nil || n != 10 {
+		if n, err := s.Drain(ctx, asSetup); err != nil || n != 10 {
 			b.Fatalf("drained %d, %v", n, err)
 		}
 	}
@@ -1328,12 +1328,12 @@ func BenchmarkOutboxRegistered(b *testing.B) {
 	}
 	defer s.Close()
 	ctx := context.Background()
-	if _, err := s.DefineAction(ctx, []byte(`{"name": "books.post", "params": {"job": {"type": "text", "required": true}, "amount": "number"}}`)); err != nil {
+	if _, err := s.DefineAction(ctx, []byte(`{"name": "books.post", "params": {"job": {"type": "text", "required": true}, "amount": "number"}}`), asSetup); err != nil {
 		b.Fatal(err)
 	}
 	if _, err := s.DefineClass(ctx, []byte(`{"name": "Job", "variables": {"amount": {"type": "number"}},
  "states": {"initial": "open", "list": ["open"]}, "transitions": [{"name": "book", "from": "open", "to": "open"}],
- "rules": [{"on": "transition", "name": "book", "do": [{"action": "books.post", "args": {"job": "ID()", "amount": "amount"}}]}]}`)); err != nil {
+ "rules": [{"on": "transition", "name": "book", "do": [{"action": "books.post", "args": {"job": "ID()", "amount": "amount"}}]}]}`), asSetup); err != nil {
 		b.Fatal(err)
 	}
 	doc, err := s.Create(ctx, "Job", Values{"amount": 500})
@@ -1346,7 +1346,7 @@ func BenchmarkOutboxRegistered(b *testing.B) {
 		if _, err := s.Transition(ctx, "Job", doc.ID, "book", nil, As(alice)); err != nil {
 			b.Fatal(err)
 		}
-		if n, err := s.Drain(ctx); err != nil || n != 1 {
+		if n, err := s.Drain(ctx, asSetup); err != nil || n != 1 {
 			b.Fatalf("drained %d, %v", n, err)
 		}
 	}
@@ -1371,12 +1371,12 @@ func BenchmarkOutboxDeclared(b *testing.B) {
 	}
 	defer s.Close()
 	ctx := context.Background()
-	if _, err := s.DefineAction(ctx, []byte(slackPost)); err != nil {
+	if _, err := s.DefineAction(ctx, []byte(slackPost), asSetup); err != nil {
 		b.Fatal(err)
 	}
 	if _, err := s.DefineClass(ctx, []byte(`{"name": "Job", "variables": {"note": {"type": "text"}},
  "states": {"initial": "open", "list": ["open"]}, "transitions": [{"name": "tell", "from": "open", "to": "open"}],
- "rules": [{"on": "transition", "name": "tell", "do": [{"action": "slack.post", "args": {"channel": "\"#ops\"", "text": "note"}}]}]}`)); err != nil {
+ "rules": [{"on": "transition", "name": "tell", "do": [{"action": "slack.post", "args": {"channel": "\"#ops\"", "text": "note"}}]}]}`), asSetup); err != nil {
 		b.Fatal(err)
 	}
 	doc, err := s.Create(ctx, "Job", Values{"note": "done"})
@@ -1392,12 +1392,12 @@ func BenchmarkOutboxDeclared(b *testing.B) {
 		if _, err := s.Transition(ctx, "Job", doc.ID, "tell", nil, As(alice)); err != nil {
 			b.Fatal(err)
 		}
-		if n, err := s.Drain(ctx); err != nil || n != 1 {
+		if n, err := s.Drain(ctx, asSetup); err != nil || n != 1 {
 			b.Fatalf("drained %d, %v", n, err)
 		}
 	}
 	b.StopTimer()
-	if dead, err := s.Outbox(ctx, OutboxFilter{Status: ActionDead}); err != nil || len(dead) != 0 {
+	if dead, err := s.Outbox(ctx, OutboxFilter{Status: ActionDead}, asSetup); err != nil || len(dead) != 0 {
 		b.Fatalf("%d actions died: %v", len(dead), err)
 	}
 }
@@ -1428,7 +1428,7 @@ func benchLifeStates(b *testing.B, function string) {
 	}
 	defer s.Close()
 	ctx := context.Background()
-	if _, err := s.DefineClass(ctx, []byte(fmt.Sprintf(benchLife, function))); err != nil {
+	if _, err := s.DefineClass(ctx, []byte(fmt.Sprintf(benchLife, function)), asSetup); err != nil {
 		b.Fatal(err)
 	}
 	doc, err := s.Create(ctx, "Case", Values{"note": "0"}, As(ann))
@@ -1531,7 +1531,7 @@ func BenchmarkDue(b *testing.B) {
 	}
 	start, made := time.Now(), 0
 	for _, c := range classes {
-		if _, err := s.DefineClass(ctx, []byte(fmt.Sprintf(invoice, c.name, c.index, c.condition))); err != nil {
+		if _, err := s.DefineClass(ctx, []byte(fmt.Sprintf(invoice, c.name, c.index, c.condition)), asSetup); err != nil {
 			b.Fatal(err)
 		}
 		// Of every class a hundred documents pass their date in two days,

@@ -12,6 +12,12 @@ import (
 	"github.com/MojoHand70/fadodb/fado"
 )
 
+// setup is the caller of a host program's own setup code (ADR-0052): it
+// is in the system groups that define, operate the outbox and run SQL,
+// and in no other, so the rules of a class hold for it as for anybody.
+var setup = fado.As(fado.Principal{ID: "setup", Kind: fado.ActorService,
+	System: []string{fado.GroupDesigners, fado.GroupAdministrators, fado.GroupAnalysts}})
+
 // The invoice of docs/architecture.md, as far as this build takes it: a
 // class with defaults, objects, lines and auto formulas; a document
 // created, changed, previewed and read back with its history.
@@ -47,7 +53,8 @@ func Example() {
 	    "ship_city": {"formula": "shipping.city"}
 	  },
 	  "states": {"initial": "draft", "list": ["draft", "approved", "paid"]}
-	}`))
+	}`), setup)
+
 	if err != nil {
 		panic(err)
 	}
@@ -97,11 +104,11 @@ func Example() {
 	// views.
 	open, _ := db.Query(ctx, fado.Filter{Class: "Invoice", Where: "state = \"draft\" AND total > 50.00", Fields: []string{"number", "total"}})
 	fmt.Println("filtered:", len(open), open[0].Values["number"], open[0].Values["total"])
-	rows, _ := db.SQL(ctx, `SELECT count(*) AS n, sum(total) AS cents FROM Invoice`, nil)
+	rows, _ := db.SQL(ctx, `SELECT count(*) AS n, sum(total) AS cents FROM Invoice`, nil, setup)
 	fmt.Println("sql:", rows.Columns, rows.Rows[0])
 
 	// A definition's problems come back at once, each with a place.
-	_, err = db.DefineClass(ctx, []byte(`{"name": "Receipt", "variables": {"amount": {"type": "money", "default": "1"}, "paid": {"type": "bool", "formula": "amount"}}}`))
+	_, err = db.DefineClass(ctx, []byte(`{"name": "Receipt", "variables": {"amount": {"type": "money", "default": "1"}, "paid": {"type": "bool", "formula": "amount"}}}`), setup)
 	var diags fado.Diagnostics
 	if errors.As(err, &diags) {
 		for _, d := range diags {
@@ -157,7 +164,8 @@ func Example_rules() {
 	     "do": [{"action": "emit", "event": "request.large_approved"}]}
 	  ],
 	  "rights": {"*": {"approved_by": {"write": "FALSE"}, "approved_at": {"write": "FALSE"}}}
-	}`))
+	}`), setup)
+
 	if err != nil {
 		panic(err)
 	}
@@ -229,7 +237,8 @@ func Example_triggered() {
 	  },
 	  "states": {"initial": "draft", "list": ["draft", "sent"]},
 	  "transitions": [{"name": "send", "from": "draft", "to": "sent"}]
-	}`))
+	}`), setup)
+
 	if err != nil {
 		panic(err)
 	}
@@ -303,7 +312,7 @@ func Example_approvals() {
 	// The two classes name each other, and a rule's target is checked when
 	// its class is defined: the purchase comes first without its rule.
 	for _, def := range []string{purchase(""), approval, purchase(asks)} {
-		if _, err := db.DefineClass(ctx, []byte(def)); err != nil {
+		if _, err := db.DefineClass(ctx, []byte(def), setup); err != nil {
 			panic(err)
 		}
 	}
@@ -316,7 +325,7 @@ func Example_approvals() {
 	if _, err := db.Transition(ctx, "Purchase", doc.ID, "submit", nil, fado.As(sam)); err != nil {
 		panic(err)
 	}
-	asked, _ := db.Drain(ctx)
+	asked, _ := db.Drain(ctx, setup)
 	fmt.Println("approvals asked:", asked)
 
 	// Sam may not grant Bob's approval; Bob may.
@@ -328,7 +337,7 @@ func Example_approvals() {
 	if _, err := db.Transition(ctx, "Approval", "po_1/bob", "grant", nil, fado.As(bob)); err != nil {
 		panic(err)
 	}
-	if _, err := db.Drain(ctx); err != nil {
+	if _, err := db.Drain(ctx, setup); err != nil {
 		panic(err)
 	}
 
@@ -387,7 +396,7 @@ func Example_goAction() {
 	  "params": {"channel": {"type": "text", "required": true, "description": "Where to post"},
 	             "text":    {"type": "text", "required": true}},
 	  "returns": {"ts": "text"}
-	}`)); err != nil {
+	}`), setup); err != nil {
 		panic(err)
 	}
 	invoice := func(args string) []byte {
@@ -405,7 +414,7 @@ func Example_goAction() {
 	for _, d := range db.ValidateClass(invoice(`{"channel": "\"#finance\"", "txt": "number"}`)) {
 		fmt.Println(d.Code, d.Path)
 	}
-	if _, err := db.DefineClass(ctx, invoice(`{"channel": "\"#finance\"", "text": "\"Approved: \" & number"}`)); err != nil {
+	if _, err := db.DefineClass(ctx, invoice(`{"channel": "\"#finance\"", "text": "\"Approved: \" & number"}`), setup); err != nil {
 		panic(err)
 	}
 
@@ -413,7 +422,7 @@ func Example_goAction() {
 	// outside any document.
 	info, _ := db.Action("team.notify")
 	fmt.Println(info.Name, "is", info.Kind, "and takes", info.Params[0].Name, "and", info.Params[1].Name)
-	trial, err := db.TryAction(ctx, "team.notify", fado.Values{"channel": "#test", "text": "hello"})
+	trial, err := db.TryAction(ctx, "team.notify", fado.Values{"channel": "#test", "text": "hello"}, setup)
 	if err != nil {
 		panic(err)
 	}
@@ -428,7 +437,7 @@ func Example_goAction() {
 		panic(err)
 	}
 	fmt.Println("committed; the action is queued")
-	if _, err := db.Drain(ctx); err != nil {
+	if _, err := db.Drain(ctx, setup); err != nil {
 		panic(err)
 	}
 	events, _ := db.Events(ctx, "Invoice", doc.ID)
@@ -476,7 +485,8 @@ func Example_due() {
 	    {"from": "sent", "to": "overdue", "guard": "TODAY() > due"},
 	    {"name": "pay", "from": ["sent", "overdue"], "to": "paid"}
 	  ]
-	}`))
+	}`), setup)
+
 	if err != nil {
 		panic(err)
 	}
@@ -560,7 +570,8 @@ func Example_timed() {
 	    {"name": "close", "from": "waiting", "to": "closed"}
 	  ],
 	  "rules": [{"on": "transition", "name": "remind", "do": [{"action": "set", "values": {"reminders": "reminders + 1", "reminded_by": "USER()"}}]}]
-	}`))
+	}`), setup)
+
 	if err != nil {
 		panic(err)
 	}
@@ -582,7 +593,7 @@ func Example_timed() {
 
 	// Three days pass, and nobody touches the request.
 	days.Store(3)
-	if _, err := db.Drain(ctx); err != nil {
+	if _, err := db.Drain(ctx, setup); err != nil {
 		panic(err)
 	}
 	doc, err := db.Get(ctx, "Request", "R-1")
@@ -593,7 +604,7 @@ func Example_timed() {
 
 	// On the day of the deadline it expires.
 	days.Store(8)
-	if _, err := db.Drain(ctx); err != nil {
+	if _, err := db.Drain(ctx, setup); err != nil {
 		panic(err)
 	}
 	if doc, err = db.Get(ctx, "Request", "R-1"); err != nil {
@@ -633,7 +644,8 @@ func Example_many() {
 	  "transitions": [
 	    {"name": "book", "from": "approved", "to": "booked", "guard": "NOT ISBLANK(cost_centre)"}
 	  ]
-	}`))
+	}`), setup)
+
 	if err != nil {
 		panic(err)
 	}

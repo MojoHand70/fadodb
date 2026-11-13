@@ -14,8 +14,8 @@ import (
 // the principal of the call. A caller the read rule does not let through
 // is answered as if the document did not exist, on every path; a caller
 // who sees a document and may not do what they ask is refused with
-// forbidden and the rule. An administrator passes every rule and never a
-// guard. What the engine does by itself asks nothing: an eventless or a
+// forbidden and the rule. A content administrator passes every rule and
+// never a guard (ADR-0052). What the engine does by itself asks nothing: an eventless or a
 // timed transition, the wake-up of a timer, the result an action writes
 // back, a migration.
 
@@ -33,9 +33,9 @@ func (k accessRule) String() string {
 	return [...]string{"read", "create", "update", "delete"}[k]
 }
 
-// leftOutAllows is what a rule answers that a class leaves out: the
-// open question A of ADR-0049, kept in one place for the store and the
-// filter compiler.
+// leftOutAllows is what a rule answers that a class leaves out, question
+// A of ADR-0049, kept in one place for the store and the filter
+// compiler.
 const leftOutAllows = model.LeftOutAllows
 
 // ruled says whether the class has an answer of its own for the rule: the
@@ -48,7 +48,7 @@ func (c *class) ruled(k accessRule) bool {
 // over the row: TRUE does; FALSE, a blank, a value of another type and an
 // error do not (ADR-0019), the error returned for the message.
 func (e *evaluator) may(c *class, k accessRule, row *docRow, ctx *formula.Context, p Principal) (bool, error) {
-	if p.Admin {
+	if p.content() {
 		return true, nil
 	}
 	prog := c.access[k]
@@ -63,11 +63,11 @@ func (e *evaluator) may(c *class, k accessRule, row *docRow, ctx *formula.Contex
 }
 
 // asksRules says whether a command asks the rules of the class at all.
-// An administrator passes them. The engine's own commands ask nothing
+// A content administrator passes them (ADR-0052). The engine's own commands ask nothing
 // (ADR-0049, item 8): the result an action writes back, the wake-up of a
 // timer and a migration.
 func asksRules(cmd *command) bool {
-	return !cmd.o.principal.Admin && !cmd.engine && cmd.op != opWake && cmd.op != opMigrate
+	return !cmd.o.principal.content() && !cmd.engine && cmd.op != opWake && cmd.op != opMigrate
 }
 
 // noDocument is the answer for a document that does not exist, and for
@@ -141,7 +141,7 @@ func forbiddenBy(c *class, k accessRule, p Principal, id string, err error) *Err
 	}
 	hint := "the " + k.String() + " rule of " + name + ": " + c.accessSrc[k]
 	if c.access[k] == nil {
-		hint = name + " has no " + k.String() + " rule, so only an administrator may; add access." + k.String() + " to the class"
+		hint = name + " has no " + k.String() + " rule, so only a content administrator may; add access." + k.String() + " to the class"
 	}
 	e := hintf(CodeForbidden, "", msg, hint)
 	e.Path = "/access/" + k.String()
@@ -172,7 +172,7 @@ func bare(d *Document) {
 // lookup and no function of a state (ADR-0010, ADR-0047), so a borrowed
 // evaluator runs it.
 func (s *Store) seesRow(c, vc *class, row *docRow, o options) bool {
-	if !c.ruled(ruleRead) || o.principal.Admin {
+	if !c.ruled(ruleRead) || o.principal.content() {
 		return true
 	}
 	if vc != c {
@@ -191,9 +191,9 @@ func (s *Store) seesRow(c, vc *class, row *docRow, o options) bool {
 // its last version when it was deleted (ADR-0049, item 6). It is false
 // for an id no document has, which the caller answers in its own words,
 // as it does a document that is hidden. A class with no answer of its own
-// for the rule, and an administrator, cost no read.
+// for the rule, and a content administrator, cost no read.
 func (s *Store) sees(ctx context.Context, c *class, id string, o options) (bool, error) {
-	if !c.ruled(ruleRead) || o.principal.Admin {
+	if !c.ruled(ruleRead) || o.principal.content() {
 		return true, nil
 	}
 	history := false
@@ -220,7 +220,7 @@ func (s *Store) sees(ctx context.Context, c *class, id string, o options) (bool,
 // the row as the class version vc computed it, in the row's state, as a
 // projection applies it (ADR-0041, item 4). nil when nothing is hidden.
 func (s *Store) hiddenFor(c, vc *class, row *docRow, o options) map[string]bool {
-	if c.rights == nil || o.principal.Admin {
+	if c.rights == nil || o.principal.content() {
 		return nil
 	}
 	if vc != c {

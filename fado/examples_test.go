@@ -40,7 +40,7 @@ func TestExampleClasses(t *testing.T) {
 				later = append(later, f)
 				continue
 			}
-			if _, err := db.DefineClass(ctx, def); err != nil {
+			if _, err := db.DefineClass(ctx, def, setup); err != nil {
 				t.Errorf("%s does not define: %v", filepath.Base(f), err)
 			}
 		}
@@ -59,7 +59,7 @@ func TestExampleClasses(t *testing.T) {
 				}
 				return
 			}
-			if _, err := db.DefineClasses(ctx, set); err != nil {
+			if _, err := db.DefineClasses(ctx, set, setup); err != nil {
 				t.Errorf("the samples that name each other do not define together: %v", err)
 			}
 			return
@@ -93,7 +93,7 @@ func TestExampleApprovals(t *testing.T) {
 			t.Errorf("sample %d validates alone; the README says the two name each other", i)
 		}
 	}
-	if _, err := db.DefineClasses(ctx, set); err != nil {
+	if _, err := db.DefineClasses(ctx, set, setup); err != nil {
 		t.Fatal(err)
 	}
 	ann, bob := fado.As(fado.Principal{ID: "ann"}), fado.As(fado.Principal{ID: "bob"})
@@ -110,7 +110,7 @@ func TestExampleApprovals(t *testing.T) {
 		if _, err := db.Transition(ctx, "Approval", id, transition, nil, as); err != nil {
 			t.Fatalf("%s %s: %v", transition, id, err)
 		}
-		if _, err := db.Drain(ctx); err != nil {
+		if _, err := db.Drain(ctx, setup); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -122,7 +122,7 @@ func TestExampleApprovals(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if n, err := db.Drain(ctx); err != nil || n != 4 {
+	if n, err := db.Drain(ctx, setup); err != nil || n != 4 {
 		t.Fatalf("submitting two purchases asked %d approvers: %v", n, err)
 	}
 	// Only the approver answers their own approval.

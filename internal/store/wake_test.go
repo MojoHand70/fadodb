@@ -40,7 +40,7 @@ func openWake(t *testing.T) (*Store, *still) {
 	s, _ := openStore(t, Options{Now: cl.Now})
 	ctx := context.Background()
 	for _, def := range []string{wakeLog, wakeTicket} {
-		if _, err := s.DefineClass(ctx, []byte(def)); err != nil {
+		if _, err := s.DefineClass(ctx, []byte(def), asSetup); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -58,7 +58,7 @@ func (c *still) add(d time.Duration) {
 // base.
 func wakes(t *testing.T, s *Store, class, id string, base time.Time) []string {
 	t.Helper()
-	rows, err := s.Outbox(context.Background(), OutboxFilter{Class: class, DocID: id})
+	rows, err := s.Outbox(context.Background(), OutboxFilter{Class: class, DocID: id}, asSetup)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -73,7 +73,7 @@ func wakes(t *testing.T, s *Store, class, id string, base time.Time) []string {
 
 func drain(t *testing.T, s *Store, want int) {
 	t.Helper()
-	n, err := s.Drain(context.Background())
+	n, err := s.Drain(context.Background(), asSetup)
 	if err != nil || n != want {
 		t.Fatalf("the drain attempted %d rows, %v; want %d", n, err, want)
 	}
@@ -118,7 +118,7 @@ func TestWake_Rows(t *testing.T) {
 	if _, err := s.Preview(ctx, "Ticket", "", Values{"limit": limit}, "", As(ann)); err != nil {
 		t.Fatal(err)
 	}
-	if rows, _ := s.Outbox(ctx, OutboxFilter{}); len(rows) != 0 {
+	if rows, _ := s.Outbox(ctx, OutboxFilter{}, asSetup); len(rows) != 0 {
 		t.Fatalf("a preview queued %s", dump(rows))
 	}
 	// No deadline: the at is blank and never comes; the reminder waits.
@@ -129,7 +129,7 @@ func TestWake_Rows(t *testing.T) {
 	same("a create", "T-1", fmt.Sprintf("/transitions/0 pending ann +%d", hour))
 	// The row: after the action the same commit queued, keyed by the
 	// commit's event, with the version it made and what it waits for.
-	rows, _ := s.Outbox(ctx, OutboxFilter{DocID: "T-1"})
+	rows, _ := s.Outbox(ctx, OutboxFilter{DocID: "T-1"}, asSetup)
 	events, _ := s.Events(ctx, "Ticket", "T-1")
 	if len(rows) != 2 || rows[0].Action != "create" || rows[0].Key != events[0].ID+":0" || rows[1].Key != events[0].ID+":1" ||
 		rows[1].Version != doc.Version || rows[1].Depth != 0 || rows[1].Attempts != 0 || rows[1].CreatedAt != dueDay.Unix() ||
@@ -208,7 +208,7 @@ func TestWake_Rows(t *testing.T) {
 	// left to wait for. The commit that makes the guard hold moves it.
 	if _, err := s.DefineClass(ctx, []byte(`{"name": "Held", "variables": {"limit": {"type": "date"}, "ready": {"type": "bool"}},
 	  "states": {"initial": "open", "list": ["open", "late"]},
-	  "transitions": [{"from": "open", "to": "late", "at": "limit", "guard": "ready"}]}`)); err != nil {
+	  "transitions": [{"from": "open", "to": "late", "at": "limit", "guard": "ready"}]}`), asSetup); err != nil {
 		t.Fatal(err)
 	}
 	if doc, err := s.Create(ctx, "Held", Values{"limit": day(-1)}, WithID("H-1"), As(ann)); err != nil || doc.State != "open" {
@@ -223,19 +223,18 @@ func TestWake_Rows(t *testing.T) {
 	if doc, err := s.Set(ctx, "Held", "H-1", Values{"ready": true}, As(bob)); err != nil || doc.State != "late" {
 		t.Errorf("the guard comes to hold: %+v %v", doc, err)
 	}
-	// The row keeps the whole principal: the id, the groups and whether
-	// it is an administrator, as every row of the outbox does.
-	root := Principal{ID: "root", Groups: []string{"ops", "night"}, Admin: true}
-	if _, err := s.Create(ctx, "Ticket", nil, WithID("T-9"), As(root)); err != nil {
+	// The row keeps the whole principal: the id, the groups and the
+	// system groups, as every row of the outbox does.
+	night := Principal{ID: "nora", Groups: []string{"ops", "night"}, System: []string{GroupContentAdministrators}}
+	if _, err := s.Create(ctx, "Ticket", nil, WithID("T-9"), As(night)); err != nil {
 		t.Fatal(err)
 	}
-	for id, want := range map[string]string{"T-9": `root ["ops","night"] 1`, "T-2": `bob ["finance"] 0`} {
+	for id, want := range map[string]string{"T-9": `nora {"groups":["ops","night"],"system":["content-administrators"]}`, "T-2": `bob ["finance"]`} {
 		var who, groups string
-		var admin int
-		if err := s.db.QueryRowContext(ctx, `SELECT principal_id, principal_groups, principal_admin FROM outbox WHERE doc_id = ? AND action = ? ORDER BY event_id, idx LIMIT 1`, id, ActionTimer).Scan(&who, &groups, &admin); err != nil {
+		if err := s.db.QueryRowContext(ctx, `SELECT principal_id, principal_groups FROM outbox WHERE doc_id = ? AND action = ? ORDER BY event_id, idx LIMIT 1`, id, ActionTimer).Scan(&who, &groups); err != nil {
 			t.Fatal(err)
 		}
-		if got := fmt.Sprintf("%s %s %d", who, groups, admin); got != want {
+		if got := fmt.Sprintf("%s %s", who, groups); got != want {
 			t.Errorf("the principal of the wake-up of %s: %s, want %s", id, got, want)
 		}
 	}
@@ -271,7 +270,7 @@ func TestWake_Evidence(t *testing.T) {
 	}
 	events, _ := s.Events(ctx, "Ticket", "T-1")
 	created, ping, late := events[0], events[len(events)-3], events[len(events)-2]
-	rows, _ := s.Outbox(ctx, OutboxFilter{DocID: "T-1"})
+	rows, _ := s.Outbox(ctx, OutboxFilter{DocID: "T-1"}, asSetup)
 	var row, other QueuedAction
 	for _, r := range rows {
 		switch r.Rule {
@@ -363,7 +362,7 @@ func TestWake_ItsStay(t *testing.T) {
 		t.Fatalf("the wake-ups: %q", got)
 	}
 	cl.add(11 * time.Hour)
-	n, err := s.Drain(ctx)
+	n, err := s.Drain(ctx, asSetup)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -378,7 +377,7 @@ func TestWake_ItsStay(t *testing.T) {
 	if doc.State != "late" || moves != 1 || n < 2 {
 		t.Errorf("on the day: %+v after %d rows, %d moves to late", doc, n, moves)
 	}
-	rows, _ := s.Outbox(ctx, OutboxFilter{DocID: "T-1"})
+	rows, _ := s.Outbox(ctx, OutboxFilter{DocID: "T-1"}, asSetup)
 	for _, r := range rows {
 		if r.Status != ActionDone {
 			t.Errorf("a row is left: %s", dump(r))
@@ -396,7 +395,7 @@ func TestWake_ItsStay(t *testing.T) {
 		t.Fatal(err)
 	}
 	cl.days(3)
-	if _, err := s.Drain(ctx); err != nil {
+	if _, err := s.Drain(ctx, asSetup); err != nil {
 		t.Fatal(err)
 	}
 	doc, _ = s.Get(ctx, "Ticket", "T-4")
@@ -413,7 +412,7 @@ func TestWake_ItsStay(t *testing.T) {
 	if doc.State != "late" || doc.StateEnteredBy != "bob" || moved == nil || moved.ActorID != "bob" || moved.CauseEventID != bump.ID {
 		t.Fatalf("the ticket bob bumped: %+v, moved by %+v", doc, moved)
 	}
-	rows, _ = s.Outbox(ctx, OutboxFilter{DocID: "T-4"})
+	rows, _ = s.Outbox(ctx, OutboxFilter{DocID: "T-4"}, asSetup)
 	fired := 0
 	for _, r := range rows {
 		if r.Action != ActionTimer {
@@ -440,10 +439,10 @@ func TestWake_ItsStay(t *testing.T) {
 		t.Fatal(err)
 	}
 	cl.add(2 * time.Hour)
-	if _, err := s.Drain(ctx); err != nil {
+	if _, err := s.Drain(ctx, asSetup); err != nil {
 		t.Fatal(err)
 	}
-	rows, _ = s.Outbox(ctx, OutboxFilter{DocID: "T-2"})
+	rows, _ = s.Outbox(ctx, OutboxFilter{DocID: "T-2"}, asSetup)
 	for _, r := range rows {
 		if r.Status != ActionDone || r.ErrorCode != "" {
 			t.Errorf("a row of the deleted ticket: %s", dump(r))
@@ -478,7 +477,7 @@ func TestWake_Repeats(t *testing.T) {
 	if doc.Values["pings"] != float64(times) || doc.Version != int64(times)+2 || doc.Values["by"] != "ann" {
 		t.Fatalf("after %d hours: %+v", times, doc)
 	}
-	rows, _ := s.Outbox(ctx, OutboxFilter{DocID: "T-1", Limit: 10000})
+	rows, _ := s.Outbox(ctx, OutboxFilter{DocID: "T-1", Limit: 10000}, asSetup)
 	for _, r := range rows {
 		want := 0
 		if r.Action == "create" && r.Version > 1 {
@@ -516,7 +515,7 @@ func TestWake_Dead(t *testing.T) {
 	  "states": {"initial": "set", "list": ["set", "blown"]},
 	  "transitions": [{"name": "blow", "from": "set", "to": "blown", "after": "1m"}],
 	  "rules": [{"on": "transition", "name": "blow", "do": [{"action": "set", "values": {"n": "10 / d"}}]}]}`
-	if _, err := s.DefineClass(ctx, []byte(def)); err != nil {
+	if _, err := s.DefineClass(ctx, []byte(def), asSetup); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := s.Create(ctx, "Fuse", nil, WithID("F-1"), As(ann), BusinessDate(dueDay.AddDate(0, 0, -40))); err != nil {
@@ -524,7 +523,7 @@ func TestWake_Dead(t *testing.T) {
 	}
 	cl.add(13 * time.Hour)
 	drain(t, s, 1)
-	rows, _ := s.Outbox(ctx, OutboxFilter{DocID: "F-1"})
+	rows, _ := s.Outbox(ctx, OutboxFilter{DocID: "F-1"}, asSetup)
 	if len(rows) != 1 || rows[0].Status != ActionDead || rows[0].Attempts != 1 || rows[0].ErrorCode != "div_by_zero" || rows[0].OutcomeEvent == "" {
 		t.Fatalf("the row: %s", dump(rows))
 	}
@@ -559,11 +558,11 @@ func TestWake_Dead(t *testing.T) {
 	}
 	// A retry of the dead row asks again: the fuse has moved on, and
 	// the row is done with nothing more to do.
-	if err := s.RetryAction(ctx, rows[0].Key); err != nil {
+	if err := s.RetryAction(ctx, rows[0].Key, asSetup); err != nil {
 		t.Fatal(err)
 	}
 	drain(t, s, 1)
-	rows, _ = s.Outbox(ctx, OutboxFilter{DocID: "F-1"})
+	rows, _ = s.Outbox(ctx, OutboxFilter{DocID: "F-1"}, asSetup)
 	if rows[0].Status != ActionDone || rows[0].ErrorCode != "" || rows[0].OutcomeEvent != "" {
 		t.Errorf("the row after the retry: %s", dump(rows[0]))
 	}
@@ -582,7 +581,7 @@ func TestWake_OrderOfTheDocument(t *testing.T) {
 	}}
 	s, _ := openStore(t, Options{Now: cl.Now, Actions: map[string]ActionFunc{"audit.ping": rec.fn}})
 	ctx := context.Background()
-	if _, err := s.DefineAction(ctx, []byte(auditPing)); err != nil {
+	if _, err := s.DefineAction(ctx, []byte(auditPing), asSetup); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := s.DefineClass(ctx, []byte(`{"name": "Job", "variables": {"note": {"type": "text"}, "runs": {"type": "number", "default": "0"}},
@@ -590,7 +589,7 @@ func TestWake_OrderOfTheDocument(t *testing.T) {
 	  "transitions": [{"name": "run", "from": "idle", "to": "idle", "after": "1m"}],
 	  "rules": [
 	    {"on": "transition", "name": "run", "do": [{"action": "set", "values": {"runs": "runs + 1"}}]},
-	    {"on": "values_change", "variables": ["note"], "do": [{"action": "audit.ping", "args": {"note": "note"}}]}]}`)); err != nil {
+	    {"on": "values_change", "variables": ["note"], "do": [{"action": "audit.ping", "args": {"note": "note"}}]}]}`), asSetup); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := s.Create(ctx, "Job", nil, WithID("J-1"), As(ann)); err != nil {
@@ -608,7 +607,7 @@ func TestWake_OrderOfTheDocument(t *testing.T) {
 	// from now by the still clock: it is pending, before the wake-up of
 	// the next stay in the order of the keys. Move the clock to the
 	// wake-up's minute but keep the action waiting: make it fail anew.
-	rows, _ := s.Outbox(ctx, OutboxFilter{DocID: "J-1"})
+	rows, _ := s.Outbox(ctx, OutboxFilter{DocID: "J-1"}, asSetup)
 	if len(rows) != 2 || rows[1].Action != "audit.ping" || rows[1].Status != ActionPending || rows[1].Attempts != 1 {
 		t.Fatalf("the rows: %s", dump(rows))
 	}
@@ -623,14 +622,14 @@ func TestWake_OrderOfTheDocument(t *testing.T) {
 	if doc.Values["runs"] != float64(1) {
 		t.Fatalf("the wake-up waited behind the action: %+v", doc)
 	}
-	rows, _ = s.Outbox(ctx, OutboxFilter{DocID: "J-1"})
+	rows, _ = s.Outbox(ctx, OutboxFilter{DocID: "J-1"}, asSetup)
 	if rows[1].Status != ActionPending || rows[1].Attempts != 2 || rows[0].Status != ActionDone {
 		t.Errorf("the rows: %s", dump(rows))
 	}
 	// And the wake-up of the new stay, queued after the waiting action,
 	// fires a minute on while the action still waits.
 	cl.add(time.Minute)
-	if _, err := s.Drain(ctx); err != nil {
+	if _, err := s.Drain(ctx, asSetup); err != nil {
 		t.Fatal(err)
 	}
 	doc, _ = s.Get(ctx, "Job", "J-1")
@@ -650,7 +649,7 @@ func TestWake_ClassVersions(t *testing.T) {
 	def := `{"name": "Lead", "variables": {"n": {"type": "number"}%s},
 	  "states": {"initial": "open", "list": ["open", "stale", "cold"]},
 	  "transitions": [{"name": "drop", "from": "open", "to": "cold"}%s]}`
-	if _, err := s.DefineClass(ctx, []byte(fmt.Sprintf(def, "", ""))); err != nil {
+	if _, err := s.DefineClass(ctx, []byte(fmt.Sprintf(def, "", "")), asSetup); err != nil {
 		t.Fatal(err)
 	}
 	for i := 0; i < 4; i++ {
@@ -658,15 +657,15 @@ func TestWake_ClassVersions(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if rows, _ := s.Outbox(ctx, OutboxFilter{}); len(rows) != 0 {
+	if rows, _ := s.Outbox(ctx, OutboxFilter{}, asSetup); len(rows) != 0 {
 		t.Fatalf("a class without a timer queued %s", dump(rows))
 	}
 	// The second version says a lead goes stale after two days, and
 	// computes a label.
-	if _, err := s.DefineClass(ctx, []byte(fmt.Sprintf(def, `, "label": {"formula": "\"lead \" & TEXT(n)"}`, `, {"from": "open", "to": "stale", "after": "2d"}`))); err != nil {
+	if _, err := s.DefineClass(ctx, []byte(fmt.Sprintf(def, `, "label": {"formula": "\"lead \" & TEXT(n)"}`, `, {"from": "open", "to": "stale", "after": "2d"}`)), asSetup); err != nil {
 		t.Fatal(err)
 	}
-	if rows, _ := s.Outbox(ctx, OutboxFilter{}); len(rows) != 0 {
+	if rows, _ := s.Outbox(ctx, OutboxFilter{}, asSetup); len(rows) != 0 {
 		t.Fatalf("the definition queued %s", dump(rows))
 	}
 	// A commit that touches a lead adopts it and queues its wake-up, as
@@ -686,7 +685,7 @@ func TestWake_ClassVersions(t *testing.T) {
 		t.Errorf("the lead touched twice: %q", got)
 	}
 	// Migrate brings the others up, and their wake-ups with them.
-	if _, err := s.Migrate(ctx, "Lead", As(ann)); err != nil {
+	if _, err := s.Migrate(ctx, "Lead", designing(ann)); err != nil {
 		t.Fatal(err)
 	}
 	for i := 1; i < 4; i++ {
@@ -698,7 +697,7 @@ func TestWake_ClassVersions(t *testing.T) {
 	// A third version, defined while the wake-ups wait: a variable more.
 	// The wake-up of a lead no commit has touched since fires under it:
 	// the move adopts the lead, in the one version it writes.
-	if _, err := s.DefineClass(ctx, []byte(fmt.Sprintf(def, `, "label": {"formula": "\"lead \" & TEXT(n)"}, "twice": {"formula": "n * 2"}`, `, {"from": "open", "to": "stale", "after": "2d"}`))); err != nil {
+	if _, err := s.DefineClass(ctx, []byte(fmt.Sprintf(def, `, "label": {"formula": "\"lead \" & TEXT(n)"}, "twice": {"formula": "n * 2"}`, `, {"from": "open", "to": "stale", "after": "2d"}`)), asSetup); err != nil {
 		t.Fatal(err)
 	}
 	cl.days(1)
@@ -715,13 +714,13 @@ func TestWake_ClassVersions(t *testing.T) {
 	if _, err := s.Create(ctx, "Lead", Values{"n": 7}, WithID("L-7"), As(ann)); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.DefineClass(ctx, []byte(fmt.Sprintf(def, `, "label": {"formula": "\"lead \" & TEXT(n)"}, "twice": {"formula": "n * 2"}`, ""))); err != nil {
+	if _, err := s.DefineClass(ctx, []byte(fmt.Sprintf(def, `, "label": {"formula": "\"lead \" & TEXT(n)"}, "twice": {"formula": "n * 2"}`, "")), asSetup); err != nil {
 		t.Fatal(err)
 	}
 	cl.days(3)
 	drain(t, s, 1)
 	doc, _ = s.Get(ctx, "Lead", "L-7")
-	rows, _ := s.Outbox(ctx, OutboxFilter{DocID: "L-7"})
+	rows, _ := s.Outbox(ctx, OutboxFilter{DocID: "L-7"}, asSetup)
 	if doc.State != "open" || doc.Version != 1 || doc.ClassVersion != 3 || len(rows) != 1 || rows[0].Status != ActionDone || rows[0].OutcomeEvent != "" {
 		t.Errorf("the lead whose timer was dropped: %+v, %s", doc, dump(rows))
 	}
@@ -741,7 +740,7 @@ func TestWake_TheWorker(t *testing.T) {
 	ctx := context.Background()
 	if _, err := s.DefineClass(ctx, []byte(`{"name": "Egg", "variables": {"n": {"type": "number"}},
 	  "states": {"initial": "raw", "list": ["raw", "done"]},
-	  "transitions": [{"from": "raw", "to": "done", "after": "1s"}]}`)); err != nil {
+	  "transitions": [{"from": "raw", "to": "done", "after": "1s"}]}`), asSetup); err != nil {
 		t.Fatal(err)
 	}
 	doc, err := s.Create(ctx, "Egg", nil, As(ann))
@@ -764,7 +763,7 @@ func TestWake_TheWorker(t *testing.T) {
 			break
 		}
 		if time.Now().After(deadline) {
-			rows, _ := s.Outbox(ctx, OutboxFilter{DocID: doc.ID})
+			rows, _ := s.Outbox(ctx, OutboxFilter{DocID: doc.ID}, asSetup)
 			t.Fatalf("the worker left the egg raw: %s", dump(rows))
 		}
 		time.Sleep(5 * time.Millisecond)
@@ -795,7 +794,7 @@ func TestWake_TellsTheWorkerWhenItMatters(t *testing.T) {
 		`{"name": "Many", "variables": {"n": {"type": "number"}}, "states": {"initial": "a", "list": ["a", "b"]}, "transitions": [{"from": "a", "to": "b", "after": "12s"}]}`,
 		`{"name": "Old", "variables": {"n": {"type": "number"}}, "states": {"initial": "a", "list": ["a", "b"]}, "transitions": [{"name": "go", "from": "a", "to": "b"}]}`,
 	} {
-		if _, err := s.DefineClass(ctx, []byte(def)); err != nil {
+		if _, err := s.DefineClass(ctx, []byte(def), asSetup); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -869,13 +868,13 @@ func TestWake_TellsTheWorkerWhenItMatters(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, err := s.DefineClass(ctx, []byte(`{"name": "Old", "variables": {"n": {"type": "number"}}, "states": {"initial": "a", "list": ["a", "b"]},
-	  "transitions": [{"name": "go", "from": "a", "to": "b"}, {"from": "a", "to": "b", "after": "6s"}]}`)); err != nil {
+	  "transitions": [{"name": "go", "from": "a", "to": "b"}, {"from": "a", "to": "b", "after": "6s"}]}`), asSetup); err != nil {
 		t.Fatal(err)
 	}
 	if n := settled(); n != after {
 		t.Errorf("a definition made the worker look %d times", n-after)
 	}
-	if _, err := s.Migrate(ctx, "Old"); err != nil {
+	if _, err := s.Migrate(ctx, "Old", asSetup); err != nil {
 		t.Fatal(err)
 	}
 	sleeps("a migration into a class with a timer", 6)
@@ -921,7 +920,7 @@ func TestWake_SurvivesACrashAtEveryStep(t *testing.T) {
 			}
 			defer s.Close()
 			ctx := context.Background()
-			n, err := s.Drain(ctx)
+			n, err := s.Drain(ctx, asSetup)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -965,14 +964,14 @@ func TestWakeCrashHelper(t *testing.T) {
 	}
 	ctx := context.Background()
 	for _, def := range []string{wakeLog, wakeTicket} {
-		if _, err := s.DefineClass(ctx, []byte(def)); err != nil {
+		if _, err := s.DefineClass(ctx, []byte(def), asSetup); err != nil {
 			t.Fatal(err)
 		}
 	}
 	if _, err := s.Create(ctx, "Ticket", nil, WithID("T-1"), As(ann)); err != nil {
 		t.Fatal(err)
 	}
-	if n, err := s.Drain(ctx); err != nil || n != 1 {
+	if n, err := s.Drain(ctx, asSetup); err != nil || n != 1 {
 		t.Fatalf("the first drain: %d %v", n, err)
 	}
 	cl.add(time.Hour)
@@ -985,6 +984,6 @@ func TestWakeCrashHelper(t *testing.T) {
 		}
 		return nil
 	}
-	_, err = s.Drain(ctx)
+	_, err = s.Drain(ctx, asSetup)
 	t.Fatalf("the helper reached the end of the drain: %v", err)
 }

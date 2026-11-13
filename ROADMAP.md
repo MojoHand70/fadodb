@@ -19,9 +19,10 @@ formula can read the documents of another class, one value or a count,
 a sum, the smallest or the largest. A formula reads the life of its
 document, a transition may carry its time, and the engine moves the
 document by itself when that time comes. The access rules of a class
-are enforced (ADR-0049); the system groups and the substitutions the
-owner accepted with them are not built yet, and the server comes with
-its phase.
+are enforced (ADR-0049), and four system groups hold the work that is
+not about one document (ADR-0052); a rule left out letting nobody
+through, the reason a content administrator gives, and substitutions
+are accepted and not built yet, and the server comes with its phase.
 Since v0.1.0 the records ADR-0022 to
 ADR-0038 fixed what the first embedder needs and what Phase 2 measured:
 SQLite as the transactional store and the in-memory index for lookups, by
@@ -168,16 +169,21 @@ costs without one. Its third step is built on ADR-0050: a
 principal says whether it is a person, an agent or a service, and for
 whom it acts; `USERKIND()` and `ACTINGFOR()` answer both to a formula;
 and every event records them, under engine schema 6. Its fourth step
-is built on ADR-0051 as it was first proposed: the host program
-names the groups that may define, operate the queue and run SQL, and a
-table has a read rule and a write rule.
-What is built is behind the rulings in three ways, until the steps
-that follow: a rule a class leaves out still lets every caller
-through; a host program that names no group is still asked nothing;
-and one administrator's flag still passes everything. Not built yet:
-the system groups and the content administrator's override with its
-reason (ADR-0052), the record of who defined each version of a class,
-substitutions (ADR-0053), and the measurements that close the phase.
+is built on ADR-0051: defining, operating the queue and running SQL
+each ask who the caller is, and a table has a read rule and a write
+rule. Its fifth step is the system groups of ADR-0052: the
+administrator's flag is gone, and `administrators`, `designers`,
+`content-administrators` and `analysts` hold what it did, each its own
+part; the host program gives them to a caller apart from its other
+groups; a class can ask for them with `INGROUP`, and for `everyone`,
+which is every caller that has an id; and work nobody was given is
+done by nobody, a call without a principal included.
+What is built is behind the rulings in two ways, until the steps that
+follow: a rule a class leaves out still lets every caller through, and
+a content administrator's act past a rule needs no reason and leaves
+no mark. Not built yet beside those: the record of who defined each
+version of a class, substitutions (ADR-0053), and the measurements
+that close the phase.
 This page is updated when a phase starts and when it ends;
 it never describes a phase as done before its acceptance criteria pass.
 

@@ -53,12 +53,36 @@ type Plan struct {
 }
 
 // Principal is who a filter runs for (ADR-0041): the id and the groups
-// its read rights are compiled with, and whether it is an administrator,
-// who reads everything.
+// its read rights are compiled with, the system groups it is in, and
+// whether it is a content administrator, who reads everything
+// (ADR-0052).
 type Principal struct {
-	ID     string
-	Groups []string
-	Admin  bool
+	ID      string
+	Groups  []string
+	System  []string
+	Content bool
+}
+
+// in reports whether the principal is in one of the groups listed: its
+// own, its system groups, or everyone, which a principal that has an id
+// is in (ADR-0052). It answers what INGROUP answers on the Go VM.
+func (p Principal) in(list []string) bool {
+	for _, g := range list {
+		for _, h := range p.Groups {
+			if g == h {
+				return true
+			}
+		}
+		for _, h := range p.System {
+			if g == h {
+				return true
+			}
+		}
+		if p.ID != "" && g == formula.GroupEveryone {
+			return true
+		}
+	}
+	return false
 }
 
 // named says of an operand of a comparison that it is the caller's id
@@ -202,7 +226,7 @@ func Compile(f Filter, cls *model.Class, sources formula.Sources, p Principal) (
 	// The read rule of the class (ADR-0049, item 5): one more predicate,
 	// from the formula the Go VM runs for a read by id, so that a filter
 	// and a count leave out what the caller may not see.
-	if !p.Admin {
+	if !p.Content {
 		rp, err := readPlanFor(cls, scope, cols, sources, d, quoted, p)
 		if err != nil {
 			return nil, err
@@ -260,7 +284,7 @@ func Compile(f Filter, cls *model.Class, sources formula.Sources, p Principal) (
 	// read it, so the engine never compares a value the caller may not
 	// see. The right is one predicate per variable, conjoined with the
 	// rest; a variable readable in no state at all refuses the filter.
-	if cls.Rights != nil && !p.Admin && cls.States != nil {
+	if cls.Rights != nil && !p.Content && cls.States != nil {
 		rights := rightsPlanFor(cls, d, quoted)
 		var named []*varRights
 		var preds []string
@@ -406,7 +430,7 @@ type readPlan struct {
 const maxReadPlans = 256
 
 // The predicates of a class without a read rule: every caller sees
-// every document, or none but an administrator does (ADR-0049, the open
+// every document, or none but a content administrator does (ADR-0049,
 // question A).
 var (
 	readAll  = &readPlan{}
@@ -440,7 +464,7 @@ func readPlanFor(cls *model.Class, scope *formula.Scope, cols map[string]column,
 	// The outcome of the caller's part: one bit for each INGROUP call.
 	var mask uint64
 	for i, call := range rr.groups {
-		if inGroups([]string{call.Args[0].(*formula.TextLit).Value}, p.Groups) {
+		if p.in([]string{call.Args[0].(*formula.TextLit).Value}) {
 			mask |= 1 << i
 		}
 	}
@@ -781,7 +805,7 @@ func (vr *varRights) compose(p Principal, d formula.Dialect) (text string, reada
 		cond := d.True()
 		switch {
 		case sr.groups != nil:
-			if !inGroups(sr.groups, p.Groups) {
+			if !p.in(sr.groups) {
 				cond = d.False()
 			}
 		case sr.sql != "":
@@ -798,17 +822,6 @@ func (vr *varRights) compose(p Principal, d formula.Dialect) (text string, reada
 		return "", false
 	}
 	return `(CASE "state"` + b.String() + " ELSE " + d.False() + " END)", true
-}
-
-func inGroups(list, groups []string) bool {
-	for _, g := range list {
-		for _, h := range groups {
-			if g == h {
-				return true
-			}
-		}
-	}
-	return false
 }
 
 func formulaError(err error) *Error {

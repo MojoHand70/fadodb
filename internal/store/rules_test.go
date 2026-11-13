@@ -44,7 +44,7 @@ const ruledTicket = `{
 
 func defineTicket(t *testing.T, s *Store) {
 	t.Helper()
-	if _, err := s.DefineClass(context.Background(), []byte(ruledTicket)); err != nil {
+	if _, err := s.DefineClass(context.Background(), []byte(ruledTicket), asSetup); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -260,7 +260,7 @@ func TestRules_PreviewReport(t *testing.T) {
 
 	// A draft's rules are reported the same way.
 	draft := strings.Replace(ruledTicket, `"ticket.heavy"`, `"ticket.very_heavy"`, 1)
-	pv, err = s.PreviewDraft(ctx, []byte(draft), doc.ID, nil, "take", As(alice))
+	pv, err = s.PreviewDraft(ctx, []byte(draft), doc.ID, nil, "take", designing(alice))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -283,7 +283,7 @@ func TestRules_ConditionAndActionErrors(t *testing.T) {
  "rules": [
    {"on": "transition", "name": "go", "if": "1 / n > 0", "do": [{"action": "set", "values": {"label": "\"ran\""}}]},
    {"on": "transition", "name": "split", "do": [{"action": "set", "values": {"share": "n"}}]}
- ]}`)); err != nil {
+ ]}`), asSetup); err != nil {
 		t.Fatal(err)
 	}
 	doc, err := s.Create(ctx, "Part", Values{"n": 0, "share": 4})
@@ -329,14 +329,14 @@ func TestRules_ValuesChangeAcrossAClassVersion(t *testing.T) {
  "states": {"initial": "on", "list": ["on"]},
  "rules": [{"on": "values_change", "variables": ["twice"], "do": [{"action": "set", "values": {"note": "\"twice changed\""}}, {"action": "emit", "event": "meter.recomputed"}]},
            {"on": "values_change", "variables": ["note"], "do": [{"action": "emit", "event": "meter.noted"}]}]}`
-	if _, err := s.DefineClass(ctx, []byte(v1)); err != nil {
+	if _, err := s.DefineClass(ctx, []byte(v1), asSetup); err != nil {
 		t.Fatal(err)
 	}
 	doc, err := s.Create(ctx, "Meter", Values{"n": 5})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.DefineClass(ctx, []byte(v2)); err != nil {
+	if _, err := s.DefineClass(ctx, []byte(v2), asSetup); err != nil {
 		t.Fatal(err)
 	}
 	// n is given the value it has: the commit adopts the new version, and

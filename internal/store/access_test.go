@@ -41,14 +41,30 @@ var (
 	clerkBob = Principal{ID: "bob", Groups: []string{"staff"}}
 	hr       = Principal{ID: "hana", Groups: []string{"hr"}}
 	guest    = Principal{ID: "guest"}
-	root     = Principal{ID: "root", Admin: true}
+	// root is in all four system groups (ADR-0052): it does the work that
+	// is not about one document, and as a content administrator passes
+	// the rules of every class.
+	root = Principal{ID: "root", System: []string{GroupAdministrators, GroupDesigners, GroupContentAdministrators, GroupAnalysts}}
+	// setup does the three kinds of work that are not about one document,
+	// as the setup code of a host program does: it defines, operates the
+	// queue and runs SQL. It is no content administrator, so the rules of
+	// a class hold for it as for anybody.
+	setup   = Principal{ID: "setup", System: []string{GroupAdministrators, GroupDesigners, GroupAnalysts}}
+	asSetup = As(setup)
 )
+
+// designing is the principal as a designer too, which a caller who
+// previews a draft or migrates has to be (ADR-0052).
+func designing(p Principal) Option {
+	p.System = append(append([]string(nil), p.System...), GroupDesigners)
+	return As(p)
+}
 
 func openClaims(t *testing.T) (*Store, context.Context) {
 	t.Helper()
 	s, _ := openStore(t, Options{})
 	ctx := context.Background()
-	if _, err := s.DefineClass(ctx, []byte(claimClass)); err != nil {
+	if _, err := s.DefineClass(ctx, []byte(claimClass), asSetup); err != nil {
 		t.Fatal(err)
 	}
 	return s, ctx
@@ -295,7 +311,7 @@ func TestAccess_TheBareReply(t *testing.T) {
  "states": {"initial": "filed", "list": ["filed", "heard"]},
  "transitions": [{"name": "hear", "from": "filed", "to": "heard"}],
  "access": {"read": "INGROUP(\"hr\")"}}`
-	if _, err := s.DefineClass(ctx, []byte(complaint)); err != nil {
+	if _, err := s.DefineClass(ctx, []byte(complaint), asSetup); err != nil {
 		t.Fatal(err)
 	}
 	isBare := func(what string, d *Document, err error) {
@@ -346,7 +362,7 @@ func TestAccess_RulesAndTimers(t *testing.T) {
             "do": [{"action": "create", "class": "Vault", "values": {}},
                    {"action": "refresh", "class": "Vault", "id": "vault"}]}]}`,
 	} {
-		if _, err := s.DefineClass(ctx, []byte(def)); err != nil {
+		if _, err := s.DefineClass(ctx, []byte(def), asSetup); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -363,10 +379,10 @@ func TestAccess_RulesAndTimers(t *testing.T) {
 	if err != nil || sent.State != "sent" || len(sent.Values) != 0 {
 		t.Fatalf("ann sends the slip: %v %s", err, dump(sent))
 	}
-	if _, err := s.Drain(ctx); err != nil {
+	if _, err := s.Drain(ctx, asSetup); err != nil {
 		t.Fatal(err)
 	}
-	dead, err := s.Outbox(ctx, OutboxFilter{Status: ActionDead})
+	dead, err := s.Outbox(ctx, OutboxFilter{Status: ActionDead}, asSetup)
 	if err != nil || len(dead) != 2 {
 		t.Fatalf("the actions ann may not cause: %v %s", err, dump(dead))
 	}
@@ -392,7 +408,7 @@ func TestAccess_RulesAndTimers(t *testing.T) {
 	now.mu.Lock()
 	now.now = now.now.Add(2 * 3600 * 1e9)
 	now.mu.Unlock()
-	if _, err := s.Drain(ctx); err != nil {
+	if _, err := s.Drain(ctx, asSetup); err != nil {
 		t.Fatal(err)
 	}
 	got, err := s.Get(ctx, "Slip", slip.ID, As(hr))
@@ -404,13 +420,13 @@ func TestAccess_RulesAndTimers(t *testing.T) {
 	if _, err := s.Transition(ctx, "Slip", slip2.ID, "send", nil, As(hr)); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.Drain(ctx); err != nil {
+	if _, err := s.Drain(ctx, asSetup); err != nil {
 		t.Fatal(err)
 	}
 	if n, _ := s.Count(ctx, Filter{Class: "Vault"}, As(root)); n != 2 {
 		t.Errorf("vaults after HR sent a slip: %d", n)
 	}
-	if dead, _ := s.Outbox(ctx, OutboxFilter{Status: ActionDead}); len(dead) != 2 {
+	if dead, _ := s.Outbox(ctx, OutboxFilter{Status: ActionDead}, asSetup); len(dead) != 2 {
 		t.Errorf("dead actions after HR sent a slip: %s", dump(dead))
 	}
 }
@@ -458,10 +474,10 @@ func TestAccess_Due(t *testing.T) {
  "states": {"initial": "open", "list": ["open", "done"]},
  "transitions": [{"from": "open", "to": "done", "guard": "LOOKUP(Flags, on, name = \"go\")"}],
  "access": {"read": "owner = USER()"}}`
-	if _, err := s.DefineTable(ctx, []byte(`{"name": "Flags", "columns": {"name": "text", "on": "bool"}, "key": ["name"]}`)); err != nil {
+	if _, err := s.DefineTable(ctx, []byte(`{"name": "Flags", "columns": {"name": "text", "on": "bool"}, "key": ["name"]}`), asSetup); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.DefineClass(ctx, []byte(task)); err != nil {
+	if _, err := s.DefineClass(ctx, []byte(task), asSetup); err != nil {
 		t.Fatal(err)
 	}
 	mine, _ := s.Create(ctx, "Task", nil, As(clerkAnn))
@@ -492,7 +508,7 @@ func TestAccess_ARuleLeftOut(t *testing.T) {
 	ctx := context.Background()
 	const memo = `{"name": "Memo", "variables": {"text": {"type": "text"}},
  "states": {"initial": "a", "list": ["a", "b"]}, "transitions": [{"name": "go", "from": "a", "to": "b"}]}`
-	if _, err := s.DefineClass(ctx, []byte(memo)); err != nil {
+	if _, err := s.DefineClass(ctx, []byte(memo), asSetup); err != nil {
 		t.Fatal(err)
 	}
 	doc, err := s.Create(ctx, "Memo", Values{"text": "hello"})
@@ -551,7 +567,7 @@ func TestAccess_LiteralsAndOlderVersions(t *testing.T) {
 		return `{"name": "Note", "variables": {"region": {"type": "text", "index": true}, "owner": {"type": "text", "default": "USER()"}, "n": {"type": "number"}},
  "states": {"initial": "a", "list": ["a"]}` + access + `}`
 	}
-	if _, err := s.DefineClass(ctx, []byte(note(""))); err != nil {
+	if _, err := s.DefineClass(ctx, []byte(note("")), asSetup); err != nil {
 		t.Fatal(err)
 	}
 	eu, _ := s.Create(ctx, "Note", Values{"region": "EU", "n": 1}, As(clerkAnn))
@@ -561,7 +577,7 @@ func TestAccess_LiteralsAndOlderVersions(t *testing.T) {
 	}
 	// The class gains a read rule: a new version, which touches no
 	// document.
-	if _, err := s.DefineClass(ctx, []byte(note(`, "access": {"read": "region = \"EU\" AND (n > 0 OR owner = USER())"}`))); err != nil {
+	if _, err := s.DefineClass(ctx, []byte(note(`, "access": {"read": "region = \"EU\" AND (n > 0 OR owner = USER())"}`)), asSetup); err != nil {
 		t.Fatal(err)
 	}
 	for _, where := range []string{"", "n > 0", "region <> \"\""} {
@@ -622,7 +638,7 @@ func TestAccess_EveryPathAgrees(t *testing.T) {
 		ctx := context.Background()
 		def := `{"name": "Doc", "variables": {"owner": {"type": "text", "index": true}, "region": {"type": "text"}, "n": {"type": "number"}},
  "states": {"initial": "a", "list": ["a"]}, "access": {"read": "` + rule + `"}}`
-		if _, err := s.DefineClass(ctx, []byte(def)); err != nil {
+		if _, err := s.DefineClass(ctx, []byte(def), asSetup); err != nil {
 			t.Fatalf("%s: %v", rule, err)
 		}
 		var ids []string
@@ -690,7 +706,7 @@ func TestAccess_OwnDocumentsThroughTheIndex(t *testing.T) {
 	ctx := context.Background()
 	const def = `{"name": "Doc", "variables": {"owner": {"type": "text", "default": "USER()", "index": true}, "n": {"type": "number"}},
  "states": {"initial": "a", "list": ["a"]}, "access": {"read": "owner = USER() OR INGROUP(\"hr\")"}}`
-	if _, err := s.DefineClass(ctx, []byte(def)); err != nil {
+	if _, err := s.DefineClass(ctx, []byte(def), asSetup); err != nil {
 		t.Fatal(err)
 	}
 	for i := 0; i < 50; i++ {

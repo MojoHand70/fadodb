@@ -283,9 +283,11 @@ func TestTriggered_EngineSchema(t *testing.T) {
 	// ADR-0043 made it 3, for the moment columns; the columns of an
 	// action's result that was not stored made it 4 (ADR-0045, item 8);
 	// who made a version and where the document came from, and the origin
-	// of an entry in the log, made it 5 (ADR-0047, items 3 and 4).
-	if engineSchema != 5 {
-		t.Fatalf("the engine schema is %d, want 5", engineSchema)
+	// of an entry in the log, made it 5 (ADR-0047, items 3 and 4); what
+	// the actor of an event was and for whom it acted made it 6
+	// (ADR-0050, item 4).
+	if engineSchema != 6 {
+		t.Fatalf("the engine schema is %d, want 6", engineSchema)
 	}
 	if _, err := s.writer.ExecContext(context.Background(), "UPDATE schema_version SET version = 3"); err != nil {
 		t.Fatal(err)

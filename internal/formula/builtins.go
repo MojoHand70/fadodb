@@ -71,6 +71,8 @@ var builtins = []*builtin{
 	{name: "TODAY", class: ClassContext, args: []argKind{}, result: KindDate, fn: fnToday},
 	{name: "USER", class: ClassContext, args: []argKind{}, result: KindText, fn: fnUser},
 	{name: "INGROUP", class: ClassContext, args: []argKind{akText}, result: KindBool, fn: fnInGroup},
+	{name: "USERKIND", class: ClassContext, args: []argKind{}, result: KindText, fn: fnUserKind},
+	{name: "ACTINGFOR", class: ClassContext, args: []argKind{}, result: KindText, fn: fnActingFor},
 	{name: "STATE", class: ClassContext, args: []argKind{}, result: KindText, fn: fnState},
 	{name: "ID", class: ClassContext, args: []argKind{}, result: KindText, fn: fnID},
 	// Text
@@ -1101,6 +1103,24 @@ func fnUser(vm *VM, _ []Value) (Value, *EvalError) {
 		return Blank(), nil
 	}
 	return Text(vm.ctx.User), nil
+}
+
+// fnUserKind is what the user is, as the host program said: person,
+// agent or service; blank when it did not say (ADR-0050).
+func fnUserKind(vm *VM, _ []Value) (Value, *EvalError) {
+	if vm.ctx == nil || vm.ctx.Kind == "" {
+		return Blank(), nil
+	}
+	return Text(vm.ctx.Kind), nil
+}
+
+// fnActingFor is the id of whoever the user acts for; blank when it acts
+// for itself (ADR-0050).
+func fnActingFor(vm *VM, _ []Value) (Value, *EvalError) {
+	if vm.ctx == nil || vm.ctx.For == "" {
+		return Blank(), nil
+	}
+	return Text(vm.ctx.For), nil
 }
 
 func fnState(vm *VM, _ []Value) (Value, *EvalError) {

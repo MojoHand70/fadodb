@@ -6,6 +6,111 @@ All notable changes to FadoDB are recorded here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- The four rules of a class are enforced (ADR-0049, proposed): `read`,
+  `create`, `update` and `delete` under `access`, each a condition over
+  the document for the caller. A document its caller may not see is
+  answered as one that does not exist, `unknown_document` in the same
+  words, by `Get`, `Version`, `Transitions`, `Preview`, `OpenFile` and
+  every command that names it; `History` and `Events` answer nothing,
+  and `Query`, `Count` and `Due` leave it out, the rule being one more
+  predicate of the filter. `TransitionMany` reports it as
+  `unknown_document`. The history of a document is read under the rule
+  as the document is now, and over its last version once it is
+  deleted.
+- A caller who sees a document and may not do what they ask is refused
+  with `forbidden`, and `Error.Path` names the rule: `/access/create`,
+  `/access/update`, `/access/delete`, `/access/transition/<name>`. The
+  hint is the rule. `create` is asked over the new document with its
+  defaults and its computed values, `update` and `delete` over the
+  stored one. `Set` and `Reset` ask `update`; `Refresh`, and a set that
+  names no value, ask only to see the document.
+- A command whose caller may not see what it left is answered with the
+  document's id, version and state and no values, and a repeat of its
+  key the same way.
+- `PreviewDelete` says whether a delete would be refused and which
+  rules it would run, and writes nothing. `Preview` reports a refusal
+  of `create` or `update` under its errors and goes on.
+- `OpenFile` asks the read rule of the document and the read right of
+  the variable that holds the file.
+- `conformance/access/` is the suite of the rules: every path, for every
+  caller. `BenchmarkTransitionAccess` is in the benchmark gate: a
+  transition on a class with rules allocates what it does without them.
+- A filter decides the caller's part of a read rule before it writes
+  its statement (ADR-0049, item 5). `INGROUP("finance")` has one answer
+  for the whole statement, so `owner = USER() OR INGROUP("finance")` is
+  nothing at all for a member of finance and `owner = USER()` for
+  anybody else, and a statement is kept for each outcome, not for each
+  caller. A caller who sees only their own documents lists and counts
+  them through the index on the owner, at the cost of the same
+  condition written out.
+- A text variable compared with the caller, `owner = USER()`, is
+  answered from the variable's index in any filter, in a `where` as in
+  a read rule. Before, such a filter read every document of the class.
+- A principal says what it is and for whom it acts (ADR-0050,
+  proposed): `Principal.Kind` is `ActorPerson`, `ActorAgent` or
+  `ActorService`, or empty when the host program does not know, and
+  `Principal.For` is the id of whoever the caller acts for. The engine
+  trusts both as it trusts the id. Any other kind is refused with
+  `bad_value`.
+- Two functions answer them to a formula, wherever `USER()` may stand:
+  `USERKIND()` and `ACTINGFOR()`, each blank when the host program said
+  nothing. `USER()` stays the one who acts. A step kept for people is
+  `USERKIND() = "person"`; an assistant sees what its principal owns
+  where the rule says `owner = ACTINGFOR()`. They evaluate alike on the
+  Go VM, SQLite and DuckDB, with cases in
+  `conformance/formula/context.json`.
+- Every event records `actor_kind` and `actor_for` beside `actor_id`:
+  `Event.ActorKind` and `Event.ActorFor`, the `_events` view, the
+  `_states` view as `entered_by_kind`, `entered_for`, `left_by_kind`
+  and `left_for`, and the event an action receives, in
+  `api/event.schema.json`. An action and a timer run as whoever set
+  them off, with what that caller was; `QueuedAction` shows it.
+  `conformance/access/actors.json` is the suite.
+- The host program names who may do the three kinds of work that are
+  not about one document (ADR-0051, proposed): `Options.Designers` for
+  defining classes, schemas, tables and actions, previewing a draft
+  and migrating; `Options.Operators` for the outbox, `Drain`,
+  `PreviewAction`, `TryAction` and `CheckBlobs`; `Options.Analysts`
+  for `SQL`, which reads every row and every variable. Each is a list
+  of groups; an administrator may do all three. Anybody else is
+  refused with `forbidden`, and the refusal names the option. A list
+  that is empty leaves its work to administrators. A host program that
+  names no list at all is asked nothing, as before, until the owner
+  accepts the record.
+- `DefineClass`, `DefineClasses`, `DefineSchema`, `DefineTable`,
+  `DefineAction`, `Outbox`, `RetryAction`, `Drain`, `PreviewAction`,
+  `TryAction`, `CheckBlobs` and `TableRows` take the options of a
+  call, and with them `As`.
+- A table has two rules (ADR-0051, item 7): `"access": {"read": ...,
+  "write": ...}` in its definition, each a condition over the caller
+  and the clock, about the table as a whole. `TableRows` asks `read`;
+  `ImportRows` asks `write`, and so do the `table.insert`,
+  `table.update` and `table.delete` actions of a rule, as the person
+  who set the rule off. A formula goes on reading a table with the
+  engine's eyes. A table without rules is as it was.
+
+### Changed
+
+- A named transition without a rule of its own asks the `update` rule
+  of its class, where the class has one. Before, it was open to every
+  caller. A transition with a rule of its own is asked that rule alone.
+- A rule's action on another document is refused by that document's
+  class rules as it is by its rights (ADR-0044, item 11): the row is
+  dead with `forbidden`. A `refresh` of another document asks its
+  `read` rule. The wake-up of a timer, an eventless transition and the
+  result an action writes back ask nothing.
+- **The engine schema is version 6**, for what the actor of an event
+  was and for whom it acted, two columns of the event. A
+  database made by an earlier engine, v0.4.1 included, is refused when
+  opened, as before 1.0 there is no upgrade path.
+- A class that declared `read`, `create`, `update` or `delete` had them
+  checked and not enforced; they are enforced now. A rule a class
+  leaves out lets every caller through, as before, until the owner
+  rules on the question ADR-0049 puts to him. The Invoice sample lets
+  finance, sales and the customer see an invoice and nobody delete one.
+
 ## [0.4.1] - 2026-11-13
 
 ### Added

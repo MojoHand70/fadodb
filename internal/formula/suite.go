@@ -217,9 +217,12 @@ type Case struct {
 type CaseContext struct {
 	User   string   `json:"user,omitempty"`
 	Groups []string `json:"groups,omitempty"`
-	Now    string   `json:"now,omitempty"`
-	State  string   `json:"state,omitempty"`
-	ID     string   `json:"id,omitempty"`
+	// Kind is what the user is and For whom it acts for (ADR-0050).
+	Kind  string `json:"kind,omitempty"`
+	For   string `json:"for,omitempty"`
+	Now   string `json:"now,omitempty"`
+	State string `json:"state,omitempty"`
+	ID    string `json:"id,omitempty"`
 	// The life of the document (ADR-0047): its version, the moments it
 	// was created, last changed and entered its state, written as Now is,
 	// who did each, and the state it came from.
@@ -656,7 +659,7 @@ func (c *CaseContext) Context() (*Context, error) {
 	if c == nil {
 		return nil, nil
 	}
-	ctx := &Context{User: c.User, Groups: c.Groups, State: c.State, ID: c.ID}
+	ctx := &Context{User: c.User, Groups: c.Groups, Kind: c.Kind, For: c.For, State: c.State, ID: c.ID}
 	if c.Now != "" {
 		secs, err := ParseCaseDate(c.Now)
 		if err != nil {

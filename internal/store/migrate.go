@@ -333,7 +333,10 @@ func (s *Store) Migrate(ctx context.Context, class string, opts ...Option) (int,
 	if e != nil {
 		return 0, e
 	}
-	o := apply(opts)
+	o, e := s.worker(workDesign, opts)
+	if e != nil {
+		return 0, e
+	}
 	if o.key != "" {
 		return 0, hintf(CodeNotSupported, "", "a migration takes no idempotency key", "running it again moves nothing: every live document is already at the current version")
 	}

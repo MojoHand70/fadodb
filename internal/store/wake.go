@@ -77,7 +77,7 @@ func (s *Store) queueWakes(ctx context.Context, c *class, cmd *command, beforeCl
 		}
 		p := cmd.o.principal
 		if groups == nil {
-			groups, _ = json.Marshal(p.Groups)
+			groups = principalText(p)
 		}
 		admin := 0
 		if p.Admin {

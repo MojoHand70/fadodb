@@ -70,6 +70,11 @@ type class struct {
 	// state of the class, and "" for the "*" row alone, one cell per
 	// variable in declared order; nil when the class declares no rights.
 	rights map[string][]rightCell
+	// access are the class-level rules by kind, read, create, update and
+	// delete (ADR-0049), and accessSrc their texts; a rule the class
+	// leaves out is nil.
+	access    [4]*formula.Program
+	accessSrc [4]string
 	// rules are the class's rules by trigger (ADR-0043); nil when it has
 	// none, so that a commit of such a class does not look.
 	rules *ruleSet
@@ -146,6 +151,9 @@ type writeStmts struct {
 
 type readStmts struct {
 	getCurrent, getVersion, listHistory *sql.Stmt
+	// getLast reads the last version a document had, for the read rule
+	// of a document that was deleted (ADR-0049, item 6).
+	getLast *sql.Stmt
 }
 
 // stay is the entry that began a document's stay in a state (ADR-0047):
@@ -352,6 +360,18 @@ func newClass(cls *model.Class, src []byte) (*class, error) {
 				return nil, err
 			}
 		}
+		// The four rules of the class (ADR-0049).
+		a, def := cls.Access, cls.Def.Access
+		c.access = [4]*formula.Program{ruleRead: a.Read, ruleCreate: a.Create, ruleUpdate: a.Update, ruleDelete: a.Delete}
+		c.accessSrc = [4]string{ruleRead: def.Read, ruleCreate: def.Create, ruleUpdate: def.Update, ruleDelete: def.Delete}
+		for k, prog := range c.access {
+			if prog == nil {
+				continue
+			}
+			if err := c.bindSlots(prog, "access/"+accessRule(k).String()); err != nil {
+				return nil, err
+			}
+		}
 	}
 	if cls.Rights != nil {
 		for st, row := range cls.Rights {
@@ -529,6 +549,7 @@ func (c *class) prepare(ctx context.Context, writer *sql.Conn, db *sql.DB) error
 	prepR(&c.r.getCurrent, selectCurrent)
 	prepR(&c.r.getVersion, "SELECT "+historySelect+" FROM "+quote(c.history)+` WHERE "id" = ? AND "version" = ?`)
 	prepR(&c.r.listHistory, "SELECT "+historySelect+" FROM "+quote(c.history)+` WHERE "id" = ? ORDER BY "version"`)
+	prepR(&c.r.getLast, "SELECT "+historySelect+" FROM "+quote(c.history)+` WHERE "id" = ? ORDER BY "version" DESC LIMIT 1`)
 	for _, ch := range c.children {
 		ccols := quoteAll(columnNames(ch.def.Columns))
 		all := append(quoteAll(childKey), ccols...)
@@ -575,7 +596,7 @@ func joinWithPrefix(cols []string) string {
 }
 
 func (c *class) close() {
-	for _, st := range []*sql.Stmt{c.w.selectCurrent, c.w.selectLean, c.w.update, c.w.updateSystem, c.w.upsert, c.w.closeHistory, c.w.insertHistory, c.w.deleteCurrent, c.r.getCurrent, c.r.getVersion, c.r.listHistory} {
+	for _, st := range []*sql.Stmt{c.w.selectCurrent, c.w.selectLean, c.w.update, c.w.updateSystem, c.w.upsert, c.w.closeHistory, c.w.insertHistory, c.w.deleteCurrent, c.r.getCurrent, c.r.getVersion, c.r.listHistory, c.r.getLast} {
 		if st != nil {
 			st.Close()
 		}
@@ -748,7 +769,10 @@ func (s *Store) compileClasses(ctx context.Context, datas [][]byte, set bool) ([
 // redefinition may not do against the documents is in
 // redefinitionDiagnostics. A class with no history at all is dropped
 // and made again.
-func (s *Store) DefineClass(ctx context.Context, data []byte) (*model.Class, error) {
+func (s *Store) DefineClass(ctx context.Context, data []byte, opts ...Option) (*model.Class, error) {
+	if _, e := s.worker(workDesign, opts); e != nil {
+		return nil, e
+	}
 	out, err := s.defineClasses(ctx, [][]byte{data}, false)
 	if err != nil {
 		return nil, err
@@ -764,7 +788,10 @@ func (s *Store) DefineClass(ctx context.Context, data []byte) (*model.Class, err
 // definition is the stored one is left as it is. The error is
 // Diagnostics when a definition is refused, and the path of each finding
 // starts with the position of its definition in the call.
-func (s *Store) DefineClasses(ctx context.Context, datas [][]byte) ([]*model.Class, error) {
+func (s *Store) DefineClasses(ctx context.Context, datas [][]byte, opts ...Option) ([]*model.Class, error) {
+	if _, e := s.worker(workDesign, opts); e != nil {
+		return nil, e
+	}
 	return s.defineClasses(ctx, datas, true)
 }
 
@@ -966,7 +993,10 @@ func (c *class) childOfName(name string) (*child, bool) {
 // DefineSchema compiles a schema definition and stores it (ADR-0031).
 // Defining the same definition again is a no-op; a schema a stored class
 // uses cannot be redefined in this build.
-func (s *Store) DefineSchema(ctx context.Context, data []byte) (*model.Schema, error) {
+func (s *Store) DefineSchema(ctx context.Context, data []byte, opts ...Option) (*model.Schema, error) {
+	if _, e := s.worker(workDesign, opts); e != nil {
+		return nil, e
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.closed {

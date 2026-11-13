@@ -19,6 +19,12 @@
     {"on": "enter", "state": "paid",
      "do": [{"action": "create", "class": "Receipt", "values": {"invoice": "ID()", "amount": "total"}}]}
   ],
-  "access": {"read": "INGROUP(\"finance\") OR INGROUP(\"sales\") OR customer = USER()", "delete": "FALSE"},
+  "access": {
+    "read":   "INGROUP(\"finance\") OR INGROUP(\"sales\") OR customer = USER()",
+    "create": "INGROUP(\"sales\")",
+    "update": "INGROUP(\"sales\") AND STATE() = \"draft\"",
+    "delete": "FALSE",
+    "transition": {"approve": "INGROUP(\"finance\")", "pay": "INGROUP(\"finance\")"}
+  },
   "rights": {"*": {"discount": {"write": ["sales"]}}, "approved": {"discount": {"read": ["finance"]}}}
 }

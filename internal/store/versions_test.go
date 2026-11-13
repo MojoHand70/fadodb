@@ -37,7 +37,7 @@ const frozen = `{"name": "Frozen", "variables": {"n": {"type": "number"}, "twice
 func TestClassVersions(t *testing.T) {
 	s, path := openStore(t, Options{})
 	ctx := context.Background()
-	if _, err := s.DefineClass(ctx, []byte(ticketV1), asSetup); err != nil {
+	if _, err := s.defineOpen(ctx, []byte(ticketV1), asSetup); err != nil {
 		t.Fatal(err)
 	}
 	a, err := s.Create(ctx, "Ticket", Values{"title_text": "A", "hours": 2, "tags": []any{"x"}}, As(alice))
@@ -52,7 +52,7 @@ func TestClassVersions(t *testing.T) {
 	historyBefore, _ := s.History(ctx, "Ticket", a.ID)
 
 	// The redefinition is version 2 and touches nothing.
-	cls2, err := s.DefineClass(ctx, []byte(ticketV2), asSetup)
+	cls2, err := s.defineOpen(ctx, []byte(ticketV2), asSetup)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -116,7 +116,7 @@ func TestClassVersions(t *testing.T) {
 	d, _ := s.Create(ctx, "Ticket", Values{"title_text": "D"})
 	_ = d
 	ticketV3 := strings.Replace(ticketV2, `"discount": {"type": "decimal(2)", "default": "0"},`, `"discount": {"type": "decimal(2)", "default": "0"}, "urgent": {"type": "bool"},`, 1)
-	if _, err := s.DefineClass(ctx, []byte(ticketV3), asSetup); err != nil {
+	if _, err := s.defineOpen(ctx, []byte(ticketV3), asSetup); err != nil {
 		t.Fatal(err)
 	}
 	eventsAll := func() int {
@@ -183,14 +183,14 @@ func TestClassVersions(t *testing.T) {
 func TestRedefinitionRules(t *testing.T) {
 	s, _ := openStore(t, Options{})
 	ctx := context.Background()
-	if _, err := s.DefineClass(ctx, []byte(ticketV2), asSetup); err != nil {
+	if _, err := s.defineOpen(ctx, []byte(ticketV2), asSetup); err != nil {
 		t.Fatal(err)
 	}
 	a, _ := s.Create(ctx, "Ticket", Values{"title_text": "A", "hours": 2, "notes": []any{Values{"text": "n"}}})
 	b, _ := s.Create(ctx, "Ticket", Values{"title_text": "B"})
 	expect := func(name, def, code, path string) {
 		t.Helper()
-		_, err := s.DefineClass(ctx, []byte(def), asSetup)
+		_, err := s.defineOpen(ctx, []byte(def), asSetup)
 		var diags model.Diagnostics
 		found := false
 		if errors.As(err, &diags) {
@@ -203,7 +203,7 @@ func TestRedefinitionRules(t *testing.T) {
 		if !found {
 			t.Errorf("%s: want %s at %s, got %v", name, code, path, err)
 		}
-		if vd := s.Validate([]byte(def)); !vd.Has(code) {
+		if vd := s.Validate(opened([]byte(def))); !vd.Has(code) {
 			t.Errorf("%s: Validate agrees: %v", name, vd)
 		}
 	}
@@ -233,7 +233,7 @@ func TestRedefinitionRules(t *testing.T) {
 	// Removal only looks at the current rows.
 	v4 := strings.Replace(ticketV2, `  "discount": {"type": "decimal(2)", "default": "0"},`, "", 1)
 	v4 = strings.Replace(v4, `"cost": {"formula": "ROUND(DECIMAL(hours, 0) * rate * (1 - discount), 2)"},`, `"cost": {"formula": "ROUND(DECIMAL(hours, 0) * rate, 2)"},`, 1)
-	cls, err := s.DefineClass(ctx, []byte(v4), asSetup)
+	cls, err := s.defineOpen(ctx, []byte(v4), asSetup)
 	if err != nil || cls.Version != 2 {
 		t.Fatalf("remove a blank variable: %v", err)
 	}
@@ -242,11 +242,11 @@ func TestRedefinitionRules(t *testing.T) {
 	}
 	// A variable that never held a value changes type: a fresh column.
 	v5 := strings.Replace(v4, `"tags": {"type": "array<text>"}`, `"tags": {"type": "array<text>"}, "urgent": {"type": "bool"}`, 1)
-	if _, err := s.DefineClass(ctx, []byte(v5), asSetup); err != nil {
+	if _, err := s.defineOpen(ctx, []byte(v5), asSetup); err != nil {
 		t.Fatal(err)
 	}
 	v6 := strings.Replace(v5, `"urgent": {"type": "bool"}`, `"urgent": {"type": "text", "index": true}`, 1)
-	cls6, err := s.DefineClass(ctx, []byte(v6), asSetup)
+	cls6, err := s.defineOpen(ctx, []byte(v6), asSetup)
 	if err != nil || cls6.Version != 4 {
 		t.Fatalf("retype a never-used variable: %v", err)
 	}
@@ -263,7 +263,7 @@ func TestRedefinitionRules(t *testing.T) {
 func TestTerminalDocuments(t *testing.T) {
 	s, _ := openStore(t, Options{})
 	ctx := context.Background()
-	if _, err := s.DefineClass(ctx, []byte(frozen), asSetup); err != nil {
+	if _, err := s.defineOpen(ctx, []byte(frozen), asSetup); err != nil {
 		t.Fatal(err)
 	}
 	doc, err := s.Create(ctx, "Frozen", Values{"n": 21})
@@ -281,7 +281,7 @@ func TestTerminalDocuments(t *testing.T) {
 	}
 	// A redefinition leaves it under its version; a migration skips it.
 	v2 := strings.Replace(frozen, `"twice": {"formula": "n * 2"}`, `"twice": {"formula": "n * 3"}, "extra": {"type": "text"}`, 1)
-	if _, err := s.DefineClass(ctx, []byte(v2), asSetup); err != nil {
+	if _, err := s.defineOpen(ctx, []byte(v2), asSetup); err != nil {
 		t.Fatal(err)
 	}
 	if moved, err := s.Migrate(ctx, "Frozen", asSetup); err != nil || moved != 0 {
@@ -292,7 +292,7 @@ func TestTerminalDocuments(t *testing.T) {
 		t.Errorf("a terminal document after a redefinition: %s", dump(got))
 	}
 	// A terminal state stays terminal while documents are in it.
-	_, err = s.DefineClass(ctx, []byte(strings.Replace(v2, `"final": ["done"]`, `"final": []`, 1)), asSetup)
+	_, err = s.defineOpen(ctx, []byte(strings.Replace(v2, `"final": ["done"]`, `"final": []`, 1)), asSetup)
 	var diags model.Diagnostics
 	if !errors.As(err, &diags) || !diags.Has(model.CodeNotAllowed) {
 		t.Errorf("thawing a state with documents: %v", err)

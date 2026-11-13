@@ -27,6 +27,9 @@ import (
 // conformance/README.md.
 
 type statechartSuite struct {
+	// AsWritten says the suite's classes and tables are defined as they
+	// are written, with no access rule added to them.
+	AsWritten   bool   `json:"as_written,omitempty"`
 	Suite       string `json:"suite"`
 	Description string `json:"description,omitempty"`
 	// Clock is the database's clock while the suite runs, as
@@ -322,6 +325,32 @@ func runScriptSuites(t *testing.T, dir string) {
 	}
 }
 
+// class, classes and table are the definitions of a suite as the runner
+// defines them: as they are written where the suite says as_written,
+// which the suites of the access rules do, and otherwise with TRUE for
+// every access rule a definition leaves out (ADR-0052, item 5), so that
+// a suite that is not about who may runs open to every caller.
+func (suite *statechartSuite) class(def []byte) []byte {
+	if suite.AsWritten {
+		return def
+	}
+	return opened(def)
+}
+
+func (suite *statechartSuite) classes(defs [][]byte) [][]byte {
+	if suite.AsWritten {
+		return defs
+	}
+	return openedAll(defs)
+}
+
+func (suite *statechartSuite) table(def []byte) []byte {
+	if suite.AsWritten {
+		return def
+	}
+	return openedTable(def)
+}
+
 func runStatechartSuite(t *testing.T, suite *statechartSuite) {
 	var o Options
 	var now time.Time
@@ -381,7 +410,7 @@ func runStatechartSuite(t *testing.T, suite *statechartSuite) {
 		}
 	}
 	for i, table := range suite.Tables {
-		if _, err := s.DefineTable(ctx, table, asSetup); err != nil {
+		if _, err := s.DefineTable(ctx, suite.table(table), asSetup); err != nil {
 			t.Fatalf("table %d of the suite's tables: %v", i, err)
 		}
 	}
@@ -392,18 +421,18 @@ func runStatechartSuite(t *testing.T, suite *statechartSuite) {
 		for _, other := range suite.Classes {
 			set = append(set, other)
 		}
-		defined, derr := s.DefineClasses(ctx, append(set, suite.Class), asSetup)
+		defined, derr := s.DefineClasses(ctx, suite.classes(append(set, suite.Class)), asSetup)
 		if derr != nil {
 			t.Fatalf("the classes, together: %v", derr)
 		}
 		cls = defined[len(defined)-1]
 	} else {
 		for i, other := range suite.Classes {
-			if _, err := s.DefineClass(ctx, other, asSetup); err != nil {
+			if _, err := s.DefineClass(ctx, suite.class(other), asSetup); err != nil {
 				t.Fatalf("class %d of the suite's classes: %v", i, err)
 			}
 		}
-		cls, err = s.DefineClass(ctx, suite.Class, asSetup)
+		cls, err = s.DefineClass(ctx, suite.class(suite.Class), asSetup)
 	}
 	if err != nil {
 		t.Fatalf("the class: %v", err)

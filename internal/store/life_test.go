@@ -51,7 +51,7 @@ const lifeClaim = `{"name": "Claim",
 func TestLife(t *testing.T) {
 	s, path := openStore(t, Options{})
 	ctx := context.Background()
-	if _, err := s.DefineClass(ctx, []byte(lifeClaim), asSetup); err != nil {
+	if _, err := s.defineOpen(ctx, []byte(lifeClaim), asSetup); err != nil {
 		t.Fatal(err)
 	}
 	who := func(d *Document) string {
@@ -206,7 +206,7 @@ func TestLife(t *testing.T) {
   "raiser":  {"type": "text", "default": "LOOKUP(Claim, created_by, id = \"C-1\")"},
   "back":    {"type": "number", "default": "LOOKUP(Claim, COUNT(id), state_entered_from = \"draft\" AND state_entered_by = \"bob\")"}},
  "states": {"initial": "open", "list": ["open"]}}`
-	if _, err := s.DefineClass(ctx, []byte(audit), asSetup); err != nil {
+	if _, err := s.defineOpen(ctx, []byte(audit), asSetup); err != nil {
 		t.Fatal(err)
 	}
 	if a, err := s.Create(ctx, "Audit", Values{}); err != nil || a.Values["by_bob"] != 2.0 || a.Values["raiser"] != "ann" || a.Values["back"] != 1.0 {
@@ -219,7 +219,7 @@ func TestLife(t *testing.T) {
 	const peer = `{"name": "Peer", "variables": {"mine": {"type": "number", "default": "LOOKUP(Claim, COUNT(id), created_by = CREATEDBY())"}},
  "states": {"initial": "open", "list": ["open", "late"]},
  "transitions": [{"name": "expire", "from": "open", "to": "late", "guard": "NOT ISBLANK(ENTEREDAT()) AND NOT ISBLANK(CREATEDAT()) AND VERSION() = 1"}]}`
-	if _, err := s.DefineClass(ctx, []byte(peer), asSetup); err != nil {
+	if _, err := s.defineOpen(ctx, []byte(peer), asSetup); err != nil {
 		t.Fatal(err)
 	}
 	if p, err := s.Create(ctx, "Peer", Values{}, WithID("P-1"), As(ann)); err != nil || p.Values["mine"] != 2.0 {
@@ -234,7 +234,7 @@ func TestLife(t *testing.T) {
 	const late = `{"name": "Late", "variables": {"note": {"type": "text"}},
  "states": {"initial": "open", "list": ["open", "late"]},
  "transitions": [{"name": "expire", "from": "open", "to": "late", "guard": "NOT ISBLANK(ENTEREDAT()) AND NOT ISBLANK(CREATEDAT()) AND VERSION() = 1"}]}`
-	if _, err := s.DefineClass(ctx, []byte(late), asSetup); err != nil {
+	if _, err := s.defineOpen(ctx, []byte(late), asSetup); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := s.Create(ctx, "Late", Values{}, WithID("L-1"), As(ann)); err != nil {
@@ -253,12 +253,12 @@ func TestLife(t *testing.T) {
 	// What is refused: a function of the life in an auto formula, and a
 	// variable that takes a system column's name.
 	var diags model.Diagnostics
-	_, err = s.DefineClass(ctx, []byte(`{"name": "Auto", "variables": {"who": {"formula": "CREATEDBY()"}}, "states": {"initial": "open", "list": ["open"]}}`), asSetup)
+	_, err = s.defineOpen(ctx, []byte(`{"name": "Auto", "variables": {"who": {"formula": "CREATEDBY()"}}, "states": {"initial": "open", "list": ["open"]}}`), asSetup)
 	if !errors.As(err, &diags) || !strings.Contains(diags.Error(), "CREATEDBY is a context function") {
 		t.Errorf("CREATEDBY in an auto formula: %v", err)
 	}
 	for _, name := range []string{"created_by", "updated_by", "state_entered_by", "state_entered_from"} {
-		_, err = s.DefineClass(ctx, []byte(`{"name": "Taken", "variables": {"`+name+`": {"type": "text"}}, "states": {"initial": "open", "list": ["open"]}}`), asSetup)
+		_, err = s.defineOpen(ctx, []byte(`{"name": "Taken", "variables": {"`+name+`": {"type": "text"}}, "states": {"initial": "open", "list": ["open"]}}`), asSetup)
 		if !errors.As(err, &diags) || !diags.Has(model.CodeReservedName) {
 			t.Errorf("a variable named %s: %v", name, err)
 		}
@@ -286,7 +286,7 @@ func TestLife(t *testing.T) {
 func TestLife_WriteStep(t *testing.T) {
 	s, _ := openStore(t, Options{})
 	ctx := context.Background()
-	if _, err := s.DefineClass(ctx, []byte(lifeClaim), asSetup); err != nil {
+	if _, err := s.defineOpen(ctx, []byte(lifeClaim), asSetup); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := s.Create(ctx, "Claim", Values{"amount": "10.00", "note": "n"}, WithID("C-1"), As(ann)); err != nil {
@@ -377,7 +377,7 @@ func TestLifeStates(t *testing.T) {
 	cl := &clock{now: start}
 	s, path := openStore(t, Options{Now: cl.Now})
 	ctx := context.Background()
-	if _, err := s.DefineClass(ctx, []byte(lifeCase), asSetup); err != nil {
+	if _, err := s.defineOpen(ctx, []byte(lifeCase), asSetup); err != nil {
 		t.Fatal(err)
 	}
 	c, _ := s.class("Case")
@@ -457,7 +457,7 @@ func TestLifeStates(t *testing.T) {
 	if _, err := s2.Create(ctx, "Case", Values{"note": "x"}, WithID("K-2"), As(ann)); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s2.DefineClass(ctx, []byte(strings.Replace(lifeCase, `"closed":  {"type": "text"}`, `"closed":  {"type": "text"}, "more": {"type": "text"}`, 1)), asSetup); err != nil {
+	if _, err := s2.defineOpen(ctx, []byte(strings.Replace(lifeCase, `"closed":  {"type": "text"}`, `"closed":  {"type": "text"}, "more": {"type": "text"}`, 1)), asSetup); err != nil {
 		t.Fatal(err)
 	}
 	if n, err := s2.Migrate(ctx, "Case", designing(bob)); err != nil || n == 0 {
@@ -503,7 +503,7 @@ func TestLifeStates_Defined(t *testing.T) {
 		{"a read rule", "", "", `, "access": {"read": "FIRSTENTEREDBY(\"sent\") = USER()"}`, "/access/read", model.CodeNotAllowed, "a triggered variable"},
 		{"a read right", "", "", `, "rights": {"*": {"note": {"read": "ENTRIES(\"sent\") = 0"}}}`, "/rights/*/note/read", model.CodeNotAllowed, "a triggered variable"},
 	} {
-		_, err := s.DefineClass(ctx, []byte(fmt.Sprintf(base, tc.vars, tc.trans, tc.rest)), asSetup)
+		_, err := s.defineOpen(ctx, []byte(fmt.Sprintf(base, tc.vars, tc.trans, tc.rest)), asSetup)
 		var diags model.Diagnostics
 		if !errors.As(err, &diags) || len(diags) != 1 || diags[0].Path != tc.path || tc.code != "" && diags[0].Code != tc.code || !strings.Contains(diags[0].Message+" "+diags[0].Hint, tc.say) {
 			t.Errorf("%s: %v", tc.name, err)
@@ -513,7 +513,7 @@ func TestLifeStates_Defined(t *testing.T) {
 	ok := fmt.Sprintf(base, "", "", `, "access": {"transition": {"send": "FIRSTEDITOR(\"draft\") = USER()"}},
  "rights": {"sent": {"note": {"write": "ENTRIES(\"sent\") = 1"}}},
  "rules": [{"on": "enter", "state": "sent", "if": "ENTRIES(\"sent\") = 1", "do": [{"action": "emit", "event": "first"}]}]`)
-	if _, err := s.DefineClass(ctx, []byte(ok), asSetup); err != nil {
+	if _, err := s.defineOpen(ctx, []byte(ok), asSetup); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := s.Create(ctx, "Memo", Values{"note": "a"}, WithID("M-1"), As(ann)); err != nil {
@@ -534,7 +534,7 @@ func TestLifeStates_Defined(t *testing.T) {
 	}
 
 	// A class whose formulas ask nothing keeps no steps and reads nothing.
-	if _, err := s.DefineClass(ctx, []byte(lifeClaim), asSetup); err != nil {
+	if _, err := s.defineOpen(ctx, []byte(lifeClaim), asSetup); err != nil {
 		t.Fatal(err)
 	}
 	// A draft of that class that begins to ask is told from the log of
@@ -552,7 +552,7 @@ func TestLifeStates_Defined(t *testing.T) {
 	if draft == lifeClaim {
 		t.Fatal("the draft is the class")
 	}
-	pv, err := s.PreviewDraft(ctx, []byte(draft), "C-ann", nil, "again", designing(ann))
+	pv, err := s.PreviewDraft(ctx, opened([]byte(draft)), "C-ann", nil, "again", designing(ann))
 	if err != nil || fmt.Sprint(pv.Document.Values["seen"]) != "ann bob 2" {
 		t.Errorf("a draft that asks the life of a stored document: %v %s", err, dump(pv))
 	}
@@ -577,7 +577,7 @@ func TestLife_AskedInsideALookup(t *testing.T) {
 	def := `{"name": "Thing", "variables": {"note": {"type": "text"}},
  "states": {"initial": "a", "list": ["a", "b"]},
  "transitions": [{"name": "go", "from": "a", "to": "b", "guard": "LOOKUP(Thing, COUNT(id), created_by = CREATEDBY()) >= 1"}]}`
-	if _, err := s.DefineClass(ctx, []byte(def), asSetup); err != nil {
+	if _, err := s.defineOpen(ctx, []byte(def), asSetup); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := s.Create(ctx, "Thing", Values{"note": "x"}, WithID("T-1"), As(ann)); err != nil {
@@ -607,12 +607,12 @@ func TestLifeStates_Corners(t *testing.T) {
 
 	// A class without states has no state to name, and one that is
 	// computed finds nothing.
-	_, err := s.DefineClass(ctx, []byte(`{"name": "Plain", "variables": {"n": {"type": "number", "default": "ENTRIES(\"draft\")"}}}`), asSetup)
+	_, err := s.defineOpen(ctx, []byte(`{"name": "Plain", "variables": {"n": {"type": "number", "default": "ENTRIES(\"draft\")"}}}`), asSetup)
 	var diags model.Diagnostics
 	if !errors.As(err, &diags) || len(diags) != 1 || !strings.Contains(diags[0].Message, "the class has no states") {
 		t.Errorf("a state named in a class without states: %v", err)
 	}
-	if _, err := s.DefineClass(ctx, []byte(`{"name": "Plain", "variables": {"note": {"type": "text"}, "n": {"type": "number", "default": "ENTRIES(note)"}}}`), asSetup); err != nil {
+	if _, err := s.defineOpen(ctx, []byte(`{"name": "Plain", "variables": {"note": {"type": "text"}, "n": {"type": "number", "default": "ENTRIES(note)"}}}`), asSetup); err != nil {
 		t.Fatal(err)
 	}
 	if pv, err := s.Preview(ctx, "Plain", "", Values{"note": "draft"}, ""); err != nil || pv.Document.Values["n"] != 0.0 {
@@ -621,7 +621,7 @@ func TestLifeStates_Corners(t *testing.T) {
 
 	// The clock goes back between two commits: the versions say the
 	// order of the events, not their times.
-	if _, err := s.DefineClass(ctx, []byte(lifeCase), asSetup); err != nil {
+	if _, err := s.defineOpen(ctx, []byte(lifeCase), asSetup); err != nil {
 		t.Fatal(err)
 	}
 	dee := Principal{ID: "dee"}
@@ -666,7 +666,7 @@ func TestLifeStates_Corners(t *testing.T) {
 	// A document that an earlier version of the class computed adopts
 	// the new one with its next command, and is told from the log all
 	// the same.
-	if _, err := s.DefineClass(ctx, []byte(strings.Replace(lifeCase, `"closed":  {"type": "text"}`, `"closed":  {"type": "text"}, "more": {"type": "text"}`, 1)), asSetup); err != nil {
+	if _, err := s.defineOpen(ctx, []byte(strings.Replace(lifeCase, `"closed":  {"type": "text"}`, `"closed":  {"type": "text"}, "more": {"type": "text"}`, 1)), asSetup); err != nil {
 		t.Fatal(err)
 	}
 	d = step(time.Minute, func() (*Document, error) { return s.Transition(ctx, "Case", "K-1", "send", nil, As(dee)) })
@@ -676,11 +676,11 @@ func TestLifeStates_Corners(t *testing.T) {
 
 	// A rule that creates a document for each element of a list reads the
 	// life of the document it runs for.
-	if _, err := s.DefineClass(ctx, []byte(`{"name": "Ask", "variables": {"job": {"type": "text"}, "whom": {"type": "text"}, "round": {"type": "number"}, "first": {"type": "text"}},
+	if _, err := s.defineOpen(ctx, []byte(`{"name": "Ask", "variables": {"job": {"type": "text"}, "whom": {"type": "text"}, "round": {"type": "number"}, "first": {"type": "text"}},
  "states": {"initial": "open", "list": ["open"]}}`), asSetup); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.DefineClass(ctx, []byte(`{"name": "Job", "variables": {"people": {"type": "array<text>"}},
+	if _, err := s.defineOpen(ctx, []byte(`{"name": "Job", "variables": {"people": {"type": "array<text>"}},
  "states": {"initial": "draft", "list": ["draft", "asked"]},
  "transitions": [{"name": "ask", "from": "draft", "to": "asked"}, {"name": "again", "from": "asked", "to": "asked"}],
  "rules": [{"on": "enter", "state": "asked", "do": [{"action": "create", "class": "Ask", "each": "people", "as": "who", "id": "ID() & \"-\" & who & \"-\" & TEXT(ENTRIES(\"asked\"))",
@@ -720,7 +720,7 @@ func TestLifeStates_TheCommitItself(t *testing.T) {
  "states": {"initial": "draft", "list": ["draft", "sent"]},
  "transitions": [{"name": "send", "from": "draft", "to": "sent"}],
  "rules": [{"on": "values_change", "variables": ["text"], "do": [{"action": "set", "values": {"last": "LASTEDITOR(STATE()) & \" of \" & TEXT(ENTRIES(\"draft\"))"}}]}]}`
-	if _, err := s.DefineClass(ctx, []byte(def), asSetup); err != nil {
+	if _, err := s.defineOpen(ctx, []byte(def), asSetup); err != nil {
 		t.Fatal(err)
 	}
 	cy := Principal{ID: "cy"}

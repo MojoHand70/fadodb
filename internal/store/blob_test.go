@@ -131,7 +131,7 @@ func TestBlobStores(t *testing.T) {
 func TestCommit_Files(t *testing.T) {
 	s, _ := openStore(t, Options{})
 	ctx := context.Background()
-	if _, err := s.DefineClass(ctx, []byte(claim), asSetup); err != nil {
+	if _, err := s.defineOpen(ctx, []byte(claim), asSetup); err != nil {
 		t.Fatal(err)
 	}
 	scan, _ := s.PutBlob(ctx, "scan.pdf", "application/pdf", strings.NewReader("%PDF-1.4 scan"))
@@ -273,7 +273,7 @@ func TestExternalBlobStore(t *testing.T) {
 	mem := &memBlobs{m: map[string][]byte{}}
 	s, path := openStore(t, Options{BlobStore: "external", Blobs: mem})
 	ctx := context.Background()
-	if _, err := s.DefineClass(ctx, []byte(claim), asSetup); err != nil {
+	if _, err := s.defineOpen(ctx, []byte(claim), asSetup); err != nil {
 		t.Fatal(err)
 	}
 	fact, err := s.PutBlob(ctx, "x.bin", "application/octet-stream", bytes.NewReader([]byte{1, 2, 3}))

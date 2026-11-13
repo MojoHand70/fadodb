@@ -125,7 +125,7 @@ func (s *Store) Due(ctx context.Context, class string, opts ...Option) ([]DueDoc
 	// The host program that touches what is due asks as a content administrator,
 	// for whom this costs nothing; for anybody else it is a read of each
 	// document found.
-	if c.ruled(ruleRead) && !o.principal.content() {
+	if !o.principal.content() {
 		seen := out[:0]
 		for _, d := range out {
 			ok, err := s.sees(ctx, c, d.ID, o)

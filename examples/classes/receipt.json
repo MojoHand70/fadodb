@@ -9,5 +9,12 @@
   "states": {"initial": "issued", "list": ["issued", "voided"], "final": ["voided"]},
   "transitions": [
     {"name": "void", "from": "issued", "to": "voided"}
-  ]
+  ],
+  "access": {
+    "read":   "INGROUP(\"finance\")",
+    "create": "INGROUP(\"finance\")",
+    "update": "FALSE",
+    "delete": "FALSE",
+    "transition": {"void": "INGROUP(\"finance\")"}
+  }
 }

@@ -44,7 +44,7 @@ const ruledTicket = `{
 
 func defineTicket(t *testing.T, s *Store) {
 	t.Helper()
-	if _, err := s.DefineClass(context.Background(), []byte(ruledTicket), asSetup); err != nil {
+	if _, err := s.defineOpen(context.Background(), []byte(ruledTicket), asSetup); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -260,7 +260,7 @@ func TestRules_PreviewReport(t *testing.T) {
 
 	// A draft's rules are reported the same way.
 	draft := strings.Replace(ruledTicket, `"ticket.heavy"`, `"ticket.very_heavy"`, 1)
-	pv, err = s.PreviewDraft(ctx, []byte(draft), doc.ID, nil, "take", designing(alice))
+	pv, err = s.PreviewDraft(ctx, opened([]byte(draft)), doc.ID, nil, "take", designing(alice))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -276,7 +276,7 @@ func TestRules_PreviewReport(t *testing.T) {
 func TestRules_ConditionAndActionErrors(t *testing.T) {
 	s, _ := openStore(t, Options{})
 	ctx := context.Background()
-	if _, err := s.DefineClass(ctx, []byte(`{"name": "Part",
+	if _, err := s.defineOpen(ctx, []byte(`{"name": "Part",
  "variables": {"n": {"type": "number"}, "share": {"type": "number"}, "half": {"formula": "100 / share"}, "label": {"type": "text"}},
  "states": {"initial": "a", "list": ["a", "b", "c"]},
  "transitions": [{"name": "go", "from": "a", "to": "b"}, {"name": "split", "from": "a", "to": "c"}],
@@ -329,14 +329,14 @@ func TestRules_ValuesChangeAcrossAClassVersion(t *testing.T) {
  "states": {"initial": "on", "list": ["on"]},
  "rules": [{"on": "values_change", "variables": ["twice"], "do": [{"action": "set", "values": {"note": "\"twice changed\""}}, {"action": "emit", "event": "meter.recomputed"}]},
            {"on": "values_change", "variables": ["note"], "do": [{"action": "emit", "event": "meter.noted"}]}]}`
-	if _, err := s.DefineClass(ctx, []byte(v1), asSetup); err != nil {
+	if _, err := s.defineOpen(ctx, []byte(v1), asSetup); err != nil {
 		t.Fatal(err)
 	}
 	doc, err := s.Create(ctx, "Meter", Values{"n": 5})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.DefineClass(ctx, []byte(v2), asSetup); err != nil {
+	if _, err := s.defineOpen(ctx, []byte(v2), asSetup); err != nil {
 		t.Fatal(err)
 	}
 	// n is given the value it has: the commit adopts the new version, and

@@ -71,7 +71,7 @@ func defineShop(t testing.TB, s *Store) {
 			t.Fatal(err)
 		}
 	}
-	if _, err := s.DefineClass(ctx, []byte(fmt.Sprintf(shopOrder, "")), asSetup); err != nil {
+	if _, err := s.defineOpen(ctx, []byte(fmt.Sprintf(shopOrder, "")), asSetup); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -187,7 +187,7 @@ func TestActions_Registry(t *testing.T) {
 		t.Errorf("a redefinition that names the next version: %v, %s", err, dump(next))
 	}
 	// The registry is the database's own: no class takes its name.
-	if _, err := s.DefineClass(ctx, []byte(`{"name": "Actions", "variables": {"a": {"type": "text"}}}`), asSetup); err == nil || !err.(model.Diagnostics).Has(model.CodeReservedName) {
+	if _, err := s.defineOpen(ctx, []byte(`{"name": "Actions", "variables": {"a": {"type": "text"}}}`), asSetup); err == nil || !err.(model.Diagnostics).Has(model.CodeReservedName) {
 		t.Errorf("a class named after the registry: %v", err)
 	}
 
@@ -338,7 +338,7 @@ func TestActions_TheCall(t *testing.T) {
 
 	// A later version of the class fires the rule of a later document, and
 	// the event says so.
-	if _, err := s.DefineClass(ctx, []byte(fmt.Sprintf(shopOrder, `, "memo": {"type": "text"}`)), asSetup); err != nil {
+	if _, err := s.defineOpen(ctx, []byte(fmt.Sprintf(shopOrder, `, "memo": {"type": "text"}`)), asSetup); err != nil {
 		t.Fatal(err)
 	}
 	books.do = nil
@@ -596,10 +596,10 @@ func TestActions_RedefinitionMayNotBreakARule(t *testing.T) {
 	// period. With it, it can.
 	fresh := strings.Replace(fmt.Sprintf(shopOrder, `, "memo": {"type": "text"}`), `"amount": "price"`, `"amount": "price", "period": "\"2026-03\""`, 1)
 	stale := fmt.Sprintf(shopOrder, `, "memo": {"type": "text"}`)
-	if _, err := s.DefineClass(ctx, []byte(stale), asSetup); err == nil || !err.(model.Diagnostics).Has(model.CodeMissing) {
+	if _, err := s.defineOpen(ctx, []byte(stale), asSetup); err == nil || !err.(model.Diagnostics).Has(model.CodeMissing) {
 		t.Errorf("a class whose rule leaves a required parameter out: %v", err)
 	}
-	if _, err := s.DefineClass(ctx, []byte(fresh), asSetup); err != nil {
+	if _, err := s.defineOpen(ctx, []byte(fresh), asSetup); err != nil {
 		t.Fatal(err)
 	}
 	place(t, s, Values{"item": "chair"})
@@ -610,7 +610,7 @@ func TestActions_RedefinitionMayNotBreakARule(t *testing.T) {
 		t.Errorf("the call once the rule gives the parameter: %s", dump(calls))
 	}
 	// A row queued for a parameter the action has since lost is refused.
-	if _, err := s.DefineClass(ctx, []byte(strings.Replace(fresh, `"amount": "price", `, "", 1)), asSetup); err != nil {
+	if _, err := s.defineOpen(ctx, []byte(strings.Replace(fresh, `"amount": "price", `, "", 1)), asSetup); err != nil {
 		t.Fatal(err)
 	}
 	old := place(t, s, Values{"item": "old"})
@@ -788,7 +788,7 @@ func TestActions_Workers(t *testing.T) {
 	for _, def := range []string{noteClass, `{"name": "Memo", "variables": {"text": {"type": "text"}},
  "states": {"initial": "new", "list": ["new", "filed"]}, "transitions": [{"name": "file", "from": "new", "to": "filed"}],
  "rules": [{"on": "enter", "state": "filed", "do": [{"action": "create", "class": "Note", "values": {"about": "ID()", "text": "\"filed\""}}]}]}`} {
-		if _, err := s.DefineClass(ctx, []byte(def), asSetup); err != nil {
+		if _, err := s.defineOpen(ctx, []byte(def), asSetup); err != nil {
 			t.Fatal(err)
 		}
 	}

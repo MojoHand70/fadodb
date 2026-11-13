@@ -6,7 +6,6 @@ import (
 	"strings"
 
 	"github.com/MojoHand70/fadodb/internal/formula"
-	"github.com/MojoHand70/fadodb/internal/model"
 )
 
 // The four rules of a class, read, create, update and delete (ADR-0010),
@@ -33,17 +32,6 @@ func (k accessRule) String() string {
 	return [...]string{"read", "create", "update", "delete"}[k]
 }
 
-// leftOutAllows is what a rule answers that a class leaves out, question
-// A of ADR-0049, kept in one place for the store and the filter
-// compiler.
-const leftOutAllows = model.LeftOutAllows
-
-// ruled says whether the class has an answer of its own for the rule: the
-// rule, or the refusal of a rule left out.
-func (c *class) ruled(k accessRule) bool {
-	return c.access[k] != nil || !leftOutAllows
-}
-
 // may reports whether a rule of the class lets the principal through
 // over the row: TRUE does; FALSE, a blank, a value of another type and an
 // error do not (ADR-0019), the error returned for the message.
@@ -53,7 +41,9 @@ func (e *evaluator) may(c *class, k accessRule, row *docRow, ctx *formula.Contex
 	}
 	prog := c.access[k]
 	if prog == nil {
-		return leftOutAllows, nil
+		// A rule the class leaves out lets nobody through (ADR-0052,
+		// item 5).
+		return false, nil
 	}
 	val, err := e.run(c, prog, row, ctx)
 	if err != nil {
@@ -82,7 +72,7 @@ func noDocument(c *class, id string) *Error {
 // read by whoever operates the queue (ADR-0049, item 9). The rule runs
 // over the stored document under the current layout.
 func (s *Store) checkRead(c, beforeClass *class, before *docRow, cmd *command, evalCtx *formula.Context) *Error {
-	if !c.ruled(ruleRead) || !asksRules(cmd) {
+	if !asksRules(cmd) {
 		return nil
 	}
 	row := before
@@ -104,7 +94,7 @@ func (s *Store) checkRead(c, beforeClass *class, before *docRow, cmd *command, e
 // forbidden and the rule (ADR-0049, item 4). A preview reports it under
 // its errors and goes on, as it does a write right.
 func (s *Store) checkRule(c *class, k accessRule, row *docRow, cmd *command, evalCtx *formula.Context, res *result) *Error {
-	if !c.ruled(k) || !asksRules(cmd) {
+	if !asksRules(cmd) {
 		return nil
 	}
 	ok, err := s.wev.may(c, k, row, evalCtx, cmd.o.principal)
@@ -153,7 +143,7 @@ func forbiddenBy(c *class, k accessRule, p Principal, id string, err error) *Err
 // version and the state stay, the values and the title go. The worker's
 // commands answer the engine, not the person, and are left whole.
 func (s *Store) veil(c *class, row *docRow, d *Document, cmd *command, evalCtx *formula.Context) {
-	if !c.ruled(ruleRead) || !asksRules(cmd) || cmd.internal {
+	if !asksRules(cmd) || cmd.internal {
 		return
 	}
 	evalCtx.ID, evalCtx.State = row.id, row.state
@@ -172,7 +162,7 @@ func bare(d *Document) {
 // lookup and no function of a state (ADR-0010, ADR-0047), so a borrowed
 // evaluator runs it.
 func (s *Store) seesRow(c, vc *class, row *docRow, o options) bool {
-	if !c.ruled(ruleRead) || o.principal.content() {
+	if o.principal.content() {
 		return true
 	}
 	if vc != c {
@@ -193,7 +183,7 @@ func (s *Store) seesRow(c, vc *class, row *docRow, o options) bool {
 // as it does a document that is hidden. A class with no answer of its own
 // for the rule, and a content administrator, cost no read.
 func (s *Store) sees(ctx context.Context, c *class, id string, o options) (bool, error) {
-	if !c.ruled(ruleRead) || o.principal.content() {
+	if o.principal.content() {
 		return true, nil
 	}
 	history := false

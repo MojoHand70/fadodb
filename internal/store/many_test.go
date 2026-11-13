@@ -211,7 +211,7 @@ const notice = `{"name": "Notice",
 func TestTransitionMany_Key(t *testing.T) {
 	s, _ := openStore(t, Options{})
 	ctx := context.Background()
-	if _, err := s.DefineClass(ctx, []byte(notice), asSetup); err != nil {
+	if _, err := s.defineOpen(ctx, []byte(notice), asSetup); err != nil {
 		t.Fatal(err)
 	}
 	var ids []string
@@ -274,7 +274,7 @@ const seats = `{"name": "Seat",
 func TestTransitionMany_SeesTheMovesBeforeIt(t *testing.T) {
 	s, _ := openStore(t, Options{})
 	ctx := context.Background()
-	if _, err := s.DefineClass(ctx, []byte(seats), asSetup); err != nil {
+	if _, err := s.defineOpen(ctx, []byte(seats), asSetup); err != nil {
 		t.Fatal(err)
 	}
 	var ids []string
@@ -426,7 +426,7 @@ func TestTransitionMany_Rights(t *testing.T) {
  "states": {"initial": "free", "list": ["free", "held"]},
  "transitions": [{"name": "hold", "from": "free", "to": "held"}],
  "access": {"transition": {"hold": "owner = USER()"}}}`
-	if _, err := s.DefineClass(ctx, []byte(desk), asSetup); err != nil {
+	if _, err := s.defineOpen(ctx, []byte(desk), asSetup); err != nil {
 		t.Fatal(err)
 	}
 	var ids []string
@@ -457,7 +457,7 @@ func TestTransitionMany_Timers(t *testing.T) {
  "states": {"initial": "idle", "list": ["idle", "set", "blown"]},
  "transitions": [{"name": "arm", "from": "idle", "to": "set"},
                  {"name": "blow", "from": "set", "to": "blown", "after": "1m"}]}`
-	if _, err := s.DefineClass(ctx, []byte(fuse), asSetup); err != nil {
+	if _, err := s.defineOpen(ctx, []byte(fuse), asSetup); err != nil {
 		t.Fatal(err)
 	}
 	var ids []string

@@ -1,6 +1,7 @@
 {
   "suite": "groups",
   "description": "The system groups as the formulas of a class see them (ADR-0052). INGROUP answers a system group as it answers any group, and answers everyone for every caller that has an id; a call without a principal is nobody and is in no group. A content administrator passes the rules of a class and never a guard. A designer, a database administrator and an analyst pass no rule by being one: they see and change what the formulas of the class give them.",
+  "as_written": true,
   "clock": "2026-03-01 12:00:00",
   "class": {
     "name": "Memo",

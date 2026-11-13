@@ -8,6 +8,7 @@ import (
 
 	"github.com/MojoHand70/fadodb/internal/formula"
 	"github.com/MojoHand70/fadodb/internal/model"
+	"github.com/MojoHand70/fadodb/internal/testdef"
 )
 
 const invoice = `{"name": "Invoice", "variables": {
@@ -17,7 +18,7 @@ const invoice = `{"name": "Invoice", "variables": {
 
 func compile(t *testing.T, f Filter) (*Plan, error) {
 	t.Helper()
-	cls, diags := model.Define([]byte(invoice), nil)
+	cls, diags := model.Define(testdef.Open([]byte(invoice)), nil)
 	if len(diags) > 0 {
 		t.Fatal(diags)
 	}
@@ -117,10 +118,13 @@ func TestIsPhysical(t *testing.T) {
 // variable readable in every state adds nothing, one readable in no
 // state refuses the filter.
 func TestCompile_ReadRights(t *testing.T) {
-	cls, diags := model.Define([]byte(`{"name": "Ticket", "variables": {
+	cls, diags := model.Define(testdef.Open([]byte(`{"name": "Ticket", "variables": {
 	  "owner": {"type": "text"}, "note": {"type": "text"}, "secret": {"type": "text"}, "amount": {"type": "number"}},
 	  "states": {"initial": "open", "list": ["open", "review"]},
-	  "rights": {"*": {"secret": {"read": ["finance"]}}, "review": {"note": {"read": "owner = USER() OR INGROUP(\"finance\")"}}}}`), nil)
+	  "rights": {"*": {"secret": {"read": ["finance"]}}, "review": {"note": {"read": "owner = USER() OR INGROUP(\"finance\")"}}}}`)),
+
+		nil)
+
 	if len(diags) > 0 {
 		t.Fatal(diags)
 	}
@@ -177,11 +181,11 @@ func errorsAs(err error, target **Error) bool {
 // variable (ADR-0041): the right's share of the filter's budget.
 func BenchmarkCompile(b *testing.B) {
 	const ticket = `{"name": "%s", "variables": {"number": {"type": "text", "index": true}, "priority": {"type": "number"}, "owner": {"type": "text"}}, "states": {"initial": "open", "list": ["open"]}%s}`
-	plain, diags := model.Define([]byte(fmt.Sprintf(ticket, "Ticket", "")), nil)
+	plain, diags := model.Define(testdef.Open([]byte(fmt.Sprintf(ticket, "Ticket", ""))), nil)
 	if len(diags) > 0 {
 		b.Fatal(diags)
 	}
-	guarded, diags := model.Define([]byte(fmt.Sprintf(ticket, "Guarded", `, "rights": {"*": {"number": {"read": "INGROUP(\"support\") OR owner = USER()"}}}`)), nil)
+	guarded, diags := model.Define(testdef.Open([]byte(fmt.Sprintf(ticket, "Guarded", `, "rights": {"*": {"number": {"read": "INGROUP(\"support\") OR owner = USER()"}}}`))), nil)
 	if len(diags) > 0 {
 		b.Fatal(diags)
 	}
@@ -207,9 +211,12 @@ func BenchmarkCompile(b *testing.B) {
 // one value for the whole statement, so the comparison seeks an index as
 // one with a literal does. A blank on either side compares as zero.
 func TestCompile_PrefilterOfTheClock(t *testing.T) {
-	cls, diags := model.Define([]byte(`{"name": "Task", "variables": {
+	cls, diags := model.Define(testdef.Open([]byte(`{"name": "Task", "variables": {
   "due": {"type": "date", "index": true}, "sent": {"type": "datetime"}, "n": {"type": "number"},
-  "owner": {"type": "text"}, "fee": {"type": "decimal(2)"}, "other": {"type": "date"}}}`), nil)
+  "owner": {"type": "text"}, "fee": {"type": "decimal(2)"}, "other": {"type": "date"}}}`)),
+
+		nil)
+
 	if len(diags) > 0 {
 		t.Fatal(diags)
 	}
@@ -259,8 +266,10 @@ func TestCompile_PrefilterOfTheClock(t *testing.T) {
 // reads, the system columns for the functions of the row, NULL where it
 // fails, and a refusal of what does not run over rows.
 func TestValue(t *testing.T) {
-	cls, diags := model.Define([]byte(`{"name": "Bill", "variables": {"due": {"type": "date"}, "ring": {"type": "datetime"}, "n": {"type": "number"}},
-	  "states": {"initial": "open", "list": ["open"]}}`), nil)
+	cls, diags := model.Define(testdef.Open([]byte(`{"name": "Bill", "variables": {"due": {"type": "date"}, "ring": {"type": "datetime"}, "n": {"type": "number"}},
+	  "states": {"initial": "open", "list": ["open"]}}`)),
+		nil)
+
 	if len(diags) > 0 {
 		t.Fatal(diags)
 	}
@@ -324,7 +333,7 @@ func TestCompile_ReadRule(t *testing.T) {
 	const ruled = `{"name": "Claim", "variables": {"owner": {"type": "text", "index": true}, "region": {"type": "text", "index": true}, "n": {"type": "number"}},
   "states": {"initial": "a", "list": ["a"]},
   "access": {"read": "region = \"EU\" AND (owner = USER() OR INGROUP(\"hr\"))"}}`
-	cls, diags := model.Define([]byte(ruled), nil)
+	cls, diags := model.Define(testdef.Open([]byte(ruled)), nil)
 	if len(diags) > 0 {
 		t.Fatal(diags)
 	}
@@ -405,7 +414,7 @@ func TestCompile_ReadRuleFolded(t *testing.T) {
 	} {
 		def := `{"name": "Claim", "variables": {"owner": {"type": "text", "index": true}, "region": {"type": "text"}, "n": {"type": "number"}},
   "states": {"initial": "a", "list": ["a"]}, "access": {"read": "` + tc.rule + `"}}`
-		cls, diags := model.Define([]byte(def), nil)
+		cls, diags := model.Define(testdef.Open([]byte(def)), nil)
 		if len(diags) > 0 {
 			t.Fatalf("%s: %v", tc.rule, diags)
 		}

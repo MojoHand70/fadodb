@@ -35,7 +35,7 @@ func TestActor_OnEveryEvent(t *testing.T) {
 		`{"name": "Ticket", "variables": {"trip": {"type": "text"}}, "states": {"initial": "issued", "list": ["issued"]}}`,
 		tripClass,
 	} {
-		if _, err := s.DefineClass(ctx, []byte(def), asSetup); err != nil {
+		if _, err := s.defineOpen(ctx, []byte(def), asSetup); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -123,7 +123,7 @@ func TestActor_OnEveryEvent(t *testing.T) {
 func TestActor_UnknownKind(t *testing.T) {
 	s, _ := openStore(t, Options{})
 	ctx := context.Background()
-	if _, err := s.DefineClass(ctx, []byte(`{"name": "Memo", "variables": {"t": {"type": "text"}}, "states": {"initial": "a", "list": ["a", "b"]}, "transitions": [{"name": "go", "from": "a", "to": "b"}]}`), asSetup); err != nil {
+	if _, err := s.defineOpen(ctx, []byte(`{"name": "Memo", "variables": {"t": {"type": "text"}}, "states": {"initial": "a", "list": ["a", "b"]}, "transitions": [{"name": "go", "from": "a", "to": "b"}]}`), asSetup); err != nil {
 		t.Fatal(err)
 	}
 	doc, err := s.Create(ctx, "Memo", Values{"t": "x"}, As(annPerson))
@@ -171,7 +171,7 @@ func TestActor_TheDeliveredEvent(t *testing.T) {
 	if _, err := s.DefineAction(ctx, []byte(`{"name": "audit.note"}`), asSetup); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.DefineClass(ctx, []byte(`{"name": "Memo", "variables": {"t": {"type": "text"}}, "states": {"initial": "a", "list": ["a"]},
+	if _, err := s.defineOpen(ctx, []byte(`{"name": "Memo", "variables": {"t": {"type": "text"}}, "states": {"initial": "a", "list": ["a"]},
  "rules": [{"on": "enter", "state": "a", "do": [{"action": "audit.note"}]}]}`), asSetup); err != nil {
 		t.Fatal(err)
 	}

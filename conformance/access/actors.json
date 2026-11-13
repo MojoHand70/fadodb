@@ -1,10 +1,12 @@
 {
   "suite": "actors",
   "description": "A principal says what it is, a person, an agent or a service, and for whom it acts (ADR-0050). USER() stays the one who acts; USERKIND() and ACTINGFOR() answer the two new facts to every formula that may ask who calls. An assistant sees what the one it acts for owns because the read rule says ACTINGFOR(); a step kept for people is written USERKIND() = \"person\", which a caller whose host said nothing does not pass. Every event records what its actor was and for whom it acted, and what a rule does it does as the caller who set it off, with that caller's kind.",
+  "as_written": true,
   "clock": "2026-03-01 12:00:00",
   "classes": [
     {"name": "Note", "variables": {"about": {"type": "text"}, "by_kind": {"type": "text", "default": "USERKIND()"}},
-     "states": {"initial": "kept", "list": ["kept"]}}
+     "states": {"initial": "kept", "list": ["kept"]},
+     "access": {"read": "INGROUP(\"everyone\")", "create": "INGROUP(\"everyone\")", "update": "FALSE", "delete": "FALSE"}}
   ],
   "class": {
     "name": "Expense",
@@ -26,7 +28,9 @@
     ],
     "access": {
       "read": "owner = USER() OR owner = ACTINGFOR() OR INGROUP(\"managers\")",
+      "create": "INGROUP(\"everyone\")",
       "update": "owner = USER() OR owner = ACTINGFOR()",
+      "delete": "FALSE",
       "transition": {"approve": "INGROUP(\"managers\") AND (total <= 10000 OR USERKIND() = \"person\")"}
     }
   },

@@ -468,9 +468,27 @@ func (c *class) bindSlots(p *formula.Program, owner string) error {
 		}
 		idx[i] = li
 	}
+	c.bind(p, idx)
+	return nil
+}
+
+// bind keeps where a program's slots are in the rows of the class: in
+// the map of the class, and on the program itself for the class that
+// bound it last, where a run finds it without the lookup. A class with
+// more than eight formulas pays for that lookup on every evaluation, and
+// every class has its four access rules beside its own formulas.
+func (c *class) bind(p *formula.Program, idx []int) {
 	c.slots[p] = idx
 	c.maxSlots = max(c.maxSlots, len(idx))
-	return nil
+	p.Bound, p.BoundFor = idx, c
+}
+
+// slotsOf are the leaves of a program's slots in the rows of the class.
+func (c *class) slotsOf(p *formula.Program) []int {
+	if p.BoundFor == any(c) {
+		return p.Bound
+	}
+	return c.slots[p]
 }
 
 // whoFunctions are the functions of the row that read a text the
@@ -611,11 +629,35 @@ func (c *class) close() {
 }
 
 // Validate compiles a class definition and reports what DefineClass would
-// refuse, without storing anything (ADR-0025).
+// refuse, without storing anything (ADR-0025). A definition it would
+// accept may still earn notes, findings that refuse nothing: each access
+// rule the class leaves out (ADR-0052, item 5). Diagnostics.Refuses
+// tells the two apart.
 func (s *Store) Validate(data []byte) model.Diagnostics {
 	s.cmu.RLock()
 	defer s.cmu.RUnlock()
-	_, diags := s.compileClasses(context.Background(), [][]byte{data}, false)
+	found, diags := s.compileClasses(context.Background(), [][]byte{data}, false)
+	return withNotes(found, diags, false)
+}
+
+// withNotes is the findings of a definition call: what refuses it, or,
+// when nothing does, the notes of its classes, each under the position
+// of its definition when the call takes several.
+func withNotes(found []*pending, diags model.Diagnostics, set bool) model.Diagnostics {
+	if len(diags) > 0 {
+		return diags
+	}
+	for i, p := range found {
+		if p == nil || p.cls == nil {
+			continue
+		}
+		for _, d := range p.cls.Notes {
+			if set {
+				d.Path = "/" + itoa(i) + d.Path
+			}
+			diags = append(diags, d)
+		}
+	}
 	return diags
 }
 
@@ -625,8 +667,8 @@ func (s *Store) Validate(data []byte) model.Diagnostics {
 func (s *Store) ValidateClasses(datas [][]byte) model.Diagnostics {
 	s.cmu.RLock()
 	defer s.cmu.RUnlock()
-	_, diags := s.compileClasses(context.Background(), datas, true)
-	return diags
+	found, diags := s.compileClasses(context.Background(), datas, true)
+	return withNotes(found, diags, true)
 }
 
 // pending is one class of a definition call: what was sent, what it

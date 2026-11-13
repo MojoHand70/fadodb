@@ -429,19 +429,12 @@ type readPlan struct {
 // maxReadPlans bounds the predicates kept for one class.
 const maxReadPlans = 256
 
-// The predicates of a class without a read rule: every caller sees
-// every document, or none but a content administrator does (ADR-0049,
-// question A).
-var (
-	readAll  = &readPlan{}
-	readNone = &readPlan{where: "0", plain: "0"}
-)
+// readNone is the predicate of a class that has no read rule: nobody but
+// a content administrator sees its documents (ADR-0052, item 5).
+var readNone = &readPlan{where: "0", plain: "0"}
 
 func readPlanFor(cls *model.Class, scope *formula.Scope, cols map[string]column, sources formula.Sources, d formula.Dialect, quoted func(formula.Slot) string, p Principal) (*readPlan, error) {
 	if cls.Access == nil || cls.Access.Read == nil {
-		if model.LeftOutAllows {
-			return readAll, nil
-		}
 		return readNone, nil
 	}
 	var rr *readRule

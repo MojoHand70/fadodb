@@ -1,6 +1,7 @@
 {
   "suite": "rules",
   "description": "The four rules of a class are enforced on every path (ADR-0049): who may see, create, change and delete a document. A document its caller may not see is answered as one that does not exist, by a read, a command, the listing of transitions, a filter, a count and the list of what is due alike. A caller who sees a document and may not do what they ask is refused with forbidden and the place of the rule. A transition with a rule of its own asks that rule and not update; one without asks update. An administrator passes every rule; a call without a principal is nobody.",
+  "as_written": true,
   "class": {
     "name": "Claim",
     "variables": {

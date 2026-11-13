@@ -99,7 +99,7 @@ func TestExampleApprovals(t *testing.T) {
 	ann, bob := fado.As(fado.Principal{ID: "ann"}), fado.As(fado.Principal{ID: "bob"})
 	state := func(id string) string {
 		t.Helper()
-		doc, err := db.Get(ctx, "Purchase", id)
+		doc, err := db.Get(ctx, "Purchase", id, ann)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -115,10 +115,10 @@ func TestExampleApprovals(t *testing.T) {
 		}
 	}
 	for _, id := range []string{"P-1", "P-2"} {
-		if _, err := db.Create(ctx, "Purchase", fado.Values{"number": id, "approvers": []any{"ann", "bob"}}, fado.WithID(id)); err != nil {
+		if _, err := db.Create(ctx, "Purchase", fado.Values{"number": id, "approvers": []any{"ann", "bob"}}, fado.WithID(id), ann); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := db.Transition(ctx, "Purchase", id, "submit", nil); err != nil {
+		if _, err := db.Transition(ctx, "Purchase", id, "submit", nil, ann); err != nil {
 			t.Fatal(err)
 		}
 	}

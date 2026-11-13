@@ -99,7 +99,15 @@ All notable changes to FadoDB are recorded here. The format follows
   `ImportRows` asks `write`, and so do the `table.insert`,
   `table.update` and `table.delete` actions of a rule, as the person
   who set the rule off. A formula goes on reading a table with the
-  engine's eyes. A table without rules is as it was.
+  engine's eyes.
+- Checking a class notes each access rule it leaves out (ADR-0052, item
+  5): `ValidateClass` and `ValidateClasses` answer a finding with the
+  code `rule_left_out`, the place of the rule, what it means and what
+  to add, and `Note` set. A note refuses nothing: `Diagnostics.Refuses`
+  tells whether a definition is refused, `Diagnostics.Err` is nil when
+  it is not, and the class a `DefineClass` returns carries its `Notes`.
+  `conformance/access/left_out.json` and `left_out_partly.json` are the
+  suites.
 
 ### Changed
 
@@ -123,11 +131,19 @@ All notable changes to FadoDB are recorded here. The format follows
   database made by an earlier engine, v0.4.1 included, is refused when
   opened, as before 1.0 there is no upgrade path.
 - A class that declared `read`, `create`, `update` or `delete` had them
-  checked and not enforced; they are enforced now. A rule a class
-  leaves out lets every caller through, as before. The owner has ruled
-  that it lets nobody through, and that is built with ADR-0052. The
-  Invoice sample lets
-  finance, sales and the customer see an invoice and nobody delete one.
+  checked and not enforced; they are enforced now.
+- **A rule a class leaves out lets nobody through** (ADR-0052, item 5,
+  the owner's ruling). A class with no `access` block holds documents
+  that nobody but a content administrator creates, sees, changes or
+  deletes; a class that writes `read` and leaves out `update` is seen
+  and not changed. The same holds for the `read` and the `write` rule
+  of a table. The refusal names the rule that is missing and what to
+  add. `"read": "INGROUP(\"everyone\")"` opens a rule to every caller
+  that has an id, and `"TRUE"` to a call without a principal as well.
+  A class without states is asked `read` and `create` by its previews.
+  Every sample writes its rules: an invoice is created and changed by
+  sales while it is a draft, approved and paid by finance, seen by
+  both and by its customer, and deleted by nobody.
 
 ## [0.4.1] - 2026-11-13
 

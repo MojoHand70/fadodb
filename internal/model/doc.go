@@ -19,6 +19,6 @@
 // engine's own or has a definition, an ActionSpec compiled from its own
 // JSON (ADR-0045), against which the rule's arguments are typed. The
 // class-level access rules are compiled here too, and the store
-// enforces them (ADR-0049); LeftOutAllows is what a rule answers that a
-// class leaves out.
+// enforces them (ADR-0049). A rule a class leaves out lets nobody
+// through (ADR-0052, item 5), and Validate notes each one.
 package model

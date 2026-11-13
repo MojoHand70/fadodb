@@ -14,7 +14,7 @@ import (
 func TestReset_Command(t *testing.T) {
 	s, _ := openStore(t, Options{})
 	ctx := context.Background()
-	if _, err := s.DefineClass(ctx, []byte(`{"name": "Form",
+	if _, err := s.defineOpen(ctx, []byte(`{"name": "Form",
  "variables": {
    "name":    {"type": "text", "required": true},
    "parts":   {"type": "number", "default": "4"},
@@ -90,7 +90,7 @@ func TestRefresh_MakesADocumentLookAtTheClock(t *testing.T) {
 	now := day
 	s, _ := openStore(t, Options{Now: func() time.Time { return now }})
 	ctx := context.Background()
-	if _, err := s.DefineClass(ctx, []byte(`{"name": "Bill", "variables": {"due": {"type": "date"}},
+	if _, err := s.defineOpen(ctx, []byte(`{"name": "Bill", "variables": {"due": {"type": "date"}},
  "states": {"initial": "sent", "list": ["sent", "late"]},
  "transitions": [{"from": "sent", "to": "late", "guard": "TODAY() > due"}]}`), asSetup); err != nil {
 		t.Fatal(err)
@@ -138,14 +138,14 @@ func TestRefresh_AdoptsTheClassVersion(t *testing.T) {
 	v1 := `{"name": "Meter", "variables": {"n": {"type": "number"}, "twice": {"formula": "n * 2"}}, "states": {"initial": "on", "list": ["on"]}}`
 	v2 := `{"name": "Meter", "variables": {"n": {"type": "number"}, "twice": {"formula": "n * 3"}, "seen": {"formula": "n", "mode": "triggered", "on": ["refresh"]}},
  "states": {"initial": "on", "list": ["on"]}}`
-	if _, err := s.DefineClass(ctx, []byte(v1), asSetup); err != nil {
+	if _, err := s.defineOpen(ctx, []byte(v1), asSetup); err != nil {
 		t.Fatal(err)
 	}
 	doc, err := s.Create(ctx, "Meter", Values{"n": 5})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.DefineClass(ctx, []byte(v2), asSetup); err != nil {
+	if _, err := s.defineOpen(ctx, []byte(v2), asSetup); err != nil {
 		t.Fatal(err)
 	}
 	doc, err = s.Refresh(ctx, "Meter", doc.ID, []string{"seen"})

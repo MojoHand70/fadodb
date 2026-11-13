@@ -23,7 +23,10 @@ type Class struct {
 	Title *formula.Program
 	// Variables in declaration order.
 	Variables []*Variable
-	byName    map[string]*Variable
+	// Notes are the findings that refused nothing when the class was
+	// compiled: each access rule it leaves out (ADR-0052, item 5).
+	Notes  Diagnostics
+	byName map[string]*Variable
 	// Order lists the auto computed variables, and "title" when there is
 	// a title formula, in an order where every one comes after what it
 	// reads: the full recalculation order of ADR-0015.
@@ -265,14 +268,6 @@ func ParseAfter(s string) (int64, bool) {
 	}
 	return n * unit, true
 }
-
-// LeftOutAllows is what a class-level access rule answers that a class
-// leaves out, question A of ADR-0049. The owner ruled on 2026-11-13 that
-// it lets nobody through (ADR-0052, item 5). Until the step that builds
-// that, with rules for every sample and test, the engine keeps the
-// answer it has given since Phase 2: a class that says nothing lets
-// every caller through.
-const LeftOutAllows = true
 
 // Access holds the compiled class-level access rules.
 type Access struct {
@@ -526,6 +521,7 @@ func CompileIn(def *Definition, env Env) (*Class, Diagnostics) {
 		return nil, c.list
 	}
 	cls.Reads = c.reads
+	cls.Notes = leftOut(def)
 	return cls, nil
 }
 
@@ -1471,4 +1467,37 @@ func rightRule(c *collector, path string, raw json.RawMessage, scope *formula.Sc
 	}
 	c.add(CodeBadValue, path, "a right is a formula as text or a list of group names")
 	return nil
+}
+
+// leftOut notes each of the four rules a class leaves out. Nobody but a
+// content administrator passes a rule that is not written (ADR-0052,
+// item 5): that is safe, and seldom what the author of the class meant,
+// so the definition is accepted and says so. A class without states has
+// no documents to change or delete, and is noted for read and create,
+// which its previews ask: who may run the calculation, and who may see
+// what it gives.
+func leftOut(def *Definition) Diagnostics {
+	var read, create, update, del string
+	if def.Access != nil {
+		read, create, update, del = def.Access.Read, def.Access.Create, def.Access.Update, def.Access.Delete
+	}
+	rules := []struct{ name, src, what string }{
+		{"read", read, "sees its documents"},
+		{"create", create, "creates its documents"},
+		{"update", update, "changes its documents, or moves them by a transition that has no rule of its own"},
+		{"delete", del, "deletes its documents"},
+	}
+	if def.States == nil {
+		rules = rules[:2]
+	}
+	var notes Diagnostics
+	for _, r := range rules {
+		if r.src != "" {
+			continue
+		}
+		notes = append(notes, Diagnostic{Code: CodeRuleLeftOut, Path: "/access/" + r.name, Pos: -1, Note: true,
+			Message: def.Name + " has no " + r.name + " rule: nobody but a content administrator " + r.what,
+			Hint:    "add access." + r.name + ", a condition such as INGROUP(\"everyone\") for every caller that has an id"})
+	}
+	return notes
 }

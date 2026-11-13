@@ -300,8 +300,7 @@ func (c *class) bindElemSlots(p *formula.Program, owner, as string, ch *child) e
 		}
 		idx[i] = li
 	}
-	c.slots[p] = idx
-	c.maxSlots = max(c.maxSlots, len(idx))
+	c.bind(p, idx)
 	return nil
 }
 

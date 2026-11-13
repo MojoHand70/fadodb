@@ -170,6 +170,7 @@ document. `into` says which variables take the answer.
     "ticket_error": {"type": "text"}
   },
   "states": {"initial": "received", "list": ["received", "filing", "filed", "stuck"]},
+  "access": {"read": "INGROUP(\"everyone\")", "create": "INGROUP(\"everyone\")", "update": "CREATEDBY() = USER()", "delete": "FALSE"},
   "transitions": [
     {"name": "file", "from": "received", "to": "filing"},
     {"from": "filing", "to": "filed", "guard": "NOT ISBLANK(ticket)"},

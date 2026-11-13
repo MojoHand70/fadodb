@@ -19,10 +19,11 @@ formula can read the documents of another class, one value or a count,
 a sum, the smallest or the largest. A formula reads the life of its
 document, a transition may carry its time, and the engine moves the
 document by itself when that time comes. The access rules of a class
-are enforced (ADR-0049), and four system groups hold the work that is
-not about one document (ADR-0052); a rule left out letting nobody
-through, the reason a content administrator gives, and substitutions
-are accepted and not built yet, and the server comes with its phase.
+are enforced (ADR-0049), a rule a class leaves out lets nobody
+through, and four system groups hold the work that is not about one
+document (ADR-0052); the reason a content administrator gives and
+substitutions are accepted and not built yet, and the server comes
+with its phase.
 Since v0.1.0 the records ADR-0022 to
 ADR-0038 fixed what the first embedder needs and what Phase 2 measured:
 SQLite as the transactional store and the in-memory index for lookups, by
@@ -178,10 +179,13 @@ part; the host program gives them to a caller apart from its other
 groups; a class can ask for them with `INGROUP`, and for `everyone`,
 which is every caller that has an id; and work nobody was given is
 done by nobody, a call without a principal included.
-What is built is behind the rulings in two ways, until the steps that
-follow: a rule a class leaves out still lets every caller through, and
-a content administrator's act past a rule needs no reason and leaves
-no mark. Not built yet beside those: the record of who defined each
+Its sixth step closes what a class does not say: a rule a class or a
+table leaves out lets nobody through but a content administrator, the
+refusal names the rule that is missing, checking a class notes each
+one without refusing it, and every sample writes its four rules.
+What is built is behind the rulings in one way, until the next step: a
+content administrator's act past a rule needs no reason and leaves no
+mark. Not built yet beside that: the record of who defined each
 version of a class, substitutions (ADR-0053), and the measurements
 that close the phase.
 This page is updated when a phase starts and when it ends;

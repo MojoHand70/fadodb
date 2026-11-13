@@ -14,7 +14,7 @@ func TestAt_PreviewRunsAtTheMoment(t *testing.T) {
 	ctx := context.Background()
 	cls := `{"name": "Stamp", "variables": {"at": {"type": "datetime", "default": "NOW()"}, "day": {"type": "date", "default": "TODAY()"}, "n": {"type": "number"}},
 	  "states": {"initial": "s", "list": ["s"]}}`
-	if _, err := s.DefineClass(ctx, []byte(cls), asSetup); err != nil {
+	if _, err := s.defineOpen(ctx, []byte(cls), asSetup); err != nil {
 		t.Fatal(err)
 	}
 	moment := time.Date(2027, 3, 4, 5, 6, 7, 0, time.UTC)
@@ -42,7 +42,7 @@ func TestAt_PreviewRunsAtTheMoment(t *testing.T) {
 		}
 	}
 	// A draft preview too.
-	dp, err := s.PreviewDraft(ctx, []byte(cls), "", nil, "", At(moment), asSetup)
+	dp, err := s.PreviewDraft(ctx, opened([]byte(cls)), "", nil, "", At(moment), asSetup)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -54,10 +54,10 @@ func TestAt_PreviewRunsAtTheMoment(t *testing.T) {
 func TestAt_RefusedOnCommands(t *testing.T) {
 	s, _ := openStore(t, Options{})
 	ctx := context.Background()
-	if _, err := s.DefineClass(ctx, []byte(`{"name": "T", "variables": {"a": {"type": "number"}}, "states": {"initial": "s", "list": ["s", "u"]}, "transitions": [{"name": "go", "from": "s", "to": "u"}]}`), asSetup); err != nil {
+	if _, err := s.defineOpen(ctx, []byte(`{"name": "T", "variables": {"a": {"type": "number"}}, "states": {"initial": "s", "list": ["s", "u"]}, "transitions": [{"name": "go", "from": "s", "to": "u"}]}`), asSetup); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.DefineTable(ctx, []byte(`{"name": "Fx", "columns": {"code": "text", "rate": "decimal(6)"}, "key": ["code"]}`), asSetup); err != nil {
+	if _, err := s.defineOpenTable(ctx, []byte(`{"name": "Fx", "columns": {"code": "text", "rate": "decimal(6)"}, "key": ["code"]}`), asSetup); err != nil {
 		t.Fatal(err)
 	}
 	doc, err := s.Create(ctx, "T", Values{"a": 1})

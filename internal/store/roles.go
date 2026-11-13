@@ -69,7 +69,7 @@ func (s *Store) tableRefusal(t *table, write bool, p Principal, now int64) *Erro
 	if write {
 		prog, kind, what = t.def.Write, "write", "write the rows of "
 	}
-	held := leftOutAllows
+	held := false
 	var failure error
 	if prog != nil {
 		ev := s.reader()

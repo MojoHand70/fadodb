@@ -175,7 +175,7 @@ func TestTimed_Due(t *testing.T) {
 	never := `,
    {"from": ["a", "b"], "to": "gone", "guard": "ENTRIES(\"gone\") > 0"}`
 	for _, def := range []string{timedJob("Fast", ""), timedJob("Slow", never)} {
-		if _, err := s.DefineClass(ctx, []byte(def), asSetup); err != nil {
+		if _, err := s.defineOpen(ctx, []byte(def), asSetup); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -313,7 +313,7 @@ func TestTimed_Filters(t *testing.T) {
 	cl := &still{now: dueDay}
 	s, _ := openStore(t, Options{Now: cl.Now})
 	ctx := context.Background()
-	if _, err := s.DefineClass(ctx, []byte(`{"name": "Bill", "variables": {"due": {"type": "date", "index": true}, "n": {"type": "number"}},
+	if _, err := s.defineOpen(ctx, []byte(`{"name": "Bill", "variables": {"due": {"type": "date", "index": true}, "n": {"type": "number"}},
 	  "states": {"initial": "open", "list": ["open", "late", "old", "void"]},
 	  "transitions": [
 	    {"from": "open", "to": "late", "at": "due"},
@@ -374,7 +374,7 @@ func TestTimed_OlderVersions(t *testing.T) {
 	def := `{"name": "Lead", "variables": {"n": {"type": "number"}},
 	  "states": {"initial": "open", "list": ["open", "stale"]},
 	  "transitions": [{"name": "drop", "from": "open", "to": "stale"}%s]}`
-	if _, err := s.DefineClass(ctx, []byte(fmt.Sprintf(def, "")), asSetup); err != nil {
+	if _, err := s.defineOpen(ctx, []byte(fmt.Sprintf(def, "")), asSetup); err != nil {
 		t.Fatal(err)
 	}
 	entered := map[string]int64{}
@@ -391,7 +391,7 @@ func TestTimed_OlderVersions(t *testing.T) {
 		t.Fatalf("a class without a timer has %v due, %v", got, err)
 	}
 	// Four days on the class says a lead goes stale after three days.
-	if _, err := s.DefineClass(ctx, []byte(fmt.Sprintf(def, `, {"from": "open", "to": "stale", "after": "3d"}`)), asSetup); err != nil {
+	if _, err := s.defineOpen(ctx, []byte(fmt.Sprintf(def, `, {"from": "open", "to": "stale", "after": "3d"}`)), asSetup); err != nil {
 		t.Fatal(err)
 	}
 	want := []DueDocument{
@@ -453,7 +453,7 @@ func TestTimed_Chain(t *testing.T) {
 	cl := &still{now: dueDay}
 	s, _ := openStore(t, Options{Now: cl.Now})
 	ctx := context.Background()
-	if _, err := s.DefineClass(ctx, []byte(`{"name": "Claim", "variables": {
+	if _, err := s.defineOpen(ctx, []byte(`{"name": "Claim", "variables": {
 	    "note": {"type": "text"}, "log": {"type": "text", "default": "\"\""}, "limit": {"type": "date"},
 	    "pinged": {"type": "datetime", "formula": "NOW()", "mode": "triggered", "on": ["transition:ping"]},
 	    "left": {"type": "text", "formula": "STATE() & \" by \" & USER()", "mode": "triggered", "on": ["exit:waiting"]}},
@@ -561,7 +561,7 @@ func TestTimed_PreviewAtAMoment(t *testing.T) {
 	cl := &still{now: dueDay}
 	s, _ := openStore(t, Options{Now: cl.Now})
 	ctx := context.Background()
-	if _, err := s.DefineClass(ctx, []byte(`{"name": "Nudge", "variables": {"n": {"type": "number"}},
+	if _, err := s.defineOpen(ctx, []byte(`{"name": "Nudge", "variables": {"n": {"type": "number"}},
 	  "states": {"initial": "idle", "list": ["idle", "waiting", "done"]},
 	  "transitions": [
 	    {"name": "start", "from": "idle", "to": "waiting"},
@@ -640,7 +640,7 @@ func TestTimed_NeverAndForever(t *testing.T) {
 	never := `,
 	    {"from": "open", "to": "void", "guard": "ENTRIES(\"void\") > 0"}`
 	for _, tc := range []struct{ name, tail string }{{"Odd", ""}, {"OddSlow", never}} {
-		if _, err := s.DefineClass(ctx, []byte(`{"name": "`+tc.name+`", "variables": {"due": {"type": "date"}, "n": {"type": "number"}},
+		if _, err := s.defineOpen(ctx, []byte(`{"name": "`+tc.name+`", "variables": {"due": {"type": "date"}, "n": {"type": "number"}},
 	  "states": {"initial": "open", "list": ["open", "late", "void"]},
 	  "transitions": [
 	    {"name": "expire", "from": "open", "to": "late", "at": "ADDDAYS(due, 10 / n)"}`+tc.tail+`]}`), asSetup); err != nil {
@@ -694,7 +694,7 @@ func TestTimed_NeverAndForever(t *testing.T) {
 	}
 	// Two timers whose moments have both come, each into the other's
 	// state.
-	if _, err := s.DefineClass(ctx, []byte(`{"name": "Loop", "variables": {"x": {"type": "date"}, "y": {"type": "date"}},
+	if _, err := s.defineOpen(ctx, []byte(`{"name": "Loop", "variables": {"x": {"type": "date"}, "y": {"type": "date"}},
 	  "states": {"initial": "p", "list": ["p", "q"]},
 	  "transitions": [{"from": "p", "to": "q", "at": "x"}, {"from": "q", "to": "p", "at": "y"}]}`), asSetup); err != nil {
 		t.Fatal(err)
@@ -718,7 +718,7 @@ func TestTimed_BeforeTheEpoch(t *testing.T) {
 	    {"from": "open", "to": "void", "guard": "ENTRIES(\"void\") > 0"}`
 	classes := []string{"Old", "OldSlow"}
 	for i, tail := range []string{"", never} {
-		if _, err := s.DefineClass(ctx, []byte(`{"name": "`+classes[i]+`", "variables": {"due": {"type": "date"}, "ring": {"type": "datetime"}},
+		if _, err := s.defineOpen(ctx, []byte(`{"name": "`+classes[i]+`", "variables": {"due": {"type": "date"}, "ring": {"type": "datetime"}},
 	  "states": {"initial": "open", "list": ["open", "late", "rung", "stale", "void"]},
 	  "transitions": [
 	    {"from": "open", "to": "late", "at": "due"},

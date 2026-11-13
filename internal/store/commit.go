@@ -348,7 +348,7 @@ func (s *Store) run(ctx context.Context, cmd command, now time.Time) (*result, e
 				// Whoever repeats a key is answered as the command answers:
 				// the document if they may see it now, the bare reply if
 				// not (ADR-0049, item 7).
-				if c.ruled(ruleRead) && asksRules(&cmd) && !cmd.internal {
+				if asksRules(&cmd) && !cmd.internal {
 					seen, err := s.sees(ctx, c, docID, cmd.o)
 					if err != nil {
 						return nil, err
@@ -431,7 +431,7 @@ func (s *Store) run(ctx context.Context, cmd command, now time.Time) (*result, e
 		// The delete rule of the class, over the stored document under the
 		// current definition's layout (ADR-0049, item 2).
 		row := before
-		if beforeClass != c && (c.ruled(ruleDelete) || c.rules != nil && len(c.rules.delete) > 0) {
+		if beforeClass != c {
 			row = c.adopted(beforeClass, before)
 		}
 		evalCtx.ID, evalCtx.State = before.id, before.state

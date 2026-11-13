@@ -38,7 +38,7 @@ type evaluator struct {
 
 // run evaluates a program over the row's values in the class's layout.
 func (e *evaluator) run(c *class, prog *formula.Program, row *docRow, ctx *formula.Context) (formula.Value, error) {
-	idx := c.slots[prog]
+	idx := c.slotsOf(prog)
 	if cap(e.vars) < len(idx) {
 		e.vars = make([]formula.Value, max(len(idx), c.maxSlots))
 	}
@@ -74,7 +74,7 @@ func (e *evaluator) tell(c *class, row *docRow) error {
 // element of the list (ADR-0044, item 12): a slot below zero reads the
 // element, -1 its first leaf.
 func (e *evaluator) runWith(c *class, prog *formula.Program, row *docRow, elem childRow, ctx *formula.Context) (formula.Value, error) {
-	idx := c.slots[prog]
+	idx := c.slotsOf(prog)
 	if cap(e.vars) < len(idx) {
 		e.vars = make([]formula.Value, max(len(idx), c.maxSlots))
 	}

@@ -34,7 +34,7 @@ const calculator = `{
 func TestStateAndIDInFormulas(t *testing.T) {
 	s, _ := openStore(t, Options{})
 	ctx := context.Background()
-	if _, err := s.DefineClass(ctx, []byte(ticket), asSetup); err != nil {
+	if _, err := s.defineOpen(ctx, []byte(ticket), asSetup); err != nil {
 		t.Fatal(err)
 	}
 	doc, err := s.Create(ctx, "Ticket", Values{"subject": "printer"}, As(alice))
@@ -77,7 +77,7 @@ func TestStateAndIDInFormulas(t *testing.T) {
 		}
 	}
 	// A preview over a stored document sees its state and id.
-	pv, err := s.PreviewDraft(ctx, []byte(ticket), doc.ID, Values{"subject": "scanner"}, "", designing(alice))
+	pv, err := s.PreviewDraft(ctx, opened([]byte(ticket)), doc.ID, Values{"subject": "scanner"}, "", designing(alice))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -85,7 +85,7 @@ func TestStateAndIDInFormulas(t *testing.T) {
 		t.Errorf("draft over a document: %s", dump(pv.Document.Values))
 	}
 	// The preview of a stateless application has an id and no state.
-	pv, err = s.PreviewDraft(ctx, []byte(calculator), "", Values{"amount": 21}, "", designing(alice))
+	pv, err = s.PreviewDraft(ctx, opened([]byte(calculator)), "", Values{"amount": 21}, "", designing(alice))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -96,7 +96,7 @@ func TestStateAndIDInFormulas(t *testing.T) {
 		t.Errorf("stateless ID(): id %q, values %s", pv.Document.ID, dump(pv.Document.Values))
 	}
 	// An auto formula may not read them.
-	_, err = s.DefineClass(ctx, []byte(`{"name": "Bad", "variables": {"a": {"type": "text"}, "b": {"formula": "STATE() & a"}},
+	_, err = s.defineOpen(ctx, []byte(`{"name": "Bad", "variables": {"a": {"type": "text"}, "b": {"formula": "STATE() & a"}},
 	  "states": {"initial": "new", "list": ["new"]}}`), asSetup)
 
 	if err == nil {

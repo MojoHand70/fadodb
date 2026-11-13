@@ -18,6 +18,12 @@
     {"from": "waiting", "to": "rejected", "guard": "refused > 0"},
     {"from": "waiting", "to": "approved", "guard": "granted >= needed"}
   ],
+  "access": {
+    "read":   "INGROUP(\"everyone\")",
+    "create": "INGROUP(\"everyone\")",
+    "update": "CREATEDBY() = USER() AND STATE() = \"draft\"",
+    "delete": "FALSE"
+  },
   "rules": [
     {"on": "transition", "name": "submit",
      "do": [{"action": "create", "class": "Approval", "each": "approvers", "as": "approver", "id": "ID() & \"-\" & approver",

@@ -399,7 +399,7 @@ func TestDatabaseSendsARequest(t *testing.T) {
  "result": {"entry": "JSONVALUE(BODY, \"entry\")"}}`), setup); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := db.DefineClass(ctx, []byte(`{"name": "Invoice", "variables": {"number": {"type": "text"}},
+	if _, err := db.DefineClass(ctx, []byte(`{"name": "Invoice", "access": {"read": "TRUE", "create": "TRUE", "update": "TRUE", "delete": "TRUE"}, "variables": {"number": {"type": "text"}},
  "states": {"initial": "draft", "list": ["draft", "approved"]}, "transitions": [{"name": "approve", "from": "draft", "to": "approved"}],
  "rules": [{"on": "enter", "state": "approved", "do": [{"action": "books.post", "args": {"number": "number"}}]}]}`), setup); err != nil {
 		t.Fatal(err)
@@ -512,7 +512,7 @@ func exampleWebhook(t *testing.T, def []byte) {
 	if info.Name != "webhook.send" || info.Kind != "declared" || info.Connection != "webhook" || !info.Available || len(info.Secrets) != 2 {
 		t.Errorf("the sample as the catalogue lists it: %+v", info)
 	}
-	if _, err := db.DefineClass(ctx, []byte(`{"name": "Invoice",
+	if _, err := db.DefineClass(ctx, []byte(`{"name": "Invoice","access": {"read": "TRUE", "create": "TRUE", "update": "TRUE", "delete": "TRUE"},
  "variables": {"number": {"type": "text"}, "sent": {"type": "bool"}, "send_error": {"type": "text"}, "receipt": {"type": "text"}},
  "states": {"initial": "draft", "list": ["draft", "approved", "announced"]},
  "transitions": [{"name": "approve", "from": "draft", "to": "approved"}, {"from": "approved", "to": "announced", "guard": "sent"}],
@@ -595,7 +595,7 @@ func TestActionsGuide(t *testing.T) {
 		case head["action"] != nil:
 			// One action of a rule: it stands in a class of its own.
 			fragments++
-			class := `{"name": "Fragment", "variables": {"subject": {"type": "text"}, "ticket_error": {"type": "text"}},
+			class := `{"name": "Fragment", "access": {"read": "TRUE", "create": "TRUE", "update": "TRUE", "delete": "TRUE"}, "variables": {"subject": {"type": "text"}, "ticket_error": {"type": "text"}},
  "states": {"initial": "a", "list": ["a", "b"]}, "transitions": [{"name": "go", "from": "a", "to": "b"}],
  "rules": [{"on": "enter", "state": "b", "do": [` + src + `]}]}`
 			if diags := db.ValidateClass([]byte(class)); len(diags) > 0 {

@@ -33,7 +33,7 @@ func defineOrders(t testing.TB, s *Store) {
 	t.Helper()
 	ctx := context.Background()
 	for _, def := range []string{noteClass, orderClass} {
-		if _, err := s.DefineClass(ctx, []byte(def), asSetup); err != nil {
+		if _, err := s.defineOpen(ctx, []byte(def), asSetup); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -119,10 +119,10 @@ func TestOutbox_TheActionsCommit(t *testing.T) {
 func TestOutbox_EveryCommitQueues(t *testing.T) {
 	s, _ := openStore(t, Options{})
 	ctx := context.Background()
-	if _, err := s.DefineClass(ctx, []byte(noteClass), asSetup); err != nil {
+	if _, err := s.defineOpen(ctx, []byte(noteClass), asSetup); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.DefineClass(ctx, []byte(`{"name": "Parcel", "variables": {"weight": {"type": "number"}},
+	if _, err := s.defineOpen(ctx, []byte(`{"name": "Parcel", "variables": {"weight": {"type": "number"}},
  "states": {"initial": "new", "list": ["new", "heavy"]},
  "transitions": [{"from": "new", "to": "heavy", "guard": "weight > 10"}],
  "rules": [
@@ -356,7 +356,7 @@ func TestOutbox_ClassesThatNameEachOtherLoad(t *testing.T) {
  "rules": [{"on": "create", "if": "n < 3", "do": [{"action": "create", "class": "Ping", "values": {"n": "n + 1"}}]}]}`
 	for _, def := range []string{strings.Replace(ping, "%s", "", 1), pong,
 		strings.Replace(ping, "%s", `, "rules": [{"on": "create", "if": "n < 3", "do": [{"action": "create", "class": "Pong", "values": {"n": "n + 1"}}]}]`, 1)} {
-		if _, err := s.DefineClass(ctx, []byte(def), asSetup); err != nil {
+		if _, err := s.defineOpen(ctx, []byte(def), asSetup); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -476,7 +476,7 @@ func TestOutboxCrashHelper(t *testing.T) {
 func TestOutbox_TooDeep(t *testing.T) {
 	s, _ := openStore(t, Options{})
 	ctx := context.Background()
-	if _, err := s.DefineClass(ctx, []byte(`{"name": "Echo", "variables": {"n": {"type": "number", "default": "0"}}, "states": {"initial": "made", "list": ["made"]},
+	if _, err := s.defineOpen(ctx, []byte(`{"name": "Echo", "variables": {"n": {"type": "number", "default": "0"}}, "states": {"initial": "made", "list": ["made"]},
  "rules": [{"on": "create", "do": [{"action": "create", "class": "Echo", "id": "\"echo-\" & TEXT(n + 1)", "values": {"n": "n + 1"}}]}]}`), asSetup); err != nil {
 		t.Fatal(err)
 	}

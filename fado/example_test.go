@@ -38,6 +38,7 @@ func Example() {
 
 	_, err = db.DefineClass(ctx, []byte(`{
 	  "name": "Invoice",
+	  "access": {"read": "TRUE", "create": "TRUE", "update": "TRUE", "delete": "TRUE"},
 	  "title": "\"INV-\" & number",
 	  "variables": {
 	    "number":   {"type": "text", "required": true},
@@ -108,7 +109,7 @@ func Example() {
 	fmt.Println("sql:", rows.Columns, rows.Rows[0])
 
 	// A definition's problems come back at once, each with a place.
-	_, err = db.DefineClass(ctx, []byte(`{"name": "Receipt", "variables": {"amount": {"type": "money", "default": "1"}, "paid": {"type": "bool", "formula": "amount"}}}`), setup)
+	_, err = db.DefineClass(ctx, []byte(`{"name": "Receipt", "access": {"read": "TRUE", "create": "TRUE", "update": "TRUE", "delete": "TRUE"}, "variables": {"amount": {"type": "money", "default": "1"}, "paid": {"type": "bool", "formula": "amount"}}}`), setup)
 	var diags fado.Diagnostics
 	if errors.As(err, &diags) {
 		for _, d := range diags {
@@ -149,6 +150,7 @@ func Example_rules() {
 
 	_, err = db.DefineClass(ctx, []byte(`{
 	  "name": "Request",
+	  "access": {"read": "TRUE", "create": "TRUE", "update": "TRUE", "delete": "TRUE"},
 	  "variables": {
 	    "amount":      {"type": "money", "scale": 2},
 	    "approved_by": {"type": "text"},
@@ -229,6 +231,7 @@ func Example_triggered() {
 
 	_, err = db.DefineClass(ctx, []byte(`{
 	  "name": "Quote",
+	  "access": {"read": "TRUE", "create": "TRUE", "update": "TRUE", "delete": "TRUE"},
 	  "variables": {
 	    "amount": {"type": "number"},
 	    "rate":   {"type": "number"},
@@ -287,6 +290,7 @@ func Example_approvals() {
 	purchase := func(rules string) string {
 		return `{
 	  "name": "Purchase",
+	  "access": {"read": "TRUE", "create": "TRUE", "update": "TRUE", "delete": "TRUE"},
 	  "variables": {"approvers": {"type": "array<text>"}, "approved_by": {"type": "text"}},
 	  "states": {"initial": "draft", "list": ["draft", "waiting", "approved"]},
 	  "transitions": [{"name": "submit", "from": "draft", "to": "waiting"},
@@ -304,7 +308,8 @@ func Example_approvals() {
 	  "variables": {"purchase": {"type": "text", "required": true}, "approver": {"type": "text", "required": true}},
 	  "states": {"initial": "asked", "list": ["asked", "granted"]},
 	  "transitions": [{"name": "grant", "from": "asked", "to": "granted"}],
-	  "access": {"transition": {"grant": "approver = USER()"}},
+	  "access": {"read": "TRUE", "create": "TRUE", "update": "FALSE", "delete": "FALSE",
+	             "transition": {"grant": "approver = USER()"}},
 	  "rules": [{"on": "enter", "state": "granted",
 	             "do": [{"action": "transition", "class": "Purchase", "id": "purchase", "name": "approve",
 	                     "values": {"approved_by": "approver"}}]}]
@@ -402,6 +407,7 @@ func Example_goAction() {
 	invoice := func(args string) []byte {
 		return []byte(`{
 	  "name": "Invoice",
+	  "access": {"read": "TRUE", "create": "TRUE", "update": "TRUE", "delete": "TRUE"},
 	  "variables": {"number": {"type": "text"}},
 	  "states": {"initial": "draft", "list": ["draft", "approved"]},
 	  "transitions": [{"name": "approve", "from": "draft", "to": "approved"}],
@@ -479,6 +485,7 @@ func Example_due() {
 
 	_, err = db.DefineClass(ctx, []byte(`{
 	  "name": "Invoice",
+	  "access": {"read": "TRUE", "create": "TRUE", "update": "TRUE", "delete": "TRUE"},
 	  "variables": {"due": {"type": "date", "index": true}},
 	  "states": {"initial": "sent", "list": ["sent", "overdue", "paid"], "final": ["paid"]},
 	  "transitions": [
@@ -562,6 +569,7 @@ func Example_timed() {
 
 	_, err = db.DefineClass(ctx, []byte(`{
 	  "name": "Request",
+	  "access": {"read": "TRUE", "create": "TRUE", "update": "TRUE", "delete": "TRUE"},
 	  "variables": {"deadline": {"type": "date"}, "reminders": {"type": "number", "default": "0"}, "reminded_by": {"type": "text"}},
 	  "states": {"initial": "waiting", "list": ["waiting", "expired", "closed"], "final": ["expired", "closed"]},
 	  "transitions": [
@@ -639,6 +647,7 @@ func Example_many() {
 
 	_, err = db.DefineClass(ctx, []byte(`{
 	  "name": "Invoice",
+	  "access": {"read": "TRUE", "create": "TRUE", "update": "TRUE", "delete": "TRUE"},
 	  "variables": {"cost_centre": {"type": "text"}},
 	  "states": {"initial": "approved", "list": ["approved", "booked"]},
 	  "transitions": [

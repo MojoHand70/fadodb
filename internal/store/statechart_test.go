@@ -31,7 +31,7 @@ var finance = Principal{ID: "fin", Groups: []string{"finance"}}
 
 func defineApproval(t *testing.T, s *Store) {
 	t.Helper()
-	if _, err := s.DefineClass(context.Background(), []byte(approval), asSetup); err != nil {
+	if _, err := s.defineOpen(context.Background(), []byte(approval), asSetup); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -282,7 +282,7 @@ func TestTransition_Preview(t *testing.T) {
 	}
 	// A draft previews a transition under its own guards.
 	draft := strings.Replace(approval, `"guard": "INGROUP(\"finance\")"`, `"guard": "TRUE"`, 1)
-	p, err = s.PreviewDraft(ctx, []byte(draft), doc.ID, nil, "approve", designing(alice))
+	p, err = s.PreviewDraft(ctx, opened([]byte(draft)), doc.ID, nil, "approve", designing(alice))
 	if err != nil || p.Document.State != "booked" || strings.Join(p.Path, ">") != "review>approved>booked" {
 		t.Errorf("draft preview of a transition: %v %s", err, dump(p))
 	}
@@ -298,7 +298,7 @@ func TestTransition_ChainBound(t *testing.T) {
 	    {"from": "b", "to": "a", "guard": "n > 1"},
 	    {"name": "stop", "from": ["a", "b"], "to": "c"}
 	  ]}`
-	if _, err := s.DefineClass(ctx, []byte(pingpong), asSetup); err != nil {
+	if _, err := s.defineOpen(ctx, []byte(pingpong), asSetup); err != nil {
 		t.Fatal(err)
 	}
 	// One hop at creation.
@@ -338,7 +338,7 @@ func TestStateless(t *testing.T) {
 	s, _ := openStore(t, Options{})
 	ctx := context.Background()
 	const calc = `{"name": "Calc", "variables": {"a": {"type": "number"}, "b": {"formula": "a * 2"}}}`
-	if _, err := s.DefineClass(ctx, []byte(calc), asSetup); err != nil {
+	if _, err := s.defineOpen(ctx, []byte(calc), asSetup); err != nil {
 		t.Fatal(err)
 	}
 	_, err := s.Create(ctx, "Calc", Values{"a": 1})
@@ -366,7 +366,7 @@ func TestStateless(t *testing.T) {
 	if _, err := s.Create(ctx, "Approval", Values{"amount": 1}); err != nil {
 		t.Fatal(err)
 	}
-	_, err = s.DefineClass(ctx, []byte(`{"name": "Approval", "variables": {"amount": {"type": "number"}, "note": {"type": "text"}, "big": {"formula": "amount > 1000"}, "trace": {"type": "text"}}}`), asSetup)
+	_, err = s.defineOpen(ctx, []byte(`{"name": "Approval", "variables": {"amount": {"type": "number"}, "note": {"type": "text"}, "big": {"formula": "amount > 1000"}, "trace": {"type": "text"}}}`), asSetup)
 	if err == nil || !strings.Contains(err.Error(), "not_allowed") {
 		t.Errorf("removing the states block of a class with documents: %v", err)
 	}
@@ -384,7 +384,7 @@ func TestMigrateMovesNothing(t *testing.T) {
 	}
 	// The redefinition lets every approved document book; the migration
 	// adopts it and moves nothing, the next commit moves.
-	if _, err := s.DefineClass(ctx, []byte(strings.Replace(approval, `"guard": "NOT big"`, `"guard": "TRUE"`, 1)), asSetup); err != nil {
+	if _, err := s.defineOpen(ctx, []byte(strings.Replace(approval, `"guard": "NOT big"`, `"guard": "TRUE"`, 1)), asSetup); err != nil {
 		t.Fatal(err)
 	}
 	if n, err := s.Migrate(ctx, "Approval", designing(alice)); err != nil || n != 1 {

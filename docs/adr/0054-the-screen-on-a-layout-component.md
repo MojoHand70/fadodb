@@ -1,4 +1,4 @@
-# ADR-0054: The screen on a layout component: `mobile` and `largescreen`
+# ADR-0054: The screen on a layout component: `mobile` and `desktop`
 
 - Status: Proposed; amends ADR-0018 (two properties of a component that are not formulas)
 - Date: 2026-11-13
@@ -20,7 +20,9 @@ lines at a desk. On the phone the wide table of lines is in the way,
 and a single line that counts them serves better; at the desk it is the
 other way round. The owner's earlier system had a switch for this on
 every widget, and on 2026-11-13 he asked for it here as two properties
-that are true or false, `mobile` and `largescreen`.
+that are true or false. He called the second `largescreen` at first
+and on 2026-11-14 chose `desktop`, the word in common use beside
+`mobile`.
 
 Layouts are not built yet. The store keeps the name `layouts` for their
 table, and they come with the server in Phase 6 and the renderer in
@@ -35,7 +37,7 @@ with no screen at all, so no command may depend on a layout.
 ## Decision
 
 1. **Two properties.** A component may declare `mobile` and
-   `largescreen`. Each is `true` or `false`, written as a JSON literal.
+   `desktop`. Each is `true` or `false`, written as a JSON literal.
    One that is left out is `true`. They are not formulas.
 
    ```json
@@ -45,7 +47,7 @@ with no screen at all, so no command may depend on a layout.
      "components": [
        {"type": "field",  "bind": "customer"},
        {"type": "grid",   "bind": "lines",      "mobile": false},
-       {"type": "field",  "bind": "line_count", "largescreen": false},
+       {"type": "field",  "bind": "line_count", "desktop": false},
        {"type": "button", "transition": "approve", "visible": "STATE() = \"review\""}
      ]
    }
@@ -56,11 +58,11 @@ with no screen at all, so no command may depend on a layout.
    kind and its variable, and this record fixes neither.
 
 2. **When a component shows.** A frontend calls the screen it draws on
-   mobile or large: one of the two, never both and never neither. A
+   mobile or desktop: one of the two, never both and never neither. A
    component shows when its `visible` formula is TRUE, or it has none,
    and its property for that screen is `true`. For the layout above:
 
-   | Component | `visible` | `mobile` | `largescreen` | On a phone | At a desk |
+   | Component | `visible` | `mobile` | `desktop` | On a phone | At a desk |
    |---|---|---|---|---|---|
    | `customer` | none | left out, so `true` | left out, so `true` | shown | shown |
    | `lines` | none | `false` | left out, so `true` | hidden | shown |
@@ -73,8 +75,9 @@ with no screen at all, so no command may depend on a layout.
    width it has to draw in and not by the make of the device, so a
    narrow window at a desk is mobile and a tablet is whichever its
    width makes it, and it decides again when the window is resized or
-   the device is turned. There are two screens, in the owner's words. A
-   third is not added.
+   the device is turned. `desktop` names the wide arrangement and not a
+   kind of machine: a laptop and a wide tablet are desktop. There are
+   two screens, in the owner's words. A third is not added.
 
 4. **A component that holds others.** Where a component holds other
    components, as a section or a tab does, one that is hidden for a
@@ -112,24 +115,18 @@ with no screen at all, so no command may depend on a layout.
      groups. The two properties are for the same arrangement with fewer
      parts. Another arrangement is a second named layout, which
      ADR-0018 allows, and nothing yet says how a frontend chooses among
-     the layouts of a class (question B).
+     the layouts of a class (the question below).
    - A third size, the way the device is held, and paper.
    - What one person chooses to hide for themselves. That is the
      frontend's, and no layout keeps it.
 
-## Questions for the owner
+## A question for the owner
 
-A. **The spelling.** The record writes `largescreen`, the owner's word,
-   and the other properties of a component are one word each. Where the
-   formats of the engine put two words in a key they join them with an
-   underscore (`created_at`, `values_change`), which would give
-   `large_screen`. The record keeps `largescreen`.
-
-B. **The same two properties on a whole layout.** A layout that says
-   `"mobile": false` would not be offered on a phone, so a class could
-   keep `form` for the desk and `form-phone` for the phone, and a
-   frontend would know which to open. It is one sentence in item 1. The
-   record leaves it out until the owner says.
+**The same two properties on a whole layout.** A layout that says
+`"mobile": false` would not be offered on a phone, so a class could
+keep `form` for the desk and `form-phone` for the phone, and a frontend
+would know which to open. It is one sentence in item 1. The record
+leaves it out until the owner says.
 
 ## Consequences
 
@@ -142,7 +139,7 @@ B. **The same two properties on a whole layout.** A layout that says
   show, by a guard that reads `lines` for one. The refusal names what
   refused, as on any screen. The designer keeps on each screen what the
   buttons shown there need, and the engine does not check it.
-- Two frontends may draw the line between mobile and large at different
+- Two frontends may draw the line between mobile and desktop at different
   widths, so one layout may show differently in each at the same width.
   The engine has no screen and cannot settle it.
 - A frontend that does not know the two properties shows every

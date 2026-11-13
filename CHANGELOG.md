@@ -6,6 +6,17 @@ All notable changes to FadoDB are recorded here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- The manual, under `docs/`: its contents page with every chapter
+  planned, and the first three written: your first application, an
+  invoice with its own editors in each state, from an empty file to a
+  working process; the class definition, block by block and word by
+  word; and the glossary. A test runs every example of a chapter
+  against the engine on each push, and another follows every link.
+- `examples/first`, the program of the first application:
+  `go run ./examples/first`.
+
 ## [0.5.0] - 2026-11-13
 
 ### Added

@@ -1,0 +1,94 @@
+# The FadoDB manual
+
+This is the manual of FadoDB, for the person who designs a process, the
+developer who embeds the engine, and the agent that works with either.
+It is being written chapter by chapter. Each chapter below carries a
+mark: **written**, or **planned**. A planned chapter names where its
+facts are today.
+
+Every example in a written chapter is run by a test on each push, so a
+chapter cannot show a class the engine refuses or an answer it does not
+give.
+
+## Start here
+
+| Chapter | For | Mark |
+|---|---|---|
+| What FadoDB is | everybody: what it is for, what it is not, how it differs from a database and from a workflow tool | planned; today the top of the [README](../README.md) |
+| How it works | everybody: a class, a document, a commit and the log, followed once from end to end | planned; today [architecture.md](architecture.md) |
+| [Your first application](manual/first-application.md) | everybody: an invoice that one person approves and accounting books, from an empty file to a working process | **written** |
+| [Glossary](manual/glossary.md) | everybody: every word, and whether it is FadoDB's or yours | **written** |
+
+## The notions
+
+One chapter each, in the order a designer meets them. Planned; until
+they are written the [glossary](manual/glossary.md) has one line for
+each and the [class definition](manual/class.md) the syntax.
+
+| Chapter | What it explains |
+|---|---|
+| Classes and documents | a kind of thing and one thing; versions; what changing a class does to its documents |
+| Variables and formulas | inputs, defaults, computed values; exact money and calendar days; what an error in a formula does |
+| States and transitions | the statechart; guards; automatic transitions; final states |
+| Rules and actions | what happens by itself, inside a commit and after it |
+| Who may | callers and groups; `access` and `rights`; the four system groups; acting for somebody; the content administrator |
+| History and the log | versions, events, previews, and reading what happened |
+| Time | deadlines, reminders, timed transitions, and choosing a moment to look at |
+
+## Guides: how do I
+
+Short pages, one task each, each with a class that runs. Planned; the
+first ones to write:
+
+| Guide | Today |
+|---|---|
+| Give each state its own editors | [The class definition, Rights](manual/class.md#rights) |
+| Make a field read-only after approval | [The class definition, Rights](manual/class.md#rights) |
+| Four eyes: the one who filed it may not approve it | [The class definition, Access](manual/class.md#access) |
+| A reminder after seven days, a deadline after thirty | the `Example_timed` example of the `fado` package |
+| Ask several people and go on when all have agreed | [examples/classes](../examples/classes/README.md), the Purchase and Approval samples |
+| Call another system when a document changes | [Actions](actions.md) |
+| Let an assistant, or a substitute, act for a person | the `Example_substitution` example of the `fado` package |
+| Look a value up in a reference table, or in other documents | [ADR-0037](adr/0037-explicit-tables-and-the-compiled-lookup.md), and the Purchase sample under [examples/classes](../examples/classes/README.md) |
+| Move many documents at once | the `Example_many` example of the `fado` package |
+| Change a class that already has documents | [ADR-0039](adr/0039-class-versions-terminal-states-and-migrations.md) |
+
+## Reference
+
+| Chapter | What it lists | Mark |
+|---|---|---|
+| [The class definition](manual/class.md) | every block of a class and every word in it | **written** |
+| The formula language | values, operators, blanks, errors, text, dates, exact numbers | planned; today [ADR-0019](adr/0019-formula-language-semantics.md) and the suites under [conformance](../conformance/README.md) |
+| The functions | every function with its arguments and an example | planned, generated from the engine's own catalogue |
+| The calls | every call of the Go package: what it takes, what it answers, what it may refuse with | planned; today the documentation of the `fado` package |
+| The refusals | every code: what it means, the place it names, how to fix it | planned, generated from the engine's own list |
+| Tables | reference data: defining, importing, looking up | planned; today [ADR-0037](adr/0037-explicit-tables-and-the-compiled-lookup.md) |
+| [Actions](actions.md) | defining an action, calling another system, secrets | **written** |
+| Views and SQL | the views the engine makes for each class, and reading them with SQL | planned; today [architecture.md](architecture.md) |
+
+## Embedding and running it
+
+For the developer whose program holds the engine. Planned.
+
+| Chapter | What it covers |
+|---|---|
+| Opening a database | the file, the options, what belongs to the database and what to the program |
+| Naming the caller | the principal on every call; groups; the system groups; a host that keeps its own substitutions |
+| The outbox and the worker | what runs after a commit, retries, and what to do with an action that died |
+| Running it | backup, the size of the file, what is fast and what is slow, in [docs/perf](perf/README.md) |
+| Versions | what a release may change before 1.0, and what the [changelog](../CHANGELOG.md) promises |
+
+## For agents
+
+An agent works from the five skills under [`skills/`](../skills/README.md),
+one for each role it can take. A skill says in which order to work; for
+the syntax it points here.
+
+## About the project
+
+| Page | What it is |
+|---|---|
+| [Architecture](architecture.md) | how the engine is built |
+| [Decision records](adr/README.md) | why each thing is as it is, one decision at a time |
+| [Performance](perf/README.md) | the budgets and the measurements of each release |
+| [Roadmap](../ROADMAP.md), [changelog](../CHANGELOG.md) | what is done, what is next, what each release changed |

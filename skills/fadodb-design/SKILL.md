@@ -9,8 +9,12 @@ metadata:
 # Design a FadoDB class
 
 **Status: stub, 2026-11-09.** This page says what the designer does, what
-works today and the outline of the procedure. The reference files it
-names under `../reference/` are not written yet; until they are, read the
+works today and the outline of the procedure. For how a class is
+written, block by block and word by word, read
+[`../../docs/manual/class.md`](../../docs/manual/class.md) first, and
+[`../../docs/manual/first-application.md`](../../docs/manual/first-application.md)
+for a small class that runs. The other reference files this page names
+under `../reference/` are not written yet; until they are, read the
 decision records they list.
 
 ## The hat
@@ -60,7 +64,14 @@ read the diagnostics, fix, preview against live data, define.
    says what must hold (`total > 0`) and who may move it
    (`INGROUP("finance")`). A terminal state freezes the document.
 5. **Write the rights per state.** Which fields are read-only once
-   approved, which group may write a discount.
+   approved, which group may write a discount, who the editors are in
+   each state. The table is state, then variable, then `write` or
+   `read`; `*` stands for every state or every variable; a cell is a
+   formula or a list of groups. "In review only reviewers edit" is
+   `"rights": {"review": {"*": {"write": ["reviewers"]}}}`. The line of
+   the document's state is asked before the line of `*`, and within a
+   state a named variable before `*`. Rights narrow what `access`
+   allows and never widen it.
 6. **Write the rules.** They run. Read `Actions` first: a rule names an
    engine action or one the catalogue lists, and gives a defined action
    its arguments under `args`, a formula for each parameter. To reach
@@ -129,6 +140,10 @@ document and not code.
 
 ## Worked examples
 
+- [`../../examples/first/invoice.json`](../../examples/first/invoice.json),
+  the invoice of the manual's first application: two states with their
+  own editors, a guard, and a program that walks it through,
+  `go run ./examples/first`.
 - [`../../examples/classes/invoice.json`](../../examples/classes/invoice.json),
   the Invoice from the README: an approval chain with a `rows` variable,
   a rule and rights per state.
@@ -136,6 +151,8 @@ document and not code.
 
 ## References, to be written
 
-`../reference/class-format.md`, `formulas.md`, `functions.md`,
-`statechart.md`, `rights-and-rules.md`, `diagnostics.md`. Their sources
-are listed in [`../reference/README.md`](../reference/README.md).
+The class format is written: [`../../docs/manual/class.md`](../../docs/manual/class.md).
+Still to be written: `formulas.md`, `functions.md`, `statechart.md`,
+`diagnostics.md`. Their sources are listed in
+[`../reference/README.md`](../reference/README.md), and the plan of the
+whole manual in [`../../docs/README.md`](../../docs/README.md).

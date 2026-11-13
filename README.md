@@ -6,7 +6,9 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 An embeddable **active document database**, written in Go, MIT licensed.
-Website: [fadodb.org](https://fadodb.org).
+Website: [fadodb.org](https://fadodb.org). The manual starts at
+[docs/README.md](docs/README.md), with
+[your first application](docs/manual/first-application.md).
 
 > **Status: Phase 5, security, is done and released as v0.5.0;
 > Phase 6, the server, is next.** The Go API stores

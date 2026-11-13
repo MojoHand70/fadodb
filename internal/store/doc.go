@@ -72,6 +72,13 @@
 // set of the engine's own in the transaction that marks the row, and the
 // eventless transitions follow.
 //
-// Not here yet: the class-level access rules (Phase 5), and the server
-// (Phase 6).
+// The four rules of a class, read, create, update and delete, are
+// enforced on every path (ADR-0049, access.go): a document its caller
+// may not see is answered as one that does not exist, and a caller who
+// sees it and may not do what they ask is refused with forbidden and the
+// rule.
+//
+// Not here yet: the rest of Phase 5, which is the kind of actor
+// (ADR-0050) and who may define, operate and run SQL, with the rules of
+// a table (ADR-0051); and the server (Phase 6).
 package store

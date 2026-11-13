@@ -179,6 +179,48 @@ owner's to change. The question at the end is his to rule.
     - The filter on the change stream, the authenticator and the
       package of users, groups and API keys: Phase 6, with the server.
 
+## Details settled while building
+
+The first step was built on 2026-11-13, on the record as proposed.
+
+- **The question is left open in the code.** A rule a class leaves out
+  lets every caller through, as the engine has always answered, and one
+  constant holds that answer for the store and for the filter compiler
+  (`model.LeftOutAllows`). The other answer is that constant and, with
+  it, rules or an administrator for the samples and the tests.
+- **A set that names no value asks only `read`.** It changes nothing
+  and answers with the document, which is what a read does. `update` is
+  asked of a set that names a value and of every reset.
+- **Where the refusal names the rule.** `Error.Path`, which until now
+  held the place of a rule's action: `/access/create`,
+  `/access/update`, `/access/delete`, `/access/transition/approve`. A
+  transition refused by `update` says so in its message and carries
+  `/access/update`.
+- **`PreviewDelete`** is the preview of item 13 for a delete, a command
+  of its own: the document as it is, the refusal under the errors, the
+  rules the delete would run.
+- **`History` and `Events` of a hidden document** answer an empty list
+  and no error, which is what they answer for an id no document has.
+- **A file in a hidden variable** is answered `unknown_blob`: for that
+  caller the document does not hold it.
+- **`Due` reads each document it found** for a caller who is not an
+  administrator and whose class has a read rule, and leaves out the
+  ones the rule hides. The host program that touches what is due asks
+  as an administrator and pays nothing. The page of `Due` may then come
+  back shorter than its bound while more documents are due.
+- **Not built in this step:** deciding the caller's part of a rule
+  before the statement is written, and the index for a text compared
+  with the caller (item 5, second paragraph); the SQL endpoint, which
+  waits for the analysts of ADR-0051 (item 12). The read rule joins the
+  filter whole, with the comparisons to literals narrowed as in a
+  `where`.
+
+Measured on the reference machine, in memory: a transition on a class
+with a read rule and an update rule takes the time and the allocations
+of the same class without them, 51 µs and 163 allocations
+(`BenchmarkTransitionAccess` against `BenchmarkTransitionOwned`), and
+`BenchmarkTransition` is unchanged at 155 allocations.
+
 ## Open question
 
 This one is the owner's to rule. The record assumes the first answer

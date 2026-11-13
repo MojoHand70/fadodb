@@ -536,6 +536,47 @@ func BenchmarkTransition(b *testing.B) {
 	}
 }
 
+// benchOwned runs BenchmarkTransition's loop on its class with an owner
+// variable added, and with the access block given.
+func benchOwned(b *testing.B, access string) {
+	s, err := Open(filepath.Join(b.TempDir(), "bench.fado"), Options{})
+	if err != nil {
+		b.Fatal(err)
+	}
+	defer s.Close()
+	ctx := context.Background()
+	owned := strings.Replace(benchFlow, `"variables": {`, `"variables": {"owner": {"type": "text", "default": "USER()"},`, 1)
+	owned = strings.Replace(owned, `"states":`, access+`"states":`, 1)
+	if _, err := s.DefineClass(ctx, []byte(owned)); err != nil {
+		b.Fatal(err)
+	}
+	doc, err := s.Create(ctx, "Flow", Values{"amount": 500, "qty": 5, "note": "n"}, As(alice))
+	if err != nil {
+		b.Fatal(err)
+	}
+	names := [2]string{"submit", "back"}
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; b.Loop(); i++ {
+		if _, err := s.Transition(ctx, "Flow", doc.ID, names[i%2], nil, As(alice)); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+// BenchmarkTransitionAccess is BenchmarkTransition on a class with the
+// rules of ADR-0049: the commit asks the read rule, then the update rule,
+// since submit and back have no rule of their own, and the read rule
+// again for the document it answers with. BenchmarkTransitionOwned is
+// the same class without the rules, to compare with: three evaluations
+// more, and no allocation more.
+func BenchmarkTransitionAccess(b *testing.B) {
+	benchOwned(b, `"access": {"read": "owner = USER() OR INGROUP(\"finance\")", "update": "owner = USER() AND amount < 100000", "delete": "FALSE"},
+ `)
+}
+
+func BenchmarkTransitionOwned(b *testing.B) { benchOwned(b, "") }
+
 // benchMany opens a store with the transition benchmarks' class and n
 // documents of it in draft, with the amount given.
 func benchMany(b *testing.B, n int, amount float64) (*Store, []string) {

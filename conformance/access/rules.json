@@ -1,0 +1,107 @@
+{
+  "suite": "rules",
+  "description": "The four rules of a class are enforced on every path (ADR-0049): who may see, create, change and delete a document. A document its caller may not see is answered as one that does not exist, by a read, a command, the listing of transitions, a filter, a count and the list of what is due alike. A caller who sees a document and may not do what they ask is refused with forbidden and the place of the rule. A transition with a rule of its own asks that rule and not update; one without asks update. An administrator passes every rule; a call without a principal is nobody.",
+  "class": {
+    "name": "Claim",
+    "variables": {
+      "owner":    {"type": "text", "default": "USER()", "index": true},
+      "amount":   {"type": "number"},
+      "note":     {"type": "text"},
+      "deadline": {"type": "date", "index": true},
+      "double":   {"formula": "amount * 2"}
+    },
+    "states": {"initial": "draft", "list": ["draft", "filed", "late", "closed"], "final": ["closed"]},
+    "transitions": [
+      {"name": "file",    "from": "draft", "to": "filed"},
+      {"name": "approve", "from": ["filed", "late"], "to": "closed"},
+      {"name": "back",    "from": "filed", "to": "draft"},
+      {"from": "filed", "to": "late", "guard": "TODAY() > deadline"}
+    ],
+    "access": {
+      "read":   "owner = USER() OR INGROUP(\"hr\")",
+      "create": "INGROUP(\"staff\") AND double <= 2000",
+      "update": "owner = USER() AND STATE() = \"draft\"",
+      "delete": "INGROUP(\"hr\")",
+      "transition": {"approve": "INGROUP(\"hr\")"}
+    }
+  },
+  "principals": {
+    "ann":  {"id": "ann",  "groups": ["staff"]},
+    "bob":  {"id": "bob",  "groups": ["staff"]},
+    "hana": {"id": "hana", "groups": ["hr"]},
+    "eve":  {"id": "eve"},
+    "root": {"id": "root", "admin": true}
+  },
+  "script": [
+    {"name": "a preview of a create reports the refusal of the rule and goes on", "do": "preview", "as": "eve", "values": {"amount": 1}, "expect": {"errors": [{"code": "forbidden", "action": "/access/create"}]}},
+    {"name": "staff create a small claim, and own it", "do": "create", "doc": "c1", "as": "ann", "values": {"amount": 100, "note": "taxi", "deadline": "2026-12-31"},
+     "expect": {"state": "draft", "version": 1, "values": {"owner": "ann", "double": 200}}},
+    {"name": "the create rule reads a computed value of the new document", "do": "create", "as": "ann", "values": {"amount": 5000}, "expect": {"code": "forbidden", "action": "/access/create"}},
+    {"name": "who is not staff creates none", "do": "create", "as": "eve", "values": {"amount": 1}, "expect": {"code": "forbidden", "action": "/access/create"}},
+    {"name": "a call without a principal is nobody", "do": "create", "values": {"amount": 1}, "expect": {"code": "forbidden", "action": "/access/create"}},
+    {"name": "an administrator passes the rule", "do": "create", "doc": "c0", "as": "root", "values": {"amount": 9000, "deadline": "2026-12-31"}, "expect": {"state": "draft", "values": {"owner": "root"}}},
+    {"name": "a second claim, of another owner", "do": "create", "doc": "c2", "as": "bob", "values": {"amount": 50, "deadline": "2026-12-31"}, "expect": {"state": "draft"}},
+
+    {"name": "the owner reads her claim", "do": "get", "doc": "c1", "as": "ann", "expect": {"state": "draft", "values": {"note": "taxi"}}},
+    {"name": "HR reads it", "do": "get", "doc": "c1", "as": "hana", "expect": {"values": {"note": "taxi"}}},
+    {"name": "an administrator reads it", "do": "get", "doc": "c1", "as": "root", "expect": {"values": {"note": "taxi"}}},
+    {"name": "for another clerk it does not exist", "do": "get", "doc": "c1", "as": "bob", "expect": {"code": "unknown_document"}},
+    {"name": "nor for nobody", "do": "get", "doc": "c1", "expect": {"code": "unknown_document"}},
+
+    {"name": "a filter shows each caller their own", "do": "query", "as": "ann", "expect": {"docs": ["c1"]}},
+    {"name": "a filter shows each caller their own, 2", "do": "query", "as": "bob", "expect": {"docs": ["c2"]}},
+    {"name": "a filter shows HR all", "do": "query", "as": "hana", "expect": {"docs": ["c1", "c0", "c2"]}},
+    {"name": "a filter shows an administrator all", "do": "query", "as": "root", "expect": {"docs": ["c1", "c0", "c2"]}},
+    {"name": "a filter shows a stranger none", "do": "query", "as": "eve", "expect": {"docs": []}},
+    {"name": "a filter shows nobody none", "do": "query", "expect": {"docs": []}},
+    {"name": "the rule joins the caller's own condition", "do": "query", "as": "hana", "where": "amount < 1000", "order": ["-amount"], "expect": {"docs": ["c1", "c2"]}},
+    {"name": "a condition with OR does not reach past the rule", "do": "query", "as": "bob", "where": "amount > 60 OR note = \"taxi\"", "expect": {"docs": []}},
+    {"name": "a count agrees with the filter", "do": "count", "as": "ann", "expect": {"count": 1}},
+    {"name": "a count agrees with the filter, 2", "do": "count", "as": "hana", "expect": {"count": 3}},
+    {"name": "a count agrees with the filter, 3", "do": "count", "as": "eve", "expect": {"count": 0}},
+    {"name": "a count agrees with the filter, 4", "do": "count", "as": "bob", "where": "amount > 60 OR note = \"taxi\"", "expect": {"count": 0}},
+    {"name": "a count agrees with the filter, 5", "do": "count", "as": "root", "where": "amount > 60", "expect": {"count": 2}},
+
+    {"name": "a set by one who may not see it finds no document", "do": "set", "doc": "c1", "as": "bob", "values": {"note": "x"}, "expect": {"code": "unknown_document"}},
+    {"name": "a reset likewise", "do": "reset", "doc": "c1", "as": "bob", "variables": ["note"], "expect": {"code": "unknown_document"}},
+    {"name": "a refresh likewise", "do": "refresh", "doc": "c1", "as": "bob", "expect": {"code": "unknown_document"}},
+    {"name": "a transition likewise", "do": "transition", "doc": "c1", "as": "bob", "transition": "file", "expect": {"code": "unknown_document"}},
+    {"name": "a transition the document is not in the state for likewise", "do": "transition", "doc": "c1", "as": "bob", "transition": "approve", "expect": {"code": "unknown_document"}},
+    {"name": "a delete likewise", "do": "delete", "doc": "c1", "as": "bob", "expect": {"code": "unknown_document"}},
+    {"name": "a preview likewise", "do": "preview", "doc": "c1", "as": "bob", "values": {"note": "x"}, "expect": {"code": "unknown_document"}},
+    {"name": "the listing likewise", "do": "transitions", "doc": "c1", "as": "bob", "expect": {"code": "unknown_document"}},
+
+    {"name": "HR sees the claim and may not change it", "do": "set", "doc": "c1", "as": "hana", "values": {"note": "x"}, "expect": {"code": "forbidden", "action": "/access/update"}},
+    {"name": "nor reset it", "do": "reset", "doc": "c1", "as": "hana", "variables": ["note"], "expect": {"code": "forbidden", "action": "/access/update"}},
+    {"name": "a preview of the set reports the rule and shows the document", "do": "preview", "doc": "c1", "as": "hana", "values": {"note": "x"},
+     "expect": {"state": "draft", "errors": [{"code": "forbidden", "action": "/access/update"}]}},
+    {"name": "a refresh asks only to see the document", "do": "refresh", "doc": "c1", "as": "hana", "expect": {"state": "draft", "version": 2}},
+    {"name": "the owner changes her draft", "do": "set", "doc": "c1", "as": "ann", "values": {"note": "taxi, late"}, "expect": {"version": 3, "values": {"note": "taxi, late"}}},
+
+    {"name": "file has no rule of its own, so update answers: not for HR", "do": "transition", "doc": "c1", "as": "hana", "transition": "file", "expect": {"code": "forbidden", "action": "/access/update"}},
+    {"name": "the listing says the same", "do": "transitions", "doc": "c1", "as": "hana",
+     "expect": {"transitions": [{"name": "file", "to": "filed", "enabled": false, "code": "forbidden"}]}},
+    {"name": "and open for the owner", "do": "transitions", "doc": "c1", "as": "ann",
+     "expect": {"transitions": [{"name": "file", "to": "filed", "enabled": true}]}},
+    {"name": "the owner files", "do": "transition", "doc": "c1", "as": "ann", "transition": "file", "expect": {"state": "filed", "version": 4}},
+    {"name": "in filed the update rule lets nobody through: no set", "do": "set", "doc": "c1", "as": "ann", "values": {"note": "y"}, "expect": {"code": "forbidden", "action": "/access/update"}},
+    {"name": "and no way back, which has no rule of its own", "do": "transition", "doc": "c1", "as": "ann", "transition": "back", "expect": {"code": "forbidden", "action": "/access/update"}},
+    {"name": "approve has a rule of its own: not the owner", "do": "transition", "doc": "c1", "as": "ann", "transition": "approve", "expect": {"code": "forbidden", "action": "/access/transition/approve"}},
+
+    {"name": "what is due is listed for those who see it: the owner", "do": "due", "as": "ann", "at": "2027-01-05", "expect": {"due": [["c1", "filed", "late"]]}},
+    {"name": "HR", "do": "due", "as": "hana", "at": "2027-01-05", "expect": {"due": [["c1", "filed", "late"]]}},
+    {"name": "an administrator", "do": "due", "as": "root", "at": "2027-01-05", "expect": {"due": [["c1", "filed", "late"]]}},
+    {"name": "and not for another clerk", "do": "due", "as": "bob", "at": "2027-01-05", "expect": {"due": []}},
+    {"name": "nor for nobody", "do": "due", "at": "2027-01-05", "expect": {"due": []}},
+
+    {"name": "HR approves a claim it may not edit: approve does not ask update", "do": "transition", "doc": "c1", "as": "hana", "transition": "approve", "expect": {"state": "closed", "version": 5}},
+    {"name": "an administrator passes the rules and not the terminal state", "do": "set", "doc": "c1", "as": "root", "values": {"note": "z"}, "expect": {"code": "terminal"}},
+
+    {"name": "the owner may not delete", "do": "delete", "doc": "c2", "as": "bob", "expect": {"code": "forbidden", "action": "/access/delete"}},
+    {"name": "who cannot see it finds nothing to delete", "do": "delete", "doc": "c2", "as": "ann", "expect": {"code": "unknown_document"}},
+    {"name": "HR deletes", "do": "delete", "doc": "c2", "as": "hana", "expect": {}},
+    {"name": "and then it is gone for its owner too", "do": "get", "doc": "c2", "as": "bob", "expect": {"code": "unknown_document"}},
+    {"name": "the filter and the count agree after it all", "do": "query", "as": "hana", "expect": {"docs": ["c1", "c0"]}},
+    {"name": "the filter and the count agree after it all, 2", "do": "count", "as": "bob", "expect": {"count": 0}}
+  ]
+}

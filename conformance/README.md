@@ -166,6 +166,17 @@ and the browser VM run them with their phases.
   their events. Nothing in it moves a document by itself: the scripts
   with the worker in them are `rules/timers.json`.
 
+## Access cases: `access/*.json`
+
+The specification of the four rules of a class (ADR-0049): who may see,
+create, change and delete a document, asked on every path. The format
+is the statechart suites'. `rules.json` takes one class through every
+command as five callers: its owner, another clerk, HR, a stranger and
+an administrator, and a call without a principal. A read, a command,
+the listing of transitions, a filter, a count and the list of what is
+due have to agree on which documents each caller sees; `action` on a
+refusal is the place of the rule, such as `/access/update`.
+
 ## Rules cases: `rules/*.json`
 
 The specification of the rules inside the commit (ADR-0043): which

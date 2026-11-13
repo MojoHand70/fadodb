@@ -19,6 +19,6 @@
     {"on": "enter", "state": "paid",
      "do": [{"action": "create", "class": "Receipt", "values": {"invoice": "ID()", "amount": "total"}}]}
   ],
-  "access": {"read": "INGROUP(\"finance\") OR customer = USER()"},
+  "access": {"read": "INGROUP(\"finance\") OR INGROUP(\"sales\") OR customer = USER()", "delete": "FALSE"},
   "rights": {"*": {"discount": {"write": ["sales"]}}, "approved": {"discount": {"read": ["finance"]}}}
 }

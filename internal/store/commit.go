@@ -232,6 +232,24 @@ func (s *Store) Preview(ctx context.Context, class, id string, values Values, tr
 	return &Preview{Document: res.doc, Errors: res.errs, Path: res.path, Transitions: res.transitions, Rules: res.rules, Now: res.now}, nil
 }
 
+// PreviewDelete answers what a delete of the document would do, and
+// writes nothing (ADR-0025; ADR-0049, item 13): the document as it is,
+// the refusal of the class's delete rule under Errors when the principal
+// may not delete it, and the rules the delete would run. A document the
+// principal may not see does not exist, and a terminal one is frozen, as
+// for Delete.
+func (s *Store) PreviewDelete(ctx context.Context, class, id string, opts ...Option) (*Preview, error) {
+	c, e := s.class(class)
+	if e != nil {
+		return nil, e
+	}
+	res, err := s.commit(ctx, command{op: opDelete, c: c, id: id, o: apply(opts), preview: true})
+	if err != nil {
+		return nil, err
+	}
+	return &Preview{Document: res.doc, Errors: res.errs, Rules: res.rules, Now: res.now}, nil
+}
+
 // commit runs a command in a transaction on the writer.
 func (s *Store) commit(ctx context.Context, cmd command) (*result, error) {
 	s.mu.Lock()
@@ -324,12 +342,26 @@ func (s *Store) run(ctx context.Context, cmd command, now time.Time) (*result, e
 					return nil, err
 				}
 				s.project(&s.wev, c, vc, vrow, &h.Document, cmd.o.principal, clock)
+				// Whoever repeats a key is answered as the command answers:
+				// the document if they may see it now, the bare reply if
+				// not (ADR-0049, item 7).
+				if c.ruled(ruleRead) && asksRules(&cmd) && !cmd.internal {
+					seen, err := s.sees(ctx, c, docID, cmd.o)
+					if err != nil {
+						return nil, err
+					}
+					if !seen {
+						bare(&h.Document)
+					}
+				}
 				res.doc = &h.Document
 			}
 			return res, nil
 		}
 	}
 
+	actor := cmd.o.principal.ID
+	evalCtx := &formula.Context{User: actor, Groups: cmd.o.principal.Groups, Now: clock}
 	var before *docRow
 	var beforeClass *class // the version that computed the current row
 	var trans *model.Transition
@@ -341,9 +373,25 @@ func (s *Store) run(ctx context.Context, cmd command, now time.Time) (*result, e
 		var err error
 		if before, err = reader.scanW(reader.w.selectCurrent.QueryRowContext(ctx, cmd.id), false); err != nil {
 			if err == sql.ErrNoRows {
-				return nil, errf(CodeUnknownDocument, "", "no document %s of class %s", cmd.id, reader.cls.Name)
+				return nil, noDocument(reader, cmd.id)
 			}
 			return nil, storageErr("read the document", err)
+		}
+		beforeClass = reader
+		if before.classVersion != reader.cls.Version && before.classVersion != 0 {
+			old := s.classAt(reader.cls.Name, before.classVersion)
+			if old == nil {
+				return nil, errf(CodeStorage, "", "the document %s was computed by version %d of %s, which the store does not have", before.id, before.classVersion, c.cls.Name)
+			}
+			if before, err = old.scanW(old.w.selectCurrent.QueryRowContext(ctx, cmd.id), false); err != nil {
+				return nil, storageErr("read the document under its class version", err)
+			}
+			beforeClass = old
+		}
+		// A caller who may not see the document is told it does not exist,
+		// before anything else is said of it (ADR-0049, item 3).
+		if e := s.checkRead(c, beforeClass, before, &cmd, evalCtx); e != nil {
+			return nil, e
 		}
 		if cmd.op == opTransition {
 			var e *Error
@@ -363,37 +411,29 @@ func (s *Store) run(ctx context.Context, cmd command, now time.Time) (*result, e
 				return nil, hintf(CodeTerminal, "", "the document is in the terminal state "+before.state+" and its values cannot change", "a terminal document only moves: take the transition without values")
 			}
 		}
-		beforeClass = reader
-		if before.classVersion != reader.cls.Version && before.classVersion != 0 {
-			old := s.classAt(reader.cls.Name, before.classVersion)
-			if old == nil {
-				return nil, errf(CodeStorage, "", "the document %s was computed by version %d of %s, which the store does not have", before.id, before.classVersion, c.cls.Name)
-			}
-			if before, err = old.scanW(old.w.selectCurrent.QueryRowContext(ctx, cmd.id), false); err != nil {
-				return nil, storageErr("read the document under its class version", err)
-			}
-			beforeClass = old
-		}
 	}
 	eventID := s.ids.next(now)
-	actor := cmd.o.principal.ID
 	day := businessDay(cmd.o, now)
 	if cmd.hasDay {
 		day = cmd.day
 	}
-	evalCtx := &formula.Context{User: actor, Groups: cmd.o.principal.Groups, Now: clock}
 	s.emits = s.emits[:0]
 	s.queued = s.queued[:0]
 	rules := ruleRun{c: c, preview: cmd.preview, res: res, evalCtx: evalCtx, secs: secs}
 	if cmd.op == opDelete {
+		// The delete rule of the class, over the stored document under the
+		// current definition's layout (ADR-0049, item 2).
+		row := before
+		if beforeClass != c && (c.ruled(ruleDelete) || c.rules != nil && len(c.rules.delete) > 0) {
+			row = c.adopted(beforeClass, before)
+		}
+		evalCtx.ID, evalCtx.State = before.id, before.state
+		if err := s.checkRule(c, ruleDelete, row, &cmd, evalCtx, res); err != nil {
+			return nil, err
+		}
 		// A delete rule sees the document as it was (ADR-0043), under the
 		// current definition's layout; it may emit and queue, nothing else.
 		if c.rules != nil && len(c.rules.delete) > 0 {
-			row := before
-			if beforeClass != c {
-				row = c.adopted(beforeClass, before)
-			}
-			evalCtx.ID = before.id
 			if len(c.rules.lists) > 0 {
 				if err := s.loadLists(ctx, c, nil, before, nil); err != nil {
 					return nil, err
@@ -402,6 +442,16 @@ func (s *Store) run(ctx context.Context, cmd command, now time.Time) (*result, e
 			if err := s.fireCommit(&rules, row, commitDelete, "", "", nil); err != nil {
 				return nil, err
 			}
+		}
+		if cmd.preview {
+			// The preview of a delete answers with the document as it is.
+			all, err := beforeClass.loadChildren(ctx, before.id, before.version, nil, true)
+			if err != nil {
+				return nil, err
+			}
+			res.doc = beforeClass.document(before, all)
+			s.project(&s.wev, c, beforeClass, before, res.doc, cmd.o.principal, clock)
+			return res, nil
 		}
 		if err := s.writeDelete(ctx, c, before, secs, eventID, actor, cmd.o.key, hash, day); err != nil {
 			return nil, err
@@ -492,6 +542,12 @@ func (s *Store) run(ctx context.Context, cmd command, now time.Time) (*result, e
 		if err := s.recalc(c, after, dirty, true, evalCtx, cmd.preview, &res.errs); err != nil {
 			return nil, err
 		}
+		// The create rule, over the new document with its defaults and its
+		// computed values, before the statechart and the rules of the
+		// class see it (ADR-0049, item 2).
+		if err := s.checkRule(c, ruleCreate, after, &cmd, evalCtx, res); err != nil {
+			return nil, err
+		}
 	} else {
 		// A live document computed by an older version adopts the current
 		// one with this commit: its values move to the current layout by
@@ -508,8 +564,18 @@ func (s *Store) run(ctx context.Context, cmd command, now time.Time) (*result, e
 		// The transition's access rule, then the write rights, over the
 		// stored document before the assignments, in the state it is in
 		// (ADR-0041): the rules say who may change this document.
-		if trans != nil {
-			if err := s.checkTransition(c, trans, after, evalCtx, cmd.o.principal); err != nil {
+		// A set that names a value, and every reset, asks the update rule
+		// of the class (ADR-0049, item 2); a transition asks its own rule,
+		// and the update rule when it has none.
+		switch {
+		case trans != nil:
+			if asksRules(&cmd) {
+				if err := s.checkTransition(c, trans, after, evalCtx, cmd.o.principal); err != nil {
+					return nil, err
+				}
+			}
+		case cmd.op == opSet && len(cmd.values) > 0, cmd.op == opReset:
+			if err := s.checkRule(c, ruleUpdate, after, &cmd, evalCtx, res); err != nil {
 				return nil, err
 			}
 		}
@@ -770,6 +836,7 @@ func (s *Store) run(ctx context.Context, cmd command, now time.Time) (*result, e
 			res.transitions = s.listTransitions(c, final, evalCtx, cmd.o.principal, fresh)
 		}
 		s.project(&s.wev, c, c, final, res.doc, cmd.o.principal, clock)
+		s.veil(c, final, res.doc, &cmd, evalCtx)
 		return res, nil
 	}
 	if ev.kind == EventCreated {
@@ -863,6 +930,7 @@ func (s *Store) run(ctx context.Context, cmd command, now time.Time) (*result, e
 	}
 	res.doc = c.document(prev, all)
 	s.project(&s.wev, c, c, prev, res.doc, cmd.o.principal, clock)
+	s.veil(c, prev, res.doc, &cmd, evalCtx)
 	res.eventID = eventID
 	return res, nil
 }

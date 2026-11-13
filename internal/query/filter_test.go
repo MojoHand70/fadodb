@@ -315,3 +315,39 @@ func TestValue(t *testing.T) {
 		t.Errorf("a column beside a table: %v %v", kind, err)
 	}
 }
+
+// The read rule of a class joins every filter as one more predicate
+// (ADR-0049): none for an administrator, the rule alone for a filter
+// without a where, with its comparisons to literals narrowed as a where's
+// are and its parameters named apart from the where's.
+func TestCompile_ReadRule(t *testing.T) {
+	const ruled = `{"name": "Claim", "variables": {"owner": {"type": "text", "index": true}, "region": {"type": "text", "index": true}, "n": {"type": "number"}},
+  "states": {"initial": "a", "list": ["a"]},
+  "access": {"read": "region = \"EU\" AND (owner = USER() OR INGROUP(\"hr\"))"}}`
+	cls, diags := model.Define([]byte(ruled), nil)
+	if len(diags) > 0 {
+		t.Fatal(diags)
+	}
+	t.Cleanup(func() { Forget(cls) })
+	admin, err := Compile(Filter{Class: "Claim"}, cls, nil, Principal{Admin: true})
+	if err != nil || admin.Where != "" || len(admin.Args) != 0 {
+		t.Errorf("an administrator's filter: %v %q", err, admin.Where)
+	}
+	alone, err := Compile(Filter{Class: "Claim"}, cls, nil, Principal{ID: "ann"})
+	if err != nil || !strings.HasPrefix(alone.Where, `("region" = :r0 AND (`) || len(alone.Args) != 1 {
+		t.Fatalf("the rule alone: %v %q %v", err, alone.Where, alone.Args)
+	}
+	both, err := Compile(Filter{Class: "Claim", Where: `n > 2 OR region = "US"`}, cls, nil, Principal{ID: "ann"})
+	if err != nil || !strings.HasSuffix(both.Where, ") AND "+alone.Where) || !strings.HasPrefix(both.Where, "(") {
+		t.Errorf("the rule beside a where with OR: %v %q", err, both.Where)
+	}
+	narrowed, err := Compile(Filter{Class: "Claim", Where: `n > 2`}, cls, nil, Principal{ID: "ann"})
+	if err != nil || !strings.HasPrefix(narrowed.Where, `("n" > :f0 AND (`) || len(narrowed.Args) != 2 {
+		t.Errorf("the rule beside a narrowed where: %v %q %v", err, narrowed.Where, narrowed.Args)
+	}
+	// The predicate is kept for the class: a second compile gives the same.
+	again, _ := Compile(Filter{Class: "Claim"}, cls, nil, Principal{ID: "bob", Groups: []string{"hr"}})
+	if again.Where != alone.Where {
+		t.Errorf("the rule for another caller is another text:\n %s\n %s", again.Where, alone.Where)
+	}
+}

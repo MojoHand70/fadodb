@@ -176,32 +176,30 @@ func Compile(f Filter, cls *model.Class, sources formula.Sources, p Principal) (
 		if stmt.Error != "" {
 			where = "(" + stmt.Error + ") IS NULL AND " + where
 		}
-		// An operand that reads no document, the clock or the principal
-		// alone, is a constant of the statement: its SQL, for the
-		// prefilter to compare an indexed column with.
-		constant := func(n formula.Node) (string, formula.Kind, bool) {
-			p, err := formula.BindNode(f.Where, n, scope, formula.BindOptions{Sources: sources})
-			if err != nil || len(p.Slots) != 0 || p.ReadsLife || p.Calls("STATE") || p.Calls("ID") {
-				return "", 0, false
-			}
-			for _, c := range p.Classes {
-				if c != formula.ClassPure && c != formula.ClassContext {
-					return "", 0, false
-				}
-			}
-			stmt, err := formula.GenerateSQLBound(p, d, formula.SQLBinding{Column: quoted, Row: quoteIdent})
-			if err != nil {
-				return "", 0, false
-			}
-			return stmt.Value, stmt.Kind, true
-		}
-		pre, args := prefilter(node, f.Where, cols, d, constant)
+		pre, args := prefilter(node, f.Where, cols, d, constantOf(f.Where, scope, sources, d, quoted), "f")
 		if pre != "" {
 			where = pre + " AND (" + where + ")"
 		}
 		plan.Where = where
 		plan.Args = args
 		plan.Prog = prog
+	}
+	// The read rule of the class (ADR-0049, item 5): one more predicate,
+	// from the formula the Go VM runs for a read by id, so that a filter
+	// and a count leave out what the caller may not see.
+	if !p.Admin {
+		rp, err := readPlanFor(cls, scope, cols, sources, d, quoted)
+		if err != nil {
+			return nil, err
+		}
+		if rp.where != "" {
+			if plan.Where == "" {
+				plan.Where = rp.where
+			} else {
+				plan.Where = "(" + plan.Where + ") AND " + rp.where
+			}
+			plan.Args = append(plan.Args[:len(plan.Args):len(plan.Args)], rp.args...)
+		}
 	}
 	// Order: by id unless told otherwise.
 	var order []string
@@ -308,6 +306,84 @@ func Compile(f Filter, cls *model.Class, sources formula.Sources, p Principal) (
 		}
 	}
 	return plan, nil
+}
+
+// constantOf answers, for an operand of a condition that reads no
+// document, the clock or the principal alone, its SQL: a constant of the
+// statement, for the prefilter to compare an indexed column with.
+func constantOf(src string, scope *formula.Scope, sources formula.Sources, d formula.Dialect, quoted func(formula.Slot) string) func(formula.Node) (string, formula.Kind, bool) {
+	return func(n formula.Node) (string, formula.Kind, bool) {
+		p, err := formula.BindNode(src, n, scope, formula.BindOptions{Sources: sources})
+		if err != nil || len(p.Slots) != 0 || p.ReadsLife || p.Calls("STATE") || p.Calls("ID") {
+			return "", 0, false
+		}
+		for _, c := range p.Classes {
+			if c != formula.ClassPure && c != formula.ClassContext {
+				return "", 0, false
+			}
+		}
+		stmt, err := formula.GenerateSQLBound(p, d, formula.SQLBinding{Column: quoted, Row: quoteIdent})
+		if err != nil {
+			return "", 0, false
+		}
+		return stmt.Value, stmt.Kind, true
+	}
+}
+
+// readPlans keeps the read rule of each class as a predicate (ADR-0049,
+// item 5). It depends on the caller through the context parameters of the
+// dialect alone, so one text serves every caller; Forget drops it with
+// the class.
+var readPlans sync.Map // *model.Class → *readPlan
+
+type readPlan struct {
+	// where is the predicate, "" when the class has no read rule and a
+	// rule left out lets every caller through.
+	where string
+	// args are the named parameters of the literals in it.
+	args []any
+}
+
+func readPlanFor(cls *model.Class, scope *formula.Scope, cols map[string]column, sources formula.Sources, d formula.Dialect, quoted func(formula.Slot) string) (*readPlan, error) {
+	if cached, ok := readPlans.Load(cls); ok {
+		return cached.(*readPlan), nil
+	}
+	rp := &readPlan{}
+	switch {
+	case cls.Access != nil && cls.Access.Read != nil:
+		src := cls.Def.Access.Read
+		refused := func(msg string) error {
+			return &Error{Code: CodeBadFormula, Element: "access/read", Pos: -1, Message: "the read rule of " + cls.Name + " does not translate to SQL: " + msg}
+		}
+		node, err := formula.Parse(src)
+		if err != nil {
+			return nil, refused(err.Error())
+		}
+		prog, err := formula.BindNode(src, node, scope, formula.BindOptions{Sources: sources})
+		if err != nil {
+			return nil, refused(err.Error())
+		}
+		stmt, err := formula.GenerateSQLBound(prog, d, formula.SQLBinding{Column: quoted, Row: quoteIdent})
+		if err != nil {
+			return nil, refused(err.Error())
+		}
+		// A rule that stops with an error on a row lets nobody see the
+		// row, as it is FALSE for a read by id (ADR-0019).
+		where := d.Cond(formula.SQLExpr{Val: stmt.Value, Kind: formula.KindBool})
+		if stmt.Error != "" {
+			where = "(" + stmt.Error + ") IS NULL AND " + where
+		}
+		pre, args := prefilter(node, src, cols, d, constantOf(src, scope, sources, d, quoted), "r")
+		if pre != "" {
+			where = pre + " AND (" + where + ")"
+		}
+		rp.where, rp.args = "("+where+")", args
+	case !model.LeftOutAllows:
+		// No read rule: nobody but an administrator sees a document.
+		rp.where = "0"
+	}
+	readPlans.Store(cls, rp)
+	return rp, nil
 }
 
 // scopeOf is what the formulas of a filter over a class bind against: the
@@ -454,8 +530,12 @@ func rightsPlanFor(cls *model.Class, d formula.Dialect, column func(formula.Slot
 	return plan
 }
 
-// Forget drops the cached rights of a class the store no longer holds.
-func Forget(cls *model.Class) { rightsPlans.Delete(cls) }
+// Forget drops the cached rights and read rule of a class the store no
+// longer holds.
+func Forget(cls *model.Class) {
+	rightsPlans.Delete(cls)
+	readPlans.Delete(cls)
+}
 
 // predicate is the condition over the row for the principal: "" when
 // every state lets the principal read the variable, forbidden when none
@@ -532,7 +612,7 @@ func formulaError(err error) *Error {
 // an index answers. When a blank would satisfy the comparison, the blank
 // rows are kept with "OR column IS NULL". Money columns, and literals that
 // do not fit the column's scale, are left to the exact predicate.
-func prefilter(n formula.Node, src string, cols map[string]column, d formula.Dialect, constant func(formula.Node) (string, formula.Kind, bool)) (string, []any) {
+func prefilter(n formula.Node, src string, cols map[string]column, d formula.Dialect, constant func(formula.Node) (string, formula.Kind, bool), prefix string) (string, []any) {
 	var terms []string
 	var args []any
 	var walk func(formula.Node)
@@ -585,7 +665,7 @@ func prefilter(n formula.Node, src string, cols map[string]column, d formula.Dia
 		if !ok {
 			return
 		}
-		name := fmt.Sprintf("f%d", len(args))
+		name := fmt.Sprintf("%s%d", prefix, len(args))
 		term := quoteIdent(col.name) + " " + op + " " + d.Param(name)
 		if zeroSatisfies(op, c) {
 			term = "(" + term + " OR " + quoteIdent(col.name) + " IS NULL)"

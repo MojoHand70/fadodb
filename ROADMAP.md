@@ -140,7 +140,16 @@ one who acts is a person, an agent or a service, and for whom; and
 ADR-0051, who may define, operate and query, and the rules of a table.
 By the owner's ruling of that day the phase is the engine's part: the
 engine's own users, groups and API keys, and the filter on the change
-stream, come with the server in Phase 6. None of it is built yet.
+stream, come with the server in Phase 6. Its first step is built, on
+the records as proposed: the four rules of a class, `read`, `create`,
+`update` and `delete`, are enforced on every call of the Go API; a
+document its caller may not see is answered as one that does not exist
+and left out of every filter, count and list of what is due; a refusal
+names the rule; a transition without a rule of its own asks `update`;
+and `conformance/access/` is the suite. A rule a class leaves out lets
+every caller through, as before, until the owner rules on the question
+ADR-0049 puts to him. Not built yet: the kind of actor (ADR-0050), who
+may define, operate and run SQL, and the rules of a table (ADR-0051).
 This page is updated when a phase starts and when it ends;
 it never describes a phase as done before its acceptance criteria pass.
 

@@ -48,9 +48,14 @@ func TestReadmeClass(t *testing.T) {
 	if err != nil || doc.Version != 2 || doc.Values["total"] != "90.00 PLN" || doc.Title != "Invoice for ACME" || doc.State != "draft" {
 		t.Errorf("the README's walk-through: %v %+v", err, doc)
 	}
-	open, err := db.Query(ctx, fado.Filter{Class: "Invoice", Where: "state = \"draft\" AND total > 50.00", Order: []string{"-due"}})
+	open, err := db.Query(ctx, fado.Filter{Class: "Invoice", Where: "state = \"draft\" AND total > 50.00", Order: []string{"-due"}}, fado.As(alice))
 	if err != nil || len(open) != 1 {
 		t.Errorf("the README's filter: %v %d", err, len(open))
+	}
+	// The class's read rule (ADR-0049): the same filter by a caller who is
+	// neither finance, sales nor the customer finds nothing.
+	if hidden, err := db.Query(ctx, fado.Filter{Class: "Invoice"}, fado.As(fado.Principal{ID: "eve"})); err != nil || len(hidden) != 0 {
+		t.Errorf("the README's filter for a stranger: %v %d", err, len(hidden))
 	}
 	rows, err := db.SQL(ctx, `SELECT count(*), sum(total) FROM Invoice`, nil)
 	if err != nil || rows.Rows[0][0] != int64(1) || rows.Rows[0][1] != int64(9000) {
@@ -59,7 +64,7 @@ func TestReadmeClass(t *testing.T) {
 	if _, err := db.Preview(ctx, "Invoice", doc.ID, fado.Values{"discount": "0.50"}, "", fado.As(alice)); err != nil {
 		t.Errorf("the README's preview: %v", err)
 	}
-	if history, err := db.History(ctx, "Invoice", doc.ID); err != nil || len(history) != 2 {
+	if history, err := db.History(ctx, "Invoice", doc.ID, fado.As(alice)); err != nil || len(history) != 2 {
 		t.Errorf("the README's history: %v", err)
 	}
 	moved, err := db.Transition(ctx, "Invoice", doc.ID, "submit", nil, fado.As(alice))

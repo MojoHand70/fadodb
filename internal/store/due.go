@@ -118,6 +118,23 @@ func (s *Store) Due(ctx context.Context, class string, opts ...Option) ([]DueDoc
 		}
 		out = append(out, found...)
 	}
+	// A document the caller may not see is not listed (ADR-0049, item 3).
+	// The host program that touches what is due asks as an administrator,
+	// for whom this costs nothing; for anybody else it is a read of each
+	// document found.
+	if c.ruled(ruleRead) && !o.principal.Admin {
+		seen := out[:0]
+		for _, d := range out {
+			ok, err := s.sees(ctx, c, d.ID, o)
+			if err != nil {
+				return nil, err
+			}
+			if ok {
+				seen = append(seen, d)
+			}
+		}
+		out = seen
+	}
 	return out, nil
 }
 

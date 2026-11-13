@@ -52,12 +52,13 @@ enforces user and group access rules that are themselves formulas.
 Analytics and process mining are SQL over the event log.
 
 A class is one JSON document. This one defines, stores, computes and
-moves through its states today, and its rights and transition rules are
-enforced. Its rule runs: paying an invoice queues a receipt in the
-outbox, and the outbox creates it. The `Receipt` class the rule names is
+moves through its states today, and its access rules, its rights and
+its transition rules are enforced: finance, sales and the customer see
+an invoice, and nobody deletes one. Its rule runs: paying an invoice
+queues a receipt in the outbox, and the outbox creates it. The `Receipt`
+class the rule names is
 [examples/classes/receipt.json](examples/classes/receipt.json) and is
-defined first. The class-level access rule comes with Phase 5, and
-formulas over `lines` arrive with composites:
+defined first. Formulas over `lines` arrive with composites:
 
 ```json
 {
@@ -81,7 +82,7 @@ formulas over `lines` arrive with composites:
     {"on": "enter", "state": "paid",
      "do": [{"action": "create", "class": "Receipt", "values": {"invoice": "ID()", "amount": "total"}}]}
   ],
-  "access": {"read": "INGROUP(\"finance\") OR customer = USER()"},
+  "access": {"read": "INGROUP(\"finance\") OR INGROUP(\"sales\") OR customer = USER()", "delete": "FALSE"},
   "rights": {"*": {"discount": {"write": ["sales"]}}, "approved": {"discount": {"read": ["finance"]}}}
 }
 ```
@@ -100,9 +101,10 @@ fmt.Println(doc.Version, doc.Values["total"])             // 2 90.00 PLN
 doc, err = db.Transition(ctx, "Invoice", doc.ID, "submit", nil, fado.As(alice))
 fmt.Println(doc.Version, doc.State)                       // 3 submitted; approve needs finance
 
-open, err := db.Query(ctx, fado.Filter{Class: "Invoice", Where: "state = \"draft\" AND total > 50.00", Order: []string{"-due"}})
+open, err := db.Query(ctx, fado.Filter{Class: "Invoice", Where: "state = \"draft\" AND total > 50.00", Order: []string{"-due"}},
+	fado.As(alice))                                          // the invoices alice may see
 rows, err := db.SQL(ctx, `SELECT count(*), sum(total) FROM Invoice`, nil)
-history, err := db.History(ctx, "Invoice", doc.ID)       // every version, who committed it, when
+history, err := db.History(ctx, "Invoice", doc.ID, fado.As(alice)) // every version, who committed it, when
 preview, err := db.Preview(ctx, "Invoice", doc.ID, fado.Values{"discount": "0.50"}, "", fado.As(alice))
 ```
 
@@ -114,8 +116,14 @@ commit of its own in the same transaction; `Transitions` says which
 moves are open. The principal decides what a call may set and sees: a
 value a right refuses, or a transition its rule refuses, comes back as
 `forbidden`, and a variable the principal may not read in the document's
-state is absent from what they get back; the row-level access rule waits
-for Phase 5. The rules of a class run inside the commit: a `set` or a
+state is absent from what they get back. The four rules of a class say
+who may see, create, change and delete a document: a document its
+caller may not see is answered as if it did not exist, by a read, a
+command, a filter and a count alike, and a caller who sees it and may
+not change it gets `forbidden` with the rule. A rule a class leaves out
+lets every caller through, and the SQL endpoint reads every row, until
+the records of Phase 5 on both are accepted (ADR-0049, ADR-0051). The
+rules of a class run inside the commit: a `set` or a
 `reset` changes the document before it is written, an `emit` appends a
 custom event, an action that fails refuses the command with its place in
 the definition, and a preview lists the rules a command would run. A

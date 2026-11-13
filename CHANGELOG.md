@@ -32,6 +32,51 @@ All notable changes to FadoDB are recorded here. The format follows
   budget of ADR-0048 is 15,000. `BenchmarkTransitionMany` is in the
   benchmark gate, and the campaign of commits has two more rows: the
   batch, and single commits made while batches run.
+- The four rules of a class are enforced (ADR-0049, proposed): `read`,
+  `create`, `update` and `delete` under `access`, each a condition over
+  the document for the caller. A document its caller may not see is
+  answered as one that does not exist, `unknown_document` in the same
+  words, by `Get`, `Version`, `Transitions`, `Preview`, `OpenFile` and
+  every command that names it; `History` and `Events` answer nothing,
+  and `Query`, `Count` and `Due` leave it out, the rule being one more
+  predicate of the filter. `TransitionMany` reports it as
+  `unknown_document`. The history of a document is read under the rule
+  as the document is now, and over its last version once it is
+  deleted.
+- A caller who sees a document and may not do what they ask is refused
+  with `forbidden`, and `Error.Path` names the rule: `/access/create`,
+  `/access/update`, `/access/delete`, `/access/transition/<name>`. The
+  hint is the rule. `create` is asked over the new document with its
+  defaults and its computed values, `update` and `delete` over the
+  stored one. `Set` and `Reset` ask `update`; `Refresh`, and a set that
+  names no value, ask only to see the document.
+- A command whose caller may not see what it left is answered with the
+  document's id, version and state and no values, and a repeat of its
+  key the same way.
+- `PreviewDelete` says whether a delete would be refused and which
+  rules it would run, and writes nothing. `Preview` reports a refusal
+  of `create` or `update` under its errors and goes on.
+- `OpenFile` asks the read rule of the document and the read right of
+  the variable that holds the file.
+- `conformance/access/` is the suite of the rules: every path, for every
+  caller. `BenchmarkTransitionAccess` is in the benchmark gate: a
+  transition on a class with rules allocates what it does without them.
+
+### Changed
+
+- A named transition without a rule of its own asks the `update` rule
+  of its class, where the class has one. Before, it was open to every
+  caller. A transition with a rule of its own is asked that rule alone.
+- A rule's action on another document is refused by that document's
+  class rules as it is by its rights (ADR-0044, item 11): the row is
+  dead with `forbidden`. A `refresh` of another document asks its
+  `read` rule. The wake-up of a timer, an eventless transition and the
+  result an action writes back ask nothing.
+- A class that declared `read`, `create`, `update` or `delete` had them
+  checked and not enforced; they are enforced now. A rule a class
+  leaves out lets every caller through, as before, until the owner
+  rules on the question ADR-0049 puts to him. The Invoice sample lets
+  finance, sales and the customer see an invoice and nobody delete one.
 
 ## [0.4.0] - 2026-11-12
 

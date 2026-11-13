@@ -732,10 +732,19 @@ key order, to the function the Go VM adds with.
   the stored document before the assignments, every document returned is
   projected for the principal, and a filter compiles the read right of
   the variables it names into its predicate. The class-level `read`,
-  `create`, `update` and `delete` rules and their predicates arrive with
-  Phase 5, whose design is proposed in ADR-0049 to ADR-0051, and the
-  change stream with the server in Phase 6. A call without a principal
-  is nobody.
+  `create`, `update` and `delete` rules are enforced too, on the records
+  of Phase 5 as proposed (ADR-0049): a document its caller may not see
+  is answered as one that does not exist by every call that names it,
+  and left out of a filter, a count and the list of what is due, the
+  read rule being one more predicate; a caller who sees a document and
+  may not do what they ask is refused with `forbidden` and the place of
+  the rule. A named transition without a rule of its own asks `update`.
+  What the engine does by itself asks nothing. A rule a class leaves
+  out lets every caller through, until the owner rules on the question
+  ADR-0049 puts to him. Not built yet: the kind of actor (ADR-0050),
+  who may define, operate and run SQL, and the rules of a table
+  (ADR-0051). The change stream comes with the server in Phase 6. A
+  call without a principal is nobody.
 
 ### Querying
 
@@ -761,8 +770,12 @@ that reads no document, as in `due < TODAY()`;
 a repeated filter runs a cached prepared statement, so it pays SQLite's
 parse once. The read right of every variable a filter's `where` or `order` names is
 compiled into its predicate for the principal, and the documents come
-back projected (ADR-0041); the class-level access rules are not applied
-until Phase 5, and the SQL endpoint stays row-level.
+back projected (ADR-0041). The read rule of the class joins the
+predicate of every `Query` and `Count` for a caller who is not an
+administrator (ADR-0049), written by the same generator from the
+formula the Go VM runs for a read by id. The SQL endpoint adds no rule
+and reads every row for every caller, until ADR-0051 says who may use
+it.
 
 ### Layouts
 

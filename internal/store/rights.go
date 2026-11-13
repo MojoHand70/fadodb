@@ -244,12 +244,17 @@ func transitionRule(c *class, t *model.Transition) *formula.Program {
 
 // permitted evaluates a transition's access rule over the row for the
 // principal: TRUE permits; FALSE, a blank, another type and an error do
-// not, the error returned for the message. A transition without a rule,
-// and every transition for an administrator, is permitted.
+// not, the error returned for the message. Every transition is permitted
+// for an administrator. A transition without a rule of its own asks the
+// update rule of the class: who may change the document may move it,
+// until the transition says who (ADR-0049, item 2).
 func (s *Store) permitted(e *evaluator, c *class, t *model.Transition, row *docRow, evalCtx *formula.Context, p Principal) (bool, error) {
-	rule := transitionRule(c, t)
-	if rule == nil || p.Admin {
+	if p.Admin {
 		return true, nil
+	}
+	rule := transitionRule(c, t)
+	if rule == nil {
+		return e.may(c, ruleUpdate, row, evalCtx, p)
 	}
 	val, err := e.run(c, rule, row, evalCtx)
 	if err != nil {
@@ -265,6 +270,12 @@ func (s *Store) checkTransition(c *class, t *model.Transition, row *docRow, eval
 	ok, err := s.permitted(&s.wev, c, t, row, evalCtx, p)
 	if ok {
 		return nil
+	}
+	if transitionRule(c, t) == nil {
+		// The update rule answered for a transition that has none.
+		e := forbiddenBy(c, ruleUpdate, p, row.id, err)
+		e.Message = fmt.Sprintf("%s may not take %s from %s: the transition has no rule of its own, and %s", who(p), t.Name, row.state, e.Message)
+		return e
 	}
 	return forbiddenTransition(p, t, row.state, c.cls.Def.Access.Transition[t.Name], err)
 }
@@ -293,7 +304,9 @@ func forbiddenTransition(p Principal, t *model.Transition, state, src string, er
 	if err != nil {
 		msg += ": the rule failed, " + guardFailure(err)
 	}
-	return hintf(CodeForbidden, "", msg, "the rule of "+t.Name+": "+src)
+	e := hintf(CodeForbidden, "", msg, "the rule of "+t.Name+": "+src)
+	e.Path = "/access/transition/" + t.Name
+	return e
 }
 
 // ruleText words a right for a hint: the formula, or the groups.

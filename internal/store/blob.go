@@ -319,13 +319,22 @@ func (s *Store) PutBlob(ctx context.Context, name, mediaType string, r io.Reader
 // OpenFile opens a file a document holds: the hash must be the hash of a
 // File of the document's current version, or of the version AtVersion
 // names. It returns the stream and the fact as the document holds it.
-// The read rule and the field right of Phase 5 are not applied yet.
+// The caller has to see the document, by its read rule as it is now, and
+// the variable that holds the file, by its read right in the state of
+// the version asked (ADR-0049, item 11): a document that is hidden does
+// not exist, and a file in a hidden variable is not held.
 func (s *Store) OpenFile(ctx context.Context, class, id, hash string, opts ...Option) (io.ReadCloser, *FileInfo, error) {
 	c, e := s.class(class)
 	if e != nil {
 		return nil, nil, e
 	}
 	o := apply(opts)
+	if seen, err := s.sees(ctx, c, id, o); err != nil {
+		return nil, nil, err
+	} else if !seen {
+		return nil, nil, errf(CodeUnknownDocument, "", "no document %s of class %s at that version", id, c.cls.Name)
+	}
+	cur := c
 	var row *docRow
 	var err error
 	if o.version > 0 {
@@ -343,13 +352,28 @@ func (s *Store) OpenFile(ctx context.Context, class, id, hash string, opts ...Op
 		return nil, nil, err
 	}
 	version := row.version
-	info := c.fileOf(row.vals, hash)
+	// hidden says which variables of the version the caller may not read:
+	// the rights table of the current class, by name, over that row
+	// (ADR-0041, item 4).
+	hidden := s.hiddenFor(cur, c, row, o)
+	var info *FileInfo
+	for _, fp := range c.files {
+		if hidden[strings.ToUpper(strings.SplitN(fp.path, ".", 2)[0])] {
+			continue
+		}
+		if info = fileOfPairs([]filePair{fp}, row.vals, hash); info != nil {
+			break
+		}
+	}
 	if info == nil {
 		kids, err := c.loadChildren(ctx, id, version, nil, false)
 		if err != nil {
 			return nil, nil, err
 		}
 		for ch, rows := range kids {
+			if hidden[strings.ToUpper(ch.v.Name)] {
+				continue
+			}
 			for _, r := range rows {
 				if info = ch.fileOf(r, hash); info != nil {
 					break
@@ -474,10 +498,6 @@ func fileOfPairs(pairs []filePair, vals []formula.Value, hash string) *FileInfo 
 		return info
 	}
 	return nil
-}
-
-func (c *class) fileOf(vals []formula.Value, hash string) *FileInfo {
-	return fileOfPairs(c.files, vals, hash)
 }
 
 func (ch *child) fileOf(vals []formula.Value, hash string) *FileInfo {

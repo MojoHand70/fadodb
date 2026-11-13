@@ -16,7 +16,12 @@
 // ran under (ADR-0042). The principal decides what a call may set and
 // sees: the rights table and the per-transition rules are enforced on
 // every call, a refusal being forbidden and a hidden variable absent
-// (ADR-0041). The rules of a class run inside the commit (ADR-0043), and
+// (ADR-0041). The four rules of a class say who may see, create, change
+// and delete a document (ADR-0049): a document its caller may not see is
+// answered as if it did not exist, by a read, a command, a filter and a
+// count alike, and a caller who sees it and may not do what they ask is
+// refused with forbidden and the rule, which Error.Path names. The rules
+// of a class run inside the commit (ADR-0043), and
 // what they do to other documents and tables is queued and run by the
 // outbox (ADR-0044). An action may also be the host program's own: a
 // definition, stored with DefineAction, and a Go function given to Open
@@ -31,9 +36,9 @@
 // engine moves the document by itself when that time comes, as the
 // person whose commit set the timer; Transitions shows the moment, and
 // Due lists the documents a guard on time would move, for the host
-// program to touch (ADR-0047). Not here yet: QUERY, the class-level
-// access rules compiled to row predicates (Phase 5) and the server
-// (Phase 6).
+// program to touch (ADR-0047). Not here yet: QUERY, the rest of Phase 5
+// (the kind of actor, who may define, the rules of a table and of the
+// SQL endpoint) and the server (Phase 6).
 package fado
 
 import (
@@ -506,6 +511,14 @@ func (db *DB) CheckBlobs(ctx context.Context) (mismatched []string, checked int,
 // the last of them.
 func (db *DB) Preview(ctx context.Context, class, id string, values Values, transition string, opts ...Option) (*Preview, error) {
 	return db.s.Preview(ctx, class, id, values, transition, opts...)
+}
+
+// PreviewDelete answers what a delete of the document would do and writes
+// nothing (ADR-0049): the document as it is, the refusal of the class's
+// delete rule under the preview's errors when the principal may not
+// delete it, and the rules the delete would run.
+func (db *DB) PreviewDelete(ctx context.Context, class, id string, opts ...Option) (*Preview, error) {
+	return db.s.PreviewDelete(ctx, class, id, opts...)
 }
 
 // PreviewDraft compiles a class definition for this call alone and runs

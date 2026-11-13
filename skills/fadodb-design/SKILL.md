@@ -39,7 +39,7 @@ read the diagnostics, fix, preview against live data, define.
 | field rights per state, per-transition rules | shipped with Phase 3 |
 | rules and actions | shipped with Phase 4: rules fire inside the commit with `set`, `reset`, `refresh` and `emit`, a preview lists them, and triggered variables are computed at their triggers; what a rule does beyond its own document runs through the outbox, exactly once and as the person who caused it: `create` (with `each`, one document per element of a list), `transition` and `refresh` of another document, `table.insert`, `table.update`, `table.delete`; a rule may also call an action that has a definition, with typed `args`, whether a Go function of the host program implements it or the engine sends it as an HTTP request, and `http.call` for one request written in the rule; `Actions` lists every action a rule may name and whether this process can run it; `into` writes what an action returned, or the code it failed with, back to the document, and the eventless transitions follow |
 | action definitions: `DefineAction`, `ValidateAction`, `Actions`, `PreviewAction`, `TryAction` | shipped with Phase 4: a definition with a `request` needs no code and reads secrets with `SECRET("name")`; it can be defined only where the host program allows outbound calls and names the definition's connection; `docs/actions.md` is the guide and `examples/actions/webhook.json` a generic webhook; definitions for particular services come with real needs, and a format for packages of them is planned |
-| the class-level access rule | designed, Phase 5: it compiles, it is not enforced |
+| the class-level access rules: `"access": {"read": ..., "create": ..., "update": ..., "delete": ...}` | shipped with Phase 5, its first step: each is a condition over the document for the caller, such as `owner = USER() OR INGROUP("finance")`. A document its caller may not `read` does not exist for them: `unknown_document` from every call that names it, and absent from a filter, a count and `Due`. `create` is asked over the new document with its defaults and computed values; `update` over the stored document, by a set, a reset and a named transition that has no rule of its own; `delete` over the stored document. A refusal is `forbidden`, with the place of the rule as its path, `/access/update`. A `read` rule uses the document's own variables, the functions of its row, the caller and the clock, and no lookup. A rule left out lets every caller through today; a ruling on that is pending (ADR-0049), so write all four |
 | class versions, terminal states, migrations | shipped: a redefinition is a new version and touches no document; a document adopts it at its next commit, or all at once with `Migrate`; a terminal state freezes the document |
 
 ## Procedure, in outline
@@ -73,8 +73,12 @@ read the diagnostics, fix, preview against live data, define.
    and guard the next transition on the variable it fills; guard
    another on the error variable, so that a failure is a state and not
    a document that waits for ever.
-   **Write the access rule**, marked as what it is today: checked, not
-   enforced.
+   **Write the access rules**, all four: who sees a document, who
+   creates one, who changes it and who deletes it. They are enforced.
+   A transition that only some may take gets a rule of its own under
+   `access.transition`; one without is open to whoever may `update`.
+   What a rule does to another document is done as the person who set
+   it off, so that person needs the other class's rules to let them.
 7. **Validate.** Today through `ValidateClass` on the Go API, and
    `ValidateClasses` for classes that name each other, whose findings
    start with the position of the definition, `/1/variables/total`; a

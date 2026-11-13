@@ -289,6 +289,10 @@ func TestStatechartConformance(t *testing.T) { runScriptSuites(t, "statechart") 
 // rules inside the commit (ADR-0043).
 func TestRulesConformance(t *testing.T) { runScriptSuites(t, "rules") }
 
+// TestAccessConformance runs conformance/access, the specification of the
+// four rules of a class on every path (ADR-0049).
+func TestAccessConformance(t *testing.T) { runScriptSuites(t, "access") }
+
 func runScriptSuites(t *testing.T, dir string) {
 	files, err := filepath.Glob(filepath.Join("..", "..", "conformance", dir, "*.json"))
 	if err != nil {
@@ -980,8 +984,10 @@ func sameListing(got []TransitionInfo, want []scriptTransition) bool {
 // format tidy: every step has a command, and the files sort by name.
 func TestStatechartSuitesAreWellFormed(t *testing.T) {
 	files, _ := filepath.Glob(filepath.Join("..", "..", "conformance", "statechart", "*.json"))
-	more, _ := filepath.Glob(filepath.Join("..", "..", "conformance", "rules", "*.json"))
-	files = append(files, more...)
+	for _, dir := range []string{"rules", "access"} {
+		more, _ := filepath.Glob(filepath.Join("..", "..", "conformance", dir, "*.json"))
+		files = append(files, more...)
+	}
 	sort.Strings(files)
 	for _, file := range files {
 		raw, _ := os.ReadFile(file)

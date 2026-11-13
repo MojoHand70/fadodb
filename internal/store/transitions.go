@@ -64,14 +64,19 @@ func (s *Store) Transitions(ctx context.Context, class, id string, opts ...Optio
 	row, err := c.scanW(read.QueryRowContext(ctx, id), !c.who)
 	if err != nil {
 		if err == sql.ErrNoRows {
-			return nil, errf(CodeUnknownDocument, "", "no document %s of class %s", id, c.cls.Name)
+			return nil, noDocument(c, id)
 		}
 		return nil, storageErr("read the document", err)
+	}
+	evalCtx := &formula.Context{User: o.principal.ID, Groups: o.principal.Groups, Now: s.clock(o), State: row.state, ID: row.id}
+	// A document the caller may not see does not exist for them
+	// (ADR-0049, item 3).
+	if ok, _ := s.wev.may(c, ruleRead, row, evalCtx, o.principal); !ok {
+		return nil, noDocument(c, id)
 	}
 	if c.cls.States == nil {
 		return []TransitionInfo{}, nil
 	}
-	evalCtx := &formula.Context{User: o.principal.ID, Groups: o.principal.Groups, Now: s.clock(o), State: row.state, ID: row.id}
 	return s.listTransitions(c, row, evalCtx, o.principal, false), nil
 }
 

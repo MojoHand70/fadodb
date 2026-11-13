@@ -8,7 +8,8 @@
 An embeddable **active document database**, written in Go, MIT licensed.
 Website: [fadodb.org](https://fadodb.org).
 
-> **Status: Phase 4, rules and actions, is done and released as v0.4.0;
+> **Status: Phase 4, rules and actions, is done and released as v0.4.0,
+> and the command that moves many documents as v0.4.1;
 > Phase 5, security, is in progress.** The Go API stores
 > documents of typed classes as commits with recalculation, history and
 > an event log,
@@ -36,7 +37,10 @@ Website: [fadodb.org](https://fadodb.org).
 > time, `"after": "30d"` or `"at"` a date the document holds, and the
 > engine moves the document by itself when that time comes, as the
 > person whose commit set the timer; `Due` lists the documents that a
-> guard on time would move, so the host program can touch them. The
+> guard on time would move, so the host program can touch them. One
+> call, `TransitionMany`, moves many documents, a commit each: those
+> that cannot move are reported with their reason, and the others
+> move. The
 > row-level access rules and the server come with their phases. The
 > numbers are in
 > [docs/perf/](docs/perf/), the plan in [ROADMAP.md](ROADMAP.md).

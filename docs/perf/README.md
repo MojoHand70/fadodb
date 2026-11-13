@@ -9,6 +9,8 @@ Published per tagged release, with the budgets from
   Phase 3.
 - [v0.4.0](v0.4.0.md): rules, actions, formulas that read other
   documents, and time, Phase 4.
+- [v0.4.1](v0.4.1.md): many documents moved by one call, the addendum
+  to Phase 4.
 
 The end-to-end suite is the `bench` package: scenarios written against
 database/sql so that the same one runs on every storage engine. Each
@@ -24,7 +26,9 @@ test classes of the store package, with the statechart rows of ADR-0040
 (a transition, a transition with values, a chain of three and the listing
 of ten candidates) and the preview at a chosen moment of ADR-0042, and
 the filter over a loaded database, with and without a read right on the
-filtered variable (ADR-0041):
+filtered variable (ADR-0041); since v0.4.1 also a transition batched
+1,000 a call, and single commits made while such batches run
+(ADR-0048):
 
 ```
 FADODB_BENCH_DIR=/path/on/disk FADODB_BENCH_COMMITS=100000 go test -count=1 -v -run TestCommitCampaign ./internal/store/

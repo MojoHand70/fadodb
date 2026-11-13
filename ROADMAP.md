@@ -1,6 +1,6 @@
 # Roadmap
 
-**Current status: Phase 4, rules and actions, done on 2026-11-12 and released as v0.4.0. Phase 5, security, is next.**
+**Current status: Phase 4, rules and actions, done on 2026-11-12 and released as v0.4.0. Phase 5, security, started on 2026-11-13.**
 The Go API (`fado`) opens a database file, defines schemas, classes and
 explicit tables, and creates, changes, reads and deletes documents as
 commits: assignments and defaults, the auto recalculation, typed history
@@ -133,7 +133,15 @@ with its reason.
 By the owner's rulings of that day a formula sees every document, and
 `QUERY`, which returns lists, is built with the first layout or report
 that needs one; tables stored outside the file come with the analytical
-engine in Phase 8. This page is updated when a phase starts and when it ends;
+engine in Phase 8. Phase 5 opened on 2026-11-13 with its design proposed
+as three records: ADR-0049, who may see, create, change and delete a
+document, with the read rule in every filter; ADR-0050, whether the
+one who acts is a person, an agent or a service, and for whom; and
+ADR-0051, who may define, operate and query, and the rules of a table.
+By the owner's ruling of that day the phase is the engine's part: the
+engine's own users, groups and API keys, and the filter on the change
+stream, come with the server in Phase 6. None of it is built yet.
+This page is updated when a phase starts and when it ends;
 it never describes a phase as done before its acceptance criteria pass.
 
 Legend: ✅ done · 🚧 in progress · ⬜ not started
@@ -145,8 +153,8 @@ Legend: ✅ done · 🚧 in progress · ⬜ not started
 | 2 | Document model and store: primary-store benchmark, variables with defaults, `json` type, enum values, range constraints, named schemas and object values with the predefined vocabulary, attachments as `File` values with a blob store, class metadata and title, current, history and child tables, commits with idempotency keys and business dates, preview and validate without writing, event log, migrations, LOOKUP, queries | ✅ |
 | 3 | Statechart: the transition command with guards, eventless chains, exit and entry snapshots and the `_states` view, allowed transitions and the preview of a transition, `STATE()` and `ID()`, per-transition access rules and field-level rights per state, statechart conformance cases | ✅ |
 | 4 | Rules and actions: event-condition-action rules run inside the commit, the synchronous actions `set`, `reset`, `refresh` and `emit`, triggered variables with their moment, the transactional outbox with its worker, retries and dead rows, the engine's actions on other documents and tables, actions as an extension point with definitions, declared HTTP actions, Go actions the embedder registers, connections and results written back, the delivered event, formulas that read other documents (`LOOKUP` over a class, with a count, a sum, the smallest and the largest), conditions on time and timers | ✅ |
-| 5 | Security: the principal from the embedder on every call, access rules compiled to SQL predicates, an optional package of users, groups and API keys for the server | ⬜ |
-| 6 | Server and CLI: JSON command set over HTTP and WebSocket, documents on the wire, layouts, `QUERY` when the first layout needs a list of rows (otherwise with the reports of Phase 8), OpenAPI, `fadodb serve` | ⬜ |
+| 5 | Security: the class-level access rules enforced on every path, who may see, create, change and delete a document, with the read rule compiled to a SQL predicate; the kind of actor, a person, an agent or a service, and whom it acts for, on every event; who may define, operate and query; the rules of a table | 🚧 |
+| 6 | Server and CLI: JSON command set over HTTP and WebSocket, the authenticator and an optional package of users, groups and API keys, the change stream filtered by the read rule, documents on the wire, layouts, `QUERY` when the first layout needs a list of rows (otherwise with the reports of Phase 8), OpenAPI, `fadodb serve` | ⬜ |
 | 7 | Browser VM and reference frontend: TypeScript VM on the same bytecode shipped as one plain JavaScript file, class bundle, layout renderer with the chip, card, coins and rating components, TypeScript client | ⬜ |
 | 8 | Analytical engine: DuckDB projection of document tables, native and attached bindings, set-wise recompute, mining views, full build per OS | ⬜ |
 | 9 | Embedding: C ABI, Python client, embedding guides | ⬜ |

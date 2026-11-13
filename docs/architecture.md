@@ -732,8 +732,10 @@ key order, to the function the Go VM adds with.
   the stored document before the assignments, every document returned is
   projected for the principal, and a filter compiles the read right of
   the variables it names into its predicate. The class-level `read`,
-  `create`, `update` and `delete` rules, their predicates and the change
-  stream arrive with Phase 5. A call without a principal is nobody.
+  `create`, `update` and `delete` rules and their predicates arrive with
+  Phase 5, whose design is proposed in ADR-0049 to ADR-0051, and the
+  change stream with the server in Phase 6. A call without a principal
+  is nobody.
 
 ### Querying
 

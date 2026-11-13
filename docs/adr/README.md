@@ -54,3 +54,6 @@ line says so. Copy `0000-template.md` to start.
 | [0046](0046-formulas-that-read-other-documents.md) | Formulas that read other documents: a class as the source of LOOKUP, with COUNT, SUM, MIN and MAX | Accepted |
 | [0047](0047-time.md) | Time: a document's life in formulas, what is due, and timed transitions | Accepted |
 | [0048](0048-moving-many-documents-in-one-command.md) | Moving many documents in one command: `TransitionMany`, the refused reported and the rest moved | Accepted |
+| [0049](0049-who-may-see-create-change-and-delete-a-document.md) | Who may see, create, change and delete a document | Proposed |
+| [0050](0050-person-agent-or-service-and-for-whom.md) | Person, agent or service, and for whom it acts | Proposed |
+| [0051](0051-who-may-define-operate-and-query.md) | Who may define, operate and query, and the rules of a table | Proposed |

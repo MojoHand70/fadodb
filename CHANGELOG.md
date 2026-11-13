@@ -8,7 +8,7 @@ All notable changes to FadoDB are recorded here. The format follows
 
 ### Added
 
-- The four rules of a class are enforced (ADR-0049, proposed): `read`,
+- The four rules of a class are enforced (ADR-0049): `read`,
   `create`, `update` and `delete` under `access`, each a condition over
   the document for the caller. A document its caller may not see is
   answered as one that does not exist, `unknown_document` in the same
@@ -48,8 +48,8 @@ All notable changes to FadoDB are recorded here. The format follows
 - A text variable compared with the caller, `owner = USER()`, is
   answered from the variable's index in any filter, in a `where` as in
   a read rule. Before, such a filter read every document of the class.
-- A principal says what it is and for whom it acts (ADR-0050,
-  proposed): `Principal.Kind` is `ActorPerson`, `ActorAgent` or
+- A principal says what it is and for whom it acts (ADR-0050):
+  `Principal.Kind` is `ActorPerson`, `ActorAgent` or
   `ActorService`, or empty when the host program does not know, and
   `Principal.For` is the id of whoever the caller acts for. The engine
   trusts both as it trusts the id. Any other kind is refused with
@@ -69,7 +69,7 @@ All notable changes to FadoDB are recorded here. The format follows
   them off, with what that caller was; `QueuedAction` shows it.
   `conformance/access/actors.json` is the suite.
 - The host program names who may do the three kinds of work that are
-  not about one document (ADR-0051, proposed): `Options.Designers` for
+  not about one document (ADR-0051): `Options.Designers` for
   defining classes, schemas, tables and actions, previewing a draft
   and migrating; `Options.Operators` for the outbox, `Drain`,
   `PreviewAction`, `TryAction` and `CheckBlobs`; `Options.Analysts`
@@ -77,8 +77,9 @@ All notable changes to FadoDB are recorded here. The format follows
   of groups; an administrator may do all three. Anybody else is
   refused with `forbidden`, and the refusal names the option. A list
   that is empty leaves its work to administrators. A host program that
-  names no list at all is asked nothing, as before, until the owner
-  accepts the record.
+  names no list at all is asked nothing, as before. ADR-0052, accepted
+  and not built yet, gives this work to system groups with fixed names
+  and leaves none of it open.
 - `DefineClass`, `DefineClasses`, `DefineSchema`, `DefineTable`,
   `DefineAction`, `Outbox`, `RetryAction`, `Drain`, `PreviewAction`,
   `TryAction`, `CheckBlobs` and `TableRows` take the options of a
@@ -107,8 +108,9 @@ All notable changes to FadoDB are recorded here. The format follows
   opened, as before 1.0 there is no upgrade path.
 - A class that declared `read`, `create`, `update` or `delete` had them
   checked and not enforced; they are enforced now. A rule a class
-  leaves out lets every caller through, as before, until the owner
-  rules on the question ADR-0049 puts to him. The Invoice sample lets
+  leaves out lets every caller through, as before. The owner has ruled
+  that it lets nobody through, and that is built with ADR-0052. The
+  Invoice sample lets
   finance, sales and the customer see an invoice and nobody delete one.
 
 ## [0.4.1] - 2026-11-13

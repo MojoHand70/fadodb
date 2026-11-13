@@ -1,6 +1,6 @@
 # ADR-0049: Who may see, create, change and delete a document
 
-- Status: Proposed, with one question open for the owner; amends ADR-0010 (the paths the read rule covers, what a transition without a rule asks, the change stream waits for the server), ADR-0027 (the optional package of users and keys waits for the server), ADR-0041 (the class-level rules are enforced), ADR-0038 (the read rule joins the filter, and the SQL endpoint is not for every caller), ADR-0033 (`OpenFile` asks the read rule and the right), ADR-0044 (what a refresh asks), ADR-0026 (the reply to a repeated key), ADR-0025 (the preview of a delete)
+- Status: Accepted; amends ADR-0010 (the paths the read rule covers, what a transition without a rule asks, the change stream waits for the server), ADR-0027 (the optional package of users and keys waits for the server), ADR-0041 (the class-level rules are enforced), ADR-0038 (the read rule joins the filter, and the SQL endpoint is not for every caller), ADR-0033 (`OpenFile` asks the read rule and the right), ADR-0044 (what a refresh asks), ADR-0026 (the reply to a repeated key), ADR-0025 (the preview of a delete); amended by ADR-0052 (a content administrator passes the rules where an administrator did, with a reason the event keeps; a rule left out; who opens a blob by its hash)
 - Date: 2026-11-13
 
 ## Context
@@ -42,9 +42,9 @@ The caller is as often an agent as a person. A refusal therefore has to
 name a stable code, the rule that refused and what would change the
 answer, and an agent has to be able to ask before it acts.
 
-Items 1, 8, 9 and 10 build on accepted records and name them. What they
-add to those records, and every other item, is proposed here and is the
-owner's to change. The question at the end is his to rule.
+Items 1, 8, 9 and 10 build on accepted records and name them. The
+owner accepted the record on 2026-11-13 and ruled on the question it
+put to him. The ruling is at the end.
 
 ## Decision
 
@@ -183,11 +183,13 @@ owner's to change. The question at the end is his to rule.
 
 The first step was built on 2026-11-13, on the record as proposed.
 
-- **The question is left open in the code.** A rule a class leaves out
-  lets every caller through, as the engine has always answered, and one
-  constant holds that answer for the store and for the filter compiler
-  (`model.LeftOutAllows`). The other answer is that constant and, with
-  it, rules or an administrator for the samples and the tests.
+- **The ruling on question A is not in the code yet.** A rule a class
+  leaves out lets every caller through, as the engine has always
+  answered, and one constant holds that answer for the store and for
+  the filter compiler (`model.LeftOutAllows`). The owner has since
+  ruled the other answer. It is that constant and, with it, rules and
+  named callers for the samples and the tests, and it is built with
+  ADR-0052.
 - **A set that names no value asks only `read`.** It changes nothing
   and answers with the document, which is what a read does. `update` is
   asked of a set that names a value and of every reset.
@@ -261,33 +263,31 @@ SQLite chooses between two indexes blind, in any filter and not only
 here. Keeping statistics is a decision about every database and is not
 taken in this record.
 
-## Open question
-
-This one is the owner's to rule. The record assumes the first answer
-until he does, since it is what ADR-0010 says today.
+## The owner's ruling
 
 **A. What does a class allow when it says nothing?** A class is defined
 with no `access` block, or with a `read` rule and no `update` rule.
 
-- *Nobody but an administrator* (ADR-0010 as accepted). A rule that is
-  left out is FALSE. A class with no `access` block stores documents
-  that only an administrator sees and changes. `ValidateClass` reports
-  each rule a class leaves out as a note, a finding that refuses
-  nothing, the first of its kind; and the refusal of item 4 names the
-  missing rule and what to add. An agent that defines a class and
-  forgets its rules is stopped at its first command and told why.
-- *Everybody*, as the engine behaves today. A rule that is left out is
-  TRUE. Nothing that works today stops working, and a class whose
+**Ruled on 2026-11-13: nobody.** In the owner's words, "a document with
+no access block - nobody sees by default". It is what ADR-0010 says.
+
+- A rule that is left out is FALSE. `ValidateClass` reports each rule a
+  class leaves out as a note, a finding that refuses nothing, the first
+  of its kind; and the refusal of item 4 names the missing rule and
+  what to add. An agent that defines a class and forgets its rules is
+  stopped at its first command and told why.
+- Who still reaches such a document is ADR-0052: a content
+  administrator, with a reason that the event keeps. The owner saw that
+  the answer is safe and can leave a process stuck, and asked for that
+  role with it.
+- The answer he did not take was everybody, as the engine behaved
+  until then: nothing that works stops working, and a class whose
   author forgot the rules is open to every caller without a sign.
 
-The first answer has a price. Every class that people use needs its
-four lines, and the samples, the README and the tests that run as
-somebody other than an administrator gain them. A call without a
-principal, which is nobody (ADR-0041, item 6), sees and does nothing,
-so a first program either names an administrator or writes rules.
-
-Recommended: nobody but an administrator. A database that gives the
-authority to act should give none that was not written down.
+The ruling has a price. Every class that people use needs its four
+lines, and the samples, the README and the tests gain them. A call
+without a principal, which is nobody (ADR-0041, item 6), sees and does
+nothing, so a first program names its callers and writes rules.
 
 ## Consequences
 

@@ -41,8 +41,10 @@ Website: [fadodb.org](https://fadodb.org).
 > call, `TransitionMany`, moves many documents, a commit each: those
 > that cannot move are reported with their reason, and the others
 > move. The access rules of a class are enforced, who may see, create,
-> change and delete a document, on the records of Phase 5 as proposed;
-> the server comes with its phase. The numbers are in
+> change and delete a document. A rule a class leaves out still lets
+> every caller through; the accepted design closes it, with system
+> groups and substitutions, and those are not built yet. The server
+> comes with its phase. The numbers are in
 > [docs/perf/](docs/perf/), the plan in [ROADMAP.md](ROADMAP.md).
 
 ## What it is

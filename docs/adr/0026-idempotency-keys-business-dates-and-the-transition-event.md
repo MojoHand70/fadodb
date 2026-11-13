@@ -1,6 +1,6 @@
 # ADR-0026: Idempotency keys on commands, a business date on events, and the transition event
 
-- Status: Accepted; amends ADR-0006, ADR-0011, ADR-0014; amended by ADR-0040 (the key of a command that made a chain), ADR-0044 (the engine's commands carry keys under a reserved prefix), ADR-0045 (the delivered event is any event, and its schema), ADR-0047 (an event says how the move came about, under `origin`), ADR-0048 (a batch of moves takes a key, held for each document)
+- Status: Accepted; amends ADR-0006, ADR-0011, ADR-0014; amended by ADR-0040 (the key of a command that made a chain), ADR-0044 (the engine's commands carry keys under a reserved prefix), ADR-0045 (the delivered event is any event, and its schema), ADR-0047 (an event says how the move came about, under `origin`), ADR-0048 (a batch of moves takes a key, held for each document), ADR-0049 (the reply to a repeated key whose caller may not see the document), ADR-0050 (the delivered event says what the actor was and for whom it acted)
 - Date: 2026-11-06
 
 ## Context

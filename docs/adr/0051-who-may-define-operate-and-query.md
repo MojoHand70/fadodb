@@ -1,6 +1,6 @@
 # ADR-0051: Who may define, operate and query, and the rules of a table
 
-- Status: Proposed; amends ADR-0046 (who may define and preview a class), ADR-0045 (who may define and try an action), ADR-0044 (who may operate the queue; a table action asks the table's rule), ADR-0038 (who may use the SQL endpoint), ADR-0037 (a table has rules), ADR-0039 (who may migrate, and a version records who defined it), ADR-0027 (the host names three lists of groups)
+- Status: Accepted; amends ADR-0046 (who may define and preview a class), ADR-0045 (who may define and try an action), ADR-0044 (who may operate the queue; a table action asks the table's rule), ADR-0038 (who may use the SQL endpoint), ADR-0037 (a table has rules), ADR-0039 (who may migrate, and a version records who defined it), ADR-0027 (the host names three lists of groups); amended by ADR-0052 (the three lists the host names become system groups with fixed names; work nobody was given is done by nobody; a rule a table leaves out; item 5 is built with a call that reads it back)
 - Date: 2026-11-13
 
 ## Context
@@ -29,8 +29,11 @@ the log, and most do their own work on documents (the skills under
 `skills/`).
 
 The owner agreed on 2026-11-13 that who may define, and the rules of
-tables, are in Phase 5. Everything below is proposed here and is his to
-change.
+tables, are in Phase 5. He accepted the record on 2026-11-13, together
+with ADR-0052, which changes its items 1 and 2: the three kinds of work
+stay, and the groups that do them have fixed names instead of names the
+host picks. His ruling on the question raised while this record was
+built is under the details below.
 
 ## Decision
 
@@ -121,9 +124,11 @@ the phase, but for the two things below.
   that is empty and not nil does that, and a host program that gives
   no list at all is asked nothing, as before these options. One
   constant holds that answer. The other answer refuses every
-  definition made without an administrator, which is every sample and
-  nearly every test, so it waits for the owner's word with question A
-  of ADR-0049, which has the same price.
+  definition made without a caller who may, which is every sample and
+  nearly every test. This became question C, and the owner ruled it on
+  2026-11-13 with question A of ADR-0049, which has the same price:
+  **work nobody was given is done by nobody.** It is built with
+  ADR-0052, item 6.
 - **Item 5 is not built**: a version does not yet record who defined
   it. It needs a way to read the record back, which no call has, and
   that is a decision on the command set.
@@ -139,7 +144,8 @@ the phase, but for the two things below.
   table only while it has no rows and no class reads it (ADR-0037), so
   a table that is in use keeps the rules it was given.
 - **A rule a table leaves out** answers as a class's does: it lets
-  every caller through until question A of ADR-0049 is ruled.
+  every caller through in this build. Question A of ADR-0049 is ruled,
+  so it will let nobody through, with ADR-0052.
 
 ## Consequences
 

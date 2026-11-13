@@ -4,13 +4,14 @@ import (
 	"github.com/MojoHand70/fadodb/internal/formula"
 )
 
-// Three kinds of work are not about one document (ADR-0051): defining,
-// operating the queue, and running SQL over every row. Each is for an
-// administrator and for the members of the groups the host program names
-// when it opens the database, in Options.Designers, Options.Operators and
-// Options.Analysts. Who may rewrite the rules cannot be decided by a rule
-// they may rewrite, so the lists come from outside the file, as the hosts
-// a database may call and its secrets do.
+// Three kinds of work are not about one document (ADR-0051), and each is
+// for the members of one system group (ADR-0052): designers define,
+// database administrators operate the queue and the blobs, and analysts
+// run SQL over every row. The host program says who is in a system group
+// when it names the caller, in Principal.System: who may rewrite the
+// rules cannot be decided by a rule they may rewrite, so no formula,
+// class or table gives one. Work nobody was given is done by nobody, and
+// a call without a principal is nobody.
 
 // work names one of the three.
 type work uint8
@@ -21,44 +22,29 @@ const (
 	workAnalyse
 )
 
-// unnamedWorkIsOpen is what a kind of work answers when the host program
-// names no list for it at all. ADR-0051 proposes that it is then left to
-// administrators. Until the owner accepts that, the engine keeps what it
-// has always done and asks nothing: a host that names a list, an empty
-// one too, is held to it.
-const unnamedWorkIsOpen = true
-
-// permits refuses a principal who may not do the work: neither an
-// administrator nor in a group the host program named for it.
+// permits refuses a principal who is not in the system group the work is
+// for.
 func (s *Store) permits(w work, p Principal) *Error {
-	var list []string
-	var option, what string
+	var group, what string
 	switch w {
 	case workDesign:
-		list, option, what = s.designers, "Designers", "define, preview a draft or migrate"
+		group, what = GroupDesigners, "define, preview a draft or migrate"
 	case workOperate:
-		list, option, what = s.operators, "Operators", "operate the outbox or try an action"
+		group, what = GroupAdministrators, "operate the outbox, try an action or check the blobs"
 	default:
-		list, option, what = s.analysts, "Analysts", "run SQL, which reads every row and every variable"
+		group, what = GroupAnalysts, "run SQL, which reads every row and every variable"
 	}
-	if p.Admin || list == nil && unnamedWorkIsOpen {
+	if p.in(group) {
 		return nil
 	}
-	for _, g := range list {
-		for _, h := range p.Groups {
-			if g == h {
-				return nil
-			}
-		}
-	}
 	e := hintf(CodeForbidden, "", who(p)+" may not "+what,
-		"this is for an administrator and for the members of the groups the host program names in Options."+option)
-	e.Path = "/options/" + option
+		"this is for the members of the system group "+group+"; the host program names them in Principal.System")
+	e.Path = "/system/" + group
 	return e
 }
 
 // worker is the check of a call that does one of the three kinds of
-// work: its options applied, its principal's kind known, and the work
+// work: its options applied, its principal sound, and the work
 // permitted.
 func (s *Store) worker(w work, opts []Option) (options, *Error) {
 	o, e := asked(opts)
@@ -72,11 +58,11 @@ func (s *Store) worker(w work, opts []Option) (options, *Error) {
 // through (ADR-0051, item 7): read for its rows, write for an import and
 // for a rule's table action, which asks as the person who set the rule
 // off (ADR-0044, item 11). A rule is a condition over the caller and the
-// clock; one that errors is FALSE. An administrator passes, and a rule
-// the definition leaves out answers as a class's does (ADR-0049, the
-// open question).
+// clock; one that errors is FALSE. A content administrator passes
+// (ADR-0052), and a rule the definition leaves out answers as a class's
+// does.
 func (s *Store) tableRefusal(t *table, write bool, p Principal, now int64) *Error {
-	if p.Admin {
+	if p.content() {
 		return nil
 	}
 	prog, kind, what := t.def.Read, "read", "read the rows of "
@@ -103,7 +89,7 @@ func (s *Store) tableRefusal(t *table, write bool, p Principal, now int64) *Erro
 	if failure != nil {
 		msg += ": the rule failed, " + guardFailure(failure)
 	}
-	hint := t.def.Name + " has no " + kind + " rule, so only an administrator may; add access." + kind + " to the table"
+	hint := t.def.Name + " has no " + kind + " rule, so only a content administrator may; add access." + kind + " to the table"
 	if prog != nil {
 		src := t.def.Def.Access.Read
 		if write {

@@ -14,12 +14,57 @@ import (
 // returned, never panicked.
 
 // Context is what the context functions see (ADR-0015).
+// GroupEveryone is the system group of every caller that has an id
+// (ADR-0052): the engine gives it, no host does.
+const GroupEveryone = "everyone"
+
+// InGroup reports whether the user is in the group: one of its groups,
+// one of its system groups, or everyone, for a user that has an id.
+func (c *Context) InGroup(name string) bool {
+	if c == nil {
+		return false
+	}
+	for _, g := range c.Groups {
+		if g == name {
+			return true
+		}
+	}
+	for _, g := range c.System {
+		if g == name {
+			return true
+		}
+	}
+	return c.User != "" && name == GroupEveryone
+}
+
+// AllGroups lists every group InGroup answers TRUE for: the groups as
+// they are for a user with no id and no system group, nil included, and
+// a new list otherwise.
+func (c *Context) AllGroups() []string {
+	if c == nil {
+		return nil
+	}
+	if c.User == "" && len(c.System) == 0 {
+		return c.Groups
+	}
+	all := make([]string, 0, len(c.Groups)+len(c.System)+1)
+	all = append(append(all, c.Groups...), c.System...)
+	if c.User != "" {
+		all = append(all, GroupEveryone)
+	}
+	return all
+}
+
 type Context struct {
 	// User is the id of the user the formula runs for; empty for a system
 	// recompute.
 	User string
 	// Groups are the groups the user belongs to.
 	Groups []string
+	// System are the system groups the user is in (ADR-0052). INGROUP
+	// answers them beside Groups, and answers GroupEveryone for a user
+	// that has an id.
+	System []string
 	// Kind is what the user is, for USERKIND(): person, agent or service,
 	// or empty when the host program does not say (ADR-0050). For is the
 	// id of whoever the user acts for, for ACTINGFOR(); empty when it acts

@@ -9,7 +9,7 @@ import (
 func TestFilterStatementsAreCached(t *testing.T) {
 	s, _ := openStore(t, Options{})
 	ctx := context.Background()
-	if _, err := s.DefineClass(ctx, []byte(`{"name": "T", "variables": {"a": {"type": "number"}}, "states": {"initial": "s", "list": ["s"]}}`)); err != nil {
+	if _, err := s.DefineClass(ctx, []byte(`{"name": "T", "variables": {"a": {"type": "number"}}, "states": {"initial": "s", "list": ["s"]}}`), asSetup); err != nil {
 		t.Fatal(err)
 	}
 	for i := 0; i < 3; i++ {
@@ -40,7 +40,7 @@ func TestFilterStatementsAreCached(t *testing.T) {
 		t.Errorf("%d statements cached, want the bound %d", s.filters.size(), maxFilterStmts)
 	}
 	// A redefinition empties it; filters work after.
-	if _, err := s.DefineClass(ctx, []byte(`{"name": "T", "variables": {"a": {"type": "number"}, "b": {"type": "text"}}, "states": {"initial": "s", "list": ["s"]}}`)); err != nil {
+	if _, err := s.DefineClass(ctx, []byte(`{"name": "T", "variables": {"a": {"type": "number"}, "b": {"type": "text"}}, "states": {"initial": "s", "list": ["s"]}}`), asSetup); err != nil {
 		t.Fatal(err)
 	}
 	if s.filters.size() != 0 {

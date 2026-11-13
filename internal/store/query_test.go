@@ -154,31 +154,31 @@ func TestSQL(t *testing.T) {
 	ctx := context.Background()
 	seedInvoices(t, s)
 	setupTables(t, s)
-	rows, err := s.SQL(ctx, `SELECT number, total, total_currency FROM Invoice WHERE priority > ? ORDER BY number`, []any{2})
+	rows, err := s.SQL(ctx, `SELECT number, total, total_currency FROM Invoice WHERE priority > ? ORDER BY number`, []any{2}, asSetup)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if strings.Join(rows.Columns, ",") != "number,total,total_currency" || len(rows.Rows) != 2 || rows.Rows[0][0] != "A-2" || rows.Rows[0][1] != int64(1800) || rows.Rows[0][2] != "PLN" {
 		t.Errorf("rows: %s", dump(rows))
 	}
-	if rows, err := s.SQL(ctx, `SELECT count(*) AS n FROM Invoice_lines`, nil); err != nil || rows.Rows[0][0] != int64(1) {
+	if rows, err := s.SQL(ctx, `SELECT count(*) AS n FROM Invoice_lines`, nil, asSetup); err != nil || rows.Rows[0][0] != int64(1) {
 		t.Errorf("lines view: %v %s", err, dump(rows))
 	}
-	if rows, err := s.SQL(ctx, `SELECT h.number, h.version FROM Invoice_history h WHERE h.valid_to IS NOT NULL ORDER BY h.number`, nil); err != nil || len(rows.Rows) != 2 {
+	if rows, err := s.SQL(ctx, `SELECT h.number, h.version FROM Invoice_history h WHERE h.valid_to IS NOT NULL ORDER BY h.number`, nil, asSetup); err != nil || len(rows.Rows) != 2 {
 		t.Errorf("history view: %v %s", err, dump(rows))
 	}
-	if rows, err := s.SQL(ctx, `SELECT kind, count(*) FROM Invoice_events GROUP BY kind ORDER BY kind`, nil); err != nil || len(rows.Rows) != 3 {
+	if rows, err := s.SQL(ctx, `SELECT kind, count(*) FROM Invoice_events GROUP BY kind ORDER BY kind`, nil, asSetup); err != nil || len(rows.Rows) != 3 {
 		t.Errorf("events view: %v %s", err, dump(rows))
 	}
-	if rows, err := s.SQL(ctx, `SELECT code, rate FROM Rates ORDER BY code`, nil); err != nil || len(rows.Rows) != 2 {
+	if rows, err := s.SQL(ctx, `SELECT code, rate FROM Rates ORDER BY code`, nil, asSetup); err != nil || len(rows.Rows) != 2 {
 		t.Errorf("table view: %v %s", err, dump(rows))
 	}
-	if rows, err := s.SQL(ctx, `SELECT upper('x') AS u, 1 + 1 AS two`, nil); err != nil || rows.Rows[0][0] != "X" || rows.Rows[0][1] != int64(2) {
+	if rows, err := s.SQL(ctx, `SELECT upper('x') AS u, 1 + 1 AS two`, nil, asSetup); err != nil || rows.Rows[0][0] != "X" || rows.Rows[0][1] != int64(2) {
 		t.Errorf("functions: %v %s", err, dump(rows))
 	}
 	// Reading no column, count(*) or SELECT 1, is allowed over a view and
 	// reveals nothing over the table behind it.
-	if rows, err := s.SQL(ctx, `SELECT count(*), (SELECT 1 FROM Invoice LIMIT 1) FROM Invoice`, nil); err != nil || rows.Rows[0][0] != int64(4) {
+	if rows, err := s.SQL(ctx, `SELECT count(*), (SELECT 1 FROM Invoice LIMIT 1) FROM Invoice`, nil, asSetup); err != nil || rows.Rows[0][0] != int64(4) {
 		t.Errorf("count over a view: %v %s", err, dump(rows))
 	}
 	for _, text := range []string{
@@ -200,15 +200,15 @@ func TestSQL(t *testing.T) {
 		`ATTACH DATABASE ':memory:' AS m`,
 		`BEGIN`,
 	} {
-		_, err := s.SQL(ctx, text, nil)
+		_, err := s.SQL(ctx, text, nil, asSetup)
 		if code(err) != CodeNotAllowed {
 			t.Errorf("%s: want not_allowed, got %v", text, err)
 		}
 	}
-	if _, err := s.SQL(ctx, `SELECT FROM`, nil); code(err) != CodeBadValue {
+	if _, err := s.SQL(ctx, `SELECT FROM`, nil, asSetup); code(err) != CodeBadValue {
 		t.Errorf("a syntax error: %v", err)
 	}
-	if _, err := s.SQL(ctx, `WITH RECURSIVE s(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM s WHERE i < 10001) SELECT i FROM s`, nil); code(err) != CodeTooManyRows {
+	if _, err := s.SQL(ctx, `WITH RECURSIVE s(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM s WHERE i < 10001) SELECT i FROM s`, nil, asSetup); code(err) != CodeTooManyRows {
 		t.Errorf("too many rows: %v", err)
 	}
 	// The endpoint's connection is its own: reads and commits still work.
@@ -219,7 +219,7 @@ func TestSQL(t *testing.T) {
 	if _, err := s.Create(ctx, "Invoice", Values{"number": "D-1"}); err != nil {
 		t.Errorf("a commit after SQL: %v", err)
 	}
-	if rows, err := s.SQL(ctx, `SELECT count(*) FROM Invoice`, nil); err != nil || rows.Rows[0][0] != int64(5) {
+	if rows, err := s.SQL(ctx, `SELECT count(*) FROM Invoice`, nil, asSetup); err != nil || rows.Rows[0][0] != int64(5) {
 		t.Errorf("the endpoint sees the commit: %v %s", err, dump(rows))
 	}
 }

@@ -120,7 +120,10 @@ and the browser VM run them with their phases.
 
 - `class` is the class definition the suite runs against; `principals`
   names the principals steps run as, each with `id`, `groups` and
-  `admin`. A step without `as` runs as nobody. `clock` is the database's
+  `system`, the system groups it is in (ADR-0052). A step without `as`
+  runs as nobody. Defining the suite's classes, draining its queue and
+  reading its tables for the checks are the runner's own, as a caller
+  in the system groups that work needs. `clock` is the database's
   clock while the suite runs, as `YYYY-MM-DD HH:MM:SS` in UTC, the
   runner's default when absent.
 - A step's `do` is `create`, `set`, `transition`, `preview`,
@@ -173,7 +176,7 @@ The specification of the four rules of a class (ADR-0049): who may see,
 create, change and delete a document, asked on every path. The format
 is the statechart suites'. `rules.json` takes one class through every
 command as five callers: its owner, another clerk, HR, a stranger and
-an administrator, and a call without a principal. A read, a command,
+a content administrator, and a call without a principal. A read, a command,
 the listing of transitions, a filter, a count and the list of what is
 due have to agree on which documents each caller sees; `action` on a
 refusal is the place of the rule, such as `/access/update`.
@@ -183,6 +186,13 @@ refusal is the place of the rule, such as `/access/update`.
 `actors` on a step checks the actors of the document's events so far,
 each written as its id, then its kind and `for` whom where the host
 said, as `agent-7 agent for ann`.
+
+`groups.json` is the suite of the system groups as the formulas of a
+class see them (ADR-0052): `INGROUP` of a system group and of
+`everyone`, on a read by id, in a command and in a filter; a call
+without a principal, which is in no group; a content administrator,
+who passes the rules of the class and never a guard; and a designer, a
+database administrator and an analyst, who pass no rule by being one.
 
 ## Rules cases: `rules/*.json`
 

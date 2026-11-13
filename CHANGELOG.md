@@ -68,18 +68,27 @@ All notable changes to FadoDB are recorded here. The format follows
   `api/event.schema.json`. An action and a timer run as whoever set
   them off, with what that caller was; `QueuedAction` shows it.
   `conformance/access/actors.json` is the suite.
-- The host program names who may do the three kinds of work that are
-  not about one document (ADR-0051): `Options.Designers` for
-  defining classes, schemas, tables and actions, previewing a draft
-  and migrating; `Options.Operators` for the outbox, `Drain`,
-  `PreviewAction`, `TryAction` and `CheckBlobs`; `Options.Analysts`
-  for `SQL`, which reads every row and every variable. Each is a list
-  of groups; an administrator may do all three. Anybody else is
-  refused with `forbidden`, and the refusal names the option. A list
-  that is empty leaves its work to administrators. A host program that
-  names no list at all is asked nothing, as before. ADR-0052, accepted
-  and not built yet, gives this work to system groups with fixed names
-  and leaves none of it open.
+- Four system groups hold the work that is not about one document
+  (ADR-0051, ADR-0052), with fixed names: `designers` define classes,
+  schemas, tables and actions, preview a draft and migrate;
+  `administrators` operate the outbox, `Drain`, `PreviewAction`,
+  `TryAction` and `CheckBlobs`; `analysts` run `SQL`, which reads every
+  row and every variable; and `content-administrators` see every
+  document and act on it past the rules of its class, never past a
+  guard. The host program gives a caller its system groups in
+  `Principal.System`, apart from `Principal.Groups`: a group of its own
+  that has one of these names is refused with `bad_value`, so that no
+  directory group gives such work by its name. Anybody else is refused
+  with `forbidden`, and the refusal names the group, as
+  `/system/designers`. Nobody is in a system group unless the host
+  program says so, and a call without a principal does none of this
+  work. The constants are `GroupAdministrators`, `GroupDesigners`,
+  `GroupContentAdministrators`, `GroupAnalysts` and `GroupEveryone`.
+- `INGROUP` answers a system group as it answers any group, and answers
+  `everyone` for every caller that has an id, on the Go VM, SQLite and
+  DuckDB. A class opens to every named caller with
+  `INGROUP("everyone")`. `conformance/access/groups.json` is the suite,
+  with ten cases in `conformance/formula/context.json`.
 - `DefineClass`, `DefineClasses`, `DefineSchema`, `DefineTable`,
   `DefineAction`, `Outbox`, `RetryAction`, `Drain`, `PreviewAction`,
   `TryAction`, `CheckBlobs` and `TableRows` take the options of a
@@ -102,8 +111,15 @@ All notable changes to FadoDB are recorded here. The format follows
   dead with `forbidden`. A `refresh` of another document asks its
   `read` rule. The wake-up of a timer, an eventless transition and the
   result an action writes back ask nothing.
-- **The engine schema is version 6**, for what the actor of an event
-  was and for whom it acted, two columns of the event. A
+- **`Principal.Admin` is gone**, and with it the one caller who did
+  everything (ADR-0052). What it did is split among the four system
+  groups above, and a caller that needs all of it is in all four. A
+  program's own setup code names itself as a caller in the groups it
+  needs; `fadodb check` acts as a database administrator.
+- **The engine schema is version 7.** Version 6 added what the actor of
+  an event was and for whom it acted, two columns of the event; version
+  7 drops the administrator's flag from the outbox row, which keeps the
+  system groups of whoever queued it with the other groups. A
   database made by an earlier engine, v0.4.1 included, is refused when
   opened, as before 1.0 there is no upgrade path.
 - A class that declared `read`, `create`, `update` or `delete` had them

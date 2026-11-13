@@ -400,12 +400,12 @@ func (s *Store) OpenFile(ctx context.Context, class, id, hash string, opts ...Op
 	return rc, info, nil
 }
 
-// OpenBlob opens a blob by hash alone, which an administrator may
+// OpenBlob opens a blob by hash alone, which a content administrator may
 // (ADR-0033); anyone else goes through OpenFile.
 func (s *Store) OpenBlob(ctx context.Context, hash string, opts ...Option) (io.ReadCloser, int64, error) {
 	o := apply(opts)
-	if !o.principal.Admin {
-		return nil, 0, hintf(CodeNotAllowed, "", "a blob is served through a document", "use OpenFile with the class and the document that hold it; an administrator may open a blob by hash")
+	if !o.principal.content() {
+		return nil, 0, hintf(CodeNotAllowed, "", "a blob is served through a document", "use OpenFile with the class and the document that hold it; a content administrator may open a blob by hash")
 	}
 	rc, size, err := s.blobs.Open(ctx, hash)
 	if err != nil {

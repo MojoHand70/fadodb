@@ -286,7 +286,7 @@ func (s *Store) Get(ctx context.Context, class, id string, opts ...Option) (*Doc
 // projectRead projects a document on a read path with a borrowed
 // evaluator (ADR-0041), at the call's clock (ADR-0042).
 func (s *Store) projectRead(c, vc *class, row *docRow, d *Document, o options) {
-	if c.rights == nil || o.principal.Admin {
+	if c.rights == nil || o.principal.content() {
 		return
 	}
 	ev := s.reader()

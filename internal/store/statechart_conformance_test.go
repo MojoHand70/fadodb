@@ -79,7 +79,8 @@ type scriptFunction struct {
 type scriptPrincipal struct {
 	ID     string   `json:"id"`
 	Groups []string `json:"groups,omitempty"`
-	Admin  bool     `json:"admin,omitempty"`
+	// System lists the system groups the principal is in (ADR-0052).
+	System []string `json:"system,omitempty"`
 	// Kind is what the principal is and For whom it acts for (ADR-0050).
 	Kind string `json:"kind,omitempty"`
 	For  string `json:"for,omitempty"`
@@ -375,12 +376,12 @@ func runStatechartSuite(t *testing.T, suite *statechartSuite) {
 	s, _ := openStore(t, o)
 	ctx := context.Background()
 	for i, def := range suite.Actions {
-		if _, err := s.DefineAction(ctx, def); err != nil {
+		if _, err := s.DefineAction(ctx, def, asSetup); err != nil {
 			t.Fatalf("action %d of the suite's actions: %v", i, err)
 		}
 	}
 	for i, table := range suite.Tables {
-		if _, err := s.DefineTable(ctx, table); err != nil {
+		if _, err := s.DefineTable(ctx, table, asSetup); err != nil {
 			t.Fatalf("table %d of the suite's tables: %v", i, err)
 		}
 	}
@@ -391,18 +392,18 @@ func runStatechartSuite(t *testing.T, suite *statechartSuite) {
 		for _, other := range suite.Classes {
 			set = append(set, other)
 		}
-		defined, derr := s.DefineClasses(ctx, append(set, suite.Class))
+		defined, derr := s.DefineClasses(ctx, append(set, suite.Class), asSetup)
 		if derr != nil {
 			t.Fatalf("the classes, together: %v", derr)
 		}
 		cls = defined[len(defined)-1]
 	} else {
 		for i, other := range suite.Classes {
-			if _, err := s.DefineClass(ctx, other); err != nil {
+			if _, err := s.DefineClass(ctx, other, asSetup); err != nil {
 				t.Fatalf("class %d of the suite's classes: %v", i, err)
 			}
 		}
-		cls, err = s.DefineClass(ctx, suite.Class)
+		cls, err = s.DefineClass(ctx, suite.Class, asSetup)
 	}
 	if err != nil {
 		t.Fatalf("the class: %v", err)
@@ -420,7 +421,7 @@ func runStatechartSuite(t *testing.T, suite *statechartSuite) {
 			if !ok {
 				t.Fatalf("%s: unknown principal %s", name, step.As)
 			}
-			opts = append(opts, As(Principal{ID: p.ID, Groups: p.Groups, Admin: p.Admin, Kind: p.Kind, For: p.For}))
+			opts = append(opts, As(Principal{ID: p.ID, Groups: p.Groups, System: p.System, Kind: p.Kind, For: p.For}))
 		}
 		if step.Key != "" {
 			opts = append(opts, Key(step.Key))
@@ -470,9 +471,9 @@ func runStatechartSuite(t *testing.T, suite *statechartSuite) {
 			now = now.Add(time.Duration(step.Seconds) * time.Second)
 		case "actions":
 		case "try":
-			outcome, err = s.TryAction(ctx, step.Action, step.Args)
+			outcome, err = s.TryAction(ctx, step.Action, step.Args, asSetup)
 		case "preview_action":
-			called, err = s.PreviewAction(ctx, step.Action, step.Args)
+			called, err = s.PreviewAction(ctx, step.Action, step.Args, asSetup)
 		case "get":
 			doc, err = s.Get(ctx, class, id, opts...)
 		case "query":
@@ -500,14 +501,14 @@ func runStatechartSuite(t *testing.T, suite *statechartSuite) {
 		case "delete":
 			err = s.Delete(ctx, class, id, opts...)
 		case "drain":
-			drained, err = s.Drain(ctx)
+			drained, err = s.Drain(ctx, asSetup)
 		case "retry":
 			var rows []QueuedAction
-			if rows, err = s.Outbox(ctx, OutboxFilter{Class: class, DocID: id}); err == nil {
+			if rows, err = s.Outbox(ctx, OutboxFilter{Class: class, DocID: id}, asSetup); err == nil {
 				if step.Row >= len(rows) {
 					t.Fatalf("%s: the document queued %d actions; no row %d", name, len(rows), step.Row)
 				}
-				err = s.RetryAction(ctx, rows[step.Row].Key)
+				err = s.RetryAction(ctx, rows[step.Row].Key, asSetup)
 			}
 		case "import":
 			_, err = s.ImportRows(ctx, step.Table, step.Rows)
@@ -690,7 +691,7 @@ func runStatechartSuite(t *testing.T, suite *statechartSuite) {
 			t.Errorf("%s: the rows of %s are %s, want %s", name, step.Table, dump(tableRows), want.Rows)
 		}
 		if want.Outbox != nil {
-			rows, err := s.Outbox(ctx, OutboxFilter{Class: class, DocID: id})
+			rows, err := s.Outbox(ctx, OutboxFilter{Class: class, DocID: id}, asSetup)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -798,7 +799,7 @@ func runStatechartSuite(t *testing.T, suite *statechartSuite) {
 			}
 		}
 		if want.Actors != nil {
-			events, err := s.Events(ctx, class, id, As(Principal{Admin: true}))
+			events, err := s.Events(ctx, class, id, As(root))
 			if err != nil {
 				t.Errorf("%s: %v", name, err)
 				continue

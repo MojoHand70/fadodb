@@ -14,7 +14,7 @@ func TestAt_PreviewRunsAtTheMoment(t *testing.T) {
 	ctx := context.Background()
 	cls := `{"name": "Stamp", "variables": {"at": {"type": "datetime", "default": "NOW()"}, "day": {"type": "date", "default": "TODAY()"}, "n": {"type": "number"}},
 	  "states": {"initial": "s", "list": ["s"]}}`
-	if _, err := s.DefineClass(ctx, []byte(cls)); err != nil {
+	if _, err := s.DefineClass(ctx, []byte(cls), asSetup); err != nil {
 		t.Fatal(err)
 	}
 	moment := time.Date(2027, 3, 4, 5, 6, 7, 0, time.UTC)
@@ -42,7 +42,7 @@ func TestAt_PreviewRunsAtTheMoment(t *testing.T) {
 		}
 	}
 	// A draft preview too.
-	dp, err := s.PreviewDraft(ctx, []byte(cls), "", nil, "", At(moment))
+	dp, err := s.PreviewDraft(ctx, []byte(cls), "", nil, "", At(moment), asSetup)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -54,10 +54,10 @@ func TestAt_PreviewRunsAtTheMoment(t *testing.T) {
 func TestAt_RefusedOnCommands(t *testing.T) {
 	s, _ := openStore(t, Options{})
 	ctx := context.Background()
-	if _, err := s.DefineClass(ctx, []byte(`{"name": "T", "variables": {"a": {"type": "number"}}, "states": {"initial": "s", "list": ["s", "u"]}, "transitions": [{"name": "go", "from": "s", "to": "u"}]}`)); err != nil {
+	if _, err := s.DefineClass(ctx, []byte(`{"name": "T", "variables": {"a": {"type": "number"}}, "states": {"initial": "s", "list": ["s", "u"]}, "transitions": [{"name": "go", "from": "s", "to": "u"}]}`), asSetup); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.DefineTable(ctx, []byte(`{"name": "Fx", "columns": {"code": "text", "rate": "decimal(6)"}, "key": ["code"]}`)); err != nil {
+	if _, err := s.DefineTable(ctx, []byte(`{"name": "Fx", "columns": {"code": "text", "rate": "decimal(6)"}, "key": ["code"]}`), asSetup); err != nil {
 		t.Fatal(err)
 	}
 	doc, err := s.Create(ctx, "T", Values{"a": 1})
@@ -71,7 +71,7 @@ func TestAt_RefusedOnCommands(t *testing.T) {
 		"set":        func() error { _, err := s.Set(ctx, "T", doc.ID, Values{"a": 2}, at); return err },
 		"transition": func() error { _, err := s.Transition(ctx, "T", doc.ID, "go", nil, at); return err },
 		"delete":     func() error { return s.Delete(ctx, "T", doc.ID, at) },
-		"migration":  func() error { _, err := s.Migrate(ctx, "T", at); return err },
+		"migration":  func() error { _, err := s.Migrate(ctx, "T", at, asSetup); return err },
 		"row import": func() error {
 			_, err := s.ImportRows(ctx, "Fx", []Values{{"code": "EUR", "rate": "4.3"}}, at)
 			return err

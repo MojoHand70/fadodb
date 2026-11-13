@@ -36,7 +36,10 @@ func runCheck(args []string, stdout, stderr io.Writer) int {
 		return 1
 	}
 	defer s.Close()
-	mismatched, checked, err := s.CheckBlobs(context.Background())
+	// Whoever runs this tool on a database operates it: the check is the
+	// work of a database administrator (ADR-0052).
+	operator := store.As(store.Principal{ID: "fadodb", Kind: store.ActorService, System: []string{store.GroupAdministrators}})
+	mismatched, checked, err := s.CheckBlobs(context.Background(), operator)
 	if err != nil {
 		fmt.Fprintf(stderr, "fadodb check: %v\n", err)
 		return 1

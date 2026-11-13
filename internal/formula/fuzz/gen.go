@@ -467,6 +467,13 @@ func (g *Generator) context() formula.Context {
 	case 3:
 		ctx.Groups = []string{}
 	}
+	// The system groups (ADR-0052): mostly none, sometimes one or two.
+	switch g.n(6) {
+	case 1:
+		ctx.System = []string{"designers"}
+	case 2:
+		ctx.System = []string{"analysts", "content-administrators"}
+	}
 	// The life of the document (ADR-0047): none, or one with some of its
 	// facts blank.
 	if g.n(4) > 0 {
@@ -651,7 +658,7 @@ func (g *Generator) condition(d int) {
 	case r < 88:
 		g.call("INGROUP", func() {
 			if g.chance(60) {
-				g.textLit(g.pick("finance", "admin", "Finance", ""))
+				g.textLit(g.pick("finance", "admin", "Finance", "", "designers", "everyone"))
 				return
 			}
 			g.quietly(formula.KindText, d+1)
@@ -1174,7 +1181,7 @@ func (f *Formula) DescribeInputs() string {
 // DescribeContext renders the context.
 func (f *Formula) DescribeContext() string {
 	return "user=" + strconv.Quote(f.Ctx.User) + " kind=" + strconv.Quote(f.Ctx.Kind) + " for=" + strconv.Quote(f.Ctx.For) +
-		" groups=" + strings.Join(f.Ctx.Groups, ",") + " now=" + formula.DateTime(f.Ctx.Now).String()
+		" groups=" + strings.Join(f.Ctx.Groups, ",") + " system=" + strings.Join(f.Ctx.System, ",") + " now=" + formula.DateTime(f.Ctx.Now).String()
 }
 
 // CaseJSON renders the formula with its inputs and context as a suite case
@@ -1209,6 +1216,16 @@ func (f *Formula) CaseJSON(result formula.Value, code string, t formula.Type) st
 	if f.Ctx.Groups != nil {
 		b.WriteString(`, "groups": [`)
 		for i, g := range f.Ctx.Groups {
+			if i > 0 {
+				b.WriteString(", ")
+			}
+			b.WriteString(strconv.Quote(g))
+		}
+		b.WriteString("]")
+	}
+	if len(f.Ctx.System) > 0 {
+		b.WriteString(`, "system": [`)
+		for i, g := range f.Ctx.System {
 			if i > 0 {
 				b.WriteString(", ")
 			}

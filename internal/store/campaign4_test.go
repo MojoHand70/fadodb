@@ -62,7 +62,7 @@ func TestRulesCampaign(t *testing.T) {
 	}
 	defer s.Close()
 	ctx := context.Background()
-	if _, err := s.DefineAction(ctx, []byte(`{"name": "books.post", "params": {"job": {"type": "text", "required": true}, "amount": "number"}}`)); err != nil {
+	if _, err := s.DefineAction(ctx, []byte(`{"name": "books.post", "params": {"job": {"type": "text", "required": true}, "amount": "number"}}`), asSetup); err != nil {
 		t.Fatal(err)
 	}
 	for _, def := range []string{
@@ -112,7 +112,7 @@ func TestRulesCampaign(t *testing.T) {
  "states": {"initial": "busy", "list": ["busy", "idle", "over"]},
  "transitions": [{"name": "rest", "from": "busy", "to": "idle"}, {"name": "work", "from": "idle", "to": "busy"}, {"from": "idle", "to": "over", "after": "1h"}]}`,
 	} {
-		if _, err := s.DefineClass(ctx, []byte(def)); err != nil {
+		if _, err := s.DefineClass(ctx, []byte(def), asSetup); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -131,7 +131,7 @@ func TestRulesCampaign(t *testing.T) {
 	drain := func(work string, want int) {
 		t.Helper()
 		start := time.Now()
-		got, err := s.Drain(ctx)
+		got, err := s.Drain(ctx, asSetup)
 		if err != nil || got != want {
 			t.Fatalf("%s: drained %d rows, %v; want %d", work, got, err, want)
 		}

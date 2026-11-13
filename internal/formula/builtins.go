@@ -1237,12 +1237,5 @@ func fnDaysIn(vm *VM, args []Value) (Value, *EvalError) {
 }
 
 func fnInGroup(vm *VM, args []Value) (Value, *EvalError) {
-	if vm.ctx != nil {
-		for _, g := range vm.ctx.Groups {
-			if g == args[0].str {
-				return Bool(true), nil
-			}
-		}
-	}
-	return Bool(false), nil
+	return Bool(vm.ctx.InGroup(args[0].str)), nil
 }

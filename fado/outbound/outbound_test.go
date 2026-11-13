@@ -20,6 +20,12 @@ import (
 	"github.com/MojoHand70/fadodb/fado"
 )
 
+// setup is the caller of a host program's own setup code (ADR-0052): it
+// is in the system groups that define, operate the outbox and run SQL,
+// and in no other, so the rules of a class hold for it as for anybody.
+var setup = fado.As(fado.Principal{ID: "setup", Kind: fado.ActorService,
+	System: []string{fado.GroupDesigners, fado.GroupAdministrators, fado.GroupAnalysts}})
+
 func refusal(err error) string {
 	var e *fado.Error
 	if errors.As(err, &e) {
@@ -390,12 +396,12 @@ func TestDatabaseSendsARequest(t *testing.T) {
 	if _, err := db.DefineAction(ctx, []byte(`{"name": "books.post", "params": {"number": {"type": "text", "required": true}}, "returns": {"entry": "text"},
  "connection": {"name": "books", "secrets": ["token", "signing_key"]},
  "request": {"url": "\"`+srv.URL+`/hooks/fadodb\"", "headers": {"Authorization": "\"Bearer \" & SECRET(\"token\")"}, "sign": "signing_key"},
- "result": {"entry": "JSONVALUE(BODY, \"entry\")"}}`)); err != nil {
+ "result": {"entry": "JSONVALUE(BODY, \"entry\")"}}`), setup); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := db.DefineClass(ctx, []byte(`{"name": "Invoice", "variables": {"number": {"type": "text"}},
  "states": {"initial": "draft", "list": ["draft", "approved"]}, "transitions": [{"name": "approve", "from": "draft", "to": "approved"}],
- "rules": [{"on": "enter", "state": "approved", "do": [{"action": "books.post", "args": {"number": "number"}}]}]}`)); err != nil {
+ "rules": [{"on": "enter", "state": "approved", "do": [{"action": "books.post", "args": {"number": "number"}}]}]}`), setup); err != nil {
 		t.Fatal(err)
 	}
 	doc, err := db.Create(ctx, "Invoice", fado.Values{"number": "INV-7"}, fado.As(fado.Principal{ID: "ann"}))
@@ -409,7 +415,7 @@ func TestDatabaseSendsARequest(t *testing.T) {
 	deadline := time.Now().Add(15 * time.Second)
 	var row fado.QueuedAction
 	for {
-		rows, err := db.Outbox(ctx, fado.OutboxFilter{DocID: doc.ID})
+		rows, err := db.Outbox(ctx, fado.OutboxFilter{DocID: doc.ID}, setup)
 		if err != nil || len(rows) != 1 {
 			t.Fatalf("the outbox: %v, %v", rows, err)
 		}
@@ -432,7 +438,7 @@ func TestDatabaseSendsARequest(t *testing.T) {
 	// A trial reaches the receiver too, and answers what result reads.
 	seen = map[string]int{}
 	mu.Unlock()
-	first, err1 := db.TryAction(ctx, "books.post", fado.Values{"number": "INV-8"})
+	first, err1 := db.TryAction(ctx, "books.post", fado.Values{"number": "INV-8"}, setup)
 	mu.Lock()
 	if err1 != nil || first.OK || first.Code != "try_later" || !first.Retry || len(failures) != 0 || asked != 3 {
 		t.Errorf("a trial the receiver was busy for: %+v, %v; the receiver said %v", first, err1, failures)
@@ -499,7 +505,7 @@ func exampleWebhook(t *testing.T, def []byte) {
 	}
 	defer db.Close()
 	ctx := context.Background()
-	info, err := db.DefineAction(ctx, def)
+	info, err := db.DefineAction(ctx, def, setup)
 	if err != nil {
 		t.Fatalf("the sample does not define: %v", err)
 	}
@@ -512,11 +518,11 @@ func exampleWebhook(t *testing.T, def []byte) {
  "transitions": [{"name": "approve", "from": "draft", "to": "approved"}, {"from": "approved", "to": "announced", "guard": "sent"}],
  "rules": [{"on": "enter", "state": "approved",
             "do": [{"action": "webhook.send", "args": {"topic": "\"invoice.approved\"", "data": {"number": "number"}},
-                    "into": {"sent": "OK", "send_error": "ERROR", "receipt": "JSONVALUE(reply, \"id\")"}}]}]}`)); err != nil {
+                    "into": {"sent": "OK", "send_error": "ERROR", "receipt": "JSONVALUE(reply, \"id\")"}}]}]}`), setup); err != nil {
 		t.Fatal(err)
 	}
 	// A preview shows the request and keeps the address to itself.
-	pv, err := db.PreviewAction(ctx, "webhook.send", fado.Values{"topic": "invoice.approved"})
+	pv, err := db.PreviewAction(ctx, "webhook.send", fado.Values{"topic": "invoice.approved"}, setup)
 	if err != nil || pv.Request.URL != "***" || pv.Request.Method != "POST" || strings.Contains(fmt.Sprint(pv), "s3cr3t") {
 		t.Errorf("a preview of the sample: %+v, %v", pv, err)
 	}
@@ -527,7 +533,7 @@ func exampleWebhook(t *testing.T, def []byte) {
 	if _, err := db.Transition(ctx, "Invoice", doc.ID, "approve", nil); err != nil {
 		t.Fatal(err)
 	}
-	if n, err := db.Drain(ctx); err != nil || n != 1 {
+	if n, err := db.Drain(ctx, setup); err != nil || n != 1 {
 		t.Fatalf("drain: %d, %v", n, err)
 	}
 	// The receiver took the signed call, and the invoice went on from its
@@ -541,7 +547,7 @@ func exampleWebhook(t *testing.T, def []byte) {
 	if after.State != "announced" || after.Values["sent"] != true || after.Values["send_error"] != nil || after.Values["receipt"] != "evt_1" {
 		t.Errorf("the invoice after the answer: %+v", after)
 	}
-	rows, _ := db.Outbox(ctx, fado.OutboxFilter{})
+	rows, _ := db.Outbox(ctx, fado.OutboxFilter{}, setup)
 	if len(rows) != 1 || rows[0].Status != "done" || strings.Contains(fmt.Sprint(rows), "s3cr3t") {
 		t.Errorf("the row: %+v", rows)
 	}
@@ -583,7 +589,7 @@ func TestActionsGuide(t *testing.T) {
 		switch {
 		case head["variables"] != nil:
 			classes++
-			if _, err := db.DefineClass(ctx, []byte(src)); err != nil {
+			if _, err := db.DefineClass(ctx, []byte(src), setup); err != nil {
 				t.Errorf("the class of block %d does not define: %v", i, err)
 			}
 		case head["action"] != nil:
@@ -597,7 +603,7 @@ func TestActionsGuide(t *testing.T) {
 			}
 		default:
 			definitions++
-			if _, err := db.DefineAction(ctx, []byte(src)); err != nil {
+			if _, err := db.DefineAction(ctx, []byte(src), setup); err != nil {
 				t.Errorf("the definition of block %d does not define: %v", i, err)
 			}
 		}
@@ -606,7 +612,7 @@ func TestActionsGuide(t *testing.T) {
 		t.Errorf("the guide has %d definitions, %d classes and %d actions; the test expects 3, 1 and 1", definitions, classes, fragments)
 	}
 	// The request of the guide's first definition is the one it describes.
-	pv, err := db.PreviewAction(ctx, "tickets.create", fado.Values{"subject": "printer"})
+	pv, err := db.PreviewAction(ctx, "tickets.create", fado.Values{"subject": "printer"}, setup)
 	if err != nil || pv.Request.Method != "POST" || pv.Request.URL != "https://api.example.com/v1/tickets" || pv.Request.Body != `{"priority":"normal","subject":"printer"}` {
 		t.Errorf("the request of tickets.create: %+v, %v", pv, err)
 	}

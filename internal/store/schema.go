@@ -68,7 +68,7 @@ var engineDDL = []string{
 	// The outbox (ADR-0044): one row per action a commit queued, keyed by
 	// the commit's event and the action's position among those it queued.
 	`CREATE TABLE IF NOT EXISTS outbox (event_id TEXT NOT NULL, idx INTEGER NOT NULL, class TEXT NOT NULL, doc_id TEXT NOT NULL, version INTEGER NOT NULL, class_version INTEGER NOT NULL,
-		rule TEXT NOT NULL, action TEXT NOT NULL, args TEXT NOT NULL, principal_id TEXT, principal_groups TEXT, principal_admin INTEGER NOT NULL, depth INTEGER NOT NULL,
+		rule TEXT NOT NULL, action TEXT NOT NULL, args TEXT NOT NULL, principal_id TEXT, principal_groups TEXT, depth INTEGER NOT NULL,
 		status TEXT NOT NULL, attempts INTEGER NOT NULL, due_at INTEGER NOT NULL, error_code TEXT, error_message TEXT, created_at INTEGER NOT NULL, finished_at INTEGER, outcome_event TEXT,
 		into_code TEXT, into_message TEXT,
 		PRIMARY KEY (event_id, idx))`,

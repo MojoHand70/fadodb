@@ -211,7 +211,7 @@ const notice = `{"name": "Notice",
 func TestTransitionMany_Key(t *testing.T) {
 	s, _ := openStore(t, Options{})
 	ctx := context.Background()
-	if _, err := s.DefineClass(ctx, []byte(notice)); err != nil {
+	if _, err := s.DefineClass(ctx, []byte(notice), asSetup); err != nil {
 		t.Fatal(err)
 	}
 	var ids []string
@@ -274,7 +274,7 @@ const seats = `{"name": "Seat",
 func TestTransitionMany_SeesTheMovesBeforeIt(t *testing.T) {
 	s, _ := openStore(t, Options{})
 	ctx := context.Background()
-	if _, err := s.DefineClass(ctx, []byte(seats)); err != nil {
+	if _, err := s.DefineClass(ctx, []byte(seats), asSetup); err != nil {
 		t.Fatal(err)
 	}
 	var ids []string
@@ -352,7 +352,7 @@ func TestTransitionMany_ARefusedDocumentIsTakenBack(t *testing.T) {
 	}
 	// The actions of the three run when the outbox is drained, one note
 	// each, and the refused two can still be placed.
-	if n, err := s.Drain(ctx); err != nil || n != 3 {
+	if n, err := s.Drain(ctx, asSetup); err != nil || n != 3 {
 		t.Errorf("drain: %d %v", n, err)
 	}
 	if n, _ := s.Count(ctx, Filter{Class: "Note"}); n != 3 {
@@ -380,7 +380,7 @@ func TestPreviewMany(t *testing.T) {
 	if _, err := s.Transition(ctx, "Order", ids[1], "place", nil, As(alice)); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.Drain(ctx); err != nil {
+	if _, err := s.Drain(ctx, asSetup); err != nil {
 		t.Fatal(err)
 	}
 	events, queued := eventCount(t, s), outboxCount(t, s)
@@ -426,7 +426,7 @@ func TestTransitionMany_Rights(t *testing.T) {
  "states": {"initial": "free", "list": ["free", "held"]},
  "transitions": [{"name": "hold", "from": "free", "to": "held"}],
  "access": {"transition": {"hold": "owner = USER()"}}}`
-	if _, err := s.DefineClass(ctx, []byte(desk)); err != nil {
+	if _, err := s.DefineClass(ctx, []byte(desk), asSetup); err != nil {
 		t.Fatal(err)
 	}
 	var ids []string
@@ -457,7 +457,7 @@ func TestTransitionMany_Timers(t *testing.T) {
  "states": {"initial": "idle", "list": ["idle", "set", "blown"]},
  "transitions": [{"name": "arm", "from": "idle", "to": "set"},
                  {"name": "blow", "from": "set", "to": "blown", "after": "1m"}]}`
-	if _, err := s.DefineClass(ctx, []byte(fuse)); err != nil {
+	if _, err := s.DefineClass(ctx, []byte(fuse), asSetup); err != nil {
 		t.Fatal(err)
 	}
 	var ids []string

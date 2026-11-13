@@ -714,8 +714,9 @@ key order, to the function the Go VM adds with.
 
 ### Security
 
-- The principal comes from the embedder on every call: an id, groups, an
-  admin flag and its business day (ADR-0027), and what the caller is, a
+- The principal comes from the embedder on every call: an id, groups,
+  the system groups it is in (ADR-0052) and its business day
+  (ADR-0027), and what the caller is, a
   person, an agent or a service, with the id of whoever it acts for
   (ADR-0050). The engine trusts all of it, writes
   the kind and the id acted for on every event beside the actor's id,
@@ -738,7 +739,8 @@ key order, to the function the Go VM adds with.
   can therefore read through it, and the host program decides who that is
   (ADR-0046).
 - `create`, `update`, `delete` and transition rules run in the VM at commit time.
-- Admins bypass rules. Everyone else gets exactly what the rules say.
+- A content administrator passes the rules and never a guard
+  (ADR-0052). Everyone else gets exactly what the rules say.
 - Today the Go API enforces the per-transition rules and the rights table
   (ADR-0041): a transition's rule and the write rights are evaluated over
   the stored document before the assignments, every document returned is
@@ -755,18 +757,23 @@ key order, to the function the Go VM adds with.
   out still lets every caller through; the owner ruled on 2026-11-13
   that it lets nobody through, and that is built with ADR-0052. Three
   kinds of work are not about one document:
-  defining, operating the queue, and running SQL. The host program
-  names the groups that may do each in `Options.Designers`,
-  `Options.Operators` and `Options.Analysts`, and an administrator may
-  do all three (ADR-0051). A host program that names no list is still
-  asked nothing. Accepted and not built yet (ADR-0052, ADR-0053): four
-  system groups with fixed names in place of the administrator's flag
-  and the three lists, a content administrator whose acts past a rule
-  carry a reason that the event keeps, work nobody was given done by
-  nobody, the record of who defined each version, and substitutions
-  that the engine keeps and checks, where today it trusts the host on
-  for whom a caller acts. The change stream comes with the server in
-  Phase 6. A call without a principal is nobody.
+  defining, operating the queue, and running SQL. Each is for one
+  system group, `designers`, `administrators` and `analysts`, and a
+  fourth, `content-administrators`, sees every document and acts on it
+  past the rules of its class (ADR-0051, ADR-0052). The names are
+  fixed. The host program gives a caller its system groups in
+  `Principal.System`, apart from its other groups, so that a group of
+  its own directory with one of these names gives nothing; such a name
+  among the other groups is refused. `INGROUP` answers a system group
+  as any group, and answers `everyone` for every caller that has an id.
+  Nobody is in a system group unless the host says so: work nobody was
+  given is done by nobody. Accepted and not built yet (ADR-0052,
+  ADR-0053): a rule left out letting nobody through, the reason a
+  content administrator gives for an act past a rule and the event
+  that keeps it, the record of who defined each version, and
+  substitutions that the engine keeps and checks, where today it
+  trusts the host on for whom a caller acts. The change stream comes
+  with the server in Phase 6. A call without a principal is nobody.
 
 ### Querying
 
@@ -793,8 +800,8 @@ a repeated filter runs a cached prepared statement, so it pays SQLite's
 parse once. The read right of every variable a filter's `where` or `order` names is
 compiled into its predicate for the principal, and the documents come
 back projected (ADR-0041). The read rule of the class joins the
-predicate of every `Query` and `Count` for a caller who is not an
-administrator (ADR-0049), written by the same generator from the
+predicate of every `Query` and `Count` for a caller who is not a
+content administrator (ADR-0049, ADR-0052), written by the same generator from the
 formula the Go VM runs for a read by id. The caller's part of the rule
 is decided first: an `INGROUP` of a group has one answer for the whole
 statement, so `owner = USER() OR INGROUP("finance")` adds nothing for a
@@ -803,10 +810,8 @@ the index on `owner` answers; a statement is kept for each outcome. The
 rule offers its comparisons to an index only where the caller's own
 condition offers none, since SQLite has no statistics to choose between
 two. The SQL endpoint adds no rule
-and reads every row and every variable. It is for an administrator and
-for the analysts the host program names in `Options.Analysts`
-(ADR-0051); a host program that names none leaves it open to every
-caller, as before.
+and reads every row and every variable. It is for the system group
+`analysts` (ADR-0051, ADR-0052), and for nobody else.
 
 ### Layouts
 

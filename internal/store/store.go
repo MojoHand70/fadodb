@@ -35,7 +35,7 @@ const DefaultMaxIndexedRows = 100000
 // engineSchema is the version of the store's own tables. A database made
 // by another engine schema is refused: before 1.0 there is no upgrade
 // path, and a pre-release file is recreated.
-const engineSchema = 6
+const engineSchema = 7
 
 // Options configure Open. The ones that are properties of the database,
 // Synchronous and MaxText, are read at creation and kept in the metadata
@@ -92,17 +92,6 @@ type Options struct {
 	// result of outbound.Allow, of package fado/outbound, with the hosts
 	// that may be called.
 	Outbound Outbound
-	// Designers, Operators and Analysts name the groups whose members may
-	// do the three kinds of work that are not about one document
-	// (ADR-0051): define classes, schemas, tables and actions, preview a
-	// draft and migrate; list and retry the outbox, drain it, preview and
-	// try an action and check the blobs; run SQL, which reads every row
-	// and every variable. An administrator may do all three. A list that
-	// is empty and not nil leaves its work to administrators. A list that
-	// is nil is not asked at all, as before these options: the host
-	// program then decides by itself which of its callers reach these
-	// calls.
-	Designers, Operators, Analysts []string
 	// Secrets gives the value of a secret of a connection at the moment a
 	// request that reads it is sent (ADR-0045, item 6). It is asked at
 	// every attempt, so a provider that renews a token serves it as it
@@ -194,10 +183,7 @@ type Store struct {
 	// supplies their secrets (ADR-0045); both are the host program's, and
 	// nil when it gave none.
 	outbound Outbound
-	// designers, operators and analysts are the groups the host program
-	// named for the three kinds of work (ADR-0051); nil for none named.
-	designers, operators, analysts []string
-	secretFn                       func(ctx context.Context, connection, name string) (string, error)
+	secretFn func(ctx context.Context, connection, name string) (string, error)
 
 	// sqlConn is the read-only SQL endpoint's connection, with its
 	// authorizer, made on first use; sqlMu serialises its statements.
@@ -313,7 +299,6 @@ func Open(path string, o Options) (*Store, error) {
 		tables: map[string]*table{}, plans: map[*formula.QuerySlot]*lookupPlan{},
 		actions: map[string]*action{}, funcs: funcs, inFlight: map[flight]struct{}{}, writesBack: map[string]bool{},
 		outbound: o.Outbound, secretFn: o.Secrets,
-		designers: o.Designers, operators: o.Operators, analysts: o.Analysts,
 		stop: make(chan struct{}), done: make(chan struct{}),
 		outbox: o.Outbox, wake: make(chan struct{}, 1), workDone: make(chan struct{}),
 	}
@@ -550,8 +535,8 @@ func (s *Store) prepareEngine(ctx context.Context) error {
 	prep(&s.stmts.mark, "SAVEPOINT many")
 	prep(&s.stmts.unmark, "RELEASE many")
 	prep(&s.stmts.toMark, "ROLLBACK TO many")
-	prep(&s.stmts.insertOutbox, "INSERT INTO outbox (event_id, idx, class, doc_id, version, class_version, rule, action, args, principal_id, principal_groups, principal_admin, depth, status, attempts, due_at, error_code, error_message, created_at, finished_at, outcome_event)"+
-		" VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?)")
+	prep(&s.stmts.insertOutbox, "INSERT INTO outbox (event_id, idx, class, doc_id, version, class_version, rule, action, args, principal_id, principal_groups, depth, status, attempts, due_at, error_code, error_message, created_at, finished_at, outcome_event)"+
+		" VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?)")
 	if err != nil {
 		return storageErr("prepare", err)
 	}
@@ -577,7 +562,7 @@ func (s *Store) prepareEngine(ctx context.Context) error {
 		dst  **sql.Stmt
 		only string
 	}{{&s.stmts.dueOutbox, ""}, {&s.stmts.dueEngine, " AND o.action IN (" + engine + ")"}, {&s.stmts.dueCalls, " AND o.action NOT IN (" + engine + ")"}} {
-		*due.dst, err = s.db.PrepareContext(ctx, "SELECT o.event_id, o.idx, o.class, o.doc_id, o.action, o.args, o.principal_id, o.principal_groups, o.principal_admin, o.depth FROM outbox o"+
+		*due.dst, err = s.db.PrepareContext(ctx, "SELECT o.event_id, o.idx, o.class, o.doc_id, o.action, o.args, o.principal_id, o.principal_groups, o.depth FROM outbox o"+
 			" WHERE o.status = 'pending' AND o.due_at <= ?"+due.only+
 			" AND (o.action = '"+ActionTimer+"' OR NOT EXISTS (SELECT 1 FROM outbox p WHERE p.class = o.class AND p.doc_id = o.doc_id AND p.status = 'pending' AND p.action <> '"+ActionTimer+"'"+
 			" AND (p.event_id < o.event_id OR (p.event_id = o.event_id AND p.idx < o.idx))))"+

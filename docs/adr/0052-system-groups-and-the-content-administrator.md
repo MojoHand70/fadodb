@@ -151,6 +151,55 @@ it. His rulings are at the end.
      host program, reads everything in it. These groups guard the
      calls. Encrypting a database is not decided here.
 
+## Details settled while building
+
+The first step was built on 2026-11-13: items 1, 2, 3 and 6, and of
+item 4 only that a content administrator passes.
+
+- **The names.** `Principal.System`, beside `Principal.Groups`; the
+  constants `GroupAdministrators`, `GroupDesigners`,
+  `GroupContentAdministrators`, `GroupAnalysts` and `GroupEveryone`.
+  Work refused is `forbidden` with `/system/designers` and the like as
+  its path, and the hint names the group and where the host gives it.
+- **A bad name is refused on every call**, a read as a command, with
+  `bad_value`: the name of a system group among `Groups`, a name in
+  `System` that is none of the four, and `everyone` given by the host,
+  which the engine gives by itself.
+- **`everyone` is every caller with an id**, whatever it is: a person,
+  an agent or a service. A call without a principal is not in it, nor
+  is a principal that has groups and no id.
+- **`INGROUP` on the three evaluators.** The Go VM tests the caller's
+  groups, its system groups and `everyone` with no allocation; SQLite
+  binds them as one text and DuckDB as one list. A filter decides
+  `INGROUP("analysts")` and `INGROUP("everyone")` before it writes its
+  statement, as it does for any group (ADR-0049, item 5).
+- **What a commit queued keeps its caller's system groups** with the
+  other groups, so the action of a content administrator's commit acts
+  on another document as a content administrator (ADR-0044, item 11).
+  The outbox row lost the administrator's flag, a column, and the
+  engine's schema is 7.
+- **Each group does its own work and no other.** A content
+  administrator may not define, operate the queue or run SQL. A
+  designer, a database administrator and an analyst pass no rule of a
+  class by being one: `conformance/access/groups.json` is the suite.
+- **`OpenBlob`**, the read of a blob by its hash alone, is the content
+  administrator's.
+- **`fadodb check`** acts as a database administrator: whoever runs it
+  on a database operates it.
+- **The tests and the samples name a caller for their setup**, in the
+  three groups that define, operate the queue and run SQL, and the
+  README shows it. The suites say what their runner does as that
+  caller.
+- **Not in this step:** item 5, so a rule a class leaves out still
+  lets every caller through (`model.LeftOutAllows`); the reason and the
+  mark of item 4, so a content administrator passes a rule without
+  either, as the flag did; and item 7.
+
+Measured in memory against the commit before: every benchmark of the
+gate keeps its allocations, the outbox and the timer lose four each
+with the column that went, and a commit takes 32 bytes more, 0.4%, for
+the system groups in the context of its formulas.
+
 ## The owner's rulings
 
 All of 2026-11-13. Questions A and C came from ADR-0049 and ADR-0051.

@@ -149,7 +149,7 @@ func (s *Store) Query(ctx context.Context, f Filter, opts ...Option) ([]*Documen
 
 // caller is the principal as the filter compiler sees it.
 func caller(o options) query.Principal {
-	return query.Principal{ID: o.principal.ID, Groups: o.principal.Groups, Admin: o.principal.Admin}
+	return query.Principal{ID: o.principal.ID, Groups: o.principal.Groups, System: o.principal.System, Content: o.principal.content()}
 }
 
 // Count counts the documents of a class that match a filter's where.

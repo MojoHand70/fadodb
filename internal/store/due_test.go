@@ -71,10 +71,10 @@ func openDue(t *testing.T) (*Store, *still) {
 	cl := &still{now: dueDay}
 	s, _ := openStore(t, Options{Now: cl.Now})
 	ctx := context.Background()
-	if _, err := s.DefineTable(ctx, []byte(dueHolds)); err != nil {
+	if _, err := s.DefineTable(ctx, []byte(dueHolds), asSetup); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.DefineClass(ctx, []byte(dueInvoice)); err != nil {
+	if _, err := s.DefineClass(ctx, []byte(dueInvoice), asSetup); err != nil {
 		t.Fatal(err)
 	}
 	return s, cl
@@ -160,7 +160,7 @@ func TestDue_Paths(t *testing.T) {
 	ctx := context.Background()
 	if _, err := s.DefineClass(ctx, []byte(`{"name": "Mixed", "variables": {"due": {"type": "date"}},
  "states": {"initial": "a", "list": ["a", "b", "c"]},
- "transitions": [{"from": "a", "to": "b", "guard": "ENTRIES(\"a\") > 5"}, {"from": "a", "to": "c", "guard": "TODAY() > due"}]}`)); err != nil {
+ "transitions": [{"from": "a", "to": "b", "guard": "ENTRIES(\"a\") > 5"}, {"from": "a", "to": "c", "guard": "TODAY() > due"}]}`), asSetup); err != nil {
 		t.Fatal(err)
 	}
 	m, _ := s.class("Mixed")
@@ -291,7 +291,7 @@ func TestDue_Principal(t *testing.T) {
  "states": {"initial": "open", "list": ["open", "mine", "audit"]},
  "transitions": [
    {"from": "open", "to": "mine", "guard": "owner = USER() AND TODAY() > due"},
-   {"from": "open", "to": "audit", "guard": "INGROUP(\"finance\") AND TODAY() > ADDDAYS(due, 5)"}]}`)); err != nil {
+   {"from": "open", "to": "audit", "guard": "INGROUP(\"finance\") AND TODAY() > ADDDAYS(due, 5)"}]}`), asSetup); err != nil {
 		t.Fatal(err)
 	}
 	for i, owner := range []string{"ann", "bob", "ann", "carl"} {
@@ -343,7 +343,7 @@ func TestDue_OlderVersions(t *testing.T) {
   "grace": {"formula": "%s"}, "share": {"formula": "%s"}},
  "states": {"initial": "open", "list": ["open", "late"]},
  "transitions": [{"from": "open", "to": "late", "guard": "TODAY() > ADDDAYS(due, grace)"}]}`
-	if _, err := s.DefineClass(ctx, []byte(fmt.Sprintf(bill, "10", "amount"))); err != nil {
+	if _, err := s.DefineClass(ctx, []byte(fmt.Sprintf(bill, "10", "amount")), asSetup); err != nil {
 		t.Fatal(err)
 	}
 	for _, b := range []struct {
@@ -364,7 +364,7 @@ func TestDue_OlderVersions(t *testing.T) {
 	}
 	// The second version gives no days of grace, and a formula that
 	// fails for one of the documents.
-	if _, err := s.DefineClass(ctx, []byte(fmt.Sprintf(bill, "0", "10 / (amount - 5)"))); err != nil {
+	if _, err := s.DefineClass(ctx, []byte(fmt.Sprintf(bill, "0", "10 / (amount - 5)")), asSetup); err != nil {
 		t.Fatal(err)
 	}
 	c, _ := s.class("Bill")
@@ -406,13 +406,13 @@ func TestDue_OlderVersions(t *testing.T) {
 	// With every document that can be brought up at the current version
 	// but one, the search for older ones still runs; fix the last one and
 	// it stops.
-	if _, err := s.Migrate(ctx, "Bill"); err == nil {
+	if _, err := s.Migrate(ctx, "Bill", asSetup); err == nil {
 		t.Error("the migration of the document whose formula fails went through")
 	}
-	if _, err := s.DefineClass(ctx, []byte(fmt.Sprintf(bill, "0", "amount * 2"))); err != nil {
+	if _, err := s.DefineClass(ctx, []byte(fmt.Sprintf(bill, "0", "amount * 2")), asSetup); err != nil {
 		t.Fatal(err)
 	}
-	if n, err := s.Migrate(ctx, "Bill"); err != nil || n == 0 {
+	if n, err := s.Migrate(ctx, "Bill", asSetup); err != nil || n == 0 {
 		t.Fatalf("migrate: %d %v", n, err)
 	}
 	c, _ = s.class("Bill")
@@ -447,7 +447,7 @@ func TestDue_OlderVersions(t *testing.T) {
 	// A fourth version gives ten days of grace again. What is stored
 	// says all three are due; under the version a commit would adopt,
 	// B-2 has its ten days, and the two that are older do not.
-	if _, err := s.DefineClass(ctx, []byte(fmt.Sprintf(bill, "10", "amount * 2"))); err != nil {
+	if _, err := s.DefineClass(ctx, []byte(fmt.Sprintf(bill, "10", "amount * 2")), asSetup); err != nil {
 		t.Fatal(err)
 	}
 	got, err = s.Due(ctx, "Bill")
@@ -473,7 +473,7 @@ func TestDue_AtMost(t *testing.T) {
    {"from": "new", "to": "old", "guard": "TODAY() > ADDDAYS(due, 1)"},
    {"from": "new", "to": "stale", "guard": "TODAY() > due"},
    {"from": "kept", "to": "old", "guard": "TODAY() > due"},
-   {"name": "keep", "from": "new", "to": "kept"}]}`)); err != nil {
+   {"name": "keep", "from": "new", "to": "kept"}]}`), asSetup); err != nil {
 		t.Fatal(err)
 	}
 	// Every second note is a day older, so that in three days the first
@@ -581,7 +581,7 @@ func TestDue_Rights(t *testing.T) {
  "transitions": [
    {"from": "open", "to": "closed", "guard": "TODAY() > limit"},
    {"from": "open", "to": "late", "guard": "TODAY() > due"}],
- "rights": {"*": {"due": {"read": ["finance"]}, "limit": {"read": "INGROUP(\"finance\")"}}}}`)); err != nil {
+ "rights": {"*": {"due": {"read": ["finance"]}, "limit": {"read": "INGROUP(\"finance\")"}}}}`), asSetup); err != nil {
 		t.Fatal(err)
 	}
 	for i := 0; i < 3; i++ {
@@ -619,7 +619,7 @@ func TestDue_Who(t *testing.T) {
  "states": {"initial": "open", "list": ["open", "late"]},
  "transitions": [{"from": "open", "to": "late", "guard": "CREATEDBY() = \"ann\" AND ENTEREDFROM() = \"\" AND STATE() = \"open\" AND LEFT(ID(), 2) = \"W-\" AND TODAY() > due%s"}]}`
 	for _, cls := range []struct{ name, more string }{{"Fast", ""}, {"Slow", ` AND ENTRIES(\"open\") = 1`}} {
-		if _, err := s.DefineClass(ctx, []byte(fmt.Sprintf(def, cls.name, cls.more))); err != nil {
+		if _, err := s.DefineClass(ctx, []byte(fmt.Sprintf(def, cls.name, cls.more)), asSetup); err != nil {
 			t.Fatal(err)
 		}
 		for i, p := range []Principal{ann, bob, ann} {
@@ -648,7 +648,7 @@ func TestDue_Nothing(t *testing.T) {
 		`{"name": "Calc", "variables": {"a": {"type": "number"}, "b": {"formula": "a * 2"}}}`,
 		`{"name": "Named", "variables": {"a": {"type": "number"}}, "states": {"initial": "x", "list": ["x", "y"]}, "transitions": [{"name": "go", "from": "x", "to": "y", "guard": "a > 0"}]}`,
 	} {
-		if _, err := s.DefineClass(ctx, []byte(def)); err != nil {
+		if _, err := s.DefineClass(ctx, []byte(def), asSetup); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -773,7 +773,7 @@ func TestQuery_ComparesWithTheClock(t *testing.T) {
 	ctx := context.Background()
 	if _, err := s.DefineClass(ctx, []byte(`{"name": "Task", "variables": {
   "due": {"type": "date", "index": true}, "seen": {"type": "datetime", "index": true}, "n": {"type": "number", "index": true}},
- "states": {"initial": "open", "list": ["open"]}}`)); err != nil {
+ "states": {"initial": "open", "list": ["open"]}}`), asSetup); err != nil {
 		t.Fatal(err)
 	}
 	for i := -3; i <= 3; i++ {

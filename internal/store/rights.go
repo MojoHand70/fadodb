@@ -13,7 +13,7 @@ import (
 // are checked over the stored document before the assignments, and every
 // document the API returns is projected for the principal, a variable
 // whose read right is not TRUE in the row's state absent from its values.
-// An administrator bypasses the rules and the rights, never a guard; a
+// A content administrator bypasses the rules and the rights, never a guard; a
 // call without a principal is nobody. Formulas inside the class compute
 // over every variable regardless: rights govern what a principal sees and
 // may set, not what the engine computes.
@@ -147,7 +147,7 @@ func (c *class) cells(state string) []rightCell {
 // older version vc is read into the current layout by path first. The
 // system variables stay.
 func (s *Store) project(e *evaluator, c, vc *class, row *docRow, d *Document, p Principal, now int64) {
-	if c.rights == nil || p.Admin {
+	if c.rights == nil || p.content() {
 		return
 	}
 	cells := c.cells(row.state)
@@ -181,7 +181,7 @@ func (s *Store) project(e *evaluator, c, vc *class, row *docRow, d *Document, p 
 // errors. A value for a name the class does not have is left to assign,
 // which refuses it.
 func (s *Store) checkWrites(c *class, cmd *command, row *docRow, evalCtx *formula.Context, res *result) *Error {
-	if c.rights == nil || cmd.o.principal.Admin || cmd.engine || len(cmd.values) == 0 && cmd.op != opReset {
+	if c.rights == nil || cmd.o.principal.content() || cmd.engine || len(cmd.values) == 0 && cmd.op != opReset {
 		return nil
 	}
 	cells := c.cells(row.state)
@@ -246,11 +246,11 @@ func transitionRule(c *class, t *model.Transition) *formula.Program {
 // permitted evaluates a transition's access rule over the row for the
 // principal: TRUE permits; FALSE, a blank, another type and an error do
 // not, the error returned for the message. Every transition is permitted
-// for an administrator. A transition without a rule of its own asks the
+// for a content administrator. A transition without a rule of its own asks the
 // update rule of the class: who may change the document may move it,
 // until the transition says who (ADR-0049, item 2).
 func (s *Store) permitted(e *evaluator, c *class, t *model.Transition, row *docRow, evalCtx *formula.Context, p Principal) (bool, error) {
-	if p.Admin {
+	if p.content() {
 		return true, nil
 	}
 	rule := transitionRule(c, t)

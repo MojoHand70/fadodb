@@ -258,7 +258,7 @@ func TestAPISchemas(t *testing.T) {
 	rec := &recorder{}
 	s, _ := openStore(t, Options{Actions: map[string]ActionFunc{"audit.note": rec.fn}})
 	ctx := context.Background()
-	if _, err := s.DefineAction(ctx, []byte(`{"name": "audit.note", "params": {"what": "text", "at": "datetime", "n": "number", "ok": "bool", "sum": "money(2)", "raw": "json", "day": "date"}}`)); err != nil {
+	if _, err := s.DefineAction(ctx, []byte(`{"name": "audit.note", "params": {"what": "text", "at": "datetime", "n": "number", "ok": "bool", "sum": "money(2)", "raw": "json", "day": "date"}}`), asSetup); err != nil {
 		t.Fatal(err)
 	}
 	note := func(what string) string {
@@ -276,7 +276,7 @@ func TestAPISchemas(t *testing.T) {
    {"on": "transition", "name": "start", "do": [`+note("transition")+`]},
    {"on": "enter", "state": "done", "do": [`+note("enter")+`]},
    {"on": "delete", "do": [`+note("delete")+`]}
- ]}`)); err != nil {
+ ]}`), asSetup); err != nil {
 		t.Fatal(err)
 	}
 	doc, err := s.Create(ctx, "Case", Values{"qty": 0, "sum": "12.5 EUR", "lines": []any{Values{"sku": "A", "qty": 1}}, "tags": []any{"x"}, "who": Values{"id": "ann", "name": "Ann"}}, As(alice), Key("k-create"))
@@ -298,7 +298,7 @@ func TestAPISchemas(t *testing.T) {
 			t.Fatalf("step %d: %v", i, err)
 		}
 	}
-	if _, err := s.Drain(ctx); err != nil {
+	if _, err := s.Drain(ctx, asSetup); err != nil {
 		t.Fatal(err)
 	}
 	calls := rec.take()
@@ -323,7 +323,7 @@ func TestAPISchemas(t *testing.T) {
 	}
 	// The call of a trial has no event and fits too; a call with a
 	// property the schema lacks does not.
-	if _, err := s.TryAction(ctx, "audit.note", Values{"what": "trial"}); err != nil {
+	if _, err := s.TryAction(ctx, "audit.note", Values{"what": "trial"}, asSetup); err != nil {
 		t.Fatal(err)
 	}
 	raw, _ := json.Marshal(rec.take()[0])

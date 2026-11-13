@@ -122,10 +122,10 @@ func (s *Store) Due(ctx context.Context, class string, opts ...Option) ([]DueDoc
 		out = append(out, found...)
 	}
 	// A document the caller may not see is not listed (ADR-0049, item 3).
-	// The host program that touches what is due asks as an administrator,
+	// The host program that touches what is due asks as a content administrator,
 	// for whom this costs nothing; for anybody else it is a read of each
 	// document found.
-	if c.ruled(ruleRead) && !o.principal.Admin {
+	if c.ruled(ruleRead) && !o.principal.content() {
 		seen := out[:0]
 		for _, d := range out {
 			ok, err := s.sees(ctx, c, d.ID, o)
@@ -183,7 +183,7 @@ func (s *Store) duePlan(c *class) *duePlan {
 // statement of its filter: the guard of an eventless one, and for a
 // timed one that its time has come, with its guard when it has one, and
 // the moment as a column. The condition is the engine's own, so it is
-// compiled as an administrator's filter: no read right narrows what it
+// compiled as a content administrator's filter: no read right narrows what it
 // compares.
 func dueFilterFor(c *class, t *model.Transition, sources formula.Sources) (dueFilter, bool) {
 	where, since := t.GuardSrc, ""
@@ -213,7 +213,7 @@ func dueFilterFor(c *class, t *model.Transition, sources formula.Sources) (dueFi
 	}
 	var args []any
 	if where != "" {
-		plan, err := query.Compile(query.Filter{Class: c.cls.Name, Where: where}, c.cls, sources, query.Principal{Admin: true})
+		plan, err := query.Compile(query.Filter{Class: c.cls.Name, Where: where}, c.cls, sources, query.Principal{Content: true})
 		if err != nil || plan.Where == "" {
 			return dueFilter{}, false
 		}

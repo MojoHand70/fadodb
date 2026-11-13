@@ -175,7 +175,7 @@ func TestTimed_Due(t *testing.T) {
 	never := `,
    {"from": ["a", "b"], "to": "gone", "guard": "ENTRIES(\"gone\") > 0"}`
 	for _, def := range []string{timedJob("Fast", ""), timedJob("Slow", never)} {
-		if _, err := s.DefineClass(ctx, []byte(def)); err != nil {
+		if _, err := s.DefineClass(ctx, []byte(def), asSetup); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -318,7 +318,7 @@ func TestTimed_Filters(t *testing.T) {
 	  "transitions": [
 	    {"from": "open", "to": "late", "at": "due"},
 	    {"from": "late", "to": "old", "after": "30d"},
-	    {"from": "old", "to": "void", "after": "30d", "guard": "n > 0"}]}`)); err != nil {
+	    {"from": "old", "to": "void", "after": "30d", "guard": "n > 0"}]}`), asSetup); err != nil {
 		t.Fatal(err)
 	}
 	c, _ := s.class("Bill")
@@ -374,7 +374,7 @@ func TestTimed_OlderVersions(t *testing.T) {
 	def := `{"name": "Lead", "variables": {"n": {"type": "number"}},
 	  "states": {"initial": "open", "list": ["open", "stale"]},
 	  "transitions": [{"name": "drop", "from": "open", "to": "stale"}%s]}`
-	if _, err := s.DefineClass(ctx, []byte(fmt.Sprintf(def, ""))); err != nil {
+	if _, err := s.DefineClass(ctx, []byte(fmt.Sprintf(def, "")), asSetup); err != nil {
 		t.Fatal(err)
 	}
 	entered := map[string]int64{}
@@ -391,7 +391,7 @@ func TestTimed_OlderVersions(t *testing.T) {
 		t.Fatalf("a class without a timer has %v due, %v", got, err)
 	}
 	// Four days on the class says a lead goes stale after three days.
-	if _, err := s.DefineClass(ctx, []byte(fmt.Sprintf(def, `, {"from": "open", "to": "stale", "after": "3d"}`))); err != nil {
+	if _, err := s.DefineClass(ctx, []byte(fmt.Sprintf(def, `, {"from": "open", "to": "stale", "after": "3d"}`)), asSetup); err != nil {
 		t.Fatal(err)
 	}
 	want := []DueDocument{
@@ -467,7 +467,7 @@ func TestTimed_Chain(t *testing.T) {
 	    {"on": "exit", "state": "waiting", "do": [{"action": "set", "values": {"log": "log & \"exit \""}}]},
 	    {"on": "enter", "state": "waiting", "do": [{"action": "set", "values": {"log": "log & \"enter \""}}]},
 	    {"on": "transition", "name": "lapse", "do": [{"action": "emit", "event": "claim.lapsed"}]}],
-	  "access": {"transition": {"ping": "INGROUP(\"sales\")", "lapse": "FALSE"}}}`)); err != nil {
+	  "access": {"transition": {"ping": "INGROUP(\"sales\")", "lapse": "FALSE"}}}`), asSetup); err != nil {
 		t.Fatal(err)
 	}
 	limit := dueDay.AddDate(0, 0, 5).Format("2006-01-02")
@@ -566,7 +566,7 @@ func TestTimed_PreviewAtAMoment(t *testing.T) {
 	  "transitions": [
 	    {"name": "start", "from": "idle", "to": "waiting"},
 	    {"name": "remind", "from": "waiting", "to": "waiting", "after": "3d"},
-	    {"from": "idle", "to": "done", "after": "10d"}]}`)); err != nil {
+	    {"from": "idle", "to": "done", "after": "10d"}]}`), asSetup); err != nil {
 		t.Fatal(err)
 	}
 	now := cl.Now().Unix()
@@ -643,7 +643,7 @@ func TestTimed_NeverAndForever(t *testing.T) {
 		if _, err := s.DefineClass(ctx, []byte(`{"name": "`+tc.name+`", "variables": {"due": {"type": "date"}, "n": {"type": "number"}},
 	  "states": {"initial": "open", "list": ["open", "late", "void"]},
 	  "transitions": [
-	    {"name": "expire", "from": "open", "to": "late", "at": "ADDDAYS(due, 10 / n)"}`+tc.tail+`]}`)); err != nil {
+	    {"name": "expire", "from": "open", "to": "late", "at": "ADDDAYS(due, 10 / n)"}`+tc.tail+`]}`), asSetup); err != nil {
 			t.Fatal(err)
 		}
 		past := dueDay.AddDate(0, 0, -30).Format("2006-01-02")
@@ -696,7 +696,7 @@ func TestTimed_NeverAndForever(t *testing.T) {
 	// state.
 	if _, err := s.DefineClass(ctx, []byte(`{"name": "Loop", "variables": {"x": {"type": "date"}, "y": {"type": "date"}},
 	  "states": {"initial": "p", "list": ["p", "q"]},
-	  "transitions": [{"from": "p", "to": "q", "at": "x"}, {"from": "q", "to": "p", "at": "y"}]}`)); err != nil {
+	  "transitions": [{"from": "p", "to": "q", "at": "x"}, {"from": "q", "to": "p", "at": "y"}]}`), asSetup); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := s.Create(ctx, "Loop", Values{"x": day(-1), "y": day(-2)}, WithID("L")); code(err) != CodeTooManyTransitions {
@@ -723,7 +723,7 @@ func TestTimed_BeforeTheEpoch(t *testing.T) {
 	  "transitions": [
 	    {"from": "open", "to": "late", "at": "due"},
 	    {"from": "open", "to": "rung", "at": "ring"},
-	    {"from": "open", "to": "stale", "after": "36h"}`+tail+`]}`)); err != nil {
+	    {"from": "open", "to": "stale", "after": "36h"}`+tail+`]}`), asSetup); err != nil {
 			t.Fatal(err)
 		}
 		for id, vals := range map[string]Values{

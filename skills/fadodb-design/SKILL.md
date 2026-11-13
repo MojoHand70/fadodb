@@ -83,8 +83,11 @@ read the diagnostics, fix, preview against live data, define.
    "INGROUP(\"treasury\")"}`, each about the table as a whole. A rule's
    `table.update` is refused when whoever set the rule off may not
    write the table. Whether you may define at all is the host
-   program's to say: where it names designers, be in one of their
-   groups or expect `forbidden`.
+   program's to say: defining is for the system group `designers`,
+   which it gives a caller in `Principal.System`. Without it expect
+   `forbidden`, naming the group. A class may speak of a system group
+   as of any group, and `INGROUP("everyone")` is true for every caller
+   that has an id.
    **Say what agents may do.** A caller is a person, an agent or a
    service, and may act for somebody: `USERKIND()` and `ACTINGFOR()`
    say so. Keep a decision for a person with `USERKIND() = "person"`,

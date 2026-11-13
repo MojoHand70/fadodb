@@ -35,7 +35,7 @@ func TestActor_OnEveryEvent(t *testing.T) {
 		`{"name": "Ticket", "variables": {"trip": {"type": "text"}}, "states": {"initial": "issued", "list": ["issued"]}}`,
 		tripClass,
 	} {
-		if _, err := s.DefineClass(ctx, []byte(def)); err != nil {
+		if _, err := s.DefineClass(ctx, []byte(def), asSetup); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -53,7 +53,7 @@ func TestActor_OnEveryEvent(t *testing.T) {
 		t.Fatal(err)
 	}
 	// The outbox row carries what the caller was, and the listing shows it.
-	queued, err := s.Outbox(ctx, OutboxFilter{Class: "Trip", DocID: doc.ID})
+	queued, err := s.Outbox(ctx, OutboxFilter{Class: "Trip", DocID: doc.ID}, asSetup)
 	if err != nil || len(queued) != 2 {
 		t.Fatalf("the rows the trip queued: %v %s", err, dump(queued))
 	}
@@ -63,14 +63,14 @@ func TestActor_OnEveryEvent(t *testing.T) {
 	if q := queued[1]; q.Action != ActionTimer || q.PrincipalID != "loader" || q.PrincipalKind != ActorService {
 		t.Errorf("the wake-up the service's commit queued: %s", dump(q))
 	}
-	if _, err := s.Drain(ctx); err != nil {
+	if _, err := s.Drain(ctx, asSetup); err != nil {
 		t.Fatal(err)
 	}
 	// The timer comes: the move is made as the service whose commit set it.
 	now.mu.Lock()
 	now.now = now.now.Add(2 * time.Hour)
 	now.mu.Unlock()
-	if _, err := s.Drain(ctx); err != nil {
+	if _, err := s.Drain(ctx, asSetup); err != nil {
 		t.Fatal(err)
 	}
 	events, err := s.Events(ctx, "Trip", doc.ID)
@@ -104,11 +104,11 @@ func TestActor_OnEveryEvent(t *testing.T) {
 	}
 	// One statement over a view answers which steps an agent took and for
 	// whom, and the view of stays says what moved the document each time.
-	rows, err := s.SQL(ctx, `SELECT kind, actor_id, actor_for FROM Trip_events WHERE actor_kind = 'agent'`, nil)
+	rows, err := s.SQL(ctx, `SELECT kind, actor_id, actor_for FROM Trip_events WHERE actor_kind = 'agent'`, nil, asSetup)
 	if err != nil || len(rows.Rows) != 1 || fmt.Sprint(rows.Rows[0]) != "[created agent-7 ann]" {
 		t.Errorf("the steps an agent took: %v %v", err, rows)
 	}
-	rows, err = s.SQL(ctx, `SELECT state, entered_by, entered_by_kind, entered_for, left_by, left_by_kind FROM Trip_states ORDER BY entry_version`, nil)
+	rows, err = s.SQL(ctx, `SELECT state, entered_by, entered_by_kind, entered_for, left_by, left_by_kind FROM Trip_states ORDER BY entry_version`, nil, asSetup)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -123,7 +123,7 @@ func TestActor_OnEveryEvent(t *testing.T) {
 func TestActor_UnknownKind(t *testing.T) {
 	s, _ := openStore(t, Options{})
 	ctx := context.Background()
-	if _, err := s.DefineClass(ctx, []byte(`{"name": "Memo", "variables": {"t": {"type": "text"}}, "states": {"initial": "a", "list": ["a", "b"]}, "transitions": [{"name": "go", "from": "a", "to": "b"}]}`)); err != nil {
+	if _, err := s.DefineClass(ctx, []byte(`{"name": "Memo", "variables": {"t": {"type": "text"}}, "states": {"initial": "a", "list": ["a", "b"]}, "transitions": [{"name": "go", "from": "a", "to": "b"}]}`), asSetup); err != nil {
 		t.Fatal(err)
 	}
 	doc, err := s.Create(ctx, "Memo", Values{"t": "x"}, As(annPerson))
@@ -168,11 +168,11 @@ func TestActor_TheDeliveredEvent(t *testing.T) {
 		return nil, nil
 	}}})
 	ctx := context.Background()
-	if _, err := s.DefineAction(ctx, []byte(`{"name": "audit.note"}`)); err != nil {
+	if _, err := s.DefineAction(ctx, []byte(`{"name": "audit.note"}`), asSetup); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := s.DefineClass(ctx, []byte(`{"name": "Memo", "variables": {"t": {"type": "text"}}, "states": {"initial": "a", "list": ["a"]},
- "rules": [{"on": "enter", "state": "a", "do": [{"action": "audit.note"}]}]}`)); err != nil {
+ "rules": [{"on": "enter", "state": "a", "do": [{"action": "audit.note"}]}]}`), asSetup); err != nil {
 		t.Fatal(err)
 	}
 	first, err := s.Create(ctx, "Memo", Values{"t": "x"}, As(assistant))
@@ -184,7 +184,7 @@ func TestActor_TheDeliveredEvent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.Drain(ctx); err != nil {
+	if _, err := s.Drain(ctx, asSetup); err != nil {
 		t.Fatal(err)
 	}
 	if e := got[first.ID]; e == nil || e.ActorID != "agent-7" || e.ActorKind != ActorAgent || e.ActorFor != "ann" {

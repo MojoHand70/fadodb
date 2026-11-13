@@ -27,7 +27,7 @@
     "alice": {"id": "alice", "groups": ["claims"]},
     "bob":   {"id": "bob",   "groups": ["claims"]},
     "fin":   {"id": "fin",   "groups": ["finance"]},
-    "root":  {"id": "root",  "admin": true}
+    "root":  {"id": "root",  "system": ["content-administrators"]}
   },
   "script": [
     {"name": "the owner defaults to the caller, who may then set the amount; the result hides the payout", "do": "create", "doc": "c1", "as": "alice", "values": {"amount": 100, "note": "car"},

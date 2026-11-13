@@ -31,11 +31,11 @@ const (
 func definePurchases(t testing.TB, s *Store) {
 	t.Helper()
 	ctx := context.Background()
-	if _, err := s.DefineAction(ctx, []byte(payCharge)); err != nil {
+	if _, err := s.DefineAction(ctx, []byte(payCharge), asSetup); err != nil {
 		t.Fatal(err)
 	}
 	for _, def := range []string{noteClass, fmt.Sprintf(purchaseClass, "", purchaseInto)} {
-		if _, err := s.DefineClass(ctx, []byte(def)); err != nil {
+		if _, err := s.DefineClass(ctx, []byte(def), asSetup); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -79,7 +79,7 @@ func TestInto_TheCommitOfAResult(t *testing.T) {
 	if _, err := s.Transition(ctx, "Purchase", doc.ID, "submit", nil, As(alice), BusinessDate(day), Key("submit-1")); err != nil {
 		t.Fatal(err)
 	}
-	if n, err := s.Drain(ctx); err != nil || n != 2 {
+	if n, err := s.Drain(ctx, asSetup); err != nil || n != 2 {
 		t.Fatalf("drain: %d, %v", n, err)
 	}
 	got, _ := s.Get(ctx, "Purchase", doc.ID)
@@ -117,7 +117,7 @@ func TestInto_TheCommitOfAResult(t *testing.T) {
 		t.Errorf("the rows: %s", dump(rows))
 	}
 	// The view shows why a result was not stored, beside the row.
-	out, err := s.SQL(ctx, `SELECT "action", "status", "into_code" FROM "Purchase_actions" ORDER BY "key"`, nil)
+	out, err := s.SQL(ctx, `SELECT "action", "status", "into_code" FROM "Purchase_actions" ORDER BY "key"`, nil, asSetup)
 	if err != nil || len(out.Rows) != 2 || out.Rows[0][2] != nil {
 		t.Errorf("the view of the actions: %v, %s", err, dump(out))
 	}
@@ -151,7 +151,7 @@ func TestInto_OneTransactionWithTheMark(t *testing.T) {
 		return fmt.Sprintf("%s v%d payment %v, %d events, %d rows, first %s after %d", doc.State, doc.Version, doc.Values["payment_id"], len(events), len(rows), rows[0].Status, rows[0].Attempts)
 	}
 	// The call was made; its mark and its result were not stored.
-	if _, err := s.Drain(ctx); code(err) != CodeStorage {
+	if _, err := s.Drain(ctx, asSetup); code(err) != CodeStorage {
 		t.Fatalf("a drain whose commit fails: %v", err)
 	}
 	if got := state(); got != "charging v2 payment <nil>, 2 events, 1 rows, first pending after 0" || len(rec.take()) != 1 {
@@ -167,13 +167,13 @@ func TestInto_OneTransactionWithTheMark(t *testing.T) {
 		}
 		return nil
 	}
-	if _, err := s.Drain(ctx); code(err) != CodeStorage {
+	if _, err := s.Drain(ctx, asSetup); code(err) != CodeStorage {
 		t.Fatalf("a drain whose second commit fails: %v", err)
 	}
 	if got := state(); got != "paid v4 payment pay_1, 5 events, 2 rows, first done after 1" || len(notes(t, s)) != 0 {
 		t.Errorf("after the second failure: %s, notes %v", got, notes(t, s))
 	}
-	if n, err := s.Drain(ctx); err != nil || n != 1 {
+	if n, err := s.Drain(ctx, asSetup); err != nil || n != 1 {
 		t.Fatalf("drain: %d, %v", n, err)
 	}
 	doc, _ := s.Get(ctx, "Purchase", id)
@@ -196,10 +196,10 @@ func TestInto_TheRuleThatQueuedIt(t *testing.T) {
 	// The class moves on while the action waits: the result now goes to
 	// another variable, and the fee is computed.
 	if _, err := s.DefineClass(ctx, []byte(strings.Replace(fmt.Sprintf(purchaseClass, `, "ref": {"type": "text"}`, `{"ref": "payment", "failed_with": "ERROR"}`),
-		`"fee": {"type": "decimal", "scale": 2}`, `"fee": {"formula": "ROUND(amount / 100, 2)"}`, 1))); err != nil {
+		`"fee": {"type": "decimal", "scale": 2}`, `"fee": {"formula": "ROUND(amount / 100, 2)"}`, 1)), asSetup); err != nil {
 		t.Fatal(err)
 	}
-	if n, err := s.Drain(ctx); err != nil || n != 1 {
+	if n, err := s.Drain(ctx, asSetup); err != nil || n != 1 {
 		t.Fatalf("drain: %d, %v", n, err)
 	}
 	// The rule of version 1 wrote payment_id, fee and failed_with; fee is
@@ -214,7 +214,7 @@ func TestInto_TheRuleThatQueuedIt(t *testing.T) {
 	}
 	// A purchase submitted now is written by the rule of now.
 	next := submit(t, s, "20")
-	if _, err := s.Drain(ctx); err != nil {
+	if _, err := s.Drain(ctx, asSetup); err != nil {
 		t.Fatal(err)
 	}
 	if doc, _ := s.Get(ctx, "Purchase", next); doc.Values["ref"] != "pay_1" || doc.Values["payment_id"] != nil || doc.ClassVersion != 2 || mustRows(t, s, next)[0].IntoCode != "" {
@@ -232,12 +232,12 @@ func TestInto_AChainOfResultsStops(t *testing.T) {
 	}}
 	s, _ := openStore(t, Options{Actions: map[string]ActionFunc{"count.next": rec.fn}})
 	ctx := context.Background()
-	if _, err := s.DefineAction(ctx, []byte(`{"name": "count.next", "params": {"n": "number"}, "returns": {"next": "number"}}`)); err != nil {
+	if _, err := s.DefineAction(ctx, []byte(`{"name": "count.next", "params": {"n": "number"}, "returns": {"next": "number"}}`), asSetup); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := s.DefineClass(ctx, []byte(`{"name": "Counter", "variables": {"n": {"type": "number", "default": "0"}, "stopped": {"type": "text"}},
  "states": {"initial": "on", "list": ["on"]},
- "rules": [{"on": "values_change", "variables": ["n"], "do": [{"action": "count.next", "args": {"n": "n"}, "into": {"n": "next", "stopped": "ERROR"}}]}]}`)); err != nil {
+ "rules": [{"on": "values_change", "variables": ["n"], "do": [{"action": "count.next", "args": {"n": "n"}, "into": {"n": "next", "stopped": "ERROR"}}]}]}`), asSetup); err != nil {
 		t.Fatal(err)
 	}
 	doc, err := s.Create(ctx, "Counter", nil)
@@ -247,7 +247,7 @@ func TestInto_AChainOfResultsStops(t *testing.T) {
 	if _, err := s.Set(ctx, "Counter", doc.ID, Values{"n": 1}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.Drain(ctx); err != nil {
+	if _, err := s.Drain(ctx, asSetup); err != nil {
 		t.Fatal(err)
 	}
 	rows := mustRows(t, s, doc.ID)
@@ -312,7 +312,7 @@ func TestInto_ARetriedActionWritesAgain(t *testing.T) {
 	definePurchases(t, s)
 	ctx := context.Background()
 	id := submit(t, s, "10")
-	if _, err := s.Drain(ctx); err != nil {
+	if _, err := s.Drain(ctx, asSetup); err != nil {
 		t.Fatal(err)
 	}
 	doc, _ := s.Get(ctx, "Purchase", id)
@@ -320,10 +320,10 @@ func TestInto_ARetriedActionWritesAgain(t *testing.T) {
 		t.Fatalf("after the refusal: %s", dump(doc))
 	}
 	declined = false
-	if err := s.RetryAction(ctx, mustRows(t, s, id)[0].Key); err != nil {
+	if err := s.RetryAction(ctx, mustRows(t, s, id)[0].Key, asSetup); err != nil {
 		t.Fatal(err)
 	}
-	if n, err := s.Drain(ctx); err != nil || n != 1 {
+	if n, err := s.Drain(ctx, asSetup); err != nil || n != 1 {
 		t.Fatalf("drain: %d, %v", n, err)
 	}
 	// The answer replaces the failure: the error is blank again.
@@ -357,7 +357,7 @@ func TestInto_AfterAReopen(t *testing.T) {
 	}
 	defer again.Close()
 	ctx := context.Background()
-	if n, err := again.Drain(ctx); err != nil || n != 2 {
+	if n, err := again.Drain(ctx, asSetup); err != nil || n != 2 {
 		t.Fatalf("drain: %d, %v", n, err)
 	}
 	if doc, _ := again.Get(ctx, "Purchase", id); doc.State != "paid" || doc.Values["payment_id"] != "pay_9" || doc.Values["receipt"] != "receipt-"+id {

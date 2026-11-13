@@ -33,10 +33,10 @@ func TestReadmeClass(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := db.DefineClass(ctx, receipt); err != nil {
+	if _, err := db.DefineClass(ctx, receipt, setup); err != nil {
 		t.Fatalf("the Receipt sample does not define: %v", err)
 	}
-	if _, err := db.DefineClass(ctx, m[1]); err != nil {
+	if _, err := db.DefineClass(ctx, m[1], setup); err != nil {
 		t.Fatalf("the README class does not define: %v", err)
 	}
 	alice := fado.Principal{ID: "alice", Groups: []string{"sales"}}
@@ -57,7 +57,7 @@ func TestReadmeClass(t *testing.T) {
 	if hidden, err := db.Query(ctx, fado.Filter{Class: "Invoice"}, fado.As(fado.Principal{ID: "eve"})); err != nil || len(hidden) != 0 {
 		t.Errorf("the README's filter for a stranger: %v %d", err, len(hidden))
 	}
-	rows, err := db.SQL(ctx, `SELECT count(*), sum(total) FROM Invoice`, nil)
+	rows, err := db.SQL(ctx, `SELECT count(*), sum(total) FROM Invoice`, nil, setup)
 	if err != nil || rows.Rows[0][0] != int64(1) || rows.Rows[0][1] != int64(9000) {
 		t.Errorf("the README's SQL: %v %v", err, rows)
 	}
@@ -83,11 +83,11 @@ func TestReadmeClass(t *testing.T) {
 			t.Fatalf("the README's %s: %v", name, err)
 		}
 	}
-	waiting, err := db.Outbox(ctx, fado.OutboxFilter{Class: "Invoice", DocID: doc.ID})
+	waiting, err := db.Outbox(ctx, fado.OutboxFilter{Class: "Invoice", DocID: doc.ID}, setup)
 	if err != nil || len(waiting) != 1 || waiting[0].Action != "create" || waiting[0].Status != "pending" || waiting[0].PrincipalID != "fin" {
 		t.Fatalf("the README's queued receipt: %v %+v", err, waiting)
 	}
-	if n, err := db.Drain(ctx); err != nil || n != 1 {
+	if n, err := db.Drain(ctx, setup); err != nil || n != 1 {
 		t.Fatalf("the README's drain: %d %v", n, err)
 	}
 	receipts, err := db.Query(ctx, fado.Filter{Class: "Receipt"})

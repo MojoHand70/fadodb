@@ -83,9 +83,11 @@
 // id, an action and a timer run with them, and USERKIND() and
 // ACTINGFOR() answer them to a formula.
 //
-// Defining, operating the queue and running SQL are for an administrator
-// and for the groups the host program names in Options (ADR-0051,
-// roles.go), and a table has a read rule and a write rule.
+// Defining, operating the queue and running SQL are for the system
+// groups designers, administrators and analysts, which the host program
+// gives a caller in Principal.System (ADR-0051, ADR-0052, roles.go). A
+// content administrator, the fourth, sees every document and acts on it
+// past the rules of its class. A table has a read rule and a write rule.
 //
 // Not here yet: the record of who defined each version (ADR-0051, item
 // 5), and the server (Phase 6).

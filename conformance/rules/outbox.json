@@ -24,7 +24,7 @@
   "principals": {
     "fin":   {"id": "fin", "groups": ["finance"]},
     "clerk": {"id": "clerk", "groups": ["clerks"]},
-    "root":  {"id": "root", "admin": true}
+    "root":  {"id": "root", "system": ["content-administrators"]}
   },
   "script": [
     {"name": "finance pays: the commit queues the receipt", "do": "create", "doc": "a", "as": "fin", "values": {"total": 90}, "expect": {"version": 1}},

@@ -41,10 +41,12 @@ Website: [fadodb.org](https://fadodb.org).
 > call, `TransitionMany`, moves many documents, a commit each: those
 > that cannot move are reported with their reason, and the others
 > move. The access rules of a class are enforced, who may see, create,
-> change and delete a document. A rule a class leaves out still lets
-> every caller through; the accepted design closes it, with system
-> groups and substitutions, and those are not built yet. The server
-> comes with its phase. The numbers are in
+> change and delete a document, and four system groups hold the work
+> that is not about one document: who runs the database, who designs,
+> who acts on any document and who runs SQL. A rule a class leaves out
+> still lets every caller through; the accepted design closes it. That,
+> the reason a content administrator must give, and substitutions are
+> not built yet. The server comes with its phase. The numbers are in
 > [docs/perf/](docs/perf/), the plan in [ROADMAP.md](ROADMAP.md).
 
 ## What it is
@@ -97,7 +99,11 @@ defined first. Formulas over `lines` arrive with composites:
 
 ```go
 db, err := fado.Open("app.fado", fado.Options{})
-_, err = db.DefineClass(ctx, invoiceJSON)
+
+// The program's own setup code names itself: it may define and run SQL.
+setup := fado.As(fado.Principal{ID: "setup", Kind: fado.ActorService,
+	System: []string{fado.GroupDesigners, fado.GroupAnalysts}})
+_, err = db.DefineClass(ctx, invoiceJSON, setup)
 
 alice := fado.Principal{ID: "alice", Groups: []string{"sales"}}
 doc, err := db.Create(ctx, "Invoice", fado.Values{"customer": "ACME", "net": "100.00 PLN"},
@@ -109,7 +115,7 @@ fmt.Println(doc.Version, doc.State)                       // 3 submitted; approv
 
 open, err := db.Query(ctx, fado.Filter{Class: "Invoice", Where: "state = \"draft\" AND total > 50.00", Order: []string{"-due"}},
 	fado.As(alice))                                          // the invoices alice may see
-rows, err := db.SQL(ctx, `SELECT count(*), sum(total) FROM Invoice`, nil)
+rows, err := db.SQL(ctx, `SELECT count(*), sum(total) FROM Invoice`, nil, setup) // every row: for analysts
 history, err := db.History(ctx, "Invoice", doc.ID, fado.As(alice)) // every version, who committed it, when
 preview, err := db.Preview(ctx, "Invoice", doc.ID, fado.Values{"discount": "0.50"}, "", fado.As(alice))
 ```
@@ -127,11 +133,16 @@ who may see, create, change and delete a document: a document its
 caller may not see is answered as if it did not exist, by a read, a
 command, a filter and a count alike, and a caller who sees it and may
 not change it gets `forbidden` with the rule. A rule a class leaves out
-lets every caller through until the record of Phase 5 on it is
-accepted (ADR-0049). Defining, operating the outbox and running SQL,
-which reads every row, are for an administrator and for the groups the
-host program names when it opens the database; a host program that
-names none is asked nothing, as before (ADR-0051). A table may say who
+still lets every caller through; the accepted design closes it
+(ADR-0052), and that is the next step. Defining, operating the outbox
+and running SQL, which reads every row, are each for a system group:
+`designers`, `administrators` and `analysts`. A fourth,
+`content-administrators`, sees every document and acts on it past the
+rules of its class, never past a guard. The host program gives a caller
+its system groups beside its other groups, in `Principal.System`;
+nobody is in one unless it says so, and a call without a principal
+does none of this work. `INGROUP("everyone")` is true for every caller
+that has an id (ADR-0051, ADR-0052). A table may say who
 reads and who writes its rows. A
 principal may say whether it is a person, an agent or a service, and
 for whom it acts: every event records it, and `USERKIND()` and

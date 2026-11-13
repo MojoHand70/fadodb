@@ -533,18 +533,19 @@ func (s *Store) evalTemplate(run *ruleRun, row *docRow, t *model.Template) (any,
 }
 
 // principalText is what an outbox row keeps of its principal beside the
-// id and the administrator's flag: the groups, as a JSON array, and for a
-// principal that says what it is or for whom it acts (ADR-0050) an object
-// with the groups, the kind and the id acted for. Most rows have neither,
-// and are written and read as before: the row gained no column, since
-// the driver allocates for every column the statement that reads the due
-// rows returns, on every action the worker runs.
+// id: the groups, as a JSON array, and for a principal that says what it
+// is or for whom it acts (ADR-0050), or that is in a system group
+// (ADR-0052), an object with the groups, the kind, the id acted for and
+// the system groups. Most rows have none of these, and are written and
+// read as before: the row gained no column, since the driver allocates
+// for every column the statement that reads the due rows returns, on
+// every action the worker runs.
 func principalText(p Principal) []byte {
-	if p.Kind == "" && p.For == "" {
+	if p.Kind == "" && p.For == "" && len(p.System) == 0 {
 		groups, _ := json.Marshal(p.Groups)
 		return groups
 	}
-	more, _ := json.Marshal(principalMore{Groups: p.Groups, Kind: p.Kind, For: p.For})
+	more, _ := json.Marshal(principalMore{Groups: p.Groups, Kind: p.Kind, For: p.For, System: p.System})
 	return more
 }
 
@@ -552,6 +553,7 @@ type principalMore struct {
 	Groups []string `json:"groups"`
 	Kind   string   `json:"kind,omitempty"`
 	For    string   `json:"for,omitempty"`
+	System []string `json:"system,omitempty"`
 }
 
 // readPrincipalText reads what principalText wrote into the principal.
@@ -559,7 +561,7 @@ func readPrincipalText(text string, p *Principal) {
 	if strings.HasPrefix(text, "{") {
 		var more principalMore
 		if json.Unmarshal([]byte(text), &more) == nil {
-			p.Groups, p.Kind, p.For = more.Groups, more.Kind, more.For
+			p.Groups, p.Kind, p.For, p.System = more.Groups, more.Kind, more.For, more.System
 		}
 		return
 	}
@@ -591,12 +593,8 @@ func (s *Store) writeQueued(ctx context.Context, c *class, cmd *command, commit 
 				return n, err
 			}
 		}
-		admin := 0
-		if p.Admin {
-			admin = 1
-		}
 		if _, err := s.stmts.insertOutbox.ExecContext(ctx, eventID, n, c.cls.Name, docID, version, c.cls.Version, q.act.a.Path(), q.act.a.Name, string(q.args),
-			nullText(p.ID), string(groups), admin, cmd.depth, status, secs, code, message, secs, finished, outcome); err != nil {
+			nullText(p.ID), string(groups), cmd.depth, status, secs, code, message, secs, finished, outcome); err != nil {
 			return n, storageErr("queue the action", err)
 		}
 		n++
@@ -690,15 +688,14 @@ func (s *Store) dueRows(ctx context.Context, due *sql.Stmt, now int64) ([]*outbo
 	for rows.Next() {
 		r := &outboxRow{}
 		var id, groups sql.NullString
-		var admin int64
 		var args string
-		if err := rows.Scan(&r.eventID, &r.idx, &r.class, &r.docID, &r.action, &args, &id, &groups, &admin, &r.depth); err != nil {
+		if err := rows.Scan(&r.eventID, &r.idx, &r.class, &r.docID, &r.action, &args, &id, &groups, &r.depth); err != nil {
 			return nil, storageErr("read the outbox", err)
 		}
 		r.args = []byte(args)
 		// The row runs as the principal of the command that queued it,
 		// with what that principal was and for whom it acted (ADR-0050).
-		r.principal = Principal{ID: id.String, Admin: admin != 0}
+		r.principal = Principal{ID: id.String}
 		if groups.Valid {
 			readPrincipalText(groups.String, &r.principal)
 		}

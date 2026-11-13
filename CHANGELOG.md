@@ -92,6 +92,28 @@ All notable changes to FadoDB are recorded here. The format follows
   `api/event.schema.json`. An action and a timer run as whoever set
   them off, with what that caller was; `QueuedAction` shows it.
   `conformance/access/actors.json` is the suite.
+- The host program names who may do the three kinds of work that are
+  not about one document (ADR-0051, proposed): `Options.Designers` for
+  defining classes, schemas, tables and actions, previewing a draft
+  and migrating; `Options.Operators` for the outbox, `Drain`,
+  `PreviewAction`, `TryAction` and `CheckBlobs`; `Options.Analysts`
+  for `SQL`, which reads every row and every variable. Each is a list
+  of groups; an administrator may do all three. Anybody else is
+  refused with `forbidden`, and the refusal names the option. A list
+  that is empty leaves its work to administrators. A host program that
+  names no list at all is asked nothing, as before, until the owner
+  accepts the record.
+- `DefineClass`, `DefineClasses`, `DefineSchema`, `DefineTable`,
+  `DefineAction`, `Outbox`, `RetryAction`, `Drain`, `PreviewAction`,
+  `TryAction`, `CheckBlobs` and `TableRows` take the options of a
+  call, and with them `As`.
+- A table has two rules (ADR-0051, item 7): `"access": {"read": ...,
+  "write": ...}` in its definition, each a condition over the caller
+  and the clock, about the table as a whole. `TableRows` asks `read`;
+  `ImportRows` asks `write`, and so do the `table.insert`,
+  `table.update` and `table.delete` actions of a rule, as the person
+  who set the rule off. A formula goes on reading a table with the
+  engine's eyes. A table without rules is as it was.
 
 ### Changed
 

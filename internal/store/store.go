@@ -92,6 +92,17 @@ type Options struct {
 	// result of outbound.Allow, of package fado/outbound, with the hosts
 	// that may be called.
 	Outbound Outbound
+	// Designers, Operators and Analysts name the groups whose members may
+	// do the three kinds of work that are not about one document
+	// (ADR-0051): define classes, schemas, tables and actions, preview a
+	// draft and migrate; list and retry the outbox, drain it, preview and
+	// try an action and check the blobs; run SQL, which reads every row
+	// and every variable. An administrator may do all three. A list that
+	// is empty and not nil leaves its work to administrators. A list that
+	// is nil is not asked at all, as before these options: the host
+	// program then decides by itself which of its callers reach these
+	// calls.
+	Designers, Operators, Analysts []string
 	// Secrets gives the value of a secret of a connection at the moment a
 	// request that reads it is sent (ADR-0045, item 6). It is asked at
 	// every attempt, so a provider that renews a token serves it as it
@@ -183,7 +194,10 @@ type Store struct {
 	// supplies their secrets (ADR-0045); both are the host program's, and
 	// nil when it gave none.
 	outbound Outbound
-	secretFn func(ctx context.Context, connection, name string) (string, error)
+	// designers, operators and analysts are the groups the host program
+	// named for the three kinds of work (ADR-0051); nil for none named.
+	designers, operators, analysts []string
+	secretFn                       func(ctx context.Context, connection, name string) (string, error)
 
 	// sqlConn is the read-only SQL endpoint's connection, with its
 	// authorizer, made on first use; sqlMu serialises its statements.
@@ -299,6 +313,7 @@ func Open(path string, o Options) (*Store, error) {
 		tables: map[string]*table{}, plans: map[*formula.QuerySlot]*lookupPlan{},
 		actions: map[string]*action{}, funcs: funcs, inFlight: map[flight]struct{}{}, writesBack: map[string]bool{},
 		outbound: o.Outbound, secretFn: o.Secrets,
+		designers: o.Designers, operators: o.Operators, analysts: o.Analysts,
 		stop: make(chan struct{}), done: make(chan struct{}),
 		outbox: o.Outbox, wake: make(chan struct{}, 1), workDone: make(chan struct{}),
 	}

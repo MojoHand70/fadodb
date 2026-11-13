@@ -693,7 +693,11 @@ Today a table is defined in JSON, `{"name": "Rates", "columns": {"code":
 "text", "rate": "decimal(6)"}, "key": ["code"]}`, stored as `tbl_Rates`
 with the view `Rates`, filled by the Go API's `ImportRows`, and read by
 `LOOKUP` in auto formulas and defaults; a rule changes one row with
-`table.insert`, `table.update` and `table.delete` (ADR-0044); only the
+`table.insert`, `table.update` and `table.delete` (ADR-0044); a table
+may carry `"access": {"read": ..., "write": ...}`, two conditions over
+the caller and the clock that say who may read its rows with
+`TableRows` and who may write them, by `ImportRows` or by a rule's
+action (ADR-0051); only the
 `sqlite` binding exists; the other bindings come with the analytical
 engine, and `QUERY` with the first layout or report that needs a list of
 rows (ADR-0046). A lookup
@@ -749,8 +753,13 @@ key order, to the function the Go VM adds with.
   the rule. A named transition without a rule of its own asks `update`.
   What the engine does by itself asks nothing. A rule a class leaves
   out lets every caller through, until the owner rules on the question
-  ADR-0049 puts to him. Not built yet: who may define, operate and run
-  SQL, and the rules of a table (ADR-0051). The change stream comes with the server in Phase 6. A
+  ADR-0049 puts to him. Three kinds of work are not about one document:
+  defining, operating the queue, and running SQL. The host program
+  names the groups that may do each in `Options.Designers`,
+  `Options.Operators` and `Options.Analysts`, and an administrator may
+  do all three (ADR-0051, proposed and built). A host program that
+  names no list is asked nothing, as before, until the owner accepts
+  the record. Not built yet: the record of who defined each version. The change stream comes with the server in Phase 6. A
   call without a principal is nobody.
 
 ### Querying
@@ -788,8 +797,10 @@ the index on `owner` answers; a statement is kept for each outcome. The
 rule offers its comparisons to an index only where the caller's own
 condition offers none, since SQLite has no statistics to choose between
 two. The SQL endpoint adds no rule
-and reads every row for every caller, until ADR-0051 says who may use
-it.
+and reads every row and every variable. It is for an administrator and
+for the analysts the host program names in `Options.Analysts`
+(ADR-0051); a host program that names none leaves it open to every
+caller, as before.
 
 ### Layouts
 

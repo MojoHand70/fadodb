@@ -14,8 +14,8 @@ give.
 
 | Chapter | For | Mark |
 |---|---|---|
-| What FadoDB is | everybody: what it is for, what it is not, how it differs from a database and from a workflow tool | planned; today the top of the [README](../README.md) |
-| How it works | everybody: a class, a document, a commit and the log, followed once from end to end | planned; today [architecture.md](architecture.md) |
+| [What FadoDB is](manual/what-is-fadodb.md) | everybody: what it is for, what it is not, how it differs from a database and from a workflow tool | **written** |
+| [How it works](manual/how-it-works.md) | everybody: a class, a document, a commit and the log, followed once from end to end | **written** |
 | [Your first application](manual/first-application.md) | everybody: an invoice that one person approves and accounting books, from an empty file to a working process | **written** |
 | [Glossary](manual/glossary.md) | everybody: every word, and whether it is FadoDB's or yours | **written** |
 

@@ -12,7 +12,9 @@ All notable changes to FadoDB are recorded here. The format follows
   planned, and the first three written: your first application, an
   invoice with its own editors in each state, from an empty file to a
   working process; the class definition, block by block and word by
-  word; and the glossary. A test runs every example of a chapter
+  word; and the glossary. Two more follow them: what FadoDB is, and
+  how it works, a commit followed step by step from the call to the
+  answer. A test runs every example of a chapter
   against the engine on each push, and another follows every link.
 - `examples/first`, the program of the first application:
   `go run ./examples/first`.

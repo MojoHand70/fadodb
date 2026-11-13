@@ -381,16 +381,30 @@ func BenchmarkFilter(b *testing.B) {
 	if _, err := s.DefineClass(ctx, []byte(fmt.Sprintf(ticket, "Guarded", `, "rights": {"*": {"number": {"read": "INGROUP(\"support\") OR owner = USER()"}}}`))); err != nil {
 		b.Fatal(err)
 	}
+	// Owned is Ticket with an index on the owner, and Ruled the same with
+	// a read rule (ADR-0049): support sees every ticket, anybody else
+	// their own. The budgets are under 5% on the indexed filter where the
+	// caller alone decides the rule, and under 15% where it reads the row.
+	const owned = `{"name": "%s", "variables": {"number": {"type": "text", "index": true}, "priority": {"type": "number"}, "owner": {"type": "text", "index": true}}, "states": {"initial": "open", "list": ["open"]}%s}`
+	if _, err := s.DefineClass(ctx, []byte(fmt.Sprintf(owned, "Owned", ""))); err != nil {
+		b.Fatal(err)
+	}
+	if _, err := s.DefineClass(ctx, []byte(fmt.Sprintf(owned, "Ruled", `, "access": {"read": "INGROUP(\"support\") OR owner = USER()"}`))); err != nil {
+		b.Fatal(err)
+	}
 	support := As(Principal{ID: "agent", Groups: []string{"support"}})
+	// u7 owns one ticket in a hundred, and the one the equality finds.
+	half := n/2 - (n/2)%100 + 7
+	u7 := As(Principal{ID: "u7", Groups: []string{"callers"}})
 	start := time.Now()
-	for _, class := range []string{"Ticket", "Guarded"} {
+	for _, class := range []string{"Ticket", "Guarded", "Owned", "Ruled"} {
 		for i := 0; i < n; i++ {
 			if _, err := s.Create(ctx, class, Values{"number": fmt.Sprintf("T-%07d", i), "priority": float64(i % 7), "owner": fmt.Sprintf("u%d", i%100)}); err != nil {
 				b.Fatal(err)
 			}
 		}
 	}
-	b.Logf("%d documents of two classes created in %s", 2*n, time.Since(start).Round(time.Millisecond))
+	b.Logf("%d documents of four classes created in %s", 4*n, time.Since(start).Round(time.Millisecond))
 	for _, bc := range []struct {
 		name string
 		f    Filter
@@ -402,6 +416,18 @@ func BenchmarkFilter(b *testing.B) {
 		{"count over a plain column", Filter{Class: "Ticket", Where: "priority = 3"}, nil},
 		{"indexed equality with a read right", Filter{Class: "Guarded", Where: fmt.Sprintf("number = \"T-%07d\"", n/2)}, []Option{support}},
 		{"indexed range with a read right", Filter{Class: "Guarded", Where: fmt.Sprintf("number >= \"T-%07d\" AND number < \"T-%07d\"", n/2, n/2+10), Limit: 10}, []Option{support}},
+		// The read rule of ADR-0049: the same equality on a class
+		// without one, with one the caller alone decides, and with one
+		// that reads the row.
+		{"indexed equality, no read rule", Filter{Class: "Owned", Where: fmt.Sprintf("number = \"T-%07d\"", half)}, []Option{u7}},
+		{"indexed equality, a read rule the caller decides", Filter{Class: "Ruled", Where: fmt.Sprintf("number = \"T-%07d\"", half)}, []Option{support}},
+		{"indexed equality, a read rule over the row", Filter{Class: "Ruled", Where: fmt.Sprintf("number = \"T-%07d\"", half)}, []Option{u7}},
+		// A caller's own tickets: by the rule alone, and by the same
+		// condition written out on the class without a rule.
+		{"own tickets by the read rule, first 10", Filter{Class: "Ruled", Limit: 10}, []Option{u7}},
+		{"own tickets by a condition, first 10", Filter{Class: "Owned", Where: "owner = \"u7\"", Limit: 10}, []Option{u7}},
+		{"count own tickets by the read rule", Filter{Class: "Ruled"}, []Option{u7}},
+		{"count own tickets by a condition", Filter{Class: "Owned", Where: "owner = \"u7\""}, []Option{u7}},
 	} {
 		b.Run(bc.name, func(b *testing.B) {
 			b.ReportAllocs()

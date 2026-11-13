@@ -151,7 +151,8 @@ func (s *Store) project(e *evaluator, c, vc *class, row *docRow, d *Document, p 
 		return
 	}
 	cells := c.cells(row.state)
-	e.ctx = formula.Context{User: p.ID, Groups: p.Groups, Now: now, State: row.state, ID: row.id}
+	e.ctx = contextOf(p, now)
+	e.ctx.State, e.ctx.ID = row.state, row.id
 	if vc != c {
 		moved := &docRow{vals: make([]formula.Value, len(c.leaves))}
 		for i, l := range c.leaves {

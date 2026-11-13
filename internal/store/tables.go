@@ -236,7 +236,10 @@ func (s *Store) Table(name string) (*model.Table, bool) {
 // and its view and stores the definition. The same definition again is a
 // no-op. A table with no rows and no class reading it can be redefined;
 // one with rows, or one a class reads, cannot in this build.
-func (s *Store) DefineTable(ctx context.Context, data []byte) (*model.Table, error) {
+func (s *Store) DefineTable(ctx context.Context, data []byte, opts ...Option) (*model.Table, error) {
+	if _, e := s.worker(workDesign, opts); e != nil {
+		return nil, e
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.closed {
@@ -350,9 +353,16 @@ func (s *Store) ImportRows(ctx context.Context, name string, rows []Values, opts
 	if e != nil {
 		return 0, e
 	}
-	o := apply(opts)
+	o, e := asked(opts)
+	if e != nil {
+		return 0, e
+	}
 	if err := refuseAt(o, "row import"); err != nil {
 		return 0, err
+	}
+	// The write rule of the table (ADR-0051, item 7).
+	if e := s.tableRefusal(t, true, o.principal, s.clock(o)); e != nil {
+		return 0, e
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -402,10 +412,18 @@ func (s *Store) ImportRows(ctx context.Context, name string, rows []Values, opts
 	return len(rows), nil
 }
 
-// TableRows reads every row of a table in key order, in the wire shape.
-func (s *Store) TableRows(ctx context.Context, name string) ([]Values, error) {
+// TableRows reads every row of a table in key order, in the wire shape,
+// for a principal the table's read rule lets through (ADR-0051, item 7).
+func (s *Store) TableRows(ctx context.Context, name string, opts ...Option) ([]Values, error) {
 	t, e := s.table(name)
 	if e != nil {
+		return nil, e
+	}
+	o, e := asked(opts)
+	if e != nil {
+		return nil, e
+	}
+	if e := s.tableRefusal(t, false, o.principal, s.clock(o)); e != nil {
 		return nil, e
 	}
 	rows, _, err := t.scanRows(ctx, t.readAll, 0)

@@ -254,7 +254,7 @@ result:
 | Class | Examples | Allowed in |
 |---|---|---|
 | Pure | `IF IFERROR ROUND SUM LEFT DATE ADDMONTHS DECIMAL MONEY JSONVALUE` | everywhere |
-| Context | `USER() INGROUP() NOW() TODAY() STATE() ID()` | defaults, triggered formulas, guards, rules, access rules, layouts; not in auto formulas |
+| Context | `USER() INGROUP() USERKIND() ACTINGFOR() NOW() TODAY() STATE() ID()` | defaults, triggered formulas, guards, rules, access rules, layouts; not in auto formulas |
 | Lookup | `LOOKUP(source, column, condition)` | everywhere; in auto formulas only against explicit tables |
 | Query | `QUERY(source, columns, condition, sort, groupby, limit)` | defaults, triggered formulas, rules, layouts; not in auto formulas |
 | Secret | `SECRET("token")` | the request of an action definition, and nowhere else (ADR-0045) |
@@ -461,7 +461,8 @@ doc_Invoice__lines        one row per element per version            key: (doc_i
                           + the row schema's columns, or `value` for arrays
 events                    one row per thing that happened            key: event_id
                           class, doc_id, kind, name, from_state, to_state,
-                          actor_id, before_version, after_version, cause_event_id,
+                          actor_id, actor_kind, actor_for,
+                          before_version, after_version, cause_event_id,
                           command_key (unique, the caller's idempotency key),
                           business_date (a calendar day the caller gives)
 event_docs                every document an event touched            (event_id, class, doc_id, qualifier)
@@ -692,7 +693,11 @@ Today a table is defined in JSON, `{"name": "Rates", "columns": {"code":
 "text", "rate": "decimal(6)"}, "key": ["code"]}`, stored as `tbl_Rates`
 with the view `Rates`, filled by the Go API's `ImportRows`, and read by
 `LOOKUP` in auto formulas and defaults; a rule changes one row with
-`table.insert`, `table.update` and `table.delete` (ADR-0044); only the
+`table.insert`, `table.update` and `table.delete` (ADR-0044); a table
+may carry `"access": {"read": ..., "write": ...}`, two conditions over
+the caller and the clock that say who may read its rows with
+`TableRows` and who may write them, by `ImportRows` or by a rule's
+action (ADR-0051); only the
 `sqlite` binding exists; the other bindings come with the analytical
 engine, and `QUERY` with the first layout or report that needs a list of
 rows (ADR-0046). A lookup
@@ -710,7 +715,14 @@ key order, to the function the Go VM adds with.
 ### Security
 
 - The principal comes from the embedder on every call: an id, groups, an
-  admin flag and its business day (ADR-0027). The engine keeps no user
+  admin flag and its business day (ADR-0027), and what the caller is, a
+  person, an agent or a service, with the id of whoever it acts for
+  (ADR-0050, proposed and built). The engine trusts all of it, writes
+  the kind and the id acted for on every event beside the actor's id,
+  and answers them to `USERKIND()` and `ACTINGFOR()`, so that a class
+  can keep a step for a person and the log can say which steps an agent
+  took and for whom. `USER()` stays the one who acts. The engine keeps
+  no user
   tables; an optional package of users, groups and API keys turns a
   credential into a principal for `fadodb serve`.
 - Access rules per class: `read`, `create`, `update`, `delete`, and per-transition rules. Tables have `read` and `write` rules.
@@ -741,9 +753,13 @@ key order, to the function the Go VM adds with.
   the rule. A named transition without a rule of its own asks `update`.
   What the engine does by itself asks nothing. A rule a class leaves
   out lets every caller through, until the owner rules on the question
-  ADR-0049 puts to him. Not built yet: the kind of actor (ADR-0050),
-  who may define, operate and run SQL, and the rules of a table
-  (ADR-0051). The change stream comes with the server in Phase 6. A
+  ADR-0049 puts to him. Three kinds of work are not about one document:
+  defining, operating the queue, and running SQL. The host program
+  names the groups that may do each in `Options.Designers`,
+  `Options.Operators` and `Options.Analysts`, and an administrator may
+  do all three (ADR-0051, proposed and built). A host program that
+  names no list is asked nothing, as before, until the owner accepts
+  the record. Not built yet: the record of who defined each version. The change stream comes with the server in Phase 6. A
   call without a principal is nobody.
 
 ### Querying
@@ -773,9 +789,18 @@ compiled into its predicate for the principal, and the documents come
 back projected (ADR-0041). The read rule of the class joins the
 predicate of every `Query` and `Count` for a caller who is not an
 administrator (ADR-0049), written by the same generator from the
-formula the Go VM runs for a read by id. The SQL endpoint adds no rule
-and reads every row for every caller, until ADR-0051 says who may use
-it.
+formula the Go VM runs for a read by id. The caller's part of the rule
+is decided first: an `INGROUP` of a group has one answer for the whole
+statement, so `owner = USER() OR INGROUP("finance")` adds nothing for a
+member of finance and is `owner = USER()` for anybody else, a comparison
+the index on `owner` answers; a statement is kept for each outcome. The
+rule offers its comparisons to an index only where the caller's own
+condition offers none, since SQLite has no statistics to choose between
+two. The SQL endpoint adds no rule
+and reads every row and every variable. It is for an administrator and
+for the analysts the host program names in `Options.Analysts`
+(ADR-0051); a host program that names none leaves it open to every
+caller, as before.
 
 ### Layouts
 

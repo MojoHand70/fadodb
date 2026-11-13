@@ -769,7 +769,10 @@ func (s *Store) compileClasses(ctx context.Context, datas [][]byte, set bool) ([
 // redefinition may not do against the documents is in
 // redefinitionDiagnostics. A class with no history at all is dropped
 // and made again.
-func (s *Store) DefineClass(ctx context.Context, data []byte) (*model.Class, error) {
+func (s *Store) DefineClass(ctx context.Context, data []byte, opts ...Option) (*model.Class, error) {
+	if _, e := s.worker(workDesign, opts); e != nil {
+		return nil, e
+	}
 	out, err := s.defineClasses(ctx, [][]byte{data}, false)
 	if err != nil {
 		return nil, err
@@ -785,7 +788,10 @@ func (s *Store) DefineClass(ctx context.Context, data []byte) (*model.Class, err
 // definition is the stored one is left as it is. The error is
 // Diagnostics when a definition is refused, and the path of each finding
 // starts with the position of its definition in the call.
-func (s *Store) DefineClasses(ctx context.Context, datas [][]byte) ([]*model.Class, error) {
+func (s *Store) DefineClasses(ctx context.Context, datas [][]byte, opts ...Option) ([]*model.Class, error) {
+	if _, e := s.worker(workDesign, opts); e != nil {
+		return nil, e
+	}
 	return s.defineClasses(ctx, datas, true)
 }
 
@@ -987,7 +993,10 @@ func (c *class) childOfName(name string) (*child, bool) {
 // DefineSchema compiles a schema definition and stores it (ADR-0031).
 // Defining the same definition again is a no-op; a schema a stored class
 // uses cannot be redefined in this build.
-func (s *Store) DefineSchema(ctx context.Context, data []byte) (*model.Schema, error) {
+func (s *Store) DefineSchema(ctx context.Context, data []byte, opts ...Option) (*model.Schema, error) {
+	if _, e := s.worker(workDesign, opts); e != nil {
+		return nil, e
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.closed {

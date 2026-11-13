@@ -1,0 +1,75 @@
+{
+  "suite": "actors",
+  "description": "A principal says what it is, a person, an agent or a service, and for whom it acts (ADR-0050). USER() stays the one who acts; USERKIND() and ACTINGFOR() answer the two new facts to every formula that may ask who calls. An assistant sees what the one it acts for owns because the read rule says ACTINGFOR(); a step kept for people is written USERKIND() = \"person\", which a caller whose host said nothing does not pass. Every event records what its actor was and for whom it acted, and what a rule does it does as the caller who set it off, with that caller's kind.",
+  "clock": "2026-03-01 12:00:00",
+  "classes": [
+    {"name": "Note", "variables": {"about": {"type": "text"}, "by_kind": {"type": "text", "default": "USERKIND()"}},
+     "states": {"initial": "kept", "list": ["kept"]}}
+  ],
+  "class": {
+    "name": "Expense",
+    "variables": {
+      "owner":    {"type": "text", "default": "IF(ACTINGFOR() <> \"\", ACTINGFOR(), USER())", "index": true},
+      "total":    {"type": "number"},
+      "made_by":  {"type": "text", "default": "USERKIND()"},
+      "approved_by_kind": {"type": "text"}
+    },
+    "states": {"initial": "draft", "list": ["draft", "filed", "approved"]},
+    "transitions": [
+      {"name": "file",    "from": "draft", "to": "filed"},
+      {"name": "approve", "from": "filed", "to": "approved"}
+    ],
+    "rules": [
+      {"on": "transition", "name": "approve",
+       "do": [{"action": "set", "values": {"approved_by_kind": "USERKIND()"}},
+              {"action": "create", "class": "Note", "values": {"about": "ID()"}}]}
+    ],
+    "access": {
+      "read": "owner = USER() OR owner = ACTINGFOR() OR INGROUP(\"managers\")",
+      "update": "owner = USER() OR owner = ACTINGFOR()",
+      "transition": {"approve": "INGROUP(\"managers\") AND (total <= 10000 OR USERKIND() = \"person\")"}
+    }
+  },
+  "principals": {
+    "ann":       {"id": "ann",     "groups": ["staff"], "kind": "person"},
+    "assistant": {"id": "agent-7", "groups": ["staff"], "kind": "agent", "for": "ann"},
+    "other":     {"id": "agent-8", "groups": ["staff"], "kind": "agent", "for": "bob"},
+    "boss":      {"id": "mia",     "groups": ["managers"], "kind": "person"},
+    "approver":  {"id": "agent-9", "groups": ["managers"], "kind": "agent"},
+    "legacy":    {"id": "old",     "groups": ["managers"]},
+    "import":    {"id": "loader",  "groups": ["staff"], "kind": "service"},
+    "root":      {"id": "root",    "admin": true}
+  },
+  "script": [
+    {"name": "an assistant files for Ann: the owner is the one it acts for, and the document says an agent made it", "do": "create", "doc": "small", "as": "assistant", "values": {"total": 400},
+     "expect": {"state": "draft", "values": {"owner": "ann", "made_by": "agent"}, "life": {"created_by": "agent-7"}}},
+    {"name": "Ann sees what her assistant filed", "do": "get", "doc": "small", "as": "ann", "expect": {"values": {"total": 400}}},
+    {"name": "another assistant, acting for somebody else, does not", "do": "get", "doc": "small", "as": "other", "expect": {"code": "unknown_document"}},
+    {"name": "nor does it find it with a filter", "do": "query", "as": "other", "expect": {"docs": []}},
+    {"name": "Ann's assistant finds it with a filter", "do": "query", "as": "assistant", "expect": {"docs": ["small"]}},
+    {"name": "and counts it", "do": "count", "as": "assistant", "where": "made_by = USERKIND()", "expect": {"count": 1}},
+    {"name": "the assistant may change what Ann owns", "do": "set", "doc": "small", "as": "assistant", "values": {"total": 450}, "expect": {"version": 2}},
+    {"name": "and file it", "do": "transition", "doc": "small", "as": "assistant", "transition": "file", "expect": {"state": "filed"}},
+    {"name": "a manager's agent approves a small one", "do": "transition", "doc": "small", "as": "approver", "transition": "approve",
+     "expect": {"state": "approved", "values": {"approved_by_kind": "agent"}}},
+    {"name": "the log says who was an agent, and for whom", "do": "get", "doc": "small", "as": "root",
+     "expect": {"actors": ["agent-7 agent for ann", "agent-7 agent for ann", "agent-7 agent for ann", "agent-9 agent"]}},
+
+    {"name": "Ann files a large one herself", "do": "create", "doc": "large", "as": "ann", "values": {"total": 25000}, "expect": {"values": {"owner": "ann", "made_by": "person"}}},
+    {"name": "and files it", "do": "transition", "doc": "large", "as": "ann", "transition": "file", "expect": {"state": "filed"}},
+    {"name": "above the limit a manager's agent may not approve", "do": "transition", "doc": "large", "as": "approver", "transition": "approve", "expect": {"code": "forbidden", "action": "/access/transition/approve"}},
+    {"name": "nor a manager whose host does not say what they are: a blank kind is not a person", "do": "transition", "doc": "large", "as": "legacy", "transition": "approve", "expect": {"code": "forbidden", "action": "/access/transition/approve"}},
+    {"name": "the listing says the same to the agent", "do": "transitions", "doc": "large", "as": "approver",
+     "expect": {"transitions": [{"name": "approve", "to": "approved", "enabled": false, "code": "forbidden"}]}},
+    {"name": "a person approves it", "do": "transition", "doc": "large", "as": "boss", "transition": "approve", "expect": {"state": "approved", "values": {"approved_by_kind": "person"}}},
+    {"name": "the log of the large one", "do": "get", "doc": "large", "as": "root", "expect": {"actors": ["ann person", "ann person", "mia person"]}},
+
+    {"name": "what the rule of approve queued runs as the one who approved, with what they were", "do": "drain", "expect": {"drained": 2}},
+    {"name": "the notes say so in their own values", "do": "query", "class": "Note", "as": "root", "order": ["by_kind"], "expect": {"found": [{"state": "kept", "values": {"by_kind": "agent"}}, {"state": "kept", "values": {"by_kind": "person"}}]}},
+
+    {"name": "a service is neither", "do": "create", "doc": "loaded", "as": "import", "values": {"total": 1}, "expect": {"values": {"owner": "loader", "made_by": "service"}}},
+    {"name": "it files what it loaded, as its owner", "do": "transition", "doc": "loaded", "as": "import", "transition": "file", "expect": {"state": "filed"}},
+    {"name": "a caller whose host says nothing has a blank kind", "do": "transition", "doc": "loaded", "as": "legacy", "transition": "approve", "expect": {"state": "approved", "values": {"approved_by_kind": null}}},
+    {"name": "and the log leaves it out", "do": "get", "doc": "loaded", "as": "root", "expect": {"actors": ["loader service", "loader service", "old"]}}
+  ]
+}

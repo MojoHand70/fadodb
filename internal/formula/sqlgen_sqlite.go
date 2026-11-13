@@ -111,7 +111,8 @@ func (SQLite) ColumnType(k Kind) string {
 // NULL, groups is the text groupsArg makes or NULL.
 func (SQLite) ContextArgs(ctx *Context) []any {
 	now, user, state, id, groups := contextValues(ctx)
-	return lifeArgs(ctx, []any{sql.Named("now", now), sql.Named("user", user), sql.Named("groups", groupsArg(groups)), sql.Named("state", state), sql.Named("id", id)})
+	return lifeArgs(ctx, []any{sql.Named("now", now), sql.Named("user", user), sql.Named("groups", groupsArg(groups)), sql.Named("state", state), sql.Named("id", id),
+		sql.Named("userkind", textOrNil(ctx, func(c *Context) string { return c.Kind })), sql.Named("actingfor", textOrNil(ctx, func(c *Context) string { return c.For }))})
 }
 
 // groupsArg binds the principal's groups as one text, each group between
@@ -894,6 +895,10 @@ func (d SQLite) Call(name string, args []SQLExpr, params *Params) (SQLExpr, erro
 		return SQLExpr{Val: "floor(CAST(" + params.Use("now") + " AS REAL) / 86400.0)", Kind: KindDate, Sure: true}, nil
 	case "USER":
 		return SQLExpr{Val: params.Use("user"), Kind: KindText}, nil
+	case "USERKIND":
+		return SQLExpr{Val: params.Use("userkind"), Kind: KindText}, nil
+	case "ACTINGFOR":
+		return SQLExpr{Val: params.Use("actingfor"), Kind: KindText}, nil
 	case "STATE":
 		return SQLExpr{Val: params.Use("state"), Kind: KindText}, nil
 	case "ID":

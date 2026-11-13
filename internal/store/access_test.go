@@ -5,6 +5,8 @@ import (
 	"io"
 	"strings"
 	"testing"
+
+	"github.com/MojoHand70/fadodb/internal/query"
 )
 
 // The four rules of a class (ADR-0049): who may see, create, change and
@@ -587,5 +589,160 @@ func TestAccess_LiteralsAndOlderVersions(t *testing.T) {
 	}
 	if got, err := s.Set(ctx, "Note", eu.ID, Values{"n": 5}, As(guest)); err != nil || got.ClassVersion != 2 {
 		t.Errorf("a set on the one the rule lets through adopts the version: %v", err)
+	}
+}
+
+// Every path agrees (ADR-0049, item 14): for a set of read rules, some of
+// which stop with an error on some rows, and callers the rules treat
+// differently, a read by id, a filter and a count show the same
+// documents. The filter folds the caller's part of a rule before it
+// writes its statement, and the read by id runs the rule whole on the Go
+// VM; this is the test that the two are one rule.
+func TestAccess_EveryPathAgrees(t *testing.T) {
+	rules := []string{
+		`owner = USER() OR INGROUP(\"hr\")`,
+		`INGROUP(\"hr\") OR owner = USER()`,
+		`(owner = USER() OR INGROUP(\"hr\")) AND region = \"EU\"`,
+		`NOT INGROUP(\"staff\") AND n >= 0`,
+		`INGROUP(\"hr\") AND INGROUP(\"staff\") OR n > 1`,
+		`1 / n > 0 OR INGROUP(\"hr\")`,
+		`INGROUP(\"hr\") OR 1 / n > 0`,
+		`1 / n > 0 AND INGROUP(\"staff\")`,
+		`INGROUP(\"staff\") AND 1 / n > 0`,
+		`NOT (INGROUP(\"hr\") OR owner = USER())`,
+		`INGROUP(region)`,
+		`owner = USER() AND STATE() = \"a\" OR INGROUP(\"hr\") AND CREATEDBY() <> USER()`,
+		`n > 0`,
+		`FALSE`,
+		`TRUE`,
+	}
+	callers := []Principal{clerkAnn, clerkBob, hr, guest, {ID: "both", Groups: []string{"hr", "staff"}}, {ID: "eu", Groups: []string{"EU"}}, {}, root}
+	for _, rule := range rules {
+		s, _ := openStore(t, Options{})
+		ctx := context.Background()
+		def := `{"name": "Doc", "variables": {"owner": {"type": "text", "index": true}, "region": {"type": "text"}, "n": {"type": "number"}},
+ "states": {"initial": "a", "list": ["a"]}, "access": {"read": "` + rule + `"}}`
+		if _, err := s.DefineClass(ctx, []byte(def)); err != nil {
+			t.Fatalf("%s: %v", rule, err)
+		}
+		var ids []string
+		for _, owner := range []any{"ann", "bob", "hana", nil} {
+			for _, region := range []any{"EU", "US", nil} {
+				for _, n := range []any{0, 1, 2, nil} {
+					doc, err := s.Create(ctx, "Doc", Values{"owner": owner, "region": region, "n": n}, As(root))
+					if err != nil {
+						t.Fatal(err)
+					}
+					ids = append(ids, doc.ID)
+				}
+			}
+		}
+		for _, p := range callers {
+			byID := map[string]bool{}
+			for _, id := range ids {
+				_, err := s.Get(ctx, "Doc", id, As(p))
+				switch {
+				case err == nil:
+					byID[id] = true
+				case code(err) != CodeUnknownDocument:
+					t.Fatalf("%s for %q: a read by id: %v", rule, p.ID, err)
+				}
+			}
+			for _, where := range []string{"", "n >= 1", "region = \"EU\" OR owner = \"bob\""} {
+				f := Filter{Class: "Doc", Where: where}
+				// What the filter should show: what a read by id shows
+				// of what an administrator's filter shows.
+				all, err := s.Query(ctx, f, As(root))
+				if err != nil {
+					t.Fatal(err)
+				}
+				want := []string{}
+				for _, d := range all {
+					if byID[d.ID] {
+						want = append(want, d.ID)
+					}
+				}
+				docs, err := s.Query(ctx, f, As(p))
+				if err != nil {
+					t.Fatalf("%s for %q: the filter %q: %v", rule, p.ID, where, err)
+				}
+				got := []string{}
+				for _, d := range docs {
+					got = append(got, d.ID)
+				}
+				if strings.Join(got, ",") != strings.Join(want, ",") {
+					t.Errorf("%s for %q: the filter %q shows %d documents and a read by id %d", rule, p.ID, where, len(got), len(want))
+				}
+				if n, err := s.Count(ctx, f, As(p)); err != nil || int(n) != len(want) {
+					t.Errorf("%s for %q: the count %q is %d (%v) and a read by id shows %d", rule, p.ID, where, n, err, len(want))
+				}
+			}
+		}
+		s.Close()
+	}
+}
+
+// A caller who sees only their own documents lists them through the
+// index on the owner (ADR-0049, item 5): the caller's part of the rule is
+// decided first, and what is left compares a column with one value.
+func TestAccess_OwnDocumentsThroughTheIndex(t *testing.T) {
+	s, _ := openStore(t, Options{})
+	ctx := context.Background()
+	const def = `{"name": "Doc", "variables": {"owner": {"type": "text", "default": "USER()", "index": true}, "n": {"type": "number"}},
+ "states": {"initial": "a", "list": ["a"]}, "access": {"read": "owner = USER() OR INGROUP(\"hr\")"}}`
+	if _, err := s.DefineClass(ctx, []byte(def)); err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 50; i++ {
+		p := clerkAnn
+		if i%5 != 0 {
+			p = Principal{ID: "u" + strings.Repeat("x", i%7), Groups: []string{"staff"}}
+		}
+		if _, err := s.Create(ctx, "Doc", Values{"n": i}, As(p)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	plan := func(p Principal) string {
+		t.Helper()
+		c, _ := s.class("Doc")
+		o := options{principal: p}
+		compiled, err := query.Compile(query.Filter{Class: "Doc"}, c.cls, s.sources(), caller(o))
+		if err != nil {
+			t.Fatal(err)
+		}
+		text := `SELECT "id" FROM ` + quote(c.cls.Name)
+		if compiled.Where != "" {
+			text += " WHERE " + compiled.Where
+		}
+		rows, err := s.db.QueryContext(ctx, "EXPLAIN QUERY PLAN "+text, append(append([]any{}, compiled.Args...), s.contextArgs(o)...)...)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer rows.Close()
+		var detail string
+		for rows.Next() {
+			var a, b, c int
+			var d string
+			if err := rows.Scan(&a, &b, &c, &d); err != nil {
+				t.Fatal(err)
+			}
+			detail += d + "\n"
+		}
+		return detail
+	}
+	if detail := plan(clerkAnn); !strings.Contains(detail, "doc_Doc_owner") || strings.Contains(detail, "SCAN") {
+		t.Errorf("a clerk's listing does not read through the index on owner:\n%s", detail)
+	}
+	if detail := plan(hr); strings.Contains(detail, "doc_Doc_owner") {
+		t.Errorf("HR's listing, which the rule does not narrow, reads the index on owner:\n%s", detail)
+	}
+	if docs, err := s.Query(ctx, Filter{Class: "Doc"}, As(clerkAnn)); err != nil || len(docs) != 10 {
+		t.Errorf("ann's listing: %v %d", err, len(docs))
+	}
+	if n, err := s.Count(ctx, Filter{Class: "Doc"}, As(hr)); err != nil || n != 50 {
+		t.Errorf("HR's count: %v %d", err, n)
+	}
+	if n, err := s.Count(ctx, Filter{Class: "Doc"}, As(guest)); err != nil || n != 0 {
+		t.Errorf("a stranger's count: %v %d", err, n)
 	}
 }

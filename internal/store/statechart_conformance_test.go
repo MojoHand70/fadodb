@@ -80,6 +80,9 @@ type scriptPrincipal struct {
 	ID     string   `json:"id"`
 	Groups []string `json:"groups,omitempty"`
 	Admin  bool     `json:"admin,omitempty"`
+	// Kind is what the principal is and For whom it acts for (ADR-0050).
+	Kind string `json:"kind,omitempty"`
+	For  string `json:"for,omitempty"`
 }
 
 type scriptStep struct {
@@ -157,6 +160,10 @@ type scriptExpect struct {
 	Stays   [][]any           `json:"stays,omitempty"`
 	Origins []string          `json:"origins,omitempty"`
 	Life    map[string]string `json:"life,omitempty"`
+	// Actors are the actors of the document's events so far, in order
+	// (ADR-0050): each the actor's id, then what it was and for whom it
+	// acted where the host program said, as "agent-7 agent for ann".
+	Actors []string `json:"actors,omitempty"`
 	// Absent and Present are variables that must be missing from, or
 	// found in, the values of the document, or of every document a query
 	// returned (ADR-0041).
@@ -413,7 +420,7 @@ func runStatechartSuite(t *testing.T, suite *statechartSuite) {
 			if !ok {
 				t.Fatalf("%s: unknown principal %s", name, step.As)
 			}
-			opts = append(opts, As(Principal{ID: p.ID, Groups: p.Groups, Admin: p.Admin}))
+			opts = append(opts, As(Principal{ID: p.ID, Groups: p.Groups, Admin: p.Admin, Kind: p.Kind, For: p.For}))
 		}
 		if step.Key != "" {
 			opts = append(opts, Key(step.Key))
@@ -788,6 +795,27 @@ func runStatechartSuite(t *testing.T, suite *statechartSuite) {
 			}
 			if !reflect.DeepEqual(got, want.History) {
 				t.Errorf("%s: history %v, want %v", name, got, want.History)
+			}
+		}
+		if want.Actors != nil {
+			events, err := s.Events(ctx, class, id, As(Principal{Admin: true}))
+			if err != nil {
+				t.Errorf("%s: %v", name, err)
+				continue
+			}
+			got := []string{}
+			for _, e := range events {
+				who := e.ActorID
+				if e.ActorKind != "" {
+					who += " " + e.ActorKind
+				}
+				if e.ActorFor != "" {
+					who += " for " + e.ActorFor
+				}
+				got = append(got, who)
+			}
+			if !reflect.DeepEqual(got, want.Actors) {
+				t.Errorf("%s: actors %v, want %v", name, got, want.Actors)
 			}
 		}
 		if want.Events != nil {

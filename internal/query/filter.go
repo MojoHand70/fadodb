@@ -61,6 +61,14 @@ type Principal struct {
 	Admin  bool
 }
 
+// named says of an operand of a comparison that it is the caller's id
+// and that the caller has one: USER() is then a value that is not blank,
+// and a column compared with it needs no care for blanks.
+func (p Principal) named(n formula.Node) bool {
+	call, ok := n.(*formula.Call)
+	return ok && call.Name == "USER" && len(call.Args) == 0 && p.ID != ""
+}
+
 // Error is a refusal of a filter: a code of the store's list, the element
 // of the filter it is about, the variable when the finding is about one,
 // the byte offset inside where when the finding is in the formula, a
@@ -114,6 +122,9 @@ var systemColumns = []formula.Variable{
 type column struct {
 	name string // the SQL column
 	typ  formula.Type
+	// indexed says the column has an index: the id, and a variable
+	// declared with one.
+	indexed bool
 }
 
 // Compile binds a filter against a class and translates it for SQLite.
@@ -139,6 +150,9 @@ func Compile(f Filter, cls *model.Class, sources formula.Sources, p Principal) (
 		return nil, &Error{Code: CodeBadValue, Element: "offset", Pos: -1, Message: fmt.Sprintf("the offset is not negative, got %d", f.Offset)}
 	}
 	quoted := quoter(cols)
+	// led says the caller's own condition compares an indexed column, so
+	// that it leads the statement to an index by itself.
+	led := false
 	if strings.TrimSpace(f.Where) != "" {
 		node, err := formula.Parse(f.Where)
 		if err != nil {
@@ -176,10 +190,11 @@ func Compile(f Filter, cls *model.Class, sources formula.Sources, p Principal) (
 		if stmt.Error != "" {
 			where = "(" + stmt.Error + ") IS NULL AND " + where
 		}
-		pre, args := prefilter(node, f.Where, cols, d, constantOf(f.Where, scope, sources, d, quoted), "f")
+		pre, args, indexed := prefilter(node, f.Where, cols, d, constantOf(f.Where, scope, sources, d, quoted), "f", p.named)
 		if pre != "" {
 			where = pre + " AND (" + where + ")"
 		}
+		led = indexed
 		plan.Where = where
 		plan.Args = args
 		plan.Prog = prog
@@ -188,17 +203,26 @@ func Compile(f Filter, cls *model.Class, sources formula.Sources, p Principal) (
 	// from the formula the Go VM runs for a read by id, so that a filter
 	// and a count leave out what the caller may not see.
 	if !p.Admin {
-		rp, err := readPlanFor(cls, scope, cols, sources, d, quoted)
+		rp, err := readPlanFor(cls, scope, cols, sources, d, quoted, p)
 		if err != nil {
 			return nil, err
 		}
-		if rp.where != "" {
+		// The rule offers its own comparisons to an index only where the
+		// caller's condition offers none: with both, SQLite, which knows
+		// nothing of how many rows each finds, may take the rule's index
+		// and read every document of the caller to find one by its
+		// number.
+		where, args := rp.where, rp.args
+		if led {
+			where, args = rp.plain, nil
+		}
+		if where != "" {
 			if plan.Where == "" {
-				plan.Where = rp.where
+				plan.Where = where
 			} else {
-				plan.Where = "(" + plan.Where + ") AND " + rp.where
+				plan.Where = "(" + plan.Where + ") AND " + where
 			}
-			plan.Args = append(plan.Args[:len(plan.Args):len(plan.Args)], rp.args...)
+			plan.Args = append(plan.Args[:len(plan.Args):len(plan.Args)], args...)
 		}
 	}
 	// Order: by id unless told otherwise.
@@ -330,36 +354,114 @@ func constantOf(src string, scope *formula.Scope, sources formula.Sources, d for
 	}
 }
 
-// readPlans keeps the read rule of each class as a predicate (ADR-0049,
-// item 5). It depends on the caller through the context parameters of the
-// dialect alone, so one text serves every caller; Forget drops it with
-// the class.
-var readPlans sync.Map // *model.Class → *readPlan
+// readRules keeps the read rule of each class, parsed once, with the
+// predicates made of it (ADR-0049, item 5); Forget drops it with the
+// class.
+var readRules sync.Map // *model.Class → *readRule
 
-type readPlan struct {
-	// where is the predicate, "" when the class has no read rule and a
-	// rule left out lets every caller through.
-	where string
-	// args are the named parameters of the literals in it.
-	args []any
+// readRule is the read rule of a class: its tree, the INGROUP calls in
+// it that the caller alone decides, and the predicate for each outcome of
+// those calls.
+//
+// The rule is not written into the statement as it stands. A call such
+// as INGROUP("finance") has one answer for the whole statement, so it is
+// answered first and the rule folded around it. For a member of finance,
+// owner = USER() OR INGROUP("finance") is TRUE and adds nothing; for
+// anybody else it is owner = USER(), a comparison of a column with one
+// value, which an index on the column answers. A statement is kept for
+// each outcome, not for each caller.
+type readRule struct {
+	src  string
+	node formula.Node
+	// groups are the INGROUP calls of a text literal that stand on the
+	// logical skeleton of the rule, under AND, OR and NOT alone: at most
+	// 64, one bit of an outcome each.
+	groups []*formula.Call
+	mu     sync.Mutex
+	plans  map[readOutcome]*readPlan
 }
 
-func readPlanFor(cls *model.Class, scope *formula.Scope, cols map[string]column, sources formula.Sources, d formula.Dialect, quoted func(formula.Slot) string) (*readPlan, error) {
-	if cached, ok := readPlans.Load(cls); ok {
-		return cached.(*readPlan), nil
+// readOutcome is what a caller decides of a read rule before any row is
+// read: the answers of its INGROUP calls, one bit each, and whether the
+// caller has an id, which lets a comparison with USER() be written as
+// one with a value that is not blank.
+type readOutcome struct {
+	groups uint64
+	named  bool
+}
+
+type readPlan struct {
+	// where is the predicate: "" when the rule lets the caller see every
+	// document, "0" when it lets them see none. Before the rule itself it
+	// carries the rule's comparisons on bare columns, which an index
+	// answers, and args are the named parameters of their literals.
+	where string
+	args  []any
+	// plain is the rule without them, for a filter whose own condition
+	// leads to an index.
+	plain string
+}
+
+// maxReadPlans bounds the predicates kept for one class.
+const maxReadPlans = 256
+
+// The predicates of a class without a read rule: every caller sees
+// every document, or none but an administrator does (ADR-0049, the open
+// question A).
+var (
+	readAll  = &readPlan{}
+	readNone = &readPlan{where: "0", plain: "0"}
+)
+
+func readPlanFor(cls *model.Class, scope *formula.Scope, cols map[string]column, sources formula.Sources, d formula.Dialect, quoted func(formula.Slot) string, p Principal) (*readPlan, error) {
+	if cls.Access == nil || cls.Access.Read == nil {
+		if model.LeftOutAllows {
+			return readAll, nil
+		}
+		return readNone, nil
 	}
-	rp := &readPlan{}
-	switch {
-	case cls.Access != nil && cls.Access.Read != nil:
+	var rr *readRule
+	if cached, ok := readRules.Load(cls); ok {
+		rr = cached.(*readRule)
+	} else {
 		src := cls.Def.Access.Read
+		node, err := formula.Parse(src)
+		if err != nil {
+			return nil, &Error{Code: CodeBadFormula, Element: "access/read", Pos: -1, Message: "the read rule of " + cls.Name + " does not read: " + err.Error()}
+		}
+		rr = &readRule{src: src, node: node, plans: map[readOutcome]*readPlan{}}
+		rr.collect(node)
+		if len(rr.groups) > 64 {
+			rr.groups = nil
+		}
+		cached, _ := readRules.LoadOrStore(cls, rr)
+		rr = cached.(*readRule)
+	}
+	// The outcome of the caller's part: one bit for each INGROUP call.
+	var mask uint64
+	for i, call := range rr.groups {
+		if inGroups([]string{call.Args[0].(*formula.TextLit).Value}, p.Groups) {
+			mask |= 1 << i
+		}
+	}
+	key := readOutcome{groups: mask, named: p.ID != ""}
+	rr.mu.Lock()
+	defer rr.mu.Unlock()
+	if rp, ok := rr.plans[key]; ok {
+		return rp, nil
+	}
+	f := folder{rr: rr, mask: mask, scope: scope, sources: sources, d: d, quoted: quoted}
+	node := f.fold(rr.node)
+	rp := &readPlan{}
+	if lit, ok := node.(*formula.BoolLit); ok {
+		if !lit.Value {
+			rp.where, rp.plain = "0", "0"
+		}
+	} else {
 		refused := func(msg string) error {
 			return &Error{Code: CodeBadFormula, Element: "access/read", Pos: -1, Message: "the read rule of " + cls.Name + " does not translate to SQL: " + msg}
 		}
-		node, err := formula.Parse(src)
-		if err != nil {
-			return nil, refused(err.Error())
-		}
-		prog, err := formula.BindNode(src, node, scope, formula.BindOptions{Sources: sources})
+		prog, err := formula.BindNode(rr.src, node, scope, formula.BindOptions{Sources: sources})
 		if err != nil {
 			return nil, refused(err.Error())
 		}
@@ -373,17 +475,126 @@ func readPlanFor(cls *model.Class, scope *formula.Scope, cols map[string]column,
 		if stmt.Error != "" {
 			where = "(" + stmt.Error + ") IS NULL AND " + where
 		}
-		pre, args := prefilter(node, src, cols, d, constantOf(src, scope, sources, d, quoted), "r")
+		rp.plain = "(" + where + ")"
+		pre, args, _ := prefilter(node, rr.src, cols, d, constantOf(rr.src, scope, sources, d, quoted), "r", p.named)
 		if pre != "" {
 			where = pre + " AND (" + where + ")"
 		}
 		rp.where, rp.args = "("+where+")", args
-	case !model.LeftOutAllows:
-		// No read rule: nobody but an administrator sees a document.
-		rp.where = "0"
 	}
-	readPlans.Store(cls, rp)
+	if len(rr.plans) < maxReadPlans {
+		rr.plans[key] = rp
+	}
 	return rp, nil
+}
+
+// collect finds the INGROUP calls of a text literal on the logical
+// skeleton of the rule: the operands of AND, OR and NOT, from the root.
+func (rr *readRule) collect(n formula.Node) {
+	switch n := n.(type) {
+	case *formula.Binary:
+		if n.Op == formula.TokAnd || n.Op == formula.TokOr {
+			rr.collect(n.L)
+			rr.collect(n.R)
+		}
+	case *formula.Unary:
+		if n.Op == formula.TokNot {
+			rr.collect(n.X)
+		}
+	case *formula.Call:
+		if n.Name == "INGROUP" && len(n.Args) == 1 {
+			if _, ok := n.Args[0].(*formula.TextLit); ok {
+				rr.groups = append(rr.groups, n)
+			}
+		}
+	}
+}
+
+// folder folds a read rule around the answers of its INGROUP calls for
+// one outcome. It makes new nodes and leaves the rule's tree as parsed.
+type folder struct {
+	rr      *readRule
+	mask    uint64
+	scope   *formula.Scope
+	sources formula.Sources
+	d       formula.Dialect
+	quoted  func(formula.Slot) string
+}
+
+// fold answers the INGROUP calls and simplifies AND, OR and NOT around
+// them, by the rules the evaluators follow (ADR-0019): AND and OR stop at
+// the operand that decides them, left to right, so an operand left of a
+// deciding constant is dropped only when it cannot stop with an error,
+// and an operand is put in place of an AND or an OR only when it is a
+// condition itself.
+func (f *folder) fold(n formula.Node) formula.Node {
+	switch n := n.(type) {
+	case *formula.Call:
+		for i, call := range f.rr.groups {
+			if call == n {
+				return &formula.BoolLit{Value: f.mask&(1<<i) != 0, P: n.P}
+			}
+		}
+	case *formula.Unary:
+		if n.Op != formula.TokNot {
+			break
+		}
+		x := f.fold(n.X)
+		if lit, ok := x.(*formula.BoolLit); ok {
+			return &formula.BoolLit{Value: !lit.Value, P: n.P}
+		}
+		if x != n.X {
+			return &formula.Unary{Op: n.Op, X: x, P: n.P}
+		}
+	case *formula.Binary:
+		if n.Op != formula.TokAnd && n.Op != formula.TokOr {
+			break
+		}
+		l, r := f.fold(n.L), f.fold(n.R)
+		and := n.Op == formula.TokAnd
+		if lit, ok := l.(*formula.BoolLit); ok {
+			if lit.Value != and {
+				// FALSE AND x, TRUE OR x: the right side is never asked.
+				return &formula.BoolLit{Value: lit.Value, P: n.P}
+			}
+			// TRUE AND x, FALSE OR x: x decides.
+			if isBool, _ := f.probe(r); isBool {
+				return r
+			}
+		} else if lit, ok := r.(*formula.BoolLit); ok {
+			isBool, fails := f.probe(l)
+			if lit.Value != and && !fails {
+				// x AND FALSE, x OR TRUE, where x cannot stop with an error.
+				return &formula.BoolLit{Value: lit.Value, P: n.P}
+			}
+			if lit.Value == and && isBool {
+				// x AND TRUE, x OR FALSE: x decides.
+				return l
+			}
+		}
+		if l != n.L || r != n.R {
+			return &formula.Binary{Op: n.Op, L: l, R: r, P: n.P}
+		}
+	}
+	return n
+}
+
+// probe says of an operand whether it is a condition, and whether it may
+// stop with an error on some row, which the SQL generator knows: it
+// writes an error expression for exactly those.
+func (f *folder) probe(n formula.Node) (isBool, fails bool) {
+	if _, ok := n.(*formula.BoolLit); ok {
+		return true, false
+	}
+	prog, err := formula.BindNode(f.rr.src, n, f.scope, formula.BindOptions{Sources: f.sources})
+	if err != nil {
+		return false, true
+	}
+	stmt, err := formula.GenerateSQLBound(prog, f.d, formula.SQLBinding{Column: f.quoted, Row: quoteIdent})
+	if err != nil {
+		return false, true
+	}
+	return prog.Result.Kind == formula.KindBool, stmt.Error != ""
 }
 
 // scopeOf is what the formulas of a filter over a class bind against: the
@@ -394,7 +605,7 @@ func scopeOf(cls *model.Class) (*formula.Scope, map[string]column, error) {
 	vars := make([]formula.Variable, 0, len(systemColumns)+len(cls.Variables))
 	for _, sc := range systemColumns {
 		vars = append(vars, sc)
-		cols[strings.ToUpper(sc.Name)] = column{name: sc.Name, typ: sc.Type}
+		cols[strings.ToUpper(sc.Name)] = column{name: sc.Name, typ: sc.Type, indexed: sc.Name == "id"}
 	}
 	for _, v := range cls.Variables {
 		vars = append(vars, formula.Variable{Name: v.Name, Type: v.Type})
@@ -405,7 +616,7 @@ func scopeOf(cls *model.Class) (*formula.Scope, map[string]column, error) {
 				continue
 			}
 		}
-		cols[strings.ToUpper(c.Path)] = column{name: c.Name, typ: c.Type}
+		cols[strings.ToUpper(c.Path)] = column{name: c.Name, typ: c.Type, indexed: c.Index}
 	}
 	scope, err := formula.NewScope(vars...)
 	if err != nil {
@@ -534,7 +745,7 @@ func rightsPlanFor(cls *model.Class, d formula.Dialect, column func(formula.Slot
 // longer holds.
 func Forget(cls *model.Class) {
 	rightsPlans.Delete(cls)
-	readPlans.Delete(cls)
+	readRules.Delete(cls)
 }
 
 // predicate is the condition over the row for the principal: "" when
@@ -612,9 +823,8 @@ func formulaError(err error) *Error {
 // an index answers. When a blank would satisfy the comparison, the blank
 // rows are kept with "OR column IS NULL". Money columns, and literals that
 // do not fit the column's scale, are left to the exact predicate.
-func prefilter(n formula.Node, src string, cols map[string]column, d formula.Dialect, constant func(formula.Node) (string, formula.Kind, bool), prefix string) (string, []any) {
+func prefilter(n formula.Node, src string, cols map[string]column, d formula.Dialect, constant func(formula.Node) (string, formula.Kind, bool), prefix string, notBlank func(formula.Node) bool) (pre string, args []any, indexed bool) {
 	var terms []string
-	var args []any
 	var walk func(formula.Node)
 	walk = func(n formula.Node) {
 		b, ok := n.(*formula.Binary)
@@ -642,8 +852,17 @@ func prefilter(n formula.Node, src string, cols map[string]column, d formula.Dia
 			if c == nil {
 				return
 			}
+			zero := "0"
 			switch c.typ.Kind {
 			case formula.KindDate, formula.KindDateTime, formula.KindNumber:
+			case formula.KindText:
+				// A text against the caller, owner = USER(): equality
+				// alone, which is exact on the bare column as it is
+				// against a literal. A blank on either side reads "".
+				if op != "=" {
+					return
+				}
+				zero = "''"
 			default:
 				return
 			}
@@ -654,8 +873,16 @@ func prefilter(n formula.Node, src string, cols map[string]column, d formula.Dia
 			if fl {
 				op = flip[op]
 			}
-			val = "COALESCE(" + val + ", 0)"
-			terms = append(terms, "("+quoteIdent(c.name)+" "+op+" "+val+" OR ("+quoteIdent(c.name)+" IS NULL AND 0 "+op+" "+val+"))")
+			indexed = indexed || c.indexed
+			if c.typ.Kind == formula.KindText && notBlank(expr) {
+				// The value is not blank, so no blank column equals it:
+				// the bare comparison is exact, and seeks the index as
+				// one with a literal does.
+				terms = append(terms, quoteIdent(c.name)+" = "+val)
+				return
+			}
+			val = "COALESCE(" + val + ", " + zero + ")"
+			terms = append(terms, "("+quoteIdent(c.name)+" "+op+" "+val+" OR ("+quoteIdent(c.name)+" IS NULL AND "+zero+" "+op+" "+val+"))")
 			return
 		}
 		if flipped {
@@ -672,9 +899,10 @@ func prefilter(n formula.Node, src string, cols map[string]column, d formula.Dia
 		}
 		terms = append(terms, term)
 		args = append(args, sql.Named(name, val))
+		indexed = indexed || col.indexed
 	}
 	walk(n)
-	return strings.Join(terms, " AND "), args
+	return strings.Join(terms, " AND "), args, indexed
 }
 
 var sargable = map[formula.TokenKind]string{

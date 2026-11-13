@@ -39,7 +39,7 @@ read the diagnostics, fix, preview against live data, define.
 | field rights per state, per-transition rules | shipped with Phase 3 |
 | rules and actions | shipped with Phase 4: rules fire inside the commit with `set`, `reset`, `refresh` and `emit`, a preview lists them, and triggered variables are computed at their triggers; what a rule does beyond its own document runs through the outbox, exactly once and as the person who caused it: `create` (with `each`, one document per element of a list), `transition` and `refresh` of another document, `table.insert`, `table.update`, `table.delete`; a rule may also call an action that has a definition, with typed `args`, whether a Go function of the host program implements it or the engine sends it as an HTTP request, and `http.call` for one request written in the rule; `Actions` lists every action a rule may name and whether this process can run it; `into` writes what an action returned, or the code it failed with, back to the document, and the eventless transitions follow |
 | action definitions: `DefineAction`, `ValidateAction`, `Actions`, `PreviewAction`, `TryAction` | shipped with Phase 4: a definition with a `request` needs no code and reads secrets with `SECRET("name")`; it can be defined only where the host program allows outbound calls and names the definition's connection; `docs/actions.md` is the guide and `examples/actions/webhook.json` a generic webhook; definitions for particular services come with real needs, and a format for packages of them is planned |
-| the class-level access rules: `"access": {"read": ..., "create": ..., "update": ..., "delete": ...}` | shipped with Phase 5, its first step: each is a condition over the document for the caller, such as `owner = USER() OR INGROUP("finance")`. A document its caller may not `read` does not exist for them: `unknown_document` from every call that names it, and absent from a filter, a count and `Due`. `create` is asked over the new document with its defaults and computed values; `update` over the stored document, by a set, a reset and a named transition that has no rule of its own; `delete` over the stored document. A refusal is `forbidden`, with the place of the rule as its path, `/access/update`. A `read` rule uses the document's own variables, the functions of its row, the caller and the clock, and no lookup. A rule left out lets every caller through today; a ruling on that is pending (ADR-0049), so write all four |
+| the class-level access rules: `"access": {"read": ..., "create": ..., "update": ..., "delete": ...}` | shipped with Phase 5, its first step: each is a condition over the document for the caller, such as `owner = USER() OR INGROUP("finance")`. A document its caller may not `read` does not exist for them: `unknown_document` from every call that names it, and absent from a filter, a count and `Due`. `create` is asked over the new document with its defaults and computed values; `update` over the stored document, by a set, a reset and a named transition that has no rule of its own; `delete` over the stored document. A refusal is `forbidden`, with the place of the rule as its path, `/access/update`. A `read` rule uses the document's own variables, the functions of its row, the caller and the clock, and no lookup. Put `"index": true` on the variable a read rule compares with the caller, as in `"owner": {"type": "text", "default": "USER()", "index": true}`: a caller's own documents are then listed through the index, and a group that sees everything, `OR INGROUP("finance")`, costs its members nothing. A rule left out lets every caller through today; a ruling on that is pending (ADR-0049), so write all four |
 | class versions, terminal states, migrations | shipped: a redefinition is a new version and touches no document; a document adopts it at its next commit, or all at once with `Migrate`; a terminal state freezes the document |
 
 ## Procedure, in outline
@@ -79,6 +79,19 @@ read the diagnostics, fix, preview against live data, define.
    `access.transition`; one without is open to whoever may `update`.
    What a rule does to another document is done as the person who set
    it off, so that person needs the other class's rules to let them.
+   **A table has two rules too**: `"access": {"read": "TRUE", "write":
+   "INGROUP(\"treasury\")"}`, each about the table as a whole. A rule's
+   `table.update` is refused when whoever set the rule off may not
+   write the table. Whether you may define at all is the host
+   program's to say: where it names designers, be in one of their
+   groups or expect `forbidden`.
+   **Say what agents may do.** A caller is a person, an agent or a
+   service, and may act for somebody: `USERKIND()` and `ACTINGFOR()`
+   say so. Keep a decision for a person with `USERKIND() = "person"`,
+   never with `<> "agent"`, which a caller of unknown kind would pass.
+   Let an assistant in with `owner = USER() OR owner = ACTINGFOR()`.
+   `USER()` is always the one who acts, the assistant and not the
+   person it works for.
 7. **Validate.** Today through `ValidateClass` on the Go API, and
    `ValidateClasses` for classes that name each other, whose findings
    start with the position of the definition, `/1/variables/total`; a

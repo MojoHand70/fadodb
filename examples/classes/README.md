@@ -40,7 +40,9 @@ call an action that has a definition, and `http.call`, which sends one
 request. A sample cannot bring a definition, a Go function or the host
 program's leave to send, so no sample here names a defined action, and
 one that names `http.call` says that it runs only where the host
-program allows the host. The class-level access rule is not enforced
-before Phase 5.
+program allows the host. The class-level access rules are enforced: a
+sample that declares one, as the invoice does, is seen and changed only
+by the callers its rules let through, and a rule a sample leaves out
+lets every caller through.
 A sample that depends on them says so in a `"description"` the reader
 sees, never silently.

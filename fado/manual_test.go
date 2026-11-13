@@ -120,7 +120,8 @@ func TestManualLinks(t *testing.T) {
 	}
 }
 
-// manualPages lists the chapters and the guides of the manual.
+// manualPages lists the chapters and the guides of the manual, and the
+// skills, which teach an agent from the same examples.
 func manualPages(t *testing.T) []string {
 	t.Helper()
 	var pages []string
@@ -134,7 +135,12 @@ func manualPages(t *testing.T) []string {
 	if len(pages) == 0 {
 		t.Fatal("no chapters found")
 	}
-	return pages
+	// The skills show classes to agents, and are held to the same.
+	skills, err := filepath.Glob(filepath.Join("..", "skills", "*", "SKILL.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return append(pages, skills...)
 }
 
 // kindOf says what a block of JSON in the manual is: a whole class, a

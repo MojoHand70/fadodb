@@ -32,6 +32,10 @@ All notable changes to FadoDB are recorded here. The format follows
   reference table, move many documents at once, change a class that
   already has documents, and do something outside when a document
   changes.
+- The designer's skill teaches the syntax: what to read in the manual,
+  a small class that is complete, and the ten things that go wrong
+  most often. It is no longer a stub. The classes the skills show are
+  defined by the engine in the manual's test.
 
 ## [0.5.0] - 2026-11-13
 

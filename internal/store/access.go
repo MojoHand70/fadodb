@@ -180,7 +180,8 @@ func (s *Store) seesRow(c, vc *class, row *docRow, o options) bool {
 	}
 	ev := s.reader()
 	defer s.release(ev)
-	ev.ctx = formula.Context{User: o.principal.ID, Groups: o.principal.Groups, Now: s.clock(o), State: row.state, ID: row.id}
+	ev.ctx = contextOf(o.principal, s.clock(o))
+	ev.ctx.State, ev.ctx.ID = row.state, row.id
 	ok, _ := ev.may(c, ruleRead, row, &ev.ctx, o.principal)
 	return ok
 }
@@ -227,7 +228,8 @@ func (s *Store) hiddenFor(c, vc *class, row *docRow, o options) map[string]bool 
 	}
 	ev := s.reader()
 	defer s.release(ev)
-	ev.ctx = formula.Context{User: o.principal.ID, Groups: o.principal.Groups, Now: s.clock(o), State: row.state, ID: row.id}
+	ev.ctx = contextOf(o.principal, s.clock(o))
+	ev.ctx.State, ev.ctx.ID = row.state, row.id
 	var hidden map[string]bool
 	for i, cell := range c.cells(row.state) {
 		if cell.read == nil {

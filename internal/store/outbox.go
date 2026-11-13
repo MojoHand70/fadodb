@@ -96,9 +96,13 @@ type QueuedAction struct {
 	// PrincipalID is who the action runs as: the principal of the command
 	// whose commit queued it (ADR-0044, item 11).
 	PrincipalID string `json:"principal_id,omitempty"`
-	Depth       int    `json:"depth"`
-	Status      string `json:"status"`
-	Attempts    int    `json:"attempts"`
+	// PrincipalKind is what that principal was, person, agent or service,
+	// and PrincipalFor the id it acted for (ADR-0050).
+	PrincipalKind string `json:"principal_kind,omitempty"`
+	PrincipalFor  string `json:"principal_for,omitempty"`
+	Depth         int    `json:"depth"`
+	Status        string `json:"status"`
+	Attempts      int    `json:"attempts"`
 	// DueAt is when the next attempt may run, seconds since the epoch.
 	DueAt int64 `json:"due_at"`
 	// ErrorCode and ErrorMessage are the last failure.
@@ -528,6 +532,40 @@ func (s *Store) evalTemplate(run *ruleRun, row *docRow, t *model.Template) (any,
 	return t.Literal, nil
 }
 
+// principalText is what an outbox row keeps of its principal beside the
+// id and the administrator's flag: the groups, as a JSON array, and for a
+// principal that says what it is or for whom it acts (ADR-0050) an object
+// with the groups, the kind and the id acted for. Most rows have neither,
+// and are written and read as before: the row gained no column, since
+// the driver allocates for every column the statement that reads the due
+// rows returns, on every action the worker runs.
+func principalText(p Principal) []byte {
+	if p.Kind == "" && p.For == "" {
+		groups, _ := json.Marshal(p.Groups)
+		return groups
+	}
+	more, _ := json.Marshal(principalMore{Groups: p.Groups, Kind: p.Kind, For: p.For})
+	return more
+}
+
+type principalMore struct {
+	Groups []string `json:"groups"`
+	Kind   string   `json:"kind,omitempty"`
+	For    string   `json:"for,omitempty"`
+}
+
+// readPrincipalText reads what principalText wrote into the principal.
+func readPrincipalText(text string, p *Principal) {
+	if strings.HasPrefix(text, "{") {
+		var more principalMore
+		if json.Unmarshal([]byte(text), &more) == nil {
+			p.Groups, p.Kind, p.For = more.Groups, more.Kind, more.For
+		}
+		return
+	}
+	_ = json.Unmarshal([]byte(text), &p.Groups)
+}
+
 // writeQueued writes the outbox rows of one commit of a command, in the
 // commit's transaction: commit is 0 for the command's own and n for its
 // n-th eventless transition, eventID that commit's event and version the
@@ -535,7 +573,7 @@ func (s *Store) evalTemplate(run *ruleRun, row *docRow, t *model.Template) (any,
 // too_deep and its action_failed event.
 func (s *Store) writeQueued(ctx context.Context, c *class, cmd *command, commit int, eventID, docID string, version int64, day, secs int64, now time.Time) (int, error) {
 	p := cmd.o.principal
-	groups, _ := json.Marshal(p.Groups)
+	groups := principalText(p)
 	n := 0
 	for i := range s.queued {
 		q := &s.queued[i]
@@ -573,7 +611,10 @@ func (s *Store) writeQueued(ctx context.Context, c *class, cmd *command, commit 
 // of its document. With OutboxOptions.Manual it is the only thing that
 // runs actions; beside a running worker it leaves alone the documents
 // whose action the worker has in flight.
-func (s *Store) Drain(ctx context.Context) (int, error) {
+func (s *Store) Drain(ctx context.Context, opts ...Option) (int, error) {
+	if _, e := s.worker(workOperate, opts); e != nil {
+		return 0, e
+	}
 	s.drainMu.Lock()
 	defer s.drainMu.Unlock()
 	n := 0
@@ -655,9 +696,11 @@ func (s *Store) dueRows(ctx context.Context, due *sql.Stmt, now int64) ([]*outbo
 			return nil, storageErr("read the outbox", err)
 		}
 		r.args = []byte(args)
+		// The row runs as the principal of the command that queued it,
+		// with what that principal was and for whom it acted (ADR-0050).
 		r.principal = Principal{ID: id.String, Admin: admin != 0}
 		if groups.Valid {
-			_ = json.Unmarshal([]byte(groups.String), &r.principal.Groups)
+			readPrincipalText(groups.String, &r.principal)
 		}
 		out = append(out, r)
 	}
@@ -835,6 +878,7 @@ func (s *Store) finish(ctx context.Context, row *outboxRow, status string, attem
 		return "", storageErr("mark the action", err)
 	}
 	ev := eventInfo{kind: kind, name: row.action, cause: row.eventID}
+	s.actAs(row.principal)
 	return id, s.writeEvent(ctx, id, row.class, row.docID, ev, row.principal.ID, nil, nil, "", "", day, secs)
 }
 
@@ -874,6 +918,11 @@ func (s *Store) perform(ctx context.Context, row *outboxRow, day int64, now time
 	case model.ActionTableInsert, model.ActionTableUpdate, model.ActionTableDelete:
 		t, e := s.table(args.Table)
 		if e != nil {
+			return nil, false, e
+		}
+		// The write rule of the table, asked of the person who set the
+		// rule off (ADR-0051, item 7).
+		if e := s.tableRefusal(t, true, row.principal, now.Unix()); e != nil {
 			return nil, false, e
 		}
 		return nil, false, s.tableAction(ctx, t, row.action, args.Row, args.Key, args.Set)
@@ -1013,7 +1062,10 @@ func asError(err error) *Error {
 // Outbox lists rows of the outbox in the order they were queued
 // (ADR-0044, item 8): what is waiting, what ran and what is dead, each
 // with its key, its arguments, its attempts and its last error.
-func (s *Store) Outbox(ctx context.Context, f OutboxFilter) ([]QueuedAction, error) {
+func (s *Store) Outbox(ctx context.Context, f OutboxFilter, opts ...Option) ([]QueuedAction, error) {
+	if _, e := s.worker(workOperate, opts); e != nil {
+		return nil, e
+	}
 	var where []string
 	var args []any
 	if f.Status != "" {
@@ -1032,7 +1084,7 @@ func (s *Store) Outbox(ctx context.Context, f OutboxFilter) ([]QueuedAction, err
 		where = append(where, "doc_id = ?")
 		args = append(args, f.DocID)
 	}
-	text := `SELECT event_id, idx, class, doc_id, version, rule, action, args, principal_id, depth, status, attempts, due_at, error_code, error_message, created_at, finished_at, outcome_event, into_code, into_message FROM outbox`
+	text := `SELECT event_id, idx, class, doc_id, version, rule, action, args, principal_id, depth, status, attempts, due_at, error_code, error_message, created_at, finished_at, outcome_event, into_code, into_message, principal_groups FROM outbox`
 	if len(where) > 0 {
 		text += " WHERE " + strings.Join(where, " AND ")
 	}
@@ -1051,11 +1103,16 @@ func (s *Store) Outbox(ctx context.Context, f OutboxFilter) ([]QueuedAction, err
 		var q QueuedAction
 		var eventID, argsText string
 		var idx int64
-		var principal, code, message, outcome, intoCode, intoMessage sql.NullString
+		var principal, code, message, outcome, intoCode, intoMessage, more sql.NullString
 		var finished sql.NullInt64
 		if err := rows.Scan(&eventID, &idx, &q.Class, &q.DocID, &q.Version, &q.Rule, &q.Action, &argsText, &principal, &q.Depth, &q.Status, &q.Attempts, &q.DueAt,
-			&code, &message, &q.CreatedAt, &finished, &outcome, &intoCode, &intoMessage); err != nil {
+			&code, &message, &q.CreatedAt, &finished, &outcome, &intoCode, &intoMessage, &more); err != nil {
 			return nil, storageErr("read the outbox", err)
+		}
+		if more.Valid {
+			var p Principal
+			readPrincipalText(more.String, &p)
+			q.PrincipalKind, q.PrincipalFor = p.Kind, p.For
 		}
 		q.IntoCode, q.IntoMessage = intoCode.String, intoMessage.String
 		q.Key = eventID + ":" + strconv.FormatInt(idx, 10)
@@ -1069,7 +1126,10 @@ func (s *Store) Outbox(ctx context.Context, f OutboxFilter) ([]QueuedAction, err
 // RetryAction makes a dead action pending again with its attempts at
 // zero (ADR-0044, item 8); the outcome it then reaches is a further
 // event. A dead row is never retried by itself.
-func (s *Store) RetryAction(ctx context.Context, key string) error {
+func (s *Store) RetryAction(ctx context.Context, key string, opts ...Option) error {
+	if _, e := s.worker(workOperate, opts); e != nil {
+		return e
+	}
 	i := strings.LastIndexByte(key, ':')
 	idx, perr := strconv.ParseInt(key[i+1:], 10, 64)
 	if i <= 0 || perr != nil {

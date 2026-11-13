@@ -120,6 +120,9 @@ func (s *Store) moveMany(ctx context.Context, class, name string, ids []string, 
 	if _, e := namedTransition(c, name); e != nil {
 		return nil, e
 	}
+	if e := checkPrincipal(o.principal); e != nil {
+		return nil, e
+	}
 	if !preview {
 		if err := refuseAt(o, "batch"); err != nil {
 			return nil, err

@@ -254,7 +254,10 @@ func (s *Store) Get(ctx context.Context, class, id string, opts ...Option) (*Doc
 	if e != nil {
 		return nil, e
 	}
-	o := apply(opts)
+	o, e := asked(opts)
+	if e != nil {
+		return nil, e
+	}
 	row, err := c.scanRow(c.r.getCurrent.QueryRowContext(ctx, id), false)
 	if err != nil {
 		if err == sql.ErrNoRows {
@@ -323,7 +326,10 @@ func (s *Store) Version(ctx context.Context, class, id string, version int64, op
 	if e != nil {
 		return nil, e
 	}
-	o := apply(opts)
+	o, e := asked(opts)
+	if e != nil {
+		return nil, e
+	}
 	// The past is read under the rule of today (ADR-0049, item 6): who may
 	// not see the document now is told there is no such version.
 	if seen, err := s.sees(ctx, c, id, o); err != nil {
@@ -378,7 +384,10 @@ func (s *Store) History(ctx context.Context, class, id string, opts ...Option) (
 	if e != nil {
 		return nil, e
 	}
-	o := apply(opts)
+	o, e := asked(opts)
+	if e != nil {
+		return nil, e
+	}
 	// A document the caller may not see has no history for them, as an id
 	// no document has (ADR-0049, item 6).
 	if seen, err := s.sees(ctx, c, id, o); err != nil {
@@ -429,7 +438,11 @@ func (s *Store) Events(ctx context.Context, class, id string, opts ...Option) ([
 	if e != nil {
 		return nil, e
 	}
-	if seen, err := s.sees(ctx, c, id, apply(opts)); err != nil {
+	o, e := asked(opts)
+	if e != nil {
+		return nil, e
+	}
+	if seen, err := s.sees(ctx, c, id, o); err != nil {
 		return nil, err
 	} else if !seen {
 		return nil, nil
@@ -442,12 +455,13 @@ func (s *Store) Events(ctx context.Context, class, id string, opts ...Option) ([
 	var out []*Event
 	for rows.Next() {
 		var ev Event
-		var name, from, to, actor, cause, key, code sql.NullString
+		var name, from, to, actor, cause, key, code, kind, acts sql.NullString
 		var before, after, origin sql.NullInt64
 		var day int64
-		if err := rows.Scan(&ev.ID, &ev.Class, &ev.DocID, &ev.Kind, &name, &from, &to, &actor, &before, &after, &cause, &key, &day, &ev.TS, &code, &origin); err != nil {
+		if err := rows.Scan(&ev.ID, &ev.Class, &ev.DocID, &ev.Kind, &name, &from, &to, &actor, &before, &after, &cause, &key, &day, &ev.TS, &code, &origin, &kind, &acts); err != nil {
 			return nil, storageErr("read the events", err)
 		}
+		ev.ActorKind, ev.ActorFor = kind.String, acts.String
 		ev.Name, ev.FromState, ev.ToState, ev.ActorID, ev.CauseEventID, ev.CommandKey = name.String, from.String, to.String, actor.String, cause.String, key.String
 		ev.Origin = originOf(origin.Int64)
 		if ev.Kind == EventActionFailed {

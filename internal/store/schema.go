@@ -42,7 +42,7 @@ func originSQL(alias string) string {
 
 // eventViewColumns are the columns of the events table as a class's
 // _events view shows them: every one as it is, and the origin as a word.
-var eventViewColumns = `e."event_id", e."class", e."doc_id", e."kind", e."name", e."from_state", e."to_state", e."actor_id", e."before_version", e."after_version",` +
+var eventViewColumns = `e."event_id", e."class", e."doc_id", e."kind", e."name", e."from_state", e."to_state", e."actor_id", e."actor_kind", e."actor_for", e."before_version", e."after_version",` +
 	` e."cause_event_id", e."command_key", e."command_hash", e."business_date", e."ts", ` + originSQL("e") + ` AS "origin"`
 
 // engineDDL makes the tables every database has (docs/architecture.md,
@@ -59,7 +59,7 @@ var engineDDL = []string{
 	`CREATE TABLE IF NOT EXISTS actions (name TEXT PRIMARY KEY COLLATE NOCASE, version INTEGER NOT NULL, json TEXT NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)`,
 	`CREATE TABLE IF NOT EXISTS action_versions (action TEXT NOT NULL COLLATE NOCASE, version INTEGER NOT NULL, json TEXT NOT NULL, created_at INTEGER NOT NULL, PRIMARY KEY (action, version))`,
 	`CREATE TABLE IF NOT EXISTS events (event_id TEXT PRIMARY KEY, class TEXT NOT NULL, doc_id TEXT NOT NULL, kind TEXT NOT NULL, name TEXT, from_state TEXT, to_state TEXT,
-		actor_id TEXT, before_version INTEGER, after_version INTEGER, cause_event_id TEXT, command_key TEXT, command_hash TEXT, business_date INTEGER NOT NULL, ts INTEGER NOT NULL, origin INTEGER)`,
+		actor_id TEXT, actor_kind TEXT, actor_for TEXT, before_version INTEGER, after_version INTEGER, cause_event_id TEXT, command_key TEXT, command_hash TEXT, business_date INTEGER NOT NULL, ts INTEGER NOT NULL, origin INTEGER)`,
 	`CREATE UNIQUE INDEX IF NOT EXISTS events_command_key ON events (command_key)`,
 	`CREATE INDEX IF NOT EXISTS events_class_doc ON events (class, doc_id, ts)`,
 	`CREATE INDEX IF NOT EXISTS events_business_date ON events (business_date)`,
@@ -223,12 +223,15 @@ func (c *class) viewDDL() []string {
 func (c *class) statesViewDDL() string {
 	window := `OVER (PARTITION BY h."id" ORDER BY h."version")`
 	return "CREATE VIEW " + quote(c.cls.Name+"_states") + " AS WITH e AS (" +
-		`SELECT h."id", h."state", h."version", h."valid_from", h."actor_id" AS by_id, ev."name" AS via, ` + originSQL("ev") + ` AS how, ev."from_state" AS came_from,` +
+		`SELECT h."id", h."state", h."version", h."valid_from", h."actor_id" AS by_id, ev."actor_kind" AS by_kind, ev."actor_for" AS by_for, ev."name" AS via, ` + originSQL("ev") + ` AS how, ev."from_state" AS came_from,` +
 		` lead(h."version") ` + window + ` AS next_version, lead(h."valid_from") ` + window + ` AS next_from,` +
-		` lead(h."actor_id") ` + window + ` AS next_by, lead(ev."name") ` + window + ` AS next_via, lead(` + originSQL("ev") + `) ` + window + ` AS next_how` +
+		` lead(h."actor_id") ` + window + ` AS next_by, lead(ev."actor_kind") ` + window + ` AS next_kind, lead(ev."actor_for") ` + window + ` AS next_for,` +
+		` lead(ev."name") ` + window + ` AS next_via, lead(` + originSQL("ev") + `) ` + window + ` AS next_how` +
 		` FROM ` + quote(c.history) + ` h JOIN "events" ev ON ev."event_id" = h."event_id" AND ev."kind" IN ('` + EventCreated + `', '` + EventTransition + `'))` +
 		` SELECT "id", "state", "valid_from" AS "entered_at", next_from AS "left_at", next_from - "valid_from" AS "duration", "version" AS "entry_version", next_version - 1 AS "exit_version",` +
-		` by_id AS "entered_by", came_from AS "entered_from", via AS "entered_via", how AS "entered_how", next_by AS "left_by", next_via AS "left_via", next_how AS "left_how" FROM e`
+		` by_id AS "entered_by", came_from AS "entered_from", via AS "entered_via", how AS "entered_how", next_by AS "left_by", next_via AS "left_via", next_how AS "left_how",` +
+		// What the one who made each move was, and for whom (ADR-0050).
+		` by_kind AS "entered_by_kind", by_for AS "entered_for", next_kind AS "left_by_kind", next_for AS "left_for" FROM e`
 }
 
 // prefixed qualifies every column of a comma-separated quoted list.

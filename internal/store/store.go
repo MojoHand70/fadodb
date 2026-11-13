@@ -35,7 +35,7 @@ const DefaultMaxIndexedRows = 100000
 // engineSchema is the version of the store's own tables. A database made
 // by another engine schema is refused: before 1.0 there is no upgrade
 // path, and a pre-release file is recreated.
-const engineSchema = 5
+const engineSchema = 6
 
 // Options configure Open. The ones that are properties of the database,
 // Synchronous and MaxText, are read at creation and kept in the metadata
@@ -92,6 +92,17 @@ type Options struct {
 	// result of outbound.Allow, of package fado/outbound, with the hosts
 	// that may be called.
 	Outbound Outbound
+	// Designers, Operators and Analysts name the groups whose members may
+	// do the three kinds of work that are not about one document
+	// (ADR-0051): define classes, schemas, tables and actions, preview a
+	// draft and migrate; list and retry the outbox, drain it, preview and
+	// try an action and check the blobs; run SQL, which reads every row
+	// and every variable. An administrator may do all three. A list that
+	// is empty and not nil leaves its work to administrators. A list that
+	// is nil is not asked at all, as before these options: the host
+	// program then decides by itself which of its callers reach these
+	// calls.
+	Designers, Operators, Analysts []string
 	// Secrets gives the value of a secret of a connection at the moment a
 	// request that reads it is sent (ADR-0045, item 6). It is asked at
 	// every attempt, so a provider that renews a token serves it as it
@@ -128,6 +139,13 @@ type Store struct {
 	// lists, kept between commits; dayArg is the business day of dayOf,
 	// boxed.
 	curArgs, updArgs, histArgs, eventArgs []any
+	// acting is what the principal of the command in progress is and whom
+	// it acts for, boxed for the events the command writes (ADR-0050);
+	// forID is the id acts boxes.
+	acting struct {
+		kind, acts any
+		forID      string
+	}
 	// stateArgs are the names of states boxed once for the statements of
 	// the write step: every commit writes its document's state, and an
 	// entry the state left and the state entered beside it.
@@ -176,7 +194,10 @@ type Store struct {
 	// supplies their secrets (ADR-0045); both are the host program's, and
 	// nil when it gave none.
 	outbound Outbound
-	secretFn func(ctx context.Context, connection, name string) (string, error)
+	// designers, operators and analysts are the groups the host program
+	// named for the three kinds of work (ADR-0051); nil for none named.
+	designers, operators, analysts []string
+	secretFn                       func(ctx context.Context, connection, name string) (string, error)
 
 	// sqlConn is the read-only SQL endpoint's connection, with its
 	// authorizer, made on first use; sqlMu serialises its statements.
@@ -292,6 +313,7 @@ func Open(path string, o Options) (*Store, error) {
 		tables: map[string]*table{}, plans: map[*formula.QuerySlot]*lookupPlan{},
 		actions: map[string]*action{}, funcs: funcs, inFlight: map[flight]struct{}{}, writesBack: map[string]bool{},
 		outbound: o.Outbound, secretFn: o.Secrets,
+		designers: o.Designers, operators: o.Operators, analysts: o.Analysts,
 		stop: make(chan struct{}), done: make(chan struct{}),
 		outbox: o.Outbox, wake: make(chan struct{}, 1), workDone: make(chan struct{}),
 	}
@@ -520,8 +542,8 @@ func (s *Store) prepareEngine(ctx context.Context) error {
 	}
 	prep(&s.stmts.lookupKey, "SELECT kind, class, doc_id, after_version, command_hash, event_id FROM events WHERE command_key = ?")
 	prep(&s.stmts.lastOfCommand, "SELECT max(after_version) FROM events WHERE cause_event_id = ?")
-	prep(&s.stmts.insertEvent, "INSERT INTO events (event_id, class, doc_id, kind, name, from_state, to_state, actor_id, before_version, after_version, cause_event_id, command_key, command_hash, business_date, ts, origin)"+
-		" VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
+	prep(&s.stmts.insertEvent, "INSERT INTO events (event_id, class, doc_id, kind, name, from_state, to_state, actor_id, before_version, after_version, cause_event_id, command_key, command_hash, business_date, ts, origin, actor_kind, actor_for)"+
+		" VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
 	prep(&s.stmts.insertEventDoc, "INSERT INTO event_docs (event_id, class, doc_id, qualifier) VALUES (?, ?, ?, ?)")
 	prep(&s.stmts.selectLife, lifeSQL)
 	prep(&s.stmts.selectMoves, movesSQL)
@@ -536,7 +558,7 @@ func (s *Store) prepareEngine(ctx context.Context) error {
 	// An event of kind action_failed is read with the code its action died
 	// with, which the outbox row holds (ADR-0044).
 	if s.stmts.listEvents, err = s.db.PrepareContext(ctx, "SELECT e.event_id, e.class, e.doc_id, e.kind, e.name, e.from_state, e.to_state, e.actor_id, e.before_version, e.after_version, e.cause_event_id, e.command_key, e.business_date, e.ts,"+
-		" (SELECT o.error_code FROM outbox o WHERE o.outcome_event = e.event_id), e.origin"+
+		" (SELECT o.error_code FROM outbox o WHERE o.outcome_event = e.event_id), e.origin, e.actor_kind, e.actor_for"+
 		" FROM events e JOIN event_docs d ON d.event_id = e.event_id WHERE d.class = ? AND d.doc_id = ? ORDER BY e.ts, e.event_id"); err != nil {
 		return storageErr("prepare", err)
 	}

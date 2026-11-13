@@ -296,6 +296,9 @@ func (s *Store) run(ctx context.Context, cmd command, now time.Time) (*result, e
 		clock = cmd.o.at.Unix()
 	}
 	res := &result{now: clock}
+	if e := checkPrincipal(cmd.o.principal); e != nil {
+		return nil, e
+	}
 
 	// A class without states is a stateless application and stores no
 	// documents (ADR-0040); the previews evaluate it.
@@ -361,7 +364,11 @@ func (s *Store) run(ctx context.Context, cmd command, now time.Time) (*result, e
 	}
 
 	actor := cmd.o.principal.ID
-	evalCtx := &formula.Context{User: actor, Groups: cmd.o.principal.Groups, Now: clock}
+	// Every event the command writes says what its principal is and for
+	// whom it acts (ADR-0050).
+	s.actAs(cmd.o.principal)
+	ctxOf := contextOf(cmd.o.principal, clock)
+	evalCtx := &ctxOf
 	var before *docRow
 	var beforeClass *class // the version that computed the current row
 	var trans *model.Transition
@@ -1196,7 +1203,8 @@ func (s *Store) writeEventArgs(ctx context.Context, eventID, class, docID any, e
 	if s.dayArg == nil || s.dayOf != day {
 		s.dayOf, s.dayArg = day, day
 	}
-	args := append(s.eventArgs[:0], eventID, class, docID, word(ev.kind), nullText(ev.name), s.stateArg(ev.from), s.stateArg(ev.to), actor, before, after, nullText(ev.cause), nullText(key), nullText(hash), s.dayArg, secs, originCode(ev.origin))
+	args := append(s.eventArgs[:0], eventID, class, docID, word(ev.kind), nullText(ev.name), s.stateArg(ev.from), s.stateArg(ev.to), actor, before, after, nullText(ev.cause), nullText(key), nullText(hash), s.dayArg, secs, originCode(ev.origin),
+		s.acting.kind, s.acting.acts)
 	s.eventArgs = args
 	if _, err := s.stmts.insertEvent.ExecContext(ctx, args...); err != nil {
 		return storageErr("write the event", err)
@@ -1209,12 +1217,24 @@ func (s *Store) writeEventArgs(ctx context.Context, eventID, class, docID any, e
 	return nil
 }
 
+// actAs notes whose command the writer runs: the kind of its principal
+// and the id it acts for, boxed for the events the command writes
+// (ADR-0050). The writer runs one command at a time, and whatever writes
+// an event for another principal, as the worker does for the outcome of
+// an action, says so first.
+func (s *Store) actAs(p Principal) {
+	s.acting.kind = word(p.Kind)
+	if p.For != s.acting.forID || s.acting.acts == nil && p.For != "" {
+		s.acting.forID, s.acting.acts = p.For, nullText(p.For)
+	}
+}
+
 // words holds the texts of the closed lists the log is written in, each
 // boxed once, so that binding one allocates nothing.
 var words = func() map[string]any {
 	m := map[string]any{}
 	for _, w := range []string{EventCreated, EventSet, EventDeleted, EventMigrated, EventTransition, EventReset, EventRefresh, EventActionRun, EventActionFailed, EventCustom,
-		"caused", "changed", "created", "deleted", "emitted", "migrated", "refreshed", "transitioned"} {
+		"caused", "changed", "created", "deleted", "emitted", "migrated", "refreshed", "transitioned", ActorPerson, ActorAgent, ActorService} {
 		m[w] = w
 	}
 	return m

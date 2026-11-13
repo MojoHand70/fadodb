@@ -21,6 +21,8 @@
     "version": {"description": "The version of the document the commit made; for a delete, the last version there was.", "type": "integer", "minimum": 1},
     "document": {"$ref": "#/$defs/document"},
     "actor_id": {"description": "The principal whose command caused the event; absent when the command had none.", "type": "string"},
+    "actor_kind": {"description": "What that principal was, as the host program said (ADR-0050): a person who sent the command, an agent that decided to send it, or a service, a program that decides nothing. Absent when the host program did not say.", "enum": ["person", "agent", "service"]},
+    "actor_for": {"description": "The id of whoever that principal acted for (ADR-0050); absent when it acted for itself.", "type": "string"},
     "business_date": {"description": "The business date of the event as YYYY-MM-DD (ADR-0026).", "type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"},
     "command_key": {"description": "The idempotency key of the command that caused the event, when it had one. A key that starts with outbox: is the engine's own: the command was an action's, or the engine's touch of the document when a timer came (ADR-0047).", "type": "string"},
     "ts": {"description": "When the commit was made, in seconds since the epoch, UTC.", "type": "integer"},

@@ -79,6 +79,19 @@ read the diagnostics, fix, preview against live data, define.
    `access.transition`; one without is open to whoever may `update`.
    What a rule does to another document is done as the person who set
    it off, so that person needs the other class's rules to let them.
+   **A table has two rules too**: `"access": {"read": "TRUE", "write":
+   "INGROUP(\"treasury\")"}`, each about the table as a whole. A rule's
+   `table.update` is refused when whoever set the rule off may not
+   write the table. Whether you may define at all is the host
+   program's to say: where it names designers, be in one of their
+   groups or expect `forbidden`.
+   **Say what agents may do.** A caller is a person, an agent or a
+   service, and may act for somebody: `USERKIND()` and `ACTINGFOR()`
+   say so. Keep a decision for a person with `USERKIND() = "person"`,
+   never with `<> "agent"`, which a caller of unknown kind would pass.
+   Let an assistant in with `owner = USER() OR owner = ACTINGFOR()`.
+   `USER()` is always the one who acts, the assistant and not the
+   person it works for.
 7. **Validate.** Today through `ValidateClass` on the Go API, and
    `ValidateClasses` for classes that name each other, whose findings
    start with the position of the definition, `/1/variables/total`; a

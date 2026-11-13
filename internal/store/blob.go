@@ -328,7 +328,10 @@ func (s *Store) OpenFile(ctx context.Context, class, id, hash string, opts ...Op
 	if e != nil {
 		return nil, nil, e
 	}
-	o := apply(opts)
+	o, e := asked(opts)
+	if e != nil {
+		return nil, nil, e
+	}
 	if seen, err := s.sees(ctx, c, id, o); err != nil {
 		return nil, nil, err
 	} else if !seen {
@@ -418,7 +421,10 @@ func (s *Store) OpenBlob(ctx context.Context, hash string, opts ...Option) (io.R
 // hashes whose bytes do not match, and how many it checked (ADR-0033);
 // a restore from an altered backup is found this way. A blob store that
 // cannot list its hashes is the error not_supported.
-func (s *Store) CheckBlobs(ctx context.Context) (mismatched []string, checked int, err error) {
+func (s *Store) CheckBlobs(ctx context.Context, opts ...Option) (mismatched []string, checked int, err error) {
+	if _, e := s.worker(workOperate, opts); e != nil {
+		return nil, 0, e
+	}
 	lister, ok := s.blobs.(BlobLister)
 	if !ok {
 		return nil, 0, errf(CodeNotSupported, "", "the %s blob store cannot list its blobs", s.blobKind)

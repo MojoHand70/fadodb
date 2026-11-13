@@ -44,6 +44,9 @@ type TableAccessDef struct {
 
 // Table is a compiled table definition.
 type Table struct {
+	// Defined says who defined this version of the table, and when
+	// (ADR-0052, item 7); the store sets it.
+	Defined     Defined
 	Name        string
 	Version     int
 	Label       string

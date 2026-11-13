@@ -58,6 +58,11 @@ var engineDDL = []string{
 	// The action definitions (ADR-0045), each with every version it had.
 	`CREATE TABLE IF NOT EXISTS actions (name TEXT PRIMARY KEY COLLATE NOCASE, version INTEGER NOT NULL, json TEXT NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)`,
 	`CREATE TABLE IF NOT EXISTS action_versions (action TEXT NOT NULL COLLATE NOCASE, version INTEGER NOT NULL, json TEXT NOT NULL, created_at INTEGER NOT NULL, PRIMARY KEY (action, version))`,
+	// Who defined each version of a class, a schema, a table and an
+	// action, and when (ADR-0052, item 7): a row for every version, never
+	// changed.
+	`CREATE TABLE IF NOT EXISTS definitions (what TEXT NOT NULL, name TEXT NOT NULL COLLATE NOCASE, version INTEGER NOT NULL, defined_at INTEGER NOT NULL,
+		defined_by TEXT, defined_kind TEXT, defined_for TEXT, PRIMARY KEY (what, name, version))`,
 	`CREATE TABLE IF NOT EXISTS events (event_id TEXT PRIMARY KEY, class TEXT NOT NULL, doc_id TEXT NOT NULL, kind TEXT NOT NULL, name TEXT, from_state TEXT, to_state TEXT,
 		actor_id TEXT, actor_kind TEXT, actor_for TEXT, before_version INTEGER, after_version INTEGER, cause_event_id TEXT, command_key TEXT, command_hash TEXT, business_date INTEGER NOT NULL, ts INTEGER NOT NULL, origin INTEGER, override TEXT, reason TEXT)`,
 	`CREATE UNIQUE INDEX IF NOT EXISTS events_command_key ON events (command_key)`,

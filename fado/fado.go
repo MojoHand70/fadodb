@@ -95,7 +95,12 @@ type (
 	DeliveredEvent = store.DeliveredEvent
 	// ActionInfo is one action a rule may name, as Actions lists it, with
 	// its parameters and what it returns, each an ActionParam.
-	ActionInfo  = store.ActionInfo
+	ActionInfo = store.ActionInfo
+	// Defined says who defined a version of a class, a schema, a table
+	// or an action, and when (ADR-0052); Definition is one version in the
+	// listing Definitions answers.
+	Defined     = store.Defined
+	Definition  = store.Definition
 	ActionParam = store.ActionParam
 	// ActionPreview is what an action would be called with, and
 	// ActionOutcome what became of one trial of it.
@@ -289,6 +294,23 @@ func (db *DB) DefineSchema(ctx context.Context, definition []byte, opts ...Optio
 
 // Classes lists the class names in definition order.
 func (db *DB) Classes() []string { return db.s.Classes() }
+
+// What a definition is, as Definitions takes it.
+const (
+	DefinitionClass  = store.DefinitionClass
+	DefinitionSchema = store.DefinitionSchema
+	DefinitionTable  = store.DefinitionTable
+	DefinitionAction = store.DefinitionAction
+)
+
+// Definitions lists the versions of one class, schema, table or action,
+// oldest first, each with who defined it, what they were, for whom they
+// acted and when (ADR-0052). It is open to every caller, as reading a
+// definition is: what a designer changed is in sight. Class, Table and
+// Action answer the same of the current version, under Defined.
+func (db *DB) Definitions(ctx context.Context, what, name string) ([]Definition, error) {
+	return db.s.Definitions(ctx, what, name)
+}
 
 // DefineTable compiles an explicit table definition in JSON, creates the
 // table and its view and stores it; formulas read it through LOOKUP.

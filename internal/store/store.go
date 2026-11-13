@@ -35,7 +35,7 @@ const DefaultMaxIndexedRows = 100000
 // engineSchema is the version of the store's own tables. A database made
 // by another engine schema is refused: before 1.0 there is no upgrade
 // path, and a pre-release file is recreated.
-const engineSchema = 8
+const engineSchema = 9
 
 // Options configure Open. The ones that are properties of the database,
 // Synchronous and MaxText, are read at creation and kept in the metadata
@@ -678,6 +678,7 @@ func (s *Store) load(ctx context.Context) error {
 	if err := s.loadActions(ctx); err != nil {
 		return err
 	}
+	defer s.loadDefined(ctx)
 	// A rule may name a class defined after its own (ADR-0044), and a
 	// formula may read one (ADR-0046), so the classes compile in two
 	// passes: every one alone, for its variables and their types, then

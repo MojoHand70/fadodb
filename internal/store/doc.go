@@ -89,6 +89,10 @@
 // content administrator, the fourth, sees every document and acts on it
 // past the rules of its class. A table has a read rule and a write rule.
 //
-// Not here yet: the record of who defined each version (ADR-0051, item
-// 5), and the server (Phase 6).
+// Every version of a class, a schema, a table and an action records who
+// defined it, what they were, for whom they acted and when (ADR-0052,
+// item 7; defined.go): Definitions lists them, and a class, a table and
+// an action say it of their current version.
+//
+// Not here yet: substitutions (ADR-0053), and the server (Phase 6).
 package store

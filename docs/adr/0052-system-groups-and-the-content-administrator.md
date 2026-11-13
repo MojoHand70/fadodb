@@ -192,7 +192,7 @@ item 4 only that a content administrator passes.
   caller.
 - **Not in this step:** item 5, which the second step built; the
   reason and the mark of item 4, which the third step built; and item
-  7.
+  7, which the fourth step built.
 
 Measured in memory against the commit before: every benchmark of the
 gate keeps its allocations, the outbox and the timer lose four each
@@ -272,6 +272,25 @@ Measured in memory: every benchmark of the gate keeps its allocations.
 A commit takes 176 bytes more, 2%, for the two values of its event,
 and the listing of ten transitions 144 bytes more, 4%, for the rule
 each entry may name.
+
+The fourth step, the same day, built item 7, and with it the record is
+built.
+
+- **One table keeps it**, a row for every version of a class, a
+  schema, a table and an action: what was defined, its name, the
+  version, the moment, and the id of the caller with what it was and
+  the id it acted for. The engine's schema is 9.
+- **`Definitions(ctx, what, name)`** is the new call: the versions of
+  one definition, oldest first. `what` is `class`, `schema`, `table` or
+  `action`. It is open to every caller, as reading a definition is.
+- **The definition says it too**: `Class.Defined`, `Table.Defined` and
+  `ActionInfo.Defined` are the record of the current version. A schema
+  is read through the list.
+- **The stored definition sent again** is no new version (ADR-0039),
+  whoever sends it, and changes no record.
+- **A draft is not recorded.** `PreviewDraft` stores nothing, and
+  `Migrate` leaves its mark on the events of the documents it moves
+  (ADR-0039).
 
 ## The owner's rulings
 

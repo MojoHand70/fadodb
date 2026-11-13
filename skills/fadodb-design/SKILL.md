@@ -85,7 +85,9 @@ read the diagnostics, fix, preview against live data, define.
    write the table. Whether you may define at all is the host
    program's to say: defining is for the system group `designers`,
    which it gives a caller in `Principal.System`. Without it expect
-   `forbidden`, naming the group. A class may speak of a system group
+   `forbidden`, naming the group. Every version you define is recorded
+   with your id, what you are and for whom you act, and
+   `Definitions(ctx, "class", name)` lists them for every caller. A class may speak of a system group
    as of any group, and `INGROUP("everyone")` is true for every caller
    that has an id.
    **Say what agents may do.** A caller is a person, an agent or a

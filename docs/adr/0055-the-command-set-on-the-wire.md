@@ -1,6 +1,6 @@
 # ADR-0055: The command set on the wire: every command, its JSON, and one address each
 
-- Status: Proposed, with three questions open for the owner; amends ADR-0011 (the commands are named and listed; over HTTP an address is the name of a command, not a path that names a document; the WebSocket is left to the record of the change stream), ADR-0018 (how a document is read and changed over HTTP), ADR-0033 (the address a file is served at)
+- Status: Proposed; the owner ruled on its three questions on 2026-11-14, and the rulings are at the end; amends ADR-0011 (the commands are named and listed; over HTTP an address is the name of a command, not a path that names a document; the WebSocket is left to the record of the change stream), ADR-0018 (how a document is read and changed over HTTP), ADR-0033 (the address a file is served at)
 - Date: 2026-11-13
 
 ## Context
@@ -166,9 +166,11 @@ Facts this record was written from, each checked in the code on the day:
 4. **Who calls is never in the command.** No field names the caller, its
    groups or what it is: a person, an agent or a service. They come with
    the door. Over HTTP the server works them out from the credential the
-   request carries, which is the record on callers and keys; in a Go
-   program the host gives them, as today. The one thing a caller says
-   about itself is `for`, and that one the engine checks.
+   request carries, which is the record on users and keys (ADR-0057);
+   in a Go program the host gives them, as today. The one thing a
+   caller says about itself is `for`, and that one the engine checks.
+   Which database a command is for is not in the command either: the
+   address it is sent to says so (ADR-0056).
 
 5. **A field a command does not know is refused**, and so is a field of
    the wrong JSON type. `{"class": "Invoice", "id": "7", "valeus": {…}}`
@@ -284,8 +286,9 @@ Facts this record was written from, each checked in the code on the day:
     answer or the refusal. The table of item 2 is data in it: for each
     command its name, its fields, its answer, its mark and the Go call.
     From that table come the HTTP addresses, the OpenAPI description
-    under `api/`, the help of the command-line tool, and the tools of a
-    door for agents if the owner rules one into the phase. A test walks
+    under `api/`, the help of the command-line tool, and the tools of
+    the door for agents, which the owner ruled into the phase on
+    2026-11-14. A test walks
     the methods of `fado.DB` and fails when one is neither in the table
     nor in the short list of item 2 that are not commands, so a call
     added to the Go API cannot be forgotten on the wire.
@@ -314,14 +317,16 @@ Facts this record was written from, each checked in the code on the day:
 13. **What this record leaves to the others of the phase.**
 
     - How a caller proves who it is, and the engine's own users, groups
-      and keys.
+      and keys: ADR-0057.
     - The stream of changes, and with it whether a WebSocket is needed
-      at all.
+      at all: ADR-0058.
     - What `fadodb serve` is told when it starts: the address it
       listens on, the hosts its actions may call and where their
       secrets come from, and that an action implemented by a Go
-      function has no function under it.
-    - Layouts and the class bundle.
+      function has no function under it: ADR-0059.
+    - How many customers are kept apart: ADR-0056.
+    - Layouts and the class bundle, which the owner moved to Phase 7 on
+      2026-11-14.
 
     And what it leaves out: several commands in one request; a command
     that changes a document only if it is still at a version the caller
@@ -334,7 +339,7 @@ Facts this record was written from, each checked in the code on the day:
 - **An id may hold a line break.** Nothing refuses one, or a tab, or a
   zero byte, which ends a text in C. Such an id cannot be typed, breaks
   a log line and a CSV export, and looks like another id on a screen.
-  Proposed, question 3: an id may be any text but a control character.
+  Ruled, question 3: an id may be any text but a control character.
   Slashes, spaces and letters of any alphabet stay.
 - **A schema cannot be read back.** The Go API has `Class`, `Table` and
   `Action` and no `Schema`. `get_schema` and `list_schemas` are in the
@@ -343,24 +348,33 @@ Facts this record was written from, each checked in the code on the day:
   form. The store keeps the JSON of every version; `get_class` answers
   that, and the Go API gains a call that does.
 
-## Questions for the owner
+## The owner's rulings
 
-1. **One address for each command (item 8), or paths that name the
-   document, as the architecture page drew them?** Proposed: one
-   address for each command. The same invoice both ways:
+All of 2026-11-14. The owner read the record with its three questions
+and agreed to the answer proposed for each.
 
-   ```
-   POST /v1/transition
-   {"class": "Invoice", "id": "FV/2026/11/0042", "transition": "approve"}
+**1. One address for each command, or paths that name the document?
+One address for each command** (item 8). The same invoice both ways:
 
-   POST /v1/docs/Invoice/FV%2F2026%2F11%2F0042/transitions/approve
-   {}
-   ```
+```
+POST /v1/transition
+{"class": "Invoice", "id": "FV/2026/11/0042", "transition": "approve"}
 
-2. **Is a field a command does not know refused (item 5), or passed
-   over?** Proposed: refused.
-3. **May an id hold a control character, such as a line break?**
-   Proposed: no; every other character stays allowed.
+POST /v1/docs/Invoice/FV%2F2026%2F11%2F0042/transitions/approve
+{}
+```
+
+The first is the one that is built. The answer not taken was the paths
+the architecture page drew.
+
+**2. Is a field a command does not know refused, or passed over?
+Refused** (item 5), with `bad_json` and the place of the field.
+
+**3. May an id hold a control character, such as a line break? No.**
+Every other character stays allowed: slashes, spaces and the letters
+of any alphabet. From the step that builds the commands, a document is
+not created under such an id: the create is refused with `bad_value`.
+A document that already has one is still read and changed.
 
 ## Consequences
 

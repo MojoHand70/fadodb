@@ -12,12 +12,16 @@ today, the JSON command set (ADR-0011, Phase 6) and the MCP server (Phase
 commits, to carry an idempotency key, to read a rejection's code and
 location rather than guess; the API is what it then calls.
 
-**Status on 2026-11-09: stubs.** Every SKILL.md names its hat, says what
-works today with the project's three marks, and outlines its procedure.
-Of the shared reference set only the class format is written, as a
-chapter of the manual under `../docs/manual/`; the sample corpus under
-`../examples/classes/` holds four classes. A stub is honest about
-being one.
+**Status on 2026-11-14: the designer's skill is written; the other four
+are stubs.** A written skill tells the agent what to read in the manual
+under `../docs/`, in which order to work, and what goes wrong most
+often, and the engine defines the class it shows in a test on each
+push. A stub names its hat, says what works today with the project's
+three marks, and outlines its procedure. Of the shared reference set,
+the class format, the list of functions and the list of refusal codes
+are written, as chapters of the manual; the sample corpus under
+`../examples/classes/` holds four classes. A stub is honest about being
+one.
 
 ## The five hats
 
@@ -26,7 +30,7 @@ so the right one loads for the task at hand.
 
 | Hat | Skill | What it does | Today |
 |---|---|---|---|
-| Designer | [`fadodb-design/`](fadodb-design/SKILL.md) | drafts a class from a process description, validates it, previews it against live data | variables, formulas and the store shipped; statechart shipped; rules and actions shipped; access shipped |
+| Designer | [`fadodb-design/`](fadodb-design/SKILL.md) | drafts a class from a process description, validates it, previews it against live data | written; variables, formulas and the store shipped; statechart shipped; rules and actions shipped; access shipped |
 | Operator | [`fadodb-operate/`](fadodb-operate/SKILL.md) | creates, sets and transitions documents on behalf of a person or a system, as a principal, with a key and a preview | Go API only; command set and MCP designed |
 | Simulator | [`fadodb-simulate/`](fadodb-simulate/SKILL.md) | replays a scenario in a scratch database and keeps the class that worked | scratch files and `At` work; replay is by hand |
 | Analyst | [`fadodb-mine/`](fadodb-mine/SKILL.md) | mines the event log and the views in SQL and feeds the finding back into the class | filter and read-only SQL shipped; `Events` on the Go API; DuckDB views designed |

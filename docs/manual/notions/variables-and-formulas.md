@@ -128,8 +128,9 @@ FadoDB has two families of number, and they behave differently.
   the class is defined.
 - **An exact result keeps all its places.** Multiplying adds the places
   of both sides: 10.00 PLN times 1.10 is 11.0000 PLN. Dividing gives
-  six: 10.00 PLN by 3 is 3.333333 PLN. `ROUND` brings a result back to
-  the places you want, which is why `net` and `per_piece` use it.
+  four places more than the value divided: 10.00 PLN by 3 is
+  3.333333 PLN. `ROUND` brings a result back to the places you want,
+  which is why `net` and `per_piece` use it.
 - **An exact value is not taken where a plain number is expected.**
   `ADDDAYS(issued, valid_days)` is refused when the class is defined,
   because `valid_days` is an `int`. `NUMBER(valid_days)` converts it,
@@ -236,6 +237,8 @@ once.
 
 ## More
 
+- The language itself, with every operator and what mixes with what:
+  [The formula language](../formula-language.md).
 - Every function: [The functions](../functions.md).
 - Reading a value from a reference table or from other documents:
   [Look a value up](../guides/look-a-value-up.md).

@@ -31,7 +31,7 @@ func TestManualExamples(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		var classes, tables, actions, pieces []string
+		var classes, tables, actions, schemas, pieces []string
 		for _, m := range block.FindAllSubmatch(data, -1) {
 			switch kindOf(m[1]) {
 			case "class":
@@ -40,6 +40,8 @@ func TestManualExamples(t *testing.T) {
 				tables = append(tables, string(m[1]))
 			case "action":
 				actions = append(actions, string(m[1]))
+			case "schema":
+				schemas = append(schemas, string(m[1]))
 			case "document":
 				// A document as the engine answers it. The test of its
 				// chapter compares it with the engine's answer.
@@ -67,6 +69,11 @@ func TestManualExamples(t *testing.T) {
 				t.Fatal(err)
 			}
 			// What the classes of the page name is defined before them.
+			for _, schema := range schemas {
+				if _, err := db.DefineSchema(ctx, []byte(schema), setup); err != nil {
+					t.Errorf("%s: a schema is refused: %v", name, err)
+				}
+			}
 			for _, table := range tables {
 				if _, err := db.DefineTable(ctx, []byte(table), setup); err != nil {
 					t.Errorf("%s: a table is refused: %v", name, err)
@@ -167,8 +174,8 @@ func className(definition string) string {
 }
 
 // kindOf says what a block of JSON in the manual is: a whole class, a
-// whole table, a whole action definition, a document as the engine
-// answers it, or a piece of one of them.
+// whole table, a whole action definition, a whole schema, a document as
+// the engine answers it, or a piece of one of them.
 func kindOf(block []byte) string {
 	var whole struct {
 		Name      string          `json:"name"`
@@ -178,6 +185,7 @@ func kindOf(block []byte) string {
 		Request   json.RawMessage `json:"request"`
 		Class     string          `json:"class"`
 		Values    json.RawMessage `json:"values"`
+		Fields    json.RawMessage `json:"fields"`
 	}
 	if json.Unmarshal(block, &whole) != nil {
 		return "piece"
@@ -193,6 +201,8 @@ func kindOf(block []byte) string {
 		return "class"
 	case whole.Columns != nil:
 		return "table"
+	case whole.Fields != nil:
+		return "schema"
 	case whole.Params != nil || whole.Request != nil:
 		return "action"
 	}

@@ -48,6 +48,13 @@ All notable changes to FadoDB are recorded here. The format follows
   twice and the business day; and time, with a transition that carries
   its time, a timer that was missed while no program ran, and reads as
   of another day. All seven notions are now written.
+- The reference chapter on the formula language: how a formula is
+  written, the operators, what mixes with what, blanks, text, plain
+  and exact numbers, days and moments, objects, what a failure means
+  and what a formula may read in each place. A test adds each of its
+  120 examples to the chapter's class as a computed variable and
+  compares the engine's answer and the type of the result with the
+  chapter.
 - The designer's skill teaches the syntax: what to read in the manual,
   a small class that is complete, and the ten things that go wrong
   most often. It is no longer a stub. The classes the skills show are

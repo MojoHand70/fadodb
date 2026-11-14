@@ -631,10 +631,12 @@ func TestAFailureThatIsNoRefusalKeepsItsWords(t *testing.T) {
 
 // TestEveryCommandIsRun fails when a command of the table was run by no
 // test of this package. It runs last: the tests of a package run in the
-// order of their files and, in a file, as written.
+// order of their files and, in a file, as written. When the tests that
+// run the commands were left out, by -run or by -short, it has nothing
+// to say.
 func TestEveryCommandIsRun(t *testing.T) {
-	if testing.Short() {
-		t.Skip("needs the other tests to have run")
+	if used["create"] == 0 || used["get_class"] == 0 || used["drain"] == 0 {
+		t.Skip("the tests that run the commands did not all run")
 	}
 	for _, c := range Commands() {
 		if used[c.Name] == 0 {

@@ -81,7 +81,7 @@ at 3.9000.
 |---|---|
 | count, add up, or take the smallest or largest of the rows that match | `LOOKUP(Stock, SUM(qty), sku = THIS.sku)`, and `COUNT`, `MIN`, `MAX` the same way |
 | read the documents of another class in the place of a table | `LOOKUP(Approval, COUNT(id), purchase = ID() AND state = "granted")`, in a triggered variable, a default, a guard or a rule |
-| take the newest rate at a moment you choose | make the variable triggered, with `"mode": "triggered"` and `"on": ["refresh"]`, and refresh the document |
+| take the newest rate at a moment you choose | make the variable triggered, with `"mode": "triggered"` and `"on": ["refresh"]`, and refresh the document; see [Triggered variables](../triggered-variables.md) |
 
 See also: [Tables](../tables.md), the reference for everything a table
 can do; [The functions](../functions.md); and the Purchase sample

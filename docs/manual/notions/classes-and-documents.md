@@ -76,7 +76,7 @@ He gave three values. Everything else the engine filled in.
 | `state_entered_at`, `state_entered_by` | when it entered the state it is in, and who moved it there | the engine |
 | `state_entered_from` | the state it was in before; absent while it is in the state it was created in | the engine |
 | `values` | the variables of the class: the inputs as they were set, the computed ones as the formulas gave them | the caller for inputs, the engine for the rest |
-| `computed` | for a variable worked out only at chosen moments: when that was. Absent in a class that has none | the engine |
+| `computed` | for a variable worked out only at chosen moments: when that was; see [Triggered variables](../triggered-variables.md#the-moment). Absent in a class that has none | the engine |
 
 Three things to know when reading one:
 

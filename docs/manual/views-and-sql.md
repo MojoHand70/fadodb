@@ -133,6 +133,10 @@ in `Invoice_actions`, has the parts of
 A row of `lines` has `doc_id`, `version`, `idx`, its place among the
 rows from 0, and one column for each column of the rows.
 
+A variable that is worked out only at chosen moments has three more
+columns, which say when that was; see
+[Triggered variables](triggered-variables.md#the-moment).
+
 ## How a value looks in SQL
 
 SQL gives a value as the engine stores it, which is not always how a

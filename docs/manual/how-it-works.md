@@ -111,6 +111,12 @@ own process; the Go package is `fado`. There is one writer at a time,
 so commits happen one after another and never see each other half
 done, while reads go on beside it.
 
+The file belongs to whoever made it. A new database can be read and
+written by the user of the machine that created it and by nobody else,
+and so can the attachments when they are kept in a directory beside it.
+A database made before v0.6.0 keeps the permissions it had; `chmod 600`
+on the file closes it.
+
 The program that opens the database is the **host program**. It is the
 only one that knows who its users are. On every call it names the
 caller: an id, groups, whether it is a person, an agent or a service,

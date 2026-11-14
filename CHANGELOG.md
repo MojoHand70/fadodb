@@ -103,6 +103,12 @@ All notable changes to FadoDB are recorded here. The format follows
   engine's own answers, and the eleven things that go wrong most
   often. A test defines the class the skill shows, sends its commands
   and compares the answers, and holds each of the eleven points.
+- The reference chapter on views and SQL: the views of a class and
+  their columns, how a value looks in SQL, seven questions an analyst
+  asks with their statements and the engine's answers, what a
+  statement may do, and who may run one. A test runs every statement
+  of the chapter and compares the answer. The chapter states three
+  faults of the engine as they are, each pinned by the test.
 - The designer's skill teaches the syntax: what to read in the manual,
   a small class that is complete, and the ten things that go wrong
   most often. It is no longer a stub. The classes the skills show are

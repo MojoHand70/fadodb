@@ -285,5 +285,4 @@ The engine's own users, groups and keys come with the server of
 Phase 6. Until then the host program is the only one who knows who a
 caller is.
 
-Next: History and the log, which is planned; until then see
-[How it works](../how-it-works.md).
+Next: [History and the log](history-and-the-log.md).

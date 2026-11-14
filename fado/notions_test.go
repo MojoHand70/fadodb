@@ -112,6 +112,33 @@ func codesIn(table string) []string {
 	return out
 }
 
+// held plays a chapter's table of what is checked when a class is
+// defined. For each row, the definitions the test has under the words
+// of that row must be found with the code the row gives. A row the test
+// has no definition for fails, and so does a definition under words no
+// row has, so the words and the code of a row cannot drift apart.
+func held(t *testing.T, db *fado.DB, page []byte, cases map[string][]string) {
+	t.Helper()
+	listed := map[string]bool{}
+	for _, row := range rows(marked(t, page, "checked when the class is defined")) {
+		what, code := row[0], row[len(row)-1]
+		listed[what] = true
+		if len(cases[what]) == 0 {
+			t.Errorf("the chapter says a class that %q is refused with %s, and the test has no such class", what, code)
+		}
+		for _, definition := range cases[what] {
+			if got := finding(db, definition); got != code {
+				t.Errorf("a class that %s: the engine finds %s, and the chapter says %s", what, got, code)
+			}
+		}
+	}
+	for what := range cases {
+		if !listed[what] {
+			t.Errorf("the test has a class that %q, and the chapter has no such row", what)
+		}
+	}
+}
+
 // finding says what the engine finds in a class definition: the code of
 // the first finding, or "accepted".
 func finding(db *fado.DB, definition string) string {
@@ -507,27 +534,30 @@ func TestNotion_VariablesAndFormulas(t *testing.T) {
 	want(t, "a line of access that divides by zero", err, "forbidden at /access/update")
 
 	// What is checked when the class is defined.
-	found := seen{}
-	for _, c := range []struct{ what, variables, code string }{
-		{"a variable the class does not have", `"a":{"type":"number"},"b":{"formula":"aa + 1"}`, "bad_formula"},
-		{"a number added to a date", `"a":{"type":"date"},"b":{"formula":"a + 1"}`, "bad_formula"},
-		{"a number where a condition is needed", `"a":{"type":"number"},"b":{"formula":"IF(a, 1, 2)"}`, "bad_formula"},
-		{"money times money", `"a":{"type":"money"},"b":{"formula":"a * a"}`, "bad_formula"},
-		{"an int where a plain number is expected", `"a":{"type":"date"},"i":{"type":"int"},"b":{"formula":"ADDDAYS(a, i)"}`, "bad_formula"},
-		{"the day in a computed variable", `"a":{"type":"date"},"b":{"formula":"DAYS(TODAY(), a)"}`, "bad_formula"},
-		{"the moment in a computed variable", `"a":{"type":"datetime"},"b":{"formula":"a < NOW()"}`, "bad_formula"},
-		{"the caller in a computed variable", `"a":{"type":"text"},"b":{"formula":"a = USER()"}`, "bad_formula"},
-		{"another type than the variable says", `"a":{"type":"number"},"b":{"type":"text","formula":"a * 2"}`, "type_mismatch"},
-		{"a type that agrees with the formula", `"a":{"type":"number"},"b":{"type":"number","formula":"a * 2"}`, "accepted"},
-		{"two formulas that read each other", `"a":{"formula":"b + 1"},"b":{"formula":"a + 1"}`, "cycle"},
-		{"a name the engine keeps", `"state":{"type":"text"}`, "reserved_name"},
-		{"a default that reads another variable", `"a":{"type":"int"},"b":{"type":"int","default":"a + 1"}`, "accepted"},
+	variables := func(variables string) string { return scratch("Checked", variables, oneState) }
+	held(t, db, page, map[string][]string{
+		"names a variable the class does not have":      {variables(`"a":{"type":"number"},"b":{"formula":"aa + 1"}`)},
+		"adds a number to a date":                       {variables(`"a":{"type":"date"},"b":{"formula":"a + 1"}`)},
+		"uses a number where a condition is needed":     {variables(`"a":{"type":"number"},"b":{"formula":"IF(a, 1, 2)"}`)},
+		"multiplies money by money":                     {variables(`"a":{"type":"money"},"b":{"formula":"a * a"}`)},
+		"gives an int where a plain number is expected": {variables(`"a":{"type":"date"},"i":{"type":"int"},"b":{"formula":"ADDDAYS(a, i)"}`)},
+		"reads the clock or the caller in a computed variable": {
+			variables(`"a":{"type":"date"},"b":{"formula":"DAYS(TODAY(), a)"}`),
+			variables(`"a":{"type":"datetime"},"b":{"formula":"a < NOW()"}`),
+			variables(`"a":{"type":"text"},"b":{"formula":"a = USER()"}`),
+		},
+		"is of another type than the variable says": {variables(`"a":{"type":"number"},"b":{"type":"text","formula":"a * 2"}`)},
+		"reads a variable that reads it back":       {variables(`"a":{"formula":"b + 1"},"b":{"formula":"a + 1"}`)},
+	})
+	for what, c := range map[string][2]string{
+		"a type that agrees with the formula":   {`"a":{"type":"number"},"b":{"type":"number","formula":"a * 2"}`, "accepted"},
+		"a name the engine keeps":               {`"state":{"type":"text"}`, "reserved_name"},
+		"a default that reads another variable": {`"a":{"type":"int"},"b":{"type":"int","default":"a + 1"}`, "accepted"},
 	} {
-		if got := found.note(finding(db, scratch("Checked", c.variables, oneState))); got != c.code {
-			t.Errorf("%s: the engine finds %s, and the chapter says %s", c.what, got, c.code)
+		if got := finding(db, variables(c[0])); got != c[1] {
+			t.Errorf("%s: the engine finds %s, and the chapter says %s", what, got, c[1])
 		}
 	}
-	found.covers(t, "checked when the class is defined", marked(t, page, "checked when the class is defined"))
 }
 
 func TestNotion_StatesAndTransitions(t *testing.T) {
@@ -763,24 +793,27 @@ func TestNotion_StatesAndTransitions(t *testing.T) {
 	}
 
 	// What is checked when the class is defined, and what is not.
-	found := seen{}
 	chart2 := func(states, transitions string) string {
 		return scratch("Checked", `"a":{"type":"number"}`, `"states":`+states+`,"transitions":`+transitions)
 	}
-	for _, c := range []struct{ what, definition, code string }{
-		{"a transition to a state that is not in the list", chart2(`{"initial":"a","list":["a","b"]}`, `[{"name":"go","from":"a","to":"z"}]`), "unknown_state"},
-		{"an initial state that is not in the list", chart2(`{"initial":"x","list":["a","b"]}`, `[{"name":"go","from":"a","to":"b"}]`), "unknown_state"},
-		{"a name used twice", chart2(`{"initial":"a","list":["a","b","c"]}`, `[{"name":"go","from":"a","to":"b"},{"name":"go","from":"b","to":"c"}]`), "duplicate"},
-		{"a guard that is not a condition", chart2(`{"initial":"a","list":["a","b"]}`, `[{"name":"go","from":"a","to":"b","guard":"a + 1"}]`), "not_a_condition"},
-		{"from a final state to one that is not", chart2(`{"initial":"a","list":["a","b"],"final":["b"]}`, `[{"name":"go","from":"a","to":"b"},{"name":"back","from":"b","to":"a"}]`), "not_allowed"},
-		{"a state no transition reaches", chart2(`{"initial":"a","list":["a","b","c"]}`, `[{"name":"go","from":"a","to":"b"}]`), "accepted"},
-		{"a state that is not final and that nothing leaves", chart2(`{"initial":"a","list":["a","b"]}`, `[{"name":"go","from":"a","to":"b"}]`), "accepted"},
+	held(t, db, page, map[string][]string{
+		"names a state in a transition, or as initial, that is not in list": {
+			chart2(`{"initial":"a","list":["a","b"]}`, `[{"name":"go","from":"a","to":"z"}]`),
+			chart2(`{"initial":"x","list":["a","b"]}`, `[{"name":"go","from":"a","to":"b"}]`),
+		},
+		"uses the name of a transition twice":               {chart2(`{"initial":"a","list":["a","b","c"]}`, `[{"name":"go","from":"a","to":"b"},{"name":"go","from":"b","to":"c"}]`)},
+		"has a guard that is not a condition":               {chart2(`{"initial":"a","list":["a","b"]}`, `[{"name":"go","from":"a","to":"b","guard":"a + 1"}]`)},
+		"leads from a final state to one that is not final": {chart2(`{"initial":"a","list":["a","b"],"final":["b"]}`, `[{"name":"go","from":"a","to":"b"},{"name":"back","from":"b","to":"a"}]`)},
+	})
+	// Two things the engine does not check.
+	for what, definition := range map[string]string{
+		"a state no transition reaches":                     chart2(`{"initial":"a","list":["a","b","c"]}`, `[{"name":"go","from":"a","to":"b"}]`),
+		"a state that is not final and that nothing leaves": chart2(`{"initial":"a","list":["a","b"]}`, `[{"name":"go","from":"a","to":"b"}]`),
 	} {
-		if got := found.note(finding(db, c.definition)); got != c.code {
-			t.Errorf("%s: the engine finds %s, and the chapter says %s", c.what, got, c.code)
+		if got := finding(db, definition); got != "accepted" {
+			t.Errorf("%s: the engine finds %s, and the chapter says it is accepted without a remark", what, got)
 		}
 	}
-	found.covers(t, "checked when the class is defined", marked(t, page, "checked when the class is defined"))
 	met.covers(t, "what is refused", marked(t, page, "what is refused"))
 }
 
@@ -1052,29 +1085,29 @@ func TestNotion_RulesAndActions(t *testing.T) {
 	}
 
 	// What is checked when the class is defined.
-	found := seen{}
 	chart := `"states":{"initial":"a","list":["a","b","c","d"],"final":["c","d"]},` +
 		`"transitions":[{"name":"go","from":"a","to":"b"},{"name":"end","from":"b","to":"c"},{"name":"over","from":"c","to":"d"}]`
-	for _, c := range []struct{ what, rules, code string }{
-		{"a state the class does not have", `[{"on":"enter","state":"zz","do":[{"action":"emit","event":"x"}]}]`, "unknown_state"},
-		{"a transition the class does not have", `[{"on":"transition","name":"zz","do":[{"action":"emit","event":"x"}]}]`, "unknown_transition"},
-		{"a variable the class does not have", `[{"on":"create","do":[{"action":"set","values":{"zz":"1"}}]}]`, "unknown_variable"},
-		{"a computed variable", `[{"on":"create","do":[{"action":"set","values":{"twice":"1"}}]}]`, "not_allowed"},
-		{"a value of another type", `[{"on":"create","do":[{"action":"set","values":{"n":"\"x\""}}]}]`, "type_mismatch"},
-		{"values_change with no variables", `[{"on":"values_change","do":[{"action":"emit","event":"x"}]}]`, "missing"},
-		{"an if that is not a condition", `[{"on":"create","if":"n + 1","do":[{"action":"emit","event":"x"}]}]`, "not_a_condition"},
-		{"an action the database does not have", `[{"on":"create","do":[{"action":"mail.send"}]}]`, "unknown_action"},
-		{"a class the database does not have", `[{"on":"create","do":[{"action":"create","class":"Nope","values":{}}]}]`, "unknown_class"},
-		{"a set on leaving a final state", `[{"on":"exit","state":"c","do":[{"action":"set","values":{"n":"1"}}]}]`, "not_allowed"},
-		{"a set on entering a state a final one leads to", `[{"on":"enter","state":"d","do":[{"action":"set","values":{"n":"1"}}]}]`, "not_allowed"},
-		{"an emit on entering a state a final one leads to", `[{"on":"enter","state":"d","do":[{"action":"emit","event":"x"}]}]`, "accepted"},
-	} {
-		definition := scratch("Checked", `"n":{"type":"number"},"twice":{"formula":"n * 2"}`, chart+`,"rules":`+c.rules)
-		if got := found.note(finding(db, definition)); got != c.code {
-			t.Errorf("%s: the engine finds %s, and the chapter says %s", c.what, got, c.code)
-		}
+	rule := func(rules string) string {
+		return scratch("Checked", `"n":{"type":"number"},"twice":{"formula":"n * 2"}`, chart+`,"rules":`+rules)
 	}
-	found.covers(t, "checked when the class is defined", marked(t, page, "checked when the class is defined"))
+	held(t, db, page, map[string][]string{
+		"names a state the class does not have":                    {rule(`[{"on":"enter","state":"zz","do":[{"action":"emit","event":"x"}]}]`)},
+		"names a transition the class does not have":               {rule(`[{"on":"transition","name":"zz","do":[{"action":"emit","event":"x"}]}]`)},
+		"sets a variable the class does not have":                  {rule(`[{"on":"create","do":[{"action":"set","values":{"zz":"1"}}]}]`)},
+		"sets a computed variable":                                 {rule(`[{"on":"create","do":[{"action":"set","values":{"twice":"1"}}]}]`)},
+		"sets a value of another type than the variable":           {rule(`[{"on":"create","do":[{"action":"set","values":{"n":"\"x\""}}]}]`)},
+		"is on values_change and names no variables":               {rule(`[{"on":"values_change","do":[{"action":"emit","event":"x"}]}]`)},
+		"has an if that is not a condition":                        {rule(`[{"on":"create","if":"n + 1","do":[{"action":"emit","event":"x"}]}]`)},
+		"names an action the database does not have":               {rule(`[{"on":"create","do":[{"action":"mail.send"}]}]`)},
+		"creates a document of a class the database does not have": {rule(`[{"on":"create","do":[{"action":"create","class":"Nope","values":{}}]}]`)},
+		"changes a document that is already finished": {
+			rule(`[{"on":"exit","state":"c","do":[{"action":"set","values":{"n":"1"}}]}]`),
+			rule(`[{"on":"enter","state":"d","do":[{"action":"set","values":{"n":"1"}}]}]`),
+		},
+	})
+	if got := finding(db, rule(`[{"on":"enter","state":"d","do":[{"action":"emit","event":"x"}]}]`)); got != "accepted" {
+		t.Errorf("an emit on entering a state a final one leads to: %s; the chapter says it may run there", got)
+	}
 	stateless := scratch("Calculator", `"n":{"type":"number"}`, `"rules":[{"on":"create","do":[{"action":"emit","event":"x"}]}]`)
 	if got := finding(db, stateless); got != "not_allowed" {
 		t.Errorf("rules in a class without states: %s", got)
@@ -1265,7 +1298,6 @@ func TestNotion_WhoMay(t *testing.T) {
 	}
 
 	// What is checked when the class is defined.
-	found := seen{}
 	full := `"read":"TRUE","create":"TRUE","update":"TRUE","delete":"FALSE"`
 	definition := func(access, rights string) string {
 		d := `{"name":"Checked","variables":{"n":{"type":"number"}},"states":{"initial":"a","list":["a","b"]},` +
@@ -1275,21 +1307,20 @@ func TestNotion_WhoMay(t *testing.T) {
 		}
 		return d + `}`
 	}
-	for _, c := range []struct{ what, definition, code string }{
-		{"a line of access that is not a condition", definition(`"read":"n + 1","create":"TRUE","update":"TRUE","delete":"FALSE"`, ""), "not_a_condition"},
-		{"a right that is not a condition", definition(full, `{"*":{"n":{"write":"n + 1"}}}`), "not_a_condition"},
-		{"a variable the class does not have, in a line of access", definition(`"read":"zz = USER()","create":"TRUE","update":"TRUE","delete":"FALSE"`, ""), "bad_formula"},
-		{"a transition the class does not have, under access", definition(full+`,"transition":{"zz":"TRUE"}`, ""), "unknown_transition"},
-		{"a state the class does not have, under rights", definition(full, `{"zz":{"*":{"write":"TRUE"}}}`), "unknown_state"},
-		{"a variable the class does not have, under rights", definition(full, `{"*":{"zz":{"write":"TRUE"}}}`), "unknown_variable"},
-		{"a word the engine does not know, under access", definition(full+`,"approve":"TRUE"`, ""), "bad_json"},
-		{"a word the engine does not know, under rights", definition(full, `{"*":{"n":{"edit":"TRUE"}}}`), "bad_json"},
-	} {
-		if got := found.note(finding(db, c.definition)); got != c.code {
-			t.Errorf("%s: the engine finds %s, and the chapter says %s", c.what, got, c.code)
-		}
-	}
-	found.covers(t, "checked when the class is defined", marked(t, page, "checked when the class is defined"))
+	held(t, db, page, map[string][]string{
+		"has a line of access or a right that is not a condition": {
+			definition(`"read":"n + 1","create":"TRUE","update":"TRUE","delete":"FALSE"`, ""),
+			definition(full, `{"*":{"n":{"write":"n + 1"}}}`),
+		},
+		"reads a variable it does not have in a line of access":                {definition(`"read":"zz = USER()","create":"TRUE","update":"TRUE","delete":"FALSE"`, "")},
+		"has a line under access.transition for a transition it does not have": {definition(full+`,"transition":{"zz":"TRUE"}`, "")},
+		"names a state under rights that it does not have":                     {definition(full, `{"zz":{"*":{"write":"TRUE"}}}`)},
+		"names a variable under rights that it does not have":                  {definition(full, `{"*":{"zz":{"write":"TRUE"}}}`)},
+		"has a word under access or rights that the engine does not know": {
+			definition(full+`,"approve":"TRUE"`, ""),
+			definition(full, `{"*":{"n":{"edit":"TRUE"}}}`),
+		},
+	})
 
 	// A line left out is noted, and lets nobody through.
 	bare := `{"name":"Bare","variables":{"n":{"type":"number"}},"states":{"initial":"a","list":["a"]}}`
@@ -1310,4 +1341,475 @@ func TestNotion_WhoMay(t *testing.T) {
 	check("Ola creates a document of a class with no access block", err, "forbidden at /access/create")
 
 	met.covers(t, "what is refused", marked(t, page, "what is refused"))
+}
+
+func TestNotion_HistoryAndTheLog(t *testing.T) {
+	page := notion(t, "history-and-the-log.md")
+	clock := time.Date(2026, 11, 16, 9, 0, 0, 0, time.UTC)
+	at := func(hour, minute int) { clock = time.Date(2026, 11, 16, hour, minute, 0, 0, time.UTC) }
+	db := notionDB(t, fado.Options{Now: func() time.Time { return clock }})
+	ctx := context.Background()
+	invoice, err := os.ReadFile(filepath.Join("..", "examples", "first", "invoice.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.DefineClass(ctx, invoice, setup); err != nil {
+		t.Fatal(err)
+	}
+	krzysztof, anna := person("krzysztof"), person("anna", "ACCOUNTING")
+	met := seen{}
+	hour := func(seconds int64) string {
+		if seconds == 0 {
+			return ""
+		}
+		return time.Unix(seconds, 0).UTC().Format("15:04")
+	}
+
+	// The story.
+	doc, err := db.Create(ctx, "Invoice", fado.Values{"number": "FV/2026/11/017", "supplier": "ACME", "net": "1000.00 PLN"}, krzysztof)
+	if err != nil {
+		t.Fatal(err)
+	}
+	version := func(step string, shown int64) {
+		t.Helper()
+		now, err := db.Get(ctx, "Invoice", doc.ID, krzysztof)
+		if err != nil || now.Version != shown {
+			t.Errorf("%s: the invoice is at version %d, %v; the chapter says %d", step, now.Version, err, shown)
+		}
+	}
+	at(10, 0)
+	first, err := db.Set(ctx, "Invoice", doc.ID, fado.Values{"net": "1200.00 PLN"}, krzysztof, fado.Key("net-fix-1"))
+	want(t, "10:00: Krzysztof changes the net amount, with a key", err, "allowed")
+	at(10, 1)
+	again, err := db.Set(ctx, "Invoice", doc.ID, fado.Values{"net": "1200.00 PLN"}, krzysztof, fado.Key("net-fix-1"))
+	want(t, "10:01: the same call again with the same key", err, "allowed")
+	if err == nil && (again.Version != first.Version || again.UpdatedAt != first.UpdatedAt) {
+		t.Errorf("10:01: the second answer is version %d of %d; the chapter says the caller gets the first answer", again.Version, first.Version)
+	}
+	version("10:01", 2)
+	_, err = db.Set(ctx, "Invoice", doc.ID, fado.Values{"net": "1300.00 PLN"}, krzysztof, fado.Key("net-fix-1"))
+	want(t, "a different call under the same key", err, met.note("key_reused"))
+	_, err = db.Set(ctx, "Invoice", doc.ID, fado.Values{"net": "1200.00 PLN"}, krzysztof)
+	want(t, "a change that changes nothing", err, "allowed")
+	version("a change that changes nothing", 2)
+	at(10, 2)
+	_, err = db.Set(ctx, "Invoice", doc.ID, fado.Values{"note": "urgent"}, anna)
+	want(t, "10:02: Anna tries to write a note", err, "forbidden, variable note")
+	version("10:02", 2)
+	at(11, 0)
+	_, err = db.Transition(ctx, "Invoice", doc.ID, "approve", nil, krzysztof)
+	want(t, "11:00: Krzysztof approves", err, "allowed")
+
+	// Looking before.
+	_, err = db.Preview(ctx, "Invoice", doc.ID, nil, "book", anna)
+	want(t, "a preview of book with no account", err, "guard_false")
+	preview, err := db.Preview(ctx, "Invoice", doc.ID, fado.Values{"account": "401"}, "book", anna)
+	if err != nil || preview.Document.State != "BOOKED" || preview.Document.Version != 4 || strings.Join(preview.Path, " ") != "INACCOUNTING BOOKED" || preview.Now != clock.Unix() {
+		t.Errorf("a preview of book with the account: %v", err)
+	}
+	version("after the previews", 3)
+
+	at(12, 0)
+	_, err = db.Transition(ctx, "Invoice", doc.ID, "book", fado.Values{"account": "401"}, anna, fado.BusinessDate(time.Date(2026, 10, 31, 0, 0, 0, 0, time.UTC)))
+	want(t, "12:00: Anna gives the account and books", err, "allowed")
+
+	// The history.
+	history, err := db.History(ctx, "Invoice", doc.ID, krzysztof)
+	if err != nil {
+		t.Fatal(err)
+	}
+	events, err := db.Events(ctx, "Invoice", doc.ID, krzysztof)
+	if err != nil {
+		t.Fatal(err)
+	}
+	shown := rows(marked(t, page, "the history"))
+	if len(history) != len(shown) {
+		t.Fatalf("the history has %d versions, and the chapter %d", len(history), len(shown))
+	}
+	for i, row := range shown {
+		h := history[i]
+		if got := []string{fmt.Sprint(h.Version), hour(h.ValidFrom), hour(h.ValidTo), h.ActorID, h.State, fmt.Sprint(h.Values["net"])}; !reflect.DeepEqual(got, row) {
+			t.Errorf("version %d is %v, and the chapter says %v", i+1, got, row)
+		}
+	}
+
+	// The log, and how the two point at each other.
+	log := rows(marked(t, page, "the log"))
+	if len(events) != len(log) {
+		t.Fatalf("the log has %d events, and the chapter %d", len(events), len(log))
+	}
+	for i, row := range log {
+		e := events[i]
+		if got := []string{e.Kind, e.Name, e.FromState, e.ToState, e.ActorID, hour(e.TS), e.BusinessDate, e.CommandKey}; !reflect.DeepEqual(got, row) {
+			t.Errorf("event %d is %v, and the chapter says %v", i+1, got, row)
+		}
+		if history[i].EventID != e.ID || e.AfterVersion != history[i].Version || e.BeforeVersion != history[i].Version-1 {
+			t.Errorf("version %d and event %d do not point at each other", i+1, i+1)
+		}
+		if i > 0 && e.ID <= events[i-1].ID {
+			t.Errorf("the id of event %d does not sort after the one before", i+1)
+		}
+	}
+
+	// What an event carries: every part, and no other.
+	var parts, named []string
+	kind := reflect.TypeOf(fado.Event{})
+	for i := 0; i < kind.NumField(); i++ {
+		tag, _, _ := strings.Cut(kind.Field(i).Tag.Get("json"), ",")
+		parts = append(parts, tag)
+	}
+	for _, row := range rows(marked(t, page, "what an event carries")) {
+		for _, name := range strings.Split(row[0], ",") {
+			named = append(named, strings.TrimSpace(name))
+		}
+	}
+	sort.Strings(parts)
+	sort.Strings(named)
+	if !reflect.DeepEqual(parts, named) {
+		t.Errorf("an event carries %v, and the chapter names %v", parts, named)
+	}
+
+	// The business day the host program names for the caller.
+	hosted := fado.As(fado.Principal{ID: "krzysztof", Kind: fado.ActorPerson, Today: time.Date(2026, 11, 13, 0, 0, 0, 0, time.UTC)})
+	friday, err := db.Create(ctx, "Invoice", fado.Values{"number": "FV/2026/11/018", "supplier": "ACME", "net": "5.00 PLN"}, hosted)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if made, err := db.Events(ctx, "Invoice", friday.ID, krzysztof); err != nil || len(made) != 1 || made[0].BusinessDate != "2026-11-13" {
+		t.Errorf("the business day the host names for the caller: %v, %v", made, err)
+	}
+
+	// Reading it with SQL.
+	query := regexp.MustCompile("(?s)```sql\r?\n(.*?)\r?\n```").FindSubmatch(page)
+	if query == nil {
+		t.Fatal("the chapter shows no SQL")
+	}
+	stays, err := db.SQL(ctx, strings.Replace(string(query[1]), "from Invoice_states", "from Invoice_states where id = ?", 1), []any{doc.ID}, setup)
+	if err != nil {
+		t.Fatal(err)
+	}
+	table := rows(marked(t, page, "the stays"))
+	if len(stays.Rows) != len(table) {
+		t.Fatalf("the query answers %d stays, and the chapter shows %d", len(stays.Rows), len(table))
+	}
+	for i, row := range table {
+		var got []string
+		for _, cell := range stays.Rows[i] {
+			if cell == nil {
+				got = append(got, "")
+			} else {
+				got = append(got, fmt.Sprint(cell))
+			}
+		}
+		if !reflect.DeepEqual(got, row) {
+			t.Errorf("stay %d is %v, and the chapter says %v", i+1, got, row)
+		}
+	}
+	for view, column := range map[string]string{"Invoice": "id", "Invoice_history": "id", "Invoice_events": "event_id", "Invoice_states": "id"} {
+		if _, err := db.SQL(ctx, "select count("+column+") from "+view, nil, setup); err != nil {
+			t.Errorf("the view %s: %v", view, err)
+		}
+	}
+	_, err = db.SQL(ctx, "select count(*) from Invoice", nil, anna)
+	want(t, "Anna runs SQL", err, "forbidden at /system/analysts")
+
+	// Who may read the record.
+	private := `{"name":"Private","variables":{"a":{"type":"text"},"secret":{"type":"text"}},"states":{"initial":"x","list":["x"]},
+	  "access":{"read":"CREATEDBY() = USER() OR INGROUP(\"readers\")","create":"TRUE","update":"TRUE","delete":"FALSE"},
+	  "rights":{"*":{"secret":{"read":"CREATEDBY() = USER()"}}}}`
+	if _, err := db.DefineClass(ctx, []byte(private), setup); err != nil {
+		t.Fatal(err)
+	}
+	own, err := db.Create(ctx, "Private", fado.Values{"a": "1", "secret": "s"}, krzysztof)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if h, err := db.History(ctx, "Private", own.ID, anna); err != nil || len(h) != 0 {
+		t.Errorf("the history of a document Anna may not see: %d versions, %v", len(h), err)
+	}
+	if e, err := db.Events(ctx, "Private", own.ID, anna); err != nil || len(e) != 0 {
+		t.Errorf("the events of a document Anna may not see: %d, %v", len(e), err)
+	}
+	_, err = db.Version(ctx, "Private", own.ID, 1, anna)
+	want(t, "a version of a document Anna may not see", err, met.note("unknown_document"))
+	reader := person("renata", "readers")
+	if h, err := db.History(ctx, "Private", own.ID, reader); err != nil || len(h) != 1 {
+		t.Errorf("the history for a reader: %d versions, %v", len(h), err)
+	} else if _, there := h[0].Values["secret"]; there || h[0].Values["a"] != "1" {
+		t.Errorf("a value the reader may not see is in the version: %v", h[0].Values)
+	}
+	_, err = db.Version(ctx, "Invoice", doc.ID, 99, krzysztof)
+	want(t, "a version the document does not have", err, met.note("unknown_document"))
+
+	// The kinds of event: a class that goes through all of them.
+	kinds := `{"name":"Kinds","variables":{"a":{"type":"number","default":"1"},"seen":{"formula":"NOW()","mode":"triggered","on":["refresh"]}},
+	  "states":{"initial":"x","list":["x","y"]},
+	  "transitions":[{"name":"go","from":"x","to":"y"}],
+	  "rules":[
+	    {"on":"create","do":[{"action":"emit","event":"made"},{"action":"transition","id":"ID()","name":"go"}]},
+	    {"on":"enter","state":"y","do":[{"action":"transition","id":"ID()","name":"go"}]}
+	  ],
+	  "access":{"read":"TRUE","create":"TRUE","update":"TRUE","delete":"TRUE"}}`
+	if _, err := db.DefineClass(ctx, []byte(kinds), setup); err != nil {
+		t.Fatal(err)
+	}
+	k, err := db.Create(ctx, "Kinds", fado.Values{"a": 5}, krzysztof)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Drain(ctx, setup); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Set(ctx, "Kinds", k.ID, fado.Values{"a": 6}, krzysztof); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Reset(ctx, "Kinds", k.ID, []string{"a"}, krzysztof); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Refresh(ctx, "Kinds", k.ID, nil, krzysztof); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.DefineClass(ctx, []byte(strings.Replace(kinds, `"a":{"type":"number","default":"1"}`, `"a":{"type":"number","default":"1"},"b":{"type":"text"}`, 1)), setup); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Migrate(ctx, "Kinds", setup); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Delete(ctx, "Kinds", k.ID, krzysztof); err != nil {
+		t.Fatal(err)
+	}
+	all, err := db.Events(ctx, "Kinds", k.ID, krzysztof)
+	if err != nil {
+		t.Fatal(err)
+	}
+	written := map[string]bool{}
+	for _, e := range all {
+		written[e.Kind] = true
+	}
+	var got, listed []string
+	for kind := range written {
+		got = append(got, kind)
+	}
+	for _, row := range rows(marked(t, page, "the kinds of event")) {
+		listed = append(listed, row[0])
+	}
+	sort.Strings(got)
+	sort.Strings(listed)
+	if !reflect.DeepEqual(got, listed) {
+		t.Errorf("the engine wrote the kinds %v, and the chapter lists %v", got, listed)
+	}
+
+	met.covers(t, "what is refused", marked(t, page, "what is refused"))
+}
+
+func TestNotion_Time(t *testing.T) {
+	page := notion(t, "time.md")
+	clock := time.Date(2026, 12, 1, 9, 0, 0, 0, time.UTC)
+	on := func(day int, month time.Month, year int) time.Time {
+		return time.Date(year, month, day, 9, 0, 0, 0, time.UTC)
+	}
+	file := filepath.Join(t.TempDir(), "time.fado")
+	options := fado.Options{Now: func() time.Time { return clock }, Outbox: fado.OutboxOptions{Manual: true}}
+	db, err := fado.Open(file, options)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { db.Close() }()
+	ctx := context.Background()
+	class := notionClass(t, page)
+	if _, err := db.DefineClass(ctx, class, setup); err != nil {
+		t.Fatal(err)
+	}
+	krzysztof, ewa := person("krzysztof"), person("ewa")
+	// run stands for the engine's worker waking at this moment.
+	run := func(step string, shown int) {
+		t.Helper()
+		if ran, err := db.Drain(ctx, setup); err != nil || ran != shown {
+			t.Errorf("%s: the engine made %d moves, %v; the chapter says %d", step, ran, err, shown)
+		}
+	}
+	offer, err := db.Create(ctx, "Offer", fado.Values{"customer": "ACME"}, krzysztof)
+	if err != nil {
+		t.Fatal(err)
+	}
+	is := func(step, state string, reminders int, valid string) {
+		t.Helper()
+		now, err := db.Get(ctx, "Offer", offer.ID, krzysztof)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if now.State != state || fmt.Sprint(now.Values["reminders"]) != fmt.Sprint(reminders) || fmt.Sprint(now.Values["valid_until"]) != valid {
+			t.Errorf("%s: the offer is %s with %v reminders, valid until %v; the chapter says %s, %d, %s",
+				step, now.State, now.Values["reminders"], now.Values["valid_until"], state, reminders, valid)
+		}
+	}
+	is("1 December", "sent", 0, "2026-12-31")
+	moment := func(seconds int64) string {
+		if seconds == 0 {
+			return ""
+		}
+		return time.Unix(seconds, 0).UTC().Format("2 January 2006, 15:04")
+	}
+
+	// When the next one comes.
+	open, err := db.Transitions(ctx, "Offer", offer.ID, ewa)
+	if err != nil {
+		t.Fatal(err)
+	}
+	table := rows(marked(t, page, "what is open on 1 December"))
+	if len(open) != len(table) {
+		t.Fatalf("%d transitions leave sent, and the chapter lists %d", len(open), len(table))
+	}
+	for i, row := range table {
+		may := "yes"
+		if !open[i].Enabled {
+			may = "no: " + open[i].Code
+		}
+		if got := []string{open[i].Name, open[i].To, may, moment(open[i].FiresAt)}; !reflect.DeepEqual(got, row) {
+			t.Errorf("open on 1 December: %v, and the chapter says %v", got, row)
+		}
+	}
+
+	// Looking at another day.
+	due := func(step string, as []fado.Option, shown int) []fado.DueDocument {
+		t.Helper()
+		found, err := db.Due(ctx, "Offer", append([]fado.Option{krzysztof}, as...)...)
+		if err != nil || len(found) != shown {
+			t.Errorf("%s: %d offers would move, %v; the chapter says %d", step, len(found), err, shown)
+		}
+		return found
+	}
+	due("which offers would move, now", nil, 0)
+	if found := due("which offers would move, as of 10 December", []fado.Option{fado.At(on(10, 12, 2026))}, 1); len(found) == 1 &&
+		(found[0].ID != offer.ID || found[0].To != "sent" || moment(found[0].Since) != "8 December 2026, 09:00") {
+		t.Errorf("as of 10 December: %v; the chapter says a reminder has been due since 8 December", found[0])
+	}
+	preview, err := db.Preview(ctx, "Offer", offer.ID, nil, "accept", ewa, fado.At(on(20, 12, 2026)))
+	if err != nil || preview.Document.State != "accepted" || preview.Now != on(20, 12, 2026).Unix() {
+		t.Errorf("may Ewa accept, as of 20 December: %v", err)
+	}
+	_, err = db.Preview(ctx, "Offer", offer.ID, nil, "accept", ewa, fado.At(on(2, 1, 2027)))
+	want(t, "may Ewa accept, as of 2 January", err, "guard_false")
+	_, err = db.Transition(ctx, "Offer", offer.ID, "accept", nil, ewa, fado.At(on(20, 12, 2026)))
+	want(t, "a change made as of another moment", err, "not_allowed")
+	_, err = db.Transition(ctx, "Offer", offer.ID, "remind", nil, krzysztof)
+	want(t, "Krzysztof takes remind by hand", err, "forbidden at /access/transition/remind")
+	is("after looking", "sent", 0, "2026-12-31")
+
+	// The story.
+	run("1 December", 0)
+	clock = on(8, 12, 2026)
+	run("8 December", 1)
+	is("8 December", "sent", 1, "2026-12-31")
+	// 15 December: no program is running. What is due is in the file.
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+	clock = on(20, 12, 2026)
+	if db, err = fado.Open(file, options); err != nil {
+		t.Fatal(err)
+	}
+	is("20 December, before the engine ran", "sent", 1, "2026-12-31")
+	run("20 December", 1)
+	is("20 December", "sent", 2, "2026-12-31")
+	run("20 December, again", 0)
+	_, err = db.Set(ctx, "Offer", offer.ID, fado.Values{"valid_until": "2026-12-22"}, krzysztof)
+	want(t, "20 December: Krzysztof shortens it", err, "allowed")
+	open, err = db.Transitions(ctx, "Offer", offer.ID, ewa)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tr := range open {
+		if tr.Name == "expire" && moment(tr.FiresAt) != "23 December 2026, 00:00" {
+			t.Errorf("after the change expire fires on %s; the chapter says 23 December", moment(tr.FiresAt))
+		}
+		if tr.Name == "remind" && moment(tr.FiresAt) != "27 December 2026, 09:00" {
+			t.Errorf("the next reminder is due on %s; the chapter says seven days after the late one", moment(tr.FiresAt))
+		}
+	}
+	clock = on(23, 12, 2026)
+	_, err = db.Transition(ctx, "Offer", offer.ID, "accept", nil, ewa)
+	want(t, "23 December: Ewa accepts", err, "guard_false")
+	run("23 December", 1)
+	is("23 December", "expired", 2, "2026-12-22")
+
+	// The log.
+	events, err := db.Events(ctx, "Offer", offer.ID, krzysztof)
+	if err != nil {
+		t.Fatal(err)
+	}
+	log := rows(marked(t, page, "the log"))
+	if len(events) != len(log) {
+		t.Fatalf("the log has %d events, and the chapter %d", len(events), len(log))
+	}
+	for i, row := range log {
+		e := events[i]
+		if got := []string{e.Kind, e.Name, e.FromState, e.ToState, e.ActorID, e.Origin}; !reflect.DeepEqual(got, row) {
+			t.Errorf("event %d is %v, and the chapter says %v", i+1, got, row)
+		}
+	}
+
+	// A timer whose document has moved on does nothing.
+	clock = on(1, 12, 2026)
+	second, err := db.Create(ctx, "Offer", fado.Values{"customer": "Borealis"}, krzysztof)
+	if err != nil {
+		t.Fatal(err)
+	}
+	clock = on(5, 12, 2026)
+	if _, err := db.Transition(ctx, "Offer", second.ID, "accept", nil, ewa); err != nil {
+		t.Fatal(err)
+	}
+	clock = on(2, 1, 2027)
+	if _, err := db.Drain(ctx, setup); err != nil {
+		t.Fatal(err)
+	}
+	if kept, err := db.Get(ctx, "Offer", second.ID, krzysztof); err != nil || kept.State != "accepted" || kept.Version != 2 || fmt.Sprint(kept.Values["reminders"]) != "0" {
+		t.Errorf("an accepted offer after its timers were due: %v, %v", kept, err)
+	}
+
+	// With another formula under access, a person may take a timed
+	// transition before its time.
+	early := bytes.Replace(class, []byte(`"remind": "FALSE"`), []byte(`"remind": "CREATEDBY() = USER()"`), 1)
+	if bytes.Equal(early, class) {
+		t.Fatal("the class of the chapter has no line for remind to replace")
+	}
+	other := notionDB(t, fado.Options{})
+	if _, err := other.DefineClass(ctx, early, setup); err != nil {
+		t.Fatal(err)
+	}
+	third, err := other.Create(ctx, "Offer", fado.Values{"customer": "ACME"}, krzysztof)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reminded, err := other.Transition(ctx, "Offer", third.ID, "remind", nil, krzysztof)
+	if err != nil || fmt.Sprint(reminded.Values["reminders"]) != "1" {
+		t.Errorf("a timed transition taken by hand before its time: %v", err)
+	}
+
+	// What is checked when the class is defined.
+	timed := func(transition string) string {
+		return scratch("Checked", `"n":{"type":"number"},"d":{"type":"date"}`,
+			`"states":{"initial":"a","list":["a","b","c","c2"],"final":["c","c2"]},`+
+				`"transitions":[{"name":"end","from":"b","to":"c"},`+transition+`]`)
+	}
+	held(t, db, page, map[string][]string{
+		"has both after and at":                  {timed(`{"name":"x","from":"a","to":"b","after":"7d","at":"d"}`)},
+		"has a time and leaves a final state":    {timed(`{"name":"x","from":"c","to":"c2","after":"7d"}`)},
+		"has an at and leads into its own state": {timed(`{"name":"x","from":"a","to":"a","at":"d"}`)},
+		"has an at that reads the clock or the caller": {
+			timed(`{"name":"x","from":"a","to":"b","at":"ADDDAYS(TODAY(), 1)"}`),
+			timed(`{"name":"x","from":"a","to":"b","at":"IF(USER() = \"a\", d, d)"}`),
+		},
+		"has an at that is not a date or a datetime": {timed(`{"name":"x","from":"a","to":"b","at":"n + 1"}`)},
+		"has an after that is not a length of time":  {timed(`{"name":"x","from":"a","to":"b","after":"a week"}`)},
+	})
+	for what, c := range map[string][2]string{
+		"an after in hours": {timed(`{"name":"x","from":"a","to":"b","after":"36h"}`), "accepted"},
+		"a computed variable that reads the life of the document": {scratch("Checked", `"n":{"type":"number"},"waited":{"formula":"DAYSIN(\"a\")"}`, oneState), "bad_formula"},
+		"a default that reads the life of the document":           {scratch("Checked", `"n":{"type":"number","default":"DAYSIN(\"a\")"}`, oneState), "accepted"},
+	} {
+		if got := finding(db, c[0]); got != c[1] {
+			t.Errorf("%s: the engine finds %s, and the chapter says %s", what, got, c[1])
+		}
+	}
 }

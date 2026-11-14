@@ -18,6 +18,11 @@ All notable changes to FadoDB are recorded here. The format follows
   against the engine on each push, and another follows every link.
 - `examples/first`, the program of the first application:
   `go run ./examples/first`.
+- Five guides in the manual, one task each, under `docs/manual/guides`:
+  give each state its own editors, make a field read-only after
+  approval, four eyes, a reminder every seven days with a deadline,
+  and let somebody act for a person. A test defines the class of each
+  guide and plays its table of who does what against the engine.
 
 ## [0.5.0] - 2026-11-13
 

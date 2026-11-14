@@ -23,10 +23,9 @@ give.
 
 One chapter each, in the order a designer meets them. Each explains
 the idea with one class and a story of named people, and a test plays
-the story and every table of the chapter against the engine. Until a
-planned chapter is written the [glossary](manual/glossary.md) has one
-line for its words and the [class definition](manual/class.md) the
-syntax.
+the story and every table of the chapter against the engine. The
+[glossary](manual/glossary.md) has one line for each word, and the
+[class definition](manual/class.md) the syntax.
 
 | Chapter | What it explains | Mark |
 |---|---|---|
@@ -35,8 +34,8 @@ syntax.
 | [States and transitions](manual/notions/states-and-transitions.md) | the chart of a class; the two questions before every move; values given with a move; final states; what the log keeps | **written** |
 | [Rules and actions](manual/notions/rules-and-actions.md) | what happens by itself; what a rule does inside a commit and what the engine runs after it; an action that is refused | **written** |
 | [Who may](manual/notions/who-may.md) | the caller; the questions a class answers; who edits in which state; how a right is found; the four system groups; the content administrator | **written** |
-| History and the log | versions, events, previews, and reading what happened | planned |
-| Time | deadlines, reminders, timed transitions, and choosing a moment to look at | planned |
+| [History and the log](manual/notions/history-and-the-log.md) | versions and events and how they point at each other; what an event carries; sending a call twice; the business day; previews; reading the record, and who may | **written** |
+| [Time](manual/notions/time.md) | how a class speaks of time; a transition with a time; who makes the move; a timer that was missed; looking at another day | **written** |
 
 ## Guides: how do I
 

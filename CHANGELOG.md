@@ -23,6 +23,31 @@ All notable changes to FadoDB are recorded here. The format follows
   approval, four eyes, a reminder every seven days with a deadline,
   and let somebody act for a person. A test defines the class of each
   guide and plays its table of who does what against the engine.
+- Two chapters of the manual are generated from the engine: every
+  function of the formula language, with the ones this version does
+  not have yet marked, and every code of a refusal with its meaning.
+  `make docs` writes them again, and a test fails when they fall
+  behind the engine.
+- Four more guides, each played by a test: look a value up in a
+  reference table, move many documents at once, change a class that
+  already has documents, and do something outside when a document
+  changes.
+- The designer's skill teaches the syntax: what to read in the manual,
+  a small class that is complete, and the ten things that go wrong
+  most often. It is no longer a stub. The classes the skills show are
+  defined by the engine in the manual's test.
+
+### Changed
+
+- The benchmark gate runs on a pull request only when it changes a file
+  that goes into the programs the gate measures: a Go file of a package
+  linked into the benchmarks of `internal/formula` and `internal/store`,
+  a test file of those two packages, a file they embed, `go.mod`,
+  `go.sum`, the Makefile, a script or the CI workflow. Until now any
+  `.go` file started it, a test of another package included, and it
+  takes half an hour. `scripts/benchgate.sh --needed` gives the answer
+  and the file that decided it; when the go tool cannot list the
+  packages the gate runs.
 
 ## [0.5.0] - 2026-11-13
 

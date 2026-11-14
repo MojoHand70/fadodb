@@ -1237,9 +1237,10 @@ in 13.7 ns with no allocation, and the core binary is 2.9 MB
 - Go benchmarks next to every package; `-benchmem` always on.
 - CI compares against the `main` baseline with `benchstat` and fails on more than
   5% regression in time or bytes per operation, or any extra allocation per operation.
-  The gate runs on pull requests that change code, over the benchmarks the
-  budgets name (`scripts/benchgate.sh`); every benchmark runs for a release's
-  perf page.
+  The gate runs on pull requests that change a file of the measured
+  programs (`scripts/benchgate.sh --needed` says whether one did), over the
+  benchmarks the budgets name (`scripts/benchgate.sh`); every benchmark
+  runs for a release's perf page.
 - Each release's numbers are published under `docs/perf/`. Today they come
   from the package benchmarks and the property campaigns, run on the
   release commit by hand and reported by `benchstat`.

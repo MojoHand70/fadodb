@@ -118,10 +118,12 @@ const (
 	CodeNotACondition = "not_a_condition"
 	// CodeCycle: computed variables depend on each other in a loop.
 	CodeCycle = "cycle"
-	// CodeUnknownState, CodeUnknownVariable, CodeUnknownTransition: a
-	// reference to a state, variable or transition the class lacks.
-	CodeUnknownState      = "unknown_state"
-	CodeUnknownVariable   = "unknown_variable"
+	// CodeUnknownState: a reference to a state the class lacks.
+	CodeUnknownState = "unknown_state"
+	// CodeUnknownVariable: a reference to a variable the class lacks.
+	CodeUnknownVariable = "unknown_variable"
+	// CodeUnknownTransition: a reference to a transition the class
+	// lacks.
 	CodeUnknownTransition = "unknown_transition"
 	// CodeUnknownClass: an action names a class the database does not
 	// have (ADR-0044).
@@ -145,8 +147,8 @@ const (
 	CodeBadTrigger = "bad_trigger"
 	// CodeBadValue: an enum value, a range bound or a literal is wrong.
 	CodeBadValue = "bad_value"
-	// CodeRuleLeftOut is the note of an access rule a class leaves out:
-	// the class is accepted, and nobody but a content administrator
+	// CodeRuleLeftOut: a note and no refusal. The class leaves an access
+	// rule out; it is accepted, and nobody but a content administrator
 	// passes that rule (ADR-0052, item 5).
 	CodeRuleLeftOut = "rule_left_out"
 	// CodeTooManyColumns: a generated table would exceed MaxColumns.

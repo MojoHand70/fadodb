@@ -281,7 +281,8 @@ through.
 **A line left out lets nobody through.** A class says who may, or
 nobody may. Checking a class tells you about each line it leaves out.
 
-The functions these formulas use most:
+The functions these formulas use most, of the whole list in
+[The functions](functions.md):
 
 | Function | Answers |
 |---|---|

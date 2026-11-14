@@ -23,6 +23,11 @@ All notable changes to FadoDB are recorded here. The format follows
   approval, four eyes, a reminder every seven days with a deadline,
   and let somebody act for a person. A test defines the class of each
   guide and plays its table of who does what against the engine.
+- Two chapters of the manual are generated from the engine: every
+  function of the formula language, with the ones this version does
+  not have yet marked, and every code of a refusal with its meaning.
+  `make docs` writes them again, and a test fails when they fall
+  behind the engine.
 
 ### Changed
 

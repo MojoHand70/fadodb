@@ -92,7 +92,7 @@ Each entry is one variable: its name, and what it is.
 | Word | Meaning |
 |---|---|
 | `type` | what kind of value it holds; see the table below |
-| `required` | a document without a value for it is refused |
+| `required` | a document without a value for it is refused. This holds for a simple value; on an object, a list or rows the word is accepted and not enforced today |
 | `default` | a formula for the value a new document gets when the caller gives none |
 | `formula` | the variable is computed, and nobody sets it |
 | `values` | for a text: the list of values it may take |
@@ -100,7 +100,7 @@ Each entry is one variable: its name, and what it is.
 | `scale` | for `decimal` and `money`: the number of decimal places, two when left out |
 | `index` | keeps an index on the variable, so that finding documents by it is fast |
 | `class` | for a `ref`: the class it points at |
-| `schema` | for `rows`: the columns of the table, each with its type. For `object`: the name of a schema, which is defined on its own before the class |
+| `schema` | for `rows`: the columns of the table, each with its type, or the name of a schema. For `object`: the name of a schema, which is defined on its own before the class; see [Schemas and objects](schemas-and-objects.md) |
 
 The types:
 

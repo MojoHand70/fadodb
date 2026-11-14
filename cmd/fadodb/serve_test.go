@@ -329,7 +329,8 @@ func TestTheChapterOnServing(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	chapter := string(text)
+	// A checkout on Windows may carry CRLF line endings.
+	chapter := strings.ReplaceAll(string(text), "\r\n", "\n")
 
 	// Every flag of the server is in the chapter.
 	for _, flag := range []string{"--listen", "--tls-cert", "--tls-key", "--plain-http"} {

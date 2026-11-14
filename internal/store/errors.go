@@ -184,6 +184,9 @@ const (
 	// CodeUnknownRow: a table.update addresses a row the table does not
 	// have (ADR-0044).
 	CodeUnknownRow = "unknown_row"
+	// CodeInUse: another program holds the database alone, as a server
+	// does while it serves it (ADR-0059). The message says which.
+	CodeInUse = "in_use"
 	// CodeUnknownUser: the database has no user of that id (ADR-0057).
 	CodeUnknownUser = "unknown_user"
 	// CodeUnknownKey: the database has no key of that id, or the key is

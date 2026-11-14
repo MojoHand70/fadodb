@@ -17,7 +17,7 @@
 // The files travel beside the commands, at three addresses the door
 // also answers (ADR-0055, item 9).
 //
-// What is not here yet, each with its step: the stream of changes, the
-// engine's own keys, and the program
-// `fadodb serve`.
+// Bearer is the Who of a database that keeps its own users and keys
+// (ADR-0057); the program `fadodb serve` is this door with such a
+// database behind it. What is not here yet: the stream of changes.
 package server

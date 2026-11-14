@@ -252,9 +252,19 @@ The fourth step gave a database its own users, groups and keys
 from `create_user` to `whoami`, a key is one line of text that begins
 `fado_` and is shown once, the database keeps a hash of it, and every
 change to a user or a key is kept. The door asks for a key with
-`httpdoor.Keys`; checking one takes 0.1 µs and reads nothing. Not
-built yet: `fadodb serve`, with the first administrator made on the
-machine, the stream of changes and the door for agents.
+`httpdoor.Keys`; checking one takes 0.1 µs and reads nothing. The
+fifth step is `fadodb serve`, built in parts. The first part is in:
+`fadodb init` makes a database, `fadodb user add` and `fadodb key new`
+make its first administrator on the machine that holds it, and
+`fadodb serve` serves it to callers who send a key. Told nothing, it
+listens on this machine only, and it refuses to listen beyond it
+without a certificate unless it is told that something in front
+encrypts. While it serves it holds the database alone: a second
+program that opens it is refused and told who holds it. It writes one
+line for each request, answers its health, and stops cleanly. Not
+built yet: the settings of the server, the hosts its actions may call
+and their secrets, its counts, the stream of changes and the door for
+agents.
 This page is updated when a phase starts and when it ends;
 it never describes a phase as done before its acceptance criteria pass.
 

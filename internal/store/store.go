@@ -108,6 +108,14 @@ type Options struct {
 	// somebody against the substitutions of the database. It is the host
 	// program's, given at every Open, like its actions.
 	HostAnswersFor bool
+	// Alone, when it is not empty, says that this program holds the
+	// database alone until it closes it (ADR-0059, item 7), and is the
+	// name the program gives itself, such as "fadodb serve": another
+	// program that opens the database meanwhile is refused with in_use
+	// and told this name. A server opens its database so, since it
+	// keeps in memory what it has read of it. Without it a program
+	// holds nothing, and is refused only a database held alone.
+	Alone string
 	// Users says that the database keeps its own users, groups and keys
 	// (ADR-0057): the calls that keep them work, their commands are
 	// offered, and Authenticate answers who a key belongs to. It is how
@@ -241,6 +249,9 @@ type Store struct {
 	// dueLists counts the lists of documents that Due read to look at
 	// them one by one (ADR-0047, item 8), for the tests of when it does.
 	dueLists atomic.Int64
+	// held is the hold of this program on the database, nil when it
+	// holds it with others (ADR-0059, item 7).
+	held *hold
 	// people is what a database that keeps its own users holds of them
 	// in memory (ADR-0057).
 	people people
@@ -279,8 +290,37 @@ func (e *engineStmts) close() {
 }
 
 // Open opens the database at path, creating it when it does not exist,
-// and loads its schemas and classes.
+// and loads its schemas and classes. A database that another program
+// holds alone is refused with in_use (ADR-0059, item 7).
 func Open(path string, o Options) (*Store, error) {
+	if path == "" {
+		return nil, errf(CodeBadValue, "", "a database path is required")
+	}
+	var held *hold
+	if o.Alone != "" {
+		now := time.Now
+		if o.Now != nil {
+			now = o.Now
+		}
+		h, err := holdAlone(path, o.Alone, now())
+		if err != nil {
+			return nil, err
+		}
+		held = h
+	} else if err := heldAlone(path); err != nil {
+		return nil, err
+	}
+	s, err := open(path, o)
+	if err != nil {
+		held.release()
+		return nil, err
+	}
+	s.held = held
+	return s, nil
+}
+
+// open is Open once the database is known to be free.
+func open(path string, o Options) (*Store, error) {
 	if path == "" {
 		return nil, errf(CodeBadValue, "", "a database path is required")
 	}
@@ -922,7 +962,18 @@ func (s *Store) Close() error {
 	if err2 := s.db.Close(); err == nil {
 		err = err2
 	}
+	s.held.release()
 	return storageErr("close", err)
+}
+
+// Ping reads from the database, to say that it answers. A server asks
+// it for its health (ADR-0059, item 9).
+func (s *Store) Ping(ctx context.Context) error {
+	var version int
+	if err := s.db.QueryRowContext(ctx, "SELECT version FROM schema_version").Scan(&version); err != nil {
+		return storageErr("read the database", err)
+	}
+	return nil
 }
 
 // Path is the database file.

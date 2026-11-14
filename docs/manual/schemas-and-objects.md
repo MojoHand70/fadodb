@@ -297,6 +297,18 @@ title, a line under it, a picture, an icon and a colour. The engine
 checks it when the schema is defined and keeps it. Nothing in the
 engine reads it today: it is there for the screens of Phase 7.
 
+## The commands
+
+<!-- the commands -->
+| To | Command |
+|---|---|
+| define a schema | `define_schema` |
+| read its definition back | `get_schema` |
+| list the schemas, the engine's first | `list_schemas` |
+
+What each takes and what it answers is in
+[The commands](commands.md#definitions).
+
 ## What is checked when the schema is defined
 
 <!-- checked when the schema is defined -->
@@ -352,5 +364,4 @@ And in a class:
 - A default for an object, and an index on one of its fields.
 - Rights for single fields.
 - Changing a schema that a class uses, and removing one.
-- A call that lists the schemas of a database or reads one back.
 - The screens that use `presentation`.

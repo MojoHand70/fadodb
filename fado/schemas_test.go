@@ -143,6 +143,15 @@ func TestSchemasAndObjects(t *testing.T) {
 	if len(brought) != 9 {
 		t.Errorf("the chapter lists %d schemas, and says nine", len(brought))
 	}
+	// The engine lists its own schemas first: the chapter has each of
+	// them, in that order, and the caller's two follow.
+	var names []string
+	for _, row := range brought {
+		names = append(names, row[0])
+	}
+	if got := db.Schemas(); !reflect.DeepEqual(got, append(names, "Contact", "Depot")) {
+		t.Errorf("the schemas of the database are %v, and the chapter lists %v as the engine's", got, names)
+	}
 	for i, row := range brought {
 		cls, err := db.DefineClass(ctx, []byte(scratch(fmt.Sprintf("Holds%d", i), `"o":{"type":"object","schema":"`+row[0]+`"}`, oneState)), setup)
 		if err != nil {
@@ -375,6 +384,55 @@ func TestSchemasAndObjects(t *testing.T) {
 	}
 	if _, err := db.DefineClass(ctx, []byte(scratch("Contact", `"c":{"type":"text"}`, oneState)), setup); err != nil {
 		t.Errorf("a class with the name of a schema: %v", err)
+	}
+
+	// The commands: each row by the command it names, on a database of
+	// its own.
+	db2 := notionDB(t, fado.Options{})
+	exec := func(as fado.Principal, name, object string) map[string]json.RawMessage {
+		t.Helper()
+		got, err := db2.Exec(ctx, as, name, []byte(object))
+		if err != nil {
+			t.Fatalf("the command %s: %v", name, err)
+		}
+		var answer map[string]json.RawMessage
+		if err := json.Unmarshal(got, &answer); err != nil {
+			t.Fatal(err)
+		}
+		return answer
+	}
+	designer := fado.Principal{ID: "dan", Kind: fado.ActorPerson, System: []string{fado.GroupDesigners}}
+	reader := fado.Principal{ID: "ola", Kind: fado.ActorPerson}
+	commands := []struct {
+		to, name string
+		holds    func() bool
+	}{
+		{"define a schema", "define_schema", func() bool {
+			return exec(designer, "define_schema", `{"definition":`+string(schemas[0])+`}`)["schema"] != nil
+		}},
+		{"read its definition back", "get_schema", func() bool {
+			return strings.Contains(string(exec(reader, "get_schema", `{"name":"Contact"}`)["schema"]), `"subtitle"`)
+		}},
+		{"list the schemas, the engine's first", "list_schemas", func() bool {
+			var got []string
+			json.Unmarshal(exec(reader, "list_schemas", `{}`)["schemas"], &got)
+			return reflect.DeepEqual(got, append(append([]string{}, names...), "Contact"))
+		}},
+	}
+	listed := map[string]string{}
+	for _, row := range rows(marked(t, page, "the commands")) {
+		listed[row[0]] = row[1]
+	}
+	if len(listed) != len(commands) {
+		t.Errorf("the chapter lists %d commands, and the test plays %d", len(listed), len(commands))
+	}
+	for _, c := range commands {
+		if listed[c.to] != c.name {
+			t.Errorf("to %s the chapter names the command %q, and the test plays %s", c.to, listed[c.to], c.name)
+		}
+		if !c.holds() {
+			t.Errorf("the command %s does not %s", c.name, c.to)
+		}
 	}
 
 	// What is checked when the schema is defined.

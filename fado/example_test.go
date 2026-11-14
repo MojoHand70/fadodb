@@ -816,3 +816,66 @@ func Example_substitution() {
 	// on the fifteenth: forbidden /principal/for
 	// substitution: ended
 }
+
+// A command is a name and one JSON object, and its answer is one JSON
+// object (ADR-0055). It is the same call as the method of DB, for a
+// caller that is not a Go program: an agent, a script, the server.
+func ExampleDB_Exec() {
+	tmp, err := os.MkdirTemp("", "fado-example")
+	if err != nil {
+		panic(err)
+	}
+	defer os.RemoveAll(tmp)
+	db, err := fado.Open(filepath.Join(tmp, "example.fado"), fado.Options{
+		Now: func() time.Time { return time.Date(2026, 11, 13, 9, 30, 0, 0, time.UTC) },
+	})
+	if err != nil {
+		panic(err)
+	}
+	defer db.Close()
+	ctx := context.Background()
+	dan := fado.Principal{ID: "dan", Kind: fado.ActorPerson, System: []string{fado.GroupDesigners}}
+	bob := fado.Principal{ID: "bob", Kind: fado.ActorPerson, Groups: []string{"sales"}}
+	agent := fado.Principal{ID: "ap-agent", Kind: fado.ActorAgent, Groups: []string{"finance"}}
+
+	// Dan defines the class. The definition travels as JSON, inside the
+	// command.
+	if _, err := db.Exec(ctx, dan, "define_class", []byte(`{"definition": {
+	  "name": "Invoice",
+	  "variables": {"customer": {"type": "text", "required": true}, "note": {"type": "text"}},
+	  "states": {"initial": "review", "list": ["review", "approved"]},
+	  "transitions": [{"name": "approve", "from": "review", "to": "approved"}],
+	  "access": {"read": "TRUE", "create": "INGROUP(\"sales\")", "update": "TRUE", "delete": "FALSE",
+	             "transition": {"approve": "INGROUP(\"finance\")"}}
+	}}`)); err != nil {
+		panic(err)
+	}
+
+	// Bob creates an invoice under its number, slashes and all.
+	if _, err := db.Exec(ctx, bob, "create", []byte(`{"class": "Invoice", "id": "FV/2026/11/0042", "values": {"customer": "Customer:42"}}`)); err != nil {
+		panic(err)
+	}
+
+	// Bob may not approve it. The refusal is the answer, and the error.
+	answer, err := db.Exec(ctx, bob, "transition", []byte(`{"class": "Invoice", "id": "FV/2026/11/0042", "transition": "approve"}`))
+	fmt.Println(string(answer))
+	fmt.Println(fado.ErrorCode(err))
+
+	// The agent of accounts payable approves it, with a note and a key
+	// that makes the command safe to send twice.
+	answer, err = db.Exec(ctx, agent, "transition", []byte(`{"class": "Invoice", "id": "FV/2026/11/0042", "transition": "approve",
+	  "values": {"note": "matches order PO-118"}, "key": "approve-FV/2026/11/0042"}`))
+	fmt.Println(string(answer))
+	fmt.Println(err)
+
+	// A member the command does not know is refused, not passed over.
+	answer, _ = db.Exec(ctx, agent, "set", []byte(`{"class": "Invoice", "id": "FV/2026/11/0042", "valeus": {"note": "x"}}`))
+	fmt.Println(string(answer))
+
+	// Output:
+	// {"error":{"code":"forbidden","message":"bob may not take approve from review","hint":"the rule of approve: INGROUP(\"finance\")","path":"/access/transition/approve"}}
+	// forbidden
+	// {"document":{"class":"Invoice","id":"FV/2026/11/0042","title":"FV/2026/11/0042","state":"approved","version":2,"class_version":1,"created_at":1794562200,"updated_at":1794562200,"state_entered_at":1794562200,"created_by":"bob","updated_by":"ap-agent","state_entered_by":"ap-agent","state_entered_from":"review","values":{"customer":"Customer:42","note":"matches order PO-118"}}}
+	// <nil>
+	// {"error":{"code":"bad_json","message":"set takes no \"valeus\"","hint":"set takes class, id, values, key, business_date, reason, for","path":"/valeus"}}
+}

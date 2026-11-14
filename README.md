@@ -49,7 +49,7 @@ Website: [fadodb.org](https://fadodb.org). The manual starts at
 > lets nobody through, so a class says who may. A content administrator
 > who acts past a rule gives a reason, and the event keeps it. A caller
 > may act for somebody only while a substitution says so, a document
-> the person gives and withdraws. The server is being designed: five records, ADR-0055 to ADR-0059, are proposed and none of it is built. The numbers are in
+> the person gives and withdraws. The server is in progress. Its first step is built: every call of the Go API is also a command, a name and one JSON object answered by one JSON object, which `Exec` runs ([the commands](docs/manual/commands.md)). Nothing listens on the network yet, and the records of the server, ADR-0055 to ADR-0059, are proposed and not accepted. The numbers are in
 > [docs/perf/](docs/perf/), the plan in [ROADMAP.md](ROADMAP.md).
 
 ## What it is

@@ -64,6 +64,7 @@ the engine on each push.
 | [The formula language](manual/formula-language.md) | how a formula is written, the operators, what mixes with what, blanks, text, plain and exact numbers, days and moments, objects, what a failure means | **written**; every example is worked out by the engine on each push |
 | [The functions](manual/functions.md) | every function with its arguments and what it answers | **written**, generated from the engine's own catalogue |
 | The calls | every call of the Go package: what it takes, what it answers, what it may refuse with | planned; today the documentation of the `fado` package |
+| [The commands](manual/commands.md) | every call as a command: the JSON it takes and the JSON it answers | **written**, generated from the engine's own table. A command is run by the Go call `Exec`; the server that takes commands over the network is in progress |
 | [The refusals](manual/refusals.md) | every code and what it means | **written**, generated from the engine's own constants; the fix for each comes with the guides |
 | Tables | reference data: defining, importing, looking up | planned; today [ADR-0037](adr/0037-explicit-tables-and-the-compiled-lookup.md) |
 | Schemas and objects | a value with named fields: defining a schema, the schemas the engine brings, an object in a class | planned; today [ADR-0031](adr/0031-named-schemas-and-object-values.md) and [ADR-0032](adr/0032-predefined-vocabulary-and-object-presentation.md). An object variable names its schema; see [The class definition](manual/class.md#variables) |

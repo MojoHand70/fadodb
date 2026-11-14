@@ -70,6 +70,13 @@ All notable changes to FadoDB are recorded here. The format follows
   engine's answers. The chapter and the class definition now say that
   `required` on an object, a list or rows is accepted and not
   enforced.
+- The reference chapter on files: the facts of a file and its bytes,
+  attaching, replacing and taking off as versions of the document,
+  opening a file under the rules of the document, who may, the three
+  stores for the bytes, the limit of a file and the check. A test
+  plays the chapter's story and holds every table of it to the
+  engine's answers, the three stores and a file changed on disk
+  included.
 - The designer's skill teaches the syntax: what to read in the manual,
   a small class that is complete, and the ten things that go wrong
   most often. It is no longer a stub. The classes the skills show are

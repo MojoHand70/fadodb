@@ -68,7 +68,7 @@ the engine on each push.
 | [The refusals](manual/refusals.md) | every code and what it means | **written**, generated from the engine's own constants; the fix for each comes with the guides |
 | [Tables](manual/tables.md) | reference data: the definition and the types of a column, rows and imports, a formula that reads a table, a rule that writes one, who may, changing a table | **written**; a test plays the chapter's story and every table of it against the engine |
 | [Schemas and objects](manual/schemas-and-objects.md) | a value with named fields: defining a schema, the nine schemas the engine brings, an object in a class, what a class can and cannot do with an object today, how an object is stored | **written**; a test plays the chapter's story and every table of it against the engine |
-| Files | attaching a file to a document, and reading it back under the rules of the document | planned; today [ADR-0033](adr/0033-attachments-as-file-values-behind-a-blob-store.md) |
+| [Files](manual/files.md) | attaching a file to a document: the facts and the bytes, opening a file under the rules of the document, who may, where the bytes are kept, how large a file may be, checking the files | **written**; a test plays the chapter's story and every table of it against the engine |
 | [Actions](actions.md) | defining an action, calling another system, secrets | **written** |
 | Views and SQL | the views the engine makes for each class, and reading them with SQL | planned; today [architecture.md](architecture.md) |
 

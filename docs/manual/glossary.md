@@ -22,6 +22,7 @@ exactly so in a class or a formula.
 | action | one thing a rule does: set a value, create another document, call another system |
 | table | a list of reference data, such as exchange rates, that formulas look values up in; see [Tables](tables.md) |
 | schema | a named set of fields, defined on its own, for a variable that holds an object such as an address; see [Schemas and objects](schemas-and-objects.md) |
+| file | a file attached to a document: the document holds its facts, the hash, the name, the kind and the size, in an object of the schema `File`, and the bytes are kept beside under the hash; see [Files](files.md) |
 | object | one value with named fields, by a schema. It has no id and no life of its own, and a formula reads its fields one at a time, as `depot.address.city` |
 
 ## Who may

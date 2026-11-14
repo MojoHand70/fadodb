@@ -1,25 +1,264 @@
 ---
 name: fadodb-mine
-description: Analyse how a FadoDB process actually runs from its event log, its history and its views. Cycle time per state, where documents wait, rework loops, who approves slowest, what was refused and why, throughput and backlog, as SQL over the tables every class writes anyway. Use this skill whenever someone asks for process mining, bottlenecks, SLAs or cycle times, an audit trail, who did what and when, a report or a dashboard over documents in FadoDB, or wants a finding to feed back into a redrafted class.
+description: Analyse how a FadoDB process actually runs from its event log, its history and its views. Cycle time per state, where documents wait, rework loops, who decides slowest, how much runs by itself, which steps an agent took, throughput and backlog, as SQL over the views every class has anyway. Use this skill whenever someone asks for process mining, bottlenecks, SLAs or cycle times, an audit trail, who did what and when, a report or a dashboard over documents in FadoDB, or wants a finding to feed back into a redrafted class.
 metadata:
   hat: analyst
-  status: stub
+  status: written
 ---
 
 # Mine a FadoDB process
 
-**Status: stub, 2026-11-09.** This page says what the analyst does, what
-works today and the outline of the procedure. The reference files it
-names under `../reference/` are not written yet.
+**Status: written, 2026-11-14.** This page says how to find out how a
+process really runs: what to read in the manual, one piece of work
+statement by statement with the engine's own answers, and what goes
+wrong most often. A test on each push defines the class this page
+shows, plays what the page says happened, runs its statements and
+compares the answers with the ones below.
 
 ## Read first
 
-[`docs/manual/views-and-sql.md`](../../docs/manual/views-and-sql.md)
-is the reference for this hat: the views of a class and their columns,
-how a value looks in SQL (an amount of 1000.00 is 100000, a day is a
-number of days), seven questions with their statements and the
-engine's answers, and what a statement may not do. Read it before you
-write a statement.
+| Read | For |
+|---|---|
+| [`docs/manual/views-and-sql.md`](../../docs/manual/views-and-sql.md) | the reference for this hat: the views of a class and their columns, how a value looks in SQL, what a statement may do. Read it whole before you write a statement |
+| [`docs/manual/notions/history-and-the-log.md`](../../docs/manual/notions/history-and-the-log.md) | versions and events, what an event carries, and that a refusal writes nothing |
+| [`docs/manual/notions/states-and-transitions.md`](../../docs/manual/notions/states-and-transitions.md) | what a stay in a state is, and how a document moves |
+| [`docs/manual/notions/time.md`](../../docs/manual/notions/time.md) | transitions that the engine takes by itself, which the log marks `timer` |
+| [`docs/manual/commands.md`](../../docs/manual/commands.md#sql) | the command `sql`: the statement, and the values for its `?` |
+
+## A piece of work, statement by statement
+
+The class. Somebody asks for a purchase and files the request. The
+approver it names approves it, rejects it with a note, or returns it
+with a note to be filed again. A request nobody decides in five days
+expires.
+
+```json
+{
+  "name": "Request",
+  "title": "\"Request for \" & what",
+  "variables": {
+    "what":     {"type": "text", "required": true},
+    "amount":   {"type": "money", "scale": 2, "required": true},
+    "approver": {"type": "text", "required": true},
+    "note":     {"type": "text"}
+  },
+  "states": {"initial": "draft", "list": ["draft", "filed", "approved", "rejected", "expired"], "final": ["approved", "rejected", "expired"]},
+  "transitions": [
+    {"name": "file",    "from": "draft", "to": "filed"},
+    {"name": "return",  "from": "filed", "to": "draft",    "guard": "NOT ISBLANK(note)"},
+    {"name": "approve", "from": "filed", "to": "approved"},
+    {"name": "reject",  "from": "filed", "to": "rejected", "guard": "NOT ISBLANK(note)"},
+    {"name": "expire",  "from": "filed", "to": "expired",  "after": "5d"}
+  ],
+  "access": {
+    "read":   "INGROUP(\"everyone\")",
+    "create": "INGROUP(\"everyone\")",
+    "update": "CREATEDBY() = USER() AND STATE() = \"draft\"",
+    "delete": "FALSE",
+    "transition": {
+      "file":    "CREATEDBY() = USER()",
+      "return":  "approver = USER()",
+      "approve": "approver = USER()",
+      "reject":  "approver = USER()",
+      "expire":  "FALSE"
+    }
+  },
+  "rights": {
+    "filed": {
+      "*":    {"write": "FALSE"},
+      "note": {"write": "approver = USER()"}
+    }
+  }
+}
+```
+
+What happened, in the week of 2 November 2026. Marek and Iza are
+approvers. `intake-agent` is an agent that files requests it gets by
+mail.
+
+<!-- what happened -->
+| Day | At | Who | Does |
+|---|---|---|---|
+| Mon 2 | 09:00 | ola | files `R-1`, a laptop, 6000.00 PLN, for marek |
+| Mon 2 | 09:00 | ola | files `R-2`, a monitor, 1500.00 PLN, for iza |
+| Mon 2 | 10:00 | piotr | files `R-3`, a trip to Lisbon, 8000.00 PLN, for iza |
+| Mon 2 | 13:00 | marek | approves `R-1` |
+| Tue 3 | 09:00 | iza | returns `R-2`: "which monitor?" |
+| Tue 3 | 09:00 | intake-agent | files `R-4`, paper, 200.00 PLN, for marek |
+| Tue 3 | 10:00 | ola | says which monitor, and files `R-2` again |
+| Tue 3 | 11:00 | marek | approves `R-4` |
+| Wed 4 | 09:00 | piotr | files `R-5`, a chair, 900.00 PLN, for iza |
+| Wed 4 | 10:00 | iza | rejects `R-3`: "no budget this year" |
+| Thu 5 | 09:00 | ola | files `R-6`, a desk, 1200.00 PLN, for marek |
+| Thu 5 | 10:00 | iza | approves `R-2` |
+| Mon 9 | 09:00 | the engine | takes `expire` of `R-5` |
+
+The program that runs you tells the engine that you are in the system
+group `analysts`. It is 12:00 on Monday 9 November. Every question
+below is one command `sql`.
+
+**1. Where do the requests stand now?** The view of the documents as
+they are, and no other, answers "now".
+
+<!-- command: sql -->
+```jsonc
+{"statement": "select state, count(*) as requests from Request group by state order by state"}
+```
+
+<!-- answer -->
+```jsonc
+{
+  "columns": ["state", "requests"],
+  "rows": [["approved", 3], ["expired", 1], ["filed", 1], ["rejected", 1]]
+}
+```
+
+**2. How long does a request stay in each state?** The view of stays
+has one row for each stay, with its length in seconds. Stays that have
+not ended are left out.
+
+<!-- command: sql -->
+```jsonc
+{"statement": "select state, count(id) as stays, round(avg(duration) / 3600.0, 1) as hours from Request_states where left_at is not null group by state order by state"}
+```
+
+<!-- answer -->
+```jsonc
+{
+  "columns": ["state", "stays", "hours"],
+  "rows": [["draft", 7, 0.1], ["filed", 6, 41]]
+}
+```
+
+**3. Who decides slowest?** `left_by` is who made the move out of the
+state, and `left_how` tells a person's move from the engine's.
+
+<!-- command: sql -->
+```jsonc
+{"statement": "select left_by as approver, count(id) as decisions, round(avg(duration) / 3600.0, 1) as hours from Request_states where state = 'filed' and left_how = 'command' group by left_by order by hours desc"}
+```
+
+<!-- answer -->
+```jsonc
+{
+  "columns": ["approver", "decisions", "hours"],
+  "rows": [["iza", 3, 40], ["marek", 2, 3]]
+}
+```
+
+**4. What came back for rework?** A request that was filed more than
+once.
+
+<!-- command: sql -->
+```jsonc
+{"statement": "select id, count(id) as times_filed from Request_states where state = 'filed' group by id having count(id) > 1"}
+```
+
+<!-- answer -->
+```jsonc
+{
+  "columns": ["id", "times_filed"],
+  "rows": [["R-2", 2]]
+}
+```
+
+**5. How much runs by itself?** Every move says how it came about: a
+caller's command, a rule's action, a guard, or a timer.
+
+<!-- command: sql -->
+```jsonc
+{"statement": "select entered_how as how, count(id) as moves from Request_states where entered_from is not null group by entered_how order by entered_how"}
+```
+
+<!-- answer -->
+```jsonc
+{
+  "columns": ["how", "moves"],
+  "rows": [["command", 12], ["timer", 1]]
+}
+```
+
+**6. Which steps did an agent take?** Every event says what its
+caller was.
+
+<!-- command: sql -->
+```jsonc
+{"statement": "select doc_id, kind, name from Request_events where actor_kind = 'agent' order by ts, kind"}
+```
+
+<!-- answer -->
+```jsonc
+{
+  "columns": ["doc_id", "kind", "name"],
+  "rows": [["R-4", "created", null], ["R-4", "transition", "file"]]
+}
+```
+
+**7. What has waited longest, and for how long?** A stay that has not
+ended has no length yet. Give the statement the moment of the asking
+as a value, here 12:00 on 9 November, and it works the wait out.
+
+<!-- command: sql -->
+```jsonc
+{
+  "statement": "select id, (? - entered_at) / 3600 as hours_waiting from Request_states where state = 'filed' and left_at is null order by entered_at",
+  "args": [1794225600]
+}
+```
+
+<!-- answer -->
+```jsonc
+{
+  "columns": ["id", "hours_waiting"],
+  "rows": [["R-6", 99]]
+}
+```
+
+**The finding, and where it goes.** A request waits 41 hours in
+`filed` on average; with Iza 40 hours, with Marek 3. One of six came
+back for rework, and one expired with nobody deciding. That goes to
+the designer as a change of the class, with the statements beside it:
+a reminder to the approver after two days, or a second approver. The
+next run of the same statements says whether it helped.
+
+## What goes wrong most often
+
+1. **Reading an amount as it is stored.** 6000.00 PLN is 600000 in
+   SQL, with PLN in `amount_currency`. Divide by 100 for two decimal
+   places, and never add up two currencies.
+2. **Reading a day as a number.** A date is days since 1970 and a
+   moment is seconds: `date(business_date * 86400, 'unixepoch')`,
+   `datetime(ts, 'unixepoch')`.
+3. **Asking the stays what waits now.** A stay that has not ended
+   belongs to a document that is there, or to one that was deleted:
+   the last stay of a deleted document has no end. Count what waits in
+   the view of the documents, as question 1 does.
+4. **Averaging without the stays that have not ended.** `duration` is
+   blank while a document is in the state, so the longest waits are
+   the ones an average leaves out. Ask for them apart, as question 7
+   does.
+5. **`count(*)` over the stays.** It is refused with `not_allowed`, a
+   fault of the engine. Count a column: `count(id)`.
+6. **Looking for refusals in the log.** A refusal writes nothing. The
+   log has what happened, and not what was tried. What an action was
+   refused with is there: the events `action_failed`.
+7. **Reading the versions as the present.** The view with `_history`
+   has every version of every document. "Now" is the view named after
+   the class.
+8. **Asking for the rows.** A statement that answers more than 10,000
+   rows is refused whole with `too_many_rows`. Let SQL group and
+   count, and ask for the result.
+9. **A class that was defined a moment ago.** SQL does not read a
+   class that was defined after the program ran its first statement,
+   until the database is opened again: its columns are refused with
+   `not_allowed`. It is a fault of the engine.
+10. **Taking a name for more than it is.** `entered_by` and `actor_id`
+    are who the program that holds the engine said was calling, and
+    `actor_kind` says `agent` only where that program said so.
+11. **Handing on what you read.** You read every document, past every
+    rule of its class. The person who asked may not. Answer with
+    counts and sums, and name a document or a value only to somebody
+    who may see it.
 
 ## The hat
 
@@ -71,8 +310,9 @@ goes back to the designer as a redrafted class.
    guard that is too tight, a state nobody leaves, a right that blocks
    the wrong group.
 
-## References, to be written
+## Where the rest is
 
-`../reference/querying.md`, `statechart.md`,
-`commits-and-previews.md`. Their sources are listed in
+The reference this page once planned under `../reference/` is the
+manual now: the chapters under "Read first" above. The decision
+records behind them are listed in
 [`../reference/README.md`](../reference/README.md).

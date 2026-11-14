@@ -109,6 +109,15 @@ All notable changes to FadoDB are recorded here. The format follows
   statement may do, and who may run one. A test runs every statement
   of the chapter and compares the answer. The chapter states three
   faults of the engine as they are, each pinned by the test.
+- The three remaining skills for agents are written, so all five are:
+  the analyst's (a week of a process and seven statements over it),
+  the simulator's (six commands that answer "what would happen if" and
+  write nothing, a draft of a class tried on a real document among
+  them), and the skill for an agent's own work (a task the agent
+  proposes, a person decides and the agent carries out, with a
+  timeout and a count of attempts). Each shows the engine's own
+  answers and lists what goes wrong most often; a test plays each on
+  every push.
 - The designer's skill teaches the syntax: what to read in the manual,
   a small class that is complete, and the ten things that go wrong
   most often. It is no longer a stub. The classes the skills show are

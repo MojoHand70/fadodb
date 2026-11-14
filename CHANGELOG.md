@@ -98,6 +98,11 @@ All notable changes to FadoDB are recorded here. The format follows
   runs it, what happens when an action fails, a dead action, running
   the queue by hand, and who may. A test runs the program and plays
   every table of the chapter.
+- The operator's skill is written, and no longer a stub: what to read
+  in the manual, one piece of work command by command with the
+  engine's own answers, and the eleven things that go wrong most
+  often. A test defines the class the skill shows, sends its commands
+  and compares the answers, and holds each of the eleven points.
 - The designer's skill teaches the syntax: what to read in the manual,
   a small class that is complete, and the ten things that go wrong
   most often. It is no longer a stub. The classes the skills show are

@@ -11,15 +11,15 @@ metadata:
 **Status: written, 2026-11-14.** This page says how to write a class the
 engine accepts and a person can read. The syntax is in the manual, and
 this page tells you what to read, in which order to work, and what
-goes wrong most often. Two reference chapters are still to be written,
-the formula language and the statechart; until they are, the decision
-records named at the end are their source.
+goes wrong most often.
 
 ## Read first
 
 | Read | For |
 |---|---|
 | [`docs/manual/class.md`](../../docs/manual/class.md) | every block of a class and every word in it. Read it whole before you write a class |
+| [`docs/manual/notions/`](../../docs/manual/notions/) | the seven ideas, one chapter each, with a class and a story of named people: classes and documents, variables and formulas, states and transitions, rules and actions, who may, history and the log, time |
+| [`docs/manual/formula-language.md`](../../docs/manual/formula-language.md) | how a formula is written, what mixes with what, blanks, exact numbers, days, and what a failure means in each place |
 | [`docs/manual/guides/`](../../docs/manual/guides/) | one task a page, each with a class a test runs. Take the pattern from the guide |
 | [`docs/manual/tables.md`](../../docs/manual/tables.md) | reference data: the definition of a table, its rows, `LOOKUP`, the three actions of a rule that write a row, and who may. Read it before a class looks a value up or feeds a table |
 | [`docs/manual/schemas-and-objects.md`](../../docs/manual/schemas-and-objects.md) | a value with named fields: defining a schema, the nine the engine brings, and the table of what a class can and cannot do with an object today. Read it before you give a class an object |
@@ -249,15 +249,14 @@ document and not code.
   your own.
 - The six samples the front page of fadodb.org links to, planned.
 
-## References, to be written
+## Where the rest is
 
-The class format is written: [`../../docs/manual/class.md`](../../docs/manual/class.md).
-So are the list of every function,
-[`../../docs/manual/functions.md`](../../docs/manual/functions.md), which
-marks the ones this engine does not have yet, and the list of every
-refusal and diagnostic code,
-[`../../docs/manual/refusals.md`](../../docs/manual/refusals.md); both are
-generated from the engine. Still to be written: `formulas.md` and
-`statechart.md`. Their sources are listed in
-[`../reference/README.md`](../reference/README.md), and the plan of the
-whole manual in [`../../docs/README.md`](../../docs/README.md).
+The reference this page once planned is the manual now: the chapters
+under "Read first" above. The formula language is
+[`../../docs/manual/formula-language.md`](../../docs/manual/formula-language.md),
+and the statechart is the chapter on states and transitions under
+[`../../docs/manual/notions/`](../../docs/manual/notions/). The list of
+every function and the list of every code are generated from the
+engine. The decision records behind them are listed in
+[`../reference/README.md`](../reference/README.md), and the contents of
+the whole manual in [`../../docs/README.md`](../../docs/README.md).

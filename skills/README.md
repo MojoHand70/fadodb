@@ -13,11 +13,13 @@ MCP server when Phase 6, which is in progress, ships them. A skill tells the age
 commits, to carry an idempotency key, to read a rejection's code and
 location rather than guess; the API is what it then calls.
 
-**Status on 2026-11-14: the designer's skill is written; the other four
-are stubs.** A written skill tells the agent what to read in the manual
-under `../docs/`, in which order to work, and what goes wrong most
-often, and the engine defines the class it shows in a test on each
-push. A stub names its hat, says what works today with the project's
+**Status on 2026-11-14: the designer's and the operator's skills are
+written; the other three are stubs.** A written skill tells the agent
+what to read in the manual under `../docs/`, in which order to work,
+and what goes wrong most often, and the engine defines the class it
+shows in a test on each push. The operator's skill also shows one
+piece of work command by command, and the same test sends its commands
+and compares the answers. A stub names its hat, says what works today with the project's
 three marks, and outlines its procedure. Of the shared reference set,
 the class format, the list of functions and the list of refusal codes
 are written, as chapters of the manual; the sample corpus under

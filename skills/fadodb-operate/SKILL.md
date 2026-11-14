@@ -3,14 +3,296 @@ name: fadodb-operate
 description: Run a FadoDB process on behalf of a person or a system. Create documents, set values, move transitions, read, filter and query, always as a principal, with an idempotency key on every commit and a preview before it. Use this skill whenever an agent has to act on records that live in FadoDB, such as submit, approve, pay, close, reopen, update, retry or resume a document, find out what a document allows next, or explain why a transition or a change was refused. Use it even when the request names the business object, the invoice, the permit, the leave request, and never says FadoDB.
 metadata:
   hat: operator
-  status: stub
+  status: written
 ---
 
 # Operate a FadoDB process
 
-**Status: stub, 2026-11-09.** This page says what the operator does, what
-works today and the outline of the procedure. The reference files it
-names under `../reference/` are not written yet.
+**Status: written, 2026-11-14.** This page says how to work on the
+documents of a class that exists: what to read in the manual, one
+piece of work command by command with the engine's own answers, and
+what goes wrong most often. A test on each push defines the class this
+page shows, sends its commands and compares the answers with the ones
+below.
+
+## Read first
+
+| Read | For |
+|---|---|
+| [`docs/manual/commands.md`](../../docs/manual/commands.md) | every command: the JSON it takes and the JSON it answers. Check a command here before you send it |
+| [`docs/manual/notions/who-may.md`](../../docs/manual/notions/who-may.md) | what a class asks about its caller, and what a caller who may not see is told |
+| [`docs/manual/notions/states-and-transitions.md`](../../docs/manual/notions/states-and-transitions.md) | the two questions before every move, and values given with a move |
+| [`docs/manual/notions/history-and-the-log.md`](../../docs/manual/notions/history-and-the-log.md) | versions and events, the key of a command sent twice, previews |
+| [`docs/manual/notions/time.md`](../../docs/manual/notions/time.md) | what moves by itself, and reading as of another day |
+| [`docs/manual/refusals.md`](../../docs/manual/refusals.md) | every code the engine answers with, and what it means |
+| [`docs/manual/naming-the-caller.md`](../../docs/manual/naming-the-caller.md) | what the program that runs you tells the engine about you. You never say who you are |
+| [`docs/manual/the-outbox-and-the-worker.md`](../../docs/manual/the-outbox-and-the-worker.md) | for an operator who is an administrator: the queue of actions, and a dead one |
+
+## A piece of work, command by command
+
+The class. An employee files an expense, and the approver it names
+approves it, up to 5000.00, or rejects it with a note.
+
+```json
+{
+  "name": "Expense",
+  "title": "\"Expense of \" & employee",
+  "variables": {
+    "employee": {"type": "text", "default": "USER()"},
+    "approver": {"type": "text", "required": true},
+    "what":     {"type": "text", "required": true},
+    "amount":   {"type": "money", "scale": 2, "required": true},
+    "note":     {"type": "text"}
+  },
+  "states": {"initial": "draft", "list": ["draft", "filed", "approved", "rejected"], "final": ["approved", "rejected"]},
+  "transitions": [
+    {"name": "file",    "from": "draft", "to": "filed",    "guard": "AMOUNT(amount) > 0"},
+    {"name": "approve", "from": "filed", "to": "approved", "guard": "AMOUNT(amount) <= 5000"},
+    {"name": "reject",  "from": "filed", "to": "rejected", "guard": "NOT ISBLANK(note)"}
+  ],
+  "access": {
+    "read":   "employee = USER() OR approver = USER()",
+    "create": "INGROUP(\"everyone\")",
+    "update": "employee = USER() AND STATE() = \"draft\"",
+    "delete": "FALSE",
+    "transition": {
+      "file":    "employee = USER()",
+      "approve": "approver = USER()",
+      "reject":  "approver = USER()"
+    }
+  },
+  "rights": {
+    "filed": {
+      "*":    {"write": "FALSE"},
+      "note": {"write": "approver = USER()"}
+    }
+  }
+}
+```
+
+The situation. Ola filed three expenses: `E-1`, a taxi for 120.00 PLN,
+and `E-2`, a conference for 8000.00 PLN, both with the approver
+`claims-agent`; and `E-3`, a lunch, with the approver `marek`. The
+program that runs you tells the engine that you are `claims-agent`,
+an agent. It is 10:00 on 16 November 2026.
+
+**1. Ask how much waits for you.** One command, and no loop. The
+engine counts what you may see.
+
+<!-- command: count -->
+```jsonc
+{"class": "Expense", "where": "state = \"filed\" AND approver = USER()"}
+```
+
+<!-- answer -->
+```jsonc
+{"count": 2}
+```
+
+**2. Ask what a document allows.** `enabled` says whether you may take
+the transition now, as the document stands, and `code` why not.
+
+<!-- command: transitions -->
+```jsonc
+{"class": "Expense", "id": "E-2"}
+```
+
+<!-- answer -->
+```jsonc
+{
+  "transitions": [
+    {"name": "approve", "to": "approved", "enabled": false, "code": "guard_false"},
+    {"name": "reject", "to": "rejected", "enabled": false, "code": "guard_false"}
+  ]
+}
+```
+
+**3. Look before you move.** A preview runs the whole command and
+writes nothing. One that would be refused answers the refusal, with
+the guard in the hint: 8000.00 is above 5000.
+
+<!-- command: preview -->
+```jsonc
+{"class": "Expense", "id": "E-2", "transition": "approve"}
+```
+
+<!-- answer -->
+```jsonc
+{
+  "error": {
+    "code": "guard_false",
+    "message": "the guard of approve is not TRUE for the document in filed",
+    "hint": "the guard: AMOUNT(amount) <= 5000"
+  }
+}
+```
+
+**4. Move, with the values the move needs and a key.** `reject` was
+blocked in step 2 only because the note was blank. Values given with a
+transition are written first, and the guard is asked then. The key
+names this one command.
+
+<!-- command: transition -->
+```jsonc
+{
+  "class": "Expense",
+  "id": "E-2",
+  "transition": "reject",
+  "values": {"note": "above the limit of 5000.00 PLN"},
+  "key": "reject-E-2"
+}
+```
+
+<!-- answer -->
+```jsonc
+{
+  "document": {
+    "class": "Expense",
+    "id": "E-2",
+    "title": "Expense of ola",
+    "state": "rejected",
+    "version": 3,
+    "class_version": 1,
+    "created_at": 1794819600,
+    "updated_at": 1794823200,
+    "state_entered_at": 1794823200,
+    "created_by": "ola",
+    "updated_by": "claims-agent",
+    "state_entered_by": "claims-agent",
+    "state_entered_from": "filed",
+    "values": {
+      "amount": "8000.00 PLN",
+      "approver": "claims-agent",
+      "employee": "ola",
+      "note": "above the limit of 5000.00 PLN",
+      "what": "conference in Lisbon"
+    }
+  }
+}
+```
+
+**5. Not sure the answer arrived? Send the same command again.** With
+the same key the engine answers as it did the first time, word for
+word, and writes nothing: the expense is still at version 3.
+
+**6. Read a refusal as an answer.** `E-3` names another approver, so
+it is not yours to see. The engine says what it says of an id that was
+never used.
+
+<!-- command: get -->
+```jsonc
+{"class": "Expense", "id": "E-3"}
+```
+
+<!-- answer -->
+```jsonc
+{
+  "error": {
+    "code": "unknown_document",
+    "message": "no document E-3 of class Expense"
+  }
+}
+```
+
+**7. Asked what happened? Read the log.** Each event says who did it,
+what they were, and the key the command carried.
+
+<!-- command: events -->
+```jsonc
+{"class": "Expense", "id": "E-2"}
+```
+
+<!-- answer -->
+```jsonc
+{
+  "events": [
+    {
+      "event_id": "01M7HSBBM0EMY6AY0QD2WXM4MB",
+      "class": "Expense",
+      "doc_id": "E-2",
+      "kind": "created",
+      "to_state": "draft",
+      "actor_id": "ola",
+      "actor_kind": "person",
+      "after_version": 1,
+      "business_date": "2026-11-16",
+      "ts": 1794819600,
+      "origin": "command"
+    },
+    {
+      "event_id": "01M7HSBBM0EMY6AY0QD2WXM4ME",
+      "class": "Expense",
+      "doc_id": "E-2",
+      "kind": "transition",
+      "name": "file",
+      "from_state": "draft",
+      "to_state": "filed",
+      "actor_id": "ola",
+      "actor_kind": "person",
+      "before_version": 1,
+      "after_version": 2,
+      "business_date": "2026-11-16",
+      "ts": 1794819600,
+      "origin": "command"
+    },
+    {
+      "event_id": "01M7HWS7803G93DXF5JAY1EYM1",
+      "class": "Expense",
+      "doc_id": "E-2",
+      "kind": "transition",
+      "name": "reject",
+      "from_state": "filed",
+      "to_state": "rejected",
+      "actor_id": "claims-agent",
+      "actor_kind": "agent",
+      "before_version": 2,
+      "after_version": 3,
+      "command_key": "reject-E-2",
+      "business_date": "2026-11-16",
+      "ts": 1794823200,
+      "origin": "command"
+    }
+  ]
+}
+```
+
+An `event_id` is made by the engine and differs at every run.
+
+## What goes wrong most often
+
+1. **Sending a refusal again.** `guard_false`, `forbidden`,
+   `wrong_state` and `terminal` are answers. The same command gets the
+   same answer until the document or the caller changes. Report the
+   code and the hint; send again only a command that got no answer at
+   all.
+2. **A change with no key.** When the answer is lost you cannot tell
+   whether the change was made, and a second send makes it twice. Give
+   every command that changes something a `key` of its own.
+3. **One key for two commands.** A key names one command. A different
+   command under a key that was used is refused with `key_reused`.
+4. **Reading `enabled: false` as final.** `transitions` asks the
+   guard of the document as it stands. A guard may hold once the
+   command brings its values, as `reject` does above: preview with the
+   values.
+5. **Taking `unknown_document` for "there is no such document".** A
+   document you may not see is answered the same way. Say "not found,
+   or not mine to see".
+6. **A loop over `get`.** `query` and `count` answer in one command,
+   and leave out what you may not see. In a filter `USER()` is you.
+7. **Changing a finished document.** A document in a final state
+   keeps its values: a `set` is refused with `terminal`.
+8. **Believing a batch.** `transition_many` answers for each id, with
+   the document or its refusal. No error does not mean all moved.
+9. **Saying who you are in the command.** The caller comes from the
+   program that sends the command, never from the command. The one
+   thing a command says is `for`, whom you act for, and that passes
+   only while a substitution says so.
+10. **Guessing a member.** A member the command does not take is
+    refused with `bad_json`, and the hint lists the members it takes.
+11. **Waiting for a date to move a document.** A transition with a
+    time moves by itself. A guard that reads the clock does not: the
+    document stays until a command touches it. `due` lists such
+    documents and `refresh` touches one.
 
 ## The hat
 
@@ -93,8 +375,9 @@ can be sent again, and with a `key` sending twice is safe.
     the same for every document; documents that need their own values
     take `Transition` each.
 
-## References, to be written
+## Where the rest is
 
-`../reference/commits-and-previews.md`, `statechart.md`,
-`rights-and-rules.md`, `querying.md`, `diagnostics.md`. Their sources are
-listed in [`../reference/README.md`](../reference/README.md).
+The reference this page once planned under `../reference/` is the
+manual now: the chapters under "Read first" above. The decision
+records behind them are listed in
+[`../reference/README.md`](../reference/README.md).

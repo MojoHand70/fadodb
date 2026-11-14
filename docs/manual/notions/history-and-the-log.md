@@ -161,7 +161,8 @@ select state, entered_by, left_by, duration from Invoice_states order by entered
 | INACCOUNTING | krzysztof | anna | 3600 |
 | BOOKED | anna | | |
 
-A chapter on the views and SQL is planned. A formula can read the same
+The views, their columns and what a statement may do are in
+[Views and SQL](../views-and-sql.md). A formula can read the same
 life of its own document, with `ENTEREDAT()`, `DAYSIN("INAPPROVAL")`
 and the others in [The functions](../functions.md).
 

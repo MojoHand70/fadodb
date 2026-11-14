@@ -477,8 +477,8 @@ SQL gives the values as the engine stores them: a day as the number of
 days since 1 January 1970, and an exact number as a whole number of
 its smallest unit, so 3.9000 with four places is 39000. A money column
 is two columns, the amount and the currency, the second under the name
-of the first with `_currency` after it. The chapter on the views and
-SQL is planned.
+of the first with `_currency` after it. The rest is in
+[Views and SQL](views-and-sql.md).
 
 ## How fast a lookup is
 

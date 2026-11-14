@@ -70,7 +70,7 @@ the engine on each push.
 | [Schemas and objects](manual/schemas-and-objects.md) | a value with named fields: defining a schema, the nine schemas the engine brings, an object in a class, what a class can and cannot do with an object today, how an object is stored | **written**; a test plays the chapter's story and every table of it against the engine |
 | [Files](manual/files.md) | attaching a file to a document: the facts and the bytes, opening a file under the rules of the document, who may, where the bytes are kept, how large a file may be, checking the files | **written**; a test plays the chapter's story and every table of it against the engine |
 | [Actions](actions.md) | defining an action, calling another system, secrets | **written** |
-| Views and SQL | the views the engine makes for each class, and reading them with SQL | planned; today [architecture.md](architecture.md) |
+| [Views and SQL](manual/views-and-sql.md) | the views of a class and their columns, how a value looks in SQL, seven questions with their statements and answers, what a statement may do, who may run one | **written**; a test runs every statement of the chapter and compares the answer |
 
 ## Embedding and running it
 

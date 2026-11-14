@@ -493,8 +493,9 @@ What a lookup costs follows from its condition.
 - **The limit** is 100,000 rows. Up to it the engine keeps the table
   in memory once a lookup of the first kind has needed it, and drops
   that copy when the table is written. The host program may set
-  another limit when it opens the database. The limit changes the
-  speed of a lookup and never its answer.
+  another limit when it opens the database, with the option
+  `MaxIndexedRows`; see [Opening a database](opening-a-database.md).
+  The limit changes the speed of a lookup and never its answer.
 - **Help the statement.** Let the column a lookup compares with the
   document be the first column of the key, or the first of an index.
 - **The measurements** are those of the release 0.2.0, in

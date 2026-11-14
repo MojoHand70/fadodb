@@ -77,6 +77,12 @@ All notable changes to FadoDB are recorded here. The format follows
   plays the chapter's story and holds every table of it to the
   engine's answers, the three stores and a file changed on disk
   included.
+- The first chapter for the developer who embeds the engine, opening
+  a database: a whole small program, `examples/open`, what opening
+  does, what is on disk, every option and whether it belongs to the
+  database or to the program, closing, and what is refused. A test
+  runs the program and plays every table of the chapter; the table of
+  options is held to the options the package has.
 - The designer's skill teaches the syntax: what to read in the manual,
   a small class that is complete, and the ten things that go wrong
   most often. It is no longer a stub. The classes the skills show are

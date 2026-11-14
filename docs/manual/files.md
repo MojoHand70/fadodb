@@ -187,7 +187,9 @@ document and the hash.
 
 ## Where the bytes are kept
 
-The bytes are in a **store**, chosen when the database is created.
+The bytes are in a **store**, chosen when the database is created,
+with the option `BlobStore`; see
+[Opening a database](opening-a-database.md).
 
 <!-- the stores -->
 | Store | The bytes are | Choose it when |

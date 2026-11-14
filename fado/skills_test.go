@@ -433,3 +433,148 @@ func TestAnalystSkill(t *testing.T) {
 		t.Errorf("9: a class defined after the first statement: %s", got)
 	}
 }
+
+// The simulator's skill answers "what would happen if" with commands
+// that write nothing. TestSimulatorSkill defines the class the skill
+// shows, makes the situation it describes, sends each command as the
+// agent of the skill and compares the answer with the page, checks that
+// nothing was written, and holds each point of the list.
+func TestSimulatorSkill(t *testing.T) {
+	page := skill(t, "fadodb-simulate")
+	ctx := context.Background()
+	clock := time.Date(2026, 11, 16, 9, 0, 0, 0, time.UTC)
+	db := notionDB(t, fado.Options{Now: func() time.Time { return clock }})
+	class := notionClass(t, page)
+	if _, err := db.DefineClass(ctx, class, setup); err != nil {
+		t.Fatal(err)
+	}
+	ola := fado.Principal{ID: "ola", Kind: fado.ActorPerson}
+	agent := fado.Principal{ID: "claims-agent", Kind: fado.ActorAgent, System: []string{fado.GroupDesigners}}
+	// The situation: Ola filed three claims at 09:00.
+	for _, claim := range [][2]string{
+		{"C-1", `"what":"taxi","amount":"120.00 PLN"`},
+		{"C-2", `"what":"conference","amount":"8000.00 PLN"`},
+		{"C-3", `"what":"hotel","amount":"300.00 PLN"`},
+	} {
+		if _, err := db.Exec(ctx, ola, "create", []byte(`{"class":"Claim","id":"`+claim[0]+`","values":{"approver":"claims-agent",`+claim[1]+`}}`)); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := db.Exec(ctx, ola, "transition", []byte(`{"class":"Claim","id":"`+claim[0]+`","transition":"file"}`)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	clock = clock.Add(time.Hour)
+	// stored says what the database holds, so that the test can tell
+	// whether a command wrote.
+	stored := func() string {
+		t.Helper()
+		var parts []string
+		for _, id := range []string{"C-1", "C-2", "C-3"} {
+			history, err := db.History(ctx, "Claim", id, fado.As(ola))
+			if err != nil {
+				t.Fatal(err)
+			}
+			parts = append(parts, fmt.Sprintf("%s: %d versions, %s", id, len(history), history[len(history)-1].State))
+		}
+		stored, _ := db.Class("Claim")
+		return strings.Join(parts, "; ") + fmt.Sprintf("; classes %v, Claim version %d", db.Classes(), stored.Version)
+	}
+	before := stored()
+
+	// The exchange: each command of the page, in its order, and the
+	// answer under it.
+	exchange := exchangesOf(page)
+	if len(exchange) != 6 {
+		t.Fatalf("the skill shows %d commands with their answers; the test knows six", len(exchange))
+	}
+	for i, m := range exchange {
+		got, _ := db.Exec(ctx, agent, m.name, m.sent)
+		if !sameAnswer(got, m.shown) {
+			t.Errorf("step %d, the command %s, is answered\n%s\nand the skill shows\n%s", i+1, m.name, got, m.shown)
+		}
+	}
+	// The draft of step 2 is the class of the page with one line
+	// changed.
+	var draft struct {
+		Definition json.RawMessage `json:"definition"`
+	}
+	if err := json.Unmarshal(exchange[1].sent, &draft); err != nil {
+		t.Fatal(err)
+	}
+	var shown, tried bytes.Buffer
+	json.Compact(&shown, class)
+	json.Compact(&tried, draft.Definition)
+	if got := strings.Replace(shown.String(), "AMOUNT(amount) <= 5000", "AMOUNT(amount) <= 10000", 1); got != tried.String() {
+		t.Error("the draft of step 2 differs from the class of the page by more than the limit")
+	}
+	if after := stored(); after != before {
+		t.Errorf("the commands of the skill wrote: before %s, after %s", before, after)
+	}
+
+	// What goes wrong most often: ten points, each held by its number.
+	if n := points(t, page); n != 10 {
+		t.Errorf("the list has %d points, and the test holds ten", n)
+	}
+	answer := func(as fado.Principal, name, object string) (string, string) {
+		got, err := db.Exec(ctx, as, name, []byte(object))
+		return fado.ErrorCode(err), string(got)
+	}
+	definition := string(draft.Definition)
+	// 2. A second preview does not see what the first would have done.
+	for i := 0; i < 2; i++ {
+		if code, got := answer(agent, "preview", `{"class":"Claim","id":"C-1","transition":"approve"}`); code != "" || !strings.Contains(got, `"path":["filed","approved"]`) {
+			t.Errorf("2: preview %d of the same approval: %s %s", i+1, code, got)
+		}
+	}
+	// 3. A preview of a transition at a later moment does not first
+	// take the timers that will have come by then.
+	if code, got := answer(agent, "preview", `{"class":"Claim","id":"C-1","transition":"approve","at":"2026-12-01"}`); code != "" || !strings.Contains(got, `"state":"approved"`) {
+		t.Errorf("3: approve of C-1 previewed on 1 December: %s %s", code, got)
+	}
+	if code, got := answer(agent, "preview", `{"class":"Claim","id":"C-1","at":"2026-12-01"}`); code != "" || !strings.Contains(got, `"state":"expired"`) {
+		t.Errorf("3: C-1 by itself on 1 December: %s %s", code, got)
+	}
+	// 4. A change as of another moment.
+	if code, _ := answer(agent, "transition", `{"class":"Claim","id":"C-1","transition":"approve","at":"2026-12-01"}`); code != "not_allowed" {
+		t.Errorf("4: a transition as of another moment: %s", code)
+	}
+	// 5. A draft tried by a caller who is no designer.
+	plain := fado.Principal{ID: "claims-agent", Kind: fado.ActorAgent}
+	if code, _ := answer(plain, "preview_draft", `{"id":"C-2","transition":"approve","definition":`+definition+`}`); code != "forbidden" {
+		t.Errorf("5: a draft tried by a caller who is no designer: %s", code)
+	}
+	// 6. A draft under another name: not on a document, but on a create.
+	renamed := strings.Replace(definition, `"name": "Claim"`, `"name": "Claim2"`, 1)
+	if code, _ := answer(agent, "preview_draft", `{"id":"C-2","transition":"approve","definition":`+renamed+`}`); code != "unknown_class" {
+		t.Errorf("6: a draft under another name, on a document: %s", code)
+	}
+	if code, got := answer(agent, "preview_draft", `{"values":{"approver":"marek","what":"a pen","amount":"3.00 PLN"},"definition":`+renamed+`}`); code != "" || !strings.Contains(got, `"class":"Claim2"`) {
+		t.Errorf("6: a draft under another name, on a create: %s %s", code, got)
+	}
+	// 7. A draft with a mistake.
+	if code, got := answer(agent, "preview_draft", `{"id":"C-2","transition":"approve","definition":`+strings.Replace(definition, "AMOUNT(amount) <= 10000", "AMOUNT(amont) <= 10000", 1)+`}`); code != "bad_definition" || !strings.Contains(got, `"/transitions/1/guard"`) {
+		t.Errorf("7: a draft with a mistake: %s %s", code, got)
+	}
+	// 8. A batch that would not move every document gives no error.
+	if code, got := answer(agent, "preview_many", `{"class":"Claim","transition":"approve","ids":["C-1","C-2"]}`); code != "" || !strings.Contains(got, `"refusal"`) {
+		t.Errorf("8: a batch with a document that would not move: %s %s", code, got)
+	}
+	// 9. A claim that waits to be approved is not due.
+	if code, got := answer(agent, "due", `{"class":"Claim"}`); code != "" || got != `{"due":[]}` {
+		t.Errorf("9: what is due now: %s %s", code, got)
+	}
+	// 10. A preview answers for its caller.
+	if code, _ := answer(ola, "preview", `{"class":"Claim","id":"C-1","transition":"approve"}`); code != "forbidden" {
+		t.Errorf("10: Ola previews an approval: %s", code)
+	}
+	// 1. Nothing above wrote, and a real change does.
+	if after := stored(); after != before {
+		t.Errorf("1: the previews wrote: before %s, after %s", before, after)
+	}
+	if code, _ := answer(agent, "transition", `{"class":"Claim","id":"C-1","transition":"approve","key":"approve-C-1"}`); code != "" {
+		t.Errorf("1: a real approval: %s", code)
+	}
+	if after := stored(); after == before {
+		t.Error("1: a real change left the database as it was")
+	}
+}

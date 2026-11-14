@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -45,6 +46,19 @@ func notionClass(t *testing.T, page []byte) []byte {
 	return nil
 }
 
+// notionClasses returns every whole class a chapter shows, in the
+// order of the page.
+func notionClasses(t *testing.T, page []byte) [][]byte {
+	t.Helper()
+	var classes [][]byte
+	for _, m := range regexp.MustCompile("(?s)```json\r?\n(.*?)\r?\n```").FindAllSubmatch(page, -1) {
+		if kindOf(m[1]) == "class" {
+			classes = append(classes, m[1])
+		}
+	}
+	return classes
+}
+
 // marked returns what follows a marker comment of a chapter up to the
 // next empty line: a table, or a fenced block without its fences.
 func marked(t *testing.T, page []byte, marker string) string {
@@ -79,8 +93,8 @@ func rows(table string) [][]string {
 	return out
 }
 
-// codesIn returns the codes a table of refusals names, the words in
-// backticks of its second column that are written like a code.
+// codesIn returns the codes a table of refusals names: the words in
+// backticks, after its first column, that are written like a code.
 func codesIn(table string) []string {
 	var out []string
 	code := regexp.MustCompile("`([a-z]+(_[a-z]+)*)`")
@@ -89,8 +103,10 @@ func codesIn(table string) []string {
 			continue
 		}
 		cells := strings.Split(strings.Trim(strings.TrimSpace(line), "|"), "|")
-		for _, m := range code.FindAllStringSubmatch(cells[len(cells)-1], -1) {
-			out = append(out, m[1])
+		for _, cell := range cells[1:] {
+			for _, m := range code.FindAllStringSubmatch(cell, -1) {
+				out = append(out, m[1])
+			}
 		}
 	}
 	return out
@@ -765,5 +781,533 @@ func TestNotion_StatesAndTransitions(t *testing.T) {
 		}
 	}
 	found.covers(t, "checked when the class is defined", marked(t, page, "checked when the class is defined"))
+	met.covers(t, "what is refused", marked(t, page, "what is refused"))
+}
+
+func TestNotion_RulesAndActions(t *testing.T) {
+	page := notion(t, "rules-and-actions.md")
+	clock := time.Date(2026, 11, 16, 9, 0, 0, 0, time.UTC)
+	db := notionDB(t, fado.Options{Now: func() time.Time { return clock }})
+	ctx := context.Background()
+	classes := notionClasses(t, page)
+	if len(classes) != 2 {
+		t.Fatalf("the chapter shows %d classes; the test plays an order and a purchase", len(classes))
+	}
+	for _, class := range classes {
+		if _, err := db.DefineClass(ctx, class, setup); err != nil {
+			t.Fatal(err)
+		}
+	}
+	ola, iza, marek, piotr := person("ola"), person("iza", "controllers"), person("marek", "managers"), person("piotr")
+
+	// The story.
+	purchase, err := db.Create(ctx, "Purchase", fado.Values{"item": "laptop", "amount": "8000.00 PLN", "approver": "marek"}, ola)
+	want(t, "1: Ola creates a purchase", err, "allowed")
+	if err != nil {
+		t.Fatal(err)
+	}
+	set := func(step string, as fado.Option, values fado.Values, answered string) *fado.Document {
+		t.Helper()
+		clock = clock.Add(time.Hour)
+		doc, err := db.Set(ctx, "Purchase", purchase.ID, values, as)
+		want(t, step, err, answered)
+		return doc
+	}
+	approve := func(step string, answered string) *fado.Document {
+		t.Helper()
+		clock = clock.Add(time.Hour)
+		doc, err := db.Transition(ctx, "Purchase", purchase.ID, "approve", nil, marek)
+		want(t, step, err, answered)
+		return doc
+	}
+	set("2: Ola ticks checked herself", ola, fado.Values{"checked": true}, "forbidden, variable checked")
+	set("3: Iza ticks checked", iza, fado.Values{"checked": true}, "allowed")
+	changed := set("4: Ola changes the amount", ola, fado.Values{"amount": "12000.00 PLN"}, "allowed")
+	if changed != nil && (changed.Values["checked"] != false || changed.Version != 3) {
+		t.Errorf("4: checked is %v at version %d; the chapter says rule 1 takes the check back in the same version", changed.Values["checked"], changed.Version)
+	}
+	approve("5: Marek approves", "guard_false")
+	set("by hand: Marek writes approved_by", marek, fado.Values{"approved_by": "marek"}, "forbidden at /access/update")
+	set("6: Iza ticks checked again", iza, fado.Values{"checked": true}, "allowed")
+
+	// Looking before: the preview lists rules 2, 3 and 4, the last queued.
+	preview, err := db.Preview(ctx, "Purchase", purchase.ID, nil, "approve", marek)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var would []string
+	for _, rule := range preview.Rules {
+		if !rule.Ran {
+			continue
+		}
+		for _, action := range rule.Actions {
+			what := rule.Path + " " + action.Action
+			if action.Queued {
+				what += " queued"
+			}
+			would = append(would, what)
+		}
+	}
+	if got := strings.Join(would, ", "); got != "/rules/1 set, /rules/2 emit, /rules/3 create queued" {
+		t.Errorf("the preview of the approval lists %s", got)
+	}
+	if queue, err := db.Outbox(ctx, fado.OutboxFilter{}, setup); err != nil || len(queue) != 0 {
+		t.Errorf("a preview queued %d actions, %v", len(queue), err)
+	}
+
+	approved := approve("7: Marek approves", "allowed")
+	if approved != nil && (approved.Values["approved_by"] != "marek" || approved.Values["approved_at"] == nil || approved.Version != 5) {
+		t.Errorf("7: approved by %v at %v, version %d", approved.Values["approved_by"], approved.Values["approved_at"], approved.Version)
+	}
+	orders := func() []*fado.Document {
+		t.Helper()
+		found, err := db.Query(ctx, fado.Filter{Class: "Order"}, ola)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return found
+	}
+	queue, err := db.Outbox(ctx, fado.OutboxFilter{DocID: purchase.ID}, setup)
+	if err != nil || len(queue) != 1 || queue[0].Status != "pending" || queue[0].Action != "create" || queue[0].PrincipalID != "marek" || queue[0].Rule != "/rules/3/do/0" {
+		t.Fatalf("after the approval the queue holds %v, %v", queue, err)
+	}
+	if len(orders()) != 0 {
+		t.Error("the order exists before the engine ran the queue")
+	}
+	if ran, err := db.Drain(ctx, setup); err != nil || ran != 1 {
+		t.Errorf("8: the engine ran %d actions, %v", ran, err)
+	}
+	made := orders()
+	if len(made) != 1 || made[0].CreatedBy != "marek" || fmt.Sprint(made[0].Values["amount"]) != "12000.00 PLN" || made[0].Values["purchase"] != purchase.ID {
+		t.Fatalf("8: the orders are %v", made)
+	}
+	if ran, err := db.Drain(ctx, setup); err != nil || ran != 0 {
+		t.Errorf("9: the engine ran %d actions the second time, %v", ran, err)
+	}
+	if history, err := db.History(ctx, "Purchase", purchase.ID, ola); err != nil || len(history) != 5 {
+		t.Errorf("the purchase has %d versions, %v; the chapter says five", len(history), err)
+	}
+
+	// What the log keeps.
+	events, err := db.Events(ctx, "Purchase", purchase.ID, ola)
+	if err != nil {
+		t.Fatal(err)
+	}
+	log := rows(marked(t, page, "the events"))
+	if len(events) != len(log) {
+		t.Fatalf("the log has %d events, and the chapter %d", len(events), len(log))
+	}
+	for i, row := range log {
+		e := events[i]
+		if got := []string{e.Kind, e.Name, e.FromState, e.ToState, e.ActorID}; !reflect.DeepEqual(got, row) {
+			t.Errorf("event %d is %v, and the chapter says %v", i+1, got, row)
+		}
+		if (e.Kind == "custom" || e.Kind == "action_run") && e.CauseEventID != events[4].ID {
+			t.Errorf("the event %s does not name the approval as its cause", e.Kind)
+		}
+	}
+
+	// An action that is refused: Piotr approves, and may not create orders.
+	second, err := db.Create(ctx, "Purchase", fado.Values{"item": "desk", "amount": "900.00 PLN", "approver": "piotr"}, ola)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Set(ctx, "Purchase", second.ID, fado.Values{"checked": true}, iza); err != nil {
+		t.Fatal(err)
+	}
+	_, err = db.Transition(ctx, "Purchase", second.ID, "approve", nil, piotr)
+	want(t, "Piotr approves the purchase", err, "allowed")
+	if ran, err := db.Drain(ctx, setup); err != nil || ran != 1 {
+		t.Errorf("the engine ran %d actions, %v", ran, err)
+	}
+	if len(orders()) != 1 {
+		t.Errorf("there are %d orders; the chapter says the second is refused", len(orders()))
+	}
+	queue, err = db.Outbox(ctx, fado.OutboxFilter{DocID: second.ID}, setup)
+	if err != nil || len(queue) != 1 || queue[0].Status != "dead" || queue[0].ErrorCode != "forbidden" || queue[0].PrincipalID != "piotr" {
+		t.Errorf("the queue afterwards: %v, %v", queue, err)
+	}
+	events, err = db.Events(ctx, "Purchase", second.ID, ola)
+	if err != nil || len(events) == 0 {
+		t.Fatal(err)
+	}
+	if last := events[len(events)-1]; last.Kind != "action_failed" || last.Name != "create" || last.Code != "forbidden" {
+		t.Errorf("the last event of the purchase is %s %s %s", last.Kind, last.Name, last.Code)
+	}
+	if ran, err := db.Drain(ctx, setup); err != nil || ran != 0 {
+		t.Errorf("a dead action was tried again by itself: %d, %v", ran, err)
+	}
+	_, err = db.Outbox(ctx, fado.OutboxFilter{}, ola)
+	want(t, "Ola lists the queue", err, "forbidden at /system/administrators")
+
+	// When a rule runs: a class whose rules name the trigger that set
+	// them off, in an order the triggers do not have.
+	triggers := `{"name":"Triggers","variables":{"a":{"type":"number"}},
+	  "states":{"initial":"draft","list":["draft","review"]},
+	  "transitions":[{"name":"submit","from":"draft","to":"review"}],
+	  "rules":[
+	    {"on":"enter","state":"review","do":[{"action":"emit","event":"enter"}]},
+	    {"on":"delete","do":[{"action":"emit","event":"delete"}]},
+	    {"on":"transition","name":"submit","do":[{"action":"emit","event":"transition"}]},
+	    {"on":"exit","state":"draft","do":[{"action":"emit","event":"exit"}]},
+	    {"on":"values_change","variables":["a"],"do":[{"action":"emit","event":"values_change"}]},
+	    {"on":"enter","state":"draft","do":[{"action":"emit","event":"enter"}]},
+	    {"on":"create","do":[{"action":"emit","event":"create"}]}
+	  ],
+	  "access":{"read":"TRUE","create":"TRUE","update":"TRUE","delete":"TRUE"}}`
+	if _, err := db.DefineClass(ctx, []byte(triggers), setup); err != nil {
+		t.Fatal(err)
+	}
+	emitted := func(id string, from int) (string, int) {
+		t.Helper()
+		events, err := db.Events(ctx, "Triggers", id, ola)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var names []string
+		for _, e := range events[from:] {
+			if e.Kind == "custom" {
+				names = append(names, e.Name)
+			}
+		}
+		return strings.Join(names, ", "), len(events)
+	}
+	word := regexp.MustCompile("`([a-z_]+)`")
+	order := map[string]string{}
+	for _, row := range rows(strings.ReplaceAll(marked(t, page, "the order of the triggers"), "`", "'")) {
+		var names []string
+		for _, m := range word.FindAllStringSubmatch(strings.ReplaceAll(row[1], "'", "`"), -1) {
+			names = append(names, m[1])
+		}
+		order[row[0]] = strings.Join(names, ", ")
+	}
+	one, err := db.Create(ctx, "Triggers", fado.Values{"a": 1}, ola)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, seenSoFar := emitted(one.ID, 0)
+	if got != order["a create"] {
+		t.Errorf("a create sets off %s, and the chapter says %s", got, order["a create"])
+	}
+	if _, err := db.Set(ctx, "Triggers", one.ID, fado.Values{"a": 2}, ola); err != nil {
+		t.Fatal(err)
+	}
+	if got, seenSoFar = emitted(one.ID, seenSoFar); got != order["a change of values"] {
+		t.Errorf("a change of values sets off %s, and the chapter says %s", got, order["a change of values"])
+	}
+	if _, err := db.Transition(ctx, "Triggers", one.ID, "submit", fado.Values{"a": 3}, ola); err != nil {
+		t.Fatal(err)
+	}
+	if got, seenSoFar = emitted(one.ID, seenSoFar); got != order["a transition"] {
+		t.Errorf("a transition sets off %s, and the chapter says %s", got, order["a transition"])
+	}
+	if err := db.Delete(ctx, "Triggers", one.ID, ola); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ = emitted(one.ID, seenSoFar); got != order["a delete"] {
+		t.Errorf("a delete sets off %s, and the chapter says %s", got, order["a delete"])
+	}
+
+	// Inside the commit: no rule sets another off, a failing action
+	// refuses the commit with its place, a failing condition is FALSE.
+	inside := `{"name":"Inside","variables":{"a":{"type":"number"},"b":{"type":"number"},"c":{"type":"number"},
+	    "m":{"type":"number"},"r":{"type":"number"},"q":{"type":"number"},"small":{"type":"int","max":5},"seen":{"type":"bool","default":"FALSE"}},
+	  "states":{"initial":"draft","list":["draft"]},
+	  "rules":[
+	    {"on":"values_change","variables":["a"],"do":[{"action":"set","values":{"b":"a + 1"}}]},
+	    {"on":"values_change","variables":["b"],"do":[{"action":"set","values":{"c":"b + 1"}}]},
+	    {"on":"values_change","variables":["m"],"do":[{"action":"set","values":{"r":"100 / m"}}]},
+	    {"on":"values_change","variables":["q"],"do":[{"action":"set","values":{"small":"9"}}]},
+	    {"on":"values_change","variables":["c"],"if":"100 / c > 1","do":[{"action":"set","values":{"seen":"TRUE"}}]}
+	  ],
+	  "access":{"read":"TRUE","create":"TRUE","update":"TRUE","delete":"FALSE"}}`
+	if _, err := db.DefineClass(ctx, []byte(inside), setup); err != nil {
+		t.Fatal(err)
+	}
+	in, err := db.Create(ctx, "Inside", nil, ola)
+	if err != nil {
+		t.Fatal(err)
+	}
+	after, err := db.Set(ctx, "Inside", in.ID, fado.Values{"a": 1}, ola)
+	if err != nil || fmt.Sprint(after.Values["b"]) != "2" || after.Values["c"] != nil {
+		t.Errorf("a rule's set ran another rule: b %v, c %v, %v", after.Values["b"], after.Values["c"], err)
+	}
+	place := func(step string, values fado.Values, code, path string) {
+		t.Helper()
+		_, err := db.Set(ctx, "Inside", in.ID, values, ola)
+		var refusal *fado.Error
+		if !errors.As(err, &refusal) || refusal.Code != code || refusal.Path != path {
+			t.Errorf("%s: %v; the chapter says the commit is refused with %s and the place %s", step, err, code, path)
+		}
+	}
+	place("an action that cannot work out its value", fado.Values{"m": 0}, "div_by_zero", "/rules/2/do/0")
+	place("an action that writes a value out of range", fado.Values{"q": 1}, "out_of_range", "/rules/3/do/0")
+	after, err = db.Set(ctx, "Inside", in.ID, fado.Values{"c": 0}, ola)
+	if err != nil || after.Values["seen"] != false {
+		t.Errorf("a rule whose condition cannot be worked out: seen %v, %v; the chapter says it does not run", after.Values["seen"], err)
+	}
+	after, err = db.Set(ctx, "Inside", in.ID, fado.Values{"c": 50}, ola)
+	if err != nil || after.Values["seen"] != true {
+		t.Errorf("a rule whose condition is TRUE: seen %v, %v", after.Values["seen"], err)
+	}
+
+	// What is checked when the class is defined.
+	found := seen{}
+	chart := `"states":{"initial":"a","list":["a","b","c","d"],"final":["c","d"]},` +
+		`"transitions":[{"name":"go","from":"a","to":"b"},{"name":"end","from":"b","to":"c"},{"name":"over","from":"c","to":"d"}]`
+	for _, c := range []struct{ what, rules, code string }{
+		{"a state the class does not have", `[{"on":"enter","state":"zz","do":[{"action":"emit","event":"x"}]}]`, "unknown_state"},
+		{"a transition the class does not have", `[{"on":"transition","name":"zz","do":[{"action":"emit","event":"x"}]}]`, "unknown_transition"},
+		{"a variable the class does not have", `[{"on":"create","do":[{"action":"set","values":{"zz":"1"}}]}]`, "unknown_variable"},
+		{"a computed variable", `[{"on":"create","do":[{"action":"set","values":{"twice":"1"}}]}]`, "not_allowed"},
+		{"a value of another type", `[{"on":"create","do":[{"action":"set","values":{"n":"\"x\""}}]}]`, "type_mismatch"},
+		{"values_change with no variables", `[{"on":"values_change","do":[{"action":"emit","event":"x"}]}]`, "missing"},
+		{"an if that is not a condition", `[{"on":"create","if":"n + 1","do":[{"action":"emit","event":"x"}]}]`, "not_a_condition"},
+		{"an action the database does not have", `[{"on":"create","do":[{"action":"mail.send"}]}]`, "unknown_action"},
+		{"a class the database does not have", `[{"on":"create","do":[{"action":"create","class":"Nope","values":{}}]}]`, "unknown_class"},
+		{"a set on leaving a final state", `[{"on":"exit","state":"c","do":[{"action":"set","values":{"n":"1"}}]}]`, "not_allowed"},
+		{"a set on entering a state a final one leads to", `[{"on":"enter","state":"d","do":[{"action":"set","values":{"n":"1"}}]}]`, "not_allowed"},
+		{"an emit on entering a state a final one leads to", `[{"on":"enter","state":"d","do":[{"action":"emit","event":"x"}]}]`, "accepted"},
+	} {
+		definition := scratch("Checked", `"n":{"type":"number"},"twice":{"formula":"n * 2"}`, chart+`,"rules":`+c.rules)
+		if got := found.note(finding(db, definition)); got != c.code {
+			t.Errorf("%s: the engine finds %s, and the chapter says %s", c.what, got, c.code)
+		}
+	}
+	found.covers(t, "checked when the class is defined", marked(t, page, "checked when the class is defined"))
+	stateless := scratch("Calculator", `"n":{"type":"number"}`, `"rules":[{"on":"create","do":[{"action":"emit","event":"x"}]}]`)
+	if got := finding(db, stateless); got != "not_allowed" {
+		t.Errorf("rules in a class without states: %s", got)
+	}
+}
+
+func TestNotion_WhoMay(t *testing.T) {
+	page := notion(t, "who-may.md")
+	db := notionDB(t, fado.Options{})
+	ctx := context.Background()
+	class := notionClass(t, page)
+	if _, err := db.DefineClass(ctx, class, setup); err != nil {
+		t.Fatal(err)
+	}
+	ola, krzysztof, anna, piotr := person("ola"), person("krzysztof"), person("anna", "ACCOUNTING"), person("piotr")
+	bot := fado.As(fado.Principal{ID: "ledger-bot", Kind: fado.ActorAgent, Groups: []string{"ACCOUNTING"}})
+	celina := fado.As(fado.Principal{ID: "celina", Kind: fado.ActorPerson, System: []string{fado.GroupContentAdministrators}})
+	met := seen{}
+	check := func(step string, err error, answered string) {
+		t.Helper()
+		want(t, step, err, met.note(answered))
+	}
+	values := fado.Values{"number": "FV/2026/11/021", "supplier": "ACME", "net": "100.00 PLN", "approver": "krzysztof"}
+
+	// The story.
+	_, err := db.Create(ctx, "Invoice", values)
+	check("1: a call that names nobody creates an invoice", err, "forbidden at /access/create")
+	invoice, err := db.Create(ctx, "Invoice", values, ola)
+	check("2: Ola creates the invoice", err, "allowed")
+	if err != nil {
+		t.Fatal(err)
+	}
+	set := func(step string, as fado.Option, values fado.Values, answered string, more ...fado.Option) {
+		t.Helper()
+		_, err := db.Set(ctx, "Invoice", invoice.ID, values, append([]fado.Option{as}, more...)...)
+		check(step, err, answered)
+	}
+	move := func(step string, as fado.Option, name, answered string) {
+		t.Helper()
+		_, err := db.Transition(ctx, "Invoice", invoice.ID, name, nil, as)
+		check(step, err, answered)
+	}
+	_, err = db.Get(ctx, "Invoice", invoice.ID, piotr)
+	check("3: Piotr reads it", err, "unknown_document")
+	// He is told the same as for an id that was never used.
+	_, never := db.Get(ctx, "Invoice", "no-such-invoice", piotr)
+	if err == nil || never == nil || strings.ReplaceAll(err.Error(), invoice.ID, "X") != strings.ReplaceAll(never.Error(), "no-such-invoice", "X") {
+		t.Errorf("an invoice Piotr may not see is answered %q, one that does not exist %q", err, never)
+	}
+	for who, n := range map[string]int64{"piotr": 0, "krzysztof": 1} {
+		if got, err := db.Count(ctx, fado.Filter{Class: "Invoice"}, person(who)); err != nil || got != n {
+			t.Errorf("%s counts %d invoices, %v; the chapter says %d", who, got, err, n)
+		}
+	}
+	set("4: Anna changes the net amount", anna, fado.Values{"net": "120.00 PLN"}, "forbidden, variable net")
+	set("5: Krzysztof writes an audit note", krzysztof, fado.Values{"audit_note": "seen"}, "forbidden, variable audit_note")
+	set("6: Ola changes the net amount", ola, fado.Values{"net": "120.00 PLN"}, "allowed")
+	// Who edits in INAPPROVAL: the rest of that table.
+	set("INAPPROVAL: Krzysztof changes the supplier", krzysztof, fado.Values{"supplier": "ACME Ltd"}, "allowed")
+	set("INAPPROVAL: Ola writes an audit note", ola, fado.Values{"audit_note": "seen"}, "forbidden, variable audit_note")
+	set("INAPPROVAL: Anna writes an audit note", anna, fado.Values{"audit_note": "the bank account is new"}, "allowed")
+	if doc, err := db.Get(ctx, "Invoice", invoice.ID, krzysztof); err != nil {
+		t.Fatal(err)
+	} else if _, there := doc.Values["audit_note"]; there {
+		t.Error("in INAPPROVAL Krzysztof sees the audit note; the read right under * has to be found past the state's own lines, which give only write")
+	}
+	move("7: Ola approves", ola, "approve", "forbidden at /access/transition/approve")
+	move("8: Krzysztof approves", krzysztof, "approve", "allowed")
+	set("9: Krzysztof changes the net amount", krzysztof, fado.Values{"net": "1.00 PLN"}, "forbidden, variable net")
+	set("10: ledger-bot sets the account and writes an audit note", bot, fado.Values{"account": "401", "audit_note": "checked the bank account"}, "allowed")
+	set("INACCOUNTING: Anna changes the net amount", anna, fado.Values{"net": "121.00 PLN"}, "allowed")
+	seenBy := func(as fado.Option) bool {
+		t.Helper()
+		doc, err := db.Get(ctx, "Invoice", invoice.ID, as)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, there := doc.Values["audit_note"]
+		if len(doc.Values) != 5 && !there || len(doc.Values) != 6 && there {
+			t.Errorf("the invoice has %d values", len(doc.Values))
+		}
+		return there
+	}
+	if seenBy(krzysztof) || !seenBy(anna) || !seenBy(celina) {
+		t.Error("11: the audit note is seen by accounting and by a content administrator, and not by Krzysztof")
+	}
+	move("12: ledger-bot books", bot, "book", "forbidden at /access/transition/book")
+	open, err := db.Transitions(ctx, "Invoice", invoice.ID, celina)
+	if err != nil || len(open) != 1 || !open[0].Enabled || open[0].Override != "/access/transition/book" {
+		t.Errorf("the open transitions for Celina: %v, %v; the chapter says the list names the rule she would get past", open, err)
+	}
+	set("13: Celina corrects the supplier, giving no reason", celina, fado.Values{"supplier": "ACME Sp. z o.o."}, "reason_required at /access/read")
+	set("14: Celina corrects it, with the reason", celina, fado.Values{"supplier": "ACME Sp. z o.o."}, "allowed", fado.Reason("the supplier was renamed, ticket 4711"))
+	move("15: Anna books", anna, "book", "allowed")
+	set("16: Celina changes the booked invoice", celina, fado.Values{"supplier": "x"}, "terminal", fado.Reason("a try"))
+
+	// The log: what the bot was, and what Celina got past and why.
+	events, err := db.Events(ctx, "Invoice", invoice.ID, anna)
+	if err != nil {
+		t.Fatal(err)
+	}
+	past := rows(marked(t, page, "the event of step 14"))[0]
+	var agent, override bool
+	for _, e := range events {
+		if e.ActorID == "ledger-bot" && e.ActorKind == "agent" {
+			agent = true
+		}
+		if e.Override != "" {
+			override = true
+			if got := []string{e.Kind, e.ActorID, e.Override, e.Reason}; !reflect.DeepEqual(got, past) {
+				t.Errorf("the event of step 14 is %q, and the chapter says %q", got, past)
+			}
+		}
+	}
+	if !agent || !override {
+		t.Errorf("the log says an agent made step 10: %v; it keeps the act past a rule: %v", agent, override)
+	}
+
+	// How a right is found: with audit_note closed under * alone, the
+	// line of INAPPROVAL for every variable is found first.
+	var whole map[string]json.RawMessage
+	if err := json.Unmarshal(class, &whole); err != nil {
+		t.Fatal(err)
+	}
+	whole["rights"] = json.RawMessage(`{
+	  "INAPPROVAL":   {"*": {"write": "CREATEDBY() = USER() OR approver = USER()"}},
+	  "INACCOUNTING": {"*": {"write": ["ACCOUNTING"]}},
+	  "*":            {"audit_note": {"read": ["ACCOUNTING"], "write": ["ACCOUNTING"]}}}`)
+	trap, err := json.Marshal(whole)
+	if err != nil {
+		t.Fatal(err)
+	}
+	other := notionDB(t, fado.Options{})
+	if _, err := other.DefineClass(ctx, trap, setup); err != nil {
+		t.Fatal(err)
+	}
+	second, err := other.Create(ctx, "Invoice", values, ola)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = other.Set(ctx, "Invoice", second.ID, fado.Values{"audit_note": "written by the approver"}, krzysztof)
+	want(t, "audit_note closed under * alone: Krzysztof writes it in INAPPROVAL", err, "allowed")
+
+	// A call that names nobody gets through where a line says TRUE.
+	if _, err := db.DefineClass(ctx, []byte(scratch("Open", `"a":{"type":"text"}`, oneState)), setup); err != nil {
+		t.Fatal(err)
+	}
+	anonymous, err := db.Create(ctx, "Open", fado.Values{"a": "x"})
+	want(t, "a call that names nobody, where the class says TRUE", err, "allowed")
+	if err == nil {
+		_, err = db.Get(ctx, "Open", anonymous.ID)
+		want(t, "a call that names nobody reads it", err, "allowed")
+	}
+
+	// The people who run the database.
+	system := func(id string, groups ...string) fado.Option {
+		return fado.As(fado.Principal{ID: id, Kind: fado.ActorPerson, System: groups})
+	}
+	designer, administrator, analyst := system("dana", fado.GroupDesigners), system("adam", fado.GroupAdministrators), system("alex", fado.GroupAnalysts)
+	work := map[string]func(as fado.Option) error{
+		"define": func(as fado.Option) error {
+			_, err := db.DefineClass(ctx, []byte(scratch("Another", `"a":{"type":"text"}`, oneState)), as)
+			return err
+		},
+		"queue": func(as fado.Option) error { _, err := db.Outbox(ctx, fado.OutboxFilter{}, as); return err },
+		"sql":   func(as fado.Option) error { _, err := db.SQL(ctx, "select count(*) from Invoice", nil, as); return err },
+		"see":   func(as fado.Option) error { _, err := db.Get(ctx, "Invoice", invoice.ID, as); return err },
+	}
+	for _, c := range []struct {
+		who                     string
+		as                      fado.Option
+		define, queue, sql, see string
+	}{
+		{"a designer", designer, "allowed", "forbidden at /system/administrators", "forbidden at /system/analysts", "unknown_document"},
+		{"an administrator", administrator, "forbidden at /system/designers", "allowed", "forbidden at /system/analysts", "unknown_document"},
+		{"an analyst", analyst, "forbidden at /system/designers", "forbidden at /system/administrators", "allowed", "unknown_document"},
+		{"a content administrator", celina, "forbidden at /system/designers", "forbidden at /system/administrators", "forbidden at /system/analysts", "allowed"},
+		{"Anna", anna, "forbidden at /system/designers", "forbidden at /system/administrators", "forbidden at /system/analysts", "allowed"},
+	} {
+		check(c.who+" defines a class", work["define"](c.as), c.define)
+		check(c.who+" lists the queue", work["queue"](c.as), c.queue)
+		check(c.who+" runs SQL", work["sql"](c.as), c.sql)
+		check(c.who+" reads the invoice", work["see"](c.as), c.see)
+	}
+	for _, group := range []string{"administrators", "everyone"} {
+		_, err := db.Get(ctx, "Invoice", invoice.ID, fado.As(fado.Principal{ID: "eve", Groups: []string{group}}))
+		check("an ordinary group called "+group, err, "bad_value")
+	}
+
+	// What is checked when the class is defined.
+	found := seen{}
+	full := `"read":"TRUE","create":"TRUE","update":"TRUE","delete":"FALSE"`
+	definition := func(access, rights string) string {
+		d := `{"name":"Checked","variables":{"n":{"type":"number"}},"states":{"initial":"a","list":["a","b"]},` +
+			`"transitions":[{"name":"go","from":"a","to":"b"}],"access":{` + access + `}`
+		if rights != "" {
+			d += `,"rights":` + rights
+		}
+		return d + `}`
+	}
+	for _, c := range []struct{ what, definition, code string }{
+		{"a line of access that is not a condition", definition(`"read":"n + 1","create":"TRUE","update":"TRUE","delete":"FALSE"`, ""), "not_a_condition"},
+		{"a right that is not a condition", definition(full, `{"*":{"n":{"write":"n + 1"}}}`), "not_a_condition"},
+		{"a variable the class does not have, in a line of access", definition(`"read":"zz = USER()","create":"TRUE","update":"TRUE","delete":"FALSE"`, ""), "bad_formula"},
+		{"a transition the class does not have, under access", definition(full+`,"transition":{"zz":"TRUE"}`, ""), "unknown_transition"},
+		{"a state the class does not have, under rights", definition(full, `{"zz":{"*":{"write":"TRUE"}}}`), "unknown_state"},
+		{"a variable the class does not have, under rights", definition(full, `{"*":{"zz":{"write":"TRUE"}}}`), "unknown_variable"},
+		{"a word the engine does not know, under access", definition(full+`,"approve":"TRUE"`, ""), "bad_json"},
+		{"a word the engine does not know, under rights", definition(full, `{"*":{"n":{"edit":"TRUE"}}}`), "bad_json"},
+	} {
+		if got := found.note(finding(db, c.definition)); got != c.code {
+			t.Errorf("%s: the engine finds %s, and the chapter says %s", c.what, got, c.code)
+		}
+	}
+	found.covers(t, "checked when the class is defined", marked(t, page, "checked when the class is defined"))
+
+	// A line left out is noted, and lets nobody through.
+	bare := `{"name":"Bare","variables":{"n":{"type":"number"}},"states":{"initial":"a","list":["a"]}}`
+	notes := 0
+	for _, d := range db.ValidateClass([]byte(bare)) {
+		if !d.Note || d.Code != "rule_left_out" {
+			t.Errorf("a class with no access block: %s, note %v", d.Code, d.Note)
+		}
+		notes++
+	}
+	if notes != 4 {
+		t.Errorf("a class with no access block gets %d notes; it leaves four lines out", notes)
+	}
+	if _, err := db.DefineClass(ctx, []byte(bare), setup); err != nil {
+		t.Errorf("a class with a line left out is not defined: %v", err)
+	}
+	_, err = db.Create(ctx, "Bare", fado.Values{"n": 1}, ola)
+	check("Ola creates a document of a class with no access block", err, "forbidden at /access/create")
+
 	met.covers(t, "what is refused", marked(t, page, "what is refused"))
 }

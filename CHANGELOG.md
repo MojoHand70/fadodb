@@ -38,6 +38,11 @@ All notable changes to FadoDB are recorded here. The format follows
   class and a story of named people, and a test plays the story and
   every table of the chapter against the engine, the document it
   shows and the chart it draws included.
+- Two more chapters on the notions: rules and actions, with what a
+  rule does inside a commit set apart from what the engine runs after
+  it; and who may, with the caller, the questions a class answers, who
+  edits in which state, how a right is found in the table, the four
+  system groups and the content administrator.
 - The designer's skill teaches the syntax: what to read in the manual,
   a small class that is complete, and the ten things that go wrong
   most often. It is no longer a stub. The classes the skills show are

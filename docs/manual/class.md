@@ -330,7 +330,8 @@ A right is a formula, or a list of groups, which is the short way to
 write "anybody in one of these groups".
 
 When several lines could apply to a variable, one of them is asked:
-the first of these that the table has.
+the first of these that says something about the right in question,
+`write` or `read`.
 
 1. the document's state, and the variable by name
 2. the document's state, and `*`
@@ -339,6 +340,11 @@ the first of these that the table has.
 
 So what a state says wins over what `*` says for every state, and
 within a state a named variable wins over `*`.
+
+That holds even for a variable that the state `*` names. A state with
+a line of its own for `*` opens such a variable to whoever that line
+names, so name the variable in that state as well.
+[Who may](notions/who-may.md) shows it.
 
 Read aloud, the example says: nobody ever sets `decided_by` by hand
 (the rule above sets it), only finance marks an expense as paid, and

@@ -33,8 +33,8 @@ syntax.
 | [Classes and documents](manual/notions/classes-and-documents.md) | a kind of thing and one thing; what a document carries; ids; versions; deleting; the versions of a class | **written** |
 | [Variables and formulas](manual/notions/variables-and-formulas.md) | inputs, defaults, computed values; exact numbers and plain ones; blanks; dates; what happens when a formula fails | **written** |
 | [States and transitions](manual/notions/states-and-transitions.md) | the chart of a class; the two questions before every move; values given with a move; final states; what the log keeps | **written** |
-| Rules and actions | what happens by itself, inside a commit and after it | planned |
-| Who may | callers and groups; `access` and `rights`; the four system groups; acting for somebody; the content administrator | planned |
+| [Rules and actions](manual/notions/rules-and-actions.md) | what happens by itself; what a rule does inside a commit and what the engine runs after it; an action that is refused | **written** |
+| [Who may](manual/notions/who-may.md) | the caller; the questions a class answers; who edits in which state; how a right is found; the four system groups; the content administrator | **written** |
 | History and the log | versions, events, previews, and reading what happened | planned |
 | Time | deadlines, reminders, timed transitions, and choosing a moment to look at | planned |
 

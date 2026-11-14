@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"net/url"
 	"os"
@@ -300,6 +301,13 @@ func Open(path string, o Options) (*Store, error) {
 	if err := sqlitefn.Register(); err != nil {
 		return nil, storageErr("register the engine functions", err)
 	}
+	// A database is its owner's: a new one is made readable and writable
+	// by the user that creates it and by nobody else, and SQLite gives
+	// the files it keeps beside it, the log and its index, the
+	// permissions of the database. One that exists keeps what it has.
+	if err := createPrivate(path); err != nil {
+		return nil, storageErr("create the database", err)
+	}
 	q := url.Values{}
 	q.Add("_pragma", "journal_mode(WAL)")
 	q.Add("_pragma", "busy_timeout(5000)")
@@ -409,6 +417,20 @@ func Open(path string, o Options) (*Store, error) {
 		go s.work(wctx)
 	}
 	return s, nil
+}
+
+// createPrivate makes the file of a new database, empty and closed to
+// everybody but its owner, for SQLite to open. A file that exists is
+// left as it is.
+func createPrivate(path string) error {
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+	if errors.Is(err, os.ErrExist) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	return f.Close()
 }
 
 // init creates the engine's tables when the database is new and reads

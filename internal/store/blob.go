@@ -182,7 +182,8 @@ func (d dirBlobs) path(hash string) string {
 }
 
 func (d dirBlobs) Put(ctx context.Context, r io.Reader, max int64) (string, int64, error) {
-	if err := os.MkdirAll(d.dir, 0o755); err != nil {
+	// The directory is the owner's alone, as the database is.
+	if err := os.MkdirAll(d.dir, 0o700); err != nil {
 		return "", 0, err
 	}
 	tmp, err := os.CreateTemp(d.dir, "put-*.tmp")
@@ -207,7 +208,7 @@ func (d dirBlobs) Put(ctx context.Context, r io.Reader, max int64) (string, int6
 	if _, err := os.Stat(target); err == nil {
 		return hash, hr.n, nil // held already: a no-op
 	}
-	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(target), 0o700); err != nil {
 		return "", 0, err
 	}
 	if err := os.Rename(tmp.Name(), target); err != nil {

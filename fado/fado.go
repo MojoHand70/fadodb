@@ -40,9 +40,8 @@
 // engine moves the document by itself when that time comes, as the
 // person whose commit set the timer; Transitions shows the moment, and
 // Due lists the documents a guard on time would move, for the host
-// program to touch (ADR-0047). Not here yet: QUERY, the rest of Phase 5
-// (who may define, the rules of a table and of the SQL endpoint) and
-// the server (Phase 6).
+// program to touch (ADR-0047). Not here yet: QUERY, and the server
+// (Phase 6).
 package fado
 
 import (

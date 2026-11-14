@@ -21,19 +21,22 @@ give.
 
 ## The notions
 
-One chapter each, in the order a designer meets them. Planned; until
-they are written the [glossary](manual/glossary.md) has one line for
-each and the [class definition](manual/class.md) the syntax.
+One chapter each, in the order a designer meets them. Each explains
+the idea with one class and a story of named people, and a test plays
+the story and every table of the chapter against the engine. Until a
+planned chapter is written the [glossary](manual/glossary.md) has one
+line for its words and the [class definition](manual/class.md) the
+syntax.
 
-| Chapter | What it explains |
-|---|---|
-| Classes and documents | a kind of thing and one thing; versions; what changing a class does to its documents |
-| Variables and formulas | inputs, defaults, computed values; exact money and calendar days; what an error in a formula does |
-| States and transitions | the statechart; guards; automatic transitions; final states |
-| Rules and actions | what happens by itself, inside a commit and after it |
-| Who may | callers and groups; `access` and `rights`; the four system groups; acting for somebody; the content administrator |
-| History and the log | versions, events, previews, and reading what happened |
-| Time | deadlines, reminders, timed transitions, and choosing a moment to look at |
+| Chapter | What it explains | Mark |
+|---|---|---|
+| [Classes and documents](manual/notions/classes-and-documents.md) | a kind of thing and one thing; what a document carries; ids; versions; deleting; the versions of a class | **written** |
+| [Variables and formulas](manual/notions/variables-and-formulas.md) | inputs, defaults, computed values; exact numbers and plain ones; blanks; dates; what happens when a formula fails | **written** |
+| [States and transitions](manual/notions/states-and-transitions.md) | the chart of a class; the two questions before every move; values given with a move; final states; what the log keeps | **written** |
+| Rules and actions | what happens by itself, inside a commit and after it | planned |
+| Who may | callers and groups; `access` and `rights`; the four system groups; acting for somebody; the content administrator | planned |
+| History and the log | versions, events, previews, and reading what happened | planned |
+| Time | deadlines, reminders, timed transitions, and choosing a moment to look at | planned |
 
 ## Guides: how do I
 

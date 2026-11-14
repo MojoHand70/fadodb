@@ -32,6 +32,12 @@ All notable changes to FadoDB are recorded here. The format follows
   reference table, move many documents at once, change a class that
   already has documents, and do something outside when a document
   changes.
+- The first three chapters on the notions, under
+  `docs/manual/notions`: classes and documents, variables and
+  formulas, states and transitions. Each explains the idea with one
+  class and a story of named people, and a test plays the story and
+  every table of the chapter against the engine, the document it
+  shows and the chart it draws included.
 - The designer's skill teaches the syntax: what to read in the manual,
   a small class that is complete, and the ten things that go wrong
   most often. It is no longer a stub. The classes the skills show are

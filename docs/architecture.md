@@ -1104,10 +1104,11 @@ engine's table.
 > and its JSON object and answers one JSON object; and the package
 > `fado/httpdoor` is the door that answers `POST /v1/<command>` for a
 > program that has opened a database, with the limits and the statuses
-> of the records. The program says where it listens and who sends each
-> request. The other addresses below, the engine's own users and keys,
-> and `fadodb serve` are decided, by the five records the owner
-> accepted on 2026-11-14, and not built.
+> of the records, and the three addresses of the files. The program
+> says where it listens and who sends each request. The stream of
+> changes, health and metrics, the engine's own users and keys, and
+> `fadodb serve` are decided, by the five records the owner accepted on
+> 2026-11-14, and not built.
 
 | Address | Purpose | Record |
 |---|---|---|

@@ -174,3 +174,225 @@ func TestNew(t *testing.T) {
 		t.Error("Status does not answer the table of ADR-0055")
 	}
 }
+
+// receipt is the class of the manual's chapter on files: a receipt with
+// its scan, and a working paper that only accounting writes and sees.
+const receipt = `{"definition": {
+  "name": "Receipt",
+  "title": "\"Receipt for \" & what",
+  "variables": {
+    "what":  {"type": "text", "required": true},
+    "scan":  {"type": "object", "schema": "File"},
+    "audit": {"type": "object", "schema": "File"}
+  },
+  "states": {"initial": "open", "list": ["open", "filed"], "final": ["filed"]},
+  "transitions": [{"name": "file", "from": "open", "to": "filed", "guard": "NOT ISBLANK(scan.hash)"}],
+  "access": {
+    "read":   "CREATEDBY() = USER() OR INGROUP(\"ACCOUNTING\")",
+    "create": "INGROUP(\"everyone\")",
+    "update": "CREATEDBY() = USER() OR INGROUP(\"ACCOUNTING\")",
+    "delete": "CREATEDBY() = USER()",
+    "transition": {"file": "CREATEDBY() = USER()"}
+  },
+  "rights": {
+    "*": {
+      "*":     {"write": "CREATEDBY() = USER()"},
+      "audit": {"write": ["ACCOUNTING"], "read": ["ACCOUNTING"]}
+    }
+  }
+}}`
+
+// call sends one request beside the commands and answers the reply.
+func call(t *testing.T, srv *httptest.Server, method, token, address, contentType, body string, header ...string) (*http.Response, string) {
+	t.Helper()
+	req, err := http.NewRequest(method, srv.URL+address, strings.NewReader(body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if contentType != "" {
+		req.Header.Set("Content-Type", contentType)
+	}
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	for i := 0; i+1 < len(header); i += 2 {
+		req.Header.Set(header[i], header[i+1])
+	}
+	resp, err := srv.Client().Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	text, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return resp, string(text)
+}
+
+// The files travel beside the commands (ADR-0055, item 9). Ola puts the
+// scan of a taxi receipt and names it on a receipt; whoever may read the
+// receipt reads the scan through it, and nobody else learns that it
+// exists.
+func TestFilesBesideTheCommands(t *testing.T) {
+	people["token-of-ola"] = fado.Principal{ID: "ola", Kind: fado.ActorPerson}
+	people["token-of-anna"] = fado.Principal{ID: "anna", Kind: fado.ActorPerson, Groups: []string{"ACCOUNTING"}}
+	people["token-of-piotr"] = fado.Principal{ID: "piotr", Kind: fado.ActorPerson}
+	people["token-of-celina"] = fado.Principal{ID: "celina", Kind: fado.ActorPerson, System: []string{fado.GroupContentAdministrators}}
+	db, srv := open(t.TempDir())
+	t.Cleanup(func() { srv.Close(); db.Close() })
+	if status, body := send(srv, "token-of-dan", "define_class", receipt); status != 200 {
+		t.Fatal(body)
+	}
+
+	// 1. Ola puts the bytes, under a name, and is answered with the
+	// facts of the file.
+	const scan = "%PDF-1.4 a taxi receipt"
+	resp, body := call(t, srv, "POST", "token-of-ola", "/v1/blobs?name=taxi.pdf", "application/pdf", scan)
+	if resp.StatusCode != 200 || resp.Header.Get("Content-Type") != "application/json" {
+		t.Fatalf("the put is answered %d %s", resp.StatusCode, body)
+	}
+	facts := strings.TrimSuffix(strings.TrimPrefix(strings.TrimSpace(body), `{"file":`), "}")
+	if !strings.HasPrefix(facts, `{"hash":"`) || !strings.HasSuffix(facts, `,"name":"taxi.pdf","media_type":"application/pdf","size":23}`) {
+		t.Fatalf("the facts of the file are %s", facts)
+	}
+	// The hash is the SHA-256 of the bytes, as 64 letters and digits.
+	sum := facts[len(`{"hash":"`) : len(`{"hash":"`)+64]
+
+	// 2. She names it on a receipt: the facts go into a command as they
+	// came.
+	if status, body := send(srv, "token-of-ola", "create", `{"class": "Receipt", "id": "R-7", "values": {"what": "taxi", "scan": `+facts+`}}`); status != 200 {
+		t.Fatalf("the create: %d %s", status, body)
+	}
+
+	// 3. She reads the scan back through the receipt. A browser is told
+	// to save it, whatever kind it was said to be.
+	file := "/v1/file?class=Receipt&id=R-7&hash=" + sum
+	resp, body = call(t, srv, "GET", "token-of-ola", file, "", "")
+	if resp.StatusCode != 200 || body != scan {
+		t.Fatalf("the file is answered %d %q", resp.StatusCode, body)
+	}
+	for header, want := range map[string]string{
+		"Content-Type":            "application/pdf",
+		"Content-Length":          "23",
+		"ETag":                    `"` + sum + `"`,
+		"Content-Disposition":     "attachment; filename=taxi.pdf",
+		"X-Content-Type-Options":  "nosniff",
+		"Cache-Control":           "private, no-cache",
+		"Content-Security-Policy": "sandbox; default-src 'none'",
+	} {
+		if got := resp.Header.Get(header); got != want {
+			t.Errorf("%s is %q, want %q", header, got, want)
+		}
+	}
+
+	// 4. A caller that holds the bytes already is told they are the
+	// same, and is sent nothing.
+	resp, body = call(t, srv, "GET", "token-of-ola", file, "", "", "If-None-Match", `"`+sum+`"`)
+	if resp.StatusCode != 304 || body != "" {
+		t.Errorf("a caller that holds the file is answered %d %q", resp.StatusCode, body)
+	}
+
+	// 5. Anna, of accounting, may read the receipt and so its scan.
+	// Piotr may not: for him there is no such receipt, with or without
+	// the tag of the bytes.
+	if resp, body := call(t, srv, "GET", "token-of-anna", file, "", ""); resp.StatusCode != 200 || body != scan {
+		t.Errorf("Anna is answered %d %q", resp.StatusCode, body)
+	}
+	for _, tag := range []string{"", `"` + sum + `"`} {
+		resp, body := call(t, srv, "GET", "token-of-piotr", file, "", "", "If-None-Match", tag)
+		if resp.StatusCode != 404 || !strings.Contains(body, `"unknown_document"`) {
+			t.Errorf("Piotr is answered %d %s", resp.StatusCode, body)
+		}
+	}
+	// Nobody at all learns anything.
+	if resp, body := call(t, srv, "GET", "", file, "", ""); resp.StatusCode != 401 || !strings.Contains(body, `"unauthenticated"`) {
+		t.Errorf("a caller without a token is answered %d %s", resp.StatusCode, body)
+	}
+
+	// A file in a variable the caller may not read is not held, for
+	// that caller: Anna attaches a working paper that only accounting
+	// sees, and Ola, who reads the receipt, is told there is no such
+	// file on it.
+	resp, body = call(t, srv, "POST", "token-of-anna", "/v1/blobs?name=audit.txt", "text/plain", "checked against the log")
+	if resp.StatusCode != 200 {
+		t.Fatalf("Anna's put: %d %s", resp.StatusCode, body)
+	}
+	paper := strings.TrimSuffix(strings.TrimPrefix(strings.TrimSpace(body), `{"file":`), "}")
+	if status, body := send(srv, "token-of-anna", "set", `{"class": "Receipt", "id": "R-7", "values": {"audit": `+paper+`}}`); status != 200 {
+		t.Fatalf("Anna's set: %d %s", status, body)
+	}
+	audit := "/v1/file?class=Receipt&id=R-7&hash=" + paper[len(`{"hash":"`):len(`{"hash":"`)+64]
+	if resp, body := call(t, srv, "GET", "token-of-anna", audit, "", ""); resp.StatusCode != 200 || body != "checked against the log" {
+		t.Errorf("Anna, for her working paper, is answered %d %q", resp.StatusCode, body)
+	}
+	if resp, body := call(t, srv, "GET", "token-of-ola", audit, "", ""); resp.StatusCode != 404 || !strings.Contains(body, `"unknown_blob"`) {
+		t.Errorf("Ola, for the working paper she may not read, is answered %d %s", resp.StatusCode, body)
+	}
+
+	// 6. The bytes by their hash alone are a content administrator's.
+	blob := "/v1/blob?hash=" + sum
+	if resp, body := call(t, srv, "GET", "token-of-celina", blob, "", ""); resp.StatusCode != 200 || body != scan {
+		t.Errorf("Celina is answered %d %q", resp.StatusCode, body)
+	}
+	if resp, body := call(t, srv, "GET", "token-of-ola", blob, "", ""); resp.StatusCode != 422 || !strings.Contains(body, `"not_allowed"`) {
+		t.Errorf("Ola, by the hash alone, is answered %d %s", resp.StatusCode, body)
+	}
+
+	// 7. An earlier version: Ola takes the scan off, and the first
+	// version still holds it.
+	if status, body := send(srv, "token-of-ola", "set", `{"class": "Receipt", "id": "R-7", "values": {"scan": null}}`); status != 200 {
+		t.Fatalf("taking the scan off: %d %s", status, body)
+	}
+	if resp, body := call(t, srv, "GET", "token-of-ola", file, "", ""); resp.StatusCode != 404 || !strings.Contains(body, `"unknown_blob"`) {
+		t.Errorf("the file of a receipt that no longer holds it is answered %d %s", resp.StatusCode, body)
+	}
+	if resp, body := call(t, srv, "GET", "token-of-ola", file+"&version=1", "", ""); resp.StatusCode != 200 || body != scan {
+		t.Errorf("the file of the first version is answered %d %q", resp.StatusCode, body)
+	}
+
+	// What is not a request for a file is told so.
+	for _, c := range []struct {
+		name, method, token, address, contentType, body string
+		status                                          int
+		says                                            string
+	}{
+		{"a parameter the address does not take", "GET", "token-of-ola", file + "&inline=1", "", "", 400, `file takes no \"inline\"`},
+		{"a parameter given twice", "GET", "token-of-ola", file + "&id=R-8", "", "", 400, "id is given 2 times"},
+		{"no hash", "GET", "token-of-ola", "/v1/file?class=Receipt&id=R-7", "", "", 400, "file needs hash"},
+		{"a version that is no number", "GET", "token-of-ola", file + "&version=first", "", "", 400, "a whole number from 1"},
+		{"a file read with POST", "POST", "token-of-ola", file, "", "", 405, "a file is read with GET"},
+		{"bytes put with PUT", "PUT", "token-of-ola", "/v1/blobs?name=taxi.pdf", "application/pdf", scan, 405, "a file is put with POST"},
+		{"a form", "POST", "token-of-ola", "/v1/blobs?name=taxi.pdf", "multipart/form-data; boundary=x", "--x--", 400, "the bytes of the file"},
+		{"a put with a parameter it does not take", "POST", "token-of-ola", "/v1/blobs?filename=taxi.pdf", "application/pdf", scan, 400, `blobs takes no \"filename\"`},
+		{"a put by nobody", "POST", "", "/v1/blobs?name=taxi.pdf", "application/pdf", scan, 401, "unauthenticated"},
+		{"bytes nobody put", "GET", "token-of-celina", "/v1/blob?hash=" + strings.Repeat("0", 64), "", "", 404, "unknown_blob"},
+	} {
+		resp, body := call(t, srv, c.method, c.token, c.address, c.contentType, c.body)
+		if resp.StatusCode != c.status || !strings.Contains(body, c.says) || !strings.Contains(body, `{"error":`) {
+			t.Errorf("%s: %d %s, want %d and %q", c.name, resp.StatusCode, body, c.status, c.says)
+		}
+	}
+}
+
+// A file larger than the database keeps is refused, and none of it is
+// kept.
+func TestAFileThatIsTooLarge(t *testing.T) {
+	db, err := fado.Open(filepath.Join(t.TempDir(), "test.fado"), fado.Options{MaxBlob: 1024})
+	if err != nil {
+		t.Fatal(err)
+	}
+	door, err := httpdoor.New(db, httpdoor.Options{Who: who})
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := httptest.NewServer(door)
+	t.Cleanup(func() { srv.Close(); db.Close() })
+	resp, body := call(t, srv, "POST", "token-of-bob", "/v1/blobs?name=big.bin", "application/octet-stream", strings.Repeat("x", 2000))
+	if resp.StatusCode != 413 || !strings.Contains(body, `"blob_too_large"`) {
+		t.Errorf("a file of 2000 bytes in a database that keeps 1024 is answered %d %s", resp.StatusCode, body)
+	}
+	if resp, body := call(t, srv, "POST", "token-of-bob", "/v1/blobs?name=small.bin", "application/octet-stream", strings.Repeat("x", 1024)); resp.StatusCode != 200 {
+		t.Errorf("a file of the largest size is answered %d %s", resp.StatusCode, body)
+	}
+}

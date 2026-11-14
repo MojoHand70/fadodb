@@ -33,9 +33,16 @@
 // Only a program that answers HTTP imports this package, so that a
 // program that embeds the engine and never listens carries no server.
 //
+// The bytes of a file travel beside the commands (ADR-0033), at three
+// addresses that the door also answers: POST /v1/blobs?name=… keeps the
+// body and answers the facts of the file, GET /v1/file?class=…&id=…&hash=…
+// streams a file under the rules of the document that holds it, and
+// GET /v1/blob?hash=… streams bytes by their hash alone, for a content
+// administrator.
+//
 // Not here yet, each with its step of Phase 6: the stream of changes,
-// the files beside the commands, and the engine's own users and keys,
-// which `fadodb serve` will give the door as its Who.
+// and the engine's own users and keys, which `fadodb serve` will give
+// the door as its Who.
 package httpdoor
 
 import (

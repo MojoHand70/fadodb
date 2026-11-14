@@ -14,7 +14,10 @@
 // package to it.
 //
 // A host program reaches the door through the package fado/httpdoor.
+// The files travel beside the commands, at three addresses the door
+// also answers (ADR-0055, item 9).
+//
 // What is not here yet, each with its step: the stream of changes, the
-// files beside the commands, the engine's own keys, and the program
+// engine's own keys, and the program
 // `fadodb serve`.
 package server

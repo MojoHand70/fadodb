@@ -310,7 +310,7 @@ Facts this record was written from, each checked in the code on the day:
    |---|---|
    | `POST /v1/blobs?name=invoice.pdf` | takes the bytes as the body with their `Content-Type`; answers `{"file": …}`, the `File` fact to commit |
    | `GET /v1/file?class=Invoice&id=FV%2F2026%2F11%2F0042&hash=9f86…` | streams the file through the document that holds it, the hash as its ETag; `version=` for an earlier version |
-   | `GET /v1/blob?hash=9f86…` | streams a blob by its hash alone, for a database administrator |
+   | `GET /v1/blob?hash=9f86…` | streams a blob by its hash alone, for a content administrator (ADR-0052) |
 
    An escaped slash in a parameter is safe where one in a path is not.
    This replaces the path ADR-0033 drew.
@@ -439,6 +439,36 @@ the three ways of item 11. The door is the package `fado/httpdoor`, an
 - **The three suites ran through the door at the first try**, each
   step a request to a server listening on the machine, and each reply's
   status held to its code.
+
+The third step built item 9, the files beside the commands, in the
+same door. What it settled:
+
+- **A blob by its hash alone is a content administrator's**, as
+  ADR-0052 decided and the engine does. Item 9 had said a database
+  administrator, and is corrected.
+- **A parameter is held as a member is.** One the address does not
+  take, one given twice and a missing one the address needs are refused
+  with `bad_json` and its name as the place.
+- **`for=` on `GET /v1/file`** says for whom the caller acts, as `for`
+  does in a command, and the engine checks it.
+- **How a file is sent.** With `Content-Disposition: attachment`, its
+  name in any alphabet, `X-Content-Type-Options: nosniff` and a
+  `Content-Security-Policy` that lets it run nothing: the kind of a
+  file is its uploader's word, and a file that says it is a page must
+  not run as one at the address of the server. Showing a file inside a
+  page is the frontend's, in Phase 7.
+- **The tag is checked after the rights.** A caller that sends
+  `If-None-Match` is answered 304 only after the engine has opened the
+  file for it, so the tag of bytes tells nobody that a document holds
+  them. Replies say `Cache-Control: private, no-cache`.
+- **The body of a put is the bytes.** A form, which wraps them, is
+  refused, since the file kept would be the wrapping.
+- **Who puts.** The engine's `PutBlob` asks for no caller yet
+  (ADR-0033 has that open). At the door a put is a request like any
+  other: its sender is asked first, and nobody the door cannot tell
+  puts a byte.
+- **A file in transfer holds the place of a command** and is not
+  stopped by the time one command may run; ADR-0059 says so.
 
 ## The owner's rulings
 

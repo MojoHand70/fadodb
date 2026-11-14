@@ -29,6 +29,20 @@ func (e engine) Exec(ctx context.Context, p store.Principal, name string, object
 	return e(ctx, p, name, object)
 }
 
+// An engine of these tests keeps no file; the tests of the files have
+// one that does.
+func (engine) PutBlob(context.Context, string, string, io.Reader, ...store.Option) (store.Values, error) {
+	return nil, errors.New("the engine of this test keeps no file")
+}
+
+func (engine) OpenFile(context.Context, string, string, string, ...store.Option) (io.ReadCloser, *store.FileInfo, error) {
+	return nil, nil, errors.New("the engine of this test keeps no file")
+}
+
+func (engine) OpenBlob(context.Context, string, ...store.Option) (io.ReadCloser, int64, error) {
+	return nil, 0, errors.New("the engine of this test keeps no file")
+}
+
 // ann is who sends every request of a test that does not say otherwise.
 var ann = store.Principal{ID: "ann", Groups: []string{"finance"}, Kind: store.ActorPerson}
 

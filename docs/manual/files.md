@@ -255,7 +255,9 @@ in progress.
   not built.
 - A caller for putting bytes.
 - Copying the bytes of a database to another store.
-- The addresses of the server for putting and opening a file.
+- The server, `fadodb serve`. A program of your own can already put
+  and open files over HTTP, at the three addresses of
+  [the commands chapter](commands.md#files-over-http).
 - Reading the files of `rows` in a formula, such as their number.
 - Previews, thumbnails and the text of a file. They are the host
   program's, which may attach them as further files.

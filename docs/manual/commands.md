@@ -958,6 +958,38 @@ Authorization: Bearer …
   | 503 | `closed`, `busy` |
   | 504 | `timeout` |
 
+### Files over HTTP
+
+The bytes of a file are not JSON, so they travel beside the commands,
+at three addresses of their own. What a file is on a document, its
+facts, is a value like any other and travels in the commands;
+[Files](files.md) says how.
+
+| Address | Does | Answers |
+|---|---|---|
+| `POST /v1/blobs?name=taxi.pdf` | keeps the bytes of the body under their hash, with the `Content-Type` of the request as their kind | `{"file": {"hash": …, "name": …, "media_type": …, "size": …}}`: the facts to set on a document, in a command |
+| `GET /v1/file?class=Receipt&id=R-7&hash=d694…` | streams a file the document holds at its current version, or at the one `version=` names; `for=` says for whom the caller acts | the bytes |
+| `GET /v1/blob?hash=d694…` | streams bytes by their hash alone, for a content administrator | the bytes |
+
+- **A file is read under the rules of its document.** A caller who may
+  not read the document is answered `unknown_document`, and one who may
+  not read the variable that holds the file is answered `unknown_blob`:
+  what is hidden is absent.
+- **A parameter the address does not take is refused**, with
+  `bad_json`, as a member of a command is, and so is one given twice. A
+  value is escaped: `id=FV%2F2026%2F11%2F0042`.
+- **The body of a put is the bytes themselves.** A form is refused.
+  A file larger than the database keeps is refused with
+  `blob_too_large`.
+- **A browser is told to save the file and not to show it**, whatever
+  kind the one who put it said it is.
+- **The hash is the tag of the bytes**, sent as `ETag`. A caller that
+  holds them and sends the tag back in `If-None-Match` is answered with
+  the status 304 and no bytes, after the engine has checked once more
+  that the caller may read the file.
+- **A file in transfer holds the place of a command**, and is not
+  stopped by the time one command may run.
+
 ## What is not a command
 
 A few calls of the Go package have no command.

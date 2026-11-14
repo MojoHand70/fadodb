@@ -187,6 +187,10 @@ does. Built with the door, ahead of `fadodb serve`:
   refusal.** `timeout` is answered only for a command that the clock
   stopped: one that failed in the engine or in its storage once its
   time had run out.
+- **A file in transfer counts among the commands at once** and is not
+  stopped by the time one command may run: a large file over a slow
+  line takes longer than a command should. The server's own limits on
+  a connection that sends nothing are `fadodb serve`'s to set.
 - **The door tells of every request** through a function the program
   gives it: when, which command, who, the status, the code and how
   long. The line of item 9 is written from it by `fadodb serve`.

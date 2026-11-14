@@ -578,3 +578,156 @@ func TestSimulatorSkill(t *testing.T) {
 		t.Error("1: a real change left the database as it was")
 	}
 }
+
+// The skill for an agent's own work shows a task that the agent
+// proposes, a person decides and the agent carries out. TestOwnWorkSkill
+// defines the class the skill shows, plays the piece of work with what
+// the page says happens between its commands, compares each answer and
+// the log with the page, and holds each point of the list.
+func TestOwnWorkSkill(t *testing.T) {
+	page := skill(t, "fadodb-own-work")
+	ctx := context.Background()
+	clock := time.Date(2026, 11, 16, 9, 0, 0, 0, time.UTC)
+	db := notionDB(t, fado.Options{Now: func() time.Time { return clock }})
+	if _, err := db.DefineClass(ctx, notionClass(t, page), setup); err != nil {
+		t.Fatal(err)
+	}
+	marek := fado.Principal{ID: "marek", Kind: fado.ActorPerson}
+	agent := fado.Principal{ID: "ops-agent", Kind: fado.ActorAgent}
+	code := func(as fado.Principal, name, object string) string {
+		t.Helper()
+		_, err := db.Exec(ctx, as, name, []byte(object))
+		return fado.ErrorCode(err)
+	}
+	must := func(as fado.Principal, name, object string) {
+		t.Helper()
+		if got := code(as, name, object); got != "" {
+			t.Fatalf("%s: %s %s: %s", as.ID, name, object, got)
+		}
+	}
+
+	// The exchange, with what the page says happens between its
+	// commands: after step 2 Marek approves at 09:30; steps 3 and 4 are
+	// at 10:00; the engine takes stall at 11:00; step 5 is at 12:00, and
+	// Marek resumes; step 6 follows.
+	exchange := exchangesOf(page)
+	if len(exchange) != 6 {
+		t.Fatalf("the skill shows %d commands with their answers; the test knows six", len(exchange))
+	}
+	between := map[int]func(){
+		3: func() {
+			clock = clock.Add(30 * time.Minute)
+			must(marek, "transition", `{"class":"Task","id":"T-1","transition":"approve"}`)
+			clock = clock.Add(30 * time.Minute)
+		},
+		5: func() {
+			clock = clock.Add(time.Hour)
+			if ran, err := db.Drain(ctx, setup); err != nil || ran != 1 {
+				t.Fatalf("at 11:00 the engine ran %d actions, %v", ran, err)
+			}
+			clock = clock.Add(time.Hour)
+		},
+		6: func() {
+			// 8. After the timeout the agent's finish is refused, and
+			// so is its resume.
+			if got := code(agent, "transition", `{"class":"Task","id":"T-1","transition":"finish","values":{"result":"x"}}`); got != "wrong_state" {
+				t.Errorf("8: a finish after the timeout: %s", got)
+			}
+			if got := code(agent, "transition", `{"class":"Task","id":"T-1","transition":"resume"}`); got != "forbidden" {
+				t.Errorf("1: the agent resumes its own task: %s", got)
+			}
+			must(marek, "transition", `{"class":"Task","id":"T-1","transition":"resume"}`)
+			clock = clock.Add(10 * time.Minute)
+			// 10. A finish with no result.
+			if got := code(agent, "transition", `{"class":"Task","id":"T-1","transition":"finish"}`); got != "guard_false" {
+				t.Errorf("10: a finish with no result: %s", got)
+			}
+			// 6. The agent does not write the count of attempts.
+			if got := code(agent, "set", `{"class":"Task","id":"T-1","values":{"attempts":0}}`); got != "forbidden" {
+				t.Errorf("6: the agent writes the count of attempts: %s", got)
+			}
+		},
+	}
+	var first []byte
+	for i, m := range exchange {
+		if before := between[i+1]; before != nil {
+			before()
+		}
+		got, _ := db.Exec(ctx, agent, m.name, m.sent)
+		if !sameAnswer(got, m.shown) {
+			t.Errorf("step %d, the command %s, is answered\n%s\nand the skill shows\n%s", i+1, m.name, got, m.shown)
+		}
+		if i == 0 {
+			first = got
+		}
+	}
+
+	// The log of the task.
+	events, err := db.Events(ctx, "Task", "T-1", fado.As(agent))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var log [][]string
+	for _, e := range events {
+		log = append(log, []string{e.Kind, e.Name, e.ActorID, e.ActorKind, e.Origin})
+	}
+	if want := rows(marked(t, page, "the log of the task")); !reflect.DeepEqual(log, want) {
+		t.Errorf("the log of the task is %v, and the skill shows %v", log, want)
+	}
+
+	// What goes wrong most often: ten points, each held by its number.
+	// Points 6, 8 and 10 are held above, where the task is in the state
+	// they speak of.
+	if n := points(t, page); n != 10 {
+		t.Errorf("the list has %d points, and the test holds ten", n)
+	}
+	// 1. The agent does not decide its own proposal, also when it names
+	// itself as reviewer; and a person does not propose.
+	must(agent, "create", `{"class":"Task","id":"T-2","values":{"what":"restart the server","reviewer":"ops-agent"}}`)
+	if got := code(agent, "transition", `{"class":"Task","id":"T-2","transition":"approve"}`); got != "forbidden" {
+		t.Errorf("1: the agent approves a task it reviews itself: %s", got)
+	}
+	// 2. Acting for a person needs a substitution.
+	got, err := db.Exec(ctx, agent, "get", []byte(`{"class":"Task","id":"T-1","for":"marek"}`))
+	if fado.ErrorCode(err) != "forbidden" || !strings.Contains(string(got), `"path":"/principal/for"`) {
+		t.Errorf("2: the agent acts for Marek with no substitution: %s", got)
+	}
+	// 3 and 4. A second create under the same id is a duplicate; under
+	// the same key it is answered as the first time, though the task is
+	// done by now.
+	if got := code(agent, "create", `{"class":"Task","id":"T-1","values":{"what":"delete the logs older than 90 days","reviewer":"marek"}}`); got != "duplicate" {
+		t.Errorf("3: a second create under the same id, with no key: %s", got)
+	}
+	again, err := db.Exec(ctx, agent, exchange[0].name, exchange[0].sent)
+	if err != nil || string(again) != string(first) || !strings.Contains(string(again), `"state":"proposed"`) {
+		t.Errorf("4: the first command again is answered\n%s, %v", again, err)
+	}
+	now, _ := db.Exec(ctx, agent, "get", []byte(`{"class":"Task","id":"T-1"}`))
+	if !strings.Contains(string(now), `"state":"done"`) {
+		t.Errorf("4: the task as it is now: %s", now)
+	}
+	// 5. After a restart the open tasks are found by a query: the
+	// exchange shows it in step 5.
+	if !strings.Contains(string(exchange[4].sent), "owner = USER()") {
+		t.Error("5: the skill no longer asks for the agent's own tasks after a restart")
+	}
+	// 7. The timeout is a transition with a time, and the engine took
+	// it as the agent, marked as a timer.
+	if log[3][1] != "stall" || log[3][4] != "timer" {
+		t.Errorf("7: the timeout in the log: %v", log[3])
+	}
+	// 9. The third retry is refused.
+	must(agent, "create", `{"class":"Task","id":"T-3","values":{"what":"rotate the keys","reviewer":"marek"}}`)
+	must(marek, "transition", `{"class":"Task","id":"T-3","transition":"approve"}`)
+	must(agent, "transition", `{"class":"Task","id":"T-3","transition":"start"}`)
+	for attempt := 1; attempt <= 3; attempt++ {
+		must(agent, "transition", `{"class":"Task","id":"T-3","transition":"fail","values":{"problem":"the disk is read-only"}}`)
+		want := ""
+		if attempt == 3 {
+			want = "guard_false"
+		}
+		if got := code(agent, "transition", `{"class":"Task","id":"T-3","transition":"retry"}`); got != want {
+			t.Errorf("9: the retry after attempt %d: %q", attempt, got)
+		}
+	}
+}

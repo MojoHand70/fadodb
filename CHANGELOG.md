@@ -53,8 +53,31 @@ All notable changes to FadoDB are recorded here. The format follows
   most often. It is no longer a stub. The classes the skills show are
   defined by the engine in the manual's test.
 
+- The command set (ADR-0055, proposed): every call of the Go API that
+  reads or changes a database is also a command, a name and one JSON
+  object answered by one JSON object. `DB.Exec` runs one, for a caller
+  that is not a Go program; `Commands` lists the 47 of them with their
+  members and their answers, and `ErrorCode` gives the code of any
+  error. A refusal is the Go API's, as JSON under `error`. A member a
+  command does not take, one given twice, one of the wrong JSON type
+  and a missing one the command needs are refused with `bad_json` and
+  the place. No server is built yet: nothing listens on the network.
+- `DB.Definition` reads a class, a schema, a table or an action back as
+  it was given, with its version and who defined it; `DB.Schema` and
+  `DB.Schemas` read the schemas, which could not be read back.
+- `docs/manual/commands.md`, generated from the table of the commands,
+  and the refusals of a command in `docs/manual/refusals.md`.
+- The three script suites, `conformance/statechart`, `rules` and
+  `access`, run through the command set as they run through the Go
+  API, and must answer the same.
+
 ### Changed
 
+- A document is no longer created under an id that holds a control
+  character, such as a line break, a tab or a zero byte: the create is
+  refused with `bad_value` (ADR-0055, the owner's ruling of
+  2026-11-14). Slashes, spaces and the letters of any alphabet stay,
+  and a document that has such an id is still read and changed.
 - The benchmark gate runs on a pull request only when it changes a file
   that goes into the programs the gate measures: a Go file of a package
   linked into the benchmarks of `internal/formula` and `internal/store`,

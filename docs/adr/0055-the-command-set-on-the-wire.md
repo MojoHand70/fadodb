@@ -112,12 +112,13 @@ Facts this record was written from, each checked in the code on the day:
 
    | Command | Takes | Answers | |
    |---|---|---|---|
-   | `define_class`, `define_schema`, `define_table`, `define_action` | `definition` | `class`, `schema`, `table` or `action` | W |
-   | `define_classes` | `definitions` | `classes` | W |
+   | `define_class`, `define_schema`, `define_table`, `define_action` | `definition` | `class`, `schema`, `table` or `action`: what was stored, as `get_class` and the others answer it | W |
+   | `define_classes` | `definitions` | `classes`, one for each definition | W |
    | `validate_class`, `validate_action` | `definition` | `diagnostics`, empty when nothing is wrong | R |
    | `validate_classes` | `definitions` | `diagnostics` | R |
    | `get_class`, `get_schema`, `get_table`, `get_action` | `name`, and `version` for an earlier version of a class or an action, which the store keeps | `class`, `schema`, `table` or `action` | R |
-   | `list_classes`, `list_schemas`, `list_tables`, `list_actions` | nothing | `classes`, `schemas`, `tables` or `actions` | R |
+   | `list_classes`, `list_schemas`, `list_tables` | nothing | `classes`, `schemas` or `tables`: the names | R |
+   | `list_actions` | nothing | `actions`: every action a rule may name, the engine's own first, each with its parameters, what it returns and whether this process can run it | R |
    | `definitions` | `what`, `name` | `versions`, each with who defined it and when | R |
    | `preview_draft` | `definition`, `id`, `values`, `transition` | `preview` | R |
    | `migrate` | `class` | `migrated`, a count | W |
@@ -136,26 +137,55 @@ Facts this record was written from, each checked in the code on the day:
    | `check_blobs` | nothing | `checked`, a count, and `mismatched` | R |
 
    A definition travels as JSON inside the command, not as text:
-   `{"definition": {"name": "Invoice", "variables": …}}`. What a
-   `get_class` answers under `class` is the definition as it was given,
-   with `version`, `defined` (who, what they were, for whom, when) and
-   `notes`, so that a designer reads back what a designer wrote.
+   `{"definition": {"name": "Invoice", "variables": …}}`. It is read
+   back as it was given. `get_class` answers
+
+   ```json
+   {"class": {"name": "Invoice", "version": 3,
+              "defined": {"by": "dan", "kind": "person", "at": 1763020800},
+              "notes": [],
+              "definition": {"name": "Invoice", "variables": …}}}
+   ```
+
+   The JSON a designer wrote is under `definition`, untouched, so that
+   it can be changed and sent again as it is. What the database added
+   is beside it: the `version`, who `defined` that version (who, what
+   they were, for whom, when) and, for a class, the `notes`, the
+   findings that refused nothing. `define_class` answers the same, and a
+   schema, a table and an action are answered the same way. A schema of
+   the engine's own vocabulary carries `predefined` and no version. An
+   action of the engine, such as `set`, has no definition: `get_action`
+   refuses it with `unknown_action` and says that `list_actions`
+   describes it.
 
    Not commands: `Open` and `Close`, which are the server's; `PutBlob`,
    `OpenFile` and `OpenBlob`, whose bytes travel beside the command set
-   (item 9); `Sign`, `VerifySignature` and `Permanent`, which help a Go
-   program and touch no database.
+   (item 9); `Class`, `Schema`, `Table` and `Action`, which answer the
+   engine's compiled form to a Go program, where the commands answer
+   the definition; `Exec`, which is the door of item 10; `Sign`,
+   `VerifySignature` and `Permanent`, which help a Go program and touch
+   no database.
 
 3. **Five fields mean the same in every command that takes them.** They
    are the options of the Go API:
 
    | Field | Go | Commands | Value |
    |---|---|---|---|
-   | `key` | `Key` | W, D | text; a repeat with the same key makes no second commit and answers the first one's answer (ADR-0026) |
-   | `business_date` | `BusinessDate` | W, D | `"2026-11-13"` |
-   | `reason` | `Reason` | W, D | text; why a content administrator acts past a rule (ADR-0052) |
-   | `at` | `At` | R | `"2026-11-13"`, `"2026-11-13 09:30:00"` in UTC, or seconds since the epoch (ADR-0042) |
-   | `for` | `Principal.For` | all | the id of whoever the caller acts for; the engine checks it against a substitution (ADR-0053) |
+   | `key` | `Key` | a command that commits a document: `create`, `set`, `reset`, `refresh`, `transition`, `delete`, `transition_many` | text; a repeat with the same key makes no second commit and answers the first one's answer (ADR-0026) |
+   | `business_date` | `BusinessDate` | the same, and `create_many` | `"2026-11-13"` |
+   | `reason` | `Reason` | the same, `create_many`, and the four previews | text; why a content administrator acts past a rule (ADR-0052) |
+   | `at` | `At` | a command that reads documents or rows, and the four previews | `"2026-11-13"`, `"2026-11-13 09:30:00"` in UTC, or seconds since the epoch (ADR-0042) |
+   | `for` | `Principal.For` | every command whose call takes a caller | the id of whoever the caller acts for; the engine checks it against a substitution (ADR-0053) |
+
+   A command takes the ones its call acts on, and no other. A `key` on
+   `define_class` would promise what the engine does not do there, so it
+   is refused as any member the command does not know is (item 5). Two
+   are known to a command only so that the engine refuses them in its
+   own words, which say what to do instead: `at` on a command that
+   writes (`not_allowed`: preview the change at that moment) and `key`
+   on a batch that takes none (`not_supported`). Reading a definition
+   and validating one take none of the five: their calls take no caller,
+   since a definition is open to everybody (ADR-0051).
 
    The key of a queued action, which `retry_action` takes, is
    `action_key`, so that `key` means one thing. The business day a host
@@ -177,7 +207,11 @@ Facts this record was written from, each checked in the code on the day:
    sent as `set` is refused with `bad_json` and the path `/valeus`; it
    is not a `set` that changes nothing. An agent that misspells finds
    out at once, and a command sent to an older server that does not know
-   a newer field is refused instead of half done.
+   a newer field is refused instead of half done. A field given twice
+   is refused the same way, and so is a command that lacks a field it
+   needs, with the place of the field: `{"class": "Invoice"}` sent as
+   `set` is refused with `bad_json` and the path `/id`. A field given as
+   `null` is read as left out.
 
 6. **An answer names what it holds.** A document is under `document`,
    a list under its plural, a count under its name, as in the tables of
@@ -240,7 +274,7 @@ Facts this record was written from, each checked in the code on the day:
    | 400 | `bad_json` |
    | 401 | `unauthenticated` |
    | 403 | `forbidden`, `reason_required` |
-   | 404 | `unknown_command`, `unknown_class`, `unknown_document`, `unknown_table`, `unknown_action`, `unknown_blob`, `unknown_row` |
+   | 404 | `unknown_command`, `unknown_class`, `unknown_document`, `unknown_table`, `unknown_schema`, `unknown_action`, `unknown_blob`, `unknown_row` |
    | 409 | `key_reused`, `duplicate`, `wrong_state`, `terminal`, `guard_false` |
    | 413 | `too_large`, `blob_too_large` |
    | 422 | every other refusal |
@@ -285,6 +319,8 @@ Facts this record was written from, each checked in the code on the day:
     it.** It takes the caller, the name and the object, and returns the
     answer or the refusal. The table of item 2 is data in it: for each
     command its name, its fields, its answer, its mark and the Go call.
+    In Go it is `Exec` and the table is `Commands`, both of the `fado`
+    package, so a Go program sends a command as any other door does.
     From that table come the HTTP addresses, the OpenAPI description
     under `api/`, the help of the command-line tool, and the tools of
     the door for agents, which the owner ruled into the phase on
@@ -348,6 +384,31 @@ Facts this record was written from, each checked in the code on the day:
   form. The store keeps the JSON of every version; `get_class` answers
   that, and the Go API gains a call that does.
 
+## Found while building it
+
+The first step of the phase built items 1 to 7, 10 and the second of
+the three ways of item 11. What it found, and what was done:
+
+- **A definition read back and sent again by a program that reads JSON
+  is often another text.** Most programs write the members of an object
+  in an order of their own. The engine compares the text, because the
+  order of the variables is part of a class, so such a definition is
+  stored as the next version though nothing in it changed. Not changed
+  here: sent back byte for byte, it is the same version, and a test
+  holds that.
+- **The hints of the engine's refusals speak Go.** "Preview the change
+  with At(…)", "give the function to Open, in Options.Actions". Item 1
+  says the refusal is the Go API's, word for word, and it is. A caller
+  on the wire reads names it never sends. Left as it is, and to be
+  looked at when the server has callers.
+- **There was no code for a schema that does not exist.** `get_schema`
+  answers `unknown_schema`, which joins the store's codes and the 404
+  row of item 8.
+- **The three suites ran through the command set at the first try but
+  for one step:** a moment on a command that writes, which the Go API
+  refuses with `not_allowed` and the wire had refused as a member it
+  does not know. Item 3 now says how the two agree.
+
 ## The owner's rulings
 
 All of 2026-11-14. The owner read the record with its three questions
@@ -392,7 +453,10 @@ A document that already has one is still read and changed.
   caches an answer. For documents that change under rules this is the
   safe default.
 - The Go API gains three small calls (item 2 and the findings), so that
-  nothing is on the wire that a Go program cannot do.
+  nothing is on the wire that a Go program cannot do: `Definition`,
+  which reads any definition back as it was given, `Schema` and
+  `Schemas`. It gains `Exec` and `Commands` too, the door and the table
+  of item 10.
 - Every call added to the Go API from now on needs its row in the
   table, or the build fails.
 - The clients of Phases 7 and 9 are generated from one table and have
@@ -407,6 +471,17 @@ document is written by the hand-written encoder of ADR-0018, which a
 test holds to the bytes `encoding/json` writes for the same document.
 Turning a command into a call is measured by itself, without a network,
 by `BenchmarkExecTransition` beside `BenchmarkTransition`, and joins the
-benchmark gate; its budget is set from its first measurement, in the
-pull request that builds it, and recorded here when the record is
-accepted.
+benchmark gate.
+
+The budget, set from the first measurement, on the development machine
+on 2026-11-14: **a command adds under 3 µs and at most 12 allocations
+to its call.**
+
+| | The call | The command | Added |
+|---|---|---|---|
+| Reading a document (`get`) | 5.9 µs, 81 allocations | 6.9 µs, 89 allocations | 1.0 µs, 8 allocations |
+| A transition | 52 µs, 155 allocations | 52 µs, 165 allocations | within the noise of a commit, 10 allocations |
+
+Writing a document of fifty variables as JSON takes 3.0 µs and no
+allocation, against the 5 µs ADR-0018 allowed; `encoding/json` takes
+8.1 µs and 118 allocations for the same document.

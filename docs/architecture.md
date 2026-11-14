@@ -1084,7 +1084,10 @@ with `forbidden`, and every document comes back projected.
 transition in one transaction, a commit each; a document that cannot
 move is reported with its refusal and the others move (ADR-0048). Every refusal
 is a `fado.Error` with a stable code and the variable it is about, or the
-`Diagnostics` of a definition.
+`Diagnostics` of a definition. `Definition` reads a class, a schema, a
+table or an action back as it was given, and `Schema` and `Schemas`
+read the schemas. `Exec` runs any of these calls sent as a command, a
+name and one JSON object, and `Commands` lists them (ADR-0055).
 Layouts, `QUERY` and subscriptions arrive with their phases.
 
 ### JSON command set
@@ -1100,6 +1103,11 @@ mapping:
 > changes as an HTTP reply that stays open, with no WebSocket; ADR-0059,
 > `fadodb serve`. By the owner's ruling of 2026-11-14 layouts move to
 > Phase 7. This section is rewritten when the records are accepted.
+>
+> The commands themselves are built, ahead of the server: the Go call
+> `Exec` takes the name of a command and its JSON object and answers
+> one JSON object, and [the commands](manual/commands.md) lists every
+> one, generated from the engine's table. No route below exists.
 
 | Route | Purpose |
 |---|---|

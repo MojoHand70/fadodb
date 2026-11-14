@@ -32,7 +32,7 @@ from the state the documents hold.
 | an agent that is a content administrator, in the system group `content-administrators`, acts on any document past the rules of its class, never past a guard. Such an act is an override: pass `fado.Reason("...")` or get `reason_required`; the event keeps the rules lifted and the reason, `Event.Override` and `Event.Reason`. `Preview.Override` and `TransitionInfo.Override` say beforehand that an act would be one. Give the true reason: it is the record of why a rule was set aside | shipped with Phase 5 |
 | idempotent retries, `Key`; the filter to poll for work | shipped |
 | rules that call the agent's program back when a state is entered | shipped with Phase 4: a Go function the host program gives to `Open` in `Options.Actions`, with a definition stored by `DefineAction`, is called through the outbox with the event and the document; an agent in another process is called over HTTP by a definition with a `request` that points at its endpoint, signed, where the host program allows that host |
-| subscriptions over the WebSocket instead of polling | designed, Phase 6 |
+| the stream of changes instead of polling: one HTTP reply that stays open and says each event the agent may see (ADR-0058, proposed) | in progress, Phase 6: nothing is built |
 
 ## Procedure, in outline
 

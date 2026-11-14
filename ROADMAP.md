@@ -1,6 +1,6 @@
 # Roadmap
 
-**Current status: Phase 5, security, done on 2026-11-13 and released as v0.5.0. Phase 6, the server, is next.**
+**Current status: Phase 5, security, done on 2026-11-13 and released as v0.5.0. Phase 6, the server, started on 2026-11-13.**
 The Go API (`fado`) opens a database file, defines schemas, classes and
 explicit tables, and creates, changes, reads and deletes documents as
 commits: assignments and defaults, the auto recalculation, typed history
@@ -206,9 +206,26 @@ record when the owner asks: a log of the reads a content administrator
 makes past a rule, with the reads of SQL; the engine's own users,
 groups and API keys, and the filter on the change stream, which come
 with the server in Phase 6.
-One record is proposed ahead of the layouts of Phase 6, at the owner's
+One record is proposed ahead of the layouts, at the owner's
 request of 2026-11-13: ADR-0054, two properties of a layout component,
 `mobile` and `desktop`, that say on which screen it shows.
+Phase 6 opened on 2026-11-13 with its design proposed as five records:
+ADR-0055, every command of the Go API as one JSON object, sent to one
+address for each command; ADR-0056, one database for each customer,
+and a server that serves one database; ADR-0057, users, groups and
+keys kept in the database; ADR-0058, the stream of changes as the log
+read forward, over a plain HTTP reply in place of the WebSocket first
+planned; and ADR-0059, what `fadodb serve` is told when it starts. By
+the owner's rulings of 2026-11-14 a command has one address and its id
+travels in its JSON, a field a command does not know is refused, and an
+id holds no control character; the door for agents, an MCP server, is
+built in this phase and not in Phase 11; the engine knows keys only,
+and passwords and a company's sign-on come with the frontend; layouts
+move to Phase 7; a database is closed to everybody but its owner; and
+the phase gains a check of a class and of an action from the command
+line, one call that answers the flow of a class, and as its last step,
+with a record of its own, a way in for messages from outside. None of
+it is built yet.
 This page is updated when a phase starts and when it ends;
 it never describes a phase as done before its acceptance criteria pass.
 
@@ -222,12 +239,12 @@ Legend: ✅ done · 🚧 in progress · ⬜ not started
 | 3 | Statechart: the transition command with guards, eventless chains, exit and entry snapshots and the `_states` view, allowed transitions and the preview of a transition, `STATE()` and `ID()`, per-transition access rules and field-level rights per state, statechart conformance cases | ✅ |
 | 4 | Rules and actions: event-condition-action rules run inside the commit, the synchronous actions `set`, `reset`, `refresh` and `emit`, triggered variables with their moment, the transactional outbox with its worker, retries and dead rows, the engine's actions on other documents and tables, actions as an extension point with definitions, declared HTTP actions, Go actions the embedder registers, connections and results written back, the delivered event, formulas that read other documents (`LOOKUP` over a class, with a count, a sum, the smallest and the largest), conditions on time and timers | ✅ |
 | 5 | Security: the class-level access rules enforced on every path, who may see, create, change and delete a document, with the read rule compiled to a SQL predicate; the kind of actor, a person, an agent or a service, and whom it acts for, on every event, checked against a substitution the database keeps; who may define, operate and query, by four system groups; a content administrator who acts past a rule with a reason; the rules of a table | ✅ |
-| 6 | Server and CLI: JSON command set over HTTP and WebSocket, the authenticator and an optional package of users, groups and API keys, the change stream filtered by the read rule, documents on the wire, layouts, `QUERY` when the first layout needs a list of rows (otherwise with the reports of Phase 8), OpenAPI, `fadodb serve` | ⬜ |
-| 7 | Browser VM and reference frontend: TypeScript VM on the same bytecode shipped as one plain JavaScript file, class bundle, layout renderer with the chip, card, coins and rating components, TypeScript client | ⬜ |
+| 6 | Server and CLI: the JSON command set over HTTP, one address for each command; users, groups and API keys kept in the database, and the authenticator for a host program that has its own; the stream of changes filtered by the read rule; documents on the wire; the door for agents (MCP); the command-line tool with a check of a class and of an action; the flow of a class in one call; a way in for messages from outside; OpenAPI; `fadodb serve` | 🚧 |
+| 7 | Browser VM and reference frontend: TypeScript VM on the same bytecode shipped as one plain JavaScript file, layouts and the class bundle, `QUERY` when the first layout needs a list of rows (otherwise with the reports of Phase 8), layout renderer with the chip, card, coins and rating components, signing in with a password or a company's sign-on, TypeScript client | ⬜ |
 | 8 | Analytical engine: DuckDB projection of document tables, native and attached bindings, set-wise recompute, mining views, full build per OS | ⬜ |
 | 9 | Embedding: C ABI, Python client, embedding guides | ⬜ |
 | 10 | Postgres backend | ⬜ |
-| 11 | Optional AI layer: MCP server, authoring assistant | ⬜ |
+| 11 | Optional AI layer: authoring assistant (the MCP server moved to Phase 6) | ⬜ |
 | 12 | 1.0 hardening: compatibility promises, documentation site, published benchmarks | ⬜ |
 
 Each phase ends with a tagged release and its benchmarks published under

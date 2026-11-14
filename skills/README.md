@@ -7,8 +7,8 @@ the SKILL.md format that Claude Code, claude.ai and other agent runtimes
 load when a task matches a skill's description.
 
 A skill is procedure and knowledge. The verbs are elsewhere: the Go API
-today, the JSON command set (ADR-0011, Phase 6) and the MCP server (Phase
-11) when their phases ship. A skill tells the agent to preview before it
+today, the JSON command set and the MCP server when Phase 6, which is
+in progress, ships them. A skill tells the agent to preview before it
 commits, to carry an idempotency key, to read a rejection's code and
 location rather than guess; the API is what it then calls.
 
@@ -31,7 +31,7 @@ so the right one loads for the task at hand.
 | Hat | Skill | What it does | Today |
 |---|---|---|---|
 | Designer | [`fadodb-design/`](fadodb-design/SKILL.md) | drafts a class from a process description, validates it, previews it against live data | written; variables, formulas and the store shipped; statechart shipped; rules and actions shipped; access shipped |
-| Operator | [`fadodb-operate/`](fadodb-operate/SKILL.md) | creates, sets and transitions documents on behalf of a person or a system, as a principal, with a key and a preview | Go API only; command set and MCP designed |
+| Operator | [`fadodb-operate/`](fadodb-operate/SKILL.md) | creates, sets and transitions documents on behalf of a person or a system, as a principal, with a key and a preview | Go API only; command set and MCP in progress, Phase 6, nothing built |
 | Simulator | [`fadodb-simulate/`](fadodb-simulate/SKILL.md) | replays a scenario in a scratch database and keeps the class that worked | scratch files and `At` work; replay is by hand |
 | Analyst | [`fadodb-mine/`](fadodb-mine/SKILL.md) | mines the event log and the views in SQL and feeds the finding back into the class | filter and read-only SQL shipped; `Events` on the Go API; DuckDB views designed |
 | Its own principal | [`fadodb-own-work/`](fadodb-own-work/SKILL.md) | runs the agent's own work as documents: the task ledger, the approval inbox, the saga | principal, the rules of a class and per-transition rights enforced; acting for a person checked against a substitution; a rule calls a Go function of the host program, or the agent's endpoint over HTTP |
@@ -85,5 +85,5 @@ before a reader meets it.
 3. The designer skill written in full. The other four presuppose a class.
 4. The first six samples, the cards the front page of fadodb.org links to,
    then one per shape of the catalogue.
-5. The operator skill grows its command-set and MCP sections with Phases
-   6 and 11.
+5. The operator skill grows its command-set and MCP sections with Phase
+   6.

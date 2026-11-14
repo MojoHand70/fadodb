@@ -55,6 +55,18 @@ All notable changes to FadoDB are recorded here. The format follows
   and the file that decided it; when the go tool cannot list the
   packages the gate runs.
 
+### Security
+
+- A new database is closed to everybody but its owner. `Open` creates
+  the file readable and writable by the user that made it and by nobody
+  else, where it was readable by every user of the machine; the log
+  SQLite keeps beside it follows, and so does the directory of
+  attachments of a database that keeps them outside the file. A
+  database that exists keeps its permissions: `chmod 600` on the file
+  and `chmod -R go-rwx` on its `.blobs` directory close one made by an
+  earlier version. On Windows nothing changes: a file takes the access
+  list of its directory.
+
 ## [0.5.0] - 2026-11-13
 
 ### Added

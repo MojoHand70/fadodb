@@ -279,7 +279,10 @@ type DB struct {
 }
 
 // Open opens the database file at path, creating it when it does not
-// exist.
+// exist. A database it creates is readable and writable by the user of
+// the machine that created it and by nobody else, and so is the
+// directory of attachments beside it; one that exists keeps the
+// permissions it has.
 func Open(path string, o Options) (*DB, error) {
 	s, err := store.Open(path, o)
 	if err != nil {

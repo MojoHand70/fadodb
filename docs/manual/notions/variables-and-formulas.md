@@ -243,7 +243,6 @@ once.
 - Reading a value from a reference table or from other documents:
   [Look a value up](../guides/look-a-value-up.md).
 - A variable worked out only at chosen moments, `"mode": "triggered"`:
-  named in [The class definition](../class.md#variables); its own
-  chapter is to come.
+  [Triggered variables](../triggered-variables.md).
 
 Next: [States and transitions](states-and-transitions.md).

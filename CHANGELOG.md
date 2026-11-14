@@ -118,6 +118,15 @@ All notable changes to FadoDB are recorded here. The format follows
   timeout and a count of attempts). Each shows the engine's own
   answers and lists what goes wrong most often; a test plays each on
   every push.
+- The reference chapter on triggered variables, the computed variables
+  that are worked out only at chosen moments: the four triggers, an
+  invoice that takes its exchange rate when accounting checks it, the
+  moment a value carries, what happens when working it out fails,
+  refreshing and who may, and what such a formula may read. A test
+  plays the chapter's two stories and every table of it. The chapter
+  states one fault of the engine as it is, pinned by the test: `min`
+  and `max` on a computed variable that names no type are accepted
+  and not applied.
 - The designer's skill teaches the syntax: what to read in the manual,
   a small class that is complete, and the ten things that go wrong
   most often. It is no longer a stub. The classes the skills show are

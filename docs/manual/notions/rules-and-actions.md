@@ -224,7 +224,8 @@ administrator finds it. An action ends in one of three ways:
 
 A dead action is never tried again by itself and never removed. A
 caller in the system group `administrators` lists the queue and may
-send a dead action again.
+send a dead action again. How the queue is run and watched is in
+[The outbox and the worker](../the-outbox-and-the-worker.md).
 
 What an action does to another document may set off rules there, and
 those may queue actions in turn. The engine follows such a chain

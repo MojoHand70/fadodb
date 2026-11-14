@@ -68,21 +68,21 @@ the engine on each push.
 | [The refusals](manual/refusals.md) | every code and what it means | **written**, generated from the engine's own constants; the fix for each comes with the guides |
 | [Tables](manual/tables.md) | reference data: the definition and the types of a column, rows and imports, a formula that reads a table, a rule that writes one, who may, changing a table | **written**; a test plays the chapter's story and every table of it against the engine |
 | [Schemas and objects](manual/schemas-and-objects.md) | a value with named fields: defining a schema, the nine schemas the engine brings, an object in a class, what a class can and cannot do with an object today, how an object is stored | **written**; a test plays the chapter's story and every table of it against the engine |
-| Files | attaching a file to a document, and reading it back under the rules of the document | planned; today [ADR-0033](adr/0033-attachments-as-file-values-behind-a-blob-store.md) |
+| [Files](manual/files.md) | attaching a file to a document: the facts and the bytes, opening a file under the rules of the document, who may, where the bytes are kept, how large a file may be, checking the files | **written**; a test plays the chapter's story and every table of it against the engine |
 | [Actions](actions.md) | defining an action, calling another system, secrets | **written** |
 | Views and SQL | the views the engine makes for each class, and reading them with SQL | planned; today [architecture.md](architecture.md) |
 
 ## Embedding and running it
 
-For the developer whose program holds the engine. Planned.
+For the developer whose program holds the engine.
 
-| Chapter | What it covers |
-|---|---|
-| Opening a database | the file, the options, what belongs to the database and what to the program |
-| Naming the caller | the principal on every call; groups; the system groups; a host that keeps its own substitutions |
-| The outbox and the worker | what runs after a commit, retries, and what to do with an action that died |
-| Running it | backup, the size of the file, what is fast and what is slow, in [docs/perf](perf/README.md) |
-| Versions | what a release may change before 1.0, and what the [changelog](../CHANGELOG.md) promises |
+| Chapter | What it covers | Mark |
+|---|---|---|
+| [Opening a database](manual/opening-a-database.md) | a whole small program; what opening does; what is on disk; every option, and whether it belongs to the database or to the program; closing; what is refused | **written**; a test runs the program and plays every table of the chapter |
+| [Naming the caller](manual/naming-the-caller.md) | a whole small program with four callers; every part of a caller, what the engine uses it for and what it checks; a call with no caller; why the program is the only door; the system groups; the business day; the options of a call | **written**; a test runs the program and plays every table of the chapter |
+| [The outbox and the worker](manual/the-outbox-and-the-worker.md) | a whole small program with an action that gets no answer and one that is refused; a row of the queue; how the worker runs it; what happens when an action fails; a dead action and sending it again; running the queue by hand; who may | **written**; a test runs the program and plays every table of the chapter |
+| Running it | backup, the size of the file, what is fast and what is slow, in [docs/perf](perf/README.md) | planned |
+| Versions | what a release may change before 1.0, and what the [changelog](../CHANGELOG.md) promises | planned |
 
 ## For agents
 

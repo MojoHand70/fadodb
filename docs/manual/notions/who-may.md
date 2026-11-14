@@ -18,7 +18,8 @@ who run a database may do that a class does not give.
 | its system groups | `designers` | the work that is not about one document; see below |
 
 The engine trusts the host program for who the caller is, and decides
-everything else itself.
+everything else itself. How a program says it, call by call, is in
+[Naming the caller](../naming-the-caller.md).
 
 Every caller that has an id is in the group `everyone`. A call that
 names nobody is nobody: it gets through only where a line of the class

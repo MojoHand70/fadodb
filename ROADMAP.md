@@ -244,7 +244,7 @@ Legend: ✅ done · 🚧 in progress · ⬜ not started
 | 8 | Analytical engine: DuckDB projection of document tables, native and attached bindings, set-wise recompute, mining views, full build per OS | ⬜ |
 | 9 | Embedding: C ABI, Python client, embedding guides | ⬜ |
 | 10 | Postgres backend | ⬜ |
-| 11 | Optional AI layer: MCP server, authoring assistant | ⬜ |
+| 11 | Optional AI layer: authoring assistant (the MCP server moved to Phase 6) | ⬜ |
 | 12 | 1.0 hardening: compatibility promises, documentation site, published benchmarks | ⬜ |
 
 Each phase ends with a tagged release and its benchmarks published under

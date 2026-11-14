@@ -29,7 +29,9 @@ Every pull request must pass:
 5. The size gate: a release-style core binary over the budget fails the build.
 6. The benchmark gate: more than 5% slower, more than 5% more bytes per
    operation, or any extra allocation per operation against the base branch
-   fails the build.
+   fails the build. It runs when the pull request changes a file that goes
+   into the measured programs (`scripts/benchgate.sh --needed origin/main`
+   says whether yours does) and is skipped otherwise.
 
 ## Rules that are not negotiable
 

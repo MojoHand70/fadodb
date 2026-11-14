@@ -24,6 +24,18 @@ All notable changes to FadoDB are recorded here. The format follows
   and let somebody act for a person. A test defines the class of each
   guide and plays its table of who does what against the engine.
 
+### Changed
+
+- The benchmark gate runs on a pull request only when it changes a file
+  that goes into the programs the gate measures: a Go file of a package
+  linked into the benchmarks of `internal/formula` and `internal/store`,
+  a test file of those two packages, a file they embed, `go.mod`,
+  `go.sum`, the Makefile, a script or the CI workflow. Until now any
+  `.go` file started it, a test of another package included, and it
+  takes half an hour. `scripts/benchgate.sh --needed` gives the answer
+  and the file that decided it; when the go tool cannot list the
+  packages the gate runs.
+
 ## [0.5.0] - 2026-11-13
 
 ### Added

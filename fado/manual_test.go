@@ -38,6 +38,9 @@ func TestManualExamples(t *testing.T) {
 				tables = append(tables, string(m[1]))
 			case "action":
 				actions = append(actions, string(m[1]))
+			case "document":
+				// A document as the engine answers it. The test of its
+				// chapter compares it with the engine's answer.
 			default:
 				pieces = append(pieces, string(m[1]))
 			}
@@ -120,12 +123,12 @@ func TestManualLinks(t *testing.T) {
 	}
 }
 
-// manualPages lists the chapters and the guides of the manual, and the
-// skills, which teach an agent from the same examples.
+// manualPages lists the chapters, the guides and the notions of the
+// manual, and the skills, which teach an agent from the same examples.
 func manualPages(t *testing.T) []string {
 	t.Helper()
 	var pages []string
-	for _, pattern := range []string{"*.md", filepath.Join("guides", "*.md")} {
+	for _, pattern := range []string{"*.md", filepath.Join("guides", "*.md"), filepath.Join("notions", "*.md")} {
 		found, err := filepath.Glob(filepath.Join("..", "docs", "manual", pattern))
 		if err != nil {
 			t.Fatal(err)
@@ -144,7 +147,8 @@ func manualPages(t *testing.T) []string {
 }
 
 // kindOf says what a block of JSON in the manual is: a whole class, a
-// whole table, a whole action definition, or a piece of one of them.
+// whole table, a whole action definition, a document as the engine
+// answers it, or a piece of one of them.
 func kindOf(block []byte) string {
 	var whole struct {
 		Name      string          `json:"name"`
@@ -152,8 +156,16 @@ func kindOf(block []byte) string {
 		Columns   json.RawMessage `json:"columns"`
 		Params    json.RawMessage `json:"params"`
 		Request   json.RawMessage `json:"request"`
+		Class     string          `json:"class"`
+		Values    json.RawMessage `json:"values"`
 	}
-	if json.Unmarshal(block, &whole) != nil || whole.Name == "" {
+	if json.Unmarshal(block, &whole) != nil {
+		return "piece"
+	}
+	if whole.Class != "" && whole.Values != nil {
+		return "document"
+	}
+	if whole.Name == "" {
 		return "piece"
 	}
 	switch {

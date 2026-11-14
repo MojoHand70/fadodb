@@ -281,6 +281,12 @@ through.
 **A line left out lets nobody through.** A class says who may, or
 nobody may. Checking a class tells you about each line it leaves out.
 
+**A transition with a line of its own is not asked `update`.** A
+manager approves a request she may not edit. The values she gives with
+the transition are checked by [`rights`](#rights) alone, so say there
+what she may write. [States and
+transitions](notions/states-and-transitions.md) plays it through.
+
 The functions these formulas use most, of the whole list in
 [The functions](functions.md):
 

@@ -1101,9 +1101,13 @@ reads or changes a database is a command, and
 engine's table.
 
 > What is built today: the Go call `Exec` takes the name of a command
-> and its JSON object and answers one JSON object. Nothing listens on
-> the network. Every address below is decided, by the five records the
-> owner accepted on 2026-11-14, and not built.
+> and its JSON object and answers one JSON object; and the package
+> `fado/httpdoor` is the door that answers `POST /v1/<command>` for a
+> program that has opened a database, with the limits and the statuses
+> of the records. The program says where it listens and who sends each
+> request. The other addresses below, the engine's own users and keys,
+> and `fadodb serve` are decided, by the five records the owner
+> accepted on 2026-11-14, and not built.
 
 | Address | Purpose | Record |
 |---|---|---|
@@ -1288,6 +1292,7 @@ fadodb/
   internal/store/        sqlite store, history, child tables, events, outbox, schema
   internal/state/        statechart engine
   fado/outbound/         the sender of an action's HTTP requests; only a program that allows outbound calls imports it
+  fado/httpdoor/         the HTTP door of a database; only a program that answers HTTP imports it
   internal/auth/         users, groups and keys
   internal/query/        LOOKUP/QUERY compilation, filter DSL, SQL endpoint, authorizer
   internal/server/       the HTTP door: requests to commands, the stream of changes

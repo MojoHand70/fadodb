@@ -116,6 +116,17 @@ What a command is answered with before the engine is asked anything, because the
 | `bad_definition` | A definition was refused. Every finding is beside the error, under diagnostics, each with its own code and its place in the definition. |
 | `internal` | The engine failed in a way that is no refusal. The words of the failure stay with the program that runs the engine and are not in the answer. |
 
+## Refusals of the HTTP door
+
+What a request is answered with before its command runs, or beside it, when the command is sent over HTTP: the door could not tell who sent it, or the request is beyond what the door takes on. [The commands](commands.md#over-http) says how a command is sent over HTTP.
+
+| Code | Meaning |
+|---|---|
+| `unauthenticated` | The request does not say who sends it, or says it with a credential the server does not know. The words are the same whatever was wrong, so that a guess learns nothing. |
+| `too_large` | The request is larger than the server reads, 16 MiB unless the server was told otherwise. Nothing of it was run. |
+| `timeout` | The command ran longer than the server lets one run, 30 seconds unless the server was told otherwise, and was stopped. A command that is one commit wrote nothing; migrate and drain, which commit as they go, keep what they had done. |
+| `busy` | The server already runs as many commands as it takes on at once, and none ended while the request waited. Nothing was run; the same request can be sent again. |
+
 ## Errors of a formula
 
 What a formula stops with when it cannot give a value. Inside a commit the refusal carries this code and names the variable whose formula failed.

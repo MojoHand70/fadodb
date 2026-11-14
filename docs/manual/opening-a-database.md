@@ -252,6 +252,9 @@ made again.
 
 - A lock that keeps a second program off an open file.
 - A way to bring a file of an earlier release forward.
-- The server, `fadodb serve`, which holds databases for many callers.
+- The server, `fadodb serve`, which serves one database to many
+  callers, each with a key of its own. A program of your own can
+  already let a database it has opened answer
+  [the commands over HTTP](commands.md#over-http).
 - Copying a database that is open. The chapter on running a database
   is planned.

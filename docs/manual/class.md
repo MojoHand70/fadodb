@@ -240,7 +240,7 @@ The actions:
 | `refresh` | works triggered variables out again |
 | `emit` | writes an event of your own into the log |
 | `create`, `transition` | creates a document of another class, or moves one |
-| `table.insert`, `table.update`, `table.delete` | changes a row of a reference table |
+| `table.insert`, `table.update`, `table.delete` | changes a row of a reference table; see [Tables](tables.md#a-rule-that-writes-a-table) |
 | `http.call`, or the name of a defined action | calls another system; see [Actions](../actions.md) |
 
 The first four change the document inside the same commit. The others

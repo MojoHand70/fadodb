@@ -352,15 +352,15 @@ var commands = []*Command{
 // NotCommands are the methods of fado.DB that are not commands, each
 // with why (ADR-0055, item 2).
 var NotCommands = map[string]string{
-	"Close":    "closing the database is the server's",
+	"Close":    "closing a database is for the program that opened it",
 	"Exec":     "it is the door the commands come through",
-	"PutBlob":  "the bytes of a file travel beside the commands (item 9)",
-	"OpenFile": "the bytes of a file travel beside the commands (item 9)",
-	"OpenBlob": "the bytes of a file travel beside the commands (item 9)",
+	"PutBlob":  "the bytes of a file are not JSON: they travel beside the commands, with the server",
+	"OpenFile": "the bytes of a file are not JSON: they travel beside the commands, with the server",
+	"OpenBlob": "the bytes of a file are not JSON: they travel beside the commands, with the server",
 	"Class":    "it answers the engine's compiled form to a Go program; get_class answers the definition",
 	"Schema":   "it answers the engine's compiled form to a Go program; get_schema answers the definition",
 	"Table":    "it answers the engine's compiled form to a Go program; get_table answers the definition",
-	"Action":   "it answers one entry of the catalogue list_actions answers whole",
+	"Action":   "it answers one entry of the catalogue that list_actions answers whole",
 }
 
 var byName = map[string]*Command{}

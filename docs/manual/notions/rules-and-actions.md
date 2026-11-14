@@ -268,7 +268,4 @@ a final state, or on entering a state that a final one leads to.
 A class without states stores no documents, so rules in it are refused
 too.
 
-Next: Who may, which is planned; until then see the guides on
-[editors](../guides/editors-per-state.md),
-[four eyes](../guides/four-eyes.md) and
-[acting for somebody](../guides/acting-for-somebody.md).
+Next: [Who may](who-may.md).

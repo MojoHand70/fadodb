@@ -77,7 +77,9 @@ person later.
 4. **`rights` narrows `access` and never widens it.** A caller needs
    `update` to let them through and the right of each variable they
    set. The line of the document's state is asked before the line of
-   `*`, and a named variable before `*`.
+   `*`, and a named variable before `*`. So a variable closed under
+   the state `*` is open again in a state that has its own line for
+   `*`: name it in that state too.
 5. **Not every function of the language is built.** `CONTAINS`,
    `FILTER`, `FIRST`, `LAST`, `INDEX`, `JOIN` and `QUERY` are refused
    today. Several named editors on one document must be a group.

@@ -1,6 +1,6 @@
 # ADR-0057: Who is calling: users, groups and keys, kept in the database
 
-- Status: Proposed, with four questions open for the owner; amends ADR-0027 (the optional package of users, groups and keys is built, with keys and without passwords or sessions; its commands are part of the command set and not routes of their own), ADR-0052 (who keeps the members of a group, and what an administrator may not give themselves), ADR-0055 (nine commands join the table)
+- Status: Proposed; the owner ruled on its four questions on 2026-11-14, and the rulings are at the end; amends ADR-0027 (the optional package of users, groups and keys is built, with keys and without passwords or sessions; its commands are part of the command set and not routes of their own), ADR-0052 (who keeps the members of a group), ADR-0055 (nine commands join the table)
 - Date: 2026-11-14
 
 ## Context
@@ -111,8 +111,8 @@ The case used below is the database of Acme:
    |---|---|---|---|
    | `create_user` | `id`, `kind`, `name`, `groups`, `system_groups` | `user` | an administrator |
    | `set_user` | `id`, and any of `name`, `groups`, `system_groups`, `disabled` | `user` | an administrator |
-   | `get_user` | `id` | `user` | every user (question 4) |
-   | `list_users` | `group`, `kind` | `users` | every user (question 4) |
+   | `get_user` | `id` | `user` | every user (ruling 4) |
+   | `list_users` | `group`, `kind` | `users` | every user (ruling 4) |
    | `user_changes` | `id` | `changes`, oldest first | an administrator; a user, of itself |
    | `create_key` | `user`, `label`, `expires` | `key`, with `secret` this once | an administrator |
    | `list_keys` | `user` | `keys`, never a secret | an administrator; a user, its own |
@@ -141,19 +141,24 @@ The case used below is the database of Acme:
    The Go API gains the same nine, so that nothing is on the wire that
    a Go program cannot do.
 
-6. **Nobody changes their own groups, and the last administrator
-   stays.** Olga, an administrator, puts Dan among the designers and
-   Ann in `finance`. She cannot put herself in either: her own lists
-   are changed by another administrator. It is the rule the owner gave
-   for substitutions (ADR-0053, ruling I: "never to themselves"). A
+6. **An administrator keeps every user's groups, their own among
+   them, and the last administrator stays.** Olga, an administrator,
+   puts Dan among the designers and Ann in `finance`. She may put
+   herself in either too, by the owner's ruling 2. The guard is the
+   record of the change (item 8): that Olga gave herself `finance` is
+   kept with her id and the moment, and `user_changes` shows it. A
    command that would leave the database without an active
    administrator is refused.
 
-   What the rule does not stop: Olga can make a user `olga-2`, put it
-   in every group and give it a key. The database records that she
-   did (item 8). As with a designer who rewrites a rule (ADR-0052,
-   item 7), the split does not make it impossible; it makes it a
-   deliberate act that is in sight.
+   So the administrator of a database can come to everything in it,
+   in one step that is in sight: Olga may put herself among the
+   content administrators. ADR-0052 says what each system group gives.
+   It does not keep an administrator out of a group. As with a designer
+   who rewrites a rule (ADR-0052, item 7), the split makes it a
+   deliberate act that is recorded.
+
+   A substitution is another matter and stays as ruled: nobody gives
+   one to themselves (ADR-0053, ruling I).
 
 7. **The first administrator is made on the machine.** A new database
    has no user. Whoever holds the database on their own machine already
@@ -214,30 +219,38 @@ The case used below is the database of Acme:
     - A formula that asks about another user, such as whether the
       approver named on a document is a manager.
 
-## Questions for the owner
+## The owner's rulings
 
-1. **The word.** Proposed: **user**, for a person, an agent and a
-   service alike, since `USER()` has always answered the id of any of
-   them. The other words: "caller", which ADR-0049 to ADR-0053 use for
-   whoever sends a call, or "account".
+All of 2026-11-14. The owner read the four questions, each with a case
+of named users, and ruled on each. The first, the third and the fourth
+are the answers the record proposed. The second is the other answer.
 
-2. **May an administrator change their own groups (item 6)?**
-   Proposed: no, neither the system groups nor the ordinary ones, with
-   the limit item 6 states. The other answer: yes, and the record of
-   the change is the guard.
+**1. One word for a person, an agent and a service alike? User**
+(item 1), since `USER()` has always answered the id of any of them.
+The words not taken were "caller", which ADR-0049 to ADR-0053 use for
+whoever sends a call, and "account".
 
-3. **Who makes a key (item 5)?** Proposed: an administrator only; a
-   user sees its own keys and may revoke them, so that a key that
-   leaked is dead at once. The other answer: a user also makes keys for
-   itself, which lets an agent change its own key on a schedule, and
-   lets whoever stole a key make more of them.
+**2. May an administrator change their own groups? Yes** (item 6).
+The record had proposed no, with another administrator changing them.
+The owner said he had long wanted a security administrator apart from
+the database administrator, against developers who held that the
+database administrator is that role, and ruled: "I can agree DBA can
+assign himself too." So the database administrator keeps who is who,
+their own groups among them, and this record adds no system group of
+security administrators. The record of the change is the guard.
 
-4. **Who sees the list of users (item 5)?** Proposed: every user sees
-   every user's id, name, kind and groups, so that a screen shows a
-   name for an id and an agent finds the manager to ask; the keys of a
-   user are seen by that user and by administrators. The other answer:
-   administrators only, and a class that needs names keeps them in
-   documents of its own.
+**3. Who makes a key? An administrator only** (item 5). A user sees
+its own keys and may revoke them, so that a key that leaked is dead at
+once. The answer not taken: a user also makes keys for itself, which
+lets an agent change its own key on a schedule, and lets whoever stole
+a key make more of them.
+
+**4. Who sees the list of users? Every user** (item 5) sees every
+user's id, name, kind and groups, so that a screen shows a name for an
+id and an agent finds the manager to ask. The keys of a user are seen
+by that user and by administrators. The answer not taken:
+administrators only, with a class that needs names keeping them in
+documents of its own.
 
 ## Consequences
 

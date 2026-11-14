@@ -60,3 +60,8 @@ line says so. Copy `0000-template.md` to start.
 | [0052](0052-system-groups-and-the-content-administrator.md) | System groups: who runs the database, who designs, who reads everything and who may act on any document | Accepted |
 | [0053](0053-acting-for-somebody.md) | Acting for somebody: a recorded substitution for people and assistants | Accepted |
 | [0054](0054-the-screen-on-a-layout-component.md) | The screen on a layout component: `mobile` and `desktop` | Proposed |
+| [0055](0055-the-command-set-on-the-wire.md) | The command set on the wire: every command, its JSON, and one address each | Proposed |
+| [0056](0056-one-database-for-each-customer.md) | One database for each customer, and a server that serves one database | Proposed |
+| [0057](0057-users-groups-and-keys.md) | Who is calling: users, groups and keys, kept in the database | Proposed |
+| [0058](0058-the-stream-of-changes.md) | The stream of changes: the log read forward, over plain HTTP | Proposed |
+| [0059](0059-fadodb-serve.md) | `fadodb serve`: one database, what it is told when it starts, and what it refuses | Proposed |

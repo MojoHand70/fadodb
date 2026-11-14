@@ -65,7 +65,7 @@ the engine on each push.
 | [The functions](manual/functions.md) | every function with its arguments and what it answers | **written**, generated from the engine's own catalogue |
 | The calls | every call of the Go package: what it takes, what it answers, what it may refuse with | planned; today the documentation of the `fado` package |
 | [The refusals](manual/refusals.md) | every code and what it means | **written**, generated from the engine's own constants; the fix for each comes with the guides |
-| Tables | reference data: defining, importing, looking up | planned; today [ADR-0037](adr/0037-explicit-tables-and-the-compiled-lookup.md) |
+| [Tables](manual/tables.md) | reference data: the definition and the types of a column, rows and imports, a formula that reads a table, a rule that writes one, who may, changing a table | **written**; a test plays the chapter's story and every table of it against the engine |
 | Schemas and objects | a value with named fields: defining a schema, the schemas the engine brings, an object in a class | planned; today [ADR-0031](adr/0031-named-schemas-and-object-values.md) and [ADR-0032](adr/0032-predefined-vocabulary-and-object-presentation.md). An object variable names its schema; see [The class definition](manual/class.md#variables) |
 | Files | attaching a file to a document, and reading it back under the rules of the document | planned; today [ADR-0033](adr/0033-attachments-as-file-values-behind-a-blob-store.md) |
 | [Actions](actions.md) | defining an action, calling another system, secrets | **written** |

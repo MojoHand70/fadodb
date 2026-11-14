@@ -96,7 +96,8 @@ Each entry is one variable: its name, and what it is.
 | `default` | a formula for the value a new document gets when the caller gives none |
 | `formula` | the variable is computed, and nobody sets it |
 | `values` | for a text: the list of values it may take |
-| `min`, `max` | for a number: the range it must stay in |
+| `min`, `max` | for a number: the range it must stay in. On a computed variable they hold only when it names its `type` |
+| `mode`, `on` | for a computed variable: `"mode": "triggered"` and the list of moments at which it is worked out; see [Triggered variables](triggered-variables.md) |
 | `scale` | for `decimal` and `money`: the number of decimal places, two when left out |
 | `index` | keeps an index on the variable, so that finding documents by it is fast |
 | `class` | for a `ref`: the class it points at |
@@ -133,8 +134,8 @@ A variable is one of two kinds.
 
 A computed variable can also be worked out only at chosen moments,
 such as the entry into a state, and kept in between: that is
-`"mode": "triggered"`, an advanced technique with a chapter of its own
-to come.
+`"mode": "triggered"`, an advanced technique with a chapter of its
+own, [Triggered variables](triggered-variables.md).
 
 Some names are the engine's and cannot be used for a variable, among
 them `id`, `title`, `state`, `version`, `created_at`, `created_by`,
@@ -237,7 +238,7 @@ The actions:
 |---|---|
 | `set` | sets variables of this document, each to the result of a formula |
 | `reset` | puts variables of this document back to their defaults |
-| `refresh` | works triggered variables out again |
+| `refresh` | works [triggered variables](triggered-variables.md#refreshing) out again |
 | `emit` | writes an event of your own into the log |
 | `create`, `transition` | creates a document of another class, or moves one |
 | `table.insert`, `table.update`, `table.delete` | changes a row of a reference table; see [Tables](tables.md#a-rule-that-writes-a-table) |

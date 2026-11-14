@@ -12,6 +12,8 @@ exactly so in a class or a formula.
 | variable | one named value that every document of a class holds, such as `amount` |
 | input | a variable that a caller sets, or that takes its default |
 | computed variable | a variable with a `formula`; the engine works it out and nobody sets it |
+| triggered variable | a computed variable that is worked out only at the moments its class names, such as the entry into a state, and keeps its value in between; see [Triggered variables](triggered-variables.md) |
+| refresh | a commit that works triggered variables out again |
 | formula | an expression in the style of a spreadsheet, such as `ROUND(net * (1 + vat_rate), 2)` |
 | state | where a document is in its process, such as `INAPPROVAL` |
 | transition | a named move from one state to another, such as `approve` |

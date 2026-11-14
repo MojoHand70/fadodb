@@ -38,6 +38,23 @@ type Database interface {
 // leaves Principal.For empty.
 type Who func(r *http.Request) (store.Principal, error)
 
+// Bearer is the Who of a door whose callers prove who they are with a
+// key (ADR-0057, item 3): a request carries the key in one place, the
+// header Authorization: Bearer <key>, and whose says who the key belongs
+// to. Nothing else is a credential: no cookie, no key in the address,
+// no name and password. A database that keeps its own users gives its
+// Authenticate as whose.
+func Bearer(whose func(key string) (store.Principal, error)) Who {
+	return func(r *http.Request) (store.Principal, error) {
+		const scheme = "Bearer "
+		sent := r.Header.Get("Authorization")
+		if len(sent) <= len(scheme) || !strings.EqualFold(sent[:len(scheme)], scheme) {
+			return store.Principal{}, store.ErrUnknownKey
+		}
+		return whose(sent[len(scheme):])
+	}
+}
+
 // Limits are what one door takes on (ADR-0059, item 2). A zero is the
 // default.
 type Limits struct {

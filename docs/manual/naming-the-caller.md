@@ -205,8 +205,11 @@ caller, a designer and a content administrator included. So:
   made it and by nobody else. Whoever can read the file can read
   everything in it, past every rule.
 
-The engine's own users and keys come with the server, which is in
-progress.
+A database can also keep its own users, groups and keys, and say
+itself who a key belongs to: the program opens it with `Users`, and
+the nine commands of [Users, groups and keys](commands.md#users-groups-and-keys)
+keep them. That is how the server, `fadodb serve`, will open a
+database; the server is in progress.
 
 ## The system groups
 
@@ -273,6 +276,7 @@ included, before the engine looks at the document.
 
 ## Not here yet
 
-- The engine's own users, groups and keys. They come with the server.
+- The server, `fadodb serve`, which opens a database with its own
+  users and asks every request for a key.
 - A refusal for a caller that has groups and no id.
 - A record of what a caller read. No read is written down today.

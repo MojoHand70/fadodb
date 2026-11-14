@@ -44,7 +44,7 @@ func Status(code string) int {
 		return http.StatusForbidden
 	case command.CodeUnknownCommand, store.CodeUnknownClass, store.CodeUnknownDocument,
 		store.CodeUnknownTable, store.CodeUnknownSchema, store.CodeUnknownAction,
-		store.CodeUnknownBlob, store.CodeUnknownRow:
+		store.CodeUnknownBlob, store.CodeUnknownRow, store.CodeUnknownUser, store.CodeUnknownKey:
 		return http.StatusNotFound
 	case store.CodeKeyReused, store.CodeDuplicate, store.CodeWrongState,
 		store.CodeTerminal, store.CodeGuardFalse:

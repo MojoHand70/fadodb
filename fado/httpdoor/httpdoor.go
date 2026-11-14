@@ -40,9 +40,9 @@
 // GET /v1/blob?hash=… streams bytes by their hash alone, for a content
 // administrator.
 //
-// Not here yet, each with its step of Phase 6: the stream of changes,
-// and the engine's own users and keys, which `fadodb serve` will give
-// the door as its Who.
+// A database that keeps its own users, groups and keys (ADR-0057) has
+// its Who ready: Keys. Not here yet, each with its step of Phase 6: the
+// stream of changes, and the program `fadodb serve`.
 package httpdoor
 
 import (
@@ -99,6 +99,18 @@ func New(db *fado.DB, o Options) (*Door, error) {
 	}
 	return server.New(db, o)
 }
+
+// Keys is the Who of a database that keeps its own users (ADR-0057),
+// one opened with fado.Options.Users: a request carries a key of a
+// user, as the header Authorization: Bearer fado_…, and the command
+// runs as the user the key belongs to, with the groups the database
+// has for it at that moment. A key the database does not know, one
+// that was revoked or has ended, and the key of a disabled user are
+// all answered with unauthenticated.
+//
+//	db, err := fado.Open("acme.fado", fado.Options{Users: true})
+//	door, err := httpdoor.New(db, httpdoor.Options{Who: httpdoor.Keys(db)})
+func Keys(db *fado.DB) Who { return server.Bearer(db.Authenticate) }
 
 // Status is the HTTP status the door answers a code with, 200 for the
 // empty code of a command that ran. A caller reads the code; the status

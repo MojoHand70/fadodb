@@ -36,7 +36,7 @@ const DefaultMaxIndexedRows = 100000
 // engineSchema is the version of the store's own tables. A database made
 // by another engine schema is refused: before 1.0 there is no upgrade
 // path, and a pre-release file is recreated.
-const engineSchema = 9
+const engineSchema = 10
 
 // Options configure Open. The ones that are properties of the database,
 // Synchronous and MaxText, are read at creation and kept in the metadata
@@ -108,6 +108,14 @@ type Options struct {
 	// somebody against the substitutions of the database. It is the host
 	// program's, given at every Open, like its actions.
 	HostAnswersFor bool
+	// Users says that the database keeps its own users, groups and keys
+	// (ADR-0057): the calls that keep them work, their commands are
+	// offered, and Authenticate answers who a key belongs to. It is how
+	// a server opens a database for callers of its own, as fadodb serve
+	// does. A host program that says itself who is calling leaves it
+	// off: the database then keeps none, and those calls answer
+	// not_supported.
+	Users bool
 	// Now is the clock of the database: it stamps every commit and is
 	// what NOW() and TODAY() read in every formula, unless a call that
 	// reads or previews chooses a moment with At (ADR-0042). nil is
@@ -233,6 +241,9 @@ type Store struct {
 	// dueLists counts the lists of documents that Due read to look at
 	// them one by one (ADR-0047, item 8), for the tests of when it does.
 	dueLists atomic.Int64
+	// people is what a database that keeps its own users holds of them
+	// in memory (ADR-0057).
+	people people
 	// subs is what the check of "for" keeps (ADR-0053), and bringing says
 	// Open is defining a class of the engine's own, which may carry a
 	// name the engine keeps.
@@ -327,6 +338,7 @@ func Open(path string, o Options) (*Store, error) {
 		outbox: o.Outbox, wake: make(chan struct{}, 1), workDone: make(chan struct{}),
 	}
 	s.subs.host = o.HostAnswersFor
+	s.people.on = o.Users
 	if s.now == nil {
 		s.now = time.Now
 	}
@@ -366,6 +378,11 @@ func Open(path string, o Options) (*Store, error) {
 	}
 	if err := s.init(ctx, sync, o.MaxText, o.MaxIndexedRows, o.BlobStore, o.MaxBlob); err != nil {
 		return fail(err)
+	}
+	if s.people.on {
+		if err := s.loadPeople(ctx); err != nil {
+			return fail(err)
+		}
 	}
 	switch s.blobKind {
 	case "sqlite":
@@ -444,7 +461,7 @@ func (s *Store) init(ctx context.Context, wantSync string, wantMaxText int, want
 		_, _ = w.ExecContext(ctx, "ROLLBACK")
 		return err
 	}
-	for _, ddl := range engineDDL {
+	for _, ddl := range append(append([]string(nil), engineDDL...), usersDDL...) {
 		if _, err := w.ExecContext(ctx, ddl); err != nil {
 			return rollback(storageErr("create the engine tables", err))
 		}

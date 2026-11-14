@@ -53,6 +53,13 @@ func Exec(ctx context.Context, s *store.Store, p store.Principal, name string, o
 	if !ok {
 		return refuse(unknownCommand(name))
 	}
+	if cmd.Users && !s.KeepsUsers() {
+		// A database whose program says itself who is calling keeps no
+		// users: the lists these commands keep would be read by nobody
+		// (ADR-0057, item 9).
+		return refuse(&store.Error{Code: CodeUnknownCommand, Message: "this database does not offer " + name + ": it keeps no users of its own",
+			Hint: "the program that serves it says itself who is calling; users, groups and keys are kept by a database a server opens for callers of its own, as fadodb serve does"})
+	}
 	c := &call{ctx: ctx, s: s, cmd: cmd}
 	if e := c.read(object); e != nil {
 		return refuse(e)
@@ -722,6 +729,99 @@ func runCheckBlobs(c *call) error {
 	c.out = strconv.AppendInt(c.out, int64(checked), 10)
 	c.next("mismatched")
 	c.out = append(c.out, text...)
+	c.close()
+	return nil
+}
+
+// Users, groups and keys.
+
+func runCreateUser(c *call) error {
+	groups, e := c.texts("groups")
+	if e != nil {
+		return e
+	}
+	system, e := c.texts("system_groups")
+	if e != nil {
+		return e
+	}
+	u, err := c.s.CreateUser(c.ctx, store.User{ID: c.text("id"), Kind: c.text("kind"), Name: c.text("name"), Groups: groups, System: system}, c.opts...)
+	return c.answer("user", u, err)
+}
+
+func runSetUser(c *call) error {
+	var edit store.UserEdit
+	if c.given("name") != nil {
+		name := c.text("name")
+		edit.Name = &name
+	}
+	if c.given("groups") != nil {
+		groups, e := c.texts("groups")
+		if e != nil {
+			return e
+		}
+		groups = list(groups)
+		edit.Groups = &groups
+	}
+	if c.given("system_groups") != nil {
+		system, e := c.texts("system_groups")
+		if e != nil {
+			return e
+		}
+		system = list(system)
+		edit.System = &system
+	}
+	if c.given("disabled") != nil {
+		disabled := c.flag("disabled")
+		edit.Disabled = &disabled
+	}
+	u, err := c.s.SetUser(c.ctx, c.text("id"), edit, c.opts...)
+	return c.answer("user", u, err)
+}
+
+func runGetUser(c *call) error {
+	u, err := c.s.GetUser(c.ctx, c.text("id"), c.opts...)
+	return c.answer("user", u, err)
+}
+
+func runListUsers(c *call) error {
+	users, err := c.s.Users(c.ctx, store.UserFilter{Group: c.text("group"), Kind: c.text("kind")}, c.opts...)
+	return c.answer("users", list(users), err)
+}
+
+func runUserChanges(c *call) error {
+	changes, err := c.s.UserChanges(c.ctx, c.text("id"), c.opts...)
+	return c.answer("changes", list(changes), err)
+}
+
+func runCreateKey(c *call) error {
+	key, err := c.s.CreateKey(c.ctx, c.text("user"), c.text("label"), c.text("expires"), c.opts...)
+	return c.answer("key", key, err)
+}
+
+func runListKeys(c *call) error {
+	keys, err := c.s.Keys(c.ctx, c.text("user"), c.opts...)
+	return c.answer("keys", list(keys), err)
+}
+
+func runRevokeKey(c *call) error {
+	return c.empty(c.s.RevokeKey(c.ctx, c.text("key"), c.opts...))
+}
+
+func runWhoami(c *call) error {
+	u, acts, err := c.s.Whoami(c.ctx, c.opts...)
+	if err != nil {
+		return err
+	}
+	text, err := json.Marshal(u)
+	if err != nil {
+		return err
+	}
+	c.open("user")
+	c.out = append(c.out, text...)
+	if acts != "" {
+		c.next("for")
+		c.out = strconv.AppendQuote(c.out, acts)
+	}
 	c.close()
 	return nil
 }

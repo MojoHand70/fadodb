@@ -62,6 +62,14 @@ All notable changes to FadoDB are recorded here. The format follows
   a class that reads it and a class that feeds it; a test plays the
   story of 21 steps and holds every table of the chapter to the
   engine's answers.
+- The reference chapter on schemas and objects: how a schema is
+  defined, the nine schemas the engine brings, an object in a class,
+  the values as they are given and answered, how an object is stored,
+  and a table of what a class can and cannot do with an object today.
+  A test plays the chapter's story and holds every table of it to the
+  engine's answers. The chapter and the class definition now say that
+  `required` on an object, a list or rows is accepted and not
+  enforced.
 - The designer's skill teaches the syntax: what to read in the manual,
   a small class that is complete, and the ten things that go wrong
   most often. It is no longer a stub. The classes the skills show are

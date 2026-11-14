@@ -115,6 +115,12 @@ type Command struct {
 	// answers {}.
 	Answer []Member
 
+	// Users says the command keeps the users, groups and keys of a
+	// database (ADR-0057). A database that keeps none, because the
+	// program that opened it says itself who is calling, does not offer
+	// the command: it answers unknown_command.
+	Users bool
+
 	run func(*call) error
 	// takes says which of the five options the command takes.
 	takes options
@@ -184,6 +190,7 @@ const (
 	Documents   = "Documents"
 	Definitions = "Definitions"
 	Operations  = "Tables, actions and the queue"
+	Users       = "Users, groups and keys"
 )
 
 // Words the table says many times.
@@ -195,6 +202,7 @@ const (
 	theDefinition = "the definition, as JSON"
 	thePreview    = "what the command would do: the document as it would be, the errors, the states visited, the transitions then open and the rules that would run"
 	theStored     = "the definition as it was given, with its name, its version and who defined it"
+	theUser       = "the user: its id, its kind, its name, its groups, its system groups and whether it is disabled"
 )
 
 var commands = []*Command{
@@ -347,20 +355,53 @@ var commands = []*Command{
 		Answer: answer("attempted", "how many actions it attempted"), takes: asCaller, run: runDrain},
 	{Group: Operations, Name: "check_blobs", Mark: Reads, Call: "CheckBlobs", Does: "Recomputes the hash of every file the database holds.",
 		Answer: answer("checked", "how many files it checked", "mismatched", "the hashes of the files whose bytes do not match"), takes: asCaller, run: runCheckBlobs},
+
+	// Users, groups and keys (ADR-0057).
+	{Group: Users, Users: true, Name: "create_user", Mark: Writes, Call: "CreateUser", Does: "Makes a user: a person, an agent or a service the database knows by its id. It is a database administrator's.",
+		Fields: []Field{req("id", Text, "the id every event will record; it never changes and is never given to somebody else"),
+			req("kind", Text, "person, agent or service"), opt("name", Text, "how a screen shows the user"),
+			opt("groups", Texts, "the groups of the user, which INGROUP answers"), opt("system_groups", Texts, "the system groups of the user: administrators, designers, content-administrators, analysts")},
+		Answer: answer("user", theUser), takes: asWriter, run: runCreateUser},
+	{Group: Users, Users: true, Name: "set_user", Mark: Writes, Call: "SetUser", Does: "Changes a user: the members given, and no other. It is a database administrator's, who may change their own groups too.",
+		Fields: []Field{req("id", Text, "the id of the user"), opt("name", Text, "how a screen shows the user"),
+			opt("groups", Texts, "the groups of the user, in place of the ones it has"), opt("system_groups", Texts, "the system groups of the user, in place of the ones it has"),
+			opt("disabled", Flag, "true stops every key of the user at the next command; false lets them through again")},
+		Answer: answer("user", theUser+", after the change"), takes: asWriter, run: runSetUser},
+	{Group: Users, Users: true, Name: "get_user", Mark: Reads, Call: "GetUser", Does: "Reads one user. Every user may ask.",
+		Fields: []Field{req("id", Text, "the id of the user")},
+		Answer: answer("user", theUser), takes: asCaller, run: runGetUser},
+	{Group: Users, Users: true, Name: "list_users", Mark: Reads, Call: "Users", Does: "Lists the users, in the order of their ids. Every user may ask.",
+		Fields: []Field{opt("group", Text, "only the members of this group, of either kind"), opt("kind", Text, "only the users of this kind")},
+		Answer: answer("users", "the users, the disabled ones among them"), takes: asCaller, run: runListUsers},
+	{Group: Users, Users: true, Name: "user_changes", Mark: Reads, Call: "UserChanges", Does: "Lists every change to a user and to its keys. A database administrator may ask of any user, and a user of itself.",
+		Fields: []Field{req("id", Text, "the id of the user")},
+		Answer: answer("changes", "the changes, oldest first: what was done, by whom, of what kind, for whom and when, with the user or the key as the change left it"), takes: asCaller, run: runUserChanges},
+	{Group: Users, Users: true, Name: "create_key", Mark: Writes, Call: "CreateKey", Does: "Makes a key for a user and answers it with its secret, this once. It is a database administrator's.",
+		Fields: []Field{req("user", Text, "the id of the user the key is for"), opt("label", Text, "where the key is used, such as laptop or nightly import"),
+			opt("expires", Text, "the last day the key holds, as YYYY-MM-DD in UTC; left out, the key holds until it is revoked")},
+		Answer: answer("key", "the key: its id, its user, its label, when and by whom it was made, its last day, and under secret the key itself, which is shown this once and kept nowhere"), takes: asWriter, run: runCreateKey},
+	{Group: Users, Users: true, Name: "list_keys", Mark: Reads, Call: "Keys", Does: "Lists the keys of a user, never a secret. A database administrator may ask of any user, and a user of itself.",
+		Fields: []Field{opt("user", Text, "the id of the user; left out, the caller")},
+		Answer: answer("keys", "the keys, oldest first, the revoked ones among them"), takes: asCaller, run: runListKeys},
+	{Group: Users, Users: true, Name: "revoke_key", Mark: Writes, Call: "RevokeKey", Does: "Ends a key: the next command sent with it is refused. A database administrator may revoke any key, and a user its own.",
+		Fields: []Field{req("key", Text, "the id of the key, as list_keys shows it, and not the key itself")}, takes: asWriter, run: runRevokeKey},
+	{Group: Users, Users: true, Name: "whoami", Mark: Reads, Call: "Whoami", Does: "Answers who the database takes the caller for.",
+		Answer: answer("user", theUser, "for", "the id of whoever the caller acts for, when the command names one"), takes: asCaller, run: runWhoami},
 }
 
 // NotCommands are the methods of fado.DB that are not commands, each
 // with why (ADR-0055, item 2).
 var NotCommands = map[string]string{
-	"Close":    "closing a database is for the program that opened it",
-	"Exec":     "it is the door the commands come through",
-	"PutBlob":  "the bytes of a file are not JSON: they travel beside the commands, with the server",
-	"OpenFile": "the bytes of a file are not JSON: they travel beside the commands, with the server",
-	"OpenBlob": "the bytes of a file are not JSON: they travel beside the commands, with the server",
-	"Class":    "it answers the engine's compiled form to a Go program; get_class answers the definition",
-	"Schema":   "it answers the engine's compiled form to a Go program; get_schema answers the definition",
-	"Table":    "it answers the engine's compiled form to a Go program; get_table answers the definition",
-	"Action":   "it answers one entry of the catalogue that list_actions answers whole",
+	"Close":        "closing a database is for the program that opened it",
+	"Exec":         "it is the door the commands come through",
+	"PutBlob":      "the bytes of a file are not JSON: they travel beside the commands, with the server",
+	"OpenFile":     "the bytes of a file are not JSON: they travel beside the commands, with the server",
+	"OpenBlob":     "the bytes of a file are not JSON: they travel beside the commands, with the server",
+	"Authenticate": "it answers who a key belongs to, for the door that is given the key; a caller that wants to know who it is sends whoami",
+	"Class":        "it answers the engine's compiled form to a Go program; get_class answers the definition",
+	"Schema":       "it answers the engine's compiled form to a Go program; get_schema answers the definition",
+	"Table":        "it answers the engine's compiled form to a Go program; get_table answers the definition",
+	"Action":       "it answers one entry of the catalogue that list_actions answers whole",
 }
 
 var byName = map[string]*Command{}

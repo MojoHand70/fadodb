@@ -11,13 +11,14 @@ import (
 )
 
 // statuses is the table of ADR-0055, item 8, with the two codes that
-// ADR-0059, item 2, added to it, written out here a second time so that
-// a change to Status that the records do not carry fails.
+// ADR-0059, item 2, added to it and the two of ADR-0057, written out
+// here a second time so that a change to Status that the records do not
+// carry fails.
 var statuses = map[int][]string{
 	400: {"bad_json"},
 	401: {"unauthenticated"},
 	403: {"forbidden", "reason_required"},
-	404: {"unknown_command", "unknown_class", "unknown_document", "unknown_table", "unknown_schema", "unknown_action", "unknown_blob", "unknown_row"},
+	404: {"unknown_command", "unknown_class", "unknown_document", "unknown_table", "unknown_schema", "unknown_action", "unknown_blob", "unknown_row", "unknown_user", "unknown_key"},
 	409: {"key_reused", "duplicate", "wrong_state", "terminal", "guard_false"},
 	413: {"too_large", "blob_too_large"},
 	500: {"internal", "storage"},

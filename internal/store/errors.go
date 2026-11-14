@@ -184,6 +184,11 @@ const (
 	// CodeUnknownRow: a table.update addresses a row the table does not
 	// have (ADR-0044).
 	CodeUnknownRow = "unknown_row"
+	// CodeUnknownUser: the database has no user of that id (ADR-0057).
+	CodeUnknownUser = "unknown_user"
+	// CodeUnknownKey: the database has no key of that id, or the key is
+	// another user's and the caller is no administrator (ADR-0057).
+	CodeUnknownKey = "unknown_key"
 )
 
 func errf(code, variable, format string, args ...any) *Error {

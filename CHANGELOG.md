@@ -146,6 +146,22 @@ All notable changes to FadoDB are recorded here. The format follows
   program may set. The status of a reply follows its code; the caller
   reads the code. The server `fadodb serve`, the engine's own users and
   keys and the stream of changes are not built yet.
+- A database keeps its own users, groups and keys (ADR-0057) when it
+  is opened with `Options.Users`. A user is a person, an agent or a
+  service known by its id; a group is a name on a user; a key is one
+  line of text, `fado_…`, shown once when it is made, of which the
+  database keeps a hash. Nine calls and their commands keep them:
+  `CreateUser`, `SetUser`, `GetUser`, `Users`, `UserChanges`,
+  `CreateKey`, `Keys`, `RevokeKey` and `Whoami` (`create_user` to
+  `whoami`). Database administrators make users and keys; every user
+  sees the users and lists and revokes its own keys; a change that
+  would leave no administrator is refused; every change is kept with
+  who made it. `DB.Authenticate` answers who a key belongs to, in
+  0.1 µs and without a read, and `httpdoor.Keys` is the door's
+  function for such a database. A disabled user and a revoked key are
+  stopped at the next command. A database opened without `Users` keeps
+  none, and does not offer the nine commands. Two codes are new,
+  `unknown_user` and `unknown_key`.
 - Files through the HTTP door (ADR-0055, item 9; ADR-0033): `POST
   /v1/blobs?name=…` keeps the bytes of the body and answers the facts
   of the file, to set on a document in a command;
@@ -168,6 +184,11 @@ All notable changes to FadoDB are recorded here. The format follows
 
 ### Changed
 
+- **The engine schema is version 10**, for the three tables of the
+  users, their keys and the changes to them (ADR-0057). Every database
+  has them; a database that keeps no users has them empty. A database
+  made by an earlier pre-release is made again: before 1.0 there is no
+  way to bring one forward.
 - A document is no longer created under an id that holds a control
   character, such as a line break, a tab or a zero byte: the create is
   refused with `bad_value` (ADR-0055, the owner's ruling of

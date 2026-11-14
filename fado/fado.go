@@ -147,6 +147,15 @@ type (
 	BlobStore = store.BlobStore
 	// FileInfo is the fact of a file as a document holds it.
 	FileInfo = store.FileInfo
+	// User is a person, an agent or a service that a database which
+	// keeps its own users knows by its id (ADR-0057); UserEdit is what
+	// SetUser changes, UserFilter narrows a list of users, UserKey is a
+	// key of a user and UserChange one change to a user or its keys.
+	User       = store.User
+	UserEdit   = store.UserEdit
+	UserFilter = store.UserFilter
+	UserKey    = store.UserKey
+	UserChange = store.UserChange
 	// Option configures one call: As, Key, BusinessDate, WithID.
 	Option = store.Option
 	// Error is a refusal with a stable code, the variable it is about, a
@@ -663,6 +672,86 @@ func (db *DB) OpenBlob(ctx context.Context, hash string, opts ...Option) (io.Rea
 // whose bytes do not match, and how many it checked.
 func (db *DB) CheckBlobs(ctx context.Context, opts ...Option) (mismatched []string, checked int, err error) {
 	return db.s.CheckBlobs(ctx, opts...)
+}
+
+// ErrUnknownKey is what Authenticate answers for every key it does not
+// let through, whatever is wrong with it.
+var ErrUnknownKey = store.ErrUnknownKey
+
+// The calls below keep the users, groups and keys of a database
+// (ADR-0057). They are for a database opened with Options.Users, which
+// a server opens for callers of its own, as fadodb serve does. A
+// database whose program says itself who is calling keeps none: the
+// calls answer not_supported and their commands are not offered.
+
+// CreateUser makes a user: a person, an agent or a service the database
+// knows by its id. It is a database administrator's.
+func (db *DB) CreateUser(ctx context.Context, u User, opts ...Option) (*User, error) {
+	return db.s.CreateUser(ctx, u, opts...)
+}
+
+// SetUser changes a user: the members of the edit that are set. It is a
+// database administrator's, who may change their own groups too; a
+// change that would leave the database without an administrator who is
+// not disabled is refused.
+func (db *DB) SetUser(ctx context.Context, id string, edit UserEdit, opts ...Option) (*User, error) {
+	return db.s.SetUser(ctx, id, edit, opts...)
+}
+
+// GetUser reads one user. Every user of the database may ask.
+func (db *DB) GetUser(ctx context.Context, id string, opts ...Option) (*User, error) {
+	return db.s.GetUser(ctx, id, opts...)
+}
+
+// Users lists the users in the order of their ids, the disabled ones
+// among them. Every user of the database may ask.
+func (db *DB) Users(ctx context.Context, f UserFilter, opts ...Option) ([]*User, error) {
+	return db.s.Users(ctx, f, opts...)
+}
+
+// UserChanges lists every change to a user and to its keys, oldest
+// first. A database administrator may ask of any user, and a user of
+// itself.
+func (db *DB) UserChanges(ctx context.Context, id string, opts ...Option) ([]UserChange, error) {
+	return db.s.UserChanges(ctx, id, opts...)
+}
+
+// CreateKey makes a key for a user and answers it with its secret, this
+// once: the database keeps a hash of it, and a lost key is replaced.
+// expires, when given, is the last day the key holds, as YYYY-MM-DD in
+// UTC. It is a database administrator's.
+func (db *DB) CreateKey(ctx context.Context, user, label, expires string, opts ...Option) (*UserKey, error) {
+	return db.s.CreateKey(ctx, user, label, expires, opts...)
+}
+
+// Keys lists the keys of a user, never a secret; user left empty is the
+// caller. A database administrator may ask of any user, and a user of
+// itself.
+func (db *DB) Keys(ctx context.Context, user string, opts ...Option) ([]*UserKey, error) {
+	return db.s.Keys(ctx, user, opts...)
+}
+
+// RevokeKey ends a key, by its id: the next command sent with it is
+// refused. A database administrator may revoke any key, and a user its
+// own.
+func (db *DB) RevokeKey(ctx context.Context, key string, opts ...Option) error {
+	return db.s.RevokeKey(ctx, key, opts...)
+}
+
+// Whoami answers who the database takes the caller for, and whom the
+// caller acts for when the call names somebody.
+func (db *DB) Whoami(ctx context.Context, opts ...Option) (*User, string, error) {
+	return db.s.Whoami(ctx, opts...)
+}
+
+// Authenticate answers who a key belongs to: the principal a command
+// sent with the key runs as. A key the database does not know, one that
+// was revoked or has ended, and the key of a disabled user all answer
+// ErrUnknownKey. It reads nothing from the database and allocates
+// nothing, so a server asks it for every request. The groups of the
+// principal are the database's own lists: do not change them.
+func (db *DB) Authenticate(key string) (Principal, error) {
+	return db.s.Authenticate(key)
 }
 
 // Preview runs a create (empty id), a set or a transition through the

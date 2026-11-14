@@ -18,7 +18,7 @@
 # docs/architecture.md "Initial budgets" and of the records of each phase,
 # not every benchmark in the tree: the VM's arithmetic, the recalculation,
 # the lookups, the transition commit, the same sent as a command and
-# through the HTTP door, the
+# through the HTTP door, the check of a key, the
 # same on a class with access
 # rules, a batch of 1,000 moves, the listing,
 # the guard loop, the
@@ -43,7 +43,7 @@ TIME_PCT="${BENCH_TIME_PCT:-5}"
 BYTES_PCT="${BENCH_BYTES_PCT:-5}"
 COUNT="${BENCH_COUNT:-5}"
 PLACEMENTS="${BENCH_PLACEMENTS:-5}"
-PATTERN="${BENCH_PATTERN:-^Benchmark(VM_Arithmetic5|VM_Exact5|Recalculate|Recalculate50|LookupIndexed|LookupKeyedStatement|LookupClass|Transition|ExecTransition|DoorTransition|TransitionAccess|TransitionMany|Transitions10|GuardLoop|Project|WriteCheck|Rules|Outbox|Timer|LifeEditors)$}"
+PATTERN="${BENCH_PATTERN:-^Benchmark(VM_Arithmetic5|VM_Exact5|Recalculate|Recalculate50|LookupIndexed|LookupKeyedStatement|LookupClass|Transition|ExecTransition|DoorTransition|WhoIsCalling|TransitionAccess|TransitionMany|Transitions10|GuardLoop|Project|WriteCheck|Rules|Outbox|Timer|LifeEditors)$}"
 PACKAGES="${BENCH_PACKAGES:-./internal/formula/ ./internal/store/}"
 
 # evaluate_csv prints every regression found in a benchstat CSV and returns 1

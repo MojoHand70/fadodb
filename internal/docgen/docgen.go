@@ -248,8 +248,13 @@ func Commands(root string) (string, error) {
 	b.WriteString("\n")
 
 	marks := map[command.Mark]string{command.Reads: "reads", command.Writes: "writes", command.Destroys: "destroys"}
-	for _, group := range []string{command.Documents, command.Definitions, command.Operations} {
-		fmt.Fprintf(&b, "## %s\n\n| Command | What it does | |\n|---|---|---|\n", group)
+	for _, group := range []string{command.Documents, command.Definitions, command.Operations, command.Users} {
+		fmt.Fprintf(&b, "## %s\n\n", group)
+		if group == command.Users {
+			b.WriteString("A database that a server opens for callers of its own keeps who they\nare: its users, their groups and their keys. A user is a person, an\nagent or a service the database knows by its id. A group is a name on\na user. A key is how a user proves who it is: one line of text that\nbegins `fado_`, shown once when it is made and kept nowhere after.\n\n")
+			b.WriteString("These commands are offered by such a database only. A database opened\nby a program that says itself who is calling keeps no users, and\nanswers each of them with `unknown_command`. The server that opens a\ndatabase this way, `fadodb serve`, is in progress and not built; a Go\nprogram opens one with `Options.Users`.\n\n")
+		}
+		b.WriteString("| Command | What it does | |\n|---|---|---|\n")
 		for _, c := range command.Commands() {
 			if c.Group == group {
 				fmt.Fprintf(&b, "| [`%s`](#%s) | %s | %s |\n", c.Name, c.Name, cell(c.Does), marks[c.Mark])
@@ -328,7 +333,7 @@ func overHTTP(b *strings.Builder, root string) error {
 	b.WriteString("A Go program that has opened a database lets it answer commands over\nHTTP with the package `fado/httpdoor`. The program says where it listens\nand who sends each request, and the door does the rest. One door serves\none database.\n\n")
 	b.WriteString("A command is sent to the address that ends in its name, with `POST`,\nits object as the body and the header `Content-Type: application/json`.\nThe answer is the body of the reply. A command that reads is a `POST`\ntoo.\n\n")
 	b.WriteString("```\nPOST /v1/transition\nContent-Type: application/json\nAuthorization: Bearer …\n\n{\"class\": \"Invoice\", \"id\": \"FV/2026/11/0042\", \"transition\": \"approve\"}\n```\n\n")
-	b.WriteString("- **Who sends the request is not in the command**, here either. The\n  program that makes the door gives it a function that reads who it is\n  from the request: from a session or a token of the program's own. A\n  request whose sender the function cannot tell is refused with\n  `unauthenticated`, in the same words whatever was wrong, and runs\n  nothing. The engine's own users and keys come with `fadodb serve`.\n")
+	b.WriteString("- **Who sends the request is not in the command**, here either. The\n  program that makes the door gives it a function that reads who it is\n  from the request: from a session or a token of the program's own. A\n  request whose sender the function cannot tell is refused with\n  `unauthenticated`, in the same words whatever was wrong, and runs\n  nothing. A database that keeps its own\n  [users, groups and keys](#users-groups-and-keys) gives the door\n  `httpdoor.Keys`: a request then carries a key of a user, as the\n  header `Authorization: Bearer fado_…`, and nothing else is a\n  credential.\n")
 	b.WriteString("- **The id of a document travels in the JSON** and never in the\n  address, so an id such as `FV/2026/11/0042` needs no escaping.\n")
 	fmt.Fprintf(b, "- **A door takes on so much and no more.** Unless the program says\n  otherwise: a request of at most %d MiB, refused beyond that with\n  `too_large`; a command that runs at most %d seconds, stopped after\n  that and refused with `timeout`; and %d commands at once. A request\n  beyond them waits one second for a command to end and is then refused\n  with `busy`; nothing of it ran, and it can be sent again.\n",
 		server.DefaultRequestBytes>>20, int(server.DefaultCommandTime.Seconds()), server.DefaultCommands)

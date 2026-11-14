@@ -1,6 +1,7 @@
 package httpdoor_test
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -394,5 +395,131 @@ func TestAFileThatIsTooLarge(t *testing.T) {
 	}
 	if resp, body := call(t, srv, "POST", "token-of-bob", "/v1/blobs?name=small.bin", "application/octet-stream", strings.Repeat("x", 1024)); resp.StatusCode != 200 {
 		t.Errorf("a file of the largest size is answered %d %s", resp.StatusCode, body)
+	}
+}
+
+// service opens a database that keeps its own users and puts its door,
+// which asks for a key, on a server that listens on this machine. The
+// first administrator, Olga, is made on the machine, by no user
+// (ADR-0057, item 7), and her key is answered.
+func service(t *testing.T, name string) (*fado.DB, *httptest.Server, string) {
+	t.Helper()
+	db, err := fado.Open(filepath.Join(t.TempDir(), name+".fado"), fado.Options{Users: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	door, err := httpdoor.New(db, httpdoor.Options{Who: httpdoor.Keys(db)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := httptest.NewServer(door)
+	t.Cleanup(func() { srv.Close(); db.Close() })
+	ctx := context.Background()
+	machine := fado.As(fado.Principal{System: []string{fado.GroupAdministrators}})
+	if _, err := db.CreateUser(ctx, fado.User{ID: "olga", Kind: fado.ActorPerson, System: []string{fado.GroupAdministrators}}, machine); err != nil {
+		t.Fatal(err)
+	}
+	key, err := db.CreateKey(ctx, "olga", "laptop", "", machine)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return db, srv, key.Secret
+}
+
+// Two customers, each with a database, a door and users of its own
+// (ADR-0056, item 4): a key opens the one database it was made in, and
+// a user of one is nobody in the other.
+func TestAKeyOpensTheDatabaseItWasMadeIn(t *testing.T) {
+	_, acme, olgaAtAcme := service(t, "acme")
+	_, globex, olgaAtGlobex := service(t, "globex")
+
+	// Olga of Acme asks who she is, with her key.
+	status, body := send(acme, olgaAtAcme, "whoami", `{}`)
+	if status != 200 || body != `{"user":{"id":"olga","kind":"person","groups":[],"system_groups":["administrators"],"disabled":false}}` {
+		t.Fatalf("whoami at Acme: %d %s", status, body)
+	}
+	// Her key is nobody's at Globex, whose own Olga is another user.
+	if status, body := send(globex, olgaAtAcme, "whoami", `{}`); status != 401 || !strings.Contains(body, `"unauthenticated"`) {
+		t.Errorf("a key of Acme at the door of Globex: %d %s", status, body)
+	}
+	if status, _ := send(globex, olgaAtGlobex, "whoami", `{}`); status != 200 {
+		t.Errorf("the key of Globex at the door of Globex: %d", status)
+	}
+	// Nothing else is a credential.
+	for what, token := range map[string]string{"no key": "", "a key cut short": olgaAtAcme[:40], "the id of the key alone": olgaAtAcme[:15]} {
+		if status, body := send(acme, token, "whoami", `{}`); status != 401 || !strings.Contains(body, `"unauthenticated"`) {
+			t.Errorf("%s: %d %s", what, status, body)
+		}
+	}
+	if resp, body := call(t, acme, "POST", "", "/v1/whoami?key="+olgaAtAcme, "application/json", `{}`); resp.StatusCode != 400 && resp.StatusCode != 401 {
+		t.Errorf("a key in the address: %d %s", resp.StatusCode, body)
+	}
+
+	// Olga makes the agent of accounts payable and gives it a key, over
+	// HTTP. The key is in the answer, this once.
+	if status, body := send(acme, olgaAtAcme, "create_user", `{"id": "ap-agent", "kind": "agent", "groups": ["finance"]}`); status != 200 {
+		t.Fatalf("create_user: %d %s", status, body)
+	}
+	status, body = send(acme, olgaAtAcme, "create_key", `{"user": "ap-agent", "label": "invoice matching"}`)
+	at := strings.Index(body, `"secret":"`)
+	if status != 200 || at < 0 {
+		t.Fatalf("create_key: %d %s", status, body)
+	}
+	agentKey := body[at+len(`"secret":"`):]
+	agentKey = agentKey[:strings.Index(agentKey, `"`)]
+	if status, body := send(acme, agentKey, "whoami", `{}`); status != 200 || !strings.Contains(body, `"id":"ap-agent","kind":"agent","groups":["finance"]`) {
+		t.Errorf("the agent asks who it is: %d %s", status, body)
+	}
+
+	// The agent keeps no users: that is an administrator's.
+	if status, body := send(acme, agentKey, "create_user", `{"id": "eve", "kind": "person"}`); status != 403 || !strings.Contains(body, `"forbidden"`) {
+		t.Errorf("the agent makes a user: %d %s", status, body)
+	}
+	if status, body := send(acme, agentKey, "get_user", `{"id": "eve"}`); status != 404 || !strings.Contains(body, `"unknown_user"`) {
+		t.Errorf("a user that is none: %d %s", status, body)
+	}
+
+	// Olga puts the agent among the designers. The key it holds answers
+	// with the new groups at the next command, and nothing is sent anew.
+	if status, body := send(acme, olgaAtAcme, "set_user", `{"id": "ap-agent", "system_groups": ["designers"]}`); status != 200 {
+		t.Fatalf("set_user: %d %s", status, body)
+	}
+	if status, body := send(acme, agentKey, "define_class", invoice); status != 200 {
+		t.Errorf("the agent, now a designer, defines a class: %d %s", status, body)
+	}
+
+	// A disabled user is stopped at the next command, and so is a key
+	// that was revoked.
+	if status, body := send(acme, olgaAtAcme, "set_user", `{"id": "ap-agent", "disabled": true}`); status != 200 {
+		t.Fatalf("disabling the agent: %d %s", status, body)
+	}
+	if status, _ := send(acme, agentKey, "whoami", `{}`); status != 401 {
+		t.Errorf("a disabled user is answered %d", status)
+	}
+	if status, body := send(acme, olgaAtAcme, "set_user", `{"id": "ap-agent", "disabled": false}`); status != 200 {
+		t.Fatalf("enabling the agent: %d %s", status, body)
+	}
+	status, body = send(acme, agentKey, "list_keys", `{}`)
+	at = strings.Index(body, `"id":"`)
+	if status != 200 || at < 0 {
+		t.Fatalf("list_keys: %d %s", status, body)
+	}
+	id := body[at+len(`"id":"`):]
+	id = id[:strings.Index(id, `"`)]
+	if status, body := send(acme, agentKey, "revoke_key", `{"key": "`+id+`"}`); status != 200 || body != `{}` {
+		t.Errorf("the agent revokes its key: %d %s", status, body)
+	}
+	if status, _ := send(acme, agentKey, "whoami", `{}`); status != 401 {
+		t.Errorf("a revoked key is answered %d", status)
+	}
+}
+
+// A database whose program says itself who is calling does not offer
+// the commands of the users.
+func TestADatabaseWithoutUsersOffersNoCommandOfThem(t *testing.T) {
+	db, srv := open(t.TempDir())
+	t.Cleanup(func() { srv.Close(); db.Close() })
+	if status, body := send(srv, "token-of-bob", "whoami", `{}`); status != 404 || !strings.Contains(body, `"unknown_command"`) || !strings.Contains(body, "keeps no users") {
+		t.Errorf("whoami: %d %s", status, body)
 	}
 }

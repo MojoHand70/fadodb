@@ -170,9 +170,11 @@ the item. One reads the door's source and fails when the package
 declares a variable, so a cache, a count or a pool can only be kept in
 a door and never beside it. The other fills one door with as many
 commands as it runs and sends a command to a second door in the same
-program, which answers. The half of the item's test that speaks of a
-key and of the stream of changes is written with the keys (ADR-0057)
-and with the stream (ADR-0058).
+program, which answers. With the keys (ADR-0057) came the test the
+item names: two databases, Acme and Globex, each with users of its own
+and a user `olga`; the key of Acme's Olga is `unauthenticated` at the
+door of Globex. The half that speaks of the stream of changes is
+written with the stream (ADR-0058).
 
 ## The owner's rulings
 

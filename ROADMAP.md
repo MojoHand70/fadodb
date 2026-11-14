@@ -247,8 +247,14 @@ added the files beside the commands to the door: a file is put at
 `POST /v1/blobs`, read through the document that holds it at
 `GET /v1/file`, under the rules of the document, and its bytes are read
 by their hash alone, by a content administrator, at `GET /v1/blob`.
-Not built yet: `fadodb serve`, the engine's own users and keys, the
-stream of changes and the door for agents.
+The fourth step gave a database its own users, groups and keys
+(ADR-0057): a program opens it with `Users`, nine commands keep them,
+from `create_user` to `whoami`, a key is one line of text that begins
+`fado_` and is shown once, the database keeps a hash of it, and every
+change to a user or a key is kept. The door asks for a key with
+`httpdoor.Keys`; checking one takes 0.1 µs and reads nothing. Not
+built yet: `fadodb serve`, with the first administrator made on the
+machine, the stream of changes and the door for agents.
 This page is updated when a phase starts and when it ends;
 it never describes a phase as done before its acceptance criteria pass.
 

@@ -219,6 +219,52 @@ The case used below is the database of Acme:
     - A formula that asks about another user, such as whether the
       approver named on a document is a manager.
 
+## Settled while building it
+
+The engine's side was built first: the tables, the nine calls with
+their commands, and the check of a key. The command-line tool that
+makes the first administrator on the machine (item 7) and
+`fadodb serve` come with their step. What was settled:
+
+- **A database says whether it keeps users when it is opened**, with
+  `Options.Users`. It is the program's to say, like its actions:
+  `fadodb serve` will say it, and a host program that says itself who
+  is calling does not. Without it the nine commands answer
+  `unknown_command` (item 9) and the nine Go calls `not_supported`.
+  The tables are in every database, and empty in one that keeps none.
+- **The users are in the store, not in a package of their own.** A
+  change to a user is a commit of the one writer, with its record in
+  the same transaction. The empty package `internal/auth` is removed.
+- **A key is 68 characters**: `fado_`, ten for its id, an underscore
+  and 52 for the secret, in digits and capital letters without I, L, O
+  and U, so that a key read aloud is not mistaken. The database keeps
+  the SHA-256 of the secret.
+- **`expires` is a day**, `YYYY-MM-DD`, and the key holds through that
+  day in UTC. A day that has passed is refused.
+- **Two codes are new**, `unknown_user` and `unknown_key`, with the
+  status 404 in the table of ADR-0055. A key that is another user's is,
+  for a caller who is no administrator, a key that does not exist.
+- **The names of the Go calls** follow the commands, as the test of
+  ADR-0055 asks: `GetUser` for `get_user`, `Users` for `list_users`,
+  `Keys` for `list_keys`, `Whoami` for `whoami`.
+- **Made on the machine means a caller with no id** who is given the
+  system group of administrators by the program that opened the
+  database. The record of such a change has an empty `by`. Nothing new
+  is trusted: a program that opens a database has always said itself
+  who is calling (ADR-0027).
+- **The last administrator stays** is counted over the users who are
+  administrators and not disabled. A change that takes the last of
+  them away, or disables them, is refused with `not_allowed`.
+- **Revoking a revoked key changes nothing** and is no refusal.
+- **A moment is refused** on the four commands that write, as on every
+  write (ADR-0042).
+- **What a key answers is the database's own list.** `Authenticate`
+  hands out the groups of the user without copying them, which is why
+  it allocates nothing; a change puts a new user in memory and never
+  alters one a reader holds.
+- **`list_keys` with no `user` is the caller's own keys**, and
+  `list_users` narrows by `group`, of either kind, and by `kind`.
+
 ## The owner's rulings
 
 All of 2026-11-14. The owner read the four questions, each with a case
@@ -278,3 +324,7 @@ substitutions are (ADR-0053). It allocates nothing. `BenchmarkWhoIsCalling`
 measures it and joins the benchmark gate; its budget is set from its
 first measurement, in the pull request that builds it, and is expected
 under 2 µs.
+
+Measured on the development machine on 2026-11-14, in a database of a
+thousand users with a key each: **0.11 µs and no allocation**. The
+budget stands at 2 µs.

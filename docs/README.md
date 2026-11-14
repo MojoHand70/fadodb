@@ -14,8 +14,8 @@ give.
 
 | Chapter | For | Mark |
 |---|---|---|
-| What FadoDB is | everybody: what it is for, what it is not, how it differs from a database and from a workflow tool | planned; today the top of the [README](../README.md) |
-| How it works | everybody: a class, a document, a commit and the log, followed once from end to end | planned; today [architecture.md](architecture.md) |
+| [What FadoDB is](manual/what-is-fadodb.md) | everybody: what it is for, what it is not, how it differs from a database and from a workflow tool | **written** |
+| [How it works](manual/how-it-works.md) | everybody: a class, a document, a commit and the log, followed once from end to end | **written** |
 | [Your first application](manual/first-application.md) | everybody: an invoice that one person approves and accounting books, from an empty file to a working process | **written** |
 | [Glossary](manual/glossary.md) | everybody: every word, and whether it is FadoDB's or yours | **written** |
 
@@ -37,21 +37,22 @@ each and the [class definition](manual/class.md) the syntax.
 
 ## Guides: how do I
 
-Short pages, one task each, each with a class that runs. Planned; the
-first ones to write:
+Short pages, one task each. Each shows a class, a table of what it
+does, and why; a test defines the class and plays the table against
+the engine on each push.
 
-| Guide | Today |
+| Guide | Mark |
 |---|---|
-| Give each state its own editors | [The class definition, Rights](manual/class.md#rights) |
-| Make a field read-only after approval | [The class definition, Rights](manual/class.md#rights) |
-| Four eyes: the one who filed it may not approve it | [The class definition, Access](manual/class.md#access) |
-| A reminder after seven days, a deadline after thirty | the `Example_timed` example of the `fado` package |
-| Ask several people and go on when all have agreed | [examples/classes](../examples/classes/README.md), the Purchase and Approval samples |
-| Call another system when a document changes | [Actions](actions.md) |
-| Let an assistant, or a substitute, act for a person | the `Example_substitution` example of the `fado` package |
-| Look a value up in a reference table, or in other documents | [ADR-0037](adr/0037-explicit-tables-and-the-compiled-lookup.md), and the Purchase sample under [examples/classes](../examples/classes/README.md) |
-| Move many documents at once | the `Example_many` example of the `fado` package |
-| Change a class that already has documents | [ADR-0039](adr/0039-class-versions-terminal-states-and-migrations.md) |
+| [Give each state its own editors](manual/guides/editors-per-state.md) | **written** |
+| [Make a field read-only after approval](manual/guides/read-only-after-approval.md) | **written** |
+| [Four eyes: the one who filed it may not approve it](manual/guides/four-eyes.md) | **written** |
+| [A reminder every seven days, and a deadline](manual/guides/reminders-and-deadlines.md) | **written** |
+| [Let somebody act for a person](manual/guides/acting-for-somebody.md) | **written** |
+| Ask several people and go on when all have agreed | planned; today [examples/classes](../examples/classes/README.md), the Purchase and Approval samples |
+| Call another system when a document changes | planned; today [Actions](actions.md) |
+| Look a value up in a reference table, or in other documents | planned; today [ADR-0037](adr/0037-explicit-tables-and-the-compiled-lookup.md), and the Purchase sample under [examples/classes](../examples/classes/README.md) |
+| Move many documents at once | planned; today the `Example_many` example of the `fado` package |
+| Change a class that already has documents | planned; today [ADR-0039](adr/0039-class-versions-terminal-states-and-migrations.md) |
 
 ## Reference
 

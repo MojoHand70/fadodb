@@ -12,10 +12,17 @@ All notable changes to FadoDB are recorded here. The format follows
   planned, and the first three written: your first application, an
   invoice with its own editors in each state, from an empty file to a
   working process; the class definition, block by block and word by
-  word; and the glossary. A test runs every example of a chapter
+  word; and the glossary. Two more follow them: what FadoDB is, and
+  how it works, a commit followed step by step from the call to the
+  answer. A test runs every example of a chapter
   against the engine on each push, and another follows every link.
 - `examples/first`, the program of the first application:
   `go run ./examples/first`.
+- Five guides in the manual, one task each, under `docs/manual/guides`:
+  give each state its own editors, make a field read-only after
+  approval, four eyes, a reminder every seven days with a deadline,
+  and let somebody act for a person. A test defines the class of each
+  guide and plays its table of who does what against the engine.
 
 ## [0.5.0] - 2026-11-13
 

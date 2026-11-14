@@ -157,7 +157,12 @@ document and not code.
 ## References, to be written
 
 The class format is written: [`../../docs/manual/class.md`](../../docs/manual/class.md).
-Still to be written: `formulas.md`, `functions.md`, `statechart.md`,
-`diagnostics.md`. Their sources are listed in
+So are the list of every function,
+[`../../docs/manual/functions.md`](../../docs/manual/functions.md), which
+marks the ones this engine does not have yet, and the list of every
+refusal and diagnostic code,
+[`../../docs/manual/refusals.md`](../../docs/manual/refusals.md); both are
+generated from the engine. Still to be written: `formulas.md` and
+`statechart.md`. Their sources are listed in
 [`../reference/README.md`](../reference/README.md), and the plan of the
 whole manual in [`../../docs/README.md`](../../docs/README.md).

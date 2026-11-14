@@ -167,17 +167,37 @@ func (e *EvalError) Error() string {
 	return fmt.Sprintf("%s: %s", e.Code, e.Msg)
 }
 
-// Error codes (ADR-0019, ADR-0020, ADR-0022, ADR-0024).
+// Error codes (ADR-0019, ADR-0020, ADR-0022, ADR-0024). The comment of
+// each is its line in the manual's list of refusals, which is generated
+// from here (internal/docgen).
 const (
-	ErrDivByZero        = "div_by_zero"
-	ErrNotANumber       = "not_a_number"
-	ErrBadText          = "bad_text"
-	ErrOutOfRange       = "out_of_range"
-	ErrLengthMismatch   = "length_mismatch"
-	ErrTooManyElements  = "too_many_elements"
-	ErrQueryFailed      = "query_failed"
-	ErrOverflow         = "overflow"
-	ErrInexact          = "inexact"
+	// ErrDivByZero: a division by zero. IFERROR says what to answer
+	// instead.
+	ErrDivByZero = "div_by_zero"
+	// ErrNotANumber: an operation whose result is not a number, such as
+	// the square root of a negative number.
+	ErrNotANumber = "not_a_number"
+	// ErrBadText: a text that does not read as the number, the date or
+	// the value a function was asked to take from it.
+	ErrBadText = "bad_text"
+	// ErrOutOfRange: a value outside what a function or a type takes: a
+	// position below 1, a date the calendar does not have, a text past
+	// the size limit.
+	ErrOutOfRange = "out_of_range"
+	// ErrLengthMismatch: two lists of different lengths where a function
+	// needs them equal.
+	ErrLengthMismatch = "length_mismatch"
+	// ErrTooManyElements: a list with more elements than the limit
+	// allows.
+	ErrTooManyElements = "too_many_elements"
+	// ErrQueryFailed: a lookup or a query that could not be answered.
+	ErrQueryFailed = "query_failed"
+	// ErrOverflow: an exact number too large for its type.
+	ErrOverflow = "overflow"
+	// ErrInexact: an exact value that cannot be kept at the scale asked
+	// without losing digits.
+	ErrInexact = "inexact"
+	// ErrCurrencyMismatch: money of two currencies in one operation.
 	ErrCurrencyMismatch = "currency_mismatch"
 )
 

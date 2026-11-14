@@ -40,8 +40,11 @@
 // engine moves the document by itself when that time comes, as the
 // person whose commit set the timer; Transitions shows the moment, and
 // Due lists the documents a guard on time would move, for the host
-// program to touch (ADR-0047). Not here yet: QUERY, and the server
-// (Phase 6).
+// program to touch (ADR-0047). Every call that reads or changes the
+// database is also a command, a name and one JSON object answered by one
+// JSON object, which Exec runs (ADR-0055): it is what the server of
+// Phase 6 will carry over the network. Not here yet: QUERY, and that
+// server.
 package fado
 
 import (
@@ -49,6 +52,7 @@ import (
 	"io"
 	"time"
 
+	"github.com/MojoHand70/fadodb/internal/command"
 	"github.com/MojoHand70/fadodb/internal/model"
 	"github.com/MojoHand70/fadodb/internal/store"
 )
@@ -98,9 +102,13 @@ type (
 	// Defined says who defined a version of a class, a schema, a table
 	// or an action, and when (ADR-0052); Definition is one version in the
 	// listing Definitions answers.
-	Defined     = store.Defined
-	Definition  = store.Definition
-	ActionParam = store.ActionParam
+	Defined    = store.Defined
+	Definition = store.Definition
+	// StoredDefinition is one version of a class, a schema, a table or an
+	// action as Definition reads it back: the JSON as it was given, with
+	// its version, who defined it and a class's notes beside it.
+	StoredDefinition = store.StoredDefinition
+	ActionParam      = store.ActionParam
 	// ActionPreview is what an action would be called with, and
 	// ActionOutcome what became of one trial of it.
 	ActionPreview = store.ActionPreview
@@ -283,6 +291,49 @@ func Open(path string, o Options) (*DB, error) {
 // Close closes the database.
 func (db *DB) Close() error { return db.s.Close() }
 
+// The command set (ADR-0055). Command is one row of its table: the name,
+// what the command does, whether it reads, writes or destroys, the call
+// of this package it is, the members of its object and the members of
+// its answer. CommandField and CommandMember are one of each.
+type (
+	Command       = command.Command
+	CommandField  = command.Field
+	CommandMember = command.Member
+)
+
+// Commands lists the command set, in the order of its table. A door, a
+// description for another language and the help of a tool are made from
+// it. The rows are read and not changed.
+func Commands() []*Command { return command.Commands() }
+
+// Exec runs one command of the command set (ADR-0055): the name of a
+// call of this package in lower case with underscores, and one JSON
+// object with what the call takes. It answers one JSON object.
+//
+//	answer, err := db.Exec(ctx, ann, "transition",
+//		[]byte(`{"class": "Invoice", "id": "FV/2026/11/0042", "transition": "approve"}`))
+//	// {"document": {"class": "Invoice", "id": "FV/2026/11/0042", "state": "approved", …}}
+//
+// p is the caller, which the object never names; the object may say for
+// whom the caller acts, under "for", and the engine checks it as it
+// checks Principal.For. A member the command does not know is refused
+// with bad_json and its place, and so is one of the wrong JSON type.
+//
+// A command that was refused answers {"error": {"code": …, "message": …}}
+// and returns the refusal as its error too: the *Error a call of this
+// package would have returned, or Diagnostics for a definition that was
+// refused, whose findings are in the answer under "diagnostics". Any
+// other error is a failure of the engine, and its words are not in the
+// answer. ErrorCode gives the code of each.
+func (db *DB) Exec(ctx context.Context, p Principal, name string, object []byte) ([]byte, error) {
+	return command.Exec(ctx, db.s, p, name, object)
+}
+
+// ErrorCode is the code of an error Exec, or any call of this package,
+// returned: the code of a refusal, "bad_definition" for Diagnostics,
+// "internal" for an error that is no refusal and "" for none.
+func ErrorCode(err error) string { return command.Code(err) }
+
 // DefineClass compiles a class definition in JSON, creates its tables
 // and views and stores it. The error is Diagnostics when the definition
 // is refused.
@@ -319,6 +370,24 @@ func (db *DB) DefineSchema(ctx context.Context, definition []byte, opts ...Optio
 
 // Classes lists the class names in definition order.
 func (db *DB) Classes() []string { return db.s.Classes() }
+
+// Schemas lists the schema names in definition order, the engine's
+// vocabulary first.
+func (db *DB) Schemas() []string { return db.s.SchemaNames() }
+
+// Schema returns a resolved schema by name.
+func (db *DB) Schema(name string) (*Schema, bool) { return db.s.Schema(name) }
+
+// Definition reads one class, schema, table or action back as it was
+// given: the JSON a designer wrote, with the version the database gave
+// it, who defined that version and, for a class, its notes. what is
+// DefinitionClass, DefinitionSchema, DefinitionTable or DefinitionAction,
+// and version 0 the current one; the database keeps every version of a
+// class and of an action. Class, Table, Schema and Action answer the
+// engine's compiled form instead. It is open to every caller.
+func (db *DB) Definition(ctx context.Context, what, name string, version int) (*StoredDefinition, error) {
+	return db.s.Definition(ctx, what, name, version)
+}
 
 // What a definition is, as Definitions takes it.
 const (

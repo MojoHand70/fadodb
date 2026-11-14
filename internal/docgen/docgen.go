@@ -1,7 +1,9 @@
-// Package docgen writes the two chapters of the manual that are lists
+// Package docgen writes the three chapters of the manual that are lists
 // of what the engine has: every function of the formula language, from
-// the catalogue the engine itself reads, and every code of a refusal,
-// from the constants the engine answers with and their comments. They
+// the catalogue the engine itself reads; every code of a refusal, from
+// the constants the engine answers with and their comments; and every
+// command, from the table the engine turns a command into a call with.
+// They
 // are generated so that they cannot fall behind the engine: a test
 // compares the files with what this package writes, and
 //
@@ -20,6 +22,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/MojoHand70/fadodb/internal/command"
 	"github.com/MojoHand70/fadodb/internal/formula"
 )
 
@@ -109,6 +112,8 @@ var sources = []source{
 		"What a call is answered with when the engine does not carry it out: a create, a set, a transition, a read. Nothing is written when a command is refused."},
 	{"model/diagnostic.go", "Code", "Findings in a definition",
 		"What the engine reports when it checks a class, a table, a schema or an action before defining it. Every finding of a definition is reported at once, each with its place in the definition."},
+	{"command/object.go", "Code", "Refusals of a command",
+		"What a command is answered with before the engine is asked anything, because the command itself cannot be read. A command is a call sent as a name and one JSON object; [the commands](commands.md) lists them."},
 	{"formula/vm.go", "Err", "Errors of a formula",
 		"What a formula stops with when it cannot give a value. Inside a commit the refusal carries this code and names the variable whose formula failed."},
 }
@@ -200,4 +205,108 @@ func code(names []string) []string {
 		out[i] = "`" + n + "`"
 	}
 	return out
+}
+
+// Commands is the chapter that lists every command.
+func Commands() string {
+	var b strings.Builder
+	b.WriteString(generated)
+	b.WriteString("# The commands\n\n")
+	b.WriteString("Every call that reads or changes a database is also a command: a name\nand one JSON object, answered by one JSON object. A command is how a\ncaller that is not a Go program reaches a document. The list is written\nfrom the engine's own table, so it has every command and no other.\n\n")
+	b.WriteString("Today a command is run by the Go call `Exec`. The server that takes the\nsame commands over the network is in progress (Phase 6) and is not\nbuilt: nothing listens yet.\n\n")
+
+	b.WriteString("## A command and its answer\n\n")
+	b.WriteString("Ann's agent approves an invoice. The command is `transition`, and its\nobject says which document, which transition and what to write with it:\n\n")
+	b.WriteString("```json\n{\"class\": \"Invoice\", \"id\": \"FV/2026/11/0042\", \"transition\": \"approve\",\n \"values\": {\"note\": \"matches order PO-118\"},\n \"key\": \"approve-FV/2026/11/0042\"}\n```\n\n")
+	b.WriteString("The answer holds the document after the command, under `document`:\n\n")
+	b.WriteString("```json\n{\"document\": {\"class\": \"Invoice\", \"id\": \"FV/2026/11/0042\", \"title\": \"FV/2026/11/0042\",\n              \"state\": \"approved\", \"version\": 2, \"class_version\": 1,\n              \"created_at\": 1794562200, \"updated_at\": 1794562200, \"state_entered_at\": 1794562200,\n              \"created_by\": \"bob\", \"updated_by\": \"ap-agent\",\n              \"state_entered_by\": \"ap-agent\", \"state_entered_from\": \"review\",\n              \"values\": {\"customer\": \"Customer:42\", \"note\": \"matches order PO-118\"}}}\n```\n\n")
+	b.WriteString("When the engine does not carry the command out, the answer holds the\nrefusal under `error`, with its code, its message and, where there is\none, a hint and the place. Bob, who is not in finance, sends the same\ncommand:\n\n")
+	b.WriteString("```json\n{\"error\": {\"code\": \"forbidden\",\n           \"message\": \"bob may not take approve from review\",\n           \"hint\": \"the rule of approve: INGROUP(\\\"finance\\\")\",\n           \"path\": \"/access/transition/approve\"}}\n```\n\n")
+	b.WriteString("[The refusals](refusals.md) lists every code. A definition that is\nrefused answers `bad_definition`, with every finding beside the error\nunder `diagnostics`.\n\n")
+
+	b.WriteString("## What holds for every command\n\n")
+	b.WriteString("- **Who calls is never in the command.** The caller comes with the door\n  the command is sent through: in a Go program, the principal given to\n  `Exec`. The one thing a command says about its caller is `for`, whom\n  the caller acts for, and the engine lets that through only while a\n  substitution says so.\n")
+	b.WriteString("- **A member the command does not take is refused**, with `bad_json`\n  and the place of the member. So is a member given twice, a member of\n  the wrong JSON type, and a command that lacks a member it needs. A\n  member given as `null` is read as left out.\n")
+	b.WriteString("- **An answer names what it holds**: a document under `document`, a\n  list under its plural, a count under its name. A list that is empty is\n  `[]`.\n")
+	b.WriteString("- **A definition is read back as it was given.** `get_class`,\n  `get_schema`, `get_table` and `get_action` answer the JSON a designer\n  wrote under `definition`, with its `name`, its `version` and who\n  `defined` it beside it, so that the definition can be changed and sent\n  again as it is.\n\n")
+
+	b.WriteString("## The members that mean the same everywhere\n\nA command takes the ones its list below shows, and no other.\n\n| Member | Type | What it is |\n|---|---|---|\n")
+	shown := map[string]bool{}
+	for _, c := range command.Commands() {
+		for _, f := range c.Fields {
+			if f.Option && !f.Refused && !shown[f.Name] {
+				shown[f.Name] = true
+				fmt.Fprintf(&b, "| `%s` | %s | %s |\n", f.Name, f.Kind, cell(f.Does))
+			}
+		}
+	}
+	b.WriteString("\n")
+
+	marks := map[command.Mark]string{command.Reads: "reads", command.Writes: "writes", command.Destroys: "destroys"}
+	for _, group := range []string{command.Documents, command.Definitions, command.Operations} {
+		fmt.Fprintf(&b, "## %s\n\n| Command | What it does | |\n|---|---|---|\n", group)
+		for _, c := range command.Commands() {
+			if c.Group == group {
+				fmt.Fprintf(&b, "| [`%s`](#%s) | %s | %s |\n", c.Name, c.Name, cell(c.Does), marks[c.Mark])
+			}
+		}
+		b.WriteString("\n")
+		for _, c := range command.Commands() {
+			if c.Group != group {
+				continue
+			}
+			fmt.Fprintf(&b, "### %s\n\n%s It %s; in Go it is the call `%s`.\n\n", c.Name, c.Does, marks[c.Mark], c.Call)
+			var options []string
+			rows := 0
+			for _, f := range c.Fields {
+				if f.Refused {
+					continue
+				}
+				if f.Option {
+					options = append(options, f.Name)
+					continue
+				}
+				if rows == 0 {
+					b.WriteString("| Member | Type | | What it is |\n|---|---|---|---|\n")
+				}
+				rows++
+				needed := ""
+				if f.Required {
+					needed = "needed"
+				}
+				fmt.Fprintf(&b, "| `%s` | %s | %s | %s |\n", f.Name, f.Kind, needed, cell(f.Does))
+			}
+			if rows > 0 {
+				b.WriteString("\n")
+			}
+			switch {
+			case rows == 0 && len(options) == 0:
+				b.WriteString("It takes nothing: its object is `{}`.\n\n")
+			case rows == 0:
+				fmt.Fprintf(&b, "It takes nothing of its own; of the members that mean the same everywhere, %s.\n\n", strings.Join(code(options), ", "))
+			case len(options) > 0:
+				fmt.Fprintf(&b, "And, of the members that mean the same everywhere: %s.\n\n", strings.Join(code(options), ", "))
+			}
+			if len(c.Answer) == 0 {
+				b.WriteString("It answers `{}`.\n\n")
+				continue
+			}
+			b.WriteString("It answers:\n\n| Member | What it holds |\n|---|---|\n")
+			for _, m := range c.Answer {
+				fmt.Fprintf(&b, "| `%s` | %s |\n", m.Name, cell(m.Does))
+			}
+			b.WriteString("\n")
+		}
+	}
+
+	b.WriteString("## What is not a command\n\nA few calls of the Go package have no command.\n\n| Call | Why |\n|---|---|\n")
+	names := make([]string, 0, len(command.NotCommands))
+	for name := range command.NotCommands {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	for _, name := range names {
+		fmt.Fprintf(&b, "| `%s` | %s |\n", name, cell(command.NotCommands[name]))
+	}
+	return strings.TrimRight(b.String(), "\n") + "\n"
 }

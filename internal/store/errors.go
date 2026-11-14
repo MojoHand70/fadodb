@@ -54,6 +54,8 @@ const (
 	CodeUnknownDocument = "unknown_document"
 	// CodeUnknownTable: no explicit table of that name.
 	CodeUnknownTable = "unknown_table"
+	// CodeUnknownSchema: no schema of that name.
+	CodeUnknownSchema = "unknown_schema"
 	// CodeUnknownVariable: a value names a variable or a field the class
 	// does not have.
 	CodeUnknownVariable = "unknown_variable"

@@ -38,9 +38,10 @@ func TestManualExamples(t *testing.T) {
 				tables = append(tables, string(m[1]))
 			case "action":
 				actions = append(actions, string(m[1]))
-			case "document":
-				// A document as the engine answers it. The test of its
-				// chapter compares it with the engine's answer.
+			case "document", "answer":
+				// A document as the engine answers it, or the answer of a
+				// command. The test of its chapter compares it with the
+				// engine's answer.
 			default:
 				pieces = append(pieces, string(m[1]))
 			}
@@ -148,7 +149,7 @@ func manualPages(t *testing.T) []string {
 
 // kindOf says what a block of JSON in the manual is: a whole class, a
 // whole table, a whole action definition, a document as the engine
-// answers it, or a piece of one of them.
+// answers it, the answer of a command, or a piece of one of them.
 func kindOf(block []byte) string {
 	var whole struct {
 		Name      string          `json:"name"`
@@ -158,9 +159,14 @@ func kindOf(block []byte) string {
 		Request   json.RawMessage `json:"request"`
 		Class     string          `json:"class"`
 		Values    json.RawMessage `json:"values"`
+		Document  json.RawMessage `json:"document"`
+		Error     json.RawMessage `json:"error"`
 	}
 	if json.Unmarshal(block, &whole) != nil {
 		return "piece"
+	}
+	if whole.Document != nil || whole.Error != nil {
+		return "answer"
 	}
 	if whole.Class != "" && whole.Values != nil {
 		return "document"

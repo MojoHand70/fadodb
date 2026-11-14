@@ -563,6 +563,40 @@ func BenchmarkTransition(b *testing.B) {
 	}
 }
 
+// BenchmarkExecTransition is BenchmarkTransition sent as a command
+// (ADR-0055): the same loop, with each move a name and a JSON object
+// that is read, and its answer a document written as JSON. The
+// difference between the two is what the command set adds to a call.
+func BenchmarkExecTransition(b *testing.B) {
+	if execCommand == nil {
+		b.Skip("built without the command set")
+	}
+	s, err := Open(filepath.Join(b.TempDir(), "bench.fado"), Options{})
+	if err != nil {
+		b.Fatal(err)
+	}
+	defer s.Close()
+	ctx := context.Background()
+	if _, err := s.defineOpen(ctx, []byte(benchFlow), asSetup); err != nil {
+		b.Fatal(err)
+	}
+	doc, err := s.Create(ctx, "Flow", Values{"amount": 500, "qty": 5, "note": "n"})
+	if err != nil {
+		b.Fatal(err)
+	}
+	objects := [2][]byte{
+		[]byte(`{"class": "Flow", "id": "` + doc.ID + `", "transition": "submit"}`),
+		[]byte(`{"class": "Flow", "id": "` + doc.ID + `", "transition": "back"}`),
+	}
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; b.Loop(); i++ {
+		if _, err := execCommand(ctx, s, alice, "transition", objects[i%2]); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
 // benchOwned runs BenchmarkTransition's loop on its class with an owner
 // variable added, and with the access block given.
 func benchOwned(b *testing.B, access string) { benchOwnedAs(b, access, alice) }

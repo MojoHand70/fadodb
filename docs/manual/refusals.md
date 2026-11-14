@@ -27,6 +27,7 @@ What a call is answered with when the engine does not carry it out: a create, a 
 | `unknown_class` | No class of that name. |
 | `unknown_document` | No current document with that id, no such version in its history, or a document the caller may not see, who is answered in the same words (ADR-0049). |
 | `unknown_table` | No explicit table of that name. |
+| `unknown_schema` | No schema of that name. |
 | `unknown_variable` | A value names a variable or a field the class does not have. |
 | `read_only` | A value is given for a computed variable. |
 | `required` | A required input is blank. |
@@ -103,6 +104,17 @@ What the engine reports when it checks a class, a table, a schema or an action b
 | `rule_left_out` | A note and no refusal. The class leaves an access rule out; it is accepted, and nobody but a content administrator passes that rule (ADR-0052, item 5). |
 | `too_many_columns` | A generated table would exceed MaxColumns. |
 | `not_supported` | A construct the format allows that the engine does not implement yet. |
+
+## Refusals of a command
+
+What a command is answered with before the engine is asked anything, because the command itself cannot be read. A command is a call sent as a name and one JSON object; [the commands](commands.md) lists them.
+
+| Code | Meaning |
+|---|---|
+| `bad_json` | The object of a command is not JSON or is not an object; or it has a member the command does not take, a member given twice or a member of the wrong JSON type; or it lacks a member the command needs. The path names the member. |
+| `unknown_command` | No command has that name. |
+| `bad_definition` | A definition was refused. Every finding is beside the error, under diagnostics, each with its own code and its place in the definition. |
+| `internal` | The engine failed in a way that is no refusal. The words of the failure stay with the program that runs the engine and are not in the answer. |
 
 ## Errors of a formula
 

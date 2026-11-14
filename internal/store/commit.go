@@ -7,8 +7,10 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/MojoHand70/fadodb/internal/formula"
 	"github.com/MojoHand70/fadodb/internal/model"
@@ -505,6 +507,9 @@ func (s *Store) run(ctx context.Context, cmd command, now time.Time) (*result, e
 		id := cmd.id
 		if id == "" {
 			id = s.ids.next(now)
+		} else if at := controlIn(id); at >= 0 {
+			return nil, hintf(CodeBadValue, "", "the id "+strconv.Quote(id)+" holds a control character, at byte "+strconv.Itoa(at),
+				"an id is any text without a line break, a tab or another control character; slashes, spaces and the letters of any alphabet are fine")
 		} else if cmd.stored == nil && c.w.selectCurrent != nil {
 			var n int64
 			if err := s.writer.QueryRowContext(ctx, "SELECT count(*) FROM "+quote(c.history)+` WHERE "id" = ?`, id).Scan(&n); err != nil {
@@ -1362,4 +1367,17 @@ func commandHash(cmd command) string {
 		fmt.Fprintf(h, "%v", cmd.values)
 	}
 	return hex.EncodeToString(h.Sum(nil))
+}
+
+// controlIn is the byte offset of the first control character in an id,
+// -1 when it holds none (ADR-0055, ruling 3): a line break, a tab, a
+// zero byte and the like cannot be typed, break a line of a log and look
+// like another id on a screen.
+func controlIn(id string) int {
+	for i, r := range id {
+		if unicode.IsControl(r) {
+			return i
+		}
+	}
+	return -1
 }

@@ -7,8 +7,9 @@ import (
 	"testing"
 )
 
-// TestGenerated keeps the two generated chapters of the manual equal to
-// what the engine has. It fails when a function or a code was added,
+// TestGenerated keeps the three generated chapters of the manual equal
+// to what the engine has. It fails when a function, a code or a command
+// was added,
 // changed or removed and the chapters were not written again; run
 //
 //	make docs
@@ -20,7 +21,7 @@ func TestGenerated(t *testing.T) {
 		t.Fatal(err)
 	}
 	manual := filepath.Join("..", "..", "docs", "manual")
-	for name, want := range map[string]string{"functions.md": Functions(), "refusals.md": refusals} {
+	for name, want := range map[string]string{"functions.md": Functions(), "refusals.md": refusals, "commands.md": Commands()} {
 		path := filepath.Join(manual, name)
 		if os.Getenv("FADODB_UPDATE_DOCS") != "" {
 			if err := os.WriteFile(path, []byte(want), 0o644); err != nil {
@@ -46,7 +47,7 @@ func TestCodesHaveMeanings(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if len(codes) < 5 {
+		if len(codes) < 4 {
 			t.Errorf("%s: %d codes found", src.file, len(codes))
 		}
 		for _, c := range codes {

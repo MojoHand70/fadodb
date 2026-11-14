@@ -1,9 +1,10 @@
 # Who may
 
-FadoDB keeps no users. The program that embeds it says, on every
-call, who is calling. The class says what that caller may do, and the
-engine asks the class each time, for a person, an agent and a service
-alike. This chapter says what a caller is, which questions a class
+On every call the engine is told who is calling. The program that
+embeds it says so, from its own users, or from the users, groups and
+keys it lets the database keep. Either way the class says what that
+caller may do, and the engine asks the class each time, for a person,
+an agent and a service alike. This chapter says what a caller is, which questions a class
 answers, how to give each state its own editors, and what the people
 who run a database may do that a class does not give.
 
@@ -284,10 +285,12 @@ to add.
 | acts past a rule and gives no reason | `reason_required` | the lines they would get past |
 | has an ordinary group with the name of a system group | `bad_value` | the group |
 
-## Not here yet
+## Users the database keeps
 
-The engine's own users, groups and keys come with the server of
-Phase 6. Until then the host program is the only one who knows who a
-caller is.
+A database can keep its own users, groups and keys, and say itself
+who a key belongs to. The class is asked the same questions of a
+caller either way. See [Naming the caller](../naming-the-caller.md),
+and the commands that keep
+[users, groups and keys](../commands.md#users-groups-and-keys).
 
 Next: [History and the log](history-and-the-log.md).

@@ -91,9 +91,10 @@ class; the evidence is the log.
   process to keep in step: the state is in the document.
 - **Not an application with screens.** Today it is the engine. Screens
   are built on it, by you or, later, from layouts the engine serves.
-- **Not a user directory.** FadoDB keeps no users and no passwords.
-  The program that embeds it says on every call who the caller is and
-  which groups they are in.
+- **Not a user directory.** FadoDB checks no passwords. The program
+  that embeds it says on every call who the caller is and which groups
+  they are in. A database can also keep its own users, groups and
+  keys, for callers that reach it with a key.
 
 ## Where it stands
 

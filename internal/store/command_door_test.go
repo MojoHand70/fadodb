@@ -43,6 +43,18 @@ func (d database) Exec(ctx context.Context, p store.Principal, name string, obje
 	return command.Exec(ctx, d.s, p, name, object)
 }
 
+func (d database) PutBlob(ctx context.Context, name, mediaType string, r io.Reader, opts ...store.Option) (store.Values, error) {
+	return d.s.PutBlob(ctx, name, mediaType, r, opts...)
+}
+
+func (d database) OpenFile(ctx context.Context, class, id, hash string, opts ...store.Option) (io.ReadCloser, *store.FileInfo, error) {
+	return d.s.OpenFile(ctx, class, id, hash, opts...)
+}
+
+func (d database) OpenBlob(ctx context.Context, hash string, opts ...store.Option) (io.ReadCloser, int64, error) {
+	return d.s.OpenBlob(ctx, hash, opts...)
+}
+
 // sentAs is the header in which a step of a suite says who sends it.
 // The door is given a function that believes it, which no door outside
 // a test is.

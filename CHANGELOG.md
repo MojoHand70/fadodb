@@ -83,6 +83,14 @@ All notable changes to FadoDB are recorded here. The format follows
   database or to the program, closing, and what is refused. A test
   runs the program and plays every table of the chapter; the table of
   options is held to the options the package has.
+- The chapter on naming the caller, for the developer who embeds the
+  engine: a whole small program, `examples/caller`, with four callers
+  on one invoice; every part of a caller, what the engine uses it for
+  and what it checks; a call with no caller; why the program is the
+  only door; the system groups, the business day and the options of a
+  call. A test runs the program and plays every table; the tables of
+  the caller's parts and of the options are held to what the package
+  has.
 - The designer's skill teaches the syntax: what to read in the manual,
   a small class that is complete, and the ten things that go wrong
   most often. It is no longer a stub. The classes the skills show are

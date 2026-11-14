@@ -132,8 +132,7 @@ ola reads "buy milk", version 1
   and takes the transitions whose time has come. What was queued while
   no program ran is still in the file, and runs now.
 - **It names no caller.** A database is opened by a program, and each
-  call says who is calling. The chapter on naming the caller is
-  planned; the idea is in [Who may](notions/who-may.md).
+  call says who is calling; see [Naming the caller](naming-the-caller.md).
 
 ## What is on disk
 

@@ -79,7 +79,7 @@ For the developer whose program holds the engine.
 | Chapter | What it covers | Mark |
 |---|---|---|
 | [Opening a database](manual/opening-a-database.md) | a whole small program; what opening does; what is on disk; every option, and whether it belongs to the database or to the program; closing; what is refused | **written**; a test runs the program and plays every table of the chapter |
-| Naming the caller | the principal on every call; groups; the system groups; a host that keeps its own substitutions | planned; the idea is in [Who may](manual/notions/who-may.md) |
+| [Naming the caller](manual/naming-the-caller.md) | a whole small program with four callers; every part of a caller, what the engine uses it for and what it checks; a call with no caller; why the program is the only door; the system groups; the business day; the options of a call | **written**; a test runs the program and plays every table of the chapter |
 | The outbox and the worker | what runs after a commit, retries, and what to do with an action that died | planned; the idea is in [Rules and actions](manual/notions/rules-and-actions.md) |
 | Running it | backup, the size of the file, what is fast and what is slow, in [docs/perf](perf/README.md) | planned |
 | Versions | what a release may change before 1.0, and what the [changelog](../CHANGELOG.md) promises | planned |

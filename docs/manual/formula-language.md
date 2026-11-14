@@ -362,6 +362,21 @@ reads one field with a dot.
 The functions that work on lists are in the language and are marked
 in [The functions](functions.md) where they are not built yet.
 
+## Tables and other documents
+
+A formula reads reference data with `LOOKUP`: one column of the first
+row of a table that matches a condition, or the count, the sum, the
+smallest or the largest over every row that matches.
+
+```
+LOOKUP(Rates, rate, currency = THIS.currency AND day = THIS.spent_on)
+```
+
+Inside the condition a bare name is a column of the table, and `THIS.`
+reaches the document. What a lookup gives when no row matches, when it
+is worked out again and where it may stand are in
+[Tables](tables.md#a-formula-that-reads-a-table).
+
 ## When a formula fails
 
 Some formulas cannot be worked out for some values.

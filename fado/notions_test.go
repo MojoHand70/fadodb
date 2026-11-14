@@ -119,22 +119,30 @@ func codesIn(table string) []string {
 // row has, so the words and the code of a row cannot drift apart.
 func held(t *testing.T, db *fado.DB, page []byte, cases map[string][]string) {
 	t.Helper()
+	heldBy(t, page, "checked when the class is defined", cases, func(definition string) string { return finding(db, definition) })
+}
+
+// heldBy plays a table of a chapter whose rows each give a code, under
+// the marker given: find says what the engine answers to a definition.
+// Every row needs a definition in the test and every definition a row.
+func heldBy(t *testing.T, page []byte, marker string, cases map[string][]string, find func(definition string) string) {
+	t.Helper()
 	listed := map[string]bool{}
-	for _, row := range rows(marked(t, page, "checked when the class is defined")) {
+	for _, row := range rows(marked(t, page, marker)) {
 		what, code := row[0], row[len(row)-1]
 		listed[what] = true
 		if len(cases[what]) == 0 {
-			t.Errorf("the chapter says a class that %q is refused with %s, and the test has no such class", what, code)
+			t.Errorf("%s: the chapter says that %q is refused with %s, and the test has no such case", marker, what, code)
 		}
 		for _, definition := range cases[what] {
-			if got := finding(db, definition); got != code {
-				t.Errorf("a class that %s: the engine finds %s, and the chapter says %s", what, got, code)
+			if got := find(definition); got != code {
+				t.Errorf("%s, %s: the engine finds %s, and the chapter says %s", marker, what, got, code)
 			}
 		}
 	}
 	for what := range cases {
 		if !listed[what] {
-			t.Errorf("the test has a class that %q, and the chapter has no such row", what)
+			t.Errorf("%s: the test has a case that %q, and the chapter has no such row", marker, what)
 		}
 	}
 }

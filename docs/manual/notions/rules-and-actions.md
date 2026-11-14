@@ -233,6 +233,8 @@ sixteen deep and then stops it, with a record of where.
 Actions that call another system, yours or over HTTP, are in the guide
 [Do something outside when a document
 changes](../guides/act-outside.md) and in [Actions](../../actions.md).
+The three actions that write a row of a table are in
+[Tables](../tables.md#a-rule-that-writes-a-table).
 
 ## Looking before
 

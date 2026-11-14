@@ -163,6 +163,10 @@ A value with no place in the table is governed by `access` alone.
 asked is a transition with a line of its own, in
 [States and transitions](states-and-transitions.md).
 
+A table of reference data has two lines of its own, `read` and
+`write`, each about the table as a whole; see
+[Tables](../tables.md#who-may).
+
 ## What a caller who may not see gets
 
 Piotr is told that there is no such document, in the same words as

@@ -55,6 +55,13 @@ All notable changes to FadoDB are recorded here. The format follows
   120 examples to the chapter's class as a computed variable and
   compares the engine's answer and the type of the result with the
   chapter.
+- The reference chapter on tables: the definition and the types of a
+  column, rows and imports, a formula that reads a table, the three
+  actions of a rule that write a row, who may, changing a table, what
+  is checked and what is refused. It shows a table of exchange rates,
+  a class that reads it and a class that feeds it; a test plays the
+  story of 21 steps and holds every table of the chapter to the
+  engine's answers.
 - The designer's skill teaches the syntax: what to read in the manual,
   a small class that is complete, and the ten things that go wrong
   most often. It is no longer a stub. The classes the skills show are

@@ -209,14 +209,21 @@ with the server in Phase 6.
 One record is proposed ahead of the layouts, at the owner's
 request of 2026-11-13: ADR-0054, two properties of a layout component,
 `mobile` and `desktop`, that say on which screen it shows.
-Phase 6 opened on 2026-11-13 with its design proposed as five records:
+Phase 6 opened on 2026-11-13. Its design is five records, which the
+owner accepted on 2026-11-14 with his rulings on their 16 questions:
 ADR-0055, every command of the Go API as one JSON object, sent to one
 address for each command; ADR-0056, one database for each customer,
-and a server that serves one database; ADR-0057, users, groups and
-keys kept in the database; ADR-0058, the stream of changes as the log
-read forward, over a plain HTTP reply in place of the WebSocket first
-planned; and ADR-0059, what `fadodb serve` is told when it starts. By
-the owner's rulings of 2026-11-14 a command has one address and its id
+and a server that serves one database, which the address alone names;
+ADR-0057, users, groups and keys kept in the database, where an
+administrator keeps every user's groups and alone makes a key;
+ADR-0058, the stream of changes as the log read forward, over a plain
+HTTP reply in place of the WebSocket first planned, each entry an
+event and nothing said of a document that leaves a subscriber's sight;
+and ADR-0059, `fadodb serve`, which serves a database that
+`fadodb init` made, runs no action written as a Go function and takes
+its settings from the operator. By
+his rulings on the scope of the phase and on ADR-0055, a command has
+one address and its id
 travels in its JSON, a field a command does not know is refused, and an
 id holds no control character; the door for agents, an MCP server, is
 built in this phase and not in Phase 11; the engine knows keys only,

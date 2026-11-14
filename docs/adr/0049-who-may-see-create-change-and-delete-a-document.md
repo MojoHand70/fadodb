@@ -1,6 +1,6 @@
 # ADR-0049: Who may see, create, change and delete a document
 
-- Status: Accepted; amends ADR-0010 (the paths the read rule covers, what a transition without a rule asks, the change stream waits for the server), ADR-0027 (the optional package of users and keys waits for the server), ADR-0041 (the class-level rules are enforced), ADR-0038 (the read rule joins the filter, and the SQL endpoint is not for every caller), ADR-0033 (`OpenFile` asks the read rule and the right), ADR-0044 (what a refresh asks), ADR-0026 (the reply to a repeated key), ADR-0025 (the preview of a delete); amended by ADR-0052 (a content administrator passes the rules where an administrator did, with a reason the event keeps; a rule left out; who opens a blob by its hash)
+- Status: Accepted; amends ADR-0010 (the paths the read rule covers, what a transition without a rule asks, the change stream waits for the server), ADR-0027 (the optional package of users and keys waits for the server), ADR-0041 (the class-level rules are enforced), ADR-0038 (the read rule joins the filter, and the SQL endpoint is not for every caller), ADR-0033 (`OpenFile` asks the read rule and the right), ADR-0044 (what a refresh asks), ADR-0026 (the reply to a repeated key), ADR-0025 (the preview of a delete); amended by ADR-0052 (a content administrator passes the rules where an administrator did, with a reason the event keeps; a rule left out; who opens a blob by its hash), ADR-0058 (how the read rule is asked for an event of the stream of changes)
 - Date: 2026-11-13
 
 ## Context

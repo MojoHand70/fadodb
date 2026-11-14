@@ -67,7 +67,7 @@ All notable changes to FadoDB are recorded here. The format follows
   most often. It is no longer a stub. The classes the skills show are
   defined by the engine in the manual's test.
 
-- The command set (ADR-0055, proposed): every call of the Go API that
+- The command set (ADR-0055): every call of the Go API that
   reads or changes a database is also a command, a name and one JSON
   object answered by one JSON object. `DB.Exec` runs one, for a caller
   that is not a Go program; `Commands` lists the 47 of them with their

@@ -1,6 +1,6 @@
 # ADR-0058: The stream of changes: the log read forward, over plain HTTP
 
-- Status: Proposed; the owner ruled on its three questions on 2026-11-14, and the rulings are at the end; amends ADR-0011 (the stream is carried by an HTTP reply that stays open, and the WebSocket is not built), ADR-0010 and ADR-0049 (how the read rule is asked for an event), ADR-0018 (an entry of the stream is an event and not a document), ADR-0055 (one command joins the table)
+- Status: Accepted; amends ADR-0011 (the stream is carried by an HTTP reply that stays open, and the WebSocket is not built), ADR-0010 and ADR-0049 (how the read rule is asked for an event), ADR-0018 (an entry of the stream is an event and not a document), ADR-0055 (one command joins the table)
 - Date: 2026-11-14
 
 ## Context

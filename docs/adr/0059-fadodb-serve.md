@@ -1,6 +1,6 @@
 # ADR-0059: `fadodb serve`: one database, what it is told when it starts, and what it refuses
 
-- Status: Proposed; the owner ruled on its three questions on 2026-11-14, and the rulings are at the end; amends ADR-0011 (what the server is and what it is told), ADR-0027 and ADR-0045 (an action implemented by a Go function does not run under `fadodb serve`), ADR-0052 (which settings are an administrator's)
+- Status: Accepted; amends ADR-0011 (what the server is and what it is told), ADR-0027 and ADR-0045 (an action implemented by a Go function does not run under `fadodb serve`), ADR-0052 (which settings are an administrator's), ADR-0055 (two codes, `timeout` and `busy`, join the codes of the door)
 - Date: 2026-11-14
 
 ## Context

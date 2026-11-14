@@ -1,6 +1,6 @@
 # ADR-0056: One database for each customer, and a server that serves one database
 
-- Status: Proposed; the owner ruled on its three questions on 2026-11-14, and the rulings are at the end; amends ADR-0011 (a server serves one database, and the address says which), ADR-0027 (the users and keys of the optional package are kept in the database they belong to)
+- Status: Accepted; amends ADR-0011 (a server serves one database, and the address says which), ADR-0027 (the users and keys of the optional package are kept in the database they belong to)
 - Date: 2026-11-14
 
 ## Context

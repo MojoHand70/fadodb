@@ -501,6 +501,23 @@ What a lookup costs follows from its condition.
   [Performance](../perf/v0.2.0.md): one lookup inside a recalculation,
   over a table of 1,000 rows.
 
+## The commands
+
+Everything a caller does with a table is a command, for a program or
+an agent that speaks to the engine in JSON.
+
+<!-- the commands -->
+| To | Command |
+|---|---|
+| define a table | `define_table` |
+| read its definition back | `get_table` |
+| list the tables | `list_tables` |
+| write rows | `import_rows` |
+| read the rows | `table_rows` |
+
+What each takes and what it answers is in
+[The commands](commands.md#definitions).
+
 ## What is checked when the table is defined
 
 <!-- checked when the table is defined -->

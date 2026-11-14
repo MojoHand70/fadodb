@@ -12,7 +12,7 @@ Website: [fadodb.org](https://fadodb.org). The manual starts at
 [your first application](docs/manual/first-application.md).
 
 > **Status: Phase 5, security, is done and released as v0.5.0;
-> Phase 6, the server, is next.** The Go API stores
+> Phase 6, the server, is in progress.** The Go API stores
 > documents of typed classes as commits with recalculation, history and
 > an event log,
 > with attachments, lookups into reference tables, filters and read-only
@@ -49,7 +49,7 @@ Website: [fadodb.org](https://fadodb.org). The manual starts at
 > lets nobody through, so a class says who may. A content administrator
 > who acts past a rule gives a reason, and the event keeps it. A caller
 > may act for somebody only while a substitution says so, a document
-> the person gives and withdraws. The server comes with its phase. The numbers are in
+> the person gives and withdraws. The server is being designed: five records, ADR-0055 to ADR-0059, are proposed and none of it is built. The numbers are in
 > [docs/perf/](docs/perf/), the plan in [ROADMAP.md](ROADMAP.md).
 
 ## What it is

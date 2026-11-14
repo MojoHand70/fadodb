@@ -31,10 +31,10 @@ obstacle. The guards hold whoever is asking, the agent included.
 | `Due`, the documents of a class that a commit would move now, or at a moment with `At`; `since` says since when, for a document a timed transition would move | shipped with Phase 4 |
 | a timed transition, `after` or `at`: it fires in the first commit that touches the document once its time has come, and `Transitions` shows the moment as `fires_at` | shipped with Phase 4 |
 | the engine moving a document by itself when its timer comes: `Outbox` and `<Class>_actions` list each timer waiting as the action `timer` with its moment in `due_at`; one that died says why, and `RetryAction` asks again | shipped with Phase 4 |
-| the JSON command set over HTTP and WebSocket | designed, Phase 6 |
-| the MCP server | designed, Phase 11 |
+| the JSON command set over HTTP, each command one JSON object sent to its own address (ADR-0055) | in progress, Phase 6: the records are proposed and nothing is built |
+| the MCP server | in progress, Phase 6, by the owner's ruling of 2026-11-14: nothing is built |
 
-Until Phase 6 an agent reaches documents through a Go program that
+Until the server of Phase 6 ships, an agent reaches documents through a Go program that
 embeds the engine, or through the embedder's own interface.
 
 ## Procedure, in outline

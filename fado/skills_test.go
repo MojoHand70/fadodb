@@ -1,6 +1,7 @@
 package fado_test
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"os"
@@ -25,6 +26,8 @@ func TestOperatorSkill(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// The page is read with the line endings of every platform made one.
+	page = bytes.ReplaceAll(page, []byte("\r\n"), []byte("\n"))
 	ctx := context.Background()
 	clock := time.Date(2026, 11, 16, 9, 0, 0, 0, time.UTC)
 	db := notionDB(t, fado.Options{Now: func() time.Time { return clock }})

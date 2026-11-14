@@ -48,8 +48,9 @@ func (e *Error) Error() string {
 const (
 	// CodeUnknownClass: no class of that name.
 	CodeUnknownClass = "unknown_class"
-	// CodeUnknownDocument: no current document with that id, or no such
-	// version in its history.
+	// CodeUnknownDocument: no current document with that id, no such
+	// version in its history, or a document the caller may not see, who
+	// is answered in the same words (ADR-0049).
 	CodeUnknownDocument = "unknown_document"
 	// CodeUnknownTable: no explicit table of that name.
 	CodeUnknownTable = "unknown_table"
@@ -120,13 +121,16 @@ const (
 	// themselves after one command, eventless or timed (ADR-0008,
 	// ADR-0047).
 	CodeTooManyTransitions = "too_many_transitions"
-	// CodeForbidden: the principal may not set the variable in the
-	// document's state, may not take the transition, or may read the
-	// variable a filter names in no state at all (ADR-0041).
+	// CodeForbidden: the caller may not do this. A rule of the class
+	// refused it (ADR-0049), or the right of a variable in the document's
+	// state (ADR-0041), or the work is for a system group the caller is
+	// not in (ADR-0052), or the caller acts for somebody and no
+	// substitution says it may (ADR-0053). The path, or the variable,
+	// names which.
 	CodeForbidden = "forbidden"
-	// CodeReasonRequired refuses a command of a content administrator
-	// that gets past a rule and gives no reason (ADR-0052, item 4). The
-	// path is the place of the rule.
+	// CodeReasonRequired: a content administrator's command gets past a
+	// rule and gives no reason (ADR-0052, item 4). The path is the place
+	// of the rule.
 	CodeReasonRequired = "reason_required"
 	// CodeTooDeep: an action was queued by a chain of actions deeper than
 	// MaxActionDepth (ADR-0044); its row is written dead.

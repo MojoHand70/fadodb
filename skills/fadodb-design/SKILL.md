@@ -3,19 +3,95 @@ name: fadodb-design
 description: Draft, validate and refine a FadoDB document class from a description of a business process. A class is one JSON document with typed variables, Excel-style formulas, a statechart with guards, field rights per state, rules and access as formulas. Use this skill whenever someone wants to model, design, declare or set up a process, workflow, approval flow, form, register, ledger, permit, case or any record that has states in FadoDB, or asks to turn a spreadsheet, a policy, a procedure or a use-case card into a class, even if they never say "class" or "FadoDB". Also use it to review, explain or repair an existing class definition or a diagnostic the engine returned.
 metadata:
   hat: designer
-  status: stub
+  status: written
 ---
 
 # Design a FadoDB class
 
-**Status: stub, 2026-11-09.** This page says what the designer does, what
-works today and the outline of the procedure. For how a class is
-written, block by block and word by word, read
-[`../../docs/manual/class.md`](../../docs/manual/class.md) first, and
-[`../../docs/manual/first-application.md`](../../docs/manual/first-application.md)
-for a small class that runs. The other reference files this page names
-under `../reference/` are not written yet; until they are, read the
-decision records they list.
+**Status: written, 2026-11-14.** This page says how to write a class the
+engine accepts and a person can read. The syntax is in the manual, and
+this page tells you what to read, in which order to work, and what
+goes wrong most often. Two reference chapters are still to be written,
+the formula language and the statechart; until they are, the decision
+records named at the end are their source.
+
+## Read first
+
+| Read | For |
+|---|---|
+| [`docs/manual/class.md`](../../docs/manual/class.md) | every block of a class and every word in it. Read it whole before you write a class |
+| [`docs/manual/guides/`](../../docs/manual/guides/) | one task a page, each with a class a test runs. Take the pattern from the guide |
+| [`docs/manual/functions.md`](../../docs/manual/functions.md) | every function, with the ones this engine does not have yet marked. Check a function here before you use it |
+| [`docs/manual/refusals.md`](../../docs/manual/refusals.md) | every code the engine answers with, and what it means |
+| [`docs/manual/glossary.md`](../../docs/manual/glossary.md) | the words, and which are the engine's and which are yours |
+
+## The shape of a class
+
+A class is one JSON document with these blocks. This one is small and
+complete; the engine accepts it as it stands.
+
+```json
+{
+  "name": "Request",
+  "title": "subject",
+  "variables": {
+    "subject":  {"type": "text", "required": true},
+    "amount":   {"type": "money", "scale": 2},
+    "approver": {"type": "text", "required": true},
+    "with_tax": {"formula": "ROUND(amount * 1.23, 2)"}
+  },
+  "states": {"initial": "draft", "list": ["draft", "filed", "approved"], "final": ["approved"]},
+  "transitions": [
+    {"name": "file",    "from": "draft", "to": "filed", "guard": "amount > 0"},
+    {"name": "approve", "from": "filed", "to": "approved"}
+  ],
+  "access": {
+    "read":   "CREATEDBY() = USER() OR approver = USER()",
+    "create": "INGROUP(\"everyone\")",
+    "update": "CREATEDBY() = USER()",
+    "delete": "FALSE",
+    "transition": {"file": "CREATEDBY() = USER()", "approve": "approver = USER() AND CREATEDBY() <> USER()"}
+  },
+  "rights": {
+    "filed": {"*": {"write": "FALSE"}}
+  }
+}
+```
+
+## What goes wrong most often
+
+Each of these costs a round with the engine, or passes and surprises a
+person later.
+
+1. **A line of `access` left out lets nobody through.** Write all
+   four, `read`, `create`, `update` and `delete`, and a line under
+   `transition` for every transition that not everybody who may
+   `update` should take.
+2. **A guard is about the document; who may is `access`.** Put
+   "the amount is above zero" in the `guard` of a transition and "only
+   finance approves" under `access.transition`. The engine tells them
+   apart in its refusals, `guard_false` and `forbidden`, and so does
+   everybody who reads the class.
+3. **Give every transition a name.** One that only time takes gets
+   `FALSE` under `access.transition`.
+4. **`rights` narrows `access` and never widens it.** A caller needs
+   `update` to let them through and the right of each variable they
+   set. The line of the document's state is asked before the line of
+   `*`, and a named variable before `*`.
+5. **Not every function of the language is built.** `CONTAINS`,
+   `FILTER`, `FIRST`, `LAST`, `INDEX`, `JOIN` and `QUERY` are refused
+   today. Several named editors on one document must be a group.
+6. **A lookup that finds nothing is blank, and a blank counts as zero**
+   in arithmetic. Guard the next step with `NOT ISBLANK(...)`.
+7. **A looked-up value stays with the document** until a value the
+   lookup reads changes. Use a triggered variable and a refresh for a
+   value that must follow its source.
+8. **A default is for new documents.** A variable added in a new
+   version is blank on the documents that exist.
+9. **Money is exact.** Declare `money` or `decimal` with a `scale`;
+   never compute an amount yourself, write the formula.
+10. **Never write a secret into a class or an action.** A request
+    reads it with `SECRET("name")`, and the host program supplies it.
 
 ## The hat
 
@@ -46,7 +122,7 @@ read the diagnostics, fix, preview against live data, define.
 | the class-level access rules: `"access": {"read": ..., "create": ..., "update": ..., "delete": ...}` | shipped with Phase 5: each is a condition over the document for the caller, such as `owner = USER() OR INGROUP("finance")`. A document its caller may not `read` does not exist for them: `unknown_document` from every call that names it, and absent from a filter, a count and `Due`. `create` is asked over the new document with its defaults and computed values; `update` over the stored document, by a set, a reset and a named transition that has no rule of its own; `delete` over the stored document. A refusal is `forbidden`, with the place of the rule as its path, `/access/update`. A `read` rule uses the document's own variables, the functions of its row, the caller and the clock, and no lookup. Put `"index": true` on the variable a read rule compares with the caller, as in `"owner": {"type": "text", "default": "USER()", "index": true}`: a caller's own documents are then listed through the index, and a group that sees everything, `OR INGROUP("finance")`, costs its members nothing. A rule left out lets every caller through today; a ruling on that is pending (ADR-0049), so write all four **Write all four.** A rule a class leaves out lets nobody through but a content administrator: a class with no `access` block holds documents nobody creates or sees. `ValidateClass` says so with a note for each rule left out, code `rule_left_out` and `note: true`, which refuses nothing; a definition is refused only when `Refuses()` is true. `INGROUP("everyone")` opens a rule to every caller that has an id, and `TRUE` to a call without a principal too |
 | class versions, terminal states, migrations | shipped: a redefinition is a new version and touches no document; a document adopts it at its next commit, or all at once with `Migrate`; a terminal state freezes the document |
 
-## Procedure, in outline
+## Procedure
 
 1. **Find the shape.** Every process in the catalogue is one of six
    shapes or two together: the approval chain, the lifecycle register,
@@ -60,9 +136,11 @@ read the diagnostics, fix, preview against live data, define.
 3. **Write the formulas you would write in the spreadsheet.** The engine
    computes; the agent never does arithmetic. Division by zero is an
    error unless the formula says what to do with `IFERROR`.
-4. **Draw the states, then the transitions, then the guards.** A guard
-   says what must hold (`total > 0`) and who may move it
-   (`INGROUP("finance")`). A terminal state freezes the document.
+4. **Draw the states, then the transitions, then the guards.** Give
+   every transition a name. A guard says what must hold for the
+   document (`total > 0`); who may take the transition goes under
+   `access.transition` in step 6. A terminal state freezes the
+   document.
 5. **Write the rights per state.** Which fields are read-only once
    approved, which group may write a discount, who the editors are in
    each state. The table is state, then variable, then `write` or
@@ -157,7 +235,12 @@ document and not code.
 ## References, to be written
 
 The class format is written: [`../../docs/manual/class.md`](../../docs/manual/class.md).
-Still to be written: `formulas.md`, `functions.md`, `statechart.md`,
-`diagnostics.md`. Their sources are listed in
+So are the list of every function,
+[`../../docs/manual/functions.md`](../../docs/manual/functions.md), which
+marks the ones this engine does not have yet, and the list of every
+refusal and diagnostic code,
+[`../../docs/manual/refusals.md`](../../docs/manual/refusals.md); both are
+generated from the engine. Still to be written: `formulas.md` and
+`statechart.md`. Their sources are listed in
 [`../reference/README.md`](../reference/README.md), and the plan of the
 whole manual in [`../../docs/README.md`](../../docs/README.md).

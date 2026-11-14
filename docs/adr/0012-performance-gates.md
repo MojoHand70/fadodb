@@ -1,6 +1,6 @@
 # ADR-0012: Performance budgets and gates
 
-- Status: Accepted; amended by ADR-0030 (the gate measures the minimum over code placements); the gate's scope narrowed on 2026-11-09 (see Gates)
+- Status: Accepted; amended by ADR-0030 (the gate measures the minimum over code placements); the gate's scope narrowed on 2026-11-09 and again on 2026-11-14 (see Gates)
 - Date: 2026-11-05
 
 ## Context
@@ -38,6 +38,15 @@ Gates, enforced in CI on every pull request:
   time; every benchmark still runs by hand for a release's perf page. The
   gate had grown to half an hour per pull request, docs-only ones included,
   as Phase 3 added its benchmarks.
+  Since 2026-11-14 "change Go code" is read exactly: the gate runs when
+  the pull request changes a file that goes into the measured programs.
+  That is a Go file of a package linked into the benchmarks of the gate's
+  packages, a test file of those packages themselves, a file they embed,
+  `go.mod`, `go.sum`, the Makefile, a script or the CI workflow.
+  `scripts/benchgate.sh --needed` answers it from the go tool's own list
+  of packages, and answers yes when in doubt. A test of another package
+  or a package the benchmarks do not link cannot move a number of the
+  gate, and each had cost the half hour all the same.
 - Binary size gate against the budget above.
 - A perf suite under `bench/` runs the end-to-end scenarios nightly; CPU and
   allocation profiles are archived per release.

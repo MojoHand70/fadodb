@@ -27,6 +27,11 @@
 # Usage:
 #   scripts/benchgate.sh [base-ref]     default base-ref: origin/main
 #   scripts/benchgate.sh --csv FILE     evaluate an existing benchstat CSV
+#   scripts/benchgate.sh --needed [base-ref]
+#                                       print "true" when a file that the
+#                                       gate measures differs from base-ref,
+#                                       "false" otherwise; CI asks this
+#                                       before it starts the gate
 #
 # See docs/adr/0012-performance-gates.md and
 # docs/adr/0030-benchmark-gate-measures-the-minimum-over-placements.md.
@@ -133,9 +138,82 @@ spread() {
   ' "$@"
 }
 
+# needed prints "true" when the tree differs from the base ref in a file
+# that can change what the gate measures, and "false" when it does not,
+# with the reason on standard error. Those files are:
+#
+#   - a Go file of a package that is linked into the benchmark programs of
+#     BENCH_PACKAGES, as the go tool lists them;
+#   - a test file of the benchmarked packages themselves, which is compiled
+#     into the same programs, and a file that one of those packages embeds;
+#   - go.mod and go.sum, the Makefile, scripts/ and the CI workflow, which
+#     decide what is built and how it is measured.
+#
+# A test file of another package, a package the benchmarked ones do not
+# import, and a document are in none of the measured programs, so a pull
+# request of only those cannot move a number of the gate and skips it.
+# When the go tool cannot list the packages the answer is "true": in
+# doubt the gate runs.
+needed() {
+  local base=$1 changed root linked tested embedded file list
+  changed=$(git diff --name-only "$base...HEAD")
+  file=$(printf '%s\n' "$changed" | grep -Em1 '^go\.(mod|sum)$|^Makefile$|^scripts/|^\.github/workflows/ci\.yml$' || true)
+  if [ -n "$file" ]; then
+    echo "benchgate: needed, $file decides what is built or how it is measured" >&2
+    echo true
+    return
+  fi
+  root=$(pwd -P)
+  # Paths of this repository, relative to its root; the standard library
+  # and the modules of go.sum are left out, go.mod and go.sum stand for them.
+  relative() {
+    awk -v root="$root" '
+      $0 == root { print "."; next }
+      index($0, root "/") == 1 { print substr($0, length(root) + 2) }
+    ' | sort -u
+  }
+  # shellcheck disable=SC2086
+  if ! linked=$(go list -deps -test -f '{{.Dir}}' $PACKAGES | relative) ||
+    ! tested=$(go list -f '{{.Dir}}' $PACKAGES | relative) ||
+    ! embedded=$(go list -deps -test -f '{{$d := .Dir}}{{range .EmbedFiles}}{{$d}}/{{.}}{{"\n"}}{{end}}{{range .TestEmbedFiles}}{{$d}}/{{.}}{{"\n"}}{{end}}{{range .XTestEmbedFiles}}{{$d}}/{{.}}{{"\n"}}{{end}}' $PACKAGES | relative) ||
+    [ -z "$linked" ] || [ -z "$tested" ]; then
+    echo "benchgate: needed, the go tool could not list the measured packages" >&2
+    echo true
+    return
+  fi
+  while IFS= read -r file; do
+    case $file in
+      "") continue ;;
+      *_test.go) list=$tested ;;
+      *.go) list=$linked ;;
+      *)
+        if grep -Fxq -- "$file" <<< "$embedded"; then
+          echo "benchgate: needed, $file is embedded in the measured programs" >&2
+          echo true
+          return
+        fi
+        continue
+        ;;
+    esac
+    if grep -Fxq -- "$(dirname "$file")" <<< "$list"; then
+      echo "benchgate: needed, $file is part of the measured programs" >&2
+      echo true
+      return
+    fi
+  done <<< "$changed"
+  echo "benchgate: not needed, no changed file is part of the programs measured ($PACKAGES)" >&2
+  echo false
+}
+
 if [ "${1:-}" = "--csv" ]; then
   evaluate_csv "$2"
   exit $?
+fi
+
+if [ "${1:-}" = "--needed" ]; then
+  cd "$(dirname "$0")/.."
+  needed "${2:-origin/main}"
+  exit 0
 fi
 
 cd "$(dirname "$0")/.."

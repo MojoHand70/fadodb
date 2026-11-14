@@ -48,11 +48,11 @@ the engine on each push.
 | [Four eyes: the one who filed it may not approve it](manual/guides/four-eyes.md) | **written** |
 | [A reminder every seven days, and a deadline](manual/guides/reminders-and-deadlines.md) | **written** |
 | [Let somebody act for a person](manual/guides/acting-for-somebody.md) | **written** |
-| Ask several people and go on when all have agreed | planned; today [examples/classes](../examples/classes/README.md), the Purchase and Approval samples |
-| Call another system when a document changes | planned; today [Actions](actions.md) |
-| Look a value up in a reference table, or in other documents | planned; today [ADR-0037](adr/0037-explicit-tables-and-the-compiled-lookup.md), and the Purchase sample under [examples/classes](../examples/classes/README.md) |
-| Move many documents at once | planned; today the `Example_many` example of the `fado` package |
-| Change a class that already has documents | planned; today [ADR-0039](adr/0039-class-versions-terminal-states-and-migrations.md) |
+| Ask several people and go on when all have agreed | planned. It needs a document to move by itself as soon as a condition holds; the owner ruled that such a transition carries a name and a mark, which is not built yet. Today [examples/classes](../examples/classes/README.md), the Purchase and Approval samples, show it in the form the engine has now |
+| [Do something outside when a document changes](manual/guides/act-outside.md) | **written** |
+| [Look a value up in a reference table](manual/guides/look-a-value-up.md) | **written** |
+| [Move many documents at once](manual/guides/move-many-documents.md) | **written** |
+| [Change a class that already has documents](manual/guides/change-a-class.md) | **written** |
 
 ## Reference
 
@@ -60,9 +60,9 @@ the engine on each push.
 |---|---|---|
 | [The class definition](manual/class.md) | every block of a class and every word in it | **written** |
 | The formula language | values, operators, blanks, errors, text, dates, exact numbers | planned; today [ADR-0019](adr/0019-formula-language-semantics.md) and the suites under [conformance](../conformance/README.md) |
-| The functions | every function with its arguments and an example | planned, generated from the engine's own catalogue |
+| [The functions](manual/functions.md) | every function with its arguments and what it answers | **written**, generated from the engine's own catalogue |
 | The calls | every call of the Go package: what it takes, what it answers, what it may refuse with | planned; today the documentation of the `fado` package |
-| The refusals | every code: what it means, the place it names, how to fix it | planned, generated from the engine's own list |
+| [The refusals](manual/refusals.md) | every code and what it means | **written**, generated from the engine's own constants; the fix for each comes with the guides |
 | Tables | reference data: defining, importing, looking up | planned; today [ADR-0037](adr/0037-explicit-tables-and-the-compiled-lookup.md) |
 | [Actions](actions.md) | defining an action, calling another system, secrets | **written** |
 | Views and SQL | the views the engine makes for each class, and reading them with SQL | planned; today [architecture.md](architecture.md) |

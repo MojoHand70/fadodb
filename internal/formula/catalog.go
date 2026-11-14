@@ -145,6 +145,21 @@ func LookupFunction(name string) *Function {
 	return catalog.byName[strings.ToUpper(name)]
 }
 
+// Implemented reports whether this build evaluates the catalog function
+// of that name. The catalog lists every function of the language; one
+// the engine does not have yet is refused where a formula calls it, with
+// "not implemented yet".
+func Implemented(name string) bool {
+	switch name = strings.ToUpper(name); name {
+	case "IF", "NOT", "AND", "OR", "IFERROR", "LOOKUP", "SECRET":
+		// These are forms of the language that the parser and the binder
+		// compile themselves, and no entry of the table of builtins.
+		return true
+	}
+	_, ok := builtinByName[name]
+	return ok
+}
+
 // Functions returns every catalog entry in catalog order.
 func Functions() []*Function {
 	out := make([]*Function, len(catalog.functions))

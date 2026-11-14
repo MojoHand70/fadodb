@@ -49,7 +49,7 @@ Website: [fadodb.org](https://fadodb.org). The manual starts at
 > lets nobody through, so a class says who may. A content administrator
 > who acts past a rule gives a reason, and the event keeps it. A caller
 > may act for somebody only while a substitution says so, a document
-> the person gives and withdraws. The server is in progress. Its first step is built: every call of the Go API is also a command, a name and one JSON object answered by one JSON object, which `Exec` runs ([the commands](docs/manual/commands.md)). Nothing listens on the network yet. The design of the server is accepted, as ADR-0055 to ADR-0059, and not built. The numbers are in
+> the person gives and withdraws. The server is in progress. Two steps are built: every call of the Go API is also a command, a name and one JSON object answered by one JSON object, which `Exec` runs ([the commands](docs/manual/commands.md)); and a program that has opened a database can let it answer the commands over HTTP, as `POST /v1/<command>`, through the package `fado/httpdoor`. The rest of the design, accepted as ADR-0055 to ADR-0059, is not built: the server `fadodb serve`, the engine's own users and keys, and the stream of changes. The numbers are in
 > [docs/perf/](docs/perf/), the plan in [ROADMAP.md](ROADMAP.md).
 
 ## What it is
@@ -301,9 +301,10 @@ internal/store/    SQLite store: documents, history, events, rules in the commit
 internal/query/    the filter compiler, with the read rule of a class as a predicate, and the SQL endpoint's authorizer
 internal/state/    statechart engine (Phase 3)
 fado/outbound/     what a host program imports to let a database send the HTTP requests of actions
+fado/httpdoor/     what a host program imports to let a database answer the command set over HTTP
 api/               JSON schemas of an action definition, of the call an action receives and of the delivered event
 internal/auth/     users, groups and API keys for the server (Phase 6)
-internal/server/   the HTTP door of the server (Phase 6)
+internal/server/   the HTTP door: a request to a command, its limits and its statuses; the rest of the server in Phase 6
 analytics/         the DuckDB module: conformance and store benchmarks today, the projection in Phase 8
 bench/             end-to-end performance scenarios behind the budgets
 docs/              architecture, ADRs, dependency budget, benchmarks

@@ -324,17 +324,40 @@ func TestStatechartConformanceByCommand(t *testing.T) {
 func TestRulesConformanceByCommand(t *testing.T)  { runScriptSuites(t, "rules", throughCommands) }
 func TestAccessConformanceByCommand(t *testing.T) { runScriptSuites(t, "access", throughCommands) }
 
-// throughGo and throughCommands are the doors a suite runs through.
-func throughGo(s *Store) door { return goDoor{s} }
+// And the same three a third way, as requests to a server that listens
+// on this machine: each step is POST /v1/<command> to the HTTP door of
+// the database, and its answer is read back from the body of the reply.
+// The status of each reply is held to the code it carries.
+func TestStatechartConformanceByHTTP(t *testing.T) { runScriptSuites(t, "statechart", throughHTTP) }
+func TestRulesConformanceByHTTP(t *testing.T)      { runScriptSuites(t, "rules", throughHTTP) }
+func TestAccessConformanceByHTTP(t *testing.T)     { runScriptSuites(t, "access", throughHTTP) }
 
-func throughCommands(s *Store) door {
+// throughGo, throughCommands and throughHTTP are the doors a suite runs
+// through.
+func throughGo(_ testing.TB, s *Store) door { return goDoor{s} }
+
+func throughCommands(_ testing.TB, s *Store) door {
 	if execCommand == nil {
 		panic("the tests of this package were built without the command set")
 	}
-	return commandDoor{s}
+	return commandDoor{
+		label: "the command set",
+		exec: func(ctx context.Context, p Principal, name string, object []byte) ([]byte, error) {
+			return execCommand(ctx, s, p, name, object)
+		},
+	}
 }
 
-func runScriptSuites(t *testing.T, dir string, through func(*Store) door) {
+func throughHTTP(t testing.TB, s *Store) door {
+	if listenHTTP == nil {
+		panic("the tests of this package were built without the HTTP door")
+	}
+	send, stop := listenHTTP(s)
+	t.Cleanup(stop)
+	return commandDoor{label: "the HTTP door", exec: send}
+}
+
+func runScriptSuites(t *testing.T, dir string, through func(testing.TB, *Store) door) {
 	files, err := filepath.Glob(filepath.Join("..", "..", "conformance", dir, "*.json"))
 	if err != nil {
 		t.Fatal(err)
@@ -381,7 +404,7 @@ func (suite *statechartSuite) table(def []byte) []byte {
 	return openedTable(def)
 }
 
-func runStatechartSuite(t *testing.T, suite *statechartSuite, through func(*Store) door) {
+func runStatechartSuite(t *testing.T, suite *statechartSuite, through func(testing.TB, *Store) door) {
 	var o Options
 	var now time.Time
 	if suite.Clock != "" {
@@ -434,7 +457,7 @@ func runStatechartSuite(t *testing.T, suite *statechartSuite, through func(*Stor
 	}
 	o.HostAnswersFor = suite.HostAnswersFor
 	s, _ := openStore(t, o)
-	d := through(s)
+	d := through(t, s)
 	ctx := context.Background()
 	asSetup, asRoot := by(setup), by(root)
 	for i, def := range suite.Actions {

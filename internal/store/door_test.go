@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"time"
 
 	"github.com/MojoHand70/fadodb/internal/formula"
@@ -192,11 +193,35 @@ func SetExecCommand(exec func(ctx context.Context, s *Store, p Principal, name s
 	execCommand = exec
 }
 
-// commandDoor is the command set: every call is a name and one JSON
-// object, and its answer is read back from JSON.
-type commandDoor struct{ s *Store }
+// listenHTTP opens the HTTP door of a store on this machine. It answers
+// the function that sends a command there as the principal, and reads
+// the reply back as the command set would have answered: the body, and
+// the refusal the body carries as the error. stop closes the door. It is
+// set as execCommand is, by the test file outside the package.
+var listenHTTP func(s *Store) (send func(ctx context.Context, p Principal, name string, object []byte) ([]byte, error), stop func())
 
-func (d commandDoor) name() string { return "the command set" }
+// SetListenHTTP gives the tests of this package the HTTP door.
+func SetListenHTTP(listen func(s *Store) (func(ctx context.Context, p Principal, name string, object []byte) ([]byte, error), func())) {
+	listenHTTP = listen
+}
+
+// handleHTTP is the HTTP door of a store as a handler, with every
+// request taken as sent by the principal. The benchmarks call it without
+// a network.
+var handleHTTP func(s *Store, as Principal) http.Handler
+
+// SetHandleHTTP gives the benchmarks of this package the HTTP door.
+func SetHandleHTTP(handle func(s *Store, as Principal) http.Handler) { handleHTTP = handle }
+
+// commandDoor is the command set: every call is a name and one JSON
+// object, and its answer is read back from JSON. exec is how the command
+// travels: to the command set itself, or as a request to the HTTP door.
+type commandDoor struct {
+	label string
+	exec  func(ctx context.Context, p Principal, name string, object []byte) ([]byte, error)
+}
+
+func (d commandDoor) name() string { return d.label }
 
 // object is the JSON object of a command: its members, then the options
 // of the call.
@@ -252,7 +277,7 @@ func (d commandDoor) send(ctx context.Context, c stepCall, name string, object [
 		// For whom the caller acts is said in the command.
 		p.For = ""
 	}
-	answer, err := execCommand(ctx, d.s, p, name, object)
+	answer, err := d.exec(ctx, p, name, object)
 	var got struct {
 		Error       *Error            `json:"error"`
 		Diagnostics model.Diagnostics `json:"diagnostics"`

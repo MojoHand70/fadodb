@@ -20,8 +20,12 @@ func TestGenerated(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	commands, err := Commands("..")
+	if err != nil {
+		t.Fatal(err)
+	}
 	manual := filepath.Join("..", "..", "docs", "manual")
-	for name, want := range map[string]string{"functions.md": Functions(), "refusals.md": refusals, "commands.md": Commands()} {
+	for name, want := range map[string]string{"functions.md": Functions(), "refusals.md": refusals, "commands.md": commands} {
 		path := filepath.Join(manual, name)
 		if os.Getenv("FADODB_UPDATE_DOCS") != "" {
 			if err := os.WriteFile(path, []byte(want), 0o644); err != nil {

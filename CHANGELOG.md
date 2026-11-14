@@ -122,7 +122,21 @@ All notable changes to FadoDB are recorded here. The format follows
   error. A refusal is the Go API's, as JSON under `error`. A member a
   command does not take, one given twice, one of the wrong JSON type
   and a missing one the command needs are refused with `bad_json` and
-  the place. No server is built yet: nothing listens on the network.
+  the place.
+- The HTTP door, the package `fado/httpdoor` (ADR-0055, items 8 and
+  10): a program that has opened a database lets it answer the command
+  set over HTTP, each command as `POST /v1/<command>` with its object
+  as the body. `httpdoor.New` makes the door, an `http.Handler`, from
+  the database and the function that says who sends a request; a
+  request whose sender it cannot tell is refused with
+  `unauthenticated` before its body is read. A door serves one
+  database and shares nothing with another (ADR-0056). It holds a
+  command to its limits (ADR-0059): a request of at most 16 MiB
+  (`too_large`), 30 seconds for one command (`timeout`) and 64 commands
+  at once (`busy`, after a wait of one second), each of which the
+  program may set. The status of a reply follows its code; the caller
+  reads the code. The server `fadodb serve`, the engine's own users and
+  keys and the stream of changes are not built yet.
 - `DB.Definition` reads a class, a schema, a table or an action back as
   it was given, with its version and who defined it; `DB.Schema` and
   `DB.Schemas` read the schemas, which could not be read back.
@@ -130,7 +144,8 @@ All notable changes to FadoDB are recorded here. The format follows
   and the refusals of a command in `docs/manual/refusals.md`.
 - The three script suites, `conformance/statechart`, `rules` and
   `access`, run through the command set as they run through the Go
-  API, and must answer the same.
+  API, and a third way, as requests to the HTTP door of a server that
+  listens on the machine, and must answer the same each way.
 
 ### Changed
 

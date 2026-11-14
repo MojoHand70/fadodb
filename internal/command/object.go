@@ -17,8 +17,9 @@ import (
 // once instead of having sent a command that does something else.
 
 // The codes the command set adds to the engine's own (ADR-0055, item 7),
-// for what cannot happen to a call of the Go API. A door adds its own
-// when it is built: no credential, and a request larger than it reads.
+// for what cannot happen to a call of the Go API. The HTTP door adds its
+// own, in package server: no credential, a request larger than it
+// reads, a command that runs too long and more commands than it runs.
 const (
 	// CodeBadJSON: the object of a command is not JSON or is not an
 	// object; or it has a member the command does not take, a member

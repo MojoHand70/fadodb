@@ -235,9 +235,16 @@ with a record of its own, a way in for messages from outside. The
 first step is built: every call of the Go API that reads or changes a
 database is also a command, a name and one JSON object answered by one
 JSON object, which the Go call `Exec` runs; the three script suites run
-through the commands as they run through the Go API. Nothing listens
-on the network yet: no server, no users or keys, no stream, no door for
-agents.
+through the commands as they run through the Go API. The second step
+is built too: the HTTP door, the package `fado/httpdoor`, by which a
+program that has opened a database lets it answer the commands as
+`POST /v1/<command>`. The program says where it listens and who sends
+each request; the door holds a command to its limits, the largest
+request, the time one command may run and how many run at once, and
+answers with the status of the code. The three suites run a third way,
+as requests to a server that listens on the machine. Not built yet:
+`fadodb serve`, the engine's own users and keys, the stream of
+changes, the files beside the commands and the door for agents.
 This page is updated when a phase starts and when it ends;
 it never describes a phase as done before its acceptance criteria pass.
 

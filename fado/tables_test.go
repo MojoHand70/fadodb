@@ -93,6 +93,63 @@ func checks(t *testing.T, page []byte, marker string, by map[string]func(row []s
 	}
 }
 
+// fenced returns the body of the fenced block, of any kind, that
+// follows a marker comment of a chapter.
+func fenced(t *testing.T, page []byte, marker string) string {
+	t.Helper()
+	text := strings.ReplaceAll(string(page), "\r\n", "\n")
+	_, rest, found := strings.Cut(text, "<!-- "+marker+" -->\n```")
+	if !found {
+		t.Fatalf("the chapter has no fenced block under the marker %q", marker)
+	}
+	_, rest, _ = strings.Cut(rest, "\n")
+	body, _, _ := strings.Cut(rest, "\n```")
+	return body
+}
+
+// told writes the answer to a call as a story of a chapter does.
+func told(err error) string {
+	if err == nil {
+		return "allowed"
+	}
+	return "refused, " + answer(err)
+}
+
+// tale plays the story of a chapter, the table under the marker "what
+// it does": each step of the test is held to the answer of its row.
+type tale struct {
+	t      *testing.T
+	rows   [][]string
+	played int
+}
+
+func taleOf(t *testing.T, page []byte) *tale {
+	t.Helper()
+	return &tale{t: t, rows: rows(marked(t, page, "what it does"))}
+}
+
+func (s *tale) step(n int, got string) {
+	s.t.Helper()
+	s.played++
+	if n > len(s.rows) {
+		s.t.Fatalf("the test plays step %d, and the chapter has %d steps", n, len(s.rows))
+	}
+	row := s.rows[n-1]
+	if row[0] != strconv.Itoa(n) {
+		s.t.Errorf("row %d of the story is step %s", n, row[0])
+	}
+	if got != row[3] {
+		s.t.Errorf("step %d, %s %s: the engine answers %q, and the chapter says %q", n, row[1], row[2], got, row[3])
+	}
+}
+
+func (s *tale) done() {
+	s.t.Helper()
+	if s.played != len(s.rows) {
+		s.t.Errorf("the test played %d steps, and the chapter has %d", s.played, len(s.rows))
+	}
+}
+
 func TestTables(t *testing.T) {
 	page, err := os.ReadFile(filepath.Join("..", "docs", "manual", "tables.md"))
 	if err != nil {
@@ -126,12 +183,6 @@ func TestTables(t *testing.T) {
 	celina := fado.As(fado.Principal{ID: "celina", Kind: fado.ActorPerson, System: []string{fado.GroupContentAdministrators}})
 	tess, olga, ann := person("tess", "treasury"), person("olga", "treasury"), person("ann")
 
-	told := func(err error) string {
-		if err == nil {
-			return "allowed"
-		}
-		return "refused, " + answer(err)
-	}
 	// tableIs holds the rows of a table to a table of the chapter.
 	tableIs := func(db *fado.DB, name, marker string, stands map[string]string) {
 		t.Helper()
@@ -158,22 +209,8 @@ func TestTables(t *testing.T) {
 
 	// The story.
 	db := notionDB(t, fado.Options{})
-	story := rows(marked(t, page, "what it does"))
-	played := 0
-	step := func(n int, got string) {
-		t.Helper()
-		played++
-		if n > len(story) {
-			t.Fatalf("the test plays step %d, and the chapter has %d steps", n, len(story))
-		}
-		row := story[n-1]
-		if row[0] != strconv.Itoa(n) {
-			t.Errorf("row %d of the story is step %s", n, row[0])
-		}
-		if got != row[3] {
-			t.Errorf("step %d, %s %s: the engine answers %q, and the chapter says %q", n, row[1], row[2], got, row[3])
-		}
-	}
+	story := taleOf(t, page)
+	step := story.step
 	written := func(n int, err error) string {
 		switch {
 		case err != nil:
@@ -270,9 +307,7 @@ func TestTables(t *testing.T) {
 	_, err = db.Transition(ctx, "RateEntry", entry.ID, "withdraw", nil, olga)
 	step(20, told(err))
 	step(21, fmt.Sprintf("%d action ran; the table has %d rows", ran(), count()))
-	if played != len(story) {
-		t.Errorf("the test played %d steps, and the chapter has %d", played, len(story))
-	}
+	story.done()
 
 	// The record is the document's.
 	events, err := db.Events(ctx, "RateEntry", entry.ID, ann)

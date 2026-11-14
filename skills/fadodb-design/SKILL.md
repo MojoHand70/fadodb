@@ -22,6 +22,7 @@ records named at the end are their source.
 | [`docs/manual/class.md`](../../docs/manual/class.md) | every block of a class and every word in it. Read it whole before you write a class |
 | [`docs/manual/guides/`](../../docs/manual/guides/) | one task a page, each with a class a test runs. Take the pattern from the guide |
 | [`docs/manual/tables.md`](../../docs/manual/tables.md) | reference data: the definition of a table, its rows, `LOOKUP`, the three actions of a rule that write a row, and who may. Read it before a class looks a value up or feeds a table |
+| [`docs/manual/schemas-and-objects.md`](../../docs/manual/schemas-and-objects.md) | a value with named fields: defining a schema, the nine the engine brings, and the table of what a class can and cannot do with an object today. Read it before you give a class an object |
 | [`docs/manual/functions.md`](../../docs/manual/functions.md) | every function, with the ones this engine does not have yet marked. Check a function here before you use it |
 | [`docs/manual/refusals.md`](../../docs/manual/refusals.md) | every code the engine answers with, and what it means |
 | [`docs/manual/glossary.md`](../../docs/manual/glossary.md) | the words, and which are the engine's and which are yours |
@@ -101,6 +102,12 @@ person later.
     transition goes to somebody who may not edit the document, write
     in `rights` what they may set, or they can change any value while
     they approve.
+12. **`required` holds for a simple value only.** On an object, a
+    list or `rows` the engine accepts the word and does not enforce
+    it. Guard the transition that needs the object with a test of one
+    of its fields, such as `NOT ISBLANK(depot.code)`. A formula reads
+    the fields of an object one at a time; it cannot test or compare
+    the object as a whole.
 
 ## The hat
 

@@ -12,6 +12,15 @@ metadata:
 works today and the outline of the procedure. The reference files it
 names under `../reference/` are not written yet.
 
+## Read first
+
+[`docs/manual/views-and-sql.md`](../../docs/manual/views-and-sql.md)
+is the reference for this hat: the views of a class and their columns,
+how a value looks in SQL (an amount of 1000.00 is 100000, a day is a
+number of days), seven questions with their statements and the
+engine's answers, and what a statement may not do. Read it before you
+write a statement.
+
 ## The hat
 
 The analyst reads. Every class is a SQL view, every version a history

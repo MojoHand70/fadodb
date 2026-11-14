@@ -998,6 +998,63 @@ func TestTables(t *testing.T) {
 		t.Errorf("a line over the caller and the clock is found %s", got)
 	}
 
+	// The commands: each row by the command it names, on a database of
+	// its own.
+	db4 := notionDB(t, fado.Options{})
+	exec := func(as fado.Principal, name, object string) map[string]json.RawMessage {
+		t.Helper()
+		got, err := db4.Exec(ctx, as, name, []byte(object))
+		if err != nil {
+			t.Fatalf("the command %s: %v", name, err)
+		}
+		var answer map[string]json.RawMessage
+		if err := json.Unmarshal(got, &answer); err != nil {
+			t.Fatal(err)
+		}
+		return answer
+	}
+	designer := fado.Principal{ID: "dan", Kind: fado.ActorPerson, System: []string{fado.GroupDesigners}}
+	treasurer := fado.Principal{ID: "tess", Kind: fado.ActorPerson, Groups: []string{"treasury"}}
+	reader := fado.Principal{ID: "ann", Kind: fado.ActorPerson}
+	sent, _ := json.Marshal(imported)
+	commands := []struct {
+		to, name string
+		holds    func() bool
+	}{
+		{"define a table", "define_table", func() bool {
+			return exec(designer, "define_table", `{"definition":`+string(rates)+`}`)["table"] != nil
+		}},
+		{"write rows", "import_rows", func() bool {
+			return string(exec(treasurer, "import_rows", `{"table":"Rates","rows":`+string(sent)+`}`)["imported"]) == "3"
+		}},
+		{"read the rows", "table_rows", func() bool {
+			var got []fado.Values
+			json.Unmarshal(exec(reader, "table_rows", `{"table":"Rates"}`)["rows"], &got)
+			return len(got) == 3 && got[0]["day"] == "2026-11-12"
+		}},
+		{"read its definition back", "get_table", func() bool {
+			return strings.Contains(string(exec(reader, "get_table", `{"name":"Rates"}`)["table"]), `"Exchange rates"`)
+		}},
+		{"list the tables", "list_tables", func() bool {
+			return string(exec(reader, "list_tables", `{}`)["tables"]) == `["Rates"]`
+		}},
+	}
+	listed := map[string]string{}
+	for _, row := range rows(marked(t, page, "the commands")) {
+		listed[row[0]] = row[1]
+	}
+	if len(listed) != len(commands) {
+		t.Errorf("the chapter lists %d commands, and the test plays %d", len(listed), len(commands))
+	}
+	for _, c := range commands {
+		if listed[c.to] != c.name {
+			t.Errorf("to %s the chapter names the command %q, and the test plays %s", c.to, listed[c.to], c.name)
+		}
+		if !c.holds() {
+			t.Errorf("the command %s does not %s", c.name, c.to)
+		}
+	}
+
 	// The third database: defining and changing.
 	db3 := notionDB(t, fado.Options{})
 	plain := func(name, more string) string {

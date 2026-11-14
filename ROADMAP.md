@@ -224,8 +224,13 @@ and passwords and a company's sign-on come with the frontend; layouts
 move to Phase 7; a database is closed to everybody but its owner; and
 the phase gains a check of a class and of an action from the command
 line, one call that answers the flow of a class, and as its last step,
-with a record of its own, a way in for messages from outside. None of
-it is built yet.
+with a record of its own, a way in for messages from outside. The
+first step is built: every call of the Go API that reads or changes a
+database is also a command, a name and one JSON object answered by one
+JSON object, which the Go call `Exec` runs; the three script suites run
+through the commands as they run through the Go API. Nothing listens
+on the network yet: no server, no users or keys, no stream, no door for
+agents.
 This page is updated when a phase starts and when it ends;
 it never describes a phase as done before its acceptance criteria pass.
 

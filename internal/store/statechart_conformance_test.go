@@ -15,7 +15,6 @@ import (
 	"time"
 
 	"github.com/MojoHand70/fadodb/internal/formula"
-	"github.com/MojoHand70/fadodb/internal/model"
 )
 
 // The statechart conformance suite (ADR-0040) is the specification of the
@@ -306,17 +305,36 @@ func moment(t *testing.T, s string) time.Time {
 	return time.Unix(secs, 0).UTC()
 }
 
-func TestStatechartConformance(t *testing.T) { runScriptSuites(t, "statechart") }
+func TestStatechartConformance(t *testing.T) { runScriptSuites(t, "statechart", throughGo) }
 
 // TestRulesConformance runs conformance/rules, the specification of the
 // rules inside the commit (ADR-0043).
-func TestRulesConformance(t *testing.T) { runScriptSuites(t, "rules") }
+func TestRulesConformance(t *testing.T) { runScriptSuites(t, "rules", throughGo) }
 
 // TestAccessConformance runs conformance/access, the specification of the
 // four rules of a class on every path (ADR-0049).
-func TestAccessConformance(t *testing.T) { runScriptSuites(t, "access") }
+func TestAccessConformance(t *testing.T) { runScriptSuites(t, "access", throughGo) }
 
-func runScriptSuites(t *testing.T, dir string) {
+// The same three, with every step sent as a command and its answer read
+// back from JSON (ADR-0055, item 11): one refusal code that differs from
+// the Go API's, or one value, fails here.
+func TestStatechartConformanceByCommand(t *testing.T) {
+	runScriptSuites(t, "statechart", throughCommands)
+}
+func TestRulesConformanceByCommand(t *testing.T)  { runScriptSuites(t, "rules", throughCommands) }
+func TestAccessConformanceByCommand(t *testing.T) { runScriptSuites(t, "access", throughCommands) }
+
+// throughGo and throughCommands are the doors a suite runs through.
+func throughGo(s *Store) door { return goDoor{s} }
+
+func throughCommands(s *Store) door {
+	if execCommand == nil {
+		panic("the tests of this package were built without the command set")
+	}
+	return commandDoor{s}
+}
+
+func runScriptSuites(t *testing.T, dir string, through func(*Store) door) {
 	files, err := filepath.Glob(filepath.Join("..", "..", "conformance", dir, "*.json"))
 	if err != nil {
 		t.Fatal(err)
@@ -333,7 +351,7 @@ func runScriptSuites(t *testing.T, dir string) {
 		if err := json.Unmarshal(raw, &suite); err != nil {
 			t.Fatalf("%s: %v", file, err)
 		}
-		t.Run(suite.Suite, func(t *testing.T) { runStatechartSuite(t, &suite) })
+		t.Run(suite.Suite, func(t *testing.T) { runStatechartSuite(t, &suite, through) })
 	}
 }
 
@@ -363,7 +381,7 @@ func (suite *statechartSuite) table(def []byte) []byte {
 	return openedTable(def)
 }
 
-func runStatechartSuite(t *testing.T, suite *statechartSuite) {
+func runStatechartSuite(t *testing.T, suite *statechartSuite, through func(*Store) door) {
 	var o Options
 	var now time.Time
 	if suite.Clock != "" {
@@ -416,36 +434,37 @@ func runStatechartSuite(t *testing.T, suite *statechartSuite) {
 	}
 	o.HostAnswersFor = suite.HostAnswersFor
 	s, _ := openStore(t, o)
+	d := through(s)
 	ctx := context.Background()
+	asSetup, asRoot := by(setup), by(root)
 	for i, def := range suite.Actions {
-		if _, err := s.DefineAction(ctx, def, asSetup); err != nil {
+		if err := d.DefineAction(ctx, def, asSetup); err != nil {
 			t.Fatalf("action %d of the suite's actions: %v", i, err)
 		}
 	}
 	for i, table := range suite.Tables {
-		if _, err := s.DefineTable(ctx, suite.table(table), asSetup); err != nil {
+		if err := d.DefineTable(ctx, suite.table(table), asSetup); err != nil {
 			t.Fatalf("table %d of the suite's tables: %v", i, err)
 		}
 	}
-	var cls *model.Class
+	// own is the declared name of the suite's class.
+	var own string
 	var err error
 	if suite.Together {
 		set := make([][]byte, 0, len(suite.Classes)+1)
 		for _, other := range suite.Classes {
 			set = append(set, other)
 		}
-		defined, derr := s.DefineClasses(ctx, suite.classes(append(set, suite.Class)), asSetup)
-		if derr != nil {
-			t.Fatalf("the classes, together: %v", derr)
+		if own, err = d.DefineClasses(ctx, suite.classes(append(set, suite.Class)), asSetup); err != nil {
+			t.Fatalf("the classes, together: %v", err)
 		}
-		cls = defined[len(defined)-1]
 	} else {
 		for i, other := range suite.Classes {
-			if _, err := s.DefineClass(ctx, suite.class(other), asSetup); err != nil {
+			if _, err := d.DefineClass(ctx, suite.class(other), asSetup); err != nil {
 				t.Fatalf("class %d of the suite's classes: %v", i, err)
 			}
 		}
-		cls, err = s.DefineClass(ctx, suite.class(suite.Class), asSetup)
+		own, err = d.DefineClass(ctx, suite.class(suite.Class), asSetup)
 	}
 	if err != nil {
 		t.Fatalf("the class: %v", err)
@@ -457,36 +476,29 @@ func runStatechartSuite(t *testing.T, suite *statechartSuite) {
 		if name == "" {
 			name = fmt.Sprintf("step %d: %s %s", i, step.Do, step.Transition)
 		}
-		var opts []Option
+		// call is who the step runs as and with which options.
+		call := stepCall{key: step.Key, reason: step.Reason, at: step.At}
 		if step.As != "" {
 			p, ok := suite.Principals[step.As]
 			if !ok {
 				t.Fatalf("%s: unknown principal %s", name, step.As)
 			}
-			opts = append(opts, As(Principal{ID: p.ID, Groups: p.Groups, System: p.System, Kind: p.Kind, For: p.For}))
-		}
-		if step.Key != "" {
-			opts = append(opts, Key(step.Key))
-		}
-		if step.Reason != "" {
-			opts = append(opts, Reason(step.Reason))
+			call.as = &Principal{ID: p.ID, Groups: p.Groups, System: p.System, Kind: p.Kind, For: p.For}
 		}
 		if step.At != "" {
-			opts = append(opts, At(moment(t, step.At)))
+			moment(t, step.At)
 		}
 		id := last
 		switch {
 		case step.Do == "create":
-			if step.ID != "" {
-				opts = append(opts, WithID(step.ID))
-			}
+			call.id = step.ID
 		case step.ID != "":
 			id = step.ID
 		case step.Doc != "":
 			id = docs[step.Doc]
 		}
 		// The class a step acts on, the suite's own unless it names one.
-		class := cls.Name
+		class := own
 		if step.Class != "" {
 			class = step.Class
 		}
@@ -517,19 +529,19 @@ func runStatechartSuite(t *testing.T, suite *statechartSuite) {
 			err = nil
 		case "actions":
 		case "try":
-			outcome, err = s.TryAction(ctx, step.Action, step.Args, asSetup)
+			outcome, err = d.TryAction(ctx, step.Action, step.Args, asSetup)
 		case "preview_action":
-			called, err = s.PreviewAction(ctx, step.Action, step.Args, asSetup)
+			called, err = d.PreviewAction(ctx, step.Action, step.Args, asSetup)
 		case "get":
-			doc, err = s.Get(ctx, class, id, opts...)
+			doc, err = d.Get(ctx, class, id, call)
 		case "query":
-			found, err = s.Query(ctx, filter, opts...)
+			found, err = d.Query(ctx, filter, call)
 		case "count":
-			count, err = s.Count(ctx, filter, opts...)
+			count, err = d.Count(ctx, filter, call)
 		case "due":
-			due, err = s.Due(ctx, class, opts...)
+			due, err = d.Due(ctx, class, call)
 		case "create":
-			doc, err = s.Create(ctx, class, step.Values, opts...)
+			doc, err = d.Create(ctx, class, step.Values, call)
 			if err == nil {
 				last, id = doc.ID, doc.ID
 				if step.Doc != "" {
@@ -537,36 +549,36 @@ func runStatechartSuite(t *testing.T, suite *statechartSuite) {
 				}
 			}
 		case "set":
-			doc, err = s.Set(ctx, class, id, step.Values, opts...)
+			doc, err = d.Set(ctx, class, id, step.Values, call)
 		case "reset":
-			doc, err = s.Reset(ctx, class, id, step.Variables, opts...)
+			doc, err = d.Reset(ctx, class, id, step.Variables, call)
 		case "refresh":
-			doc, err = s.Refresh(ctx, class, id, step.Variables, opts...)
+			doc, err = d.Refresh(ctx, class, id, step.Variables, call)
 		case "transition":
-			doc, err = s.Transition(ctx, class, id, step.Transition, step.Values, opts...)
+			doc, err = d.Transition(ctx, class, id, step.Transition, step.Values, call)
 		case "delete":
-			err = s.Delete(ctx, class, id, opts...)
+			err = d.Delete(ctx, class, id, call)
 		case "drain":
-			drained, err = s.Drain(ctx, asSetup)
+			drained, err = d.Drain(ctx, asSetup)
 		case "retry":
 			var rows []QueuedAction
-			if rows, err = s.Outbox(ctx, OutboxFilter{Class: class, DocID: id}, asSetup); err == nil {
+			if rows, err = d.Outbox(ctx, OutboxFilter{Class: class, DocID: id}, asSetup); err == nil {
 				if step.Row >= len(rows) {
 					t.Fatalf("%s: the document queued %d actions; no row %d", name, len(rows), step.Row)
 				}
-				err = s.RetryAction(ctx, rows[step.Row].Key, asSetup)
+				err = d.RetryAction(ctx, rows[step.Row].Key, asSetup)
 			}
 		case "import":
-			_, err = s.ImportRows(ctx, step.Table, step.Rows)
+			_, err = d.ImportRows(ctx, step.Table, step.Rows, stepCall{})
 		case "rows":
-			tableRows, err = s.TableRows(ctx, step.Table)
+			tableRows, err = d.TableRows(ctx, step.Table, stepCall{})
 		case "preview":
-			pv, err = s.Preview(ctx, class, id, step.Values, step.Transition, opts...)
+			pv, err = d.Preview(ctx, class, id, step.Values, step.Transition, call)
 			if err == nil {
 				doc = pv.Document
 			}
 		case "transitions":
-			infos, err = s.Transitions(ctx, class, id, opts...)
+			infos, err = d.Transitions(ctx, class, id, call)
 		case "visits":
 			visitsGot, err = readVisits(s, class, id)
 		default:
@@ -727,7 +739,7 @@ func runStatechartSuite(t *testing.T, suite *statechartSuite) {
 					Name string `json:"name"`
 				}
 				_ = json.Unmarshal(entry, &head)
-				info, ok := s.Action(head.Name)
+				info, ok := d.Action(head.Name)
 				if !ok || !subsetOf(entry, mustJSON(info)) {
 					t.Errorf("%s: the catalogue has %s, want %s", name, dump(info), entry)
 				}
@@ -737,7 +749,7 @@ func runStatechartSuite(t *testing.T, suite *statechartSuite) {
 			t.Errorf("%s: the rows of %s are %s, want %s", name, step.Table, dump(tableRows), want.Rows)
 		}
 		if want.Outbox != nil {
-			rows, err := s.Outbox(ctx, OutboxFilter{Class: class, DocID: id}, asSetup)
+			rows, err := d.Outbox(ctx, OutboxFilter{Class: class, DocID: id}, asSetup)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -832,7 +844,7 @@ func runStatechartSuite(t *testing.T, suite *statechartSuite) {
 			}
 		}
 		if want.History != nil {
-			rows, err := s.History(ctx, class, id, As(root))
+			rows, err := d.History(ctx, class, id, asRoot)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -845,7 +857,7 @@ func runStatechartSuite(t *testing.T, suite *statechartSuite) {
 			}
 		}
 		if want.Actors != nil {
-			events, err := s.Events(ctx, class, id, As(root))
+			events, err := d.Events(ctx, class, id, asRoot)
 			if err != nil {
 				t.Errorf("%s: %v", name, err)
 				continue
@@ -866,7 +878,7 @@ func runStatechartSuite(t *testing.T, suite *statechartSuite) {
 			}
 		}
 		if want.Overrides != nil {
-			events, err := s.Events(ctx, class, id, As(root))
+			events, err := d.Events(ctx, class, id, asRoot)
 			if err != nil {
 				t.Errorf("%s: %v", name, err)
 				continue
@@ -884,7 +896,7 @@ func runStatechartSuite(t *testing.T, suite *statechartSuite) {
 			}
 		}
 		if want.Events != nil {
-			events, err := s.Events(ctx, class, id, As(root))
+			events, err := d.Events(ctx, class, id, asRoot)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -901,7 +913,7 @@ func runStatechartSuite(t *testing.T, suite *statechartSuite) {
 			}
 		}
 		if want.Origins != nil {
-			events, err := s.Events(ctx, class, id, As(root))
+			events, err := d.Events(ctx, class, id, asRoot)
 			if err != nil {
 				t.Fatal(err)
 			}

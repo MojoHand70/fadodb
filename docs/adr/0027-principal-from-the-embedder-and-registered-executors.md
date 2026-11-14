@@ -1,6 +1,6 @@
 # ADR-0027: The principal comes from the embedder; action executors are registered
 
-- Status: Accepted; amends ADR-0009, ADR-0010, ADR-0011; amended by ADR-0044 (how the worker hands a row to an action), ADR-0045 (an action is registered with a definition; `http.call` belongs to the library, behind a switch), ADR-0049 (the optional package of users and keys waits for the server), ADR-0050 (a principal says what it is and for whom it acts), ADR-0051 (who may define, operate and run SQL), ADR-0052 (four system groups take the place of the administrator's flag), ADR-0053 (the engine keeps substitutions and checks for whom a caller acts)
+- Status: Accepted; amends ADR-0009, ADR-0010, ADR-0011; amended by ADR-0044 (how the worker hands a row to an action), ADR-0045 (an action is registered with a definition; `http.call` belongs to the library, behind a switch), ADR-0049 (the optional package of users and keys waits for the server), ADR-0050 (a principal says what it is and for whom it acts), ADR-0051 (who may define, operate and run SQL), ADR-0052 (four system groups take the place of the administrator's flag), ADR-0053 (the engine keeps substitutions and checks for whom a caller acts), ADR-0056 (users and keys are kept in the database they belong to), ADR-0057 (the optional package of users, groups and keys is built, with keys and without passwords or sessions; its commands are part of the command set), ADR-0059 (an action implemented by a Go function does not run under `fadodb serve`)
 - Date: 2026-11-06
 
 ## Context

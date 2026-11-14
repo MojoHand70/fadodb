@@ -39,7 +39,7 @@ through an interface, so a lite build exists for embedding anywhere.
 ┌──────────────────────────────────────────────────────────────────────┐
 │ Frontends: reference web renderer · CLI · your app · AI agent (MCP)  │
 └───────────────┬───────────────────────┬──────────────────┬───────────┘
-                │ HTTP + WebSocket      │ C ABI (JSON)     │ Go API
+                │ HTTP                  │ C ABI (JSON)     │ Go API
 ┌───────────────▼───────────────────────▼──────────────────▼───────────┐
 │ Protocol layer: one JSON command set, OpenAPI described              │
 ├──────────────────────────────────────────────────────────────────────┤
@@ -722,16 +722,17 @@ key order, to the function the Go VM adds with.
   the kind and the id acted for on every event beside the actor's id,
   and answers them to `USERKIND()` and `ACTINGFOR()`, so that a class
   can keep a step for a person and the log can say which steps an agent
-  took and for whom. `USER()` stays the one who acts. The engine keeps
-  no user
-  tables; an optional package of users, groups and API keys turns a
-  credential into a principal for `fadodb serve`.
+  took and for whom. `USER()` stays the one who acts. A host program
+  says who is calling. Under `fadodb serve` the database keeps its own
+  users, groups and keys, and a key turns a request into a principal
+  (ADR-0057, accepted and not built).
 - Access rules per class: `read`, `create`, `update`, `delete`, and per-transition rules. Tables have `read` and `write` rules.
 - A class may declare `rights` per state and variable, a table of ticks:
   a variable whose `write` rule is FALSE in the document's state cannot be
-  set, one whose `read` rule is FALSE is absent from the wire document, the
-  change stream and query results; the SQL endpoint and the views stay
-  row-level (ADR-0028).
+  set, one whose `read` rule is FALSE is absent from the wire document
+  and query results; the SQL endpoint and the views stay row-level
+  (ADR-0028). The stream of changes carries events and no values
+  (ADR-0058).
 - `read` compiles to a SQL predicate appended to every query, view and
   subscription filter. A formula that reads the documents of a class is
   not a caller: it sees every document, and the rights on the variable
@@ -975,7 +976,7 @@ against their own VM port.
   prepared statements, read connections pooled.
 - Schema: `classes`, `class_versions`, `schemas`, `layouts`, per class the
   current, history and child tables, `events`, `event_docs`, `outbox`,
-  `users`, `groups`, `memberships`, `api_keys`, `sessions`,
+  the users and keys of a database that keeps its own (ADR-0057),
   `tables_registry`, `schema_version`, `blobs` when the blob store is the
   database file, plus explicit tables bound to `sqlite`.
 - Indexes declared per variable (`"index": true`), plus `(class, doc_id, ts)`
@@ -1092,47 +1093,55 @@ Layouts, `QUERY` and subscriptions arrive with their phases.
 
 ### JSON command set
 
-One command set serves HTTP, WebSocket and the C ABI. HTTP routes are a thin
-mapping:
+One command set serves HTTP, the door for agents, the command-line tool
+and the C ABI (ADR-0011, ADR-0055). A command is a name and one JSON
+object, answered by one JSON object. Every call of the Go API that
+reads or changes a database is a command, and
+[the commands](manual/commands.md) lists every one, generated from the
+engine's table.
 
-> Phase 6 is open and proposes to replace this table. Five records are
-> proposed and not yet accepted: ADR-0055, one address for each command,
-> `POST /v1/<command>`, with the id of the document in the JSON;
-> ADR-0056, one database for each customer and for each server;
-> ADR-0057, users, groups and keys as commands; ADR-0058, the stream of
-> changes as an HTTP reply that stays open, with no WebSocket; ADR-0059,
-> `fadodb serve`. By the owner's ruling of 2026-11-14 layouts move to
-> Phase 7. This section is rewritten when the records are accepted.
->
-> The commands themselves are built, ahead of the server: the Go call
-> `Exec` takes the name of a command and its JSON object and answers
-> one JSON object, and [the commands](manual/commands.md) lists every
-> one, generated from the engine's table. No route below exists.
+> What is built today: the Go call `Exec` takes the name of a command
+> and its JSON object and answers one JSON object. Nothing listens on
+> the network. Every address below is decided, by the five records the
+> owner accepted on 2026-11-14, and not built.
 
-| Route | Purpose |
-|---|---|
-| `POST /v1/classes`, `GET /v1/classes/{name}`, `GET /v1/classes/{name}/bundle` | Define classes; fetch the bundle for frontends |
-| `PUT /v1/classes/{name}/layouts/{layout}`, `GET .../layouts`, `GET .../layouts/{layout}` | Layouts, versioned independently of the class |
-| `POST /v1/docs/{class}`, `GET /v1/docs/{class}/{id}`, `PATCH .../values`, `DELETE` | Documents |
-| `POST /v1/docs/{class}/{id}/transitions/{name}` | Transition |
-| `POST /v1/docs/{class}/{id}/refresh`, `POST .../reset` | Trigger recalculation of named variables; reset inputs to defaults |
-| `POST /v1/docs/{class}/preview`, `POST /v1/classes/validate` | Evaluate without writing: a document, a draft class, one transition; definition-time diagnostics (ADR-0025) |
-| `GET /v1/docs/{class}/{id}/history`, `GET .../events` | Versions and log |
-| `POST /v1/query`, `POST /v1/sql` | Filter DSL, read-only SQL |
-| `GET /v1/subscribe` (WebSocket) | Change stream filtered by the caller's read predicate |
-| `/v1/tables/*` | Explicit tables: schema, binding, rows, import |
-| `/v1/auth/*`, `/v1/users`, `/v1/groups` | Administration |
-| `GET /v1/health`, `GET /v1/metrics` | Operations; Prometheus text format written by hand |
+| Address | Purpose | Record |
+|---|---|---|
+| `POST /v1/<command>` | Any command: its object as the body, its answer as the body of the reply. The id of a document travels in the JSON and never in the path | ADR-0055 |
+| `POST /v1/subscribe` | The stream of changes: a reply that stays open and carries one entry for each event the caller's read rule lets it hear of. No WebSocket | ADR-0058 |
+| `POST /v1/blobs`, `GET /v1/file`, `GET /v1/blob` | Files, beside the commands, with the id as a parameter | ADR-0055, ADR-0033 |
+| `GET /v1/health`, `GET /v1/metrics` | Operations; Prometheus text format written by hand | ADR-0059 |
 
-The OpenAPI document is generated from the Go route table and checked into `api/`.
+- **One database for each customer.** A server serves one database,
+  and the address alone says which: no command, no JSON and no key
+  names a customer (ADR-0056).
+- **Users, groups and keys are kept in the database.** A caller proves
+  who it is with a key, `Authorization: Bearer fado_…`. There is no
+  password and no session in this phase. Database administrators keep
+  the users and alone make keys, with nine commands. A host program
+  with its own people gives the door its own function, and the nine
+  commands are then not offered (ADR-0057).
+- **The stream sends the event alone.** A subscriber reads the document
+  when it acts. A document that leaves a subscriber's sight is not
+  mentioned (ADR-0058).
+- **`fadodb serve`** serves a database that `fadodb init` made. Told
+  nothing, it listens on this machine only. It runs the engine's
+  actions and the actions that send an HTTP request, and no action
+  written as a Go function. Its settings are the operator's
+  (ADR-0059).
+- Layouts and the class bundle come with the frontend in Phase 7, by
+  the owner's ruling of 2026-11-14.
+
+The OpenAPI document is generated from the table of the commands and
+checked into `api/`.
 
 ### Documents on the wire
 
 A document is one JSON object: system variables at the top level, declared
-variables under `values`, composites inline. Reads, the change stream,
-create (`values` only) and `PATCH .../values` (the variables to change)
-share this shape. A blank is `null`; a variable absent from a patch is
-unchanged. Dates are `"YYYY-MM-DD"`, datetimes integer seconds, exact
+variables under `values`, composites inline. Reads, create (`values`
+only) and `set` (the variables to change) share this shape; an entry of
+the stream of changes is an event and not a document (ADR-0058). A
+blank is `null`; a variable absent from a `set` is unchanged. Dates are `"YYYY-MM-DD"`, datetimes integer seconds, exact
 values text such as `"12.30"` and money `"12.30 PLN"`, refs are
 `"Class:id"` text, objects nested JSON objects and `null` when every field
 is blank, `json` variables embedded as they are.
@@ -1157,7 +1166,8 @@ is blank, `json` variables embedded as they are.
 }
 ```
 
-The bundle at `GET /v1/classes/{name}/bundle` is the class definition, its
+The bundle, which comes with the frontend in Phase 7 and whose address
+that phase decides (ADR-0055, item 8), is the class definition, its
 layouts, the compiled bytecode of every formula including layout bindings,
 and the slice of the function catalog they use. A frontend needs nothing
 else to render a document and evaluate it live. The bundle is cached by an
@@ -1278,9 +1288,9 @@ fadodb/
   internal/store/        sqlite store, history, child tables, events, outbox, schema
   internal/state/        statechart engine
   fado/outbound/         the sender of an action's HTTP requests; only a program that allows outbound calls imports it
-  internal/auth/         users, groups, tokens, predicate compilation
+  internal/auth/         users, groups and keys
   internal/query/        LOOKUP/QUERY compilation, filter DSL, SQL endpoint, authorizer
-  internal/server/       http, websocket, command dispatch
+  internal/server/       the HTTP door: requests to commands, the stream of changes
   api/                   openapi.json, json schemas for class, layout and wire documents
   analytics/             duckdb module: projection, native tables, attach, mining views
   postgres/              postgres dialect and driver (separate module)

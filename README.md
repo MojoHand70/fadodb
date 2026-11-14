@@ -49,7 +49,7 @@ Website: [fadodb.org](https://fadodb.org). The manual starts at
 > lets nobody through, so a class says who may. A content administrator
 > who acts past a rule gives a reason, and the event keeps it. A caller
 > may act for somebody only while a substitution says so, a document
-> the person gives and withdraws. The server is in progress. Its first step is built: every call of the Go API is also a command, a name and one JSON object answered by one JSON object, which `Exec` runs ([the commands](docs/manual/commands.md)). Nothing listens on the network yet, and the records of the server, ADR-0055 to ADR-0059, are proposed and not accepted. The numbers are in
+> the person gives and withdraws. The server is in progress. Its first step is built: every call of the Go API is also a command, a name and one JSON object answered by one JSON object, which `Exec` runs ([the commands](docs/manual/commands.md)). Nothing listens on the network yet. The design of the server is accepted, as ADR-0055 to ADR-0059, and not built. The numbers are in
 > [docs/perf/](docs/perf/), the plan in [ROADMAP.md](ROADMAP.md).
 
 ## What it is
@@ -273,8 +273,8 @@ in [docs/perf/](docs/perf/).
   server, in SQL, and in the browser.
 - **Records, not cells.** A redefinition of a class never changes a stored
   document; a document in a terminal state never changes at all.
-- **Protocol first.** One JSON command set over HTTP, WebSocket, a C ABI and
-  the Go API, so any frontend or language can attach.
+- **Protocol first.** One JSON command set over HTTP, a C ABI and the Go
+  API, so any frontend or language can attach.
 - **Honest status.** Docs describe what works today.
 
 The reasoning is in [docs/architecture.md](docs/architecture.md) and the
@@ -303,7 +303,7 @@ internal/state/    statechart engine (Phase 3)
 fado/outbound/     what a host program imports to let a database send the HTTP requests of actions
 api/               JSON schemas of an action definition, of the call an action receives and of the delivered event
 internal/auth/     users, groups and API keys for the server (Phase 6)
-internal/server/   HTTP and WebSocket (Phase 6)
+internal/server/   the HTTP door of the server (Phase 6)
 analytics/         the DuckDB module: conformance and store benchmarks today, the projection in Phase 8
 bench/             end-to-end performance scenarios behind the budgets
 docs/              architecture, ADRs, dependency budget, benchmarks

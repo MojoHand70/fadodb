@@ -1,6 +1,6 @@
 # ADR-0052: System groups: who runs the database, who designs, who reads everything and who may act on any document
 
-- Status: Accepted; amends ADR-0010 and ADR-0027 (the administrator's flag gives way to four system groups), ADR-0041 (who passes the rights on variables), ADR-0033 (who opens a blob by its hash), ADR-0047 (an event says which rule was lifted, and why), ADR-0049 (who passes the rules of a class; a rule left out), ADR-0051 (the three lists the host names become system groups; work nobody was given; a table's rule left out; a version is read back with who defined it)
+- Status: Accepted; amends ADR-0010 and ADR-0027 (the administrator's flag gives way to four system groups), ADR-0041 (who passes the rights on variables), ADR-0033 (who opens a blob by its hash), ADR-0047 (an event says which rule was lifted, and why), ADR-0049 (who passes the rules of a class; a rule left out), ADR-0051 (the three lists the host names become system groups; work nobody was given; a table's rule left out; a version is read back with who defined it); amended by ADR-0057 (database administrators keep users, groups and keys, their own groups among them), ADR-0059 (the settings of the server are the operator's, not an administrator's)
 - Date: 2026-11-13
 
 ## Context

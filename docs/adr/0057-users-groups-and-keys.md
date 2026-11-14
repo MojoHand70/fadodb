@@ -1,6 +1,6 @@
 # ADR-0057: Who is calling: users, groups and keys, kept in the database
 
-- Status: Proposed; the owner ruled on its four questions on 2026-11-14, and the rulings are at the end; amends ADR-0027 (the optional package of users, groups and keys is built, with keys and without passwords or sessions; its commands are part of the command set and not routes of their own), ADR-0052 (who keeps the members of a group), ADR-0055 (nine commands join the table)
+- Status: Accepted; amends ADR-0027 (the optional package of users, groups and keys is built, with keys and without passwords or sessions; its commands are part of the command set and not routes of their own), ADR-0052 (who keeps the members of a group), ADR-0055 (nine commands join the table)
 - Date: 2026-11-14
 
 ## Context

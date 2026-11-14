@@ -17,7 +17,9 @@ import (
 // must define as it is written, or a piece quoted from a whole class of
 // the same chapter, which must be found there word for word. So a
 // chapter cannot show a class the engine refuses, nor a line the class
-// beside it does not have.
+// beside it does not have. A class is defined in a database that holds
+// what the page shows before it: its tables, its actions and its
+// earlier classes.
 func TestManualExamples(t *testing.T) {
 	pages := manualPages(t)
 	block := regexp.MustCompile("(?s)```json\r?\n(.*?)\r?\n```")
@@ -74,6 +76,15 @@ func TestManualExamples(t *testing.T) {
 			for _, action := range actions {
 				if _, err := db.DefineAction(ctx, []byte(action), setup); err != nil {
 					t.Errorf("%s: an action is refused: %v", name, err)
+				}
+			}
+			// So is every class the page shows before this one, under
+			// another name: a rule may name a class shown above it. Such
+			// a class is checked in its own turn, so its error is not
+			// reported twice.
+			for _, earlier := range classes[:i] {
+				if className(earlier) != className(class) {
+					db.DefineClass(ctx, []byte(earlier), setup)
 				}
 			}
 			cls, err := db.DefineClass(ctx, []byte(class), setup)
@@ -145,6 +156,15 @@ func manualPages(t *testing.T) []string {
 		t.Fatal(err)
 	}
 	return append(pages, skills...)
+}
+
+// className returns the name a class definition gives.
+func className(definition string) string {
+	var named struct {
+		Name string `json:"name"`
+	}
+	json.Unmarshal([]byte(definition), &named)
+	return named.Name
 }
 
 // kindOf says what a block of JSON in the manual is: a whole class, a

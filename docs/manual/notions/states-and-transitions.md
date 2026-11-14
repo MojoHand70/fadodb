@@ -256,3 +256,5 @@ transition leaves. Both are accepted without a remark.
 A refusal says what would help: `wrong_state` names the transitions
 that do leave the state, `unknown_transition` the transitions the
 class has, `guard_false` the guard.
+
+Next: [Rules and actions](rules-and-actions.md).

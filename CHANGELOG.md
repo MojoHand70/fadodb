@@ -38,6 +38,16 @@ All notable changes to FadoDB are recorded here. The format follows
   class and a story of named people, and a test plays the story and
   every table of the chapter against the engine, the document it
   shows and the chart it draws included.
+- Two more chapters on the notions: rules and actions, with what a
+  rule does inside a commit set apart from what the engine runs after
+  it; and who may, with the caller, the questions a class answers, who
+  edits in which state, how a right is found in the table, the four
+  system groups and the content administrator.
+- The last two chapters on the notions: history and the log, with
+  what an event carries, every kind of event, the key of a call sent
+  twice and the business day; and time, with a transition that carries
+  its time, a timer that was missed while no program ran, and reads as
+  of another day. All seven notions are now written.
 - The designer's skill teaches the syntax: what to read in the manual,
   a small class that is complete, and the ten things that go wrong
   most often. It is no longer a stub. The classes the skills show are

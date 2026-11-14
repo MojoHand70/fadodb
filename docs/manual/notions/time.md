@@ -147,7 +147,7 @@ its week, and how a designer tries what a class will do next month.
 A change is never made as of another moment. A commit runs at the
 clock of the database, and a call that tries is refused with
 `not_allowed`. To rehearse a month, open a copy of the file with a
-clock of your own.
+clock of your own; see [Opening a database](../opening-a-database.md#the-clock).
 
 ## A guard that reads the clock
 

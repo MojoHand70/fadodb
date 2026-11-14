@@ -1,8 +1,11 @@
 package store
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -596,6 +599,112 @@ func BenchmarkExecTransition(b *testing.B) {
 		}
 	}
 }
+
+// BenchmarkDoorTransition is BenchmarkExecTransition sent to the HTTP
+// door of the store: the same two transitions as requests, answered by
+// the door without a network in between. What it takes beyond
+// BenchmarkExecTransition is what the door adds to a command: asking who
+// sends it, its slot, reading the body, the clock over the command and
+// writing the reply (ADR-0055, item 8; ADR-0011's budget of 200 µs for
+// the server is over this and the network).
+func BenchmarkDoorTransition(b *testing.B) {
+	if handleHTTP == nil {
+		b.Skip("built without the HTTP door")
+	}
+	s, err := Open(filepath.Join(b.TempDir(), "bench.fado"), Options{})
+	if err != nil {
+		b.Fatal(err)
+	}
+	defer s.Close()
+	ctx := context.Background()
+	if _, err := s.defineOpen(ctx, []byte(benchFlow), asSetup); err != nil {
+		b.Fatal(err)
+	}
+	doc, err := s.Create(ctx, "Flow", Values{"amount": 500, "qty": 5, "note": "n"})
+	if err != nil {
+		b.Fatal(err)
+	}
+	objects := [2][]byte{
+		[]byte(`{"class": "Flow", "id": "` + doc.ID + `", "transition": "submit"}`),
+		[]byte(`{"class": "Flow", "id": "` + doc.ID + `", "transition": "back"}`),
+	}
+	door := handleHTTP(s, alice)
+	// One request and one reply serve every round, so that what is
+	// counted is the door's and not the making of a request.
+	body := &benchBody{}
+	req := &http.Request{
+		Method: http.MethodPost,
+		URL:    &url.URL{Path: "/v1/transition"},
+		Header: http.Header{"Content-Type": {"application/json"}},
+		Body:   body,
+	}
+	w := &benchReply{header: http.Header{}}
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; b.Loop(); i++ {
+		body.Reset(objects[i%2])
+		req.ContentLength = int64(len(objects[i%2]))
+		clear(w.header)
+		w.status = 0
+		door.ServeHTTP(w, req)
+		if w.status != http.StatusOK {
+			b.Fatalf("the door answered %d", w.status)
+		}
+	}
+}
+
+// BenchmarkDoorTransitionLoopback is the same two transitions sent to a
+// server that listens on this machine, one connection kept open: the
+// door, Go's HTTP server and client, and the loopback network. It is
+// not in the benchmark gate; the campaign of the phase measures the
+// server against its budget (ADR-0011: under 200 µs at p99 beyond the
+// Go API).
+func BenchmarkDoorTransitionLoopback(b *testing.B) {
+	if listenHTTP == nil {
+		b.Skip("built without the HTTP door")
+	}
+	s, err := Open(filepath.Join(b.TempDir(), "bench.fado"), Options{})
+	if err != nil {
+		b.Fatal(err)
+	}
+	defer s.Close()
+	ctx := context.Background()
+	if _, err := s.defineOpen(ctx, []byte(benchFlow), asSetup); err != nil {
+		b.Fatal(err)
+	}
+	doc, err := s.Create(ctx, "Flow", Values{"amount": 500, "qty": 5, "note": "n"})
+	if err != nil {
+		b.Fatal(err)
+	}
+	objects := [2][]byte{
+		[]byte(`{"class": "Flow", "id": "` + doc.ID + `", "transition": "submit"}`),
+		[]byte(`{"class": "Flow", "id": "` + doc.ID + `", "transition": "back"}`),
+	}
+	send, stop := listenHTTP(s)
+	defer stop()
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; b.Loop(); i++ {
+		if _, err := send(ctx, alice, "transition", objects[i%2]); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+// benchBody is the body of a request that is read again each round.
+type benchBody struct{ bytes.Reader }
+
+func (*benchBody) Close() error { return nil }
+
+// benchReply takes the reply of a door and keeps its status.
+type benchReply struct {
+	header http.Header
+	status int
+}
+
+func (w *benchReply) Header() http.Header         { return w.header }
+func (w *benchReply) WriteHeader(status int)      { w.status = status }
+func (w *benchReply) Write(p []byte) (int, error) { return len(p), nil }
 
 // benchOwned runs BenchmarkTransition's loop on its class with an owner
 // variable added, and with the access block given.

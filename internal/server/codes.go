@@ -1,0 +1,64 @@
+package server
+
+import (
+	"net/http"
+
+	"github.com/MojoHand70/fadodb/internal/command"
+	"github.com/MojoHand70/fadodb/internal/store"
+)
+
+// The codes a door answers with for what happens before a command runs
+// or beside it, and to no Go program (ADR-0055, item 7; ADR-0059,
+// item 2). A caller branches on them as on the codes of the engine.
+const (
+	// CodeUnauthenticated: the request does not say who sends it, or says
+	// it with a credential the server does not know. The words are the
+	// same whatever was wrong, so that a guess learns nothing.
+	CodeUnauthenticated = "unauthenticated"
+	// CodeTooLarge: the request is larger than the server reads, 16 MiB
+	// unless the server was told otherwise. Nothing of it was run.
+	CodeTooLarge = "too_large"
+	// CodeTimeout: the command ran longer than the server lets one run,
+	// 30 seconds unless the server was told otherwise, and was stopped. A
+	// command that is one commit wrote nothing; migrate and drain, which
+	// commit as they go, keep what they had done.
+	CodeTimeout = "timeout"
+	// CodeBusy: the server already runs as many commands as it takes on
+	// at once, and none ended while the request waited. Nothing was run;
+	// the same request can be sent again.
+	CodeBusy = "busy"
+)
+
+// Status is the HTTP status a code is answered with (ADR-0055, item 8),
+// for the proxies and the tools between a caller and the door. A caller
+// reads the code. The empty code is a command that ran.
+func Status(code string) int {
+	switch code {
+	case "":
+		return http.StatusOK
+	case command.CodeBadJSON:
+		return http.StatusBadRequest
+	case CodeUnauthenticated:
+		return http.StatusUnauthorized
+	case store.CodeForbidden, store.CodeReasonRequired:
+		return http.StatusForbidden
+	case command.CodeUnknownCommand, store.CodeUnknownClass, store.CodeUnknownDocument,
+		store.CodeUnknownTable, store.CodeUnknownSchema, store.CodeUnknownAction,
+		store.CodeUnknownBlob, store.CodeUnknownRow:
+		return http.StatusNotFound
+	case store.CodeKeyReused, store.CodeDuplicate, store.CodeWrongState,
+		store.CodeTerminal, store.CodeGuardFalse:
+		return http.StatusConflict
+	case CodeTooLarge, store.CodeBlobTooLarge:
+		return http.StatusRequestEntityTooLarge
+	case command.CodeInternal, store.CodeStorage:
+		return http.StatusInternalServerError
+	case store.CodeClosed, CodeBusy:
+		return http.StatusServiceUnavailable
+	case CodeTimeout:
+		return http.StatusGatewayTimeout
+	}
+	// Every other refusal: the request was understood and the engine
+	// does not carry it out.
+	return http.StatusUnprocessableEntity
+}

@@ -1,0 +1,99 @@
+// Package httpdoor is the HTTP door of a FadoDB database: it lets a
+// program that has opened a database answer the command set over HTTP
+// (ADR-0055).
+//
+// A command is sent as POST /v1/<command>, its object as the body, and
+// the answer is the body of the reply:
+//
+//	POST /v1/transition
+//	Content-Type: application/json
+//
+//	{"class": "Invoice", "id": "FV/2026/11/0042", "transition": "approve"}
+//
+// The door is an http.Handler. The program that makes it decides where
+// it listens, and gives it the one thing the engine never decides: who
+// sends a request.
+//
+//	door, err := httpdoor.New(db, httpdoor.Options{
+//		Who: func(r *http.Request) (fado.Principal, error) {
+//			user, ok := mySession(r)
+//			if !ok {
+//				return fado.Principal{}, errors.New("no session")
+//			}
+//			return fado.Principal{ID: user.ID, Groups: user.Groups, Kind: fado.ActorPerson}, nil
+//		},
+//	})
+//	http.ListenAndServe("127.0.0.1:8080", door)
+//
+// A door serves one database (ADR-0056). A program that serves several
+// makes one door for each and chooses between them by the host name or
+// by the start of the path, which it takes off before the door sees the
+// request; two doors share nothing.
+//
+// Only a program that answers HTTP imports this package, so that a
+// program that embeds the engine and never listens carries no server.
+//
+// Not here yet, each with its step of Phase 6: the stream of changes,
+// the files beside the commands, and the engine's own users and keys,
+// which `fadodb serve` will give the door as its Who.
+package httpdoor
+
+import (
+	"github.com/MojoHand70/fadodb/fado"
+	"github.com/MojoHand70/fadodb/internal/server"
+)
+
+// Door is the HTTP door of one database. It is an http.Handler, safe for
+// any number of requests at once.
+type Door = server.Door
+
+// Options are what a door is made with: Who, which is required, the
+// limits and a function that is told of every request.
+type Options = server.Options
+
+// Who says who sends a request: the principal its command runs as, or an
+// error, which the door answers with unauthenticated in the same words
+// whatever the error says. For whom the caller acts is said in the
+// command, under "for", and the engine checks it.
+type Who = server.Who
+
+// Limits are what one door takes on: the largest request, the time one
+// command may run and how many run at once. A zero is the default.
+type Limits = server.Limits
+
+// Request is what a door tells Options.Report of one request. It holds
+// no body, no value of a document and no credential.
+type Request = server.Request
+
+// The limits of a door that was given none (ADR-0059, item 2).
+const (
+	DefaultRequestBytes = server.DefaultRequestBytes
+	DefaultCommandTime  = server.DefaultCommandTime
+	DefaultCommands     = server.DefaultCommands
+)
+
+// The codes a door answers with for what happens before a command runs
+// or beside it. Every other code is the engine's; fado.ErrorCode and the
+// chapter on refusals list them.
+const (
+	CodeUnauthenticated = server.CodeUnauthenticated
+	CodeTooLarge        = server.CodeTooLarge
+	CodeTimeout         = server.CodeTimeout
+	CodeBusy            = server.CodeBusy
+)
+
+// New makes the door of an open database. It fails when Options.Who is
+// not given: a program that means to let everybody in says so with a
+// function that answers the same principal for every request.
+func New(db *fado.DB, o Options) (*Door, error) {
+	if db == nil {
+		// A nil *fado.DB in the interface would not be nil.
+		return server.New(nil, o)
+	}
+	return server.New(db, o)
+}
+
+// Status is the HTTP status the door answers a code with, 200 for the
+// empty code of a command that ran. A caller reads the code; the status
+// is for the proxies and the tools in between.
+func Status(code string) int { return server.Status(code) }

@@ -167,6 +167,30 @@ Facts checked on the day:
     - Limits for each user, such as commands a minute. The limits of
       item 2 are for the whole database.
 
+## Settled while building the door
+
+The limits of item 2 that are about commands are the door's
+(`fado/httpdoor`), so that a host program has them as `fadodb serve`
+does. Built with the door, ahead of `fadodb serve`:
+
+- **A command takes its slot before its body is read.** So a door
+  never holds more bodies than it runs commands: 64 of at most 16 MiB
+  unless told otherwise. A body is read after the door knows who sends
+  it.
+- **The short time a request waits for a slot is one second**, and the
+  refusal `busy` carries `Retry-After: 1`.
+- **What `timeout` leaves behind.** A command that is one commit wrote
+  nothing. `migrate` and `drain` commit as they go, and keep what they
+  had done when they were stopped; both can be sent again. The refusal
+  says so in its hint.
+- **A refusal that comes back after the time is up is still the
+  refusal.** `timeout` is answered only for a command that the clock
+  stopped: one that failed in the engine or in its storage once its
+  time had run out.
+- **The door tells of every request** through a function the program
+  gives it: when, which command, who, the status, the code and how
+  long. The line of item 9 is written from it by `fadodb serve`.
+
 ## The owner's rulings
 
 All of 2026-11-14. The owner read the three questions, each with a

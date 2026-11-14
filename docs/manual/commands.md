@@ -7,9 +7,12 @@ and one JSON object, answered by one JSON object. A command is how a
 caller that is not a Go program reaches a document. The list is written
 from the engine's own table, so it has every command and no other.
 
-Today a command is run by the Go call `Exec`. The server that takes the
-same commands over the network is in progress (Phase 6) and is not
-built: nothing listens yet.
+A command reaches a database two ways today. A Go program runs one with
+the call `Exec`. And a Go program that has opened a database can let it
+answer commands [over HTTP](#over-http), through the package
+`fado/httpdoor`. The program `fadodb serve`, which does that for a
+database with users and keys of its own, is in progress (Phase 6) and
+is not built.
 
 ## A command and its answer
 
@@ -897,6 +900,61 @@ It answers:
 |---|---|
 | `checked` | how many files it checked |
 | `mismatched` | the hashes of the files whose bytes do not match |
+
+## Over HTTP
+
+A Go program that has opened a database lets it answer commands over
+HTTP with the package `fado/httpdoor`. The program says where it listens
+and who sends each request, and the door does the rest. One door serves
+one database.
+
+A command is sent to the address that ends in its name, with `POST`,
+its object as the body and the header `Content-Type: application/json`.
+The answer is the body of the reply. A command that reads is a `POST`
+too.
+
+```
+POST /v1/transition
+Content-Type: application/json
+Authorization: Bearer …
+
+{"class": "Invoice", "id": "FV/2026/11/0042", "transition": "approve"}
+```
+
+- **Who sends the request is not in the command**, here either. The
+  program that makes the door gives it a function that reads who it is
+  from the request: from a session or a token of the program's own. A
+  request whose sender the function cannot tell is refused with
+  `unauthenticated`, in the same words whatever was wrong, and runs
+  nothing. The engine's own users and keys come with `fadodb serve`.
+- **The id of a document travels in the JSON** and never in the
+  address, so an id such as `FV/2026/11/0042` needs no escaping.
+- **A door takes on so much and no more.** Unless the program says
+  otherwise: a request of at most 16 MiB, refused beyond that with
+  `too_large`; a command that runs at most 30 seconds, stopped after
+  that and refused with `timeout`; and 64 commands at once. A request
+  beyond them waits one second for a command to end and is then refused
+  with `busy`; nothing of it ran, and it can be sent again.
+- **A request that is not a command as JSON is told so.** One that is
+  not a `POST` is answered with the status 405, and a body that is not
+  said to be JSON with 415. Both carry the code `bad_json` and a hint.
+- **A caller reads the code, not the status.** The status of a reply
+  is worked out from its code, for the proxies and the tools between
+  the caller and the door:
+
+  | Status | Codes |
+  |---|---|
+  | 200 | the command ran |
+  | 400 | `bad_json` |
+  | 401 | `unauthenticated` |
+  | 403 | `forbidden`, `reason_required` |
+  | 404 | `unknown_class`, `unknown_document`, `unknown_table`, `unknown_schema`, `unknown_blob`, `unknown_action`, `unknown_row`, `unknown_command` |
+  | 409 | `key_reused`, `duplicate`, `terminal`, `wrong_state`, `guard_false` |
+  | 413 | `blob_too_large`, `too_large` |
+  | 422 | every other refusal |
+  | 500 | `storage`, `internal` |
+  | 503 | `closed`, `busy` |
+  | 504 | `timeout` |
 
 ## What is not a command
 

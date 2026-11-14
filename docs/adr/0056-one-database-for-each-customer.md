@@ -163,6 +163,17 @@ Facts checked in the engine on the day:
      account that has several databases, such as one for tests and one
      for production, invoices, and which machine holds which database.
 
+## Settled while building the door
+
+The door of item 4 is the package `fado/httpdoor`. Two tests hold it to
+the item. One reads the door's source and fails when the package
+declares a variable, so a cache, a count or a pool can only be kept in
+a door and never beside it. The other fills one door with as many
+commands as it runs and sends a command to a second door in the same
+program, which answers. The half of the item's test that speaks of a
+key and of the stream of changes is written with the keys (ADR-0057)
+and with the stream (ADR-0058).
+
 ## The owner's rulings
 
 All of 2026-11-14. The owner read the three questions, each with the

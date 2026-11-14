@@ -409,6 +409,33 @@ the three ways of item 11. What it found, and what was done:
   refuses with `not_allowed` and the wire had refused as a member it
   does not know. Item 3 now says how the two agree.
 
+The second step built item 8, the HTTP door of item 10 and the third of
+the three ways of item 11. The door is the package `fado/httpdoor`, an
+`http.Handler` that a program mounts where it listens. What it settled:
+
+- **A request that is not a command as JSON is answered by what is
+  wrong with it as HTTP, and carries `bad_json`.** One that is not a
+  POST is answered 405 with `Allow: POST`; a body that is not said to
+  be `application/json` is answered 415; a request with no body is 400,
+  with the hint that a command that takes nothing is sent as `{}`. To a
+  caller the three are one mistake, and the hint says which. 405 and
+  415 are the only statuses that do not come from the table of item 8.
+- **An address outside `/v1/` is `unknown_command`**, with the form of
+  an address in the hint.
+- **Who is asked first.** The door asks who sends a request before it
+  reads the body and before the command set says whether the command
+  exists, so a caller it cannot tell learns nothing and costs nothing.
+  The reply carries `WWW-Authenticate: Bearer`.
+- **An answer ends with a line break** after its one JSON object, so
+  that a terminal shows it whole, and says `Cache-Control: no-store`.
+- **The table of item 8 is written out twice.** `Status` in the door,
+  and again in its test, which walks every code the engine, the command
+  set and the door declare: a code not named there is 422, and a code
+  the table names that nothing declares fails.
+- **The three suites ran through the door at the first try**, each
+  step a request to a server listening on the machine, and each reply's
+  status held to its code.
+
 ## The owner's rulings
 
 All of 2026-11-14. The owner read the record with its three questions
@@ -485,3 +512,40 @@ to its call.**
 Writing a document of fifty variables as JSON takes 3.0 µs and no
 allocation, against the 5 µs ADR-0018 allowed; `encoding/json` takes
 8.1 µs and 118 allocations for the same document.
+
+The door is measured the same way, without a network, by
+`BenchmarkDoorTransition`, which joins the benchmark gate. Its budget,
+set from the first measurement on the development machine on
+2026-11-14: **the door adds under 15 µs and at most 55 allocations to
+its command.**
+
+| | The command | Through the door | Added |
+|---|---|---|---|
+| A transition | 52 µs, 165 allocations | 60 µs, 216 allocations | 8 µs, 51 allocations |
+
+Of the 51 allocations, 44 are not the door's. A command over HTTP runs
+under a context that can be cancelled, so that it can be stopped when
+its time is up or its caller has left, and the SQLite driver watches
+such a context for every statement. A transition called from Go with a
+context that can be cancelled allocates 197 where it allocates 155
+without one. Every host program that passes the context of a request
+pays it today. A commit could watch its context once; that is a change
+to the commit and is not made here.
+
+Over the network the first numbers are these, on the same machine, a
+Linux VM under WSL2, over one connection that is kept open, 6,000
+transitions each:
+
+| | p50 | p99 |
+|---|---|---|
+| A transition by the Go API | 43 µs | 127 µs |
+| The same through the door, over loopback | 287 µs | 640 µs |
+| A request to a handler that does nothing, over loopback | 146 µs | 308 µs |
+
+So on this machine a request that does nothing takes longer at p99
+than the 200 µs the budget of ADR-0011 allows the server to add. The
+budget is not judged here. It is judged by the campaign of the phase's
+last step, which also has to say what of the time is the door's and
+what is the machine's network, and whether the budget is to be stated
+against a request that does nothing. That would be a change to a
+budget, and so a record and the owner's decision.

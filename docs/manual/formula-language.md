@@ -339,7 +339,8 @@ between them.
 ## Objects
 
 A variable of type `object` holds a value with named fields. A formula
-reads one field with a dot.
+reads one field with a dot. Schemas, and everything else about
+objects, are in [Schemas and objects](schemas-and-objects.md).
 
 <!-- examples -->
 | Formula | Answer | Type |

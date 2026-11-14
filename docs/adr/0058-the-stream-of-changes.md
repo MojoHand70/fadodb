@@ -1,6 +1,6 @@
 # ADR-0058: The stream of changes: the log read forward, over plain HTTP
 
-- Status: Proposed, with three questions open for the owner; amends ADR-0011 (the stream is carried by an HTTP reply that stays open, and the WebSocket is not built), ADR-0010 and ADR-0049 (how the read rule is asked for an event), ADR-0018 (an entry of the stream is an event and not a document), ADR-0055 (one command joins the table)
+- Status: Proposed; the owner ruled on its three questions on 2026-11-14, and the rulings are at the end; amends ADR-0011 (the stream is carried by an HTTP reply that stays open, and the WebSocket is not built), ADR-0010 and ADR-0049 (how the read rule is asked for an event), ADR-0018 (an entry of the stream is an event and not a document), ADR-0055 (one command joins the table)
 - Date: 2026-11-14
 
 ## Context
@@ -99,10 +99,14 @@ invoices of Acme that enter `review`.
      mentioned, and an event on it tells nothing, not even that it
      exists.
    - A document that an event takes out of the subscriber's sight: an
-     invoice whose owner changes from Ann to Bob, under a rule
-     `owner = USER()`. Ann is sent one bare entry, `hidden`, with the
-     class and the id and nothing else, so that her list drops the row.
-     She learns nothing she would not learn by asking for it.
+     expense waits for Ann's approval, under a `read` rule that names
+     its owner and its approver, and the approver is changed to Celina
+     before Ann touched it. Ann is told nothing, by the owner's
+     ruling 3. It is for her as if she had never had a right to the
+     document, which is what ADR-0049, item 3, says of a document a
+     caller may not read: hidden means absent. So the one rule above
+     has no exception. A list Ann holds keeps the row until she asks
+     again, and then the expense is absent for her.
    - A delete is told to whoever could read the document just before
      it.
    - A content administrator hears of every document, as they see every
@@ -131,7 +135,7 @@ invoices of Acme that enter `review`.
    reads it. The WebSocket of ADR-0011 would also carry commands on the
    same connection; a command is a request already, and nothing needs
    both on one connection. It can be added by a record if something
-   ever does.
+   ever does, and the owner expects that 2.0 will add it (ruling 1).
 
 9. **A commit pays nothing for the stream.** A commit that ends leaves
    a mark that the log grew, without allocating and without waiting for
@@ -149,7 +153,7 @@ invoices of Acme that enter `review`.
 
 12. **What this record leaves out.**
 
-    - The document inside an entry (question 2).
+    - The document inside an entry (ruling 2).
     - A condition on the values of a document, such as invoices over
       10,000. The subscriber reads the document and decides.
     - Changes of definitions and of users. They are not events of the
@@ -158,24 +162,43 @@ invoices of Acme that enter `review`.
     - How a tool of the door for agents hears of changes. That is the
       record of that door.
 
-## Questions for the owner
+## The owner's rulings
 
-1. **A plain HTTP stream and no WebSocket (item 8)?** Proposed: yes.
-   The roadmap's words for the phase change from "over HTTP and
-   WebSocket" to "over HTTP". The other answer: a WebSocket, by a
-   library taken into the core or by code of our own.
+All of 2026-11-14. The owner read the three questions, each with a
+case, and ruled on each. The first two are the answers the record
+proposed. The third is the other answer.
 
-2. **Is an entry the event alone (item 3), or the event with the
-   document after it?** Proposed: the event alone. The other answer
-   saves the subscriber one `get`, and has to say which document is
-   meant when three commits follow each other before the first entry
-   is read, and to apply the rights on each variable for each
-   subscriber. It can be added later as a field of `subscribe` without
-   changing what is built now.
+**1. A plain HTTP stream and no WebSocket? Yes** (item 8), with his
+words: "I can agree, but I think we will want to add Websocket in
+2.0." The roadmap's words for the phase change from "over HTTP and
+WebSocket" to "over HTTP". A WebSocket in 2.0 is what he expects. It
+is not planned work, and a record of its own comes before it.
 
-3. **A document that leaves a subscriber's sight: one bare `hidden`
-   entry (item 4), or silence?** Proposed: the bare entry. With
-   silence, the row stays on Ann's screen until she asks again.
+**2. Is an entry the event alone, or the event with the document after
+it? The event alone** (item 3). The agent reads the document when it
+acts, as it stands then and with the rights the agent has then. The
+answer not taken saves the subscriber one `get`, and has to say which
+document is meant when three commits follow each other before the
+first entry is read, and to apply the rights on each variable for each
+subscriber. It can be added later as a field of `subscribe` without
+changing what is built now.
+
+**3. A document that leaves a subscriber's sight: one bare `hidden`
+entry, or silence? Silence** (item 4). The record had proposed the
+bare entry, so that a list drops the row. The owner: "My answer is
+'nothing'. Just as if she didn't have rights to the document." So no
+entry of the stream says that a document went out of sight, and the
+stream has one kind of entry, `change`.
+
+The record's first case for this question was an invoice whose owner
+changes from Ann to Bob. The owner answered that whoever was once the
+editor of a document sees it in every later state, so a class written
+well does not take that invoice from Ann. The `read` rule of a class
+says so today by naming whoever has had a part: who created the
+document, its owner, its approver. The case of item 4 is therefore of
+somebody who never had a part. Whether the engine should hold his rule
+without the designer writing it is a question of rights that he has
+not ruled, and a record of its own.
 
 ## Consequences
 
@@ -192,6 +215,10 @@ invoices of Acme that enter `review`.
   many subscribers is work in proportion to both; it is done after
   the commit and never inside it.
 - The frontend of Phase 7 reads the same stream in a browser.
+- A list that is kept up to date from the stream can show a document
+  its holder may no longer read, until the list is asked again
+  (ruling 3). The frontend asks again when it shows a list; an agent
+  that works a document reads it first and finds it absent.
 
 ## Performance
 

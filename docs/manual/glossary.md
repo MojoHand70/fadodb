@@ -21,6 +21,7 @@ exactly so in a class or a formula.
 | rule | "when this happens, do that": it runs by itself when a document is created, changed or moved |
 | action | one thing a rule does: set a value, create another document, call another system |
 | table | a list of reference data, such as exchange rates, that formulas look values up in |
+| schema | a named set of fields, defined on its own, for a variable that holds an object such as an address |
 
 ## Who may
 

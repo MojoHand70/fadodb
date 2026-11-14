@@ -100,7 +100,7 @@ Each entry is one variable: its name, and what it is.
 | `scale` | for `decimal` and `money`: the number of decimal places, two when left out |
 | `index` | keeps an index on the variable, so that finding documents by it is fast |
 | `class` | for a `ref`: the class it points at |
-| `schema` | for `object` and `rows`: the fields of the value |
+| `schema` | for `rows`: the columns of the table, each with its type. For `object`: the name of a schema, which is defined on its own before the class |
 
 The types:
 

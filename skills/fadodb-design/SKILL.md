@@ -92,6 +92,12 @@ person later.
    never compute an amount yourself, write the formula.
 10. **Never write a secret into a class or an action.** A request
     reads it with `SECRET("name")`, and the host program supplies it.
+11. **A transition with its own line under `access.transition` is not
+    asked `update`.** Whoever may take it may set, in the same call,
+    every variable that `rights` does not keep from them. When a
+    transition goes to somebody who may not edit the document, write
+    in `rights` what they may set, or they can change any value while
+    they approve.
 
 ## The hat
 

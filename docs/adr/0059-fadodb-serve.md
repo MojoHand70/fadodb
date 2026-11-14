@@ -67,10 +67,10 @@ Facts checked on the day:
    | Streams of changes open at once | 256 | the settings |
 
    A command that runs out of time is stopped and refused with
-   `timeout`, and writes nothing. A request beyond the count of
-   commands or of streams waits a short time and is then refused with
-   `busy`, with status 503. Both codes join the five of ADR-0055,
-   item 7.
+   `timeout`, status 504, and writes nothing. A request beyond the
+   count of commands or of streams waits a short time and is then
+   refused with `busy`, status 503. Both codes join the five of
+   ADR-0055, item 7.
 
 3. **A key never travels in the clear by accident.** Listening on any
    address but this machine's without a certificate is refused at

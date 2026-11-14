@@ -1092,6 +1092,15 @@ Layouts, `QUERY` and subscriptions arrive with their phases.
 One command set serves HTTP, WebSocket and the C ABI. HTTP routes are a thin
 mapping:
 
+> Phase 6 is open and proposes to replace this table. Five records are
+> proposed and not yet accepted: ADR-0055, one address for each command,
+> `POST /v1/<command>`, with the id of the document in the JSON;
+> ADR-0056, one database for each customer and for each server;
+> ADR-0057, users, groups and keys as commands; ADR-0058, the stream of
+> changes as an HTTP reply that stays open, with no WebSocket; ADR-0059,
+> `fadodb serve`. By the owner's ruling of 2026-11-14 layouts move to
+> Phase 7. This section is rewritten when the records are accepted.
+
 | Route | Purpose |
 |---|---|
 | `POST /v1/classes`, `GET /v1/classes/{name}`, `GET /v1/classes/{name}/bundle` | Define classes; fetch the bundle for frontends |

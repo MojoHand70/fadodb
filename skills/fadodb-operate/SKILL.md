@@ -32,12 +32,16 @@ obstacle. The guards hold whoever is asking, the agent included.
 | a timed transition, `after` or `at`: it fires in the first commit that touches the document once its time has come, and `Transitions` shows the moment as `fires_at` | shipped with Phase 4 |
 | the engine moving a document by itself when its timer comes: `Outbox` and `<Class>_actions` list each timer waiting as the action `timer` with its moment in `due_at`; one that died says why, and `RetryAction` asks again | shipped with Phase 4 |
 | the JSON command set (ADR-0055): every call above as a name and one JSON object, answered by one JSON object, `{"document": …}` or `{"error": {"code": …}}`; a member the command does not take is refused with `bad_json` and its place. `docs/manual/commands.md` lists every command | shipped as the Go call `Exec`, which a host program gives an agent |
-| the same commands over HTTP, each sent to its own address, `POST /v1/<command>` | in progress, Phase 6: the records are accepted and no server is built |
+| the same commands over HTTP, each sent to its own address, `POST /v1/<command>`, with `Content-Type: application/json`; the status follows the code, and the code is what to act on | shipped as the Go package `fado/httpdoor`: a host program mounts the door and says who sends each request. `fadodb serve`, a server with the engine's own users and keys, is in progress, Phase 6, and not built |
 | the MCP server | in progress, Phase 6, by the owner's ruling of 2026-11-14: nothing is built |
 
-Until the server of Phase 6 ships, an agent reaches documents through a Go program that
-embeds the engine, or through the embedder's own interface. Such a
-program can pass the agent's commands to `Exec` as they are.
+Until `fadodb serve` ships, an agent reaches documents through a Go
+program that embeds the engine. Such a program passes the agent's
+commands to `Exec` as they are, or mounts the HTTP door
+(`fado/httpdoor`), and the agent then sends each command as
+`POST /v1/<command>`. A command refused with `busy` did not run, and
+one refused with `timeout` wrote nothing if it is one commit. Either
+can be sent again, and with a `key` sending twice is safe.
 
 ## Procedure, in outline
 

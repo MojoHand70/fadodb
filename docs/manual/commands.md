@@ -938,6 +938,8 @@ Authorization: Bearer …
 - **A request that is not a command as JSON is told so.** One that is
   not a `POST` is answered with the status 405, and a body that is not
   said to be JSON with 415. Both carry the code `bad_json` and a hint.
+  So does a request with members in its address, such as `?limit=10`:
+  they belong in the object.
 - **A caller reads the code, not the status.** The status of a reply
   is worked out from its code, for the proxies and the tools between
   the caller and the door:

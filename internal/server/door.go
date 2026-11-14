@@ -185,6 +185,17 @@ func (d *Door) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
+	if r.URL.RawQuery != "" {
+		// A member in the address would be passed over, and the caller
+		// would have sent a command that does something else.
+		told.Code = command.CodeBadJSON
+		out.refusal(Status(told.Code), &store.Error{
+			Code:    command.CodeBadJSON,
+			Message: "a command takes its members in its object, and this request has some in its address: ?" + r.URL.RawQuery,
+			Hint:    "send POST " + r.URL.Path + " and put the members in the JSON object of the body",
+		})
+		return
+	}
 
 	p, err := d.who(r)
 	if err != nil {

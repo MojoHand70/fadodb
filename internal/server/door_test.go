@@ -139,6 +139,7 @@ func TestWhatIsNotACommand(t *testing.T) {
 		{"a body that is not said to be JSON", "POST", "/v1/get", "", `{}`, 415, command.CodeBadJSON, "Content-Type: application/json"},
 		{"a form", "POST", "/v1/get", "application/x-www-form-urlencoded", `class=Invoice`, 415, command.CodeBadJSON, "Content-Type: application/json"},
 		{"a type that only begins like JSON", "POST", "/v1/get", "application/jsonp", `{}`, 415, command.CodeBadJSON, "Content-Type: application/json"},
+		{"members in the address", "POST", "/v1/query?class=Invoice&limit=10", "application/json", `{}`, 400, command.CodeBadJSON, "?class=Invoice&limit=10"},
 		{"no body", "POST", "/v1/list_classes", "application/json", ``, 400, command.CodeBadJSON, "sent as {}"},
 		{"a body of spaces", "POST", "/v1/list_classes", "application/json", "  \n", 400, command.CodeBadJSON, "sent as {}"},
 	} {

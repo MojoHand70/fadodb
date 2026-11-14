@@ -332,7 +332,7 @@ func overHTTP(b *strings.Builder, root string) error {
 	b.WriteString("- **The id of a document travels in the JSON** and never in the\n  address, so an id such as `FV/2026/11/0042` needs no escaping.\n")
 	fmt.Fprintf(b, "- **A door takes on so much and no more.** Unless the program says\n  otherwise: a request of at most %d MiB, refused beyond that with\n  `too_large`; a command that runs at most %d seconds, stopped after\n  that and refused with `timeout`; and %d commands at once. A request\n  beyond them waits one second for a command to end and is then refused\n  with `busy`; nothing of it ran, and it can be sent again.\n",
 		server.DefaultRequestBytes>>20, int(server.DefaultCommandTime.Seconds()), server.DefaultCommands)
-	b.WriteString("- **A request that is not a command as JSON is told so.** One that is\n  not a `POST` is answered with the status 405, and a body that is not\n  said to be JSON with 415. Both carry the code `bad_json` and a hint.\n")
+	b.WriteString("- **A request that is not a command as JSON is told so.** One that is\n  not a `POST` is answered with the status 405, and a body that is not\n  said to be JSON with 415. Both carry the code `bad_json` and a hint.\n  So does a request with members in its address, such as `?limit=10`:\n  they belong in the object.\n")
 	b.WriteString("- **A caller reads the code, not the status.** The status of a reply\n  is worked out from its code, for the proxies and the tools between\n  the caller and the door:\n\n")
 
 	byStatus := map[int][]string{}

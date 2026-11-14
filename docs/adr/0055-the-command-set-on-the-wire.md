@@ -422,6 +422,10 @@ the three ways of item 11. The door is the package `fado/httpdoor`, an
   415 are the only statuses that do not come from the table of item 8.
 - **An address outside `/v1/` is `unknown_command`**, with the form of
   an address in the hint.
+- **A member in the address is refused**, with `bad_json`:
+  `POST /v1/query?limit=10` would otherwise run without its limit. It
+  is the owner's ruling 2 held at the door: what a command does not
+  take is refused and not passed over.
 - **Who is asked first.** The door asks who sends a request before it
   reads the body and before the command set says whether the command
   exists, so a caller it cannot tell learns nothing and costs nothing.

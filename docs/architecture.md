@@ -723,9 +723,10 @@ key order, to the function the Go VM adds with.
   and answers them to `USERKIND()` and `ACTINGFOR()`, so that a class
   can keep a step for a person and the log can say which steps an agent
   took and for whom. `USER()` stays the one who acts. A host program
-  says who is calling. Under `fadodb serve` the database keeps its own
-  users, groups and keys, and a key turns a request into a principal
-  (ADR-0057, accepted and not built).
+  says who is calling. A database opened with `Users` keeps its own
+  users, groups and keys, as `fadodb serve` will open it: nine commands
+  keep them, a key turns a request into a principal, and every change
+  to a user or a key is kept (ADR-0057).
 - Access rules per class: `read`, `create`, `update`, `delete`, and per-transition rules. Tables have `read` and `write` rules.
 - A class may declare `rights` per state and variable, a table of ticks:
   a variable whose `write` rule is FALSE in the document's state cannot be
@@ -1105,8 +1106,9 @@ engine's table.
 > `fado/httpdoor` is the door that answers `POST /v1/<command>` for a
 > program that has opened a database, with the limits and the statuses
 > of the records, and the three addresses of the files. The program
-> says where it listens and who sends each request. The stream of
-> changes, health and metrics, the engine's own users and keys, and
+> says where it listens and who sends each request, or opens the
+> database with its own users and gives the door their keys
+> (`httpdoor.Keys`). The stream of changes, health and metrics, and
 > `fadodb serve` are decided, by the five records the owner accepted on
 > 2026-11-14, and not built.
 
@@ -1294,7 +1296,6 @@ fadodb/
   internal/state/        statechart engine
   fado/outbound/         the sender of an action's HTTP requests; only a program that allows outbound calls imports it
   fado/httpdoor/         the HTTP door of a database; only a program that answers HTTP imports it
-  internal/auth/         users, groups and keys
   internal/query/        LOOKUP/QUERY compilation, filter DSL, SQL endpoint, authorizer
   internal/server/       the HTTP door: requests to commands, the stream of changes
   api/                   openapi.json, json schemas for class, layout and wire documents

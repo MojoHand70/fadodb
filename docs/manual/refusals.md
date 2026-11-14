@@ -69,6 +69,8 @@ What a call is answered with when the engine does not carry it out: a create, a 
 | `not_ok` | The receiver answered 2xx and the definition's ok is not TRUE for the reply. A refusal. |
 | `reply_too_large` | The reply is larger than the outbound rules read. |
 | `unknown_row` | A table.update addresses a row the table does not have (ADR-0044). |
+| `unknown_user` | The database has no user of that id (ADR-0057). |
+| `unknown_key` | The database has no key of that id, or the key is another user's and the caller is no administrator (ADR-0057). |
 
 ## Findings in a definition
 

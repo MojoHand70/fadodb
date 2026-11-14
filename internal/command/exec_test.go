@@ -629,6 +629,156 @@ func TestAFailureThatIsNoRefusalKeepsItsWords(t *testing.T) {
 	}
 }
 
+// The users, groups and keys of a database that keeps its own
+// (ADR-0057), command by command: Olga, the first administrator, made
+// on the machine; Ann of finance; and the agent of accounts payable.
+func TestTheCommandsOfUsersAndKeys(t *testing.T) {
+	o := store.Options{Users: true, Now: func() time.Time { return clock }}
+	o.Outbox.Manual = true
+	s, err := store.Open(filepath.Join(t.TempDir(), "acme.fado"), o)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { s.Close() })
+	machine := store.Principal{System: []string{store.GroupAdministrators}}
+	olga := store.Principal{ID: "olga", Kind: store.ActorPerson, System: []string{store.GroupAdministrators}}
+	ann := store.Principal{ID: "ann", Kind: store.ActorPerson, Groups: []string{"finance"}}
+
+	made := run(t, s, machine, "create_user", `{"id": "olga", "kind": "person", "name": "Olga Nowak", "system_groups": ["administrators"]}`)
+	if got, want := string(mustJSON(made)), `{"user":{"disabled":false,"groups":[],"id":"olga","kind":"person","name":"Olga Nowak","system_groups":["administrators"]}}`; got != want {
+		t.Errorf("create_user answers\n%s\nwant\n%s", got, want)
+	}
+	run(t, s, olga, "create_user", `{"id": "ann", "kind": "person", "groups": ["finance"]}`)
+	run(t, s, olga, "create_user", `{"id": "ap-agent", "kind": "agent", "name": "Accounts payable agent", "groups": ["finance"]}`)
+
+	// Olga gives the agent a key. The secret is in the answer, this
+	// once.
+	answer := run(t, s, olga, "create_key", `{"user": "ap-agent", "label": "invoice matching", "expires": "2027-11-14"}`)
+	key := answer["key"].(map[string]any)
+	secret, _ := key["secret"].(string)
+	if key["user"] != "ap-agent" || key["label"] != "invoice matching" || key["expires"] != "2027-11-14" || key["created_by"] != "olga" ||
+		key["created_at"] != float64(clock.Unix()) || !strings.HasPrefix(secret, "fado_"+key["id"].(string)+"_") {
+		t.Errorf("create_key answers %v", answer)
+	}
+	agent, err := s.Authenticate(secret)
+	if err != nil || agent.ID != "ap-agent" || agent.Kind != store.ActorAgent {
+		t.Fatalf("the key of the answer is let through as %+v, %v", agent, err)
+	}
+
+	// The agent, which starts with nothing but its key, asks who it is.
+	if got, want := string(mustJSON(run(t, s, agent, "whoami", `{}`))), `{"user":{"disabled":false,"groups":["finance"],"id":"ap-agent","kind":"agent","name":"Accounts payable agent","system_groups":[]}}`; got != want {
+		t.Errorf("whoami answers\n%s\nwant\n%s", got, want)
+	}
+
+	// Every user sees the users; a list narrows by group and by kind.
+	if users := run(t, s, ann, "list_users", `{}`)["users"].([]any); len(users) != 3 || users[0].(map[string]any)["id"] != "ann" {
+		t.Errorf("list_users answers %v", users)
+	}
+	if users := run(t, s, ann, "list_users", `{"group": "finance", "kind": "agent"}`)["users"].([]any); len(users) != 1 {
+		t.Errorf("the agents of finance are %v", users)
+	}
+	if u := run(t, s, agent, "get_user", `{"id": "ann"}`)["user"].(map[string]any); u["kind"] != "person" {
+		t.Errorf("get_user answers %v", u)
+	}
+
+	// set_user changes the members given and no other; a list given as
+	// [] empties it, and one left out stays.
+	u := run(t, s, olga, "set_user", `{"id": "ann", "name": "Ann Kowalska"}`)["user"].(map[string]any)
+	if u["name"] != "Ann Kowalska" || len(u["groups"].([]any)) != 1 {
+		t.Errorf("set_user with a name answers %v", u)
+	}
+	u = run(t, s, olga, "set_user", `{"id": "ann", "groups": [], "disabled": true}`)["user"].(map[string]any)
+	if u["name"] != "Ann Kowalska" || len(u["groups"].([]any)) != 0 || u["disabled"] != true {
+		t.Errorf("set_user with an empty list answers %v", u)
+	}
+	u = run(t, s, olga, "set_user", `{"id": "ann", "groups": ["finance"], "disabled": false, "name": null}`)["user"].(map[string]any)
+	if u["name"] != "Ann Kowalska" || u["disabled"] != false {
+		t.Errorf("set_user with a null answers %v", u)
+	}
+	// Olga may put herself in a group (ruling 2).
+	run(t, s, olga, "set_user", `{"id": "olga", "groups": ["finance"]}`)
+
+	// The keys of a user, and the end of one.
+	keys := run(t, s, olga, "list_keys", `{"user": "ap-agent"}`)["keys"].([]any)
+	if len(keys) != 1 || keys[0].(map[string]any)["secret"] != nil || keys[0].(map[string]any)["id"] != key["id"] {
+		t.Errorf("list_keys answers %v", keys)
+	}
+	if own := run(t, s, agent, "list_keys", `{}`)["keys"].([]any); len(own) != 1 {
+		t.Errorf("the agent's own keys are %v", own)
+	}
+	if got := string(mustJSON(run(t, s, agent, "revoke_key", `{"key": "`+key["id"].(string)+`"}`))); got != `{}` {
+		t.Errorf("revoke_key answers %s", got)
+	}
+	if _, err := s.Authenticate(secret); err != store.ErrUnknownKey {
+		t.Errorf("the revoked key answers %v", err)
+	}
+
+	// The changes of a user, oldest first.
+	changes := run(t, s, olga, "user_changes", `{"id": "ap-agent"}`)["changes"].([]any)
+	var whats []string
+	for _, c := range changes {
+		whats = append(whats, c.(map[string]any)["what"].(string))
+	}
+	if got := strings.Join(whats, " "); got != "created key_created key_revoked" {
+		t.Errorf("the changes of the agent are %s", got)
+	}
+	if strings.Contains(string(mustJSON(changes)), "fado_") {
+		t.Errorf("a change holds a key: %s", mustJSON(changes))
+	}
+
+	// The refusals come as the Go API gives them.
+	for _, c := range []struct {
+		p                        store.Principal
+		name, object, code, path string
+	}{
+		{ann, "create_user", `{"id": "eve", "kind": "person"}`, store.CodeForbidden, "/system/administrators"},
+		{ann, "create_key", `{"user": "ann"}`, store.CodeForbidden, "/system/administrators"},
+		{olga, "create_user", `{"id": "ann", "kind": "person"}`, store.CodeDuplicate, "/id"},
+		{olga, "create_user", `{"id": "eve"}`, CodeBadJSON, "/kind"},
+		{olga, "create_user", `{"id": "eve", "kind": "robot"}`, store.CodeBadValue, "/kind"},
+		{olga, "create_user", `{"id": "eve", "kind": "person", "groups": "finance"}`, CodeBadJSON, "/groups"},
+		{olga, "create_user", `{"id": "eve", "kind": "person", "admin": true}`, CodeBadJSON, "/admin"},
+		{olga, "set_user", `{"id": "eve", "name": "Eve"}`, store.CodeUnknownUser, "/id"},
+		{olga, "set_user", `{"id": "ann"}`, store.CodeBadValue, ""},
+		{olga, "set_user", `{"id": "olga", "system_groups": []}`, store.CodeNotAllowed, "/system_groups"},
+		{olga, "get_user", `{"id": "eve"}`, store.CodeUnknownUser, "/id"},
+		{olga, "create_key", `{"user": "eve"}`, store.CodeUnknownUser, "/user"},
+		{olga, "create_key", `{"user": "ann", "expires": "next year"}`, store.CodeBadValue, "/expires"},
+		{ann, "list_keys", `{"user": "ap-agent"}`, store.CodeForbidden, "/system/administrators"},
+		{ann, "revoke_key", `{"key": "` + key["id"].(string) + `"}`, store.CodeUnknownKey, "/key"},
+		{ann, "user_changes", `{"id": "olga"}`, store.CodeForbidden, "/system/administrators"},
+		{olga, "create_user", `{"id": "eve", "kind": "person", "at": "2026-01-01"}`, store.CodeNotAllowed, ""},
+		{store.Principal{}, "list_users", `{}`, store.CodeForbidden, ""},
+	} {
+		if e := refused(t, s, c.p, c.name, c.object); e.Code != c.code || e.Path != c.path {
+			t.Errorf("%s %s as %s: refused with %s at %q, want %s at %q: %s", c.name, c.object, c.p.ID, e.Code, e.Path, c.code, c.path, e.Message)
+		}
+	}
+
+	// A database whose program says itself who is calling does not
+	// offer these commands (item 9).
+	plain := open(t)
+	for _, c := range Commands() {
+		if !c.Users {
+			continue
+		}
+		e := refused(t, plain, olga, c.Name, `{}`)
+		if e.Code != CodeUnknownCommand || !strings.Contains(e.Message, "keeps no users") {
+			t.Errorf("%s in a database that keeps no users is refused with %+v", c.Name, e)
+		}
+	}
+	// And the commands that are not about users do not carry the mark.
+	marked := 0
+	for _, c := range Commands() {
+		if c.Users {
+			marked++
+		}
+	}
+	if marked != 9 {
+		t.Errorf("%d commands are of the users, want the nine of ADR-0057", marked)
+	}
+}
+
 // TestEveryCommandIsRun fails when a command of the table was run by no
 // test of this package. It runs last: the tests of a package run in the
 // order of their files and, in a file, as written. When the tests that

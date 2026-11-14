@@ -901,6 +901,180 @@ It answers:
 | `checked` | how many files it checked |
 | `mismatched` | the hashes of the files whose bytes do not match |
 
+## Users, groups and keys
+
+A database that a server opens for callers of its own keeps who they
+are: its users, their groups and their keys. A user is a person, an
+agent or a service the database knows by its id. A group is a name on
+a user. A key is how a user proves who it is: one line of text that
+begins `fado_`, shown once when it is made and kept nowhere after.
+
+These commands are offered by such a database only. A database opened
+by a program that says itself who is calling keeps no users, and
+answers each of them with `unknown_command`. The server that opens a
+database this way, `fadodb serve`, is in progress and not built; a Go
+program opens one with `Options.Users`.
+
+| Command | What it does | |
+|---|---|---|
+| [`create_user`](#create_user) | Makes a user: a person, an agent or a service the database knows by its id. It is a database administrator's. | writes |
+| [`set_user`](#set_user) | Changes a user: the members given, and no other. It is a database administrator's, who may change their own groups too. | writes |
+| [`get_user`](#get_user) | Reads one user. Every user may ask. | reads |
+| [`list_users`](#list_users) | Lists the users, in the order of their ids. Every user may ask. | reads |
+| [`user_changes`](#user_changes) | Lists every change to a user and to its keys. A database administrator may ask of any user, and a user of itself. | reads |
+| [`create_key`](#create_key) | Makes a key for a user and answers it with its secret, this once. It is a database administrator's. | writes |
+| [`list_keys`](#list_keys) | Lists the keys of a user, never a secret. A database administrator may ask of any user, and a user of itself. | reads |
+| [`revoke_key`](#revoke_key) | Ends a key: the next command sent with it is refused. A database administrator may revoke any key, and a user its own. | writes |
+| [`whoami`](#whoami) | Answers who the database takes the caller for. | reads |
+
+### create_user
+
+Makes a user: a person, an agent or a service the database knows by its id. It is a database administrator's. It writes; in Go it is the call `CreateUser`.
+
+| Member | Type | | What it is |
+|---|---|---|---|
+| `id` | text | needed | the id every event will record; it never changes and is never given to somebody else |
+| `kind` | text | needed | person, agent or service |
+| `name` | text |  | how a screen shows the user |
+| `groups` | list of texts |  | the groups of the user, which INGROUP answers |
+| `system_groups` | list of texts |  | the system groups of the user: administrators, designers, content-administrators, analysts |
+
+And, of the members that mean the same everywhere: `for`.
+
+It answers:
+
+| Member | What it holds |
+|---|---|
+| `user` | the user: its id, its kind, its name, its groups, its system groups and whether it is disabled |
+
+### set_user
+
+Changes a user: the members given, and no other. It is a database administrator's, who may change their own groups too. It writes; in Go it is the call `SetUser`.
+
+| Member | Type | | What it is |
+|---|---|---|---|
+| `id` | text | needed | the id of the user |
+| `name` | text |  | how a screen shows the user |
+| `groups` | list of texts |  | the groups of the user, in place of the ones it has |
+| `system_groups` | list of texts |  | the system groups of the user, in place of the ones it has |
+| `disabled` | true or false |  | true stops every key of the user at the next command; false lets them through again |
+
+And, of the members that mean the same everywhere: `for`.
+
+It answers:
+
+| Member | What it holds |
+|---|---|
+| `user` | the user: its id, its kind, its name, its groups, its system groups and whether it is disabled, after the change |
+
+### get_user
+
+Reads one user. Every user may ask. It reads; in Go it is the call `GetUser`.
+
+| Member | Type | | What it is |
+|---|---|---|---|
+| `id` | text | needed | the id of the user |
+
+And, of the members that mean the same everywhere: `for`.
+
+It answers:
+
+| Member | What it holds |
+|---|---|
+| `user` | the user: its id, its kind, its name, its groups, its system groups and whether it is disabled |
+
+### list_users
+
+Lists the users, in the order of their ids. Every user may ask. It reads; in Go it is the call `Users`.
+
+| Member | Type | | What it is |
+|---|---|---|---|
+| `group` | text |  | only the members of this group, of either kind |
+| `kind` | text |  | only the users of this kind |
+
+And, of the members that mean the same everywhere: `for`.
+
+It answers:
+
+| Member | What it holds |
+|---|---|
+| `users` | the users, the disabled ones among them |
+
+### user_changes
+
+Lists every change to a user and to its keys. A database administrator may ask of any user, and a user of itself. It reads; in Go it is the call `UserChanges`.
+
+| Member | Type | | What it is |
+|---|---|---|---|
+| `id` | text | needed | the id of the user |
+
+And, of the members that mean the same everywhere: `for`.
+
+It answers:
+
+| Member | What it holds |
+|---|---|
+| `changes` | the changes, oldest first: what was done, by whom, of what kind, for whom and when, with the user or the key as the change left it |
+
+### create_key
+
+Makes a key for a user and answers it with its secret, this once. It is a database administrator's. It writes; in Go it is the call `CreateKey`.
+
+| Member | Type | | What it is |
+|---|---|---|---|
+| `user` | text | needed | the id of the user the key is for |
+| `label` | text |  | where the key is used, such as laptop or nightly import |
+| `expires` | text |  | the last day the key holds, as YYYY-MM-DD in UTC; left out, the key holds until it is revoked |
+
+And, of the members that mean the same everywhere: `for`.
+
+It answers:
+
+| Member | What it holds |
+|---|---|
+| `key` | the key: its id, its user, its label, when and by whom it was made, its last day, and under secret the key itself, which is shown this once and kept nowhere |
+
+### list_keys
+
+Lists the keys of a user, never a secret. A database administrator may ask of any user, and a user of itself. It reads; in Go it is the call `Keys`.
+
+| Member | Type | | What it is |
+|---|---|---|---|
+| `user` | text |  | the id of the user; left out, the caller |
+
+And, of the members that mean the same everywhere: `for`.
+
+It answers:
+
+| Member | What it holds |
+|---|---|
+| `keys` | the keys, oldest first, the revoked ones among them |
+
+### revoke_key
+
+Ends a key: the next command sent with it is refused. A database administrator may revoke any key, and a user its own. It writes; in Go it is the call `RevokeKey`.
+
+| Member | Type | | What it is |
+|---|---|---|---|
+| `key` | text | needed | the id of the key, as list_keys shows it, and not the key itself |
+
+And, of the members that mean the same everywhere: `for`.
+
+It answers `{}`.
+
+### whoami
+
+Answers who the database takes the caller for. It reads; in Go it is the call `Whoami`.
+
+It takes nothing of its own; of the members that mean the same everywhere, `for`.
+
+It answers:
+
+| Member | What it holds |
+|---|---|
+| `user` | the user: its id, its kind, its name, its groups, its system groups and whether it is disabled |
+| `for` | the id of whoever the caller acts for, when the command names one |
+
 ## Over HTTP
 
 A Go program that has opened a database lets it answer commands over
@@ -926,7 +1100,11 @@ Authorization: Bearer …
   from the request: from a session or a token of the program's own. A
   request whose sender the function cannot tell is refused with
   `unauthenticated`, in the same words whatever was wrong, and runs
-  nothing. The engine's own users and keys come with `fadodb serve`.
+  nothing. A database that keeps its own
+  [users, groups and keys](#users-groups-and-keys) gives the door
+  `httpdoor.Keys`: a request then carries a key of a user, as the
+  header `Authorization: Bearer fado_…`, and nothing else is a
+  credential.
 - **The id of a document travels in the JSON** and never in the
   address, so an id such as `FV/2026/11/0042` needs no escaping.
 - **A door takes on so much and no more.** Unless the program says
@@ -950,7 +1128,7 @@ Authorization: Bearer …
   | 400 | `bad_json` |
   | 401 | `unauthenticated` |
   | 403 | `forbidden`, `reason_required` |
-  | 404 | `unknown_class`, `unknown_document`, `unknown_table`, `unknown_schema`, `unknown_blob`, `unknown_action`, `unknown_row`, `unknown_command` |
+  | 404 | `unknown_class`, `unknown_document`, `unknown_table`, `unknown_schema`, `unknown_blob`, `unknown_action`, `unknown_row`, `unknown_user`, `unknown_key`, `unknown_command` |
   | 409 | `key_reused`, `duplicate`, `terminal`, `wrong_state`, `guard_false` |
   | 413 | `blob_too_large`, `too_large` |
   | 422 | every other refusal |
@@ -997,6 +1175,7 @@ A few calls of the Go package have no command.
 | Call | Why |
 |---|---|
 | `Action` | it answers one entry of the catalogue that list_actions answers whole |
+| `Authenticate` | it answers who a key belongs to, for the door that is given the key; a caller that wants to know who it is sends whoami |
 | `Class` | it answers the engine's compiled form to a Go program; get_class answers the definition |
 | `Close` | closing a database is for the program that opened it |
 | `Exec` | it is the door the commands come through |

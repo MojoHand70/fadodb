@@ -172,6 +172,7 @@ An option is one of two kinds.
 | `Outbound` | which hosts an action may call | the program's | none: no call leaves the program | |
 | `Secrets` | a function that gives the secret of a connection when a call needs it | the program's | none | |
 | `HostAnswersFor` | the program itself keeps who may act for whom | the program's | the engine asks its substitutions | |
+| `Users` | the database keeps its own users, groups and keys, and answers who a key belongs to | the program's | the program says itself who is calling, and the database keeps no users | |
 | `Now` | the clock of the database | the program's | the clock of the machine | |
 | `WALLimit`, `CheckpointEvery` | when the latest commits are folded into the database | the program's | at 64 MiB, and every 100 ms | |
 
@@ -179,7 +180,8 @@ Where each is explained: `MaxIndexedRows` in
 [Tables](tables.md#how-fast-a-lookup-is), `BlobStore`, `Blobs` and
 `MaxBlob` in [Files](files.md), `Actions`, `Outbound` and `Secrets` in
 [Actions](../actions.md), `HostAnswersFor` in [Let somebody act for a
-person](guides/acting-for-somebody.md), `Now` in
+person](guides/acting-for-somebody.md), `Users` in
+[The commands](commands.md#users-groups-and-keys), `Now` in
 [Time](notions/time.md).
 
 ### How sure a commit is

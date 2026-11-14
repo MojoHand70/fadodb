@@ -70,6 +70,34 @@ All notable changes to FadoDB are recorded here. The format follows
   engine's answers. The chapter and the class definition now say that
   `required` on an object, a list or rows is accepted and not
   enforced.
+- The reference chapter on files: the facts of a file and its bytes,
+  attaching, replacing and taking off as versions of the document,
+  opening a file under the rules of the document, who may, the three
+  stores for the bytes, the limit of a file and the check. A test
+  plays the chapter's story and holds every table of it to the
+  engine's answers, the three stores and a file changed on disk
+  included.
+- The first chapter for the developer who embeds the engine, opening
+  a database: a whole small program, `examples/open`, what opening
+  does, what is on disk, every option and whether it belongs to the
+  database or to the program, closing, and what is refused. A test
+  runs the program and plays every table of the chapter; the table of
+  options is held to the options the package has.
+- The chapter on naming the caller, for the developer who embeds the
+  engine: a whole small program, `examples/caller`, with four callers
+  on one invoice; every part of a caller, what the engine uses it for
+  and what it checks; a call with no caller; why the program is the
+  only door; the system groups, the business day and the options of a
+  call. A test runs the program and plays every table; the tables of
+  the caller's parts and of the options are held to what the package
+  has.
+- The chapter on the outbox and the worker, for the developer who
+  runs a database: a whole small program, `examples/outbox`, with an
+  action that gets no answer twice and one that is refused until an
+  administrator sends it again; a row of the queue, how the worker
+  runs it, what happens when an action fails, a dead action, running
+  the queue by hand, and who may. A test runs the program and plays
+  every table of the chapter.
 - The designer's skill teaches the syntax: what to read in the manual,
   a small class that is complete, and the ten things that go wrong
   most often. It is no longer a stub. The classes the skills show are

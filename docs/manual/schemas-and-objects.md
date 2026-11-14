@@ -91,7 +91,7 @@ schema of yours may not have one of them.
 The engine keeps what it is given in them and checks the types only.
 It does not know people, so `Person.id` is any text; a host program
 that writes its caller's id there can ask `driver.id = USER()`. `File`
-is the value of an attached file; the chapter on files is planned.
+is the value of an attached file; see [Files](files.md).
 
 ## An object in a class
 

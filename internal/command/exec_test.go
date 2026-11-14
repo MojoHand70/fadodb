@@ -444,6 +444,17 @@ func TestTablesActionsAndTheQueue(t *testing.T) {
 	if got := run(t, s, ann, "get_action", `{"name": "books.post"}`); !reflect.DeepEqual(got, posted) {
 		t.Fatalf("get_action answered %v", got)
 	}
+	// The next version of the action, and the first one still read back.
+	second := run(t, s, dan, "define_action", `{"definition": {"name": "books.post", "params": {"amount": {"type": "number"}, "memo": {"type": "text"}}, "returns": {"entry": {"type": "text"}}}}`)
+	if at(t, second, "action.version") != float64(2) {
+		t.Fatalf("the second definition of the action answered %v", second)
+	}
+	if first := run(t, s, ann, "get_action", `{"name": "books.post", "version": 1}`); !reflect.DeepEqual(first, posted) {
+		t.Fatalf("version 1 of the action read back as %v", first)
+	}
+	if e := refused(t, s, ann, "get_action", `{"name": "books.post", "version": 9}`); e.Code != store.CodeUnknownAction {
+		t.Fatalf("a version of an action that does not exist: %v", e)
+	}
 	if e := refused(t, s, ann, "get_action", `{"name": "set"}`); e.Code != store.CodeUnknownAction || !strings.Contains(e.Message, "engine's own") {
 		t.Fatalf("the definition of an action of the engine: %+v", e)
 	}

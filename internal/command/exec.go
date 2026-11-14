@@ -3,6 +3,7 @@ package command
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"strconv"
 	"strings"
 
@@ -70,12 +71,15 @@ func Exec(ctx context.Context, s *store.Store, p store.Principal, name string, o
 // a status: the code of a refusal, bad_definition for a definition that
 // was refused, and internal for anything else.
 func Code(err error) string {
-	switch e := err.(type) {
-	case nil:
+	if err == nil {
 		return ""
-	case *store.Error:
-		return e.Code
-	case model.Diagnostics:
+	}
+	var refusal *store.Error
+	if errors.As(err, &refusal) {
+		return refusal.Code
+	}
+	var findings model.Diagnostics
+	if errors.As(err, &findings) {
 		return CodeBadDefinition
 	}
 	return CodeInternal
@@ -83,31 +87,33 @@ func Code(err error) string {
 
 // refuse writes the answer of a command that did not run.
 func refuse(err error) ([]byte, error) {
-	switch e := err.(type) {
-	case *store.Error:
-		text, _ := json.Marshal(e)
+	var refusal *store.Error
+	if errors.As(err, &refusal) {
+		text, _ := json.Marshal(refusal)
 		out := make([]byte, 0, len(text)+12)
 		out = append(out, `{"error":`...)
 		out = append(out, text...)
-		return append(out, '}'), e
-	case model.Diagnostics:
-		findings := 0
-		for _, d := range e {
+		return append(out, '}'), err
+	}
+	var findings model.Diagnostics
+	if errors.As(err, &findings) {
+		refusing := 0
+		for _, d := range findings {
 			if !d.Note {
-				findings++
+				refusing++
 			}
 		}
-		message := strconv.Itoa(findings) + " findings refuse the definition"
-		if findings == 1 {
+		message := strconv.Itoa(refusing) + " findings refuse the definition"
+		if refusing == 1 {
 			message = "1 finding refuses the definition"
 		}
 		text, _ := json.Marshal(struct {
 			Error       *store.Error      `json:"error"`
 			Diagnostics model.Diagnostics `json:"diagnostics"`
-		}{&store.Error{Code: CodeBadDefinition, Message: message}, e})
-		return text, e
+		}{&store.Error{Code: CodeBadDefinition, Message: message}, findings})
+		return text, err
 	}
-	return []byte(`{"error":{"code":"internal","message":"the command failed in the server; its log says how"}}`), err
+	return []byte(`{"error":{"code":"internal","message":"the command failed in the engine; the program that runs it has the words"}}`), err
 }
 
 func unknownCommand(name string) *store.Error {

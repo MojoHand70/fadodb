@@ -65,6 +65,7 @@ the engine on each push.
 | The formula language | values, operators, blanks, errors, text, dates, exact numbers | planned; today [ADR-0019](adr/0019-formula-language-semantics.md) and the suites under [conformance](../conformance/README.md) |
 | [The functions](manual/functions.md) | every function with its arguments and what it answers | **written**, generated from the engine's own catalogue |
 | The calls | every call of the Go package: what it takes, what it answers, what it may refuse with | planned; today the documentation of the `fado` package |
+| [The commands](manual/commands.md) | every call as a command: the JSON it takes and the JSON it answers | **written**, generated from the engine's own table. A command is run by the Go call `Exec`; the server that takes commands over the network is in progress |
 | [The refusals](manual/refusals.md) | every code and what it means | **written**, generated from the engine's own constants; the fix for each comes with the guides |
 | Tables | reference data: defining, importing, looking up | planned; today [ADR-0037](adr/0037-explicit-tables-and-the-compiled-lookup.md) |
 | [Actions](actions.md) | defining an action, calling another system, secrets | **written** |

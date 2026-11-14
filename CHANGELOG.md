@@ -91,6 +91,13 @@ All notable changes to FadoDB are recorded here. The format follows
   call. A test runs the program and plays every table; the tables of
   the caller's parts and of the options are held to what the package
   has.
+- The chapter on the outbox and the worker, for the developer who
+  runs a database: a whole small program, `examples/outbox`, with an
+  action that gets no answer twice and one that is refused until an
+  administrator sends it again; a row of the queue, how the worker
+  runs it, what happens when an action fails, a dead action, running
+  the queue by hand, and who may. A test runs the program and plays
+  every table of the chapter.
 - The designer's skill teaches the syntax: what to read in the manual,
   a small class that is complete, and the ten things that go wrong
   most often. It is no longer a stub. The classes the skills show are

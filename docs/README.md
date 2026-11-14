@@ -80,7 +80,7 @@ For the developer whose program holds the engine.
 |---|---|---|
 | [Opening a database](manual/opening-a-database.md) | a whole small program; what opening does; what is on disk; every option, and whether it belongs to the database or to the program; closing; what is refused | **written**; a test runs the program and plays every table of the chapter |
 | [Naming the caller](manual/naming-the-caller.md) | a whole small program with four callers; every part of a caller, what the engine uses it for and what it checks; a call with no caller; why the program is the only door; the system groups; the business day; the options of a call | **written**; a test runs the program and plays every table of the chapter |
-| The outbox and the worker | what runs after a commit, retries, and what to do with an action that died | planned; the idea is in [Rules and actions](manual/notions/rules-and-actions.md) |
+| [The outbox and the worker](manual/the-outbox-and-the-worker.md) | a whole small program with an action that gets no answer and one that is refused; a row of the queue; how the worker runs it; what happens when an action fails; a dead action and sending it again; running the queue by hand; who may | **written**; a test runs the program and plays every table of the chapter |
 | Running it | backup, the size of the file, what is fast and what is slow, in [docs/perf](perf/README.md) | planned |
 | Versions | what a release may change before 1.0, and what the [changelog](../CHANGELOG.md) promises | planned |
 

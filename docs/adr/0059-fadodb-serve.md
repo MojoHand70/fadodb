@@ -1,6 +1,6 @@
 # ADR-0059: `fadodb serve`: one database, what it is told when it starts, and what it refuses
 
-- Status: Proposed, with three questions open for the owner; amends ADR-0011 (what the server is and what it is told), ADR-0027 and ADR-0045 (an action implemented by a Go function does not run under `fadodb serve`), ADR-0052 (which settings are an administrator's)
+- Status: Proposed; the owner ruled on its three questions on 2026-11-14, and the rulings are at the end; amends ADR-0011 (what the server is and what it is told), ADR-0027 and ADR-0045 (an action implemented by a Go function does not run under `fadodb serve`), ADR-0052 (which settings are an administrator's)
 - Date: 2026-11-14
 
 ## Context
@@ -167,21 +167,31 @@ Facts checked on the day:
     - Limits for each user, such as commands a minute. The limits of
       item 2 are for the whole database.
 
-## Questions for the owner
+## The owner's rulings
 
-1. **Is a database made only by `fadodb init`, and never by
-   `fadodb serve` (item 1)?** Proposed: yes.
+All of 2026-11-14. The owner read the three questions, each with a
+case, and agreed to the answer proposed for each.
 
-2. **Is it right that an action written as a Go function needs the
-   company's own host program (item 6)?** Proposed: yes. The actions
-   that call a service over HTTP are the ones a server runs, and they
-   are the ones an agent can add without anybody building a program.
+**1. Is a database made only by `fadodb init`, and never by `fadodb
+serve`? By `init` only** (item 1). An operator who types
+`fadodb serve acm.fado` for `acme.fado` is refused and told to run
+`init`. The answer not taken: `serve` makes an empty database under
+the mistyped name and serves it, with no administrator in it.
 
-3. **Are all the settings the operator's (item 11)?** Proposed: yes,
-   in this phase. The other answer: a database administrator changes
-   some through commands, such as the hosts an action may call. That
-   would let a user of the database widen what the machine's owner
-   allowed.
+**2. Is it right that an action written as a Go function needs the
+company's own host program? Yes** (item 6). The owner: "I don't think
+we can allow stranger code run in our server, can we?" It cannot, and
+under this record it does not: `fadodb serve` runs the engine's own
+actions and the actions that send an HTTP request, whose code runs in
+the service they call. A Go function runs only in the program of the
+company that wrote it. The answer not taken was a way to load a
+company's code into `fadodb serve`.
+
+**3. Are all the settings the operator's? Yes**, in this phase
+(item 11). Olga, a database administrator, changes none of them
+through a command. The answer not taken: an administrator changes
+some, such as the hosts an action may call, which would let a user of
+the database widen what the owner of the machine allowed.
 
 ## Consequences
 

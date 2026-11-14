@@ -1,6 +1,6 @@
 # ADR-0056: One database for each customer, and a server that serves one database
 
-- Status: Proposed, with three questions open for the owner; amends ADR-0011 (a server serves one database, and the address says which), ADR-0027 (the users and keys of the optional package are kept in the database they belong to)
+- Status: Proposed; the owner ruled on its three questions on 2026-11-14, and the rulings are at the end; amends ADR-0011 (a server serves one database, and the address says which), ADR-0027 (the users and keys of the optional package are kept in the database they belong to)
 - Date: 2026-11-14
 
 ## Context
@@ -163,27 +163,36 @@ Facts checked in the engine on the day:
      account that has several databases, such as one for tests and one
      for production, invoices, and which machine holds which database.
 
-## Questions for the owner
+## The owner's rulings
 
-1. **Is a customer a database (item 1)?** Proposed: yes. The answer not
-   taken is A, one database for all with a customer on every row. It
-   would put a customer into every table, view, index, formula and
-   statement the engine has built in five phases; it would make every
-   customer wait for the one writer; and one rule written wrongly would
-   show one customer's documents to another.
+All of 2026-11-14. The owner read the three questions, each with the
+case of two customers of one service, Acme and Globex, and agreed to
+the answer proposed for each.
 
-2. **Does `fadodb serve` serve one database (item 5)?** Proposed: yes,
-   and a program that serves many is a host program. The other answer:
-   `fadodb serve`, given a directory, serves every database in it, each
-   under its name in the address. That makes the open engine a ready
-   service for many customers. It adds to this phase the opening of a
-   database at its first call, its closing when it is quiet, and the
-   call of item 9 that wakes it for a timer.
+**1. Is a customer a database, or a mark on every row of one database?
+A database** (item 1). Acme has a database of its own and Globex has a
+database of its own. The answer not taken was one database for all with
+a customer on every row. It would put a customer into every table,
+view, index, formula and statement the engine has built in five phases;
+it would make every customer wait for the one writer; and one rule
+written wrongly would show one customer's documents to another.
 
-3. **Does the address alone say which database (item 6)?** Proposed:
-   yes. The other answer: one address for all, and the key says which
-   database. A key would then have to be found before its database is
-   known, so keys would be kept outside the databases, against item 2.
+**2. Does `fadodb serve` serve one database, or every database in a
+directory? One database** (item 5). A program that serves many is a
+host program that imports the door, and it is not built in this phase.
+The answer not taken: `fadodb serve`, given a directory, serves every
+database in it, each under its name in the address. It would have added
+to this phase the opening of a database at its first call, its closing
+when it is quiet, and the call of item 9 that wakes it for a timer.
+
+**3. Does the address alone say which database, or does the key? The
+address alone** (item 6). The agent of Acme calls
+`https://acme.example.com/v1/transition` and the agent of Globex calls
+`https://globex.example.com/v1/transition`, with the same JSON; a key
+of Acme sent to the address of Globex is `unauthenticated`. The answer
+not taken was one address for all, with the key saying which database.
+A key would then have to be found before its database is known, so keys
+would be kept outside the databases, against item 2.
 
 ## Consequences
 

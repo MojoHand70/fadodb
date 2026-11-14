@@ -378,7 +378,9 @@ func TestMoreCommandsThanTheDoorRuns(t *testing.T) {
 	if w.Header().Get("Retry-After") == "" {
 		t.Error("the refusal does not say when to come back")
 	}
-	if waited := time.Since(start); waited < d.wait {
+	// Half the wait, and not the whole of it: a clock that ticks
+	// coarsely may measure a wait a tick short.
+	if waited := time.Since(start); waited < d.wait/2 {
 		t.Errorf("it was refused after %v, before the %v it waits", waited, d.wait)
 	}
 	if len(entered) != 0 {
@@ -430,6 +432,11 @@ func TestAFailureKeepsItsWordsFromTheCaller(t *testing.T) {
 	}
 }
 
+// slow is how long the command of a test runs when the test reads how
+// long the door says it took. The test asks for half of it, since a
+// coarse clock may measure a tick short.
+const slow = 20 * time.Millisecond
+
 // The report of a request says what was asked and how it ended, and
 // nothing of what was sent.
 func TestWhatADoorTellsOfARequest(t *testing.T) {
@@ -439,6 +446,8 @@ func TestWhatADoorTellsOfARequest(t *testing.T) {
 		if name == "transition" {
 			return []byte(`{"error":{"code":"guard_false"}}`), guard
 		}
+		// The set takes a time that any clock can tell.
+		time.Sleep(slow)
 		return []byte(`{"document":{"values":{"salary":"9000.00 PLN"}}}`), nil
 	}), Options{
 		Report: func(r Request) { told = append(told, r) },
@@ -473,8 +482,13 @@ func TestWhatADoorTellsOfARequest(t *testing.T) {
 		t.Fatalf("%d requests were reported, want %d", len(told), len(want))
 	}
 	for i, got := range told {
-		if got.At.Before(before) || got.Took <= 0 {
+		// A clock that ticks coarsely, as the one of Windows does, may
+		// say that a request that did nothing took no time at all.
+		if got.At.Before(before) || got.Took < 0 {
 			t.Errorf("request %d: at %v, took %v", i, got.At, got.Took)
+		}
+		if i == 0 && got.Took < slow/2 {
+			t.Errorf("the set ran for %v and is reported to have taken %v", slow, got.Took)
 		}
 		got.At, got.Took = time.Time{}, 0
 		if got != want[i] {

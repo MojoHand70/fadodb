@@ -17,9 +17,13 @@ import (
 )
 
 // Database is the one database a door serves: what runs a command of the
-// command set. A *fado.DB is one.
+// command set, and keeps and opens the files that travel beside the
+// commands. A *fado.DB is one.
 type Database interface {
 	Exec(ctx context.Context, p store.Principal, name string, object []byte) ([]byte, error)
+	PutBlob(ctx context.Context, name, mediaType string, r io.Reader, opts ...store.Option) (store.Values, error)
+	OpenFile(ctx context.Context, class, id, hash string, opts ...store.Option) (io.ReadCloser, *store.FileInfo, error)
+	OpenBlob(ctx context.Context, hash string, opts ...store.Option) (io.ReadCloser, int64, error)
 }
 
 // Who says who sends a request (ADR-0027; ADR-0057, item 9): the
@@ -175,14 +179,25 @@ func (d *Door) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	name := r.URL.Path[len(prefix):]
 	told.Command = name
+	// The files travel beside the commands (ADR-0055, item 9), at three
+	// addresses that are not commands.
+	switch name {
+	case addressPut:
+		d.put(out, r, &told)
+	case addressFile:
+		d.file(out, r, &told)
+	case addressBlob:
+		d.blob(out, r, &told)
+	default:
+		d.command(out, r, &told, name)
+	}
+}
+
+// command runs the command a request was sent to.
+func (d *Door) command(out *reply, r *http.Request, told *Request, name string) {
 	if r.Method != http.MethodPost {
-		told.Code = command.CodeBadJSON
-		w.Header().Set("Allow", http.MethodPost)
-		out.refusal(http.StatusMethodNotAllowed, &store.Error{
-			Code:    command.CodeBadJSON,
-			Message: "a command is sent with POST, and this request is a " + r.Method,
-			Hint:    "send POST " + r.URL.Path + " with the object of the command as the body; a command that reads is a POST too",
-		})
+		d.notSentWith(out, told, http.MethodPost, "a command is sent with POST, and this request is a "+r.Method,
+			"send POST "+r.URL.Path+" with the object of the command as the body; a command that reads is a POST too")
 		return
 	}
 	if r.URL.RawQuery != "" {
@@ -196,16 +211,10 @@ func (d *Door) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
-
-	p, err := d.who(r)
-	if err != nil {
-		told.Code = CodeUnauthenticated
-		w.Header().Set("WWW-Authenticate", "Bearer")
-		out.refusal(Status(told.Code), unauthenticated())
+	p, ok := d.sender(out, r, told)
+	if !ok {
 		return
 	}
-	told.User = p.ID
-
 	if !isJSON(r.Header.Get("Content-Type")) {
 		told.Code = command.CodeBadJSON
 		out.refusal(http.StatusUnsupportedMediaType, &store.Error{
@@ -215,22 +224,14 @@ func (d *Door) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
-
 	// A command holds its slot from before its body is read, so that the
 	// door never holds more bodies than it runs commands.
-	if !d.enter(r.Context()) {
-		told.Code = CodeBusy
-		w.Header().Set("Retry-After", "1")
-		out.refusal(Status(told.Code), &store.Error{
-			Code:    CodeBusy,
-			Message: "the server runs " + strconv.Itoa(d.limits.Commands) + " commands, as many as it takes on at once, and none ended in time",
-			Hint:    "nothing was run; send the request again",
-		})
+	if !d.slot(out, r, told) {
 		return
 	}
 	defer d.leave()
 
-	object, refusal := d.body(w, r)
+	object, refusal := d.body(out.w, r)
 	if refusal != nil {
 		told.Code = refusal.Code
 		out.refusal(Status(refusal.Code), refusal)
@@ -262,6 +263,44 @@ func (d *Door) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		told.Err = err
 	}
 	out.send(Status(code), answer)
+}
+
+// notSentWith refuses a request that has not the method its address
+// takes. Its words are made only for a request that is refused.
+func (d *Door) notSentWith(out *reply, told *Request, method, message, hint string) {
+	told.Code = command.CodeBadJSON
+	out.w.Header().Set("Allow", method)
+	out.refusal(http.StatusMethodNotAllowed, &store.Error{Code: command.CodeBadJSON, Message: message, Hint: hint})
+}
+
+// sender asks who sends the request, and refuses it when nobody can
+// tell.
+func (d *Door) sender(out *reply, r *http.Request, told *Request) (store.Principal, bool) {
+	p, err := d.who(r)
+	if err != nil {
+		told.Code = CodeUnauthenticated
+		out.w.Header().Set("WWW-Authenticate", "Bearer")
+		out.refusal(Status(told.Code), unauthenticated())
+		return store.Principal{}, false
+	}
+	told.User = p.ID
+	return p, true
+}
+
+// slot takes the slot of a command for the request, and refuses it with
+// busy when none comes free in time. Whoever is given one leaves it.
+func (d *Door) slot(out *reply, r *http.Request, told *Request) bool {
+	if d.enter(r.Context()) {
+		return true
+	}
+	told.Code = CodeBusy
+	out.w.Header().Set("Retry-After", "1")
+	out.refusal(Status(told.Code), &store.Error{
+		Code:    CodeBusy,
+		Message: "the server runs " + strconv.Itoa(d.limits.Commands) + " commands, as many as it takes on at once, and none ended in time",
+		Hint:    "nothing was run; send the request again",
+	})
+	return false
 }
 
 // unauthenticated is the one answer to a request whose sender the door

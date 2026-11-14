@@ -146,6 +146,16 @@ All notable changes to FadoDB are recorded here. The format follows
   program may set. The status of a reply follows its code; the caller
   reads the code. The server `fadodb serve`, the engine's own users and
   keys and the stream of changes are not built yet.
+- Files through the HTTP door (ADR-0055, item 9; ADR-0033): `POST
+  /v1/blobs?name=…` keeps the bytes of the body and answers the facts
+  of the file, to set on a document in a command;
+  `GET /v1/file?class=…&id=…&hash=…` streams a file under the rules of
+  the document that holds it, at its current version or the one
+  `version=` names; `GET /v1/blob?hash=…` streams bytes by their hash
+  alone, for a content administrator. A file is sent so that a browser
+  saves it and does not show it, with its hash as its `ETag`. A
+  parameter an address does not take is refused, as a member of a
+  command is.
 - `DB.Definition` reads a class, a schema, a table or an action back as
   it was given, with its version and who defined it; `DB.Schema` and
   `DB.Schemas` read the schemas, which could not be read back.

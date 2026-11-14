@@ -242,9 +242,13 @@ program that has opened a database lets it answer the commands as
 each request; the door holds a command to its limits, the largest
 request, the time one command may run and how many run at once, and
 answers with the status of the code. The three suites run a third way,
-as requests to a server that listens on the machine. Not built yet:
-`fadodb serve`, the engine's own users and keys, the stream of
-changes, the files beside the commands and the door for agents.
+as requests to a server that listens on the machine. The third step
+added the files beside the commands to the door: a file is put at
+`POST /v1/blobs`, read through the document that holds it at
+`GET /v1/file`, under the rules of the document, and its bytes are read
+by their hash alone, by a content administrator, at `GET /v1/blob`.
+Not built yet: `fadodb serve`, the engine's own users and keys, the
+stream of changes and the door for agents.
 This page is updated when a phase starts and when it ends;
 it never describes a phase as done before its acceptance criteria pass.
 

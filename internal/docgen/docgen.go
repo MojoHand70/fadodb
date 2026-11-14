@@ -369,6 +369,19 @@ func overHTTP(b *strings.Builder, root string) error {
 		fmt.Fprintf(b, "  | %d | %s |\n", status, strings.Join(code(byStatus[status]), ", "))
 	}
 	b.WriteString("\n")
+
+	b.WriteString("### Files over HTTP\n\n")
+	b.WriteString("The bytes of a file are not JSON, so they travel beside the commands,\nat three addresses of their own. What a file is on a document, its\nfacts, is a value like any other and travels in the commands;\n[Files](files.md) says how.\n\n")
+	b.WriteString("| Address | Does | Answers |\n|---|---|---|\n")
+	b.WriteString("| `POST /v1/blobs?name=taxi.pdf` | keeps the bytes of the body under their hash, with the `Content-Type` of the request as their kind | `{\"file\": {\"hash\": …, \"name\": …, \"media_type\": …, \"size\": …}}`: the facts to set on a document, in a command |\n")
+	b.WriteString("| `GET /v1/file?class=Receipt&id=R-7&hash=d694…` | streams a file the document holds at its current version, or at the one `version=` names; `for=` says for whom the caller acts | the bytes |\n")
+	b.WriteString("| `GET /v1/blob?hash=d694…` | streams bytes by their hash alone, for a content administrator | the bytes |\n\n")
+	b.WriteString("- **A file is read under the rules of its document.** A caller who may\n  not read the document is answered `unknown_document`, and one who may\n  not read the variable that holds the file is answered `unknown_blob`:\n  what is hidden is absent.\n")
+	b.WriteString("- **A parameter the address does not take is refused**, with\n  `bad_json`, as a member of a command is, and so is one given twice. A\n  value is escaped: `id=FV%2F2026%2F11%2F0042`.\n")
+	b.WriteString("- **The body of a put is the bytes themselves.** A form is refused.\n  A file larger than the database keeps is refused with\n  `blob_too_large`.\n")
+	b.WriteString("- **A browser is told to save the file and not to show it**, whatever\n  kind the one who put it said it is.\n")
+	b.WriteString("- **The hash is the tag of the bytes**, sent as `ETag`. A caller that\n  holds them and sends the tag back in `If-None-Match` is answered with\n  the status 304 and no bytes, after the engine has checked once more\n  that the caller may read the file.\n")
+	b.WriteString("- **A file in transfer holds the place of a command**, and is not\n  stopped by the time one command may run.\n\n")
 	return nil
 }
 

@@ -48,11 +48,11 @@ the engine on each push.
 | [Four eyes: the one who filed it may not approve it](manual/guides/four-eyes.md) | **written** |
 | [A reminder every seven days, and a deadline](manual/guides/reminders-and-deadlines.md) | **written** |
 | [Let somebody act for a person](manual/guides/acting-for-somebody.md) | **written** |
-| Ask several people and go on when all have agreed | planned; today [examples/classes](../examples/classes/README.md), the Purchase and Approval samples |
-| Call another system when a document changes | planned; today [Actions](actions.md) |
-| Look a value up in a reference table, or in other documents | planned; today [ADR-0037](adr/0037-explicit-tables-and-the-compiled-lookup.md), and the Purchase sample under [examples/classes](../examples/classes/README.md) |
-| Move many documents at once | planned; today the `Example_many` example of the `fado` package |
-| Change a class that already has documents | planned; today [ADR-0039](adr/0039-class-versions-terminal-states-and-migrations.md) |
+| Ask several people and go on when all have agreed | planned. It needs a document to move by itself as soon as a condition holds; the owner ruled that such a transition carries a name and a mark, which is not built yet. Today [examples/classes](../examples/classes/README.md), the Purchase and Approval samples, show it in the form the engine has now |
+| [Do something outside when a document changes](manual/guides/act-outside.md) | **written** |
+| [Look a value up in a reference table](manual/guides/look-a-value-up.md) | **written** |
+| [Move many documents at once](manual/guides/move-many-documents.md) | **written** |
+| [Change a class that already has documents](manual/guides/change-a-class.md) | **written** |
 
 ## Reference
 

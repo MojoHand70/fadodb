@@ -39,6 +39,27 @@ func guideClass(t *testing.T, guide string) []byte {
 	return nil
 }
 
+// guideParts returns every whole table, action and class a guide shows,
+// each in the order of the page.
+func guideParts(t *testing.T, guide string) (tables, actions, classes [][]byte) {
+	t.Helper()
+	data, err := os.ReadFile(filepath.Join("..", "docs", "manual", "guides", guide))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, m := range regexp.MustCompile("(?s)```json\r?\n(.*?)\r?\n```").FindAllSubmatch(data, -1) {
+		switch kindOf(m[1]) {
+		case "table":
+			tables = append(tables, m[1])
+		case "action":
+			actions = append(actions, m[1])
+		case "class":
+			classes = append(classes, m[1])
+		}
+	}
+	return tables, actions, classes
+}
+
 // guideDB opens a database with the class of the guide defined.
 func guideDB(t *testing.T, guide string, o fado.Options) *fado.DB {
 	t.Helper()
@@ -302,5 +323,250 @@ func TestGuide_ActingForSomebody(t *testing.T) {
 	made, err := db.Events(ctx, "Expense", filed.ID, ann)
 	if err != nil || len(made) != 1 || made[0].ActorKind != fado.ActorAgent || made[0].ActorFor != "ann" {
 		t.Errorf("the log of what the assistant filed: %v %+v", err, made)
+	}
+}
+
+func TestGuide_LookAValueUp(t *testing.T) {
+	tables, _, classes := guideParts(t, "look-a-value-up.md")
+	if len(tables) != 1 || len(classes) != 1 {
+		t.Fatalf("the guide shows %d tables and %d classes", len(tables), len(classes))
+	}
+	db, err := fado.Open(filepath.Join(t.TempDir(), "guide.fado"), fado.Options{Outbox: fado.OutboxOptions{Manual: true}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	ctx := context.Background()
+	if _, err := db.DefineTable(ctx, tables[0], setup); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.DefineClass(ctx, classes[0], setup); err != nil {
+		t.Fatal(err)
+	}
+	ann, tess := person("ann"), person("tess", "treasury")
+	if _, err := db.ImportRows(ctx, "Rates", []fado.Values{{"code": "EUR", "rate": "4.3000"}, {"code": "USD", "rate": "3.9000"}}, tess); err != nil {
+		t.Fatal(err)
+	}
+	_, err = db.ImportRows(ctx, "Rates", []fado.Values{{"code": "EUR", "rate": "9.0000"}}, ann)
+	want(t, "Ann writes a rate into the table", err, "forbidden at /access/write")
+	quote, err := db.Create(ctx, "Quote", fado.Values{"currency": "EUR", "amount": "100.00"}, ann)
+	if err != nil {
+		t.Fatal(err)
+	}
+	is := func(step, rate, pln string) {
+		t.Helper()
+		if quote.Values["rate"] != rate || quote.Values["in_pln"] != pln {
+			t.Errorf("%s: rate %v and in_pln %v, and the guide says %s and %s", step, quote.Values["rate"], quote.Values["in_pln"], rate, pln)
+		}
+	}
+	is("Ann creates a quote of 100.00 in EUR", "4.3000", "430.00")
+	if _, err := db.ImportRows(ctx, "Rates", []fado.Values{{"code": "EUR", "rate": "4.5000"}}, tess); err != nil {
+		t.Fatal(err)
+	}
+	if rows, err := db.TableRows(ctx, "Rates", ann); err != nil || len(rows) != 2 {
+		t.Fatalf("a row written with a key the table has replaces that row: %v %v", rows, err)
+	}
+	if quote, err = db.Get(ctx, "Quote", quote.ID, ann); err != nil {
+		t.Fatal(err)
+	}
+	is("Ann reads her quote", "4.3000", "430.00")
+	if quote, err = db.Set(ctx, "Quote", quote.ID, fado.Values{"amount": "200.00"}, ann); err != nil {
+		t.Fatal(err)
+	}
+	is("Ann changes the amount", "4.3000", "860.00")
+	if quote, err = db.Set(ctx, "Quote", quote.ID, fado.Values{"currency": "USD"}, ann); err != nil {
+		t.Fatal(err)
+	}
+	is("Ann changes the currency", "3.9000", "780.00")
+	// A currency the table does not have: blank, and zero in arithmetic.
+	other, err := db.Create(ctx, "Quote", fado.Values{"currency": "GBP", "amount": "10.00"}, ann)
+	if err != nil || other.Values["rate"] != nil || other.Values["in_pln"] != "0.00" {
+		t.Errorf("a lookup that finds nothing: %v %v", err, other.Values)
+	}
+}
+
+func TestGuide_MoveManyDocuments(t *testing.T) {
+	db := guideDB(t, "move-many-documents.md", fado.Options{})
+	ctx := context.Background()
+	acc := person("anna", "accounting")
+	ids := []string{"INV-416", "INV-417", "INV-418"}
+	for _, id := range ids {
+		values := fado.Values{"cost_centre": "sales"}
+		if id == "INV-417" {
+			values = nil
+		}
+		if _, err := db.Create(ctx, "Invoice", values, acc, fado.WithID(id)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	said := func(out []fado.MoveOutcome) string {
+		var parts []string
+		for _, m := range out {
+			if m.Moved() {
+				parts = append(parts, m.ID+" "+m.Document.State)
+			} else {
+				parts = append(parts, m.ID+" refused "+m.Refusal.Code)
+			}
+		}
+		return strings.Join(parts, "; ")
+	}
+	const outcome = "INV-416 booked; INV-417 refused guard_false; INV-418 booked"
+	would, err := db.PreviewMany(ctx, "Invoice", "book", ids, nil, acc)
+	if err != nil || said(would) != outcome {
+		t.Errorf("the preview: %v %s", err, said(would))
+	}
+	if doc, _ := db.Get(ctx, "Invoice", "INV-416", acc); doc.State != "approved" {
+		t.Errorf("the preview wrote: %s", doc.State)
+	}
+	moved, err := db.TransitionMany(ctx, "Invoice", "book", ids, nil, acc, fado.Key("booking-2026-11"))
+	if err != nil || said(moved) != outcome {
+		t.Errorf("the call: %v %s", err, said(moved))
+	}
+	if doc, _ := db.Get(ctx, "Invoice", "INV-417", acc); doc.State != "approved" {
+		t.Errorf("the one refused is %s", doc.State)
+	}
+	again, err := db.TransitionMany(ctx, "Invoice", "book", ids, nil, acc, fado.Key("booking-2026-11"))
+	if err != nil || said(again) != outcome {
+		t.Errorf("the same call sent again: %v %s", err, said(again))
+	}
+	if events, _ := db.Events(ctx, "Invoice", "INV-416", acc); len(events) != 2 {
+		t.Errorf("INV-416 has %d events after the call was sent twice, want its creation and one move", len(events))
+	}
+	if _, err := db.Set(ctx, "Invoice", "INV-417", fado.Values{"cost_centre": "sales"}, acc); err != nil {
+		t.Fatal(err)
+	}
+	rest, err := db.TransitionMany(ctx, "Invoice", "book", []string{"INV-417"}, nil, acc)
+	if err != nil || said(rest) != "INV-417 booked" {
+		t.Errorf("a new call with only that id: %v %s", err, said(rest))
+	}
+}
+
+func TestGuide_ChangeAClass(t *testing.T) {
+	_, _, classes := guideParts(t, "change-a-class.md")
+	if len(classes) != 2 {
+		t.Fatalf("the guide shows %d classes, want the class before and after", len(classes))
+	}
+	db, err := fado.Open(filepath.Join(t.TempDir(), "guide.fado"), fado.Options{Outbox: fado.OutboxOptions{Manual: true}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	ctx := context.Background()
+	ann := person("ann")
+	if cls, err := db.DefineClass(ctx, classes[0], setup); err != nil || cls.Version != 1 {
+		t.Fatalf("the class in use: %v", err)
+	}
+	make := func(subject string) string {
+		t.Helper()
+		doc, err := db.Create(ctx, "Ticket", fado.Values{"subject": subject}, ann)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return doc.ID
+	}
+	a, b, c := make("A"), make("B"), make("C")
+	if _, err := db.Transition(ctx, "Ticket", c, "close", nil, ann); err != nil {
+		t.Fatal(err)
+	}
+	if cls, err := db.DefineClass(ctx, classes[1], setup); err != nil || cls.Version != 2 {
+		t.Fatalf("the class with a priority: %v", err)
+	}
+	is := func(step, id string, version int, has bool) *fado.Document {
+		t.Helper()
+		doc, err := db.Get(ctx, "Ticket", id, ann)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, got := doc.Values["priority"]
+		if doc.ClassVersion != version || got != has {
+			t.Errorf("%s: of version %d, with a priority %v; the guide says version %d, %v", step, doc.ClassVersion, got, version, has)
+		}
+		return doc
+	}
+	is("A, untouched", a, 1, false)
+	if _, err := db.Set(ctx, "Ticket", a, fado.Values{"subject": "A, reworded"}, ann); err != nil {
+		t.Fatal(err)
+	}
+	if doc := is("A, after a change", a, 2, true); doc.Values["priority"] != nil || doc.Values["urgent"] != false {
+		t.Errorf("A after a change: %v", doc.Values)
+	}
+	if n, err := db.Migrate(ctx, "Ticket", setup); err != nil || n != 1 {
+		t.Errorf("migrating moved %d tickets: %v; B alone was left to move", n, err)
+	}
+	is("B, after the migration", b, 2, true)
+	is("C, closed", c, 1, false)
+	fresh, err := db.Create(ctx, "Ticket", fado.Values{"subject": "D"}, ann)
+	if err != nil || fresh.ClassVersion != 2 || fresh.Values["priority"] != "low" {
+		t.Errorf("a new ticket: %v %+v", err, fresh)
+	}
+	if defs, err := db.Definitions(ctx, "class", "Ticket"); err != nil || len(defs) != 2 {
+		t.Errorf("the versions recorded: %v %d", err, len(defs))
+	}
+	// Going back to the first definition would remove a variable that
+	// tickets now hold a value for.
+	_, err = db.DefineClass(ctx, classes[0], setup)
+	if err == nil || !strings.Contains(err.Error(), "not_allowed") || !strings.Contains(err.Error(), "hold a value for urgent") {
+		t.Errorf("removing a variable with values: %v", err)
+	}
+}
+
+func TestGuide_ActOutside(t *testing.T) {
+	_, actions, classes := guideParts(t, "act-outside.md")
+	if len(actions) != 1 || len(classes) != 1 {
+		t.Fatalf("the guide shows %d actions and %d classes", len(actions), len(classes))
+	}
+	var calls []string
+	notify := func(_ context.Context, call *fado.ActionCall) (fado.Values, error) {
+		calls = append(calls, call.Args["channel"].(string)+": "+call.Args["text"].(string))
+		return nil, nil
+	}
+	db, err := fado.Open(filepath.Join(t.TempDir(), "guide.fado"), fado.Options{
+		Outbox:  fado.OutboxOptions{Manual: true},
+		Actions: map[string]fado.ActionFunc{"team.notify": notify},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	ctx := context.Background()
+	if _, err := db.DefineAction(ctx, actions[0], setup); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.DefineClass(ctx, classes[0], setup); err != nil {
+		t.Fatal(err)
+	}
+	ann := person("ann")
+	inv, err := db.Create(ctx, "Invoice", fado.Values{"number": "FV-17"}, ann)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Transition(ctx, "Invoice", inv.ID, "approve", nil, ann); err != nil {
+		t.Fatal(err)
+	}
+	if len(calls) != 0 {
+		t.Errorf("the function was called before the worker ran: %v", calls)
+	}
+	if _, err := db.Drain(ctx, setup); err != nil {
+		t.Fatal(err)
+	}
+	if len(calls) != 1 || calls[0] != "#finance: Approved: FV-17" {
+		t.Errorf("after the worker ran: %v", calls)
+	}
+	if _, err := db.Drain(ctx, setup); err != nil {
+		t.Fatal(err)
+	}
+	if len(calls) != 1 {
+		t.Errorf("the worker ran again and the function was called %d times", len(calls))
+	}
+	events, err := db.Events(ctx, "Invoice", inv.ID, ann)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var kinds []string
+	for _, e := range events {
+		kinds = append(kinds, e.Kind)
+	}
+	if got := strings.Join(kinds, ", "); got != "created, transition, action_run" {
+		t.Errorf("the log: %s", got)
 	}
 }

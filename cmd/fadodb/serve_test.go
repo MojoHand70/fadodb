@@ -482,7 +482,7 @@ func TestTheChapterOnTheCounts(t *testing.T) {
 	m.record(httpdoor.Request{Command: "transition", Status: 200, Took: 40 * time.Microsecond})
 	m.record(httpdoor.Request{Command: "transition", Status: 409, Took: 30 * time.Microsecond})
 	var page bytes.Buffer
-	m.write(&page, fado.OutboxCounts{Due: 2, Waiting: 5, Dead: 1, OldestDue: started}, 0, 0, started.Add(time.Minute))
+	m.write(&page, 3, fado.OutboxCounts{Due: 2, Waiting: 5, Dead: 1, OldestDue: started}, 0, 0, started.Add(time.Minute))
 	shown := strings.Split(blockOfTheChapter(t, "a part of the counts"), "\n")
 	if len(shown) < 8 {
 		t.Errorf("the chapter shows %d lines of the counts", len(shown))

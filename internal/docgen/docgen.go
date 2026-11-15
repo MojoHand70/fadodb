@@ -218,6 +218,7 @@ func Commands(root string) (string, error) {
 	b.WriteString(generated)
 	b.WriteString("# The commands\n\n")
 	b.WriteString("Every call that reads or changes a database is also a command: a name\nand one JSON object, answered by one JSON object. A command is how a\ncaller that is not a Go program reaches a document. The list is written\nfrom the engine's own table, so it has every command and no other.\n\n")
+	b.WriteString("One command is answered by more than one object: [`subscribe`](#subscribe)\nopens the stream of changes, and its answer is a reply that stays open\nand says each event as it is written.\n\n")
 	b.WriteString("A command reaches a database two ways today. A Go program runs one with\nthe call `Exec`. And a Go program that has opened a database can let it\nanswer commands [over HTTP](#over-http), through the package\n`fado/httpdoor`. The program `fadodb serve` does that for a database with\nusers and keys of its own: [Serving a database](serving-a-database.md).\n\n")
 
 	b.WriteString("## A command and its answer\n\n")
@@ -297,6 +298,10 @@ func Commands(root string) (string, error) {
 			case len(options) > 0:
 				fmt.Fprintf(&b, "And, of the members that mean the same everywhere: %s.\n\n", strings.Join(code(options), ", "))
 			}
+			if c.Stream {
+				b.WriteString("Its answer is a stream and not one object: over HTTP a reply that stays\nopen and carries one entry for each event, and in Go a value whose\n`Next` answers the events one by one. `Exec` answers one object, and\nrefuses this command with `not_supported`.\n[The stream of changes](the-stream-of-changes.md) says what an entry is,\nwho hears of what and how a stream ends.\n\n")
+				continue
+			}
 			if len(c.Answer) == 0 {
 				b.WriteString("It answers `{}`.\n\n")
 				continue
@@ -337,6 +342,7 @@ func overHTTP(b *strings.Builder, root string) error {
 	b.WriteString("- **The id of a document travels in the JSON** and never in the\n  address, so an id such as `FV/2026/11/0042` needs no escaping.\n")
 	fmt.Fprintf(b, "- **A door takes on so much and no more.** Unless the program says\n  otherwise: a request of at most %d MiB, refused beyond that with\n  `too_large`; a command that runs at most %d seconds, stopped after\n  that and refused with `timeout`; and %d commands at once. A request\n  beyond them waits one second for a command to end and is then refused\n  with `busy`; nothing of it ran, and it can be sent again.\n",
 		server.DefaultRequestBytes>>20, int(server.DefaultCommandTime.Seconds()), server.DefaultCommands)
+	fmt.Fprintf(b, "- **One command is answered with a stream.** `POST /v1/subscribe` opens\n  the stream of changes: the reply has the status 200 and the kind\n  `text/event-stream`, stays open, and carries one entry for each event\n  the caller may read of. A door holds %d of them open unless the\n  program says otherwise, and refuses one beyond them with `busy`, at\n  once. [The stream of changes](the-stream-of-changes.md) has the rest.\n", server.DefaultStreams)
 	b.WriteString("- **A request that is not a command as JSON is told so.** One that is\n  not a `POST` is answered with the status 405, and a body that is not\n  said to be JSON with 415. Both carry the code `bad_json` and a hint.\n  So does a request with members in its address, such as `?limit=10`:\n  they belong in the object.\n")
 	b.WriteString("- **A caller reads the code, not the status.** The status of a reply\n  is worked out from its code, for the proxies and the tools between\n  the caller and the door:\n\n")
 

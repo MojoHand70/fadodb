@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"io"
@@ -88,10 +89,35 @@ func TestTheChapterShowsTheProgram(t *testing.T) {
 	ctx, stop := context.WithCancel(ctx)
 	out, ended := &printed{}, make(chan error, 1)
 	go func() { ended <- serve(ctx, path, ln, out) }()
+	// stream, once it is open, is a stream of changes that Olga holds
+	// when the program is told to stop.
+	var stream *bufio.Reader
 	defer func() {
+		began := time.Now()
 		stop()
 		if err := <-ended; err != nil {
 			t.Errorf("the program ended with %v", err)
+		}
+		// A stream does not keep the program from stopping: the door
+		// ended it, and told its caller why. A program that waited for
+		// its streams would have waited its ten seconds.
+		if took := time.Since(began); took > 5*time.Second {
+			t.Errorf("the program took %v to stop with a stream open", took)
+		}
+		if stream != nil {
+			var last string
+			for {
+				line, err := stream.ReadString('\n')
+				if err != nil {
+					break
+				}
+				if strings.HasPrefix(line, "data: ") {
+					last = line
+				}
+			}
+			if !strings.Contains(last, `"code":"closed"`) {
+				t.Errorf("the stream ended with %q, want the entry that says the server stops", last)
+			}
 		}
 		// Stopped, it gave the database back.
 		db, err := fado.Open(path, fado.Options{Users: true, Alone: "the test"})
@@ -132,6 +158,22 @@ func TestTheChapterShowsTheProgram(t *testing.T) {
 	// A function the program does not have is refused, as everywhere.
 	if status, body := send("define_action", `{"definition": {"name": "fax.send", "params": {"to": "text"}}}`); status != 422 || !strings.Contains(body, "not_registered") {
 		t.Errorf("an action of a function the program does not have: %d %s", status, body)
+	}
+	// Olga opens a stream of changes and leaves it open.
+	req, err := http.NewRequest("POST", "http://"+ln.Addr().String()+"/v1/subscribe", strings.NewReader(`{}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+key.Secret)
+	resp, err := http.DefaultTransport.RoundTrip(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { resp.Body.Close() })
+	stream = bufio.NewReader(resp.Body)
+	if line, _ := stream.ReadString('\n'); resp.StatusCode != 200 || line != ": the stream is open\n" {
+		t.Fatalf("the stream: %d %q", resp.StatusCode, line)
 	}
 	// While it serves, the program holds the database alone.
 	if _, err := fado.Open(path, fado.Options{}); fado.ErrorCode(err) != "in_use" || !strings.Contains(err.Error(), "the server of Acme") {

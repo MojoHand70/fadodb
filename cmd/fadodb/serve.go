@@ -32,6 +32,9 @@ Serves the database at FILE, which fadodb init made, to callers who
 send a key of a user of the database:
 
   POST /v1/<command>     a command, its object as the body
+  POST /v1/subscribe     the stream of changes: a reply that stays open
+                         and tells the caller of every event it may
+                         read of
   POST /v1/blobs         a file, put
   GET  /v1/file          a file, read through its document
   GET  /v1/health        that the server answers, for anybody
@@ -57,7 +60,8 @@ A key travels with every request, so the server refuses to listen
 beyond this machine in the clear unless --plain-http says that it may.
 While it serves, the server holds the database alone. It writes one
 line for each request to standard error, and stops when it is told to
-(an interrupt), letting the commands that run end first.
+(an interrupt), ending its streams and letting the commands that run
+end first.
 
 Told nothing, the actions of the database call no host. The settings
 list the hosts they may call:
@@ -223,9 +227,11 @@ func runServe(ctx context.Context, args []string, stdout, stderr io.Writer, read
 		return 1
 	case <-ctx.Done():
 	}
-	// Told to stop: no new request is taken, the commands that run end,
-	// and the database is closed (item 10).
+	// Told to stop: no new request is taken, the streams of changes are
+	// ended, each told why (ADR-0058, item 7), the commands that run
+	// end, and the database is closed (item 10).
 	fmt.Fprintf(stderr, "%s: stopping\n", name)
+	door.EndStreams()
 	within, cancel := context.WithTimeout(context.Background(), stopWithin)
 	defer cancel()
 	if err := srv.Shutdown(within); err != nil {
@@ -318,7 +324,7 @@ func interrupted() (context.Context, context.CancelFunc) {
 // anybody, and everything else through the door of the database.
 type served struct {
 	db   *fado.DB
-	door http.Handler
+	door *httpdoor.Door
 	// path is the file of the database; who says who sends a request,
 	// as the door asks it; metrics are the counts of the server, and
 	// report is what every request is told to once it was answered.
@@ -364,7 +370,9 @@ func (s *served) health(w http.ResponseWriter, r *http.Request) {
 // requestLog writes one line for each request, as JSON (ADR-0059,
 // item 9): when it came, the command, the user, the status, the code of
 // the refusal if there was one and how long it took. Never a body, a
-// value of a document or a key.
+// value of a document or a key. A stream of changes has its line when
+// it ended: ms is then the time until it was open, and the line says
+// for how many seconds it stayed open and how many events it told.
 type requestLog struct {
 	mu   sync.Mutex
 	w    io.Writer
@@ -389,6 +397,12 @@ func (l *requestLog) write(r httpdoor.Request) {
 	}
 	b = append(b, `,"ms":`...)
 	b = strconv.AppendFloat(b, float64(r.Took.Microseconds())/1000, 'f', 3, 64)
+	if r.Stream {
+		b = append(b, `,"open_s":`...)
+		b = strconv.AppendFloat(b, float64(r.Lasted.Milliseconds())/1000, 'f', 3, 64)
+		b = append(b, `,"events":`...)
+		b = strconv.AppendInt(b, int64(r.Entries), 10)
+	}
 	if r.Err != nil {
 		// What failed in the engine is said here and not to the caller.
 		b = append(b, `,"error":`...)

@@ -115,6 +115,12 @@ type Command struct {
 	// answers {}.
 	Answer []Member
 
+	// Stream says the answer of the command is a stream and not one
+	// object (ADR-0058): a reply that stays open and carries an entry
+	// for each event. Exec does not run such a command. A Go program
+	// makes the call, and a door answers the command at its address.
+	Stream bool
+
 	// Users says the command keeps the users, groups and keys of a
 	// database (ADR-0057). A database that keeps none, because the
 	// program that opened it says itself who is calling, does not offer
@@ -142,6 +148,9 @@ const (
 	// command knows the member so that those words are the answer.
 	refusesAt
 	refusesKey
+	// refusesFor: the stream of changes is heard as oneself, which the
+	// engine says in its own words to a caller that names somebody.
+	refusesFor
 
 	// asReader is a command that reads documents or rows.
 	asReader = takesAt | takesFor
@@ -251,6 +260,13 @@ var commands = []*Command{
 	{Group: Documents, Name: "events", Mark: Reads, Call: "Events", Does: "Reads the events that touched a document, oldest first.",
 		Fields: []Field{req("class", Text, theClass), req("id", Text, theID)},
 		Answer: answer("events", "the events"), takes: asReader, run: runEvents},
+	{Group: Documents, Name: "subscribe", Mark: Reads, Call: "Subscribe", Stream: true,
+		Does: "Opens the stream of changes: the caller is told of every event it may read of, in the order of the commits, as each is written.",
+		Fields: []Field{opt("classes", Texts, "the classes to hear of; every class when left out"),
+			opt("kinds", Texts, "the kinds of event to hear of, such as created, set and transition; every kind when left out"),
+			opt("to_states", Texts, "for a transition, the states entered; every state when left out"),
+			opt("after", Text, "the id of an event: the stream begins after it, so a caller that was away gives the last one it handled; now when left out")},
+		takes: refusesFor, run: runSubscribe},
 	{Group: Documents, Name: "preview", Mark: Reads, Call: "Preview", Does: "Runs a create, a set or a transition without writing anything.",
 		Fields: []Field{req("class", Text, theClass), opt("id", Text, "the id of the document; left out, the preview is of a create"),
 			opt("values", Object, theValues), opt("transition", Text, "the name of a transition to take")},
@@ -399,7 +415,6 @@ var NotCommands = map[string]string{
 	"OpenFile":     "the bytes of a file are not JSON: they travel beside the commands, with the server",
 	"OpenBlob":     "the bytes of a file are not JSON: they travel beside the commands, with the server",
 	"Ping":         "it asks whether the database answers; a server answers it at GET /v1/health, for anybody",
-	"Subscribe":    "its answer is a stream and not one object; it joins the commands with the server, as POST /v1/subscribe, which is not built yet",
 	"OutboxCounts": "it counts what of the queue is still to do, for whoever watches a server, which answers it at GET /v1/metrics; outbox lists the actions themselves",
 	"Authenticate": "it answers who a key belongs to, for the door that is given the key; a caller that wants to know who it is sends whoami",
 	"Class":        "it answers the engine's compiled form to a Go program; get_class answers the definition",
@@ -420,7 +435,7 @@ func init() {
 			{takesBusinessDate, 0, optionBusinessDate},
 			{takesReason, 0, optionReason},
 			{takesAt, refusesAt, optionAt},
-			{takesFor, 0, optionFor},
+			{takesFor, refusesFor, optionFor},
 		} {
 			switch {
 			case c.takes&o.takes != 0:

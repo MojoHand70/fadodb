@@ -46,9 +46,6 @@ type settings struct {
 	// limits are the limits of the door; a limit the file does not give
 	// is zero, which is the door's own.
 	limits httpdoor.Limits
-	// streams is how many streams of changes may be open at once. It is
-	// read and kept for the stream, which is not built yet.
-	streams int
 }
 
 // The names a settings file may hold, at each place.
@@ -137,7 +134,7 @@ func parseSettings(data []byte) (*settings, error) {
 			if err != nil {
 				return nil, err
 			}
-			s.streams = int(n)
+			s.limits.Streams = int(n)
 		}
 	}
 	return s, nil

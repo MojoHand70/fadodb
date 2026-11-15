@@ -57,6 +57,7 @@ exactly so in a class or a formula.
 | preview | a commit tried and not made: what it would do, and whether it would be refused |
 | refusal | the engine's answer to a call it does not carry out. It has a code, a place and often a fix |
 | outbox | where the actions that reach outside a commit wait until the engine runs them |
+| stream of changes | the log read forward for one caller: it is told of every event it may read of, as each is written, and need not ask again and again. [The stream of changes](the-stream-of-changes.md) |
 
 ## The codes of a refusal you meet first
 

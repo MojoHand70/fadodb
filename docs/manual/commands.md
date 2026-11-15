@@ -7,6 +7,10 @@ and one JSON object, answered by one JSON object. A command is how a
 caller that is not a Go program reaches a document. The list is written
 from the engine's own table, so it has every command and no other.
 
+One command is answered by more than one object: [`subscribe`](#subscribe)
+opens the stream of changes, and its answer is a reply that stays open
+and says each event as it is written.
+
 A command reaches a database two ways today. A Go program runs one with
 the call `Exec`. And a Go program that has opened a database can let it
 answer commands [over HTTP](#over-http), through the package
@@ -101,6 +105,7 @@ A command takes the ones its list below shows, and no other.
 | [`history`](#history) | Reads every committed version of a document, oldest first. | reads |
 | [`version`](#version) | Reads one committed version of a document. | reads |
 | [`events`](#events) | Reads the events that touched a document, oldest first. | reads |
+| [`subscribe`](#subscribe) | Opens the stream of changes: the caller is told of every event it may read of, in the order of the commits, as each is written. | reads |
 | [`preview`](#preview) | Runs a create, a set or a transition without writing anything. | reads |
 | [`preview_delete`](#preview_delete) | Answers what a delete of a document would do, without deleting it. | reads |
 | [`preview_many`](#preview_many) | Runs the batch transition_many would run, without writing anything. | reads |
@@ -349,6 +354,24 @@ It answers:
 | Member | What it holds |
 |---|---|
 | `events` | the events |
+
+### subscribe
+
+Opens the stream of changes: the caller is told of every event it may read of, in the order of the commits, as each is written. It reads; in Go it is the call `Subscribe`.
+
+| Member | Type | | What it is |
+|---|---|---|---|
+| `classes` | list of texts |  | the classes to hear of; every class when left out |
+| `kinds` | list of texts |  | the kinds of event to hear of, such as created, set and transition; every kind when left out |
+| `to_states` | list of texts |  | for a transition, the states entered; every state when left out |
+| `after` | text |  | the id of an event: the stream begins after it, so a caller that was away gives the last one it handled; now when left out |
+
+Its answer is a stream and not one object: over HTTP a reply that stays
+open and carries one entry for each event, and in Go a value whose
+`Next` answers the events one by one. `Exec` answers one object, and
+refuses this command with `not_supported`.
+[The stream of changes](the-stream-of-changes.md) says what an entry is,
+who hears of what and how a stream ends.
 
 ### preview
 
@@ -1112,6 +1135,12 @@ Authorization: Bearer …
   that and refused with `timeout`; and 64 commands at once. A request
   beyond them waits one second for a command to end and is then refused
   with `busy`; nothing of it ran, and it can be sent again.
+- **One command is answered with a stream.** `POST /v1/subscribe` opens
+  the stream of changes: the reply has the status 200 and the kind
+  `text/event-stream`, stays open, and carries one entry for each event
+  the caller may read of. A door holds 256 of them open unless the
+  program says otherwise, and refuses one beyond them with `busy`, at
+  once. [The stream of changes](the-stream-of-changes.md) has the rest.
 - **A request that is not a command as JSON is told so.** One that is
   not a `POST` is answered with the status 405, and a body that is not
   said to be JSON with 415. Both carry the code `bad_json` and a hint.
@@ -1184,5 +1213,4 @@ A few calls of the Go package have no command.
 | `Ping` | it asks whether the database answers; a server answers it at GET /v1/health, for anybody |
 | `PutBlob` | the bytes of a file are not JSON: they travel beside the commands, with the server |
 | `Schema` | it answers the engine's compiled form to a Go program; get_schema answers the definition |
-| `Subscribe` | its answer is a stream and not one object; it joins the commands with the server, as POST /v1/subscribe, which is not built yet |
 | `Table` | it answers the engine's compiled form to a Go program; get_table answers the definition |

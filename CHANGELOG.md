@@ -197,10 +197,39 @@ All notable changes to FadoDB are recorded here. The format follows
   document as the event left it, and of a delete when it could read
   the document just before; a document that leaves a caller's sight
   is passed over in silence. A stream that was away gives the id of
-  the last event it handled and misses nothing. A commit pays nothing
-  for the streams: it allocates the same with streams open as with
-  none. The address on the server, `POST /v1/subscribe`, is not built
-  yet.
+  the last event it handled and misses nothing. A stream follows its
+  caller: given a function that says who the caller is now (`Follow`),
+  it asks when there is an event to tell, so a group that was given or
+  taken counts from the next event on. A commit pays nothing for the
+  streams: it allocates the same with streams open as with none, and
+  the streams read the log once, together, so a hundred of them ask
+  the database what one asks.
+- The stream of changes on the server (ADR-0058): `POST /v1/subscribe`,
+  the command `subscribe`, whose reply stays open. The reply is in the
+  form of server-sent events, `text/event-stream`: an entry for each
+  event, with its id, the kind `change` and the event as one line of
+  JSON; a first line that says the stream is open; and a comment
+  every fifteen seconds without an event. A caller that was away
+  gives the last event it handled, as `after` or in the header
+  `Last-Event-ID`, and is told everything since. When the server ends
+  a stream it says why in a last entry of the kind `end`:
+  `unauthenticated` when the key was revoked or its user disabled,
+  `closed` when the server stops. A door holds 256 streams at once,
+  `limits.streams` in the settings of `fadodb serve`, and refuses one
+  beyond them with `busy`; a caller that takes nothing for thirty
+  seconds is cut. `httpdoor.Door.EndStreams` ends the streams of a
+  program that stops; `fadodb serve` calls it, and so does
+  `examples/server`, the server of one's own. The server counts
+  the open streams as `fadodb_streams`, and writes a line for a stream
+  when it ended, with how long it stayed open and how many events it
+  told. Measured on one machine with a writer that commits every
+  millisecond: an entry is read 0.84 ms after its commit at p99 with
+  one subscriber and 3.12 ms with a hundred, against a budget of 5 ms.
+- The manual's chapter on the stream of changes,
+  `docs/manual/the-stream-of-changes.md`, with `examples/stream`, the
+  program of an agent that waits for invoices to enter review. A test
+  runs the program, and another plays every table and every reply of
+  the chapter against a server.
 - The settings of `fadodb serve` (ADR-0059, items 4, 5, 6 and 11).
   `--settings FILE` gives the server one JSON file of the operator's:
   under `outbound`, the hosts the actions of the database may call,

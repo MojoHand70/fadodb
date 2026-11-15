@@ -392,15 +392,18 @@ func (s *Store) compileAction(data []byte) (*model.ActionSpec, model.Diagnostics
 	case !spec.Declared():
 		// A definition without a request is the contract of a Go function,
 		// and the process that defines it has the function (ADR-0027).
+		// It is refused with the code its rows would wait with, so that
+		// whoever defines it learns at once what a dead action would say
+		// later (ADR-0059, item 6).
 		if fn == nil {
-			add(model.CodeNotSupported, "/name", "nothing in this process implements "+spec.Name+": the definition has no request, so it is the contract of a Go function, and none is registered under that name",
-				"the host program gives the function to Open, in Options.Actions; or the definition gives a request for the engine to send")
+			add(CodeNotRegistered, "/name", "nothing in this process implements "+spec.Name+": the definition has no request, so it is the contract of a Go function, and none is registered under that name",
+				"give the definition a request, which the engine sends itself; a Go function is given by a program that opens the database itself, in Options.Actions, and fadodb serve takes none")
 		}
 	case s.outbound == nil:
 		// Whether this process may reach the network is its host program's
 		// decision (ADR-0045, item 7).
 		add(model.CodeNotSupported, "/request", "this process sends no requests, so it cannot take a definition that has one",
-			"the host program allows outbound calls when it opens the database, with Options.Outbound")
+			"the host program allows outbound calls when it opens the database, with Options.Outbound; fadodb serve does when its settings list the hosts it may call")
 	default:
 		if fn != nil {
 			add(model.CodeNotAllowed, "/request", "a Go function is registered under "+spec.Name+" in this process, and the definition has a request: an action is one or the other",
@@ -431,7 +434,8 @@ func (s *Store) compileAction(data []byte) (*model.ActionSpec, model.Diagnostics
 // take away or retype what a rule of a class gives, which is refused with
 // not_allowed naming the rule. A definition without a request is the
 // contract of a Go function, so the process that defines it must have
-// been given the function, in Options.Actions. A definition with a
+// been given the function, in Options.Actions; one that has not refuses
+// the definition with not_registered. A definition with a
 // request is sent by the engine, so the process must allow outbound
 // calls, with Options.Outbound, know the definition's connection and, if
 // the request reads a secret, supply secrets.
@@ -720,7 +724,7 @@ func (s *Store) act(ctx context.Context, a *action, call *ActionCall) outcome {
 }
 
 func notRegistered(name string) *Error {
-	return hintf(CodeNotRegistered, "", "nothing in this process implements the action "+name, "the host program gives its function to Open, in Options.Actions")
+	return hintf(CodeNotRegistered, "", "nothing in this process implements the action "+name, "a program that opens the database itself gives its function to Open, in Options.Actions; fadodb serve takes none")
 }
 
 // invoke calls the function of an action and reads its answer (ADR-0045,

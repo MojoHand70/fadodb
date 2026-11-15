@@ -141,6 +141,13 @@ db, err := fado.Open(path, fado.Options{
 })
 ```
 
+Under `fadodb serve` the same is decided by the operator, in the
+server's settings: the two lists are `outbound.hosts` and
+`outbound.connections` of the file given with `--settings`, and a
+secret is a file in the directory given with `--secrets-dir` or a
+variable of the environment
+([Serving a database](manual/serving-a-database.md#what-its-actions-may-call)).
+
 - **Nothing is sent** by a database opened without `Outbound`. A
   definition with a `request` cannot be defined there, and an action that
   needs one waits and then dies with `outbound_off`.

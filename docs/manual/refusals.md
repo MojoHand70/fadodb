@@ -56,7 +56,7 @@ What a call is answered with when the engine does not carry it out: a create, a 
 | `too_deep` | An action was queued by a chain of actions deeper than MaxActionDepth (ADR-0044); its row is written dead. |
 | `unknown_action` | No action of the outbox has that key, or the database has no action of that name. |
 | `unknown_parameter` | An argument names a parameter the action's definition does not have (ADR-0045). |
-| `not_registered` | The action is defined and nothing in this process implements it: its Go function was not given to Open (ADR-0027). |
+| `not_registered` | Nothing in this process implements the action: its Go function was not given to Open (ADR-0027). A definition that needs one is refused with it, and the rows of one that came with the database wait with it. fadodb serve takes no Go function (ADR-0059). |
 | `action_error` | The Go function of an action returned an error, or panicked; Message carries its words. A function that returns an error of the store keeps that error's code. |
 | `bad_result` | What an action returned does not fit what its definition declares under returns. |
 | `outbound_off` | The action is sent as an HTTP request and this process sends none: it was opened without Options.Outbound (ADR-0045, item 7). |

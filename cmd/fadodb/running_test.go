@@ -114,6 +114,15 @@ func TestTheChapterOnRunning(t *testing.T) {
 	}
 	ends["names a file"] = code
 
+	// And the scan of R-2 is removed from the disk.
+	if err := os.Remove(filepath.Join("books.fado.blobs", hashes[1][:2], hashes[1])); err != nil {
+		t.Fatal(err)
+	}
+	code, out, said = check("books.fado")
+	if out != fenced("the check, a file missing") || code != 1 {
+		t.Errorf("the check of a database that lost a file ends with %d and prints:\n%s%s\nand the chapter shows:\n%s", code, out, said, fenced("the check, a file missing"))
+	}
+
 	// Another program holds the database alone.
 	held, err := fado.Open("books.fado", fado.Options{Alone: "the program of Acme", Outbox: fado.OutboxOptions{Manual: true}})
 	if err != nil {

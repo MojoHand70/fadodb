@@ -215,8 +215,8 @@ names; a definition's problems come back at once as `Diagnostics`, each
 with a code and the place. Files are attached as `File` values behind a
 blob store, reference data lives in explicit tables that formulas read
 with `LOOKUP`, and a class can be redefined as a new version that
-touches no existing document. `fadodb check FILE` verifies a database
-file. The full walk-through is `fado/example_test.go`, and
+touches no existing document. `fadodb check FILE` verifies the files of
+a database: that their bytes are unchanged and that none is missing. The full walk-through is `fado/example_test.go`, and
 `fado/readme_test.go` runs the class and the calls above.
 
 ## Install

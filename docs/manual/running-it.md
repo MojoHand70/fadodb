@@ -101,7 +101,7 @@ see [Serving a database](serving-a-database.md#stopping).
 | What is copied | When | What the copy is |
 |---|---|---|
 | the database file, and the directory of its files | no program has the database open | the whole database |
-| the database file without the directory | no program has the database open | every document, and no file: opening one is refused with `unknown_blob`. The check does not notice |
+| the database file without the directory | no program has the database open | every document, and no file: opening one is refused with `unknown_blob`. The check names every receipt that lost its file |
 | the database file alone | a program has it open | not a backup. It lacks the commits that are still in the `-wal` file. In the test that was all of them: the copy opened, with no complaint, as a database with no class |
 | a copy that SQLite makes, with `VACUUM INTO` | a program has it open and writes to it | the whole database, as it was at one moment between two commits |
 
@@ -207,9 +207,12 @@ the two that nobody made.
 
 ## Checking
 
-`fadodb check` reads the bytes of every file the database keeps, works
-out the hash of each again, and names the ones that do not match. It
-is how to see that a copy has its files as they were put.
+`fadodb check` looks at the files of a database both ways. It reads
+the bytes of every file the database keeps, works out the hash of each
+again, and names the ones that do not match. And it reads the hash of
+every file a document holds, in every version, and names the ones the
+database no longer keeps, each with its document. It is how to see
+that a copy has its files, and has them as they were put.
 
 ```
 fadodb check books.fado
@@ -217,7 +220,7 @@ fadodb check books.fado
 
 <!-- the check -->
 ```text
-books.fado: 2 classes, 0 tables, 2 blobs checked, all match
+books.fado: 2 classes, 0 tables, 2 blobs checked, all match, no file of a document is missing
 ```
 
 The two classes are `Receipt` and `Substitution`, which every database
@@ -226,8 +229,20 @@ has. A blob is the bytes of one file: here the scans of `R-1` and
 
 <!-- the check, a file altered -->
 ```text
-books.fado: 2 classes, 0 tables, 2 blobs checked, 1 do not match:
+books.fado: 2 classes, 0 tables, 2 blobs checked, 1 do not match, no file of a document is missing
+the bytes of these blobs are not the bytes that were put:
   7a67c33675777c40c57af1be207dd2a250dee13c3e5e8b6668371477b80b0e21
+```
+
+And when the scan of `R-2` is then removed from the disk:
+
+<!-- the check, a file missing -->
+```text
+books.fado: 2 classes, 0 tables, 1 blobs checked, 1 do not match, 1 file of a document is missing
+the bytes of these blobs are not the bytes that were put:
+  7a67c33675777c40c57af1be207dd2a250dee13c3e5e8b6668371477b80b0e21
+these documents hold a file that the store does not have:
+  Receipt R-2, scan, since version 1: f15bad6b676368f0048e01e9ed1b8edbe821b8578ef8c91649497a5a6523dd0f
 ```
 
 <!-- what the check finds -->
@@ -235,7 +250,7 @@ books.fado: 2 classes, 0 tables, 2 blobs checked, 1 do not match:
 |---|---|
 | every file as it was put | names nothing |
 | a file whose bytes were changed | names its hash |
-| a file that is missing | names nothing, and counts one file less |
+| a file that is missing | names the document that holds it |
 
 <!-- how the check ends -->
 | The check | It ends with |
@@ -245,9 +260,11 @@ books.fado: 2 classes, 0 tables, 2 blobs checked, 1 do not match:
 | cannot open the database, because another program holds it alone | 1 |
 | is called with no database | 2 |
 
-- **A file that is missing is not found.** The check reads what the
-  store holds. It does not ask which files the documents name. After a
-  copy, compare the count of blobs with the one before.
+- **A file that is missing is found**, with the document that holds
+  it: the class, the id, the variable and the first version that held
+  the file. The name of the file is not told, since who checks a
+  database is not always allowed to read what is in it. A copy that
+  left the directory of files out fails the check.
 - **The database file itself is not checked.** The check opens it, and
   says how many classes and tables it read.
 - **A served database is checked through its server**, by an
@@ -255,17 +272,20 @@ books.fado: 2 classes, 0 tables, 2 blobs checked, 1 do not match:
   [`check_blobs`](commands.md#check_blobs). `fadodb check` is refused
   with `in_use` while the server holds the database.
 
-> **`fadodb check` runs the queue of the database it checks.** It opens
-> the database as a program does, so the worker starts. The tool has
-> none of the program's functions and may call no host, so an action
-> that is due fails, with `not_registered` or `outbound_off`, and
-> waits for its next attempt. An action is dead after ten attempts.
-> `fadodb user add` and `fadodb key new` open the database the same
-> way. In the test a program with no functions opens Adam's copy, and
-> the mail that waits there is tried and fails with `not_registered`.
-> The tool does not leave the queue alone today. Until it does, check
-> a database whose queue is empty, or a second copy that is thrown
-> away afterwards.
+- **The check leaves the queue alone**, and so do `fadodb user add`
+  and `fadodb key new`. The tool has none of the program's functions
+  and may call no host, so it starts no worker: what waits in the
+  queue waits for the program, or the server, that runs it.
+
+> **A program of your own that opens a database without its functions
+> runs the queue all the same**, unless it says that it runs the queue
+> by hand. An action that is due then fails, with `not_registered` or
+> `outbound_off`, and waits for its next attempt; an action is dead
+> after ten attempts. In the test a program with no functions opens
+> Adam's copy, and the mail that waits there is
+> tried and fails with `not_registered`.
+> [Looking into a copy](#looking-into-a-copy) shows how such a program
+> opens a database.
 
 ## How large the file is
 
@@ -351,9 +371,7 @@ release that made it: `fadodb version` says it, and the
 ## Not here yet
 
 - A backup that the engine makes itself, of a database that is open.
-- A check that finds a file that is missing, and one that checks the
-  database file itself.
-- A tool that leaves the queue alone.
+- A check of the database file itself.
 - Making the file smaller: nothing removes old versions, events or
   bytes.
 - A way to bring a file of an earlier release forward.

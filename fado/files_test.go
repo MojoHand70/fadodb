@@ -158,11 +158,12 @@ func TestFiles(t *testing.T) {
 	_, err = db.Transition(ctx, "Receipt", receipt.ID, "file", nil, ola)
 	step(15, told(err))
 	step(16, opened(scan)(blob(hash, celina)))
-	wrong, checked, err := db.CheckBlobs(ctx, adam)
+	check, err := db.CheckBlobs(ctx, adam)
 	if err != nil {
 		t.Fatal(err)
 	}
-	step(17, fmt.Sprintf("%d checked, %d wrong", checked, len(wrong)))
+	checked := check.Checked
+	step(17, fmt.Sprintf("%d checked, %d wrong, %d missing", checked, len(check.Mismatched), len(check.Missing)))
 	story.done()
 
 	// What the history keeps.
@@ -199,8 +200,8 @@ func TestFiles(t *testing.T) {
 	if err != nil || renamed["hash"] != fact["hash"] || renamed["media_type"] != "text/plain" || renamed["name"] != "copy.txt" {
 		t.Errorf("the same bytes under another name and kind: %v, %v", renamed, err)
 	}
-	if _, again, _ := db.CheckBlobs(ctx, adam); again != checked {
-		t.Errorf("the same bytes put twice are kept %d times more", again-checked)
+	if again, err := db.CheckBlobs(ctx, adam); err != nil || again.Checked != checked {
+		t.Errorf("the same bytes put twice are kept more than once: %v, %v", again, err)
 	}
 
 	// Attaching.
@@ -277,8 +278,8 @@ func TestFiles(t *testing.T) {
 	if got := opened(scan)(file(receipt.ID, hash, ola, fado.AtVersion(1))); got != "the 24 bytes" {
 		t.Errorf("a file of a deleted document, as of version 1: %s", got)
 	}
-	if _, after, _ := db.CheckBlobs(ctx, adam); after != checked {
-		t.Errorf("after the delete the database keeps %d files, and kept %d", after, checked)
+	if after, err := db.CheckBlobs(ctx, adam); err != nil || after.Checked != checked || len(after.Missing) != 0 {
+		t.Errorf("after the delete the database keeps other files than the %d it kept: %v, %v", checked, after, err)
 	}
 
 	// Who may.
@@ -319,16 +320,16 @@ func TestFiles(t *testing.T) {
 			}
 		},
 		"check the files": func(row []string) {
-			_, _, err := db.CheckBlobs(ctx, ola)
+			_, err := db.CheckBlobs(ctx, ola)
 			lacks(row, err)
-			_, _, err = db.CheckBlobs(ctx, celina)
+			_, err = db.CheckBlobs(ctx, celina)
 			lacks(row, err)
 		},
 	})
 
 	// The command.
 	got, err := db.Exec(ctx, fado.Principal{ID: "adam", Kind: fado.ActorPerson, System: []string{fado.GroupAdministrators}}, "check_blobs", []byte(`{}`))
-	if err != nil || !strings.Contains(string(got), `"checked"`) {
+	if err != nil || !strings.Contains(string(got), `"checked"`) || !strings.Contains(string(got), `"mismatched":[],"missing":[]`) {
 		t.Errorf("the command check_blobs: %s, %v", got, err)
 	}
 
@@ -380,8 +381,8 @@ func TestFiles(t *testing.T) {
 			if data, err := os.ReadFile(onDisk); err != nil || !bytes.Equal(data, scan) {
 				t.Fatalf("the bytes are not in <database>.blobs/<two letters>/<hash>: %v", err)
 			}
-			if wrong, n, err := made.CheckBlobs(ctx, adam); err != nil || n != 1 || len(wrong) != 0 {
-				t.Errorf("a check of sound bytes: %v, %d, %v", wrong, n, err)
+			if found, err := made.CheckBlobs(ctx, adam); err != nil || found.Checked != 1 || len(found.Mismatched) != 0 || len(found.Missing) != 0 {
+				t.Errorf("a check of sound bytes: %v, %v", found, err)
 			}
 			// The bytes are changed on disk, and the check names them.
 			if err := os.Chmod(onDisk, 0o644); err != nil {
@@ -390,8 +391,29 @@ func TestFiles(t *testing.T) {
 			if err := os.WriteFile(onDisk, []byte("%PDF-1.4 a forged receipt"), 0o644); err != nil {
 				t.Fatal(err)
 			}
-			if wrong, n, err := made.CheckBlobs(ctx, adam); err != nil || n != 1 || !reflect.DeepEqual(wrong, []string{name}) {
-				t.Errorf("a check of bytes that were changed on disk: %v, %d, %v", wrong, n, err)
+			if found, err := made.CheckBlobs(ctx, adam); err != nil || found.Checked != 1 || !reflect.DeepEqual(found.Mismatched, []string{name}) {
+				t.Errorf("a check of bytes that were changed on disk: %v, %v", found, err)
+			}
+			// A receipt holds a second file, and the file is lost: a
+			// backup that left it out. The check names the receipt.
+			second, err := made.PutBlob(ctx, "b.txt", "", strings.NewReader("a second file"), ola)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := made.DefineClass(ctx, class, setup); err != nil {
+				t.Fatal(err)
+			}
+			doc, err := made.Create(ctx, "Receipt", fado.Values{"what": "taxi", "scan": second}, ola)
+			if err != nil {
+				t.Fatal(err)
+			}
+			lost := fmt.Sprint(second["hash"])
+			if err := os.Remove(filepath.Join(path+".blobs", lost[:2], lost)); err != nil {
+				t.Fatal(err)
+			}
+			want := []fado.MissingFile{{Hash: lost, Class: "Receipt", ID: doc.ID, Version: 1, Variable: "scan"}}
+			if found, err := made.CheckBlobs(ctx, adam); err != nil || found.Checked != 1 || !reflect.DeepEqual(found.Missing, want) {
+				t.Errorf("a check after a file was lost: %v, %v", found, err)
 			}
 		},
 		"external": func([]string) {
@@ -411,7 +433,7 @@ func TestFiles(t *testing.T) {
 			if got := opened(scan)(rc, err); got != "the 24 bytes" {
 				t.Errorf("a file whose bytes the host program keeps: %s", got)
 			}
-			if _, _, err := made.CheckBlobs(ctx, adam); codeOf(err) != "not_supported" {
+			if _, err := made.CheckBlobs(ctx, adam); codeOf(err) != "not_supported" {
 				t.Errorf("a check of a store that cannot list what it keeps: %v", err)
 			}
 		},
@@ -423,8 +445,8 @@ func TestFiles(t *testing.T) {
 	// How large a file may be.
 	small, path := create("small.fado", fado.Options{MaxBlob: 1000})
 	_, tooLarge := small.PutBlob(ctx, "big.bin", "", strings.NewReader(strings.Repeat("x", 1001)), ola)
-	if _, n, _ := small.CheckBlobs(ctx, adam); n != 0 {
-		t.Errorf("bytes past the limit were kept: %d files", n)
+	if found, err := small.CheckBlobs(ctx, adam); err != nil || found.Checked != 0 {
+		t.Errorf("bytes past the limit were kept: %v, %v", found, err)
 	}
 	if _, err := small.PutBlob(ctx, "fits.bin", "", strings.NewReader(strings.Repeat("x", 1000)), ola); err != nil {
 		t.Errorf("bytes at the limit: %v", err)
@@ -484,7 +506,7 @@ func TestFiles(t *testing.T) {
 			return err
 		}(),
 		"checks the files, and is no administrator": func() error {
-			_, _, err := db.CheckBlobs(ctx, anna)
+			_, err := db.CheckBlobs(ctx, anna)
 			return err
 		}(),
 		"opens a database with another store than it was created with": otherStore,

@@ -353,8 +353,9 @@ var commands = []*Command{
 		Fields: []Field{req("action_key", Text, "the key of the queued action, as outbox lists it")}, takes: asCaller, run: runRetryAction},
 	{Group: Operations, Name: "drain", Mark: Writes, Call: "Drain", Does: "Runs every queued action that is due, now.",
 		Answer: answer("attempted", "how many actions it attempted"), takes: asCaller, run: runDrain},
-	{Group: Operations, Name: "check_blobs", Mark: Reads, Call: "CheckBlobs", Does: "Recomputes the hash of every file the database holds.",
-		Answer: answer("checked", "how many files it checked", "mismatched", "the hashes of the files whose bytes do not match"), takes: asCaller, run: runCheckBlobs},
+	{Group: Operations, Name: "check_blobs", Mark: Reads, Call: "CheckBlobs", Does: "Recomputes the hash of every file the database holds, and looks for every file a document holds.",
+		Answer: answer("checked", "how many files it checked", "mismatched", "the hashes of the files whose bytes do not match",
+			"missing", `the files a document holds, in any version, that the database has lost, each {"hash", "class", "id", "version", "variable"}`), takes: asCaller, run: runCheckBlobs},
 
 	// Users, groups and keys (ADR-0057).
 	{Group: Users, Users: true, Name: "create_user", Mark: Writes, Call: "CreateUser", Does: "Makes a user: a person, an agent or a service the database knows by its id. It is a database administrator's.",

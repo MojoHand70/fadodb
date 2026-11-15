@@ -6,9 +6,11 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -209,29 +211,171 @@ func TestCommit_Files(t *testing.T) {
 	}
 }
 
+// The check finds a file both ways (ADR-0033, item 7): bytes that are
+// not the bytes that were put, and a file that a document holds, in any
+// version, whose bytes the store has lost.
 func TestCheckBlobs(t *testing.T) {
 	for _, kind := range []string{"sqlite", "dir"} {
 		t.Run(kind, func(t *testing.T) {
 			s, path := openStore(t, Options{BlobStore: kind})
 			ctx := context.Background()
-			good, _ := s.PutBlob(ctx, "good", "", strings.NewReader("good bytes"))
-			bad, _ := s.PutBlob(ctx, "bad", "", strings.NewReader("bad bytes"))
-			if mism, n, err := s.CheckBlobs(ctx, asSetup); err != nil || n != 2 || len(mism) != 0 {
-				t.Fatalf("before: %v %d %v", mism, n, err)
-			}
-			h := bad["hash"].(string)
-			if kind == "sqlite" {
-				if _, err := s.writer.ExecContext(ctx, "UPDATE blobs SET bytes = ? WHERE hash = ?", []byte("altered"), h); err != nil {
-					t.Fatal(err)
-				}
-			} else if err := os.WriteFile(filepath.Join(path+".blobs", h[:2], h), []byte("altered"), 0o644); err != nil {
+			if _, err := s.defineOpen(ctx, []byte(claim), asSetup); err != nil {
 				t.Fatal(err)
 			}
-			mism, n, err := s.CheckBlobs(ctx, asSetup)
-			if err != nil || n != 2 || len(mism) != 1 || mism[0] != h || mism[0] == good["hash"] {
-				t.Errorf("after: %v %d %v", mism, n, err)
+			put := func(text string) Values {
+				t.Helper()
+				fact, err := s.PutBlob(ctx, text+".txt", "", strings.NewReader(text))
+				if err != nil {
+					t.Fatal(err)
+				}
+				return fact
+			}
+			hash := func(fact Values) string { return fact["hash"].(string) }
+			// What happens to bytes behind the store's back.
+			onDisk := func(h string) string { return filepath.Join(path+".blobs", h[:2], h) }
+			alter := func(h string) {
+				t.Helper()
+				var err error
+				if kind == "sqlite" {
+					_, err = s.writer.ExecContext(ctx, "UPDATE blobs SET bytes = ? WHERE hash = ?", []byte("altered"), h)
+				} else {
+					err = os.WriteFile(onDisk(h), []byte("altered"), 0o644)
+				}
+				if err != nil {
+					t.Fatal(err)
+				}
+			}
+			lose := func(h string) {
+				t.Helper()
+				var err error
+				if kind == "sqlite" {
+					_, err = s.writer.ExecContext(ctx, "DELETE FROM blobs WHERE hash = ?", h)
+				} else {
+					err = os.Remove(onDisk(h))
+				}
+				if err != nil {
+					t.Fatal(err)
+				}
+			}
+			check := func() *BlobCheck {
+				t.Helper()
+				found, err := s.CheckBlobs(ctx, asSetup)
+				if err != nil {
+					t.Fatal(err)
+				}
+				return found
+			}
+
+			good, bad := put("good bytes"), put("bad bytes")
+			scan, was := put("the scan"), put("the scan as it was")
+			first, second := put("the first receipt"), put("the second receipt")
+			// C-1 holds a scan and two receipts; in its first version the
+			// scan was another file.
+			if _, err := s.Create(ctx, "Claim", Values{"number": "C-1", "scan": was, "receipts": []any{first, second}}, WithID("c-1")); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := s.Set(ctx, "Claim", "c-1", Values{"scan": scan}); err != nil {
+				t.Fatal(err)
+			}
+			// C-2 holds the first receipt too, and was deleted since: its
+			// versions are kept, and so is what they hold.
+			if _, err := s.Create(ctx, "Claim", Values{"number": "C-2", "receipts": []any{first}}, WithID("c-2")); err != nil {
+				t.Fatal(err)
+			}
+			if err := s.Delete(ctx, "Claim", "c-2"); err != nil {
+				t.Fatal(err)
+			}
+			// C-3 holds no file.
+			if _, err := s.Create(ctx, "Claim", Values{"number": "C-3"}, WithID("c-3")); err != nil {
+				t.Fatal(err)
+			}
+			if found := check(); found.Checked != 6 || len(found.Mismatched) != 0 || len(found.Missing) != 0 {
+				t.Fatalf("a sound database: %s", dump(found))
+			}
+
+			// Bytes that were changed are named by their hash, as before.
+			alter(hash(bad))
+			found := check()
+			if found.Checked != 6 || len(found.Mismatched) != 1 || found.Mismatched[0] != hash(bad) || len(found.Missing) != 0 {
+				t.Errorf("after bytes were changed: %s", dump(found))
+			}
+
+			// Files that are gone are named with the documents that hold
+			// them: the scan of the first version of C-1, and the first
+			// receipt, which two documents hold. A file no document holds
+			// is not missed.
+			lose(hash(was))
+			lose(hash(first))
+			lose(hash(good))
+			found = check()
+			want := []MissingFile{
+				{Hash: hash(was), Class: "Claim", ID: "c-1", Version: 1, Variable: "scan"},
+				{Hash: hash(first), Class: "Claim", ID: "c-1", Version: 1, Variable: "receipts"},
+				{Hash: hash(first), Class: "Claim", ID: "c-2", Version: 1, Variable: "receipts"},
+			}
+			if found.Checked != 3 || len(found.Mismatched) != 1 || !reflect.DeepEqual(found.Missing, want) {
+				t.Errorf("after files were lost:\n%s\nwant missing\n%s", dump(found), dump(want))
+			}
+			// What is still there is still read.
+			if rc, _, err := s.OpenFile(ctx, "Claim", "c-1", hash(second)); err != nil || readAll(t, rc) != "the second receipt" {
+				t.Errorf("a file that was not lost: %v", err)
 			}
 		})
+	}
+}
+
+// The check names the variable that holds a missing file, and does not
+// look where an earlier version of a class kept files and the class of
+// today keeps none.
+func TestCheckBlobsAcrossClassVersions(t *testing.T) {
+	s, path := openStore(t, Options{BlobStore: "dir"})
+	ctx := context.Background()
+	const parcel = `{"name": "Parcel", "variables": {
+  "number": {"type": "text"},
+  "label":  {"type": "object", "schema": "File"},
+  "photos": {"type": "rows", "schema": "File"}
+}, "states": {"initial": "open", "list": ["open"]}}`
+	if _, err := s.defineOpen(ctx, []byte(parcel), asSetup); err != nil {
+		t.Fatal(err)
+	}
+	label, _ := s.PutBlob(ctx, "label.pdf", "", strings.NewReader("the label"))
+	photo, _ := s.PutBlob(ctx, "photo.jpg", "", strings.NewReader("the photo"))
+	if _, err := s.Create(ctx, "Parcel", Values{"number": "P-1", "label": label, "photos": []any{photo}}, WithID("p-1")); err != nil {
+		t.Fatal(err)
+	}
+	for _, fact := range []Values{label, photo} {
+		h := fact["hash"].(string)
+		if err := os.Remove(filepath.Join(path+".blobs", h[:2], h)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	found, err := s.CheckBlobs(ctx, asSetup)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []MissingFile{
+		{Hash: label["hash"].(string), Class: "Parcel", ID: "p-1", Version: 1, Variable: "label"},
+		{Hash: photo["hash"].(string), Class: "Parcel", ID: "p-1", Version: 1, Variable: "photos"},
+	}
+	if found.Checked != 0 || !reflect.DeepEqual(found.Missing, want) {
+		t.Errorf("both files lost:\n%s", dump(found))
+	}
+
+	// A slip could hold a scan and no slip ever did, so the next version
+	// of the class drops the variable, and its column with it. The check
+	// still knows the first version, and does not ask for the column.
+	const slip = `{"name": "Slip", "variables": {"number": {"type": "text"}%s}, "states": {"initial": "open", "list": ["open"]}}`
+	if _, err := s.defineOpen(ctx, []byte(fmt.Sprintf(slip, `, "scan": {"type": "object", "schema": "File"}`)), asSetup); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Create(ctx, "Slip", Values{"number": "S-1"}, WithID("s-1")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.defineOpen(ctx, []byte(fmt.Sprintf(slip, "")), asSetup); err != nil {
+		t.Fatal(err)
+	}
+	if again, err := s.CheckBlobs(ctx, asSetup); err != nil || !reflect.DeepEqual(again.Missing, want) {
+		t.Errorf("after a class dropped a variable of files: %v\n%s", err, dump(again))
 	}
 }
 
@@ -287,7 +431,7 @@ func TestExternalBlobStore(t *testing.T) {
 	if rc, _, err := s.OpenFile(ctx, "Claim", doc.ID, fact["hash"].(string)); err != nil || readAll(t, rc) != "\x01\x02\x03" {
 		t.Errorf("open: %v", err)
 	}
-	if _, _, err := s.CheckBlobs(ctx, asSetup); code(err) != CodeNotSupported {
+	if _, err := s.CheckBlobs(ctx, asSetup); code(err) != CodeNotSupported {
 		t.Errorf("check without a lister: %v", err)
 	}
 	s.Close()

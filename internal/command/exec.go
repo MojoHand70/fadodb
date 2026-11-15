@@ -720,15 +720,18 @@ func runDrain(c *call) error {
 }
 
 func runCheckBlobs(c *call) error {
-	mismatched, checked, err := c.s.CheckBlobs(c.ctx, c.opts...)
+	check, err := c.s.CheckBlobs(c.ctx, c.opts...)
 	if err != nil {
 		return err
 	}
-	text, _ := json.Marshal(list(mismatched))
+	mismatched, _ := json.Marshal(list(check.Mismatched))
+	missing, _ := json.Marshal(check.Missing)
 	c.open("checked")
-	c.out = strconv.AppendInt(c.out, int64(checked), 10)
+	c.out = strconv.AppendInt(c.out, int64(check.Checked), 10)
 	c.next("mismatched")
-	c.out = append(c.out, text...)
+	c.out = append(c.out, mismatched...)
+	c.next("missing")
+	c.out = append(c.out, missing...)
 	c.close()
 	return nil
 }

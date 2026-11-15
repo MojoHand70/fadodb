@@ -47,6 +47,37 @@ func TestCheck(t *testing.T) {
 		t.Errorf("check after tampering: exit %d\n%s%s", code, out.String(), errOut.String())
 	}
 
+	// A note holds a file, and the file is lost behind the store's back:
+	// the check names the note, and fails.
+	s, err = store.Open(path, store.Options{Outbox: leavesTheQueue})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.DefineClass(ctx, []byte(`{"name": "Letter", "variables": {"scan": {"type": "object", "schema": "File"}}, "states": {"initial": "open", "list": ["open"]},
+ "access": {"read": "TRUE", "create": "TRUE", "update": "TRUE", "delete": "FALSE"}}`), store.As(store.Principal{ID: "setup", System: []string{store.GroupDesigners}})); err != nil {
+		t.Fatal(err)
+	}
+	scan, err := s.PutBlob(ctx, "letter.pdf", "", strings.NewReader("a letter"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Create(ctx, "Letter", store.Values{"scan": scan}, store.WithID("l-1"), store.As(store.Principal{ID: "ola"})); err != nil {
+		t.Fatal(err)
+	}
+	s.Close()
+	db = openRaw(t, path)
+	if _, err := db.Exec("DELETE FROM blobs WHERE hash = ?", scan["hash"]); err != nil {
+		t.Fatal(err)
+	}
+	db.Close()
+	out.Reset()
+	errOut.Reset()
+	code := run([]string{"check", path}, &out, &errOut)
+	if code != 1 || !strings.Contains(out.String(), "1 file of a document is missing") ||
+		!strings.Contains(out.String(), "  Letter l-1, scan, since version 1: "+scan["hash"].(string)) {
+		t.Errorf("check after a file was lost: exit %d\n%s%s", code, out.String(), errOut.String())
+	}
+
 	if code := run([]string{"check"}, &out, &errOut); code != 2 {
 		t.Errorf("no file: exit %d", code)
 	}

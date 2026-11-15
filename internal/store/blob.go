@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/MojoHand70/fadodb/internal/formula"
@@ -421,19 +422,52 @@ func (s *Store) OpenBlob(ctx context.Context, hash string, opts ...Option) (io.R
 	return rc, size, nil
 }
 
-// CheckBlobs reads every held blob, recomputes its hash and returns the
-// hashes whose bytes do not match, and how many it checked (ADR-0033);
-// a restore from an altered backup is found this way. A blob store that
-// cannot list its hashes is the error not_supported.
-func (s *Store) CheckBlobs(ctx context.Context, opts ...Option) (mismatched []string, checked int, err error) {
+// BlobCheck is what CheckBlobs found (ADR-0033, item 7).
+type BlobCheck struct {
+	// Checked is how many blobs the store holds and the check read.
+	Checked int `json:"checked"`
+	// Mismatched are the hashes of the blobs whose bytes are not the
+	// bytes that were put: a file changed on disk, a damaged backup.
+	Mismatched []string `json:"mismatched"`
+	// Missing are the files that documents hold and the store does not:
+	// a backup that left a file out, a directory that was not copied.
+	Missing []MissingFile `json:"missing"`
+}
+
+// MissingFile is a file a document holds whose bytes the store does not
+// have. It says which document, and not what the file is called: the
+// name of a file is content, and who checks a database need not be
+// allowed to read it (ADR-0052).
+type MissingFile struct {
+	Hash  string `json:"hash"`
+	Class string `json:"class"`
+	ID    string `json:"id"`
+	// Version is the first version of the document that held the file.
+	Version int `json:"version"`
+	// Variable is the variable that holds it, with the path of the field
+	// when the file is inside an object: scan, receipts, shipping.label.
+	Variable string `json:"variable"`
+}
+
+// CheckBlobs checks the files of the database both ways (ADR-0033, item
+// 7). It reads every blob the store holds and recomputes its hash, and
+// names the ones whose bytes do not match. And it reads the hash of
+// every file a document holds, in every version, of every class, and
+// names the ones the store does not hold, each with its document. So a
+// restore from a backup that was altered, or that left files out, is
+// found. A blob store that cannot list its hashes is the error
+// not_supported.
+func (s *Store) CheckBlobs(ctx context.Context, opts ...Option) (*BlobCheck, error) {
 	if _, e := s.worker(ctx, workOperate, opts); e != nil {
-		return nil, 0, e
+		return nil, e
 	}
 	lister, ok := s.blobs.(BlobLister)
 	if !ok {
-		return nil, 0, errf(CodeNotSupported, "", "the %s blob store cannot list its blobs", s.blobKind)
+		return nil, errf(CodeNotSupported, "", "the %s blob store cannot list its blobs", s.blobKind)
 	}
-	err = lister.List(ctx, func(hash string) error {
+	check := &BlobCheck{Mismatched: []string{}, Missing: []MissingFile{}}
+	held := map[string]struct{}{}
+	err := lister.List(ctx, func(hash string) error {
 		rc, _, err := s.blobs.Open(ctx, hash)
 		if err != nil {
 			return err
@@ -443,13 +477,113 @@ func (s *Store) CheckBlobs(ctx context.Context, opts ...Option) (mismatched []st
 		if _, err := io.Copy(h, rc); err != nil {
 			return err
 		}
-		checked++
+		check.Checked++
+		held[hash] = struct{}{}
 		if hex.EncodeToString(h.Sum(nil)) != hash {
-			mismatched = append(mismatched, hash)
+			check.Mismatched = append(check.Mismatched, hash)
 		}
 		return nil
 	})
-	return mismatched, checked, err
+	if err != nil {
+		return nil, err
+	}
+	if check.Missing, err = s.missingFiles(ctx, held); err != nil {
+		return nil, err
+	}
+	return check, nil
+}
+
+// fileColumn is one place the documents of a class keep the hash of a
+// file: a column of the class's history table, which has a row for
+// every version, or of the table of a rows variable.
+type fileColumn struct {
+	class, variable   string
+	table, column, id string
+}
+
+// fileColumns lists every place a hash is kept, class by class in the
+// order the classes were defined, over every version of each class.
+func (s *Store) fileColumns() []fileColumn {
+	s.cmu.RLock()
+	defer s.cmu.RUnlock()
+	var out []fileColumn
+	seen := map[[2]string]bool{}
+	add := func(fc fileColumn) {
+		if key := [2]string{fc.table, fc.column}; !seen[key] {
+			seen[key] = true
+			out = append(out, fc)
+		}
+	}
+	for _, name := range s.order {
+		versions := s.versions[strings.ToUpper(name)]
+		numbers := make([]int, 0, len(versions))
+		for n := range versions {
+			numbers = append(numbers, n)
+		}
+		sort.Sort(sort.Reverse(sort.IntSlice(numbers)))
+		for _, n := range numbers {
+			c := versions[n]
+			for _, fp := range c.files {
+				if fp.hash >= 0 {
+					add(fileColumn{class: c.cls.Name, variable: fp.path, table: c.history, column: c.leaves[fp.hash].column, id: "id"})
+				}
+			}
+			for _, ch := range c.children {
+				for _, fp := range ch.files {
+					if fp.hash < 0 {
+						continue
+					}
+					variable := ch.v.Name
+					if fp.path != "" {
+						variable += "." + fp.path
+					}
+					add(fileColumn{class: c.cls.Name, variable: variable, table: ch.table, column: ch.leaves[fp.hash].column, id: "doc_id"})
+				}
+			}
+		}
+	}
+	return out
+}
+
+// missingFiles reads the hash of every file the documents hold and
+// answers the ones that are not among the held. It asks one statement of
+// each place a hash is kept, which groups the versions of a document,
+// and never one of a document.
+func (s *Store) missingFiles(ctx context.Context, held map[string]struct{}) ([]MissingFile, error) {
+	missing := []MissingFile{}
+	for _, fc := range s.fileColumns() {
+		// A column of an earlier version of the class that a later
+		// version dropped holds nothing any more.
+		var there int
+		if err := s.db.QueryRowContext(ctx, "SELECT count(*) FROM pragma_table_info(?) WHERE name = ?", fc.table, fc.column).Scan(&there); err != nil {
+			return nil, storageErr("read the columns of "+fc.table, err)
+		}
+		if there == 0 {
+			continue
+		}
+		col, id := quote(fc.column), quote(fc.id)
+		rows, err := s.db.QueryContext(ctx, "SELECT "+col+", "+id+`, min("version") FROM `+quote(fc.table)+
+			" WHERE "+col+" IS NOT NULL AND "+col+" <> '' GROUP BY "+col+", "+id+" ORDER BY "+id+", "+col)
+		if err != nil {
+			return nil, storageErr("read the files of "+fc.class, err)
+		}
+		for rows.Next() {
+			m := MissingFile{Class: fc.class, Variable: fc.variable}
+			if err := rows.Scan(&m.Hash, &m.ID, &m.Version); err != nil {
+				rows.Close()
+				return nil, storageErr("read the files of "+fc.class, err)
+			}
+			if _, ok := held[m.Hash]; !ok {
+				missing = append(missing, m)
+			}
+		}
+		err = rows.Err()
+		rows.Close()
+		if err != nil {
+			return nil, storageErr("read the files of "+fc.class, err)
+		}
+	}
+	return missing, nil
 }
 
 // filePair is where a File object keeps its hash and its size among the

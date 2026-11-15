@@ -304,6 +304,40 @@ and the refusal of a Go function.
   links no HTTP client, and neither package imports `fado/outbound`.
   The tool is 14.1 MB against its budget of 15.
 
+The third part built the counts of item 9.
+
+- **The door tells of each request, and the program counts.**
+  `fadodb serve` counts in the function the door reports to, the one
+  that writes the line of the log. A program of one's own around the
+  door counts what it likes from the same reports.
+- **What is on the page.** The requests by command and status; the
+  time the requests of each command took, added up, and how many they
+  were; all requests by how long they took; the queue of the database,
+  as the actions that are due, the ones that wait for their moment and
+  the dead ones, with how long the oldest due action has been due; the
+  sizes of the database and of its log; the version and the moment the
+  server started. The count of open streams comes with the stream.
+- **A name that is no command is counted as `other`.** A caller may
+  send any name, and a page with a line for each would have no bound.
+  Only what happened has a line.
+- **The counts are kept in memory** and begin at zero with each start.
+  No user, no document and no value is in them.
+- **Who reads them** is a database administrator, as item 9 says:
+  without a key the request is refused with `unauthenticated`, and the
+  queue is counted as the caller, so the engine itself refuses
+  everybody else with `forbidden`. A watcher such as Prometheus
+  therefore holds the key of an administrator, a key that can also
+  make users and keys. A lesser right, for watching alone, would be a
+  change to this item and is the owner's to decide; it is not built.
+- **`OutboxCounts` is the Go call behind the counts of the queue.** It
+  reads three counts from an index and no row, and is no command:
+  `outbox` lists the actions themselves.
+- **A request for the counts has its line in the log and is counted;
+  a request for the health has neither**, since a health check comes
+  every few seconds from a machine and says nothing of who asks.
+- **Counting a request allocates nothing**, which a test holds: it
+  stands on the way of every command.
+
 ## The owner's rulings
 
 All of 2026-11-14. The owner read the three questions, each with a

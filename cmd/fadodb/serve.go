@@ -35,6 +35,8 @@ send a key of a user of the database:
   POST /v1/blobs         a file, put
   GET  /v1/file          a file, read through its document
   GET  /v1/health        that the server answers, for anybody
+  GET  /v1/metrics       its counts, for a database administrator, in
+                         the text form Prometheus reads
 
 Told nothing, it listens on this machine only, at 127.0.0.1:8080.
 
@@ -162,8 +164,16 @@ func runServe(ctx context.Context, args []string, stdout, stderr io.Writer, read
 		return 1
 	}
 	defer db.Close()
+	// Every request is told once, when it was answered: it gets its line
+	// and is counted (item 9).
 	log := &requestLog{w: stderr}
-	door, err := httpdoor.New(db, httpdoor.Options{Who: httpdoor.Keys(db), Limits: told.limits, Report: log.write})
+	counted := newMetrics(version, time.Now())
+	report := func(r httpdoor.Request) {
+		log.write(r)
+		counted.record(r)
+	}
+	who := httpdoor.Keys(db)
+	door, err := httpdoor.New(db, httpdoor.Options{Who: who, Limits: told.limits, Report: report})
 	if err != nil {
 		fmt.Fprintf(stderr, "%s: %v\n", name, err)
 		return 1
@@ -174,7 +184,7 @@ func runServe(ctx context.Context, args []string, stdout, stderr io.Writer, read
 		return 1
 	}
 	srv := &http.Server{
-		Handler: &served{db: db, door: door},
+		Handler: &served{db: db, door: door, path: path, who: who, metrics: counted, report: report},
 		// A caller that connects and says nothing is not waited for
 		// forever. A body and a reply have no limit of time here: a
 		// large file takes as long as its line allows.
@@ -309,11 +319,22 @@ func interrupted() (context.Context, context.CancelFunc) {
 type served struct {
 	db   *fado.DB
 	door http.Handler
+	// path is the file of the database; who says who sends a request,
+	// as the door asks it; metrics are the counts of the server, and
+	// report is what every request is told to once it was answered.
+	path    string
+	who     httpdoor.Who
+	metrics *metrics
+	report  func(httpdoor.Request)
 }
 
 func (s *served) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	if r.URL.Path == "/v1/health" {
+	switch r.URL.Path {
+	case "/v1/health":
 		s.health(w, r)
+		return
+	case metricsPath:
+		s.counts(w, r)
 		return
 	}
 	s.door.ServeHTTP(w, r)

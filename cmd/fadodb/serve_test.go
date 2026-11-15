@@ -22,6 +22,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/MojoHand70/fadodb/fado"
 	"github.com/MojoHand70/fadodb/fado/httpdoor"
 	"github.com/MojoHand70/fadodb/internal/server"
 )
@@ -457,6 +458,59 @@ func TestTheChapterOnServing(t *testing.T) {
 	if said := blockOfTheChapter(t, "what it says when it starts"); said != "fadodb serve: serving acme.fado at http://"+defaultListen+"\nfadodb serve: "+told.mayCall() {
 		t.Errorf("the chapter shows a server that says:\n%s\nand the server says of the same settings:\n%s", said, told.mayCall())
 	}
+}
+
+// The chapter lists the counts the server writes, each with its kind and
+// what it says, and shows a part of the page as the server writes it.
+func TestTheChapterOnTheCounts(t *testing.T) {
+	var rows []string
+	for _, f := range families {
+		rows = append(rows, "| `"+f.name+"` | "+f.kind+" | "+f.help+" |")
+	}
+	table := strings.Split(blockAfter(t, "<!-- the counts -->\n| Count | Kind | What it says |\n|---|---|---|\n", "\n\n"), "\n")
+	if strings.Join(table, "\n") != strings.Join(rows, "\n") {
+		t.Errorf("the chapter lists the counts\n%s\n\nand the server writes\n%s", strings.Join(table, "\n"), strings.Join(rows, "\n"))
+	}
+	if got := blockOfTheChapter(t, "the counts are read"); !strings.HasPrefix(got, "GET "+metricsPath+"\nAuthorization: Bearer fado_") {
+		t.Errorf("the chapter asks for the counts with:\n%s", got)
+	}
+	// The part of the page the chapter shows, for the requests and the
+	// queue it names.
+	started := time.Date(2026, 11, 15, 9, 0, 0, 0, time.UTC)
+	m := newMetrics("dev", started)
+	m.record(httpdoor.Request{Command: "transition", Status: 200, Took: 60 * time.Microsecond})
+	m.record(httpdoor.Request{Command: "transition", Status: 200, Took: 40 * time.Microsecond})
+	m.record(httpdoor.Request{Command: "transition", Status: 409, Took: 30 * time.Microsecond})
+	var page bytes.Buffer
+	m.write(&page, fado.OutboxCounts{Due: 2, Waiting: 5, Dead: 1, OldestDue: started}, 0, 0, started.Add(time.Minute))
+	shown := strings.Split(blockOfTheChapter(t, "a part of the counts"), "\n")
+	if len(shown) < 8 {
+		t.Errorf("the chapter shows %d lines of the counts", len(shown))
+	}
+	for _, line := range shown {
+		if !strings.Contains(page.String(), line+"\n") {
+			t.Errorf("the chapter shows the line %q, which the server does not write", line)
+		}
+	}
+	// The help of the server names the address.
+	if !strings.Contains(serveUsage, "GET  "+metricsPath) {
+		t.Error("the help of the server does not name the address of the counts")
+	}
+}
+
+// blockAfter is what stands in the chapter on serving after a mark, up
+// to an end.
+func blockAfter(t *testing.T, from, to string) string {
+	t.Helper()
+	text, err := os.ReadFile(filepath.Join("..", "..", "docs", "manual", "serving-a-database.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	chapter := strings.ReplaceAll(string(text), "\r\n", "\n")
+	if !strings.Contains(chapter, from) {
+		t.Fatalf("the chapter has no %q", from)
+	}
+	return between(chapter, from, to)
 }
 
 // between is what stands in the chapter between two marks.

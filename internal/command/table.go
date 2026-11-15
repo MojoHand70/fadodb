@@ -398,6 +398,7 @@ var NotCommands = map[string]string{
 	"OpenFile":     "the bytes of a file are not JSON: they travel beside the commands, with the server",
 	"OpenBlob":     "the bytes of a file are not JSON: they travel beside the commands, with the server",
 	"Ping":         "it asks whether the database answers; a server answers it at GET /v1/health, for anybody",
+	"OutboxCounts": "it counts what of the queue is still to do, for whoever watches a server, which answers it at GET /v1/metrics; outbox lists the actions themselves",
 	"Authenticate": "it answers who a key belongs to, for the door that is given the key; a caller that wants to know who it is sends whoami",
 	"Class":        "it answers the engine's compiled form to a Go program; get_class answers the definition",
 	"Schema":       "it answers the engine's compiled form to a Go program; get_schema answers the definition",

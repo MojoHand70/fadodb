@@ -3,9 +3,11 @@
 // "fadodb init" makes a database, "fadodb user add" and "fadodb key new"
 // make its first administrator on the machine that holds it, and
 // "fadodb serve" serves it over HTTP to callers who send a key
-// (ADR-0059). "fadodb formula eval" runs the formula engine, "fadodb
-// check" verifies a database file and "fadodb version" prints the
-// build. See ROADMAP.md for what comes next.
+// (ADR-0059). "fadodb class check" and "fadodb action check" ask the
+// engine whether it would take a definition in a file. "fadodb formula
+// eval" runs the formula engine, "fadodb check" verifies a database
+// file and "fadodb version" prints the build. See ROADMAP.md for what
+// comes next.
 package main
 
 import (
@@ -34,6 +36,8 @@ Usage:
   fadodb key new USER --db FILE         make a key for a user, and print it once
   fadodb serve FILE                     serve a database over HTTP, on this machine only
                                         unless told otherwise
+  fadodb class check FILE...            ask whether the engine would take a class, storing nothing
+  fadodb action check FILE              ask whether the engine would take an action, storing nothing
   fadodb formula eval [flags] FORMULA   evaluate a formula, or print its bytecode or SQL
   fadodb check FILE                     verify a database file: every blob's hash
   fadodb version                        print version, commit and build date
@@ -65,6 +69,8 @@ func run(args []string, stdout, stderr io.Writer) int {
 		ctx, stop := interrupted()
 		defer stop()
 		return runServe(ctx, args[1:], stdout, stderr, nil)
+	case "class", "action":
+		return runDefinition(args[0], args[1:], stdout, stderr)
 	case "formula":
 		return runFormula(args[1:], stdout, stderr)
 	case "check":

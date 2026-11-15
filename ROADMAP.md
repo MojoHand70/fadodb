@@ -277,9 +277,12 @@ with the read rule asked for each; and its address on the server,
 it is written, which a caller that was away picks up where it stopped.
 The seventh step is the description of the commands for other
 languages, `api/openapi.json`, written from the engine's table of the
-commands. Not built yet: the command-line tool as a caller, the door
-for agents, the image for containers and the way in for messages from
-outside.
+commands. The eighth is the check of a class and of an action from a
+file, `fadodb class check` and `fadodb action check`, so that an agent
+asks whether the engine would take a definition before it reaches a
+database. Not built yet: the command-line tool as a caller of a
+server, the flow of a class in one call, the door for agents, the
+image for containers and the way in for messages from outside.
 This page is updated when a phase starts and when it ends;
 it never describes a phase as done before its acceptance criteria pass.
 

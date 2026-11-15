@@ -91,10 +91,6 @@
   },
   "info": {
     "description": "Every call that reads or changes a database is a command: a name and one JSON object, answered by one JSON object. A command is sent as `POST /v1/<command>` with its object as the body. A command that reads is a `POST` too, and the id of a document travels in the JSON and never in the address.\n\nWho sends a request is never in the command. A database that keeps its own users is sent a key of a user, as `Authorization: Bearer fado_…`. A member that is `null` is a member left out, and a member a command does not have is refused.\n\nThis document is written from the engine's own table of the commands. The manual's chapter on the commands is written from the same table.",
-    "license": {
-      "identifier": "MIT",
-      "name": "MIT"
-    },
     "summary": "The command set of a FadoDB database over HTTP.",
     "title": "FadoDB",
     "version": "1"

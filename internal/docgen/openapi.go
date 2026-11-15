@@ -250,7 +250,6 @@ func OpenAPI(root string) (string, error) {
 				"A member that is `null` is a member left out, and a member a command does not have is refused.\n\n" +
 				"This document is written from the engine's own table of the commands. The manual's chapter on the commands is written from the same table.",
 			"version": APIVersion,
-			"license": object{"name": "MIT", "identifier": "MIT"},
 		},
 		"servers":  []object{{"url": "http://127.0.0.1:8080", "description": "`fadodb serve`, told nothing: this machine only"}},
 		"security": []object{{"key": []string{}}},

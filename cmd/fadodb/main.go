@@ -3,11 +3,12 @@
 // "fadodb init" makes a database, "fadodb user add" and "fadodb key new"
 // make its first administrator on the machine that holds it, and
 // "fadodb serve" serves it over HTTP to callers who send a key
-// (ADR-0059). "fadodb class check" and "fadodb action check" ask the
-// engine whether it would take a definition in a file. "fadodb formula
-// eval" runs the formula engine, "fadodb check" verifies a database
-// file and "fadodb version" prints the build. See ROADMAP.md for what
-// comes next.
+// (ADR-0059). "fadodb exec" is such a caller: it sends a command to a
+// server with the key of a user and prints the answer (ADR-0062).
+// "fadodb class check" and "fadodb action check" ask the engine whether
+// it would take a definition in a file. "fadodb formula eval" runs the
+// formula engine, "fadodb check" verifies a database file and "fadodb
+// version" prints the build. See ROADMAP.md for what comes next.
 package main
 
 import (
@@ -36,6 +37,8 @@ Usage:
   fadodb key new USER --db FILE         make a key for a user, and print it once
   fadodb serve FILE                     serve a database over HTTP, on this machine only
                                         unless told otherwise
+  fadodb exec COMMAND [OBJECT]          send a command to a server, with the key of a user,
+                                        and print the answer; fadodb exec help lists the commands
   fadodb class check FILE...            ask whether the engine would take a class, storing nothing
   fadodb action check FILE              ask whether the engine would take an action, storing nothing
   fadodb formula eval [flags] FORMULA   evaluate a formula, or print its bytecode or SQL
@@ -45,7 +48,7 @@ Usage:
 
 Run a command with --help for its flags. A database that is served
 answers the commands of docs/manual/commands.md, each sent as
-POST /v1/<command> with a key of a user.
+POST /v1/<command> with a key of a user, which fadodb exec does.
 Roadmap: https://github.com/MojoHand70/fadodb/blob/main/ROADMAP.md
 `
 
@@ -71,6 +74,10 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return runServe(ctx, args[1:], stdout, stderr, nil)
 	case "class", "action":
 		return runDefinition(args[0], args[1:], stdout, stderr)
+	case "exec":
+		ctx, stop := interrupted()
+		defer stop()
+		return runExec(ctx, args[1:], stdout, stderr)
 	case "formula":
 		return runFormula(args[1:], stdout, stderr)
 	case "check":

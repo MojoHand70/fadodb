@@ -234,6 +234,24 @@ All notable changes to FadoDB are recorded here. The format follows
   told. Measured on one machine with a writer that commits every
   millisecond: an entry is read 0.84 ms after its commit at p99 with
   one subscriber and 3.12 ms with a hundred, against a budget of 5 ms.
+- Commands from a terminal: `fadodb exec COMMAND OBJECT` sends any
+  command to a server, with the key of a user, and prints the answer
+  (ADR-0062, proposed). The object is the JSON the command takes over
+  HTTP, given on the line, on standard input (`-`) or in a file
+  (`@FILE`); `--from MEMBER=FILE` takes one member from a file, so a
+  class is defined from the file it was checked in. The server comes
+  from `--url` or `FADODB_URL` and the key from `--key-file` or
+  `FADODB_KEY`, never from an argument; the key does not travel in the
+  clear beyond the machine unless `--plain-http` says so, and the tool
+  follows no redirect. A refusal goes to standard error as the server
+  gave it. The tool ends with 0 when the command was carried out, 1
+  when the server refused it, 2 when the line could not be read and 3
+  when no answer came. `--csv` prints the documents of `query` and the
+  rows of `sql` as CSV; `subscribe` prints one event to a line;
+  `fadodb exec help` lists the commands and `fadodb exec help COMMAND`
+  the members of one, from the engine's table. The manual has a
+  chapter, `docs/manual/commands-from-a-terminal.md`, and a test types
+  every line of it against a server.
 - A check of a definition from the command line: `fadodb class check
   FILE...` and `fadodb action check FILE` ask the engine whether it
   would take the class or the action in a file, and store nothing.

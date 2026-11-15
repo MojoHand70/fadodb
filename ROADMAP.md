@@ -280,9 +280,13 @@ languages, `api/openapi.json`, written from the engine's table of the
 commands. The eighth is the check of a class and of an action from a
 file, `fadodb class check` and `fadodb action check`, so that an agent
 asks whether the engine would take a definition before it reaches a
-database. Not built yet: the command-line tool as a caller of a
-server, the flow of a class in one call, the door for agents, the
-image for containers and the way in for messages from outside.
+database. The ninth is the command-line tool as a caller of a server:
+`fadodb exec` sends any command to a server with the key of a user and
+prints the answer, so that classes, documents, queries and exports
+work from a terminal (ADR-0062, proposed, built as it proposes). Not
+built yet: files from the command line, the flow of a class in one
+call, the door for agents, the image for containers and the way in
+for messages from outside.
 This page is updated when a phase starts and when it ends;
 it never describes a phase as done before its acceptance criteria pass.
 

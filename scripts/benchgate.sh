@@ -26,8 +26,21 @@
 # outbox, a timer and the read of a document's life. The others run by hand and for a release's perf page. BENCH_PATTERN overrides the set;
 # BENCH_PATTERN=. runs every benchmark of BENCH_PACKAGES.
 #
+# The gate has two forms (ADR-0012, since 2026-11-15). The full one is
+# what this script does when it is told nothing, and what a change to a
+# hot path is measured with on the machine of whoever makes it, before
+# it is pushed: five placements, five rounds, 5% on time. The short one,
+# --quick, is what a pull request is held to on GitHub: one placement,
+# five rounds of half a second, and time refused only when a benchmark
+# is more than half slower, since a shared runner cannot tell 5% from
+# where the code landed. Bytes and allocations do not depend on the
+# machine and are held the same in both. The short form runs each
+# benchmark ten times and not fifty.
+#
 # Usage:
 #   scripts/benchgate.sh [base-ref]     default base-ref: origin/main
+#   scripts/benchgate.sh --quick [base-ref]
+#                                       the short form
 #   scripts/benchgate.sh --csv FILE     evaluate an existing benchstat CSV
 #   scripts/benchgate.sh --needed [base-ref]
 #                                       print "true" when a file that the
@@ -39,10 +52,20 @@
 # docs/adr/0030-benchmark-gate-measures-the-minimum-over-placements.md.
 set -euo pipefail
 
+# The short form sets what the full form leaves at its default; a value
+# given in the environment counts in both.
+if [ "${1:-}" = "--quick" ]; then
+  shift
+  : "${BENCH_PLACEMENTS:=1}" "${BENCH_TIME_PCT:=50}" "${BENCH_BENCHTIME:=500ms}"
+fi
+
 TIME_PCT="${BENCH_TIME_PCT:-5}"
 BYTES_PCT="${BENCH_BYTES_PCT:-5}"
 COUNT="${BENCH_COUNT:-5}"
 PLACEMENTS="${BENCH_PLACEMENTS:-5}"
+# How long one benchmark runs in a round; the go tool's own second when
+# it is not given.
+BENCHTIME="${BENCH_BENCHTIME:-}"
 PATTERN="${BENCH_PATTERN:-^Benchmark(VM_Arithmetic5|VM_Exact5|Recalculate|Recalculate50|LookupIndexed|LookupKeyedStatement|LookupClass|Transition|ExecTransition|DoorTransition|WhoIsCalling|TransitionAccess|TransitionMany|Transitions10|GuardLoop|Project|WriteCheck|Rules|Outbox|Timer|LifeEditors)$}"
 PACKAGES="${BENCH_PACKAGES:-./internal/formula/ ./internal/store/}"
 
@@ -233,7 +256,7 @@ trap cleanup EXIT
 # One round of the gate's benchmarks in the tree at $1.
 run_bench() {
   # shellcheck disable=SC2086
-  (cd "$1" && go test -run '^$' -bench "$PATTERN" -benchmem -count 1 $PACKAGES 2>&1) || true
+  (cd "$1" && go test -run '^$' -bench "$PATTERN" -benchmem -count 1 ${BENCHTIME:+-benchtime $BENCHTIME} $PACKAGES 2>&1) || true
 }
 
 if find . -name a_layoutpad.go -not -path './.git/*' | grep -q .; then
@@ -291,7 +314,7 @@ benchstat "$work/old.txt" "$work/new.txt" 2>/dev/null || true
 benchstat -format csv "$work/old.txt" "$work/new.txt" > "$work/cmp.csv" 2>/dev/null || true
 
 if evaluate_csv "$work/cmp.csv"; then
-  echo "benchgate: ok (base $BASE, $PLACEMENTS placements, $COUNT rounds each, benchmarks $PATTERN; limits sec/op +${TIME_PCT}%, B/op +${BYTES_PCT}%, allocs/op +0)"
+  echo "benchgate: ok (base $BASE, $PLACEMENTS placements, $COUNT rounds each${BENCHTIME:+ of $BENCHTIME}, benchmarks $PATTERN; limits sec/op +${TIME_PCT}%, B/op +${BYTES_PCT}%, allocs/op +0)"
 else
   echo "benchgate: failed, see the regressions above"
   exit 1

@@ -13,7 +13,7 @@ make tools     # installs staticcheck, govulncheck and benchstat with go install
 make build     # bin/fadodb
 make test      # race detector on
 make gates     # everything CI runs: lint, vuln, depgate, sizegate, filegate, test
-make benchgate BASE=origin/main   # benchmark comparison against a git ref
+make benchgate BASE=origin/main   # the full benchmark comparison against a git ref: run it before you push a change to a hot path
 scripts/layoutsweep.sh -n 8 'VM_'  # spread of the VM benchmarks over code placements
 ```
 
@@ -30,11 +30,18 @@ Every pull request must pass:
 6. The file gate: a tracked file over 1 MB fails the build. The repository
    holds source, documents and test data; build `fadodb` with `make build`,
    which writes to `bin/`, and never commit what a build makes.
-7. The benchmark gate: more than 5% slower, more than 5% more bytes per
-   operation, or any extra allocation per operation against the base branch
+7. The benchmark gate, in its short form (`scripts/benchgate.sh --quick`):
+   any extra allocation per operation, more than 5% more bytes per
+   operation, or a benchmark more than half slower against the base branch
    fails the build. It runs when the pull request changes a file that goes
    into the measured programs (`scripts/benchgate.sh --needed origin/main`
    says whether yours does) and is skipped otherwise.
+
+A shared runner cannot measure 5% of time, so the fine comparison is
+yours: when you change a hot path, run `make benchgate BASE=origin/main`
+on your own machine before you push. It builds both trees at five code
+placements and fails on more than 5% slower. Quote its numbers in the
+pull request.
 
 ## Rules that are not negotiable
 

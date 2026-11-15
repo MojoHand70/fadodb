@@ -43,28 +43,20 @@ reads it from standard input and "@FILE" from a file; left out, it is
 
   fadodb exec get '{"class": "Invoice", "id": "FV/2026/11/0042"}'
   fadodb exec define_class --from definition=invoice.json
-  fadodb exec query '{"class": "Invoice"}' --csv > invoices.csv
+  fadodb exec query '{"class": "Invoice"}' --xlsx --out invoices.xlsx
 
   --from MEMBER=FILE
                    a member of the object is the JSON a file holds, such
                    as a definition: --from definition=invoice.json; may
                    be given several times
-  --url URL        the server, such as https://fado.acme.example; left
-                   out, FADODB_URL, and without it http://127.0.0.1:8080,
-                   where fadodb serve listens when it is told nothing
-  --key-file FILE  a file that holds the key; left out, the key is read
-                   from FADODB_KEY
-  --ca FILE        a certificate, in PEM, to know the server by, when
-                   the machine does not know who signed the server's
-  --plain-http     the key may travel in the clear beyond this machine,
-                   because something between the tool and the server
-                   encrypts
-  --csv            print the documents of query, or the rows of sql, as
-                   CSV
-
-The key is never an argument: a line of a terminal is kept in its
-history and shown to the machine's other users.
-
+  --xlsx           write the documents of query, or the rows of sql, as
+                   an Excel file, for a person: a number is a number in
+                   it and a day a day, so the program that opens it
+                   shows them in the reader's own way; with --out
+  --csv            write the same as CSV, for a program: commas, a
+                   point in a number, UTF-8, on every machine
+  --out FILE       write what the tool would print to a file
+` + serverUsage + `
 "fadodb exec help" lists the commands, and "fadodb exec help COMMAND"
 the members of one and of its answer.
 
@@ -107,11 +99,10 @@ const dialWithin = 10 * time.Second
 func runExec(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	const name = "fadodb exec"
 	fs := flags(name, execUsage, stderr)
-	server := fs.String("url", "", "")
-	keyFile := fs.String("key-file", "", "")
-	ca := fs.String("ca", "", "")
-	plain := fs.Bool("plain-http", false, "")
+	to := serverFlags(fs)
 	asCSV := fs.Bool("csv", false, "")
+	asXLSX := fs.Bool("xlsx", false, "")
+	out := fs.String("out", "", "")
 	var from several
 	fs.Var(&from, "from", "")
 	rest, err := parse(fs, args)
@@ -132,8 +123,15 @@ func runExec(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "%s: %q is not the name of a command\n  the commands: fadodb exec help\n", name, sent)
 		return exitUsage
 	}
-	if *asCSV && sent != "query" && sent != "sql" {
-		fmt.Fprintf(stderr, "%s: --csv prints the documents of query and the rows of sql; %s answers neither\n", name, sent)
+	switch {
+	case *asCSV && *asXLSX:
+		fmt.Fprintf(stderr, "%s: an export is --csv or --xlsx, and not both\n", name)
+		return exitUsage
+	case (*asCSV || *asXLSX) && sent != "query" && sent != "sql":
+		fmt.Fprintf(stderr, "%s: --csv and --xlsx write the documents of query and the rows of sql; %s answers neither\n", name, sent)
+		return exitUsage
+	case *asXLSX && *out == "":
+		fmt.Fprintf(stderr, "%s: an Excel file is not printed to a terminal: say where it goes, with --out FILE\n", name)
 		return exitUsage
 	}
 	object := []byte("{}")
@@ -149,79 +147,53 @@ func runExec(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 			return exitUsage
 		}
 	}
+	c, ok := to.caller(name, stderr)
+	if !ok {
+		return exitUsage
+	}
+	defer c.close()
 
-	address, err := addressOf(*server, sent, *plain)
-	if err != nil {
-		fmt.Fprintf(stderr, "%s: %v\n", name, err)
-		return exitUsage
-	}
-	key, err := keyOf(*keyFile)
-	if err != nil {
-		fmt.Fprintf(stderr, "%s: %v\n", name, err)
-		return exitUsage
-	}
-	client, err := clientOf(*ca)
-	if err != nil {
-		fmt.Fprintf(stderr, "%s: %v\n", name, err)
-		return exitUsage
-	}
-	defer client.CloseIdleConnections()
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, address, bytes.NewReader(object))
-	if err != nil {
-		fmt.Fprintf(stderr, "%s: %v\n", name, err)
-		return exitUsage
-	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+key)
-	req.Header.Set("User-Agent", "fadodb/"+version)
-	resp, err := client.Do(req)
-	if err != nil {
-		if ctx.Err() != nil {
-			return interruptedBeforeTheAnswer(name, sent, stderr)
-		}
-		fmt.Fprintf(stderr, "%s: no answer from %s: %v\n  is a server serving the database there? fadodb serve FILE\n", name, address, unwrapped(err))
-		return exitNoAnswer
+	what := "the answer of " + sent
+	resp, code := c.send(ctx, http.MethodPost, sent, bytes.NewReader(object), "application/json", what)
+	if resp == nil {
+		return code
 	}
 	defer resp.Body.Close()
-
 	if resp.StatusCode == http.StatusOK && strings.HasPrefix(resp.Header.Get("Content-Type"), "text/event-stream") {
-		return follow(ctx, name, resp.Body, stdout, stderr)
-	}
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		if ctx.Err() != nil {
-			return interruptedBeforeTheAnswer(name, sent, stderr)
+		events := stdout
+		if *out != "" {
+			file, err := os.Create(*out)
+			if err != nil {
+				return c.written(err)
+			}
+			defer file.Close()
+			events = file
 		}
-		fmt.Fprintf(stderr, "%s: the answer of %s broke off: %v\n", name, address, err)
-		return exitNoAnswer
+		return follow(ctx, name, resp.Body, events, stderr)
 	}
+	body, code := c.answer(ctx, resp, what)
+	if code != exitDone {
+		return code
+	}
+	var shown bytes.Buffer
 	switch {
-	case resp.StatusCode == http.StatusOK && isObject(body):
-		if *asCSV {
-			err = writeCSV(stdout, sent, object, body)
-		} else {
-			err = printJSON(stdout, body)
+	case *asCSV:
+		err = writeCSV(&shown, sent, object, body)
+	case *asXLSX:
+		var types *classTypes
+		if sent == "query" {
+			if types, code = typesOf(ctx, c, object, body); code != exitDone {
+				return code
+			}
 		}
-		if err != nil {
-			fmt.Fprintf(stderr, "%s: the command was carried out, and its answer could not be written: %v\n", name, err)
-			return exitNoAnswer
-		}
-		return exitDone
-	case resp.StatusCode != http.StatusOK && isRefusal(body):
-		printJSON(stderr, body)
-		return exitRefused
+		err = exportXLSX(&shown, sent, object, body, types)
+	default:
+		err = printJSON(&shown, body)
 	}
-	fmt.Fprintf(stderr, "%s: what answered at %s is not a FadoDB server: %s\n%s", name, address, resp.Status, beginning(body))
-	return exitNoAnswer
-}
-
-// interruptedBeforeTheAnswer is how the tool ends when it is told to
-// stop while it waits for an answer: it has none, and cannot say
-// whether the command was carried out.
-func interruptedBeforeTheAnswer(name, sent string, stderr io.Writer) int {
-	fmt.Fprintf(stderr, "%s: interrupted before the answer of %s came; the command may have been carried out\n", name, sent)
-	return exitNoAnswer
+	if err == nil {
+		err = deliver(stdout, *out, shown.Bytes())
+	}
+	return c.written(err)
 }
 
 // commandName reports whether a word can be the name of a command:
@@ -350,11 +322,11 @@ func beginning(body []byte) string {
 	return "  " + strings.ReplaceAll(text, "\n", "\n  ") + "\n"
 }
 
-// addressOf is the address of a command at a server: the server given
-// with --url, or by FADODB_URL, or the place fadodb serve listens at
-// when it is told nothing. A key does not travel in the clear beyond
+// baseOf is the address of a server, up to and with /v1/: the server
+// given with --url, or by FADODB_URL, or the place fadodb serve listens
+// at when it is told nothing. A key does not travel in the clear beyond
 // this machine unless plain says that it may.
-func addressOf(given, sent string, plain bool) (string, error) {
+func baseOf(given string, plain bool) (string, error) {
 	from := "--url"
 	if given == "" {
 		given, from = environment("FADODB_URL"), "FADODB_URL"
@@ -369,7 +341,7 @@ func addressOf(given, sent string, plain bool) (string, error) {
 	if u.Scheme == "http" && !plain && !onThisMachine(u.Hostname()) {
 		return "", fmt.Errorf("%s is beyond this machine and not https, so the key would travel in the clear\n  give an https address, or --plain-http when something between encrypts", given)
 	}
-	return strings.TrimRight(u.String(), "/") + "/v1/" + sent, nil
+	return strings.TrimRight(u.String(), "/") + "/v1/", nil
 }
 
 // onThisMachine reports whether a host is this machine.
@@ -549,12 +521,21 @@ func sqlCSV(out *csv.Writer, body []byte) error {
 	return nil
 }
 
-// queryCSV prints the documents of an answer of query: the id and the
-// state of each, then its variables. The variables are the ones the
-// command asked for with "fields", in that order; when it asked for
-// none, every variable the documents hold, in the order they are first
-// met.
-func queryCSV(out *csv.Writer, object, body []byte) error {
+// exportedDocument is a document of an answer of query, as an export
+// writes it.
+type exportedDocument struct {
+	ID           string          `json:"id"`
+	State        string          `json:"state"`
+	ClassVersion int             `json:"class_version"`
+	Values       json.RawMessage `json:"values"`
+	values       map[string]json.RawMessage
+}
+
+// exported reads the documents of an answer of query, and says which
+// variables an export of them has: the ones the command asked for with
+// "fields", in that order; when it asked for none, every variable the
+// documents hold, in the order they are first met.
+func exported(object, body []byte) ([]string, []exportedDocument, error) {
 	var asked struct {
 		Fields []string `json:"fields"`
 	}
@@ -562,24 +543,20 @@ func queryCSV(out *csv.Writer, object, body []byte) error {
 		asked.Fields = nil
 	}
 	var answer struct {
-		Documents []struct {
-			ID     string          `json:"id"`
-			State  string          `json:"state"`
-			Values json.RawMessage `json:"values"`
-		} `json:"documents"`
+		Documents []exportedDocument `json:"documents"`
 	}
 	if err := json.Unmarshal(body, &answer); err != nil {
-		return fmt.Errorf("the answer of query could not be read as documents: %v", err)
+		return nil, nil, fmt.Errorf("the answer of query could not be read as documents: %v", err)
 	}
 	variables := asked.Fields
-	values := make([]map[string]json.RawMessage, len(answer.Documents))
 	seen := map[string]bool{}
-	for i, d := range answer.Documents {
+	for i := range answer.Documents {
+		d := &answer.Documents[i]
 		names, held, err := membersInOrder(d.Values)
 		if err != nil {
-			return fmt.Errorf("the values of %s could not be read: %v", d.ID, err)
+			return nil, nil, fmt.Errorf("the values of %s could not be read: %v", d.ID, err)
 		}
-		values[i] = held
+		d.values = held
 		if len(asked.Fields) > 0 {
 			continue
 		}
@@ -590,14 +567,24 @@ func queryCSV(out *csv.Writer, object, body []byte) error {
 			}
 		}
 	}
+	return variables, answer.Documents, nil
+}
+
+// queryCSV prints the documents of an answer of query: the id and the
+// state of each, then its variables.
+func queryCSV(out *csv.Writer, object, body []byte) error {
+	variables, documents, err := exported(object, body)
+	if err != nil {
+		return err
+	}
 	if err := out.Write(append([]string{"id", "state"}, variables...)); err != nil {
 		return err
 	}
 	line := make([]string, 0, len(variables)+2)
-	for i, d := range answer.Documents {
+	for _, d := range documents {
 		line = append(line[:0], d.ID, d.State)
 		for _, v := range variables {
-			line = append(line, cell(values[i][v]))
+			line = append(line, cell(d.values[v]))
 		}
 		if err := out.Write(line); err != nil {
 			return err

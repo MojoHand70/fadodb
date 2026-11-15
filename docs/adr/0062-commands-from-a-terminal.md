@@ -111,13 +111,51 @@ the server and the key, what it prints, and how it ends.
    read from the status of the reply, and not from a member named
    `error`.
 
-7. **An export is CSV: `--csv` on `query` and on `sql`.** For `query`
-   the columns are the id and the state of each document and then its
-   variables: the ones asked for with `fields`, in that order, or
-   every variable the documents hold. For `sql` they are the columns
-   of the statement. A text is written as it is, a number as the
-   server wrote it, a list or an object as its JSON, and a value that
-   is not there as nothing. The tool changes no value.
+7. **An export is written in no locale. For a person it is an Excel
+   file, `--xlsx`; for a program it is CSV, `--csv`.** Both are for
+   `query` and `sql`. For `query` the columns are the id and the state
+   of each document and then its variables: the ones asked for with
+   `fields`, in that order, or every variable the documents hold. For
+   `sql` they are the columns of the statement.
+
+   A file of text has to choose a mark between its values and a mark
+   inside a number, and a spreadsheet expects the marks of its
+   reader's language: Excel set to Polish wants a semicolon and a
+   comma, Excel set to English a comma and a point. Whoever writes the
+   text guesses the reader, and neither the server nor the tool knows
+   who will open the file. So for a person the tool writes no text. An
+   Excel file keeps a number as a number and a day as a day, and the
+   program that opens it shows them its reader's way. Checked on
+   2026-11-15 in Excel 16 set to Polish: the file opens by a double
+   click, an amount shows as `1 250,50 PLN`, a day as `15.12.2026`,
+   and the amounts add up; the same documents as CSV land in one
+   column.
+
+   - **What a cell holds follows the type of the variable**, which the
+     tool reads from the definition of the class, in each version the
+     documents are of (`get_class`, open to every caller): a decimal,
+     an amount and a whole number are numbers, an amount with its
+     currency in how it is shown; a date is a day and a datetime a
+     moment in UTC; a text is a text whatever it looks like; a list or
+     an object is its JSON.
+   - **A computed variable whose definition names no type** is told by
+     the form the engine writes its value in. A designer who means a
+     text names the type. The type the engine worked out is not in an
+     answer today; when the class bundle of Phase 7 carries it, the
+     tool reads it there.
+   - **A number with more than fifteen digits is a text** in the file:
+     a number of an Excel file keeps fifteen, and no digit is dropped.
+   - **The writer is the tool's own**, on the standard library: a zip
+     of six XML files (ADR-0002). The same answer makes the same file,
+     byte for byte.
+   - **CSV has one form on every machine**: commas, a point in a
+     number, UTF-8, each value as the server wrote it. It is what a
+     program reads. The tool reads no locale from the machine it runs
+     on: the same line would then write different files on two
+     machines.
+   - **`--out FILE`** writes what the tool would print to a file. An
+     Excel file goes nowhere else. Some shells change what passes
+     through `>`, Windows PowerShell among them.
 
 8. **`subscribe` prints one event to a line**, as the server wrote it,
    until the tool is interrupted, which is how a caller closes a
@@ -136,10 +174,16 @@ the server and the key, what it prints, and how it ends.
    knows. A name the tool does not know is sent all the same, because
    a server may be newer than the tool.
 
-10. **Left for a step of its own: files.** Putting a file and reading
-    one travel beside the commands (ADR-0055, item 9) and are not
-    commands, so `exec` does not send them. A word of the tool for
-    them is its own step.
+10. **A file on a document has two words of the tool: `fadodb file
+    put` and `fadodb file get`.** Putting a file and reading one travel
+    beside the commands (ADR-0055, item 9) and are not commands, so
+    `exec` does not send them. `put` sends the bytes and, when a
+    document and a variable are named, writes the file into the
+    variable with `set`; without them it prints the facts of the file.
+    `get` reads the file a variable holds, or one by its hash, through
+    the document. They are told the server and the key as `exec` is,
+    end as it does, and stand under the same rules: a caller who may
+    not read the variable reads no file.
 
 ## Questions for the owner
 
@@ -149,14 +193,20 @@ the server and the key, what it prints, and how it ends.
    hand, such as `fadodb invoice approve FV/2026/11/0042`. They are
    shorter to type, and they are a second set of commands that an
    agent learns beside the first and that lags behind it.
-2. **What an export is.** Ann sends the accountant every approved
-   invoice over 1000. Proposed: CSV, as in item 7, which every
-   spreadsheet imports. It is imported and not opened by a double
-   click: a spreadsheet set to a language that writes numbers with a
-   comma, Polish among them, expects semicolons, and puts a line with
-   commas into one cell. The other way: Excel files as well, which
-   open by a double click everywhere, and need a writer of the
-   engine's own, since the core takes no dependency (ADR-0002).
+2. **What an export is: ruled.** On 2026-11-15 the owner said of the
+   first form of item 7, which wrote CSV only: "assuming server locale
+   is wrong, it must be client locale set", and recalled the trouble
+   with the separators of Excel in an earlier engine. Item 7 was
+   rewritten on that word: no export is written in a locale; a person
+   gets an Excel file, which the reader's own program shows the
+   reader's way.
+3. **CSV in another form.** A program of the accountant's wants
+   semicolons and a comma in a number. Proposed: not built until one
+   is named; then the caller says the two marks on the line, and the
+   tool still reads no locale by itself. The other way: the tool takes
+   the marks from the settings of the machine it runs on, which is
+   right for Ann at her desk and wrong for an agent on a server that
+   exports for her.
 
 ## Consequences
 
@@ -170,18 +220,19 @@ the server and the key, what it prints, and how it ends.
   commands make its first administrator.
 - JSON between single quotes is awkward in the shells of Windows.
   `@FILE`, `-` and `--from` are the way there.
-- A spreadsheet that opens an export may take a text that begins with
-  `=` for a formula. The tool does not change the text; the manual
-  says so. It also says that the file is UTF-8 with commas and with a
-  point in a number, which a spreadsheet is told when it imports the
-  file.
-- The tool grows by the client of HTTP it already had for the actions
-  of a database: 0.05 MB, to 14.3 MB of its budget of 15.
+- An accountant opens an export by a double click, in any language
+  Excel is set to, and adds its numbers up. A text that begins with
+  `=` is a text in the file, and not a formula.
+- A computed variable with no type in its definition is told by the
+  form of its value. The manual says so, and how a designer says it
+  otherwise.
+- The tool grows by the Excel writer and the file words: 0.2 MB, to
+  14.5 MB of its budget of 15. The door for agents is still to come.
 
 ## Performance
 
-No hot path is touched: the tool is a client, and the server's part of
-a command is measured where the door is (ADR-0055, ADR-0059). The tool
+The tool is a client, and the server's part of a command is measured
+where the door is (ADR-0055, ADR-0059). The tool
 adds the start of a process and a connection to each command, so a
 program that sends many commands keeps a connection open and calls the
 server itself.

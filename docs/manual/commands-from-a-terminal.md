@@ -2,7 +2,8 @@
 
 `fadodb exec` sends a command to a server that serves a database, and
 prints the answer. It is for a person at a terminal, for a script, and
-for an agent that works through a shell.
+for an agent that works through a shell. It also writes an export, and
+`fadodb file` puts a file on a document and reads one.
 
 ```sh
 fadodb exec transition '{"class": "Invoice", "id": "FV/2026/11/0042", "transition": "approve"}'
@@ -69,7 +70,8 @@ Olga has the class of an invoice in a file, `invoice.json`:
   "title": "supplier",
   "variables": {
     "supplier": {"type": "text", "required": true},
-    "total":    {"type": "decimal", "scale": 2, "required": true}
+    "total":    {"type": "decimal", "scale": 2, "required": true},
+    "scan":     {"type": "object", "schema": "File"}
   },
   "states": {"initial": "draft", "list": ["draft", "review", "approved"]},
   "transitions": [
@@ -156,6 +158,7 @@ standard output, and ends with 0:
     "state_entered_by": "ann",
     "state_entered_from": "review",
     "values": {
+      "scan": null,
       "supplier": "Ink and Son",
       "total": "1250.50"
     }
@@ -222,54 +225,101 @@ fadodb exec transition @approve-0043.json
 
 ## An export
 
-Ann sends the accountant every approved invoice over 1000. `--csv`
-prints the documents of `query` as CSV, a file every spreadsheet
-imports:
+Ann sends the accountant every approved invoice over 1000, as an Excel
+file:
 
 <!-- ann: the export -->
 ```sh
-fadodb exec query '{"class": "Invoice", "where": "state = \"approved\" AND total > 1000", "order": ["id"], "fields": ["supplier", "total"]}' --csv > approved.csv
+fadodb exec query '{"class": "Invoice", "where": "state = \"approved\" AND total > 1000", "order": ["id"], "fields": ["supplier", "total"]}' --xlsx --out approved.xlsx
 ```
 
-<!-- ann: the export, the file -->
+The sheet of the file, named `Invoice`, with its first line kept in
+sight:
+
+<!-- ann: the export, the sheet -->
+| id | state | supplier | total |
+|---|---|---|---|
+| FV/2026/11/0042 | approved | Ink and Son | 1250.50 |
+| FV/2026/11/0043 | approved | Paper Mill | 2400.00 |
+
+The two totals are numbers in the file, and not texts that look like
+numbers. That is the point of the Excel file. A file of text has to
+choose a mark between its values and a mark inside a number, and the
+reader's spreadsheet expects the marks of the reader's language: a
+comma in a number and a semicolon between values in Polish, a point and
+a comma in English. Whoever writes such a file guesses the reader. An
+Excel file has no such marks. It keeps the number, and the program that
+opens it shows the number its reader's way: `1250,50` on a machine set
+to Polish, `1250.50` on one set to English, and both add it up. So
+nothing in the export is written in a locale, neither the server's nor
+the tool's.
+
+What a cell holds follows the type the class gives the variable, which
+the tool asks the server for:
+
+<!-- a cell of an Excel file -->
+| The variable is | The answer writes | The cell holds |
+|---|---|---|
+| `text` | `"10.50"` | the text 10.50, whatever it looks like |
+| `decimal` | `"1250.50"` | the number 1250.50, shown with its two digits after the point |
+| `money` | `"1250.50 PLN"` | the number 1250.50, shown with its two digits and with PLN |
+| `int` | `"12"` | the number 12 |
+| `number` | `3.75` | the number 3.75 |
+| `date` | `"2026-12-15"` | the day 15 December 2026 |
+| `datetime` | `1794778200` | the moment 15 November 2026 at 21:30, in UTC |
+| `bool` | `true` | true |
+| `rows` | `[{"sku": "A4"}]` | the text `[{"sku":"A4"}]`, its JSON |
+| computed, and its definition names no `type` | `"1250.50 PLN"` | the number 1250.50 with PLN: such a value is told by its form |
+| computed, and its definition names no `type` | `"0042"` | the text 0042: digits that begin with a zero are no number |
+
+- **A computed variable says its type** when its definition has a
+  `type`, as [the class definition](class.md) allows. Without one the
+  tool goes by the form the engine writes a value in: an amount, an
+  exact number, a whole number, a day. A designer who means a text
+  writes `"type": "text"`.
+- **A number with more than fifteen digits is written as a text.** A
+  number of an Excel file keeps fifteen, and the tool does not drop a
+  digit.
+- **A text is written as it is.** One that begins with `=` is a text in
+  the file, and not a formula.
+- **`--xlsx` goes with `--out`.** An Excel file is not printed to a
+  terminal.
+- **`--xlsx` is for `query` and `sql`.** With `sql` the columns are the
+  ones of the statement, for a caller in the system group `analysts`
+  ([Views and SQL](views-and-sql.md)), and a number is a number and a
+  text a text. Any other command is refused with it, and nothing is
+  sent.
+- **A refusal writes no file**, and leaves the one that was there.
+
+### For a program: CSV
+
+`--csv` writes the same documents as text, for a program that reads
+them:
+
+<!-- ann: the export as text -->
+```sh
+fadodb exec query '{"class": "Invoice", "where": "state = \"approved\" AND total > 1000", "order": ["id"], "fields": ["supplier", "total"]}' --csv
+```
+
+<!-- ann: the export as text, printed -->
 ```text
 id,state,supplier,total
 FV/2026/11/0042,approved,Ink and Son,1250.50
 FV/2026/11/0043,approved,Paper Mill,2400.00
 ```
 
-- **The columns** are the id and the state of each document, and then
-  its variables: the ones asked for with `fields`, in that order. With
-  no `fields`, they are every variable the documents hold.
-- **`--csv` is for `query` and `sql`.** With `sql` the columns are the
-  ones of the statement, for a caller in the system group `analysts`
-  ([Views and SQL](views-and-sql.md)). Any other command is refused
-  with it, and nothing is sent.
-- **A refusal is never a line of the file.** It goes to standard error,
-  and the file stays empty.
+It has one form on every machine: commas between the values, a point
+in a number, UTF-8, each value as the server wrote it, a list or an
+object as its JSON. That is what a program wants, and it is why this
+file is not for a person's spreadsheet: one set to Polish, opened by a
+double click, puts each line into a single cell.
 
-What a cell holds:
+### Into a file: `--out`
 
-<!-- a cell -->
-| In the answer | In the cell |
-|---|---|
-| `"Paper Mill"` | `Paper Mill` |
-| `"1250.50"` | `1250.50` |
-| `42` | `42` |
-| `true` | `true` |
-| `null` | |
-| `["A4", "A5"]` | `["A4","A5"]` |
-
-A list or an object is written as its JSON. A text is written as it
-is: the tool changes no value, so a text that begins with `=` reaches
-a spreadsheet as such a text, and a spreadsheet may take it for a
-formula.
-
-The file is in UTF-8, its values are parted by commas and a number has
-a point. A spreadsheet reads all three when the file is imported, and
-is told so there if it does not see it by itself. Opened by a double
-click, a spreadsheet set to a language that writes numbers with a
-comma may put a whole line into one cell.
+`--out FILE` writes what the tool would print to a file: an answer, an
+export, the events of a stream. A shell does the same with `>`, but
+some shells change what passes through them, Windows PowerShell among
+them, and `--out` does not.
 
 ## The stream of changes
 
@@ -313,6 +363,43 @@ The tool does not open a broken stream again by itself. A script does:
 it keeps the `event_id` of the last line, and gives it as `after` when
 it sends `subscribe` again, so that no event is lost.
 
+## A file on a document
+
+The bytes of a file are no JSON, so they are not sent by `exec`. Two
+words of the tool send them, with the same key and under the same rules
+of the document: `fadodb file put` and `fadodb file get`. The class of
+this chapter keeps the scan of an invoice in its variable `scan`
+([Files](files.md) says what a file on a document is).
+
+Bob files an invoice and puts its scan on it:
+
+<!-- bob: the scan -->
+```sh
+fadodb exec create '{"class": "Invoice", "id": "FV/2026/11/0045", "values": {"supplier": "Paper Mill", "total": "96.00"}}'
+fadodb file put scan-0045.pdf --class Invoice --id FV/2026/11/0045 --variable scan
+```
+
+`put` sends the bytes to the server, writes the file into the variable,
+and prints the document after the change. Ann reads the scan:
+
+<!-- ann: the scan -->
+```sh
+fadodb file get --class Invoice --id FV/2026/11/0045 --variable scan --out scan.pdf
+```
+
+| To | The line |
+|---|---|
+| put a file on a document | `fadodb file put FILE --class CLASS --id ID --variable VARIABLE` |
+| send the bytes only, and be told the facts of the file, to give a variable in a command of your own | `fadodb file put FILE` |
+| read the file a variable holds | `fadodb file get --class CLASS --id ID --variable VARIABLE --out FILE` |
+| read one file of a list, or one an earlier version of the document held, by its hash | `fadodb file get --class CLASS --id ID --hash HASH --out FILE`, with `--version N` for an earlier version |
+
+A file is read through the document that holds it, by a caller who may
+read that variable; somebody who may not see the document is refused,
+and nothing is written. `--name` and `--type` say the name a file is
+kept under and its kind; left out, they are the name of the file, and
+what the server reads from its first bytes.
+
 ## The help
 
 `fadodb exec help` lists the commands, and `fadodb exec help` with a
@@ -347,12 +434,14 @@ same, and the server judges it.
 
 ## How the tool ends
 
+`fadodb exec` and `fadodb file` end the same way:
+
 <!-- how the tool ends -->
 | It ends with | When |
 |---|---|
 | 0 | the command was carried out; the answer is on standard output |
 | 1 | the server refused the command; the refusal is on standard error |
-| 2 | the line could not be read: no key, an object that is not JSON, a name that is not a command's; nothing was sent |
+| 2 | the line could not be read: no key, an object that is not JSON, a name that is not a command's; nothing was sent. `fadodb file get` also ends so when the variable it names holds no file |
 | 3 | no answer came through: the server was not reached, what answered is not a FadoDB server, or the answer was cut off |
 
 After a 3 the tool cannot say whether the command was carried out: the
@@ -363,9 +452,8 @@ key makes no second commit, and is answered as the first was.
 
 ## Not here yet
 
-- **Files.** The tool does not put a file or read one. A program does,
-  at the addresses that [Files](files.md) and
-  [Serving a database](serving-a-database.md) show.
+- **CSV in another form.** `--csv` has one form. A program that wants
+  semicolons, or a comma in a number, is not served yet.
 - **A server with a sign-in of its own.** The tool sends a key, as
   `fadodb serve` wants it. A program that mounts the door with its own
   way of knowing a caller is called by its own means.

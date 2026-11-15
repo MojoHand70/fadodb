@@ -198,3 +198,108 @@ both under `docs/perf/`. The second-process test runs in CI on every
 operating system for SQLite, so that the property this record relies on
 is checked rather than assumed; the DuckDB test records the outcome
 without asserting it, since it is DuckDB's process model and not ours.
+
+## Measured again on 2026-11-15: a log that has a bound
+
+Item 7 says that the log cannot grow without bound, and leaves the
+timer, the limit and the pause to later measurement. Measured with the
+real commit, the bound did not hold for a writer that never pauses. A
+log can only be emptied when nobody writes to it. The checkpointer
+waited for such a moment, and a caller that commits one document after
+another leaves none: the log reached 2.6 to 4.4 GiB beside a database of
+200 MiB. When the moment came by chance, the whole log was copied in one
+go and every commit waited for it, more than two seconds.
+
+A database behind a server makes this a workload and not only a
+benchmark: several callers that each pause add up to a writer that
+never does.
+
+What changed is inside what item 7 leaves open. The principle stands:
+the committing connection never checkpoints.
+
+- **Past its limit, the log is emptied as soon as that costs
+  nothing**: when less than a megabyte of it is left to copy and no
+  commit runs at that instant. Callers that pause between commits
+  leave such instants all the time, and their log stays at its limit,
+  as before.
+- **A burst costs the writer nothing.** A writer that never pauses
+  leaves no such instant, and its log grows while it is copied in the
+  background.
+- **Far past the limit, at eight times it, the checkpointer takes the
+  writer's turn.** It waits for the store's own lock, the one every
+  commit of the program takes, gets it between two commits, copies
+  what is left of the log and empties it. No commit runs meanwhile.
+  Before it takes the turn it copies the log once more, so that the
+  turn has to copy only what the writers wrote during that copy.
+- **It never waits inside SQLite.** A reader that still looks at an old
+  view of the database, or a writer of another program, keeps a log
+  from being emptied. In the writer's turn, waiting for either would
+  stop every commit; the checkpointer copies as far as it can and tries
+  again a period later.
+- **It costs the commits nothing to count.** The benchmark gate counts
+  every allocation of the process, the checkpointer's among them, and
+  allows no more than before. Its two statements are prepared once, and
+  a period of the checkpointer allocates less than it did while the
+  log is within its limit.
+- **What the limit means.** `WALLimit`, 64 MiB when none is given, is
+  the size past which the log is emptied whenever that costs nothing.
+  Under writers that never pause the log grows to eight times the
+  limit, and by what they write in a moment more: about 650 MiB
+  measured. A reader that keeps one view for long, and a second
+  program that writes without pause, still let the log grow; neither
+  is new.
+
+**Why the turn is not taken at the limit itself.** A first form of
+this change took the writer's turn as soon as the log passed its
+limit. On the development machine it was the fastest. On the runner of
+the benchmark gate, whose disk is slow to confirm a write, it nearly
+doubled the time of a short burst: a transition took 202 µs where it
+takes 113 µs. A burst there does not pay for the copying of its log
+while it runs; taking the turn at the limit made it pay, every quarter
+of a second. The same runner shows what the old way costs later: its
+times for one benchmark ran from 112 to 230 µs from round to round,
+where the first form was a steady 205. So a burst is left free, up to
+eight times the limit, and the bound is paid for only by a writer that
+goes on past it.
+
+Measured on the development machine, on disk, twenty seconds of commits
+with no pause between them:
+
+| | Before | Now |
+|---|---|---|
+| One writer: commits a second | 13,100 | 17,400 |
+| One writer: the log at its largest | 4,354 MiB | 656 MiB |
+| One writer: the longest a commit waited | 2.2 s | 67 ms |
+| Eight writers: commits a second | 13,800 | 17,000 |
+| Eight writers: the log at its largest | 2,585 MiB | 672 MiB |
+| Eight writers: the longest a commit waited | 2.2 s | 72 ms |
+| Eight writers: p99.9 of a commit | 3.3 ms | 6.9 ms |
+
+A caller that pauses a millisecond between commits sees no difference:
+the log stays at 66 MiB and p99 at 0.2 ms.
+
+The commit campaign (`TestCommitCampaign`, 200,000 commits of each
+kind into one database, 2.3 GB at the end) before and now:
+
+| Work | Throughput | p99 | max |
+|---|---|---|---|
+| create, one transaction each | 7,875/s → 10,253/s | 0.270 → 0.257 ms | 2,363 → 72 ms |
+| set, one transaction each | 6,855/s → 8,232/s | 0.329 → 0.317 ms | 2,096 → 76 ms |
+| transition, one transaction each | 12,112/s → 15,146/s | 0.230 → 0.180 ms | 435 → 65 ms |
+| transition starting a chain of three | 7,695/s → 9,125/s | 0.334 → 0.296 ms | 535 → 81 ms |
+| create, batched 1,000 per transaction | 24,141/s → 24,891/s | 144 → 71 ms | 170 → 74 ms |
+| transition, batched 1,000 per transaction | 27,862/s → 27,580/s | 46 → 44 ms | 48 → 99 ms |
+
+The price is paid by callers that never pause, and only by them: under
+eight such writers one commit in a thousand waits 7 ms where it waited
+3 ms, and now and then one waits some tens of milliseconds for the log
+to be emptied. The waits of seconds are gone, and every budget of
+ADR-0012 holds. On a disk that is slow to confirm a write, such a
+caller is held to the speed at which its log can be copied once its
+log is half a GiB; before, it ran ahead until the disk was full.
+
+Four tests hold it: the log of a burst is emptied when the writer
+pauses; the log of four writers that never pause stays under its
+bound and is emptied while they write; the writers go on while a
+reader keeps its view; and a store closes while its checkpointer waits
+for the turn.

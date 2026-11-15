@@ -307,21 +307,29 @@ these documents hold a file that the store does not have:
 
 ### Room for the latest commits
 
-The `-wal` file is emptied once it passes 64 MiB, and the engine does
-that in a moment between two commits. The option `WALLimit` changes
-the size; see [Opening a database](opening-a-database.md#the-options).
+The `-wal` file is emptied once it passes 64 MiB, as soon as the
+callers leave an instant for it. Callers that pause between commits
+leave one all the time. A caller that writes without any pause leaves
+none: its log grows to eight times the limit, about half a GiB, and
+then the engine takes its turn among the commits to empty it, for
+which a commit now and then waits some tens of milliseconds. The
+option `WALLimit` changes the size; see
+[Opening a database](opening-a-database.md#the-options).
 
-> **Not played by the test.** Measured on 2026-11-15 on the machine of
-> the [performance pages](../perf/README.md). One caller created
-> receipts for four seconds without any pause, over 50,000 of them. The
-> engine found a moment to empty the `-wal` file only every second or
-> two, and the file reached between 1.4 and 2.3 GiB in three runs,
-> beside a database of 27 MB. With a pause of about a millisecond
-> between two commits it never passed 66 MiB.
+> **Measured, not played by this chapter's test.** On 2026-11-15, on
+> the machine of the [performance pages](../perf/README.md), callers
+> created documents for twenty seconds without any pause. The `-wal`
+> file stayed under 700 MiB, beside a database of 260 MiB. With a
+> pause of about a millisecond between two commits it never passed
+> 66 MiB. Before this release the log had no bound, and under such
+> callers it reached several GiB.
+> [ADR-0035](../adr/0035-sqlite-is-the-transactional-store.md) has the
+> numbers, and a test of the engine holds the bound.
 
-So leave room on the disk for it, and let a program that writes for a
-long time without pause, such as an import, stop for a moment now and
-then.
+So leave room on the disk for ten times the limit. Two things still
+let the file grow past that: a reader that keeps one view of the
+database open for a long time, and a second program that writes to the
+same database without pause.
 
 ## How fast it is
 

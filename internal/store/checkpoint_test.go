@@ -54,29 +54,48 @@ func writing(t *testing.T, limit int64, writers int) (s *Store, path string, com
 	return s, path, commits, stop
 }
 
+// logSize is the size of the log beside a database, 0 when there is
+// none.
+func logSize(path string) int64 {
+	fi, err := os.Stat(path + "-wal")
+	if err != nil {
+		return 0
+	}
+	return fi.Size()
+}
+
+// emptied watches the log for a while and answers how often it was
+// emptied, which shows as a log less than half the size it had a
+// millisecond before, and how large it was at its largest.
+func emptied(path string, long time.Duration) (times int, largest int64) {
+	last := logSize(path)
+	for until := time.Now().Add(long); time.Now().Before(until); time.Sleep(time.Millisecond) {
+		size := logSize(path)
+		if size < last/2 {
+			times++
+		}
+		largest, last = max(largest, size), size
+	}
+	return times, largest
+}
+
 // A writer that never pauses leaves no moment at which the log could be
 // emptied, and the log of such a writer grew to gigabytes. The
 // checkpointer takes its turn among the commits, so the log is emptied
 // while the writers write and stays near its limit (ADR-0035, item 7).
 func TestTheLogStaysNearItsLimit(t *testing.T) {
 	const limit = 1 << 20
-	s, path, _, stop := writing(t, limit, 4)
-	var largest int64
-	for until := time.Now().Add(1500 * time.Millisecond); time.Now().Before(until); time.Sleep(time.Millisecond) {
-		if fi, err := os.Stat(path + "-wal"); err == nil && fi.Size() > largest {
-			largest = fi.Size()
-		}
-	}
-	// Counted while the writers still write: they left no pause.
-	emptied := s.logEmptied.Load()
+	_, path, _, stop := writing(t, limit, 4)
+	// Watched while the writers write: they leave no pause.
+	times, largest := emptied(path, 1500*time.Millisecond)
 	stop()
-	if emptied < 10 {
-		t.Errorf("the log was emptied %d times in a second and a half of writing without a pause", emptied)
+	if times < 10 {
+		t.Errorf("the log was emptied %d times in a second and a half of writing without a pause", times)
 	}
 	if largest > 64*limit {
 		t.Errorf("the log grew to %d MiB under a limit of %d MiB", largest>>20, limit>>20)
 	}
-	t.Logf("the log was emptied %d times and was %d KiB at its largest, under a limit of %d KiB", emptied, largest>>10, limit>>10)
+	t.Logf("the log was emptied %d times and was %d KiB at its largest, under a limit of %d KiB", times, largest>>10, limit>>10)
 }
 
 // A reader that still looks at an old view of the database keeps the
@@ -85,7 +104,7 @@ func TestTheLogStaysNearItsLimit(t *testing.T) {
 // commits go on, and the log is emptied when the reader is done.
 func TestAReaderDoesNotHoldTheWriters(t *testing.T) {
 	const limit = 256 << 10
-	s, _, commits, stop := writing(t, limit, 2)
+	s, path, commits, stop := writing(t, limit, 2)
 	ctx := context.Background()
 	// A reader with a view of its own, kept open.
 	reader, err := s.db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
@@ -103,13 +122,15 @@ func TestAReaderDoesNotHoldTheWriters(t *testing.T) {
 	if made := commits.Load() - before; made < 200 {
 		t.Errorf("%d commits in half a second while a reader kept its view: the checkpointer held the writers for the reader", made)
 	}
-	emptied := s.logEmptied.Load()
 	if err := reader.Rollback(); err != nil {
 		t.Fatal(err)
 	}
 	// The reader gone, the log is emptied again, with the writers still
 	// writing.
-	for until := time.Now().Add(10 * time.Second); s.logEmptied.Load() == emptied; time.Sleep(5 * time.Millisecond) {
+	for until := time.Now().Add(10 * time.Second); ; {
+		if times, _ := emptied(path, 50*time.Millisecond); times > 0 {
+			break
+		}
 		if time.Now().After(until) {
 			t.Fatal("the log was not emptied after the reader was done")
 		}

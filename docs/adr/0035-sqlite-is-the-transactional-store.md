@@ -222,17 +222,21 @@ the committing connection never checkpoints.
   takes, gets it between two commits, copies what is left of the log
   and empties it. No commit runs meanwhile.
 - **The wait is kept short.** Before it takes the turn, the
-  checkpointer copies the log while the writers write, again and again
-  until less than a megabyte is left.
+  checkpointer copies the log once more while the writers write, so
+  that the turn has to copy only what they wrote during that copy.
 - **It never waits inside SQLite.** A reader that still looks at an old
   view of the database, or a writer of another program, keeps a log
   from being emptied. In the writer's turn, waiting for either would
   stop every commit; the checkpointer copies as far as it can and tries
   again a period later.
+- **It costs the commits nothing to count.** The benchmark gate counts
+  every allocation of the process, the checkpointer's among them, and
+  allows no more than before. Its two statements are prepared once, and
+  a period of the checkpointer now allocates less than it did.
 - **What the limit means.** The log passes the limit by what the
-  writers write within a period or two of the checkpointer: about three
-  times the limit under the fastest writer measured, and not at all
-  under a caller that pauses a millisecond between commits. A reader
+  writers write within a period or two of the checkpointer: a little
+  over three times the limit under the fastest writer measured, and
+  not at all under a caller that pauses a millisecond between commits. A reader
   that keeps one view for long, and a second program that writes
   without pause, still let the log grow; neither is new.
 
@@ -241,28 +245,28 @@ with no pause between them:
 
 | | Before | Now |
 |---|---|---|
-| One writer: commits a second | 13,100 | 16,300 |
-| One writer: the log at its largest | 4,354 MiB | 192 MiB |
-| One writer: the longest a commit waited | 2.2 s | 53 ms |
-| Eight writers: commits a second | 13,800 | 15,900 |
-| Eight writers: the log at its largest | 2,585 MiB | 214 MiB |
-| Eight writers: the longest a commit waited | 2.2 s | 62 ms |
-| Eight writers: p99.9 of a commit | 3.3 ms | 19.6 ms |
+| One writer: commits a second | 13,100 | 17,100 |
+| One writer: the log at its largest | 4,354 MiB | 210 MiB |
+| One writer: the longest a commit waited | 2.2 s | 43 ms |
+| Eight writers: commits a second | 13,800 | 16,100 |
+| Eight writers: the log at its largest | 2,585 MiB | 213 MiB |
+| Eight writers: the longest a commit waited | 2.2 s | 58 ms |
+| Eight writers: p99.9 of a commit | 3.3 ms | 37 ms |
 
 A caller that pauses a millisecond between commits sees no difference:
-the log stays at 66 MiB and p99 at 0.22 ms.
+the log stays at 66 MiB and p99 at 0.2 ms.
 
 The commit campaign (`TestCommitCampaign`, 200,000 commits of each
 kind into one database, 2.3 GB at the end) before and now:
 
 | Work | Throughput | p99 | max |
 |---|---|---|---|
-| create, one transaction each | 7,875/s → 9,659/s | 0.270 → 0.264 ms | 2,363 → 48 ms |
-| set, one transaction each | 6,855/s → 7,765/s | 0.329 → 0.315 ms | 2,096 → 56 ms |
-| transition, one transaction each | 12,112/s → 14,920/s | 0.230 → 0.161 ms | 435 → 41 ms |
-| transition starting a chain of three | 7,695/s → 8,471/s | 0.334 → 0.299 ms | 535 → 42 ms |
-| create, batched 1,000 per transaction | 24,141/s → 24,661/s | 144 → 69 ms | 170 → 71 ms |
-| transition, batched 1,000 per transaction | 27,862/s → 26,879/s | 46 → 74 ms | 48 → 86 ms |
+| create, one transaction each | 7,875/s → 9,434/s | 0.270 → 0.263 ms | 2,363 → 48 ms |
+| set, one transaction each | 6,855/s → 7,821/s | 0.329 → 0.308 ms | 2,096 → 42 ms |
+| transition, one transaction each | 12,112/s → 14,668/s | 0.230 → 0.178 ms | 435 → 42 ms |
+| transition starting a chain of three | 7,695/s → 8,485/s | 0.334 → 0.311 ms | 535 → 39 ms |
+| create, batched 1,000 per transaction | 24,141/s → 25,201/s | 144 → 62 ms | 170 → 62 ms |
+| transition, batched 1,000 per transaction | 27,862/s → 27,076/s | 46 → 71 ms | 48 → 76 ms |
 
 The price is in the last row and in the last line of the table before:
 a batch, or one commit in a thousand under eight writers, now and then

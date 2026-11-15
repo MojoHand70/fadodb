@@ -222,8 +222,6 @@ type Store struct {
 	stop   chan struct{}
 	done   chan struct{}
 	closed bool
-	// logEmptied counts how often the checkpointer emptied the log.
-	logEmptied atomic.Uint64
 
 	// The outbox (ADR-0044): its options with the defaults filled in, the
 	// lock that makes one drain by hand run at a time, the documents that
@@ -907,7 +905,7 @@ func (s *Store) classAt(name string, version int) *class {
 // moment: so once the log is past limit bytes, the checkpointer takes
 // the writer's turn, between two commits, copies what is left and
 // empties the log. The writers wait for that, and it is kept short by
-// copying, before the turn is taken, until little is left.
+// copying once more before the turn is taken, so that little is left.
 func (s *Store) checkpoint(conn *sql.Conn, every time.Duration, limit int64) {
 	defer close(s.done)
 	defer conn.Close()
@@ -919,51 +917,68 @@ func (s *Store) checkpoint(conn *sql.Conn, every time.Duration, limit int64) {
 	// of the database, or another program writes; what it cannot do now
 	// it does a period later.
 	_, _ = conn.ExecContext(ctx, "PRAGMA busy_timeout(0)")
+	// The two statements are prepared once: the checkpointer runs for as
+	// long as the database is open, and what it allocates is counted
+	// with the commits it runs beside.
+	copyLog := prepared(ctx, conn, "PRAGMA wal_checkpoint(PASSIVE)")
+	emptyLog := prepared(ctx, conn, "PRAGMA wal_checkpoint(TRUNCATE)")
+	defer copyLog.close()
+	defer emptyLog.close()
+	log := s.path + "-wal"
 	for {
 		select {
 		case <-s.stop:
 			return
 		case <-t.C:
-			left := copyLog(ctx, conn)
-			if fi, err := os.Stat(s.path + "-wal"); err != nil || fi.Size() <= limit {
+			copyLog.run(ctx)
+			if fi, err := os.Stat(log); err != nil || fi.Size() <= limit {
 				continue
 			}
-			for i := 0; i < 4 && left > fewPages; i++ {
-				left = copyLog(ctx, conn)
+			// Past the limit. What the writers wrote while the log was
+			// copied is copied too, outside their turn, and what they
+			// write during that is what the turn has to copy.
+			copyLog.run(ctx)
+			// The writer's turn: the lock every commit of this program
+			// takes, so that no commit runs meanwhile. A store that was
+			// closed in the meantime is left alone.
+			s.mu.Lock()
+			if !s.closed {
+				emptyLog.run(ctx)
 			}
-			s.emptyLog(ctx, conn)
+			s.mu.Unlock()
 		}
 	}
 }
 
-// fewPages is how many pages of the log may be left to copy when the
-// checkpointer takes the writer's turn: a megabyte of the usual pages.
-const fewPages = 256
-
-// copyLog copies what it can of the log into the database file without
-// waiting for anybody, and answers how many pages are left to copy.
-func copyLog(ctx context.Context, conn *sql.Conn) int {
-	var busy, pages, copied int
-	if err := conn.QueryRowContext(ctx, "PRAGMA wal_checkpoint(PASSIVE)").Scan(&busy, &pages, &copied); err != nil {
-		return 0
-	}
-	return pages - copied
+// statement is a statement of the checkpointer on its connection,
+// prepared when it can be.
+type statement struct {
+	conn *sql.Conn
+	stmt *sql.Stmt
+	text string
 }
 
-// emptyLog copies what is left of the log into the database file and
-// empties the log, in the writer's turn: no commit of this program runs
-// meanwhile. A reader that still looks at an old view of the database,
-// or a writer of another program, keeps the log from being emptied; it
-// is then copied as far as it can be, and tried again a period later.
-func (s *Store) emptyLog(ctx context.Context, conn *sql.Conn) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if s.closed {
+func prepared(ctx context.Context, conn *sql.Conn, text string) *statement {
+	st := &statement{conn: conn, text: text}
+	if stmt, err := conn.PrepareContext(ctx, text); err == nil {
+		st.stmt = stmt
+	}
+	return st
+}
+
+// run runs the statement and leaves its outcome: a checkpoint that could
+// not be made now is made a period later.
+func (st *statement) run(ctx context.Context) {
+	if st.stmt != nil {
+		_, _ = st.stmt.ExecContext(ctx)
 		return
 	}
-	var busy, pages, copied int
-	if err := conn.QueryRowContext(ctx, "PRAGMA wal_checkpoint(TRUNCATE)").Scan(&busy, &pages, &copied); err == nil && busy == 0 {
-		s.logEmptied.Add(1)
+	_, _ = st.conn.ExecContext(ctx, st.text)
+}
+
+func (st *statement) close() {
+	if st.stmt != nil {
+		st.stmt.Close()
 	}
 }
 

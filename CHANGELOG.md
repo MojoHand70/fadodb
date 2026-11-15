@@ -242,9 +242,9 @@ All notable changes to FadoDB are recorded here. The format follows
   leaves no such moment; when one came by chance, every commit waited
   more than two seconds for the whole log to be copied. Past the limit
   the engine now empties the log in the writer's turn, between two
-  commits. The log stays under about three times its limit, the
-  longest wait of a commit fell from 2.2 s to about 50 ms, and commits
-  a second rose by a tenth to a quarter. A commit now and then waits
+  commits. The log stays near three times its limit, the longest wait
+  of a commit fell from 2.2 s to about 50 ms, and commits a second rose
+  by a tenth to a third. A commit now and then waits
   some tens of milliseconds for the log to be emptied. ADR-0035 has
   the measurements.
 

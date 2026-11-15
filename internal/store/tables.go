@@ -334,7 +334,7 @@ func (s *Store) DefineTable(ctx context.Context, data []byte, opts ...Option) (*
 		return rollback(derr)
 	}
 	def.Defined = defined
-	if _, err := w.ExecContext(ctx, "COMMIT"); err != nil {
+	if err := s.endTransaction(ctx); err != nil {
 		return nil, storageErr("commit", err)
 	}
 	if old != nil {
@@ -411,7 +411,7 @@ func (s *Store) ImportRows(ctx context.Context, name string, rows []Values, opts
 			return rollback(storageErr(fmt.Sprintf("write row %d of %s", i, t.def.Name), err))
 		}
 	}
-	if _, err := w.ExecContext(ctx, "COMMIT"); err != nil {
+	if err := s.endTransaction(ctx); err != nil {
 		return rollback(storageErr("commit", err))
 	}
 	t.cache, t.tooBig = nil, false

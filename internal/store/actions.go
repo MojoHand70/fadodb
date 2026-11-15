@@ -484,7 +484,7 @@ func (s *Store) DefineAction(ctx context.Context, data []byte, opts ...Option) (
 	if derr != nil {
 		return rollback(derr)
 	}
-	if _, err := w.ExecContext(ctx, "COMMIT"); err != nil {
+	if err := s.endTransaction(ctx); err != nil {
 		return nil, storageErr("commit", err)
 	}
 	a := &action{spec: spec, json: compact, defined: defined}
@@ -845,7 +845,7 @@ func (s *Store) runCall(ctx context.Context, row *outboxRow) (bool, error) {
 		_, _ = w.ExecContext(ctx, "ROLLBACK")
 		return false, err
 	}
-	if _, err := w.ExecContext(ctx, "COMMIT"); err != nil {
+	if err := s.endTransaction(ctx); err != nil {
 		_, _ = w.ExecContext(ctx, "ROLLBACK")
 		return false, storageErr("commit", err)
 	}

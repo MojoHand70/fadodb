@@ -789,7 +789,7 @@ func (s *Store) runAction(ctx context.Context, row *outboxRow, own bool) (bool, 
 			_, _ = w.ExecContext(ctx, "ROLLBACK")
 			return false, err
 		}
-		if _, err := w.ExecContext(ctx, "COMMIT"); err != nil {
+		if err := s.endTransaction(ctx); err != nil {
 			_, _ = w.ExecContext(ctx, "ROLLBACK")
 			return false, storageErr("commit", err)
 		}
@@ -818,7 +818,7 @@ func (s *Store) runAction(ctx context.Context, row *outboxRow, own bool) (bool, 
 		_, _ = w.ExecContext(ctx, "ROLLBACK")
 		return false, err
 	}
-	if _, err := w.ExecContext(ctx, "COMMIT"); err != nil {
+	if err := s.endTransaction(ctx); err != nil {
 		_, _ = w.ExecContext(ctx, "ROLLBACK")
 		return false, storageErr("commit", err)
 	}

@@ -50,6 +50,11 @@ func TestManualExamples(t *testing.T) {
 				pieces = append(pieces, string(m[1]))
 			}
 		}
+		// A table a page shows only as the engine's answer to get_table
+		// is defined like the others.
+		for _, table := range shownTables(data) {
+			tables = append(tables, string(table))
+		}
 		name := filepath.Base(page)
 		// An action a page defines with no request is the contract of a
 		// function of the host program, so the test's database is opened
@@ -118,6 +123,23 @@ func TestManualExamples(t *testing.T) {
 		}
 		t.Logf("%s: %d classes, %d tables and %d actions defined, %d pieces found in them", name, len(classes), len(tables), len(actions), len(pieces))
 	}
+}
+
+// shownTables returns the definitions of the tables a page shows as the
+// engine's answer to get_table, in the order of the page.
+func shownTables(page []byte) [][]byte {
+	var out [][]byte
+	for _, m := range regexp.MustCompile("(?s)<!-- answer -->\r?\n```jsonc\r?\n(.*?)\r?\n```").FindAllSubmatch(page, -1) {
+		var answer struct {
+			Table struct {
+				Definition json.RawMessage `json:"definition"`
+			} `json:"table"`
+		}
+		if json.Unmarshal(m[1], &answer) == nil && answer.Table.Definition != nil {
+			out = append(out, answer.Table.Definition)
+		}
+	}
+	return out
 }
 
 // TestManualLinks follows every link of the manual that points into the

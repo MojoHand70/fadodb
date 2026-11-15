@@ -731,3 +731,141 @@ func TestOwnWorkSkill(t *testing.T) {
 		}
 	}
 }
+
+// The designer's skill begins by looking at what the organisation
+// already keeps. TestDesignerSkill makes the database the skill
+// describes, sends each command of its story as the agent and compares
+// the answer with the page; then it defines every class the page shows,
+// the small one of "The shape of a class" with them, and plays the
+// story the page tells, so that the classes do what the page says.
+func TestDesignerSkill(t *testing.T) {
+	page := skill(t, "fadodb-design")
+	ctx := context.Background()
+	clock := time.Date(2026, 11, 16, 9, 0, 0, 0, time.UTC)
+	db := notionDB(t, fado.Options{Now: func() time.Time { return clock }})
+
+	// The database the story finds: a leave process and two tables.
+	if _, err := db.DefineClass(ctx, []byte(`{"name":"Leave","label":"Leave request",`+
+		`"description":"A day off asked for and approved. Born: here. Owner: HR. List: this class.",`+
+		`"variables":{"from":{"type":"date"},"to":{"type":"date"}},`+oneState+
+		`,"access":{"read":"TRUE","create":"TRUE","update":"TRUE","delete":"FALSE"}}`), setup); err != nil {
+		t.Fatal(err)
+	}
+	// The two tables are those the page shows in the answers to
+	// get_table.
+	tables := shownTables(page)
+	if len(tables) != 2 {
+		t.Fatalf("the skill shows %d tables; the test knows two", len(tables))
+	}
+	for _, table := range tables {
+		if _, err := db.DefineTable(ctx, table, setup); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := db.ImportRows(ctx, "People", []fado.Values{
+		{"login": "ola", "name": "Ola Nowak", "department": "SAL"},
+		{"login": "marek", "name": "Marek Lis", "department": "SAL"},
+		{"login": "anna", "name": "Anna Wolska", "department": "HR"},
+		{"login": "ewa", "name": "Ewa Mazur", "department": "FIN"},
+	}, fado.As(fado.Principal{ID: "hr-import", Kind: fado.ActorService, Groups: []string{"hr"}})); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.ImportRows(ctx, "Departments", []fado.Values{
+		{"code": "SAL", "name": "Sales", "head": "marek"},
+		{"code": "HR", "name": "Human resources", "head": "anna"},
+		{"code": "FIN", "name": "Finance", "head": "ewa"},
+	}, fado.As(fado.Principal{ID: "ewa", Kind: fado.ActorPerson, Groups: []string{"finance"}})); err != nil {
+		t.Fatal(err)
+	}
+
+	// The exchange: each command of the page, in its order, and the
+	// answer under it.
+	agent := fado.Principal{ID: "builder-agent", Kind: fado.ActorAgent, System: []string{fado.GroupDesigners}}
+	exchange := exchangesOf(page)
+	if len(exchange) != 4 {
+		t.Fatalf("the skill shows %d commands with their answers; the test knows four", len(exchange))
+	}
+	for i, m := range exchange {
+		got, _ := db.Exec(ctx, agent, m.name, m.sent)
+		if !sameAnswer(got, m.shown) {
+			t.Errorf("step %d, the command %s %s, is answered\n%s\nand the skill shows\n%s", i+1, m.name, m.sent, got, m.shown)
+		}
+	}
+	// What was asked names the two tables the commands found.
+	asked := rows(marked(t, page, "what was asked"))
+	if len(asked) != 3 || !strings.Contains(asked[0][1], "People") || !strings.Contains(asked[1][1], "Departments") {
+		t.Errorf("the table of what was asked is %v", asked)
+	}
+
+	// Every class the page shows is accepted as it stands, by the agent.
+	classes := notionClasses(t, page)
+	if len(classes) != 3 {
+		t.Fatalf("the skill shows %d classes; the test knows three", len(classes))
+	}
+	for _, class := range classes {
+		if _, err := db.Exec(ctx, agent, "define_class", append(append([]byte(`{"definition":`), class...), '}')); err != nil {
+			t.Fatalf("the class %.40s... is refused: %v", class, err)
+		}
+	}
+	// Each class the agent made says where it is born, who owns it and
+	// where its list is.
+	for _, name := range []string{"CostCentre", "TrainingRequest"} {
+		got, _ := db.Exec(ctx, agent, "get_class", []byte(`{"name":"`+name+`"}`))
+		for _, word := range []string{"Born: ", "Owner: ", "List: "} {
+			if !strings.Contains(string(got), word) {
+				t.Errorf("the description of %s does not say %q", name, word)
+			}
+		}
+	}
+
+	// The story the page tells.
+	who := func(id string, groups ...string) fado.Principal {
+		return fado.Principal{ID: id, Kind: fado.ActorPerson, Groups: groups}
+	}
+	ola, marek, ewa, anna := who("ola"), who("marek"), who("ewa", "finance"), who("anna", "hr")
+	code := func(as fado.Principal, name, object string) string {
+		t.Helper()
+		_, err := db.Exec(ctx, as, name, []byte(object))
+		return fado.ErrorCode(err)
+	}
+	must := func(as fado.Principal, name, object string) {
+		t.Helper()
+		if got := code(as, name, object); got != "" {
+			t.Fatalf("%s: %s %s: %s", as.ID, name, object, got)
+		}
+	}
+	must(ola, "create", `{"class":"TrainingRequest","id":"T-1","values":{"training":"a negotiation course","for_whom":"employee","cost_centre":"CC-410","cost":"1200.00 PLN"}}`)
+	if got := code(ola, "transition", `{"class":"TrainingRequest","id":"T-1","transition":"ask"}`); got != "guard_false" {
+		t.Errorf("Ola asks before the cost centre is approved: %q", got)
+	}
+	must(marek, "create", `{"class":"CostCentre","id":"CC-410","values":{"name":"Sales training","owner":"marek"}}`)
+	if got := code(marek, "transition", `{"class":"CostCentre","id":"CC-410","transition":"approve"}`); got != "forbidden" {
+		t.Errorf("Marek approves the cost centre he proposed: %q", got)
+	}
+	must(ewa, "transition", `{"class":"CostCentre","id":"CC-410","transition":"approve"}`)
+	must(ola, "transition", `{"class":"TrainingRequest","id":"T-1","transition":"ask"}`)
+	got, err := db.Exec(ctx, marek, "get", []byte(`{"class":"TrainingRequest","id":"T-1"}`))
+	if err != nil || !strings.Contains(string(got), `"department":"SAL"`) || !strings.Contains(string(got), `"head":"marek"`) {
+		t.Errorf("the request as its head reads it: %s, %v", got, err)
+	}
+	if got := code(ola, "transition", `{"class":"TrainingRequest","id":"T-1","transition":"approve"}`); got != "forbidden" {
+		t.Errorf("Ola approves her own request: %q", got)
+	}
+	must(marek, "transition", `{"class":"TrainingRequest","id":"T-1","transition":"approve"}`)
+	must(anna, "transition", `{"class":"TrainingRequest","id":"T-1","transition":"book"}`)
+	got, _ = db.Exec(ctx, anna, "get", []byte(`{"class":"TrainingRequest","id":"T-1"}`))
+	if !strings.Contains(string(got), `"state":"booked"`) {
+		t.Errorf("the request after Anna booked it: %s", got)
+	}
+	// A training for a whole department takes the department chosen.
+	must(ola, "create", `{"class":"TrainingRequest","id":"T-2","values":{"training":"first aid","for_whom":"department","chosen":"HR","cost_centre":"CC-410","cost":"3000.00 PLN"}}`)
+	got, _ = db.Exec(ctx, ola, "get", []byte(`{"class":"TrainingRequest","id":"T-2"}`))
+	if !strings.Contains(string(got), `"head":"anna"`) {
+		t.Errorf("a training for the department HR: %s", got)
+	}
+	// Nothing the story names was made twice: the tables are the two
+	// the agent found, and the one new class is the list nobody kept.
+	if tables := db.Tables(); !reflect.DeepEqual(tables, []string{"People", "Departments"}) {
+		t.Errorf("the tables after the story: %v", tables)
+	}
+}

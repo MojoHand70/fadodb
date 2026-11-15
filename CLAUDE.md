@@ -20,7 +20,7 @@ make build      # bin/fadodb
 make test       # go test -race ./...
 make gates      # lint, vuln, depgate, sizegate, filegate, test  (what CI runs on the core)
 make analytics  # the DuckDB module: separate go.mod, needs cgo and a C compiler
-make benchgate BASE=origin/main
+make benchgate BASE=origin/main   # the full comparison: run it before pushing a change to a hot path
 go test -count=1 -run TestName ./internal/formula/
 ```
 
@@ -32,7 +32,10 @@ go test -count=1 -run TestName ./internal/formula/
 2. **Hot paths do not allocate.** VM loop, recalculation, transition commit:
    fixed buffers, no interface boxing of values, no reflection, prepared
    statements. Add a benchmark with `-benchmem` for any hot-path change and
-   quote before/after numbers in the pull request.
+   quote before/after numbers in the pull request. Run `make benchgate`
+   on your own machine before the push: GitHub holds a pull request to
+   allocations and bytes, and to time only when a benchmark is more than
+   half slower (ADR-0012).
 3. **Three evaluators, one behaviour.** Any formula semantics change needs
    conformance cases under `conformance/` and must pass on the Go VM, the SQL
    generator and the browser VM. The suite is the specification.

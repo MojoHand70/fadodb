@@ -1,6 +1,7 @@
 package httpdoor_test
 
 import (
+	"bufio"
 	"context"
 	"errors"
 	"fmt"
@@ -167,12 +168,75 @@ func TestNew(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := httpdoor.Limits{RequestBytes: httpdoor.DefaultRequestBytes, CommandTime: httpdoor.DefaultCommandTime, Commands: 8}
+	want := httpdoor.Limits{RequestBytes: httpdoor.DefaultRequestBytes, CommandTime: httpdoor.DefaultCommandTime, Commands: 8, Streams: httpdoor.DefaultStreams}
 	if got := door.Limits(); got != want {
 		t.Errorf("the limits are %+v, want %+v", got, want)
 	}
 	if httpdoor.Status(httpdoor.CodeBusy) != 503 || httpdoor.Status("") != 200 {
 		t.Error("Status does not answer the table of ADR-0055")
+	}
+}
+
+// The door answers the stream of changes of a *fado.DB (ADR-0058): a
+// reply that stays open, an entry for each event the caller may read
+// of, and a last entry when the program ends its streams.
+func TestTheStreamOfChanges(t *testing.T) {
+	db, srv := open(t.TempDir())
+	defer db.Close()
+	defer srv.Close()
+	door := srv.Config.Handler.(*httpdoor.Door)
+	if status, body := send(srv, "token-of-dan", "define_class", invoice); status != 200 {
+		t.Fatalf("define_class: %d %s", status, body)
+	}
+	listen := func(token string) *bufio.Reader {
+		req, err := http.NewRequest(http.MethodPost, srv.URL+"/v1/subscribe", strings.NewReader(`{"classes": ["Invoice"]}`))
+		if err != nil {
+			t.Fatal(err)
+		}
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Authorization", "Bearer "+token)
+		resp, err := http.DefaultTransport.RoundTrip(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { resp.Body.Close() })
+		if resp.StatusCode != 200 || resp.Header.Get("Content-Type") != "text/event-stream" {
+			t.Fatalf("the stream was answered with %d %s", resp.StatusCode, resp.Header.Get("Content-Type"))
+		}
+		return bufio.NewReader(resp.Body)
+	}
+	// entry reads the lines of one entry.
+	entry := func(in *bufio.Reader) string {
+		var b strings.Builder
+		for {
+			line, err := in.ReadString('\n')
+			if err != nil || line == "\n" {
+				return b.String()
+			}
+			b.WriteString(line)
+		}
+	}
+	bob := listen("token-of-bob")
+	if got := entry(bob); got != ": the stream is open\n" {
+		t.Fatalf("the stream begins with %q", got)
+	}
+	if n := door.Streams(); n != 1 {
+		t.Errorf("the door holds %d streams, want 1", n)
+	}
+	if status, body := send(srv, "token-of-bob", "create", `{"class": "Invoice", "id": "FV/1", "values": {"customer": "Acme"}}`); status != 200 {
+		t.Fatalf("create: %d %s", status, body)
+	}
+	got := entry(bob)
+	if !strings.HasPrefix(got, "id: ") || !strings.Contains(got, "\nevent: change\ndata: {") || !strings.Contains(got, `"doc_id":"FV/1","kind":"created"`) || !strings.Contains(got, `"actor_id":"bob"`) {
+		t.Errorf("the entry of a create is %q", got)
+	}
+	// The program stops: the door ends the stream, and says why.
+	door.EndStreams()
+	if got := entry(bob); !strings.HasPrefix(got, "event: end\ndata: {\"error\":{\"code\":\"closed\"") {
+		t.Errorf("the last entry is %q", got)
+	}
+	if got := entry(bob); got != "" {
+		t.Errorf("the stream went on after its end: %q", got)
 	}
 }
 

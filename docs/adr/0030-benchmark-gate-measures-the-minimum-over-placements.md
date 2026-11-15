@@ -1,6 +1,6 @@
 # ADR-0030: The benchmark gate measures the minimum over code placements
 
-- Status: Accepted; amends ADR-0012
+- Status: Accepted; amends ADR-0012; since 2026-11-15 it describes the full form of the gate, which is run on the author's machine, and not what a pull request is held to on GitHub (see the last section)
 - Date: 2026-11-07
 
 ## Context
@@ -75,3 +75,28 @@ and are ignored by git.
 `BenchmarkVM_Arithmetic5` over sixteen placements: main 13.3 to 14.2 ns;
 the exact-numbers loop 13.15 ns in eight placements and 15.0 ns in the
 other eight. The gate under this record compares 13.15 ns with 13.3 ns.
+
+## Amended on 2026-11-15: placements on the author's machine only
+
+On the owner's word (ADR-0012, Gates). The five placements made the
+gate five times longer, and by then it took 25 to 35 minutes of every
+pull request that touched measured code. They did not make its verdict
+on time true: on one pull request two runs on two runners refused
+different benchmarks, each a little over 5%, on code the change did
+not touch.
+
+What the placements of this record cannot undo:
+
+- **Code that moves inside a package.** The padding stands ahead of a
+  package and shifts all of it together. A change that adds code ahead
+  of a hot function moves that function against the rest of the
+  program, at every placement alike.
+- **The runner.** The two runs were on an AMD EPYC 7763 and an Intel
+  Xeon 6975P-C, and what read slower on one read equal on the other.
+
+So a pull request is held on GitHub to the short form of ADR-0012: one
+placement, bytes and allocations as before, time refused only when a
+benchmark is more than half slower. The gate of this record, the
+minimum over five placements at 5%, is the full form: `make benchgate`
+on the machine of whoever changes a hot path, where the same two trees
+measured at twelve placements each gave the same numbers.

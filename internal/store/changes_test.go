@@ -3,7 +3,10 @@ package store
 import (
 	"context"
 	"errors"
+	"fmt"
+	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -128,17 +131,94 @@ func TestChanges_WhoHearsOfAnEvent(t *testing.T) {
 	}
 	told("it is deleted", map[string]string{"ola": "deleted e-1", "celina": "deleted e-1", "fin": "deleted e-1", "root": "deleted e-1"})
 
-	// Eve joins finance: she hears of what happens from then on, and of
-	// nothing that passed.
-	if err := streams["eve"].As(Principal{ID: "eve", Groups: []string{"finance"}}); err != nil {
+}
+
+// A stream follows its caller (ADR-0058, item 4): it asks who the caller
+// is now once it has read events its filter lets through, and judges
+// them for the caller as it is then.
+func TestChanges_AStreamFollowsItsCaller(t *testing.T) {
+	s, _ := openStore(t, Options{})
+	ctx := context.Background()
+	for _, def := range []string{expense, openMemo} {
+		if _, err := s.DefineClass(ctx, []byte(def), asSetup); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// Eve's stream hears of expenses only, and asks who Eve is now.
+	eve, asked := Principal{ID: "eve"}, 0
+	var gone error
+	stream := listening(t, s, ChangeFilter{Classes: []string{"Expense"}}, asEve)
+	stream.Follow(func(context.Context) (Principal, error) {
+		asked++
+		return eve, gone
+	})
+	expenseOf := func(id string) {
+		t.Helper()
+		if _, err := s.Create(ctx, "Expense", Values{"amount": 7}, asOla, WithID(id)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	told := func(what, want string, times int) {
+		t.Helper()
+		if got := strings.Join(heard(t, stream), "; "); got != want {
+			t.Errorf("%s: Eve hears %q, want %q", what, got, want)
+		}
+		if asked != times {
+			t.Errorf("%s: who Eve is was asked %d times, want %d", what, asked, times)
+		}
+	}
+
+	// Nothing in the log, and a memo, which the filter passes over:
+	// nobody is asked who Eve is.
+	told("before anything happens", "", 0)
+	if _, err := s.Create(ctx, "Memo", Values{"text": "for all"}, asOla, WithID("m-1")); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.Create(ctx, "Expense", Values{"amount": 7}, asOla, WithID("e-2")); err != nil {
-		t.Fatal(err)
+	told("a memo", "", 0)
+
+	// An expense while Eve is in no group: she is asked for and hears
+	// nothing.
+	expenseOf("e-1")
+	told("an expense, Eve in no group", "", 1)
+
+	// Eve joins finance, and an expense is written after: she hears of
+	// it, and of nothing that passed.
+	eve.Groups = []string{"finance"}
+	expenseOf("e-2")
+	told("an expense after Eve joined finance", "created e-2", 2)
+
+	// An expense is written, Eve leaves finance, another is written, and
+	// only then does her stream read the log. She is judged as she is
+	// after the last of the two, so she hears of neither.
+	expenseOf("e-3")
+	eve.Groups = nil
+	expenseOf("e-4")
+	told("two expenses, Eve left finance between them", "", 3)
+
+	// Her key is revoked: the stream ends with what the function said,
+	// and what it had read is told to nobody. It kept its place, so a
+	// stream whose function answers again loses nothing.
+	eve.Groups = []string{"finance"}
+	gone = ErrUnknownKey
+	expenseOf("e-5")
+	if _, err := stream.Next(ctx); err != ErrUnknownKey {
+		t.Errorf("a stream whose caller is gone: %v, want the error of the function", err)
 	}
-	told("a second expense, after Eve joined finance", map[string]string{"ola": "created e-2", "fin": "created e-2", "root": "created e-2", "eve": "created e-2"})
-	if err := streams["eve"].As(Principal{ID: "eve", Kind: "robot"}); code(err) != CodeBadValue {
+	if len(stream.read) != 0 {
+		t.Errorf("a stream whose caller is gone kept %d events to tell", len(stream.read))
+	}
+	gone = nil
+	told("the function answers again", "created e-5", 5)
+
+	// A caller the engine would refuse on a command is refused here.
+	eve = Principal{ID: "eve", Kind: "robot"}
+	expenseOf("e-6")
+	if _, err := stream.Next(ctx); code(err) != CodeBadValue {
 		t.Errorf("a caller of a kind that is none: %v", err)
+	}
+	eve = Principal{ID: "eve", For: "ann"}
+	if _, err := stream.Next(ctx); code(err) != CodeNotSupported {
+		t.Errorf("a caller that acts for somebody: %v", err)
 	}
 }
 
@@ -229,9 +309,6 @@ func TestChanges_TheEventsAndThePlace(t *testing.T) {
 	// A stream is heard as oneself.
 	if _, err := s.Subscribe(ctx, ChangeFilter{}, As(Principal{ID: "ola", For: "ann"})); code(err) != CodeNotSupported {
 		t.Errorf("a stream for somebody else: %v", err)
-	}
-	if err := all.As(Principal{ID: "ola", For: "ann"}); code(err) != CodeNotSupported {
-		t.Errorf("a stream handed to a caller that acts for somebody: %v", err)
 	}
 }
 
@@ -343,5 +420,234 @@ func TestChanges_ACommitPaysNothing(t *testing.T) {
 	}
 	if watched := testing.AllocsPerRun(200, set); watched > alone {
 		t.Errorf("a commit allocates %v times with eight streams open, and %v with none", watched, alone)
+	}
+}
+
+// The log is read from the database once for all the streams that keep
+// up, and so is the version of a document the read rule is asked over
+// (ADR-0058, item 9): what the streams read after a commit does not
+// grow with their number. A hundred streams that each read the log for
+// themselves slowed the commits a hundred times.
+func TestChanges_TheLogIsReadOnceForAllStreams(t *testing.T) {
+	s, _ := openStore(t, Options{})
+	ctx := context.Background()
+	if _, err := s.DefineClass(ctx, []byte(expense), asSetup); err != nil {
+		t.Fatal(err)
+	}
+	// Fifty streams, of callers who may read an expense, who may not,
+	// and of an administrator, who needs no version to be read.
+	var streams []*Changes
+	var hears []bool
+	for i := 0; i < 50; i++ {
+		as, may := asFin, true
+		switch i % 3 {
+		case 1:
+			as, may = asEve, false
+		case 2:
+			as = asRoot
+		}
+		streams = append(streams, listening(t, s, ChangeFilter{}, as))
+		hears = append(hears, may)
+	}
+	told := func(what string) {
+		t.Helper()
+		for i, c := range streams {
+			want := ""
+			if hears[i] {
+				want = what
+			}
+			if got := strings.Join(heard(t, c), "; "); got != want {
+				t.Errorf("stream %d hears %q, want %q", i, got, want)
+			}
+		}
+	}
+	// Before anything is written every stream has asked the log once
+	// and found nothing. They are asked again, and nobody reads: no
+	// commit ended since.
+	told("")
+	reads, loads := s.tail.reads.Load(), s.tail.loads.Load()
+	told("")
+	if got := s.tail.reads.Load() - reads; got != 0 {
+		t.Errorf("fifty streams read the log from the database %d times with no commit since", got)
+	}
+	if _, err := s.Create(ctx, "Expense", Values{"amount": 7}, asOla, WithID("e-1")); err != nil {
+		t.Fatal(err)
+	}
+	told("created e-1")
+	if _, err := s.Set(ctx, "Expense", "e-1", Values{"amount": 8}, asOla); err != nil {
+		t.Fatal(err)
+	}
+	told("set e-1")
+	// Each commit was read once, and the version of the document the
+	// read rule is asked over was read once for each event.
+	if got := s.tail.reads.Load() - reads; got != 2 {
+		t.Errorf("fifty streams read the log from the database %d times after two commits, want 2", got)
+	}
+	if got := s.tail.loads.Load() - loads; got != 2 {
+		t.Errorf("fifty streams read %d versions of the document for two events, want 2", got)
+	}
+	// An event of the tail is every stream's: what a caller is given is
+	// its own, and changing it changes nothing for the others.
+	if _, err := s.Set(ctx, "Expense", "e-1", Values{"amount": 9}, asOla); err != nil {
+		t.Fatal(err)
+	}
+	first, err := streams[0].Next(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	first.DocID, first.Kind = "changed", "changed"
+	if got := strings.Join(heard(t, streams[3]), "; "); got != "set e-1" {
+		t.Errorf("after a caller changed the event it was given, another hears %q", got)
+	}
+}
+
+// A stream that is behind what the tail holds reads the log itself and
+// loses nothing; one that is ahead of it moves the tail; and the tail
+// lets go of its oldest events (ADR-0058, items 1 and 5).
+func TestChanges_AStreamBehindTheOthers(t *testing.T) {
+	s, _ := openStore(t, Options{})
+	ctx := context.Background()
+	if _, err := s.DefineClass(ctx, []byte(openMemo), asSetup); err != nil {
+		t.Fatal(err)
+	}
+	memo := func(i int) {
+		t.Helper()
+		if _, err := s.Create(ctx, "Memo", Values{"text": "x"}, asOla, WithID("m-"+strconv.Itoa(i))); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// inOrder holds what a stream was told to the memos from to to.
+	inOrder := func(who string, got []string, from, to int) {
+		t.Helper()
+		if len(got) != to-from+1 {
+			t.Fatalf("%s was told of %d memos, want %d to %d", who, len(got), from, to)
+		}
+		for i, line := range got {
+			if line != "created m-"+strconv.Itoa(from+i) {
+				t.Fatalf("%s was told %q at place %d, want m-%d", who, line, i, from+i)
+			}
+		}
+	}
+	memo(0)
+	first, err := s.Events(ctx, "Memo", "m-0", asOla)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Ola keeps up while more events are written than the tail holds.
+	ola := listening(t, s, ChangeFilter{}, asOla)
+	const many = 2*tailSize + 300
+	var olaHeard []string
+	for i := 1; i <= many; i++ {
+		memo(i)
+		if i%100 == 0 {
+			olaHeard = append(olaHeard, heard(t, ola)...)
+		}
+	}
+	olaHeard = append(olaHeard, heard(t, ola)...)
+	inOrder("Ola", olaHeard, 1, many)
+	if held := len(s.tail.held); held > tailSize {
+		t.Errorf("the tail holds %d events, more than its %d", held, tailSize)
+	}
+	// Ann comes back after the first event: she is far behind the tail,
+	// reads the log herself, and is told every event, each once.
+	ann := listening(t, s, ChangeFilter{After: first[0].ID}, asAnn)
+	inOrder("Ann", heard(t, ann), 1, many)
+	// Both are told of what follows.
+	memo(many + 1)
+	inOrder("Ola", heard(t, ola), many+1, many+1)
+	inOrder("Ann", heard(t, ann), many+1, many+1)
+
+	// Nobody reads while ten memos are written, and Celina begins now:
+	// she is ahead of the tail, which moves to where she is. Ola, left
+	// behind it, still hears of the ten.
+	for i := many + 2; i <= many+11; i++ {
+		memo(i)
+	}
+	celina := listening(t, s, ChangeFilter{}, asCelina)
+	if got := heard(t, celina); len(got) != 0 {
+		t.Errorf("a stream that begins now is told of what passed: %q", got)
+	}
+	memo(many + 12)
+	inOrder("Celina", heard(t, celina), many+12, many+12)
+	inOrder("Ola", heard(t, ola), many+2, many+12)
+	inOrder("Ann", heard(t, ann), many+2, many+12)
+
+	// With the last stream closed the tail holds nothing.
+	ola.Close()
+	ann.Close()
+	celina.Close()
+	if s.tail.set || len(s.tail.held) != 0 {
+		t.Errorf("with no stream open the tail holds %d events", len(s.tail.held))
+	}
+}
+
+// Many streams read while a writer writes: each is told of every event
+// it may read of, once and in order, whoever read the log for it.
+func TestChanges_ManyStreamsAtOnce(t *testing.T) {
+	s, _ := openStore(t, Options{})
+	ctx := context.Background()
+	for _, def := range []string{expense, openMemo} {
+		if _, err := s.DefineClass(ctx, []byte(def), asSetup); err != nil {
+			t.Fatal(err)
+		}
+	}
+	const commits, readers = 300, 24
+	// Every third commit is a memo, which everybody reads; the others
+	// are expenses, which finance reads and Eve does not.
+	wants := func(finance bool) []string {
+		var out []string
+		for i := 0; i < commits; i++ {
+			switch {
+			case i%3 == 0:
+				out = append(out, "m-"+strconv.Itoa(i))
+			case finance:
+				out = append(out, "e-"+strconv.Itoa(i))
+			}
+		}
+		return out
+	}
+	var wg sync.WaitGroup
+	failed := make(chan error, readers)
+	for r := 0; r < readers; r++ {
+		finance := r%2 == 0
+		as := asEve
+		if finance {
+			as = asFin
+		}
+		c := listening(t, s, ChangeFilter{}, as)
+		wg.Add(1)
+		go func(r int) {
+			defer wg.Done()
+			want := wants(finance)
+			within, cancel := context.WithTimeout(ctx, 60*time.Second)
+			defer cancel()
+			for i, id := range want {
+				ev, err := c.Next(within)
+				if err != nil {
+					failed <- fmt.Errorf("stream %d, after %d of %d events: %v", r, i, len(want), err)
+					return
+				}
+				if ev.DocID != id {
+					failed <- fmt.Errorf("stream %d was told of %s at place %d, want %s", r, ev.DocID, i, id)
+					return
+				}
+			}
+		}(r)
+	}
+	for i := 0; i < commits; i++ {
+		var err error
+		if i%3 == 0 {
+			_, err = s.Create(ctx, "Memo", Values{"text": "x"}, asOla, WithID("m-"+strconv.Itoa(i)))
+		} else {
+			_, err = s.Create(ctx, "Expense", Values{"amount": i}, asOla, WithID("e-"+strconv.Itoa(i)))
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	wg.Wait()
+	close(failed)
+	for err := range failed {
+		t.Error(err)
 	}
 }

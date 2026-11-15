@@ -159,7 +159,11 @@ and the browser VM run them with their phases.
   since the script began, or since that caller's last `heard` step
   (ADR-0058): the kind and the label of the document of each event, in
   the order of the commits, with the name of a transition, as
-  `transition c1 file`. A step whose `do` is `heard` asks it.
+  `transition c1 file`. A step whose `do` is `heard` asks it. The
+  stream is opened through the door the suite runs through: by the Go
+  call, with the object of the command `subscribe` as the command set
+  reads it, and as `POST /v1/subscribe` to a server, where each entry
+  is held to the form of the wire.
 - `due.json` is the suite of the list of what is due (ADR-0047, item
   8): which documents a commit would move at the clock and at a moment,
   that the list moves nothing and a refresh does, the order of two

@@ -338,6 +338,24 @@ The third part built the counts of item 9.
 - **Counting a request allocates nothing**, which a test holds: it
   stands on the way of every command.
 
+The fourth part came with the stream of changes on the server
+(ADR-0058, which says what was settled for the stream itself).
+
+- **`limits.streams` now limits.** The server holds so many streams
+  of changes open, 256 unless the settings say otherwise, and refuses
+  one beyond them with `busy`, at once.
+- **Stopping (item 10).** Told to stop, the server ends its streams
+  first, each with the last entry `closed`, and then lets the commands
+  that run end. A stream does not end by itself, and a server that
+  waited for its streams would wait its ten seconds every time.
+- **The line of a stream** is written when the stream ended. `ms` is
+  the time until it was open; `open_s` and `events` say for how long
+  it stayed open and how many events it told; `code` is the code the
+  server ended it with, and is left out when the caller closed it.
+- **The count of open streams** is `fadodb_streams`. A stream is
+  counted among the requests when it ended, with the time until it
+  was open.
+
 ## The owner's rulings
 
 All of 2026-11-14. The owner read the three questions, each with a

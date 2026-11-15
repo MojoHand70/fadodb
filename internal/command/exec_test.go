@@ -565,6 +565,71 @@ func TestWhatIsNotACommandIsRefused(t *testing.T) {
 	}
 }
 
+// The stream of changes is a command whose answer is no object
+// (ADR-0058, item 2): Exec says so, and the door that answers it with a
+// stream reads its object as every object is read.
+func TestTheStreamIsACommandWithItsObject(t *testing.T) {
+	s := open(t)
+	define(t, s)
+	used["subscribe"]++
+	e := refused(t, s, bob, "subscribe", `{"classes": ["Invoice"]}`)
+	if e.Code != store.CodeNotSupported || !strings.Contains(e.Hint, "POST /v1/subscribe") || !strings.Contains(e.Hint, "Subscribe") {
+		t.Errorf("subscribe sent to Exec is refused with %+v", e)
+	}
+	cmd, _ := Lookup("subscribe")
+	if !cmd.Stream || cmd.Call != "Subscribe" || len(cmd.Answer) != 0 {
+		t.Errorf("the row of subscribe: %+v", cmd)
+	}
+	for _, c := range Commands() {
+		if c.Stream != (c.Name == "subscribe") {
+			t.Errorf("%s: its answer is a stream: %v", c.Name, c.Stream)
+		}
+	}
+
+	// The object: the four members, each left out or given.
+	f, p, err := Subscription(bob, []byte(`{"classes": ["Invoice", "Memo"], "kinds": ["transition"], "to_states": ["approved"], "after": "01KA2F8Q7ZJ4M0X3T5V9B1C6DE"}`))
+	want := store.ChangeFilter{Classes: []string{"Invoice", "Memo"}, Kinds: []string{"transition"}, ToStates: []string{"approved"}, After: "01KA2F8Q7ZJ4M0X3T5V9B1C6DE"}
+	if err != nil || !reflect.DeepEqual(f, want) || !reflect.DeepEqual(p, bob) {
+		t.Errorf("the object of subscribe read as %+v for %+v: %v", f, p, err)
+	}
+	if f, _, err := Subscription(bob, []byte(`{}`)); err != nil || !reflect.DeepEqual(f, store.ChangeFilter{}) {
+		t.Errorf("an empty object read as %+v: %v", f, err)
+	}
+	if f, _, err := Subscription(bob, []byte(`{"classes": null, "after": null}`)); err != nil || !reflect.DeepEqual(f, store.ChangeFilter{}) {
+		t.Errorf("members that are null read as %+v: %v", f, err)
+	}
+	// For whom the caller acts is passed on, and the engine refuses it
+	// in its own words.
+	_, p, err = Subscription(bob, []byte(`{"for": "ann"}`))
+	if err != nil || p.For != "ann" || p.ID != bob.ID {
+		t.Errorf("an object with for read for %+v: %v", p, err)
+	}
+	if _, err := s.Subscribe(context.Background(), store.ChangeFilter{}, store.As(p)); Code(err) != store.CodeNotSupported {
+		t.Errorf("a stream for somebody else: %v", err)
+	}
+	// What is not the object of subscribe.
+	for _, c := range []struct{ object, path, says string }{
+		{`{"class": "Invoice"}`, "/class", `takes no "class"`},
+		{`{"classes": "Invoice"}`, "/classes", "list of texts"},
+		{`{"kinds": ["set", 3]}`, "/kinds/1", "list of texts"},
+		{`{"after": 7}`, "/after", "after is a text"},
+		{`{"at": "2026-11-13"}`, "/at", `takes no "at"`},
+		{`{"after": "a", "after": "b"}`, "/after", "given twice"},
+		{`["Invoice"]`, "", "not an object"},
+		{``, "", "not JSON"},
+	} {
+		_, _, err := Subscription(bob, []byte(c.object))
+		e, _ := err.(*store.Error)
+		if e == nil || e.Code != CodeBadJSON || e.Path != c.path || !strings.Contains(e.Message, c.says) {
+			t.Errorf("subscribe %s: refused with %+v, want %s at %q saying %q", c.object, err, CodeBadJSON, c.path, c.says)
+		}
+	}
+	_, _, err = Subscription(bob, []byte(`{"states": ["approved"]}`))
+	if e, _ := err.(*store.Error); e == nil || e.Hint != "subscribe takes classes, kinds, to_states, after" {
+		t.Errorf("the hint of an unknown member is %v", err)
+	}
+}
+
 func TestWhoCallsIsNeverInTheCommand(t *testing.T) {
 	s := open(t)
 	define(t, s)

@@ -789,8 +789,9 @@ key order, to the function the Go VM adds with.
   person gives and withdraws one, a database administrator gives one
   when the person cannot, and a content administrator acts past no
   rule of this class. A host program with its own substitutions says
-  `HostAnswersFor` at `Open` and is trusted as before. The change stream comes
-  with the server in Phase 6. A call without a principal is nobody.
+  `HostAnswersFor` at `Open` and is trusted as before. The stream of
+  changes applies the read rule to every event (ADR-0058). A call
+  without a principal is nobody.
 
 ### Querying
 
@@ -1060,7 +1061,7 @@ doc, err  = db.Refresh(ctx, "Invoice", doc.ID, []string{"backlog"}, fado.As(p))
 preview, err := db.Preview(ctx, "Invoice", doc.ID, fado.Values{"discount": "0.20"}, "approve", fado.As(p))
 history, err := db.History(ctx, "Invoice", doc.ID, fado.As(p))
 rows, err := db.Query(ctx, `SELECT id, total FROM Invoice WHERE state = 'approved'`, fado.As(p))
-sub  := db.Subscribe(ctx, fado.Filter{Class: "Invoice"}, fado.As(p))
+changes, err := db.Subscribe(ctx, fado.ChangeFilter{Classes: []string{"Invoice"}}, fado.As(p))
 ```
 
 The principal is the embedder's (ADR-0027); every mutating call takes an
@@ -1115,10 +1116,8 @@ engine's table.
 > operator's, list the hosts its actions may call and its limits, and
 > the secrets of its connections are read from a directory or the
 > environment. It answers its counts to an administrator at
-> `GET /v1/metrics`. The stream of changes is built as the Go call
-> `Subscribe`; its address on the server, `POST /v1/subscribe`, is
-> decided, by the records the owner accepted on 2026-11-14, and not
-> built.
+> `GET /v1/metrics`. The stream of changes is built: the Go call
+> `Subscribe`, and its address on the server, `POST /v1/subscribe`.
 
 | Address | Purpose | Record |
 |---|---|---|

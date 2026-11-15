@@ -35,7 +35,7 @@ func TestTheCountsOfTheServer(t *testing.T) {
 
 	var out bytes.Buffer
 	queue := fado.OutboxCounts{Due: 2, Waiting: 5, Dead: 1, OldestDue: started.Add(30 * time.Second)}
-	m.write(&out, queue, 4096, 1024, started.Add(90*time.Second))
+	m.write(&out, 3, queue, 4096, 1024, started.Add(90*time.Second))
 	got := out.String()
 	for _, want := range []string{
 		"# HELP fadodb_requests_total Requests answered, by the command they were sent to and the status of the reply.",
@@ -60,6 +60,7 @@ func TestTheCountsOfTheServer(t *testing.T) {
 		`fadodb_request_seconds_bucket{le="30"} 7` + "\n",
 		`fadodb_request_seconds_bucket{le="+Inf"} 8` + "\n",
 		"fadodb_request_seconds_count 8\n",
+		"fadodb_streams 3\n",
 		`fadodb_actions{state="due"} 2` + "\n",
 		`fadodb_actions{state="waiting"} 5` + "\n",
 		`fadodb_actions{state="dead"} 1` + "\n",
@@ -108,7 +109,7 @@ func TestTheCountsOfTheServer(t *testing.T) {
 
 	// Nothing is due: no action has been due for any time.
 	out.Reset()
-	m.write(&out, fado.OutboxCounts{}, 0, 0, started)
+	m.write(&out, 0, fado.OutboxCounts{}, 0, 0, started)
 	if !strings.Contains(out.String(), "fadodb_actions_oldest_due_seconds 0\n") {
 		t.Errorf("with nothing due:\n%s", out.String())
 	}

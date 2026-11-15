@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/MojoHand70/fadodb/internal/command"
@@ -24,6 +25,8 @@ type Database interface {
 	PutBlob(ctx context.Context, name, mediaType string, r io.Reader, opts ...store.Option) (store.Values, error)
 	OpenFile(ctx context.Context, class, id, hash string, opts ...store.Option) (io.ReadCloser, *store.FileInfo, error)
 	OpenBlob(ctx context.Context, hash string, opts ...store.Option) (io.ReadCloser, int64, error)
+	// Subscribe opens a stream of changes for the caller p (ADR-0058).
+	Subscribe(ctx context.Context, p store.Principal, f store.ChangeFilter) (Stream, error)
 }
 
 // Who says who sends a request (ADR-0027; ADR-0057, item 9): the
@@ -67,6 +70,11 @@ type Limits struct {
 	// Commands is how many commands run at once. A request beyond them
 	// waits one second for one to end and is then refused with busy.
 	Commands int
+	// Streams is how many streams of changes are open at once. One
+	// beyond them is refused with busy, at once: a stream stays open
+	// for as long as its caller listens, so waiting for one to end
+	// would be waiting for nothing.
+	Streams int
 }
 
 // The limits of a door that was given none.
@@ -74,6 +82,7 @@ const (
 	DefaultRequestBytes = 16 << 20
 	DefaultCommandTime  = 30 * time.Second
 	DefaultCommands     = 64
+	DefaultStreams      = 256
 )
 
 // busyWait is how long a request waits for a command to end before it
@@ -111,6 +120,14 @@ type Request struct {
 	// Err is set when the command failed in the engine, with code
 	// internal: the words the caller was not given.
 	Err error
+	// Stream says the request opened a stream of changes, and is told
+	// now that the stream ended. Lasted is how long it stayed open and
+	// Entries how many events its caller was told. Took is then the
+	// time until the stream was open, the status 200, and Code the code
+	// the server ended the stream with, empty when the caller closed it.
+	Stream  bool
+	Lasted  time.Duration
+	Entries int
 }
 
 // Door is the HTTP door of one database. It is an http.Handler, safe for
@@ -124,6 +141,16 @@ type Door struct {
 	// a request waits for one.
 	slots chan struct{}
 	wait  time.Duration
+	// alive is how long a stream of changes says nothing before it shows
+	// that it is alive, and take how long its caller is given to take
+	// what it was sent.
+	alive time.Duration
+	take  time.Duration
+	// streams are the streams of changes that are open, each with how
+	// it is ended; ended says the door opens no more of them.
+	mu      sync.Mutex
+	streams map[*subscription]struct{}
+	ended   bool
 }
 
 // New makes the door of a database.
@@ -135,7 +162,7 @@ func New(db Database, o Options) (*Door, error) {
 		return nil, errors.New("server: a door needs Options.Who, the function that says who sends a request")
 	}
 	l := o.Limits
-	if l.RequestBytes < 0 || l.CommandTime < 0 || l.Commands < 0 {
+	if l.RequestBytes < 0 || l.CommandTime < 0 || l.Commands < 0 || l.Streams < 0 {
 		return nil, errors.New("server: a limit of a door is negative; leave it zero for the default")
 	}
 	if l.RequestBytes == 0 {
@@ -147,13 +174,19 @@ func New(db Database, o Options) (*Door, error) {
 	if l.Commands == 0 {
 		l.Commands = DefaultCommands
 	}
+	if l.Streams == 0 {
+		l.Streams = DefaultStreams
+	}
 	return &Door{
-		db:     db,
-		who:    o.Who,
-		limits: l,
-		report: o.Report,
-		slots:  make(chan struct{}, l.Commands),
-		wait:   busyWait,
+		db:      db,
+		who:     o.Who,
+		limits:  l,
+		report:  o.Report,
+		slots:   make(chan struct{}, l.Commands),
+		wait:    busyWait,
+		alive:   aliveEvery,
+		take:    takeWithin,
+		streams: map[*subscription]struct{}{},
 	}, nil
 }
 
@@ -180,7 +213,10 @@ func (d *Door) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		if d.report != nil {
 			told.Status = out.status
-			told.Took = time.Since(told.At)
+			if told.Took == 0 {
+				// A stream said how long it took to open.
+				told.Took = time.Since(told.At)
+			}
 			d.report(told)
 		}
 	}()
@@ -205,17 +241,22 @@ func (d *Door) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		d.file(out, r, &told)
 	case addressBlob:
 		d.blob(out, r, &told)
+	case addressSubscribe:
+		// The one command whose answer is a stream (ADR-0058).
+		d.subscribe(out, r, &told)
 	default:
 		d.command(out, r, &told, name)
 	}
 }
 
-// command runs the command a request was sent to.
-func (d *Door) command(out *reply, r *http.Request, told *Request, name string) {
+// asCommand holds a request to what every command is sent as: a POST
+// with no member in its address, from a sender the door can tell, whose
+// body is said to be JSON. It answers who sends it, or refuses it.
+func (d *Door) asCommand(out *reply, r *http.Request, told *Request) (store.Principal, bool) {
 	if r.Method != http.MethodPost {
 		d.notSentWith(out, told, http.MethodPost, "a command is sent with POST, and this request is a "+r.Method,
 			"send POST "+r.URL.Path+" with the object of the command as the body; a command that reads is a POST too")
-		return
+		return store.Principal{}, false
 	}
 	if r.URL.RawQuery != "" {
 		// A member in the address would be passed over, and the caller
@@ -226,11 +267,11 @@ func (d *Door) command(out *reply, r *http.Request, told *Request, name string) 
 			Message: "a command takes its members in its object, and this request has some in its address: ?" + r.URL.RawQuery,
 			Hint:    "send POST " + r.URL.Path + " and put the members in the JSON object of the body",
 		})
-		return
+		return store.Principal{}, false
 	}
 	p, ok := d.sender(out, r, told)
 	if !ok {
-		return
+		return p, false
 	}
 	if !isJSON(r.Header.Get("Content-Type")) {
 		told.Code = command.CodeBadJSON
@@ -239,6 +280,15 @@ func (d *Door) command(out *reply, r *http.Request, told *Request, name string) 
 			Message: "the body of a command is JSON, and this request does not say its body is",
 			Hint:    "send the header Content-Type: application/json",
 		})
+		return p, false
+	}
+	return p, true
+}
+
+// command runs the command a request was sent to.
+func (d *Door) command(out *reply, r *http.Request, told *Request, name string) {
+	p, ok := d.asCommand(out, r, told)
+	if !ok {
 		return
 	}
 	// A command holds its slot from before its body is read, so that the

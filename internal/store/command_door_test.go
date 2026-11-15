@@ -1,6 +1,7 @@
 package store_test
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/base64"
@@ -11,6 +12,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"time"
 
 	"github.com/MojoHand70/fadodb/internal/command"
 	"github.com/MojoHand70/fadodb/internal/model"
@@ -25,6 +27,7 @@ import (
 func init() {
 	store.SetExecCommand(command.Exec)
 	store.SetListenHTTP(listen)
+	store.SetSubscribe(command.Subscription, hear)
 	store.SetHandleHTTP(func(s *store.Store, as store.Principal) http.Handler {
 		door, err := server.New(database{s}, server.Options{
 			Who: func(*http.Request) (store.Principal, error) { return as, nil },
@@ -55,14 +58,22 @@ func (d database) OpenBlob(ctx context.Context, hash string, opts ...store.Optio
 	return d.s.OpenBlob(ctx, hash, opts...)
 }
 
+func (d database) Subscribe(ctx context.Context, p store.Principal, f store.ChangeFilter) (server.Stream, error) {
+	changes, err := d.s.Subscribe(ctx, f, store.As(p))
+	if err != nil {
+		return nil, err
+	}
+	return changes, nil
+}
+
 // sentAs is the header in which a step of a suite says who sends it.
 // The door is given a function that believes it, which no door outside
 // a test is.
 const sentAs = "X-Sent-As"
 
-// listen opens the HTTP door of a store on this machine and answers how
-// a command is sent to it.
-func listen(s *store.Store) (func(ctx context.Context, p store.Principal, name string, object []byte) ([]byte, error), func()) {
+// serve opens the HTTP door of a store on this machine. Its Who
+// believes the header a step says who it is in.
+func serve(s *store.Store) *httptest.Server {
 	door, err := server.New(database{s}, server.Options{
 		Who: func(r *http.Request) (store.Principal, error) {
 			var p store.Principal
@@ -76,7 +87,87 @@ func listen(s *store.Store) (func(ctx context.Context, p store.Principal, name s
 	if err != nil {
 		panic(err)
 	}
-	srv := httptest.NewServer(door)
+	return httptest.NewServer(door)
+}
+
+// heardWithin is how long a stream of a suite may stay open: a suite
+// that waits for an entry that never comes fails, and does not hang.
+const heardWithin = 2 * time.Minute
+
+// hear opens a stream of changes at the HTTP door of a store, as the
+// principal, and answers how its entries are read: next answers the
+// next event, having held the entry to the form of ADR-0058, item 3.
+func hear(s *store.Store, p store.Principal, object []byte) (func() (*store.Event, error), func(), error) {
+	srv := serve(s)
+	ctx, cancel := context.WithTimeout(context.Background(), heardWithin)
+	stop := func() {
+		cancel()
+		srv.CloseClientConnections()
+		srv.Close()
+	}
+	who, err := json.Marshal(p)
+	if err != nil {
+		stop()
+		return nil, nil, err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, srv.URL+"/v1/subscribe", bytes.NewReader(object))
+	if err != nil {
+		stop()
+		return nil, nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set(sentAs, base64.StdEncoding.EncodeToString(who))
+	resp, err := srv.Client().Do(req)
+	if err != nil {
+		stop()
+		return nil, nil, err
+	}
+	if resp.StatusCode != http.StatusOK || resp.Header.Get("Content-Type") != "text/event-stream" {
+		body, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		stop()
+		return nil, nil, fmt.Errorf("the stream was answered with the status %d and %q: %s", resp.StatusCode, resp.Header.Get("Content-Type"), body)
+	}
+	in := bufio.NewReader(resp.Body)
+	next := func() (*store.Event, error) {
+		for {
+			var lines []string
+			for {
+				line, err := in.ReadString('\n')
+				if err != nil {
+					return nil, fmt.Errorf("the stream broke off: %w", err)
+				}
+				if line == "\n" {
+					break
+				}
+				lines = append(lines, strings.TrimSuffix(line, "\n"))
+			}
+			if len(lines) == 1 && strings.HasPrefix(lines[0], ":") {
+				// A comment: the stream is open, or alive.
+				continue
+			}
+			if len(lines) != 3 || !strings.HasPrefix(lines[0], "id: ") || lines[1] != "event: change" || !strings.HasPrefix(lines[2], "data: ") {
+				return nil, fmt.Errorf("an entry of the stream is not an id, the kind change and one line of data: %q", lines)
+			}
+			var ev store.Event
+			read := json.NewDecoder(strings.NewReader(strings.TrimPrefix(lines[2], "data: ")))
+			read.DisallowUnknownFields()
+			if err := read.Decode(&ev); err != nil {
+				return nil, fmt.Errorf("the data of an entry is not an event: %v: %s", err, lines[2])
+			}
+			if ev.ID != strings.TrimPrefix(lines[0], "id: ") {
+				return nil, fmt.Errorf("an entry has the id %q and carries the event %q", lines[0], ev.ID)
+			}
+			return &ev, nil
+		}
+	}
+	return next, func() { resp.Body.Close(); stop() }, nil
+}
+
+// listen opens the HTTP door of a store on this machine and answers how
+// a command is sent to it.
+func listen(s *store.Store) (func(ctx context.Context, p store.Principal, name string, object []byte) ([]byte, error), func()) {
+	srv := serve(s)
 	client := srv.Client()
 	send := func(ctx context.Context, p store.Principal, name string, object []byte) ([]byte, error) {
 		who, err := json.Marshal(p)

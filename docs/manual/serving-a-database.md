@@ -7,8 +7,7 @@ a key. This chapter is the reference for the server and for the three
 commands that come before it. A test plays what stands here on each
 push.
 
-The server is being built in parts. What is here works; what is not
-is listed at the end.
+What the server does not do yet is listed at the end.
 
 ## From nothing to a server
 
@@ -61,6 +60,12 @@ Content-Type: application/json
 [the files](commands.md#files-over-http). A request without a key the
 database knows is refused with `unauthenticated`, and nothing of it is
 read.
+
+One command is answered with a reply that stays open: `subscribe`, the
+[stream of changes](the-stream-of-changes.md). A caller that waits for
+something to happen, such as an agent that works the invoices that
+enter review, asks once and is told of every event it may read of, as
+each is written.
 
 ## Where it listens
 
@@ -116,7 +121,7 @@ fadodb serve acme.fado --settings settings.json --secrets-dir /run/secrets/fadod
 | `limits.request_bytes` | the largest request, in bytes | 16777216, which is 16 MiB |
 | `limits.command_seconds` | how long one command may run, in seconds; it may have a fraction | 30 |
 | `limits.commands` | how many commands run at once | 64 |
-| `limits.streams` | how many streams of changes are open at once. The server does not serve the stream yet, so it is read and limits nothing today | 256 |
+| `limits.streams` | how many [streams of changes](the-stream-of-changes.md) are open at once | 256 |
 
 - **The settings are the operator's.** Where the server listens, what
   it may call and how much it takes on are decided by whoever runs the
@@ -377,6 +382,10 @@ func serve(ctx context.Context, path string, ln net.Listener, w io.Writer) error
 		return err
 	}
 	srv := &http.Server{Handler: door, ReadHeaderTimeout: 10 * time.Second}
+	// A stream of changes stays open until its caller closes it, so the
+	// door ends the streams when the server is told to stop, each with
+	// a last entry that says so.
+	srv.RegisterOnShutdown(door.EndStreams)
 	ended := make(chan error, 1)
 	go func() { ended <- srv.Serve(ln) }()
 	select {
@@ -384,8 +393,8 @@ func serve(ctx context.Context, path string, ln net.Listener, w io.Writer) error
 		return err
 	case <-ctx.Done():
 	}
-	// Told to stop: the commands that run end first, then the database
-	// is closed.
+	// Told to stop: the streams are ended and the commands that run end
+	// first, then the database is closed.
 	within, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	if err := srv.Shutdown(within); err != nil && !errors.Is(err, context.DeadlineExceeded) {
@@ -494,6 +503,7 @@ is no administrator.
 | `fadodb_requests_total` | counter | Requests answered, by the command they were sent to and the status of the reply. A name that is no command is counted as other. |
 | `fadodb_command_seconds` | summary | The time the requests of a command took, added up, and how many they were. |
 | `fadodb_request_seconds` | histogram | How long requests took, all commands together. |
+| `fadodb_streams` | gauge | The streams of changes that are open. |
 | `fadodb_actions` | gauge | The queued actions of the database that are not done: due and not yet run, waiting for their moment, and dead. |
 | `fadodb_actions_oldest_due_seconds` | gauge | How long the action that has been due longest has been due; 0 when none is due. |
 | `fadodb_database_bytes` | gauge | The size of the database file. |
@@ -516,6 +526,9 @@ fadodb_actions_oldest_due_seconds 60
 
 - **Every request is counted when it was answered**: a command, a
   file, and a request for the counts themselves, under `metrics`.
+- **A stream of changes is one request**, counted under `subscribe`
+  when it ended. Its time is the time until it was open, and not how
+  long it stayed open. How many are open now is `fadodb_streams`.
 - **A name that is no command is counted as `other`.** A caller cannot
   make the page grow by sending names.
 - **Only what happened has a line.** A command nobody sent is not on
@@ -548,23 +561,24 @@ scrape_configs:
 
 ## Stopping
 
-Told to stop, by an interrupt, the server takes no new request, lets
-the commands that are running end, for up to ten seconds, closes the
-database and gives it back. What a commit had queued and has not run
-stays in the database and runs when it is served again.
+Told to stop, by an interrupt, the server takes no new request, ends
+its streams of changes, each with a last entry that says the server
+stops, lets the commands that are running end, for up to ten seconds,
+closes the database and gives it back. What a commit had queued and
+has not run stays in the database and runs when it is served again. A
+caller of a stream opens it again when the server answers, with the
+last event it handled, and has missed nothing.
 
 ## What it takes on
 
 A request of at most 16 MiB, a command that runs at most 30 seconds,
-and 64 commands at once, unless [the settings](#the-settings) say
-otherwise; [the commands over HTTP](commands.md#over-http) says what a
-caller is answered beyond them.
+64 commands at once and 256 streams of changes open at once, unless
+[the settings](#the-settings) say otherwise;
+[the commands over HTTP](commands.md#over-http) says what a caller is
+answered beyond them.
 
 ## Not here yet
 
-- **The stream of changes over HTTP**, `POST /v1/subscribe`, and with
-  it the count of the streams that are open. A program of your own
-  has the stream already, as the Go call `Subscribe`.
 - **The command-line tool as a caller** of a server, with a key.
 - **Changing the settings without a restart.**
 - **Limits for each user**, such as commands a minute. The limits are

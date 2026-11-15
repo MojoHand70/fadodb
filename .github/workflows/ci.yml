@@ -80,9 +80,9 @@ jobs:
           check-latest: true
       - id: diff
         name: Does the pull request change what the benchmark gate measures?
-        # The gate takes half an hour, so it runs only when a file that
-        # goes into the measured programs changed; the script says which
-        # file that was, or that there was none.
+        # The gate runs only when a file that goes into the measured
+        # programs changed; the script says which file that was, or that
+        # there was none.
         run: |
           measured=$(scripts/benchgate.sh --needed "origin/${{ github.base_ref }}")
           echo "measured=$measured" >> "$GITHUB_OUTPUT"
@@ -102,4 +102,9 @@ jobs:
           check-latest: true
       - run: go install golang.org/x/perf/cmd/benchstat@latest
       - name: Compare benchmarks against the base branch
-        run: scripts/benchgate.sh origin/${{ github.base_ref }}
+        # The short form (ADR-0012, since 2026-11-15): allocations and
+        # bytes as ever, time refused only when a benchmark is more than
+        # half slower. The full form, five placements and 5% on time, is
+        # run on the machine of whoever changes a hot path, before the
+        # push.
+        run: scripts/benchgate.sh --quick origin/${{ github.base_ref }}

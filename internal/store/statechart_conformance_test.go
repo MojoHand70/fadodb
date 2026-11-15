@@ -350,6 +350,7 @@ func throughCommands(_ testing.TB, s *Store) door {
 		exec: func(ctx context.Context, p Principal, name string, object []byte) ([]byte, error) {
 			return execCommand(ctx, s, p, name, object)
 		},
+		s: s,
 	}
 }
 
@@ -359,7 +360,7 @@ func throughHTTP(t testing.TB, s *Store) door {
 	}
 	send, stop := listenHTTP(s)
 	t.Cleanup(stop)
-	return commandDoor{label: "the HTTP door", exec: send}
+	return commandDoor{label: "the HTTP door", exec: send, s: s, overHTTP: true}
 }
 
 func runScriptSuites(t *testing.T, dir string, through func(testing.TB, *Store) door) {
@@ -501,24 +502,24 @@ func runStatechartSuite(t *testing.T, suite *statechartSuite, through func(testi
 	last := ""
 	// The streams of changes of the callers the script asks about, opened
 	// before anything happens, so that each is told from the beginning.
-	streams := map[string]*Changes{}
+	streams := map[string]hearing{}
 	for _, step := range suite.Script {
 		if _, open := streams[step.As]; step.Do != "heard" || open {
 			continue
 		}
-		var opts []Option
+		var listener stepCall
 		if step.As != "" {
 			p, ok := suite.Principals[step.As]
 			if !ok {
 				t.Fatalf("%s: unknown principal %s", step.Name, step.As)
 			}
-			opts = append(opts, As(Principal{ID: p.ID, Groups: p.Groups, System: p.System, Kind: p.Kind}))
+			listener.as = &Principal{ID: p.ID, Groups: p.Groups, System: p.System, Kind: p.Kind}
 		}
-		stream, err := s.Subscribe(ctx, ChangeFilter{}, opts...)
+		stream, err := d.Listen(ctx, listener)
 		if err != nil {
 			t.Fatalf("the stream of %q: %v", step.As, err)
 		}
-		t.Cleanup(stream.Close)
+		t.Cleanup(stream.close)
 		streams[step.As] = stream
 	}
 	for i, step := range suite.Script {
@@ -579,22 +580,19 @@ func runStatechartSuite(t *testing.T, suite *statechartSuite, through func(testi
 			for name, id := range docs {
 				alias[id] = name
 			}
-			stream := streams[step.As]
+			var told []*Event
+			told, err = streams[step.As].heard(ctx)
 			heardNow = []string{}
-			for more := true; more && err == nil; {
-				more, err = stream.fill(ctx)
-				for _, ev := range stream.read {
-					doc := ev.DocID
-					if name, known := alias[doc]; known {
-						doc = name
-					}
-					line := ev.Kind + " " + doc
-					if ev.Kind == EventTransition && ev.Name != "" {
-						line += " " + ev.Name
-					}
-					heardNow = append(heardNow, line)
+			for _, ev := range told {
+				doc := ev.DocID
+				if name, known := alias[doc]; known {
+					doc = name
 				}
-				stream.read = nil
+				line := ev.Kind + " " + doc
+				if ev.Kind == EventTransition && ev.Name != "" {
+					line += " " + ev.Name
+				}
+				heardNow = append(heardNow, line)
 			}
 		case "wait":
 			if suite.Clock == "" {

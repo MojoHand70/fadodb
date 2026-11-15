@@ -196,10 +196,16 @@ and 7) follow with the door.
   acts for (ADR-0053) is refused with `not_supported`: who may act for
   whom is asked class by class when a command is sent, and a stream is
   of every class and of no command.
-- **A stream can be told who its caller is from now on.** The door
-  asks whose the key is before each entry, so that a stream follows the
-  groups of its user as item 4 says; a program that names its callers
-  itself does the same when it knows of a change.
+- **A stream follows its caller.** A stream can be given a function
+  that says who its caller is now (`Follow`). It asks the function
+  when the log has events its filter lets through, after it has read
+  them and before it judges who hears of them, so that a stream
+  follows the groups of its user as item 4 says and no event is judged
+  for a caller as it was before the event. The door gives the function
+  that asks whose the key is; a program that names its callers itself
+  gives its own. The first part had a call that told a stream its
+  caller "from now on" (`As`). It was replaced with the door: a caller
+  told that way was judged too early for the events already read.
 - **Until the door serves it, `Subscribe` is a call and no command.**
   It joins the table of ADR-0055 with its address.
 - **The suite asks what a caller heard** with a step of its own,
@@ -207,6 +213,99 @@ and 7) follow with the door.
   was told, in order. `conformance/access/rules.json` asks it of the
   owner of a claim, of another owner, of HR, of an administrator, of a
   stranger and of nobody.
+
+## Settled while building the door of the stream
+
+The second part, of 2026-11-15: the address on the server, the form on
+the wire, the sign of life, how a stream ends and the limit on their
+number (items 2, 3, 6 and 7).
+
+- **`subscribe` is a row of the table of commands**, with the mark
+  that its answer is a stream. Its object is read as every object is:
+  a member it does not have is refused with `bad_json` and its place.
+  `Exec`, which answers one object, refuses the command with
+  `not_supported` and says to call `Subscribe`. A caller that says for
+  whom it acts is passed to the engine, which refuses it in its own
+  words.
+- **The reply** has the status 200 and the kind `text/event-stream`.
+  Its first line is a comment, `: the stream is open`, written before
+  anything happened: a caller that has read it knows that every event
+  written from then on reaches it. An entry is three lines and an
+  empty one: `id:` with the id of the event, `event: change`, and
+  `data:` with the event as one JSON object on one line.
+- **`after` and `Last-Event-ID` (item 5).** When a request has both,
+  the header counts. A reader of server-sent events that connects
+  again sends the request it sent the first time, with the object it
+  had then, and adds the header.
+- **The sign of life (item 6)** is the comment `: nothing new`, every
+  fifteen seconds without an entry.
+- **The last entry (item 7)** is of the kind `end`, and its data is a
+  refusal: `{"error": {"code": …, "message": …}}`. It has no id, so
+  that the last id a reader holds is still that of the last event. It
+  is not named `error`: a browser's reader of server-sent events uses
+  that name for a connection that broke. Three codes end a stream:
+  `unauthenticated`, `closed`, and `internal` for a stream that failed
+  in the engine, whose words go to the server's log.
+- **When the key is asked again.** When there is an event to tell, as
+  the engine's part settled, and at each sign of life. So a key that
+  was revoked ends a stream before its next event, which is not told,
+  and a silent stream within fifteen seconds.
+- **The limit.** A door holds 256 streams, `limits.streams` of
+  ADR-0059. One beyond them is refused with `busy` at once, and not
+  after the second a command waits: a stream stays open for as long
+  as its caller listens. A stream takes no place among the commands
+  that run, and the time one command may run does not end it.
+- **A caller that takes nothing of what it is sent for thirty seconds
+  is cut**, so that one that went away without a word holds no
+  stream.
+- **Ending the streams is the program's.** A stream does not end by
+  itself, so a program that waits for its requests to end would wait
+  for its streams. The door ends them when it is told to
+  (`EndStreams`), each with the last entry `closed`, and refuses the
+  ones asked for after that. `fadodb serve` tells it when it is told
+  to stop, before it waits for the commands.
+- **A stream is one request.** The door tells of it once, when it
+  ended: the status 200, the code the server ended it with, the time
+  until it was open, how long it stayed open and how many events it
+  told. `fadodb serve` writes that as the line of the stream and
+  counts the streams that are open, `fadodb_streams`.
+- **The suite through the server (item 11).** The step `heard` runs
+  through the HTTP door too. A stream on the wire arrives when it
+  arrives, so the runner writes a mark that every caller reads and
+  takes what the stream told before it.
+
+### What the measurement found, and what was changed in the engine
+
+The first part read the log for each stream: after a commit every
+stream sent its own query for the new events, and one more for the
+version of the document the read rule is asked over. The commit did
+nothing for them, and allocated the same, which is what its test
+held. But a hundred streams reading at once stood in the way of the
+next commit inside the storage: a commit took 11 ms at the median
+with a hundred streams open, where it takes 0.12 ms with none.
+
+The log is now read once for all the streams.
+
+- **A tail of the log.** The engine holds the last 1,024 events of
+  the log in memory while a stream is open. After a commit the first
+  stream to wake reads the new events into the tail, and the others
+  take them from it. The version of the document is read once for
+  each event, when a caller that is no content administrator first
+  asks, and serves every stream.
+- **A commit leaves a count** beside the mark of item 9: one number
+  that goes up, without allocating. A stream at the end of the log
+  asks the database again only after the count moved.
+- **A stream that is behind the tail reads the log itself**, as every
+  stream did before, until it has caught up. So a caller that comes
+  back after a day costs what it cost, and holds nobody up.
+- **What a caller is given is its own.** An event of the tail is
+  every stream's, so `Next` answers a copy.
+
+Measured in the engine on the machine below, with a writer that
+commits every millisecond, a commit took at the median 140 µs with no
+stream, 141 µs with one, 145 µs with ten and 151 µs with a hundred. A
+test holds that fifty streams read the log from the database once for
+each commit, and not at all when no commit ended.
 
 ## The owner's rulings
 
@@ -277,3 +376,37 @@ campaign of the phase's last step and published in
 `docs/perf/v0.6.0.md`. Its budget is set from the first measurement, in
 the pull request that builds the stream, and is expected under 5 ms at
 p99 on one machine.
+
+### Measured on 2026-11-15, and the budget
+
+`TestStreamCampaign` measures it: a server on this machine, each
+subscriber on a connection of its own with a filter that lets every
+event through and a read rule that is asked for every event, and the
+time from the moment a commit returned to its caller to the moment
+the subscriber had read the entry. 5,000 commits for each row, four
+runs, the slowest of them here. The machine is an Intel Core Ultra 9
+275HX, 24 threads, under WSL2 with kernel 6.18, the database on ext4
+on a VHD on NVMe.
+
+| Subscribers | The writer | Commits/s | p50 | p99 | Longest |
+|---|---|---|---|---|---|
+| 1 | commits every millisecond | 650 to 680 | 0.25 ms | 0.84 ms | 1.7 ms |
+| 100 | commits every millisecond | 760 to 770 | 1.09 ms | 3.12 ms | 7.2 ms |
+| 1 | never pauses | 10,400 to 11,100 | 0.53 ms | 1.69 ms | 4.1 ms |
+| 100 | never pauses | 4,700 to 6,300 | 3.72 ms | 12.81 ms | 25.2 ms |
+
+**The budget of the stream is 5 ms at p99**, from the end of a commit
+to the entry read by a subscriber on the same machine, with one
+subscriber and with a hundred, under a writer that commits every
+millisecond. Both rows hold it. The campaign of the phase's last step
+measures it again for `docs/perf/v0.6.0.md`.
+
+The two rows of a writer that never pauses are outside the budget and
+are here to be known. A hundred subscribers are then sent over half a
+million entries a second, and the hundred readers of the test run on
+the same machine as the server: the entries wait behind each other,
+and the writer has less of the machine. In the engine alone, with no
+server, 20,000 commits of such a writer took 1.6 s with no stream and
+1.9 to 2.2 s with one stream as with a hundred. A commit does nothing
+for a stream, but reading the log while it is written takes part of
+the machine, as any reader of the database does.

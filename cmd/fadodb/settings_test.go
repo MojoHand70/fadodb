@@ -45,8 +45,8 @@ func TestTheSettings(t *testing.T) {
 		strings.Join(s.connections["slack"], " ") != "slack.com" || strings.Join(s.connections["books"], " ") != "books.acme.internal:8443" {
 		t.Errorf("what may be called: %v, %v", s.hosts, s.connections)
 	}
-	if want := (httpdoor.Limits{RequestBytes: 16 << 20, CommandTime: 30 * time.Second, Commands: 64}); s.limits != want || s.streams != 256 {
-		t.Errorf("the limits: %+v, streams %d", s.limits, s.streams)
+	if want := (httpdoor.Limits{RequestBytes: 16 << 20, CommandTime: 30 * time.Second, Commands: 64, Streams: 256}); s.limits != want {
+		t.Errorf("the limits: %+v", s.limits)
 	}
 	if got := s.mayCall(); got != "its actions may call hooks.acme.example; over the connection books, books.acme.internal:8443; over the connection slack, slack.com" {
 		t.Errorf("what the server says it may call: %s", got)
@@ -56,7 +56,7 @@ func TestTheSettings(t *testing.T) {
 	// it is told nothing: no host, and the limits of the door.
 	for _, empty := range []string{`{}`, `{"outbound": {}, "limits": {}}`, `{"outbound": {"hosts": [], "connections": {}}}`} {
 		s, err := parseSettings([]byte(empty))
-		if err != nil || s.calls() || s.limits != (httpdoor.Limits{}) || s.streams != 0 {
+		if err != nil || s.calls() || s.limits != (httpdoor.Limits{}) {
 			t.Errorf("%s: %v, %+v", empty, err, s)
 		}
 		if err == nil && !strings.Contains(s.mayCall(), "may call no host") {

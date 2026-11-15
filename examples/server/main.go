@@ -74,6 +74,10 @@ func serve(ctx context.Context, path string, ln net.Listener, w io.Writer) error
 		return err
 	}
 	srv := &http.Server{Handler: door, ReadHeaderTimeout: 10 * time.Second}
+	// A stream of changes stays open until its caller closes it, so the
+	// door ends the streams when the server is told to stop, each with
+	// a last entry that says so.
+	srv.RegisterOnShutdown(door.EndStreams)
 	ended := make(chan error, 1)
 	go func() { ended <- srv.Serve(ln) }()
 	select {
@@ -81,8 +85,8 @@ func serve(ctx context.Context, path string, ln net.Listener, w io.Writer) error
 		return err
 	case <-ctx.Done():
 	}
-	// Told to stop: the commands that run end first, then the database
-	// is closed.
+	// Told to stop: the streams are ended and the commands that run end
+	// first, then the database is closed.
 	within, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	if err := srv.Shutdown(within); err != nil && !errors.Is(err, context.DeadlineExceeded) {

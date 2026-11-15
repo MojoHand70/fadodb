@@ -230,6 +230,9 @@ type Store struct {
 	// stream opens or closes, so that a commit reads it without a lock.
 	listeners  atomic.Pointer[[]*Changes]
 	listenerMu sync.Mutex
+	// tail is the end of the log as the streams share it: read from the
+	// database once for all of them.
+	tail logTail
 
 	// The outbox (ADR-0044): its options with the defaults filled in, the
 	// lock that makes one drain by hand run at a time, the documents that

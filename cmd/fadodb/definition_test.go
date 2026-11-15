@@ -70,6 +70,7 @@ func TestTheCheckOfAClass(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	defer db.Close()
 	definition, err := os.ReadFile(invoice)
 	if err != nil {
 		t.Fatal(err)

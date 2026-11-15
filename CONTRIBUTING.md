@@ -12,7 +12,7 @@ Go 1.26 or newer.
 make tools     # installs staticcheck, govulncheck and benchstat with go install
 make build     # bin/fadodb
 make test      # race detector on
-make gates     # everything CI runs: lint, vuln, depgate, sizegate, test
+make gates     # everything CI runs: lint, vuln, depgate, sizegate, filegate, test
 make benchgate BASE=origin/main   # benchmark comparison against a git ref
 scripts/layoutsweep.sh -n 8 'VM_'  # spread of the VM benchmarks over code placements
 ```
@@ -27,7 +27,10 @@ Every pull request must pass:
 4. The dependency gate: a direct module in `go.mod` that is not listed in
    [docs/dependencies.md](docs/dependencies.md) fails the build.
 5. The size gate: a release-style core binary over the budget fails the build.
-6. The benchmark gate: more than 5% slower, more than 5% more bytes per
+6. The file gate: a tracked file over 1 MB fails the build. The repository
+   holds source, documents and test data; build `fadodb` with `make build`,
+   which writes to `bin/`, and never commit what a build makes.
+7. The benchmark gate: more than 5% slower, more than 5% more bytes per
    operation, or any extra allocation per operation against the base branch
    fails the build. It runs when the pull request changes a file that goes
    into the measured programs (`scripts/benchgate.sh --needed origin/main`

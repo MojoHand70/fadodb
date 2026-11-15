@@ -4,6 +4,8 @@ private/
 # Build output
 bin/
 dist/
+/fadodb
+*.exe
 *.test
 *.out
 *.prof

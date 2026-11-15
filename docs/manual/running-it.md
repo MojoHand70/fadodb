@@ -351,5 +351,3 @@ release that made it: `fadodb version` says it, and the
 - Making the file smaller: nothing removes old versions, events or
   bytes.
 - A way to bring a file of an earlier release forward.
-- Counts for whoever watches a server; see
-  [Serving a database](serving-a-database.md#not-here-yet).

@@ -116,7 +116,7 @@ fadodb serve acme.fado --settings settings.json --secrets-dir /run/secrets/fadod
 | `limits.request_bytes` | the largest request, in bytes | 16777216, which is 16 MiB |
 | `limits.command_seconds` | how long one command may run, in seconds; it may have a fraction | 30 |
 | `limits.commands` | how many commands run at once | 64 |
-| `limits.streams` | how many streams of changes are open at once. The stream is not built yet, so it is read and limits nothing today | 256 |
+| `limits.streams` | how many streams of changes are open at once. The server does not serve the stream yet, so it is read and limits nothing today | 256 |
 
 - **The settings are the operator's.** Where the server listens, what
   it may call and how much it takes on are decided by whoever runs the
@@ -562,8 +562,9 @@ caller is answered beyond them.
 
 ## Not here yet
 
-- **The stream of changes**, and with it the count of the streams
-  that are open.
+- **The stream of changes over HTTP**, `POST /v1/subscribe`, and with
+  it the count of the streams that are open. A program of your own
+  has the stream already, as the Go call `Subscribe`.
 - **The command-line tool as a caller** of a server, with a key.
 - **Changing the settings without a restart.**
 - **Limits for each user**, such as commands a minute. The limits are

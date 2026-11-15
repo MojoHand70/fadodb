@@ -227,9 +227,9 @@ checked this way, and the check is refused with `not_supported`.
 
 Everything else a caller does is a command in JSON; see
 [The commands](commands.md). Bytes are not JSON. Putting and opening a
-file are calls of the Go package today, `PutBlob`, `OpenFile` and
-`OpenBlob`, and get addresses of their own with the server, which is
-in progress.
+file are calls of the Go package, `PutBlob`, `OpenFile` and
+`OpenBlob`, and over HTTP they have addresses of their own beside the
+commands: see [Files over HTTP](commands.md#files-over-http).
 
 ## What is refused
 

@@ -127,6 +127,16 @@ All notable changes to FadoDB are recorded here. The format follows
   states one fault of the engine as it is, pinned by the test: `min`
   and `max` on a computed variable that names no type are accepted
   and not applied.
+- The manual's chapter "Running it", for whoever keeps a database in
+  service: a backup and putting it back, with what is gone and what
+  runs twice; what a copy is, and a copy of a database that does not
+  stop; what a program that died leaves; what `fadodb check` finds;
+  how large the file gets; and how fast the engine is, from the
+  performance pages. A test plays the chapter's story and every table
+  of it. The chapter states three faults as they are: the check does
+  not find a file that is missing; the command-line tool runs the
+  queue of a database it opens; and the file of latest commits grows
+  far past its limit while a caller writes without pause.
 - The designer's skill teaches the syntax: what to read in the manual,
   a small class that is complete, and the ten things that go wrong
   most often. It is no longer a stub. The classes the skills show are

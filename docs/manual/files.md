@@ -203,7 +203,7 @@ with the option `BlobStore`; see
 - **In the `dir` store** the bytes of a hash are in the file
   `<database>.blobs/<the first two letters of the hash>/<hash>`.
 - **A backup** of a database with the `dir` store is the database file
-  and that directory.
+  and that directory; see [Running it](running-it.md#what-a-copy-is).
 
 ## How large a file may be
 

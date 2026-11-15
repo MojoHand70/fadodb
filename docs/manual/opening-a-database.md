@@ -270,5 +270,6 @@ made again.
 - A hold for every program. One that opens a database without `Alone`
   holds nothing, so two such programs on one file are not kept apart.
 - A way to bring a file of an earlier release forward.
-- Copying a database that is open. The chapter on running a database
-  is planned.
+- A backup of an open database that the engine makes itself.
+  [Running it](running-it.md#a-database-that-does-not-stop) says what
+  can be done today.

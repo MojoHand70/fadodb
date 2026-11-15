@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+	"sync"
 	"time"
 
 	_ "modernc.org/sqlite" // the pure-Go driver, the core's one dependency (ADR-0002)
@@ -88,17 +89,34 @@ func (s SQLite) Open(path string) (*sql.DB, error) {
 		if limit <= 0 {
 			limit = DefaultWALLimit
 		}
-		go checkpoint(db, path+"-wal", limit)
+		c := &checkpointer{stop: make(chan struct{}), done: make(chan struct{})}
+		checkpointers.Store(db, c)
+		go c.run(db, path+"-wal", limit)
 	}
 	return db, nil
 }
 
-// checkpoint copies the write-ahead log into the database file every
-// 100 ms without waiting for the writer, and truncates the log once it
-// passes limit bytes, until the database is closed.
-func checkpoint(db *sql.DB, wal string, limit int64) {
+// checkpointers are the background checkpointers of the databases that
+// are open, by database, so that Close ends each with its database.
+var checkpointers sync.Map
+
+// checkpointer copies the log of one database in the background.
+type checkpointer struct{ stop, done chan struct{} }
+
+// run copies the write-ahead log into the database file every 100 ms
+// without waiting for the writer, and truncates the log once it passes
+// limit bytes, until the checkpointer is stopped or the database is
+// closed.
+func (c *checkpointer) run(db *sql.DB, wal string, limit int64) {
+	defer close(c.done)
+	t := time.NewTicker(100 * time.Millisecond)
+	defer t.Stop()
 	for {
-		time.Sleep(100 * time.Millisecond)
+		select {
+		case <-c.stop:
+			return
+		case <-t.C:
+		}
 		mode := "PASSIVE"
 		if fi, err := os.Stat(wal); err == nil && fi.Size() > limit {
 			mode = "TRUNCATE"
@@ -107,6 +125,20 @@ func checkpoint(db *sql.DB, wal string, limit int64) {
 			return
 		}
 	}
+}
+
+// Close closes a database that a target opened. A background
+// checkpointer of the database is ended first and waited for, so that no
+// connection of the database is left open behind the caller: a file
+// that is still open cannot be removed on Windows, and a test that
+// removes its directory right after closing failed there now and then.
+func Close(db *sql.DB) error {
+	if c, running := checkpointers.LoadAndDelete(db); running {
+		c := c.(*checkpointer)
+		close(c.stop)
+		<-c.done
+	}
+	return db.Close()
 }
 
 // OpenReadOnly implements Target.

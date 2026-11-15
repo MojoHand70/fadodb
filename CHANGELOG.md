@@ -218,7 +218,8 @@ All notable changes to FadoDB are recorded here. The format follows
   `limits.streams` in the settings of `fadodb serve`, and refuses one
   beyond them with `busy`; a caller that takes nothing for thirty
   seconds is cut. `httpdoor.Door.EndStreams` ends the streams of a
-  program that stops, and `fadodb serve` calls it. The server counts
+  program that stops; `fadodb serve` calls it, and so does
+  `examples/server`, the server of one's own. The server counts
   the open streams as `fadodb_streams`, and writes a line for a stream
   when it ended, with how long it stayed open and how many events it
   told. Measured on one machine with a writer that commits every

@@ -87,10 +87,7 @@ func serve(s *store.Store) *httptest.Server {
 	if err != nil {
 		panic(err)
 	}
-	srv := httptest.NewServer(door)
-	// A stream that a test left open is ended when the server closes.
-	srv.Config.RegisterOnShutdown(door.EndStreams)
-	return srv
+	return httptest.NewServer(door)
 }
 
 // heardWithin is how long a stream of a suite may stay open: a suite

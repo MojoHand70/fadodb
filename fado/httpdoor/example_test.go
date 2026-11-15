@@ -185,7 +185,6 @@ func TestTheStreamOfChanges(t *testing.T) {
 	defer db.Close()
 	defer srv.Close()
 	door := srv.Config.Handler.(*httpdoor.Door)
-	srv.Config.RegisterOnShutdown(door.EndStreams)
 	if status, body := send(srv, "token-of-dan", "define_class", invoice); status != 200 {
 		t.Fatalf("define_class: %d %s", status, body)
 	}

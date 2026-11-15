@@ -1100,7 +1100,9 @@ and the C ABI (ADR-0011, ADR-0055). A command is a name and one JSON
 object, answered by one JSON object. Every call of the Go API that
 reads or changes a database is a command, and
 [the commands](manual/commands.md) lists every one, generated from the
-engine's table.
+engine's table. The command-line tool sends one with `fadodb exec`, to
+a server and with the key of a user (ADR-0062,
+[commands from a terminal](manual/commands-from-a-terminal.md)).
 
 > What is built today: the Go call `Exec` takes the name of a command
 > and its JSON object and answers one JSON object; and the package
@@ -1297,7 +1299,7 @@ in 13.7 ns with no allocation, and the core binary is 2.9 MB
 
 ```
 fadodb/
-  cmd/fadodb/            single binary: init, user, key, serve, class check, action check, formula, check today; doc, table, query, bench, export to come
+  cmd/fadodb/            single binary: init, user, key, serve, exec (any command sent to a server, a query as CSV), class check, action check, formula, check today; files and bench to come
   fado/                  public Go API (small surface, see Go API)
   internal/formula/      lexer, parser, binder, bytecode, vm, sqlgen (dialects), catalog
   internal/model/        class definitions, layouts, variables, defaults, validation, migrations

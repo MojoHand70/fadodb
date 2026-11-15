@@ -67,3 +67,4 @@ line says so. Copy `0000-template.md` to start.
 | [0059](0059-fadodb-serve.md) | `fadodb serve`: one database, what it is told when it starts, and what it refuses | Accepted |
 | [0060](0060-the-organisations-rule-book.md) | The organisation's rule-book: the things it keeps and the look of its faces | Proposed |
 | [0061](0061-apache-license.md) | License: Apache 2.0 | Accepted |
+| [0062](0062-commands-from-a-terminal.md) | Commands from a terminal: `fadodb exec` | Proposed |

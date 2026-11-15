@@ -462,7 +462,10 @@ read the diagnostics, fix, preview against live data, define.
    defining it: it runs the draft through the commit pipeline over an
    existing document or as a create and writes nothing.
 10. **Define.** A redefinition is a new version that touches no document
-   (ADR-0039).
+   (ADR-0039). On a server, from the file that was checked:
+   `fadodb exec define_class --from definition=invoice.json`, with the
+   key of a designer in `FADODB_KEY`
+   ([commands from a terminal](../../docs/manual/commands-from-a-terminal.md)).
 
 ## Why the order matters
 

@@ -579,7 +579,10 @@ answered beyond them.
 
 ## Not here yet
 
-- **The command-line tool as a caller** of a server, with a key.
+- **Files from the command line.** The tool sends every command to a
+  server, with `fadodb exec`
+  ([Commands from a terminal](commands-from-a-terminal.md)); it does
+  not put a file or read one yet.
 - **Changing the settings without a restart.**
 - **Limits for each user**, such as commands a minute. The limits are
   for the whole database.

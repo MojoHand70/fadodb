@@ -137,6 +137,24 @@ func (s *subscriber) event() (ev map[string]any, written string) {
 	}
 }
 
+// streamsOpen waits until the counts of the server say that so many
+// streams are open. A stream its caller closed is counted until the
+// server has seen that the caller is gone, which takes a moment, so
+// the count is waited for and not read once.
+func streamsOpen(t *testing.T, client *http.Client, base, key string, want int) {
+	t.Helper()
+	line := "\nfadodb_streams " + strconv.Itoa(want) + "\n"
+	for end := time.Now().Add(20 * time.Second); ; time.Sleep(5 * time.Millisecond) {
+		_, page := ask(t, client, "GET", base+metricsPath, key, "")
+		if strings.Contains(page, line) {
+			return
+		}
+		if time.Now().After(end) {
+			t.Fatalf("%d streams are open, and the counts say: %s", want, between(page, "# TYPE fadodb_streams gauge\n", "\n"))
+		}
+	}
+}
+
 // The ids and the moments the chapter shows, which another run does
 // not repeat: an event read from a server is held to the chapter with
 // these in their place.
@@ -332,10 +350,10 @@ func TestTheChapterOnTheStream(t *testing.T) {
 		}
 	}
 
-	// The streams that are open are counted.
-	if _, page := ask(t, client, "GET", base+metricsPath, olga, ""); !strings.Contains(page, "\nfadodb_streams 4\n") {
-		t.Errorf("four streams are open, and the counts say:\n%s", between(page, "# TYPE fadodb_streams gauge\n", "\n"))
-	}
+	// The streams that are open are counted: the four of the table,
+	// once the server has seen that the agent closed the ones it came
+	// back with.
+	streamsOpen(t, client, base, olga, 4)
 
 	// The agent's key is revoked. Its stream ends before the next event,
 	// which it is not told.
@@ -442,14 +460,7 @@ func TestTheServerHoldsSoManyStreams(t *testing.T) {
 	}
 	// One is closed, and there is room for another.
 	first.close()
-	for end := time.Now().Add(10 * time.Second); ; time.Sleep(5 * time.Millisecond) {
-		if _, page := ask(t, client, "GET", base+metricsPath, key, ""); strings.Contains(page, "\nfadodb_streams 1\n") {
-			break
-		}
-		if time.Now().After(end) {
-			t.Fatal("the place of a stream that was closed was not given back")
-		}
-	}
+	streamsOpen(t, client, base, key, 1)
 	if third := subscribe(t, base, key, `{}`); third.resp.StatusCode != 200 {
 		t.Errorf("a stream after one was closed: %d", third.resp.StatusCode)
 	}

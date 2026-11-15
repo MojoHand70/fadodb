@@ -159,7 +159,10 @@ func TestExecReadsTheObject(t *testing.T) {
 		{[]string{"define_class", `{"definition": {}}`, "--from", "definition=" + class}, "gives it another"},
 		{[]string{"Get", "{}"}, "is not the name of a command"},
 		{[]string{"../health", "{}"}, "is not the name of a command"},
-		{[]string{"get", "{}", "--csv"}, "--csv prints the documents of query and the rows of sql"},
+		{[]string{"get", "{}", "--csv"}, "--csv and --xlsx write the documents of query and the rows of sql"},
+		{[]string{"get", "{}", "--xlsx", "--out", filepath.Join(dir, "x.xlsx")}, "--csv and --xlsx write the documents of query and the rows of sql"},
+		{[]string{"query", "{}", "--xlsx"}, "say where it goes, with --out FILE"},
+		{[]string{"query", "{}", "--csv", "--xlsx", "--out", filepath.Join(dir, "x.xlsx")}, "and not both"},
 		{[]string{}, "say which command to send"},
 	} {
 		code, out, said := tool(append([]string{"exec", "--url", server.URL}, c.args...)...)
@@ -196,7 +199,8 @@ func TestExecFindsTheServerAndTheKey(t *testing.T) {
 		{env: "nowhere", says: "FADODB_URL is"},
 	} {
 		t.Setenv("FADODB_URL", c.env)
-		got, err := addressOf(c.given, "get", c.plain)
+		got, err := baseOf(c.given, c.plain)
+		got += "get"
 		switch {
 		case c.says != "" && (err == nil || !strings.Contains(err.Error(), c.says)):
 			t.Errorf("%+v: %q, %v; want an error with %q", c, got, err, c.says)
@@ -302,7 +306,7 @@ func TestExecEndsAsTheAnswerSays(t *testing.T) {
 	// An answer that cannot be written is no answer: the command was
 	// carried out, and the tool says so.
 	var told bytes.Buffer
-	if code := runExec(context.Background(), []string{"claims", "--url", server.URL}, closed{}, &told); code != exitNoAnswer || !strings.Contains(told.String(), "was carried out, and its answer could not be written") {
+	if code := runExec(context.Background(), []string{"claims", "--url", server.URL}, closed{}, &told); code != exitNoAnswer || !strings.Contains(told.String(), "the server answered, and the answer could not be written") {
 		t.Errorf("an answer that cannot be written: exit %d, said %q", code, told.String())
 	}
 

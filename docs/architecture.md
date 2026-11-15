@@ -1101,8 +1101,10 @@ object, answered by one JSON object. Every call of the Go API that
 reads or changes a database is a command, and
 [the commands](manual/commands.md) lists every one, generated from the
 engine's table. The command-line tool sends one with `fadodb exec`, to
-a server and with the key of a user (ADR-0062,
-[commands from a terminal](manual/commands-from-a-terminal.md)).
+a server and with the key of a user, and a file with `fadodb file`
+(ADR-0062,
+[commands from a terminal](manual/commands-from-a-terminal.md)). An
+answer writes `<`, `>` and `&` as themselves (ADR-0055, amended).
 
 > What is built today: the Go call `Exec` takes the name of a command
 > and its JSON object and answers one JSON object; and the package
@@ -1299,7 +1301,7 @@ in 13.7 ns with no allocation, and the core binary is 2.9 MB
 
 ```
 fadodb/
-  cmd/fadodb/            single binary: init, user, key, serve, exec (any command sent to a server, a query as CSV), class check, action check, formula, check today; files and bench to come
+  cmd/fadodb/            single binary: init, user, key, serve, exec (any command sent to a server, a query as an Excel file or as CSV), file put and file get, class check, action check, formula, check today; bench to come
   fado/                  public Go API (small surface, see Go API)
   internal/formula/      lexer, parser, binder, bytecode, vm, sqlgen (dialects), catalog
   internal/model/        class definitions, layouts, variables, defaults, validation, migrations

@@ -96,7 +96,7 @@ func Code(err error) string {
 func refuse(err error) ([]byte, error) {
 	var refusal *store.Error
 	if errors.As(err, &refusal) {
-		text, _ := json.Marshal(refusal)
+		text, _ := Marshal(refusal)
 		out := make([]byte, 0, len(text)+12)
 		out = append(out, `{"error":`...)
 		out = append(out, text...)
@@ -114,7 +114,7 @@ func refuse(err error) ([]byte, error) {
 		if refusing == 1 {
 			message = "1 finding refuses the definition"
 		}
-		text, _ := json.Marshal(struct {
+		text, _ := Marshal(struct {
 			Error       *store.Error      `json:"error"`
 			Diagnostics model.Diagnostics `json:"diagnostics"`
 		}{&store.Error{Code: CodeBadDefinition, Message: message}, findings})
@@ -307,7 +307,7 @@ func (c *call) outcomes(moves []store.MoveOutcome, err error) error {
 			}
 		}
 		if m.Refusal != nil {
-			text, _ := json.Marshal(m.Refusal)
+			text, _ := Marshal(m.Refusal)
 			c.out = append(c.out, `,"refusal":`...)
 			c.out = append(c.out, text...)
 		}
@@ -323,7 +323,7 @@ func (c *call) answer(member string, value any, err error) error {
 	if err != nil {
 		return err
 	}
-	text, err := json.Marshal(value)
+	text, err := Marshal(value)
 	if err != nil {
 		return err
 	}
@@ -554,8 +554,8 @@ func runSQL(c *call) error {
 	if err != nil {
 		return err
 	}
-	columns, _ := json.Marshal(list(rows.Columns))
-	data, err := json.Marshal(list(rows.Rows))
+	columns, _ := Marshal(list(rows.Columns))
+	data, err := Marshal(list(rows.Rows))
 	if err != nil {
 		return err
 	}
@@ -759,8 +759,8 @@ func runCheckBlobs(c *call) error {
 	if err != nil {
 		return err
 	}
-	mismatched, _ := json.Marshal(list(check.Mismatched))
-	missing, _ := json.Marshal(check.Missing)
+	mismatched, _ := Marshal(list(check.Mismatched))
+	missing, _ := Marshal(check.Missing)
 	c.open("checked")
 	c.out = strconv.AppendInt(c.out, int64(check.Checked), 10)
 	c.next("mismatched")
@@ -850,7 +850,7 @@ func runWhoami(c *call) error {
 	if err != nil {
 		return err
 	}
-	text, err := json.Marshal(u)
+	text, err := Marshal(u)
 	if err != nil {
 		return err
 	}

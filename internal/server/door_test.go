@@ -119,7 +119,7 @@ func TestARefusalOfTheEngineKeepsItsWords(t *testing.T) {
 	forbidden := &store.Error{Code: store.CodeForbidden, Message: "bob may not take approve from review",
 		Hint: `the rule of approve: INGROUP("finance")`, Path: "/access/transition/approve"}
 	d := door(t, engine(func(context.Context, store.Principal, string, []byte) ([]byte, error) {
-		text, _ := json.Marshal(map[string]any{"error": forbidden})
+		text, _ := command.Marshal(map[string]any{"error": forbidden})
 		return text, forbidden
 	}), Options{})
 	w := post(d, "/v1/transition", `{}`)
@@ -338,7 +338,7 @@ func TestACommandThatRunsTooLong(t *testing.T) {
 			// refusal: the command was not stopped, it was refused.
 			<-ctx.Done()
 			e := &store.Error{Code: store.CodeGuardFalse, Message: "the guard of approve is false"}
-			text, _ := json.Marshal(map[string]any{"error": e})
+			text, _ := command.Marshal(map[string]any{"error": e})
 			return text, e
 		}
 		<-ctx.Done()

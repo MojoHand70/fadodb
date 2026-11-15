@@ -1,7 +1,6 @@
 package server
 
 import (
-	"encoding/json"
 	"errors"
 	"io"
 	"mime"
@@ -79,7 +78,7 @@ func (d *Door) put(out *reply, r *http.Request, told *Request) {
 	case float64:
 		file.Size = int64(size)
 	}
-	text, err := json.Marshal(struct {
+	text, err := command.Marshal(struct {
 		File store.FileInfo `json:"file"`
 	}{file})
 	if err != nil {

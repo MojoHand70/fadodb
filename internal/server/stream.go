@@ -2,7 +2,6 @@ package server
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"net/http"
 	"strconv"
@@ -215,7 +214,7 @@ func (d *Door) subscribe(out *reply, r *http.Request, told *Request) {
 	// last ends the stream with the entry that says why (item 7).
 	last := func(e *store.Error) {
 		told.Code = e.Code
-		text, err := json.Marshal(struct {
+		text, err := command.Marshal(struct {
 			Error *store.Error `json:"error"`
 		}{e})
 		if err != nil {
@@ -230,7 +229,7 @@ func (d *Door) subscribe(out *reply, r *http.Request, told *Request) {
 		stop()
 		switch {
 		case err == nil:
-			text, err := json.Marshal(ev)
+			text, err := command.Marshal(ev)
 			if err != nil {
 				told.Err = err
 				last(broken())

@@ -246,12 +246,26 @@ All notable changes to FadoDB are recorded here. The format follows
   follows no redirect. A refusal goes to standard error as the server
   gave it. The tool ends with 0 when the command was carried out, 1
   when the server refused it, 2 when the line could not be read and 3
-  when no answer came. `--csv` prints the documents of `query` and the
-  rows of `sql` as CSV; `subscribe` prints one event to a line;
-  `fadodb exec help` lists the commands and `fadodb exec help COMMAND`
-  the members of one, from the engine's table. The manual has a
-  chapter, `docs/manual/commands-from-a-terminal.md`, and a test types
-  every line of it against a server.
+  when no answer came through. `subscribe` prints one event to a line,
+  and the tool says when the stream is open; `fadodb exec help` lists
+  the commands and `fadodb exec help COMMAND` the members of one, from
+  the engine's table. `--out FILE` writes what the tool would print to
+  a file. The manual has a chapter,
+  `docs/manual/commands-from-a-terminal.md`, and a test types every
+  line of it against a server.
+- Exports from a terminal, written in no locale: `fadodb exec query …
+  --xlsx --out FILE` writes the documents of `query`, or the rows of
+  `sql`, as an Excel file in which a number is a number and a day a
+  day, by the type the class gives each variable, so the program that
+  opens it shows them its reader's way; an amount is shown with its
+  currency. The writer is the tool's own, on the standard library.
+  `--csv` writes the same for a program, in one form on every machine:
+  commas, a point in a number, UTF-8.
+- A file on a document from a terminal: `fadodb file put FILE --class
+  … --id … --variable …` sends the bytes to a server and writes the
+  file into the variable; `fadodb file get … --out FILE` reads the file
+  a variable holds, or one by its hash, through the document and under
+  its rules.
 - A check of a definition from the command line: `fadodb class check
   FILE...` and `fadodb action check FILE` ask the engine whether it
   would take the class or the action in a file, and store nothing.
@@ -364,6 +378,13 @@ All notable changes to FadoDB are recorded here. The format follows
   listens on the machine, and must answer the same each way.
 
 ### Changed
+
+- An answer writes `<`, `>` and `&` as themselves, and no longer as
+  `\u003c`, `\u003e` and `\u0026`: a guard reads `"total > 0"` at a
+  terminal and to an agent. This holds for the answer of a command, a
+  refusal, an entry of the stream and the facts of a file, in a Go
+  program and over HTTP. The values are the same; a program that reads
+  JSON sees no change (ADR-0055, amended).
 
 - **The license is the Apache License 2.0** (ADR-0061), in place of
   MIT. Releases up to v0.5.0 stay under MIT.

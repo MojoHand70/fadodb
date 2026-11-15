@@ -240,7 +240,10 @@ Everything else a caller does is a command in JSON; see
 [The commands](commands.md). Bytes are not JSON. Putting and opening a
 file are calls of the Go package, `PutBlob`, `OpenFile` and
 `OpenBlob`, and over HTTP they have addresses of their own beside the
-commands: see [Files over HTTP](commands.md#files-over-http).
+commands: see [Files over HTTP](commands.md#files-over-http). From a
+terminal the tool sends them, with `fadodb file put` and
+`fadodb file get`: see
+[Commands from a terminal](commands-from-a-terminal.md#a-file-on-a-document).
 
 ## What is refused
 

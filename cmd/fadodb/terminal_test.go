@@ -107,6 +107,10 @@ func TestTheChapterOnTheTerminal(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	scan := []byte("%PDF-1.4 the scan of an invoice\n")
+	if err := os.WriteFile(filepath.Join(dir, "scan-0045.pdf"), scan, 0o600); err != nil {
+		t.Fatal(err)
+	}
 	t.Chdir(dir)
 
 	// play types the lines of a block as the user its mark names, and
@@ -172,30 +176,80 @@ func TestTheChapterOnTheTerminal(t *testing.T) {
 		t.Errorf("the refusal is\n%s\nand the chapter shows\n%s", said[0], want)
 	}
 
-	// The object from a file, and the export.
+	// The object from a file, and the export: an Excel file whose sheet
+	// is the table of the chapter, with the totals kept as numbers.
 	done("ann: approve from a file")
-	args, into := typed(t, blockOf(t, chapter, "ann: the export"))
-	if into != "approved.csv" {
-		t.Errorf("the export of the chapter goes to %q", into)
-	}
+	args, _ := typed(t, blockOf(t, chapter, "ann: the export"))
 	t.Setenv("FADODB_KEY", keys["ann"])
-	code, file, complaint := tool(args...)
-	if want := blockOf(t, chapter, "ann: the export, the file") + "\n"; code != exitDone || file != want {
-		t.Errorf("the export: exit %d, said %q, the file is\n%s\nand the chapter shows\n%s", code, complaint, file, want)
+	if code, out, said := tool(args...); code != exitDone || out != "" || said != "" {
+		t.Fatalf("the export: exit %d, printed %q, said %q", code, out, said)
 	}
-	// A cell, as the table of the chapter says.
-	inTicks := regexp.MustCompile("^`(.*)`$")
-	for _, row := range rowsOf(t, chapter, "a cell") {
-		value, want := inTicks.FindStringSubmatch(row[0]), ""
+	written, err := os.ReadFile("approved.xlsx")
+	if err != nil {
+		t.Fatalf("the export of the chapter wrote no approved.xlsx: %v", err)
+	}
+	name, cells := readSheet(t, written)
+	if name != "Invoice" {
+		t.Errorf("the sheet of the export is named %q", name)
+	}
+	_, table, _ := strings.Cut(chapter, "<!-- ann: the export, the sheet -->\n")
+	table, _, _ = strings.Cut(table, "\n\n")
+	for r, line := range strings.Split(table, "\n") {
+		if r == 1 {
+			continue // the line under the names
+		}
+		row := r + 1
+		if r > 1 {
+			row = r
+		}
+		for c, shown := range strings.Split(strings.Trim(line, "|"), "|") {
+			shown = strings.TrimSpace(shown)
+			want := "text: " + shown
+			switch {
+			case r == 0:
+				want = "name: " + shown
+			case c == 3:
+				want = "number: " + shown + " shown as 0.00"
+			}
+			if at := columnName(c) + strconv.Itoa(row); cells[at] != want {
+				t.Errorf("%s of the export holds %q, and the chapter shows %q", at, cells[at], want)
+			}
+		}
+	}
+	if len(cells) != 12 {
+		t.Errorf("the export has %d cells, and the chapter shows 12", len(cells))
+	}
+	// A cell, as the table of the chapter says, by the type of its
+	// variable.
+	inTicks := regexp.MustCompile("^`([^`]*)`")
+	for _, row := range rowsOf(t, chapter, "a cell of an Excel file") {
+		declared, value := "", inTicks.FindStringSubmatch(row[1])
+		if named := inTicks.FindStringSubmatch(row[0]); named != nil {
+			declared = named[1]
+		} else if !strings.HasPrefix(row[0], "computed") {
+			t.Fatalf("the table of the cells has a row for %q", row[0])
+		}
 		if value == nil {
 			t.Fatalf("the table of the cells has a row %q", row)
 		}
-		if shown := inTicks.FindStringSubmatch(row[1]); shown != nil {
-			want = shown[1]
+		got := cellOf(declared, []byte(value[1]))
+		holds := strings.Trim(row[2], "`")
+		kind, said := map[cellKind]string{cellText: "the text ", cellNumber: "the number ", cellDay: "the day ", cellMoment: "the moment ", cellBool: "true"}[got.kind], got.text
+		if got.kind == cellDay || got.kind == cellMoment || got.kind == cellBool {
+			said = ""
 		}
-		if got := cell([]byte(value[1])); got != want {
-			t.Errorf("a cell of %s holds %q, and the chapter says %q", value[1], got, want)
+		if !strings.HasPrefix(strings.ReplaceAll(holds, "`", ""), kind+said) {
+			t.Errorf("a %s value %s is the cell %+v, and the chapter says: %s", row[0], value[1], got, row[2])
 		}
+		if got.unit != "" && !strings.Contains(holds, got.unit) {
+			t.Errorf("a %s value %s has the currency %s, and the chapter says: %s", row[0], value[1], got.unit, row[2])
+		}
+	}
+	// The same as text, for a program.
+	args, _ = typed(t, blockOf(t, chapter, "ann: the export as text"))
+	code, file, complaint := tool(args...)
+	if want := blockOf(t, chapter, "ann: the export as text, printed") + "\n"; code != exitDone || file != want {
+		t.Errorf("the export as text: exit %d, said %q, printed\n%s\nand the chapter shows\n%s", code, complaint, file, want)
 	}
 
 	// Ann waits for invoices that enter review, Bob files one more, and
@@ -243,6 +297,13 @@ func TestTheChapterOnTheTerminal(t *testing.T) {
 		t.Errorf("the chapter says a stream ends with %v", ends)
 	}
 
+	// A file on a document: Bob puts the scan, Ann reads the same bytes.
+	done("bob: the scan")
+	done("ann: the scan")
+	if read, err := os.ReadFile("scan.pdf"); err != nil || string(read) != string(scan) {
+		t.Errorf("Ann read %q of the scan (%v)", read, err)
+	}
+
 	// The help of a command.
 	t.Setenv("FADODB_KEY", "")
 	if _, help, _ := tool("exec", "help", "transition"); help != blockOf(t, chapter, "the help of a command")+"\n" {
@@ -260,8 +321,13 @@ func TestTheChapterOnTheTerminal(t *testing.T) {
 			t.Errorf("the chapter names %s, which the tool does not read", env)
 		}
 	}
-	if strings.Count(execUsage, "\n  --") != len(rowsOf(t, chapter, "what the tool is told"))+2 {
-		t.Error("the tool has a flag the chapter does not name: its table has the four of the server and the key, and the chapter --from and --csv")
+	if strings.Count(execUsage, "\n  --") != len(rowsOf(t, chapter, "what the tool is told"))+4 {
+		t.Error("the tool has a flag the chapter does not name: its table has the four of the server and the key, and the chapter --from, --xlsx, --csv and --out")
+	}
+	for _, flag := range []string{"--from", "--xlsx", "--csv", "--out"} {
+		if !strings.Contains(chapter, "`"+flag) || !strings.Contains(execUsage, "\n  "+flag+" ") {
+			t.Errorf("the flag %s is not in the chapter and in the help of the tool", flag)
+		}
 	}
 
 	// How the tool ends: the four ends of the chapter's table, each as

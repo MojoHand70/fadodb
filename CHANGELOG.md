@@ -176,8 +176,18 @@ All notable changes to FadoDB are recorded here. The format follows
   unless `--plain-http` says that something in front encrypts. It
   writes one line of JSON for each request to standard error, answers
   `GET /v1/health` for anybody, and on an interrupt lets the commands
-  that run end before it closes the database. Its metrics are not
-  built yet. `docs/manual/serving-a-database.md` is its chapter.
+  that run end before it closes the database.
+  `docs/manual/serving-a-database.md` is its chapter.
+- The counts of `fadodb serve` (ADR-0059, item 9). `GET /v1/metrics`
+  answers, to a database administrator who sends a key, what the
+  server has counted since it started, in the text form Prometheus
+  reads: the requests by command and status, the time they took, what
+  the queue of the database still has to do (due, waiting for its
+  moment, dead), how long the oldest due action has been due, and the
+  sizes of the database and of its log. A name that is no command is
+  counted as `other`; no user, document or value is in the counts.
+  Counting a request allocates nothing. `OutboxCounts` is the Go call
+  behind the counts of the queue.
 - The stream of changes, in the Go API (ADR-0058). `Subscribe` opens a
   stream for a caller: the events of the log from now on, or from
   after the event its filter names, in the order of the commits.

@@ -267,8 +267,10 @@ the hosts the actions of the database may call and the limits of the
 server; the secrets of its connections, read from a directory or the
 environment at every request; and the refusal of an action that needs
 a Go function, which a program of the company's own runs
-(`examples/server`). Not built yet: its counts, the stream of changes
-and the door for agents.
+(`examples/server`). The third part is in as well: the counts of the
+server, for an administrator, at `GET /v1/metrics`, in the form
+Prometheus reads. Not built yet: the stream of changes and the door
+for agents.
 This page is updated when a phase starts and when it ends;
 it never describes a phase as done before its acceptance criteria pass.
 

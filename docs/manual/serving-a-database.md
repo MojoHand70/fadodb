@@ -436,7 +436,8 @@ says how a program of your own holds a database alone.
 
 ## What it writes
 
-To standard error, one line for each request, as JSON:
+To standard error, one line for each request but those for its
+health, as JSON:
 
 <!-- a line of the log -->
 ```jsonc
@@ -446,7 +447,7 @@ To standard error, one line for each request, as JSON:
 | Member | What it is |
 |---|---|
 | `time` | when the request came, in UTC |
-| `command` | the name the request was sent to: a command, or `blobs`, `file` or `blob` for a file |
+| `command` | the name the request was sent to: a command, `blobs`, `file` or `blob` for a file, or `metrics` for the counts |
 | `user` | the id of who sent it, empty when the server could not tell |
 | `status` | the status of the reply |
 | `code` | the code of the refusal; left out when the command ran |
@@ -469,7 +470,81 @@ GET /v1/health
 
 Anybody may ask; it needs no key and says nothing of what the database
 holds. `ok` is true when the server answers and can read its database,
-and the status is then 200; otherwise it is 503.
+and the status is then 200; otherwise it is 503. A request for the
+health has no line in the log and is not counted.
+
+## Its counts
+
+<!-- the counts are read -->
+```
+GET /v1/metrics
+Authorization: Bearer fado_7GQ2M4XK0P_3ZD9…
+```
+
+A database administrator reads what the server has counted since it
+started, in the text form Prometheus reads. Anybody else is refused:
+`unauthenticated` without a key, `forbidden` with the key of a user who
+is no administrator.
+
+<!-- the counts -->
+| Count | Kind | What it says |
+|---|---|---|
+| `fadodb_build_info` | gauge | The version of the server; always 1. |
+| `fadodb_start_time_seconds` | gauge | When the server started, in seconds since 1970. |
+| `fadodb_requests_total` | counter | Requests answered, by the command they were sent to and the status of the reply. A name that is no command is counted as other. |
+| `fadodb_command_seconds` | summary | The time the requests of a command took, added up, and how many they were. |
+| `fadodb_request_seconds` | histogram | How long requests took, all commands together. |
+| `fadodb_actions` | gauge | The queued actions of the database that are not done: due and not yet run, waiting for their moment, and dead. |
+| `fadodb_actions_oldest_due_seconds` | gauge | How long the action that has been due longest has been due; 0 when none is due. |
+| `fadodb_database_bytes` | gauge | The size of the database file. |
+| `fadodb_log_bytes` | gauge | The size of the file of latest commits beside the database, which is folded into it. |
+
+A part of the page, after three transitions of which one was refused,
+with eight actions in the queue:
+
+<!-- a part of the counts -->
+```
+fadodb_requests_total{command="transition",status="200"} 2
+fadodb_requests_total{command="transition",status="409"} 1
+fadodb_command_seconds_sum{command="transition"} 0.00013
+fadodb_command_seconds_count{command="transition"} 3
+fadodb_actions{state="due"} 2
+fadodb_actions{state="waiting"} 5
+fadodb_actions{state="dead"} 1
+fadodb_actions_oldest_due_seconds 60
+```
+
+- **Every request is counted when it was answered**: a command, a
+  file, and a request for the counts themselves, under `metrics`.
+- **A name that is no command is counted as `other`.** A caller cannot
+  make the page grow by sending names.
+- **Only what happened has a line.** A command nobody sent is not on
+  the page.
+- **The counts start with the server.** They are kept in memory and
+  begin at zero each time it starts.
+- **The queue.** `due` are the actions that should have run and have
+  not: a number that stays high says the server does not keep up, or
+  that something its actions need gives no answer. `waiting` are the
+  timers whose moment has not come and the actions that are tried
+  again later. `dead` are the actions that were refused or ran out of
+  attempts: an administrator lists them with `outbox` and sends one
+  again with `retry_action`.
+- **No user, no document and no value is in the counts.**
+- **Asking for the counts is a request like any other**: it has its
+  line in the log, with who asked.
+
+Prometheus sends the key of a user who is an administrator, which it
+reads from a file:
+
+```yaml
+scrape_configs:
+  - job_name: fadodb
+    metrics_path: /v1/metrics
+    authorization:
+      credentials_file: /etc/prometheus/fadodb.key
+    static_configs:
+      - targets: ["127.0.0.1:8080"]
+```
 
 ## Stopping
 
@@ -487,8 +562,8 @@ caller is answered beyond them.
 
 ## Not here yet
 
-- **Counts for whoever watches the server** (`GET /v1/metrics`).
-- **The stream of changes.**
+- **The stream of changes**, and with it the count of the streams
+  that are open.
 - **The command-line tool as a caller** of a server, with a key.
 - **Changing the settings without a restart.**
 - **Limits for each user**, such as commands a minute. The limits are

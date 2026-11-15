@@ -89,6 +89,9 @@ type (
 	OutboxOptions = store.OutboxOptions
 	QueuedAction  = store.QueuedAction
 	OutboxFilter  = store.OutboxFilter
+	// OutboxCounts is how much of the outbox is still to do: due,
+	// waiting for its moment, and dead.
+	OutboxCounts = store.OutboxCounts
 	// ChangeFilter says which events a stream of changes is told of,
 	// and Changes is the stream: Next answers its events one by one
 	// and Close ends it (ADR-0058).
@@ -516,6 +519,14 @@ func (db *DB) Drain(ctx context.Context, opts ...Option) (int, error) {
 // arguments, its attempts and its last error (ADR-0044).
 func (db *DB) Outbox(ctx context.Context, f OutboxFilter, opts ...Option) ([]QueuedAction, error) {
 	return db.s.Outbox(ctx, f, opts...)
+}
+
+// OutboxCounts counts what of the outbox is still to do: the actions
+// that are due and have not run, the ones that wait for their moment,
+// and the dead ones. It is an administrator's, like Outbox, and is what
+// a server shows whoever watches it (ADR-0059, item 9).
+func (db *DB) OutboxCounts(ctx context.Context, opts ...Option) (OutboxCounts, error) {
+	return db.s.OutboxCounts(ctx, opts...)
 }
 
 // Subscribe opens a stream of changes for the caller (ADR-0058): the

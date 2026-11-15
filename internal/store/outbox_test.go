@@ -195,10 +195,28 @@ func TestOutbox_NoAnswerIsRetried(t *testing.T) {
 		}
 		return rows[i]
 	}
+	// What is still to do, counted for whoever watches the database
+	// (ADR-0059, item 9): four actions are due, since the commits.
+	counts := func() OutboxCounts {
+		t.Helper()
+		c, err := s.OutboxCounts(ctx, asSetup)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return c
+	}
+	if c := counts(); c != (OutboxCounts{Due: 4, OldestDue: start}) {
+		t.Errorf("before the first drain: %s", dump(c))
+	}
 	// First drain: the slow order's first action fails, its second waits
 	// behind it; the fast order's two run.
 	if n, err := s.Drain(ctx, asSetup); err != nil || n != 3 {
 		t.Fatalf("drain: %d, %v", n, err)
+	}
+	// One action waits for its next attempt, a second from now; the one
+	// behind it is due and held back.
+	if c := counts(); c != (OutboxCounts{Due: 1, Waiting: 1, OldestDue: start}) {
+		t.Errorf("after the first drain: %s", dump(c))
 	}
 	if got := notes(t, s); strings.Join(got, "|") != "placed fast|shipped" {
 		t.Errorf("notes %v", got)
@@ -248,6 +266,13 @@ func TestOutbox_NoAnswerIsRetried(t *testing.T) {
 	}
 	if q := row(slow.ID, 1); q.Status != ActionDone {
 		t.Errorf("the action behind the dead one: %s", dump(q))
+	}
+	// Nothing is due and nothing waits; one action is dead.
+	if c := counts(); c != (OutboxCounts{Dead: 1}) {
+		t.Errorf("after the last attempt: %s", dump(c))
+	}
+	if _, err := s.OutboxCounts(ctx, As(Principal{ID: "ola"})); code(err) != CodeForbidden {
+		t.Errorf("the counts of the queue, for a caller who is no administrator: %v", err)
 	}
 	// Retried by hand once the store answers, the first runs too.
 	busy = false

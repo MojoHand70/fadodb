@@ -1114,8 +1114,9 @@ engine's table.
 > request and answers `GET /v1/health`. Its settings, a file of the
 > operator's, list the hosts its actions may call and its limits, and
 > the secrets of its connections are read from a directory or the
-> environment. The stream of changes and the metrics are decided, by
-> the five records the owner accepted on 2026-11-14, and not built.
+> environment. It answers its counts to an administrator at
+> `GET /v1/metrics`. The stream of changes is decided, by the five
+> records the owner accepted on 2026-11-14, and not built.
 
 | Address | Purpose | Record |
 |---|---|---|

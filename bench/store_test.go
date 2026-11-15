@@ -37,7 +37,7 @@ func TestStore_SQLite(t *testing.T) {
 		if err := Verify(context.Background(), db, o); err != nil {
 			t.Error(err)
 		}
-		db.Close()
+		Close(db)
 		// The timing fields are informative here, and a coarse clock, as
 		// on the Windows runners, may round a short commit to zero.
 		if r.Commits != o.Commits || r.PerSecond <= 0 || r.P50 < 0 || r.P99 < r.P50 || r.Max < r.P99 || r.FileBytes <= 0 {
@@ -54,7 +54,7 @@ func TestLookup_SQLite(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer db.Close()
+	defer Close(db)
 	reports, err := RunLookup(context.Background(), target, db, []int{100, 1000}, 500)
 	if err != nil {
 		t.Fatal(err)

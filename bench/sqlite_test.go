@@ -28,7 +28,7 @@ func TestSQLite_Pragmas(t *testing.T) {
 		if err := db.QueryRow("PRAGMA wal_autocheckpoint").Scan(&auto); err != nil {
 			t.Fatal(err)
 		}
-		db.Close()
+		Close(db)
 		wantAuto := int64(1000)
 		if tc.target.BackgroundCheckpoints {
 			wantAuto = 0

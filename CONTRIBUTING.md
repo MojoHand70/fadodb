@@ -70,5 +70,5 @@ pull request.
 
 ## License
 
-Contributions are accepted under the MIT license in [LICENSE](LICENSE). There
-is no contributor license agreement.
+Contributions are accepted under the Apache License 2.0 in [LICENSE](LICENSE),
+as its section 5 says. There is no contributor license agreement.

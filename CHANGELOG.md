@@ -347,6 +347,8 @@ All notable changes to FadoDB are recorded here. The format follows
 
 ### Changed
 
+- **The license is the Apache License 2.0** (ADR-0061), in place of
+  MIT. Releases up to v0.5.0 stay under MIT.
 - **The engine schema is version 10**, for the three tables of the
   users, their keys and the changes to them (ADR-0057). Every database
   has them; a database that keeps no users has them empty. A database

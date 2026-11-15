@@ -1,6 +1,6 @@
 {
   "suite": "rules",
-  "description": "The four rules of a class are enforced on every path (ADR-0049): who may see, create, change and delete a document. A document its caller may not see is answered as one that does not exist, by a read, a command, the listing of transitions, a filter, a count and the list of what is due alike. A caller who sees a document and may not do what they ask is refused with forbidden and the place of the rule. A transition with a rule of its own asks that rule and not update; one without asks update. An administrator passes every rule; a call without a principal is nobody.",
+  "description": "The four rules of a class are enforced on every path (ADR-0049): who may see, create, change and delete a document. A document its caller may not see is answered as one that does not exist, by a read, a command, the listing of transitions, a filter, a count and the list of what is due alike. A caller who sees a document and may not do what they ask is refused with forbidden and the place of the rule. The stream of changes tells a caller of an event when the caller may read the document as the event left it, and of a delete when the caller could read the document just before (ADR-0058). A transition with a rule of its own asks that rule and not update; one without asks update. An administrator passes every rule; a call without a principal is nobody.",
   "as_written": true,
   "class": {
     "name": "Claim",
@@ -103,6 +103,17 @@
     {"name": "HR deletes", "do": "delete", "doc": "c2", "as": "hana", "expect": {}},
     {"name": "and then it is gone for its owner too", "do": "get", "doc": "c2", "as": "bob", "expect": {"code": "unknown_document"}},
     {"name": "the filter and the count agree after it all", "do": "query", "as": "hana", "expect": {"docs": ["c1", "c0"]}},
-    {"name": "the filter and the count agree after it all, 2", "do": "count", "as": "bob", "expect": {"count": 0}}
+    {"name": "the filter and the count agree after it all, 2", "do": "count", "as": "bob", "expect": {"count": 0}},
+
+    {"name": "the stream of changes told the owner of all that happened to her claim, and of no other", "do": "heard", "as": "ann",
+     "expect": {"heard": ["created c1", "refresh c1", "set c1", "transition c1 file", "transition c1 approve"]}},
+    {"name": "the stream told another owner of his claim, and of its delete, since he could read it just before", "do": "heard", "as": "bob",
+     "expect": {"heard": ["created c2", "deleted c2"]}},
+    {"name": "the stream told HR of every claim, in the order of the commits", "do": "heard", "as": "hana",
+     "expect": {"heard": ["created c1", "created c0", "created c2", "refresh c1", "set c1", "transition c1 file", "transition c1 approve", "deleted c2"]}},
+    {"name": "the stream told an administrator of every claim", "do": "heard", "as": "root",
+     "expect": {"heard": ["created c1", "created c0", "created c2", "refresh c1", "set c1", "transition c1 file", "transition c1 approve", "deleted c2"]}},
+    {"name": "the stream told a stranger nothing, not even that a claim exists", "do": "heard", "as": "eve", "expect": {"heard": []}},
+    {"name": "the stream told nobody nothing", "do": "heard", "expect": {"heard": []}}
   ]
 }

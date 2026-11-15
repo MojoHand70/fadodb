@@ -226,6 +226,13 @@ func TestChanges_TheEventsAndThePlace(t *testing.T) {
 	if _, err := s.Subscribe(ctx, ChangeFilter{}, As(Principal{ID: "x", Kind: "robot"})); code(err) != CodeBadValue {
 		t.Errorf("a caller of a kind that is none: %v", err)
 	}
+	// A stream is heard as oneself.
+	if _, err := s.Subscribe(ctx, ChangeFilter{}, As(Principal{ID: "ola", For: "ann"})); code(err) != CodeNotSupported {
+		t.Errorf("a stream for somebody else: %v", err)
+	}
+	if err := all.As(Principal{ID: "ola", For: "ann"}); code(err) != CodeNotSupported {
+		t.Errorf("a stream handed to a caller that acts for somebody: %v", err)
+	}
 }
 
 // Next waits for the log to grow, and a commit wakes it (ADR-0058, item

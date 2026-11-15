@@ -178,6 +178,19 @@ All notable changes to FadoDB are recorded here. The format follows
   `GET /v1/health` for anybody, and on an interrupt lets the commands
   that run end before it closes the database. Its metrics are not
   built yet. `docs/manual/serving-a-database.md` is its chapter.
+- The stream of changes, in the Go API (ADR-0058). `Subscribe` opens a
+  stream for a caller: the events of the log from now on, or from
+  after the event its filter names, in the order of the commits.
+  `Next` waits for the next event and `Close` ends the stream. The
+  filter narrows it to classes, to kinds of event and to the states a
+  transition enters. A caller is told of an event when it may read the
+  document as the event left it, and of a delete when it could read
+  the document just before; a document that leaves a caller's sight
+  is passed over in silence. A stream that was away gives the id of
+  the last event it handled and misses nothing. A commit pays nothing
+  for the streams: it allocates the same with streams open as with
+  none. The address on the server, `POST /v1/subscribe`, is not built
+  yet.
 - The settings of `fadodb serve` (ADR-0059, items 4, 5, 6 and 11).
   `--settings FILE` gives the server one JSON file of the operator's:
   under `outbound`, the hosts the actions of the database may call,

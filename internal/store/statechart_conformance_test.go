@@ -186,7 +186,12 @@ type scriptExpect struct {
 	Present []string `json:"present,omitempty"`
 	// Docs are the labels of the documents a query returned, in order;
 	// Count the count.
-	Docs  []string `json:"docs,omitempty"`
+	Docs []string `json:"docs,omitempty"`
+	// Heard is what the stream of changes of the step's caller was told
+	// since the suite began, or since the caller's last such step
+	// (ADR-0058, item 11): for each event its kind and its document,
+	// and for a transition its name, as "transition c1 file".
+	Heard []string `json:"heard,omitempty"`
 	Count *int64   `json:"count,omitempty"`
 	// Due is what a due step lists: for each document its label in the
 	// script, its state and the state it would move to, and for one a
@@ -494,6 +499,28 @@ func runStatechartSuite(t *testing.T, suite *statechartSuite, through func(testi
 	}
 	docs := map[string]string{}
 	last := ""
+	// The streams of changes of the callers the script asks about, opened
+	// before anything happens, so that each is told from the beginning.
+	streams := map[string]*Changes{}
+	for _, step := range suite.Script {
+		if _, open := streams[step.As]; step.Do != "heard" || open {
+			continue
+		}
+		var opts []Option
+		if step.As != "" {
+			p, ok := suite.Principals[step.As]
+			if !ok {
+				t.Fatalf("%s: unknown principal %s", step.Name, step.As)
+			}
+			opts = append(opts, As(Principal{ID: p.ID, Groups: p.Groups, System: p.System, Kind: p.Kind}))
+		}
+		stream, err := s.Subscribe(ctx, ChangeFilter{}, opts...)
+		if err != nil {
+			t.Fatalf("the stream of %q: %v", step.As, err)
+		}
+		t.Cleanup(stream.Close)
+		streams[step.As] = stream
+	}
 	for i, step := range suite.Script {
 		name := step.Name
 		if name == "" {
@@ -543,7 +570,32 @@ func runStatechartSuite(t *testing.T, suite *statechartSuite, through func(testi
 		if network != nil {
 			network.take()
 		}
+		var heardNow []string
 		switch step.Do {
+		case "heard":
+			// What the caller's stream has to tell now, by the names the
+			// suite gave the documents.
+			alias := map[string]string{}
+			for name, id := range docs {
+				alias[id] = name
+			}
+			stream := streams[step.As]
+			heardNow = []string{}
+			for more := true; more && err == nil; {
+				more, err = stream.fill(ctx)
+				for _, ev := range stream.read {
+					doc := ev.DocID
+					if name, known := alias[doc]; known {
+						doc = name
+					}
+					line := ev.Kind + " " + doc
+					if ev.Kind == EventTransition && ev.Name != "" {
+						line += " " + ev.Name
+					}
+					heardNow = append(heardNow, line)
+				}
+				stream.read = nil
+			}
 		case "wait":
 			if suite.Clock == "" {
 				t.Fatalf("%s: a wait moves the suite's clock, and the suite has none", name)
@@ -672,6 +724,9 @@ func runStatechartSuite(t *testing.T, suite *statechartSuite, through func(testi
 					t.Errorf("%s: %s is absent from %s, want it present", name, v, d.ID)
 				}
 			}
+		}
+		if step.Do == "heard" && !reflect.DeepEqual(heardNow, append([]string{}, want.Heard...)) {
+			t.Errorf("%s: the stream told %q, want %q", name, heardNow, want.Heard)
 		}
 		if want.Docs != nil {
 			labels := map[string]string{}

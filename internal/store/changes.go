@@ -84,6 +84,12 @@ func (s *Store) Subscribe(ctx context.Context, f ChangeFilter, opts ...Option) (
 		return nil, errf(CodeClosed, "", "the store is closed")
 	default:
 	}
+	// A stream is heard as oneself. Who may act for whom is asked class
+	// by class when a command is sent (ADR-0053), and a stream is of
+	// every class and of no command.
+	if len(opts) > 0 && apply(opts).principal.For != "" {
+		return nil, hintf(CodeNotSupported, "", "a stream of changes is heard as oneself, and this caller names somebody it acts for", "open the stream without for; the commands the caller then sends name who they are for")
+	}
 	o, e := s.asked(ctx, opts, "")
 	if e != nil {
 		return nil, e
@@ -175,6 +181,9 @@ func (s *Store) hasState(classes map[string]bool, state string) bool {
 func (c *Changes) As(p Principal) error {
 	if e := checkPrincipal(p); e != nil {
 		return e
+	}
+	if p.For != "" {
+		return hintf(CodeNotSupported, "", "a stream of changes is heard as oneself, and this caller names somebody it acts for", "name the caller without for")
 	}
 	c.o.principal = p
 	return nil

@@ -1,8 +1,8 @@
 # Naming the caller
 
-FadoDB keeps no users and checks no passwords. The program that holds
-the engine knows who is calling, from its own login, a token or a
-queue, and says so on every call. The engine trusts the program for
+FadoDB checks no passwords, and keeps no users unless it is told to.
+The program that holds the engine knows who is calling, from its own
+login, a token or a queue, and says so on every call. The engine trusts the program for
 that, and decides everything else itself. This chapter is for the
 developer of that program: what it says about a caller, what the
 engine does with each part, what the engine checks, and what stays

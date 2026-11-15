@@ -54,6 +54,20 @@ func identReason(name string) string {
 	return ""
 }
 
+// NameReason says why a text is not a name a definition may give, such
+// as the name of a connection or of a secret, or "" when it is. A program
+// that keeps something under such a name, as a server keeps secrets,
+// asks it before it makes a file or a variable of the name.
+func NameReason(name string) string {
+	if reason := identReason(name); reason != "" {
+		return reason
+	}
+	if formula.IsKeyword(name) {
+		return "a name may not be a keyword of the formula language"
+	}
+	return ""
+}
+
 // checkName validates a variable, state, transition, class or schema
 // name at path and records what is wrong. reserved is the set of names
 // the generated tables take, or nil.

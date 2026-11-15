@@ -120,7 +120,7 @@ func refusal(e *Error) outcome { return outcome{failure: e} }
 func noReply(e *Error) outcome { return outcome{failure: e, retry: true} }
 func (o outcome) failed() bool { return o.failure != nil }
 func outboundOff(name string) *Error {
-	return hintf(CodeOutboundOff, "", "this process sends no requests, and "+name+" is sent as one", "the host program allows outbound calls when it opens the database, with Options.Outbound (ADR-0045)")
+	return hintf(CodeOutboundOff, "", "this process sends no requests, and "+name+" is sent as one", "the host program allows outbound calls when it opens the database, with Options.Outbound; fadodb serve does when its settings list the hosts it may call")
 }
 
 // sending is one request being built: the action, the call, the values of

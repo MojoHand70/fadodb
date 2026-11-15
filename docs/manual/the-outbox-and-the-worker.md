@@ -412,7 +412,7 @@ alone no document.
 | lists the queue, sends an action again or runs the queue, and is no administrator | `forbidden` | `/system/administrators` |
 | sends again an action that is pending or done | `not_allowed` | |
 | sends again an action under a key the queue does not have | `unknown_action` | |
-| defines an action with no request, and the program has no function under its name | `not_supported` | |
+| defines an action with no request, and the program has no function under its name | `not_registered` | |
 
 ## Not here yet
 

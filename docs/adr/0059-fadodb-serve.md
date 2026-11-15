@@ -245,6 +245,65 @@ the health. The settings (items 4, 5, 6 and 11) and the metrics follow.
   seconds.** A body and a reply have no limit of time, since a file
   takes as long as its line allows.
 
+The second part built items 4, 5, 6 and 11: the settings, the secrets
+and the refusal of a Go function.
+
+- **The file of settings is read once, when the server starts**, by a
+  reader as strict as a command's: it refuses a member the file should
+  not have, a member written twice and a value that does not fit, and
+  names the file and the place. `limits.command_seconds` may have a
+  fraction and is at most a day. `limits.streams` is read and kept for
+  the stream of ADR-0058, which is not built, so it limits nothing
+  yet. The time of a call and the size of its reply, ten seconds and
+  one megabyte (ADR-0045, item 7), are not settings.
+- **A connection of the settings has a name a definition can give
+  it**, and no two differ in case only: their secrets are kept under
+  the name without regard to case, so two such connections would share
+  them.
+- **A secret in the environment is `FADODB_SECRET_SLACK__TOKEN`, with
+  two underscores** between the connection and the secret, and not
+  with one, as item 5 wrote it. A name may hold an underscore. With
+  one between them, the secret `c` of a connection `a_b` and the
+  secret `b_c` of a connection `a` are one variable, and a definition
+  could name the second to send the first to the hosts of another
+  connection, against the owner's ruling of 2026-11-10. No name holds
+  two underscores (ADR-0031), so the variable of one connection is
+  never that of another.
+- **The file is looked for first, then the environment.** The
+  directory and the file are in small letters, the variable in
+  capitals. A file is read without the end of its last line and holds
+  at most 64 KiB. A file that is there and empty is no secret, and the
+  environment is not asked in its place. The directory given with
+  `--secrets-dir` must be there when the server starts.
+- **Why a secret is missing is said without the directory of the
+  machine.** The words stay with the action that was not sent, where
+  users of the database read them: they name the file as `slack/token`
+  and the variable.
+- **What item 6 found already there.** The Context says that a
+  definition without its function is accepted. It is not: since
+  ADR-0045 was built, a program with no function under the name
+  refuses the definition, with `not_supported`. What is there, and is
+  tried again with `not_registered` until it is dead, is an action of
+  a database that another program kept with the function. So this part changed the code of the
+  refusal to `not_registered`, in every program, and its hint to the
+  two ways out: a request, or a program of one's own. A class whose
+  rule names such an action is taken as in any program, and the action
+  does not run.
+- **The server says what it cannot run, when it starts**: an action of
+  a Go function, an action whose connection the settings do not have,
+  and a secret that is in neither place, each by name. It also says in
+  a line what its actions may call.
+- **`examples/server` is the program of item 6**: the door in front of
+  a database opened with a Go function, in about fifty lines, played
+  by a test.
+- **The gate of ADR-0045, item 7, moved.** `fadodb` is now a program
+  that allows outbound calls when its settings list a host, so it
+  imports `fado/outbound` and links the HTTP client, as ADR-0045 said
+  it would when the server arrived. The dependency gate holds the rule
+  on `examples/server` instead: a program with the engine and the door
+  links no HTTP client, and neither package imports `fado/outbound`.
+  The tool is 14.1 MB against its budget of 15.
+
 ## The owner's rulings
 
 All of 2026-11-14. The owner read the three questions, each with a

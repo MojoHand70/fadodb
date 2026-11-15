@@ -261,10 +261,14 @@ listens on this machine only, and it refuses to listen beyond it
 without a certificate unless it is told that something in front
 encrypts. While it serves it holds the database alone: a second
 program that opens it is refused and told who holds it. It writes one
-line for each request, answers its health, and stops cleanly. Not
-built yet: the settings of the server, the hosts its actions may call
-and their secrets, its counts, the stream of changes and the door for
-agents.
+line for each request, answers its health, and stops cleanly. The
+second part is in too: the operator's settings, a JSON file that lists
+the hosts the actions of the database may call and the limits of the
+server; the secrets of its connections, read from a directory or the
+environment at every request; and the refusal of an action that needs
+a Go function, which a program of the company's own runs
+(`examples/server`). Not built yet: its counts, the stream of changes
+and the door for agents.
 This page is updated when a phase starts and when it ends;
 it never describes a phase as done before its acceptance criteria pass.
 

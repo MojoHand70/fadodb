@@ -166,7 +166,7 @@ func TestActions_Registry(t *testing.T) {
 	for name, tc := range map[string]struct{ def, code, path string }{
 		"a version that is not the next":     {strings.Replace(booksPost, `"label"`, `"version": 5, "label"`, 1), model.CodeBadValue, "/version"},
 		"a name that differs in case":        {strings.Replace(booksPost, "books.post", "Books.Post", 1), model.CodeDuplicate, "/name"},
-		"a definition nothing implements":    {`{"name": "slack.post", "params": {"text": "text"}}`, model.CodeNotSupported, "/name"},
+		"a definition nothing implements":    {`{"name": "slack.post", "params": {"text": "text"}}`, CodeNotRegistered, "/name"},
 		"a definition that does not compile": {`{"name": "books.post", "params": {"order": "string"}}`, model.CodeUnknownType, "/params/order"},
 		"what is not JSON":                   {`{"name": "books.post",`, model.CodeBadJSON, ""},
 	} {
@@ -202,7 +202,7 @@ func TestActions_Registry(t *testing.T) {
 	if a, ok := bare.Action("books.post"); !ok || a.Available || a.Version != 3 || len(a.Params) != 3 {
 		t.Errorf("a definition in a process without its function: %s", dump(a))
 	}
-	if _, err := bare.DefineAction(ctx, []byte(booksPost), asSetup); err == nil || !err.(model.Diagnostics).Has(model.CodeNotSupported) {
+	if _, err := bare.DefineAction(ctx, []byte(booksPost), asSetup); err == nil || !err.(model.Diagnostics).Has(CodeNotRegistered) {
 		t.Errorf("a redefinition in a process without the function: %v", err)
 	}
 	if _, err := bare.TryAction(ctx, "books.post", Values{"order": "o"}, asSetup); code(err) != CodeNotRegistered {

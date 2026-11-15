@@ -19,6 +19,10 @@ recomputes its hash and reports the blobs whose bytes do not match
 when every blob matches, 1 when one does not or the file cannot be
 opened, 2 on a usage mistake. A database whose blob store is the
 embedder's cannot be checked here.
+
+It looks only at the blobs the store holds: a blob that a document
+names and the store has lost is not found. It runs none of the
+database's queued actions.
 `
 
 // runCheck is "fadodb check FILE".
@@ -30,7 +34,11 @@ func runCheck(args []string, stdout, stderr io.Writer) int {
 		}
 		return 2
 	}
-	s, err := store.Open(args[0], store.Options{})
+	// A database is made by init and by nothing else (ADR-0059, item 1).
+	if !exists(args[0]) {
+		return noDatabase("fadodb check", args[0], stderr)
+	}
+	s, err := store.Open(args[0], store.Options{Outbox: leavesTheQueue})
 	if err != nil {
 		fmt.Fprintf(stderr, "fadodb check: %v\n", err)
 		return 1

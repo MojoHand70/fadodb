@@ -143,8 +143,11 @@ const (
 	// CodeUnknownParameter: an argument names a parameter the action's
 	// definition does not have (ADR-0045).
 	CodeUnknownParameter = "unknown_parameter"
-	// CodeNotRegistered: the action is defined and nothing in this process
-	// implements it: its Go function was not given to Open (ADR-0027).
+	// CodeNotRegistered: nothing in this process implements the action:
+	// its Go function was not given to Open (ADR-0027). A definition
+	// that needs one is refused with it, and the rows of one that came
+	// with the database wait with it. fadodb serve takes no Go function
+	// (ADR-0059).
 	CodeNotRegistered = "not_registered"
 	// CodeActionError: the Go function of an action returned an error, or
 	// panicked; Message carries its words. A function that returns an

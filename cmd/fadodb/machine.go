@@ -74,6 +74,14 @@ serves the database, keys are made through it, with the command
 create_key.
 `
 
+// leavesTheQueue is how every command of the tool but serve opens a
+// database. The tool works on a database and is not its program: it has
+// none of the program's Go functions and may call no host. A worker of
+// its own would ask for the actions that are due, get no answer, and
+// use up an attempt of each. So the tool starts none, and what is
+// queued waits for the program, or the server, that runs it.
+var leavesTheQueue = fado.OutboxOptions{Manual: true}
+
 // onTheMachine is who the commands of this file act as: no user, with
 // the work of a database administrator.
 var onTheMachine = fado.As(fado.Principal{System: []string{fado.GroupAdministrators}})
@@ -152,7 +160,7 @@ func runInit(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "%s: %s exists; a database is made where there is none\n", name, path)
 		return 1
 	}
-	db, err := fado.Open(path, fado.Options{Users: true, Alone: name, MaxText: *maxText, BlobStore: *blobs, MaxBlob: *maxBlob})
+	db, err := fado.Open(path, fado.Options{Users: true, Alone: name, Outbox: leavesTheQueue, MaxText: *maxText, BlobStore: *blobs, MaxBlob: *maxBlob})
 	if err != nil {
 		fmt.Fprintf(stderr, "%s: %v\n", name, err)
 		return 1
@@ -176,7 +184,7 @@ func openOnTheMachine(name, path string, stderr io.Writer) (*fado.DB, int) {
 	if !exists(path) {
 		return nil, noDatabase(name, path, stderr)
 	}
-	db, err := fado.Open(path, fado.Options{Users: true, Alone: name})
+	db, err := fado.Open(path, fado.Options{Users: true, Alone: name, Outbox: leavesTheQueue})
 	if err != nil {
 		fmt.Fprintf(stderr, "%s: %v\n", name, err)
 		if fado.ErrorCode(err) == "in_use" {

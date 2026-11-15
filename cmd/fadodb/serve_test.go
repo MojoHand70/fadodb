@@ -16,12 +16,14 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/MojoHand70/fadodb/fado/httpdoor"
+	"github.com/MojoHand70/fadodb/internal/server"
 )
 
 // requestOfTheChapter is the request whose line the chapter on serving
@@ -333,7 +335,7 @@ func TestTheChapterOnServing(t *testing.T) {
 	chapter := strings.ReplaceAll(string(text), "\r\n", "\n")
 
 	// Every flag of the server is in the chapter.
-	for _, flag := range []string{"--listen", "--tls-cert", "--tls-key", "--plain-http"} {
+	for _, flag := range []string{"--listen", "--tls-cert", "--tls-key", "--plain-http", "--settings", "--secrets-dir"} {
 		if !strings.Contains(serveUsage, flag) {
 			t.Errorf("the test names the flag %s, which the server does not have", flag)
 		}
@@ -381,4 +383,85 @@ func TestTheChapterOnServing(t *testing.T) {
 	if !strings.Contains(chapter, "```jsonc\n{\"ok\":true,\"version\":\"dev\"}\n```") {
 		t.Error("the chapter does not show the answer of the health")
 	}
+
+	// The settings the chapter shows are those of the record, and the
+	// server reads them.
+	if got := blockOfTheChapter(t, "the settings"); got != settingsOfTheRecord {
+		t.Errorf("the settings of the chapter are not those of ADR-0059:\n%s", got)
+	}
+	// Every member a file of settings may have has its row, with what
+	// the server does when the member is not given.
+	rows := between(chapter, "<!-- the members of the settings -->\n", "\n\n")
+	usual := map[string]string{
+		"limits.request_bytes":   strconv.Itoa(server.DefaultRequestBytes),
+		"limits.command_seconds": strconv.Itoa(int(server.DefaultCommandTime.Seconds())),
+		"limits.commands":        strconv.Itoa(server.DefaultCommands),
+		"limits.streams":         "256",
+		"outbound.hosts":         "none",
+		"outbound.connections":   "none",
+	}
+	var all []string
+	for _, m := range outboundMembers {
+		all = append(all, "outbound."+m)
+	}
+	for _, m := range limitMembers {
+		all = append(all, "limits."+m)
+	}
+	if len(all) != len(usual) {
+		t.Errorf("the test knows what is usual for %d members, and a file of settings may have %d", len(usual), len(all))
+	}
+	for _, member := range all {
+		found := false
+		for _, row := range strings.Split(rows, "\n") {
+			if cells := strings.Split(row, "|"); len(cells) >= 5 && strings.TrimSpace(cells[1]) == "`"+member+"`" {
+				found = true
+				if !strings.HasPrefix(strings.TrimSpace(cells[3]), usual[member]) {
+					t.Errorf("the chapter says of %s, when it is not given: %s; the server has %s", member, strings.TrimSpace(cells[3]), usual[member])
+				}
+			}
+		}
+		if !found {
+			t.Errorf("the chapter has no row for the setting %s", member)
+		}
+		if _, name, _ := strings.Cut(member, "."); !strings.Contains(serveUsage, `"`+name+`"`) {
+			t.Errorf("the help of the server does not show the setting %s", member)
+		}
+	}
+	// The settings the help of the server shows are read too.
+	if _, after, found := strings.Cut(serveUsage, "\n  {\n"); !found {
+		t.Error("the help of the server shows no settings")
+	} else if example, _, _ := strings.Cut(after, "\n  }\n"); true {
+		if _, err := parseSettings([]byte("{" + example + "}")); err != nil {
+			t.Errorf("the settings the help of the server shows: %v", err)
+		}
+	}
+
+	// Where a secret is, as the server looks for it.
+	where := between(chapter, "<!-- where a secret is -->\n", "\n\n")
+	if !strings.Contains(where, "`"+secretFile("books", "token")+"`") || !strings.Contains(where, "`"+secretVariable("books", "token")+"`") {
+		t.Errorf("the chapter does not say where the secret token of books is: %s and %s\n%s", secretFile("books", "token"), secretVariable("books", "token"), where)
+	}
+	if !strings.Contains(serveUsage, secretVariable("slack", "token")) || !strings.Contains(serveUsage, "DIR/"+secretFile("slack", "token")) {
+		t.Error("the help of the server does not say where the secret token of slack is")
+	}
+	if !strings.Contains(chapter, "at\n  most 64 KiB") || maxSecret != 64<<10 {
+		t.Errorf("the chapter and the server differ on the longest secret: %d", maxSecret)
+	}
+
+	// What the server says when it starts, for the settings of the
+	// chapter's case.
+	told, err := parseSettings([]byte(blockOfTheChapter(t, "the settings of the case")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if said := blockOfTheChapter(t, "what it says when it starts"); said != "fadodb serve: serving acme.fado at http://"+defaultListen+"\nfadodb serve: "+told.mayCall() {
+		t.Errorf("the chapter shows a server that says:\n%s\nand the server says of the same settings:\n%s", said, told.mayCall())
+	}
+}
+
+// between is what stands in the chapter between two marks.
+func between(chapter, from, to string) string {
+	_, after, _ := strings.Cut(chapter, from)
+	block, _, _ := strings.Cut(after, to)
+	return block
 }

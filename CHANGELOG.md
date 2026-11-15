@@ -176,9 +176,40 @@ All notable changes to FadoDB are recorded here. The format follows
   unless `--plain-http` says that something in front encrypts. It
   writes one line of JSON for each request to standard error, answers
   `GET /v1/health` for anybody, and on an interrupt lets the commands
-  that run end before it closes the database. The settings of the
-  server, the actions that call a service, and its metrics are not
+  that run end before it closes the database. Its metrics are not
   built yet. `docs/manual/serving-a-database.md` is its chapter.
+- The settings of `fadodb serve` (ADR-0059, items 4, 5, 6 and 11).
+  `--settings FILE` gives the server one JSON file of the operator's:
+  under `outbound`, the hosts the actions of the database may call,
+  and for each connection the hosts its requests and its secrets may
+  go to; under `limits`, the largest request, the time of a command,
+  the commands at once and the streams at once. A member the file
+  should not have, a member written twice or a value that does not
+  fit is refused when the server starts. Told nothing, the server
+  calls no host. A secret is never in the settings: the secret `token`
+  of the connection `slack` is the file `slack/token` in the directory
+  given with `--secrets-dir`, or the variable
+  `FADODB_SECRET_SLACK__TOKEN` of the environment, and it is read
+  again for every request, so a secret is changed without a restart.
+  When it starts, the server says what its actions may call, and
+  names every action of the database it cannot run as it was started.
+  No setting is kept in the database, and no command changes one.
+- The command-line tool leaves the queue of a database alone. `fadodb
+  check`, `fadodb user add` and `fadodb key new` opened a database as
+  a program does, with a worker for its queued actions; the tool has
+  none of the program's Go functions, so an action that was due got no
+  answer, `not_registered`, and lost one of its ten attempts. A check
+  of a database with files to read ran long enough for that. The tool
+  now starts no worker. `fadodb check` also refuses a name under which
+  there is no database, where it made an empty one, and its help says
+  that it does not find a blob the store has lost.
+- `fadodb serve` runs no Go function (ADR-0059, item 6). A definition
+  of an action with no request is refused when it is defined, in
+  every program that has no function under its name, with
+  `not_registered` (it was `not_supported`), and the refusal says the
+  ways out. `examples/server` is the program a company starts from
+  when it needs its own Go function: the door in front of a database
+  it opens with the function.
 - A program holds a database alone with `Options.Alone` (ADR-0059,
   item 7), as the server does: while it has the database open, every
   other program that opens it is refused with the new code `in_use`

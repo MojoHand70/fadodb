@@ -307,24 +307,26 @@ these documents hold a file that the store does not have:
 
 ### Room for the latest commits
 
-The `-wal` file is emptied once it passes 64 MiB. The engine takes its
-turn among the commits for that, so a caller that never pauses does
-not keep it from happening; a commit now and then waits some tens of
-milliseconds for it. The option `WALLimit` changes the size; see
+The `-wal` file is emptied once it passes 64 MiB, as soon as the
+callers leave an instant for it. Callers that pause between commits
+leave one all the time. A caller that writes without any pause leaves
+none: its log grows to eight times the limit, about half a GiB, and
+then the engine takes its turn among the commits to empty it, for
+which a commit now and then waits some tens of milliseconds. The
+option `WALLimit` changes the size; see
 [Opening a database](opening-a-database.md#the-options).
 
 > **Measured, not played by this chapter's test.** On 2026-11-15, on
 > the machine of the [performance pages](../perf/README.md), callers
 > created documents for twenty seconds without any pause. The `-wal`
-> file stayed near 210 MiB, a little over three times its limit,
-> beside a database of 250 MiB. With a pause of about a millisecond
-> between two commits it never passed 66 MiB. Before this release the
-> engine waited for a moment when nobody wrote, and under such callers
-> the file reached several GiB.
+> file stayed under 700 MiB, beside a database of 260 MiB. With a
+> pause of about a millisecond between two commits it never passed
+> 66 MiB. Before this release the log had no bound, and under such
+> callers it reached several GiB.
 > [ADR-0035](../adr/0035-sqlite-is-the-transactional-store.md) has the
 > numbers, and a test of the engine holds the bound.
 
-So leave room on the disk for a few times the limit. Two things still
+So leave room on the disk for ten times the limit. Two things still
 let the file grow past that: a reader that keeps one view of the
 database open for a long time, and a second program that writes to the
 same database without pause.

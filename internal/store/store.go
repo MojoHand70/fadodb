@@ -21,9 +21,10 @@ import (
 	"github.com/MojoHand70/fadodb/internal/query"
 )
 
-// DefaultWALLimit is the write-ahead log size past which the checkpointer
-// empties the log, in the writer's turn (ADR-0035). The log passes it by
-// what the writers write within a period or two of the checkpointer.
+// DefaultWALLimit is the size past which the write-ahead log is emptied
+// as soon as the writers leave an instant for it (ADR-0035). Under
+// writers that never pause the log grows to eight times it, and is
+// then emptied in the writer's turn.
 const DefaultWALLimit int64 = 64 << 20
 
 // DefaultCheckpointEvery is how often the checkpointer runs a passive
@@ -52,8 +53,10 @@ type Options struct {
 	// MaxText is the text limit of a new database in code points; 0 is
 	// formula.DefaultMaxText.
 	MaxText int
-	// WALLimit is the log size past which the checkpointer empties the
-	// log, for which the writers wait a moment; 0 is DefaultWALLimit.
+	// WALLimit is the size past which the log is emptied as soon as the
+	// writers leave an instant for it; under writers that never pause it
+	// grows to eight times that, and they then wait a moment for it to
+	// be emptied. 0 is DefaultWALLimit.
 	WALLimit int64
 	// CheckpointEvery is the checkpointer's period; 0 is
 	// DefaultCheckpointEvery.
@@ -897,15 +900,32 @@ func (s *Store) classAt(name string, version int) *class {
 	return s.versions[strings.ToUpper(name)][version]
 }
 
+// farPast is how many times its limit the log may grow to before the
+// checkpointer takes the writer's turn to empty it, and fewPages how
+// many pages of the log may be left to copy for it to be emptied at no
+// cost: a megabyte of the usual pages.
+const (
+	farPast  = 8
+	fewPages = 256
+)
+
 // checkpoint keeps the write-ahead log small until the store is closed
 // (ADR-0035, item 7). Every period it copies what it can of the log into
 // the database file, on a connection of its own and without waiting for
-// anybody, so that no commit pays for it. A log can only be emptied when
-// nobody is writing to it, and a writer that never pauses leaves no such
-// moment: so once the log is past limit bytes, the checkpointer takes
-// the writer's turn, between two commits, copies what is left and
-// empties the log. The writers wait for that, and it is kept short by
-// copying once more before the turn is taken, so that little is left.
+// anybody, so that no commit pays for it. A log can only be emptied
+// when nobody writes to it and it was copied whole.
+//
+//   - Past its limit, the log is emptied as soon as that costs nothing:
+//     when little is left to copy and no commit runs at that instant.
+//     Callers that pause between commits leave such instants all the
+//     time.
+//   - A writer that never pauses leaves none, and its log grows. A
+//     burst may: it is copied in the background and costs the writer
+//     nothing.
+//   - Once the log is farPast times its limit, the checkpointer takes
+//     the writer's turn, between two commits, copies what is left and
+//     empties the log. The writers wait for that, and it is kept short
+//     by copying once more before the turn is taken.
 func (s *Store) checkpoint(conn *sql.Conn, every time.Duration, limit int64) {
 	defer close(s.done)
 	defer conn.Close()
@@ -930,22 +950,35 @@ func (s *Store) checkpoint(conn *sql.Conn, every time.Duration, limit int64) {
 		case <-s.stop:
 			return
 		case <-t.C:
-			copyLog.run(ctx)
-			if fi, err := os.Stat(log); err != nil || fi.Size() <= limit {
+			fi, err := os.Stat(log)
+			if err != nil || fi.Size() <= limit {
+				copyLog.run(ctx)
 				continue
 			}
-			// Past the limit. What the writers wrote while the log was
-			// copied is copied too, outside their turn, and what they
-			// write during that is what the turn has to copy.
-			copyLog.run(ctx)
-			// The writer's turn: the lock every commit of this program
-			// takes, so that no commit runs meanwhile. A store that was
-			// closed in the meantime is left alone.
-			s.mu.Lock()
-			if !s.closed {
-				emptyLog.run(ctx)
+			// Past the limit: the log is copied, and how much is left of
+			// it is asked.
+			left := copyLog.left(ctx)
+			switch {
+			case fi.Size() > farPast*limit:
+				// Far past it. What the writers wrote while the log was
+				// copied is copied too, outside their turn, and what they
+				// write during that is what the turn has to copy. Then
+				// the writer's turn: the lock every commit of this
+				// program takes, so that no commit runs meanwhile.
+				copyLog.run(ctx)
+				s.mu.Lock()
+				if !s.closed {
+					emptyLog.run(ctx)
+				}
+				s.mu.Unlock()
+			case left <= fewPages && s.mu.TryLock():
+				// Little is left and no commit runs just now: emptying
+				// the log costs nobody anything.
+				if !s.closed {
+					emptyLog.run(ctx)
+				}
+				s.mu.Unlock()
 			}
-			s.mu.Unlock()
 		}
 	}
 }
@@ -974,6 +1007,17 @@ func (st *statement) run(ctx context.Context) {
 		return
 	}
 	_, _ = st.conn.ExecContext(ctx, st.text)
+}
+
+// left runs a statement that copies the log, and answers how many pages
+// of the log are left to copy; all of them, as far as the caller is to
+// know, when the statement could not be run.
+func (st *statement) left(ctx context.Context) int {
+	var busy, pages, copied int
+	if err := st.conn.QueryRowContext(ctx, st.text).Scan(&busy, &pages, &copied); err != nil {
+		return fewPages + 1
+	}
+	return pages - copied
 }
 
 func (st *statement) close() {

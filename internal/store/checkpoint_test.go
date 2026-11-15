@@ -79,10 +79,39 @@ func emptied(path string, long time.Duration) (times int, largest int64) {
 	return times, largest
 }
 
+// A burst of commits costs the writer nothing: the log grows past its
+// limit while it is copied in the background. When the writer pauses,
+// the log is emptied, with no further commit (ADR-0035, item 7).
+func TestTheLogIsEmptiedAfterABurst(t *testing.T) {
+	const limit = 256 << 10
+	s, path := openStore(t, Options{WALLimit: limit, CheckpointEvery: 5 * time.Millisecond})
+	ctx := context.Background()
+	if _, err := s.defineOpen(ctx, []byte(logNote), asSetup); err != nil {
+		t.Fatal(err)
+	}
+	// A burst: past the limit, and well short of where the writers
+	// would be made to wait.
+	for logSize(path) < 3*limit {
+		if _, err := s.Create(ctx, "Note", Values{"text": "a note of some length, as a caller writes one"}, asSetup); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if size := logSize(path); size >= farPast*limit {
+		t.Fatalf("the burst of the test made a log of %d KiB, which is no burst", size>>10)
+	}
+	// The writer pauses, and the log is emptied.
+	for until := time.Now().Add(10 * time.Second); logSize(path) > limit; time.Sleep(5 * time.Millisecond) {
+		if time.Now().After(until) {
+			t.Fatalf("the log is %d KiB after the writer paused, over its limit of %d KiB", logSize(path)>>10, limit>>10)
+		}
+	}
+}
+
 // A writer that never pauses leaves no moment at which the log could be
-// emptied, and the log of such a writer grew to gigabytes. The
-// checkpointer takes its turn among the commits, so the log is emptied
-// while the writers write and stays near its limit (ADR-0035, item 7).
+// begun again, and the log of such a writer grew to gigabytes. Once the
+// log is far past its limit the checkpointer takes its turn among the
+// commits, so the log is emptied while the writers write and stays
+// under a bound (ADR-0035, item 7).
 func TestTheLogStaysNearItsLimit(t *testing.T) {
 	const limit = 1 << 20
 	_, path, _, stop := writing(t, limit, 4)
@@ -96,8 +125,8 @@ func TestTheLogStaysNearItsLimit(t *testing.T) {
 	if times == 0 {
 		t.Errorf("the log was never emptied in a second and a half of writing without a pause")
 	}
-	if largest > 64*limit {
-		t.Errorf("the log grew to %d MiB under a limit of %d MiB", largest>>20, limit>>20)
+	if largest > 4*farPast*limit {
+		t.Errorf("the log grew to %d MiB under a limit of %d MiB: it is emptied past %d times the limit", largest>>20, limit>>20, farPast)
 	}
 	t.Logf("the log was emptied %d times and was %d KiB at its largest, under a limit of %d KiB", times, largest>>10, limit>>10)
 }

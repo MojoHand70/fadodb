@@ -1,4 +1,30 @@
-# Published schemas
+# The description of the commands, and the published schemas
+
+## `openapi.json`: the commands, for other languages
+
+Every command of a database, as one OpenAPI 3.1 document: its address,
+`POST /v1/<command>`, the members of its object with their types, the
+members of its answer, and how a refusal looks. The three addresses of
+the files are in it, and the health and the counts that `fadodb serve`
+answers. A client in another language is generated from it with the
+tool of that language.
+
+- **It is written from the engine's own table of the commands**
+  (ADR-0055, item 10) and is never edited by hand: `make docs` writes
+  it, and a test fails when it is not what the engine has.
+- **A test holds it to a door**: every address is answered, a member
+  the document does not list is refused, and a command needs what the
+  document says it needs.
+- **Three fields are FadoDB's own.** `x-fado-mark` says whether a
+  command reads, writes or destroys; `x-fado-call` names the Go call
+  it is; `x-fado-stream` marks `subscribe`, whose answer is a reply
+  that stays open ([the stream of changes](../docs/manual/the-stream-of-changes.md)).
+- **Its version is 1**, the `v1` of the addresses.
+- **An answer is described by the names of its members**, and not yet
+  by their types: a generated client reads an answer as plain JSON.
+  [The commands](../docs/manual/commands.md) says the same in words.
+
+## Published schemas
 
 JSON Schemas (draft 2020-12) of the shapes FadoDB hands to code outside
 the engine. Each is a public contract from the release that ships it

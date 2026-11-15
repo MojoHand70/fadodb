@@ -3,7 +3,8 @@
 // the catalogue the engine itself reads; every code of a refusal, from
 // the constants the engine answers with and their comments; and every
 // command, from the table the engine turns a command into a call with.
-// They
+// From the same table it writes the description of the commands for
+// other languages, api/openapi.json. They
 // are generated so that they cannot fall behind the engine: a test
 // compares the files with what this package writes, and
 //
@@ -220,6 +221,7 @@ func Commands(root string) (string, error) {
 	b.WriteString("Every call that reads or changes a database is also a command: a name\nand one JSON object, answered by one JSON object. A command is how a\ncaller that is not a Go program reaches a document. The list is written\nfrom the engine's own table, so it has every command and no other.\n\n")
 	b.WriteString("One command is answered by more than one object: [`subscribe`](#subscribe)\nopens the stream of changes, and its answer is a reply that stays open\nand says each event as it is written.\n\n")
 	b.WriteString("A command reaches a database two ways today. A Go program runs one with\nthe call `Exec`. And a Go program that has opened a database can let it\nanswer commands [over HTTP](#over-http), through the package\n`fado/httpdoor`. The program `fadodb serve` does that for a database with\nusers and keys of its own: [Serving a database](serving-a-database.md).\n\n")
+	b.WriteString("For a program in another language the same list is in\n[api/openapi.json](../../api/openapi.json), an OpenAPI document written\nfrom the same table, from which a client is generated.\n\n")
 
 	b.WriteString("## A command and its answer\n\n")
 	b.WriteString("Ann's agent approves an invoice. The command is `transition`, and its\nobject says which document, which transition and what to write with it:\n\n")
@@ -346,24 +348,9 @@ func overHTTP(b *strings.Builder, root string) error {
 	b.WriteString("- **A request that is not a command as JSON is told so.** One that is\n  not a `POST` is answered with the status 405, and a body that is not\n  said to be JSON with 415. Both carry the code `bad_json` and a hint.\n  So does a request with members in its address, such as `?limit=10`:\n  they belong in the object.\n")
 	b.WriteString("- **A caller reads the code, not the status.** The status of a reply\n  is worked out from its code, for the proxies and the tools between\n  the caller and the door:\n\n")
 
-	byStatus := map[int][]string{}
-	seen := map[string]bool{}
-	for _, file := range []string{"store/errors.go", "command/object.go", "server/codes.go"} {
-		codes, err := codesOf(filepath.Join(root, filepath.FromSlash(file)), "Code")
-		if err != nil {
-			return err
-		}
-		for _, c := range codes {
-			status := server.Status(c.value)
-			if seen[c.value] || status == other {
-				continue
-			}
-			seen[c.value] = true
-			byStatus[status] = append(byStatus[status], c.value)
-		}
-	}
-	if len(byStatus) < 8 {
-		return fmt.Errorf("docgen: only %d statuses found for the codes under %s", len(byStatus), root)
+	byStatus, err := statusCodes(root)
+	if err != nil {
+		return err
 	}
 	byStatus[other] = nil
 	statuses := make([]int, 0, len(byStatus))

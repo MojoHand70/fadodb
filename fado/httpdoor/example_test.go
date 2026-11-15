@@ -3,6 +3,7 @@ package httpdoor_test
 import (
 	"bufio"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -585,5 +586,108 @@ func TestADatabaseWithoutUsersOffersNoCommandOfThem(t *testing.T) {
 	t.Cleanup(func() { srv.Close(); db.Close() })
 	if status, body := send(srv, "token-of-bob", "whoami", `{}`); status != 404 || !strings.Contains(body, `"unknown_command"`) || !strings.Contains(body, "keeps no users") {
 		t.Errorf("whoami: %d %s", status, body)
+	}
+}
+
+// The description of the commands for other languages, api/openapi.json,
+// is held to a door: every address it lists is answered there, with
+// the method it names; a member it does not list is refused; and what
+// it says a command needs is what the door asks for (ADR-0055, item 10).
+func TestTheDescriptionAndTheDoor(t *testing.T) {
+	text, err := os.ReadFile(filepath.Join("..", "..", "api", "openapi.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var doc struct {
+		Paths map[string]map[string]struct {
+			Tags        []string
+			Stream      bool `json:"x-fado-stream"`
+			Parameters  []struct{ Name string }
+			RequestBody struct {
+				Content map[string]struct {
+					Schema struct {
+						Properties map[string]any
+						Required   []string
+					}
+				}
+			} `json:"requestBody"`
+		}
+	}
+	if err := json.Unmarshal(text, &doc); err != nil {
+		t.Fatal(err)
+	}
+	_, srv, key := service(t, "acme")
+	// ask sends a request with Olga's key and answers the status and
+	// the refusal the reply carries.
+	ask := func(method, address, contentType, body string) (int, fado.Error) {
+		t.Helper()
+		req, err := http.NewRequest(method, srv.URL+address, strings.NewReader(body))
+		if err != nil {
+			t.Fatal(err)
+		}
+		req.Header.Set("Authorization", "Bearer "+key)
+		if contentType != "" {
+			req.Header.Set("Content-Type", contentType)
+		}
+		resp, err := srv.Client().Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		var got struct{ Error fado.Error }
+		answer, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+		_ = json.Unmarshal(answer, &got)
+		return resp.StatusCode, got.Error
+	}
+	commands := 0
+	for address, methods := range doc.Paths {
+		for method, op := range methods {
+			if len(op.Tags) == 1 && op.Tags[0] == "The server" {
+				// Answered by fadodb serve, whose tests hold it.
+				continue
+			}
+			upper := strings.ToUpper(method)
+			body, described := op.RequestBody.Content["application/json"]
+			if !described {
+				// One of the three addresses of the files: it is there,
+				// and it takes the parameters the description lists.
+				status, e := ask(upper, address+"?no_such_parameter=1", "application/octet-stream", "x")
+				if e.Code != "bad_json" || status != 400 || !strings.Contains(e.Message, "no_such_parameter") {
+					t.Errorf("%s %s with a parameter it does not have: %d %+v", upper, address, status, e)
+				}
+				for _, p := range op.Parameters {
+					if status, e := ask(upper, address+"?"+p.Name+"=x&"+p.Name+"=y", "application/octet-stream", "x"); e.Code != "bad_json" || !strings.Contains(e.Message, p.Name) {
+						t.Errorf("%s %s with %s given twice: %d %+v", upper, address, p.Name, status, e)
+					}
+				}
+				continue
+			}
+			commands++
+			// A command: its address answers, a member the description
+			// does not list is refused with its place, and an empty
+			// object is refused for the first member it needs.
+			if status, e := ask(upper, address, "application/json", `{"no_such_member": 1}`); e.Code != "bad_json" || e.Path != "/no_such_member" || status != 400 {
+				t.Errorf("%s %s with a member it does not have: %d %+v", upper, address, status, e)
+			}
+			for member := range body.Schema.Properties {
+				if _, e := ask(upper, address, "application/json", `{"`+member+`": null, "no_such_member": 1}`); e.Path != "/no_such_member" {
+					t.Errorf("%s %s does not know the member %s the description lists: %+v", upper, address, member, e)
+				}
+			}
+			if op.Stream {
+				continue
+			}
+			status, e := ask(upper, address, "application/json", `{}`)
+			needs := body.Schema.Required
+			switch {
+			case len(needs) > 0 && (e.Code != "bad_json" || e.Path != "/"+needs[0]):
+				t.Errorf("%s %s sent {}: %d %+v, and the description says it needs %v", upper, address, status, e, needs)
+			case len(needs) == 0 && (e.Code == "bad_json" || e.Code == "unknown_command"):
+				t.Errorf("%s %s sent {}: %d %+v, and the description says it needs nothing", upper, address, status, e)
+			}
+		}
+	}
+	if want := len(fado.Commands()); commands != want {
+		t.Errorf("the description has %d commands, and the engine %d", commands, want)
 	}
 }

@@ -218,7 +218,7 @@ func Commands(root string) (string, error) {
 	b.WriteString(generated)
 	b.WriteString("# The commands\n\n")
 	b.WriteString("Every call that reads or changes a database is also a command: a name\nand one JSON object, answered by one JSON object. A command is how a\ncaller that is not a Go program reaches a document. The list is written\nfrom the engine's own table, so it has every command and no other.\n\n")
-	b.WriteString("A command reaches a database two ways today. A Go program runs one with\nthe call `Exec`. And a Go program that has opened a database can let it\nanswer commands [over HTTP](#over-http), through the package\n`fado/httpdoor`. The program `fadodb serve`, which does that for a\ndatabase with users and keys of its own, is in progress (Phase 6) and\nis not built.\n\n")
+	b.WriteString("A command reaches a database two ways today. A Go program runs one with\nthe call `Exec`. And a Go program that has opened a database can let it\nanswer commands [over HTTP](#over-http), through the package\n`fado/httpdoor`. The program `fadodb serve` does that for a database with\nusers and keys of its own: [Serving a database](serving-a-database.md).\n\n")
 
 	b.WriteString("## A command and its answer\n\n")
 	b.WriteString("Ann's agent approves an invoice. The command is `transition`, and its\nobject says which document, which transition and what to write with it:\n\n")
@@ -252,7 +252,7 @@ func Commands(root string) (string, error) {
 		fmt.Fprintf(&b, "## %s\n\n", group)
 		if group == command.Users {
 			b.WriteString("A database that a server opens for callers of its own keeps who they\nare: its users, their groups and their keys. A user is a person, an\nagent or a service the database knows by its id. A group is a name on\na user. A key is how a user proves who it is: one line of text that\nbegins `fado_`, shown once when it is made and kept nowhere after.\n\n")
-			b.WriteString("These commands are offered by such a database only. A database opened\nby a program that says itself who is calling keeps no users, and\nanswers each of them with `unknown_command`. The server that opens a\ndatabase this way, `fadodb serve`, is in progress and not built; a Go\nprogram opens one with `Options.Users`.\n\n")
+			b.WriteString("These commands are offered by such a database only. A database opened\nby a program that says itself who is calling keeps no users, and\nanswers each of them with `unknown_command`. The server `fadodb serve` opens its\ndatabase this way, and a Go program does with `Options.Users`.\n\n")
 		}
 		b.WriteString("| Command | What it does | |\n|---|---|---|\n")
 		for _, c := range command.Commands() {

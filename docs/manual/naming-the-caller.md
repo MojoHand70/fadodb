@@ -208,8 +208,8 @@ caller, a designer and a content administrator included. So:
 A database can also keep its own users, groups and keys, and say
 itself who a key belongs to: the program opens it with `Users`, and
 the nine commands of [Users, groups and keys](commands.md#users-groups-and-keys)
-keep them. That is how the server, `fadodb serve`, will open a
-database; the server is in progress.
+keep them. That is how the server, `fadodb serve`, opens a database:
+see [Serving a database](serving-a-database.md).
 
 ## The system groups
 
@@ -276,7 +276,5 @@ included, before the engine looks at the document.
 
 ## Not here yet
 
-- The server, `fadodb serve`, which opens a database with its own
-  users and asks every request for a key.
 - A refusal for a caller that has groups and no id.
 - A record of what a caller read. No read is written down today.

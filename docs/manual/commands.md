@@ -10,9 +10,8 @@ from the engine's own table, so it has every command and no other.
 A command reaches a database two ways today. A Go program runs one with
 the call `Exec`. And a Go program that has opened a database can let it
 answer commands [over HTTP](#over-http), through the package
-`fado/httpdoor`. The program `fadodb serve`, which does that for a
-database with users and keys of its own, is in progress (Phase 6) and
-is not built.
+`fado/httpdoor`. The program `fadodb serve` does that for a database with
+users and keys of its own: [Serving a database](serving-a-database.md).
 
 ## A command and its answer
 
@@ -911,9 +910,8 @@ begins `fado_`, shown once when it is made and kept nowhere after.
 
 These commands are offered by such a database only. A database opened
 by a program that says itself who is calling keeps no users, and
-answers each of them with `unknown_command`. The server that opens a
-database this way, `fadodb serve`, is in progress and not built; a Go
-program opens one with `Options.Users`.
+answers each of them with `unknown_command`. The server `fadodb serve` opens its
+database this way, and a Go program does with `Options.Users`.
 
 | Command | What it does | |
 |---|---|---|
@@ -1181,6 +1179,7 @@ A few calls of the Go package have no command.
 | `Exec` | it is the door the commands come through |
 | `OpenBlob` | the bytes of a file are not JSON: they travel beside the commands, with the server |
 | `OpenFile` | the bytes of a file are not JSON: they travel beside the commands, with the server |
+| `Ping` | it asks whether the database answers; a server answers it at GET /v1/health, for anybody |
 | `PutBlob` | the bytes of a file are not JSON: they travel beside the commands, with the server |
 | `Schema` | it answers the engine's compiled form to a Go program; get_schema answers the definition |
 | `Table` | it answers the engine's compiled form to a Go program; get_table answers the definition |

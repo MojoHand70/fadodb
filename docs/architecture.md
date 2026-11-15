@@ -724,7 +724,7 @@ key order, to the function the Go VM adds with.
   can keep a step for a person and the log can say which steps an agent
   took and for whom. `USER()` stays the one who acts. A host program
   says who is calling. A database opened with `Users` keeps its own
-  users, groups and keys, as `fadodb serve` will open it: nine commands
+  users, groups and keys, as `fadodb serve` opens it: nine commands
   keep them, a key turns a request into a principal, and every change
   to a user or a key is kept (ADR-0057).
 - Access rules per class: `read`, `create`, `update`, `delete`, and per-transition rules. Tables have `read` and `write` rules.
@@ -1108,8 +1108,12 @@ engine's table.
 > of the records, and the three addresses of the files. The program
 > says where it listens and who sends each request, or opens the
 > database with its own users and gives the door their keys
-> (`httpdoor.Keys`). The stream of changes, health and metrics, and
-> `fadodb serve` are decided, by the five records the owner accepted on
+> (`httpdoor.Keys`). `fadodb serve` does that for a database
+> `fadodb init` made: it listens on this machine only unless it has a
+> certificate, holds the database alone, writes a line for each
+> request and answers `GET /v1/health`. The stream of changes, the
+> metrics, and the settings of the server with the hosts its actions
+> may call are decided, by the five records the owner accepted on
 > 2026-11-14, and not built.
 
 | Address | Purpose | Record |
@@ -1131,11 +1135,13 @@ engine's table.
 - **The stream sends the event alone.** A subscriber reads the document
   when it acts. A document that leaves a subscriber's sight is not
   mentioned (ADR-0058).
-- **`fadodb serve`** serves a database that `fadodb init` made. Told
-  nothing, it listens on this machine only. It runs the engine's
-  actions and the actions that send an HTTP request, and no action
-  written as a Go function. Its settings are the operator's
-  (ADR-0059).
+- **`fadodb serve`** serves a database that `fadodb init` made, and
+  holds it alone while it does. Told nothing, it listens on this
+  machine only, and a key never travels in the clear by accident. It
+  is to run the engine's actions and the actions that send an HTTP
+  request, and no action written as a Go function; its settings are
+  the operator's (ADR-0059). The settings and the actions that call a
+  service are not built yet.
 - Layouts and the class bundle come with the frontend in Phase 7, by
   the owner's ruling of 2026-11-14.
 
@@ -1288,7 +1294,7 @@ in 13.7 ns with no allocation, and the core binary is 2.9 MB
 
 ```
 fadodb/
-  cmd/fadodb/            single binary: serve, class, doc, table, query, bench, export
+  cmd/fadodb/            single binary: init, user, key, serve, formula, check today; class, doc, table, query, bench, export to come
   fado/                  public Go API (small surface, see Go API)
   internal/formula/      lexer, parser, binder, bytecode, vm, sqlgen (dialects), catalog
   internal/model/        class definitions, layouts, variables, defaults, validation, migrations

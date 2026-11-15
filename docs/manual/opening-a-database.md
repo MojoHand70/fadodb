@@ -143,6 +143,7 @@ ola reads "buy milk", version 1
 | `notes.fado-wal` | the latest commits, before they are folded into the database | while a program has the database open |
 | `notes.fado-shm` | an index of the file above | while a program has the database open |
 | `notes.fado.blobs` | a directory with the bytes of attached files | when the database was created with the store `dir`; see [Files](files.md) |
+| `notes.fado.lock` | says which program holds the database alone, and is empty when none does | once a program has held the database alone |
 
 The database is a SQLite file, and the two files beside it are
 SQLite's. When the database is closed they are folded in and gone, and
@@ -173,6 +174,7 @@ An option is one of two kinds.
 | `Secrets` | a function that gives the secret of a connection when a call needs it | the program's | none | |
 | `HostAnswersFor` | the program itself keeps who may act for whom | the program's | the engine asks its substitutions | |
 | `Users` | the database keeps its own users, groups and keys, and answers who a key belongs to | the program's | the program says itself who is calling, and the database keeps no users | |
+| `Alone` | the program holds the database alone until it closes it, under the name it gives here | the program's | the program holds nothing | |
 | `Now` | the clock of the database | the program's | the clock of the machine | |
 | `WALLimit`, `CheckpointEvery` | when the latest commits are folded into the database | the program's | at 64 MiB, and every 100 ms | |
 
@@ -181,8 +183,9 @@ Where each is explained: `MaxIndexedRows` in
 `MaxBlob` in [Files](files.md), `Actions`, `Outbound` and `Secrets` in
 [Actions](../actions.md), `HostAnswersFor` in [Let somebody act for a
 person](guides/acting-for-somebody.md), `Users` in
-[The commands](commands.md#users-groups-and-keys), `Now` in
-[Time](notions/time.md).
+[The commands](commands.md#users-groups-and-keys), `Alone` in
+[One program holds a database](#one-program-holds-a-database), `Now`
+in [Time](notions/time.md).
 
 ### How sure a commit is
 
@@ -200,15 +203,26 @@ The engine is built for one program on a file. That program keeps the
 classes, the tables and the actions in memory from the moment it
 opened the database.
 
-> **A second open is not refused.** Nothing stops another program, or
-> the same program a second time, from opening a file that is open.
-> Each then works from what it read when it opened: a class that one
-> defines is unknown to the other until that one opens the database
-> again. The engine promises nothing about two programs on one file.
-> Let one program hold a database, and let the others ask that one.
+> **A second open is not refused, unless a program holds the database
+> alone.** Nothing else stops another program, or the same program a
+> second time, from opening a file that is open. Each then works from
+> what it read when it opened: a class that one defines is unknown to
+> the other until that one opens the database again. The engine
+> promises nothing about two programs on one file. Let one program hold
+> a database, and let the others ask that one.
 
-That one program for many callers is the server, which is in
-progress.
+A program holds a database alone by opening it with `Alone`, which is
+the name the program goes by, such as `"fadodb serve"`. While it has
+the database open, every other program that opens it is refused with
+`in_use` and told that name. The hold ends when the program closes
+the database, and by itself when the program ends, however it ends.
+
+A program that opens a database without `Alone` holds nothing. It is
+refused a database that another holds alone, and a program that takes
+the database alone after it does not see it.
+
+That one program for many callers is the server:
+[Serving a database](serving-a-database.md).
 
 ## Closing
 
@@ -243,6 +257,7 @@ program that rehearses next month in a copy of the file; see
 | gives a function under `Actions` that is nil, or under a name no action can have | `bad_value` |
 | opens a database with another `Synchronous`, `MaxText` or `BlobStore` than it has | `bad_value` |
 | opens a database with a lower `MaxBlob` than it has | `bad_value` |
+| opens a database that another program holds alone | `in_use` |
 | opens a file that a newer engine made | `not_supported` |
 | opens a file that an earlier engine made | `not_supported` |
 
@@ -252,11 +267,8 @@ made again.
 
 ## Not here yet
 
-- A lock that keeps a second program off an open file.
+- A hold for every program. One that opens a database without `Alone`
+  holds nothing, so two such programs on one file are not kept apart.
 - A way to bring a file of an earlier release forward.
-- The server, `fadodb serve`, which serves one database to many
-  callers, each with a key of its own. A program of your own can
-  already let a database it has opened answer
-  [the commands over HTTP](commands.md#over-http).
 - Copying a database that is open. The chapter on running a database
   is planned.

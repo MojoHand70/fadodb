@@ -195,6 +195,56 @@ does. Built with the door, ahead of `fadodb serve`:
   gives it: when, which command, who, the status, the code and how
   long. The line of item 9 is written from it by `fadodb serve`.
 
+## Settled while building `fadodb serve`
+
+The program is built in parts. The first built items 1, 3, 7 and 10,
+the defaults of item 2, and of item 9 the line for each request and
+the health. The settings (items 4, 5, 6 and 11) and the metrics follow.
+
+- **How the hold is kept (item 7).** A program that opens a database
+  with `Options.Alone` takes a lock of the operating system on a file
+  beside it, `acme.fado.lock`, and writes into it the name it goes by,
+  its process and the moment. The system drops the lock when the
+  program ends, however it ends; a test kills a program that holds a
+  database and opens the database after it. Every `Open` asks whether
+  the database is held alone, and is refused with the new code
+  `in_use` and the words of the holder: "the database acme.fado is
+  held by fadodb serve (process 4711) since 2026-11-14 09:30:00 UTC".
+  The lock file stays when the hold is gone, since a lock file that is
+  removed can be locked twice.
+- **The tool on the machine holds the database alone too**, for the
+  moment it works: `fadodb init`, `fadodb user add` and
+  `fadodb key new`. `fadodb check` holds nothing and is refused a
+  served database like any program.
+- **What the hold does not reach.** A program that opens a database
+  without `Alone` holds nothing. It is refused a database that is held
+  alone, and a server that starts while such a program has the
+  database open does not see it. Whether every program that opens a
+  database should hold it alone is a question for the owner: it would
+  end two programs on one file for good, and it would refuse what the
+  engine lets through today.
+- **`fadodb init` takes what is fixed at the making** as `--max-text`,
+  `--blobs` and `--max-blob`, and refuses a file that exists.
+  `fadodb serve`, `fadodb user add` and `fadodb key new` refuse a file
+  that does not, and say to run `init`.
+- **`fadodb key new` prints the key alone** on standard output, so
+  that a script takes it, and what it says about the key on standard
+  error.
+- **Half a certificate is refused**, and so is `--plain-http` with a
+  certificate. An address is this machine's when its host is
+  `localhost` or a loopback address; `:8080`, which is every address
+  of the machine, is not.
+- **The line of a request** is `time`, `command`, `user`, `status`,
+  `code` when the request was refused, `ms`, and `error` with the
+  words of a failure that the caller is not given.
+- **The health** answers `{"ok": true, "version": "…"}` with 200, and
+  `ok` false with 503 when the database cannot be read.
+- **A server of a database with no user says so** when it starts, with
+  the two commands that make the first.
+- **A caller that connects and sends no request is dropped after ten
+  seconds.** A body and a reply have no limit of time, since a file
+  takes as long as its line allows.
+
 ## The owner's rulings
 
 All of 2026-11-14. The owner read the three questions, each with a

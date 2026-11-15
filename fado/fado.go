@@ -674,6 +674,10 @@ func (db *DB) CheckBlobs(ctx context.Context, opts ...Option) (mismatched []stri
 	return db.s.CheckBlobs(ctx, opts...)
 }
 
+// Ping reads from the database, to say that it answers. A server asks
+// it for its health.
+func (db *DB) Ping(ctx context.Context) error { return db.s.Ping(ctx) }
+
 // ErrUnknownKey is what Authenticate answers for every key it does not
 // let through, whatever is wrong with it.
 var ErrUnknownKey = store.ErrUnknownKey

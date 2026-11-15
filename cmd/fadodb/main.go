@@ -1,8 +1,11 @@
-// Command fadodb is the FadoDB command-line tool and, later, its server.
+// Command fadodb is the FadoDB command-line tool and its server.
 //
-// At this stage of the project "fadodb formula eval" runs the formula
-// engine, "fadodb check" verifies a database file and "fadodb version"
-// prints the build. See ROADMAP.md for what comes next.
+// "fadodb init" makes a database, "fadodb user add" and "fadodb key new"
+// make its first administrator on the machine that holds it, and
+// "fadodb serve" serves it over HTTP to callers who send a key
+// (ADR-0059). "fadodb formula eval" runs the formula engine, "fadodb
+// check" verifies a database file and "fadodb version" prints the
+// build. See ROADMAP.md for what comes next.
 package main
 
 import (
@@ -25,13 +28,20 @@ var (
 const usage = `fadodb - an embeddable active document database (pre-release)
 
 Usage:
+  fadodb init FILE                      make a database
+  fadodb user add ID --kind KIND --db FILE
+                                        make a user, on the machine that holds the database
+  fadodb key new USER --db FILE         make a key for a user, and print it once
+  fadodb serve FILE                     serve a database over HTTP, on this machine only
+                                        unless told otherwise
   fadodb formula eval [flags] FORMULA   evaluate a formula, or print its bytecode or SQL
   fadodb check FILE                     verify a database file: every blob's hash
   fadodb version                        print version, commit and build date
   fadodb help                           print this help
 
-Run "fadodb formula help" for the flags of eval. Documents are reached
-through the Go API for now; the server arrives in a later phase.
+Run a command with --help for its flags. A database that is served
+answers the commands of docs/manual/commands.md, each sent as
+POST /v1/<command> with a key of a user.
 Roadmap: https://github.com/MojoHand70/fadodb/blob/main/ROADMAP.md
 `
 
@@ -45,6 +55,16 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return 2
 	}
 	switch args[0] {
+	case "init":
+		return runInit(args[1:], stdout, stderr)
+	case "user":
+		return runUser(args[1:], stdout, stderr)
+	case "key":
+		return runKey(args[1:], stdout, stderr)
+	case "serve":
+		ctx, stop := interrupted()
+		defer stop()
+		return runServe(ctx, args[1:], stdout, stderr, nil)
 	case "formula":
 		return runFormula(args[1:], stdout, stderr)
 	case "check":

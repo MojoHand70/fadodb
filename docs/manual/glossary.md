@@ -33,7 +33,9 @@ exactly so in a class or a formula.
 |---|---|
 | caller | whoever makes a call: a person, an agent or a service |
 | principal | the caller as the engine is told of it: an id, its groups, what it is, and for whom it acts |
-| host program | the program that embeds FadoDB. It says who the caller is on every call; FadoDB keeps no users |
+| host program | the program that embeds FadoDB. It says who the caller is on every call: from its own users, or from the users, groups and keys it lets the database keep |
+| user | a caller that a database knows by its id, when the database keeps its own users; see [the commands](commands.md#users-groups-and-keys) |
+| key | how such a user proves who it is: one line of text that begins `fado_`, shown once when it is made |
 | group | a named set of callers, as the host program knows them, such as `ACCOUNTING` |
 | system group | one of four groups that hold work which is not about one document: `administrators`, `designers`, `content-administrators`, `analysts` |
 | `everyone` | every caller that has an id |

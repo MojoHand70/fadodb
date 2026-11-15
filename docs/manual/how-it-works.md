@@ -123,7 +123,11 @@ caller: an id, groups, whether it is a person, an agent or a service,
 and for whom it acts. The engine trusts the host for who the caller is
 and decides everything else itself, from the class.
 
-A server that takes the same commands over the network, so that
-several programs and agents share one database, comes with Phase 6.
+One such program comes with FadoDB: the server, `fadodb serve`. It
+takes the same commands over the network, so that several programs and
+agents share one database, and the database keeps the users itself:
+every request proves who sends it with a key. See
+[Serving a database](serving-a-database.md), which also lists what the
+server does not do yet.
 
 Next: [the class definition](class.md), or the [glossary](glossary.md).

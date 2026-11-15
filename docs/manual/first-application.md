@@ -189,5 +189,6 @@ program again. Three to try:
 | versions and events | what happened, kept by the engine | [Glossary](glossary.md) |
 
 The program calls the engine through its Go package, `fado`: `Open`,
-`DefineClass`, `Create`, `Set`, `Transition` and `Events`. A server
-that takes the same commands over the network comes with Phase 6.
+`DefineClass`, `Create`, `Set`, `Transition` and `Events`. A server,
+`fadodb serve`, takes the same commands over the network: see
+[Serving a database](serving-a-database.md).

@@ -89,8 +89,12 @@ func TestTheLogStaysNearItsLimit(t *testing.T) {
 	// Watched while the writers write: they leave no pause.
 	times, largest := emptied(path, 1500*time.Millisecond)
 	stop()
-	if times < 10 {
-		t.Errorf("the log was emptied %d times in a second and a half of writing without a pause", times)
+	// How often depends on how fast the machine writes; that it happens
+	// at all while the writers write, and that the log stays near its
+	// limit, does not. Without the turn the log of this test grew to
+	// 600 times its limit.
+	if times == 0 {
+		t.Errorf("the log was never emptied in a second and a half of writing without a pause")
 	}
 	if largest > 64*limit {
 		t.Errorf("the log grew to %d MiB under a limit of %d MiB", largest>>20, limit>>20)
@@ -119,7 +123,10 @@ func TestAReaderDoesNotHoldTheWriters(t *testing.T) {
 	time.Sleep(100 * time.Millisecond)
 	before := commits.Load()
 	time.Sleep(500 * time.Millisecond)
-	if made := commits.Load() - before; made < 200 {
+	// A checkpointer that waited for the reader in the writer's turn
+	// would let no commit through for as long as it waits: the test saw
+	// none. A slow machine with the race detector makes a few hundred.
+	if made := commits.Load() - before; made < 20 {
 		t.Errorf("%d commits in half a second while a reader kept its view: the checkpointer held the writers for the reader", made)
 	}
 	if err := reader.Rollback(); err != nil {

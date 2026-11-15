@@ -630,6 +630,79 @@ func TestTheStreamIsACommandWithItsObject(t *testing.T) {
 	}
 }
 
+// The flow of a class is a command (ADR-0063): the answer of the Go
+// call under "flow", a period given as two moments, and the documents
+// the caller may read.
+func TestTheFlowIsACommand(t *testing.T) {
+	s := open(t)
+	define(t, s)
+	ctx := context.Background()
+	run(t, s, bob, "create", `{"class": "Invoice", "id": "I-1", "values": {"number": "I-1"}}`)
+	run(t, s, bob, "create", `{"class": "Invoice", "id": "I-2", "values": {"number": "I-2"}}`)
+	run(t, s, ann, "transition", `{"class": "Invoice", "id": "I-1", "transition": "approve"}`)
+
+	got := run(t, s, ann, "flow", `{"class": "Invoice"}`)
+	want, err := s.Flow(ctx, "Invoice", store.FlowPeriod{}, store.As(ann))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var wantFlow any
+	_ = json.Unmarshal(mustJSON(want), &wantFlow)
+	if !reflect.DeepEqual(got["flow"], wantFlow) {
+		t.Errorf("flow answered %v, and the Go call %v", got["flow"], wantFlow)
+	}
+	if at(t, got, "flow.class") != "Invoice" || at(t, got, "flow.created") != float64(2) {
+		t.Errorf("flow answered %v", got)
+	}
+	states, transitions := at(t, got, "flow.states").([]any), at(t, got, "flow.transitions").([]any)
+	if len(states) != 3 || len(transitions) != 2 {
+		t.Fatalf("flow answered %d states and %d transitions", len(states), len(transitions))
+	}
+	draft, approve := states[0].(map[string]any), transitions[0].(map[string]any)
+	if draft["name"] != "draft" || draft["initial"] != true || draft["documents"] != float64(1) || draft["stays"] != float64(1) ||
+		approve["name"] != "approve" || approve["from"] != "draft" || approve["to"] != "approved" || approve["moves"] != float64(1) {
+		t.Errorf("flow answered the state %v and the transition %v", draft, approve)
+	}
+	// A period, in each form a moment has: the clock of the tests stands
+	// at 2026-11-13 09:30:00.
+	for object, moves := range map[string]float64{
+		`{"class": "Invoice", "since": "2026-11-13"}`:                                          1,
+		`{"class": "Invoice", "since": "2026-11-14"}`:                                          0,
+		`{"class": "Invoice", "until": "2026-11-13"}`:                                          0,
+		`{"class": "Invoice", "since": "2026-11-13 09:30:00", "until": "2026-11-13 09:30:01"}`: 1,
+		`{"class": "Invoice", "since": 1794562200, "until": 1794562201}`:                       1,
+		`{"class": "Invoice", "since": null, "until": null}`:                                   1,
+	} {
+		if got := run(t, s, ann, "flow", object); at(t, got, "flow.transitions").([]any)[0].(map[string]any)["moves"] != moves {
+			t.Errorf("flow %s answered %v moves, want %v", object, at(t, got, "flow.transitions").([]any)[0].(map[string]any)["moves"], moves)
+		}
+	}
+	// Somebody who is in no group of the class reads the chart and no
+	// document.
+	eve := store.Principal{ID: "eve", Kind: store.ActorPerson}
+	if got := run(t, s, eve, "flow", `{"class": "Invoice"}`); at(t, got, "flow.created") != float64(2) {
+		// The class of these tests lets everybody read.
+		t.Errorf("flow answered Eve %v", got)
+	}
+	// What is refused, and where.
+	for object, want := range map[string][2]string{
+		`{}`:                                     {CodeBadJSON, "/class"},
+		`{"class": "Receipt"}`:                   {store.CodeUnknownClass, ""},
+		`{"class": "Invoice", "since": "soon"}`:  {store.CodeBadValue, "/since"},
+		`{"class": "Invoice", "until": "never"}`: {store.CodeBadValue, "/until"},
+		`{"class": "Invoice", "since": "2026-11-14", "until": "2026-11-13"}`: {store.CodeBadValue, ""},
+		`{"class": "Invoice", "at": "2026-11-13"}`:                           {CodeBadJSON, "/at"},
+		`{"class": "Invoice", "where": "net > 0"}`:                           {CodeBadJSON, "/where"},
+	} {
+		if e := refused(t, s, ann, "flow", object); e.Code != want[0] || e.Path != want[1] {
+			t.Errorf("flow %s: %s at %q (%s), want %s at %q", object, e.Code, e.Path, e.Message, want[0], want[1])
+		}
+	}
+	if e := refused(t, s, ann, "flow", `{"class": "Invoice", "since": "soon"}`); !strings.HasPrefix(e.Message, "since is a day") {
+		t.Errorf("a moment that is none is refused with: %s", e.Message)
+	}
+}
+
 func TestWhoCallsIsNeverInTheCommand(t *testing.T) {
 	s := open(t)
 	define(t, s)

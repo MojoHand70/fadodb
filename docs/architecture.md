@@ -1076,7 +1076,7 @@ package has `Open`, `DefineClass`, `ValidateClass`, `DefineClasses` and
 `Delete`, `Migrate`,
 `Drain`, `Outbox`, `RetryAction`, `DefineAction`, `ValidateAction`,
 `Actions`, `Action`, `PreviewAction`, `TryAction`, `Get`, `Version`,
-`History`, `Events`, `Query`, `Count`, `SQL`, `PutBlob`, `OpenFile`,
+`History`, `Events`, `Query`, `Count`, `Flow`, `SQL`, `PutBlob`, `OpenFile`,
 `OpenBlob`, `CheckBlobs`, and `Preview` and `PreviewDraft` of a create, a
 set or a transition, and `PreviewMany` of a batch of moves; a preview, a listing or a read runs at a moment the
 caller chooses with `At`, and a preview reports its moment (ADR-0042).

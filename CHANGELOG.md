@@ -234,6 +234,19 @@ All notable changes to FadoDB are recorded here. The format follows
   told. Measured on one machine with a writer that commits every
   millisecond: an entry is read 0.84 ms after its commit at p99 with
   one subscriber and 3.12 ms with a hundred, against a budget of 5 ms.
+- The flow of a class in one call (ADR-0063, proposed): the command
+  `flow`, in Go `Flow`, answers the states of a class, each with the
+  documents that are in it now, the moment the oldest entered it, and
+  how many stays in it ended in a period, with their average and their
+  longest; and its transitions, each with the moves along it in the
+  period, and how many documents were created. `since` and `until` say
+  the period; left out, it is since the class began. The flow counts
+  the documents its caller may read, by the read rule of the class, so
+  two callers see two flows. A state or a transition the class no
+  longer has is marked `retired`. The manual has a guide, "See where
+  documents wait". Measured on disk: 361 ms for a class of 100,000
+  documents asked by somebody who reads them all, 15 ms by somebody
+  who reads a hundredth.
 - Commands from a terminal: `fadodb exec COMMAND OBJECT` sends any
   command to a server, with the key of a user, and prints the answer
   (ADR-0062, proposed). The object is the JSON the command takes over
@@ -410,6 +423,8 @@ All notable changes to FadoDB are recorded here. The format follows
 
 ### Fixed
 
+- The hint of a moment that is none showed seconds a year off:
+  `1763026200` beside `"2026-11-13 09:30:00"`, which is `1794562200`.
 - The log of latest commits, the `-wal` file beside a database, had no
   bound under a caller that commits without a pause: it grew to 2.6 to
   4.4 GiB beside a database of 200 MiB, measured. A log can only be

@@ -100,6 +100,13 @@ type (
 	// (ADR-0058).
 	ChangeFilter = store.ChangeFilter
 	Changes      = store.Changes
+	// Flow is the flow of a class as one caller sees it, FlowState and
+	// FlowTransition a state and a transition in it, and FlowPeriod the
+	// period its moves are counted in (ADR-0063).
+	Flow           = store.Flow
+	FlowState      = store.FlowState
+	FlowTransition = store.FlowTransition
+	FlowPeriod     = store.FlowPeriod
 	// ActionFunc is a Go function that implements an action, given to Open
 	// in Options.Actions under the action's name (ADR-0027, ADR-0045);
 	// ActionCall is what it is called with, and DeliveredEvent the event
@@ -690,6 +697,18 @@ func (db *DB) Query(ctx context.Context, f Filter, opts ...Option) ([]*Document,
 // Count counts the documents a filter's where matches.
 func (db *DB) Count(ctx context.Context, f Filter, opts ...Option) (int64, error) {
 	return db.s.Count(ctx, f, opts...)
+}
+
+// Flow answers the flow of a class for its caller (ADR-0063): its
+// states, each with the documents that are in it now, and its
+// transitions, each with the moves along it in the period, with how
+// long the stays that ended in the period lasted. It counts the
+// documents the caller may read, by the read rule of the class, and no
+// other. The zero period is since the class began.
+//
+//	flow, err := db.Flow(ctx, "Invoice", fado.FlowPeriod{Since: firstOfNovember}, fado.As(ann))
+func (db *DB) Flow(ctx context.Context, class string, period FlowPeriod, opts ...Option) (*Flow, error) {
+	return db.s.Flow(ctx, class, period, opts...)
 }
 
 // SQL runs one read-only SELECT over the views with positional

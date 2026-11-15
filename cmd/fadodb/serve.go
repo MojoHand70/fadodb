@@ -9,13 +9,18 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"sort"
 	"strconv"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
 
 	"github.com/MojoHand70/fadodb/fado"
 	"github.com/MojoHand70/fadodb/fado/httpdoor"
+	"github.com/MojoHand70/fadodb/fado/outbound"
+	"github.com/MojoHand70/fadodb/internal/model"
+	"github.com/MojoHand70/fadodb/internal/store"
 )
 
 const serveUsage = `fadodb serve - serve a database over HTTP
@@ -39,12 +44,42 @@ Told nothing, it listens on this machine only, at 127.0.0.1:8080.
   --plain-http       it listens beyond this machine without a
                      certificate, because something in front of it
                      encrypts: a proxy, or the network of a container
+  --settings FILE    the settings, a JSON file: the hosts the actions
+                     of the database may call, and how much the server
+                     takes on
+  --secrets-dir DIR  where the secrets of the connections are: the
+                     secret token of the connection slack is the file
+                     DIR/slack/token
 
 A key travels with every request, so the server refuses to listen
 beyond this machine in the clear unless --plain-http says that it may.
 While it serves, the server holds the database alone. It writes one
 line for each request to standard error, and stops when it is told to
 (an interrupt), letting the commands that run end first.
+
+Told nothing, the actions of the database call no host. The settings
+list the hosts they may call:
+
+  {
+    "outbound": {
+      "hosts": ["hooks.acme.example"],
+      "connections": {"slack": ["slack.com"]}
+    },
+    "limits": {
+      "request_bytes": 16777216,
+      "command_seconds": 30,
+      "commands": 64,
+      "streams": 256
+    }
+  }
+
+A secret is never in the settings. Without --secrets-dir, or when the
+file is not there, the secret token of the connection slack is read
+from the environment, as FADODB_SECRET_SLACK__TOKEN. A secret is read
+again for every request, so it is changed without a restart.
+
+The server runs no Go function: an action is the engine's own, or a
+request the server sends.
 `
 
 // defaultListen is where the server listens when it is told nothing:
@@ -65,6 +100,8 @@ func runServe(ctx context.Context, args []string, stdout, stderr io.Writer, read
 	cert := fs.String("tls-cert", "", "")
 	key := fs.String("tls-key", "", "")
 	plain := fs.Bool("plain-http", false, "")
+	settingsFile := fs.String("settings", "", "")
+	secretsDir := fs.String("secrets-dir", "", "")
 	rest, err := parse(fs, args)
 	if err != nil {
 		return asked(name, serveUsage, err, stderr)
@@ -88,18 +125,45 @@ func runServe(ctx context.Context, args []string, stdout, stderr io.Writer, read
 			"  or listen on this machine only:          --listen %s\n", name, *listen, defaultListen)
 		return 2
 	}
+	// What the operator tells the server beyond its flags (item 4). A
+	// mistake in it is found now, before anything is opened.
+	told := &settings{}
+	if *settingsFile != "" {
+		if told, err = readSettings(*settingsFile); err != nil {
+			fmt.Fprintf(stderr, "%s: the settings %s: %v\n", name, *settingsFile, err)
+			return 2
+		}
+	}
+	if *secretsDir != "" {
+		if info, err := os.Stat(*secretsDir); err != nil || !info.IsDir() {
+			fmt.Fprintf(stderr, "%s: there is no directory of secrets at %s\n", name, *secretsDir)
+			return 2
+		}
+	}
+	// The database is opened with no Go function: the server runs none
+	// (item 6). It sends requests only when the settings list a host,
+	// and only to the hosts they list (items 2 and 4).
+	opened := fado.Options{Users: true, Alone: name}
+	kept := &secrets{dir: *secretsDir, env: os.LookupEnv}
+	if told.calls() {
+		if opened.Outbound, err = outbound.Allow(outbound.Options{Hosts: told.hosts, Connections: told.connections}); err != nil {
+			fmt.Fprintf(stderr, "%s: the settings %s: %v\n", name, *settingsFile, err)
+			return 2
+		}
+		opened.Secrets = kept.find
+	}
 	if !exists(path) {
 		return noDatabase(name, path, stderr)
 	}
 
-	db, err := fado.Open(path, fado.Options{Users: true, Alone: name})
+	db, err := fado.Open(path, opened)
 	if err != nil {
 		fmt.Fprintf(stderr, "%s: %v\n", name, err)
 		return 1
 	}
 	defer db.Close()
 	log := &requestLog{w: stderr}
-	door, err := httpdoor.New(db, httpdoor.Options{Who: httpdoor.Keys(db), Report: log.write})
+	door, err := httpdoor.New(db, httpdoor.Options{Who: httpdoor.Keys(db), Limits: told.limits, Report: log.write})
 	if err != nil {
 		fmt.Fprintf(stderr, "%s: %v\n", name, err)
 		return 1
@@ -126,6 +190,10 @@ func runServe(ctx context.Context, args []string, stdout, stderr io.Writer, read
 	if users, err := db.Users(ctx, fado.UserFilter{}, onTheMachine); err == nil && len(users) == 0 {
 		fmt.Fprintf(stderr, "%s: the database has no user yet, so nobody can call it. Stop the server and make the first:\n"+
 			"  fadodb user add olga --kind person --system administrators --db %s\n  fadodb key new olga --label laptop --db %s\n", name, path, path)
+	}
+	fmt.Fprintf(stderr, "%s: %s\n", name, told.mayCall())
+	for _, line := range waiting(db.Actions(), kept) {
+		fmt.Fprintf(stderr, "%s: %s\n", name, line)
 	}
 	if ready != nil {
 		ready(ln.Addr().String())
@@ -160,6 +228,61 @@ func runServe(ctx context.Context, args []string, stdout, stderr io.Writer, read
 	}
 	fmt.Fprintf(stderr, "%s: stopped\n", name)
 	return 0
+}
+
+// mayCall says, in a line, what the actions of the database may call.
+func (s *settings) mayCall() string {
+	if !s.calls() {
+		return "its actions may call no host; the settings list the hosts they may call (--settings)"
+	}
+	var parts []string
+	if len(s.hosts) > 0 {
+		parts = append(parts, strings.Join(s.hosts, ", "))
+	}
+	names := make([]string, 0, len(s.connections))
+	for name := range s.connections {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	for _, name := range names {
+		hosts := strings.Join(s.connections[name], ", ")
+		if hosts == "" {
+			hosts = "no host"
+		}
+		parts = append(parts, "over the connection "+name+", "+hosts)
+	}
+	return "its actions may call " + strings.Join(parts, "; ")
+}
+
+// waiting says which actions of the database this server cannot run as
+// it was started, a line for each reason, so that the operator learns
+// it now and not from an action that died: an action that is a Go
+// function (ADR-0059, item 6), one whose connection the settings do
+// not have, and one whose secret is in neither place.
+func waiting(actions []fado.ActionInfo, kept *secrets) []string {
+	var functions, lines []string
+	for _, a := range actions {
+		switch {
+		case a.Kind == store.ActionRegistered && !a.Available:
+			functions = append(functions, a.Name)
+		case a.Kind != store.ActionDeclared || a.Name == model.ActionHTTPCall:
+		case !a.Available && a.Connection != "":
+			lines = append(lines, "the action "+a.Name+" sends its request over the connection "+a.Connection+", which the settings do not have: it does not run")
+		case !a.Available:
+			lines = append(lines, "the action "+a.Name+" sends a request, and the settings list no host: it does not run")
+		default:
+			for _, name := range a.Secrets {
+				if _, err := kept.find(context.Background(), a.Connection, name); err != nil {
+					lines = append(lines, "the action "+a.Name+" reads the secret "+name+" of the connection "+a.Connection+", and "+err.Error()+": it does not run until the secret is there")
+				}
+			}
+		}
+	}
+	if len(functions) > 0 {
+		lines = append([]string{"the database has actions that a Go function runs, and this server runs none: " + strings.Join(functions, ", ") +
+			". They do not run here; they run in a program of your own that opens the database with the functions"}, lines...)
+	}
+	return lines
 }
 
 // thisMachineOnly reports whether an address to listen at can be

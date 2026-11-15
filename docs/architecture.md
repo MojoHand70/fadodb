@@ -1111,10 +1111,11 @@ engine's table.
 > (`httpdoor.Keys`). `fadodb serve` does that for a database
 > `fadodb init` made: it listens on this machine only unless it has a
 > certificate, holds the database alone, writes a line for each
-> request and answers `GET /v1/health`. The stream of changes, the
-> metrics, and the settings of the server with the hosts its actions
-> may call are decided, by the five records the owner accepted on
-> 2026-11-14, and not built.
+> request and answers `GET /v1/health`. Its settings, a file of the
+> operator's, list the hosts its actions may call and its limits, and
+> the secrets of its connections are read from a directory or the
+> environment. The stream of changes and the metrics are decided, by
+> the five records the owner accepted on 2026-11-14, and not built.
 
 | Address | Purpose | Record |
 |---|---|---|
@@ -1138,10 +1139,10 @@ engine's table.
 - **`fadodb serve`** serves a database that `fadodb init` made, and
   holds it alone while it does. Told nothing, it listens on this
   machine only, and a key never travels in the clear by accident. It
-  is to run the engine's actions and the actions that send an HTTP
-  request, and no action written as a Go function; its settings are
-  the operator's (ADR-0059). The settings and the actions that call a
-  service are not built yet.
+  runs the engine's actions and the actions that send an HTTP request,
+  to the hosts its settings list, and no action written as a Go
+  function; its settings are the operator's, and no secret is among
+  them (ADR-0059).
 - Layouts and the class bundle come with the frontend in Phase 7, by
   the owner's ruling of 2026-11-14.
 

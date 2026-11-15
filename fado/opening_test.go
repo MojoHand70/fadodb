@@ -90,18 +90,26 @@ func TestOpeningADatabase(t *testing.T) {
 			if exists(name) || !exists("files.fado.blobs") {
 				t.Errorf("the directory of bytes: %s is there for a database of the store sqlite, or missing for one of the store dir", name)
 			}
+		case when == "once a program has held the database alone":
+			if exists(name) {
+				t.Errorf("%s is there for a database that no program held alone", name)
+			}
+			must(open("held.fado", fado.Options{Alone: "the test"})).Close()
+			if !exists("held.fado.lock") {
+				t.Error("a database that a program held alone has no lock file")
+			}
 		default:
 			t.Errorf("the test cannot read when %s is there: %q", name, when)
 		}
 	}
-	if len(there) != 4 {
-		t.Errorf("the chapter lists %d files, and the test knows four", len(there))
+	if len(there) != 5 {
+		t.Errorf("the chapter lists %d files, and the test knows five", len(there))
 	}
 
-	// One program holds a database: a second open is not refused, and
-	// the first does not learn what the second defines. When the engine
-	// keeps a second program off the file, this fails and the box in the
-	// chapter goes.
+	// One program holds a database: a second open is not refused unless
+	// the first holds the database alone, and the first does not learn
+	// what the second defines. When the engine keeps every second
+	// program off the file, this fails and the box in the chapter goes.
 	second, err := fado.Open(filepath.Join(dir, "notes.fado"), fado.Options{})
 	if err != nil {
 		t.Errorf("a second open of an open file is refused: %v", err)
@@ -348,8 +356,13 @@ func TestOpeningADatabase(t *testing.T) {
 			opened("plain.fado", fado.Options{BlobStore: "dir"}),
 		},
 		"opens a database with a lower MaxBlob than it has": {opened("plain.fado", fado.Options{MaxBlob: 999})},
-		"opens a file that a newer engine made":             {newer(1)},
-		"opens a file that an earlier engine made":          {newer(-2)},
+		"opens a database that another program holds alone": {func() error {
+			held := must(open("alone.fado", fado.Options{Alone: "the test"}))
+			defer held.Close()
+			return opened("alone.fado", fado.Options{})
+		}()},
+		"opens a file that a newer engine made":    {newer(1)},
+		"opens a file that an earlier engine made": {newer(-2)},
 	}
 	listedCases := map[string]bool{}
 	for _, row := range rows(marked(t, page, "what is refused")) {

@@ -155,6 +155,26 @@ All notable changes to FadoDB are recorded here. The format follows
   program may set. The status of a reply follows its code; the caller
   reads the code. The server `fadodb serve`, the engine's own users and
   keys and the stream of changes are not built yet.
+- `fadodb serve`, the server, in its first part (ADR-0059). Four
+  commands lead from nothing to a database that answers a key over
+  HTTP: `fadodb init FILE` makes a database; `fadodb user add ID
+  --kind … --system administrators --db FILE` and `fadodb key new USER
+  --db FILE` make its first administrator and print her key, once, on
+  the machine that holds the database; `fadodb serve FILE` serves it.
+  Told nothing, the server listens at `127.0.0.1:8080`. It refuses to
+  listen beyond this machine without `--tls-cert` and `--tls-key`,
+  unless `--plain-http` says that something in front encrypts. It
+  writes one line of JSON for each request to standard error, answers
+  `GET /v1/health` for anybody, and on an interrupt lets the commands
+  that run end before it closes the database. The settings of the
+  server, the actions that call a service, and its metrics are not
+  built yet. `docs/manual/serving-a-database.md` is its chapter.
+- A program holds a database alone with `Options.Alone` (ADR-0059,
+  item 7), as the server does: while it has the database open, every
+  other program that opens it is refused with the new code `in_use`
+  and told who holds it. The hold is a lock of the operating system on
+  `FILE.lock` and ends with the program, however it ends.
+- `DB.Ping` reads from the database, to say that it answers.
 - A database keeps its own users, groups and keys (ADR-0057) when it
   is opened with `Options.Users`. A user is a person, an agent or a
   service known by its id; a group is a name on a user; a key is one

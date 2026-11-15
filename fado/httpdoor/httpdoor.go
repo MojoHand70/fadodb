@@ -41,8 +41,8 @@
 // administrator.
 //
 // A database that keeps its own users, groups and keys (ADR-0057) has
-// its Who ready: Keys. Not here yet, each with its step of Phase 6: the
-// stream of changes, and the program `fadodb serve`.
+// its Who ready: Keys. The program `fadodb serve` is this door with
+// such a database behind it. Not here yet: the stream of changes.
 package httpdoor
 
 import (

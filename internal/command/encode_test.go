@@ -11,14 +11,14 @@ import (
 	"github.com/MojoHand70/fadodb/internal/store"
 )
 
-// The encoder written by hand is held to the bytes encoding/json writes
-// for the same document (ADR-0055): an answer written here and an answer
-// written by encoding/json, such as a preview with its document inside,
-// must read the same.
+// The encoder written by hand is held to the bytes Marshal writes for
+// the same document (ADR-0055): an answer written here and an answer
+// written through encoding/json, such as a preview with its document
+// inside, must read the same. Both write <, > and & as themselves.
 
 func sameBytes(t *testing.T, d *store.Document) {
 	t.Helper()
-	want, wantErr := json.Marshal(d)
+	want, wantErr := Marshal(d)
 	got, gotErr := appendDocument(nil, d)
 	if (wantErr != nil) != (gotErr != nil) {
 		t.Fatalf("encoding/json fails with %v and the encoder with %v", wantErr, gotErr)

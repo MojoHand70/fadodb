@@ -181,7 +181,7 @@ func appendValue(b []byte, v any) ([]byte, error) {
 	}
 	// A json value, which encoding/json compacts and escapes, and anything
 	// a host program's action put into a document's values.
-	text, err := json.Marshal(v)
+	text, err := Marshal(v)
 	if err != nil {
 		return b, err
 	}
@@ -212,16 +212,16 @@ func appendFloat(b []byte, f float64) ([]byte, error) {
 
 const hex = "0123456789abcdef"
 
-// appendString writes a text as encoding/json does with its HTML
-// escaping on: the quote, the backslash and the control characters
-// escaped, <, > and & as <, > and &, U+2028 and U+2029 as
-// escapes, and a byte that is not UTF-8 as the replacement character, escaped.
+// appendString writes a text as Marshal does: the quote, the backslash
+// and the control characters escaped, <, > and & as themselves, U+2028
+// and U+2029 as escapes, and a byte that is not UTF-8 as the
+// replacement character, escaped.
 func appendString(b []byte, s string) []byte {
 	b = append(b, '"')
 	start := 0
 	for i := 0; i < len(s); {
 		if c := s[i]; c < utf8.RuneSelf {
-			if c >= ' ' && c != '"' && c != '\\' && c != '<' && c != '>' && c != '&' {
+			if c >= ' ' && c != '"' && c != '\\' {
 				i++
 				continue
 			}

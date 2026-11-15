@@ -501,6 +501,30 @@ The description for other languages (item 10) was built on 2026-11-15:
   document, the event and the other shapes of ADR-0018 as schemas is
   a step of its own.
 
+## Amended 2026-11-15: an answer writes `<`, `>` and `&` as themselves
+
+Until this day every answer wrote the three characters as `\u003c`,
+`\u003e` and `\u0026`, because `encoding/json` does so unless it is
+told otherwise, and the encoder of a document written by hand was held
+to its bytes. The escapes exist so that JSON can be pasted into a page
+of HTML. An answer is not a page: a door sends it as
+`application/json` and tells a browser not to guess otherwise.
+
+The escapes cost the readers the phase is built for. A guard came back
+as `"total \u003e 0"` and a title as `"\"Invoice for \" \u0026 customer"`,
+at a terminal and in what an agent reads. The owner called it a
+problem on 2026-11-15, when the command-line tool first showed it
+(ADR-0062).
+
+So an answer of a command, a refusal, an entry of the stream and the
+facts of a file write the three characters as themselves. The value
+read from an answer is the same as before; only its bytes differ, and
+a program that reads JSON sees no change. Everything else stays
+escaped as it was: the quote, the backslash, the control characters,
+U+2028 and U+2029. All of it goes through one function,
+`command.Marshal`, and the encoder of a document is held to its bytes
+by the tests that held it to `encoding/json`.
+
 ## The owner's rulings
 
 All of 2026-11-14. The owner read the record with its three questions

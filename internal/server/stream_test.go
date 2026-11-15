@@ -261,9 +261,13 @@ func TestAStreamOfChanges(t *testing.T) {
 	// An event: its id, its kind of entry, and the event on one line, as
 	// the command events answers it.
 	j.events <- submitted
-	text, _ := json.Marshal(submitted)
+	text, _ := command.Marshal(submitted)
 	if block, _ := l.next(); block != "id: 01KA2F8Q7ZJ4M0X3T5V9B1C6DE\nevent: change\ndata: "+string(text)+"\n" {
 		t.Errorf("the entry of an event is %q", block)
+	}
+	// The line is written as an answer is: a < is a <.
+	if !strings.Contains(string(text), `and <another>`) {
+		t.Errorf("an event is written as %s", text)
 	}
 	second := *submitted
 	second.ID, second.Name, second.Reason = "01KA2F8Q7ZJ4M0X3T5V9B1C6DF", "approve", ""

@@ -1,7 +1,6 @@
 package main
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -12,6 +11,7 @@ import (
 
 	"github.com/MojoHand70/fadodb/fado"
 	"github.com/MojoHand70/fadodb/fado/outbound"
+	"github.com/MojoHand70/fadodb/internal/command"
 )
 
 const classUsage = `fadodb class check - ask whether the engine would take a class
@@ -182,7 +182,7 @@ func runDefinition(what string, args []string, stdout, stderr io.Writer) int {
 		if found == nil {
 			found = fado.Diagnostics{}
 		}
-		text, err := json.Marshal(struct {
+		text, err := command.Marshal(struct {
 			Diagnostics fado.Diagnostics `json:"diagnostics"`
 		}{found})
 		if err != nil {

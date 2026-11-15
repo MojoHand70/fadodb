@@ -3,7 +3,6 @@ package server
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -498,7 +497,7 @@ func (o *reply) send(status int, answer []byte) {
 // refusal writes a refusal of the door's own, in the shape of every
 // refusal: {"error": …}.
 func (o *reply) refusal(status int, e *store.Error) {
-	text, err := json.Marshal(struct {
+	text, err := command.Marshal(struct {
 		Error *store.Error `json:"error"`
 	}{e})
 	if err != nil {

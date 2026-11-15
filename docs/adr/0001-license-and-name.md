@@ -1,6 +1,6 @@
 # ADR-0001: License and name
 
-- Status: Accepted
+- Status: Accepted; the license part superseded by ADR-0061
 - Date: 2026-11-05
 
 ## Context

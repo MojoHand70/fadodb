@@ -2,10 +2,9 @@
 
 [![ci](https://github.com/MojoHand70/fadodb/actions/workflows/ci.yml/badge.svg)](https://github.com/MojoHand70/fadodb/actions/workflows/ci.yml)
 [![Go Reference](https://pkg.go.dev/badge/github.com/MojoHand70/fadodb.svg)](https://pkg.go.dev/github.com/MojoHand70/fadodb/fado)
-[![Go Report Card](https://goreportcard.com/badge/github.com/MojoHand70/fadodb)](https://goreportcard.com/report/github.com/MojoHand70/fadodb)
-[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![License: Apache 2.0](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 
-An embeddable **active document database**, written in Go, MIT licensed.
+An embeddable **active document database**, written in Go, Apache 2.0 licensed.
 Website: [fadodb.org](https://fadodb.org). The manual starts at
 [docs/README.md](docs/README.md): [what FadoDB is](docs/manual/what-is-fadodb.md),
 [how it works](docs/manual/how-it-works.md) and
@@ -317,4 +316,5 @@ are the most useful contributions at this stage.
 
 ## License
 
-MIT, see [LICENSE](LICENSE).
+Apache License 2.0, see [LICENSE](LICENSE). Releases up to v0.5.0 were
+published under the MIT license, and those copies stay under it.

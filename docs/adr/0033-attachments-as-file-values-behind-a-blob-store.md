@@ -140,3 +140,46 @@ commit and a new version.
 - Serving streams from the store; the `dir` store streams the file, the
   `sqlite` store reads the blob in one statement.
 - Opening a database is unchanged; the store is a metadata row.
+
+## Added on 2026-11-15: the check finds a file that is missing
+
+Item 7 gave the check one direction: it read every blob the store held
+and reported the ones whose bytes had changed. It never asked which
+files the documents hold. So a file that was lost was not found. With
+the `dir` store, whose files are in a directory beside the database, a
+backup that left the directory out passed the check with "0 blobs
+checked, all match".
+
+The check now looks both ways.
+
+- **It reads the hash of every file a document holds**, in every
+  version of every document of every class, the deleted ones among
+  them, since their versions are kept and their files can still be
+  opened as of a version. A hash the store does not hold is reported
+  as missing.
+- **A missing file is reported with its document**: the hash, the
+  class, the id, the first version that held the file, and the
+  variable, with the path of the field for a file inside an object.
+  One entry for each document and variable that holds the file, so a
+  file that two documents share is reported twice.
+- **The name of the file is not reported.** Who checks a database is a
+  database administrator, who is not always allowed to read what the
+  documents hold (ADR-0052). The class and the id are what the list of
+  queued actions shows such a caller already.
+- **It asks the database one statement for each place a hash is
+  kept**, a column of a class's history or of the table of a `rows`
+  variable, and never one for each document.
+- **What it leaves alone.** A blob that no document holds is not
+  missed when it is gone; and a store of the host program that cannot
+  list what it keeps is still refused with `not_supported`.
+
+What changes for a caller:
+
+| | Before | Now |
+|---|---|---|
+| The Go call | `CheckBlobs` answers the mismatched hashes and a count | `CheckBlobs` answers a `BlobCheck`: `Checked`, `Mismatched`, `Missing` |
+| The command `check_blobs` | `{"checked": 3, "mismatched": []}` | `{"checked": 3, "mismatched": [], "missing": []}` |
+| `fadodb check` | ends with 1 when bytes do not match | ends with 1 when bytes do not match or a file is missing, and lists both |
+
+The retention command of this item, which is not built, needs the same
+reading of which hashes the documents hold, and can use it.

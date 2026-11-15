@@ -501,7 +501,7 @@ func TestTablesActionsAndTheQueue(t *testing.T) {
 	used["retry_action"]++
 
 	checked := run(t, s, olga, "check_blobs", `{}`)
-	if checked["checked"] != float64(0) || string(mustJSON(checked["mismatched"])) != "[]" {
+	if checked["checked"] != float64(0) || string(mustJSON(checked["mismatched"])) != "[]" || string(mustJSON(checked["missing"])) != "[]" {
 		t.Fatalf("check_blobs answered %v", checked)
 	}
 }

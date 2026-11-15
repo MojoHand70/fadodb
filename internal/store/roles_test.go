@@ -44,7 +44,7 @@ func TestRoles_SystemGroups(t *testing.T) {
 	operate := map[string]call{
 		"Outbox":      func(o Option) error { _, err := s.Outbox(ctx, OutboxFilter{}, o); return err },
 		"Drain":       func(o Option) error { _, err := s.Drain(ctx, o); return err },
-		"CheckBlobs":  func(o Option) error { _, _, err := s.CheckBlobs(ctx, o); return err },
+		"CheckBlobs":  func(o Option) error { _, err := s.CheckBlobs(ctx, o); return err },
 		"RetryAction": func(o Option) error { return s.RetryAction(ctx, "none:0", o) },
 	}
 	analyse := map[string]call{

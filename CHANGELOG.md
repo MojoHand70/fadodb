@@ -184,6 +184,18 @@ All notable changes to FadoDB are recorded here. The format follows
   When it starts, the server says what its actions may call, and
   names every action of the database it cannot run as it was started.
   No setting is kept in the database, and no command changes one.
+- **Breaking for a program that calls `CheckBlobs`:** the check of the
+  files now also finds a file that is missing. It read every blob the
+  store held and named the ones whose bytes had changed, and never
+  asked which files the documents hold: a backup that left a file out,
+  or the whole directory of the `dir` store, passed. It now reads the
+  hash of every file a document holds, in every version, and names
+  the ones the store does not have, each with its document: the class,
+  the id, the first version that held it and the variable. `CheckBlobs`
+  answers a `BlobCheck` with `Checked`, `Mismatched` and `Missing`
+  where it answered two values; the command `check_blobs` gains the
+  member `missing`; `fadodb check` lists the missing files and ends
+  with 1 for them (ADR-0033).
 - The command-line tool leaves the queue of a database alone. `fadodb
   check`, `fadodb user add` and `fadodb key new` opened a database as
   a program does, with a worker for its queued actions; the tool has
@@ -191,8 +203,7 @@ All notable changes to FadoDB are recorded here. The format follows
   answer, `not_registered`, and lost one of its ten attempts. A check
   of a database with files to read ran long enough for that. The tool
   now starts no worker. `fadodb check` also refuses a name under which
-  there is no database, where it made an empty one, and its help says
-  that it does not find a blob the store has lost.
+  there is no database, where it made an empty one.
 - `fadodb serve` runs no Go function (ADR-0059, item 6). A definition
   of an action with no request is refused when it is defined, in
   every program that has no function under its name, with

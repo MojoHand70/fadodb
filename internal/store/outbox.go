@@ -1068,6 +1068,49 @@ func asError(err error) *Error {
 	return &Error{Code: CodeStorage, Message: err.Error()}
 }
 
+// OutboxCounts is how much of the outbox is still to do, for whoever
+// watches a database (ADR-0059, item 9).
+type OutboxCounts struct {
+	// Due is how many actions are due and have not run: what the worker
+	// has before it. A number that stays high says the worker does not
+	// keep up, or that something the actions need gives no answer.
+	Due int `json:"due"`
+	// Waiting is how many actions wait for their moment: a timer that
+	// has not come, an action that is tried again later.
+	Waiting int `json:"waiting"`
+	// Dead is how many actions are dead: refused, or out of attempts. An
+	// administrator sends one again with RetryAction.
+	Dead int `json:"dead"`
+	// OldestDue is when the action that has been due longest fell due;
+	// the zero time when none is due.
+	OldestDue time.Time `json:"oldest_due"`
+}
+
+// OutboxCounts counts what of the outbox is due, what waits for its
+// moment and what is dead, at the database's clock. It is an
+// administrator's, like Outbox, and reads three counts from an index
+// and no row.
+func (s *Store) OutboxCounts(ctx context.Context, opts ...Option) (OutboxCounts, error) {
+	var c OutboxCounts
+	if _, e := s.worker(ctx, workOperate, opts); e != nil {
+		return c, e
+	}
+	now := s.now().Unix()
+	var oldest sql.NullInt64
+	err := s.db.QueryRowContext(ctx, `SELECT
+ (SELECT count(*) FROM outbox WHERE status = 'pending' AND due_at <= ?),
+ (SELECT count(*) FROM outbox WHERE status = 'pending' AND due_at > ?),
+ (SELECT count(*) FROM outbox WHERE status = 'dead'),
+ (SELECT min(due_at) FROM outbox WHERE status = 'pending' AND due_at <= ?)`, now, now, now).Scan(&c.Due, &c.Waiting, &c.Dead, &oldest)
+	if err != nil {
+		return c, storageErr("count the outbox", err)
+	}
+	if oldest.Valid {
+		c.OldestDue = time.Unix(oldest.Int64, 0).UTC()
+	}
+	return c, nil
+}
+
 // Outbox lists rows of the outbox in the order they were queued
 // (ADR-0044, item 8): what is waiting, what ran and what is dead, each
 // with its key, its arguments, its attempts and its last error.

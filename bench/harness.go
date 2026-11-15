@@ -24,7 +24,7 @@ func Probe(target Target, path string) (int64, error) {
 	if err != nil {
 		return 0, fmt.Errorf("open: %w", err)
 	}
-	defer db.Close()
+	defer Close(db)
 	var n int64
 	if err := db.QueryRow("SELECT count(*) FROM doc_Invoice").Scan(&n); err != nil {
 		return 0, fmt.Errorf("count: %w", err)
@@ -42,7 +42,7 @@ func HoldAndProbe(ctx context.Context, target Target, path string, probeTest str
 	if err != nil {
 		return "", err
 	}
-	defer db.Close()
+	defer Close(db)
 	o := Options{Commits: 200, Documents: 50, Lines: 2, Batch: 1, Seed: 3}
 	if _, err := RunStore(ctx, target, db, path, o); err != nil {
 		return "", err
@@ -131,7 +131,7 @@ func Campaign(ctx context.Context, target Target, dir, which string, w io.Writer
 		for _, r := range reports {
 			fmt.Fprintln(w, r)
 		}
-		db.Close()
+		Close(db)
 		removeDatabase(path)
 		if err != nil {
 			return true, err
@@ -167,14 +167,14 @@ func storeRun(ctx context.Context, target Target, path string, o Options, w io.W
 	}
 	r, err := RunStore(ctx, target, db, path, o)
 	if err != nil {
-		db.Close()
+		Close(db)
 		return err
 	}
 	if err := Verify(ctx, db, o); err != nil {
-		db.Close()
+		Close(db)
 		return err
 	}
-	if err := db.Close(); err != nil {
+	if err := Close(db); err != nil {
 		return err
 	}
 	fmt.Fprintln(w, r)
@@ -183,7 +183,7 @@ func storeRun(ctx context.Context, target Target, path string, o Options, w io.W
 	if err != nil {
 		return err
 	}
-	defer db.Close()
+	defer Close(db)
 	var version int64
 	if err := db.QueryRowContext(ctx, "SELECT version FROM doc_Invoice WHERE id = 'inv_00000000'").Scan(&version); err != nil {
 		return err

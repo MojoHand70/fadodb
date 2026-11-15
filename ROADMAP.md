@@ -275,9 +275,11 @@ every event of the log it may read of, in the order of the commits,
 with the read rule asked for each; and its address on the server,
 `POST /v1/subscribe`, a reply that stays open and says each event as
 it is written, which a caller that was away picks up where it stopped.
-Not built yet: the command-line tool as a caller, the door for agents,
-the description of the commands for other languages, the image for
-containers and the way in for messages from outside.
+The seventh step is the description of the commands for other
+languages, `api/openapi.json`, written from the engine's table of the
+commands. Not built yet: the command-line tool as a caller, the door
+for agents, the image for containers and the way in for messages from
+outside.
 This page is updated when a phase starts and when it ends;
 it never describes a phase as done before its acceptance criteria pass.
 

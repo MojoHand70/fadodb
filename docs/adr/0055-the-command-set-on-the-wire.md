@@ -470,6 +470,37 @@ same door. What it settled:
 - **A file in transfer holds the place of a command** and is not
   stopped by the time one command may run; ADR-0059 says so.
 
+The description for other languages (item 10) was built on 2026-11-15:
+`api/openapi.json`.
+
+- **It is an OpenAPI 3.1 document, written from the table** by the
+  program that writes the manual's chapter on the commands, and held
+  by the same test: a command that is added, changed or removed fails
+  the build until `make docs` has written both again. Another test
+  sends every address of the document to a door, and fails when the
+  door does not answer it, takes a member the document does not list,
+  or needs another member than the document says.
+- **One address for each command**, `POST /v1/<command>`, named by the
+  command. Its object is described member by member, with the type of
+  each, what it is and whether it is needed; a member the command does
+  not have is not allowed. The three addresses of the files stand
+  beside them, and the two that `fadodb serve` answers itself, the
+  health and the counts.
+- **What the table says beyond OpenAPI is carried in three fields of
+  the document's own**: `x-fado-mark` (reads, writes or destroys),
+  `x-fado-call` (the Go call) and `x-fado-stream` for the one command
+  whose answer is a stream.
+- **A refusal is described once**, for every address: the object under
+  `error`, and the status of each code.
+- **Its version is 1**, the `v1` every address begins with. It changes
+  when the addresses do, and not with a release.
+- **What it does not have yet: the types of an answer.** The table
+  holds the names of an answer's members and what each holds, in
+  words, and no type, so the document names the members and a client
+  written from it reads an answer as untyped JSON. Describing the
+  document, the event and the other shapes of ADR-0018 as schemas is
+  a step of its own.
+
 ## The owner's rulings
 
 All of 2026-11-14. The owner read the record with its three questions

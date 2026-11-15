@@ -1,0 +1,4132 @@
+{
+  "components": {
+    "responses": {
+      "Refused": {
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Refusal"
+            }
+          }
+        },
+        "description": "The command was not carried out. The body holds the refusal under `error`, with its code; a caller reads the code, and the status is worked out from it:\n\n| Status | Codes |\n|---|---|\n| 400 | `bad_json` |\n| 401 | `unauthenticated` |\n| 403 | `forbidden`, `reason_required` |\n| 404 | `unknown_class`, `unknown_document`, `unknown_table`, `unknown_schema`, `unknown_blob`, `unknown_action`, `unknown_row`, `unknown_user`, `unknown_key`, `unknown_command` |\n| 409 | `key_reused`, `duplicate`, `terminal`, `wrong_state`, `guard_false` |\n| 413 | `blob_too_large`, `too_large` |\n| 500 | `storage`, `internal` |\n| 503 | `closed`, `busy` |\n| 504 | `timeout` |\n| 422 | every other refusal |\n"
+      }
+    },
+    "schemas": {
+      "Error": {
+        "properties": {
+          "code": {
+            "description": "what a caller branches on",
+            "type": "string"
+          },
+          "hint": {
+            "description": "what to do about it, where the engine knows",
+            "type": "string"
+          },
+          "message": {
+            "description": "what happened, in words",
+            "type": "string"
+          },
+          "path": {
+            "description": "the place: in the object of the command, or in the class whose rule refused",
+            "type": "string"
+          },
+          "pos": {
+            "description": "the place inside a formula, where the refusal is about one",
+            "type": "integer"
+          },
+          "variable": {
+            "description": "the variable the refusal is about",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "message"
+        ],
+        "type": "object"
+      },
+      "Health": {
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          },
+          "version": {
+            "description": "the version of the server",
+            "type": "string"
+          }
+        },
+        "required": [
+          "ok",
+          "version"
+        ],
+        "type": "object"
+      },
+      "Refusal": {
+        "properties": {
+          "diagnostics": {
+            "description": "every finding of a definition that was refused, beside the code `bad_definition`",
+            "items": {
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "error": {
+            "$ref": "#/components/schemas/Error"
+          }
+        },
+        "required": [
+          "error"
+        ],
+        "type": "object"
+      }
+    },
+    "securitySchemes": {
+      "key": {
+        "description": "A key of a user of the database, made by `create_key` or by `fadodb key new`. A program that mounts the door for callers of its own says itself who sends a request.",
+        "scheme": "bearer",
+        "type": "http"
+      }
+    }
+  },
+  "info": {
+    "description": "Every call that reads or changes a database is a command: a name and one JSON object, answered by one JSON object. A command is sent as `POST /v1/<command>` with its object as the body. A command that reads is a `POST` too, and the id of a document travels in the JSON and never in the address.\n\nWho sends a request is never in the command. A database that keeps its own users is sent a key of a user, as `Authorization: Bearer fado_…`. A member that is `null` is a member left out, and a member a command does not have is refused.\n\nThis document is written from the engine's own table of the commands. The manual's chapter on the commands is written from the same table.",
+    "license": {
+      "identifier": "MIT",
+      "name": "MIT"
+    },
+    "summary": "The command set of a FadoDB database over HTTP.",
+    "title": "FadoDB",
+    "version": "1"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/v1/blob": {
+      "get": {
+        "operationId": "open_blob",
+        "parameters": [
+          {
+            "description": "the hash of the bytes",
+            "in": "query",
+            "name": "hash",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              }
+            },
+            "description": "The bytes."
+          },
+          "304": {
+            "description": "The caller holds these bytes already: it sent their tag in `If-None-Match`."
+          },
+          "default": {
+            "$ref": "#/components/responses/Refused"
+          }
+        },
+        "summary": "Streams bytes by their hash alone, for a content administrator.",
+        "tags": [
+          "Files"
+        ]
+      }
+    },
+    "/v1/blobs": {
+      "post": {
+        "description": "The body is the bytes themselves, and the `Content-Type` of the request is their kind. The facts answered are a value like any other: a command sets them on a document.",
+        "operationId": "put_blob",
+        "parameters": [
+          {
+            "description": "the name of the file",
+            "in": "query",
+            "name": "name",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "*/*": {
+              "schema": {
+                "format": "binary",
+                "type": "string"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "file": {
+                      "description": "the facts of the file: its hash, name, media_type and size",
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "file"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "The bytes are kept."
+          },
+          "default": {
+            "$ref": "#/components/responses/Refused"
+          }
+        },
+        "summary": "Keeps the bytes of a file and answers its facts.",
+        "tags": [
+          "Files"
+        ]
+      }
+    },
+    "/v1/check_blobs": {
+      "post": {
+        "description": "It reads. In Go it is the call `CheckBlobs`.",
+        "operationId": "check_blobs",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "for": {
+                    "description": "the id of whoever the caller acts for; let through only while a substitution says so",
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "checked": {
+                      "description": "how many files it checked"
+                    },
+                    "mismatched": {
+                      "description": "the hashes of the files whose bytes do not match"
+                    },
+                    "missing": {
+                      "description": "the files a document holds, in any version, that the database has lost, each {\"hash\", \"class\", \"id\", \"version\", \"variable\"}"
+                    }
+                  },
+                  "required": [
+                    "checked",
+                    "mismatched",
+                    "missing"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "The command ran."
+          },
+          "default": {
+            "$ref": "#/components/responses/Refused"
+          }
+        },
+        "summary": "Recomputes the hash of every file the database holds, and looks for every file a document holds.",
+        "tags": [
+          "Tables, actions and the queue"
+        ],
+        "x-fado-call": "CheckBlobs",
+        "x-fado-mark": "reads"
+      }
+    },
+    "/v1/count": {
+      "post": {
+        "description": "It reads. In Go it is the call `Count`.",
+        "operationId": "count",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "at": {
+                    "description": "the moment the command reads at: \"2026-11-13\", \"2026-11-13 09:30:00\" in UTC, or seconds since the epoch; now when left out",
+                    "type": [
+                      "string",
+                      "integer"
+                    ]
+                  },
+                  "class": {
+                    "description": "the name of the class",
+                    "type": "string"
+                  },
+                  "for": {
+                    "description": "the id of whoever the caller acts for; let through only while a substitution says so",
+                    "type": "string"
+                  },
+                  "where": {
+                    "description": "a formula over the variables of the class; every document when left out",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "class"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "count": {
+                      "description": "how many documents match"
+                    }
+                  },
+                  "required": [
+                    "count"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "The command ran."
+          },
+          "default": {
+            "$ref": "#/components/responses/Refused"
+          }
+        },
+        "summary": "Counts the documents of a class that match a filter.",
+        "tags": [
+          "Documents"
+        ],
+        "x-fado-call": "Count",
+        "x-fado-mark": "reads"
+      }
+    },
+    "/v1/create": {
+      "post": {
+        "description": "It writes. In Go it is the call `Create`.",
+        "operationId": "create",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "business_date": {
+                    "description": "the business day of the commit, as \"2026-11-13\"; the server's day when left out",
+                    "type": "string"
+                  },
+                  "class": {
+                    "description": "the name of the class",
+                    "type": "string"
+                  },
+                  "for": {
+                    "description": "the id of whoever the caller acts for; let through only while a substitution says so",
+                    "type": "string"
+                  },
+                  "id": {
+                    "description": "the id of the new document; generated when left out",
+                    "type": "string"
+                  },
+                  "key": {
+                    "description": "the idempotency key: the same command sent again with the same key makes no second commit and is answered as the first was",
+                    "type": "string"
+                  },
+                  "reason": {
+                    "description": "why a content administrator acts past a rule of the class; kept on the event",
+                    "type": "string"
+                  },
+                  "values": {
+                    "description": "the values to assign, by variable",
+                    "type": "object"
+                  }
+                },
+                "required": [
+                  "class"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "document": {
+                      "description": "the new document"
+                    }
+                  },
+                  "required": [
+                    "document"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "The command ran."
+          },
+          "default": {
+            "$ref": "#/components/responses/Refused"
+          }
+        },
+        "summary": "Makes a document.",
+        "tags": [
+          "Documents"
+        ],
+        "x-fado-call": "Create",
+        "x-fado-mark": "writes"
+      }
+    },
+    "/v1/create_key": {
+      "post": {
+        "description": "It writes. In Go it is the call `CreateKey`. It is offered only by a database that keeps its own users, groups and keys; any other answers `unknown_command`.",
+        "operationId": "create_key",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "expires": {
+                    "description": "the last day the key holds, as YYYY-MM-DD in UTC; left out, the key holds until it is revoked",
+                    "type": "string"
+                  },
+                  "for": {
+                    "description": "the id of whoever the caller acts for; let through only while a substitution says so",
+                    "type": "string"
+                  },
+                  "label": {
+                    "description": "where the key is used, such as laptop or nightly import",
+                    "type": "string"
+                  },
+                  "user": {
+                    "description": "the id of the user the key is for",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "user"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "key": {
+                      "description": "the key: its id, its user, its label, when and by whom it was made, its last day, and under secret the key itself, which is shown this once and kept nowhere"
+                    }
+                  },
+                  "required": [
+                    "key"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "The command ran."
+          },
+          "default": {
+            "$ref": "#/components/responses/Refused"
+          }
+        },
+        "summary": "Makes a key for a user and answers it with its secret, this once. It is a database administrator's.",
+        "tags": [
+          "Users, groups and keys"
+        ],
+        "x-fado-call": "CreateKey",
+        "x-fado-mark": "writes"
+      }
+    },
+    "/v1/create_many": {
+      "post": {
+        "description": "It writes. In Go it is the call `CreateMany`.",
+        "operationId": "create_many",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "business_date": {
+                    "description": "the business day of the commit, as \"2026-11-13\"; the server's day when left out",
+                    "type": "string"
+                  },
+                  "class": {
+                    "description": "the name of the class",
+                    "type": "string"
+                  },
+                  "documents": {
+                    "description": "the documents, each {\"values\": {…}}",
+                    "items": {
+                      "type": "object"
+                    },
+                    "type": "array"
+                  },
+                  "for": {
+                    "description": "the id of whoever the caller acts for; let through only while a substitution says so",
+                    "type": "string"
+                  },
+                  "reason": {
+                    "description": "why a content administrator acts past a rule of the class; kept on the event",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "class",
+                  "documents"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "documents": {
+                      "description": "the new documents, in the order given"
+                    }
+                  },
+                  "required": [
+                    "documents"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "The command ran."
+          },
+          "default": {
+            "$ref": "#/components/responses/Refused"
+          }
+        },
+        "summary": "Makes several documents of one class in one transaction, all or none.",
+        "tags": [
+          "Documents"
+        ],
+        "x-fado-call": "CreateMany",
+        "x-fado-mark": "writes"
+      }
+    },
+    "/v1/create_user": {
+      "post": {
+        "description": "It writes. In Go it is the call `CreateUser`. It is offered only by a database that keeps its own users, groups and keys; any other answers `unknown_command`.",
+        "operationId": "create_user",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "for": {
+                    "description": "the id of whoever the caller acts for; let through only while a substitution says so",
+                    "type": "string"
+                  },
+                  "groups": {
+                    "description": "the groups of the user, which INGROUP answers",
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "id": {
+                    "description": "the id every event will record; it never changes and is never given to somebody else",
+                    "type": "string"
+                  },
+                  "kind": {
+                    "description": "person, agent or service",
+                    "type": "string"
+                  },
+                  "name": {
+                    "description": "how a screen shows the user",
+                    "type": "string"
+                  },
+                  "system_groups": {
+                    "description": "the system groups of the user: administrators, designers, content-administrators, analysts",
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "id",
+                  "kind"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "user": {
+                      "description": "the user: its id, its kind, its name, its groups, its system groups and whether it is disabled"
+                    }
+                  },
+                  "required": [
+                    "user"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "The command ran."
+          },
+          "default": {
+            "$ref": "#/components/responses/Refused"
+          }
+        },
+        "summary": "Makes a user: a person, an agent or a service the database knows by its id. It is a database administrator's.",
+        "tags": [
+          "Users, groups and keys"
+        ],
+        "x-fado-call": "CreateUser",
+        "x-fado-mark": "writes"
+      }
+    },
+    "/v1/define_action": {
+      "post": {
+        "description": "It writes. In Go it is the call `DefineAction`.",
+        "operationId": "define_action",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "definition": {
+                    "description": "the definition, as JSON",
+                    "type": "object"
+                  },
+                  "for": {
+                    "description": "the id of whoever the caller acts for; let through only while a substitution says so",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "definition"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "action": {
+                      "description": "the definition as it was given, with its name, its version and who defined it"
+                    }
+                  },
+                  "required": [
+                    "action"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "The command ran."
+          },
+          "default": {
+            "$ref": "#/components/responses/Refused"
+          }
+        },
+        "summary": "Defines an action a rule may name.",
+        "tags": [
+          "Definitions"
+        ],
+        "x-fado-call": "DefineAction",
+        "x-fado-mark": "writes"
+      }
+    },
+    "/v1/define_class": {
+      "post": {
+        "description": "It writes. In Go it is the call `DefineClass`.",
+        "operationId": "define_class",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "definition": {
+                    "description": "the definition, as JSON",
+                    "type": "object"
+                  },
+                  "for": {
+                    "description": "the id of whoever the caller acts for; let through only while a substitution says so",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "definition"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "class": {
+                      "description": "the definition as it was given, with its name, its version and who defined it, and the notes of the class"
+                    }
+                  },
+                  "required": [
+                    "class"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "The command ran."
+          },
+          "default": {
+            "$ref": "#/components/responses/Refused"
+          }
+        },
+        "summary": "Defines a class, or the next version of one.",
+        "tags": [
+          "Definitions"
+        ],
+        "x-fado-call": "DefineClass",
+        "x-fado-mark": "writes"
+      }
+    },
+    "/v1/define_classes": {
+      "post": {
+        "description": "It writes. In Go it is the call `DefineClasses`.",
+        "operationId": "define_classes",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "definitions": {
+                    "description": "the definitions, as JSON",
+                    "items": {
+                      "type": "object"
+                    },
+                    "type": "array"
+                  },
+                  "for": {
+                    "description": "the id of whoever the caller acts for; let through only while a substitution says so",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "definitions"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "classes": {
+                      "description": "for each class, in the order given, the definition as it was given, with its name, its version and who defined it"
+                    }
+                  },
+                  "required": [
+                    "classes"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "The command ran."
+          },
+          "default": {
+            "$ref": "#/components/responses/Refused"
+          }
+        },
+        "summary": "Defines several classes in one call, all or none: how classes that name each other are defined.",
+        "tags": [
+          "Definitions"
+        ],
+        "x-fado-call": "DefineClasses",
+        "x-fado-mark": "writes"
+      }
+    },
+    "/v1/define_schema": {
+      "post": {
+        "description": "It writes. In Go it is the call `DefineSchema`.",
+        "operationId": "define_schema",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "definition": {
+                    "description": "the definition, as JSON",
+                    "type": "object"
+                  },
+                  "for": {
+                    "description": "the id of whoever the caller acts for; let through only while a substitution says so",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "definition"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "schema": {
+                      "description": "the definition as it was given, with its name, its version and who defined it"
+                    }
+                  },
+                  "required": [
+                    "schema"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "The command ran."
+          },
+          "default": {
+            "$ref": "#/components/responses/Refused"
+          }
+        },
+        "summary": "Defines a named schema of an object.",
+        "tags": [
+          "Definitions"
+        ],
+        "x-fado-call": "DefineSchema",
+        "x-fado-mark": "writes"
+      }
+    },
+    "/v1/define_table": {
+      "post": {
+        "description": "It writes. In Go it is the call `DefineTable`.",
+        "operationId": "define_table",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "definition": {
+                    "description": "the definition, as JSON",
+                    "type": "object"
+                  },
+                  "for": {
+                    "description": "the id of whoever the caller acts for; let through only while a substitution says so",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "definition"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "table": {
+                      "description": "the definition as it was given, with its name, its version and who defined it"
+                    }
+                  },
+                  "required": [
+                    "table"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "The command ran."
+          },
+          "default": {
+            "$ref": "#/components/responses/Refused"
+          }
+        },
+        "summary": "Defines a table of reference data.",
+        "tags": [
+          "Definitions"
+        ],
+        "x-fado-call": "DefineTable",
+        "x-fado-mark": "writes"
+      }
+    },
+    "/v1/definitions": {
+      "post": {
+        "description": "It reads. In Go it is the call `Definitions`.",
+        "operationId": "definitions",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "name": {
+                    "description": "its name",
+                    "type": "string"
+                  },
+                  "what": {
+                    "description": "class, schema, table or action",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "what",
+                  "name"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "versions": {
+                      "description": "the versions, oldest first"
+                    }
+                  },
+                  "required": [
+                    "versions"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "The command ran."
+          },
+          "default": {
+            "$ref": "#/components/responses/Refused"
+          }
+        },
+        "summary": "Lists the versions of one class, schema, table or action, with who defined each and when.",
+        "tags": [
+          "Definitions"
+        ],
+        "x-fado-call": "Definitions",
+        "x-fado-mark": "reads"
+      }
+    },
+    "/v1/delete": {
+      "post": {
+        "description": "It destroys. In Go it is the call `Delete`.",
+        "operationId": "delete",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "business_date": {
+                    "description": "the business day of the commit, as \"2026-11-13\"; the server's day when left out",
+                    "type": "string"
+                  },
+                  "class": {
+                    "description": "the name of the class",
+                    "type": "string"
+                  },
+                  "for": {
+                    "description": "the id of whoever the caller acts for; let through only while a substitution says so",
+                    "type": "string"
+                  },
+                  "id": {
+                    "description": "the id of the document",
+                    "type": "string"
+                  },
+                  "key": {
+                    "description": "the idempotency key: the same command sent again with the same key makes no second commit and is answered as the first was",
+                    "type": "string"
+                  },
+                  "reason": {
+                    "description": "why a content administrator acts past a rule of the class; kept on the event",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "class",
+                  "id"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {},
+                  "type": "object"
+                }
+              }
+            },
+            "description": "The command ran."
+          },
+          "default": {
+            "$ref": "#/components/responses/Refused"
+          }
+        },
+        "summary": "Removes a document; its history and its events stay.",
+        "tags": [
+          "Documents"
+        ],
+        "x-fado-call": "Delete",
+        "x-fado-mark": "destroys"
+      }
+    },
+    "/v1/drain": {
+      "post": {
+        "description": "It writes. In Go it is the call `Drain`.",
+        "operationId": "drain",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "for": {
+                    "description": "the id of whoever the caller acts for; let through only while a substitution says so",
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "attempted": {
+                      "description": "how many actions it attempted"
+                    }
+                  },
+                  "required": [
+                    "attempted"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "The command ran."
+          },
+          "default": {
+            "$ref": "#/components/responses/Refused"
+          }
+        },
+        "summary": "Runs every queued action that is due, now.",
+        "tags": [
+          "Tables, actions and the queue"
+        ],
+        "x-fado-call": "Drain",
+        "x-fado-mark": "writes"
+      }
+    },
+    "/v1/due": {
+      "post": {
+        "description": "It reads. In Go it is the call `Due`.",
+        "operationId": "due",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "at": {
+                    "description": "the moment the command reads at: \"2026-11-13\", \"2026-11-13 09:30:00\" in UTC, or seconds since the epoch; now when left out",
+                    "type": [
+                      "string",
+                      "integer"
+                    ]
+                  },
+                  "class": {
+                    "description": "the name of the class",
+                    "type": "string"
+                  },
+                  "for": {
+                    "description": "the id of whoever the caller acts for; let through only while a substitution says so",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "class"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "due": {
+                      "description": "the documents, each with its state and the state it would move to"
+                    }
+                  },
+                  "required": [
+                    "due"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "The command ran."
+          },
+          "default": {
+            "$ref": "#/components/responses/Refused"
+          }
+        },
+        "summary": "Lists the documents of a class that a commit would move now: a guard on time holds, or a timer has come.",
+        "tags": [
+          "Documents"
+        ],
+        "x-fado-call": "Due",
+        "x-fado-mark": "reads"
+      }
+    },
+    "/v1/events": {
+      "post": {
+        "description": "It reads. In Go it is the call `Events`.",
+        "operationId": "events",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "at": {
+                    "description": "the moment the command reads at: \"2026-11-13\", \"2026-11-13 09:30:00\" in UTC, or seconds since the epoch; now when left out",
+                    "type": [
+                      "string",
+                      "integer"
+                    ]
+                  },
+                  "class": {
+                    "description": "the name of the class",
+                    "type": "string"
+                  },
+                  "for": {
+                    "description": "the id of whoever the caller acts for; let through only while a substitution says so",
+                    "type": "string"
+                  },
+                  "id": {
+                    "description": "the id of the document",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "class",
+                  "id"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "events": {
+                      "description": "the events"
+                    }
+                  },
+                  "required": [
+                    "events"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "The command ran."
+          },
+          "default": {
+            "$ref": "#/components/responses/Refused"
+          }
+        },
+        "summary": "Reads the events that touched a document, oldest first.",
+        "tags": [
+          "Documents"
+        ],
+        "x-fado-call": "Events",
+        "x-fado-mark": "reads"
+      }
+    },
+    "/v1/file": {
+      "get": {
+        "description": "A caller who may not read the document is answered `unknown_document`, and one who may not read the variable that holds the file `unknown_blob`. The hash is the tag of the bytes, sent as `ETag`.",
+        "operationId": "open_file",
+        "parameters": [
+          {
+            "description": "the name of the class",
+            "in": "query",
+            "name": "class",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "the id of the document",
+            "in": "query",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "the hash of the file, as its facts give it",
+            "in": "query",
+            "name": "hash",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "the version of the document to read the file from; the current one when left out",
+            "in": "query",
+            "name": "version",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "description": "the id of whoever the caller acts for",
+            "in": "query",
+            "name": "for",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              }
+            },
+            "description": "The bytes of the file."
+          },
+          "304": {
+            "description": "The caller holds these bytes already: it sent their tag in `If-None-Match`."
+          },
+          "default": {
+            "$ref": "#/components/responses/Refused"
+          }
+        },
+        "summary": "Streams a file a document holds, under the rules of the document.",
+        "tags": [
+          "Files"
+        ]
+      }
+    },
+    "/v1/get": {
+      "post": {
+        "description": "It reads. In Go it is the call `Get`.",
+        "operationId": "get",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "at": {
+                    "description": "the moment the command reads at: \"2026-11-13\", \"2026-11-13 09:30:00\" in UTC, or seconds since the epoch; now when left out",
+                    "type": [
+                      "string",
+                      "integer"
+                    ]
+                  },
+                  "class": {
+                    "description": "the name of the class",
+                    "type": "string"
+                  },
+                  "for": {
+                    "description": "the id of whoever the caller acts for; let through only while a substitution says so",
+                    "type": "string"
+                  },
+                  "id": {
+                    "description": "the id of the document",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "class",
+                  "id"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "document": {
+                      "description": "the document"
+                    }
+                  },
+                  "required": [
+                    "document"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "The command ran."
+          },
+          "default": {
+            "$ref": "#/components/responses/Refused"
+          }
+        },
+        "summary": "Reads a document.",
+        "tags": [
+          "Documents"
+        ],
+        "x-fado-call": "Get",
+        "x-fado-mark": "reads"
+      }
+    },
+    "/v1/get_action": {
+      "post": {
+        "description": "It reads. In Go it is the call `Definition`.",
+        "operationId": "get_action",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "name": {
+                    "description": "the name of the action",
+                    "type": "string"
+                  },
+                  "version": {
+                    "description": "an earlier version; the current one when left out",
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "name"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "action": {
+                      "description": "the definition as it was given, with its name, its version and who defined it"
+                    }
+                  },
+                  "required": [
+                    "action"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "The command ran."
+          },
+          "default": {
+            "$ref": "#/components/responses/Refused"
+          }
+        },
+        "summary": "Reads an action's definition back as it was defined.",
+        "tags": [
+          "Definitions"
+        ],
+        "x-fado-call": "Definition",
+        "x-fado-mark": "reads"
+      }
+    },
+    "/v1/get_class": {
+      "post": {
+        "description": "It reads. In Go it is the call `Definition`.",
+        "operationId": "get_class",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "name": {
+                    "description": "the name of the class",
+                    "type": "string"
+                  },
+                  "version": {
+                    "description": "an earlier version; the current one when left out",
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "name"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "class": {
+                      "description": "the definition as it was given, with its name, its version and who defined it, and the notes of the class"
+                    }
+                  },
+                  "required": [
+                    "class"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "The command ran."
+          },
+          "default": {
+            "$ref": "#/components/responses/Refused"
+          }
+        },
+        "summary": "Reads a class back as it was defined.",
+        "tags": [
+          "Definitions"
+        ],
+        "x-fado-call": "Definition",
+        "x-fado-mark": "reads"
+      }
+    },
+    "/v1/get_schema": {
+      "post": {
+        "description": "It reads. In Go it is the call `Definition`.",
+        "operationId": "get_schema",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "name": {
+                    "description": "the name of the schema",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "name"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "schema": {
+                      "description": "the definition as it was given, with its name, its version and who defined it"
+                    }
+                  },
+                  "required": [
+                    "schema"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "The command ran."
+          },
+          "default": {
+            "$ref": "#/components/responses/Refused"
+          }
+        },
+        "summary": "Reads a schema back as it was defined.",
+        "tags": [
+          "Definitions"
+        ],
+        "x-fado-call": "Definition",
+        "x-fado-mark": "reads"
+      }
+    },
+    "/v1/get_table": {
+      "post": {
+        "description": "It reads. In Go it is the call `Definition`.",
+        "operationId": "get_table",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "name": {
+                    "description": "the name of the table",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "name"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "table": {
+                      "description": "the definition as it was given, with its name, its version and who defined it"
+                    }
+                  },
+                  "required": [
+                    "table"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "The command ran."
+          },
+          "default": {
+            "$ref": "#/components/responses/Refused"
+          }
+        },
+        "summary": "Reads a table's definition back as it was defined.",
+        "tags": [
+          "Definitions"
+        ],
+        "x-fado-call": "Definition",
+        "x-fado-mark": "reads"
+      }
+    },
+    "/v1/get_user": {
+      "post": {
+        "description": "It reads. In Go it is the call `GetUser`. It is offered only by a database that keeps its own users, groups and keys; any other answers `unknown_command`.",
+        "operationId": "get_user",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "for": {
+                    "description": "the id of whoever the caller acts for; let through only while a substitution says so",
+                    "type": "string"
+                  },
+                  "id": {
+                    "description": "the id of the user",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "id"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "user": {
+                      "description": "the user: its id, its kind, its name, its groups, its system groups and whether it is disabled"
+                    }
+                  },
+                  "required": [
+                    "user"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "The command ran."
+          },
+          "default": {
+            "$ref": "#/components/responses/Refused"
+          }
+        },
+        "summary": "Reads one user. Every user may ask.",
+        "tags": [
+          "Users, groups and keys"
+        ],
+        "x-fado-call": "GetUser",
+        "x-fado-mark": "reads"
+      }
+    },
+    "/v1/health": {
+      "get": {
+        "description": "It asks for no key and says nothing of what the database holds. It is answered by `fadodb serve`.",
+        "operationId": "health",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Health"
+                }
+              }
+            },
+            "description": "The server answers."
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Health"
+                }
+              }
+            },
+            "description": "The server cannot read its database."
+          }
+        },
+        "security": [],
+        "summary": "Says that the server answers and can read its database.",
+        "tags": [
+          "The server"
+        ]
+      }
+    },
+    "/v1/history": {
+      "post": {
+        "description": "It reads. In Go it is the call `History`.",
+        "operationId": "history",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "at": {
+                    "description": "the moment the command reads at: \"2026-11-13\", \"2026-11-13 09:30:00\" in UTC, or seconds since the epoch; now when left out",
+                    "type": [
+                      "string",
+                      "integer"
+                    ]
+                  },
+                  "class": {
+                    "description": "the name of the class",
+                    "type": "string"
+                  },
+                  "for": {
+                    "description": "the id of whoever the caller acts for; let through only while a substitution says so",
+                    "type": "string"
+                  },
+                  "id": {
+                    "description": "the id of the document",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "class",
+                  "id"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "versions": {
+                      "description": "the versions, each the document as it was, when it was current and who committed it"
+                    }
+                  },
+                  "required": [
+                    "versions"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "The command ran."
+          },
+          "default": {
+            "$ref": "#/components/responses/Refused"
+          }
+        },
+        "summary": "Reads every committed version of a document, oldest first.",
+        "tags": [
+          "Documents"
+        ],
+        "x-fado-call": "History",
+        "x-fado-mark": "reads"
+      }
+    },
+    "/v1/import_rows": {
+      "post": {
+        "description": "It writes. In Go it is the call `ImportRows`.",
+        "operationId": "import_rows",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "for": {
+                    "description": "the id of whoever the caller acts for; let through only while a substitution says so",
+                    "type": "string"
+                  },
+                  "replace": {
+                    "description": "true empties the table first, so that the rows given are all its rows",
+                    "type": "boolean"
+                  },
+                  "rows": {
+                    "description": "the rows, each an object of values by column",
+                    "items": {
+                      "type": "object"
+                    },
+                    "type": "array"
+                  },
+                  "table": {
+                    "description": "the name of the table",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "table",
+                  "rows"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "imported": {
+                      "description": "how many rows it wrote"
+                    }
+                  },
+                  "required": [
+                    "imported"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "The command ran."
+          },
+          "default": {
+            "$ref": "#/components/responses/Refused"
+          }
+        },
+        "summary": "Writes rows into a table; a row whose key exists is replaced.",
+        "tags": [
+          "Tables, actions and the queue"
+        ],
+        "x-fado-call": "ImportRows",
+        "x-fado-mark": "writes"
+      }
+    },
+    "/v1/list_actions": {
+      "post": {
+        "description": "It reads. In Go it is the call `Actions`.",
+        "operationId": "list_actions",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {},
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "actions": {
+                      "description": "the actions, each with its parameters, what it returns and whether this server can run it"
+                    }
+                  },
+                  "required": [
+                    "actions"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "The command ran."
+          },
+          "default": {
+            "$ref": "#/components/responses/Refused"
+          }
+        },
+        "summary": "Lists every action a rule may name, the engine's own first.",
+        "tags": [
+          "Definitions"
+        ],
+        "x-fado-call": "Actions",
+        "x-fado-mark": "reads"
+      }
+    },
+    "/v1/list_classes": {
+      "post": {
+        "description": "It reads. In Go it is the call `Classes`.",
+        "operationId": "list_classes",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {},
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "classes": {
+                      "description": "the names, in the order they were defined"
+                    }
+                  },
+                  "required": [
+                    "classes"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "The command ran."
+          },
+          "default": {
+            "$ref": "#/components/responses/Refused"
+          }
+        },
+        "summary": "Lists the classes.",
+        "tags": [
+          "Definitions"
+        ],
+        "x-fado-call": "Classes",
+        "x-fado-mark": "reads"
+      }
+    },
+    "/v1/list_keys": {
+      "post": {
+        "description": "It reads. In Go it is the call `Keys`. It is offered only by a database that keeps its own users, groups and keys; any other answers `unknown_command`.",
+        "operationId": "list_keys",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "for": {
+                    "description": "the id of whoever the caller acts for; let through only while a substitution says so",
+                    "type": "string"
+                  },
+                  "user": {
+                    "description": "the id of the user; left out, the caller",
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "keys": {
+                      "description": "the keys, oldest first, the revoked ones among them"
+                    }
+                  },
+                  "required": [
+                    "keys"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "The command ran."
+          },
+          "default": {
+            "$ref": "#/components/responses/Refused"
+          }
+        },
+        "summary": "Lists the keys of a user, never a secret. A database administrator may ask of any user, and a user of itself.",
+        "tags": [
+          "Users, groups and keys"
+        ],
+        "x-fado-call": "Keys",
+        "x-fado-mark": "reads"
+      }
+    },
+    "/v1/list_schemas": {
+      "post": {
+        "description": "It reads. In Go it is the call `Schemas`.",
+        "operationId": "list_schemas",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {},
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "schemas": {
+                      "description": "the names, the engine's own first"
+                    }
+                  },
+                  "required": [
+                    "schemas"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "The command ran."
+          },
+          "default": {
+            "$ref": "#/components/responses/Refused"
+          }
+        },
+        "summary": "Lists the schemas.",
+        "tags": [
+          "Definitions"
+        ],
+        "x-fado-call": "Schemas",
+        "x-fado-mark": "reads"
+      }
+    },
+    "/v1/list_tables": {
+      "post": {
+        "description": "It reads. In Go it is the call `Tables`.",
+        "operationId": "list_tables",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {},
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "tables": {
+                      "description": "the names, in the order they were defined"
+                    }
+                  },
+                  "required": [
+                    "tables"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "The command ran."
+          },
+          "default": {
+            "$ref": "#/components/responses/Refused"
+          }
+        },
+        "summary": "Lists the tables.",
+        "tags": [
+          "Definitions"
+        ],
+        "x-fado-call": "Tables",
+        "x-fado-mark": "reads"
+      }
+    },
+    "/v1/list_users": {
+      "post": {
+        "description": "It reads. In Go it is the call `Users`. It is offered only by a database that keeps its own users, groups and keys; any other answers `unknown_command`.",
+        "operationId": "list_users",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "for": {
+                    "description": "the id of whoever the caller acts for; let through only while a substitution says so",
+                    "type": "string"
+                  },
+                  "group": {
+                    "description": "only the members of this group, of either kind",
+                    "type": "string"
+                  },
+                  "kind": {
+                    "description": "only the users of this kind",
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "users": {
+                      "description": "the users, the disabled ones among them"
+                    }
+                  },
+                  "required": [
+                    "users"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "The command ran."
+          },
+          "default": {
+            "$ref": "#/components/responses/Refused"
+          }
+        },
+        "summary": "Lists the users, in the order of their ids. Every user may ask.",
+        "tags": [
+          "Users, groups and keys"
+        ],
+        "x-fado-call": "Users",
+        "x-fado-mark": "reads"
+      }
+    },
+    "/v1/metrics": {
+      "get": {
+        "description": "The requests by command and status, how long they took, the streams that are open, the queue of actions and the sizes of the files, in the text form Prometheus reads. It is answered by `fadodb serve`.",
+        "operationId": "metrics",
+        "responses": {
+          "200": {
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "The counts."
+          },
+          "default": {
+            "$ref": "#/components/responses/Refused"
+          }
+        },
+        "summary": "Answers the counts of the server, for a database administrator.",
+        "tags": [
+          "The server"
+        ]
+      }
+    },
+    "/v1/migrate": {
+      "post": {
+        "description": "It writes. In Go it is the call `Migrate`.",
+        "operationId": "migrate",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "class": {
+                    "description": "the name of the class",
+                    "type": "string"
+                  },
+                  "for": {
+                    "description": "the id of whoever the caller acts for; let through only while a substitution says so",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "class"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "migrated": {
+                      "description": "how many documents it moved"
+                    }
+                  },
+                  "required": [
+                    "migrated"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "The command ran."
+          },
+          "default": {
+            "$ref": "#/components/responses/Refused"
+          }
+        },
+        "summary": "Brings every live document of a class that an earlier version computed to the current version.",
+        "tags": [
+          "Definitions"
+        ],
+        "x-fado-call": "Migrate",
+        "x-fado-mark": "writes"
+      }
+    },
+    "/v1/outbox": {
+      "post": {
+        "description": "It reads. In Go it is the call `Outbox`.",
+        "operationId": "outbox",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "class": {
+                    "description": "only the actions of documents of this class",
+                    "type": "string"
+                  },
+                  "for": {
+                    "description": "the id of whoever the caller acts for; let through only while a substitution says so",
+                    "type": "string"
+                  },
+                  "id": {
+                    "description": "only the actions of this document",
+                    "type": "string"
+                  },
+                  "limit": {
+                    "description": "the most actions to answer",
+                    "type": "integer"
+                  },
+                  "status": {
+                    "description": "pending, done or dead; every status when left out",
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "actions": {
+                      "description": "the actions, in the order they were queued"
+                    }
+                  },
+                  "required": [
+                    "actions"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "The command ran."
+          },
+          "default": {
+            "$ref": "#/components/responses/Refused"
+          }
+        },
+        "summary": "Lists the actions commits queued: what waits, what ran and what is dead.",
+        "tags": [
+          "Tables, actions and the queue"
+        ],
+        "x-fado-call": "Outbox",
+        "x-fado-mark": "reads"
+      }
+    },
+    "/v1/preview": {
+      "post": {
+        "description": "It reads. In Go it is the call `Preview`.",
+        "operationId": "preview",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "at": {
+                    "description": "the moment the command reads at: \"2026-11-13\", \"2026-11-13 09:30:00\" in UTC, or seconds since the epoch; now when left out",
+                    "type": [
+                      "string",
+                      "integer"
+                    ]
+                  },
+                  "class": {
+                    "description": "the name of the class",
+                    "type": "string"
+                  },
+                  "for": {
+                    "description": "the id of whoever the caller acts for; let through only while a substitution says so",
+                    "type": "string"
+                  },
+                  "id": {
+                    "description": "the id of the document; left out, the preview is of a create",
+                    "type": "string"
+                  },
+                  "reason": {
+                    "description": "why a content administrator acts past a rule of the class; kept on the event",
+                    "type": "string"
+                  },
+                  "transition": {
+                    "description": "the name of a transition to take",
+                    "type": "string"
+                  },
+                  "values": {
+                    "description": "the values to assign, by variable",
+                    "type": "object"
+                  }
+                },
+                "required": [
+                  "class"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "preview": {
+                      "description": "what the command would do: the document as it would be, the errors, the states visited, the transitions then open and the rules that would run"
+                    }
+                  },
+                  "required": [
+                    "preview"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "The command ran."
+          },
+          "default": {
+            "$ref": "#/components/responses/Refused"
+          }
+        },
+        "summary": "Runs a create, a set or a transition without writing anything.",
+        "tags": [
+          "Documents"
+        ],
+        "x-fado-call": "Preview",
+        "x-fado-mark": "reads"
+      }
+    },
+    "/v1/preview_action": {
+      "post": {
+        "description": "It reads. In Go it is the call `PreviewAction`.",
+        "operationId": "preview_action",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "action": {
+                    "description": "the name of the action",
+                    "type": "string"
+                  },
+                  "args": {
+                    "description": "its arguments, by parameter",
+                    "type": "object"
+                  },
+                  "for": {
+                    "description": "the id of whoever the caller acts for; let through only while a substitution says so",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "action"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "preview": {
+                      "description": "the call, or the request"
+                    }
+                  },
+                  "required": [
+                    "preview"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "The command ran."
+          },
+          "default": {
+            "$ref": "#/components/responses/Refused"
+          }
+        },
+        "summary": "Answers what an action would be called with, or the request it would send, with every secret masked; nothing is called or sent.",
+        "tags": [
+          "Tables, actions and the queue"
+        ],
+        "x-fado-call": "PreviewAction",
+        "x-fado-mark": "reads"
+      }
+    },
+    "/v1/preview_delete": {
+      "post": {
+        "description": "It reads. In Go it is the call `PreviewDelete`.",
+        "operationId": "preview_delete",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "at": {
+                    "description": "the moment the command reads at: \"2026-11-13\", \"2026-11-13 09:30:00\" in UTC, or seconds since the epoch; now when left out",
+                    "type": [
+                      "string",
+                      "integer"
+                    ]
+                  },
+                  "class": {
+                    "description": "the name of the class",
+                    "type": "string"
+                  },
+                  "for": {
+                    "description": "the id of whoever the caller acts for; let through only while a substitution says so",
+                    "type": "string"
+                  },
+                  "id": {
+                    "description": "the id of the document",
+                    "type": "string"
+                  },
+                  "reason": {
+                    "description": "why a content administrator acts past a rule of the class; kept on the event",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "class",
+                  "id"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "preview": {
+                      "description": "what the command would do: the document as it would be, the errors, the states visited, the transitions then open and the rules that would run"
+                    }
+                  },
+                  "required": [
+                    "preview"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "The command ran."
+          },
+          "default": {
+            "$ref": "#/components/responses/Refused"
+          }
+        },
+        "summary": "Answers what a delete of a document would do, without deleting it.",
+        "tags": [
+          "Documents"
+        ],
+        "x-fado-call": "PreviewDelete",
+        "x-fado-mark": "reads"
+      }
+    },
+    "/v1/preview_draft": {
+      "post": {
+        "description": "It reads. In Go it is the call `PreviewDraft`.",
+        "operationId": "preview_draft",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "at": {
+                    "description": "the moment the command reads at: \"2026-11-13\", \"2026-11-13 09:30:00\" in UTC, or seconds since the epoch; now when left out",
+                    "type": [
+                      "string",
+                      "integer"
+                    ]
+                  },
+                  "definition": {
+                    "description": "the draft, as JSON",
+                    "type": "object"
+                  },
+                  "for": {
+                    "description": "the id of whoever the caller acts for; let through only while a substitution says so",
+                    "type": "string"
+                  },
+                  "id": {
+                    "description": "the id of a document of the stored class; left out, the preview is of a create",
+                    "type": "string"
+                  },
+                  "reason": {
+                    "description": "why a content administrator acts past a rule of the class; kept on the event",
+                    "type": "string"
+                  },
+                  "transition": {
+                    "description": "the name of a transition to take",
+                    "type": "string"
+                  },
+                  "values": {
+                    "description": "the values to assign, by variable",
+                    "type": "object"
+                  }
+                },
+                "required": [
+                  "definition"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "preview": {
+                      "description": "what the command would do: the document as it would be, the errors, the states visited, the transitions then open and the rules that would run"
+                    }
+                  },
+                  "required": [
+                    "preview"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "The command ran."
+          },
+          "default": {
+            "$ref": "#/components/responses/Refused"
+          }
+        },
+        "summary": "Tries a class definition that is not stored on a create, or on a document of the stored class of the same name, writing nothing.",
+        "tags": [
+          "Definitions"
+        ],
+        "x-fado-call": "PreviewDraft",
+        "x-fado-mark": "reads"
+      }
+    },
+    "/v1/preview_many": {
+      "post": {
+        "description": "It reads. In Go it is the call `PreviewMany`.",
+        "operationId": "preview_many",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "at": {
+                    "description": "the moment the command reads at: \"2026-11-13\", \"2026-11-13 09:30:00\" in UTC, or seconds since the epoch; now when left out",
+                    "type": [
+                      "string",
+                      "integer"
+                    ]
+                  },
+                  "class": {
+                    "description": "the name of the class",
+                    "type": "string"
+                  },
+                  "for": {
+                    "description": "the id of whoever the caller acts for; let through only while a substitution says so",
+                    "type": "string"
+                  },
+                  "ids": {
+                    "description": "the ids of the documents, in order",
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "reason": {
+                    "description": "why a content administrator acts past a rule of the class; kept on the event",
+                    "type": "string"
+                  },
+                  "transition": {
+                    "description": "the name of the transition",
+                    "type": "string"
+                  },
+                  "values": {
+                    "description": "values to assign to each document in its commit, by variable",
+                    "type": "object"
+                  }
+                },
+                "required": [
+                  "class",
+                  "transition",
+                  "ids"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "outcomes": {
+                      "description": "one for each id, in the order given: the id, and the document as it would be or the refusal"
+                    }
+                  },
+                  "required": [
+                    "outcomes"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "The command ran."
+          },
+          "default": {
+            "$ref": "#/components/responses/Refused"
+          }
+        },
+        "summary": "Runs the batch transition_many would run, without writing anything.",
+        "tags": [
+          "Documents"
+        ],
+        "x-fado-call": "PreviewMany",
+        "x-fado-mark": "reads"
+      }
+    },
+    "/v1/query": {
+      "post": {
+        "description": "It reads. In Go it is the call `Query`.",
+        "operationId": "query",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "at": {
+                    "description": "the moment the command reads at: \"2026-11-13\", \"2026-11-13 09:30:00\" in UTC, or seconds since the epoch; now when left out",
+                    "type": [
+                      "string",
+                      "integer"
+                    ]
+                  },
+                  "class": {
+                    "description": "the name of the class",
+                    "type": "string"
+                  },
+                  "fields": {
+                    "description": "the variables to answer; every one when left out",
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "for": {
+                    "description": "the id of whoever the caller acts for; let through only while a substitution says so",
+                    "type": "string"
+                  },
+                  "limit": {
+                    "description": "the most documents to answer",
+                    "type": "integer"
+                  },
+                  "offset": {
+                    "description": "how many documents to skip",
+                    "type": "integer"
+                  },
+                  "order": {
+                    "description": "the variables to sort by, a leading \"-\" for descending; by id when left out",
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "where": {
+                    "description": "a formula over the variables of the class; every document when left out",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "class"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "documents": {
+                      "description": "the documents, in the order asked"
+                    }
+                  },
+                  "required": [
+                    "documents"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "The command ran."
+          },
+          "default": {
+            "$ref": "#/components/responses/Refused"
+          }
+        },
+        "summary": "Reads the documents of a class that match a filter.",
+        "tags": [
+          "Documents"
+        ],
+        "x-fado-call": "Query",
+        "x-fado-mark": "reads"
+      }
+    },
+    "/v1/refresh": {
+      "post": {
+        "description": "It writes. In Go it is the call `Refresh`.",
+        "operationId": "refresh",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "business_date": {
+                    "description": "the business day of the commit, as \"2026-11-13\"; the server's day when left out",
+                    "type": "string"
+                  },
+                  "class": {
+                    "description": "the name of the class",
+                    "type": "string"
+                  },
+                  "for": {
+                    "description": "the id of whoever the caller acts for; let through only while a substitution says so",
+                    "type": "string"
+                  },
+                  "id": {
+                    "description": "the id of the document",
+                    "type": "string"
+                  },
+                  "key": {
+                    "description": "the idempotency key: the same command sent again with the same key makes no second commit and is answered as the first was",
+                    "type": "string"
+                  },
+                  "reason": {
+                    "description": "why a content administrator acts past a rule of the class; kept on the event",
+                    "type": "string"
+                  },
+                  "variables": {
+                    "description": "the variables to recompute; every one that lists refresh when left out",
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "class",
+                  "id"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "document": {
+                      "description": "the document after the command"
+                    }
+                  },
+                  "required": [
+                    "document"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "The command ran."
+          },
+          "default": {
+            "$ref": "#/components/responses/Refused"
+          }
+        },
+        "summary": "Recomputes triggered variables of a document, and lets it move if a guard on time now holds.",
+        "tags": [
+          "Documents"
+        ],
+        "x-fado-call": "Refresh",
+        "x-fado-mark": "writes"
+      }
+    },
+    "/v1/reset": {
+      "post": {
+        "description": "It writes. In Go it is the call `Reset`.",
+        "operationId": "reset",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "business_date": {
+                    "description": "the business day of the commit, as \"2026-11-13\"; the server's day when left out",
+                    "type": "string"
+                  },
+                  "class": {
+                    "description": "the name of the class",
+                    "type": "string"
+                  },
+                  "for": {
+                    "description": "the id of whoever the caller acts for; let through only while a substitution says so",
+                    "type": "string"
+                  },
+                  "id": {
+                    "description": "the id of the document",
+                    "type": "string"
+                  },
+                  "key": {
+                    "description": "the idempotency key: the same command sent again with the same key makes no second commit and is answered as the first was",
+                    "type": "string"
+                  },
+                  "reason": {
+                    "description": "why a content administrator acts past a rule of the class; kept on the event",
+                    "type": "string"
+                  },
+                  "variables": {
+                    "description": "the variables to reset",
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "class",
+                  "id"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "document": {
+                      "description": "the document after the command"
+                    }
+                  },
+                  "required": [
+                    "document"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "The command ran."
+          },
+          "default": {
+            "$ref": "#/components/responses/Refused"
+          }
+        },
+        "summary": "Puts input variables of a document back to their defaults.",
+        "tags": [
+          "Documents"
+        ],
+        "x-fado-call": "Reset",
+        "x-fado-mark": "writes"
+      }
+    },
+    "/v1/retry_action": {
+      "post": {
+        "description": "It writes. In Go it is the call `RetryAction`.",
+        "operationId": "retry_action",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "action_key": {
+                    "description": "the key of the queued action, as outbox lists it",
+                    "type": "string"
+                  },
+                  "for": {
+                    "description": "the id of whoever the caller acts for; let through only while a substitution says so",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "action_key"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {},
+                  "type": "object"
+                }
+              }
+            },
+            "description": "The command ran."
+          },
+          "default": {
+            "$ref": "#/components/responses/Refused"
+          }
+        },
+        "summary": "Makes a dead action pending again.",
+        "tags": [
+          "Tables, actions and the queue"
+        ],
+        "x-fado-call": "RetryAction",
+        "x-fado-mark": "writes"
+      }
+    },
+    "/v1/revoke_key": {
+      "post": {
+        "description": "It writes. In Go it is the call `RevokeKey`. It is offered only by a database that keeps its own users, groups and keys; any other answers `unknown_command`.",
+        "operationId": "revoke_key",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "for": {
+                    "description": "the id of whoever the caller acts for; let through only while a substitution says so",
+                    "type": "string"
+                  },
+                  "key": {
+                    "description": "the id of the key, as list_keys shows it, and not the key itself",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "key"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {},
+                  "type": "object"
+                }
+              }
+            },
+            "description": "The command ran."
+          },
+          "default": {
+            "$ref": "#/components/responses/Refused"
+          }
+        },
+        "summary": "Ends a key: the next command sent with it is refused. A database administrator may revoke any key, and a user its own.",
+        "tags": [
+          "Users, groups and keys"
+        ],
+        "x-fado-call": "RevokeKey",
+        "x-fado-mark": "writes"
+      }
+    },
+    "/v1/set": {
+      "post": {
+        "description": "It writes. In Go it is the call `Set`.",
+        "operationId": "set",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "business_date": {
+                    "description": "the business day of the commit, as \"2026-11-13\"; the server's day when left out",
+                    "type": "string"
+                  },
+                  "class": {
+                    "description": "the name of the class",
+                    "type": "string"
+                  },
+                  "for": {
+                    "description": "the id of whoever the caller acts for; let through only while a substitution says so",
+                    "type": "string"
+                  },
+                  "id": {
+                    "description": "the id of the document",
+                    "type": "string"
+                  },
+                  "key": {
+                    "description": "the idempotency key: the same command sent again with the same key makes no second commit and is answered as the first was",
+                    "type": "string"
+                  },
+                  "reason": {
+                    "description": "why a content administrator acts past a rule of the class; kept on the event",
+                    "type": "string"
+                  },
+                  "values": {
+                    "description": "the values to assign, by variable",
+                    "type": "object"
+                  }
+                },
+                "required": [
+                  "class",
+                  "id"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "document": {
+                      "description": "the document after the command"
+                    }
+                  },
+                  "required": [
+                    "document"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "The command ran."
+          },
+          "default": {
+            "$ref": "#/components/responses/Refused"
+          }
+        },
+        "summary": "Assigns values to a document and recalculates what depends on them.",
+        "tags": [
+          "Documents"
+        ],
+        "x-fado-call": "Set",
+        "x-fado-mark": "writes"
+      }
+    },
+    "/v1/set_user": {
+      "post": {
+        "description": "It writes. In Go it is the call `SetUser`. It is offered only by a database that keeps its own users, groups and keys; any other answers `unknown_command`.",
+        "operationId": "set_user",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "disabled": {
+                    "description": "true stops every key of the user at the next command; false lets them through again",
+                    "type": "boolean"
+                  },
+                  "for": {
+                    "description": "the id of whoever the caller acts for; let through only while a substitution says so",
+                    "type": "string"
+                  },
+                  "groups": {
+                    "description": "the groups of the user, in place of the ones it has",
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "id": {
+                    "description": "the id of the user",
+                    "type": "string"
+                  },
+                  "name": {
+                    "description": "how a screen shows the user",
+                    "type": "string"
+                  },
+                  "system_groups": {
+                    "description": "the system groups of the user, in place of the ones it has",
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "id"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "user": {
+                      "description": "the user: its id, its kind, its name, its groups, its system groups and whether it is disabled, after the change"
+                    }
+                  },
+                  "required": [
+                    "user"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "The command ran."
+          },
+          "default": {
+            "$ref": "#/components/responses/Refused"
+          }
+        },
+        "summary": "Changes a user: the members given, and no other. It is a database administrator's, who may change their own groups too.",
+        "tags": [
+          "Users, groups and keys"
+        ],
+        "x-fado-call": "SetUser",
+        "x-fado-mark": "writes"
+      }
+    },
+    "/v1/sql": {
+      "post": {
+        "description": "It reads. In Go it is the call `SQL`.",
+        "operationId": "sql",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "args": {
+                    "description": "the arguments, in order",
+                    "items": {
+                      "type": [
+                        "string",
+                        "number",
+                        "boolean",
+                        "null"
+                      ]
+                    },
+                    "type": "array"
+                  },
+                  "for": {
+                    "description": "the id of whoever the caller acts for; let through only while a substitution says so",
+                    "type": "string"
+                  },
+                  "statement": {
+                    "description": "the SELECT, with ? for each argument",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "statement"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "columns": {
+                      "description": "the names of the columns"
+                    },
+                    "rows": {
+                      "description": "the rows, each a list of values in the order of the columns"
+                    }
+                  },
+                  "required": [
+                    "columns",
+                    "rows"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "The command ran."
+          },
+          "default": {
+            "$ref": "#/components/responses/Refused"
+          }
+        },
+        "summary": "Runs one read-only SELECT over the views, for an analyst.",
+        "tags": [
+          "Documents"
+        ],
+        "x-fado-call": "SQL",
+        "x-fado-mark": "reads"
+      }
+    },
+    "/v1/subscribe": {
+      "post": {
+        "description": "It reads. In Go it is the call `Subscribe`.",
+        "operationId": "subscribe",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "after": {
+                    "description": "the id of an event: the stream begins after it, so a caller that was away gives the last one it handled; now when left out",
+                    "type": "string"
+                  },
+                  "classes": {
+                    "description": "the classes to hear of; every class when left out",
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "kinds": {
+                    "description": "the kinds of event to hear of, such as created, set and transition; every kind when left out",
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "to_states": {
+                    "description": "for a transition, the states entered; every state when left out",
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  }
+                },
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "The stream is open. The reply does not end: it carries one entry for each event the caller may read of, in the form of server-sent events. An entry is three lines and an empty one: `id:` with the id of the event, `event: change`, and `data:` with the event as one JSON object on one line. A line that begins with a colon is a comment. When the server ends the stream, the last entry is `event: end`, whose data is a refusal."
+          },
+          "default": {
+            "$ref": "#/components/responses/Refused"
+          }
+        },
+        "summary": "Opens the stream of changes: the caller is told of every event it may read of, in the order of the commits, as each is written.",
+        "tags": [
+          "Documents"
+        ],
+        "x-fado-call": "Subscribe",
+        "x-fado-mark": "reads",
+        "x-fado-stream": true
+      }
+    },
+    "/v1/table_rows": {
+      "post": {
+        "description": "It reads. In Go it is the call `TableRows`.",
+        "operationId": "table_rows",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "at": {
+                    "description": "the moment the command reads at: \"2026-11-13\", \"2026-11-13 09:30:00\" in UTC, or seconds since the epoch; now when left out",
+                    "type": [
+                      "string",
+                      "integer"
+                    ]
+                  },
+                  "for": {
+                    "description": "the id of whoever the caller acts for; let through only while a substitution says so",
+                    "type": "string"
+                  },
+                  "table": {
+                    "description": "the name of the table",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "table"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "rows": {
+                      "description": "the rows, each an object of values by column"
+                    }
+                  },
+                  "required": [
+                    "rows"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "The command ran."
+          },
+          "default": {
+            "$ref": "#/components/responses/Refused"
+          }
+        },
+        "summary": "Reads every row of a table, in the order of its key.",
+        "tags": [
+          "Tables, actions and the queue"
+        ],
+        "x-fado-call": "TableRows",
+        "x-fado-mark": "reads"
+      }
+    },
+    "/v1/transition": {
+      "post": {
+        "description": "It writes. In Go it is the call `Transition`.",
+        "operationId": "transition",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "business_date": {
+                    "description": "the business day of the commit, as \"2026-11-13\"; the server's day when left out",
+                    "type": "string"
+                  },
+                  "class": {
+                    "description": "the name of the class",
+                    "type": "string"
+                  },
+                  "for": {
+                    "description": "the id of whoever the caller acts for; let through only while a substitution says so",
+                    "type": "string"
+                  },
+                  "id": {
+                    "description": "the id of the document",
+                    "type": "string"
+                  },
+                  "key": {
+                    "description": "the idempotency key: the same command sent again with the same key makes no second commit and is answered as the first was",
+                    "type": "string"
+                  },
+                  "reason": {
+                    "description": "why a content administrator acts past a rule of the class; kept on the event",
+                    "type": "string"
+                  },
+                  "transition": {
+                    "description": "the name of the transition",
+                    "type": "string"
+                  },
+                  "values": {
+                    "description": "values to assign in the same commit, by variable",
+                    "type": "object"
+                  }
+                },
+                "required": [
+                  "class",
+                  "id",
+                  "transition"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "document": {
+                      "description": "the document after the command"
+                    }
+                  },
+                  "required": [
+                    "document"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "The command ran."
+          },
+          "default": {
+            "$ref": "#/components/responses/Refused"
+          }
+        },
+        "summary": "Moves a document along a named transition of its class.",
+        "tags": [
+          "Documents"
+        ],
+        "x-fado-call": "Transition",
+        "x-fado-mark": "writes"
+      }
+    },
+    "/v1/transition_many": {
+      "post": {
+        "description": "It writes. In Go it is the call `TransitionMany`.",
+        "operationId": "transition_many",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "business_date": {
+                    "description": "the business day of the commit, as \"2026-11-13\"; the server's day when left out",
+                    "type": "string"
+                  },
+                  "class": {
+                    "description": "the name of the class",
+                    "type": "string"
+                  },
+                  "for": {
+                    "description": "the id of whoever the caller acts for; let through only while a substitution says so",
+                    "type": "string"
+                  },
+                  "ids": {
+                    "description": "the ids of the documents, in order",
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "key": {
+                    "description": "the idempotency key: the same command sent again with the same key makes no second commit and is answered as the first was",
+                    "type": "string"
+                  },
+                  "reason": {
+                    "description": "why a content administrator acts past a rule of the class; kept on the event",
+                    "type": "string"
+                  },
+                  "transition": {
+                    "description": "the name of the transition",
+                    "type": "string"
+                  },
+                  "values": {
+                    "description": "values to assign to each document in its commit, by variable",
+                    "type": "object"
+                  }
+                },
+                "required": [
+                  "class",
+                  "transition",
+                  "ids"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "outcomes": {
+                      "description": "one for each id, in the order given: the id, and the document after its move or the refusal"
+                    }
+                  },
+                  "required": [
+                    "outcomes"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "The command ran."
+          },
+          "default": {
+            "$ref": "#/components/responses/Refused"
+          }
+        },
+        "summary": "Moves several documents of one class along one transition; a document that cannot move is reported and the others move.",
+        "tags": [
+          "Documents"
+        ],
+        "x-fado-call": "TransitionMany",
+        "x-fado-mark": "writes"
+      }
+    },
+    "/v1/transitions": {
+      "post": {
+        "description": "It reads. In Go it is the call `Transitions`.",
+        "operationId": "transitions",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "at": {
+                    "description": "the moment the command reads at: \"2026-11-13\", \"2026-11-13 09:30:00\" in UTC, or seconds since the epoch; now when left out",
+                    "type": [
+                      "string",
+                      "integer"
+                    ]
+                  },
+                  "class": {
+                    "description": "the name of the class",
+                    "type": "string"
+                  },
+                  "for": {
+                    "description": "the id of whoever the caller acts for; let through only while a substitution says so",
+                    "type": "string"
+                  },
+                  "id": {
+                    "description": "the id of the document",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "class",
+                  "id"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "transitions": {
+                      "description": "the transitions, in the order of the class"
+                    }
+                  },
+                  "required": [
+                    "transitions"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "The command ran."
+          },
+          "default": {
+            "$ref": "#/components/responses/Refused"
+          }
+        },
+        "summary": "Lists the transitions leaving a document's state, each with whether the caller may take it now.",
+        "tags": [
+          "Documents"
+        ],
+        "x-fado-call": "Transitions",
+        "x-fado-mark": "reads"
+      }
+    },
+    "/v1/try_action": {
+      "post": {
+        "description": "It writes. In Go it is the call `TryAction`.",
+        "operationId": "try_action",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "action": {
+                    "description": "the name of the action",
+                    "type": "string"
+                  },
+                  "args": {
+                    "description": "its arguments, by parameter",
+                    "type": "object"
+                  },
+                  "for": {
+                    "description": "the id of whoever the caller acts for; let through only while a substitution says so",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "action"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "outcome": {
+                      "description": "what the action returned, or how it failed"
+                    }
+                  },
+                  "required": [
+                    "outcome"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "The command ran."
+          },
+          "default": {
+            "$ref": "#/components/responses/Refused"
+          }
+        },
+        "summary": "Runs an action once, outside any document; a request is sent for real.",
+        "tags": [
+          "Tables, actions and the queue"
+        ],
+        "x-fado-call": "TryAction",
+        "x-fado-mark": "writes"
+      }
+    },
+    "/v1/user_changes": {
+      "post": {
+        "description": "It reads. In Go it is the call `UserChanges`. It is offered only by a database that keeps its own users, groups and keys; any other answers `unknown_command`.",
+        "operationId": "user_changes",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "for": {
+                    "description": "the id of whoever the caller acts for; let through only while a substitution says so",
+                    "type": "string"
+                  },
+                  "id": {
+                    "description": "the id of the user",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "id"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "changes": {
+                      "description": "the changes, oldest first: what was done, by whom, of what kind, for whom and when, with the user or the key as the change left it"
+                    }
+                  },
+                  "required": [
+                    "changes"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "The command ran."
+          },
+          "default": {
+            "$ref": "#/components/responses/Refused"
+          }
+        },
+        "summary": "Lists every change to a user and to its keys. A database administrator may ask of any user, and a user of itself.",
+        "tags": [
+          "Users, groups and keys"
+        ],
+        "x-fado-call": "UserChanges",
+        "x-fado-mark": "reads"
+      }
+    },
+    "/v1/validate_action": {
+      "post": {
+        "description": "It reads. In Go it is the call `ValidateAction`.",
+        "operationId": "validate_action",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "definition": {
+                    "description": "the definition, as JSON",
+                    "type": "object"
+                  }
+                },
+                "required": [
+                  "definition"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "diagnostics": {
+                      "description": "the findings; an empty list when nothing is wrong"
+                    }
+                  },
+                  "required": [
+                    "diagnostics"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "The command ran."
+          },
+          "default": {
+            "$ref": "#/components/responses/Refused"
+          }
+        },
+        "summary": "Reports what define_action would refuse, storing nothing.",
+        "tags": [
+          "Definitions"
+        ],
+        "x-fado-call": "ValidateAction",
+        "x-fado-mark": "reads"
+      }
+    },
+    "/v1/validate_class": {
+      "post": {
+        "description": "It reads. In Go it is the call `ValidateClass`.",
+        "operationId": "validate_class",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "definition": {
+                    "description": "the definition, as JSON",
+                    "type": "object"
+                  }
+                },
+                "required": [
+                  "definition"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "diagnostics": {
+                      "description": "the findings; an empty list when nothing is wrong"
+                    }
+                  },
+                  "required": [
+                    "diagnostics"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "The command ran."
+          },
+          "default": {
+            "$ref": "#/components/responses/Refused"
+          }
+        },
+        "summary": "Reports what define_class would refuse, storing nothing.",
+        "tags": [
+          "Definitions"
+        ],
+        "x-fado-call": "ValidateClass",
+        "x-fado-mark": "reads"
+      }
+    },
+    "/v1/validate_classes": {
+      "post": {
+        "description": "It reads. In Go it is the call `ValidateClasses`.",
+        "operationId": "validate_classes",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "definitions": {
+                    "description": "the definitions, as JSON",
+                    "items": {
+                      "type": "object"
+                    },
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "definitions"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "diagnostics": {
+                      "description": "the findings; an empty list when nothing is wrong"
+                    }
+                  },
+                  "required": [
+                    "diagnostics"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "The command ran."
+          },
+          "default": {
+            "$ref": "#/components/responses/Refused"
+          }
+        },
+        "summary": "Reports what define_classes would refuse, storing nothing.",
+        "tags": [
+          "Definitions"
+        ],
+        "x-fado-call": "ValidateClasses",
+        "x-fado-mark": "reads"
+      }
+    },
+    "/v1/version": {
+      "post": {
+        "description": "It reads. In Go it is the call `Version`.",
+        "operationId": "version",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "at": {
+                    "description": "the moment the command reads at: \"2026-11-13\", \"2026-11-13 09:30:00\" in UTC, or seconds since the epoch; now when left out",
+                    "type": [
+                      "string",
+                      "integer"
+                    ]
+                  },
+                  "class": {
+                    "description": "the name of the class",
+                    "type": "string"
+                  },
+                  "for": {
+                    "description": "the id of whoever the caller acts for; let through only while a substitution says so",
+                    "type": "string"
+                  },
+                  "id": {
+                    "description": "the id of the document",
+                    "type": "string"
+                  },
+                  "version": {
+                    "description": "the version to read",
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "class",
+                  "id",
+                  "version"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "version": {
+                      "description": "the document as it was at that version, when it was current and who committed it"
+                    }
+                  },
+                  "required": [
+                    "version"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "The command ran."
+          },
+          "default": {
+            "$ref": "#/components/responses/Refused"
+          }
+        },
+        "summary": "Reads one committed version of a document.",
+        "tags": [
+          "Documents"
+        ],
+        "x-fado-call": "Version",
+        "x-fado-mark": "reads"
+      }
+    },
+    "/v1/whoami": {
+      "post": {
+        "description": "It reads. In Go it is the call `Whoami`. It is offered only by a database that keeps its own users, groups and keys; any other answers `unknown_command`.",
+        "operationId": "whoami",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "for": {
+                    "description": "the id of whoever the caller acts for; let through only while a substitution says so",
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "for": {
+                      "description": "the id of whoever the caller acts for, when the command names one"
+                    },
+                    "user": {
+                      "description": "the user: its id, its kind, its name, its groups, its system groups and whether it is disabled"
+                    }
+                  },
+                  "required": [
+                    "user",
+                    "for"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "The command ran."
+          },
+          "default": {
+            "$ref": "#/components/responses/Refused"
+          }
+        },
+        "summary": "Answers who the database takes the caller for.",
+        "tags": [
+          "Users, groups and keys"
+        ],
+        "x-fado-call": "Whoami",
+        "x-fado-mark": "reads"
+      }
+    }
+  },
+  "security": [
+    {
+      "key": []
+    }
+  ],
+  "servers": [
+    {
+      "description": "`fadodb serve`, told nothing: this machine only",
+      "url": "http://127.0.0.1:8080"
+    }
+  ],
+  "tags": [
+    {
+      "name": "Documents"
+    },
+    {
+      "name": "Definitions"
+    },
+    {
+      "name": "Tables, actions and the queue"
+    },
+    {
+      "name": "Users, groups and keys"
+    },
+    {
+      "description": "The bytes of a file are not JSON, so they travel beside the commands.",
+      "name": "Files"
+    },
+    {
+      "description": "What `fadodb serve` answers besides the commands.",
+      "name": "The server"
+    }
+  ]
+}

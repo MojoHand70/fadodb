@@ -225,6 +225,15 @@ All notable changes to FadoDB are recorded here. The format follows
   told. Measured on one machine with a writer that commits every
   millisecond: an entry is read 0.84 ms after its commit at p99 with
   one subscriber and 3.12 ms with a hundred, against a budget of 5 ms.
+- The description of the commands for other languages (ADR-0055, item
+  10): `api/openapi.json`, an OpenAPI 3.1 document with every command
+  as `POST /v1/<command>`, the members of its object with their types,
+  the members of its answer and the shape of a refusal, the three
+  addresses of the files, and the health and the counts of
+  `fadodb serve`. It is written from the engine's table of the
+  commands by `make docs`, a test fails when it falls behind, and
+  another holds every address of it to a door. An answer is described
+  by the names of its members and not yet by their types.
 - The manual's chapter on the stream of changes,
   `docs/manual/the-stream-of-changes.md`, with `examples/stream`, the
   program of an agent that waits for invoices to enter review. A test

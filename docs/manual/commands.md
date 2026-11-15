@@ -17,6 +17,10 @@ answer commands [over HTTP](#over-http), through the package
 `fado/httpdoor`. The program `fadodb serve` does that for a database with
 users and keys of its own: [Serving a database](serving-a-database.md).
 
+For a program in another language the same list is in
+[api/openapi.json](../../api/openapi.json), an OpenAPI document written
+from the same table, from which a client is generated.
+
 ## A command and its answer
 
 Ann's agent approves an invoice. The command is `transition`, and its

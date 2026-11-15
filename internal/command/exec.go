@@ -465,6 +465,41 @@ func runEvents(c *call) error {
 	return c.answer("events", list(events), err)
 }
 
+// runSubscribe refuses the stream of changes to Exec, which answers one
+// object.
+func runSubscribe(*call) error {
+	return &store.Error{Code: store.CodeNotSupported, Message: "subscribe answers a stream of events, and a command run this way answers one object",
+		Hint: "a Go program opens the stream with the call Subscribe; over HTTP it is POST /v1/subscribe, whose reply stays open"}
+}
+
+// Subscription reads the object of the command subscribe (ADR-0058,
+// item 2), for the door that answers it with a stream: the filter of
+// the stream, and the caller as the engine is told of it. An object
+// that says for whom the caller acts is passed on, and the engine
+// refuses it in its own words: a stream is heard as oneself.
+func Subscription(p store.Principal, object []byte) (store.ChangeFilter, store.Principal, error) {
+	var f store.ChangeFilter
+	c := &call{cmd: byName["subscribe"]}
+	if e := c.read(object); e != nil {
+		return f, p, e
+	}
+	var e *store.Error
+	if f.Classes, e = c.texts("classes"); e != nil {
+		return f, p, e
+	}
+	if f.Kinds, e = c.texts("kinds"); e != nil {
+		return f, p, e
+	}
+	if f.ToStates, e = c.texts("to_states"); e != nil {
+		return f, p, e
+	}
+	f.After = c.text("after")
+	if value := c.given("for"); value != nil {
+		p.For = unquote(value)
+	}
+	return f, p, nil
+}
+
 func runPreview(c *call) error {
 	values, e := c.values("values")
 	if e != nil {

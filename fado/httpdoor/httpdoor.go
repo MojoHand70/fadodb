@@ -40,18 +40,31 @@
 // GET /v1/blob?hash=… streams bytes by their hash alone, for a content
 // administrator.
 //
+// One command answers a stream and not an object: POST /v1/subscribe
+// opens the stream of changes (ADR-0058), a reply that stays open and
+// carries, in the form of server-sent events, one entry for each event
+// the caller may read of. A program that stops tells the door to end
+// its streams first, since a stream does not end by itself:
+//
+//	srv := &http.Server{Handler: door}
+//	srv.RegisterOnShutdown(door.EndStreams)
+//
 // A database that keeps its own users, groups and keys (ADR-0057) has
 // its Who ready: Keys. The program `fadodb serve` is this door with
-// such a database behind it. Not here yet: the stream of changes.
+// such a database behind it.
 package httpdoor
 
 import (
+	"context"
+
 	"github.com/MojoHand70/fadodb/fado"
 	"github.com/MojoHand70/fadodb/internal/server"
 )
 
 // Door is the HTTP door of one database. It is an http.Handler, safe for
-// any number of requests at once.
+// any number of requests at once. Its EndStreams ends the streams of
+// changes it holds open, each with a last entry that says the server
+// stops, and Streams says how many are open.
 type Door = server.Door
 
 // Options are what a door is made with: Who, which is required, the
@@ -65,11 +78,14 @@ type Options = server.Options
 type Who = server.Who
 
 // Limits are what one door takes on: the largest request, the time one
-// command may run and how many run at once. A zero is the default.
+// command may run, how many run at once and how many streams of changes
+// are open at once. A zero is the default.
 type Limits = server.Limits
 
 // Request is what a door tells Options.Report of one request. It holds
-// no body, no value of a document and no credential.
+// no body, no value of a document and no credential. A stream of
+// changes is told once, when it ended, with how long it stayed open
+// and how many events its caller was told.
 type Request = server.Request
 
 // The limits of a door that was given none (ADR-0059, item 2).
@@ -77,6 +93,7 @@ const (
 	DefaultRequestBytes = server.DefaultRequestBytes
 	DefaultCommandTime  = server.DefaultCommandTime
 	DefaultCommands     = server.DefaultCommands
+	DefaultStreams      = server.DefaultStreams
 )
 
 // The codes a door answers with for what happens before a command runs
@@ -97,7 +114,20 @@ func New(db *fado.DB, o Options) (*Door, error) {
 		// A nil *fado.DB in the interface would not be nil.
 		return server.New(nil, o)
 	}
-	return server.New(db, o)
+	return server.New(database{db}, o)
+}
+
+// database is a *fado.DB as the door sees a database: its stream of
+// changes is opened for the caller the door names, and answered as the
+// stream the door reads.
+type database struct{ *fado.DB }
+
+func (d database) Subscribe(ctx context.Context, p fado.Principal, f fado.ChangeFilter) (server.Stream, error) {
+	changes, err := d.DB.Subscribe(ctx, f, fado.As(p))
+	if err != nil {
+		return nil, err
+	}
+	return changes, nil
 }
 
 // Keys is the Who of a database that keeps its own users (ADR-0057),

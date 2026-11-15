@@ -89,12 +89,95 @@ type door interface {
 	TryAction(ctx context.Context, name string, args Values, c stepCall) (*ActionOutcome, error)
 	PreviewAction(ctx context.Context, name string, args Values, c stepCall) (*ActionPreview, error)
 	Action(name string) (*ActionInfo, bool)
+	// Listen opens the stream of changes of the caller (ADR-0058).
+	Listen(ctx context.Context, c stepCall) (hearing, error)
 }
+
+// hearing is the stream of changes of one caller of a suite, read
+// through the door the suite runs through: heard answers the events the
+// stream was told since it was last asked.
+type hearing interface {
+	heard(ctx context.Context) ([]*Event, error)
+	close()
+}
+
+// goHearing is a stream the Go API opened, read without waiting.
+type goHearing struct{ c *Changes }
+
+func (h goHearing) heard(ctx context.Context) ([]*Event, error) {
+	var out []*Event
+	for {
+		more, err := h.c.fill(ctx)
+		if err != nil {
+			return out, err
+		}
+		out = append(out, h.c.read...)
+		h.c.read = nil
+		if !more {
+			return out, nil
+		}
+	}
+}
+
+func (h goHearing) close() { h.c.Close() }
+
+// httpHearing is a stream a server sends, which arrives when it
+// arrives. To know what the stream has to tell now, a mark is written
+// that every caller hears of: what came before the mark is the answer.
+type httpHearing struct {
+	s    *Store
+	next func() (*Event, error)
+	stop func()
+}
+
+// The class of the marks: a document of it is read by everybody.
+const (
+	markClass = "HeardSoFar"
+	markDef   = `{"name": "HeardSoFar", "variables": {"note": {"type": "text"}}, "states": {"initial": "written", "list": ["written"]},
+ "access": {"read": "TRUE", "create": "TRUE"}}`
+)
+
+func (h *httpHearing) heard(ctx context.Context) ([]*Event, error) {
+	if _, e := h.s.class(markClass); e != nil {
+		if _, err := h.s.DefineClass(ctx, []byte(markDef), As(setup)); err != nil {
+			return nil, err
+		}
+	}
+	mark, err := h.s.Create(ctx, markClass, nil, As(setup))
+	if err != nil {
+		return nil, err
+	}
+	written, err := h.s.Events(ctx, markClass, mark.ID, As(setup))
+	if err != nil || len(written) != 1 {
+		return nil, fmt.Errorf("the mark has %d events: %v", len(written), err)
+	}
+	var out []*Event
+	for {
+		ev, err := h.next()
+		switch {
+		case err != nil:
+			return out, err
+		case ev.ID == written[0].ID:
+			return out, nil
+		case ev.Class != markClass:
+			out = append(out, ev)
+		}
+	}
+}
+
+func (h *httpHearing) close() { h.stop() }
 
 // goDoor is the Go API.
 type goDoor struct{ s *Store }
 
 func (d goDoor) name() string { return "the Go API" }
+func (d goDoor) Listen(ctx context.Context, c stepCall) (hearing, error) {
+	stream, err := d.s.Subscribe(ctx, ChangeFilter{}, c.opts()...)
+	if err != nil {
+		return nil, err
+	}
+	return goHearing{stream}, nil
+}
 func (d goDoor) DefineAction(ctx context.Context, def []byte, c stepCall) error {
 	_, err := d.s.DefineAction(ctx, def, c.opts()...)
 	return err
@@ -205,6 +288,22 @@ func SetListenHTTP(listen func(s *Store) (func(ctx context.Context, p Principal,
 	listenHTTP = listen
 }
 
+// subscriptionOf reads the object of the command subscribe, as the
+// command set reads it, and hearHTTP opens a stream of changes at the
+// HTTP door of a store, as the principal: next answers its entries one
+// by one, each held to the form of the wire, and stop closes it. Both
+// are set as execCommand is.
+var (
+	subscriptionOf func(p Principal, object []byte) (ChangeFilter, Principal, error)
+	hearHTTP       func(s *Store, p Principal, object []byte) (next func() (*Event, error), stop func(), err error)
+)
+
+// SetSubscribe gives the tests of this package the stream of changes
+// as the command set and the HTTP door have it.
+func SetSubscribe(read func(p Principal, object []byte) (ChangeFilter, Principal, error), hear func(s *Store, p Principal, object []byte) (func() (*Event, error), func(), error)) {
+	subscriptionOf, hearHTTP = read, hear
+}
+
 // handleHTTP is the HTTP door of a store as a handler, with every
 // request taken as sent by the principal. The benchmarks call it without
 // a network.
@@ -219,9 +318,41 @@ func SetHandleHTTP(handle func(s *Store, as Principal) http.Handler) { handleHTT
 type commandDoor struct {
 	label string
 	exec  func(ctx context.Context, p Principal, name string, object []byte) ([]byte, error)
+	// s is the store behind the door, and overHTTP says the door is a
+	// server, whose stream of changes is read as it is sent.
+	s        *Store
+	overHTTP bool
 }
 
 func (d commandDoor) name() string { return d.label }
+
+// Listen opens the stream with the object of the command subscribe. A
+// server answers it with a reply that stays open. The command set by
+// itself answers one object, so there the object is read as the
+// command set reads it and the stream is the Go API's.
+func (d commandDoor) Listen(ctx context.Context, c stepCall) (hearing, error) {
+	var p Principal
+	if c.as != nil {
+		p = *c.as
+	}
+	object := []byte(`{}`)
+	if d.overHTTP {
+		next, stop, err := hearHTTP(d.s, p, object)
+		if err != nil {
+			return nil, err
+		}
+		return &httpHearing{s: d.s, next: next, stop: stop}, nil
+	}
+	f, p, err := subscriptionOf(p, object)
+	if err != nil {
+		return nil, err
+	}
+	stream, err := d.s.Subscribe(ctx, f, As(p))
+	if err != nil {
+		return nil, err
+	}
+	return goHearing{stream}, nil
+}
 
 // object is the JSON object of a command: its members, then the options
 // of the call.

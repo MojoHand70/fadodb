@@ -25,6 +25,10 @@ import (
 // and counting allocates nothing: a place for every command is made
 // when the server starts, and a name that is no command is counted as
 // one, other, so that a caller cannot make the page grow.
+//
+// A stream of changes is one request: it is counted when it ended, and
+// its time is the time until it was open. How many are open now is a
+// count of its own.
 type metrics struct {
 	version string
 	started time.Time
@@ -116,6 +120,7 @@ var families = []struct{ name, kind, help string }{
 	{"fadodb_requests_total", "counter", "Requests answered, by the command they were sent to and the status of the reply. A name that is no command is counted as other."},
 	{"fadodb_command_seconds", "summary", "The time the requests of a command took, added up, and how many they were."},
 	{"fadodb_request_seconds", "histogram", "How long requests took, all commands together."},
+	{"fadodb_streams", "gauge", "The streams of changes that are open."},
 	{"fadodb_actions", "gauge", "The queued actions of the database that are not done: due and not yet run, waiting for their moment, and dead."},
 	{"fadodb_actions_oldest_due_seconds", "gauge", "How long the action that has been due longest has been due; 0 when none is due."},
 	{"fadodb_database_bytes", "gauge", "The size of the database file."},
@@ -125,7 +130,7 @@ var families = []struct{ name, kind, help string }{
 // write writes the counts as they are now, with what the queue of the
 // database has to do and the sizes of its files, in the text form
 // Prometheus reads.
-func (m *metrics) write(w io.Writer, queue fado.OutboxCounts, databaseBytes, logBytes int64, now time.Time) {
+func (m *metrics) write(w io.Writer, streams int, queue fado.OutboxCounts, databaseBytes, logBytes int64, now time.Time) {
 	b := make([]byte, 0, 8<<10)
 	head := func(i int) {
 		f := families[i]
@@ -185,18 +190,20 @@ func (m *metrics) write(w io.Writer, queue fado.OutboxCounts, databaseBytes, log
 	line("fadodb_request_seconds_count", "", float64(upTo))
 
 	head(5)
+	line("fadodb_streams", "", float64(streams))
+	head(6)
 	line("fadodb_actions", `state="due"`, float64(queue.Due))
 	line("fadodb_actions", `state="waiting"`, float64(queue.Waiting))
 	line("fadodb_actions", `state="dead"`, float64(queue.Dead))
-	head(6)
+	head(7)
 	oldest := 0.0
 	if !queue.OldestDue.IsZero() && now.After(queue.OldestDue) {
 		oldest = now.Sub(queue.OldestDue).Seconds()
 	}
 	line("fadodb_actions_oldest_due_seconds", "", oldest)
-	head(7)
-	line("fadodb_database_bytes", "", float64(databaseBytes))
 	head(8)
+	line("fadodb_database_bytes", "", float64(databaseBytes))
+	head(9)
 	line("fadodb_log_bytes", "", float64(logBytes))
 	_, _ = w.Write(b)
 }
@@ -261,5 +268,5 @@ func (s *served) counts(w http.ResponseWriter, r *http.Request) {
 	}
 	told.Status = http.StatusOK
 	h.Set("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
-	s.metrics.write(w, queue, fileBytes(s.path), fileBytes(s.path+"-wal"), time.Now())
+	s.metrics.write(w, s.door.Streams(), queue, fileBytes(s.path), fileBytes(s.path+"-wal"), time.Now())
 }

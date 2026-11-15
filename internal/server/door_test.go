@@ -43,6 +43,11 @@ func (engine) OpenBlob(context.Context, string, ...store.Option) (io.ReadCloser,
 	return nil, 0, errors.New("the engine of this test keeps no file")
 }
 
+// And it has no log to read forward; the tests of the stream have one.
+func (engine) Subscribe(context.Context, store.Principal, store.ChangeFilter) (Stream, error) {
+	return nil, errors.New("the engine of this test has no log")
+}
+
 // ann is who sends every request of a test that does not say otherwise.
 var ann = store.Principal{ID: "ann", Groups: []string{"finance"}, Kind: store.ActorPerson}
 
@@ -523,13 +528,16 @@ func TestADoorIsNotMadeWithoutWhatItNeeds(t *testing.T) {
 			return New(engine(echo), Options{Who: asAnn, Limits: Limits{CommandTime: -time.Second}})
 		},
 		"a negative size": func() (*Door, error) { return New(engine(echo), Options{Who: asAnn, Limits: Limits{RequestBytes: -1}}) },
+		"a negative number of streams": func() (*Door, error) {
+			return New(engine(echo), Options{Who: asAnn, Limits: Limits{Streams: -1}})
+		},
 	} {
 		if d, err := make(); err == nil || d != nil {
 			t.Errorf("%s: a door was made", name)
 		}
 	}
 	d := door(t, engine(echo), Options{})
-	if got, want := d.Limits(), (Limits{RequestBytes: 16 << 20, CommandTime: 30 * time.Second, Commands: 64}); got != want {
+	if got, want := d.Limits(), (Limits{RequestBytes: 16 << 20, CommandTime: 30 * time.Second, Commands: 64, Streams: 256}); got != want {
 		t.Errorf("the limits of a door told nothing are %+v, want %+v (ADR-0059, item 2)", got, want)
 	}
 }

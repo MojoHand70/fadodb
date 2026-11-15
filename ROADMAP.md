@@ -270,11 +270,14 @@ a Go function, which a program of the company's own runs
 (`examples/server`). The third part is in as well: the counts of the
 server, for an administrator, at `GET /v1/metrics`, in the form
 Prometheus reads. The sixth step is the stream of changes, built in
-two parts. The first is in: the Go call `Subscribe`, which tells a
-caller of every event of the log it may read of, in the order of the
-commits, with the read rule asked for each. Not built yet: the address
-of the stream on the server, `POST /v1/subscribe`, and the door for
-agents.
+two parts, both in: the Go call `Subscribe`, which tells a caller of
+every event of the log it may read of, in the order of the commits,
+with the read rule asked for each; and its address on the server,
+`POST /v1/subscribe`, a reply that stays open and says each event as
+it is written, which a caller that was away picks up where it stopped.
+Not built yet: the command-line tool as a caller, the door for agents,
+the description of the commands for other languages, the image for
+containers and the way in for messages from outside.
 This page is updated when a phase starts and when it ends;
 it never describes a phase as done before its acceptance criteria pass.
 

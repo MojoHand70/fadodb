@@ -94,7 +94,10 @@ type (
 	OutboxCounts = store.OutboxCounts
 	// ChangeFilter says which events a stream of changes is told of,
 	// and Changes is the stream: Next answers its events one by one
-	// and Close ends it (ADR-0058).
+	// and Close ends it. Follow gives the stream a function that says
+	// who its caller is now, which it asks when there is an event to
+	// tell, so that a stream follows the groups of its caller
+	// (ADR-0058).
 	ChangeFilter = store.ChangeFilter
 	Changes      = store.Changes
 	// ActionFunc is a Go function that implements an action, given to Open
@@ -535,7 +538,9 @@ func (db *DB) OutboxCounts(ctx context.Context, opts ...Option) (OutboxCounts, e
 // it may read the document as the event left it, so a stream tells
 // nothing a query would hide. Next waits for the next event; a caller
 // that was away gives the id of the last event it handled as After and
-// misses nothing.
+// misses nothing. As a command it is subscribe, which a server answers
+// with a reply that stays open; Exec, which answers one object, refuses
+// it.
 //
 //	changes, err := db.Subscribe(ctx, fado.ChangeFilter{Classes: []string{"Invoice"}, ToStates: []string{"review"}}, fado.As(agent))
 //	defer changes.Close()

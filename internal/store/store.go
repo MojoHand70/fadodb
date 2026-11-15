@@ -21,8 +21,10 @@ import (
 	"github.com/MojoHand70/fadodb/internal/query"
 )
 
-// DefaultWALLimit is the write-ahead log size past which the checkpointer
-// truncates the log (ADR-0035).
+// DefaultWALLimit is the size past which the write-ahead log is emptied
+// as soon as the writers leave an instant for it (ADR-0035). Under
+// writers that never pause the log grows to eight times it, and is
+// then emptied in the writer's turn.
 const DefaultWALLimit int64 = 64 << 20
 
 // DefaultCheckpointEvery is how often the checkpointer runs a passive
@@ -51,8 +53,10 @@ type Options struct {
 	// MaxText is the text limit of a new database in code points; 0 is
 	// formula.DefaultMaxText.
 	MaxText int
-	// WALLimit is the log size that triggers a truncating checkpoint; 0
-	// is DefaultWALLimit.
+	// WALLimit is the size past which the log is emptied as soon as the
+	// writers leave an instant for it; under writers that never pause it
+	// grows to eight times that, and they then wait a moment for it to
+	// be emptied. 0 is DefaultWALLimit.
 	WALLimit int64
 	// CheckpointEvery is the checkpointer's period; 0 is
 	// DefaultCheckpointEvery.
@@ -896,26 +900,129 @@ func (s *Store) classAt(name string, version int) *class {
 	return s.versions[strings.ToUpper(name)][version]
 }
 
-// checkpoint copies the write-ahead log into the database file every
-// period without waiting for the writer, and truncates the log once it
-// passes limit bytes, until the store is closed (ADR-0035).
+// farPast is how many times its limit the log may grow to before the
+// checkpointer takes the writer's turn to empty it, and fewPages how
+// many pages of the log may be left to copy for it to be emptied at no
+// cost: a megabyte of the usual pages.
+const (
+	farPast  = 8
+	fewPages = 256
+)
+
+// checkpoint keeps the write-ahead log small until the store is closed
+// (ADR-0035, item 7). Every period it copies what it can of the log into
+// the database file, on a connection of its own and without waiting for
+// anybody, so that no commit pays for it. A log can only be emptied
+// when nobody writes to it and it was copied whole.
+//
+//   - Past its limit, the log is emptied as soon as that costs nothing:
+//     when little is left to copy and no commit runs at that instant.
+//     Callers that pause between commits leave such instants all the
+//     time.
+//   - A writer that never pauses leaves none, and its log grows. A
+//     burst may: it is copied in the background and costs the writer
+//     nothing.
+//   - Once the log is farPast times its limit, the checkpointer takes
+//     the writer's turn, between two commits, copies what is left and
+//     empties the log. The writers wait for that, and it is kept short
+//     by copying once more before the turn is taken.
 func (s *Store) checkpoint(conn *sql.Conn, every time.Duration, limit int64) {
 	defer close(s.done)
 	defer conn.Close()
 	t := time.NewTicker(every)
 	defer t.Stop()
 	ctx := context.Background()
+	// The checkpointer never waits inside SQLite. In the writer's turn it
+	// would hold every commit for as long as a reader keeps an old view
+	// of the database, or another program writes; what it cannot do now
+	// it does a period later.
+	_, _ = conn.ExecContext(ctx, "PRAGMA busy_timeout(0)")
+	// The two statements are prepared once: the checkpointer runs for as
+	// long as the database is open, and what it allocates is counted
+	// with the commits it runs beside.
+	copyLog := prepared(ctx, conn, "PRAGMA wal_checkpoint(PASSIVE)")
+	emptyLog := prepared(ctx, conn, "PRAGMA wal_checkpoint(TRUNCATE)")
+	defer copyLog.close()
+	defer emptyLog.close()
+	log := s.path + "-wal"
 	for {
 		select {
 		case <-s.stop:
 			return
 		case <-t.C:
-			mode := "PASSIVE"
-			if fi, err := os.Stat(s.path + "-wal"); err == nil && fi.Size() > limit {
-				mode = "TRUNCATE"
+			fi, err := os.Stat(log)
+			if err != nil || fi.Size() <= limit {
+				copyLog.run(ctx)
+				continue
 			}
-			_, _ = conn.ExecContext(ctx, "PRAGMA wal_checkpoint("+mode+")")
+			// Past the limit: the log is copied, and how much is left of
+			// it is asked.
+			left := copyLog.left(ctx)
+			switch {
+			case fi.Size() > farPast*limit:
+				// Far past it. What the writers wrote while the log was
+				// copied is copied too, outside their turn, and what they
+				// write during that is what the turn has to copy. Then
+				// the writer's turn: the lock every commit of this
+				// program takes, so that no commit runs meanwhile.
+				copyLog.run(ctx)
+				s.mu.Lock()
+				if !s.closed {
+					emptyLog.run(ctx)
+				}
+				s.mu.Unlock()
+			case left <= fewPages && s.mu.TryLock():
+				// Little is left and no commit runs just now: emptying
+				// the log costs nobody anything.
+				if !s.closed {
+					emptyLog.run(ctx)
+				}
+				s.mu.Unlock()
+			}
 		}
+	}
+}
+
+// statement is a statement of the checkpointer on its connection,
+// prepared when it can be.
+type statement struct {
+	conn *sql.Conn
+	stmt *sql.Stmt
+	text string
+}
+
+func prepared(ctx context.Context, conn *sql.Conn, text string) *statement {
+	st := &statement{conn: conn, text: text}
+	if stmt, err := conn.PrepareContext(ctx, text); err == nil {
+		st.stmt = stmt
+	}
+	return st
+}
+
+// run runs the statement and leaves its outcome: a checkpoint that could
+// not be made now is made a period later.
+func (st *statement) run(ctx context.Context) {
+	if st.stmt != nil {
+		_, _ = st.stmt.ExecContext(ctx)
+		return
+	}
+	_, _ = st.conn.ExecContext(ctx, st.text)
+}
+
+// left runs a statement that copies the log, and answers how many pages
+// of the log are left to copy; all of them, as far as the caller is to
+// know, when the statement could not be run.
+func (st *statement) left(ctx context.Context) int {
+	var busy, pages, copied int
+	if err := st.conn.QueryRowContext(ctx, st.text).Scan(&busy, &pages, &copied); err != nil {
+		return fewPages + 1
+	}
+	return pages - copied
+}
+
+func (st *statement) close() {
+	if st.stmt != nil {
+		st.stmt.Close()
 	}
 }
 
@@ -931,13 +1038,18 @@ func (s *Store) Close() error {
 	})
 	<-s.workDone
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	if s.closed {
+		s.mu.Unlock()
 		return nil
 	}
 	s.closed = true
+	// The checkpointer may be waiting for the writer's turn: it gets it
+	// here, sees the store closed and ends.
+	s.mu.Unlock()
 	close(s.stop)
 	<-s.done
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	s.cmu.Lock()
 	for _, vs := range s.versions {
 		for _, c := range vs {

@@ -141,6 +141,15 @@ All notable changes to FadoDB are recorded here. The format follows
   a small class that is complete, and the ten things that go wrong
   most often. It is no longer a stub. The classes the skills show are
   defined by the engine in the manual's test.
+- The designer's skill begins with "look before you build": list what
+  the database keeps, read each label and description, ask the person
+  which list a process uses, and never keep a thing twice; for a thing
+  nothing holds, ask where it is born, who keeps it and how to get the
+  list, and write the answer in the description. A training request,
+  for an employee or a whole department, shows it with the engine's
+  own answers, and a test plays it. ADR-0060, Proposed, keeps the
+  organisation's rule-book, its things and the look of its faces, as
+  documents.
 
 - The command set (ADR-0055): every call of the Go API that
   reads or changes a database is also a command, a name and one JSON

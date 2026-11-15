@@ -113,7 +113,7 @@ Adam an administrator.
 | 14 | Ola | takes the scan off | allowed, version 4 |
 | 15 | Ola | files the receipt | refused, `guard_false` |
 | 16 | Celina | opens the first scan by its hash alone | the 24 bytes |
-| 17 | Adam | checks the files | 3 checked, 0 wrong |
+| 17 | Adam | checks the files | 3 checked, 0 wrong, 0 missing |
 
 What the history keeps:
 
@@ -214,11 +214,22 @@ lowered.
 
 ## Checking the files
 
-A check reads all the bytes the database keeps, works out the hash of
-each again, and names the ones that do not match: a file that was
-changed on disk, or a backup that was damaged. An administrator runs
-it, as the command `check_blobs`; on the command line `fadodb check`
-does the same for a database file.
+A check looks at the files both ways.
+
+- **It reads all the bytes the database keeps**, works out the hash of
+  each again, and names the ones that do not match: a file that was
+  changed on disk, or a backup that was damaged.
+- **It reads the hash of every file a document holds**, in every
+  version, and names the ones the database no longer keeps: a backup
+  that left a file out, or a directory of files that was not copied
+  with its database. Each is named with its document: the class, the
+  id, the first version that held the file and the variable. The name
+  of the file is not told, since who checks a database is not always
+  allowed to read what is in it.
+
+An administrator runs it, as the command `check_blobs`; on the command
+line `fadodb check` does the same for a database file, and ends with 1
+when anything is wrong.
 
 A store of the host program that cannot list what it keeps cannot be
 checked this way, and the check is refused with `not_supported`.

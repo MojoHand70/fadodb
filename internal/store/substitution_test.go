@@ -186,7 +186,7 @@ func TestSubstitution_EveryCallIsAsked(t *testing.T) {
 		"RetryAction":   func() error { return s.RetryAction(ctx, "x", design) },
 		"TryAction":     func() error { _, err := s.TryAction(ctx, "audit.note", nil, design); return err },
 		"PreviewAction": func() error { _, err := s.PreviewAction(ctx, "audit.note", nil, design); return err },
-		"CheckBlobs":    func() error { _, _, err := s.CheckBlobs(ctx, design); return err },
+		"CheckBlobs":    func() error { _, err := s.CheckBlobs(ctx, design); return err },
 		"OpenBlob":      func() error { _, _, err := s.OpenBlob(ctx, "sha256:x", design); return err },
 		"SQL":           func() error { _, err := s.SQL(ctx, "SELECT 1", nil, design); return err },
 		"ImportRows":    func() error { _, err := s.ImportRows(ctx, "Rates", nil, design); return err },

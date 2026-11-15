@@ -147,6 +147,14 @@ type (
 	BlobStore = store.BlobStore
 	// FileInfo is the fact of a file as a document holds it.
 	FileInfo = store.FileInfo
+	// BlobCheck is what CheckBlobs found: how many blobs it read, the
+	// ones whose bytes do not match, and the files that documents hold
+	// and the store has lost.
+	BlobCheck = store.BlobCheck
+	// MissingFile is a file a document holds whose bytes the store does
+	// not have: its hash, and the class, the id, the first version and
+	// the variable of the document.
+	MissingFile = store.MissingFile
 	// User is a person, an agent or a service that a database which
 	// keeps its own users knows by its id (ADR-0057); UserEdit is what
 	// SetUser changes, UserFilter narrows a list of users, UserKey is a
@@ -668,9 +676,11 @@ func (db *DB) OpenBlob(ctx context.Context, hash string, opts ...Option) (io.Rea
 	return db.s.OpenBlob(ctx, hash, opts...)
 }
 
-// CheckBlobs recomputes the hash of every held blob and returns the ones
-// whose bytes do not match, and how many it checked.
-func (db *DB) CheckBlobs(ctx context.Context, opts ...Option) (mismatched []string, checked int, err error) {
+// CheckBlobs checks the files of the database both ways: it recomputes
+// the hash of every blob the store holds and names the ones whose bytes
+// do not match, and it names every file a document holds, in any
+// version, whose bytes the store does not have, with its document.
+func (db *DB) CheckBlobs(ctx context.Context, opts ...Option) (*BlobCheck, error) {
 	return db.s.CheckBlobs(ctx, opts...)
 }
 

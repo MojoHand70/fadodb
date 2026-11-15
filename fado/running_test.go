@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"regexp"
 	"runtime"
 	"strings"
@@ -138,11 +139,11 @@ func TestRunningIt(t *testing.T) {
 	// state writes what a database holds as the story does.
 	state := func(db *fado.DB) string {
 		t.Helper()
-		_, files, err := db.CheckBlobs(ctx, adam)
+		found, err := db.CheckBlobs(ctx, adam)
 		if err != nil {
 			t.Fatal(err)
 		}
-		return fmt.Sprintf("receipts: %s, files: %d, mails sent: %d, waiting: %d", receipts(db), files, len(sent), len(waiting(db)))
+		return fmt.Sprintf("receipts: %s, files: %d, mails sent: %d, waiting: %d", receipts(db), found.Checked, len(sent), len(waiting(db)))
 	}
 	// made creates a receipt with no scan.
 	made := func(db *fado.DB, id string) {
@@ -249,9 +250,11 @@ func TestRunningIt(t *testing.T) {
 			if code := codeOf(err); code != "unknown_blob" || !strings.Contains(row[2], code) {
 				t.Errorf("opening a file of the copy without its directory answers %q, and the chapter says %q", code, row[2])
 			}
-			wrong, files, err := db.CheckBlobs(ctx, adam)
-			if err != nil || len(wrong) != 0 || files != 0 || !strings.Contains(row[2], "The check does not notice") {
-				t.Errorf("the check of the copy without its directory names %v of %d files: %v", wrong, files, err)
+			found, err := db.CheckBlobs(ctx, adam)
+			want := []fado.MissingFile{{Hash: scan, Class: "Receipt", ID: "R-1", Version: 1, Variable: "scan"}}
+			if err != nil || found.Checked != 0 || len(found.Mismatched) != 0 || !reflect.DeepEqual(found.Missing, want) ||
+				!strings.Contains(row[2], "The check names every receipt that lost its file") {
+				t.Errorf("the check of the copy without its directory: %+v, %v", found, err)
 			}
 		},
 		"the database file alone": func(row []string) {
@@ -440,38 +443,34 @@ func TestRunningIt(t *testing.T) {
 	onDiskAs := func(hash string) string { return filepath.Join(checked+".blobs", hash[:2], hash) }
 	checks(t, page, "what the check finds", map[string]func([]string){
 		"every file as it was put": func(row []string) {
-			if wrong, files, err := db.CheckBlobs(ctx, adam); err != nil || len(wrong) != 0 || files != 3 || row[1] != "names nothing" {
-				t.Errorf("the check names %v of %d files: %v", wrong, files, err)
+			if found, err := db.CheckBlobs(ctx, adam); err != nil || len(found.Mismatched) != 0 || len(found.Missing) != 0 || found.Checked != 3 || row[1] != "names nothing" {
+				t.Errorf("the check of files as they were put: %+v, %v", found, err)
 			}
 		},
 		"a file whose bytes were changed": func(row []string) {
 			if err := os.WriteFile(onDiskAs(hashes[0]), []byte("the scan of another"), 0o600); err != nil {
 				t.Fatal(err)
 			}
-			if wrong, files, err := db.CheckBlobs(ctx, adam); err != nil || len(wrong) != 1 || wrong[0] != hashes[0] || files != 3 || row[1] != "names its hash" {
-				t.Errorf("the check names %v of %d files: %v", wrong, files, err)
+			if found, err := db.CheckBlobs(ctx, adam); err != nil || len(found.Mismatched) != 1 || found.Mismatched[0] != hashes[0] || len(found.Missing) != 0 || found.Checked != 3 || row[1] != "names its hash" {
+				t.Errorf("the check of a file whose bytes were changed: %+v, %v", found, err)
 			}
 		},
 		"a file that is missing": func(row []string) {
 			if err := os.Remove(onDiskAs(hashes[1])); err != nil {
 				t.Fatal(err)
 			}
-			wrong, files, err := db.CheckBlobs(ctx, adam)
-			for _, hash := range wrong {
-				if hash == hashes[1] {
-					t.Error("the check names the file that is missing")
-				}
-			}
-			if err != nil || files != 2 || row[1] != "names nothing, and counts one file less" {
-				t.Errorf("the check names %v of %d files: %v", wrong, files, err)
+			found, err := db.CheckBlobs(ctx, adam)
+			want := []fado.MissingFile{{Hash: hashes[1], Class: "Receipt", ID: "R-2", Version: 1, Variable: "scan"}}
+			if err != nil || found.Checked != 2 || !reflect.DeepEqual(found.Missing, want) || row[1] != "names the document that holds it" {
+				t.Errorf("the check of a file that is missing: %+v, %v", found, err)
 			}
 		},
 	})
 	db.Close()
 
-	// A program with none of the functions, as the command-line tool is,
-	// opens Adam's copy with the worker running: the mail that waits
-	// there is tried.
+	// A program with none of the functions opens Adam's copy with the
+	// worker running: the mail that waits there is tried. The
+	// command-line tool starts no worker, which its own test holds.
 	tool := filepath.Join(root, "tool", "books.fado")
 	copyFile(t, backup, tool)
 	copyDir(t, backup+".blobs", tool+".blobs")

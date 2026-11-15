@@ -13,16 +13,17 @@ const checkUsage = `fadodb check - verify a database file
 Usage:
   fadodb check FILE
 
-Opens the database, reads every blob the attachment store holds,
-recomputes its hash and reports the blobs whose bytes do not match
-(ADR-0033), so that a restore from an altered backup is found. Exits 0
-when every blob matches, 1 when one does not or the file cannot be
-opened, 2 on a usage mistake. A database whose blob store is the
-embedder's cannot be checked here.
+Opens the database and checks its files both ways (ADR-0033). It
+reads every blob the attachment store holds, recomputes its hash and
+reports the blobs whose bytes do not match. And it reads the hash of
+every file a document holds, in every version, and reports the ones
+the store does not have, each with its document. So a restore from a
+backup that was altered, or that left files out, is found.
 
-It looks only at the blobs the store holds: a blob that a document
-names and the store has lost is not found. It runs none of the
-database's queued actions.
+Exits 0 when every blob matches and no file is missing, 1 when one
+does not, one is missing or the file cannot be opened, 2 on a usage
+mistake. A database whose blob store is the embedder's cannot be
+checked here. The check runs none of the database's queued actions.
 `
 
 // runCheck is "fadodb check FILE".
@@ -47,19 +48,39 @@ func runCheck(args []string, stdout, stderr io.Writer) int {
 	// Whoever runs this tool on a database operates it: the check is the
 	// work of a database administrator (ADR-0052).
 	operator := store.As(store.Principal{ID: "fadodb", Kind: store.ActorService, System: []string{store.GroupAdministrators}})
-	mismatched, checked, err := s.CheckBlobs(context.Background(), operator)
+	check, err := s.CheckBlobs(context.Background(), operator)
 	if err != nil {
 		fmt.Fprintf(stderr, "fadodb check: %v\n", err)
 		return 1
 	}
-	fmt.Fprintf(stdout, "%s: %d classes, %d tables, %d blobs checked", args[0], len(s.Classes()), len(s.Tables()), checked)
-	if len(mismatched) == 0 {
-		fmt.Fprintln(stdout, ", all match")
-		return 0
+	fmt.Fprintf(stdout, "%s: %d classes, %d tables, %d blobs checked", args[0], len(s.Classes()), len(s.Tables()), check.Checked)
+	if len(check.Mismatched) == 0 {
+		fmt.Fprint(stdout, ", all match")
+	} else {
+		fmt.Fprintf(stdout, ", %d do not match", len(check.Mismatched))
 	}
-	fmt.Fprintf(stdout, ", %d do not match:\n", len(mismatched))
-	for _, h := range mismatched {
-		fmt.Fprintln(stdout, "  "+h)
+	switch len(check.Missing) {
+	case 0:
+		fmt.Fprintln(stdout, ", no file of a document is missing")
+	case 1:
+		fmt.Fprintln(stdout, ", 1 file of a document is missing")
+	default:
+		fmt.Fprintf(stdout, ", %d files of documents are missing\n", len(check.Missing))
 	}
-	return 1
+	if len(check.Mismatched) > 0 {
+		fmt.Fprintln(stdout, "the bytes of these blobs are not the bytes that were put:")
+		for _, h := range check.Mismatched {
+			fmt.Fprintln(stdout, "  "+h)
+		}
+	}
+	if len(check.Missing) > 0 {
+		fmt.Fprintln(stdout, "these documents hold a file that the store does not have:")
+		for _, m := range check.Missing {
+			fmt.Fprintf(stdout, "  %s %s, %s, since version %d: %s\n", m.Class, m.ID, m.Variable, m.Version, m.Hash)
+		}
+	}
+	if len(check.Mismatched) > 0 || len(check.Missing) > 0 {
+		return 1
+	}
+	return 0
 }

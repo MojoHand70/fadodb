@@ -774,7 +774,7 @@ It answers:
 | [`outbox`](#outbox) | Lists the actions commits queued: what waits, what ran and what is dead. | reads |
 | [`retry_action`](#retry_action) | Makes a dead action pending again. | writes |
 | [`drain`](#drain) | Runs every queued action that is due, now. | writes |
-| [`check_blobs`](#check_blobs) | Recomputes the hash of every file the database holds. | reads |
+| [`check_blobs`](#check_blobs) | Recomputes the hash of every file the database holds, and looks for every file a document holds. | reads |
 
 ### table_rows
 
@@ -889,7 +889,7 @@ It answers:
 
 ### check_blobs
 
-Recomputes the hash of every file the database holds. It reads; in Go it is the call `CheckBlobs`.
+Recomputes the hash of every file the database holds, and looks for every file a document holds. It reads; in Go it is the call `CheckBlobs`.
 
 It takes nothing of its own; of the members that mean the same everywhere, `for`.
 
@@ -899,6 +899,7 @@ It answers:
 |---|---|
 | `checked` | how many files it checked |
 | `mismatched` | the hashes of the files whose bytes do not match |
+| `missing` | the files a document holds, in any version, that the database has lost, each {"hash", "class", "id", "version", "variable"} |
 
 ## Users, groups and keys
 

@@ -23,6 +23,7 @@ jobs:
       - run: make vuln
       - run: make depgate
       - run: make sizegate
+      - run: make filegate
 
   test:
     name: test / ${{ matrix.os }}

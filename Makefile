@@ -11,7 +11,7 @@ STATICCHECK_VERSION ?= latest
 GOVULNCHECK_VERSION ?= latest
 BENCHSTAT_VERSION   ?= latest
 
-.PHONY: all build run test analytics bench fmt vet lint vuln tools depgate sizegate benchgate gates clean docs
+.PHONY: all build run test analytics bench fmt vet lint vuln tools depgate sizegate filegate benchgate gates clean docs
 
 all: build
 
@@ -60,11 +60,15 @@ depgate:
 sizegate:
 	scripts/sizegate.sh
 
+# No tracked file is larger than 1 MB: a build output is never committed.
+filegate:
+	scripts/filegate.sh
+
 # BASE is the git ref to compare benchmarks against.
 benchgate:
 	scripts/benchgate.sh $(BASE)
 
-gates: lint vuln depgate sizegate test
+gates: lint vuln depgate sizegate filegate test
 
 clean:
 	rm -rf bin dist

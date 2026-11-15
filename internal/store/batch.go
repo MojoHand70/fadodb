@@ -57,7 +57,7 @@ func (s *Store) CreateMany(ctx context.Context, class string, docs []Values, opt
 		out = append(out, res.doc)
 		queued += res.queued
 	}
-	if _, err := s.writer.ExecContext(ctx, "COMMIT"); err != nil {
+	if err := s.endTransaction(ctx); err != nil {
 		_, _ = s.writer.ExecContext(ctx, "ROLLBACK")
 		return nil, storageErr("commit", err)
 	}
@@ -214,7 +214,7 @@ func (s *Store) moveMany(ctx context.Context, class, name string, ids []string, 
 		undo()
 		return out, nil
 	}
-	if _, err := s.writer.ExecContext(ctx, "COMMIT"); err != nil {
+	if err := s.endTransaction(ctx); err != nil {
 		undo()
 		return nil, storageErr("commit", err)
 	}

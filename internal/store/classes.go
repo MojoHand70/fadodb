@@ -889,7 +889,7 @@ func (s *Store) defineClasses(ctx context.Context, datas [][]byte, set bool, by 
 			return nil, err
 		}
 	}
-	if _, err := w.ExecContext(ctx, "COMMIT"); err != nil {
+	if err := s.endTransaction(ctx); err != nil {
 		return nil, storageErr("commit", err)
 	}
 	for i, p := range ps {

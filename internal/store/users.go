@@ -362,7 +362,7 @@ func (s *Store) writeUsers(ctx context.Context, write func(w execer, now int64) 
 		_, _ = w.ExecContext(context.WithoutCancel(ctx), "ROLLBACK")
 		return err
 	}
-	if _, err := w.ExecContext(ctx, "COMMIT"); err != nil {
+	if err := s.endTransaction(ctx); err != nil {
 		_, _ = w.ExecContext(context.WithoutCancel(ctx), "ROLLBACK")
 		return storageErr("commit", err)
 	}

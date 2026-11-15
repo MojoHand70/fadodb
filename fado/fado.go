@@ -92,6 +92,11 @@ type (
 	// OutboxCounts is how much of the outbox is still to do: due,
 	// waiting for its moment, and dead.
 	OutboxCounts = store.OutboxCounts
+	// ChangeFilter says which events a stream of changes is told of,
+	// and Changes is the stream: Next answers its events one by one
+	// and Close ends it (ADR-0058).
+	ChangeFilter = store.ChangeFilter
+	Changes      = store.Changes
 	// ActionFunc is a Go function that implements an action, given to Open
 	// in Options.Actions under the action's name (ADR-0027, ADR-0045);
 	// ActionCall is what it is called with, and DeliveredEvent the event
@@ -522,6 +527,24 @@ func (db *DB) Outbox(ctx context.Context, f OutboxFilter, opts ...Option) ([]Que
 // a server shows whoever watches it (ADR-0059, item 9).
 func (db *DB) OutboxCounts(ctx context.Context, opts ...Option) (OutboxCounts, error) {
 	return db.s.OutboxCounts(ctx, opts...)
+}
+
+// Subscribe opens a stream of changes for the caller (ADR-0058): the
+// events of the log from now on, or from after the event the filter
+// names, in the order of the commits. The caller hears of an event when
+// it may read the document as the event left it, so a stream tells
+// nothing a query would hide. Next waits for the next event; a caller
+// that was away gives the id of the last event it handled as After and
+// misses nothing.
+//
+//	changes, err := db.Subscribe(ctx, fado.ChangeFilter{Classes: []string{"Invoice"}, ToStates: []string{"review"}}, fado.As(agent))
+//	defer changes.Close()
+//	for {
+//	    ev, err := changes.Next(ctx)
+//	    ...
+//	}
+func (db *DB) Subscribe(ctx context.Context, f ChangeFilter, opts ...Option) (*Changes, error) {
+	return db.s.Subscribe(ctx, f, opts...)
 }
 
 // RetryAction makes a dead action pending again; the outcome it then

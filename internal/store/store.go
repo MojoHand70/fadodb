@@ -225,6 +225,11 @@ type Store struct {
 	stop   chan struct{}
 	done   chan struct{}
 	closed bool
+	// listeners are the streams of changes that are open (ADR-0058): a
+	// commit that ends wakes each. The list is replaced whole when a
+	// stream opens or closes, so that a commit reads it without a lock.
+	listeners  atomic.Pointer[[]*Changes]
+	listenerMu sync.Mutex
 
 	// The outbox (ADR-0044): its options with the defaults filled in, the
 	// lock that makes one drain by hand run at a time, the documents that
@@ -582,7 +587,7 @@ func (s *Store) init(ctx context.Context, wantSync string, wantMaxText int, want
 		meta[k] = v
 	}
 	rows.Close()
-	if _, err := w.ExecContext(ctx, "COMMIT"); err != nil {
+	if err := s.endTransaction(ctx); err != nil {
 		return storageErr("commit", err)
 	}
 	s.synchronous = meta["synchronous"]

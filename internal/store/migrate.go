@@ -395,7 +395,7 @@ func (s *Store) migrateBatch(ctx context.Context, c *class, ids []string, o opti
 			return err
 		}
 	}
-	if _, err := s.writer.ExecContext(ctx, "COMMIT"); err != nil {
+	if err := s.endTransaction(ctx); err != nil {
 		_, _ = s.writer.ExecContext(ctx, "ROLLBACK")
 		return storageErr("commit", err)
 	}

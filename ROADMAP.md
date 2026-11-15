@@ -269,8 +269,12 @@ environment at every request; and the refusal of an action that needs
 a Go function, which a program of the company's own runs
 (`examples/server`). The third part is in as well: the counts of the
 server, for an administrator, at `GET /v1/metrics`, in the form
-Prometheus reads. Not built yet: the stream of changes and the door
-for agents.
+Prometheus reads. The sixth step is the stream of changes, built in
+two parts. The first is in: the Go call `Subscribe`, which tells a
+caller of every event of the log it may read of, in the order of the
+commits, with the read rule asked for each. Not built yet: the address
+of the stream on the server, `POST /v1/subscribe`, and the door for
+agents.
 This page is updated when a phase starts and when it ends;
 it never describes a phase as done before its acceptance criteria pass.
 

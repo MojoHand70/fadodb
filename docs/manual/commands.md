@@ -1184,4 +1184,5 @@ A few calls of the Go package have no command.
 | `Ping` | it asks whether the database answers; a server answers it at GET /v1/health, for anybody |
 | `PutBlob` | the bytes of a file are not JSON: they travel beside the commands, with the server |
 | `Schema` | it answers the engine's compiled form to a Go program; get_schema answers the definition |
+| `Subscribe` | its answer is a stream and not one object; it joins the commands with the server, as POST /v1/subscribe, which is not built yet |
 | `Table` | it answers the engine's compiled form to a Go program; get_table answers the definition |

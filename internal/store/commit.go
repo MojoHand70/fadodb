@@ -285,7 +285,7 @@ func (s *Store) commit(ctx context.Context, cmd command) (*result, error) {
 		}
 		return res, err
 	}
-	if _, err := s.writer.ExecContext(ctx, "COMMIT"); err != nil {
+	if err := s.endTransaction(ctx); err != nil {
 		_, _ = s.writer.ExecContext(ctx, "ROLLBACK")
 		return nil, storageErr("commit", err)
 	}

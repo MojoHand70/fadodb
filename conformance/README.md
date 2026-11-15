@@ -154,7 +154,12 @@ and the browser VM run them with their phases.
   listed, each document as `[label, state, the state it would move to]`
   in order, with the moment of its timer as a fourth element, in the
   notation of `at` with its time, when a timed transition would move it,
-  and `now` the moment a preview reports, in the notation of `at`.
+  `now` the moment a preview reports, in the notation of `at`, and
+  `heard` what the stream of changes of the step's caller was told
+  since the script began, or since that caller's last `heard` step
+  (ADR-0058): the kind and the label of the document of each event, in
+  the order of the commits, with the name of a transition, as
+  `transition c1 file`. A step whose `do` is `heard` asks it.
 - `due.json` is the suite of the list of what is due (ADR-0047, item
   8): which documents a commit would move at the clock and at a moment,
   that the list moves nothing and a refresh does, the order of two

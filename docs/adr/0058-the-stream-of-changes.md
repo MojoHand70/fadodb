@@ -162,6 +162,52 @@ invoices of Acme that enter `review`.
     - How a tool of the door for agents hears of changes. That is the
       record of that door.
 
+## Settled while building the stream
+
+The stream is built in two parts. The first is the engine's: the Go
+call of item 10, with the place of items 1 and 5, the read rule of
+item 4, the mark of item 9, and the suite of item 11 through the Go
+API. The address on the server, the form on the wire, the sign of
+life, how a stream ends and the limit on their number (items 2, 3, 6
+and 7) follow with the door.
+
+- **The order of the stream is the order in which the events were
+  written**, which is the order of the commits. The id of an event is
+  not used for it: a clock that is set back would put a later event
+  first.
+- **A stream that begins now begins after the last event of the log**
+  as the stream is opened. `after` names an event by its id, and an id
+  the log does not have is refused with `bad_value`.
+- **The filter is checked when the stream is opened.** A class the
+  database does not have is `unknown_class`. A kind that is none, and
+  a state that no class the stream hears of has, are `bad_value`: a
+  stream that can never say anything would stay silent, and its caller
+  would not know why.
+- **Which version the read rule is asked over.** The version the event
+  left; for a delete, the version before it; for an event that names
+  no version, the document as it is now. The rule is the class's as it
+  is now, as for the read of a version (ADR-0049).
+- **A commit wakes the streams and does nothing else for them.** Every
+  commit of the store ends in one function, which tells each open
+  stream without waiting for any. A test holds that the statement
+  stands in that one place, and another that a commit allocates the
+  same with eight streams open as with none.
+- **A stream is heard as oneself.** A caller that names somebody it
+  acts for (ADR-0053) is refused with `not_supported`: who may act for
+  whom is asked class by class when a command is sent, and a stream is
+  of every class and of no command.
+- **A stream can be told who its caller is from now on.** The door
+  asks whose the key is before each entry, so that a stream follows the
+  groups of its user as item 4 says; a program that names its callers
+  itself does the same when it knows of a change.
+- **Until the door serves it, `Subscribe` is a call and no command.**
+  It joins the table of ADR-0055 with its address.
+- **The suite asks what a caller heard** with a step of its own,
+  `heard`: the kind and the document of each event the caller's stream
+  was told, in order. `conformance/access/rules.json` asks it of the
+  owner of a claim, of another owner, of HR, of an administrator, of a
+  stranger and of nobody.
+
 ## The owner's rulings
 
 All of 2026-11-14. The owner read the three questions, each with a

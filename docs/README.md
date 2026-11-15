@@ -60,7 +60,7 @@ the engine on each push.
 
 | Chapter | What it lists | Mark |
 |---|---|---|
-| [The class definition](manual/class.md) | every block of a class and every word in it | **written** |
+| [The class definition](manual/class.md) | every block of a class and every word in it; checking a class in a file with `fadodb class check` before it reaches a database | **written**; a test holds the check to the tool |
 | [The formula language](manual/formula-language.md) | how a formula is written, the operators, what mixes with what, blanks, text, plain and exact numbers, days and moments, objects, what a failure means | **written**; every example is worked out by the engine on each push |
 | [The functions](manual/functions.md) | every function with its arguments and what it answers | **written**, generated from the engine's own catalogue |
 | The calls | every call of the Go package: what it takes, what it answers, what it may refuse with | planned; today the documentation of the `fado` package |

@@ -1297,7 +1297,7 @@ in 13.7 ns with no allocation, and the core binary is 2.9 MB
 
 ```
 fadodb/
-  cmd/fadodb/            single binary: init, user, key, serve, formula, check today; class, doc, table, query, bench, export to come
+  cmd/fadodb/            single binary: init, user, key, serve, class check, action check, formula, check today; doc, table, query, bench, export to come
   fado/                  public Go API (small surface, see Go API)
   internal/formula/      lexer, parser, binder, bytecode, vm, sqlgen (dialects), catalog
   internal/model/        class definitions, layouts, variables, defaults, validation, migrations

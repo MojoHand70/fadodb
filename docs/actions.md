@@ -226,6 +226,58 @@ left the other document in.
 | `PreviewAction` | Shows the request for given values, with every secret masked, and sends nothing |
 | `TryAction` | Sends the request once, outside any document, and answers the result or the failure |
 
+## Checking an action from the command line
+
+A definition that stands in a file is checked with the tool before it
+reaches a database. The file here, `tickets.json`, holds the definition
+of `tickets.create` above.
+
+The tool answers what `fadodb serve` would answer, so it is told what
+the server will be told: the settings, with the hosts an action may
+call. These let the connection `tickets` reach the API:
+
+<!-- the settings of the check -->
+```jsonc
+{"outbound": {"connections": {"tickets": ["api.example.com"]}}}
+```
+
+<!-- the check of an action -->
+```
+fadodb action check tickets.json --settings settings.json
+```
+
+<!-- what the check says -->
+```text
+tickets.json: the engine takes it
+```
+
+Told no settings, the tool checks as a server told nothing, which
+calls no host:
+
+<!-- what the check says without settings -->
+```text
+tickets.json: 1 finding refuses it
+  not_supported at /request: this process sends no requests, so it cannot take a definition that has one
+    fix: the host program allows outbound calls when it opens the database, with Options.Outbound; fadodb serve does when its settings list the hosts it may call
+    here: give the settings the server will run with, --settings FILE
+```
+
+- **`--db FILE`** names the database the action is meant for; left
+  out, the check is against an empty one. **`--json`** prints the
+  findings as the command `validate_action` answers them.
+- **It ends with 0** when the engine would take the definition, **with
+  1** when a finding refuses it, and **with 2** when the file or the
+  settings could not be read.
+- **The tool runs no Go function**, as `fadodb serve` runs none. A
+  definition with no request is refused here with `not_registered`,
+  as it is there, and is taken by a program of your own that has the
+  function.
+- **No secret is read.** The check does not need the token, and does
+  not say whether the server will find it.
+
+A class is checked the same way, with `fadodb class check`:
+[The class definition](manual/class.md#from-the-command-line).
+
 ## A webhook
 
 [`examples/actions/webhook.json`](../examples/actions/webhook.json) is a

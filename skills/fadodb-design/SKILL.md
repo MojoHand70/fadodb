@@ -442,13 +442,22 @@ read the diagnostics, fix, preview against live data, define.
    pass to a substitute: `INGROUP("managers")` waits for a manager.
    The class `Substitution` is the engine's; a class of yours may read
    it, and may not take its name (`reserved_name`).
-8. **Validate.** Today through `ValidateClass` on the Go API, and
-   `ValidateClasses` for classes that name each other, whose findings
-   start with the position of the definition, `/1/variables/total`; a
-   `fadodb class check FILE` subcommand is planned so this needs no Go.
-   Each diagnostic carries a stable code, a JSON pointer to the element,
-   an offset inside the formula, a message and often a hint. Fix the
-   place it names; do not guess around it.
+8. **Validate.** Write the class to a file and ask the tool:
+   `fadodb class check invoice.json`. It ends with 0 when the engine
+   would take the class and with 1 when a finding refuses it; `--json`
+   prints the findings as one object, `{"diagnostics": [...]}`. Classes
+   that name each other go in one call, `fadodb class check
+   receipt.json invoice.json`, and `--db FILE` checks against the
+   database the class is meant for, writing nothing. Loop: check, mend
+   the place the finding names, check again, until it ends with 0. The
+   same check is the command `validate_class` on a server, and
+   `ValidateClass` and `ValidateClasses` on the Go API, whose findings
+   for several classes start with the position of the definition,
+   `/1/variables/total`. Each diagnostic carries a stable code, a JSON
+   pointer to the element, an offset inside the formula, a message and
+   often a hint. Fix the place it names; do not guess around it. An
+   action in a file is checked the same way, with `fadodb action check
+   tickets.json --settings settings.json`.
 9. **Preview the draft against live data** with `PreviewDraft` before
    defining it: it runs the draft through the commit pipeline over an
    existing document or as a create and writes nothing.

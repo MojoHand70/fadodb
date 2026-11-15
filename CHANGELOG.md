@@ -234,6 +234,18 @@ All notable changes to FadoDB are recorded here. The format follows
   told. Measured on one machine with a writer that commits every
   millisecond: an entry is read 0.84 ms after its commit at p99 with
   one subscriber and 3.12 ms with a hundred, against a budget of 5 ms.
+- A check of a definition from the command line: `fadodb class check
+  FILE...` and `fadodb action check FILE` ask the engine whether it
+  would take the class or the action in a file, and store nothing.
+  Each finding is printed with its code, its place in the definition,
+  what is wrong and what to write instead; the tool ends with 0 when
+  the engine would take the definition and with 1 when a finding
+  refuses it, so an agent loops until it passes. Several classes that
+  name each other are checked together; `--db FILE` checks against a
+  database, which is not changed; `--json` prints the findings as the
+  commands `validate_class` and `validate_action` answer them. An
+  action is checked as `fadodb serve` would take it, with the settings
+  given by `--settings FILE`.
 - The description of the commands for other languages (ADR-0055, item
   10): `api/openapi.json`, an OpenAPI 3.1 document with every command
   as `POST /v1/<command>`, the members of its object with their types,

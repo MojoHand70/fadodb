@@ -377,6 +377,65 @@ every finding at once, each with a code, the exact place in the
 definition and often a hint for the fix. A class with a finding is not
 defined, and nothing is half done.
 
+### From the command line
+
+A class that stands in a file is checked before it reaches a database,
+with the tool:
+
+<!-- the check of a class -->
+```
+fadodb class check invoice.json
+```
+
+The file here is the invoice of [examples/classes](../../examples/classes/README.md),
+whose rule makes a receipt. Checked alone, it is refused, and the tool
+says where and what to do:
+
+<!-- what the check says -->
+```text
+invoice.json: 1 finding refuses it
+  unknown_class at /rules/0/do/0/class: unknown class "Receipt"
+    fix: define it before the class whose rule creates its documents
+```
+
+Classes that name each other are checked together, as they are
+defined together:
+
+<!-- the check of two classes -->
+```
+fadodb class check receipt.json invoice.json
+```
+
+<!-- what the check says of two -->
+```text
+receipt.json: the engine takes it
+invoice.json: the engine takes it
+```
+
+| | |
+|---|---|
+| `fadodb class check FILE...` | each file holds one class, a JSON object; `-` is standard input |
+| `--db FILE` | the database the classes are meant for: what it has is what a definition may name. Left out, the check is against an empty database. Nothing is written to the database |
+| `--json` | the findings as the command `validate_class` answers them, for a program |
+| it ends with 0 | the engine would take the classes; a note refuses nothing |
+| it ends with 1 | a finding refuses one of them |
+| it ends with 2 | a file could not be read, or the tool was not told what to check |
+
+An agent that writes a class works in a loop: write the file, check
+it, mend the place the finding names, and check again until the tool
+ends with 0. For a program the findings are one JSON object:
+
+<!-- the findings for a program -->
+```jsonc
+{"diagnostics":[{"code":"unknown_class","path":"/rules/0/do/0/class","pos":-1,"message":"unknown class \"Receipt\"","hint":"define it before the class whose rule creates its documents"}]}
+```
+
+A database that a server holds is not opened by the tool. It is asked
+through the server, with the command
+[`validate_class`](commands.md#validate_class), which answers the same
+findings. An action is checked the same way, with
+`fadodb action check`: [Actions](../actions.md#checking-an-action-from-the-command-line).
+
 Defining a class again with a change makes the next version of the
 class. Existing documents are not touched; each takes the new version
 at its next change.

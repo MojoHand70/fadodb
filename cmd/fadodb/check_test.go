@@ -73,7 +73,7 @@ func TestCheck(t *testing.T) {
 	out.Reset()
 	errOut.Reset()
 	code := run([]string{"check", path}, &out, &errOut)
-	if code != 1 || !strings.Contains(out.String(), "1 files of documents are missing") ||
+	if code != 1 || !strings.Contains(out.String(), "1 file of a document is missing") ||
 		!strings.Contains(out.String(), "  Letter l-1, scan, since version 1: "+scan["hash"].(string)) {
 		t.Errorf("check after a file was lost: exit %d\n%s%s", code, out.String(), errOut.String())
 	}

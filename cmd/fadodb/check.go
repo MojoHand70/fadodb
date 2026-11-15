@@ -59,9 +59,12 @@ func runCheck(args []string, stdout, stderr io.Writer) int {
 	} else {
 		fmt.Fprintf(stdout, ", %d do not match", len(check.Mismatched))
 	}
-	if len(check.Missing) == 0 {
+	switch len(check.Missing) {
+	case 0:
 		fmt.Fprintln(stdout, ", no file of a document is missing")
-	} else {
+	case 1:
+		fmt.Fprintln(stdout, ", 1 file of a document is missing")
+	default:
 		fmt.Fprintf(stdout, ", %d files of documents are missing\n", len(check.Missing))
 	}
 	if len(check.Mismatched) > 0 {

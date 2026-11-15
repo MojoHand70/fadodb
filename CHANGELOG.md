@@ -184,6 +184,15 @@ All notable changes to FadoDB are recorded here. The format follows
   When it starts, the server says what its actions may call, and
   names every action of the database it cannot run as it was started.
   No setting is kept in the database, and no command changes one.
+- The command-line tool leaves the queue of a database alone. `fadodb
+  check`, `fadodb user add` and `fadodb key new` opened a database as
+  a program does, with a worker for its queued actions; the tool has
+  none of the program's Go functions, so an action that was due got no
+  answer, `not_registered`, and lost one of its ten attempts. A check
+  of a database with files to read ran long enough for that. The tool
+  now starts no worker. `fadodb check` also refuses a name under which
+  there is no database, where it made an empty one, and its help says
+  that it does not find a blob the store has lost.
 - `fadodb serve` runs no Go function (ADR-0059, item 6). A definition
   of an action with no request is refused when it is defined, in
   every program that has no function under its name, with

@@ -22,7 +22,8 @@ import (
 )
 
 // DefaultWALLimit is the write-ahead log size past which the checkpointer
-// truncates the log (ADR-0035).
+// empties the log, in the writer's turn (ADR-0035). The log passes it by
+// what the writers write within a period or two of the checkpointer.
 const DefaultWALLimit int64 = 64 << 20
 
 // DefaultCheckpointEvery is how often the checkpointer runs a passive
@@ -51,8 +52,8 @@ type Options struct {
 	// MaxText is the text limit of a new database in code points; 0 is
 	// formula.DefaultMaxText.
 	MaxText int
-	// WALLimit is the log size that triggers a truncating checkpoint; 0
-	// is DefaultWALLimit.
+	// WALLimit is the log size past which the checkpointer empties the
+	// log, for which the writers wait a moment; 0 is DefaultWALLimit.
 	WALLimit int64
 	// CheckpointEvery is the checkpointer's period; 0 is
 	// DefaultCheckpointEvery.
@@ -221,6 +222,8 @@ type Store struct {
 	stop   chan struct{}
 	done   chan struct{}
 	closed bool
+	// logEmptied counts how often the checkpointer emptied the log.
+	logEmptied atomic.Uint64
 
 	// The outbox (ADR-0044): its options with the defaults filled in, the
 	// lock that makes one drain by hand run at a time, the documents that
@@ -896,26 +899,71 @@ func (s *Store) classAt(name string, version int) *class {
 	return s.versions[strings.ToUpper(name)][version]
 }
 
-// checkpoint copies the write-ahead log into the database file every
-// period without waiting for the writer, and truncates the log once it
-// passes limit bytes, until the store is closed (ADR-0035).
+// checkpoint keeps the write-ahead log small until the store is closed
+// (ADR-0035, item 7). Every period it copies what it can of the log into
+// the database file, on a connection of its own and without waiting for
+// anybody, so that no commit pays for it. A log can only be emptied when
+// nobody is writing to it, and a writer that never pauses leaves no such
+// moment: so once the log is past limit bytes, the checkpointer takes
+// the writer's turn, between two commits, copies what is left and
+// empties the log. The writers wait for that, and it is kept short by
+// copying, before the turn is taken, until little is left.
 func (s *Store) checkpoint(conn *sql.Conn, every time.Duration, limit int64) {
 	defer close(s.done)
 	defer conn.Close()
 	t := time.NewTicker(every)
 	defer t.Stop()
 	ctx := context.Background()
+	// The checkpointer never waits inside SQLite. In the writer's turn it
+	// would hold every commit for as long as a reader keeps an old view
+	// of the database, or another program writes; what it cannot do now
+	// it does a period later.
+	_, _ = conn.ExecContext(ctx, "PRAGMA busy_timeout(0)")
 	for {
 		select {
 		case <-s.stop:
 			return
 		case <-t.C:
-			mode := "PASSIVE"
-			if fi, err := os.Stat(s.path + "-wal"); err == nil && fi.Size() > limit {
-				mode = "TRUNCATE"
+			left := copyLog(ctx, conn)
+			if fi, err := os.Stat(s.path + "-wal"); err != nil || fi.Size() <= limit {
+				continue
 			}
-			_, _ = conn.ExecContext(ctx, "PRAGMA wal_checkpoint("+mode+")")
+			for i := 0; i < 4 && left > fewPages; i++ {
+				left = copyLog(ctx, conn)
+			}
+			s.emptyLog(ctx, conn)
 		}
+	}
+}
+
+// fewPages is how many pages of the log may be left to copy when the
+// checkpointer takes the writer's turn: a megabyte of the usual pages.
+const fewPages = 256
+
+// copyLog copies what it can of the log into the database file without
+// waiting for anybody, and answers how many pages are left to copy.
+func copyLog(ctx context.Context, conn *sql.Conn) int {
+	var busy, pages, copied int
+	if err := conn.QueryRowContext(ctx, "PRAGMA wal_checkpoint(PASSIVE)").Scan(&busy, &pages, &copied); err != nil {
+		return 0
+	}
+	return pages - copied
+}
+
+// emptyLog copies what is left of the log into the database file and
+// empties the log, in the writer's turn: no commit of this program runs
+// meanwhile. A reader that still looks at an old view of the database,
+// or a writer of another program, keeps the log from being emptied; it
+// is then copied as far as it can be, and tried again a period later.
+func (s *Store) emptyLog(ctx context.Context, conn *sql.Conn) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.closed {
+		return
+	}
+	var busy, pages, copied int
+	if err := conn.QueryRowContext(ctx, "PRAGMA wal_checkpoint(TRUNCATE)").Scan(&busy, &pages, &copied); err == nil && busy == 0 {
+		s.logEmptied.Add(1)
 	}
 }
 
@@ -931,13 +979,18 @@ func (s *Store) Close() error {
 	})
 	<-s.workDone
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	if s.closed {
+		s.mu.Unlock()
 		return nil
 	}
 	s.closed = true
+	// The checkpointer may be waiting for the writer's turn: it gets it
+	// here, sees the store closed and ends.
+	s.mu.Unlock()
 	close(s.stop)
 	<-s.done
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	s.cmu.Lock()
 	for _, vs := range s.versions {
 		for _, c := range vs {

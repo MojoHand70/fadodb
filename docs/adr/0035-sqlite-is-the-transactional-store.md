@@ -198,3 +198,78 @@ both under `docs/perf/`. The second-process test runs in CI on every
 operating system for SQLite, so that the property this record relies on
 is checked rather than assumed; the DuckDB test records the outcome
 without asserting it, since it is DuckDB's process model and not ours.
+
+## Measured again on 2026-11-15: the log is emptied in the writer's turn
+
+Item 7 says that the log cannot grow without bound, and leaves the
+timer, the limit and the pause to later measurement. Measured with the
+real commit, the bound did not hold for a writer that never pauses. A
+log can only be emptied when nobody writes to it. The checkpointer
+waited for such a moment, and a caller that commits one document after
+another leaves none: the log reached 2.6 to 4.4 GiB beside a database of
+200 MiB. When the moment came by chance, the whole log was copied in one
+go and every commit waited for it, more than two seconds.
+
+A database behind a server makes this a workload and not only a
+benchmark: several callers that each pause add up to a writer that
+never does.
+
+What changed is inside what item 7 leaves open. The principle stands:
+the committing connection never checkpoints.
+
+- **Past the limit, the checkpointer takes the writer's turn.** It
+  waits for the store's own lock, the one every commit of the program
+  takes, gets it between two commits, copies what is left of the log
+  and empties it. No commit runs meanwhile.
+- **The wait is kept short.** Before it takes the turn, the
+  checkpointer copies the log while the writers write, again and again
+  until less than a megabyte is left.
+- **It never waits inside SQLite.** A reader that still looks at an old
+  view of the database, or a writer of another program, keeps a log
+  from being emptied. In the writer's turn, waiting for either would
+  stop every commit; the checkpointer copies as far as it can and tries
+  again a period later.
+- **What the limit means.** The log passes the limit by what the
+  writers write within a period or two of the checkpointer: about three
+  times the limit under the fastest writer measured, and not at all
+  under a caller that pauses a millisecond between commits. A reader
+  that keeps one view for long, and a second program that writes
+  without pause, still let the log grow; neither is new.
+
+Measured on the development machine, on disk, twenty seconds of commits
+with no pause between them:
+
+| | Before | Now |
+|---|---|---|
+| One writer: commits a second | 13,100 | 16,300 |
+| One writer: the log at its largest | 4,354 MiB | 192 MiB |
+| One writer: the longest a commit waited | 2.2 s | 53 ms |
+| Eight writers: commits a second | 13,800 | 15,900 |
+| Eight writers: the log at its largest | 2,585 MiB | 214 MiB |
+| Eight writers: the longest a commit waited | 2.2 s | 62 ms |
+| Eight writers: p99.9 of a commit | 3.3 ms | 19.6 ms |
+
+A caller that pauses a millisecond between commits sees no difference:
+the log stays at 66 MiB and p99 at 0.22 ms.
+
+The commit campaign (`TestCommitCampaign`, 200,000 commits of each
+kind into one database, 2.3 GB at the end) before and now:
+
+| Work | Throughput | p99 | max |
+|---|---|---|---|
+| create, one transaction each | 7,875/s → 9,659/s | 0.270 → 0.264 ms | 2,363 → 48 ms |
+| set, one transaction each | 6,855/s → 7,765/s | 0.329 → 0.315 ms | 2,096 → 56 ms |
+| transition, one transaction each | 12,112/s → 14,920/s | 0.230 → 0.161 ms | 435 → 41 ms |
+| transition starting a chain of three | 7,695/s → 8,471/s | 0.334 → 0.299 ms | 535 → 42 ms |
+| create, batched 1,000 per transaction | 24,141/s → 24,661/s | 144 → 69 ms | 170 → 71 ms |
+| transition, batched 1,000 per transaction | 27,862/s → 26,879/s | 46 → 74 ms | 48 → 86 ms |
+
+The price is in the last row and in the last line of the table before:
+a batch, or one commit in a thousand under eight writers, now and then
+waits for the log to be emptied, some tens of milliseconds. The long
+waits are gone, and every budget of ADR-0012 holds.
+
+Three tests hold it: the log of four writers that never pause stays
+near its limit and is emptied while they write; the writers go on
+while a reader keeps its view; and a store closes while its
+checkpointer waits for the turn.

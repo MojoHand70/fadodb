@@ -233,6 +233,21 @@ All notable changes to FadoDB are recorded here. The format follows
   and the file that decided it; when the go tool cannot list the
   packages the gate runs.
 
+### Fixed
+
+- The log of latest commits, the `-wal` file beside a database, grew
+  far past its limit of 64 MiB under a caller that commits without a
+  pause: to 2.6 to 4.4 GiB beside a database of 200 MiB, measured. A
+  log can only be emptied when nobody writes to it, and such a caller
+  leaves no such moment; when one came by chance, every commit waited
+  more than two seconds for the whole log to be copied. Past the limit
+  the engine now empties the log in the writer's turn, between two
+  commits. The log stays under about three times its limit, the
+  longest wait of a commit fell from 2.2 s to about 50 ms, and commits
+  a second rose by a tenth to a quarter. A commit now and then waits
+  some tens of milliseconds for the log to be emptied. ADR-0035 has
+  the measurements.
+
 ### Security
 
 - A new database is closed to everybody but its owner. `Open` creates

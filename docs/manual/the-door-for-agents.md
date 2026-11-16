@@ -82,6 +82,50 @@ The door is told the server and the key as `fadodb exec` is:
   the door of her own assistant. What it does is then done as Ann, and
   the log says Ann.
 
+## What the door says of itself
+
+When an agent's program opens the door, the door hands it a text, which
+the protocol calls `instructions`, and the program puts it before its
+agent: the sign above the door. This is the sign of a door that offers
+every tool:
+
+<!-- the sign -->
+```text
+FadoDB is a database of documents that move through the states of
+their class. Each tool is one command of the database at
+https://fado.acme.example, sent as the user whose key this door was
+given. whoami answers who that user is. list_classes answers which
+classes there are, and get_class how one is defined: its variables,
+its states, its transitions and who may do what. Look before you
+build: before you define a class, a table or a schema, list what the
+database has (list_classes, list_tables, list_schemas) and read each
+one that may be the same thing; match by meaning, not by name. Ask the
+person you work for which one to use, and never keep a thing twice.
+preview answers what a create, a set or a transition would do, and
+writes nothing. A command the database refuses is answered with the
+refusal under error: a code, a message, the place in the command and a
+hint. The tools that commit a document take a key, and one sent again
+with the same key makes no second commit: create, set, reset, refresh,
+transition, transition_many, delete. No other tool takes one.
+```
+
+- **Look before you build** is on the sign because the door is the one
+  place every agent passes. An employee is kept in one list. Ann's
+  assistant, asked to set up training requests, finds the table
+  `People` before it defines a class `Employee` beside it, and asks
+  Ann which one to use. The whole procedure is the first step of
+  [the designer's skill](../../skills/fadodb-design/SKILL.md#look-before-you-build),
+  which an agent reads only when it was given the skills.
+- **The four tools that build say it again**, each in its own
+  description: `define_class`, `define_classes`, `define_table` and
+  `define_schema`. A program may show its agent the tools and not the
+  sign.
+- **The sign says what the door offers.** A door started with
+  `--read-only` says nothing of building or of keys, and a door
+  started with `--tools` names only the tools it has.
+- **A sign stops nobody.** What an agent may do is decided by the
+  groups of its user and the rules of the classes.
+
 ## The tools
 
 Every command is a tool, but [two](#what-is-no-tool). A tool says what
@@ -319,7 +363,7 @@ not see them:
   cannot move an invoice.
 - `--tools get,query,transitions,transition` offers these tools and no
   other. A short list also costs an agent less to read: the whole list
-  is about 40,000 characters.
+  is about 45,000 characters.
 
 An agent that calls a tool the door does not offer is told why:
 

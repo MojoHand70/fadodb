@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"testing"
@@ -301,7 +302,42 @@ func TestTheChapterOnTheDoor(t *testing.T) {
 	}
 	_, discovered, _ := door(nil, `{"jsonrpc":"2.0","id":1,"method":"server/discover","params":{"_meta":`+modernMeta+`}}`)
 	if len(discovered) != 1 || !strings.Contains(discovered[0], "makes no second commit: "+strings.Join(keyed, ", ")+". No other tool takes one.") {
-		t.Errorf("the door says of the keys: %v", discovered)
+		t.Fatalf("the door says of the keys: %v", discovered)
+	}
+
+	// The sign above the door is the one the chapter shows, word for
+	// word, with the chapter's server where this test's is; and the
+	// tools the chapter says tell an agent to look first are the ones
+	// that do.
+	var itself struct {
+		Result struct{ Instructions string }
+	}
+	if err := json.Unmarshal([]byte(discovered[0]), &itself); err != nil {
+		t.Fatal(err)
+	}
+	sign := strings.ReplaceAll(strings.TrimSpace(blockOf(t, chapter, "the sign")), "\n", " ")
+	if got := strings.ReplaceAll(itself.Result.Instructions, os.Getenv("FADODB_URL"), "https://fado.acme.example"); got != sign {
+		t.Errorf("the door says of itself\n%s\nand the chapter shows\n%s", got, sign)
+	}
+	var look, lookShown []string
+	for i, tl := range list.Result.Tools {
+		var described struct{ Description string }
+		if err := json.Unmarshal(raw.Result.Tools[i], &described); err != nil {
+			t.Fatal(err)
+		}
+		if strings.Contains(described.Description, "Look before you build") {
+			look = append(look, tl.Name)
+		}
+	}
+	_, after4, _ := strings.Cut(chapter, "- **The four tools that build say it again**")
+	item, _, _ := strings.Cut(after4, "\n- **")
+	for _, n := range named.FindAllStringSubmatch(item, -1) {
+		lookShown = append(lookShown, n[1])
+	}
+	sort.Strings(look)
+	sort.Strings(lookShown)
+	if len(look) != 4 || !reflect.DeepEqual(look, lookShown) {
+		t.Errorf("the chapter says %v tell an agent to look first, and the tools that do are %v", lookShown, look)
 	}
 
 	// What an agent reads: who it is, the invoices that wait, and the

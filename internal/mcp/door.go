@@ -48,6 +48,31 @@ func Withheld(name string) string {
 // reads or changes the database and nothing else.
 func reachesOut(name string) bool { return name == "try_action" || name == "drain" }
 
+// builds says a command makes a thing the database keeps one list of: a
+// class, a table or a schema. An agent looks at what is already kept
+// before it calls one, so that nothing is kept twice. The door says so
+// of itself and on each such tool, since it is the one place every
+// agent passes; the whole procedure is the first step of the
+// designer's skill.
+func builds(name string) bool {
+	switch name {
+	case "define_class", "define_classes", "define_table", "define_schema":
+		return true
+	}
+	return false
+}
+
+// lists names the tools offered that answer what the database keeps.
+func lists(tools map[string]bool) []string {
+	var names []string
+	for _, name := range []string{"list_classes", "list_tables", "list_schemas"} {
+		if tools[name] {
+			names = append(names, name)
+		}
+	}
+	return names
+}
+
 // CodeNoAnswer is the code of the door's own for a command that no
 // answer came through for: the database was not reached, or its answer
 // was cut off. It is no refusal of the database, which never saw the
@@ -108,7 +133,7 @@ func New(send Send, o Options) (*Door, error) {
 		narrowed: len(only) > 0,
 		info:     map[string]any{"name": "fadodb", "title": "FadoDB", "version": o.Version},
 	}
-	var tools []tool
+	var offered []*command.Command
 	for _, c := range command.Commands() {
 		switch {
 		case c.Stream, Withheld(c.Name) != "":
@@ -119,10 +144,14 @@ func New(send Send, o Options) (*Door, error) {
 			continue
 		}
 		d.tools[c.Name] = true
+		offered = append(offered, c)
+	}
+	var tools []tool
+	for _, c := range offered {
 		tools = append(tools, tool{
 			Name:        c.Name,
 			Title:       title(c.Name),
-			Description: describe(c),
+			Description: describe(c, d.tools),
 			InputSchema: c.Schema(),
 			Annotations: hints{
 				ReadOnly:    c.Mark == command.Reads,
@@ -164,27 +193,50 @@ func title(name string) string {
 }
 
 // describe says what a tool does and what it answers, in the words of
-// the table.
-func describe(c *command.Command) string {
+// the table. A tool that builds also says to look first, naming the
+// tools of this door that answer what the database keeps: an agent's
+// program may show its agent the tools and not what the door says of
+// itself.
+func describe(c *command.Command, tools map[string]bool) string {
 	var b strings.Builder
 	b.WriteString(c.Does)
 	if len(c.Answer) == 0 {
 		b.WriteString(" It answers {}.")
-		return b.String()
-	}
-	b.WriteString(" It answers ")
-	for i, m := range c.Answer {
-		if i > 0 {
-			b.WriteString("; ")
+	} else {
+		b.WriteString(" It answers ")
+		for i, m := range c.Answer {
+			if i > 0 {
+				b.WriteString("; ")
+			}
+			b.WriteString(m.Name + ": " + m.Does)
 		}
-		b.WriteString(m.Name + ": " + m.Does)
+		b.WriteString(".")
 	}
-	b.WriteString(".")
+	if builds(c.Name) {
+		b.WriteString(" Look before you build:")
+		switch lists := lists(tools); len(lists) {
+		case 0:
+		case 1:
+			b.WriteString(" " + lists[0] + " answers what the database already keeps, and")
+		default:
+			b.WriteString(" " + anded(lists) + " answer what the database already keeps, and")
+		}
+		b.WriteString(" a thing is never kept twice.")
+	}
 	return b.String()
 }
 
+// anded writes names as a sentence lists them: a, b and c.
+func anded(names []string) string {
+	if len(names) < 2 {
+		return strings.Join(names, "")
+	}
+	return strings.Join(names[:len(names)-1], ", ") + " and " + names[len(names)-1]
+}
+
 // says is what the door tells an agent of itself when it is asked what
-// it is: what the tools are, and what each first step answers.
+// it is, the sign above the door: what the tools are, what each first
+// step answers, and to look before it builds.
 func says(o Options, tools map[string]bool) string {
 	var b strings.Builder
 	b.WriteString("FadoDB is a database of documents that move through the states of their class. Each tool is one command of the database")
@@ -192,14 +244,25 @@ func says(o Options, tools map[string]bool) string {
 		b.WriteString(" at " + o.Database)
 	}
 	b.WriteString(", sent as the user whose key this door was given.")
-	for _, step := range []struct{ tool, does string }{
-		{"whoami", " whoami answers who that user is."},
-		{"list_classes", " list_classes answers which classes there are, and get_class how one is defined: its variables, its states, its transitions and who may do what."},
-		{"preview", " preview answers what a create, a set or a transition would do, and writes nothing."},
-	} {
-		if tools[step.tool] {
-			b.WriteString(step.does)
+	if tools["whoami"] {
+		b.WriteString(" whoami answers who that user is.")
+	}
+	if tools["list_classes"] {
+		b.WriteString(" list_classes answers which classes there are, and get_class how one is defined: its variables, its states, its transitions and who may do what.")
+	}
+	for name := range tools {
+		if !builds(name) {
+			continue
 		}
+		b.WriteString(" Look before you build: before you define a class, a table or a schema, list what the database has")
+		if lists := lists(tools); len(lists) > 0 {
+			b.WriteString(" (" + strings.Join(lists, ", ") + ")")
+		}
+		b.WriteString(" and read each one that may be the same thing; match by meaning, not by name. Ask the person you work for which one to use, and never keep a thing twice.")
+		break
+	}
+	if tools["preview"] {
+		b.WriteString(" preview answers what a create, a set or a transition would do, and writes nothing.")
 	}
 	b.WriteString(" A command the database refuses is answered with the refusal under error: a code, a message, the place in the command and a hint.")
 	if keyed := keyed(tools); len(keyed) > 0 {

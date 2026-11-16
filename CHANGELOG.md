@@ -245,7 +245,10 @@ All notable changes to FadoDB are recorded here. The format follows
   engine's table, with a mark that says whether it reads, writes or
   removes. A refusal reaches the agent as the database wrote it, with
   its code and its hint; when no answer comes through, the tool says so
-  with the code `no_answer`. `--read-only` offers only the tools that
+  with the code `no_answer`. The door tells every agent that opens it
+  to look before it builds: to list what the database keeps before it
+  defines a class, a table or a schema, and never to keep a thing
+  twice. `--read-only` offers only the tools that
   read and `--tools` only the ones named. `subscribe` and `create_key`
   are no tool, and the files are not in the door. It speaks the
   revision of 2026-07-28 of the protocol and the ones that open with a

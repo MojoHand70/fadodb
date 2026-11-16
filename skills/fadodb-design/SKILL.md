@@ -40,6 +40,12 @@ that drift apart, and from then on every report is wrong in one of
 them. So before you draw a state, find out what the organisation
 keeps, and never keep a thing twice.
 
+An agent that comes through `fadodb mcp` reads the short of this on
+the door itself, and again on each tool that defines a class, a table
+or a schema
+([the door for agents](../../docs/manual/the-door-for-agents.md#what-the-door-says-of-itself)).
+This section is the whole of it.
+
 1. **List what the database has**: `list_classes`, `list_tables` and
    `list_schemas`. They answer names only.
 2. **Read every one that may be a thing the story names**:

@@ -158,7 +158,24 @@ user in `finance` with a key of its own.
    tool is a command sent as the user of the key, that `whoami`
    answers who that is, that `list_classes` and `get_class` answer
    what there is, that `preview` writes nothing, how a refusal reads,
-   and which tools take a key.
+   and which tools take a key. This text is the sign above the door:
+   an agent's program puts it before its agent.
+
+   **The sign tells an agent to look before it builds** (the owner's
+   word, 2026-11-16): before it defines a class, a table or a schema
+   it lists what the database has and reads each one that may be the
+   same thing, it asks the person it works for which one to use, and
+   it never keeps a thing twice. The procedure is the first step of
+   the designer's skill, but a skill is read only by an agent that was
+   given it, and the door is the one place every agent passes. Ann's
+   assistant, with a designer's key and no skill, would otherwise
+   define a class `Employee` beside the table `People`. The four
+   tools that build, `define_class`, `define_classes`, `define_table`
+   and `define_schema`, say it again in their descriptions, since a
+   program may show its agent the tools and not the sign. A door that
+   offers none of them does not say it. It is a sign and no lock: no
+   rule of the engine refuses a second list, which is the matter of
+   ADR-0060.
 
 10. **One door, one database** (ADR-0056). An agent that works for
     Acme and for Globex is given two doors, each with its server and
@@ -214,7 +231,7 @@ user in `finance` with a key of its own.
   talk its way past.
 - The tools cannot fall behind the engine, and a tool cannot behave
   apart from its command.
-- The whole list of the tools is about 40,000 characters, which an
+- The whole list of the tools is about 45,000 characters, which an
   agent's program reads once. `--tools` shortens it.
 - An agent hears of no change by itself until question 3 is ruled and
   built, and puts no file on a document until question 4 is.
@@ -228,4 +245,4 @@ No commit is touched: the door is a caller. Measured on the
 development machine, against a server on the same machine: 2,000 calls
 of `get` through one door took 0.25 s, with 16 carried at once. The
 door starts, lists its tools and ends in under 10 ms. The command-line
-tool grew by 53 kB, to 14.55 MB of its budget of 15.
+tool grew by 65 kB, to 14.56 MB of its budget of 15.

@@ -7,6 +7,7 @@ import (
 	"errors"
 	"io"
 	"regexp"
+	"sort"
 	"strings"
 	"sync"
 	"testing"
@@ -412,6 +413,66 @@ func TestNoAnswerSaysWhatIsSafe(t *testing.T) {
 		if got := hint(name); got != want {
 			t.Errorf("no answer of %s is hinted\n%s\nand not\n%s", name, got, want)
 		}
+	}
+}
+
+// The door tells an agent to look before it builds: on its sign, and on
+// each tool that makes a class, a table or a schema, since a program
+// may show its agent the tools and not the sign. A door with no such
+// tool says nothing of it, and a door names only the tools it offers.
+func TestLookBeforeYouBuild(t *testing.T) {
+	const sign = " Look before you build: before you define a class, a table or a schema, list what the database has (list_classes, list_tables, list_schemas) and read each one that may be the same thing; match by meaning, not by name. Ask the person you work for which one to use, and never keep a thing twice."
+	const onATool = " Look before you build: list_classes, list_tables and list_schemas answer what the database already keeps, and a thing is never kept twice."
+	described := func(d *Door) map[string]string {
+		t.Helper()
+		var tools []struct{ Name, Description string }
+		if err := json.Unmarshal(d.listed, &tools); err != nil {
+			t.Fatal(err)
+		}
+		says := map[string]string{}
+		for _, tool := range tools {
+			says[tool.Name] = tool.Description
+		}
+		return says
+	}
+
+	all := door(t, acme(), Options{})
+	if !strings.Contains(all.says, sign) {
+		t.Errorf("a door with every tool says of itself: %s", all.says)
+	}
+	var building []string
+	for name, says := range described(all) {
+		if strings.Contains(says, "Look before you build") != builds(name) {
+			t.Errorf("%s says: %s", name, says)
+		}
+		if builds(name) {
+			building = append(building, name)
+			if !strings.HasSuffix(says, onATool) {
+				t.Errorf("%s, a tool that builds, says: %s", name, says)
+			}
+		}
+	}
+	sort.Strings(building)
+	if got := strings.Join(building, ","); got != "define_class,define_classes,define_schema,define_table" {
+		t.Errorf("the tools that build are %s", got)
+	}
+
+	// A door that builds nothing says nothing of it.
+	for how, o := range map[string]Options{"only reads": {ReadOnly: true}, "has no tool that builds": {Only: []string{"get", "create", "transition"}}} {
+		if d := door(t, acme(), o); strings.Contains(d.says, "Look before") {
+			t.Errorf("a door that %s says of itself: %s", how, d.says)
+		}
+	}
+	// A door names the tools it offers and no other.
+	some := door(t, acme(), Options{Only: []string{"define_class", "list_classes", "get_class"}})
+	if !strings.Contains(some.says, "list what the database has (list_classes) and read each one") ||
+		!strings.HasSuffix(described(some)["define_class"], " Look before you build: list_classes answers what the database already keeps, and a thing is never kept twice.") {
+		t.Errorf("a door with one tool that lists says %s\nand its define_class %s", some.says, described(some)["define_class"])
+	}
+	none := door(t, acme(), Options{Only: []string{"define_table"}})
+	if !strings.Contains(none.says, "list what the database has and read each one") ||
+		!strings.HasSuffix(described(none)["define_table"], " Look before you build: a thing is never kept twice.") {
+		t.Errorf("a door with no tool that lists says %s\nand its define_table %s", none.says, described(none)["define_table"])
 	}
 }
 

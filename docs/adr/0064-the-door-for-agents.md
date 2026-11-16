@@ -116,9 +116,13 @@ user in `finance` with a key of its own.
 
    When no answer comes through, because the server was not reached or
    its answer was cut off, the tool answers in the same form with a
-   code of the door's own, `no_answer`, and says that the command may
-   have been carried out. A command that writes takes a `key`
-   (ADR-0055, item 3), so an agent sends it again safely.
+   code of the door's own, `no_answer`, and a hint that says what is
+   safe for the command that was sent. A command that reads is asked
+   again. A command that commits a document takes a `key` (ADR-0055,
+   item 3), so an agent sends it again safely. Any other command that
+   writes, such as `define_class`, `set_user` or `try_action`, takes
+   no key: it may have been carried out, and the agent reads what it
+   would have changed before sending it again.
 
 5. **The door is a caller as any other.** It holds no database. What
    an agent does through it is judged by the rules of the classes and
@@ -154,7 +158,7 @@ user in `finance` with a key of its own.
    tool is a command sent as the user of the key, that `whoami`
    answers who that is, that `list_classes` and `get_class` answer
    what there is, that `preview` writes nothing, how a refusal reads,
-   and that a command that writes takes a key.
+   and which tools take a key.
 
 10. **One door, one database** (ADR-0056). An agent that works for
     Acme and for Globex is given two doors, each with its server and

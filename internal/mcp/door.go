@@ -202,12 +202,25 @@ func says(o Options, tools map[string]bool) string {
 		}
 	}
 	b.WriteString(" A command the database refuses is answered with the refusal under error: a code, a message, the place in the command and a hint.")
-	if !o.ReadOnly {
-		b.WriteString(" A command that writes takes a key: sent again with the same key, it makes no second commit.")
-	} else {
+	if keyed := keyed(tools); len(keyed) > 0 {
+		b.WriteString(" The tools that commit a document take a key, and one sent again with the same key makes no second commit: " + strings.Join(keyed, ", ") + ". No other tool takes one.")
+	}
+	if o.ReadOnly {
 		b.WriteString(" This door offers only the tools that read.")
 	}
 	return b.String()
+}
+
+// keyed lists the tools offered that take the idempotency key, in the
+// order of the table.
+func keyed(tools map[string]bool) []string {
+	var names []string
+	for _, c := range command.Commands() {
+		if tools[c.Name] && c.TakesKey() {
+			names = append(names, c.Name)
+		}
+	}
+	return names
 }
 
 // call sends a command and answers the text of a tool's answer, and
@@ -215,18 +228,31 @@ func says(o Options, tools map[string]bool) string {
 func (d *Door) call(ctx context.Context, name string, object []byte) (string, bool) {
 	answer, refused, err := d.send(ctx, name, object)
 	if err != nil {
-		return noAnswer(err), true
+		return noAnswer(name, err), true
 	}
 	return string(bytes.TrimSpace(answer)), refused
 }
 
 // noAnswer is what a tool answers when no answer came through, in the
-// form of a refusal, so that an agent reads one form.
-func noAnswer(err error) string {
+// form of a refusal, so that an agent reads one form. Its hint says
+// what is safe for the command that was sent: a command that reads is
+// asked again, one that takes a key is sent again with its key, and
+// any other may have been carried out and has no key to send it again
+// with.
+func noAnswer(name string, err error) string {
+	hint := "the command may have been carried out, and it takes no key: read what it would have changed before sending it again"
+	if c, known := command.Lookup(name); known {
+		switch {
+		case c.Mark == command.Reads:
+			hint = "the command only reads, so nothing was changed: ask again"
+		case c.TakesKey():
+			hint = "the command may have been carried out: sent again with the same key, it makes no second commit; sent with no key, read the document before sending it again"
+		}
+	}
 	text, _ := command.Marshal(map[string]any{"error": map[string]string{
 		"code":    CodeNoAnswer,
 		"message": "no answer came through: " + err.Error(),
-		"hint":    "the command may have been carried out: read before deciding, or send a command that writes again with the same key, which makes no second commit",
+		"hint":    hint,
 	}})
 	return string(text)
 }

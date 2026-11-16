@@ -287,13 +287,25 @@ answers in the same form, with a code of the door's own:
   "error": {
     "code": "no_answer",
     "message": "no answer came through: the server at http://127.0.0.1:8080/v1/transition was not reached: dial tcp 127.0.0.1:8080: connect: connection refused",
-    "hint": "the command may have been carried out: read before deciding, or send a command that writes again with the same key, which makes no second commit"
+    "hint": "the command may have been carried out: sent again with the same key, it makes no second commit; sent with no key, read the document before sending it again"
   }
 }
 ```
 
 `no_answer` is no refusal: nobody knows whether the command was
-carried out.
+carried out. The hint says what is safe for the command that was
+sent:
+
+<!-- after no answer -->
+| The command | What the hint says |
+|---|---|
+| reads, such as `get` or `query` | nothing was changed: ask again |
+| commits a document and so takes a `key`: `create`, `set`, `reset`, `refresh`, `transition`, `transition_many`, `delete` | sent again with the same key, it makes no second commit; sent with no key, read the document before sending it again |
+| writes anything else, such as `define_class`, `set_user` or `try_action` | it takes no key: read what it would have changed before sending it again |
+
+So an agent gives a `key` to every command that commits a document,
+as `ap-agent` does above. The door tells an agent which tools take
+one when it is asked what it is.
 
 ## Keeping tools from an agent
 

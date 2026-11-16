@@ -271,7 +271,8 @@ func TestTheModernForm(t *testing.T) {
 		t.Errorf("who answers: %s", got)
 	}
 	says := discovered["instructions"].(string)
-	for _, part := range []string{"at https://fado.acme.example", "whoami answers", "preview answers", "the refusal under error", "takes a key"} {
+	for _, part := range []string{"at https://fado.acme.example", "whoami answers", "preview answers", "the refusal under error",
+		"take a key, and one sent again with the same key makes no second commit: create, set, reset, refresh, transition, transition_many, delete. No other tool takes one."} {
 		if !strings.Contains(says, part) {
 			t.Errorf("the door does not say %q of itself: %s", part, says)
 		}
@@ -377,6 +378,74 @@ func TestARefusalIsAnAnswer(t *testing.T) {
 	}
 	if none.Error.Code != CodeNoAnswer || !strings.Contains(none.Error.Message, "was not reached: connection refused") || !strings.Contains(none.Error.Hint, "may have been carried out") || !strings.Contains(none.Error.Hint, "same key") {
 		t.Errorf("no answer reached the agent as %+v", none.Error)
+	}
+}
+
+// When no answer comes through, the hint says what is safe for the
+// command that was sent: a command that reads is asked again, one that
+// commits a document is sent again with its key, and any other has no
+// key to be sent again with (ADR-0064, item 4).
+func TestNoAnswerSaysWhatIsSafe(t *testing.T) {
+	db := acme()
+	lost := errors.New("the answer of the server broke off: unexpected EOF")
+	db.gone = map[string]error{"get": lost, "transition": lost, "delete": lost, "set_user": lost, "try_action": lost, "define_class": lost}
+	hint := func(name string) string {
+		t.Helper()
+		a := talk(t, door(t, db, Options{}), `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"`+name+`","arguments":{},`+modern+`}}`)
+		text, failed := a.text(t, "1")
+		var none struct {
+			Error struct{ Code, Hint string }
+		}
+		if err := json.Unmarshal([]byte(text), &none); err != nil || !failed || none.Error.Code != CodeNoAnswer {
+			t.Fatalf("no answer of %s reached the agent as %q, error %v: %v", name, text, failed, err)
+		}
+		return none.Error.Hint
+	}
+	for name, want := range map[string]string{
+		"get":          "the command only reads, so nothing was changed: ask again",
+		"transition":   "the command may have been carried out: sent again with the same key, it makes no second commit; sent with no key, read the document before sending it again",
+		"delete":       "the command may have been carried out: sent again with the same key, it makes no second commit; sent with no key, read the document before sending it again",
+		"set_user":     "the command may have been carried out, and it takes no key: read what it would have changed before sending it again",
+		"try_action":   "the command may have been carried out, and it takes no key: read what it would have changed before sending it again",
+		"define_class": "the command may have been carried out, and it takes no key: read what it would have changed before sending it again",
+	} {
+		if got := hint(name); got != want {
+			t.Errorf("no answer of %s is hinted\n%s\nand not\n%s", name, got, want)
+		}
+	}
+}
+
+// The door says of itself which tools take a key, and they are the
+// ones whose arguments have one: what the door says and what a tool
+// lists cannot come apart.
+func TestTheToolsThatTakeAKey(t *testing.T) {
+	d := door(t, acme(), Options{})
+	var tools []struct {
+		Name        string
+		InputSchema struct {
+			Properties map[string]struct{ Description string }
+		}
+	}
+	if err := json.Unmarshal(d.listed, &tools); err != nil {
+		t.Fatal(err)
+	}
+	var listed []string
+	for _, tool := range tools {
+		if strings.HasPrefix(tool.InputSchema.Properties["key"].Description, "the idempotency key") {
+			listed = append(listed, tool.Name)
+		}
+	}
+	if got := keyed(d.tools); strings.Join(got, ",") != strings.Join(listed, ",") || len(got) != 7 {
+		t.Errorf("the door says these take a key: %v, and the tools that list one are %v", got, listed)
+	}
+	// A door with one such tool names that one, and a door with none says
+	// nothing of keys.
+	one := door(t, acme(), Options{Only: []string{"get", "transition", "set_user"}})
+	if !strings.Contains(one.says, "makes no second commit: transition. No other tool takes one.") {
+		t.Errorf("a door with one tool that takes a key says of itself: %s", one.says)
+	}
+	if none := door(t, acme(), Options{Only: []string{"get", "set_user"}}); strings.Contains(none.says, "a key") {
+		t.Errorf("a door with no tool that takes a key says of itself: %s", none.says)
 	}
 }
 
@@ -649,7 +718,7 @@ func TestToolsKeptFromAnAgent(t *testing.T) {
 	if n := len(reads.Tools()); n < 20 {
 		t.Errorf("a door that only reads offers %d tools", n)
 	}
-	if !strings.Contains(reads.says, "only the tools that read") || strings.Contains(reads.says, "takes a key") {
+	if !strings.Contains(reads.says, "only the tools that read") || strings.Contains(reads.says, "a key") {
 		t.Errorf("a door that only reads says of itself: %s", reads.says)
 	}
 	a := talk(t, reads, `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"transition","arguments":{},`+modern+`}}`)

@@ -222,6 +222,9 @@ func TestTheChapterOnTheDoor(t *testing.T) {
 			Tools []struct {
 				Name        string
 				Annotations struct{ ReadOnlyHint, DestructiveHint, OpenWorldHint bool }
+				InputSchema struct {
+					Properties map[string]struct{ Description string }
+				}
 			}
 		}
 	}
@@ -274,6 +277,31 @@ func TestTheChapterOnTheDoor(t *testing.T) {
 				t.Errorf("the chapter names %v where the door lists %v", want, kinds[marks])
 			}
 		}
+	}
+
+	// The tools the chapter says take a key are the ones that list one,
+	// and the door says the same of itself.
+	var keyed, shown []string
+	for _, tl := range list.Result.Tools {
+		if strings.HasPrefix(tl.InputSchema.Properties["key"].Description, "the idempotency key") {
+			keyed = append(keyed, tl.Name)
+		}
+	}
+	after := rowsOf(t, chapter, "after no answer")
+	if len(after) != 3 {
+		t.Fatalf("the chapter says what follows no answer in %d rows", len(after))
+	}
+	for _, n := range named.FindAllStringSubmatch(after[1][0], -1) {
+		if n[1] != "key" {
+			shown = append(shown, n[1])
+		}
+	}
+	if !reflect.DeepEqual(keyed, shown) {
+		t.Errorf("the chapter says %v take a key, and the tools that list one are %v", shown, keyed)
+	}
+	_, discovered, _ := door(nil, `{"jsonrpc":"2.0","id":1,"method":"server/discover","params":{"_meta":`+modernMeta+`}}`)
+	if len(discovered) != 1 || !strings.Contains(discovered[0], "makes no second commit: "+strings.Join(keyed, ", ")+". No other tool takes one.") {
+		t.Errorf("the door says of the keys: %v", discovered)
 	}
 
 	// What an agent reads: who it is, the invoices that wait, and the

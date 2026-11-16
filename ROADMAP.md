@@ -305,7 +305,10 @@ watches one; and a compose file keeps a served database running. A
 release publishes the image under its version; none has yet.
 Not built yet: the door at the server itself, a tool that waits for a
 change and files through the door, which are questions of that record;
-and the way in for messages from outside.
+and the way in for messages from outside, which ADR-0065 proposes: a
+definition, the mirror of an action's, that says how a message proves
+its sender and which one command it becomes, run by the server as a
+service user. It waits for the owner's rulings.
 This page is updated when a phase starts and when it ends;
 it never describes a phase as done before its acceptance criteria pass.
 

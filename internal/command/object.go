@@ -368,9 +368,24 @@ func moment(value []byte) (time.Time, *store.Error) {
 	return time.Time{}, badMoment(strconv.Quote(text))
 }
 
+// moment reads a member that is a moment, as at is read; the zero
+// moment when the member is left out.
+func (c *call) moment(name string) (time.Time, *store.Error) {
+	value := c.given(name)
+	if value == nil {
+		return time.Time{}, nil
+	}
+	t, e := moment(value)
+	if e != nil {
+		e.Path = pointer(name)
+		e.Message = name + strings.TrimPrefix(e.Message, "at")
+	}
+	return t, e
+}
+
 func badMoment(got string) *store.Error {
 	return &store.Error{Code: store.CodeBadValue, Path: "/at", Message: "at is a day, a day and a time in UTC, or seconds since the epoch, got " + got,
-		Hint: `write "2026-11-13", "2026-11-13 09:30:00" or 1763026200`}
+		Hint: `write "2026-11-13", "2026-11-13 09:30:00" or 1794562200`}
 }
 
 // day reads business_date, a calendar day.

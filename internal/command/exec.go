@@ -545,6 +545,20 @@ func runCount(c *call) error {
 	return c.answer("count", n, err)
 }
 
+// runFlow answers the flow of a class (ADR-0063).
+func runFlow(c *call) error {
+	var period store.FlowPeriod
+	var e *store.Error
+	if period.Since, e = c.moment("since"); e != nil {
+		return e
+	}
+	if period.Until, e = c.moment("until"); e != nil {
+		return e
+	}
+	flow, err := c.s.Flow(c.ctx, c.text("class"), period, c.opts...)
+	return c.answer("flow", flow, err)
+}
+
 func runSQL(c *call) error {
 	args, e := c.scalars("args")
 	if e != nil {

@@ -71,10 +71,10 @@ func TestExecSendsTheCommandAsItWasGiven(t *testing.T) {
 
 	// A server may be newer than the tool: a command the tool does not
 	// know is sent, and the server judges it.
-	if _, known := knownCommand("flow"); known {
+	if _, known := knownCommand("forecast"); known {
 		t.Fatal("the test wants a command the tool does not know")
 	}
-	if code, _, said := tool("exec", "flow", `{"class": "Invoice"}`, "--url", server.URL); code != exitDone || server.path != "/v1/flow" {
+	if code, _, said := tool("exec", "forecast", `{"class": "Invoice"}`, "--url", server.URL); code != exitDone || server.path != "/v1/forecast" {
 		t.Errorf("a command the tool does not know: exit %d, sent to %s, said %q", code, server.path, said)
 	}
 	// With no object, the command is sent {}.
@@ -551,7 +551,7 @@ func TestExecHelpIsTheTable(t *testing.T) {
 			t.Errorf("help %s and the stream", c.Name)
 		}
 	}
-	if code, out, said := tool("exec", "help", "flow"); code != exitUsage || out != "" || !strings.Contains(said, `knows no command "flow"`) {
+	if code, out, said := tool("exec", "help", "forecast"); code != exitUsage || out != "" || !strings.Contains(said, `knows no command "forecast"`) {
 		t.Errorf("help of a command there is none of: exit %d, printed %q, said %q", code, out, said)
 	}
 	if code, _, said := tool("exec", "--help"); code != 0 || !strings.Contains(said, "fadodb exec COMMAND [OBJECT] [flags]") {

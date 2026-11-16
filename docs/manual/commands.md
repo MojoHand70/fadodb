@@ -115,6 +115,7 @@ A command takes the ones its list below shows, and no other.
 | [`preview_many`](#preview_many) | Runs the batch transition_many would run, without writing anything. | reads |
 | [`query`](#query) | Reads the documents of a class that match a filter. | reads |
 | [`count`](#count) | Counts the documents of a class that match a filter. | reads |
+| [`flow`](#flow) | Answers the flow of a class: the documents the caller may read in each state now, and their moves along each transition. | reads |
 | [`sql`](#sql) | Runs one read-only SELECT over the views, for an analyst. | reads |
 
 ### create
@@ -469,6 +470,24 @@ It answers:
 | Member | What it holds |
 |---|---|
 | `count` | how many documents match |
+
+### flow
+
+Answers the flow of a class: the documents the caller may read in each state now, and their moves along each transition. It reads; in Go it is the call `Flow`.
+
+| Member | Type | | What it is |
+|---|---|---|---|
+| `class` | text | needed | the name of the class |
+| `since` | moment |  | the first moment of the period the moves and the stays are counted in; since the class began when left out |
+| `until` | moment |  | the moment the period ends before; now when left out |
+
+And, of the members that mean the same everywhere: `for`.
+
+It answers:
+
+| Member | What it holds |
+|---|---|
+| `flow` | the states of the class, each with its documents now, since when the oldest is there, and how many stays ended in the period and how long they lasted; and its transitions, each with its moves in the period |
 
 ### sql
 

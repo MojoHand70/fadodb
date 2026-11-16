@@ -1317,6 +1317,79 @@
         ]
       }
     },
+    "/v1/flow": {
+      "post": {
+        "description": "It reads. In Go it is the call `Flow`.",
+        "operationId": "flow",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "class": {
+                    "description": "the name of the class",
+                    "type": "string"
+                  },
+                  "for": {
+                    "description": "the id of whoever the caller acts for; let through only while a substitution says so",
+                    "type": "string"
+                  },
+                  "since": {
+                    "description": "the first moment of the period the moves and the stays are counted in; since the class began when left out",
+                    "type": [
+                      "string",
+                      "integer"
+                    ]
+                  },
+                  "until": {
+                    "description": "the moment the period ends before; now when left out",
+                    "type": [
+                      "string",
+                      "integer"
+                    ]
+                  }
+                },
+                "required": [
+                  "class"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "flow": {
+                      "description": "the states of the class, each with its documents now, since when the oldest is there, and how many stays ended in the period and how long they lasted; and its transitions, each with its moves in the period"
+                    }
+                  },
+                  "required": [
+                    "flow"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "The command ran."
+          },
+          "default": {
+            "$ref": "#/components/responses/Refused"
+          }
+        },
+        "summary": "Answers the flow of a class: the documents the caller may read in each state now, and their moves along each transition.",
+        "tags": [
+          "Documents"
+        ],
+        "x-fado-call": "Flow",
+        "x-fado-mark": "reads"
+      }
+    },
     "/v1/get": {
       "post": {
         "description": "It reads. In Go it is the call `Get`.",

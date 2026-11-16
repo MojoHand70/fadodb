@@ -1,12 +1,15 @@
 package fado_test
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
+	"reflect"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -438,6 +441,192 @@ func TestGuide_MoveManyDocuments(t *testing.T) {
 	rest, err := db.TransitionMany(ctx, "Invoice", "book", []string{"INV-417"}, nil, acc)
 	if err != nil || said(rest) != "INV-417 booked" {
 		t.Errorf("a new call with only that id: %v %s", err, said(rest))
+	}
+}
+
+func TestGuide_SeeWhereDocumentsWait(t *testing.T) {
+	const guide = "see-where-documents-wait.md"
+	monday := time.Date(2026, 11, 2, 9, 0, 0, 0, time.UTC)
+	var hours atomic.Int64
+	db := guideDB(t, guide, fado.Options{Now: func() time.Time { return monday.Add(time.Duration(hours.Load()) * time.Hour) }})
+	ctx := context.Background()
+	bob, dan, ann, eve := person("bob", "sales"), person("dan", "sales"), person("ann", "finance"), person("eve")
+	must := func(_ *fado.Document, err error) {
+		t.Helper()
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	// What happened, as the guide's table tells it.
+	for _, id := range []string{"B-1", "B-2", "B-3"} {
+		must(db.Create(ctx, "Invoice", fado.Values{"total": "100.00"}, bob, fado.WithID(id)))
+	}
+	must(db.Create(ctx, "Invoice", fado.Values{"total": "0.00"}, dan, fado.WithID("D-1")))
+	hours.Store(1)
+	must(db.Transition(ctx, "Invoice", "B-1", "submit", nil, bob))
+	must(db.Transition(ctx, "Invoice", "B-2", "submit", nil, bob))
+	must(db.Transition(ctx, "Invoice", "D-1", "submit", nil, dan))
+	if doc, _ := db.Get(ctx, "Invoice", "D-1", dan); doc == nil || doc.State != "cancelled" {
+		t.Errorf("an invoice of nothing that enters review is %v", doc)
+	}
+	hours.Store(4)
+	must(db.Transition(ctx, "Invoice", "B-1", "approve", nil, ann))
+	hours.Store(28)
+	must(db.Transition(ctx, "Invoice", "B-3", "cancel", nil, bob))
+	hours.Store(29)
+
+	text, err := os.ReadFile(filepath.Join("..", "docs", "manual", "guides", guide))
+	if err != nil {
+		t.Fatal(err)
+	}
+	page := strings.ReplaceAll(string(text), "\r\n", "\n")
+	block := func(mark string) string {
+		t.Helper()
+		_, after, found := strings.Cut(page, "<!-- "+mark+" -->\n")
+		if !found {
+			t.Fatalf("the guide has nothing marked %q", mark)
+		}
+		part, _, _ := strings.Cut(after, "\n\n")
+		return part
+	}
+	rows := func(mark string) [][]string {
+		t.Helper()
+		var out [][]string
+		for i, line := range strings.Split(block(mark), "\n") {
+			if i < 2 {
+				continue
+			}
+			cells := strings.Split(strings.Trim(line, "|"), "|")
+			for j := range cells {
+				cells[j] = strings.Trim(strings.TrimSpace(cells[j]), "`")
+			}
+			out = append(out, cells)
+		}
+		return out
+	}
+	// asked sends the command as a caller and answers the flow.
+	asked := func(as fado.Principal, object string) (*fado.Flow, string) {
+		t.Helper()
+		answer, err := db.Exec(ctx, as, "flow", []byte(object))
+		if err != nil {
+			t.Fatalf("flow %s: %v", object, err)
+		}
+		var got struct{ Flow *fado.Flow }
+		if err := json.Unmarshal(answer, &got); err != nil {
+			t.Fatal(err)
+		}
+		var shown bytes.Buffer
+		if err := json.Indent(&shown, answer, "", "  "); err != nil {
+			t.Fatal(err)
+		}
+		return got.Flow, shown.String()
+	}
+	who := map[string]fado.Principal{
+		"Ann": {ID: "ann", Kind: fado.ActorPerson, Groups: []string{"finance"}},
+		"Bob": {ID: "bob", Kind: fado.ActorPerson, Groups: []string{"sales"}},
+		"Dan": {ID: "dan", Kind: fado.ActorPerson, Groups: []string{"sales"}},
+		"Eve": {ID: "eve", Kind: fado.ActorPerson},
+	}
+	_ = eve
+
+	// The answer the guide shows is the answer Ann gets.
+	_, shown := asked(who["Ann"], `{"class": "Invoice"}`)
+	if want := strings.TrimSuffix(strings.TrimPrefix(block("the flow Ann sees"), "```jsonc\n"), "\n```"); shown != want {
+		t.Errorf("the flow Ann sees is\n%s\nand the guide shows\n%s", shown, want)
+	}
+	// The Go call answers the same.
+	direct, err := db.Flow(ctx, "Invoice", fado.FlowPeriod{}, ann)
+	if viaCommand, _ := asked(who["Ann"], `{"class": "Invoice"}`); err != nil || !reflect.DeepEqual(direct, viaCommand) {
+		t.Errorf("the Go call answers %+v (%v), and the command %+v", direct, err, viaCommand)
+	}
+	// What the guide reads from it.
+	if draft, review := direct.States[0], direct.States[1]; draft.Stays != 4 || draft.AverageSeconds != 7*3600+45*60 || draft.LongestSeconds != 28*3600 ||
+		review.Documents != 1 || review.OldestSince != monday.Add(time.Hour).Unix() || review.Stays != 2 || review.AverageSeconds != 90*60 {
+		t.Errorf("the guide reads draft and review otherwise than the flow says: %+v %+v", draft, review)
+	}
+	// Every member of the flow is in the guide's table of what a number
+	// says, and the table names no other.
+	named := map[string]bool{}
+	for _, row := range rows("what a number says") {
+		for _, member := range strings.Split(row[0], ", ") {
+			named[strings.Trim(member, "`")] = true
+		}
+	}
+	has := map[string]bool{}
+	for _, of := range []any{fado.Flow{}, fado.FlowState{}, fado.FlowTransition{}} {
+		kind := reflect.TypeOf(of)
+		for i := 0; i < kind.NumField(); i++ {
+			member, _, _ := strings.Cut(kind.Field(i).Tag.Get("json"), ",")
+			switch member {
+			case "class", "class_version", "since", "until", "states", "transitions", "name", "from", "to":
+				continue // what the flow is of, and the names
+			}
+			if !named[member] {
+				t.Errorf("the guide does not say what %s says", member)
+			}
+			has[member] = true
+		}
+	}
+	for member := range named {
+		if !has[member] {
+			t.Errorf("the guide explains %s, which the flow has not", member)
+		}
+	}
+
+	number := func(text string) int64 {
+		n, err := strconv.ParseInt(text, 10, 64)
+		if err != nil {
+			t.Fatalf("the guide has %q where a number goes", text)
+		}
+		return n
+	}
+	in := func(f *fado.Flow, state string) int64 {
+		for _, st := range f.States {
+			if st.Name == state {
+				return st.Documents
+			}
+		}
+		t.Fatalf("the flow has no state %s", state)
+		return 0
+	}
+	along := func(f *fado.Flow, name, from string) int64 {
+		for _, tr := range f.Transitions {
+			if tr.Name == name && tr.From == from {
+				return tr.Moves
+			}
+		}
+		t.Fatalf("the flow has no transition %s from %s", name, from)
+		return 0
+	}
+	// Each caller sees their own.
+	for _, row := range rows("who sees what") {
+		p, known := who[row[0]]
+		if !known {
+			t.Fatalf("the guide has a caller %q", row[0])
+		}
+		f, _ := asked(p, `{"class": "Invoice"}`)
+		if f.Created != number(row[1]) || in(f, "review") != number(row[2]) || in(f, "cancelled") != number(row[3]) || along(f, "submit", "draft") != number(row[4]) {
+			t.Errorf("%s sees created %d, %d in review, %d cancelled, %d moves along submit, and the guide says %v",
+				row[0], f.Created, in(f, "review"), in(f, "cancelled"), along(f, "submit", "draft"), row[1:])
+		}
+	}
+	if len(rows("who sees what")) != len(who) {
+		t.Error("the guide's table of who sees what lacks a caller")
+	}
+	// A period.
+	for _, row := range rows("a period") {
+		f, _ := asked(who["Ann"], row[0])
+		if f.Created != number(row[1]) || along(f, "submit", "draft") != number(row[2]) || along(f, "cancel", "draft") != number(row[3]) || in(f, "review") != number(row[4]) {
+			t.Errorf("%s: created %d, %d along submit, %d along cancel, %d in review, and the guide says %v",
+				row[0], f.Created, along(f, "submit", "draft"), along(f, "cancel", "draft"), in(f, "review"), row[1:])
+		}
+	}
+	// A deleted document is in no number.
+	if err := db.Delete(ctx, "Invoice", "B-2", bob); err != nil {
+		t.Fatal(err)
+	}
+	if f, _ := asked(who["Ann"], `{"class": "Invoice"}`); f.Created != 3 || in(f, "review") != 0 || along(f, "submit", "draft") != 2 {
+		t.Errorf("after a delete Ann sees created %d, %d in review, %d along submit", f.Created, in(f, "review"), along(f, "submit", "draft"))
 	}
 }
 

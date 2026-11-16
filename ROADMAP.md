@@ -287,9 +287,13 @@ command to a server with the key of a user and prints the answer;
 number is a number and a day a day, so that an export is written in no
 locale, and `--csv` writes them for a program; `fadodb file put` and
 `fadodb file get` put a file on a document and read one. With it an
-answer writes `<`, `>` and `&` as themselves. Not built yet: the flow
-of a class in one call, the door for agents, the image for containers
-and the way in for messages from outside.
+answer writes `<`, `>` and `&` as themselves. The tenth is the flow of
+a class in one call (ADR-0063, proposed, built as it proposes): the
+command `flow` answers the states of a class, each with the documents
+that are in it now and how long the stays in it lasted, and its
+transitions, each with the moves along it, counted over the documents
+the caller may read. Not built yet: the door for agents, the image for
+containers and the way in for messages from outside.
 This page is updated when a phase starts and when it ends;
 it never describes a phase as done before its acceptance criteria pass.
 

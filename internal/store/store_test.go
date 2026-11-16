@@ -811,3 +811,39 @@ func TestARepeatedKeyReadsItsDocumentOnly(t *testing.T) {
 		t.Errorf("a key is found by: %s %v", detail, err)
 	}
 }
+
+// Readers that read at once each have a connection, and the database
+// keeps their connections ready: none is closed and opened again
+// between two reads, which costs far more than a read. The library
+// counts the connections it closed for being more than it keeps.
+func TestReadersKeepTheirConnections(t *testing.T) {
+	s, _ := openStore(t, Options{})
+	ctx := context.Background()
+	defineInvoice(t, s)
+	doc, err := s.Create(ctx, "Invoice", sampleValues(), As(alice))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Eight at once: as many as every machine keeps ready.
+	const readers = 8
+	if readersKept() < readers {
+		t.Fatalf("the database keeps %d connections ready", readersKept())
+	}
+	var wg sync.WaitGroup
+	for range readers {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for range 2000 {
+				if _, err := s.Get(ctx, "Invoice", doc.ID, As(alice)); err != nil {
+					t.Error(err)
+					return
+				}
+			}
+		}()
+	}
+	wg.Wait()
+	if closed := s.db.Stats().MaxIdleClosed; closed != 0 {
+		t.Errorf("of the connections of %d readers, %d were closed for being more than the database keeps ready", readers, closed)
+	}
+}

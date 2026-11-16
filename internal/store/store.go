@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -34,6 +35,15 @@ const DefaultCheckpointEvery = 100 * time.Millisecond
 // DefaultMaxIndexedRows is the row count up to which a table is held in
 // memory for the lookups of auto formulas (ADR-0036).
 const DefaultMaxIndexedRows = 100000
+
+// readerIdle is how long a connection that reads stays ready after its
+// last read.
+const readerIdle = time.Minute
+
+// readersKept is how many connections that read are kept ready: one for
+// each reader that can run at once, and no fewer than eight, since a
+// reader that waits for the disk gives its processor to another.
+func readersKept() int { return max(runtime.GOMAXPROCS(0), 8) }
 
 // lastOfCommandSQL finds the last version a command made of its
 // document: the versions of the moves its own commit caused, when it
@@ -402,6 +412,15 @@ func open(path string, o Options) (*Store, error) {
 	if err != nil {
 		return nil, storageErr("open", err)
 	}
+	// Every reader reads on a connection of its own, and a connection
+	// costs far more to open than a read costs. The library keeps two
+	// ready unless it is told otherwise, so that sixteen callers at once
+	// had their connections opened and closed over and over. As many
+	// are kept ready as readers can run at once, and one that nobody has
+	// used for a minute is closed, so that a quiet database holds
+	// little.
+	db.SetMaxIdleConns(readersKept())
+	db.SetConnMaxIdleTime(readerIdle)
 	s := &Store{
 		path: path, db: db, now: o.Now, vm: formula.NewVM(), qvm: formula.NewVM(),
 		schemas: model.NewSchemaSet(), schemaJSON: map[string][]byte{}, classes: map[string]*class{}, versions: map[string]map[int]*class{},

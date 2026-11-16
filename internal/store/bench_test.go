@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -605,6 +606,45 @@ func BenchmarkTransitionRepeated(b *testing.B) {
 			b.Fatalf("the command sent again: %v %+v", err, again)
 		}
 	}
+}
+
+// BenchmarkGetParallel is a read by id made by eight callers at once,
+// as a server's callers make them: every reader has a connection of its
+// own to the database, and a connection that is opened anew for a read
+// costs far more than the read. The time is of one read, with the eight
+// counted together.
+func BenchmarkGetParallel(b *testing.B) {
+	s, err := Open(filepath.Join(b.TempDir(), "bench.fado"), Options{})
+	if err != nil {
+		b.Fatal(err)
+	}
+	defer s.Close()
+	ctx := context.Background()
+	if _, err := s.defineOpen(ctx, []byte(benchFlow), asSetup); err != nil {
+		b.Fatal(err)
+	}
+	doc, err := s.Create(ctx, "Flow", Values{"amount": 500, "qty": 5, "note": "n"})
+	if err != nil {
+		b.Fatal(err)
+	}
+	const callers = 8
+	b.ReportAllocs()
+	b.ResetTimer()
+	var wg sync.WaitGroup
+	each := b.N/callers + 1
+	for range callers {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for range each {
+				if _, err := s.Get(ctx, "Flow", doc.ID, As(alice)); err != nil {
+					b.Error(err)
+					return
+				}
+			}
+		}()
+	}
+	wg.Wait()
 }
 
 // BenchmarkExecTransition is BenchmarkTransition sent as a command

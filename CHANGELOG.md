@@ -509,6 +509,16 @@ All notable changes to FadoDB are recorded here. The format follows
 
 ### Fixed
 
+- Callers that read at once had their connections to the database
+  opened and closed over and over: every reader reads on a connection
+  of its own, and only two were kept ready, which is what Go's database
+  library does unless it is told otherwise. Sixteen callers together
+  read fewer documents a second than one caller alone, and through a
+  server one read in a hundred took 18 ms. As many connections are now
+  kept ready as readers can run at once, and no fewer than eight; one
+  that nobody has used for a minute is closed, so that a quiet database
+  holds what it held. Eight callers at once take 3.2 µs a read, where
+  they took 6.8 µs.
 - A command sent again with its key searched the whole log of the
   database for the versions its commit had made, and did so while it
   held the writer's turn: with fifty thousand events of other documents

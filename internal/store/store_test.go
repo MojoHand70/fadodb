@@ -824,11 +824,7 @@ func TestReadersKeepTheirConnections(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Eight at once: as many as every machine keeps ready.
-	const readers = 8
-	if readersKept() < readers {
-		t.Fatalf("the database keeps %d connections ready", readersKept())
-	}
+	const readers = readersKept
 	var wg sync.WaitGroup
 	for range readers {
 		wg.Add(1)

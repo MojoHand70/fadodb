@@ -26,6 +26,8 @@ const APIVersion = "1"
 const (
 	tagFiles  = "Files"
 	tagServer = "The server"
+	// tagMessages is the tag of the way in for messages from outside.
+	tagMessages = "Messages from outside"
 )
 
 // object is a JSON object under construction. encoding/json writes its
@@ -172,6 +174,28 @@ func OpenAPI(root string) (string, error) {
 		}),
 	}}
 
+	// The way in for messages from outside (ADR-0065): a message carries
+	// no key and proves itself as its inlet says.
+	paths["/v1/in/{inlet}"] = object{"post": object{
+		"operationId": "receive",
+		"tags":        []string{tagMessages},
+		"summary":     "Takes a message from outside for an inlet.",
+		"description": "The message is in its sender's own form and carries no key of a user: it proves who sent it as the inlet says, with a secret shown or a signature in a header. The database carries out the one command the message becomes, as the user the inlet names, and a message sent twice makes one commit. The answer says what happened and nothing of the database: a refusal holds a code and no words. Only a door that was told to take messages does; `fadodb serve` is told by the member `inbound` of its settings.",
+		"security":    []object{},
+		"parameters":  []object{{"name": "inlet", "in": "path", "required": true, "description": "the name of the inlet", "schema": text}},
+		"requestBody": object{"required": true, "content": object{"*/*": object{"schema": object{"description": "the message, as its sender writes it: JSON, or the fields of a form"}}}},
+		"responses": object{
+			"200": object{"description": "The command was carried out, now or by an earlier message with the same key; or the inlet does not act on the message, and `ignored` is true.", "content": object{"application/json": object{"schema": object{
+				"type": "object", "required": []string{"ok"},
+				"properties": object{"ok": object{"type": "boolean"}, "ignored": object{"type": "boolean"}},
+			}}}},
+			"default": object{"description": "Nothing was done. The code says why: `unauthenticated` when the proof does not hold, `unknown_inlet`, `bad_message`, `too_large`, `busy`, or the code of what the database refused.", "content": object{"application/json": object{"schema": object{
+				"type": "object", "required": []string{"error"},
+				"properties": object{"error": object{"type": "object", "required": []string{"code"}, "properties": object{"code": text}}},
+			}}}},
+		},
+	}}
+
 	// What the server itself answers (ADR-0059, item 9). A program that
 	// mounts the door answers its own.
 	paths["/v1/health"] = object{"get": object{
@@ -199,6 +223,7 @@ func OpenAPI(root string) (string, error) {
 	}
 	tags = append(tags,
 		object{"name": tagFiles, "description": "The bytes of a file are not JSON, so they travel beside the commands."},
+		object{"name": tagMessages, "description": "A message from a system that speaks its own language: it carries no key, proves itself as its inlet says and becomes one command."},
 		object{"name": tagServer, "description": "What `fadodb serve` answers besides the commands."})
 
 	doc := object{

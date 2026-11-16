@@ -1129,17 +1129,20 @@ a user.
 > `Subscribe`, and its address on the server, `POST /v1/subscribe`.
 > The server runs in a container as on a machine: the image the
 > repository builds holds the tool and nothing else
-> ([in a container](manual/in-a-container.md)). Of the way in for
-> messages from outside (ADR-0065, proposed) the engine's part is
-> built: an inlet, a definition that says how a message proves who
-> sent it and which one command it becomes, its commands, and the Go
-> call `Receive`. The server's address for messages is not built.
+> ([in a container](manual/in-a-container.md)). A system that
+> speaks only its own language has a way in (ADR-0065, proposed): an
+> inlet, a definition that says how its message proves who sent it
+> and which one command it becomes; the server takes the message at
+> `POST /v1/in/<inlet>`, with no key, once its settings have
+> `inbound`, and answers a status and a code
+> ([a way in for messages](manual/a-way-in-for-messages.md)).
 
 | Address | Purpose | Record |
 |---|---|---|
 | `POST /v1/<command>` | Any command: its object as the body, its answer as the body of the reply. The id of a document travels in the JSON and never in the path | ADR-0055 |
 | `POST /v1/subscribe` | The stream of changes: a reply that stays open and carries one entry for each event the caller's read rule lets it hear of. No WebSocket | ADR-0058 |
 | `POST /v1/blobs`, `GET /v1/file`, `GET /v1/blob` | Files, beside the commands, with the id as a parameter | ADR-0055, ADR-0033 |
+| `POST /v1/in/<inlet>` | A message from outside, in its sender's own form and with no key of a user: it proves who sent it as its inlet says, and becomes one command | ADR-0065 |
 | `GET /v1/health`, `GET /v1/metrics` | Operations; Prometheus text format written by hand | ADR-0059 |
 
 - **One database for each customer.** A server serves one database,

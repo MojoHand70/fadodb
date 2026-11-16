@@ -72,7 +72,7 @@ func TestTheSettings(t *testing.T) {
 	for name, c := range map[string]struct{ file, words string }{
 		"what is not JSON":                        {"{\n  \"limits\": {\n    \"commands\": 64,\n  }\n}", "it is not JSON, at line 4"},
 		"what is no object":                       {`["slack.com"]`, "the file is an object, written in braces"},
-		"a member that is no setting":             {`{"listen": ":8443"}`, `the file has "listen", which is no setting: it may have outbound, limits`},
+		"a member that is no setting":             {`{"listen": ":8443"}`, `the file has "listen", which is no setting: it may have outbound, limits, inbound`},
 		"a member in other letters":               {`{"Outbound": {}}`, `the file has "Outbound", which is no setting`},
 		"a member twice":                          {`{"outbound": {"hosts": ["a.example"]}, "outbound": {}}`, `the file has "outbound" twice`},
 		"something after the settings":            {`{} {}`, "it is not JSON"},

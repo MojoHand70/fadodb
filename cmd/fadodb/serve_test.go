@@ -400,6 +400,8 @@ func TestTheChapterOnServing(t *testing.T) {
 		"limits.streams":         "256",
 		"outbound.hosts":         "none",
 		"outbound.connections":   "none",
+		"inbound.message_bytes":  strconv.Itoa(server.DefaultMessageBytes),
+		"inbound.messages":       strconv.Itoa(server.DefaultMessages),
 	}
 	var all []string
 	for _, m := range outboundMembers {
@@ -407,6 +409,9 @@ func TestTheChapterOnServing(t *testing.T) {
 	}
 	for _, m := range limitMembers {
 		all = append(all, "limits."+m)
+	}
+	for _, m := range inboundMembers {
+		all = append(all, "inbound."+m)
 	}
 	if len(all) != len(usual) {
 		t.Errorf("the test knows what is usual for %d members, and a file of settings may have %d", len(usual), len(all))

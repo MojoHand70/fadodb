@@ -94,6 +94,10 @@ const (
 	DefaultCommandTime  = server.DefaultCommandTime
 	DefaultCommands     = server.DefaultCommands
 	DefaultStreams      = server.DefaultStreams
+	// The limits of the messages from outside, for a door that takes
+	// them (ADR-0065, item 8).
+	DefaultMessageBytes = server.DefaultMessageBytes
+	DefaultMessages     = server.DefaultMessages
 )
 
 // The codes a door answers with for what happens before a command runs

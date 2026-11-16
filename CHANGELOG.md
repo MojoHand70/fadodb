@@ -251,8 +251,29 @@ All notable changes to FadoDB are recorded here. The format follows
   In Go: `DefineInlet`, `ValidateInlet`, `TryInlet`, `RemoveInlet`,
   `Inlets`, `Inlet`, and `Receive`, which takes a message. A program
   says that it takes messages with `Options.Inbound`. New refusals:
-  `unknown_inlet` and `bad_message`. `fadodb serve` does not take
-  messages yet: its address and its setting come next.
+  `unknown_inlet` and `bad_message`.
+- The server's part of the way in (ADR-0065, proposed): `fadodb serve`
+  takes a message from outside at `POST /v1/in/<inlet>`, with no key
+  of a user, once the operator's settings have the member `inbound`;
+  told nothing, it takes none, and an inlet cannot be defined. The
+  sender is answered a status and a code and no word of the database:
+  `{"ok":true}`, `{"ok":true,"ignored":true}` for a message the inlet
+  does not act on, `unauthenticated` for a proof that does not hold,
+  `unknown_inlet`, `bad_message`, or the code of what the database
+  refused. The words of a refusal are in the line the server writes,
+  under `in/<inlet>` and the user the inlet acts as, and the counts
+  have the messages of each inlet by status. A message has places of
+  its own, 16 unless `inbound.messages` says otherwise, and is at most
+  1 MiB, `inbound.message_bytes`, so a stranger who floods an inlet
+  takes no place from a caller with a key. When it starts, the server
+  says which inlets it takes messages at and which it cannot act on. A
+  program that mounts the door sets `Inbound` in its options.
+- `fadodb inlet check FILE --class FILE --message FILE` asks the
+  engine whether it would take an inlet in a file, with the class it
+  names, and shows the command a sample message would become, storing
+  nothing and needing no server.
+- A chapter of the manual, A way in for messages, played step by step
+  against a server by a test; the address is in `api/openapi.json`.
 - The image for containers. `docker build -t fadodb .` builds it from
   a checkout: the tool, the certificates an action's request knows
   another service by, and nothing else, about 15 MB. It runs as a user

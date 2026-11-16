@@ -169,7 +169,8 @@ func TestNew(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := httpdoor.Limits{RequestBytes: httpdoor.DefaultRequestBytes, CommandTime: httpdoor.DefaultCommandTime, Commands: 8, Streams: httpdoor.DefaultStreams}
+	want := httpdoor.Limits{RequestBytes: httpdoor.DefaultRequestBytes, CommandTime: httpdoor.DefaultCommandTime, Commands: 8, Streams: httpdoor.DefaultStreams,
+		MessageBytes: httpdoor.DefaultMessageBytes, Messages: httpdoor.DefaultMessages}
 	if got := door.Limits(); got != want {
 		t.Errorf("the limits are %+v, want %+v", got, want)
 	}
@@ -647,6 +648,16 @@ func TestTheDescriptionAndTheDoor(t *testing.T) {
 				continue
 			}
 			upper := strings.ToUpper(method)
+			if len(op.Tags) == 1 && op.Tags[0] == "Messages from outside" {
+				// The address of an inlet (ADR-0065): it is there, and a
+				// door that was not told to take messages answers every
+				// name as one that is no inlet, with a code and no words.
+				status, e := ask(upper, strings.Replace(address, "{inlet}", "bank.paid", 1), "application/json", `{}`)
+				if status != 404 || e.Code != "unknown_inlet" || e.Message != "" {
+					t.Errorf("%s %s at a door that takes no messages: %d %+v", upper, address, status, e)
+				}
+				continue
+			}
 			body, described := op.RequestBody.Content["application/json"]
 			if !described {
 				// One of the three addresses of the files: it is there,

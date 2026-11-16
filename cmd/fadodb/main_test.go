@@ -71,7 +71,7 @@ func TestRunUnknown(t *testing.T) {
 func TestACommandSaysItsHelpOnce(t *testing.T) {
 	for _, line := range [][]string{
 		{"init"}, {"user", "add"}, {"key", "new"}, {"serve"}, {"exec"}, {"file"},
-		{"mcp"}, {"health"}, {"class", "check"}, {"action", "check"},
+		{"mcp"}, {"health"}, {"class", "check"}, {"action", "check"}, {"inlet", "check"},
 	} {
 		for _, flag := range []string{"--help", "--no-such-flag"} {
 			code, out, said := tool(append(append([]string{}, line...), flag)...)

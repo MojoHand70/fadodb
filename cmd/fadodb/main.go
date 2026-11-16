@@ -9,8 +9,8 @@
 // is the door for agents: it offers the commands of a server as tools
 // to an agent's program (ADR-0064). "fadodb health" asks a server
 // whether it answers.
-// "fadodb class check" and "fadodb action check" ask the engine whether
-// it would take a definition in a file. "fadodb formula eval" runs the
+// "fadodb class check", "fadodb action check" and "fadodb inlet check"
+// ask the engine whether it would take a definition in a file. "fadodb formula eval" runs the
 // formula engine, "fadodb check" verifies a database file and "fadodb
 // version" prints the build. See ROADMAP.md for what comes next.
 package main
@@ -50,6 +50,8 @@ Usage:
   fadodb health                         ask a server whether it answers, with no key
   fadodb class check FILE...            ask whether the engine would take a class, storing nothing
   fadodb action check FILE              ask whether the engine would take an action, storing nothing
+  fadodb inlet check FILE               ask whether the engine would take an inlet, a way in for
+                                        messages from outside, and what a message would become
   fadodb formula eval [flags] FORMULA   evaluate a formula, or print its bytecode or SQL
   fadodb check FILE                     verify a database file: every blob's hash
   fadodb version                        print version, commit and build date
@@ -83,6 +85,8 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return runServe(ctx, args[1:], stdout, stderr, nil)
 	case "class", "action":
 		return runDefinition(args[0], args[1:], stdout, stderr)
+	case "inlet":
+		return runInlet(args[1:], stdout, stderr)
 	case "exec":
 		ctx, stop := interrupted()
 		defer stop()

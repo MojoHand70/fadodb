@@ -2041,6 +2041,87 @@
         "x-fado-mark": "writes"
       }
     },
+    "/v1/in/{inlet}": {
+      "post": {
+        "description": "The message is in its sender's own form and carries no key of a user: it proves who sent it as the inlet says, with a secret shown or a signature in a header. The database carries out the one command the message becomes, as the user the inlet names, and a message sent twice makes one commit. The answer says what happened and nothing of the database: a refusal holds a code and no words. Only a door that was told to take messages does; `fadodb serve` is told by the member `inbound` of its settings.",
+        "operationId": "receive",
+        "parameters": [
+          {
+            "description": "the name of the inlet",
+            "in": "path",
+            "name": "inlet",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "*/*": {
+              "schema": {
+                "description": "the message, as its sender writes it: JSON, or the fields of a form"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "ignored": {
+                      "type": "boolean"
+                    },
+                    "ok": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "ok"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "The command was carried out, now or by an earlier message with the same key; or the inlet does not act on the message, and `ignored` is true."
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "error": {
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Nothing was done. The code says why: `unauthenticated` when the proof does not hold, `unknown_inlet`, `bad_message`, `too_large`, `busy`, or the code of what the database refused."
+          }
+        },
+        "security": [],
+        "summary": "Takes a message from outside for an inlet.",
+        "tags": [
+          "Messages from outside"
+        ]
+      }
+    },
     "/v1/list_actions": {
       "post": {
         "description": "It reads. In Go it is the call `Actions`.",
@@ -4528,6 +4609,10 @@
     {
       "description": "The bytes of a file are not JSON, so they travel beside the commands.",
       "name": "Files"
+    },
+    {
+      "description": "A message from a system that speaks its own language: it carries no key, proves itself as its inlet says and becomes one command.",
+      "name": "Messages from outside"
     },
     {
       "description": "What `fadodb serve` answers besides the commands.",

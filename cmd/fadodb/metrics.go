@@ -6,8 +6,10 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -43,6 +45,46 @@ type metrics struct {
 	took     []atomic.Uint64
 	within   [len(withinSeconds) + 1]atomic.Uint64
 	all      atomic.Uint64
+	// inlets counts the messages from outside by inlet, under
+	// in/<inlet> (ADR-0065, item 10). An inlet is defined while the
+	// server runs, so its place is made when its first message is
+	// told, and only for an inlet the database has: a message for a
+	// name that is none is counted as other, like a name that is no
+	// command.
+	inletMu sync.RWMutex
+	inlets  map[string]*counted
+}
+
+// counted are the counts of one inlet: its messages by status, and
+// their time added up.
+type counted struct {
+	answered [len(statuses) + 1]atomic.Uint64
+	took     atomic.Uint64
+}
+
+// mostInlets is how many inlets have a place of their own; the
+// messages of any beyond them are counted as other.
+const mostInlets = 256
+
+// inlet is where the messages of an inlet are counted, or nil for a
+// request that is no message for an inlet of the database.
+func (m *metrics) inlet(name, command string) *counted {
+	if name == "" {
+		return nil
+	}
+	m.inletMu.RLock()
+	c := m.inlets[command]
+	m.inletMu.RUnlock()
+	if c != nil {
+		return c
+	}
+	m.inletMu.Lock()
+	defer m.inletMu.Unlock()
+	if c = m.inlets[command]; c == nil && len(m.inlets) < mostInlets {
+		c = &counted{}
+		m.inlets[command] = c
+	}
+	return c
 }
 
 // The address of the counts, and the name its requests are counted and
@@ -64,7 +106,7 @@ var withinSeconds = [...]float64{0.0001, 0.00025, 0.0005, 0.001, 0.0025, 0.005, 
 // for the three addresses of the files, for the counts themselves, and
 // one for every name that is none of them.
 func newMetrics(version string, started time.Time) *metrics {
-	m := &metrics{version: version, started: started, place: map[string]int{}}
+	m := &metrics{version: version, started: started, place: map[string]int{}, inlets: map[string]*counted{}}
 	add := func(name string) {
 		if _, twice := m.place[name]; !twice {
 			m.place[name] = len(m.names)
@@ -87,10 +129,6 @@ func newMetrics(version string, started time.Time) *metrics {
 
 // record counts one request, as the door reports it.
 func (m *metrics) record(r httpdoor.Request) {
-	i, known := m.place[r.Command]
-	if !known {
-		i = len(m.names) - 1
-	}
 	j := len(statuses)
 	for k, status := range statuses {
 		if status == r.Status {
@@ -98,9 +136,18 @@ func (m *metrics) record(r httpdoor.Request) {
 			break
 		}
 	}
-	m.answered[i][j].Add(1)
 	took := max(r.Took, 0)
-	m.took[i].Add(uint64(took))
+	if c := m.inlet(r.Inlet, r.Command); c != nil {
+		c.answered[j].Add(1)
+		c.took.Add(uint64(took))
+	} else {
+		i, known := m.place[r.Command]
+		if !known {
+			i = len(m.names) - 1
+		}
+		m.answered[i][j].Add(1)
+		m.took[i].Add(uint64(took))
+	}
 	m.all.Add(uint64(took))
 	b := len(withinSeconds)
 	for k, bound := range withinSeconds {
@@ -170,6 +217,29 @@ func (m *metrics) write(w io.Writer, streams int, queue fado.OutboxCounts, datab
 			line("fadodb_requests_total", `command=`+label(name)+`,status="`+status+`"`, float64(n))
 		}
 	}
+	// The messages from outside, by inlet, after the commands.
+	m.inletMu.RLock()
+	inlets := make([]string, 0, len(m.inlets))
+	for name := range m.inlets {
+		inlets = append(inlets, name)
+	}
+	sort.Strings(inlets)
+	messages := make([]uint64, len(inlets))
+	for i, name := range inlets {
+		c := m.inlets[name]
+		for j := range c.answered {
+			n := c.answered[j].Load()
+			if n == 0 {
+				continue
+			}
+			messages[i] += n
+			status := otherName
+			if j < len(statuses) {
+				status = strconv.Itoa(statuses[j])
+			}
+			line("fadodb_requests_total", `command=`+label(name)+`,status="`+status+`"`, float64(n))
+		}
+	}
 	head(3)
 	for i, name := range m.names {
 		if counts[i] == 0 {
@@ -178,6 +248,14 @@ func (m *metrics) write(w io.Writer, streams int, queue fado.OutboxCounts, datab
 		line("fadodb_command_seconds_sum", `command=`+label(name), seconds(m.took[i].Load()))
 		line("fadodb_command_seconds_count", `command=`+label(name), float64(counts[i]))
 	}
+	for i, name := range inlets {
+		if messages[i] == 0 {
+			continue
+		}
+		line("fadodb_command_seconds_sum", `command=`+label(name), seconds(m.inlets[name].took.Load()))
+		line("fadodb_command_seconds_count", `command=`+label(name), float64(messages[i]))
+	}
+	m.inletMu.RUnlock()
 	head(4)
 	var upTo uint64
 	for k, bound := range withinSeconds {

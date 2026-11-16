@@ -224,3 +224,7 @@ func listen(s *store.Store) (func(ctx context.Context, p store.Principal, name s
 	}
 	return send, srv.Close
 }
+
+func (d database) Receive(ctx context.Context, inlet string, m *store.Message) (*store.Receipt, error) {
+	return d.s.Receive(ctx, inlet, m)
+}

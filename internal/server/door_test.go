@@ -48,6 +48,11 @@ func (engine) Subscribe(context.Context, store.Principal, store.ChangeFilter) (S
 	return nil, errors.New("the engine of this test has no log")
 }
 
+// And it has no inlet; the tests of the messages have one that does.
+func (engine) Receive(_ context.Context, inlet string, _ *store.Message) (*store.Receipt, error) {
+	return nil, &store.Error{Code: store.CodeUnknownInlet, Message: "the engine of this test has no inlet " + inlet}
+}
+
 // ann is who sends every request of a test that does not say otherwise.
 var ann = store.Principal{ID: "ann", Groups: []string{"finance"}, Kind: store.ActorPerson}
 
@@ -599,8 +604,8 @@ func TestADoorIsNotMadeWithoutWhatItNeeds(t *testing.T) {
 		}
 	}
 	d := door(t, engine(echo), Options{})
-	if got, want := d.Limits(), (Limits{RequestBytes: 16 << 20, CommandTime: 30 * time.Second, Commands: 64, Streams: 256}); got != want {
-		t.Errorf("the limits of a door told nothing are %+v, want %+v (ADR-0059, item 2)", got, want)
+	if got, want := d.Limits(), (Limits{RequestBytes: 16 << 20, CommandTime: 30 * time.Second, Commands: 64, Streams: 256, MessageBytes: 1 << 20, Messages: 16}); got != want {
+		t.Errorf("the limits of a door told nothing are %+v, want %+v (ADR-0059, item 2; ADR-0065, item 8)", got, want)
 	}
 }
 

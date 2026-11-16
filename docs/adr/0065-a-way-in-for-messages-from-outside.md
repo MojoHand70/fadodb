@@ -421,6 +421,49 @@ takes no inlet: `define_inlet` answers `not_supported` there, as item
 - **The layout of a database is 11**: the two tables of the inlets,
   whose names no class may take.
 
+## Settled while building the server's part
+
+The second step: the address, the setting and the check from the
+command line. With it the record is built as it proposes.
+
+- **`inbound` alone turns the way in on.** An empty object takes
+  messages with the usual limits. The two limits of the messages are
+  members of `inbound`, and the door keeps them with its other limits.
+- **A message has a place or none**: one beyond the places is answered
+  `busy` at once, with `Retry-After`. A command waits a second for a
+  place; a sender sends again anyway.
+- **The body of a message has ten seconds to arrive.** Whoever sends
+  one has proved nothing yet, and a body sent a byte at a time would
+  hold a place for as long as its sender liked. One that does not
+  arrive is answered `bad_message`, and the line is closed.
+- **A message sent with anything but POST** is answered 405, with the
+  code `bad_json`, as a command is.
+- **`secret_unavailable` is answered 503**: the server cannot check
+  the proof now, and the sender is told to come back. The line of the
+  server names the secret and where it was looked for, and never
+  holds one.
+- **Nobody is named for a message without a proof.** The line of the
+  server has the user of the inlet only once the proof held.
+- **A message the inlet does not act on** has `"ignored":true` in its
+  line, so that whoever reads the lines tells it from one that moved a
+  document.
+- **The counts** have a place for each inlet of the database, made
+  when its first message is told, up to 256 inlets; a message for a
+  name that is no inlet is counted as `other`.
+- **When it starts, the server says** which inlets it takes messages
+  at, each inlet it cannot act on, with why, and, when it takes no
+  messages and the database has inlets, that the settings turn it on.
+- **`fadodb inlet check` takes the class in a file**, `--class`, and
+  checks the inlet against an empty database that has it and the user
+  the inlet names, as a service. So an agent that writes a class and
+  an inlet together checks both before either reaches a database.
+  Item 9 named `--message` only. With `--db` the check is against a
+  database, whose classes and users the inlet then names.
+- **The answers of a door are in `api/openapi.json`**, as
+  `POST /v1/in/{inlet}`, with no security and the two answers.
+- **A program of one's own** mounts the address by setting `Inbound`
+  in the options of `fado/httpdoor`, with the same limits.
+
 ## Consequences
 
 - A system that speaks only its own language is joined to a database

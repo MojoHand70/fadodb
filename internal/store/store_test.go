@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -841,5 +842,57 @@ func TestReadersKeepTheirConnections(t *testing.T) {
 	wg.Wait()
 	if closed := s.db.Stats().MaxIdleClosed; closed != 0 {
 		t.Errorf("of the connections of %d readers, %d were closed for being more than the database keeps ready", readers, closed)
+	}
+}
+
+// A database that nobody reads for a while gives back the connections
+// its readers had, all but one: the first read after a quiet spell is
+// made on a connection that is ready, and does not pay for one.
+func TestAQuietDatabaseKeepsOneReaderReady(t *testing.T) {
+	was := readerIdle
+	readerIdle = 300 * time.Millisecond
+	defer func() { readerIdle = was }()
+	s, _ := openStore(t, Options{CheckpointEvery: 10 * time.Millisecond})
+	ctx := context.Background()
+	defineInvoice(t, s)
+	doc, err := s.Create(ctx, "Invoice", sampleValues(), As(alice))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var wg sync.WaitGroup
+	for range readersKept {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for range 500 {
+				if _, err := s.Get(ctx, "Invoice", doc.ID, As(alice)); err != nil {
+					t.Error(err)
+					return
+				}
+			}
+		}()
+	}
+	wg.Wait()
+	busy := s.db.Stats().OpenConnections
+	// Quiet for several times as long as a connection is kept: the
+	// readers' connections are closed, and one stays.
+	var quiet sql.DBStats
+	for until := time.Now().Add(10 * time.Second); time.Now().Before(until); time.Sleep(50 * time.Millisecond) {
+		if quiet = s.db.Stats(); quiet.MaxIdleTimeClosed >= int64(readersKept-1) {
+			break
+		}
+	}
+	time.Sleep(4 * readerIdle)
+	quiet = s.db.Stats()
+	if quiet.MaxIdleTimeClosed < int64(readersKept-1) || quiet.Idle < 1 || quiet.OpenConnections >= busy {
+		t.Errorf("after the quiet spell %d connections are open of the %d there were, %d of them ready; %d were closed for being idle", quiet.OpenConnections, busy, quiet.Idle, quiet.MaxIdleTimeClosed)
+	}
+	// The next read opens no connection.
+	opened := quiet.OpenConnections
+	if _, err := s.Get(ctx, "Invoice", doc.ID, As(alice)); err != nil {
+		t.Fatal(err)
+	}
+	if after := s.db.Stats(); after.OpenConnections != opened {
+		t.Errorf("the first read after the quiet spell opened a connection: %d open, %d before it", after.OpenConnections, opened)
 	}
 }

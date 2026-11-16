@@ -516,8 +516,10 @@ All notable changes to FadoDB are recorded here. The format follows
   read fewer documents a second than one caller alone, and through a
   server one read in a hundred took 18 ms. Eight connections are now
   kept ready, and one that nobody has used for a quarter of a minute is
-  closed, so that a quiet database holds what it held: a connection
-  that reads takes about 3.5 MB and two open files. Sixteen callers at
+  closed, all but one, which is kept for good, so that a quiet database
+  holds what it held and a caller that reads once a minute does not pay
+  for a connection each time: a connection that reads takes about
+  3.5 MB and two open files, and milliseconds to open. Sixteen callers at
   once take 4.3 µs a read, where they took 11.9 µs.
 - A command sent again with its key searched the whole log of the
   database for the versions its commit had made, and did so while it

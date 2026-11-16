@@ -62,6 +62,17 @@ the message into one command.
    is sent. This record calls the definition an *inlet*. Nobody writes
    or hosts a program.
 
+   **An inlet is data, and not code.** Nothing is compiled and nothing
+   is loaded into the server. It is stored with a command, as a class
+   and an action are, and the server that is running takes it at
+   once. Its formulas are those of a class, and they read the message
+   and nothing else (item 4): no document, no table, no file, no
+   network. The engine's part, which reads an inlet and carries it
+   out, is written once, in the engine, like the part that sends the
+   request of an action. No stranger's code runs in the server, as the
+   owner ruled for the actions (ADR-0059, item 6), and an inlet keeps
+   to that.
+
    Acme's bank tells Acme when a customer has paid. The class, whole:
 
    ```json

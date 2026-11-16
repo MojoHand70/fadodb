@@ -297,9 +297,15 @@ proposed, built as it proposes): `fadodb mcp`, a program that an
 agent's program starts and speaks the Model Context Protocol to, which
 offers each command as a tool and sends each call to a server with the
 key of a user; a refusal reaches the agent as the database wrote it.
+The twelfth is the image for containers: the repository builds an
+image that holds the tool and nothing else, in which `fadodb serve`
+runs as a user that is not root, with the database in a volume;
+`fadodb health` asks a server whether it answers, which is how Docker
+watches one; and a compose file keeps a served database running. A
+release publishes the image under its version; none has yet.
 Not built yet: the door at the server itself, a tool that waits for a
 change and files through the door, which are questions of that record;
-the image for containers and the way in for messages from outside.
+and the way in for messages from outside.
 This page is updated when a phase starts and when it ends;
 it never describes a phase as done before its acceptance criteria pass.
 

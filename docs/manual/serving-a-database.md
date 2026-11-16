@@ -505,6 +505,20 @@ holds. `ok` is true when the server answers and can read its database,
 and the status is then 200; otherwise it is 503. A request for the
 health has no line in the log and is not counted.
 
+The tool asks too, of the server it is told with `--url` or
+`FADODB_URL`, and sends no key:
+
+<!-- the tool asks -->
+```sh
+fadodb health
+```
+
+It prints the answer, and ends with 0 when `ok` is true, with 1 when
+the server answers that it cannot read its database, and with 3 when no
+answer came. A script that has started a server waits for it this way,
+and it is how Docker watches a server
+[in a container](in-a-container.md#its-health).
+
 ## Its counts
 
 <!-- the counts are read -->

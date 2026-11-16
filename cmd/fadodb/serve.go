@@ -101,7 +101,7 @@ const stopWithin = 10 * time.Second
 // server listens once it does.
 func runServe(ctx context.Context, args []string, stdout, stderr io.Writer, ready func(addr string)) int {
 	const name = "fadodb serve"
-	fs := flags(name, serveUsage, stderr)
+	fs := flags(name)
 	listen := fs.String("listen", defaultListen, "")
 	cert := fs.String("tls-cert", "", "")
 	key := fs.String("tls-key", "", "")

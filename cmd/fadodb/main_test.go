@@ -65,3 +65,23 @@ func TestRunUnknown(t *testing.T) {
 		t.Fatalf("stderr = %q, want unknown-command message", errOut.String())
 	}
 }
+
+// A command says its help once, when it is asked for it and when it
+// could not read its line.
+func TestACommandSaysItsHelpOnce(t *testing.T) {
+	for _, line := range [][]string{
+		{"init"}, {"user", "add"}, {"key", "new"}, {"serve"}, {"exec"}, {"file"},
+		{"mcp"}, {"health"}, {"class", "check"}, {"action", "check"},
+	} {
+		for _, flag := range []string{"--help", "--no-such-flag"} {
+			code, out, said := tool(append(append([]string{}, line...), flag)...)
+			want := 0
+			if flag != "--help" {
+				want = 2
+			}
+			if n := strings.Count(out+said, "Usage:"); code != want || n != 1 {
+				t.Errorf("fadodb %s %s: exit %d, its help %d times\n%s%s", strings.Join(line, " "), flag, code, n, out, said)
+			}
+		}
+	}
+}

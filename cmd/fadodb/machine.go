@@ -108,12 +108,13 @@ func parse(fs *flag.FlagSet, args []string) ([]string, error) {
 	}
 }
 
-// flags makes the flag set of a command, which prints the command's
-// own usage and nothing of its own.
-func flags(name, usage string, stderr io.Writer) *flag.FlagSet {
+// flags makes the flag set of a command. It prints nothing of its own:
+// what a command says of a line it could not read, and its help, is
+// said once, by asked.
+func flags(name string) *flag.FlagSet {
 	fs := flag.NewFlagSet(name, flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
-	fs.Usage = func() { fmt.Fprint(stderr, usage) }
+	fs.Usage = func() {}
 	return fs
 }
 
@@ -144,7 +145,7 @@ func noDatabase(name, path string, stderr io.Writer) int {
 // runInit is "fadodb init FILE".
 func runInit(args []string, stdout, stderr io.Writer) int {
 	const name = "fadodb init"
-	fs := flags(name, initUsage, stderr)
+	fs := flags(name)
 	maxText := fs.Int("max-text", 0, "")
 	blobs := fs.String("blobs", "", "")
 	maxBlob := fs.Int64("max-blob", 0, "")
@@ -205,7 +206,7 @@ func runUser(args []string, stdout, stderr io.Writer) int {
 		}
 		return 2
 	}
-	fs := flags(name, userUsage, stderr)
+	fs := flags(name)
 	kind := fs.String("kind", "", "")
 	shown := fs.String("name", "", "")
 	path := fs.String("db", "", "")
@@ -250,7 +251,7 @@ func runKey(args []string, stdout, stderr io.Writer) int {
 		}
 		return 2
 	}
-	fs := flags(name, keyUsage, stderr)
+	fs := flags(name)
 	label := fs.String("label", "", "")
 	expires := fs.String("expires", "", "")
 	path := fs.String("db", "", "")

@@ -26,3 +26,24 @@ jobs:
           args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  image:
+    # The image for containers, published under the version of the tag
+    # and under no other name (docs/manual/in-a-container.md). A job of
+    # its own: the binaries of a release neither wait for it nor fail
+    # with it. It is published only after its chapter of the manual was
+    # played against it.
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          check-latest: true
+      - name: Sign in to the registry
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io --username "${{ github.actor }}" --password-stdin
+      - name: Check the image and publish it
+        run: scripts/image.sh push "${GITHUB_REF_NAME#v}"

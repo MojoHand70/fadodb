@@ -64,6 +64,20 @@ jobs:
           go vet ./...
           go test -count=1 ./...
 
+  image:
+    name: image
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          check-latest: true
+      - name: Build the image for containers and play its chapter of the manual against it
+        # For the machines a release publishes it for; nothing is
+        # published here (docs/manual/in-a-container.md).
+        run: scripts/image.sh check
+
   changes:
     name: changes
     runs-on: ubuntu-latest

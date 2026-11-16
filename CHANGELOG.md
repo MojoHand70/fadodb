@@ -234,6 +234,26 @@ All notable changes to FadoDB are recorded here. The format follows
   told. Measured on one machine with a writer that commits every
   millisecond: an entry is read 0.84 ms after its commit at p99 with
   one subscriber and 3.12 ms with a hundred, against a budget of 5 ms.
+- The image for containers. `docker build -t fadodb .` builds it from
+  a checkout: the tool, the certificates an action's request knows
+  another service by, and nothing else, about 15 MB. It runs as a user
+  that is not root, keeps a database in the volume at `/data`, and is
+  the tool: what follows its name is what follows `fadodb` at a
+  terminal, so the four commands from nothing to a server are four
+  containers, and the image is a caller and the door for agents as
+  well. `examples/container/compose.yaml` keeps a served database
+  running, with a health check, a file system it cannot write to and
+  none of the rights of the machine. A release publishes the image at
+  `ghcr.io/mojohand70/fadodb` under its version, for `linux/amd64` and
+  `linux/arm64`, and under no other name; none has yet. The manual has
+  a chapter, In a container, and a test plays its commands against the
+  image, on GitHub with every push (`make imagecheck`).
+- `fadodb health` asks a server whether it answers, `GET /v1/health`,
+  with no key, and prints the answer. It ends with 0 when the server
+  can read its database, with 1 when it answers that it cannot and
+  with 3 when no answer came. It is the health check of a container,
+  whose image holds no other program to ask with, and how a script
+  waits for a server it has started.
 - The door for agents: `fadodb mcp` offers the commands of a server as
   tools to an agent's program, in the Model Context Protocol
   (ADR-0064, proposed). The agent's program starts it and talks to it
@@ -443,6 +463,10 @@ All notable changes to FadoDB are recorded here. The format follows
 
 ### Fixed
 
+- A command of the tool said its help twice: `fadodb serve --help`
+  printed the whole text two times, and a flag it does not know
+  printed it before the mistake and after. Each command now says it
+  once.
 - A command whose caller left before it ended was logged and counted
   by the server as a failure of the storage, with the status 500,
   which is what the engine says of a command it was told to stop. An

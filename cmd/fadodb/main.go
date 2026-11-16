@@ -7,7 +7,8 @@
 // server with the key of a user and prints the answer, and "fadodb
 // file" puts a file on a document or reads one (ADR-0062). "fadodb mcp"
 // is the door for agents: it offers the commands of a server as tools
-// to an agent's program (ADR-0064).
+// to an agent's program (ADR-0064). "fadodb health" asks a server
+// whether it answers.
 // "fadodb class check" and "fadodb action check" ask the engine whether
 // it would take a definition in a file. "fadodb formula eval" runs the
 // formula engine, "fadodb check" verifies a database file and "fadodb
@@ -46,6 +47,7 @@ Usage:
   fadodb file get                       read the file a document holds, through a server
   fadodb mcp                            the door for agents: offer the commands of a server
                                         as tools to an agent's program, with the key of a user
+  fadodb health                         ask a server whether it answers, with no key
   fadodb class check FILE...            ask whether the engine would take a class, storing nothing
   fadodb action check FILE              ask whether the engine would take an action, storing nothing
   fadodb formula eval [flags] FORMULA   evaluate a formula, or print its bytecode or SQL
@@ -93,6 +95,10 @@ func run(args []string, stdout, stderr io.Writer) int {
 		ctx, stop := interrupted()
 		defer stop()
 		return runMCP(ctx, args[1:], stdin, stdout, stderr)
+	case "health":
+		ctx, stop := interrupted()
+		defer stop()
+		return runHealth(ctx, args[1:], stdout, stderr)
 	case "formula":
 		return runFormula(args[1:], stdout, stderr)
 	case "check":

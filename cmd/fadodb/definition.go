@@ -88,7 +88,7 @@ func runDefinition(what string, args []string, stdout, stderr io.Writer) int {
 		}
 		return 2
 	}
-	fs := flags(name, usage, stderr)
+	fs := flags(name)
 	path := fs.String("db", "", "")
 	asJSON := fs.Bool("json", false, "")
 	settingsFile := new(string)

@@ -11,7 +11,7 @@ STATICCHECK_VERSION ?= latest
 GOVULNCHECK_VERSION ?= latest
 BENCHSTAT_VERSION   ?= latest
 
-.PHONY: all build run test analytics bench fmt vet lint vuln tools depgate sizegate filegate benchgate gates clean docs
+.PHONY: all build run test analytics bench fmt vet lint vuln tools depgate sizegate filegate benchgate gates clean docs image imagecheck
 
 all: build
 
@@ -69,6 +69,16 @@ benchgate:
 	scripts/benchgate.sh $(BASE)
 
 gates: lint vuln depgate sizegate filegate test
+
+# The image for containers (the Dockerfile): image builds it for this
+# machine as "fadodb"; imagecheck builds it for every machine a release
+# publishes it for and plays its chapter of the manual against it, as
+# GitHub does on every push. Both need Docker.
+image:
+	scripts/image.sh build
+
+imagecheck:
+	scripts/image.sh check
 
 clean:
 	rm -rf bin dist

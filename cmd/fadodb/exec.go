@@ -98,7 +98,7 @@ const dialWithin = 10 * time.Second
 // ends when ctx does, which an interrupt of the program does.
 func runExec(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	const name = "fadodb exec"
-	fs := flags(name, execUsage, stderr)
+	fs := flags(name)
 	to := serverFlags(fs)
 	asCSV := fs.Bool("csv", false, "")
 	asXLSX := fs.Bool("xlsx", false, "")

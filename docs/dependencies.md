@@ -21,6 +21,17 @@ These live in their own Go modules so their weight and cgo never reach the core.
 | `github.com/duckdb/duckdb-go/v2` with `go.duckdb.org/libduckdb/<os>-<arch>` | `analytics/` | MIT | Needs cgo and a C compiler; a minimal binary linking DuckDB 2.0.0 is 75 MB. Prebuilt libraries for five platforms; `duckdb_use_lib` links a system library instead. In use since Phase 1 for the DuckDB conformance runner (ADR-0020) and since Phase 2 for the DuckDB target of the store benchmarks (ADR-0017). |
 | `github.com/jackc/pgx/v5` | `postgres/` | MIT | Driver and its tree are only needed by the enterprise backend. |
 
+## The image for containers
+
+The image (the `Dockerfile` at the root) holds the tool and one file
+that is not the project's. Nothing here is a Go module, so the
+dependency gate does not see it.
+
+| What | Where it comes from | License | Why |
+|---|---|---|---|
+| The list of certificate authorities, `/etc/ssl/certs/ca-certificates.crt` | the `ca-certificates` package of the image the tool is built in, which is Mozilla's list | MPL-2.0 | An action's request to another service is checked against it. The image holds no other file but the tool. |
+| `golang:<the Go of go.mod>-alpine`, Docker's official image of Go | Docker Hub | BSD-3 (Go); nothing of Alpine is passed on | Builds the tool. Nothing of it reaches the image but the list above. A test holds its version to the `go` line of `go.mod`. |
+
 ## Developer tools
 
 Installed with `go install`, never added to `go.mod`.

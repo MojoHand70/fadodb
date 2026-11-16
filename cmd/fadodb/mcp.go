@@ -56,7 +56,7 @@ written to the agent's program.
 // runMCP is "fadodb mcp".
 func runMCP(ctx context.Context, args []string, in io.Reader, stdout, stderr io.Writer) int {
 	const name = "fadodb mcp"
-	fs := flags(name, mcpUsage, stderr)
+	fs := flags(name)
 	to := serverFlags(fs)
 	readOnly := fs.Bool("read-only", false, "")
 	tools := fs.String("tools", "", "")

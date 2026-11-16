@@ -347,8 +347,8 @@ var commands = []*Command{
 		Answer: answer("tables", "the names, in the order they were defined"), run: runListTables},
 	{Group: Definitions, Name: "list_actions", Mark: Reads, Call: "Actions", Does: "Lists every action a rule may name, the engine's own first.", takes: asNobody,
 		Answer: answer("actions", "the actions, each with its parameters, what it returns and whether this server can run it"), run: runListActions},
-	{Group: Definitions, Name: "definitions", Mark: Reads, Call: "Definitions", Does: "Lists the versions of one class, schema, table or action, with who defined each and when.", takes: asNobody,
-		Fields: []Field{req("what", Text, "class, schema, table or action"), req("name", Text, "its name")},
+	{Group: Definitions, Name: "definitions", Mark: Reads, Call: "Definitions", Does: "Lists the versions of one class, schema, table, action or inlet, with who defined each and when.", takes: asNobody,
+		Fields: []Field{req("what", Text, "class, schema, table, action or inlet"), req("name", Text, "its name")},
 		Answer: answer("versions", "the versions, oldest first"), run: runDefinitions},
 	{Group: Definitions, Name: "preview_draft", Mark: Reads, Call: "PreviewDraft", Does: "Tries a class definition that is not stored on a create, or on a document of the stored class of the same name, writing nothing.",
 		Fields: []Field{req("definition", JSON, "the draft, as JSON"), opt("id", Text, "the id of a document of the stored class; left out, the preview is of a create"),
@@ -357,6 +357,24 @@ var commands = []*Command{
 	{Group: Definitions, Name: "migrate", Mark: Writes, Call: "Migrate", Does: "Brings every live document of a class that an earlier version computed to the current version.",
 		Fields: []Field{req("class", Text, theClass)},
 		Answer: answer("migrated", "how many documents it moved"), takes: asWriter | refusesKey, run: runMigrate},
+	// The inlets (ADR-0065): a way in for messages from outside.
+	{Group: Definitions, Name: "validate_inlet", Mark: Reads, Call: "ValidateInlet", Does: "Reports what define_inlet would refuse, storing nothing.", takes: asNobody,
+		Fields: []Field{req("definition", JSON, theDefinition)},
+		Answer: answer("diagnostics", "the findings; an empty list when nothing is wrong"), run: runValidateInlet},
+	{Group: Definitions, Name: "try_inlet", Mark: Reads, Call: "TryInlet", Does: "Answers what an inlet would do with a message, and does nothing: whether it acts on it, and the command the message would become. The proof is not asked for.",
+		Fields: []Field{opt("inlet", Text, "the name of an inlet of the database"), opt("definition", JSON, "a definition that is not stored, in place of a name"),
+			opt("message", Object, "the message: headers and params, each an object of texts; body, the body as JSON or as one text; and form, true when the body holds the fields of a form")},
+		Answer: answer("trial", "whether the inlet acts on the message, the user it would act as, and the command with its object and its key"), takes: asCaller, run: runTryInlet},
+	{Group: Definitions, Name: "define_inlet", Mark: Writes, Call: "DefineInlet", Does: "Defines an inlet: how a message from outside proves who sent it, and the one command it becomes, carried out as a service user. For a database administrator.",
+		Fields: []Field{req("definition", JSON, theDefinition)},
+		Answer: answer("inlet", theStored), takes: asCaller, run: runDefineInlet},
+	{Group: Definitions, Name: "remove_inlet", Mark: Writes, Call: "RemoveInlet", Does: "Closes an inlet: its messages are answered as those of a name that is no inlet. Its versions stay. For a database administrator.",
+		Fields: []Field{req("name", Text, "the name of the inlet")}, takes: asCaller, run: runRemoveInlet},
+	{Group: Definitions, Name: "get_inlet", Mark: Reads, Call: "Definition", Does: "Reads an inlet back as it was defined.", takes: asNobody,
+		Fields: []Field{req("name", Text, "the name of the inlet"), opt("version", Integer, "an earlier version; the current one when left out")},
+		Answer: answer("inlet", theStored), run: runGetInlet},
+	{Group: Definitions, Name: "list_inlets", Mark: Reads, Call: "Inlets", Does: "Lists the inlets.", takes: asNobody,
+		Answer: answer("inlets", "the inlets, each with its address, the user it acts as, the command its messages become and whether this server acts on them"), run: runListInlets},
 
 	// Tables, actions and the queue.
 	{Group: Operations, Name: "table_rows", Mark: Reads, Call: "TableRows", Does: "Reads every row of a table, in the order of its key.",
@@ -432,6 +450,8 @@ var NotCommands = map[string]string{
 	"Schema":       "it answers the engine's compiled form to a Go program; get_schema answers the definition",
 	"Table":        "it answers the engine's compiled form to a Go program; get_table answers the definition",
 	"Action":       "it answers one entry of the catalogue that list_actions answers whole",
+	"Inlet":        "it answers one entry of the list that list_inlets answers whole",
+	"Receive":      "it takes a message from outside, which proves itself and carries no key of a user: a server answers it at POST /v1/in/<inlet>",
 }
 
 var byName = map[string]*Command{}

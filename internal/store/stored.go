@@ -139,8 +139,10 @@ func (s *Store) stored(ctx context.Context, what, name string, version int) (*St
 			return nil, asError(storageErr("read the version of the action", err))
 		}
 		return &StoredDefinition{Name: a.spec.Name, Version: version, Definition: json.RawMessage(text)}, nil
+	case DefinitionInlet:
+		return s.storedInlet(ctx, name, version)
 	}
-	return nil, hintf(CodeBadValue, "", "a definition is a "+DefinitionClass+", a "+DefinitionSchema+", a "+DefinitionTable+" or an "+DefinitionAction+", got "+strings.TrimSpace(what), "name one of the four")
+	return nil, noSuchDefinition(what)
 }
 
 // onlyCurrent is the refusal of an earlier version of a schema or a

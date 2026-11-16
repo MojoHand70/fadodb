@@ -192,6 +192,14 @@ const (
 	CodeInUse = "in_use"
 	// CodeUnknownUser: the database has no user of that id (ADR-0057).
 	CodeUnknownUser = "unknown_user"
+	// CodeUnknownInlet: the database has no inlet of that name, or the
+	// program that holds it takes no messages from outside (ADR-0065).
+	CodeUnknownInlet = "unknown_inlet"
+	// CodeBadMessage: a message from outside is not what its inlet
+	// reads: it holds no JSON, lacks what a formula of the inlet looks
+	// for, or gives a value the formula cannot turn into what it fills
+	// (ADR-0065).
+	CodeBadMessage = "bad_message"
 	// CodeUnknownKey: the database has no key of that id, or the key is
 	// another user's and the caller is no administrator (ADR-0057).
 	CodeUnknownKey = "unknown_key"

@@ -290,9 +290,10 @@ func TestTriggered_EngineSchema(t *testing.T) {
 	// override lifted and its reason on the event made it 8 (ADR-0052,
 	// item 4); the record of who defined each version made it 9
 	// (ADR-0052, item 7); the tables of the users, their keys and the
-	// changes to them made it 10 (ADR-0057).
-	if engineSchema != 10 {
-		t.Fatalf("the engine schema is %d, want 10", engineSchema)
+	// changes to them made it 10 (ADR-0057); the tables of the inlets,
+	// whose names no class may take, made it 11 (ADR-0065).
+	if engineSchema != 11 {
+		t.Fatalf("the engine schema is %d, want 11", engineSchema)
 	}
 	if _, err := s.writer.ExecContext(context.Background(), "UPDATE schema_version SET version = 3"); err != nil {
 		t.Fatal(err)

@@ -18,7 +18,7 @@ var statuses = map[int][]string{
 	400: {"bad_json"},
 	401: {"unauthenticated"},
 	403: {"forbidden", "reason_required"},
-	404: {"unknown_command", "unknown_class", "unknown_document", "unknown_table", "unknown_schema", "unknown_action", "unknown_blob", "unknown_row", "unknown_user", "unknown_key"},
+	404: {"unknown_command", "unknown_class", "unknown_document", "unknown_table", "unknown_schema", "unknown_action", "unknown_blob", "unknown_row", "unknown_user", "unknown_key", "unknown_inlet"},
 	409: {"key_reused", "duplicate", "wrong_state", "terminal", "guard_false"},
 	413: {"too_large", "blob_too_large"},
 	499: {"caller_left"},

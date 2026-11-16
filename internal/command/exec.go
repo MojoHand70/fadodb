@@ -1,6 +1,7 @@
 package command
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -749,6 +750,73 @@ func runTryAction(c *call) error {
 	outcome, err := c.s.TryAction(c.ctx, c.text("action"), args, c.opts...)
 	return c.answer("outcome", outcome, err)
 }
+
+func runValidateInlet(c *call) error {
+	return c.diagnostics(c.s.ValidateInlet(c.given("definition")))
+}
+
+// message reads the message of a trial: its headers and the parameters
+// of its address, each an object of texts, and its body, given as JSON
+// or as one text.
+func (c *call) message() (*store.Message, *store.Error) {
+	raw := c.given("message")
+	if len(raw) == 0 {
+		return &store.Message{}, nil
+	}
+	var given struct {
+		Headers map[string]string `json:"headers"`
+		Params  map[string]string `json:"params"`
+		Body    json.RawMessage   `json:"body"`
+		Form    bool              `json:"form"`
+	}
+	dec := json.NewDecoder(bytes.NewReader(raw))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&given); err != nil {
+		return nil, badJSON("/message", "the message is not one a trial reads: "+strings.TrimPrefix(err.Error(), "json: "),
+			`a message has headers and params, each an object of texts, body, and form: {"headers": {"X-Shop": "Warsaw"}, "body": {"id": "ntc_8841"}}`)
+	}
+	m := &store.Message{Headers: given.Headers, Params: given.Params, Form: given.Form}
+	// A body that is one text is the body itself, so that a form, or a
+	// body that is no JSON, can be tried; anything else is the JSON.
+	var text string
+	if json.Unmarshal(given.Body, &text) == nil {
+		m.Body = []byte(text)
+	} else {
+		m.Body = given.Body
+	}
+	return m, nil
+}
+
+func runTryInlet(c *call) error {
+	m, e := c.message()
+	if e != nil {
+		return e
+	}
+	trial, err := c.s.TryInlet(c.ctx, c.text("inlet"), c.given("definition"), m, c.opts...)
+	return c.answer("trial", trial, err)
+}
+
+func runDefineInlet(c *call) error {
+	in, err := c.s.DefineInlet(c.ctx, c.given("definition"), c.opts...)
+	if err != nil {
+		return err
+	}
+	return c.stored("inlet", store.DefinitionInlet, in.Name, in.Version, nil)
+}
+
+func runRemoveInlet(c *call) error {
+	return c.empty(c.s.RemoveInlet(c.ctx, c.text("name"), c.opts...))
+}
+
+func runGetInlet(c *call) error {
+	version, e := c.integer("version")
+	if e != nil {
+		return e
+	}
+	return c.stored("inlet", store.DefinitionInlet, c.text("name"), int(version), nil)
+}
+
+func runListInlets(c *call) error { return c.answer("inlets", list(c.s.Inlets()), nil) }
 
 func runOutbox(c *call) error {
 	limit, e := c.integer("limit")

@@ -55,6 +55,11 @@ func (m Mode) allows(c Class) bool {
 	return true
 }
 
+// Where is how a message names the kind of formula the mode stands for,
+// for a caller that binds in the mode for something of its own and says
+// so in its own words.
+func (m Mode) Where() string { return m.where() }
+
 // where names the kind of formula the mode stands for, in a message.
 func (m Mode) where() string {
 	switch m {

@@ -167,6 +167,10 @@ type collector struct {
 	// may read, and reads the classes its formulas read (ADR-0046).
 	self  *Class
 	reads []string
+	// pure binds what fills a document as a pure formula: the values an
+	// inlet gives are read from a message, and from nothing else
+	// (ADR-0065, item 4).
+	pure bool
 }
 
 // errUnbound says a formula that reads the documents of a class was left

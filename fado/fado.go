@@ -131,6 +131,14 @@ type (
 	// ActionOutcome what became of one trial of it.
 	ActionPreview = store.ActionPreview
 	ActionOutcome = store.ActionOutcome
+	// InletInfo is one inlet of the database (ADR-0065), Message a
+	// message from outside as an inlet reads it, Receipt what became of
+	// one, and InletTrial what an inlet would do with one.
+	InletInfo  = store.InletInfo
+	InletProof = store.InletProof
+	Message    = store.Message
+	Receipt    = store.Receipt
+	InletTrial = store.InletTrial
 	// Outbound sends the HTTP requests of declared actions, in
 	// Options.Outbound (ADR-0045, item 7); package fado/outbound makes one
 	// that calls only the hosts a program lists. OutboundRequest and
@@ -433,6 +441,7 @@ const (
 	DefinitionSchema = store.DefinitionSchema
 	DefinitionTable  = store.DefinitionTable
 	DefinitionAction = store.DefinitionAction
+	DefinitionInlet  = store.DefinitionInlet
 )
 
 // Definitions lists the versions of one class, schema, table or action,
@@ -609,6 +618,67 @@ func (db *DB) TryAction(ctx context.Context, name string, args Values, opts ...O
 	return db.s.TryAction(ctx, name, args, opts...)
 }
 
+// DefineInlet stores an inlet (ADR-0065): a way in for messages from
+// outside. An inlet is a definition, the mirror of a declared action:
+// how a message proves who sent it, with a secret of the inlet's
+// connection, which messages the inlet acts on, what makes two messages
+// the same, and the one command a message becomes, create, set or
+// transition, carried out as the service user the inlet names. Its
+// formulas read the message and nothing else. It is for a database
+// administrator, since an inlet says whom the database takes a stranger
+// for, in a database that keeps its users (Options.Users), opened by a
+// program that takes messages (Options.Inbound) and supplies secrets
+// (Options.Secrets). The same definition again is a no-op, and a
+// redefinition is the next version. The error is Diagnostics when the
+// definition is refused.
+func (db *DB) DefineInlet(ctx context.Context, definition []byte, opts ...Option) (*InletInfo, error) {
+	return db.s.DefineInlet(ctx, definition, opts...)
+}
+
+// ValidateInlet reports what DefineInlet would refuse, storing nothing.
+func (db *DB) ValidateInlet(definition []byte) Diagnostics { return db.s.ValidateInlet(definition) }
+
+// Inlets lists the inlets of the database, each with its address, the
+// user it acts as, the command its messages become and whether this
+// process acts on them.
+func (db *DB) Inlets() []InletInfo { return db.s.Inlets() }
+
+// Inlet returns one inlet by name.
+func (db *DB) Inlet(name string) (*InletInfo, bool) { return db.s.Inlet(name) }
+
+// RemoveInlet closes an inlet: its messages are answered as those of a
+// name that is no inlet. Its versions stay, and defining it again opens
+// it as its next version. It is for a database administrator.
+func (db *DB) RemoveInlet(ctx context.Context, name string, opts ...Option) error {
+	return db.s.RemoveInlet(ctx, name, opts...)
+}
+
+// TryInlet answers what an inlet would do with a message, and does
+// nothing: whether it acts on it, and the command with its object as it
+// would be sent. The inlet is one of the database, by name, or a
+// definition that is not stored. The proof is not asked for. It is for
+// a designer.
+func (db *DB) TryInlet(ctx context.Context, name string, definition []byte, m *Message, opts ...Option) (*InletTrial, error) {
+	return db.s.TryInlet(ctx, name, definition, m, opts...)
+}
+
+// Receive takes a message from outside for an inlet (ADR-0065): it
+// checks the proof of the message, and then carries out the one command
+// the message becomes, as the user the inlet names, with the key of the
+// message, so that a message sent twice makes one commit and is answered
+// the second time as the first. It asks for no caller: the proof is the
+// message's own.
+//
+// A message whose proof does not hold is answered ErrNotProven, and
+// nothing of it is read. A name that is no inlet, and any name in a
+// program that takes no messages, is refused with unknown_inlet; a
+// message the inlet cannot read with bad_message; and a command the
+// database refuses with the database's own error. Once the inlet is
+// known the receipt names it and its user, whatever the error.
+func (db *DB) Receive(ctx context.Context, inlet string, m *Message) (*Receipt, error) {
+	return db.s.Receive(ctx, inlet, m)
+}
+
 // Transition moves a document along the named transition of its class,
 // with the assignments in values applied in the same commit (ADR-0040);
 // values may be nil. Every eventless transition that then fires is a
@@ -749,6 +819,11 @@ func (db *DB) Ping(ctx context.Context) error { return db.s.Ping(ctx) }
 // ErrUnknownKey is what Authenticate answers for every key it does not
 // let through, whatever is wrong with it.
 var ErrUnknownKey = store.ErrUnknownKey
+
+// ErrNotProven is what Receive answers for every message whose proof
+// does not hold, whatever is wrong with it, so that a guess learns
+// nothing (ADR-0065, item 3).
+var ErrNotProven = store.ErrNotProven
 
 // The calls below keep the users, groups and keys of a database
 // (ADR-0057). They are for a database opened with Options.Users, which

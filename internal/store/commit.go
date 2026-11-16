@@ -328,6 +328,9 @@ func (s *Store) run(ctx context.Context, cmd command, now time.Time) (*result, e
 	if !cmd.internal && strings.HasPrefix(cmd.o.key, outboxKeyPrefix) {
 		return nil, hintf(CodeBadValue, "", "a key may not start with "+outboxKeyPrefix+", the prefix of the commits the outbox makes", "choose another key")
 	}
+	if !cmd.o.received && strings.HasPrefix(cmd.o.key, inletKeyPrefix) {
+		return nil, hintf(CodeBadValue, "", "a key may not start with "+inletKeyPrefix+", the prefix of the commands the inlets send", "choose another key")
+	}
 	if cmd.o.key != "" {
 		hash = commandHash(cmd)
 		var kind, class, docID, keyed string

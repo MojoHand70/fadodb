@@ -527,9 +527,15 @@ It answers:
 | [`list_schemas`](#list_schemas) | Lists the schemas. | reads |
 | [`list_tables`](#list_tables) | Lists the tables. | reads |
 | [`list_actions`](#list_actions) | Lists every action a rule may name, the engine's own first. | reads |
-| [`definitions`](#definitions) | Lists the versions of one class, schema, table or action, with who defined each and when. | reads |
+| [`definitions`](#definitions) | Lists the versions of one class, schema, table, action or inlet, with who defined each and when. | reads |
 | [`preview_draft`](#preview_draft) | Tries a class definition that is not stored on a create, or on a document of the stored class of the same name, writing nothing. | reads |
 | [`migrate`](#migrate) | Brings every live document of a class that an earlier version computed to the current version. | writes |
+| [`validate_inlet`](#validate_inlet) | Reports what define_inlet would refuse, storing nothing. | reads |
+| [`try_inlet`](#try_inlet) | Answers what an inlet would do with a message, and does nothing: whether it acts on it, and the command the message would become. The proof is not asked for. | reads |
+| [`define_inlet`](#define_inlet) | Defines an inlet: how a message from outside proves who sent it, and the one command it becomes, carried out as a service user. For a database administrator. | writes |
+| [`remove_inlet`](#remove_inlet) | Closes an inlet: its messages are answered as those of a name that is no inlet. Its versions stay. For a database administrator. | writes |
+| [`get_inlet`](#get_inlet) | Reads an inlet back as it was defined. | reads |
+| [`list_inlets`](#list_inlets) | Lists the inlets. | reads |
 
 ### define_class
 
@@ -761,11 +767,11 @@ It answers:
 
 ### definitions
 
-Lists the versions of one class, schema, table or action, with who defined each and when. It reads; in Go it is the call `Definitions`.
+Lists the versions of one class, schema, table, action or inlet, with who defined each and when. It reads; in Go it is the call `Definitions`.
 
 | Member | Type | | What it is |
 |---|---|---|---|
-| `what` | text | needed | class, schema, table or action |
+| `what` | text | needed | class, schema, table, action or inlet |
 | `name` | text | needed | its name |
 
 It answers:
@@ -808,6 +814,93 @@ It answers:
 | Member | What it holds |
 |---|---|
 | `migrated` | how many documents it moved |
+
+### validate_inlet
+
+Reports what define_inlet would refuse, storing nothing. It reads; in Go it is the call `ValidateInlet`.
+
+| Member | Type | | What it is |
+|---|---|---|---|
+| `definition` | definition | needed | the definition, as JSON |
+
+It answers:
+
+| Member | What it holds |
+|---|---|
+| `diagnostics` | the findings; an empty list when nothing is wrong |
+
+### try_inlet
+
+Answers what an inlet would do with a message, and does nothing: whether it acts on it, and the command the message would become. The proof is not asked for. It reads; in Go it is the call `TryInlet`.
+
+| Member | Type | | What it is |
+|---|---|---|---|
+| `inlet` | text |  | the name of an inlet of the database |
+| `definition` | definition |  | a definition that is not stored, in place of a name |
+| `message` | object |  | the message: headers and params, each an object of texts; body, the body as JSON or as one text; and form, true when the body holds the fields of a form |
+
+And, of the members that mean the same everywhere: `for`.
+
+It answers:
+
+| Member | What it holds |
+|---|---|
+| `trial` | whether the inlet acts on the message, the user it would act as, and the command with its object and its key |
+
+### define_inlet
+
+Defines an inlet: how a message from outside proves who sent it, and the one command it becomes, carried out as a service user. For a database administrator. It writes; in Go it is the call `DefineInlet`.
+
+| Member | Type | | What it is |
+|---|---|---|---|
+| `definition` | definition | needed | the definition, as JSON |
+
+And, of the members that mean the same everywhere: `for`.
+
+It answers:
+
+| Member | What it holds |
+|---|---|
+| `inlet` | the definition as it was given, with its name, its version and who defined it |
+
+### remove_inlet
+
+Closes an inlet: its messages are answered as those of a name that is no inlet. Its versions stay. For a database administrator. It writes; in Go it is the call `RemoveInlet`.
+
+| Member | Type | | What it is |
+|---|---|---|---|
+| `name` | text | needed | the name of the inlet |
+
+And, of the members that mean the same everywhere: `for`.
+
+It answers `{}`.
+
+### get_inlet
+
+Reads an inlet back as it was defined. It reads; in Go it is the call `Definition`.
+
+| Member | Type | | What it is |
+|---|---|---|---|
+| `name` | text | needed | the name of the inlet |
+| `version` | whole number |  | an earlier version; the current one when left out |
+
+It answers:
+
+| Member | What it holds |
+|---|---|
+| `inlet` | the definition as it was given, with its name, its version and who defined it |
+
+### list_inlets
+
+Lists the inlets. It reads; in Go it is the call `Inlets`.
+
+It takes nothing: its object is `{}`.
+
+It answers:
+
+| Member | What it holds |
+|---|---|
+| `inlets` | the inlets, each with its address, the user it acts as, the command its messages become and whether this server acts on them |
 
 ## Tables, actions and the queue
 
@@ -1179,7 +1272,7 @@ Authorization: Bearer …
   | 400 | `bad_json` |
   | 401 | `unauthenticated` |
   | 403 | `forbidden`, `reason_required` |
-  | 404 | `unknown_class`, `unknown_document`, `unknown_table`, `unknown_schema`, `unknown_blob`, `unknown_action`, `unknown_row`, `unknown_user`, `unknown_key`, `unknown_command` |
+  | 404 | `unknown_class`, `unknown_document`, `unknown_table`, `unknown_schema`, `unknown_blob`, `unknown_action`, `unknown_row`, `unknown_user`, `unknown_inlet`, `unknown_key`, `unknown_command` |
   | 409 | `key_reused`, `duplicate`, `terminal`, `wrong_state`, `guard_false` |
   | 413 | `blob_too_large`, `too_large` |
   | 422 | every other refusal |
@@ -1231,10 +1324,12 @@ A few calls of the Go package have no command.
 | `Class` | it answers the engine's compiled form to a Go program; get_class answers the definition |
 | `Close` | closing a database is for the program that opened it |
 | `Exec` | it is the door the commands come through |
+| `Inlet` | it answers one entry of the list that list_inlets answers whole |
 | `OpenBlob` | the bytes of a file are not JSON: they travel beside the commands, with the server |
 | `OpenFile` | the bytes of a file are not JSON: they travel beside the commands, with the server |
 | `OutboxCounts` | it counts what of the queue is still to do, for whoever watches a server, which answers it at GET /v1/metrics; outbox lists the actions themselves |
 | `Ping` | it asks whether the database answers; a server answers it at GET /v1/health, for anybody |
 | `PutBlob` | the bytes of a file are not JSON: they travel beside the commands, with the server |
+| `Receive` | it takes a message from outside, which proves itself and carries no key of a user: a server answers it at POST /v1/in/<inlet> |
 | `Schema` | it answers the engine's compiled form to a Go program; get_schema answers the definition |
 | `Table` | it answers the engine's compiled form to a Go program; get_table answers the definition |

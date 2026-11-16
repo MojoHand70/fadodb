@@ -38,7 +38,7 @@ const DefaultMaxIndexedRows = 100000
 // engineSchema is the version of the store's own tables. A database made
 // by another engine schema is refused: before 1.0 there is no upgrade
 // path, and a pre-release file is recreated.
-const engineSchema = 10
+const engineSchema = 11
 
 // Options configure Open. The ones that are properties of the database,
 // Synchronous and MaxText, are read at creation and kept in the metadata
@@ -128,6 +128,14 @@ type Options struct {
 	// off: the database then keeps none, and those calls answer
 	// not_supported.
 	Users bool
+	// Inbound says that this program takes messages from outside at the
+	// inlets of the database (ADR-0065, item 8): an inlet can be
+	// defined, and Receive acts on a message. Without it, the default,
+	// a definition of an inlet is refused with not_supported and every
+	// message is answered as one for a name that is no inlet. It is the
+	// host program's, given at every Open, as whether it sends requests
+	// is; fadodb serve gives it when its settings have inbound.
+	Inbound bool
 	// Now is the clock of the database: it stamps every commit and is
 	// what NOW() and TODAY() read in every formula, unless a call that
 	// reads or previews chooses a moment with At (ADR-0042). nil is
@@ -216,6 +224,12 @@ type Store struct {
 	// nil when it gave none.
 	outbound Outbound
 	secretFn func(ctx context.Context, connection, name string) (string, error)
+	// inlets are the inlets by upper-cased name (ADR-0065), and inbound
+	// says that this process takes their messages, which is the host
+	// program's to say.
+	inlets     map[string]*inlet
+	inletOrder []string
+	inbound    bool
 
 	// sqlConn is the read-only SQL endpoint's connection, with its
 	// authorizer, made on first use; sqlMu serialises its statements.
@@ -385,7 +399,7 @@ func open(path string, o Options) (*Store, error) {
 		schemas: model.NewSchemaSet(), schemaJSON: map[string][]byte{}, classes: map[string]*class{}, versions: map[string]map[int]*class{},
 		tables: map[string]*table{}, plans: map[*formula.QuerySlot]*lookupPlan{},
 		actions: map[string]*action{}, funcs: funcs, inFlight: map[flight]struct{}{}, writesBack: map[string]bool{},
-		outbound: o.Outbound, secretFn: o.Secrets,
+		outbound: o.Outbound, secretFn: o.Secrets, inlets: map[string]*inlet{}, inbound: o.Inbound,
 		stop: make(chan struct{}), done: make(chan struct{}),
 		outbox: o.Outbox, wake: make(chan struct{}, 1), workDone: make(chan struct{}),
 	}
@@ -831,7 +845,8 @@ func (s *Store) load(ctx context.Context) error {
 			return err
 		}
 	}
-	return nil
+	// The inlets, which name the classes (ADR-0065).
+	return s.loadInlets(ctx)
 }
 
 // env is what definitions compile against: the schemas, the tables, the

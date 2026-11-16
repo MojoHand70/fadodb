@@ -1129,7 +1129,11 @@ a user.
 > `Subscribe`, and its address on the server, `POST /v1/subscribe`.
 > The server runs in a container as on a machine: the image the
 > repository builds holds the tool and nothing else
-> ([in a container](manual/in-a-container.md)).
+> ([in a container](manual/in-a-container.md)). Of the way in for
+> messages from outside (ADR-0065, proposed) the engine's part is
+> built: an inlet, a definition that says how a message proves who
+> sent it and which one command it becomes, its commands, and the Go
+> call `Receive`. The server's address for messages is not built.
 
 | Address | Purpose | Record |
 |---|---|---|

@@ -305,10 +305,16 @@ watches one; and a compose file keeps a served database running. A
 release publishes the image under its version; none has yet.
 Not built yet: the door at the server itself, a tool that waits for a
 change and files through the door, which are questions of that record;
-and the way in for messages from outside, which ADR-0065 proposes: a
-definition, the mirror of an action's, that says how a message proves
-its sender and which one command it becomes, run by the server as a
-service user. It waits for the owner's rulings.
+and the address of the way in for messages from outside. Of that way
+in (ADR-0065, proposed) the engine's part is built: an inlet, a
+definition that is the mirror of an action's, says how a message
+proves who sent it and which one command it becomes; six commands
+check, try, define, read, list and remove one; and the Go call
+`Receive` takes a message, checks its proof and carries the command
+out as the service user the inlet names, once however often the
+message comes. The server does not take messages yet: its address,
+`POST /v1/in/<inlet>`, the setting that turns it on and the check of
+an inlet from the command line are the next step.
 This page is updated when a phase starts and when it ends;
 it never describes a phase as done before its acceptance criteria pass.
 

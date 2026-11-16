@@ -519,3 +519,66 @@ func between(chapter, from, to string) string {
 	block, _, _ := strings.Cut(after, to)
 	return block
 }
+
+// A statement that runs longer than the server lets a command run is
+// stopped and answered timeout, as any other command is, and the log
+// says the same: nothing is wrong with what the caller sent (ADR-0059,
+// item 2).
+func TestAStatementThatRunsTooLong(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "acme.fado")
+	if code, _, said := tool("init", path); code != 0 {
+		t.Fatal(said)
+	}
+	db, err := fado.Open(path, fado.Options{Users: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	if _, err := db.DefineClass(ctx, []byte(`{"name": "Invoice", "variables": {"supplier": {"type": "text"}},
+ "states": {"initial": "draft", "list": ["draft"]},
+ "access": {"read": "TRUE", "create": "TRUE", "update": "TRUE", "delete": "FALSE"}}`), fado.As(fado.Principal{ID: "setup", System: []string{fado.GroupDesigners}})); err != nil {
+		t.Fatal(err)
+	}
+	for _, supplier := range []string{"Paper Mill", "Ink and Son", "Zażółć", "Staples"} {
+		if _, err := db.Create(ctx, "Invoice", fado.Values{"supplier": supplier}, fado.As(fado.Principal{ID: "bob"})); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if code, _, said := tool("user", "add", "olga", "--kind", "person", "--system", "analysts", "--db", path); code != 0 {
+		t.Fatal(said)
+	}
+	_, key, _ := tool("key", "new", "olga", "--db", path)
+	key = strings.TrimSpace(key)
+	settings := filepath.Join(dir, "settings.json")
+	if err := os.WriteFile(settings, []byte(`{"limits": {"command_seconds": 0.05}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	addr, log, stop := serving(t, path, "--listen", "127.0.0.1:0", "--settings", settings)
+	client := &http.Client{Timeout: 30 * time.Second}
+	// Four invoices joined sixteen times are four billion rows.
+	var from []string
+	for i := 0; i < 16; i++ {
+		from = append(from, "Invoice t"+strconv.Itoa(i))
+	}
+	status, body := ask(t, client, "POST", "http://"+addr+"/v1/sql", key, `{"statement": "SELECT count(*) FROM `+strings.Join(from, ", ")+`"}`)
+	if status != http.StatusGatewayTimeout || !strings.Contains(body, `"code":"timeout"`) || !strings.Contains(body, "50ms") {
+		t.Errorf("a statement that runs longer than the server lets one run: %d %s", status, body)
+	}
+	// The next statement runs, and one that is wrong is still the
+	// caller's to mend.
+	if status, body := ask(t, client, "POST", "http://"+addr+"/v1/sql", key, `{"statement": "SELECT count(*) AS n FROM Invoice"}`); status != 200 || !strings.Contains(body, `"rows":[[4]]`) {
+		t.Errorf("the statement after one that was stopped: %d %s", status, body)
+	}
+	if status, body := ask(t, client, "POST", "http://"+addr+"/v1/sql", key, `{"statement": "SELECT nothing FROM Invoice"}`); status != 422 || !strings.Contains(body, `"code":"bad_value"`) {
+		t.Errorf("a statement that names no column: %d %s", status, body)
+	}
+	stop()
+	if !strings.Contains(log.String(), `"command":"sql","user":"olga","status":504,"code":"timeout"`) {
+		t.Errorf("the log of a statement that ran too long:\n%s", log)
+	}
+}

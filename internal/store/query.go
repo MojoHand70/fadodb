@@ -282,14 +282,24 @@ func (s *Store) SQL(ctx context.Context, text string, args []any, opts ...Option
 		}
 		s.sqlConn = conn
 	}
+	// A statement that was stopped, because the time its caller gave it
+	// was up or because its caller left, did not fail by what it says:
+	// that is the storage's word, as with every other read, and no
+	// bad_value. A door that set the time then answers that it was up.
+	failed := func(err error) error {
+		if ctx.Err() != nil {
+			return storageErr("run the statement", ctx.Err())
+		}
+		return sqlErr(err)
+	}
 	rows, err := s.sqlConn.QueryContext(ctx, text, args...)
 	if err != nil {
-		return nil, sqlErr(err)
+		return nil, failed(err)
 	}
 	defer rows.Close()
 	cols, err := rows.Columns()
 	if err != nil {
-		return nil, sqlErr(err)
+		return nil, failed(err)
 	}
 	out := &Rows{Columns: cols}
 	for rows.Next() {
@@ -302,12 +312,12 @@ func (s *Store) SQL(ctx context.Context, text string, args []any, opts ...Option
 			dest[i] = &vals[i]
 		}
 		if err := rows.Scan(dest...); err != nil {
-			return nil, sqlErr(err)
+			return nil, failed(err)
 		}
 		out.Rows = append(out.Rows, vals)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, sqlErr(err)
+		return nil, failed(err)
 	}
 	return out, nil
 }

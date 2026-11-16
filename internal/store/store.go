@@ -1005,6 +1005,12 @@ func (s *Store) checkpoint(conn *sql.Conn, every time.Duration, limit int64) {
 	// the database takes the one that was used last and gives it back,
 	// which starts its quarter of a minute again. The others go when
 	// nobody has used them for that long.
+	//
+	// The asking is one reader more for the instant it takes. A read
+	// that falls in that instant on a quiet database opens a connection
+	// of its own, and beside eight callers reading at once a ninth
+	// connection is opened and one is closed when the nine are back:
+	// one opening in five seconds at the most.
 	asked, often := time.Now(), readerIdle/3
 	for {
 		select {

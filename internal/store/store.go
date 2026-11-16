@@ -42,10 +42,14 @@ const DefaultMaxIndexedRows = 100000
 // callers reading at once, a read takes 11.9 µs with two kept ready,
 // 6.7 µs with four, 4.3 µs with eight and 3.6 µs with sixteen, and each
 // connection kept takes about 3.5 MB of the machine's memory.
-const (
-	readersKept = 8
-	readerIdle  = 15 * time.Second
-)
+const readersKept = 8
+
+// readerIdle is how long a connection that reads stays ready after its
+// last read. One connection is kept ready for good: the checkpointer
+// asks after it more often than that, so that a caller who reads once
+// a minute does not pay for a connection each time, which takes
+// milliseconds where a read takes microseconds. A test shortens it.
+var readerIdle = 15 * time.Second
 
 // lastOfCommandSQL finds the last version a command made of its
 // document: the versions of the moves its own commit caused, when it
@@ -997,11 +1001,20 @@ func (s *Store) checkpoint(conn *sql.Conn, every time.Duration, limit int64) {
 	defer copyLog.close()
 	defer emptyLog.close()
 	log := s.path + "-wal"
+	// One connection that reads is kept ready for good: asking after
+	// the database takes the one that was used last and gives it back,
+	// which starts its quarter of a minute again. The others go when
+	// nobody has used them for that long.
+	asked, often := time.Now(), readerIdle/3
 	for {
 		select {
 		case <-s.stop:
 			return
 		case <-t.C:
+			if now := time.Now(); now.Sub(asked) >= often {
+				asked = now
+				_ = s.db.PingContext(ctx)
+			}
 			fi, err := os.Stat(log)
 			if err != nil || fi.Size() <= limit {
 				copyLog.run(ctx)

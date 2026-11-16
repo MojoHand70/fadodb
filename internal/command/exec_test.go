@@ -917,6 +917,116 @@ func TestTheCommandsOfUsersAndKeys(t *testing.T) {
 	}
 }
 
+// The inlets of a database (ADR-0065), command by command: Dan writes
+// the inlet of the bank, has the engine check it and tries it with a
+// message; Olga, an administrator, defines it and removes it.
+func TestTheCommandsOfTheInlets(t *testing.T) {
+	o := store.Options{Users: true, Inbound: true, Now: func() time.Time { return clock },
+		Secrets: func(context.Context, string, string) (string, error) { return "the secret of the bank", nil }}
+	o.Outbox.Manual = true
+	s, err := store.Open(filepath.Join(t.TempDir(), "acme.fado"), o)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { s.Close() })
+	machine := store.Principal{System: []string{store.GroupAdministrators}}
+	run(t, s, machine, "create_user", `{"id": "bank-in", "kind": "service", "groups": ["finance"]}`)
+	run(t, s, olga, "define_class", `{"definition": `+invoiceClass+`}`)
+	run(t, s, bob, "create", `{"class": "Invoice", "id": "i-1", "values": {"number": "FV/1"}}`)
+	const inlet = `{"name": "bank.approved", "label": "The bank approves", "as": "bank-in",
+ "connection": {"name": "bank", "secrets": ["signing_key"]},
+ "proof": {"form": "timestamp.body", "header": "Bank-Signature", "secret": "signing_key"},
+ "when": "JSONVALUE(BODY, \"type\") = \"approved\"",
+ "key": "JSONVALUE(BODY, \"id\")",
+ "command": "transition",
+ "object": {"class": "Invoice", "id": "JSONVALUE(BODY, \"invoice\")", "transition": "approve", "values": {"note": "JSONVALUE(HEADERS, \"x-note\")"}}}`
+	const message = `{"headers": {"X-Note": "by the bank"}, "body": {"id": "n-1", "type": "approved", "invoice": "i-1"}}`
+
+	// validate_inlet answers the findings, and none for a sound one.
+	if got := run(t, s, dan, "validate_inlet", `{"definition": `+inlet+`}`); len(got["diagnostics"].([]any)) != 0 {
+		t.Errorf("validate_inlet of a sound inlet answers %v", got)
+	}
+	found := run(t, s, dan, "validate_inlet", `{"definition": `+strings.Replace(inlet, `"transition": "approve"`, `"transition": "settle"`, 1)+`}`)["diagnostics"].([]any)
+	if len(found) != 1 || found[0].(map[string]any)["code"] != model.CodeUnknownTransition || found[0].(map[string]any)["path"] != "/object/transition" {
+		t.Errorf("validate_inlet of an inlet with a transition the class has not answers %v", found)
+	}
+	// try_inlet answers the command a message would become, for a
+	// definition that is not stored, and does nothing.
+	trial := run(t, s, dan, "try_inlet", `{"definition": `+inlet+`, "message": `+message+`}`)
+	if got, want := string(mustJSON(trial)), `{"trial":{"acts":true,"as":"bank-in","command":"transition","inlet":"bank.approved",`+
+		`"object":{"class":"Invoice","id":"i-1","key":"in:bank.approved:n-1","transition":"approve","values":{"note":"by the bank"}}}}`; got != want {
+		t.Errorf("try_inlet answers\n%s\nwant\n%s", got, want)
+	}
+	if e := refused(t, s, ann, "try_inlet", `{"definition": `+inlet+`, "message": `+message+`}`); e.Code != store.CodeForbidden {
+		t.Errorf("try_inlet by somebody who designs nothing: %+v", e)
+	}
+	if e := refused(t, s, dan, "try_inlet", `{"definition": `+inlet+`, "message": {"heads": {}}}`); e.Code != CodeBadJSON || e.Path != "/message" {
+		t.Errorf("try_inlet with a message it cannot read: %+v", e)
+	}
+	// A body given as one text is the body itself: a form.
+	form := run(t, s, dan, "try_inlet", `{"definition": `+strings.Replace(inlet, `"when": "JSONVALUE(BODY, \"type\") = \"approved\"",`, ``, 1)+`, "message": {"form": true, "body": "id=n-2&invoice=i-1"}}`)
+	if object := form["trial"].(map[string]any)["object"].(map[string]any); object["id"] != "i-1" || object["key"] != "in:bank.approved:n-2" {
+		t.Errorf("try_inlet of a form answers %v", form)
+	}
+
+	// define_inlet is an administrator's, and answers the definition as
+	// it was given, with who defined it.
+	if e := refused(t, s, dan, "define_inlet", `{"definition": `+inlet+`}`); e.Code != store.CodeForbidden || e.Path != "/system/administrators" {
+		t.Errorf("define_inlet by a designer: %+v", e)
+	}
+	defined := run(t, s, olga, "define_inlet", `{"definition": `+inlet+`}`)["inlet"].(map[string]any)
+	if defined["name"] != "bank.approved" || defined["version"] != float64(1) || defined["defined"].(map[string]any)["by"] != "olga" ||
+		defined["definition"].(map[string]any)["as"] != "bank-in" {
+		t.Errorf("define_inlet answers %v", defined)
+	}
+	if e := refused(t, s, olga, "define_inlet", `{"definition": `+strings.Replace(inlet, `"as": "bank-in"`, `"as": "nobody"`, 1)+`}`); e.Code != CodeBadDefinition {
+		t.Errorf("define_inlet of an inlet that acts as nobody: %+v", e)
+	}
+	// get_inlet reads it back, list_inlets lists it with its address,
+	// and definitions says who defined each version.
+	if got := run(t, s, ann, "get_inlet", `{"name": "bank.approved"}`)["inlet"].(map[string]any); got["version"] != float64(1) || got["definition"].(map[string]any)["command"] != "transition" {
+		t.Errorf("get_inlet answers %v", got)
+	}
+	listed := run(t, s, ann, "list_inlets", `{}`)["inlets"].([]any)
+	if got, want := string(mustJSON(listed)), `[{"address":"/v1/in/bank.approved","as":"bank-in","available":true,"class":"Invoice","command":"transition","connection":"bank",`+
+		`"defined":{"at":`+fmt.Sprint(clock.Unix())+`,"by":"olga","kind":"person"},"label":"The bank approves","name":"bank.approved",`+
+		`"proof":{"form":"timestamp.body","header":"Bank-Signature","secret":"signing_key"},"transition":"approve","version":1}]`; got != want {
+		t.Errorf("list_inlets answers\n%s\nwant\n%s", got, want)
+	}
+	if versions := run(t, s, ann, "definitions", `{"what": "inlet", "name": "bank.approved"}`)["versions"].([]any); len(versions) != 1 {
+		t.Errorf("definitions of an inlet answers %v", versions)
+	}
+	// A trial of the stored inlet, by its name.
+	if trial := run(t, s, dan, "try_inlet", `{"inlet": "bank.approved", "message": {"body": {"type": "other"}}}`)["trial"].(map[string]any); trial["acts"] != false || trial["command"] != nil {
+		t.Errorf("try_inlet of a message of another kind answers %v", trial)
+	}
+	// The message itself is no command: it comes with a proof and no
+	// key of a user, through Receive. Here it moves the invoice.
+	ts := fmt.Sprint(clock.Unix())
+	body := []byte(`{"id": "n-1", "type": "approved", "invoice": "i-1"}`)
+	receipt, err := s.Receive(context.Background(), "bank.approved", &store.Message{Body: body,
+		Headers: map[string]string{"Bank-Signature": "t=" + ts + ",v1=" + store.Sign("the secret of the bank", ts, body), "X-Note": "by the bank"}})
+	if err != nil || receipt.Document.State != "approved" || receipt.Document.Values["note"] != "by the bank" || receipt.Document.UpdatedBy != "bank-in" {
+		t.Errorf("the message of the bank: %+v %v", receipt, err)
+	}
+	// remove_inlet closes it, and is an administrator's.
+	if e := refused(t, s, dan, "remove_inlet", `{"name": "bank.approved"}`); e.Code != store.CodeForbidden {
+		t.Errorf("remove_inlet by a designer: %+v", e)
+	}
+	if got := run(t, s, olga, "remove_inlet", `{"name": "bank.approved"}`); len(got) != 0 {
+		t.Errorf("remove_inlet answers %v", got)
+	}
+	if e := refused(t, s, olga, "remove_inlet", `{"name": "bank.approved"}`); e.Code != store.CodeUnknownInlet {
+		t.Errorf("remove_inlet of an inlet that was removed: %+v", e)
+	}
+	if listed := run(t, s, ann, "list_inlets", `{}`)["inlets"].([]any); len(listed) != 0 {
+		t.Errorf("list_inlets after the removal answers %v", listed)
+	}
+	if e := refused(t, s, ann, "get_inlet", `{"name": "bank.nothing"}`); e.Code != store.CodeUnknownInlet {
+		t.Errorf("get_inlet of a name that is no inlet: %+v", e)
+	}
+}
+
 // TestEveryCommandIsRun fails when a command of the table was run by no
 // test of this package. It runs last: the tests of a package run in the
 // order of their files and, in a file, as written. When the tests that

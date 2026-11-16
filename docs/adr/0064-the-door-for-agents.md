@@ -231,7 +231,7 @@ user in `finance` with a key of its own.
   talk its way past.
 - The tools cannot fall behind the engine, and a tool cannot behave
   apart from its command.
-- The whole list of the tools is about 45,000 characters, which an
+- The whole list of the tools is about 47,000 characters, which an
   agent's program reads once. `--tools` shortens it.
 - An agent hears of no change by itself until question 3 is ruled and
   built, and puts no file on a document until question 4 is.

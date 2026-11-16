@@ -21,6 +21,7 @@ const (
 	DefinitionSchema = "schema"
 	DefinitionTable  = "table"
 	DefinitionAction = "action"
+	DefinitionInlet  = "inlet"
 )
 
 // Defined says who defined a version and when: By, the id of the caller,
@@ -59,9 +60,9 @@ func recordDefinition(ctx context.Context, w execer, what, name string, version 
 // was defined under answers an empty list.
 func (s *Store) Definitions(ctx context.Context, what, name string) ([]Definition, error) {
 	switch what {
-	case DefinitionClass, DefinitionSchema, DefinitionTable, DefinitionAction:
+	case DefinitionClass, DefinitionSchema, DefinitionTable, DefinitionAction, DefinitionInlet:
 	default:
-		return nil, hintf(CodeBadValue, "", "a definition is a "+DefinitionClass+", a "+DefinitionSchema+", a "+DefinitionTable+" or an "+DefinitionAction+", got "+strings.TrimSpace(what), "name one of the four")
+		return nil, noSuchDefinition(what)
 	}
 	rows, err := s.db.QueryContext(ctx, "SELECT name, version, defined_at, defined_by, defined_kind, defined_for FROM definitions WHERE what = ? AND name = ? ORDER BY version", what, name)
 	if err != nil {
@@ -84,7 +85,12 @@ func (s *Store) Definitions(ctx context.Context, what, name string) ([]Definitio
 	return out, nil
 }
 
-// loadDefined gives every class, table and action that was loaded the
+// noSuchDefinition is the refusal of a kind of definition that is none.
+func noSuchDefinition(what string) *Error {
+	return hintf(CodeBadValue, "", "a definition is a "+DefinitionClass+", a "+DefinitionSchema+", a "+DefinitionTable+", an "+DefinitionAction+" or an "+DefinitionInlet+", got "+strings.TrimSpace(what), "name one of the five")
+}
+
+// loadDefined gives every class, table, action and inlet that was loaded the
 // record of its current version. The caller is Open; a database that
 // cannot be read here was refused before.
 func (s *Store) loadDefined(ctx context.Context) {
@@ -115,6 +121,10 @@ func (s *Store) loadDefined(ctx context.Context) {
 		case DefinitionAction:
 			if a, ok := s.actions[key]; ok && a.spec.Version == version {
 				a.defined = d
+			}
+		case DefinitionInlet:
+			if in, ok := s.inlets[key]; ok && in.spec.Version == version {
+				in.defined = d
 			}
 		}
 	}

@@ -356,10 +356,15 @@ type options struct {
 	key             string
 	businessDate    time.Time
 	hasBusinessDate bool
-	id              string
-	replace         bool
-	version         int64
-	at              time.Time
+	// received marks the command of an inlet (ADR-0065), whose key
+	// starts with the prefix a caller may not use. It stands beside
+	// the other flag so that the options are no larger for it: they
+	// are made for every call.
+	received bool
+	id       string
+	replace  bool
+	version  int64
+	at       time.Time
 	// reason is why a content administrator acts past a rule (ADR-0052,
 	// item 4): the event of the commit keeps it.
 	reason string

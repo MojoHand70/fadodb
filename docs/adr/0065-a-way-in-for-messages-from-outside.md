@@ -350,6 +350,66 @@ the message into one command.
    database and change nothing in it, and a rule of the class does the
    rest; or every command that commits a document, `delete` among them.
 
+## Settled while building the engine's part
+
+The owner took the idea on 2026-11-16, once it was plain that an inlet
+is data and no code ("Then we are fine"). Questions 2 to 5 are his
+still; each is built as proposed and is small to change. Built first:
+the engine's part, which is the definition, its six commands and the
+Go call `Receive`. The address on the server, the setting `inbound`
+and `fadodb inlet check` are the next step. Until then `fadodb serve`
+takes no inlet: `define_inlet` answers `not_supported` there, as item
+8 says of a server that takes no messages.
+
+- **The program says that it takes messages**, with `Options.Inbound`,
+  as it says with `Options.Outbound` that it sends requests. Without
+  it an inlet cannot be defined and `Receive` answers `unknown_inlet`
+  for every name.
+- **An inlet needs a database that keeps its users** (`Options.Users`):
+  it acts as one of them. When it is defined the user must be there,
+  of the kind `service` and not disabled: `unknown_user` or
+  `not_allowed`, at `/as`. The user is looked up again for every
+  message, as it is then: an administrator who disables `bank-in`
+  closes every inlet that acts as it, and the next message is answered
+  `unknown_inlet`.
+- **`get_inlet`, `list_inlets` and `validate_inlet` are open to every
+  caller with a key**, as reading and checking a class and an action
+  are (ADR-0051, item 4). Item 9 said a designer and an administrator.
+  An inlet holds the name of a secret and never the secret.
+- **The header that carries the proof is not among `HEADERS`.** With
+  the form `shown` it holds the secret itself, and a formula that
+  copied it would put the secret into a document.
+- **The key of a message** is `in:<inlet>:<key>`, the key at most 200
+  characters. **No caller's key may start with `in:`**, as none may
+  start with `outbox:`: otherwise any user could use up the key of a
+  message before the message came, and the message would be refused.
+  The same number with other content is refused as a caller's reused
+  key is, with `key_reused`.
+- **What `Receive` answers of a proof that does not hold** is one
+  error, `ErrNotProven`, whatever is wrong, as `Authenticate` answers
+  one for every key it does not let through. A door answers it
+  `unauthenticated`. A secret the program cannot supply is
+  `secret_unavailable`, which names the secret and never holds it.
+- **A body** is read as JSON when it is JSON, and as the fields of a
+  form when the message says so. Anything else gives the formulas a
+  blank `BODY`, and `RAW` still has the text.
+- **A blank** where a message must give something is `bad_message`
+  with the place: the key, when the inlet names one, and the id, for a
+  `set` and a `transition`. A `create` that names no id is given one.
+- **`remove_inlet` keeps the versions** and who defined them, and
+  defining the inlet again is its next version. Who removed it is in
+  the line the server writes for the command, and nowhere in the
+  database.
+- **A class that changes under an inlet** does not refuse the change
+  and does not stop the database from opening. What the inlet says of
+  the class is found when the next message comes, and refused then
+  with the engine's own code, such as `unknown_variable`.
+- **`try_inlet` answers the command and its object** and runs nothing.
+  Whoever wants to see what the command would do sends the object to
+  `preview`.
+- **The layout of a database is 11**: the two tables of the inlets,
+  whose names no class may take.
+
 ## Consequences
 
 - A system that speaks only its own language is joined to a database

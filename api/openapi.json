@@ -9,7 +9,7 @@
             }
           }
         },
-        "description": "The command was not carried out. The body holds the refusal under `error`, with its code; a caller reads the code, and the status is worked out from it:\n\n| Status | Codes |\n|---|---|\n| 400 | `bad_json` |\n| 401 | `unauthenticated` |\n| 403 | `forbidden`, `reason_required` |\n| 404 | `unknown_class`, `unknown_document`, `unknown_table`, `unknown_schema`, `unknown_blob`, `unknown_action`, `unknown_row`, `unknown_user`, `unknown_key`, `unknown_command` |\n| 409 | `key_reused`, `duplicate`, `terminal`, `wrong_state`, `guard_false` |\n| 413 | `blob_too_large`, `too_large` |\n| 499 | `caller_left` |\n| 500 | `storage`, `internal` |\n| 503 | `closed`, `busy` |\n| 504 | `timeout` |\n| 422 | every other refusal |\n"
+        "description": "The command was not carried out. The body holds the refusal under `error`, with its code; a caller reads the code, and the status is worked out from it:\n\n| Status | Codes |\n|---|---|\n| 400 | `bad_json` |\n| 401 | `unauthenticated` |\n| 403 | `forbidden`, `reason_required` |\n| 404 | `unknown_class`, `unknown_document`, `unknown_table`, `unknown_schema`, `unknown_blob`, `unknown_action`, `unknown_row`, `unknown_user`, `unknown_inlet`, `unknown_key`, `unknown_command` |\n| 409 | `key_reused`, `duplicate`, `terminal`, `wrong_state`, `guard_false` |\n| 413 | `blob_too_large`, `too_large` |\n| 499 | `caller_left` |\n| 500 | `storage`, `internal` |\n| 503 | `closed`, `busy` |\n| 504 | `timeout` |\n| 422 | every other refusal |\n"
       }
     },
     "schemas": {
@@ -805,6 +805,65 @@
         "x-fado-mark": "writes"
       }
     },
+    "/v1/define_inlet": {
+      "post": {
+        "description": "It writes. In Go it is the call `DefineInlet`.",
+        "operationId": "define_inlet",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "definition": {
+                    "description": "the definition, as JSON",
+                    "type": "object"
+                  },
+                  "for": {
+                    "description": "the id of whoever the caller acts for; let through only while a substitution says so",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "definition"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "inlet": {
+                      "description": "the definition as it was given, with its name, its version and who defined it"
+                    }
+                  },
+                  "required": [
+                    "inlet"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "The command ran."
+          },
+          "default": {
+            "$ref": "#/components/responses/Refused"
+          }
+        },
+        "summary": "Defines an inlet: how a message from outside proves who sent it, and the one command it becomes, carried out as a service user. For a database administrator.",
+        "tags": [
+          "Definitions"
+        ],
+        "x-fado-call": "DefineInlet",
+        "x-fado-mark": "writes"
+      }
+    },
     "/v1/define_schema": {
       "post": {
         "description": "It writes. In Go it is the call `DefineSchema`.",
@@ -938,7 +997,7 @@
                     "type": "string"
                   },
                   "what": {
-                    "description": "class, schema, table or action",
+                    "description": "class, schema, table, action or inlet",
                     "type": "string"
                   }
                 },
@@ -975,7 +1034,7 @@
             "$ref": "#/components/responses/Refused"
           }
         },
-        "summary": "Lists the versions of one class, schema, table or action, with who defined each and when.",
+        "summary": "Lists the versions of one class, schema, table, action or inlet, with who defined each and when.",
         "tags": [
           "Definitions"
         ],
@@ -1579,6 +1638,65 @@
         "x-fado-mark": "reads"
       }
     },
+    "/v1/get_inlet": {
+      "post": {
+        "description": "It reads. In Go it is the call `Definition`.",
+        "operationId": "get_inlet",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "name": {
+                    "description": "the name of the inlet",
+                    "type": "string"
+                  },
+                  "version": {
+                    "description": "an earlier version; the current one when left out",
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "name"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "inlet": {
+                      "description": "the definition as it was given, with its name, its version and who defined it"
+                    }
+                  },
+                  "required": [
+                    "inlet"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "The command ran."
+          },
+          "default": {
+            "$ref": "#/components/responses/Refused"
+          }
+        },
+        "summary": "Reads an inlet back as it was defined.",
+        "tags": [
+          "Definitions"
+        ],
+        "x-fado-call": "Definition",
+        "x-fado-mark": "reads"
+      }
+    },
     "/v1/get_schema": {
       "post": {
         "description": "It reads. In Go it is the call `Definition`.",
@@ -2014,6 +2132,53 @@
           "Definitions"
         ],
         "x-fado-call": "Classes",
+        "x-fado-mark": "reads"
+      }
+    },
+    "/v1/list_inlets": {
+      "post": {
+        "description": "It reads. In Go it is the call `Inlets`.",
+        "operationId": "list_inlets",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {},
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "inlets": {
+                      "description": "the inlets, each with its address, the user it acts as, the command its messages become and whether this server acts on them"
+                    }
+                  },
+                  "required": [
+                    "inlets"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "The command ran."
+          },
+          "default": {
+            "$ref": "#/components/responses/Refused"
+          }
+        },
+        "summary": "Lists the inlets.",
+        "tags": [
+          "Definitions"
+        ],
+        "x-fado-call": "Inlets",
         "x-fado-mark": "reads"
       }
     },
@@ -2943,6 +3108,58 @@
         "x-fado-mark": "writes"
       }
     },
+    "/v1/remove_inlet": {
+      "post": {
+        "description": "It writes. In Go it is the call `RemoveInlet`.",
+        "operationId": "remove_inlet",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "for": {
+                    "description": "the id of whoever the caller acts for; let through only while a substitution says so",
+                    "type": "string"
+                  },
+                  "name": {
+                    "description": "the name of the inlet",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "name"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {},
+                  "type": "object"
+                }
+              }
+            },
+            "description": "The command ran."
+          },
+          "default": {
+            "$ref": "#/components/responses/Refused"
+          }
+        },
+        "summary": "Closes an inlet: its messages are answered as those of a name that is no inlet. Its versions stay. For a database administrator.",
+        "tags": [
+          "Definitions"
+        ],
+        "x-fado-call": "RemoveInlet",
+        "x-fado-mark": "writes"
+      }
+    },
     "/v1/reset": {
       "post": {
         "description": "It writes. In Go it is the call `Reset`.",
@@ -3805,6 +4022,70 @@
         "x-fado-mark": "writes"
       }
     },
+    "/v1/try_inlet": {
+      "post": {
+        "description": "It reads. In Go it is the call `TryInlet`.",
+        "operationId": "try_inlet",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "definition": {
+                    "description": "a definition that is not stored, in place of a name",
+                    "type": "object"
+                  },
+                  "for": {
+                    "description": "the id of whoever the caller acts for; let through only while a substitution says so",
+                    "type": "string"
+                  },
+                  "inlet": {
+                    "description": "the name of an inlet of the database",
+                    "type": "string"
+                  },
+                  "message": {
+                    "description": "the message: headers and params, each an object of texts; body, the body as JSON or as one text; and form, true when the body holds the fields of a form",
+                    "type": "object"
+                  }
+                },
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "trial": {
+                      "description": "whether the inlet acts on the message, the user it would act as, and the command with its object and its key"
+                    }
+                  },
+                  "required": [
+                    "trial"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "The command ran."
+          },
+          "default": {
+            "$ref": "#/components/responses/Refused"
+          }
+        },
+        "summary": "Answers what an inlet would do with a message, and does nothing: whether it acts on it, and the command the message would become. The proof is not asked for.",
+        "tags": [
+          "Definitions"
+        ],
+        "x-fado-call": "TryInlet",
+        "x-fado-mark": "reads"
+      }
+    },
     "/v1/user_changes": {
       "post": {
         "description": "It reads. In Go it is the call `UserChanges`. It is offered only by a database that keeps its own users, groups and keys; any other answers `unknown_command`.",
@@ -4029,6 +4310,61 @@
           "Definitions"
         ],
         "x-fado-call": "ValidateClasses",
+        "x-fado-mark": "reads"
+      }
+    },
+    "/v1/validate_inlet": {
+      "post": {
+        "description": "It reads. In Go it is the call `ValidateInlet`.",
+        "operationId": "validate_inlet",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "definition": {
+                    "description": "the definition, as JSON",
+                    "type": "object"
+                  }
+                },
+                "required": [
+                  "definition"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "diagnostics": {
+                      "description": "the findings; an empty list when nothing is wrong"
+                    }
+                  },
+                  "required": [
+                    "diagnostics"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "The command ran."
+          },
+          "default": {
+            "$ref": "#/components/responses/Refused"
+          }
+        },
+        "summary": "Reports what define_inlet would refuse, storing nothing.",
+        "tags": [
+          "Definitions"
+        ],
+        "x-fado-call": "ValidateInlet",
         "x-fado-mark": "reads"
       }
     },

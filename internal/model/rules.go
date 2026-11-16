@@ -1273,16 +1273,20 @@ func fillValues(c *collector, path string, raw json.RawMessage, target *Class, s
 // what it says of another class: a type that no longer fits is found
 // when the action runs.
 func bindFill(c *collector, path, src string, scope *formula.Scope, want *formula.Type) *formula.Program {
+	mode := formula.ModeAny
+	if c.pure {
+		mode = formula.ModePure
+	}
 	if want != nil && !c.env.Lenient {
-		return bindAs(c, path, src, scope, formula.ModeAny, *want)
+		return bindAs(c, path, src, scope, mode, *want)
 	}
 	if want != nil {
-		probe := collector{env: c.env}
-		if prog := bindAs(&probe, path, src, scope, formula.ModeAny, *want); prog != nil {
+		probe := collector{env: c.env, pure: c.pure}
+		if prog := bindAs(&probe, path, src, scope, mode, *want); prog != nil {
 			return prog
 		}
 	}
-	prog, err := c.bind(src, scope, formula.ModeAny)
+	prog, err := c.bind(src, scope, mode)
 	if err != nil {
 		c.formulaErr(path, err)
 		return nil

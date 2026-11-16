@@ -174,6 +174,7 @@ An option is one of two kinds.
 | `Secrets` | a function that gives the secret of a connection when a call needs it | the program's | none | |
 | `HostAnswersFor` | the program itself keeps who may act for whom | the program's | the engine asks its substitutions | |
 | `Users` | the database keeps its own users, groups and keys, and answers who a key belongs to | the program's | the program says itself who is calling, and the database keeps no users | |
+| `Inbound` | the program takes messages from outside at the inlets of the database (ADR-0065) | the program's | it takes none: an inlet cannot be defined, and a message is answered as one for a name that is no inlet | |
 | `Alone` | the program holds the database alone until it closes it, under the name it gives here | the program's | the program holds nothing | |
 | `Now` | the clock of the database | the program's | the clock of the machine | |
 | `WALLimit`, `CheckpointEvery` | when the latest commits are folded into the database | the program's | at 64 MiB, and every 100 ms | |

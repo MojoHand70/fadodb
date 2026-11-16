@@ -234,6 +234,25 @@ All notable changes to FadoDB are recorded here. The format follows
   told. Measured on one machine with a writer that commits every
   millisecond: an entry is read 0.84 ms after its commit at p99 with
   one subscriber and 3.12 ms with a hundred, against a budget of 5 ms.
+- The engine's part of a way in for messages from outside (ADR-0065,
+  proposed): an inlet. It is a definition kept in the database, the
+  mirror of a declared action: how a message of another system proves
+  who sent it, by a secret shown or a signature made with one, in one
+  of three forms; which messages the inlet acts on; what makes two
+  messages the same; and the one command a message becomes, `create`,
+  `set` or `transition`, whose values are formulas over the message,
+  typed against the class when the inlet is defined. The engine
+  carries the command out as the service user the inlet names, so the
+  rules of the class judge it and the log names it, with the key of
+  the message, so a message sent twice makes one commit. Six commands:
+  `validate_inlet`, `try_inlet`, which answers the command a message
+  would become and does nothing, `define_inlet` and `remove_inlet`,
+  which are a database administrator's, `get_inlet` and `list_inlets`.
+  In Go: `DefineInlet`, `ValidateInlet`, `TryInlet`, `RemoveInlet`,
+  `Inlets`, `Inlet`, and `Receive`, which takes a message. A program
+  says that it takes messages with `Options.Inbound`. New refusals:
+  `unknown_inlet` and `bad_message`. `fadodb serve` does not take
+  messages yet: its address and its setting come next.
 - The image for containers. `docker build -t fadodb .` builds it from
   a checkout: the tool, the certificates an action's request knows
   another service by, and nothing else, about 15 MB. It runs as a user
@@ -432,6 +451,12 @@ All notable changes to FadoDB are recorded here. The format follows
 
 ### Changed
 
+- The layout of a database is 11 (it was 10): the tables of the inlets
+  join the engine's, and `inlets` and `inlet_versions` are names no
+  class may take. A database made by an earlier engine is refused with
+  `not_supported`, as before 1.0 there is no way to bring one forward.
+- An idempotency key may not start with `in:`, the prefix of the
+  commands the inlets send, as it may not start with `outbox:`.
 - An answer writes `<`, `>` and `&` as themselves, and no longer as
   `\u003c`, `\u003e` and `\u0026`: a guard reads `"total > 0"` at a
   terminal and to an agent. This holds for the answer of a command, a

@@ -35,6 +35,14 @@ const DefaultCheckpointEvery = 100 * time.Millisecond
 // memory for the lookups of auto formulas (ADR-0036).
 const DefaultMaxIndexedRows = 100000
 
+// lastOfCommandSQL finds the last version a command made of its
+// document: the versions of the moves its own commit caused, when it
+// started a chain (ADR-0040). It is asked when a command is sent again
+// with its key, and reads the events of that one document, through the
+// index by document: a database's whole log is not searched for the
+// answer of a repeated command, however long it has grown.
+const lastOfCommandSQL = "SELECT max(after_version) FROM events WHERE class = ? AND doc_id = ? AND cause_event_id = ?"
+
 // engineSchema is the version of the store's own tables. A database made
 // by another engine schema is refused: before 1.0 there is no upgrade
 // path, and a pre-release file is recreated.
@@ -653,7 +661,7 @@ func (s *Store) prepareEngine(ctx context.Context) error {
 		*dst, err = s.writer.PrepareContext(ctx, text)
 	}
 	prep(&s.stmts.lookupKey, "SELECT kind, class, doc_id, after_version, command_hash, event_id FROM events WHERE command_key = ?")
-	prep(&s.stmts.lastOfCommand, "SELECT max(after_version) FROM events WHERE cause_event_id = ?")
+	prep(&s.stmts.lastOfCommand, lastOfCommandSQL)
 	prep(&s.stmts.insertEvent, "INSERT INTO events (event_id, class, doc_id, kind, name, from_state, to_state, actor_id, before_version, after_version, cause_event_id, command_key, command_hash, business_date, ts, origin, actor_kind, actor_for, override, reason)"+
 		" VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
 	prep(&s.stmts.insertEventDoc, "INSERT INTO event_docs (event_id, class, doc_id, qualifier) VALUES (?, ?, ?, ?)")

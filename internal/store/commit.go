@@ -349,7 +349,7 @@ func (s *Store) run(ctx context.Context, cmd command, now time.Time) (*result, e
 				// A command whose chain made further versions is answered
 				// with the last of them (ADR-0040).
 				var last sql.NullInt64
-				if err := s.stmts.lastOfCommand.QueryRowContext(ctx, keyed).Scan(&last); err != nil {
+				if err := s.stmts.lastOfCommand.QueryRowContext(ctx, class, docID, keyed).Scan(&last); err != nil {
 					return nil, storageErr("look up the command's versions", err)
 				}
 				if last.Valid {

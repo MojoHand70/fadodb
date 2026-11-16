@@ -169,6 +169,11 @@ const (
 	asNobody options = 0
 )
 
+// TakesKey says the command takes the idempotency key: the same command
+// sent again with the same key makes no second commit (ADR-0055, item
+// 3). It is the commands that commit a document, and no other.
+func (c *Command) TakesKey() bool { return c.takes&takesKey != 0 }
+
 // The five members that mean the same in every command that takes them.
 var (
 	optionKey          = Field{Name: "key", Kind: Text, Option: true, Does: "the idempotency key: the same command sent again with the same key makes no second commit and is answered as the first was"}

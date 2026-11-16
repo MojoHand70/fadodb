@@ -33,29 +33,6 @@ const (
 // every run.
 type object = map[string]any
 
-// kindSchema is the JSON Schema of a member of a command's object.
-func kindSchema(k command.Kind) object {
-	switch k {
-	case command.Text:
-		return object{"type": "string"}
-	case command.Integer:
-		return object{"type": "integer"}
-	case command.Flag:
-		return object{"type": "boolean"}
-	case command.Object, command.JSON:
-		return object{"type": "object"}
-	case command.Texts:
-		return object{"type": "array", "items": object{"type": "string"}}
-	case command.Objects, command.JSONs:
-		return object{"type": "array", "items": object{"type": "object"}}
-	case command.Scalars:
-		return object{"type": "array", "items": object{"type": []string{"string", "number", "boolean", "null"}}}
-	case command.Moment:
-		return object{"type": []string{"string", "integer"}}
-	}
-	panic("docgen: a kind of member the description does not know: " + k.String())
-}
-
 // statusCodes are the codes the engine, the command set and the door
 // declare, by the HTTP status the door answers each with. The status of
 // every refusal the table does not name is other.
@@ -105,22 +82,7 @@ func OpenAPI(root string) (string, error) {
 	marks := map[command.Mark]string{command.Reads: "reads", command.Writes: "writes", command.Destroys: "destroys"}
 	paths := object{}
 	for _, c := range command.Commands() {
-		properties, required := object{}, []string{}
-		for _, f := range c.Fields {
-			if f.Refused {
-				continue
-			}
-			member := kindSchema(f.Kind)
-			member["description"] = f.Does
-			properties[f.Name] = member
-			if f.Required {
-				required = append(required, f.Name)
-			}
-		}
-		body := object{"type": "object", "additionalProperties": false, "properties": properties}
-		if len(required) > 0 {
-			body["required"] = required
-		}
+		body := c.Schema()
 		does := "It " + marks[c.Mark] + ". In Go it is the call `" + c.Call + "`."
 		if c.Users {
 			does += " It is offered only by a database that keeps its own users, groups and keys; any other answers `unknown_command`."

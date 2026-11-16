@@ -35,6 +35,10 @@ import (
 //	    "command_seconds": 30,
 //	    "commands": 64,
 //	    "streams": 256
+//	  },
+//	  "inbound": {
+//	    "message_bytes": 1048576,
+//	    "messages": 16
 //	  }
 //	}
 type settings struct {
@@ -46,13 +50,19 @@ type settings struct {
 	// limits are the limits of the door; a limit the file does not give
 	// is zero, which is the door's own.
 	limits httpdoor.Limits
+	// inbound says that the server takes messages from outside at the
+	// inlets of its database (ADR-0065, item 8): the file has the
+	// member inbound, whatever is in it. The limits of the messages are
+	// among the limits of the door.
+	inbound bool
 }
 
 // The names a settings file may hold, at each place.
 var (
-	settingsMembers = []string{"outbound", "limits"}
+	settingsMembers = []string{"outbound", "limits", "inbound"}
 	outboundMembers = []string{"hosts", "connections"}
 	limitMembers    = []string{"request_bytes", "command_seconds", "commands", "streams"}
+	inboundMembers  = []string{"message_bytes", "messages"}
 )
 
 // longestCommand is the longest a command may be given to run.
@@ -135,6 +145,27 @@ func parseSettings(data []byte) (*settings, error) {
 				return nil, err
 			}
 			s.limits.Streams = int(n)
+		}
+	}
+	// The member alone turns the messages on: an empty object takes
+	// them with the usual limits.
+	if raw, given := top["inbound"]; given {
+		in, err := members(raw, "inbound", inboundMembers)
+		if err != nil {
+			return nil, err
+		}
+		s.inbound = true
+		if raw, given := in["message_bytes"]; given {
+			if s.limits.MessageBytes, err = countOf(raw, "inbound.message_bytes"); err != nil {
+				return nil, err
+			}
+		}
+		if raw, given := in["messages"]; given {
+			n, err := countOf(raw, "inbound.messages")
+			if err != nil {
+				return nil, err
+			}
+			s.limits.Messages = int(n)
 		}
 	}
 	return s, nil

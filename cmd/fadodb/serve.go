@@ -35,6 +35,9 @@ send a key of a user of the database:
   POST /v1/subscribe     the stream of changes: a reply that stays open
                          and tells the caller of every event it may
                          read of
+  POST /v1/in/<inlet>    a message from outside, which proves itself
+                         and carries no key; only when the settings
+                         have inbound
   POST /v1/blobs         a file, put
   GET  /v1/file          a file, read through its document
   GET  /v1/health        that the server answers, for anybody
@@ -76,8 +79,16 @@ list the hosts they may call:
       "command_seconds": 30,
       "commands": 64,
       "streams": 256
+    },
+    "inbound": {
+      "message_bytes": 1048576,
+      "messages": 16
     }
   }
+
+Told nothing, the server takes no message from outside. With inbound
+in the settings, even an empty one, it takes them at the inlets of its
+database, each at POST /v1/in/<inlet>.
 
 A secret is never in the settings. Without --secrets-dir, or when the
 file is not there, the secret token of the connection slack is read
@@ -149,13 +160,18 @@ func runServe(ctx context.Context, args []string, stdout, stderr io.Writer, read
 	// The database is opened with no Go function: the server runs none
 	// (item 6). It sends requests only when the settings list a host,
 	// and only to the hosts they list (items 2 and 4).
-	opened := fado.Options{Users: true, Alone: name}
+	opened := fado.Options{Users: true, Alone: name, Inbound: told.inbound}
 	kept := &secrets{dir: *secretsDir, env: os.LookupEnv}
 	if told.calls() {
 		if opened.Outbound, err = outbound.Allow(outbound.Options{Hosts: told.hosts, Connections: told.connections}); err != nil {
 			fmt.Fprintf(stderr, "%s: the settings %s: %v\n", name, *settingsFile, err)
 			return 2
 		}
+		opened.Secrets = kept.find
+	}
+	if told.inbound {
+		// A message proves who sent it with a secret of its inlet's
+		// connection (ADR-0065, item 3).
 		opened.Secrets = kept.find
 	}
 	if !exists(path) {
@@ -177,7 +193,7 @@ func runServe(ctx context.Context, args []string, stdout, stderr io.Writer, read
 		counted.record(r)
 	}
 	who := httpdoor.Keys(db)
-	door, err := httpdoor.New(db, httpdoor.Options{Who: who, Limits: told.limits, Report: report})
+	door, err := httpdoor.New(db, httpdoor.Options{Who: who, Limits: told.limits, Report: report, Inbound: told.inbound})
 	if err != nil {
 		fmt.Fprintf(stderr, "%s: %v\n", name, err)
 		return 1
@@ -207,6 +223,9 @@ func runServe(ctx context.Context, args []string, stdout, stderr io.Writer, read
 	}
 	fmt.Fprintf(stderr, "%s: %s\n", name, told.mayCall())
 	for _, line := range waiting(db.Actions(), kept) {
+		fmt.Fprintf(stderr, "%s: %s\n", name, line)
+	}
+	for _, line := range taking(db.Inlets(), told.inbound, kept) {
 		fmt.Fprintf(stderr, "%s: %s\n", name, line)
 	}
 	if ready != nil {
@@ -268,6 +287,40 @@ func (s *settings) mayCall() string {
 		parts = append(parts, "over the connection "+name+", "+hosts)
 	}
 	return "its actions may call " + strings.Join(parts, "; ")
+}
+
+// taking says what the server does with messages from outside
+// (ADR-0065, item 8): nothing of them when it takes none and the
+// database has no inlet; which inlets it takes them at; and, a line
+// each, the inlets it cannot act on as it was started, so that the
+// operator learns it now and not from a sender that was turned away.
+func taking(inlets []fado.InletInfo, inbound bool, kept *secrets) []string {
+	if len(inlets) == 0 {
+		if inbound {
+			return []string{"it takes messages from outside, and the database has no inlet yet; an administrator defines one with define_inlet"}
+		}
+		return nil
+	}
+	names := make([]string, len(inlets))
+	for i, in := range inlets {
+		names[i] = in.Name
+	}
+	if !inbound {
+		return []string{"the database has inlets, and this server takes no messages from outside: " + strings.Join(names, ", ") +
+			". The settings turn it on, with the member inbound (--settings)"}
+	}
+	lines := []string{"it takes messages from outside at /v1/in/<inlet>, for " + strings.Join(names, ", ")}
+	for _, in := range inlets {
+		switch {
+		case !in.Available:
+			lines = append(lines, "the inlet "+in.Name+" takes no message: "+in.Why)
+		default:
+			if _, err := kept.find(context.Background(), in.Connection, in.Proof.Secret); err != nil {
+				lines = append(lines, "the inlet "+in.Name+" proves its messages with the secret "+in.Proof.Secret+" of the connection "+in.Connection+", and "+err.Error()+": no message is taken until the secret is there")
+			}
+		}
+	}
+	return lines
 }
 
 // waiting says which actions of the database this server cannot run as
@@ -402,6 +455,9 @@ func (l *requestLog) write(r httpdoor.Request) {
 		b = strconv.AppendFloat(b, float64(r.Lasted.Milliseconds())/1000, 'f', 3, 64)
 		b = append(b, `,"events":`...)
 		b = strconv.AppendInt(b, int64(r.Entries), 10)
+	}
+	if r.Ignored {
+		b = append(b, `,"ignored":true`...)
 	}
 	if r.Err != nil {
 		// What failed in the engine is said here and not to the caller.

@@ -122,6 +122,9 @@ fadodb serve acme.fado --settings settings.json --secrets-dir /run/secrets/fadod
 | `limits.command_seconds` | how long one command may run, in seconds; it may have a fraction | 30 |
 | `limits.commands` | how many commands run at once | 64 |
 | `limits.streams` | how many [streams of changes](the-stream-of-changes.md) are open at once | 256 |
+| `inbound` | the server takes [messages from outside](a-way-in-for-messages.md), at the inlets of its database | it takes none |
+| `inbound.message_bytes` | the largest message from outside, in bytes | 1048576, which is 1 MiB |
+| `inbound.messages` | how many messages from outside are worked at once | 16 |
 
 - **The settings are the operator's.** Where the server listens, what
   it may call and how much it takes on are decided by whoever runs the
@@ -456,12 +459,13 @@ health, as JSON:
 | Member | What it is |
 |---|---|
 | `time` | when the request came, in UTC |
-| `command` | the name the request was sent to: a command, `blobs`, `file` or `blob` for a file, or `metrics` for the counts |
-| `user` | the id of who sent it, empty when the server could not tell |
+| `command` | the name the request was sent to: a command, `blobs`, `file` or `blob` for a file, `metrics` for the counts, or `in/` and the name of an inlet for [a message from outside](a-way-in-for-messages.md) |
+| `user` | the id of who sent it, empty when the server could not tell; for a message from outside, the user its inlet acts as |
 | `status` | the status of the reply; 499 when the caller left before the command ended |
 | `code` | the code of the refusal; left out when the command ran |
 | `ms` | how long it took, in milliseconds |
-| `error` | for a command that failed in the engine, with the code `internal`: what failed. The caller is not told |
+| `ignored` | true for a message from outside that its inlet does not act on; left out otherwise |
+| `error` | for a command that failed in the engine, with the code `internal`: what failed. The caller is not told. For a message from outside that was refused, the words of the refusal, which its sender is not given |
 
 A line never holds the body of a request, a value of a document or a
 key.

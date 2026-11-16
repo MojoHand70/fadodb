@@ -513,7 +513,7 @@ func badMessage(path, what string, err error) *Error {
 	if err != nil {
 		msg += ": " + evalErr("", err).Message
 	}
-	return &Error{Code: CodeBadMessage, Path: path, Message: msg, Hint: "try_inlet shows what an inlet makes of a message"}
+	return &Error{Code: CodeBadMessage, Path: path, Message: msg, Hint: "the place names the formula of the inlet that this message has no answer for"}
 }
 
 // worked is what an inlet makes of a message: whether it acts on it,

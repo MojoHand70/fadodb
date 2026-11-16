@@ -124,6 +124,31 @@ func TestTheCountsOfTheServer(t *testing.T) {
 	if n := testing.AllocsPerRun(1000, func() { m.record(stranger) }); n != 0 {
 		t.Errorf("counting a request to a name that is no command allocates %v times", n)
 	}
+	// A message from outside is counted under its inlet, whose place is
+	// made when its first message is told (ADR-0065, item 10); after
+	// that, counting one allocates nothing either. A message for a name
+	// that is no inlet is counted as other, and so is one of an inlet
+	// beyond those that have a place: the page does not grow by names.
+	message := httpdoor.Request{Command: "in/bank.paid", Inlet: "bank.paid", User: "bank-in", Status: 200, Took: time.Millisecond}
+	m.record(message)
+	if n := testing.AllocsPerRun(1000, func() { m.record(message) }); n != 0 {
+		t.Errorf("counting a message allocates %v times", n)
+	}
+	m.record(httpdoor.Request{Command: "in/bank.paid", Inlet: "bank.paid", Status: 401, Took: time.Millisecond})
+	m.record(httpdoor.Request{Command: "in/no.such", Status: 404, Took: time.Millisecond})
+	for i := range mostInlets + 10 {
+		m.record(httpdoor.Request{Command: "in/sender.n" + strconv.Itoa(i), Inlet: "sender.n" + strconv.Itoa(i), Status: 200})
+	}
+	out.Reset()
+	m.write(&out, 0, fado.OutboxCounts{}, 0, 0, started)
+	page := out.String()
+	if !strings.Contains(page, `fadodb_requests_total{command="in/bank.paid",status="200"} 1002`+"\n") || !strings.Contains(page, `fadodb_requests_total{command="in/bank.paid",status="401"} 1`+"\n") ||
+		!strings.Contains(page, `fadodb_command_seconds_count{command="in/bank.paid"} 1003`+"\n") || strings.Contains(page, "no.such") {
+		t.Errorf("the counts of the messages:\n%s", page)
+	}
+	if got := strings.Count(page, `fadodb_command_seconds_count{command="in/`); got != mostInlets {
+		t.Errorf("%d inlets have a place among the counts, want %d", got, mostInlets)
+	}
 	// Every command has its place, and so have the files and the counts.
 	for _, c := range fado.Commands() {
 		if _, known := m.place[c.Name]; !known {

@@ -26,6 +26,8 @@ type Database interface {
 	OpenBlob(ctx context.Context, hash string, opts ...store.Option) (io.ReadCloser, int64, error)
 	// Subscribe opens a stream of changes for the caller p (ADR-0058).
 	Subscribe(ctx context.Context, p store.Principal, f store.ChangeFilter) (Stream, error)
+	// Receive takes a message from outside for an inlet (ADR-0065).
+	Receive(ctx context.Context, inlet string, m *store.Message) (*store.Receipt, error)
 }
 
 // Who says who sends a request (ADR-0027; ADR-0057, item 9): the
@@ -74,6 +76,12 @@ type Limits struct {
 	// for as long as its caller listens, so waiting for one to end
 	// would be waiting for nothing.
 	Streams int
+	// MessageBytes is the largest message from outside, and Messages
+	// how many are worked at once (ADR-0065, item 8), for a door that
+	// takes messages. A message beyond them is refused with too_large
+	// or, at once, with busy.
+	MessageBytes int64
+	Messages     int
 }
 
 // The limits of a door that was given none.
@@ -96,6 +104,11 @@ type Options struct {
 	Who Who
 	// Limits are the door's limits; the zero value gives the defaults.
 	Limits Limits
+	// Inbound says that the door takes messages from outside, at
+	// POST /v1/in/<inlet> (ADR-0065). Without it every such address
+	// answers as one of a name that is no inlet. A program that sets it
+	// opened its database with the option of the same name.
+	Inbound bool
 	// Report, when set, is called once for every request, after it was
 	// answered. It is how a program writes its log and counts.
 	Report func(Request)
@@ -118,6 +131,14 @@ type Request struct {
 	// was answered.
 	Status int
 	Code   string
+	// Inlet is the name of the inlet a message from outside was for, as
+	// the database declares it; empty for every other request, and for
+	// a message for a name that is no inlet. Command is then in/<Inlet>,
+	// User the user the inlet acts as, and Err what the database
+	// refused, in the words the sender was not given. Ignored says the
+	// inlet does not act on the message: nothing was done.
+	Inlet   string
+	Ignored bool
 	// Err is set when the command failed in the engine, with code
 	// internal: the words the caller was not given.
 	Err error
@@ -142,6 +163,12 @@ type Door struct {
 	// a request waits for one.
 	slots chan struct{}
 	wait  time.Duration
+	// inbound says the door takes messages from outside, and messages
+	// holds one entry for each message that is worked (ADR-0065).
+	inbound  bool
+	messages chan struct{}
+	// arrive is how long the body of a message is given to arrive.
+	arrive time.Duration
 	// alive is how long a stream of changes says nothing before it shows
 	// that it is alive, and take how long its caller is given to take
 	// what it was sent.
@@ -163,7 +190,7 @@ func New(db Database, o Options) (*Door, error) {
 		return nil, errors.New("server: a door needs Options.Who, the function that says who sends a request")
 	}
 	l := o.Limits
-	if l.RequestBytes < 0 || l.CommandTime < 0 || l.Commands < 0 || l.Streams < 0 {
+	if l.RequestBytes < 0 || l.CommandTime < 0 || l.Commands < 0 || l.Streams < 0 || l.MessageBytes < 0 || l.Messages < 0 {
 		return nil, errors.New("server: a limit of a door is negative; leave it zero for the default")
 	}
 	if l.RequestBytes == 0 {
@@ -178,16 +205,25 @@ func New(db Database, o Options) (*Door, error) {
 	if l.Streams == 0 {
 		l.Streams = DefaultStreams
 	}
+	if l.MessageBytes == 0 {
+		l.MessageBytes = DefaultMessageBytes
+	}
+	if l.Messages == 0 {
+		l.Messages = DefaultMessages
+	}
 	return &Door{
-		db:      db,
-		who:     o.Who,
-		limits:  l,
-		report:  o.Report,
-		slots:   make(chan struct{}, l.Commands),
-		wait:    busyWait,
-		alive:   aliveEvery,
-		take:    takeWithin,
-		streams: map[*subscription]struct{}{},
+		db:       db,
+		who:      o.Who,
+		limits:   l,
+		report:   o.Report,
+		inbound:  o.Inbound,
+		messages: make(chan struct{}, l.Messages),
+		arrive:   arriveWithin,
+		slots:    make(chan struct{}, l.Commands),
+		wait:     busyWait,
+		alive:    aliveEvery,
+		take:     takeWithin,
+		streams:  map[*subscription]struct{}{},
 	}, nil
 }
 
@@ -235,6 +271,12 @@ func (d *Door) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	told.Command = name
 	// The files travel beside the commands (ADR-0055, item 9), at three
 	// addresses that are not commands.
+	if inlet, ok := strings.CutPrefix(name, addressIn); ok {
+		// A message from outside: it proves itself, and carries no key
+		// of a user (ADR-0065).
+		d.message(out, r, &told, inlet)
+		return
+	}
 	switch name {
 	case addressPut:
 		d.put(out, r, &told)

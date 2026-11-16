@@ -145,7 +145,7 @@ func TestTheDescriptionOfTheCommands(t *testing.T) {
 		}
 	}
 	// And nothing else but the files and what the server answers itself.
-	besides := map[string]string{"/v1/blobs": "post", "/v1/file": "get", "/v1/blob": "get", "/v1/health": "get", "/v1/metrics": "get"}
+	besides := map[string]string{"/v1/blobs": "post", "/v1/file": "get", "/v1/blob": "get", "/v1/in/{inlet}": "post", "/v1/health": "get", "/v1/metrics": "get"}
 	if want := len(command.Commands()) + len(besides); len(doc.Paths) != want {
 		t.Errorf("the description has %d addresses, want %d", len(doc.Paths), want)
 	}

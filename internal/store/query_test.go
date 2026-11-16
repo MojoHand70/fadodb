@@ -3,8 +3,10 @@ package store
 import (
 	"context"
 	"errors"
+	"strconv"
 	"strings"
 	"testing"
+	"time"
 )
 
 // seedInvoices creates a handful of invoices with varied values and
@@ -146,6 +148,50 @@ func TestQuery(t *testing.T) {
 	var e *Error
 	if !errors.As(err, &e) || e.Pos != 10 {
 		t.Errorf("a parse error carries its offset: %+v", e)
+	}
+}
+
+// A statement that is stopped, because its caller's time is up or
+// because its caller left, is no bad_value: nothing is wrong with what
+// it says. It is the storage's word, which a door that set the time
+// answers as timeout, and the next statement runs.
+func TestSQLThatIsStopped(t *testing.T) {
+	s, _ := openStore(t, Options{})
+	seedInvoices(t, s)
+	// Four invoices joined sixteen times are four billion rows.
+	var from []string
+	for i := 0; i < 16; i++ {
+		from = append(from, "Invoice t"+strconv.Itoa(i))
+	}
+	slow := `SELECT count(*) FROM ` + strings.Join(from, ", ")
+
+	stopped := func(ctx context.Context, how string) {
+		t.Helper()
+		began := time.Now()
+		_, err := s.SQL(ctx, slow, nil, asSetup)
+		var e *Error
+		if !errors.As(err, &e) || e.Code != CodeStorage || !strings.HasPrefix(e.Message, "run the statement: ") {
+			t.Errorf("a statement stopped because %s: %v", how, err)
+		}
+		if took := time.Since(began); took > 20*time.Second {
+			t.Errorf("a statement stopped because %s ran for %s", how, took)
+		}
+	}
+	late, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+	stopped(late, "its time was up")
+
+	left, leave := context.WithCancel(context.Background())
+	time.AfterFunc(50*time.Millisecond, leave)
+	stopped(left, "its caller left")
+
+	if rows, err := s.SQL(context.Background(), `SELECT count(*) FROM Invoice`, nil, asSetup); err != nil || rows.Rows[0][0] != int64(4) {
+		t.Errorf("the statement after one that was stopped: %v %s", err, dump(rows))
+	}
+	// A statement that is wrong is still the caller's to mend.
+	var e *Error
+	if _, err := s.SQL(context.Background(), `SELECT nothing FROM Invoice`, nil, asSetup); !errors.As(err, &e) || e.Code != CodeBadValue {
+		t.Errorf("a statement that names no column: %v", err)
 	}
 }
 

@@ -443,6 +443,12 @@ All notable changes to FadoDB are recorded here. The format follows
 
 ### Fixed
 
+- A statement of `sql` that ran longer than the server lets a command
+  run was refused with `bad_value` and the words `context deadline
+  exceeded`, as if the statement were wrong. It is now refused with
+  `timeout`, status 504, as every other command is. A Go program that
+  gives `SQL` a context that ends reads the error of the storage, and
+  no longer `bad_value`.
 - The hint of a moment that is none showed seconds a year off:
   `1763026200` beside `"2026-11-13 09:30:00"`, which is `1794562200`.
 - The log of latest commits, the `-wal` file beside a database, had no

@@ -1127,6 +1127,9 @@ a user.
 > environment. It answers its counts to an administrator at
 > `GET /v1/metrics`. The stream of changes is built: the Go call
 > `Subscribe`, and its address on the server, `POST /v1/subscribe`.
+> The server runs in a container as on a machine: the image the
+> repository builds holds the tool and nothing else
+> ([in a container](manual/in-a-container.md)).
 
 | Address | Purpose | Record |
 |---|---|---|

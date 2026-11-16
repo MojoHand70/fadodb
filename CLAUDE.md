@@ -21,6 +21,7 @@ make test       # go test -race ./...
 make gates      # lint, vuln, depgate, sizegate, filegate, test  (what CI runs on the core)
 make analytics  # the DuckDB module: separate go.mod, needs cgo and a C compiler
 make benchgate BASE=origin/main   # the full comparison: run it before pushing a change to a hot path
+make imagecheck # the image for containers: built, and its chapter of the manual played against it (needs Docker)
 go test -count=1 -run TestName ./internal/formula/
 ```
 

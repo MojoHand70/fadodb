@@ -64,7 +64,7 @@ through.
 // runFile is "fadodb file put …" and "fadodb file get …".
 func runFile(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	const name = "fadodb file"
-	fs := flags(name, fileUsage, stderr)
+	fs := flags(name)
 	to := serverFlags(fs)
 	class := fs.String("class", "", "")
 	id := fs.String("id", "", "")

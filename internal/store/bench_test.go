@@ -566,6 +566,47 @@ func BenchmarkTransition(b *testing.B) {
 	}
 }
 
+// BenchmarkTransitionRepeated is a transition sent again with its key
+// (ADR-0026), in a database whose log holds fifty thousand events of
+// other documents: what a caller pays that got no answer the first
+// time and asks again. The command is answered from the events of its
+// own document, so the log beside them costs it nothing.
+func BenchmarkTransitionRepeated(b *testing.B) {
+	s, err := Open(filepath.Join(b.TempDir(), "bench.fado"), Options{})
+	if err != nil {
+		b.Fatal(err)
+	}
+	defer s.Close()
+	ctx := context.Background()
+	if _, err := s.defineOpen(ctx, []byte(benchFlow), asSetup); err != nil {
+		b.Fatal(err)
+	}
+	others := make([]Values, 1000)
+	for i := range others {
+		others[i] = Values{"amount": 500, "qty": 5, "note": "n"}
+	}
+	for range 50 {
+		if _, err := s.CreateMany(ctx, "Flow", others); err != nil {
+			b.Fatal(err)
+		}
+	}
+	doc, err := s.Create(ctx, "Flow", Values{"amount": 500, "qty": 5, "note": "n"})
+	if err != nil {
+		b.Fatal(err)
+	}
+	if _, err := s.Transition(ctx, "Flow", doc.ID, "submit", nil, As(alice), Key("submit-once")); err != nil {
+		b.Fatal(err)
+	}
+	b.ReportAllocs()
+	b.ResetTimer()
+	for b.Loop() {
+		again, err := s.Transition(ctx, "Flow", doc.ID, "submit", nil, As(alice), Key("submit-once"))
+		if err != nil || again.Version != 2 {
+			b.Fatalf("the command sent again: %v %+v", err, again)
+		}
+	}
+}
+
 // BenchmarkExecTransition is BenchmarkTransition sent as a command
 // (ADR-0055): the same loop, with each move a name and a JSON object
 // that is read, and its answer a document written as JSON. The

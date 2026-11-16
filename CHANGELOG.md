@@ -509,6 +509,14 @@ All notable changes to FadoDB are recorded here. The format follows
 
 ### Fixed
 
+- A command sent again with its key searched the whole log of the
+  database for the versions its commit had made, and did so while it
+  held the writer's turn: with fifty thousand events of other documents
+  it took 2.4 ms, where a first command takes 0.05 ms, and it grew with
+  the log. It is what a caller does that got no answer the first time,
+  and what a sender of messages does with every notice it repeats. The
+  answer is now read from the events of the command's own document:
+  0.024 ms, whatever the database holds.
 - A command of the tool said its help twice: `fadodb serve --help`
   printed the whole text two times, and a flag it does not know
   printed it before the mistake and after. Each command now says it

@@ -772,3 +772,42 @@ func dump(x any) string {
 	b, _ := json.MarshalIndent(x, "", "  ")
 	return string(b)
 }
+
+// A command sent again with its key is answered from the events of its
+// own document, and not by a search of the whole log (ADR-0026): the
+// answer takes as long in a database of a million events as in one of
+// ten. The plan of the statement says how it reads, which no clock has
+// to be asked for.
+func TestARepeatedKeyReadsItsDocumentOnly(t *testing.T) {
+	s, _ := openStore(t, Options{})
+	ctx := context.Background()
+	defineInvoice(t, s)
+	doc, err := s.Create(ctx, "Invoice", sampleValues(), As(alice), Key("create-42"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	rows, err := s.db.QueryContext(ctx, "EXPLAIN QUERY PLAN "+lastOfCommandSQL, "Invoice", doc.ID, "an event")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows.Close()
+	var plan []string
+	for rows.Next() {
+		var id, parent, unused int
+		var detail string
+		if err := rows.Scan(&id, &parent, &unused, &detail); err != nil {
+			t.Fatal(err)
+		}
+		plan = append(plan, detail)
+	}
+	if got := strings.Join(plan, "; "); !strings.Contains(got, "USING INDEX events_class_doc") || strings.Contains(got, "SCAN") {
+		t.Errorf("the versions of a repeated command are found by: %s", got)
+	}
+	// And the same holds for the key itself.
+	var detail string
+	var a, b, c int
+	if err := s.db.QueryRowContext(ctx, "EXPLAIN QUERY PLAN SELECT kind, class, doc_id, after_version, command_hash, event_id FROM events WHERE command_key = ?", "create-42").Scan(&a, &b, &c, &detail); err != nil ||
+		!strings.Contains(detail, "USING INDEX events_command_key") {
+		t.Errorf("a key is found by: %s %v", detail, err)
+	}
+}

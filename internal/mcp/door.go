@@ -1,0 +1,248 @@
+package mcp
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"fmt"
+	"sort"
+	"strings"
+
+	"github.com/MojoHand70/fadodb/internal/command"
+)
+
+// Send carries a command to a database and brings back what it
+// answered: the answer of the command, or, with refused set, its
+// refusal as the database wrote it. An error says that no answer came
+// through, so that nobody knows whether the command was carried out.
+type Send func(ctx context.Context, name string, object []byte) (answer []byte, refused bool, err error)
+
+// Options say what a door offers.
+type Options struct {
+	// Version is the version of the program that holds the door, which
+	// the door tells an agent's program.
+	Version string
+	// Database says where the commands go, such as the address of a
+	// server, for the words the door says of itself.
+	Database string
+	// ReadOnly offers only the tools that read.
+	ReadOnly bool
+	// Only names the commands to offer; every command when it is empty.
+	Only []string
+}
+
+// Withheld answers why the door offers a command as no tool, and "" for
+// a command it offers.
+func Withheld(name string) string {
+	switch name {
+	case "subscribe":
+		return "its answer is a stream, and a tool is one question and one answer"
+	case "create_key":
+		return "its answer holds the secret of a key, which would stay in the conversation of an agent; a key is made at a terminal"
+	}
+	return ""
+}
+
+// reachesOut says a command itself sends a request to a host outside
+// the database: the two that run an action now. Every other command
+// reads or changes the database and nothing else.
+func reachesOut(name string) bool { return name == "try_action" || name == "drain" }
+
+// CodeNoAnswer is the code of the door's own for a command that no
+// answer came through for: the database was not reached, or its answer
+// was cut off. It is no refusal of the database, which never saw the
+// command or was not heard. The command may have been carried out.
+const CodeNoAnswer = "no_answer"
+
+// tool is a command as the protocol lists a tool.
+type tool struct {
+	Name        string         `json:"name"`
+	Title       string         `json:"title"`
+	Description string         `json:"description"`
+	InputSchema map[string]any `json:"inputSchema"`
+	Annotations hints          `json:"annotations"`
+}
+
+// hints are the marks of a tool. Each is always written: the protocol
+// takes a tool with no mark for one that destroys and reaches out.
+type hints struct {
+	ReadOnly    bool `json:"readOnlyHint"`
+	Destructive bool `json:"destructiveHint"`
+	OpenWorld   bool `json:"openWorldHint"`
+}
+
+// Door offers the commands of a database as tools.
+type Door struct {
+	send Send
+	// info is the door as it names itself to an agent's program.
+	info map[string]any
+	// says is what the door says of itself to an agent.
+	says string
+	// tools are the names of the tools offered, and listed the tools as
+	// the protocol lists them, written once.
+	tools  map[string]bool
+	listed json.RawMessage
+	// readOnly and narrowed say why a command is no tool of this door.
+	readOnly, narrowed bool
+}
+
+// New makes a door that sends its commands through send.
+func New(send Send, o Options) (*Door, error) {
+	only := map[string]bool{}
+	for _, name := range o.Only {
+		c, known := command.Lookup(name)
+		switch {
+		case !known:
+			return nil, fmt.Errorf("no command is named %q", name)
+		case Withheld(name) != "":
+			return nil, fmt.Errorf("%s is offered as no tool: %s", name, Withheld(name))
+		case o.ReadOnly && c.Mark != command.Reads:
+			return nil, fmt.Errorf("%s does not only read, and the door was told to offer only the tools that read", name)
+		}
+		only[name] = true
+	}
+	d := &Door{
+		send:     send,
+		tools:    map[string]bool{},
+		readOnly: o.ReadOnly,
+		narrowed: len(only) > 0,
+		info:     map[string]any{"name": "fadodb", "title": "FadoDB", "version": o.Version},
+	}
+	var tools []tool
+	for _, c := range command.Commands() {
+		switch {
+		case c.Stream, Withheld(c.Name) != "":
+			continue
+		case o.ReadOnly && c.Mark != command.Reads:
+			continue
+		case len(only) > 0 && !only[c.Name]:
+			continue
+		}
+		d.tools[c.Name] = true
+		tools = append(tools, tool{
+			Name:        c.Name,
+			Title:       title(c.Name),
+			Description: describe(c),
+			InputSchema: c.Schema(),
+			Annotations: hints{
+				ReadOnly:    c.Mark == command.Reads,
+				Destructive: c.Mark == command.Destroys,
+				OpenWorld:   reachesOut(c.Name),
+			},
+		})
+	}
+	listed, err := command.Marshal(tools)
+	if err != nil {
+		return nil, err
+	}
+	d.listed = listed
+	d.says = says(o, d.tools)
+	return d, nil
+}
+
+// Tools lists the names of the tools the door offers, in the order of
+// their names.
+func (d *Door) Tools() []string {
+	names := make([]string, 0, len(d.tools))
+	for name := range d.tools {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
+}
+
+// title is how a screen shows a tool: the name of its command in words.
+func title(name string) string {
+	switch name {
+	case "sql":
+		return "SQL"
+	case "whoami":
+		return "Who am I"
+	}
+	words := strings.ReplaceAll(name, "_", " ")
+	return strings.ToUpper(words[:1]) + words[1:]
+}
+
+// describe says what a tool does and what it answers, in the words of
+// the table.
+func describe(c *command.Command) string {
+	var b strings.Builder
+	b.WriteString(c.Does)
+	if len(c.Answer) == 0 {
+		b.WriteString(" It answers {}.")
+		return b.String()
+	}
+	b.WriteString(" It answers ")
+	for i, m := range c.Answer {
+		if i > 0 {
+			b.WriteString("; ")
+		}
+		b.WriteString(m.Name + ": " + m.Does)
+	}
+	b.WriteString(".")
+	return b.String()
+}
+
+// says is what the door tells an agent of itself when it is asked what
+// it is: what the tools are, and what each first step answers.
+func says(o Options, tools map[string]bool) string {
+	var b strings.Builder
+	b.WriteString("FadoDB is a database of documents that move through the states of their class. Each tool is one command of the database")
+	if o.Database != "" {
+		b.WriteString(" at " + o.Database)
+	}
+	b.WriteString(", sent as the user whose key this door was given.")
+	for _, step := range []struct{ tool, does string }{
+		{"whoami", " whoami answers who that user is."},
+		{"list_classes", " list_classes answers which classes there are, and get_class how one is defined: its variables, its states, its transitions and who may do what."},
+		{"preview", " preview answers what a create, a set or a transition would do, and writes nothing."},
+	} {
+		if tools[step.tool] {
+			b.WriteString(step.does)
+		}
+	}
+	b.WriteString(" A command the database refuses is answered with the refusal under error: a code, a message, the place in the command and a hint.")
+	if !o.ReadOnly {
+		b.WriteString(" A command that writes takes a key: sent again with the same key, it makes no second commit.")
+	} else {
+		b.WriteString(" This door offers only the tools that read.")
+	}
+	return b.String()
+}
+
+// call sends a command and answers the text of a tool's answer, and
+// whether it is an error.
+func (d *Door) call(ctx context.Context, name string, object []byte) (string, bool) {
+	answer, refused, err := d.send(ctx, name, object)
+	if err != nil {
+		return noAnswer(err), true
+	}
+	return string(bytes.TrimSpace(answer)), refused
+}
+
+// noAnswer is what a tool answers when no answer came through, in the
+// form of a refusal, so that an agent reads one form.
+func noAnswer(err error) string {
+	text, _ := command.Marshal(map[string]any{"error": map[string]string{
+		"code":    CodeNoAnswer,
+		"message": "no answer came through: " + err.Error(),
+		"hint":    "the command may have been carried out: read before deciding, or send a command that writes again with the same key, which makes no second commit",
+	}})
+	return string(text)
+}
+
+// unknownTool says why a name is no tool of this door.
+func (d *Door) unknownTool(name string) string {
+	c, known := command.Lookup(name)
+	switch {
+	case !known:
+		return "Unknown tool: " + name
+	case Withheld(name) != "":
+		return "Unknown tool: " + name + ". The command is offered as no tool: " + Withheld(name)
+	case d.readOnly && c.Mark != command.Reads:
+		return "Unknown tool: " + name + ". This door was started to offer only the tools that read"
+	case d.narrowed:
+		return "Unknown tool: " + name + ". This door was started with a list of tools, and " + name + " is not in it"
+	}
+	return "Unknown tool: " + name
+}

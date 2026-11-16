@@ -292,8 +292,14 @@ a class in one call (ADR-0063, proposed, built as it proposes): the
 command `flow` answers the states of a class, each with the documents
 that are in it now and how long the stays in it lasted, and its
 transitions, each with the moves along it, counted over the documents
-the caller may read. Not built yet: the door for agents, the image for
-containers and the way in for messages from outside.
+the caller may read. The eleventh is the door for agents (ADR-0064,
+proposed, built as it proposes): `fadodb mcp`, a program that an
+agent's program starts and speaks the Model Context Protocol to, which
+offers each command as a tool and sends each call to a server with the
+key of a user; a refusal reaches the agent as the database wrote it.
+Not built yet: the door at the server itself, a tool that waits for a
+change and files through the door, which are questions of that record;
+the image for containers and the way in for messages from outside.
 This page is updated when a phase starts and when it ends;
 it never describes a phase as done before its acceptance criteria pass.
 

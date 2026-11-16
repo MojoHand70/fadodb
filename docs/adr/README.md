@@ -69,3 +69,4 @@ line says so. Copy `0000-template.md` to start.
 | [0061](0061-apache-license.md) | License: Apache 2.0 | Accepted |
 | [0062](0062-commands-from-a-terminal.md) | Commands from a terminal: `fadodb exec` | Proposed |
 | [0063](0063-the-flow-of-a-class.md) | The flow of a class in one call | Proposed |
+| [0064](0064-the-door-for-agents.md) | The door for agents: `fadodb mcp`, each command a tool | Proposed |

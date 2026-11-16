@@ -135,6 +135,36 @@ func (c *caller) command(ctx context.Context, sent string, object []byte) ([]byt
 	return c.answer(ctx, resp, "the answer of "+sent)
 }
 
+// ask sends a command and brings back what the server answered, and
+// prints nothing: the answer of the command, or, with refused set, its
+// refusal as the server wrote it. An error says that no answer came
+// through. It is how the door for agents sends a command (ADR-0064),
+// which answers an agent and writes to no terminal.
+func (c *caller) ask(ctx context.Context, sent string, object []byte) (answer []byte, refused bool, err error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.base+sent, bytes.NewReader(object))
+	if err != nil {
+		return nil, false, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+c.key)
+	req.Header.Set("User-Agent", "fadodb/"+version)
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return nil, false, fmt.Errorf("the server at %s was not reached: %v", req.URL.Redacted(), unwrapped(err))
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	switch {
+	case err != nil:
+		return nil, false, fmt.Errorf("the answer of %s broke off: %v", sent, err)
+	case resp.StatusCode == http.StatusOK && isObject(body):
+		return body, false, nil
+	case resp.StatusCode != http.StatusOK && isRefusal(body):
+		return body, true, nil
+	}
+	return nil, false, fmt.Errorf("what answered at %s is not a FadoDB server: %s", req.URL.Redacted(), resp.Status)
+}
+
 // notFadoDB is how the tool ends when what answered is not a FadoDB
 // server.
 func (c *caller) notFadoDB(resp *http.Response, body []byte) int {

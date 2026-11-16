@@ -1104,7 +1104,12 @@ engine's table. The command-line tool sends one with `fadodb exec`, to
 a server and with the key of a user, and a file with `fadodb file`
 (ADR-0062,
 [commands from a terminal](manual/commands-from-a-terminal.md)). An
-answer writes `<`, `>` and `&` as themselves (ADR-0055, amended).
+answer writes `<`, `>` and `&` as themselves (ADR-0055, amended). The
+door for agents is `fadodb mcp` (ADR-0064,
+[the door for agents](manual/the-door-for-agents.md)): a program an
+agent's program starts, which offers each command as a tool of the
+Model Context Protocol and sends each call to a server with the key of
+a user.
 
 > What is built today: the Go call `Exec` takes the name of a command
 > and its JSON object and answers one JSON object; and the package

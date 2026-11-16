@@ -234,6 +234,23 @@ All notable changes to FadoDB are recorded here. The format follows
   told. Measured on one machine with a writer that commits every
   millisecond: an entry is read 0.84 ms after its commit at p99 with
   one subscriber and 3.12 ms with a hundred, against a budget of 5 ms.
+- The door for agents: `fadodb mcp` offers the commands of a server as
+  tools to an agent's program, in the Model Context Protocol
+  (ADR-0064, proposed). The agent's program starts it and talks to it
+  over standard input and output; the door sends each call to the
+  server with the key of a user, from `FADODB_KEY` or `--key-file`, so
+  what an agent does is judged by the rules of the classes and written
+  to the log under that user. A tool is a command: its name, its
+  arguments and its answer are the command's, written from the
+  engine's table, with a mark that says whether it reads, writes or
+  removes. A refusal reaches the agent as the database wrote it, with
+  its code and its hint; when no answer comes through, the tool says so
+  with the code `no_answer`. `--read-only` offers only the tools that
+  read and `--tools` only the ones named. `subscribe` and `create_key`
+  are no tool, and the files are not in the door. It speaks the
+  revision of 2026-07-28 of the protocol and the ones that open with a
+  greeting, back to 2024-11-05. The manual has a chapter, "The door for
+  agents".
 - The flow of a class in one call (ADR-0063, proposed): the command
   `flow`, in Go `Flow`, answers the states of a class, each with the
   documents that are in it now, the moment the oldest entered it, and

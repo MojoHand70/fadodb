@@ -12,6 +12,7 @@ Published per tagged release, with the budgets from
 - [v0.4.1](v0.4.1.md): many documents moved by one call, the addendum
   to Phase 4.
 - [v0.5.0](v0.5.0.md): who may see and do what, and for whom, Phase 5.
+- [v0.6.0](v0.6.0.md): the server, Phase 6.
 
 The end-to-end suite is the `bench` package: scenarios written against
 database/sql so that the same one runs on every storage engine. Each
@@ -60,6 +61,21 @@ a filter:
 ```
 FADODB_BENCH_DIR=/path/on/disk FADODB_BENCH_COMMITS=100000 go test -count=1 -timeout 2h -v -run TestAccessCampaign ./internal/store/
 FADODB_BENCH_DIR=/path/on/disk FADODB_BENCH_DOCS=1000000 go test -run '^$' -bench '^BenchmarkFilter$' -benchmem ./internal/store/
+```
+
+The campaigns of the server run beside them since v0.6.0. One measures
+`fadodb serve`: a transition and a read through it on a connection
+that is kept open, by one caller and by sixteen, beside the same calls
+through the Go API and beside a request to Go's own server that does
+nothing (ADR-0011, ADR-0055, ADR-0059); a message from outside through
+an inlet (ADR-0065); and the door for agents (ADR-0064). One measures
+what it takes to open a database of fifty classes and what it holds
+open (ADR-0056), one the stream of changes on the wire (ADR-0058), and
+one the flow of a class (ADR-0063):
+
+```
+FADODB_BENCH_DIR=/path/on/disk FADODB_BENCH_COMMITS=200000 go test -count=1 -timeout 2h -v -run TestServeCampaign ./cmd/fadodb/
+FADODB_BENCH_DIR=/path/on/disk go test -count=1 -v -run 'TestOpenCampaign|TestStreamCampaign|TestFlowCampaign' ./internal/store/
 ```
 
 A campaign of a million commits a row runs longer than the ten minutes

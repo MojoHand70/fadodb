@@ -490,3 +490,14 @@ budget proposed for the part before the command is 100 µs for a
 message of 2 KiB, measured when it is built. The command is the
 command's budget (ADR-0055). Nothing of this is on the path of a
 command that comes with a key.
+
+Measured on 2026-11-16, with the campaign of the phase
+(`docs/perf/v0.6.0.md`): **27 µs and 94 allocations** before the
+command, for a message of 2 KiB whose `when`, `key` and id are read
+from it: 79.2 µs against 52.1 µs for the same move sent with a key
+(`BenchmarkReceive`, `BenchmarkTransitionKeyed`). Most of it is the
+JSON of the message, read once for each formula. Through the server a
+message that makes a document takes 0.377 ms at the median on the
+machine of the measurements, where a transition takes 0.318 ms. The
+proposed budget of 100 µs holds; the two benchmarks join the benchmark
+gate when the record is accepted.

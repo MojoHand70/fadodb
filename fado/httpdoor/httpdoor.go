@@ -104,7 +104,15 @@ const (
 	CodeTooLarge        = server.CodeTooLarge
 	CodeTimeout         = server.CodeTimeout
 	CodeBusy            = server.CodeBusy
+	// CodeCallerLeft is answered to nobody: it is what Request.Code says
+	// of a command whose caller closed the request before it ended, with
+	// the status StatusCallerLeft.
+	CodeCallerLeft = server.CodeCallerLeft
 )
+
+// StatusCallerLeft is the status of a request whose caller left before
+// it was answered, 499, as proxies write it in their logs.
+const StatusCallerLeft = server.StatusCallerLeft
 
 // New makes the door of an open database. It fails when Options.Who is
 // not given: a program that means to let everybody in says so with a

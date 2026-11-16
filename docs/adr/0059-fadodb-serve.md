@@ -72,6 +72,21 @@ Facts checked on the day:
    refused with `busy`, status 503. Both codes join the five of
    ADR-0055, item 7.
 
+   **A command whose caller left is stopped too, and has a code of its
+   own, `caller_left`, with the status 499** (added on 2026-11-16, on
+   the owner's word). Olga's assistant stops waiting for a slow
+   statement, as an agent's program may through the door for agents
+   (ADR-0064): the request is closed, the command is stopped, and
+   nobody is there to read a reply. The code is what the log and the
+   counts say of such a request. Without it they said what the engine
+   says of a command it was told to stop, a failure of its storage
+   with the status 500, which wakes whoever watches for a failing
+   disk. 499 is no status of HTTP: it is what proxies write in their
+   logs for a request its caller closed. A command that ended though
+   its caller had left ran, and a refusal that came after the caller
+   left is still the refusal, as with `timeout`. A request the server
+   itself cuts when it stops (item 10) is not one whose caller left.
+
 3. **A key never travels in the clear by accident.** Listening on any
    address but this machine's without a certificate is refused at
    start, unless the operator says that something in front encrypts:

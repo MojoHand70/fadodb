@@ -1,6 +1,6 @@
 # ADR-0055: The command set on the wire: every command, its JSON, and one address each
 
-- Status: Accepted; amends ADR-0011 (the commands are named and listed; over HTTP an address is the name of a command, not a path that names a document; the WebSocket is left to the record of the change stream), ADR-0018 (how a document is read and changed over HTTP), ADR-0033 (the address a file is served at); amended by ADR-0057 (nine commands join the table), ADR-0058 (one command joins the table), ADR-0059 (two codes, `timeout` and `busy`, join the codes of the door)
+- Status: Accepted; amends ADR-0011 (the commands are named and listed; over HTTP an address is the name of a command, not a path that names a document; the WebSocket is left to the record of the change stream), ADR-0018 (how a document is read and changed over HTTP), ADR-0033 (the address a file is served at); amended by ADR-0057 (nine commands join the table), ADR-0058 (one command joins the table), ADR-0059 (three codes, `timeout`, `busy` and, since 2026-11-16, `caller_left`, join the codes of the door)
 - Date: 2026-11-13
 
 ## Context

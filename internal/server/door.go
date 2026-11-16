@@ -113,7 +113,9 @@ type Request struct {
 	Command string
 	User    string
 	// Status is the HTTP status answered. Code is the code of the
-	// refusal, empty when the command ran.
+	// refusal, empty when the command ran. A command whose caller left
+	// before it ended has StatusCallerLeft and CodeCallerLeft: nobody
+	// was answered.
 	Status int
 	Code   string
 	// Err is set when the command failed in the engine, with code
@@ -306,20 +308,37 @@ func (d *Door) command(out *reply, r *http.Request, told *Request, name string) 
 
 	ctx, cancel := context.WithTimeout(r.Context(), d.limits.CommandTime)
 	answer, err := d.db.Exec(ctx, p, name, object)
-	expired := ctx.Err() == context.DeadlineExceeded
+	// Why the command was told to stop, if it was: its time was up, or
+	// the request it came in was closed.
+	why := ctx.Err()
 	cancel()
 	if err == nil {
 		out.send(http.StatusOK, answer)
 		return
 	}
 	code := command.Code(err)
-	// A command that the clock stopped fails in the engine or in its
-	// storage; one that was refused in time is answered with its refusal.
-	if expired && (code == command.CodeInternal || code == store.CodeStorage || errors.Is(err, context.DeadlineExceeded)) {
+	// A command that was stopped fails in the engine or in its storage;
+	// one that was refused before that is answered with its refusal.
+	broke := code == command.CodeInternal || code == store.CodeStorage
+	if why == context.DeadlineExceeded && (broke || errors.Is(err, context.DeadlineExceeded)) {
 		told.Code = CodeTimeout
 		out.refusal(Status(CodeTimeout), &store.Error{
 			Code:    CodeTimeout,
 			Message: "the command ran longer than " + d.limits.CommandTime.String() + ", the longest the server lets one run, and was stopped",
+			Hint:    "a command that is one commit wrote nothing; migrate and drain commit as they go and keep what they had done",
+		})
+		return
+	}
+	// A command whose caller left is stopped the same way. Nobody reads
+	// the reply: the code is for the log and the counts, which would
+	// otherwise say that the storage failed (ADR-0059, item 2). A
+	// request the server itself cuts because it stops is not one whose
+	// caller left.
+	if why == context.Canceled && (broke || errors.Is(err, context.Canceled)) && !d.stops() {
+		told.Code = CodeCallerLeft
+		out.refusal(Status(CodeCallerLeft), &store.Error{
+			Code:    CodeCallerLeft,
+			Message: "the caller closed the request before the command ended, and the command was stopped",
 			Hint:    "a command that is one commit wrote nothing; migrate and drain commit as they go and keep what they had done",
 		})
 		return

@@ -27,7 +27,19 @@ const (
 	// at once, and none ended while the request waited. Nothing was run;
 	// the same request can be sent again.
 	CodeBusy = "busy"
+	// CodeCallerLeft: the caller closed the request before the command
+	// ended, and the command was stopped. Nobody reads this refusal: it
+	// is what the log and the counts of the server say of such a request.
+	// A command that is one commit wrote nothing; migrate and drain, which
+	// commit as they go, keep what they had done.
+	CodeCallerLeft = "caller_left"
 )
+
+// StatusCallerLeft is the status of a request whose caller left before
+// it was answered. HTTP has no status for it, since nobody is there to
+// read one; 499 is what proxies write in their logs for such a request,
+// so the tools that read the log of a server know it.
+const StatusCallerLeft = 499
 
 // Status is the HTTP status a code is answered with (ADR-0055, item 8),
 // for the proxies and the tools between a caller and the door. A caller
@@ -57,6 +69,8 @@ func Status(code string) int {
 		return http.StatusServiceUnavailable
 	case CodeTimeout:
 		return http.StatusGatewayTimeout
+	case CodeCallerLeft:
+		return StatusCallerLeft
 	}
 	// Every other refusal: the request was understood and the engine
 	// does not carry it out.

@@ -115,15 +115,23 @@ func TestTheLogIsEmptiedAfterABurst(t *testing.T) {
 func TestTheLogStaysNearItsLimit(t *testing.T) {
 	const limit = 1 << 20
 	_, path, _, stop := writing(t, limit, 4)
-	// Watched while the writers write: they leave no pause.
+	// Watched while the writers write: they leave no pause. How long
+	// they take to fill the log to where it is first emptied depends on
+	// the machine: under the race detector on one processor it is about
+	// the second and a half this test watches for. So the watch goes on
+	// until the log was emptied once, and gives up after half a minute.
 	times, largest := emptied(path, 1500*time.Millisecond)
+	for until := time.Now().Add(30 * time.Second); times == 0 && time.Now().Before(until); {
+		more, larger := emptied(path, 250*time.Millisecond)
+		times, largest = times+more, max(largest, larger)
+	}
 	stop()
 	// How often depends on how fast the machine writes; that it happens
 	// at all while the writers write, and that the log stays near its
 	// limit, does not. Without the turn the log of this test grew to
 	// 600 times its limit.
 	if times == 0 {
-		t.Errorf("the log was never emptied in a second and a half of writing without a pause")
+		t.Errorf("the log was never emptied in half a minute of writing without a pause")
 	}
 	if largest > 4*farPast*limit {
 		t.Errorf("the log grew to %d MiB under a limit of %d MiB: it is emptied past %d times the limit", largest>>20, limit>>20, farPast)

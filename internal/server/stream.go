@@ -74,7 +74,8 @@ func (d *Door) Streams() int {
 // refuses with closed the ones asked for after it. A program calls it
 // when it is told to stop, before it waits for its requests to end: a
 // stream does not end by itself. It does not wait for the streams, and
-// commands are answered as before.
+// commands are answered as before. A command the program cuts after
+// this is not taken for one whose caller left.
 //
 //	srv.RegisterOnShutdown(door.EndStreams)
 func (d *Door) EndStreams() {
@@ -84,6 +85,13 @@ func (d *Door) EndStreams() {
 	for s := range d.streams {
 		s.end()
 	}
+}
+
+// stops reports whether the door was told that the server stops.
+func (d *Door) stops() bool {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return d.ended
 }
 
 // hold takes a place among the open streams, or says why there is none.

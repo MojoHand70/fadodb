@@ -520,13 +520,13 @@ func between(chapter, from, to string) string {
 	return block
 }
 
-// A statement that runs longer than the server lets a command run is
-// stopped and answered timeout, as any other command is, and the log
-// says the same: nothing is wrong with what the caller sent (ADR-0059,
-// item 2).
-func TestAStatementThatRunsTooLong(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "acme.fado")
+// fourInvoices makes a database with four invoices and Olga, who may
+// run SQL and read the counts, and answers where it is and her key. A
+// statement over the four, joined sixteen times, reads four billion
+// rows: slowStatement, which does not end unless it is stopped.
+func fourInvoices(t *testing.T) (path, key string) {
+	t.Helper()
+	path = filepath.Join(t.TempDir(), "acme.fado")
 	if code, _, said := tool("init", path); code != 0 {
 		t.Fatal(said)
 	}
@@ -548,24 +548,35 @@ func TestAStatementThatRunsTooLong(t *testing.T) {
 	if err := db.Close(); err != nil {
 		t.Fatal(err)
 	}
-	if code, _, said := tool("user", "add", "olga", "--kind", "person", "--system", "analysts", "--db", path); code != 0 {
+	if code, _, said := tool("user", "add", "olga", "--kind", "person", "--system", "analysts", "--system", "administrators", "--db", path); code != 0 {
 		t.Fatal(said)
 	}
-	_, key, _ := tool("key", "new", "olga", "--db", path)
-	key = strings.TrimSpace(key)
-	settings := filepath.Join(dir, "settings.json")
+	_, key, _ = tool("key", "new", "olga", "--db", path)
+	return path, strings.TrimSpace(key)
+}
+
+func slowStatement() string {
+	var from []string
+	for i := 0; i < 16; i++ {
+		from = append(from, "Invoice t"+strconv.Itoa(i))
+	}
+	return `{"statement": "SELECT count(*) FROM ` + strings.Join(from, ", ") + `"}`
+}
+
+// A statement that runs longer than the server lets a command run is
+// stopped and answered timeout, as any other command is, and the log
+// says the same: nothing is wrong with what the caller sent (ADR-0059,
+// item 2).
+func TestAStatementThatRunsTooLong(t *testing.T) {
+	path, key := fourInvoices(t)
+	settings := filepath.Join(t.TempDir(), "settings.json")
 	if err := os.WriteFile(settings, []byte(`{"limits": {"command_seconds": 0.05}}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
 	addr, log, stop := serving(t, path, "--listen", "127.0.0.1:0", "--settings", settings)
 	client := &http.Client{Timeout: 30 * time.Second}
-	// Four invoices joined sixteen times are four billion rows.
-	var from []string
-	for i := 0; i < 16; i++ {
-		from = append(from, "Invoice t"+strconv.Itoa(i))
-	}
-	status, body := ask(t, client, "POST", "http://"+addr+"/v1/sql", key, `{"statement": "SELECT count(*) FROM `+strings.Join(from, ", ")+`"}`)
+	status, body := ask(t, client, "POST", "http://"+addr+"/v1/sql", key, slowStatement())
 	if status != http.StatusGatewayTimeout || !strings.Contains(body, `"code":"timeout"`) || !strings.Contains(body, "50ms") {
 		t.Errorf("a statement that runs longer than the server lets one run: %d %s", status, body)
 	}
@@ -580,5 +591,53 @@ func TestAStatementThatRunsTooLong(t *testing.T) {
 	stop()
 	if !strings.Contains(log.String(), `"command":"sql","user":"olga","status":504,"code":"timeout"`) {
 		t.Errorf("the log of a statement that ran too long:\n%s", log)
+	}
+}
+
+// A statement whose caller leaves before it ends is stopped, and the
+// log and the counts say that the caller left, with the status 499: the
+// storage did not fail (ADR-0059, item 2).
+func TestAStatementWhoseCallerLeft(t *testing.T) {
+	path, key := fourInvoices(t)
+	addr, log, stop := serving(t, path, "--listen", "127.0.0.1:0")
+	base := "http://" + addr
+
+	// Ann's assistant waits a fifth of a second for its answer and
+	// leaves.
+	req, err := http.NewRequest("POST", base+"/v1/sql", strings.NewReader(slowStatement()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+key)
+	if resp, err := (&http.Client{Timeout: 200 * time.Millisecond}).Do(req); err == nil {
+		resp.Body.Close()
+		t.Fatalf("a statement over four billion rows was answered: %d", resp.StatusCode)
+	}
+
+	// The server stops the statement and writes its line; the next
+	// statement runs.
+	client := &http.Client{Timeout: 30 * time.Second}
+	const line = `"command":"sql","user":"olga","status":499,"code":"caller_left"`
+	for until := time.Now().Add(20 * time.Second); !strings.Contains(log.String(), line); time.Sleep(10 * time.Millisecond) {
+		if time.Now().After(until) {
+			t.Fatalf("the log has no line of a caller that left:\n%s", log)
+		}
+	}
+	if status, body := ask(t, client, "POST", base+"/v1/sql", key, `{"statement": "SELECT count(*) AS n FROM Invoice"}`); status != 200 || !strings.Contains(body, `"rows":[[4]]`) {
+		t.Errorf("the statement after one whose caller left: %d %s", status, body)
+	}
+	// It is counted under its own status, and no failure is.
+	status, page := ask(t, client, "GET", base+metricsPath, key, "")
+	if status != 200 || !strings.Contains(page, `fadodb_requests_total{command="sql",status="499"} 1`+"\n") || strings.Contains(page, `command="sql",status="500"`) {
+		t.Errorf("the counts after a caller left: %d\n%s", status, page)
+	}
+	stop()
+	if strings.Contains(log.String(), `"code":"storage"`) || strings.Contains(log.String(), `"status":500`) {
+		t.Errorf("the log names a failure where a caller left:\n%s", log)
+	}
+	// The chapter on serving shows such a line.
+	if shown := blockAfter(t, "<!-- a caller that left -->\n```jsonc\n", "\n```"); !strings.Contains(shown, line) {
+		t.Errorf("the chapter shows the line of a caller that left as %s", shown)
 	}
 }

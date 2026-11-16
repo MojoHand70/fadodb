@@ -430,7 +430,9 @@ An agent's program of either kind finds the door speaking its form.
 - **The tools are listed on one page**, and the list does not change
   while a door lives.
 - **A slow command holds up no other.** The door carries up to 16
-  calls at once, and a call that the agent's program stops is stopped.
+  calls at once, and a call that the agent's program stops is stopped:
+  the server ends the command and writes `caller_left` in
+  [its log](serving-a-database.md#what-it-writes).
 - **A message is one line of at most 64 MiB.** A server reads 16 MiB
   of a command unless it was told otherwise, and says so itself.
 

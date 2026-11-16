@@ -9,7 +9,7 @@
             }
           }
         },
-        "description": "The command was not carried out. The body holds the refusal under `error`, with its code; a caller reads the code, and the status is worked out from it:\n\n| Status | Codes |\n|---|---|\n| 400 | `bad_json` |\n| 401 | `unauthenticated` |\n| 403 | `forbidden`, `reason_required` |\n| 404 | `unknown_class`, `unknown_document`, `unknown_table`, `unknown_schema`, `unknown_blob`, `unknown_action`, `unknown_row`, `unknown_user`, `unknown_key`, `unknown_command` |\n| 409 | `key_reused`, `duplicate`, `terminal`, `wrong_state`, `guard_false` |\n| 413 | `blob_too_large`, `too_large` |\n| 500 | `storage`, `internal` |\n| 503 | `closed`, `busy` |\n| 504 | `timeout` |\n| 422 | every other refusal |\n"
+        "description": "The command was not carried out. The body holds the refusal under `error`, with its code; a caller reads the code, and the status is worked out from it:\n\n| Status | Codes |\n|---|---|\n| 400 | `bad_json` |\n| 401 | `unauthenticated` |\n| 403 | `forbidden`, `reason_required` |\n| 404 | `unknown_class`, `unknown_document`, `unknown_table`, `unknown_schema`, `unknown_blob`, `unknown_action`, `unknown_row`, `unknown_user`, `unknown_key`, `unknown_command` |\n| 409 | `key_reused`, `duplicate`, `terminal`, `wrong_state`, `guard_false` |\n| 413 | `blob_too_large`, `too_large` |\n| 499 | `caller_left` |\n| 500 | `storage`, `internal` |\n| 503 | `closed`, `busy` |\n| 504 | `timeout` |\n| 422 | every other refusal |\n"
       }
     },
     "schemas": {

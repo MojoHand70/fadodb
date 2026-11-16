@@ -1183,6 +1183,7 @@ Authorization: Bearer …
   | 409 | `key_reused`, `duplicate`, `terminal`, `wrong_state`, `guard_false` |
   | 413 | `blob_too_large`, `too_large` |
   | 422 | every other refusal |
+  | 499 | `caller_left` |
   | 500 | `storage`, `internal` |
   | 503 | `closed`, `busy` |
   | 504 | `timeout` |

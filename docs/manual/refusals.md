@@ -129,6 +129,7 @@ What a request is answered with before its command runs, or beside it, when the 
 | `too_large` | The request is larger than the server reads, 16 MiB unless the server was told otherwise. Nothing of it was run. |
 | `timeout` | The command ran longer than the server lets one run, 30 seconds unless the server was told otherwise, and was stopped. A command that is one commit wrote nothing; migrate and drain, which commit as they go, keep what they had done. |
 | `busy` | The server already runs as many commands as it takes on at once, and none ended while the request waited. Nothing was run; the same request can be sent again. |
+| `caller_left` | The caller closed the request before the command ended, and the command was stopped. Nobody reads this refusal: it is what the log and the counts of the server say of such a request. A command that is one commit wrote nothing; migrate and drain, which commit as they go, keep what they had done. |
 
 ## Errors of a formula
 

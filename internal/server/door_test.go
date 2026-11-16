@@ -364,6 +364,68 @@ func TestACommandThatRunsTooLong(t *testing.T) {
 	}
 }
 
+// A command whose caller left before it ended is stopped, and the log
+// and the counts are told so with a code of their own and the status
+// 499: it is no failure of the storage, which is what the engine says
+// of a command it was told to stop (ADR-0059, item 2).
+func TestACommandWhoseCallerLeft(t *testing.T) {
+	entered := make(chan struct{}, 4)
+	var told []Request
+	d := door(t, engine(func(ctx context.Context, _ store.Principal, name string, _ []byte) ([]byte, error) {
+		entered <- struct{}{}
+		<-ctx.Done()
+		switch name {
+		case "sql":
+			return []byte(`{"error":{"code":"storage","message":"run the statement: context canceled"}}`), &store.Error{Code: store.CodeStorage, Message: "run the statement: context canceled"}
+		case "transition":
+			// A refusal that comes after the caller left is still the
+			// refusal: the command was not stopped, it was refused.
+			e := &store.Error{Code: store.CodeGuardFalse, Message: "the guard of approve is false"}
+			text, _ := command.Marshal(map[string]any{"error": e})
+			return text, e
+		}
+		// A command that ended, though its caller had left, ran.
+		return []byte(`{"document":{}}`), nil
+	}), Options{Report: func(r Request) { told = append(told, r) }})
+
+	// send sends a command whose caller leaves once the command runs.
+	send := func(name string) *httptest.ResponseRecorder {
+		t.Helper()
+		ctx, leave := context.WithCancel(context.Background())
+		defer leave()
+		r := httptest.NewRequest(http.MethodPost, "/v1/"+name, strings.NewReader(`{}`)).WithContext(ctx)
+		r.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		go func() {
+			<-entered
+			leave()
+		}()
+		d.ServeHTTP(w, r)
+		return w
+	}
+	w := send("sql")
+	if got := refusal(t, w); w.Code != StatusCallerLeft || got.Code != CodeCallerLeft || !strings.Contains(got.Hint, "wrote nothing") {
+		t.Errorf("a command whose caller left: %d %+v", w.Code, got)
+	}
+	if w := send("transition"); w.Code != http.StatusConflict || refusal(t, w).Code != store.CodeGuardFalse {
+		t.Errorf("a refusal after the caller left: %d %s", w.Code, w.Body)
+	}
+	if w := send("get"); w.Code != http.StatusOK {
+		t.Errorf("a command that ended after its caller left: %d %s", w.Code, w.Body)
+	}
+	if len(told) != 3 || told[0].Status != 499 || told[0].Code != "caller_left" || told[0].Err != nil ||
+		told[1].Status != 409 || told[1].Code != store.CodeGuardFalse || told[2].Status != 200 || told[2].Code != "" {
+		t.Errorf("the door told of the three requests: %+v", told)
+	}
+
+	// A server that stops and cuts a request is not a caller that left:
+	// the request is told of as the engine answered it.
+	d.EndStreams()
+	if w := send("sql"); w.Code != http.StatusInternalServerError || refusal(t, w).Code != store.CodeStorage {
+		t.Errorf("a command the server cut as it stopped: %d %s", w.Code, w.Body)
+	}
+}
+
 func TestMoreCommandsThanTheDoorRuns(t *testing.T) {
 	entered := make(chan struct{}, 8)
 	release := make(chan struct{})

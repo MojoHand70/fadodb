@@ -458,13 +458,36 @@ health, as JSON:
 | `time` | when the request came, in UTC |
 | `command` | the name the request was sent to: a command, `blobs`, `file` or `blob` for a file, or `metrics` for the counts |
 | `user` | the id of who sent it, empty when the server could not tell |
-| `status` | the status of the reply |
+| `status` | the status of the reply; 499 when the caller left before the command ended |
 | `code` | the code of the refusal; left out when the command ran |
 | `ms` | how long it took, in milliseconds |
 | `error` | for a command that failed in the engine, with the code `internal`: what failed. The caller is not told |
 
 A line never holds the body of a request, a value of a document or a
 key.
+
+A command whose caller left before it ended is stopped, as one that
+ran out of time is. Olga's assistant stops waiting for a slow
+statement after a third of a second; nobody is there to read a reply,
+and the line says what happened, with a status and a code of its own:
+
+<!-- a caller that left -->
+```jsonc
+{"time":"2026-11-16T12:38:11.246Z","command":"sql","user":"olga","status":499,"code":"caller_left","ms":302.850}
+```
+
+- **499 is no status of HTTP.** It is what proxies write in their logs
+  for a request its caller closed, so the tools that read such logs
+  know it.
+- **It is counted under that status** in [the counts](#its-counts),
+  and not as a failure: whoever watches for the status 500 is not
+  woken by an agent that stopped waiting.
+- **What it leaves behind is what `timeout` leaves**: a command that
+  is one commit wrote nothing; `migrate` and `drain`, which commit as
+  they go, keep what they had done.
+- **A command that ended, though its caller had left, ran**, and its
+  line says 200. A command refused after its caller left has the line
+  of its refusal.
 
 ## Its health
 

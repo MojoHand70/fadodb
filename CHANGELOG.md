@@ -443,6 +443,16 @@ All notable changes to FadoDB are recorded here. The format follows
 
 ### Fixed
 
+- A command whose caller left before it ended was logged and counted
+  by the server as a failure of the storage, with the status 500,
+  which is what the engine says of a command it was told to stop. An
+  agent that stopped waiting for a slow statement could so wake
+  whoever watches for a failing disk. Such a request now has a code of
+  its own in the log and the counts, `caller_left`, with the status
+  499, the one proxies write for a request its caller closed
+  (ADR-0059, item 2, amended on the owner's word). Nobody is answered
+  with it. `httpdoor.CodeCallerLeft` and `httpdoor.StatusCallerLeft`
+  are what a Go program's `Report` reads.
 - A statement of `sql` that ran longer than the server lets a command
   run was refused with `bad_value` and the words `context deadline
   exceeded`, as if the statement were wrong. It is now refused with

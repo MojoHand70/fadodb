@@ -27,7 +27,10 @@
   },
   "script": [
     {"name": "Ann writes a memo", "do": "create", "doc": "m1", "as": "ann", "expect": {"state": "draft", "values": {"owner": "ann"}}},
-    {"name": "a content administrator reads it, and no reason is asked for a read", "do": "get", "doc": "m1", "as": "cora", "expect": {"values": {"owner": "ann"}}},
+    {"name": "a content administrator who gives no reason is told that a read past the rule needs one (ADR-0067)", "do": "get", "doc": "m1", "as": "cora",
+     "expect": {"code": "reason_required", "action": "/access/read"}},
+    {"name": "with a reason she reads it, and the log of reads keeps the document and the rule", "do": "get", "doc": "m1", "as": "cora", "reason": "checking the memo for its owner",
+     "expect": {"values": {"owner": "ann"}, "reads": ["get m1 /access/read"]}},
     {"name": "to change it she needs a reason: the refusal names the first rule she would get past", "do": "set", "doc": "m1", "as": "cora", "values": {"total": 6},
      "expect": {"code": "reason_required", "action": "/access/read"}},
     {"name": "a preview says the same and goes on", "do": "preview", "doc": "m1", "as": "cora", "values": {"total": 6},
@@ -40,14 +43,19 @@
     {"name": "she sets the total", "do": "set", "doc": "m1", "as": "cora", "reason": "the owner left the company", "values": {"total": 6}, "expect": {"version": 3}},
     {"name": "and sends the memo past the rule of the transition; the engine files it by itself", "do": "transition", "doc": "m1", "as": "cora", "reason": "sent for the owner", "transition": "send",
      "expect": {"state": "filed"}},
-    {"name": "each of her commands is marked with the rules it lifted and its reason, and the engine's own move is not", "do": "get", "doc": "m1", "as": "cora",
+    {"name": "each of her commands is marked with the rules it lifted and its reason, and the engine's own move is not", "do": "get", "doc": "m1", "as": "cora", "reason": "checking her marks",
      "expect": {"overrides": ["", "/access/read /access/update: the owner left the company", "/access/read /access/update: the owner left the company",
                               "/access/read /access/transition/send: sent for the owner", ""]}},
 
+    {"name": "her changes left no entry in the log of reads, since their events keep the reason, and the preview with no reason none either; the read of the marks did", "do": "get", "doc": "m1", "as": "ann",
+     "expect": {"reads": ["get m1 /access/read"]}},
+    {"name": "a preview with a reason shows the memo whole, and no event keeps it, so the log of reads does", "do": "preview", "doc": "m1", "as": "cora", "reason": "what would a total of 7 do", "values": {"total": 7},
+     "expect": {"values": {"owner": "ann", "total": 7}, "reads": ["preview m1 /access/read"]}},
     {"name": "her own memo is an ordinary document: the rules let her through", "do": "create", "doc": "m2", "as": "cora", "expect": {"state": "draft"}},
     {"name": "no reason is asked where no rule is lifted", "do": "set", "doc": "m2", "as": "cora", "values": {"total": 2}, "expect": {"version": 2}},
     {"name": "and a reason given all the same is not kept", "do": "set", "doc": "m2", "as": "cora", "reason": "not needed", "values": {"total": 3}, "expect": {"version": 3}},
     {"name": "nobody deletes a memo, so her delete of her own is an override too", "do": "delete", "doc": "m2", "as": "cora", "expect": {"code": "reason_required", "action": "/access/delete"}},
-    {"name": "the events of her own memo carry no mark", "do": "get", "doc": "m2", "as": "cora", "expect": {"overrides": ["", "", ""]}}
+    {"name": "the events of her own memo carry no mark", "do": "get", "doc": "m2", "as": "cora", "expect": {"overrides": ["", "", ""]}},
+    {"name": "and nothing she read of her own memo is in the log of reads", "do": "get", "doc": "m2", "as": "cora", "reason": "a reason given all the same", "expect": {"reads": []}}
   ]
 }

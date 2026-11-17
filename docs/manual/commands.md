@@ -87,7 +87,7 @@ A command takes the ones its list below shows, and no other.
 |---|---|---|
 | `key` | text | the idempotency key: the same command sent again with the same key makes no second commit and is answered as the first was |
 | `business_date` | text | the business day of the commit, as "2026-11-13"; the server's day when left out |
-| `reason` | text | why a content administrator acts past a rule of the class; kept on the event |
+| `reason` | text | why a content administrator acts or reads past a rule; a change keeps it on its event, a read in the log of reads |
 | `for` | text | the id of whoever the caller acts for; let through only while a substitution says so |
 | `at` | moment | the moment the command reads at: "2026-11-13", "2026-11-13 09:30:00" in UTC, or seconds since the epoch; now when left out |
 
@@ -162,7 +162,7 @@ Reads a document. It reads; in Go it is the call `Get`.
 | `class` | text | needed | the name of the class |
 | `id` | text | needed | the id of the document |
 
-And, of the members that mean the same everywhere: `at`, `for`.
+And, of the members that mean the same everywhere: `reason`, `at`, `for`.
 
 It answers:
 
@@ -284,7 +284,7 @@ Lists the transitions leaving a document's state, each with whether the caller m
 | `class` | text | needed | the name of the class |
 | `id` | text | needed | the id of the document |
 
-And, of the members that mean the same everywhere: `at`, `for`.
+And, of the members that mean the same everywhere: `reason`, `at`, `for`.
 
 It answers:
 
@@ -300,7 +300,7 @@ Lists the documents of a class that a commit would move now: a guard on time hol
 |---|---|---|---|
 | `class` | text | needed | the name of the class |
 
-And, of the members that mean the same everywhere: `at`, `for`.
+And, of the members that mean the same everywhere: `reason`, `at`, `for`.
 
 It answers:
 
@@ -317,7 +317,7 @@ Reads every committed version of a document, oldest first. It reads; in Go it is
 | `class` | text | needed | the name of the class |
 | `id` | text | needed | the id of the document |
 
-And, of the members that mean the same everywhere: `at`, `for`.
+And, of the members that mean the same everywhere: `reason`, `at`, `for`.
 
 It answers:
 
@@ -335,7 +335,7 @@ Reads one committed version of a document. It reads; in Go it is the call `Versi
 | `id` | text | needed | the id of the document |
 | `version` | whole number | needed | the version to read |
 
-And, of the members that mean the same everywhere: `at`, `for`.
+And, of the members that mean the same everywhere: `reason`, `at`, `for`.
 
 It answers:
 
@@ -352,7 +352,7 @@ Reads the events that touched a document, oldest first. It reads; in Go it is th
 | `class` | text | needed | the name of the class |
 | `id` | text | needed | the id of the document |
 
-And, of the members that mean the same everywhere: `at`, `for`.
+And, of the members that mean the same everywhere: `reason`, `at`, `for`.
 
 It answers:
 
@@ -370,6 +370,8 @@ Opens the stream of changes: the caller is told of every event it may read of, i
 | `kinds` | list of texts |  | the kinds of event to hear of, such as created, set and transition; every kind when left out |
 | `to_states` | list of texts |  | for a transition, the states entered; every state when left out |
 | `after` | text |  | the id of an event: the stream begins after it, so a caller that was away gives the last one it handled; now when left out |
+
+And, of the members that mean the same everywhere: `reason`.
 
 Its answer is a stream and not one object: over HTTP a reply that stays
 open and carries one entry for each event, and in Go a value whose
@@ -446,7 +448,7 @@ Reads the documents of a class that match a filter. It reads; in Go it is the ca
 | `offset` | whole number |  | how many documents to skip |
 | `fields` | list of texts |  | the variables to answer; every one when left out |
 
-And, of the members that mean the same everywhere: `at`, `for`.
+And, of the members that mean the same everywhere: `reason`, `at`, `for`.
 
 It answers:
 
@@ -463,7 +465,7 @@ Counts the documents of a class that match a filter. It reads; in Go it is the c
 | `class` | text | needed | the name of the class |
 | `where` | text |  | a formula over the variables of the class; every document when left out |
 
-And, of the members that mean the same everywhere: `at`, `for`.
+And, of the members that mean the same everywhere: `reason`, `at`, `for`.
 
 It answers:
 
@@ -481,7 +483,7 @@ Answers the flow of a class: the documents the caller may read in each state now
 | `since` | moment |  | the first moment of the period the moves and the stays are counted in; since the class began when left out |
 | `until` | moment |  | the moment the period ends before; now when left out |
 
-And, of the members that mean the same everywhere: `for`.
+And, of the members that mean the same everywhere: `reason`, `for`.
 
 It answers:
 
@@ -498,7 +500,7 @@ Runs one read-only SELECT over the views, for an analyst. It reads; in Go it is 
 | `statement` | text | needed | the SELECT, with ? for each argument |
 | `args` | list of values |  | the arguments, in order |
 
-And, of the members that mean the same everywhere: `for`.
+And, of the members that mean the same everywhere: `reason`, `for`.
 
 It answers:
 
@@ -914,6 +916,7 @@ It answers:
 | [`retry_action`](#retry_action) | Makes a dead action pending again. | writes |
 | [`drain`](#drain) | Runs every queued action that is due, now. | writes |
 | [`check_blobs`](#check_blobs) | Recomputes the hash of every file the database holds, and looks for every file a document holds. | reads |
+| [`reads`](#reads) | Lists the log of reads: what a content administrator saw past a rule, with the reason, and every SQL statement. It is a database administrator's. | reads |
 
 ### table_rows
 
@@ -923,7 +926,7 @@ Reads every row of a table, in the order of its key. It reads; in Go it is the c
 |---|---|---|---|
 | `table` | text | needed | the name of the table |
 
-And, of the members that mean the same everywhere: `at`, `for`.
+And, of the members that mean the same everywhere: `reason`, `at`, `for`.
 
 It answers:
 
@@ -941,7 +944,7 @@ Writes rows into a table; a row whose key exists is replaced. It writes; in Go i
 | `rows` | list of objects | needed | the rows, each an object of values by column |
 | `replace` | true or false |  | true empties the table first, so that the rows given are all its rows |
 
-And, of the members that mean the same everywhere: `for`.
+And, of the members that mean the same everywhere: `reason`, `for`.
 
 It answers:
 
@@ -1039,6 +1042,30 @@ It answers:
 | `checked` | how many files it checked |
 | `mismatched` | the hashes of the files whose bytes do not match |
 | `missing` | the files a document holds, in any version, that the database has lost, each {"hash", "class", "id", "version", "variable"} |
+
+### reads
+
+Lists the log of reads: what a content administrator saw past a rule, with the reason, and every SQL statement. It is a database administrator's. It reads; in Go it is the call `Reads`.
+
+| Member | Type | | What it is |
+|---|---|---|---|
+| `by` | text |  | only what this caller read |
+| `class` | text |  | only reads of this class |
+| `id` | text |  | only reads that showed this document; needs class |
+| `table` | text |  | only reads of this table |
+| `command` | text |  | only reads by this command, such as get, query or sql |
+| `since` | moment |  | the first moment of the period |
+| `until` | moment |  | the moment the period ends before |
+| `after` | whole number |  | the seq of the last entry already read, to read on from |
+| `limit` | whole number |  | the most entries to answer: 1,000 when left out, at most 10,000 |
+
+And, of the members that mean the same everywhere: `for`.
+
+It answers:
+
+| Member | What it holds |
+|---|---|
+| `reads` | the entries, oldest first: seq, when, who, of what kind and for whom, the command, the class or the table, the documents it showed past a rule and the rules, the reason; for a count how many it counted past a rule; for a table how many rows; for SQL the statement, its arguments and how many rows it returned or the code it failed with |
 
 ## Users, groups and keys
 
@@ -1291,8 +1318,8 @@ facts, is a value like any other and travels in the commands;
 | Address | Does | Answers |
 |---|---|---|
 | `POST /v1/blobs?name=taxi.pdf` | keeps the bytes of the body under their hash, with the `Content-Type` of the request as their kind | `{"file": {"hash": …, "name": …, "media_type": …, "size": …}}`: the facts to set on a document, in a command |
-| `GET /v1/file?class=Receipt&id=R-7&hash=d694…` | streams a file the document holds at its current version, or at the one `version=` names; `for=` says for whom the caller acts | the bytes |
-| `GET /v1/blob?hash=d694…` | streams bytes by their hash alone, for a content administrator | the bytes |
+| `GET /v1/file?class=Receipt&id=R-7&hash=d694…` | streams a file the document holds at its current version, or at the one `version=` names; `for=` says for whom the caller acts, and `reason=` why a content administrator opens it past a rule | the bytes |
+| `GET /v1/blob?hash=d694…&reason=…` | streams bytes by their hash alone, for a content administrator who gives a reason, which the log of reads keeps | the bytes |
 
 - **A file is read under the rules of its document.** A caller who may
   not read the document is answered `unknown_document`, and one who may

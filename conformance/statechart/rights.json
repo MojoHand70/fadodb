@@ -27,7 +27,8 @@
     "alice": {"id": "alice", "groups": ["claims"]},
     "bob":   {"id": "bob",   "groups": ["claims"]},
     "fin":   {"id": "fin",   "groups": ["finance"]},
-    "root":  {"id": "root",  "system": ["content-administrators"]}
+    "root":  {"id": "root",  "system": ["content-administrators"]},
+    "cora":  {"id": "cora",  "system": ["content-administrators"]}
   },
   "script": [
     {"name": "the owner defaults to the caller, who may then set the amount; the result hides the payout", "do": "create", "doc": "c1", "as": "alice", "values": {"amount": 100, "note": "car"},
@@ -38,7 +39,9 @@
     {"name": "a formula right over the stored document: not the owner", "do": "set", "doc": "c1", "as": "bob", "values": {"amount": 200}, "expect": {"code": "forbidden"}},
     {"name": "the owner", "do": "set", "doc": "c1", "as": "alice", "values": {"amount": 200}, "expect": {"version": 2, "values": {"double": 400}}},
     {"name": "a read as a stranger hides the payout and shows the note in open", "do": "get", "doc": "c1", "as": "bob", "expect": {"absent": ["payout"], "present": ["note", "amount", "owner"]}},
-    {"name": "an administrator reads everything", "do": "get", "doc": "c1", "as": "root", "expect": {"present": ["payout", "note"]}},
+    {"name": "an administrator reads everything, with a reason", "do": "get", "doc": "c1", "as": "root", "reason": "checking the claim for finance", "expect": {"present": ["payout", "note"]}},
+    {"name": "a content administrator who gives no reason reads what anybody reads (ADR-0067)", "do": "get", "doc": "c1", "as": "cora", "expect": {"absent": ["payout"], "present": ["note"], "reads": []}},
+    {"name": "with a reason she reads the payout, and the log keeps the right she got past", "do": "get", "doc": "c1", "as": "cora", "reason": "checking the claim for finance", "expect": {"present": ["payout", "note"], "reads": ["get c1 /rights/open/payout/read"]}},
     {"name": "a call without a principal is nobody", "do": "get", "doc": "c1", "expect": {"absent": ["payout"], "present": ["note"]}},
     {"name": "an administrator sets what a group list guards", "do": "set", "doc": "c1", "as": "root", "reason": "asked to by the owner of the process", "values": {"payout": 10}, "expect": {"version": 3, "present": ["payout"]}},
     {"name": "nobody may not set the amount", "do": "set", "doc": "c1", "values": {"amount": 1}, "expect": {"code": "forbidden"}},
@@ -64,7 +67,9 @@
     {"name": "a right that depends on the row matches where the state allows: the owner finds the note in review", "do": "query", "as": "alice", "where": "note = \"sent\"", "expect": {"docs": ["c1"]}},
     {"name": "a stranger does not", "do": "query", "as": "bob", "where": "note = \"sent\"", "expect": {"docs": []}},
     {"name": "nor nobody", "do": "query", "where": "note = \"sent\"", "expect": {"docs": []}},
-    {"name": "an administrator matches without predicates", "do": "query", "as": "root", "where": "note = \"sent\"", "expect": {"docs": ["c1"]}},
+    {"name": "an administrator matches without predicates, with a reason", "do": "query", "as": "root", "reason": "checking the claim for finance", "where": "note = \"sent\"", "expect": {"docs": ["c1"]}},
+    {"name": "a content administrator who gives no reason matches as anybody", "do": "query", "as": "cora", "where": "note = \"sent\"", "expect": {"docs": []}},
+    {"name": "with a reason she matches, and the log names the rights", "do": "query", "as": "cora", "reason": "checking the claim for finance", "where": "note = \"sent\"", "expect": {"docs": ["c1"], "reads": ["query c1 /rights/review/note/read /rights/review/payout/read"]}},
     {"name": "a sort on a hidden variable leaves the row out", "do": "query", "as": "bob", "order": ["note", "amount"], "expect": {"docs": ["c2"]}},
     {"name": "fields are projected, with no refusal", "do": "query", "as": "bob", "fields": ["payout", "amount"], "order": ["amount"], "expect": {"docs": ["c2", "c1"], "absent": ["payout"], "present": ["amount"]}},
     {"name": "finance pays", "do": "transition", "doc": "c1", "transition": "pay", "as": "fin", "expect": {"state": "paid", "version": 5, "present": ["payout", "note"]}},

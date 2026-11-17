@@ -1187,9 +1187,9 @@ func TestNotion_WhoMay(t *testing.T) {
 	set("9: Krzysztof changes the net amount", krzysztof, fado.Values{"net": "1.00 PLN"}, "forbidden, variable net")
 	set("10: ledger-bot sets the account and writes an audit note", bot, fado.Values{"account": "401", "audit_note": "checked the bank account"}, "allowed")
 	set("INACCOUNTING: Anna changes the net amount", anna, fado.Values{"net": "121.00 PLN"}, "allowed")
-	seenBy := func(as fado.Option) bool {
+	seenBy := func(as ...fado.Option) bool {
 		t.Helper()
-		doc, err := db.Get(ctx, "Invoice", invoice.ID, as)
+		doc, err := db.Get(ctx, "Invoice", invoice.ID, as...)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -1199,11 +1199,11 @@ func TestNotion_WhoMay(t *testing.T) {
 		}
 		return there
 	}
-	if seenBy(krzysztof) || !seenBy(anna) || !seenBy(celina) {
-		t.Error("11: the audit note is seen by accounting and by a content administrator, and not by Krzysztof")
+	if seenBy(krzysztof) || !seenBy(anna) || !seenBy(celina, fado.Reason("checking the audit note")) {
+		t.Error("11: the audit note is seen by accounting and by a content administrator who says why, and not by Krzysztof")
 	}
 	move("12: ledger-bot books", bot, "book", "forbidden at /access/transition/book")
-	open, err := db.Transitions(ctx, "Invoice", invoice.ID, celina)
+	open, err := db.Transitions(ctx, "Invoice", invoice.ID, celina, fado.Reason("which moves are open"))
 	if err != nil || len(open) != 1 || !open[0].Enabled || open[0].Override != "/access/transition/book" {
 		t.Errorf("the open transitions for Celina: %v, %v; the chapter says the list names the rule she would get past", open, err)
 	}
@@ -1211,6 +1211,14 @@ func TestNotion_WhoMay(t *testing.T) {
 	set("14: Celina corrects it, with the reason", celina, fado.Values{"supplier": "ACME Sp. z o.o."}, "allowed", fado.Reason("the supplier was renamed, ticket 4711"))
 	move("15: Anna books", anna, "book", "allowed")
 	set("16: Celina changes the booked invoice", celina, fado.Values{"supplier": "x"}, "terminal", fado.Reason("a try"))
+	_, err = db.Get(ctx, "Invoice", invoice.ID, celina)
+	check("17: Celina reads the invoice, giving no reason", err, "reason_required at /access/read")
+	_, err = db.Get(ctx, "Invoice", invoice.ID, celina, fado.Reason("the supplier asks what we booked"))
+	check("18: Celina reads it, with the reason", err, "allowed")
+	reads, err := db.Reads(ctx, fado.ReadsFilter{By: "celina", Command: "get"}, fado.As(fado.Principal{ID: "adam", System: []string{fado.GroupAdministrators}}))
+	if err != nil || len(reads) == 0 || reads[len(reads)-1].Reason != "the supplier asks what we booked" {
+		t.Errorf("18: the log of reads keeps Celina's read and her reason: %v %v", err, reads)
+	}
 
 	// The log: what the bot was, and what Celina got past and why.
 	events, err := db.Events(ctx, "Invoice", invoice.ID, anna)
@@ -1282,7 +1290,10 @@ func TestNotion_WhoMay(t *testing.T) {
 		},
 		"queue": func(as fado.Option) error { _, err := db.Outbox(ctx, fado.OutboxFilter{}, as); return err },
 		"sql":   func(as fado.Option) error { _, err := db.SQL(ctx, "select count(*) from Invoice", nil, as); return err },
-		"see":   func(as fado.Option) error { _, err := db.Get(ctx, "Invoice", invoice.ID, as); return err },
+		"see": func(as fado.Option) error {
+			_, err := db.Get(ctx, "Invoice", invoice.ID, as, fado.Reason("asked by the supplier"))
+			return err
+		},
 	}
 	for _, c := range []struct {
 		who                     string

@@ -254,7 +254,7 @@ Every commit has a business day beside its time. It is, in this order:
 |---|---|---|
 | `As` | who is calling | every call |
 | `Key` | the key of a call that may be sent twice; see [History and the log](notions/history-and-the-log.md#sending-a-call-twice) | a call that changes something |
-| `Reason` | why a content administrator acts past a rule | a call that changes something |
+| `Reason` | why a content administrator acts or reads past a rule; why an analyst runs a statement | a call that changes something; a read of documents, rows or files; SQL |
 | `BusinessDate` | the business day of the commit | a call that changes something |
 | `WithID` | the id of a new document, when the caller gives one | a create |
 | `At` | the moment a read or a preview is worked out for; see [Time](notions/time.md#looking-at-another-day) | a read or a preview |

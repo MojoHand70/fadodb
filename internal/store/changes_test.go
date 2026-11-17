@@ -30,7 +30,12 @@ var (
 	asCelina = As(Principal{ID: "celina"})
 	asFin    = As(Principal{ID: "fin", Groups: []string{"finance"}})
 	asEve    = As(Principal{ID: "eve"})
-	asRoot   = As(Principal{ID: "root", System: []string{GroupContentAdministrators}})
+	// asRoot hears and reads everything: a content administrator who
+	// gives a reason (ADR-0067).
+	asRoot = Option(func(o *options) {
+		As(Principal{ID: "root", System: []string{GroupContentAdministrators}})(o)
+		Reason("the test hears every change")(o)
+	})
 )
 
 // heard reads what a stream has to tell now, without waiting, as the

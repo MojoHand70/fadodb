@@ -399,7 +399,11 @@ func TestFilesBesideTheCommands(t *testing.T) {
 
 	// 6. The bytes by their hash alone are a content administrator's.
 	blob := "/v1/blob?hash=" + sum
-	if resp, body := call(t, srv, "GET", "token-of-celina", blob, "", ""); resp.StatusCode != 200 || body != scan {
+	// A content administrator says why, or is refused (ADR-0067).
+	if resp, body := call(t, srv, "GET", "token-of-celina", blob, "", ""); resp.StatusCode != 403 || !strings.Contains(body, `"reason_required"`) {
+		t.Errorf("Celina, giving no reason, is answered %d %q", resp.StatusCode, body)
+	}
+	if resp, body := call(t, srv, "GET", "token-of-celina", blob+"&reason=the+auditor+asked", "", ""); resp.StatusCode != 200 || body != scan {
 		t.Errorf("Celina is answered %d %q", resp.StatusCode, body)
 	}
 	if resp, body := call(t, srv, "GET", "token-of-ola", blob, "", ""); resp.StatusCode != 422 || !strings.Contains(body, `"not_allowed"`) {
@@ -433,7 +437,7 @@ func TestFilesBesideTheCommands(t *testing.T) {
 		{"a form", "POST", "token-of-ola", "/v1/blobs?name=taxi.pdf", "multipart/form-data; boundary=x", "--x--", 400, "the bytes of the file"},
 		{"a put with a parameter it does not take", "POST", "token-of-ola", "/v1/blobs?filename=taxi.pdf", "application/pdf", scan, 400, `blobs takes no \"filename\"`},
 		{"a put by nobody", "POST", "", "/v1/blobs?name=taxi.pdf", "application/pdf", scan, 401, "unauthenticated"},
-		{"bytes nobody put", "GET", "token-of-celina", "/v1/blob?hash=" + strings.Repeat("0", 64), "", "", 404, "unknown_blob"},
+		{"bytes nobody put", "GET", "token-of-celina", "/v1/blob?reason=a+try&hash=" + strings.Repeat("0", 64), "", "", 404, "unknown_blob"},
 	} {
 		resp, body := call(t, srv, c.method, c.token, c.address, c.contentType, c.body)
 		if resp.StatusCode != c.status || !strings.Contains(body, c.says) || !strings.Contains(body, `{"error":`) {

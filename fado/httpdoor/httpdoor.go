@@ -37,8 +37,8 @@
 // addresses that the door also answers: POST /v1/blobs?name=… keeps the
 // body and answers the facts of the file, GET /v1/file?class=…&id=…&hash=…
 // streams a file under the rules of the document that holds it, and
-// GET /v1/blob?hash=… streams bytes by their hash alone, for a content
-// administrator.
+// GET /v1/blob?hash=…&reason=… streams bytes by their hash alone, for a
+// content administrator who says why (ADR-0067).
 //
 // One command answers a stream and not an object: POST /v1/subscribe
 // opens the stream of changes (ADR-0058), a reply that stays open and
@@ -134,8 +134,8 @@ func New(db *fado.DB, o Options) (*Door, error) {
 // stream the door reads.
 type database struct{ *fado.DB }
 
-func (d database) Subscribe(ctx context.Context, p fado.Principal, f fado.ChangeFilter) (server.Stream, error) {
-	changes, err := d.DB.Subscribe(ctx, f, fado.As(p))
+func (d database) Subscribe(ctx context.Context, p fado.Principal, f fado.ChangeFilter, opts ...fado.Option) (server.Stream, error) {
+	changes, err := d.DB.Subscribe(ctx, f, append([]fado.Option{fado.As(p)}, opts...)...)
 	if err != nil {
 		return nil, err
 	}

@@ -65,14 +65,14 @@ func TestBlobStores(t *testing.T) {
 				t.Error("an unknown hash is held")
 			}
 			// A content administrator opens by hash; anyone else does not.
-			rc, size, err := s.OpenBlob(ctx, fact["hash"].(string), As(root))
+			rc, size, err := s.OpenBlob(ctx, fact["hash"].(string), readAs(root)...)
 			if err != nil || size != 12 || readAll(t, rc) != "hello, world" {
 				t.Errorf("admin open: %v %d", err, size)
 			}
 			if _, _, err := s.OpenBlob(ctx, fact["hash"].(string), As(alice)); code(err) != CodeNotAllowed {
 				t.Errorf("open by hash as a user: %v", err)
 			}
-			if _, _, err := s.OpenBlob(ctx, strings.Repeat("0", 64), As(root)); code(err) != CodeUnknownBlob {
+			if _, _, err := s.OpenBlob(ctx, strings.Repeat("0", 64), readAs(root)...); code(err) != CodeUnknownBlob {
 				t.Errorf("open an unknown hash: %v", err)
 			}
 			// Past the limit nothing is stored.

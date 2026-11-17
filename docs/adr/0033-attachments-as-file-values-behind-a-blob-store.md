@@ -1,6 +1,6 @@
 # ADR-0033: Attachments are File values; the bytes live behind a blob store
 
-- Status: Accepted; amends ADR-0011, ADR-0018, ADR-0021; amended by ADR-0049 (`OpenFile` asks the read rule and the right), ADR-0052 (who opens a blob by its hash), ADR-0055 (the address a file is served at)
+- Status: Accepted; amends ADR-0011, ADR-0018, ADR-0021; amended by ADR-0049 (`OpenFile` asks the read rule and the right), ADR-0052 (who opens a blob by its hash), ADR-0055 (the address a file is served at), ADR-0067 (a file opened by its hash alone needs a reason and is recorded)
 - Date: 2026-11-07
 
 ## Context

@@ -63,7 +63,7 @@ const lastOfCommandSQL = "SELECT max(after_version) FROM events WHERE class = ? 
 // engineSchema is the version of the store's own tables. A database made
 // by another engine schema is refused: before 1.0 there is no upgrade
 // path, and a pre-release file is recreated.
-const engineSchema = 11
+const engineSchema = 12
 
 // Options configure Open. The ones that are properties of the database,
 // Synchronous and MaxText, are read at creation and kept in the metadata
@@ -562,7 +562,7 @@ func (s *Store) init(ctx context.Context, wantSync string, wantMaxText int, want
 		_, _ = w.ExecContext(ctx, "ROLLBACK")
 		return err
 	}
-	for _, ddl := range append(append([]string(nil), engineDDL...), usersDDL...) {
+	for _, ddl := range append(append(append([]string(nil), engineDDL...), usersDDL...), readsDDL...) {
 		if _, err := w.ExecContext(ctx, ddl); err != nil {
 			return rollback(storageErr("create the engine tables", err))
 		}

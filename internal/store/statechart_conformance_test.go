@@ -192,6 +192,13 @@ type scriptExpect struct {
 	// (ADR-0058, item 11): for each event its kind and its document,
 	// and for a transition its name, as "transition c1 file".
 	Heard []string `json:"heard,omitempty"`
+	// Reads are the entries of the log of reads written since the
+	// suite's last such step, but the runner's own (ADR-0067): for each
+	// the command, the table it read, the labels of the documents it
+	// showed past a rule, the places of the rules, and how many it
+	// counted or how many rows, as "get m1 /access/read" or
+	// "count counted 2".
+	Reads []string `json:"reads,omitempty"`
 	Count *int64   `json:"count,omitempty"`
 	// Due is what a due step lists: for each document its label in the
 	// script, its state and the state it would move to, and for one a
@@ -465,7 +472,11 @@ func runStatechartSuite(t *testing.T, suite *statechartSuite, through func(testi
 	s, _ := openStore(t, o)
 	d := through(t, s)
 	ctx := context.Background()
-	asSetup, asRoot := by(setup), by(root)
+	// The runner reads what each step did as root, who passes every rule
+	// with a reason; the log of reads keeps those reads too, and the
+	// runner leaves them out of what a step expects of the log.
+	asSetup, asRoot := by(setup), stepCall{as: &root, reason: "the suite reads what the script did"}
+	var readsSeen int64
 	for i, def := range suite.Actions {
 		if err := d.DefineAction(ctx, def, asSetup); err != nil {
 			t.Fatalf("action %d of the suite's actions: %v", i, err)
@@ -515,6 +526,7 @@ func runStatechartSuite(t *testing.T, suite *statechartSuite, through func(testi
 			}
 			listener.as = &Principal{ID: p.ID, Groups: p.Groups, System: p.System, Kind: p.Kind}
 		}
+		listener.reason = step.Reason
 		stream, err := d.Listen(ctx, listener)
 		if err != nil {
 			t.Fatalf("the stream of %q: %v", step.As, err)
@@ -754,6 +766,44 @@ func runStatechartSuite(t *testing.T, suite *statechartSuite, through func(testi
 			}
 			if !reflect.DeepEqual(got, want.Due) {
 				t.Errorf("%s: due %v, want %v", name, got, want.Due)
+			}
+		}
+		if want.Reads != nil {
+			entries, err := d.Reads(ctx, ReadsFilter{After: readsSeen}, asSetup)
+			if err != nil {
+				t.Fatalf("%s: the log of reads: %v", name, err)
+			}
+			labels := map[string]string{}
+			for label, docID := range docs {
+				labels[docID] = label
+			}
+			got := []string{}
+			for _, r := range entries {
+				readsSeen = r.Seq
+				if r.By == root.ID {
+					continue
+				}
+				parts := []string{r.Command}
+				if r.Table != "" {
+					parts = append(parts, r.Table)
+				}
+				for _, id := range r.Documents {
+					if label, ok := labels[id]; ok {
+						id = label
+					}
+					parts = append(parts, id)
+				}
+				parts = append(parts, r.Rules...)
+				if r.Counted != nil {
+					parts = append(parts, fmt.Sprintf("counted %d", *r.Counted))
+				}
+				if r.Rows != nil {
+					parts = append(parts, fmt.Sprintf("rows %d", *r.Rows))
+				}
+				got = append(got, strings.Join(parts, " "))
+			}
+			if !reflect.DeepEqual(got, append([]string{}, want.Reads...)) {
+				t.Errorf("%s: the log of reads has %q, want %q", name, got, want.Reads)
 			}
 		}
 		if want.Count != nil && count != *want.Count {

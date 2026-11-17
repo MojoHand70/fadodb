@@ -42,7 +42,7 @@ func (s *Store) Query(ctx context.Context, f Filter, opts ...Option) ([]*Documen
 	if e != nil {
 		return nil, e
 	}
-	plan, err := query.Compile(f, c.cls, s.sources(), caller(o))
+	plan, err := query.Compile(f, c.cls, s.sources(), caller(o, c))
 	if err != nil {
 		return nil, filterErr(err)
 	}
@@ -101,6 +101,18 @@ func (s *Store) Query(ctx context.Context, f Filter, opts ...Option) ([]*Documen
 	ev := s.reader()
 	defer s.release(ev)
 	now := s.clock(o)
+	// A content administrator who passes the rules sees every document
+	// whole; the entry names each one only the override showed, and the
+	// rules it got past (ADR-0067, item 3).
+	passes, r := o.passes(c), o.newRead("query", c)
+	shown := func(vc *class, row *docRow, d *Document) {
+		switch {
+		case !passes:
+			s.project(ev, c, vc, row, d, o.principal, now)
+		case o.records(c):
+			r.saw(row.id, s.pastRow(ev, c, vc, row, o.principal, now)...)
+		}
+	}
 	docs := make([]*Document, len(found))
 	for i, row := range found {
 		var d *Document
@@ -115,14 +127,14 @@ func (s *Store) Query(ctx context.Context, f Filter, opts ...Option) ([]*Documen
 				return nil, err
 			}
 			d = vc.document(vrow, vkids)
-			s.project(ev, c, vc, vrow, d, o.principal, now)
+			shown(vc, vrow, d)
 		} else {
 			have := map[*child][]childRow{}
 			for ch := range wanted {
 				have[ch] = kids[ch][row.id]
 			}
 			d = c.document(row, have)
-			s.project(ev, c, c, row, d, o.principal, now)
+			shown(c, row, d)
 		}
 		if plan.Fields != nil {
 			// A hidden variable is absent from the fields as from the
@@ -144,12 +156,46 @@ func (s *Store) Query(ctx context.Context, f Filter, opts ...Option) ([]*Documen
 		}
 		docs[i] = d
 	}
+	if err := s.logRead(ctx, o, r); err != nil {
+		return nil, err
+	}
 	return docs, nil
 }
 
-// caller is the principal as the filter compiler sees it.
-func caller(o options) query.Principal {
-	return query.Principal{ID: o.principal.ID, Groups: o.principal.Groups, System: o.principal.System, Content: o.principal.content()}
+// caller is the principal as the filter compiler sees it over the class:
+// a content administrator past the rules only where they pass them
+// (ADR-0067, item 2), and otherwise held by the read rule and the rights
+// as anybody.
+func caller(o options, c *class) query.Principal {
+	return query.Principal{ID: o.principal.ID, Groups: o.principal.Groups, System: o.principal.System, Content: o.passes(c)}
+}
+
+// pastCount is how many of the documents a statement over the class
+// counts only because a content administrator passes the rules: the
+// count with the filter as they pass it, less the count with the filter
+// as anybody would have it (ADR-0067, item 3). where is the condition of
+// the filter, built by build for a principal.
+func (s *Store) pastCount(ctx context.Context, c *class, o options, all int64, build func(query.Principal) (string, []any, error)) (int64, error) {
+	ordinary := o
+	ordinary.reason = ""
+	where, args, err := build(caller(ordinary, c))
+	if err != nil {
+		return 0, err
+	}
+	text := "SELECT count(*) FROM " + quote(c.cls.Name)
+	if where != "" {
+		text += " WHERE " + where
+	}
+	st, err := s.filters.acquire(ctx, s.db, text)
+	if err != nil {
+		return 0, storageErr("prepare the count of "+c.cls.Name, err)
+	}
+	defer s.filters.release(st)
+	var n int64
+	if err := st.stmt.QueryRowContext(ctx, append(args, s.contextArgs(ordinary)...)...).Scan(&n); err != nil {
+		return 0, storageErr("count "+c.cls.Name, err)
+	}
+	return all - n, nil
 }
 
 // Count counts the documents of a class that match a filter's where.
@@ -163,7 +209,7 @@ func (s *Store) Count(ctx context.Context, f Filter, opts ...Option) (int64, err
 		return 0, e
 	}
 	f.Order, f.Fields, f.Limit, f.Offset = nil, nil, 0, 0
-	plan, err := query.Compile(f, c.cls, s.sources(), caller(o))
+	plan, err := query.Compile(f, c.cls, s.sources(), caller(o, c))
 	if err != nil {
 		return 0, filterErr(err)
 	}
@@ -179,6 +225,23 @@ func (s *Store) Count(ctx context.Context, f Filter, opts ...Option) (int64, err
 	var n int64
 	if err := st.stmt.QueryRowContext(ctx, append(plan.Args, s.contextArgs(o)...)...).Scan(&n); err != nil {
 		return 0, storageErr("count "+c.cls.Name, err)
+	}
+	if o.records(c) {
+		past, err := s.pastCount(ctx, c, o, n, func(p query.Principal) (string, []any, error) {
+			plan, err := query.Compile(f, c.cls, s.sources(), p)
+			if err != nil {
+				return "", nil, filterErr(err)
+			}
+			return plan.Where, plan.Args, nil
+		})
+		if err != nil {
+			return 0, err
+		}
+		r := newRead("count", c)
+		r.counted, r.hasCounted, r.past = past, true, past > 0
+		if err := s.logRead(ctx, o, r); err != nil {
+			return 0, err
+		}
 	}
 	return n, nil
 }
@@ -256,9 +319,32 @@ func (s *Store) SQL(ctx context.Context, text string, args []any, opts ...Option
 	// A statement its caller writes is given no rule: it reads every row
 	// and every variable, so it is for whoever the host program names an
 	// analyst (ADR-0049, item 12; ADR-0051).
-	if _, e := s.worker(ctx, workAnalyse, opts); e != nil {
+	o, e := s.worker(ctx, workAnalyse, opts)
+	if e != nil {
 		return nil, e
 	}
+	out, err := s.runSQL(ctx, text, args)
+	// Every statement is written down, with how many rows it returned or
+	// the code it failed with, and never its rows; the entry is written
+	// before the answer leaves (ADR-0067, items 4 and 6).
+	r := &readLog{command: "sql", sql: true, statement: text, args: args, past: true}
+	if err != nil {
+		r.failure = CodeStorage
+		if se, ok := err.(*Error); ok {
+			r.failure = se.Code
+		}
+	} else {
+		r.rows, r.hasRows = int64(len(out.Rows)), true
+	}
+	if lerr := s.logRead(context.WithoutCancel(ctx), o, r); lerr != nil {
+		return nil, lerr
+	}
+	return out, err
+}
+
+// runSQL runs the statement on the connection of the SQL endpoint, which
+// one statement holds at a time.
+func (s *Store) runSQL(ctx context.Context, text string, args []any) (*Rows, error) {
 	s.sqlMu.Lock()
 	defer s.sqlMu.Unlock()
 	if s.sqlConn == nil {

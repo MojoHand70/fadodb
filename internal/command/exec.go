@@ -478,27 +478,33 @@ func runSubscribe(*call) error {
 // the stream, and the caller as the engine is told of it. An object
 // that says for whom the caller acts is passed on, and the engine
 // refuses it in its own words: a stream is heard as oneself.
-func Subscription(p store.Principal, object []byte) (store.ChangeFilter, store.Principal, error) {
+func Subscription(p store.Principal, object []byte) (store.ChangeFilter, store.Principal, []store.Option, error) {
 	var f store.ChangeFilter
 	c := &call{cmd: byName["subscribe"]}
 	if e := c.read(object); e != nil {
-		return f, p, e
+		return f, p, nil, e
 	}
 	var e *store.Error
 	if f.Classes, e = c.texts("classes"); e != nil {
-		return f, p, e
+		return f, p, nil, e
 	}
 	if f.Kinds, e = c.texts("kinds"); e != nil {
-		return f, p, e
+		return f, p, nil, e
 	}
 	if f.ToStates, e = c.texts("to_states"); e != nil {
-		return f, p, e
+		return f, p, nil, e
 	}
 	f.After = c.text("after")
 	if value := c.given("for"); value != nil {
 		p.For = unquote(value)
 	}
-	return f, p, nil
+	// A content administrator hears past the read rule only with a
+	// reason, which the log of reads keeps (ADR-0067).
+	var opts []store.Option
+	if reason := c.text("reason"); reason != "" {
+		opts = append(opts, store.Reason(reason))
+	}
+	return f, p, opts, nil
 }
 
 func runPreview(c *call) error {
@@ -825,6 +831,30 @@ func runOutbox(c *call) error {
 	}
 	rows, err := c.s.Outbox(c.ctx, store.OutboxFilter{Status: c.text("status"), Class: c.text("class"), DocID: c.text("id"), Limit: int(limit)}, c.opts...)
 	return c.answer("actions", list(rows), err)
+}
+
+// runReads lists the log of reads (ADR-0067, item 5).
+func runReads(c *call) error {
+	var f store.ReadsFilter
+	var e *store.Error
+	if f.Since, e = c.moment("since"); e != nil {
+		return e
+	}
+	if f.Until, e = c.moment("until"); e != nil {
+		return e
+	}
+	after, e := c.integer("after")
+	if e != nil {
+		return e
+	}
+	limit, e := c.integer("limit")
+	if e != nil {
+		return e
+	}
+	f.By, f.Class, f.ID, f.Table, f.Command = c.text("by"), c.text("class"), c.text("id"), c.text("table"), c.text("command")
+	f.After, f.Limit = after, int(limit)
+	reads, err := c.s.Reads(c.ctx, f, c.opts...)
+	return c.answer("reads", list(reads), err)
 }
 
 func runRetryAction(c *call) error {

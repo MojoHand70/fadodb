@@ -44,7 +44,7 @@ func (engine) OpenBlob(context.Context, string, ...store.Option) (io.ReadCloser,
 }
 
 // And it has no log to read forward; the tests of the stream have one.
-func (engine) Subscribe(context.Context, store.Principal, store.ChangeFilter) (Stream, error) {
+func (engine) Subscribe(context.Context, store.Principal, store.ChangeFilter, ...store.Option) (Stream, error) {
 	return nil, errors.New("the engine of this test has no log")
 }
 

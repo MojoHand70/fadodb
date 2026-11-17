@@ -50,12 +50,14 @@
      "expect": {"code": "forbidden", "action": "/access/transition/send"}},
     {"name": "everyone in a where of Ann's own filter", "do": "count", "as": "ann", "where": "INGROUP(\"everyone\") AND NOT INGROUP(\"designers\")", "expect": {"count": 1}},
 
-    {"name": "a content administrator sees every memo", "do": "query", "as": "content", "expect": {"docs": ["m1"]}},
+    {"name": "a content administrator who gives no reason sees what anybody in her groups sees (ADR-0067)", "do": "query", "as": "content", "expect": {"docs": []}},
+    {"name": "with a reason she sees every memo, and the log of reads names the one only the override showed", "do": "query", "as": "content", "reason": "asked to by the owner of the process", "expect": {"docs": ["m1"], "reads": ["query m1 /access/read"]}},
     {"name": "and changes one past the update rule", "do": "set", "doc": "m1", "as": "content", "reason": "asked to by the owner of the process", "values": {"total": 0}, "expect": {"version": 3}},
     {"name": "but never past a guard: nothing to send", "do": "transition", "doc": "m1", "as": "content", "reason": "asked to by the owner of the process", "transition": "send", "expect": {"code": "guard_false"}},
     {"name": "with the guard holding, the content administrator sends it past the rule of the transition", "do": "set", "doc": "m1", "as": "content", "reason": "asked to by the owner of the process", "values": {"total": 9}, "expect": {"version": 4}},
     {"name": "the memo is sent", "do": "transition", "doc": "m1", "as": "content", "reason": "asked to by the owner of the process", "transition": "send", "expect": {"state": "sent"}},
     {"name": "the owner may not delete, as the class says", "do": "delete", "doc": "m1", "as": "ann", "expect": {"code": "forbidden", "action": "/access/delete"}},
-    {"name": "the log says who did each step", "do": "get", "doc": "m1", "as": "content", "expect": {"actors": ["ann", "dee", "cora", "cora", "cora"]}}
+    {"name": "the log says who did each step", "do": "get", "doc": "m1", "as": "content", "reason": "asked to by the owner of the process", "expect": {"actors": ["ann", "dee", "cora", "cora", "cora"]}},
+    {"name": "her changes past the rules left no entry in the log of reads, since their events keep the reason; her read did", "do": "get", "doc": "m1", "as": "content", "reason": "asked to by the owner of the process", "expect": {"reads": ["get m1 /access/read", "get m1 /access/read"]}}
   ]
 }

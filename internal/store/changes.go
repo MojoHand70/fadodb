@@ -61,7 +61,7 @@ type Changes struct {
 // and one read of a pointer; with streams it wakes each without waiting
 // for any, and it never allocates.
 func (s *Store) endTransaction(ctx context.Context) error {
-	if _, err := s.writer.ExecContext(ctx, "COMMIT"); err != nil {
+	if err := s.commitWriter(ctx); err != nil {
 		return err
 	}
 	// The mark that the log grew: a stream that has read to the end of
@@ -76,6 +76,19 @@ func (s *Store) endTransaction(ctx context.Context) error {
 		}
 	}
 	return nil
+}
+
+// endQuietly commits a transaction that wrote nothing to the log of
+// events, only to the log of reads (ADR-0067), and wakes no stream: it
+// would find nothing new, and a stream that writes an entry would
+// otherwise wake every other stream for nothing.
+func (s *Store) endQuietly(ctx context.Context) error { return s.commitWriter(ctx) }
+
+// commitWriter is the one statement that commits the writer's
+// transaction.
+func (s *Store) commitWriter(ctx context.Context) error {
+	_, err := s.writer.ExecContext(ctx, "COMMIT")
+	return err
 }
 
 // Subscribe opens a stream of changes for the caller (ADR-0058): the
@@ -492,8 +505,12 @@ func (c *Changes) fill(ctx context.Context) (bool, error) {
 		}
 	}
 	var heard []*Event
+	var past map[string][]string
+	if c.o.principal.content() && c.o.reason != "" {
+		past = map[string][]string{}
+	}
 	for _, e := range let {
-		hears, err := c.hears(ctx, e)
+		hears, err := c.hears(ctx, e, past)
 		if err != nil {
 			return false, err
 		}
@@ -501,6 +518,21 @@ func (c *Changes) fill(ctx context.Context) (bool, error) {
 			// The caller's own: the event of the tail is every stream's.
 			ev := e.ev
 			heard = append(heard, &ev)
+		}
+	}
+	// The batch is told only once its entries are written: one for each
+	// class it holds an event of past a rule.
+	if len(past) > 0 {
+		entries := make([]*readLog, 0, len(past))
+		for _, name := range sortedNames(past) {
+			r := &readLog{command: "subscribe", class: name}
+			for _, id := range past[name] {
+				r.saw(id, "/access/read")
+			}
+			entries = append(entries, r)
+		}
+		if err := c.s.logRead(ctx, c.o, entries...); err != nil {
+			return false, err
 		}
 	}
 	c.read = append(c.read, heard...)
@@ -526,19 +558,28 @@ func (c *Changes) lets(ev *Event) bool {
 // whether it may read the document as the event left it, and for a
 // delete as it was just before (ADR-0058, item 4). A document the
 // caller may not read is absent, so nothing is said of it. The rule is
-// the class's as it is now.
-func (c *Changes) hears(ctx context.Context, e *logEntry) (bool, error) {
-	if c.o.principal.content() {
-		return true, nil
-	}
+// the class's as it is now. A content administrator hears of every
+// document only with a reason, and the batch's entry names each one only
+// the override let them hear of (ADR-0067).
+func (c *Changes) hears(ctx context.Context, e *logEntry, past map[string][]string) (bool, error) {
 	s := c.s
 	cls, er := s.class(e.ev.Class)
 	if er != nil {
 		return false, nil
 	}
+	if cls.brought && c.o.principal.content() {
+		return true, nil
+	}
 	vc, row, err := e.version(ctx, s, cls)
 	if err != nil || row == nil {
 		return false, err
 	}
-	return s.seesRow(cls, vc, row, c.o), nil
+	if s.seesRow(cls, vc, row, c.o) {
+		return true, nil
+	}
+	if c.o.records(cls) {
+		past[cls.cls.Name] = append(past[cls.cls.Name], e.ev.DocID)
+		return true, nil
+	}
+	return false, nil
 }

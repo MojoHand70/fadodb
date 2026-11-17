@@ -79,6 +79,7 @@ func TestFiles(t *testing.T) {
 
 	ola, anna, piotr := person("ola"), person("anna", "ACCOUNTING"), person("piotr")
 	celina := fado.As(fado.Principal{ID: "celina", Kind: fado.ActorPerson, System: []string{fado.GroupContentAdministrators}})
+	why := fado.Reason("the auditor asked for the first scan")
 	adam := fado.As(fado.Principal{ID: "adam", Kind: fado.ActorPerson, System: []string{fado.GroupAdministrators}})
 
 	db := notionDB(t, fado.Options{})
@@ -113,8 +114,8 @@ func TestFiles(t *testing.T) {
 		rc, _, err := db.OpenFile(ctx, "Receipt", id, hash, opts...)
 		return rc, err
 	}
-	blob := func(hash string, as fado.Option) (io.ReadCloser, error) {
-		rc, _, err := db.OpenBlob(ctx, hash, as)
+	blob := func(hash string, as ...fado.Option) (io.ReadCloser, error) {
+		rc, _, err := db.OpenBlob(ctx, hash, as...)
 		return rc, err
 	}
 	versioned := func(doc *fado.Document, err error) string {
@@ -158,12 +159,13 @@ func TestFiles(t *testing.T) {
 	_, err = db.Transition(ctx, "Receipt", receipt.ID, "file", nil, ola)
 	step(15, told(err))
 	step(16, opened(scan)(blob(hash, celina)))
+	step(17, opened(scan)(blob(hash, celina, why)))
 	check, err := db.CheckBlobs(ctx, adam)
 	if err != nil {
 		t.Fatal(err)
 	}
 	checked := check.Checked
-	step(17, fmt.Sprintf("%d checked, %d wrong, %d missing", checked, len(check.Mismatched), len(check.Missing)))
+	step(18, fmt.Sprintf("%d checked, %d wrong, %d missing", checked, len(check.Mismatched), len(check.Missing)))
 	story.done()
 
 	// What the history keeps.
@@ -315,7 +317,7 @@ func TestFiles(t *testing.T) {
 					t.Errorf("%s opens bytes by their hash: %s", who, got)
 				}
 			}
-			if got := opened(scan)(blob(hash, celina)); got != "the 24 bytes" || !strings.Contains(row[1], "the system group content-administrators") {
+			if got := opened(scan)(blob(hash, celina, why)); got != "the 24 bytes" || !strings.Contains(row[1], "the system group content-administrators, and a reason") {
 				t.Errorf("a content administrator opens bytes by their hash: %s; the chapter asks for %q", got, row[1])
 			}
 		},
@@ -356,7 +358,7 @@ func TestFiles(t *testing.T) {
 			if _, err := os.Stat(path + ".blobs"); err == nil {
 				t.Error("the store of a database that names none keeps bytes beside the file")
 			}
-			rc, _, err := made.OpenBlob(ctx, fmt.Sprint(held["hash"]), celina)
+			rc, _, err := made.OpenBlob(ctx, fmt.Sprint(held["hash"]), celina, why)
 			if got := opened(scan)(rc, err); got != "the 24 bytes" {
 				t.Errorf("the bytes of the sqlite store: %s", got)
 			}
@@ -503,6 +505,10 @@ func TestFiles(t *testing.T) {
 		}(),
 		"opens bytes by their hash alone, and is no content administrator": func() error {
 			_, _, err := db.OpenBlob(ctx, hash, anna)
+			return err
+		}(),
+		"opens bytes by their hash alone as a content administrator, and gives no reason": func() error {
+			_, _, err := db.OpenBlob(ctx, hash, celina)
 			return err
 		}(),
 		"checks the files, and is no administrator": func() error {

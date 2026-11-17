@@ -988,11 +988,16 @@ func TestTables(t *testing.T) {
 		_, err = db2.TableRows(ctx, "Unsaid", as)
 		want(t, who+" reads a table with no lines", err, "forbidden at /access/read")
 	}
-	if _, err := db2.ImportRows(ctx, "Unsaid", []fado.Values{{"k": "a"}}, celina); err != nil {
-		t.Errorf("a content administrator writes any table, and no reason is asked: %v", err)
+	_, err = db2.ImportRows(ctx, "Unsaid", []fado.Values{{"k": "a"}}, celina)
+	want(t, "a content administrator writes a table past its line, giving no reason", err, "reason_required at /access/write")
+	_, err = db2.TableRows(ctx, "Unsaid", celina)
+	want(t, "a content administrator reads a table past its line, giving no reason", err, "reason_required at /access/read")
+	why := fado.Reason("the rates of the old system")
+	if _, err := db2.ImportRows(ctx, "Unsaid", []fado.Values{{"k": "a"}}, celina, why); err != nil {
+		t.Errorf("a content administrator writes any table, with a reason: %v", err)
 	}
-	if found, err := db2.TableRows(ctx, "Unsaid", celina); err != nil || len(found) != 1 {
-		t.Errorf("a content administrator reads any table: %v, %v", found, err)
+	if found, err := db2.TableRows(ctx, "Unsaid", celina, why); err != nil || len(found) != 1 {
+		t.Errorf("a content administrator reads any table, with a reason: %v, %v", found, err)
 	}
 	if got := tableFinding(db2, `{"name":"Kind","columns":{"k":"text"},"key":["k"],"access":{"read":"USERKIND() = \"person\" AND TODAY() > DATE(2026, 1, 1)","write":"INGROUP(\"treasury\")"}}`); got != "accepted" {
 		t.Errorf("a line over the caller and the clock is found %s", got)

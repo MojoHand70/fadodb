@@ -112,8 +112,9 @@ Adam an administrator.
 | 13 | Ola | opens the first scan as of version 1 | the 24 bytes |
 | 14 | Ola | takes the scan off | allowed, version 4 |
 | 15 | Ola | files the receipt | refused, `guard_false` |
-| 16 | Celina | opens the first scan by its hash alone | the 24 bytes |
-| 17 | Adam | checks the files | 3 checked, 0 wrong, 0 missing |
+| 16 | Celina | opens the first scan by its hash alone, and gives no reason | refused, `reason_required` |
+| 17 | Celina | opens it by its hash alone, saying why | the 24 bytes |
+| 18 | Adam | checks the files | 3 checked, 0 wrong, 0 missing |
 
 What the history keeps:
 
@@ -159,7 +160,11 @@ document and the hash.
 
 - **The hash alone opens nothing.** Knowing a hash is no right to the
   bytes. Only a content administrator may open bytes by their hash,
-  as in step 16.
+  and only saying why, as in steps 16 and 17: the bytes get past the
+  rules of every document that holds them, so the
+  [log of reads](the-log-of-reads.md) keeps the hash, who opened it
+  and why. Over HTTP the reason is a parameter of the address,
+  `reason=`.
 - **The same bytes on two documents** are served to whoever may read
   either of them, through that one.
 - **A caller who may not see is told what a stranger is told**: that
@@ -176,7 +181,7 @@ document and the hash.
 | put bytes | nothing |
 | attach, replace or take off a file | to write the variable, as for any value |
 | open a file | to see the document and to read the variable |
-| open bytes by their hash alone | the system group `content-administrators` |
+| open bytes by their hash alone | the system group `content-administrators`, and a reason |
 | check the files | the system group `administrators` |
 
 > **Putting asks for nobody.** The engine keeps bytes for any call,
@@ -257,6 +262,7 @@ terminal the tool sends them, with `fadodb file put` and
 | opens a file of a document they may not see | `unknown_document` | |
 | opens a file the document does not hold, or holds in a variable they may not read | `unknown_blob` | |
 | opens bytes by their hash alone, and is no content administrator | `not_allowed` | |
+| opens bytes by their hash alone as a content administrator, and gives no reason | `reason_required` | |
 | checks the files, and is no administrator | `forbidden` | `/system/administrators` |
 | opens a database with another store than it was created with | `bad_value` | |
 | opens a database with a lower limit than it has | `bad_value` | |

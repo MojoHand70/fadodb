@@ -366,8 +366,11 @@ func (s *Store) ImportRows(ctx context.Context, name string, rows []Values, opts
 	if err := refuseAt(o, "row import"); err != nil {
 		return 0, err
 	}
-	// The write rule of the table (ADR-0051, item 7).
-	if e := s.tableRefusal(t, true, o.principal, s.clock(o)); e != nil {
+	// The write rule of the table (ADR-0051, item 7). A content
+	// administrator's import past it is written down with the rows, in
+	// the same transaction (ADR-0067, item 7).
+	past, e := s.tableRefusal(t, true, o, s.clock(o))
+	if e != nil {
 		return 0, e
 	}
 	s.mu.Lock()
@@ -411,6 +414,12 @@ func (s *Store) ImportRows(ctx context.Context, name string, rows []Values, opts
 			return rollback(storageErr(fmt.Sprintf("write row %d of %s", i, t.def.Name), err))
 		}
 	}
+	if past {
+		r := &readLog{command: "import_rows", table: t.def.Name, rules: []string{"/access/write"}, rows: int64(len(rows)), hasRows: true, past: true}
+		if err := s.insertRead(ctx, w, o, r); err != nil {
+			return rollback(err)
+		}
+	}
 	if err := s.endTransaction(ctx); err != nil {
 		return rollback(storageErr("commit", err))
 	}
@@ -429,7 +438,8 @@ func (s *Store) TableRows(ctx context.Context, name string, opts ...Option) ([]V
 	if e != nil {
 		return nil, e
 	}
-	if e := s.tableRefusal(t, false, o.principal, s.clock(o)); e != nil {
+	past, e := s.tableRefusal(t, false, o, s.clock(o))
+	if e != nil {
 		return nil, e
 	}
 	rows, _, err := t.scanRows(ctx, t.readAll, 0)
@@ -440,6 +450,12 @@ func (s *Store) TableRows(ctx context.Context, name string, opts ...Option) ([]V
 	for i, row := range rows {
 		m, _ := getFields(row, t.leafIndex, "", t.def.Fields)
 		out[i] = m
+	}
+	if past {
+		r := &readLog{command: "table_rows", table: t.def.Name, rules: []string{"/access/read"}, rows: int64(len(rows)), hasRows: true, past: true}
+		if err := s.logRead(ctx, o, r); err != nil {
+			return nil, err
+		}
 	}
 	return out, nil
 }

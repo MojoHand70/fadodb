@@ -165,7 +165,8 @@ func (s *Store) moveMany(ctx context.Context, class, name string, ids []string, 
 		s.wakeAt = 0
 	}
 	out := make([]MoveOutcome, len(ids))
-	cmd := command{op: opTransition, c: c, transition: name, values: values, o: o}
+	cmd := command{op: opTransition, c: c, transition: name, values: values, o: o, takenBack: preview}
+	shown := o.newRead("preview_many", c)
 	queued := 0
 	// The mark is the savepoint before a document. A refused document
 	// returns to it and leaves it standing for the next one.
@@ -209,9 +210,19 @@ func (s *Store) moveMany(ctx context.Context, class, name string, ids []string, 
 		marked = false
 		out[i].Document = res.doc
 		queued += res.queued
+		if preview && res.read != nil {
+			for _, id := range res.read.docs {
+				shown.saw(id, res.read.rules...)
+			}
+		}
 	}
 	if preview {
 		undo()
+		// What the preview showed past a rule is written down once the
+		// batch is taken back, before the answer leaves (ADR-0067).
+		if err := s.logReadHeld(ctx, o, shown); err != nil {
+			return nil, err
+		}
 		return out, nil
 	}
 	if err := s.endTransaction(ctx); err != nil {

@@ -85,6 +85,26 @@ func refusedBy(t *testing.T, err error, path string) *Error {
 	return e
 }
 
+// readAs is a read as the principal. A content administrator gives a
+// reason, so that the read sees past the rules (ADR-0067): the tests
+// that follow are about what the rules let through, and use one to see
+// everything.
+func readAs(p Principal) []Option {
+	if p.content() {
+		return []Option{As(p), Reason("the test reads past the rules")}
+	}
+	return []Option{As(p)}
+}
+
+// seeing is readAs as one option.
+func seeing(p Principal) Option {
+	return func(o *options) {
+		for _, opt := range readAs(p) {
+			opt(o)
+		}
+	}
+}
+
 func TestAccess_Create(t *testing.T) {
 	s, ctx := openClaims(t)
 	if _, err := s.Create(ctx, "Claim", Values{"amount": 100}, As(clerkAnn)); err != nil {
@@ -101,13 +121,13 @@ func TestAccess_Create(t *testing.T) {
 		t.Errorf("a content administrator passes the rule: %v", err)
 	}
 	// A refused create wrote nothing, and a batch is all or none.
-	if n, _ := s.Count(ctx, Filter{Class: "Claim"}, As(root)); n != 2 {
+	if n, _ := s.Count(ctx, Filter{Class: "Claim"}, readAs(root)...); n != 2 {
 		t.Errorf("documents after the refusals: %d", n)
 	}
 	if _, err := s.CreateMany(ctx, "Claim", []Values{{"amount": 1}, {"amount": 5000}}, As(clerkAnn)); code(err) != CodeForbidden {
 		t.Errorf("a batch with a document its caller may not create: %v", err)
 	}
-	if n, _ := s.Count(ctx, Filter{Class: "Claim"}, As(root)); n != 2 {
+	if n, _ := s.Count(ctx, Filter{Class: "Claim"}, readAs(root)...); n != 2 {
 		t.Errorf("documents after the refused batch: %d", n)
 	}
 	// A preview reports the refusal under its errors and still answers.
@@ -187,24 +207,24 @@ func TestAccess_HiddenMeansAbsent(t *testing.T) {
 			t.Errorf("bob's count %q: %v %d", where, err, n)
 		}
 		for _, p := range []Principal{clerkAnn, hr, root} {
-			if docs, err := s.Query(ctx, f, As(p)); err != nil || len(docs) != 1 {
+			if docs, err := s.Query(ctx, f, readAs(p)...); err != nil || len(docs) != 1 {
 				t.Errorf("%s's filter %q: %v %d", p.ID, where, err, len(docs))
 			}
-			if n, err := s.Count(ctx, f, As(p)); err != nil || n != 1 {
+			if n, err := s.Count(ctx, f, readAs(p)...); err != nil || n != 1 {
 				t.Errorf("%s's count %q: %v %d", p.ID, where, err, n)
 			}
 		}
 	}
 	// Nothing bob did changed the document, and those who may see it do.
 	for _, p := range []Principal{clerkAnn, hr, root} {
-		got, err := s.Get(ctx, "Claim", doc.ID, As(p))
+		got, err := s.Get(ctx, "Claim", doc.ID, readAs(p)...)
 		if err != nil || got.Version != 2 || got.Values["note"] != "taxi, late" {
 			t.Errorf("%s reads the claim: %v %s", p.ID, err, dump(got))
 		}
-		if h, err := s.History(ctx, "Claim", doc.ID, As(p)); err != nil || len(h) != 2 {
+		if h, err := s.History(ctx, "Claim", doc.ID, readAs(p)...); err != nil || len(h) != 2 {
 			t.Errorf("%s reads its history: %v %d", p.ID, err, len(h))
 		}
-		if ev, err := s.Events(ctx, "Claim", doc.ID, As(p)); err != nil || len(ev) != 2 {
+		if ev, err := s.Events(ctx, "Claim", doc.ID, readAs(p)...); err != nil || len(ev) != 2 {
 			t.Errorf("%s reads its events: %v %d", p.ID, err, len(ev))
 		}
 	}
@@ -289,7 +309,7 @@ func TestAccess_Delete(t *testing.T) {
 	// The past of a deleted document is read under the rule over its last
 	// version: its owner and HR read it, a stranger does not.
 	for _, p := range []Principal{clerkAnn, hr} {
-		if h, err := s.History(ctx, "Claim", doc.ID, As(p)); err != nil || len(h) != 1 {
+		if h, err := s.History(ctx, "Claim", doc.ID, readAs(p)...); err != nil || len(h) != 1 {
 			t.Errorf("%s reads the history of the deleted claim: %v %d", p.ID, err, len(h))
 		}
 		if _, err := s.Version(ctx, "Claim", doc.ID, 1, As(p)); err != nil {
@@ -341,7 +361,7 @@ func TestAccess_TheBareReply(t *testing.T) {
 	if err != nil || len(pre.Errors) != 0 || len(pre.Document.Values) != 0 {
 		t.Errorf("the preview of a create its caller will not see: %v %s", err, dump(pre))
 	}
-	if n, _ := s.Count(ctx, Filter{Class: "Complaint"}, As(root)); n != 1 {
+	if n, _ := s.Count(ctx, Filter{Class: "Complaint"}, readAs(root)...); n != 1 {
 		t.Errorf("complaints: %d", n)
 	}
 }
@@ -405,7 +425,7 @@ func TestAccess_RulesAndTimers(t *testing.T) {
 			t.Errorf("the message of the dead %s: %s", row.Action, row.ErrorMessage)
 		}
 	}
-	if n, _ := s.Count(ctx, Filter{Class: "Vault"}, As(root)); n != 1 {
+	if n, _ := s.Count(ctx, Filter{Class: "Vault"}, readAs(root)...); n != 1 {
 		t.Errorf("vaults: %d", n)
 	}
 	// The timer comes. The wake-up is made as ann, who can neither see
@@ -428,7 +448,7 @@ func TestAccess_RulesAndTimers(t *testing.T) {
 	if _, err := s.Drain(ctx, asSetup); err != nil {
 		t.Fatal(err)
 	}
-	if n, _ := s.Count(ctx, Filter{Class: "Vault"}, As(root)); n != 2 {
+	if n, _ := s.Count(ctx, Filter{Class: "Vault"}, readAs(root)...); n != 2 {
 		t.Errorf("vaults after HR sent a slip: %d", n)
 	}
 	if dead, _ := s.Outbox(ctx, OutboxFilter{Status: ActionDead}, asSetup); len(dead) != 2 {
@@ -450,7 +470,7 @@ func TestAccess_Files(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, p := range []Principal{clerkAnn, root} {
-		rc, info, err := s.OpenFile(ctx, "Claim", doc.ID, hash, As(p))
+		rc, info, err := s.OpenFile(ctx, "Claim", doc.ID, hash, readAs(p)...)
 		if err != nil || info.Name != "scan.pdf" {
 			t.Fatalf("%s opens the scan: %v", p.ID, err)
 		}
@@ -496,7 +516,7 @@ func TestAccess_Due(t *testing.T) {
 	if err != nil || len(due) != 1 || due[0].ID != mine.ID {
 		t.Errorf("what is due for ann: %v %s", err, dump(due))
 	}
-	if due, err := s.Due(ctx, "Task", As(root)); err != nil || len(due) != 2 {
+	if due, err := s.Due(ctx, "Task", readAs(root)...); err != nil || len(due) != 2 {
 		t.Errorf("what is due for an administrator: %v %s", err, dump(due))
 	}
 	if due, err := s.Due(ctx, "Task", As(guest)); err != nil || len(due) != 0 {
@@ -556,7 +576,7 @@ func TestAccess_PreviewDelete(t *testing.T) {
 	if got, err := s.Get(ctx, "Claim", doc.ID, As(clerkAnn)); err != nil || got.Version != 1 {
 		t.Errorf("the document after the previews: %v", err)
 	}
-	if ev, _ := s.Events(ctx, "Claim", doc.ID, As(root)); len(ev) != 1 {
+	if ev, _ := s.Events(ctx, "Claim", doc.ID, readAs(root)...); len(ev) != 1 {
 		t.Errorf("events after the previews: %d", len(ev))
 	}
 }
@@ -594,7 +614,7 @@ func TestAccess_LiteralsAndOlderVersions(t *testing.T) {
 		if n, err := s.Count(ctx, f, As(guest)); err != nil || n != 1 {
 			t.Errorf("the count %q under the new rule: %v %d", where, err, n)
 		}
-		if n, err := s.Count(ctx, f, As(root)); err != nil || n != 2 {
+		if n, err := s.Count(ctx, f, readAs(root)...); err != nil || n != 2 {
 			t.Errorf("an administrator's count %q: %v %d", where, err, n)
 		}
 	}
@@ -661,7 +681,7 @@ func TestAccess_EveryPathAgrees(t *testing.T) {
 		for _, p := range callers {
 			byID := map[string]bool{}
 			for _, id := range ids {
-				_, err := s.Get(ctx, "Doc", id, As(p))
+				_, err := s.Get(ctx, "Doc", id, readAs(p)...)
 				switch {
 				case err == nil:
 					byID[id] = true
@@ -673,7 +693,7 @@ func TestAccess_EveryPathAgrees(t *testing.T) {
 				f := Filter{Class: "Doc", Where: where}
 				// What the filter should show: what a read by id shows
 				// of what an administrator's filter shows.
-				all, err := s.Query(ctx, f, As(root))
+				all, err := s.Query(ctx, f, readAs(root)...)
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -683,7 +703,7 @@ func TestAccess_EveryPathAgrees(t *testing.T) {
 						want = append(want, d.ID)
 					}
 				}
-				docs, err := s.Query(ctx, f, As(p))
+				docs, err := s.Query(ctx, f, readAs(p)...)
 				if err != nil {
 					t.Fatalf("%s for %q: the filter %q: %v", rule, p.ID, where, err)
 				}
@@ -694,7 +714,7 @@ func TestAccess_EveryPathAgrees(t *testing.T) {
 				if strings.Join(got, ",") != strings.Join(want, ",") {
 					t.Errorf("%s for %q: the filter %q shows %d documents and a read by id %d", rule, p.ID, where, len(got), len(want))
 				}
-				if n, err := s.Count(ctx, f, As(p)); err != nil || int(n) != len(want) {
+				if n, err := s.Count(ctx, f, readAs(p)...); err != nil || int(n) != len(want) {
 					t.Errorf("%s for %q: the count %q is %d (%v) and a read by id shows %d", rule, p.ID, where, n, err, len(want))
 				}
 			}
@@ -727,7 +747,7 @@ func TestAccess_OwnDocumentsThroughTheIndex(t *testing.T) {
 		t.Helper()
 		c, _ := s.class("Doc")
 		o := options{principal: p}
-		compiled, err := query.Compile(query.Filter{Class: "Doc"}, c.cls, s.sources(), caller(o))
+		compiled, err := query.Compile(query.Filter{Class: "Doc"}, c.cls, s.sources(), caller(o, c))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -837,7 +857,7 @@ func TestAccess_LeftOutIsNoted(t *testing.T) {
 	if n, err := s.Count(ctx, Filter{Class: "Slip"}, As(clerkAnn)); err != nil || n != 0 {
 		t.Errorf("counting where the class says nothing: %v %d", err, n)
 	}
-	if n, err := s.Count(ctx, Filter{Class: "Slip"}, As(root)); err != nil || n != 1 {
+	if n, err := s.Count(ctx, Filter{Class: "Slip"}, readAs(root)...); err != nil || n != 1 {
 		t.Errorf("a content administrator counts: %v %d", err, n)
 	}
 	// A table that says nothing is the same: no rows for anybody but a
@@ -849,7 +869,12 @@ func TestAccess_LeftOutIsNoted(t *testing.T) {
 	if e, ok := err.(*Error); !ok || e.Code != CodeForbidden || e.Path != "/access/write" || !strings.Contains(e.Hint, "add access.write") {
 		t.Errorf("writing a table that says nothing: %v", err)
 	}
-	if _, err := s.ImportRows(ctx, "Rates", []Values{{"code": "EUR", "rate": 4.3}}, As(root)); err != nil {
+	// A content administrator writes it past the rule only with a
+	// reason, which the log of reads keeps (ADR-0067, item 7).
+	if _, err := s.ImportRows(ctx, "Rates", []Values{{"code": "EUR", "rate": 4.3}}, As(root)); code(err) != CodeReasonRequired {
+		t.Errorf("a content administrator writes the table with no reason: %v", err)
+	}
+	if _, err := s.ImportRows(ctx, "Rates", []Values{{"code": "EUR", "rate": 4.3}}, readAs(root)...); err != nil {
 		t.Fatalf("a content administrator writes the table: %v", err)
 	}
 	if _, err := s.TableRows(ctx, "Rates", As(clerkAnn)); code(err) != CodeForbidden {
@@ -894,7 +919,7 @@ func TestAccess_Override(t *testing.T) {
 	}
 	marks := func(class, id string) []string {
 		t.Helper()
-		events, err := s.Events(ctx, class, id, As(cora))
+		events, err := s.Events(ctx, class, id, As(cora), Reason("the test reads the marks"))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -919,8 +944,12 @@ func TestAccess_Override(t *testing.T) {
 	if err != nil || strings.Join(pv.Override, " ") != "/access/read /access/update" || len(pv.Errors) != 0 {
 		t.Errorf("the preview of an override with a reason: %v %s", err, dump(pv))
 	}
-	// A read by override asks no reason and leaves no trace.
-	if got, err := s.Get(ctx, "Memo", memo.ID, As(cora)); err != nil || got.Values["total"] != 5.0 {
+	// A read by override needs a reason too, and the log of reads keeps
+	// it (ADR-0067).
+	if _, err := s.Get(ctx, "Memo", memo.ID, As(cora)); code(err) != CodeReasonRequired {
+		t.Errorf("a content administrator reads with no reason: %v", err)
+	}
+	if got, err := s.Get(ctx, "Memo", memo.ID, As(cora), why); err != nil || got.Values["total"] != 5.0 {
 		t.Errorf("a content administrator reads: %v %s", err, dump(got))
 	}
 	// With a reason the command is made, and its event keeps both.
@@ -933,7 +962,10 @@ func TestAccess_Override(t *testing.T) {
 		t.Errorf("a write past a right, without a reason: %v", err)
 	}
 	// The listing says what taking the transition would lift.
-	infos, err := s.Transitions(ctx, "Memo", memo.ID, As(cora))
+	if _, err := s.Transitions(ctx, "Memo", memo.ID, As(cora)); code(err) != CodeReasonRequired {
+		t.Errorf("the listing for a content administrator with no reason: %v", err)
+	}
+	infos, err := s.Transitions(ctx, "Memo", memo.ID, As(cora), why)
 	if err != nil || len(infos) != 1 || infos[0].Name != "send" || !infos[0].Enabled || infos[0].Override != "/access/transition/send" {
 		t.Errorf("the listing for a content administrator: %v %s", err, dump(infos))
 	}

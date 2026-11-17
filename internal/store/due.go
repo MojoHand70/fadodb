@@ -121,22 +121,31 @@ func (s *Store) Due(ctx context.Context, class string, opts ...Option) ([]DueDoc
 		}
 		out = append(out, found...)
 	}
-	// A document the caller may not see is not listed (ADR-0049, item 3).
-	// The host program that touches what is due asks as a content administrator,
-	// for whom this costs nothing; for anybody else it is a read of each
-	// document found.
-	if !o.principal.content() {
+	// A document the caller may not see is not listed (ADR-0049, item 3):
+	// a read of each document found. A content administrator who passes
+	// the rules sees every one, and the entry names those only the
+	// override showed (ADR-0067); one who gave no reason is held by the
+	// rules as anybody.
+	passes, r := o.passes(c), o.newRead("due", c)
+	if !passes || o.records(c) {
 		seen := out[:0]
 		for _, d := range out {
 			ok, err := s.sees(ctx, c, d.ID, o)
 			if err != nil {
 				return nil, err
 			}
-			if ok {
+			switch {
+			case ok:
 				seen = append(seen, d)
+			case passes:
+				seen = append(seen, d)
+				r.saw(d.ID, "/access/read")
 			}
 		}
 		out = seen
+	}
+	if err := s.logRead(ctx, o, r); err != nil {
+		return nil, err
 	}
 	return out, nil
 }

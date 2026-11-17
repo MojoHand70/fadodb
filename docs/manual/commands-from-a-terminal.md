@@ -421,7 +421,7 @@ The members of its object:
 And the members that mean the same in every command:
   key            text          the idempotency key: the same command sent again with the same key makes no second commit and is answered as the first was
   business_date  text          the business day of the commit, as "2026-11-13"; the server's day when left out
-  reason         text          why a content administrator acts past a rule of the class; kept on the event
+  reason         text          why a content administrator acts or reads past a rule; a change keeps it on its event, a read in the log of reads
   for            text          the id of whoever the caller acts for; let through only while a substitution says so
 
 The members of its answer:

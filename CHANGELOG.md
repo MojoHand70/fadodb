@@ -9,18 +9,55 @@ All notable changes to FadoDB are recorded here. The format follows
 ### Added
 
 - Phase 7, the browser VM and the reference frontend, has started;
-  the roadmap says what the owner ruled it holds. Its first record,
-  ADR-0067, proposed: a content administrator who gives a reason sees
-  past the rules, and the log of reads keeps every document so seen,
-  every import into a table past its write rule and every SQL
-  statement; database administrators read it with the new command
-  `reads`. Without a reason a content administrator reads as anybody.
-  Nothing of it is built yet.
+  the roadmap says what the owner ruled it holds.
+- The log of reads (ADR-0067, accepted). A content administrator who
+  gives a reason sees past the rules, and every document, row,
+  variable and file only the override showed is written down before
+  the answer leaves, with the rules it got past and the reason: one
+  entry for each call, naming every document; a count says how many
+  it counted past a rule. Every SQL statement is written down too, with
+  its arguments and how many rows it returned, or the code it failed
+  with, never the rows. So is a content administrator's import into a
+  table past its write rule, and a row a rule's action writes past it.
+  Database administrators, and nobody else, read the log with the new
+  command `reads` (in Go `Reads`), narrowed by caller, class and
+  document, table, command and period; SQL cannot read it, and nothing
+  deletes an entry. If the entry cannot be written, the read fails and
+  shows nothing. The chapter
+  [The log of reads](docs/manual/the-log-of-reads.md) plays the case.
+- The member `reason` on every command that reads a document or a
+  table, on `flow`, `subscribe`, `sql` and `import_rows`, and the
+  parameter `reason=` on the addresses of files.
 
 ### Changed
 
+- **A content administrator reads past a rule only with a reason.**
+  Without one they read as anybody in their groups: a document only
+  the override would show them is refused with `reason_required` and
+  the place of the rule, a list and a count leave it out, the stream
+  does not tell of it, and a variable a right hides is hidden. This
+  holds for a host program that lists `due` as a content
+  administrator, and for the answer of a change. A class the engine
+  brings, `Substitution`, is seen as before.
+- **Opening bytes by their hash alone needs a reason**, every time.
+- **A content administrator's import into a table, or read of its
+  rows, past the table's rule needs a reason**, and an action a rule
+  queued writes a table past its rule only with the reason of the
+  commit that queued it; without one it is refused with
+  `reason_required`.
+- The engine schema is 12, for the log of reads. A database made by
+  v0.6.0 is refused by this release, as before 1.0 every database of
+  an earlier schema is: there is no upgrade path yet.
+
 - The chapter on containers says where the image is pulled from,
   `ghcr.io/mojohand70/fadodb:0.6.0`, now that v0.6.0 has published it.
+
+### Security
+
+- A read past a rule leaves a trace. A content administrator's read of
+  what the rules hide, and every statement of an analyst's SQL, are in
+  the log of reads with who, when and why; v0.6.0 said that a read
+  left none.
 
 ## [0.6.0] - 2026-11-17
 

@@ -93,6 +93,12 @@ func (s *Store) overridden(cmd *command, res *result) *Error {
 	return nil
 }
 
+// whole reports whether the answer of a command shows its document whole
+// to a content administrator: in a class the engine brings always, and
+// elsewhere when they give a reason (ADR-0067, item 2). Otherwise the
+// answer is projected and veiled as for anybody.
+func (cmd *command) whole() bool { return cmd.o.passes(cmd.c) }
+
 // noDocument is the answer for a document that does not exist, and for
 // one the caller may not see (ADR-0049, item 3): the same words.
 func noDocument(c *class, id string) *Error {
@@ -190,7 +196,7 @@ func forbiddenBy(c *class, k accessRule, p Principal, id string, err error) *Err
 // version and the state stay, the values and the title go. The worker's
 // commands answer the engine, not the person, and are left whole.
 func (s *Store) veil(c *class, row *docRow, d *Document, cmd *command, evalCtx *formula.Context) {
-	if !asksRules(cmd) || cmd.internal || cmd.o.principal.content() {
+	if !asksRules(cmd) || cmd.internal || cmd.whole() {
 		return
 	}
 	evalCtx.ID, evalCtx.State = row.id, row.state
@@ -204,12 +210,15 @@ func bare(d *Document) {
 	d.Title, d.Values, d.Computed = "", Values{}, nil
 }
 
-// seesRow reports whether the principal of a read may see a document,
-// given its row as the class version vc computed it. A read rule uses no
-// lookup and no function of a state (ADR-0010, ADR-0047), so a borrowed
-// evaluator runs it.
+// seesRow reports whether the rules let the principal of a read see a
+// document, given its row as the class version vc computed it. A content
+// administrator is asked the rules too (ADR-0067, item 1), except in a
+// class the engine brings, which they see as they see any other
+// (ADR-0052); whether they then pass them is the caller's to decide. A
+// read rule uses no lookup and no function of a state (ADR-0010,
+// ADR-0047), so a borrowed evaluator runs it.
 func (s *Store) seesRow(c, vc *class, row *docRow, o options) bool {
-	if o.principal.content() {
+	if c.brought && o.principal.content() {
 		return true
 	}
 	if vc != c {
@@ -223,16 +232,26 @@ func (s *Store) seesRow(c, vc *class, row *docRow, o options) bool {
 	return ok
 }
 
-// sees reports whether the principal of a read may see the document with
-// the id: the read rule over the document as it is stored now, and over
-// its last version when it was deleted (ADR-0049, item 6). It is false
-// for an id no document has, which the caller answers in its own words,
-// as it does a document that is hidden. A class with no answer of its own
-// for the rule, and a content administrator, cost no read.
+// sees reports whether the rules let the principal of a read see the
+// document with the id: the read rule over the document as it is stored
+// now, and over its last version when it was deleted (ADR-0049, item 6).
+// It is false for an id no document has, which the caller answers in its
+// own words, as it does a document that is hidden.
 func (s *Store) sees(ctx context.Context, c *class, id string, o options) (bool, error) {
-	if o.principal.content() {
+	if c.brought && o.principal.content() {
 		return true, nil
 	}
+	vc, row, err := s.storedRow(ctx, c, id)
+	if err != nil || row == nil {
+		return false, err
+	}
+	return s.seesRow(c, vc, row, o), nil
+}
+
+// storedRow reads the document with the id as it is stored now, or as it
+// was last when it was deleted, under the class version that computed
+// it. The row is nil for an id no document has.
+func (s *Store) storedRow(ctx context.Context, c *class, id string) (*class, *docRow, error) {
 	history := false
 	row, err := c.scanRow(c.r.getCurrent.QueryRowContext(ctx, id), false)
 	if err == sql.ErrNoRows {
@@ -240,16 +259,12 @@ func (s *Store) sees(ctx context.Context, c *class, id string, o options) (bool,
 		row, err = c.scanRow(c.r.getLast.QueryRowContext(ctx, id), true)
 	}
 	if err == sql.ErrNoRows {
-		return false, nil
+		return nil, nil, nil
 	}
 	if err != nil {
-		return false, storageErr("read the document", err)
+		return nil, nil, storageErr("read the document", err)
 	}
-	vc, row, err := s.underVersion(ctx, c, row, history)
-	if err != nil {
-		return false, err
-	}
-	return s.seesRow(c, vc, row, o), nil
+	return s.underVersion(ctx, c, row, history)
 }
 
 // hiddenFor names, upper-cased, the variables of a row the principal may
@@ -257,7 +272,7 @@ func (s *Store) sees(ctx context.Context, c *class, id string, o options) (bool,
 // the row as the class version vc computed it, in the row's state, as a
 // projection applies it (ADR-0041, item 4). nil when nothing is hidden.
 func (s *Store) hiddenFor(c, vc *class, row *docRow, o options) map[string]bool {
-	if c.rights == nil || o.principal.content() {
+	if c.rights == nil || c.brought && o.principal.content() {
 		return nil
 	}
 	if vc != c {

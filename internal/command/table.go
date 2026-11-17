@@ -152,8 +152,9 @@ const (
 	// engine says in its own words to a caller that names somebody.
 	refusesFor
 
-	// asReader is a command that reads documents or rows.
-	asReader = takesAt | takesFor
+	// asReader is a command that reads documents or rows. A content
+	// administrator reads past a rule with a reason (ADR-0067).
+	asReader = takesAt | takesReason | takesFor
 	// asCommitter is a command that commits a document.
 	asCommitter = takesKey | takesBusinessDate | takesReason | takesFor | refusesAt
 	// asBatch is a batch of commits that takes no key.
@@ -178,7 +179,7 @@ func (c *Command) TakesKey() bool { return c.takes&takesKey != 0 }
 var (
 	optionKey          = Field{Name: "key", Kind: Text, Option: true, Does: "the idempotency key: the same command sent again with the same key makes no second commit and is answered as the first was"}
 	optionBusinessDate = Field{Name: "business_date", Kind: Text, Option: true, Does: `the business day of the commit, as "2026-11-13"; the server's day when left out`}
-	optionReason       = Field{Name: "reason", Kind: Text, Option: true, Does: "why a content administrator acts past a rule of the class; kept on the event"}
+	optionReason       = Field{Name: "reason", Kind: Text, Option: true, Does: "why a content administrator acts or reads past a rule; a change keeps it on its event, a read in the log of reads"}
 	optionAt           = Field{Name: "at", Kind: Moment, Option: true, Does: `the moment the command reads at: "2026-11-13", "2026-11-13 09:30:00" in UTC, or seconds since the epoch; now when left out`}
 	optionFor          = Field{Name: "for", Kind: Text, Option: true, Does: "the id of whoever the caller acts for; let through only while a substitution says so"}
 )
@@ -271,7 +272,7 @@ var commands = []*Command{
 			opt("kinds", Texts, "the kinds of event to hear of, such as created, set and transition; every kind when left out"),
 			opt("to_states", Texts, "for a transition, the states entered; every state when left out"),
 			opt("after", Text, "the id of an event: the stream begins after it, so a caller that was away gives the last one it handled; now when left out")},
-		takes: refusesFor, run: runSubscribe},
+		takes: refusesFor | takesReason, run: runSubscribe},
 	{Group: Documents, Name: "preview", Mark: Reads, Call: "Preview", Does: "Runs a create, a set or a transition without writing anything.",
 		Fields: []Field{req("class", Text, theClass), opt("id", Text, "the id of the document; left out, the preview is of a create"),
 			opt("values", Object, theValues), opt("transition", Text, "the name of a transition to take")},
@@ -297,10 +298,10 @@ var commands = []*Command{
 			opt("since", Moment, "the first moment of the period the moves and the stays are counted in; since the class began when left out"),
 			opt("until", Moment, "the moment the period ends before; now when left out")},
 		Answer: answer("flow", "the states of the class, each with its documents now, since when the oldest is there, and how many stays ended in the period and how long they lasted; and its transitions, each with its moves in the period"),
-		takes:  asCaller, run: runFlow},
+		takes:  asCaller | takesReason, run: runFlow},
 	{Group: Documents, Name: "sql", Mark: Reads, Call: "SQL", Does: "Runs one read-only SELECT over the views, for an analyst.",
 		Fields: []Field{req("statement", Text, "the SELECT, with ? for each argument"), opt("args", Scalars, "the arguments, in order")},
-		Answer: answer("columns", "the names of the columns", "rows", "the rows, each a list of values in the order of the columns"), takes: asCaller, run: runSQL},
+		Answer: answer("columns", "the names of the columns", "rows", "the rows, each a list of values in the order of the columns"), takes: asCaller | takesReason, run: runSQL},
 
 	// Definitions.
 	{Group: Definitions, Name: "define_class", Mark: Writes, Call: "DefineClass", Does: "Defines a class, or the next version of one.",
@@ -383,7 +384,7 @@ var commands = []*Command{
 	{Group: Operations, Name: "import_rows", Mark: Writes, Call: "ImportRows", Does: "Writes rows into a table; a row whose key exists is replaced.",
 		Fields: []Field{req("table", Text, "the name of the table"), req("rows", Objects, "the rows, each an object of values by column"),
 			opt("replace", Flag, "true empties the table first, so that the rows given are all its rows")},
-		Answer: answer("imported", "how many rows it wrote"), takes: asWriter, run: runImportRows},
+		Answer: answer("imported", "how many rows it wrote"), takes: asWriter | takesReason, run: runImportRows},
 	{Group: Operations, Name: "preview_action", Mark: Reads, Call: "PreviewAction", Does: "Answers what an action would be called with, or the request it would send, with every secret masked; nothing is called or sent.",
 		Fields: []Field{req("action", Text, "the name of the action"), opt("args", Object, "its arguments, by parameter")},
 		Answer: answer("preview", "the call, or the request"), takes: asCaller, run: runPreviewAction},
@@ -401,6 +402,15 @@ var commands = []*Command{
 	{Group: Operations, Name: "check_blobs", Mark: Reads, Call: "CheckBlobs", Does: "Recomputes the hash of every file the database holds, and looks for every file a document holds.",
 		Answer: answer("checked", "how many files it checked", "mismatched", "the hashes of the files whose bytes do not match",
 			"missing", `the files a document holds, in any version, that the database has lost, each {"hash", "class", "id", "version", "variable"}`), takes: asCaller, run: runCheckBlobs},
+	{Group: Operations, Name: "reads", Mark: Reads, Call: "Reads", Does: "Lists the log of reads: what a content administrator saw past a rule, with the reason, and every SQL statement. It is a database administrator's.",
+		Fields: []Field{opt("by", Text, "only what this caller read"), opt("class", Text, "only reads of this class"),
+			opt("id", Text, "only reads that showed this document; needs class"), opt("table", Text, "only reads of this table"),
+			opt("command", Text, "only reads by this command, such as get, query or sql"),
+			opt("since", Moment, "the first moment of the period"), opt("until", Moment, "the moment the period ends before"),
+			opt("after", Integer, "the seq of the last entry already read, to read on from"),
+			opt("limit", Integer, "the most entries to answer: 1,000 when left out, at most 10,000")},
+		Answer: answer("reads", "the entries, oldest first: seq, when, who, of what kind and for whom, the command, the class or the table, the documents it showed past a rule and the rules, the reason; for a count how many it counted past a rule; for a table how many rows; for SQL the statement, its arguments and how many rows it returned or the code it failed with"),
+		takes:  asCaller, run: runReads},
 
 	// Users, groups and keys (ADR-0057).
 	{Group: Users, Users: true, Name: "create_user", Mark: Writes, Call: "CreateUser", Does: "Makes a user: a person, an agent or a service the database knows by its id. It is a database administrator's.",

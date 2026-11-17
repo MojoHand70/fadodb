@@ -115,6 +115,8 @@ administrator.
 | 14 | Celina | corrects it, with the reason "the supplier was renamed, ticket 4711" | allowed |
 | 15 | Anna | books | allowed, state `BOOKED` |
 | 16 | Celina | changes the booked invoice, with a reason | refused, `terminal` |
+| 17 | Celina | reads the invoice, giving no reason | refused, `reason_required` |
+| 18 | Celina | reads it, with the reason "the supplier asks what we booked" | allowed, and the log of reads keeps it |
 
 ## Who edits in which state
 
@@ -245,8 +247,14 @@ administrator.
 
 - **Asking first says so.** The list of open transitions tells a
   content administrator which of them they would take past a rule.
-- **A read leaves no trace.** No read is logged today, a content
-  administrator's included.
+- **A read past a rule needs a reason too.** Without one a content
+  administrator reads as anybody in their groups: a document only the
+  group would show them is refused with `reason_required`, as in step
+  17, and a list leaves it out. With a reason they see everything, as
+  in step 18, and the [log of reads](../the-log-of-reads.md) keeps what
+  they saw past which rule, and why. Database administrators read that
+  log, and the content administrator does not, unless the host program
+  puts them in both groups.
 
 ## What a rule does, and for whom
 

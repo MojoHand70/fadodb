@@ -58,8 +58,8 @@ func (d database) OpenBlob(ctx context.Context, hash string, opts ...store.Optio
 	return d.s.OpenBlob(ctx, hash, opts...)
 }
 
-func (d database) Subscribe(ctx context.Context, p store.Principal, f store.ChangeFilter) (server.Stream, error) {
-	changes, err := d.s.Subscribe(ctx, f, store.As(p))
+func (d database) Subscribe(ctx context.Context, p store.Principal, f store.ChangeFilter, opts ...store.Option) (server.Stream, error) {
+	changes, err := d.s.Subscribe(ctx, f, append([]store.Option{store.As(p)}, opts...)...)
 	if err != nil {
 		return nil, err
 	}

@@ -99,12 +99,22 @@
   "paths": {
     "/v1/blob": {
       "get": {
+        "description": "Bytes opened by their hash alone get past the rules of every document that holds them, so the reason is needed every time, and the log of reads keeps it with the hash.",
         "operationId": "open_blob",
         "parameters": [
           {
             "description": "the hash of the bytes",
             "in": "query",
             "name": "hash",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "why the content administrator opens the bytes; the log of reads keeps it",
+            "in": "query",
+            "name": "reason",
             "required": true,
             "schema": {
               "type": "string"
@@ -130,7 +140,7 @@
             "$ref": "#/components/responses/Refused"
           }
         },
-        "summary": "Streams bytes by their hash alone, for a content administrator.",
+        "summary": "Streams bytes by their hash alone, for a content administrator who gives a reason.",
         "tags": [
           "Files"
         ]
@@ -277,6 +287,10 @@
                     "description": "the id of whoever the caller acts for; let through only while a substitution says so",
                     "type": "string"
                   },
+                  "reason": {
+                    "description": "why a content administrator acts or reads past a rule; a change keeps it on its event, a read in the log of reads",
+                    "type": "string"
+                  },
                   "where": {
                     "description": "a formula over the variables of the class; every document when left out",
                     "type": "string"
@@ -353,7 +367,7 @@
                     "type": "string"
                   },
                   "reason": {
-                    "description": "why a content administrator acts past a rule of the class; kept on the event",
+                    "description": "why a content administrator acts or reads past a rule; a change keeps it on its event, a read in the log of reads",
                     "type": "string"
                   },
                   "values": {
@@ -498,7 +512,7 @@
                     "type": "string"
                   },
                   "reason": {
-                    "description": "why a content administrator acts past a rule of the class; kept on the event",
+                    "description": "why a content administrator acts or reads past a rule; a change keeps it on its event, a read in the log of reads",
                     "type": "string"
                   }
                 },
@@ -1073,7 +1087,7 @@
                     "type": "string"
                   },
                   "reason": {
-                    "description": "why a content administrator acts past a rule of the class; kept on the event",
+                    "description": "why a content administrator acts or reads past a rule; a change keeps it on its event, a read in the log of reads",
                     "type": "string"
                   }
                 },
@@ -1187,6 +1201,10 @@
                   "for": {
                     "description": "the id of whoever the caller acts for; let through only while a substitution says so",
                     "type": "string"
+                  },
+                  "reason": {
+                    "description": "why a content administrator acts or reads past a rule; a change keeps it on its event, a read in the log of reads",
+                    "type": "string"
                   }
                 },
                 "required": [
@@ -1256,6 +1274,10 @@
                   },
                   "id": {
                     "description": "the id of the document",
+                    "type": "string"
+                  },
+                  "reason": {
+                    "description": "why a content administrator acts or reads past a rule; a change keeps it on its event, a read in the log of reads",
                     "type": "string"
                   }
                 },
@@ -1349,6 +1371,15 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "description": "why a content administrator opens the file past a rule; the log of reads keeps it",
+            "in": "query",
+            "name": "reason",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "responses": {
@@ -1392,6 +1423,10 @@
                   },
                   "for": {
                     "description": "the id of whoever the caller acts for; let through only while a substitution says so",
+                    "type": "string"
+                  },
+                  "reason": {
+                    "description": "why a content administrator acts or reads past a rule; a change keeps it on its event, a read in the log of reads",
                     "type": "string"
                   },
                   "since": {
@@ -1476,6 +1511,10 @@
                   },
                   "id": {
                     "description": "the id of the document",
+                    "type": "string"
+                  },
+                  "reason": {
+                    "description": "why a content administrator acts or reads past a rule; a change keeps it on its event, a read in the log of reads",
                     "type": "string"
                   }
                 },
@@ -1927,6 +1966,10 @@
                   "id": {
                     "description": "the id of the document",
                     "type": "string"
+                  },
+                  "reason": {
+                    "description": "why a content administrator acts or reads past a rule; a change keeps it on its event, a read in the log of reads",
+                    "type": "string"
                   }
                 },
                 "required": [
@@ -1982,6 +2025,10 @@
                 "properties": {
                   "for": {
                     "description": "the id of whoever the caller acts for; let through only while a substitution says so",
+                    "type": "string"
+                  },
+                  "reason": {
+                    "description": "why a content administrator acts or reads past a rule; a change keeps it on its event, a read in the log of reads",
                     "type": "string"
                   },
                   "replace": {
@@ -2655,7 +2702,7 @@
                     "type": "string"
                   },
                   "reason": {
-                    "description": "why a content administrator acts past a rule of the class; kept on the event",
+                    "description": "why a content administrator acts or reads past a rule; a change keeps it on its event, a read in the log of reads",
                     "type": "string"
                   },
                   "transition": {
@@ -2800,7 +2847,7 @@
                     "type": "string"
                   },
                   "reason": {
-                    "description": "why a content administrator acts past a rule of the class; kept on the event",
+                    "description": "why a content administrator acts or reads past a rule; a change keeps it on its event, a read in the log of reads",
                     "type": "string"
                   }
                 },
@@ -2875,7 +2922,7 @@
                     "type": "string"
                   },
                   "reason": {
-                    "description": "why a content administrator acts past a rule of the class; kept on the event",
+                    "description": "why a content administrator acts or reads past a rule; a change keeps it on its event, a read in the log of reads",
                     "type": "string"
                   },
                   "transition": {
@@ -2960,7 +3007,7 @@
                     "type": "array"
                   },
                   "reason": {
-                    "description": "why a content administrator acts past a rule of the class; kept on the event",
+                    "description": "why a content administrator acts or reads past a rule; a change keeps it on its event, a read in the log of reads",
                     "type": "string"
                   },
                   "transition": {
@@ -3061,6 +3108,10 @@
                     },
                     "type": "array"
                   },
+                  "reason": {
+                    "description": "why a content administrator acts or reads past a rule; a change keeps it on its event, a read in the log of reads",
+                    "type": "string"
+                  },
                   "where": {
                     "description": "a formula over the variables of the class; every document when left out",
                     "type": "string"
@@ -3106,6 +3157,100 @@
         "x-fado-mark": "reads"
       }
     },
+    "/v1/reads": {
+      "post": {
+        "description": "It reads. In Go it is the call `Reads`.",
+        "operationId": "reads",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "after": {
+                    "description": "the seq of the last entry already read, to read on from",
+                    "type": "integer"
+                  },
+                  "by": {
+                    "description": "only what this caller read",
+                    "type": "string"
+                  },
+                  "class": {
+                    "description": "only reads of this class",
+                    "type": "string"
+                  },
+                  "command": {
+                    "description": "only reads by this command, such as get, query or sql",
+                    "type": "string"
+                  },
+                  "for": {
+                    "description": "the id of whoever the caller acts for; let through only while a substitution says so",
+                    "type": "string"
+                  },
+                  "id": {
+                    "description": "only reads that showed this document; needs class",
+                    "type": "string"
+                  },
+                  "limit": {
+                    "description": "the most entries to answer: 1,000 when left out, at most 10,000",
+                    "type": "integer"
+                  },
+                  "since": {
+                    "description": "the first moment of the period",
+                    "type": [
+                      "string",
+                      "integer"
+                    ]
+                  },
+                  "table": {
+                    "description": "only reads of this table",
+                    "type": "string"
+                  },
+                  "until": {
+                    "description": "the moment the period ends before",
+                    "type": [
+                      "string",
+                      "integer"
+                    ]
+                  }
+                },
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "reads": {
+                      "description": "the entries, oldest first: seq, when, who, of what kind and for whom, the command, the class or the table, the documents it showed past a rule and the rules, the reason; for a count how many it counted past a rule; for a table how many rows; for SQL the statement, its arguments and how many rows it returned or the code it failed with"
+                    }
+                  },
+                  "required": [
+                    "reads"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "The command ran."
+          },
+          "default": {
+            "$ref": "#/components/responses/Refused"
+          }
+        },
+        "summary": "Lists the log of reads: what a content administrator saw past a rule, with the reason, and every SQL statement. It is a database administrator's.",
+        "tags": [
+          "Tables, actions and the queue"
+        ],
+        "x-fado-call": "Reads",
+        "x-fado-mark": "reads"
+      }
+    },
     "/v1/refresh": {
       "post": {
         "description": "It writes. In Go it is the call `Refresh`.",
@@ -3137,7 +3282,7 @@
                     "type": "string"
                   },
                   "reason": {
-                    "description": "why a content administrator acts past a rule of the class; kept on the event",
+                    "description": "why a content administrator acts or reads past a rule; a change keeps it on its event, a read in the log of reads",
                     "type": "string"
                   },
                   "variables": {
@@ -3272,7 +3417,7 @@
                     "type": "string"
                   },
                   "reason": {
-                    "description": "why a content administrator acts past a rule of the class; kept on the event",
+                    "description": "why a content administrator acts or reads past a rule; a change keeps it on its event, a read in the log of reads",
                     "type": "string"
                   },
                   "variables": {
@@ -3459,7 +3604,7 @@
                     "type": "string"
                   },
                   "reason": {
-                    "description": "why a content administrator acts past a rule of the class; kept on the event",
+                    "description": "why a content administrator acts or reads past a rule; a change keeps it on its event, a read in the log of reads",
                     "type": "string"
                   },
                   "values": {
@@ -3615,6 +3760,10 @@
                     "description": "the id of whoever the caller acts for; let through only while a substitution says so",
                     "type": "string"
                   },
+                  "reason": {
+                    "description": "why a content administrator acts or reads past a rule; a change keeps it on its event, a read in the log of reads",
+                    "type": "string"
+                  },
                   "statement": {
                     "description": "the SELECT, with ? for each argument",
                     "type": "string"
@@ -3692,6 +3841,10 @@
                     },
                     "type": "array"
                   },
+                  "reason": {
+                    "description": "why a content administrator acts or reads past a rule; a change keeps it on its event, a read in the log of reads",
+                    "type": "string"
+                  },
                   "to_states": {
                     "description": "for a transition, the states entered; every state when left out",
                     "items": {
@@ -3749,6 +3902,10 @@
                   },
                   "for": {
                     "description": "the id of whoever the caller acts for; let through only while a substitution says so",
+                    "type": "string"
+                  },
+                  "reason": {
+                    "description": "why a content administrator acts or reads past a rule; a change keeps it on its event, a read in the log of reads",
                     "type": "string"
                   },
                   "table": {
@@ -3827,7 +3984,7 @@
                     "type": "string"
                   },
                   "reason": {
-                    "description": "why a content administrator acts past a rule of the class; kept on the event",
+                    "description": "why a content administrator acts or reads past a rule; a change keeps it on its event, a read in the log of reads",
                     "type": "string"
                   },
                   "transition": {
@@ -3915,7 +4072,7 @@
                     "type": "string"
                   },
                   "reason": {
-                    "description": "why a content administrator acts past a rule of the class; kept on the event",
+                    "description": "why a content administrator acts or reads past a rule; a change keeps it on its event, a read in the log of reads",
                     "type": "string"
                   },
                   "transition": {
@@ -3996,6 +4153,10 @@
                   },
                   "id": {
                     "description": "the id of the document",
+                    "type": "string"
+                  },
+                  "reason": {
+                    "description": "why a content administrator acts or reads past a rule; a change keeps it on its event, a read in the log of reads",
                     "type": "string"
                   }
                 },
@@ -4476,6 +4637,10 @@
                   },
                   "id": {
                     "description": "the id of the document",
+                    "type": "string"
+                  },
+                  "reason": {
+                    "description": "why a content administrator acts or reads past a rule; a change keeps it on its event, a read in the log of reads",
                     "type": "string"
                   },
                   "version": {

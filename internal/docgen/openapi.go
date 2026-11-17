@@ -157,6 +157,7 @@ func OpenAPI(root string) (string, error) {
 			query("hash", "the hash of the file, as its facts give it", true, text),
 			query("version", "the version of the document to read the file from; the current one when left out", false, object{"type": "integer"}),
 			query("for", "the id of whoever the caller acts for", false, text),
+			query("reason", "why a content administrator opens the file past a rule; the log of reads keeps it", false, text),
 		},
 		"responses": with(object{
 			"200": object{"description": "The bytes of the file.", "content": bytesOf},
@@ -166,8 +167,9 @@ func OpenAPI(root string) (string, error) {
 	paths["/v1/blob"] = object{"get": object{
 		"operationId": "open_blob",
 		"tags":        []string{tagFiles},
-		"summary":     "Streams bytes by their hash alone, for a content administrator.",
-		"parameters":  []object{query("hash", "the hash of the bytes", true, text)},
+		"summary":     "Streams bytes by their hash alone, for a content administrator who gives a reason.",
+		"description": "Bytes opened by their hash alone get past the rules of every document that holds them, so the reason is needed every time, and the log of reads keeps it with the hash.",
+		"parameters":  []object{query("hash", "the hash of the bytes", true, text), query("reason", "why the content administrator opens the bytes; the log of reads keeps it", true, text)},
 		"responses": with(object{
 			"200": object{"description": "The bytes.", "content": bytesOf},
 			"304": object{"description": "The caller holds these bytes already: it sent their tag in `If-None-Match`."},

@@ -100,7 +100,7 @@ func (d *Door) file(out *reply, r *http.Request, told *Request) {
 	if !ok {
 		return
 	}
-	asked, refusal := parameters(r, addressFile, "class", "id", "hash", "version", "for")
+	asked, refusal := parameters(r, addressFile, "class", "id", "hash", "version", "for", "reason")
 	if refusal == nil {
 		refusal = needs(asked, addressFile, "class", "id", "hash")
 	}
@@ -108,7 +108,7 @@ func (d *Door) file(out *reply, r *http.Request, told *Request) {
 		d.refused(out, told, refusal)
 		return
 	}
-	opts := make([]store.Option, 0, 2)
+	opts := make([]store.Option, 0, 3)
 	if text := asked.Get("version"); text != "" {
 		version, err := strconv.ParseInt(text, 10, 64)
 		if err != nil || version < 1 {
@@ -125,6 +125,11 @@ func (d *Door) file(out *reply, r *http.Request, told *Request) {
 	// command, and the engine checks it.
 	p.For = asked.Get("for")
 	opts = append(opts, store.As(p))
+	// A content administrator opens a file past a rule with a reason,
+	// which the log of reads keeps (ADR-0067).
+	if reason := asked.Get("reason"); reason != "" {
+		opts = append(opts, store.Reason(reason))
+	}
 	if !d.slot(out, r, told) {
 		return
 	}
@@ -140,7 +145,8 @@ func (d *Door) file(out *reply, r *http.Request, told *Request) {
 }
 
 // blob streams bytes by their hash alone. The engine opens them for a
-// content administrator and for nobody else (ADR-0052).
+// content administrator and for nobody else (ADR-0052), with a reason,
+// which the log of reads keeps (ADR-0067).
 func (d *Door) blob(out *reply, r *http.Request, told *Request) {
 	if r.Method != http.MethodGet {
 		d.notSentWith(out, told, http.MethodGet, "bytes are read with GET, and this request is a "+r.Method,
@@ -151,7 +157,7 @@ func (d *Door) blob(out *reply, r *http.Request, told *Request) {
 	if !ok {
 		return
 	}
-	asked, refusal := parameters(r, addressBlob, "hash")
+	asked, refusal := parameters(r, addressBlob, "hash", "reason")
 	if refusal == nil {
 		refusal = needs(asked, addressBlob, "hash")
 	}
@@ -165,7 +171,7 @@ func (d *Door) blob(out *reply, r *http.Request, told *Request) {
 	defer d.leave()
 
 	hash := asked.Get("hash")
-	from, size, err := d.db.OpenBlob(r.Context(), hash, store.As(p))
+	from, size, err := d.db.OpenBlob(r.Context(), hash, store.As(p), store.Reason(asked.Get("reason")))
 	if err != nil {
 		d.refused(out, told, err)
 		return

@@ -190,6 +190,10 @@ type (
 	UserFilter = store.UserFilter
 	UserKey    = store.UserKey
 	UserChange = store.UserChange
+	// Read is one entry of the log of reads, and ReadsFilter narrows the
+	// log (ADR-0067).
+	Read        = store.Read
+	ReadsFilter = store.ReadsFilter
 	// Option configures one call: As, Key, BusinessDate, WithID.
 	Option = store.Option
 	// Error is a refusal with a stable code, the variable it is about, a
@@ -269,11 +273,13 @@ func As(p Principal) Option { return store.As(p) }
 // Key gives a mutating call its idempotency key (ADR-0026).
 func Key(k string) Option { return store.Key(k) }
 
-// Reason says why the caller acts, for a command that only the content
-// administrators' group lets through (ADR-0052): an act past a rule of a
-// class is an override, it is refused with reason_required without a
-// reason, and its event keeps the reason beside the rule it lifted. A
-// command the rules let through ignores it.
+// Reason says why the caller acts or reads, for a call that only the
+// content administrators' group lets through (ADR-0052, ADR-0067): an act
+// or a read past a rule needs one, and is refused with reason_required
+// without it. A change keeps the reason on its event beside the rule it
+// lifted, and a read in the log of reads beside what it showed. Without a
+// reason a content administrator reads as anybody. A SQL statement keeps
+// a reason when it is given. A call the rules let through ignores it.
 func Reason(text string) Option { return store.Reason(text) }
 
 // BusinessDate gives the commit's event its business date (ADR-0026), a
@@ -854,6 +860,14 @@ func (db *DB) GetUser(ctx context.Context, id string, opts ...Option) (*User, er
 // among them. Every user of the database may ask.
 func (db *DB) Users(ctx context.Context, f UserFilter, opts ...Option) ([]*User, error) {
 	return db.s.Users(ctx, f, opts...)
+}
+
+// Reads lists the log of reads, oldest first (ADR-0067): every document,
+// row and file a content administrator saw past a rule, with the rules
+// and the reason, and every SQL statement an analyst ran. It is for
+// database administrators.
+func (db *DB) Reads(ctx context.Context, f ReadsFilter, opts ...Option) ([]Read, error) {
+	return db.s.Reads(ctx, f, opts...)
 }
 
 // UserChanges lists every change to a user and to its keys, oldest

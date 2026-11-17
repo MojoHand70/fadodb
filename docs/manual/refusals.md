@@ -52,7 +52,7 @@ What a call is answered with when the engine does not carry it out: a create, a 
 | `guard_false` | The transition's guard did not evaluate TRUE; an erroring guard is FALSE. |
 | `too_many_transitions` | More than eight transitions fired by themselves after one command, eventless or timed (ADR-0008, ADR-0047). |
 | `forbidden` | The caller may not do this. A rule of the class refused it (ADR-0049), or the right of a variable in the document's state (ADR-0041), or the work is for a system group the caller is not in (ADR-0052), or the caller acts for somebody and no substitution says it may (ADR-0053). The path, or the variable, names which. |
-| `reason_required` | A content administrator's command gets past a rule and gives no reason (ADR-0052, item 4). The path is the place of the rule. |
+| `reason_required` | A content administrator's command gets past a rule and gives no reason (ADR-0052, item 4), or their read would show what only a rule's override shows (ADR-0067). The path is the place of the rule. |
 | `too_deep` | An action was queued by a chain of actions deeper than MaxActionDepth (ADR-0044); its row is written dead. |
 | `unknown_action` | No action of the outbox has that key, or the database has no action of that name. |
 | `unknown_parameter` | An argument names a parameter the action's definition does not have (ADR-0045). |

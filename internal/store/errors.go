@@ -131,8 +131,9 @@ const (
 	// names which.
 	CodeForbidden = "forbidden"
 	// CodeReasonRequired: a content administrator's command gets past a
-	// rule and gives no reason (ADR-0052, item 4). The path is the place
-	// of the rule.
+	// rule and gives no reason (ADR-0052, item 4), or their read would
+	// show what only a rule's override shows (ADR-0067). The path is the
+	// place of the rule.
 	CodeReasonRequired = "reason_required"
 	// CodeTooDeep: an action was queued by a chain of actions deeper than
 	// MaxActionDepth (ADR-0044); its row is written dead.

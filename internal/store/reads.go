@@ -102,6 +102,16 @@ func newRead(command string, c *class) *readLog {
 	return r
 }
 
+// newRead starts the entry of a call only when the call may need one: a
+// content administrator's with a reason, in a class the engine does not
+// bring. Every other read makes none and allocates nothing for it.
+func (o *options) newRead(command string, c *class) *readLog {
+	if !o.records(c) {
+		return nil
+	}
+	return newRead(command, c)
+}
+
 // saw notes a document the call showed past the rules named. A document
 // shown under no rule is not noted.
 func (r *readLog) saw(id string, rules ...string) {

@@ -271,7 +271,7 @@ func (s *Store) Get(ctx context.Context, class, id string, opts ...Option) (*Doc
 	}
 	// A document the caller may not see does not exist for them
 	// (ADR-0049, item 3).
-	r := newRead("get", c)
+	r := o.newRead("get", c)
 	if seen, err := s.look(c, vc, row, o, r); err != nil {
 		return nil, err
 	} else if !seen {
@@ -356,7 +356,7 @@ func (s *Store) Version(ctx context.Context, class, id string, version int64, op
 	}
 	// The past is read under the rule of today (ADR-0049, item 6): who may
 	// not see the document now is told there is no such version.
-	r := newRead("version", c)
+	r := o.newRead("version", c)
 	if seen, err := s.lookID(ctx, c, id, o, r); err != nil {
 		return nil, err
 	} else if !seen {
@@ -418,7 +418,7 @@ func (s *Store) History(ctx context.Context, class, id string, opts ...Option) (
 	}
 	// A document the caller may not see has no history for them, as an id
 	// no document has (ADR-0049, item 6).
-	r := newRead("history", c)
+	r := o.newRead("history", c)
 	if seen, err := s.lookID(ctx, c, id, o, r); err != nil {
 		return nil, err
 	} else if !seen {
@@ -479,7 +479,7 @@ func (s *Store) Events(ctx context.Context, class, id string, opts ...Option) ([
 	if e != nil {
 		return nil, e
 	}
-	r := newRead("events", c)
+	r := o.newRead("events", c)
 	if seen, err := s.lookID(ctx, c, id, o, r); err != nil {
 		return nil, err
 	} else if !seen {

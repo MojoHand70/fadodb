@@ -126,7 +126,7 @@ func (s *Store) Due(ctx context.Context, class string, opts ...Option) ([]DueDoc
 	// the rules sees every one, and the entry names those only the
 	// override showed (ADR-0067); one who gave no reason is held by the
 	// rules as anybody.
-	passes, r := o.passes(c), newRead("due", c)
+	passes, r := o.passes(c), o.newRead("due", c)
 	if !passes || o.records(c) {
 		seen := out[:0]
 		for _, d := range out {

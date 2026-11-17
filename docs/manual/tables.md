@@ -430,9 +430,13 @@ with `bad_formula`, and the message says which.
   line is missing.
 - **`TRUE` lets a call through that names nobody.**
   `INGROUP("everyone")` asks for a caller with an id.
-- **A content administrator reads and writes every table.** No reason
-  is asked and nothing is written down, since a table keeps no log.
-  Bear that in mind when you name one.
+- **A content administrator reads and writes every table, with a
+  reason.** Without one the lines apply to them as to anybody, and
+  what they would get past is refused with `reason_required`. A table
+  keeps no history of its own, so the [log of reads](the-log-of-reads.md)
+  keeps the import or the read: the table, how many rows, the line it
+  got past, who and why. An action a rule queued writes a table as the
+  person whose commit queued it, with the reason that commit gave.
 - **A formula asks neither line**, as said above.
 
 The system groups are in [Who may](notions/who-may.md).

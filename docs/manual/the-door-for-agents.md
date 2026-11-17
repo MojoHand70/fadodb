@@ -149,7 +149,7 @@ as the door lists it:
       "values": {"type": "object", "description": "values to assign in the same commit, by variable"},
       "key": {"type": "string", "description": "the idempotency key: the same command sent again with the same key makes no second commit and is answered as the first was"},
       "business_date": {"type": "string", "description": "the business day of the commit, as \"2026-11-13\"; the server's day when left out"},
-      "reason": {"type": "string", "description": "why a content administrator acts past a rule of the class; kept on the event"},
+      "reason": {"type": "string", "description": "why a content administrator acts or reads past a rule; a change keeps it on its event, a read in the log of reads"},
       "for": {"type": "string", "description": "the id of whoever the caller acts for; let through only while a substitution says so"}
     }
   },
@@ -164,7 +164,7 @@ before one that removes:
 <!-- the marks -->
 | The command | Tools | `readOnlyHint` | `destructiveHint` | `openWorldHint` |
 |---|---|---|---|---|
-| reads | 39 | true | false | false |
+| reads | 40 | true | false | false |
 | writes | 20 | false | false | false |
 | writes, and runs an action now: `try_action`, `drain` | 2 | false | false | true |
 | removes: `delete` | 1 | false | true | false |
@@ -363,7 +363,7 @@ not see them:
   cannot move an invoice.
 - `--tools get,query,transitions,transition` offers these tools and no
   other. A short list also costs an agent less to read: the whole list
-  is about 47,000 characters.
+  is about 50,000 characters.
 
 An agent that calls a tool the door does not offer is told why:
 

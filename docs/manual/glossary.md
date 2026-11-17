@@ -42,7 +42,7 @@ exactly so in a class or a formula.
 | `access` | the block of a class that says who may see, create, change, delete and move a document |
 | `rights` | the block of a class that says who may write or see single variables, state by state |
 | editor | not a word of the engine: whoever `access` and `rights` let change a document in its state |
-| content administrator | a caller who may act on any document past its `access` and `rights`, with a reason that the log keeps |
+| content administrator | a caller who may see and act on any document past its `access` and `rights`, with a reason: the log keeps the reason of a change, and the log of reads that of a read |
 | substitution | a document that says one caller may act for another, from when and until when |
 
 ## What the engine keeps
@@ -54,6 +54,7 @@ exactly so in a class or a formula.
 | history | all the versions of a document, oldest first |
 | event | the record of one commit: what happened, who did it, when, and for a move from which state to which |
 | log | all the events, in order. Nothing in it is ever changed |
+| log of reads | what a content administrator saw past a rule, and every SQL statement, each with who and why. Database administrators read it. [The log of reads](the-log-of-reads.md) |
 | preview | a commit tried and not made: what it would do, and whether it would be refused |
 | refusal | the engine's answer to a call it does not carry out. It has a code, a place and often a fix |
 | outbox | where the actions that reach outside a commit wait until the engine runs them |

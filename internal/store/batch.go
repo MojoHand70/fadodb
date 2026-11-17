@@ -166,7 +166,7 @@ func (s *Store) moveMany(ctx context.Context, class, name string, ids []string, 
 	}
 	out := make([]MoveOutcome, len(ids))
 	cmd := command{op: opTransition, c: c, transition: name, values: values, o: o, takenBack: preview}
-	shown := newRead("preview_many", c)
+	shown := o.newRead("preview_many", c)
 	queued := 0
 	// The mark is the savepoint before a document. A refused document
 	// returns to it and leaves it standing for the next one.

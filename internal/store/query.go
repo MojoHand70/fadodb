@@ -104,7 +104,7 @@ func (s *Store) Query(ctx context.Context, f Filter, opts ...Option) ([]*Documen
 	// A content administrator who passes the rules sees every document
 	// whole; the entry names each one only the override showed, and the
 	// rules it got past (ADR-0067, item 3).
-	passes, r := o.passes(c), newRead("query", c)
+	passes, r := o.passes(c), o.newRead("query", c)
 	shown := func(vc *class, row *docRow, d *Document) {
 		switch {
 		case !passes:

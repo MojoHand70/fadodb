@@ -334,7 +334,7 @@ func (s *Store) OpenFile(ctx context.Context, class, id, hash string, opts ...Op
 	if e != nil {
 		return nil, nil, e
 	}
-	r := newRead("open_file", c)
+	r := o.newRead("open_file", c)
 	if seen, err := s.lookID(ctx, c, id, o, r); err != nil {
 		return nil, nil, err
 	} else if !seen {
@@ -407,7 +407,7 @@ func (s *Store) OpenFile(ctx context.Context, class, id, hash string, opts ...Op
 	if o.records(cur) && hidden[strings.ToUpper(holder)] {
 		r.saw(id, rightRead(row.state, holder))
 	}
-	if r.past {
+	if r != nil && r.past {
 		r.blob = hash
 	}
 	rc, _, err := s.blobs.Open(ctx, hash)

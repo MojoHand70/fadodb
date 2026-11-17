@@ -1,6 +1,6 @@
 # ADR-0068: What a class says to people: labels, The List, formats, descriptions and other languages
 
-- Status: Proposed; amends ADR-0013 (a variable gains `label`, `description`, `list` and `format`), ADR-0008 (a state and a transition gain a label and a description), ADR-0016 and ADR-0031 (a column of a table and a field of a schema may be written in a long form), ADR-0018 (the class header's `label` is the word for every caption)
+- Status: Accepted; amends ADR-0013 (a variable gains `label`, `description`, `list` and `format`), ADR-0008 (a state and a transition gain a label and a description), ADR-0016 and ADR-0031 (a column of a table and a field of a schema may be written in a long form), ADR-0018 (the class header's `label` is the word for every caption)
 - Date: 2026-11-17
 
 ## Context

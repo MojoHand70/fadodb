@@ -15,7 +15,7 @@ import { builtins } from "./builtins.js";
 export { decode, parseType, FORMAT_VERSION, type Program, type Slot, type Type } from "./bytecode.js";
 export { EvalError, ErrorCode } from "./errors.js";
 export { render } from "./render.js";
-export { VM, DEFAULT_MAX_TEXT, type Context, type Life, type Options } from "./vm.js";
+export { VM, DEFAULT_MAX_TEXT, type Context, type Life, type Options, type StateLife } from "./vm.js";
 export { BLANK, FALSE, Kind, TRUE, Value, bool, date, datetime, decimal, json, kindNames, money, number, ref, same, text, type KindCode } from "./value.js";
 
 /** The names of the VM's functions, in the order of the engine's table. */

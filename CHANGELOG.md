@@ -21,6 +21,16 @@ All notable changes to FadoDB are recorded here. The format follows
   and the 86 that read other documents are the server's. 3,000 numbers
   are rendered as text as Go renders them. Not yet published: the files
   go with a release when the four parts are built.
+- The browser VM, part 2 of 4: dates and moments, and the functions of
+  a document's life (ADR-0023, ADR-0047). `DATE`, `DATEVALUE`,
+  `DATETIMEVALUE`, the parts of a date, the distances between two and
+  the moves of a date by days, months and years run as the server runs
+  them, on whole days with Go's carrying of a month that runs over, so
+  that year 1 to year 9999 come out alike; a document's life comes in
+  the context in the form the engine writes it. 1,009 cases of the suite
+  pass, none fails, and the 379 that wait are all exact numbers and
+  money; 4,200 calls of the functions of dates drawn at random answer
+  what the Go VM answers. 27.8 KB.
 - Phase 7, the browser VM and the reference frontend, has started;
   the roadmap says what the owner ruled it holds.
 - The log of reads (ADR-0067, accepted). A content administrator who

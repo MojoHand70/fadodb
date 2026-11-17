@@ -218,6 +218,115 @@ func run(dir string) error {
 		}
 		out.Suites = append(out.Suites, got)
 	}
+	drawnSuite, err := drawn()
+	if err != nil {
+		return err
+	}
+	out.Suites = append(out.Suites, drawnSuite)
 	enc := json.NewEncoder(os.Stdout)
 	return enc.Encode(out)
+}
+
+// drawn is a suite the conformance files do not hold: calls of the
+// functions of dates drawn at random, the same ones each run, worked out
+// by the Go VM. The edges are what it is for: a month or a day that runs
+// over into another year, year 1 and year 9999, the instants before
+// 1970, and texts that are almost a date.
+func drawn() (suite, error) {
+	scope, err := formula.ScopeOf(map[string]string{"Y": "number", "M": "number", "D": "number", "N": "number",
+		"T": "date", "U": "date", "S": "datetime", "R": "datetime", "X": "text"}, nil)
+	if err != nil {
+		return suite{}, err
+	}
+	r := rand.New(rand.NewPCG(2026, 11))
+	day := func() formula.Value {
+		if r.IntN(10) == 0 {
+			return formula.Date(-719162 + r.Int64N(30)) // year 1
+		}
+		if r.IntN(10) == 0 {
+			return formula.Date(2932896 - r.Int64N(30)) // year 9999
+		}
+		return formula.Date(r.Int64N(2932896+719162) - 719162)
+	}
+	instant := func() formula.Value {
+		return formula.DateTime(r.Int64N(253402300799+62135596800) - 62135596800)
+	}
+	num := func(lo, hi int64) formula.Value {
+		if r.IntN(8) == 0 {
+			return formula.Number(float64(r.Int64N(hi-lo)+lo) + r.Float64())
+		}
+		return formula.Number(float64(r.Int64N(hi-lo) + lo))
+	}
+	texts := func() formula.Value {
+		y, m, d := r.IntN(10001), r.IntN(14), r.IntN(33)
+		forms := []string{
+			fmt.Sprintf("%04d-%02d-%02d", y, m, d),
+			fmt.Sprintf("%04d-%d-%02d", y, m, d),
+			fmt.Sprintf("  %04d-%02d-%02d ", y, m, d),
+			fmt.Sprintf("%04d-%02d-%02d %d:%02d:%02d", y, m, d, r.IntN(26), r.IntN(61), r.IntN(61)),
+			fmt.Sprintf("%04d-%02d-%02d %02d:%02d:%02d.%d", y, m, d, r.IntN(24), r.IntN(60), r.IntN(60), r.IntN(1000)),
+			fmt.Sprintf("%04d-%02d-%02d %02d:%02d:%02d,5", y, m, d, r.IntN(24), r.IntN(60), r.IntN(60)),
+			fmt.Sprintf("%+04d-%02d-%02d", y%1000, m, d),
+			fmt.Sprintf("%04d/%02d/%02d", y, m, d),
+			fmt.Sprintf("%04d-%02d-%02dT10:00:00", y, m, d),
+		}
+		return formula.Text(forms[r.IntN(len(forms))])
+	}
+	calls := []struct {
+		formula string
+		draw    func() map[string]formula.Value
+	}{
+		{"DATE(Y, M, D)", func() map[string]formula.Value {
+			return map[string]formula.Value{"Y": num(-50, 10050), "M": num(-40, 40), "D": num(-800, 800)}
+		}},
+		{"ADDMONTHS(T, N)", func() map[string]formula.Value { return map[string]formula.Value{"T": day(), "N": num(-400, 400)} }},
+		{"ADDMONTHS(S, N)", func() map[string]formula.Value { return map[string]formula.Value{"S": instant(), "N": num(-400, 400)} }},
+		{"ADDYEARS(T, N)", func() map[string]formula.Value { return map[string]formula.Value{"T": day(), "N": num(-30, 30)} }},
+		{"ADDDAYS(T, N)", func() map[string]formula.Value { return map[string]formula.Value{"T": day(), "N": num(-1000, 1000)} }},
+		{"ADDDAYS(S, N)", func() map[string]formula.Value {
+			return map[string]formula.Value{"S": instant(), "N": num(-1000, 1000)}
+		}},
+		{"MONTHSBETWEEN(T, U)", func() map[string]formula.Value { return map[string]formula.Value{"T": day(), "U": day()} }},
+		{"YEARSBETWEEN(S, R)", func() map[string]formula.Value { return map[string]formula.Value{"S": instant(), "R": instant()} }},
+		{"DAYS(S, R)", func() map[string]formula.Value { return map[string]formula.Value{"S": instant(), "R": instant()} }},
+		{"YEAR(S) * 10000 + MONTH(S) * 100 + DAY(S) + QUARTER(S) / 10", func() map[string]formula.Value { return map[string]formula.Value{"S": instant()} }},
+		{"TEXT(T) & \" \" & TEXT(S)", func() map[string]formula.Value { return map[string]formula.Value{"T": day(), "S": instant()} }},
+		{"DATEVALUE(X)", func() map[string]formula.Value { return map[string]formula.Value{"X": texts()} }},
+		{"DATETIMEVALUE(X)", func() map[string]formula.Value { return map[string]formula.Value{"X": texts()} }},
+		{"DAYSBETWEEN(DATEOF(S), T) + DAYSBETWEEN(DATETIME(T), R)", func() map[string]formula.Value {
+			return map[string]formula.Value{"S": instant(), "R": instant(), "T": day()}
+		}},
+	}
+	vm := formula.NewVM()
+	got := suite{Suite: "dates drawn"}
+	for _, c := range calls {
+		prog, err := formula.Bind(c.formula, scope, formula.BindOptions{})
+		if err != nil {
+			return suite{}, fmt.Errorf("%s: %w", c.formula, err)
+		}
+		code := base64.StdEncoding.EncodeToString(prog.Encode())
+		for i := 0; i < 300; i++ {
+			given := c.draw()
+			e := exported{Label: fmt.Sprintf("dates drawn: %s with", c.formula), Program: code, Result: prog.Result.String(), MaxText: formula.DefaultMaxText}
+			vars := make([]formula.Value, len(prog.Slots))
+			for si, slot := range prog.Slots {
+				vars[si] = given[slot.Name]
+				e.Inputs = append(e.Inputs, typed(vars[si]))
+				e.Label += " " + slot.Name + "=" + vars[si].String()
+			}
+			v, err := vm.Run(prog, vars, nil)
+			if err != nil {
+				ee, ok := err.(*formula.EvalError)
+				if !ok {
+					return suite{}, err
+				}
+				e.Error = ee.Code
+			} else {
+				t := typed(v)
+				e.Expected = &t
+			}
+			got.Cases = append(got.Cases, e)
+		}
+	}
+	return got, nil
 }

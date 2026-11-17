@@ -6,11 +6,12 @@
 
 import { compare, builtins } from "./builtins.js";
 import { Op, setBuiltinCount, type Program } from "./bytecode.js";
-import { EvalError, NotBuilt, errDivByZero, errNotANumber, errServer, tooLong } from "./errors.js";
+import { EvalError, errDivByZero, errNotANumber, errServer, tooLong } from "./errors.js";
+import { compareExact, decBinary, decUnary } from "./exact.js";
 import { pow } from "./numbers.js";
 import { render } from "./render.js";
 import { longerThan } from "./text.js";
-import { BLANK, FALSE, Kind, TRUE, Value, bool, isExact, number, text } from "./value.js";
+import { BLANK, FALSE, Kind, TRUE, Value, bool, decimal, isExact, number, text } from "./value.js";
 
 setBuiltinCount(builtins.length);
 
@@ -206,15 +207,35 @@ export class VM {
           stack[sp - 1] = number(r);
           break;
         }
-        case Op.ConstDec:
+        case Op.ConstDec: {
+          const c = p.decs[arg]!;
+          stack[sp++] = decimal(c.mant, c.scale);
+          break;
+        }
         case Op.DecNeg:
         case Op.DecPercent:
+        case Op.DecScale: {
+          const r = decUnary(op === Op.DecScale, op === Op.DecNeg, stack[sp - 1]!, arg);
+          if (r instanceof EvalError) {
+            err = r;
+            break;
+          }
+          stack[sp - 1] = r;
+          break;
+        }
         case Op.DecAdd:
         case Op.DecSub:
         case Op.DecMul:
-        case Op.DecDiv:
-        case Op.DecScale:
-          throw new NotBuilt("arithmetic on exact numbers");
+        case Op.DecDiv: {
+          const r = decBinary((op - Op.DecAdd) as 0 | 1 | 2 | 3, stack[sp - 2]!, stack[sp - 1]!, arg);
+          if (r instanceof EvalError) {
+            err = r;
+            break;
+          }
+          sp--;
+          stack[sp - 1] = r;
+          break;
+        }
         case Op.Concat: {
           const s = render(stack[sp - 2]!) + render(stack[sp - 1]!);
           if (longerThan(s, this.maxText)) {
@@ -233,10 +254,17 @@ export class VM {
         case Op.Ge: {
           const a = stack[sp - 2]!;
           const b = stack[sp - 1]!;
+          let c: number;
           if (isExact(a.kind) || isExact(b.kind)) {
-            throw new NotBuilt("a comparison of exact numbers");
+            const r = compareExact(a, b, arg);
+            if (r instanceof EvalError) {
+              err = r;
+              break;
+            }
+            c = r;
+          } else {
+            c = compare(a, b);
           }
-          const c = compare(a, b);
           sp--;
           stack[sp - 1] = bool(op === Op.Eq ? c === 0 : op === Op.Ne ? c !== 0 : op === Op.Lt ? c < 0 : op === Op.Le ? c <= 0 : op === Op.Gt ? c > 0 : c >= 0);
           break;

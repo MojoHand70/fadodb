@@ -4,13 +4,11 @@
 // go run ./web/vm/cases, so the file under test is given bytecode as a
 // page is.
 //
-//   node vm/test/run.mjs cases.json            what part 1 runs, every case of it passing
-//   node vm/test/run.mjs --complete cases.json  every case, none waiting
+//   node vm/test/run.mjs cases.json
 //
 // A case passes when the VM answers the value the engine answers, of the
-// same kind and the same exactness, or stops with the same code. A case
-// that reaches what this build does not run yet waits, with the reason;
-// one whose program reads other documents is the server's (ADR-0003).
+// same kind and the same exactness, or stops with the same code. One
+// whose program reads other documents is the server's (ADR-0003).
 
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -20,9 +18,7 @@ const here = dirname(fileURLToPath(import.meta.url));
 const vm = await import(join(here, "..", "dist", "fadodb-vm.js"));
 const { VM, decode, builtinNames, same, render } = vm;
 
-const flags = process.argv.slice(2).filter((a) => a.startsWith("--"));
-const files = process.argv.slice(2).filter((a) => !a.startsWith("--"));
-const complete = flags.includes("--complete");
+const files = process.argv.slice(2);
 const input = files.length > 0 ? readFileSync(files[0], "utf8") : readFileSync(0, "utf8");
 const cases = JSON.parse(input);
 
@@ -67,12 +63,11 @@ function shown(v) {
 }
 
 const machines = new Map();
-const waiting = new Map();
-const totals = { passed: 0, failed: 0, waiting: 0, server: 0 };
+const totals = { passed: 0, failed: 0, server: 0 };
 const failures = [];
 
 for (const suite of cases.suites) {
-  const counts = { passed: 0, failed: 0, waiting: 0, server: 0 };
+  const counts = { passed: 0, failed: 0, server: 0 };
   for (const c of suite.cases) {
     if (c.server) {
       counts.server++;
@@ -90,11 +85,6 @@ for (const suite of cases.suites) {
     try {
       got = machine.run(program, inputs, c.context);
     } catch (e) {
-      if (e && e.name === "NotBuilt") {
-        counts.waiting++;
-        waiting.set(e.message, (waiting.get(e.message) ?? 0) + 1);
-        continue;
-      }
       if (!(e instanceof vm.EvalError)) {
         throw e;
       }
@@ -117,7 +107,7 @@ for (const suite of cases.suites) {
     }
   }
   for (const k of Object.keys(totals)) totals[k] += counts[k];
-  console.log(`${suite.suite.padEnd(12)} passed ${String(counts.passed).padStart(4)}   failed ${String(counts.failed).padStart(3)}   waiting ${String(counts.waiting).padStart(4)}   server ${String(counts.server).padStart(3)}`);
+  console.log(`${suite.suite.padEnd(12)} passed ${String(counts.passed).padStart(5)}   failed ${String(counts.failed).padStart(3)}   server ${String(counts.server).padStart(3)}`);
 }
 
 // Every number the engine rendered, rendered here.
@@ -129,22 +119,12 @@ for (const r of cases.renders) {
     renderedWrong++;
   }
 }
-console.log(`${"renders".padEnd(12)} passed ${String(cases.renders.length - renderedWrong).padStart(4)}   failed ${String(renderedWrong).padStart(3)}`);
+console.log(`${"renders".padEnd(12)} passed ${String(cases.renders.length - renderedWrong).padStart(5)}   failed ${String(renderedWrong).padStart(3)}`);
 
-console.log(`${"all".padEnd(12)} passed ${String(totals.passed).padStart(4)}   failed ${String(totals.failed).padStart(3)}   waiting ${String(totals.waiting).padStart(4)}   server ${String(totals.server).padStart(3)}`);
-if (waiting.size > 0) {
-  console.log("\nwaiting for the next parts of Phase 7:");
-  for (const [why, n] of [...waiting].sort((a, b) => b[1] - a[1])) {
-    console.log(`  ${String(n).padStart(4)}  ${why.replace(/^fadodb-vm: /, "").replace(/,? is not built in this version of the browser VM$/, "")}`);
-  }
-}
+console.log(`${"all".padEnd(12)} passed ${String(totals.passed).padStart(5)}   failed ${String(totals.failed).padStart(3)}   server ${String(totals.server).padStart(3)}`);
 if (failures.length > 0) {
   console.error(`\n${failures.length} cases fail:`);
   for (const f of failures.slice(0, 80)) console.error(f);
-  bad = 1;
-}
-if (complete && totals.waiting > 0) {
-  console.error(`\n${totals.waiting} cases wait, and --complete asks for none`);
   bad = 1;
 }
 process.exit(bad);

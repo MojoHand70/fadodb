@@ -49,15 +49,3 @@ export function tooLong(): EvalError {
   return outOfRange("the result is too long");
 }
 
-/**
- * NotBuilt is thrown by what this build of the browser VM does not run
- * yet: the functions and the operations of dates, of exact numbers and
- * money, which the next parts of Phase 7 build. It is never a value of a
- * formula and IFERROR does not catch it.
- */
-export class NotBuilt extends Error {
-  constructor(what: string) {
-    super(`fadodb-vm: ${what} is not built in this version of the browser VM`);
-    this.name = "NotBuilt";
-  }
-}

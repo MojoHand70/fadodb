@@ -11,7 +11,7 @@ Website: [fadodb.org](https://fadodb.org). The manual starts at
 [your first application](docs/manual/first-application.md).
 
 > **Status: Phase 6, the server, is done and released as v0.6.0;
-> Phase 7, the browser VM and the reference frontend, is next.** The Go API stores
+> Phase 7, the browser VM and the reference frontend, has started.** The Go API stores
 > documents of typed classes as commits with recalculation, history and
 > an event log,
 > with attachments, lookups into reference tables, filters and read-only

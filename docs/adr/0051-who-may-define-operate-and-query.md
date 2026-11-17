@@ -1,6 +1,6 @@
 # ADR-0051: Who may define, operate and query, and the rules of a table
 
-- Status: Accepted; amends ADR-0046 (who may define and preview a class), ADR-0045 (who may define and try an action), ADR-0044 (who may operate the queue; a table action asks the table's rule), ADR-0038 (who may use the SQL endpoint), ADR-0037 (a table has rules), ADR-0039 (who may migrate, and a version records who defined it), ADR-0027 (the host names three lists of groups); amended by ADR-0052 (the three lists the host names become system groups with fixed names; work nobody was given is done by nobody; a rule a table leaves out; item 5 is built with a call that reads it back)
+- Status: Accepted; amends ADR-0046 (who may define and preview a class), ADR-0045 (who may define and try an action), ADR-0044 (who may operate the queue; a table action asks the table's rule), ADR-0038 (who may use the SQL endpoint), ADR-0037 (a table has rules), ADR-0039 (who may migrate, and a version records who defined it), ADR-0027 (the host names three lists of groups); amended by ADR-0052 (the three lists the host names become system groups with fixed names; work nobody was given is done by nobody; a rule a table leaves out; item 5 is built with a call that reads it back), ADR-0067 (a content administrator passes the rules of a table with a reason, and is recorded)
 - Date: 2026-11-13
 
 ## Context

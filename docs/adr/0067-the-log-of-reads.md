@@ -1,6 +1,6 @@
 # ADR-0067: The log of reads: what a content administrator sees past a rule, and every SQL statement
 
-- Status: Proposed; amends ADR-0052 (question G is answered: a content administrator's read past a rule needs a reason and is recorded, and so is an import into a table past its write rule), ADR-0033 (a file opened by its hash alone needs a reason), ADR-0038 (every SQL statement is recorded), ADR-0051 (a table's rules: the content administrator's pass needs a reason), ADR-0058 (what a content administrator hears without a reason), ADR-0055 (one command joins the table, and the reading commands take `reason`)
+- Status: Accepted; amends ADR-0052 (question G is answered: a content administrator's read past a rule needs a reason and is recorded, and so is an import into a table past its write rule), ADR-0033 (a file opened by its hash alone needs a reason), ADR-0038 (every SQL statement is recorded), ADR-0051 (a table's rules: the content administrator's pass needs a reason), ADR-0058 (what a content administrator hears without a reason), ADR-0055 (one command joins the table, and the reading commands take `reason`)
 - Date: 2026-11-17
 
 ## Context
@@ -240,6 +240,9 @@ with the case above; the owner answered "Agreed on all seven".
 
 The same message said that nothing deletes an entry (item 8), and
 listed what is not recorded (item 9).
+
+The owner accepted the record the same day ("accept ADR-0067"), and
+merged it.
 
 ## Consequences
 

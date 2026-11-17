@@ -18,12 +18,16 @@ is worked out by the server, and the page is given its last value.
 
 ## Where it stands
 
-Phase 7 builds it in four parts. **Parts 1 to 3 are built: every
-instruction of the bytecode and every function a page runs**, plain
-numbers, text and logic, dates and moments, the functions of a
-document's life, and exact numbers and money on `BigInt`. Part 4
-measures the speed, 200 formulas in under a millisecond, and publishes
-the files with a release.
+**Built.** Every instruction of the bytecode and every function a page
+runs: plain numbers, text and logic, dates and moments, the functions
+of a document's life, and exact numbers and money on `BigInt`, 95 of
+the 104 functions of the language; the other nine are the server's or
+not built in the engine either. Each release carries the three files.
+
+**Fast.** A document of 200 formulas, each reading the one before,
+recalculates whole in about 13 µs of the 1,000 µs budget of ADR-0003,
+and in about 42 µs with decimals or money in place of numbers. The
+numbers, three runs each, are at the end of ADR-0029.
 
 On every push, CI builds the file and runs every case of the
 conformance suite through it, compiled by the engine
@@ -43,9 +47,16 @@ Node 24 and npm, from the root of the repository:
 make vmtest     # npm ci, type check, build into web/vm/dist, every case through the built file
 ```
 
-The build writes `dist/fadodb-vm.js`, an ES module, and
+The build writes `dist/fadodb-vm.js`, an ES module,
 `dist/fadodb-vm.iife.js`, a classic script that defines the global
-`FadoDB`, both minified and held to 100 KB. Neither is committed.
+`FadoDB`, both minified and held to 100 KB, and `dist/fadodb-vm.d.ts`,
+the declarations of both, one file joined from the sources' own. None
+is committed: a release builds them, checks them and attaches them,
+with their checksums beside the binaries'.
+
+`make vmtest` then checks the declarations, as a page written in
+TypeScript would use them and against what the module exports, runs
+every case, and measures the speed.
 
 ## The files
 
@@ -62,6 +73,8 @@ The build writes `dist/fadodb-vm.js`, an ES module, and
 | `src/exact.ts` | exact numbers and money: a BigInt mantissa held to Go's 64 bits |
 | `src/render.ts` | a value as text, the TEXT rule |
 | `src/errors.ts` | the codes a formula stops with |
-| `cases/main.go` | writes the conformance cases, compiled, for the runner |
+| `cases/main.go` | writes the conformance cases, compiled, for the runner, and the documents of the benchmark |
 | `test/run.mjs` | runs them through the built file |
-| `build.mjs` | the build, and the size budget |
+| `test/bench.mjs` | the recalculation budget, on the built file |
+| `test/consumer.ts`, `test/surface.mjs` | the declarations, as a page uses them and against the module |
+| `build.mjs` | the build, the declarations and the size budget |

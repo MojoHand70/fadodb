@@ -333,10 +333,10 @@ day. Its first step, the log of reads (ADR-0067), is built: a content
 administrator sees past a rule only with a reason, and what they saw,
 with every SQL statement, is kept in a log that database
 administrators read with the command `reads`. Then, in this order: the
-browser VM, in four parts, of which the first three are built and run
-every case of the conformance suite a page runs, every function with
-exact numbers and money too, and the fourth measures its speed and
-publishes it; layouts and the class bundle at the server; signing in
+browser VM, which is built: every function a page runs, exact numbers
+and money too, passing every case of the conformance suite a page runs,
+200 formulas recalculated in about 13 µs of the 1,000 µs budget, and
+attached to every release; layouts and the class bundle at the server; signing in
 for people at `fadodb serve` itself, a password or a company's
 sign-on, with its own record; a kit of plain pages the server serves
 (the classes, the list of a class, the document and a designer made of

@@ -84,11 +84,15 @@ clean:
 	rm -rf bin dist
 
 # The browser VM (ADR-0029): built into web/vm/dist with the build tools
-# of web/package.json, then given every case of the conformance suite,
-# compiled by the engine, in Node. Needs Node 24 and npm.
+# of web/package.json; its declarations checked as a page would use them
+# and against the module; then given every case of the conformance
+# suite, compiled by the engine, in Node; and the recalculation budget of
+# ADR-0003 measured on the built file. Needs Node 24 and npm.
 vm:
 	cd web && npm ci --no-audit --no-fund && npm run build
 
 vmtest: vm
+	cd web && npm run check
 	go run ./web/vm/cases > web/vm/dist/cases.json
 	node web/vm/test/run.mjs web/vm/dist/cases.json
+	node web/vm/test/bench.mjs web/vm/dist/cases.json

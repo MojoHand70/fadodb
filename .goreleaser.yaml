@@ -34,6 +34,11 @@ archives:
 
 checksum:
   name_template: checksums.txt
+  # The browser VM's three files are checksummed with the binaries.
+  extra_files:
+    - glob: ./web/vm/dist/fadodb-vm.js
+    - glob: ./web/vm/dist/fadodb-vm.iife.js
+    - glob: ./web/vm/dist/fadodb-vm.d.ts
 
 changelog:
   sort: asc
@@ -47,5 +52,12 @@ release:
   # Every release before 1.0 is a pre-release. "auto" would only flag
   # versions with a suffix such as -rc1, which misrepresents 0.x tags.
   prerelease: true
+  # The browser VM, attached to every release as ADR-0029 says: the ES
+  # module, the classic script and the declarations, which the release
+  # workflow builds and checks before goreleaser runs.
+  extra_files:
+    - glob: ./web/vm/dist/fadodb-vm.js
+    - glob: ./web/vm/dist/fadodb-vm.iife.js
+    - glob: ./web/vm/dist/fadodb-vm.d.ts
   footer: |
     Pre-release. See ROADMAP.md for what is implemented and what is not.

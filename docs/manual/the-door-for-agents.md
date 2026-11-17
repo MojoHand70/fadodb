@@ -454,5 +454,7 @@ answered what was asked before.
 - **A tool that waits for a change**, in place of the stream.
 - **Files.**
 
-Each is a question of [ADR-0064](../adr/0064-the-door-for-agents.md),
-which the owner has not ruled on.
+Each is wanted and is its own step after v0.6.0, by the owner's
+rulings of 2026-11-17
+([ADR-0064](../adr/0064-the-door-for-agents.md)). The door at the
+server comes with the signing in of the frontend.

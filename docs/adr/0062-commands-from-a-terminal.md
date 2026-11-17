@@ -1,6 +1,6 @@
 # ADR-0062: Commands from a terminal: `fadodb exec`
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-11-15
 
 ## Context
@@ -185,14 +185,19 @@ the server and the key, what it prints, and how it ends.
     end as it does, and stand under the same rules: a caller who may
     not read the variable reads no file.
 
-## Questions for the owner
+## The owner's rulings
 
-1. **One word for every command, or a word for each thing.** Olga
-   approves an invoice from a terminal. Proposed: `fadodb exec
+The owner ruled on the second question on 2026-11-15, and on the first
+and the third on 2026-11-17, each as the record proposed. He accepted
+the record on 2026-11-17.
+
+1. **One word for every command, or a word for each thing: ruled.**
+   Olga approves an invoice from a terminal. Proposed: `fadodb exec
    transition '{…}'`, as in item 1. The other way: words written by
    hand, such as `fadodb invoice approve FV/2026/11/0042`. They are
    shorter to type, and they are a second set of commands that an
-   agent learns beside the first and that lags behind it.
+   agent learns beside the first and that lags behind it. On
+   2026-11-17 the owner ruled: one word.
 2. **What an export is: ruled.** On 2026-11-15 the owner said of the
    first form of item 7, which wrote CSV only: "assuming server locale
    is wrong, it must be client locale set", and recalled the trouble
@@ -200,13 +205,16 @@ the server and the key, what it prints, and how it ends.
    rewritten on that word: no export is written in a locale; a person
    gets an Excel file, which the reader's own program shows the
    reader's way.
-3. **CSV in another form.** A program of the accountant's wants
-   semicolons and a comma in a number. Proposed: not built until one
-   is named; then the caller says the two marks on the line, and the
-   tool still reads no locale by itself. The other way: the tool takes
-   the marks from the settings of the machine it runs on, which is
-   right for Ann at her desk and wrong for an agent on a server that
-   exports for her.
+3. **CSV in another form: ruled.** A program of the accountant's
+   wants semicolons and a comma in a number. Proposed: not built until
+   one is named; then the caller says the two marks on the line, and
+   the tool still reads no locale by itself. The other way: the tool
+   takes the marks from the settings of the machine it runs on, which
+   is right for Ann at her desk and wrong for an agent on a server
+   that exports for her. On 2026-11-17 the owner ruled: as proposed.
+   He asked the same day about the other direction, a person who
+   uploads a file her own Excel wrote; reading such files is not part
+   of this record.
 
 ## Consequences
 

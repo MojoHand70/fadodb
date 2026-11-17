@@ -1,6 +1,6 @@
 # ADR-0011: One JSON command set over HTTP, WebSocket and C ABI
 
-- Status: Accepted; amended by ADR-0025 (preview and validate), ADR-0026 (idempotency keys), ADR-0027 (the principal on every call), ADR-0033 (blobs travel outside the JSON command set), ADR-0045 (action definitions join the definitions the command set carries), ADR-0046 (several classes defined in one call), ADR-0055 (the commands are named and listed; over HTTP an address is the name of a command), ADR-0056 (a server serves one database, and the address says which), ADR-0058 (the stream is carried by an HTTP reply that stays open, and the WebSocket is not built), ADR-0059 (what the server is and what it is told)
+- Status: Accepted; amended by ADR-0025 (preview and validate), ADR-0026 (idempotency keys), ADR-0027 (the principal on every call), ADR-0033 (blobs travel outside the JSON command set), ADR-0045 (action definitions join the definitions the command set carries), ADR-0046 (several classes defined in one call), ADR-0055 (the commands are named and listed; over HTTP an address is the name of a command), ADR-0056 (a server serves one database, and the address says which), ADR-0058 (the stream is carried by an HTTP reply that stays open, and the WebSocket is not built), ADR-0059 (what the server is and what it is told), ADR-0066 (what the budget of the server is measured beside)
 - Date: 2026-11-05
 
 ## Context

@@ -1,6 +1,6 @@
 # ADR-0063: The flow of a class in one call
 
-- Status: Proposed
+- Status: Accepted; amends ADR-0055 (one command, `flow`, joins the table)
 - Date: 2026-11-16
 
 ## Context
@@ -104,23 +104,29 @@ line.
    transition events by transition, joined to the version each move
    left.
 
-## Questions for the owner
+## The owner's rulings
 
-1. **Whose documents are counted.** Ann, in finance, reads every
+All of 2026-11-17: the owner ruled on the three questions as the
+record proposed, which is how the flow was built, and accepted the
+record the same day.
+
+1. **Whose documents are counted: ruled.** Ann, in finance, reads every
    invoice; Bob, in sales, reads his own. Proposed: each sees the flow
    of what they may read, as in item 2. The other way: everybody's
    documents, for anyone who may see the class. One chart for all, and
    Bob learns how many invoices sit in a state he cannot look into.
-2. **Over which time.** Olga asks how invoices moved in November.
+   On 2026-11-17 the owner ruled: as built.
+2. **Over which time: ruled.** Olga asks how invoices moved in November.
    Proposed: the documents are counted now, and the moves and stays in
    the period the caller gives; with none, since the class began, as in
    item 3. The other way: a fixed window when none is given, such as
-   the last thirty days.
-3. **What it says about waiting.** Proposed: for each state, how many
+   the last thirty days. On 2026-11-17 the owner ruled: as built.
+3. **What it says about waiting: ruled.** Proposed: for each state, how many
    are there, since when the oldest waits, and for the stays that ended
    their number, their average and the longest, as in item 4. The other
    way: the median as well, which is truer when one invoice waited a
-   year, and costs a sort of the stays of each state.
+   year, and costs a sort of the stays of each state. On 2026-11-17
+   the owner ruled: as built.
 
 ## Consequences
 

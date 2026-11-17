@@ -1,6 +1,6 @@
 # Roadmap
 
-**Current status: Phase 5, security, done on 2026-11-13 and released as v0.5.0. Phase 6, the server, started on 2026-11-13.**
+**Current status: Phase 6, the server, done on 2026-11-17 and released as v0.6.0. Phase 7, the browser VM and the reference frontend, is next.**
 The Go API (`fado`) opens a database file, defines schemas, classes and
 explicit tables, and creates, changes, reads and deletes documents as
 commits: assignments and defaults, the auto recalculation, typed history
@@ -281,19 +281,19 @@ commands. The eighth is the check of a class and of an action from a
 file, `fadodb class check` and `fadodb action check`, so that an agent
 asks whether the engine would take a definition before it reaches a
 database. The ninth is the command-line tool as a caller of a server
-(ADR-0062, proposed, built as it proposes): `fadodb exec` sends any
+(ADR-0062): `fadodb exec` sends any
 command to a server with the key of a user and prints the answer;
 `--xlsx` writes the documents of a query as an Excel file, in which a
 number is a number and a day a day, so that an export is written in no
 locale, and `--csv` writes them for a program; `fadodb file put` and
 `fadodb file get` put a file on a document and read one. With it an
 answer writes `<`, `>` and `&` as themselves. The tenth is the flow of
-a class in one call (ADR-0063, proposed, built as it proposes): the
+a class in one call (ADR-0063): the
 command `flow` answers the states of a class, each with the documents
 that are in it now and how long the stays in it lasted, and its
 transitions, each with the moves along it, counted over the documents
-the caller may read. The eleventh is the door for agents (ADR-0064,
-proposed, built as it proposes): `fadodb mcp`, a program that an
+the caller may read. The eleventh is the door for agents (ADR-0064):
+`fadodb mcp`, a program that an
 agent's program starts and speaks the Model Context Protocol to, which
 offers each command as a tool and sends each call to a server with the
 key of a user; a refusal reaches the agent as the database wrote it.
@@ -302,9 +302,10 @@ image that holds the tool and nothing else, in which `fadodb serve`
 runs as a user that is not root, with the database in a volume;
 `fadodb health` asks a server whether it answers, which is how Docker
 watches one; and a compose file keeps a served database running. A
-release publishes the image under its version; none has yet.
-The thirteenth is the way in for messages from outside (ADR-0065,
-proposed, built as it proposes): an inlet, a definition that is the
+release publishes the image at `ghcr.io/mojohand70/fadodb`, under its
+version and under no other name; v0.6.0 is the first.
+The thirteenth is the way in for messages from outside (ADR-0065):
+an inlet, a definition that is the
 mirror of an action's, says how a message of a system that speaks
 only its own language proves who sent it and which one command it
 becomes; six commands check, try, define, read, list and remove one;
@@ -315,8 +316,18 @@ however often the message comes; the sender is answered a status and
 a code, and nothing of the database; and `fadodb inlet check` asks
 the engine about an inlet in a file and shows what a message would
 become.
-Not built yet: the door at the server itself, a tool that waits for a
-change and files through the door, which are questions of that record.
+The phase closed on 2026-11-17 with the measurements of
+`docs/perf/v0.6.0.md`: every budget of its records holds, the server's
+as ADR-0066 measures it, beside the Go API called by a request, and so
+do those of Phases 2 to 5 on the same build. The owner accepted that
+day the records that were built as they proposed, ADR-0062 to
+ADR-0065, with his rulings on their questions, and ADR-0066. What the
+phase leaves for later, by his rulings of the same day: the log of the
+reads a content administrator makes past a rule, with the reads of
+SQL, which gets its own record as the first step after the release;
+and three things for agents, each its own step: the door at the server
+itself, with the signing in of Phase 7, a tool that waits for a
+change, and files through the door.
 This page is updated when a phase starts and when it ends;
 it never describes a phase as done before its acceptance criteria pass.
 
@@ -330,8 +341,8 @@ Legend: ✅ done · 🚧 in progress · ⬜ not started
 | 3 | Statechart: the transition command with guards, eventless chains, exit and entry snapshots and the `_states` view, allowed transitions and the preview of a transition, `STATE()` and `ID()`, per-transition access rules and field-level rights per state, statechart conformance cases | ✅ |
 | 4 | Rules and actions: event-condition-action rules run inside the commit, the synchronous actions `set`, `reset`, `refresh` and `emit`, triggered variables with their moment, the transactional outbox with its worker, retries and dead rows, the engine's actions on other documents and tables, actions as an extension point with definitions, declared HTTP actions, Go actions the embedder registers, connections and results written back, the delivered event, formulas that read other documents (`LOOKUP` over a class, with a count, a sum, the smallest and the largest), conditions on time and timers | ✅ |
 | 5 | Security: the class-level access rules enforced on every path, who may see, create, change and delete a document, with the read rule compiled to a SQL predicate; the kind of actor, a person, an agent or a service, and whom it acts for, on every event, checked against a substitution the database keeps; who may define, operate and query, by four system groups; a content administrator who acts past a rule with a reason; the rules of a table | ✅ |
-| 6 | Server and CLI: the JSON command set over HTTP, one address for each command; users, groups and API keys kept in the database, and the authenticator for a host program that has its own; the stream of changes filtered by the read rule; documents on the wire; the door for agents (MCP); the command-line tool with a check of a class and of an action; the flow of a class in one call; a way in for messages from outside; OpenAPI; `fadodb serve` | 🚧 |
-| 7 | Browser VM and reference frontend: TypeScript VM on the same bytecode shipped as one plain JavaScript file, layouts and the class bundle, `QUERY` when the first layout needs a list of rows (otherwise with the reports of Phase 8), layout renderer with the chip, card, coins and rating components, signing in with a password or a company's sign-on, TypeScript client | ⬜ |
+| 6 | Server and CLI: the JSON command set over HTTP, one address for each command; users, groups and API keys kept in the database, and the authenticator for a host program that has its own; the stream of changes filtered by the read rule; documents on the wire; the door for agents (MCP); the command-line tool with a check of a class and of an action; the flow of a class in one call; a way in for messages from outside; OpenAPI; `fadodb serve` | ✅ |
+| 7 | Browser VM and reference frontend: TypeScript VM on the same bytecode shipped as one plain JavaScript file, layouts and the class bundle, `QUERY` when the first layout needs a list of rows (otherwise with the reports of Phase 8), layout renderer with the chip, card, coins and rating components, signing in with a password or a company's sign-on, the door for agents at the server itself, TypeScript client | ⬜ |
 | 8 | Analytical engine: DuckDB projection of document tables, native and attached bindings, set-wise recompute, mining views, full build per OS | ⬜ |
 | 9 | Embedding: C ABI, Python client, embedding guides | ⬜ |
 | 10 | Postgres backend | ⬜ |

@@ -91,6 +91,5 @@ before a reader meets it.
 3. The designer skill written in full. The other four presuppose a class.
 4. The first six samples, the cards the front page of fadodb.org links to,
    then one per shape of the catalogue.
-5. The operator skill grows its command-set and MCP sections with Phase
-   6: it has the commands over HTTP, from a shell and as tools of
-   `fadodb mcp`.
+5. Done with Phase 6: the operator skill has the commands over HTTP,
+   from a shell and as tools of `fadodb mcp`.

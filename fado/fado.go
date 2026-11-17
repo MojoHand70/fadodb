@@ -42,9 +42,9 @@
 // Due lists the documents a guard on time would move, for the host
 // program to touch (ADR-0047). Every call that reads or changes the
 // database is also a command, a name and one JSON object answered by one
-// JSON object, which Exec runs (ADR-0055): it is what the server of
-// Phase 6 will carry over the network. Not here yet: QUERY, and that
-// server.
+// JSON object, which Exec runs (ADR-0055): it is what the server
+// carries over the network (fadodb serve, and the door a host program
+// mounts, fado/httpdoor). Not here yet: QUERY.
 package fado
 
 import (

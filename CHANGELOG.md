@@ -6,7 +6,23 @@ All notable changes to FadoDB are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-11-17
+
 ### Added
+
+- Phase 6, the server, is closed. The owner accepted the records that
+  were built as they proposed, with his rulings on their questions:
+  ADR-0062, commands from a terminal; ADR-0063, the flow of a class;
+  ADR-0064, the door for agents; ADR-0065, the way in for messages
+  from outside; and ADR-0066, what the budget of the server is
+  measured beside. `BenchmarkReceive` and `BenchmarkTransitionKeyed`
+  join the benchmark gate, as ADR-0065 says. Not in this release, and
+  wanted, each as its own step: the door for agents at the server
+  itself, which comes with the signing in of the frontend; a tool
+  with which an agent waits for a change; and files through the door.
+- The release publishes the image for containers at
+  `ghcr.io/mojohand70/fadodb`, under its version and under no other
+  name, so that a server never changes its engine by itself.
 
 - The manual, under `docs/`: its contents page with every chapter
   planned, and the first three written: your first application, an
@@ -237,7 +253,7 @@ All notable changes to FadoDB are recorded here. The format follows
 - `docs/perf/v0.6.0.md` has the measurements of the phase against its
   budgets, with the rows of Phases 2 to 5 run again on the same build.
   Every budget holds, the 200 µs that ADR-0011 gives the server
-  beyond the Go API as ADR-0066 (proposed) measures it: beside the
+  beyond the Go API as ADR-0066 measures it: beside the
   same transition made through the Go API by a plain server that was
   sent a request for it, on the same machine. Measured so, three
   times, the server adds nothing that can be told from the noise. The
@@ -251,8 +267,8 @@ All notable changes to FadoDB are recorded here. The format follows
   database of fifty classes and what it holds open; and the benchmarks
   `BenchmarkReceive` and `BenchmarkTransitionKeyed`, a message from
   outside beside the same move sent with a key.
-- The engine's part of a way in for messages from outside (ADR-0065,
-  proposed): an inlet. It is a definition kept in the database, the
+- The engine's part of a way in for messages from outside (ADR-0065):
+  an inlet. It is a definition kept in the database, the
   mirror of a declared action: how a message of another system proves
   who sent it, by a secret shown or a signature made with one, in one
   of three forms; which messages the inlet acts on; what makes two
@@ -269,7 +285,7 @@ All notable changes to FadoDB are recorded here. The format follows
   `Inlets`, `Inlet`, and `Receive`, which takes a message. A program
   says that it takes messages with `Options.Inbound`. New refusals:
   `unknown_inlet` and `bad_message`.
-- The server's part of the way in (ADR-0065, proposed): `fadodb serve`
+- The server's part of the way in (ADR-0065): `fadodb serve`
   takes a message from outside at `POST /v1/in/<inlet>`, with no key
   of a user, once the operator's settings have the member `inbound`;
   told nothing, it takes none, and an inlet cannot be defined. The
@@ -313,7 +329,7 @@ All notable changes to FadoDB are recorded here. The format follows
   waits for a server it has started.
 - The door for agents: `fadodb mcp` offers the commands of a server as
   tools to an agent's program, in the Model Context Protocol
-  (ADR-0064, proposed). The agent's program starts it and talks to it
+  (ADR-0064). The agent's program starts it and talks to it
   over standard input and output; the door sends each call to the
   server with the key of a user, from `FADODB_KEY` or `--key-file`, so
   what an agent does is judged by the rules of the classes and written
@@ -331,7 +347,7 @@ All notable changes to FadoDB are recorded here. The format follows
   revision of 2026-07-28 of the protocol and the ones that open with a
   greeting, back to 2024-11-05. The manual has a chapter, "The door for
   agents".
-- The flow of a class in one call (ADR-0063, proposed): the command
+- The flow of a class in one call (ADR-0063): the command
   `flow`, in Go `Flow`, answers the states of a class, each with the
   documents that are in it now, the moment the oldest entered it, and
   how many stays in it ended in a period, with their average and their
@@ -346,7 +362,7 @@ All notable changes to FadoDB are recorded here. The format follows
   who reads a hundredth.
 - Commands from a terminal: `fadodb exec COMMAND OBJECT` sends any
   command to a server, with the key of a user, and prints the answer
-  (ADR-0062, proposed). The object is the JSON the command takes over
+  (ADR-0062). The object is the JSON the command takes over
   HTTP, given on the line, on standard input (`-`) or in a file
   (`@FILE`); `--from MEMBER=FILE` takes one member from a file, so a
   class is defined from the file it was checked in. The server comes
@@ -594,6 +610,13 @@ All notable changes to FadoDB are recorded here. The format follows
   and `chmod -R go-rwx` on its `.blobs` directory close one made by an
   earlier version. On Windows nothing changes: a file takes the access
   list of its directory.
+- A read leaves no trace in the database. A content administrator who
+  opens a document past its rules is not recorded, and neither is an
+  analyst who reads through SQL; a change past a rule is, with its
+  reason. The log of the server has a line for each request, with the
+  user and the command, and not the document or the statement. A log
+  of such reads gets its own record as the first step after this
+  release (ADR-0052, and the owner's ruling of 2026-11-17).
 
 ## [0.5.0] - 2026-11-13
 
@@ -1739,7 +1762,8 @@ Project scaffold. Nothing to run beyond `fadodb version`.
 - Contributing guide, code of conduct, security policy, issue and pull request
   templates, roadmap.
 
-[Unreleased]: https://github.com/MojoHand70/fadodb/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/MojoHand70/fadodb/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/MojoHand70/fadodb/releases/tag/v0.6.0
 [0.5.0]: https://github.com/MojoHand70/fadodb/releases/tag/v0.5.0
 [0.4.1]: https://github.com/MojoHand70/fadodb/releases/tag/v0.4.1
 [0.4.0]: https://github.com/MojoHand70/fadodb/releases/tag/v0.4.0

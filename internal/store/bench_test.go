@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -562,6 +563,101 @@ func BenchmarkTransition(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; b.Loop(); i++ {
 		if _, err := s.Transition(ctx, "Flow", doc.ID, names[i%2], nil, As(alice)); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+// BenchmarkTransitionKeyed is BenchmarkTransition with an idempotency
+// key on every move, a new one each time: what a caller that may send
+// a command twice pays (ADR-0026). It is what BenchmarkReceive is held
+// against, since the command of an inlet always carries a key.
+func BenchmarkTransitionKeyed(b *testing.B) {
+	s, err := Open(filepath.Join(b.TempDir(), "bench.fado"), Options{})
+	if err != nil {
+		b.Fatal(err)
+	}
+	defer s.Close()
+	ctx := context.Background()
+	if _, err := s.defineOpen(ctx, []byte(benchFlow), asSetup); err != nil {
+		b.Fatal(err)
+	}
+	doc, err := s.Create(ctx, "Flow", Values{"amount": 500, "qty": 5, "note": "n"})
+	if err != nil {
+		b.Fatal(err)
+	}
+	names := [2]string{"submit", "back"}
+	key := []byte("move-")
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; b.Loop(); i++ {
+		key = strconv.AppendInt(key[:5], int64(i), 10)
+		if _, err := s.Transition(ctx, "Flow", doc.ID, names[i%2], nil, As(alice), Key(string(key))); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+// BenchmarkReceive is the same two transitions as messages from
+// outside (ADR-0065): each a message of 2 KiB with a signature over a
+// timestamp and its body, taken by an inlet whose when, key and id are
+// read from it, and carried out as the service the inlet names. What it
+// takes beyond BenchmarkTransitionKeyed is the part before the command:
+// the secret, the proof, the user and the formulas.
+func BenchmarkReceive(b *testing.B) {
+	const secret = "whsec_the_bench_and_its_sender"
+	s, err := Open(filepath.Join(b.TempDir(), "bench.fado"), Options{Users: true, Inbound: true,
+		Secrets: func(context.Context, string, string) (string, error) { return secret, nil }})
+	if err != nil {
+		b.Fatal(err)
+	}
+	defer s.Close()
+	ctx := context.Background()
+	admin := As(Principal{System: []string{GroupAdministrators, GroupDesigners}})
+	if _, err := s.defineOpen(ctx, []byte(benchFlow), admin); err != nil {
+		b.Fatal(err)
+	}
+	if _, err := s.CreateUser(ctx, User{ID: "bench-in", Kind: ActorService, Groups: []string{"finance"}}, admin); err != nil {
+		b.Fatal(err)
+	}
+	doc, err := s.Create(ctx, "Flow", Values{"amount": 500, "qty": 5, "note": "n"})
+	if err != nil {
+		b.Fatal(err)
+	}
+	names := [2]string{"submit", "back"}
+	for _, name := range names {
+		if _, err := s.DefineInlet(ctx, []byte(`{"name": "bench.`+name+`", "as": "bench-in",
+ "connection": {"name": "bench", "secrets": ["signing_key"]},
+ "proof": {"form": "timestamp.body", "header": "Bench-Signature", "secret": "signing_key"},
+ "when": "JSONVALUE(BODY, \"type\") = \"move\"", "key": "JSONVALUE(BODY, \"id\")",
+ "command": "transition", "object": {"class": "Flow", "id": "JSONVALUE(BODY, \"document\")", "transition": "`+name+`"}}`), admin); err != nil {
+			b.Fatal(err)
+		}
+	}
+	// A message of 2 KiB: what it says, and what a sender adds to it.
+	at := strconv.FormatInt(s.now().Unix(), 10)
+	body := func(i int) []byte {
+		text := `{"id": "m-` + strconv.Itoa(i) + `", "type": "move", "document": "` + doc.ID + `", "padding": "`
+		return []byte(text + strings.Repeat("x", 2048-len(text)-2) + `"}`)
+	}
+	inlets := [2]string{"bench.submit", "bench.back"}
+	// Making and signing a message is its sender's work and not the
+	// engine's: the messages are made a thousand at a time, with the
+	// clock stopped.
+	const batch = 1000
+	messages := make([]Message, batch)
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; b.Loop(); i++ {
+		if i%batch == 0 {
+			b.StopTimer()
+			for j := range messages {
+				text := body(i + j)
+				messages[j] = Message{Body: text, Headers: map[string]string{"Content-Type": "application/json", "Bench-Signature": "t=" + at + ",v1=" + Sign(secret, at, text)}}
+			}
+			b.StartTimer()
+		}
+		if _, err := s.Receive(ctx, inlets[i%2], &messages[i%batch]); err != nil {
 			b.Fatal(err)
 		}
 	}

@@ -234,6 +234,17 @@ All notable changes to FadoDB are recorded here. The format follows
   told. Measured on one machine with a writer that commits every
   millisecond: an entry is read 0.84 ms after its commit at p99 with
   one subscriber and 3.12 ms with a hundred, against a budget of 5 ms.
+- `docs/perf/v0.6.0.md` has the measurements of the phase against its
+  budgets, with the rows of Phases 2 to 5 run again on the same build.
+  Every budget holds but the 200 µs that ADR-0011 gives the server
+  beyond the Go API, which the machine of the measurements cannot
+  judge: a request that does nothing takes it more than that. Three
+  campaigns are new: `TestServeCampaign`, which measures `fadodb serve`
+  on a connection that is kept open, the way in and the door for
+  agents; `TestOpenCampaign`, which measures what it takes to open a
+  database of fifty classes and what it holds open; and the benchmarks
+  `BenchmarkReceive` and `BenchmarkTransitionKeyed`, a message from
+  outside beside the same move sent with a key.
 - The engine's part of a way in for messages from outside (ADR-0065,
   proposed): an inlet. It is a definition kept in the database, the
   mirror of a declared action: how a message of another system proves

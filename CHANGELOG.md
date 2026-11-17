@@ -6,6 +6,17 @@ All notable changes to FadoDB are recorded here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- Phase 7, the browser VM and the reference frontend, has started;
+  the roadmap says what the owner ruled it holds. Its first record,
+  ADR-0067, proposed: a content administrator who gives a reason sees
+  past the rules, and the log of reads keeps every document so seen,
+  every import into a table past its write rule and every SQL
+  statement; database administrators read it with the new command
+  `reads`. Without a reason a content administrator reads as anybody.
+  Nothing of it is built yet.
+
 ### Changed
 
 - The chapter on containers says where the image is pulled from,

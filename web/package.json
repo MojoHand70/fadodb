@@ -1,0 +1,15 @@
+{
+  "name": "fadodb-web",
+  "private": true,
+  "description": "The browser side of FadoDB: the formula machine for a page. Build tools only; nothing here is a dependency of what a page loads.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p vm/tsconfig.json && node vm/build.mjs",
+    "test": "node vm/test/run.mjs"
+  },
+  "devDependencies": {
+    "esbuild": "0.28.2",
+    "typescript": "7.0.2"
+  }
+}

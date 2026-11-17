@@ -11,7 +11,7 @@ STATICCHECK_VERSION ?= latest
 GOVULNCHECK_VERSION ?= latest
 BENCHSTAT_VERSION   ?= latest
 
-.PHONY: all build run test analytics bench fmt vet lint vuln tools depgate sizegate filegate benchgate gates clean docs image imagecheck
+.PHONY: all build run test analytics bench fmt vet lint vuln tools depgate sizegate filegate benchgate gates clean docs image imagecheck vm vmtest
 
 all: build
 
@@ -82,3 +82,13 @@ imagecheck:
 
 clean:
 	rm -rf bin dist
+
+# The browser VM (ADR-0029): built into web/vm/dist with the build tools
+# of web/package.json, then given every case of the conformance suite,
+# compiled by the engine, in Node. Needs Node 24 and npm.
+vm:
+	cd web && npm ci --no-audit --no-fund && npm run build
+
+vmtest: vm
+	go run ./web/vm/cases > web/vm/dist/cases.json
+	node web/vm/test/run.mjs web/vm/dist/cases.json

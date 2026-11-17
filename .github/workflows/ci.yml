@@ -24,6 +24,13 @@ jobs:
       - run: make depgate
       - run: make sizegate
       - run: make filegate
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Build the browser VM and run the conformance suite through it
+        run: make vmtest
 
   test:
     name: test / ${{ matrix.os }}

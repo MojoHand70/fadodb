@@ -1,0 +1,28 @@
+{
+  "name": "fadodb-vm",
+  "version": "4.0.0",
+  "description": "FadoDB's formula machine for a page: it runs the formulas the engine compiled, with the server's answers, and never parses a formula.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "main": "./fadodb-vm.js",
+  "module": "./fadodb-vm.js",
+  "types": "./fadodb-vm.d.ts",
+  "exports": {
+    ".": {
+      "types": "./fadodb-vm.d.ts",
+      "import": "./fadodb-vm.js"
+    },
+    "./iife": "./fadodb-vm.iife.js"
+  },
+  "unpkg": "./fadodb-vm.iife.js",
+  "jsdelivr": "./fadodb-vm.iife.js",
+  "files": ["fadodb-vm.js", "fadodb-vm.iife.js", "fadodb-vm.d.ts"],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/MojoHand70/fadodb.git",
+    "directory": "web/vm"
+  },
+  "homepage": "https://fadodb.org",
+  "bugs": "https://github.com/MojoHand70/fadodb/issues",
+  "keywords": ["fadodb", "formula", "bytecode", "vm", "spreadsheet", "decimal", "money"]
+}

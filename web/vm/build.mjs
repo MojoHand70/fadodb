@@ -106,6 +106,14 @@ function joinDeclarations(dir) {
   return out.trimEnd() + "\nexport {};\n";
 }
 
+// What npm publishes: the three files, with the package's description,
+// a README for npmjs.com and the licence, written beside them. The
+// package's major version is the bytecode format version (ADR-0029, the
+// owner's ruling of 2026-11-17).
+writeFileSync(join(dist, "package.json"), readFileSync(join(here, "package.npm.json")));
+writeFileSync(join(dist, "README.md"), readFileSync(join(here, "npm-readme.md")));
+writeFileSync(join(dist, "LICENSE"), readFileSync(join(here, "..", "..", "LICENSE")));
+
 let over = false;
 for (const name of ["fadodb-vm.js", "fadodb-vm.iife.js"]) {
   const size = statSync(join(dist, name)).size;

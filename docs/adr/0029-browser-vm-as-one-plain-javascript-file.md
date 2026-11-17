@@ -115,3 +115,17 @@ The exact path costs a little more than three times the plain one, and
 both are far inside the budget. The size: 34.7 KB for the ES module and
 35.2 KB for the classic script, of 100 KB. `make vmtest` fails when the
 plain document reaches the budget or a file the size.
+
+## The owner's rulings of 2026-11-17: npm
+
+The name `fadodb-vm` was free on npm. The owner ruled:
+
+1. **Published on npm, as this record says.** The owner's npm account
+   holds the name, and the release workflow publishes each new version
+   by itself, through npm's trusted publishing, so that no token is
+   kept anywhere. npm asks that a new package be published once by
+   hand, which the owner does for 4.0.0.
+2. **The version follows the bytecode format version** as this record
+   says, read as the major version: the first is 4.0.0, for format 4.
+   The other way was the engine's version, 0.7.0, which says nothing
+   of which programs the VM runs.

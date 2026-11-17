@@ -55,3 +55,36 @@ jobs:
         run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io --username "${{ github.actor }}" --password-stdin
       - name: Check the image and publish it
         run: scripts/image.sh push "${GITHUB_REF_NAME#v}"
+
+  npm:
+    # The browser VM on npm, as fadodb-vm (ADR-0029). A job of its own,
+    # as the image's is: the release neither waits for it nor fails with
+    # it. The package's major version is the bytecode format version, so
+    # a release whose VM is unchanged keeps its version, and this job
+    # then publishes nothing. npm trusts this workflow by its trusted
+    # publisher setting: no token is kept anywhere.
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          check-latest: true
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+          registry-url: https://registry.npmjs.org
+      - run: make vmtest
+      - name: Publish the version unless npm has it already
+        run: |
+          version="$(node -p "require('./web/vm/dist/package.json').version")"
+          if npm view "fadodb-vm@${version}" version >/dev/null 2>&1; then
+            echo "fadodb-vm ${version} is on npm already; nothing to publish"
+          else
+            npm publish ./web/vm/dist --access public
+          fi

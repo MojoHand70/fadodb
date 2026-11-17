@@ -58,6 +58,22 @@ with their checksums beside the binaries'.
 TypeScript would use them and against what the module exports, runs
 every case, and measures the speed.
 
+## Publishing
+
+Every release attaches the three files, with their checksums beside
+the binaries'. npm publishes them as
+[`fadodb-vm`](https://www.npmjs.com/package/fadodb-vm), from the job
+`npm` of the release workflow, which npm trusts by its trusted
+publisher setting, so no token is kept anywhere. The package is
+described by `package.npm.json`, and its page on npmjs.com is
+`npm-readme.md`; the build writes both into `dist` with the licence.
+
+The package's major version is the bytecode format version (ADR-0029,
+the owner's ruling of 2026-11-17): 4.x runs format 4, and `make vmtest`
+fails when the two part. A change to the VM raises the minor or the
+patch version in `package.npm.json`, in the same pull request; a
+release whose version npm has already publishes nothing there.
+
 ## The files
 
 | File | What it holds |
@@ -77,4 +93,5 @@ every case, and measures the speed.
 | `test/run.mjs` | runs them through the built file |
 | `test/bench.mjs` | the recalculation budget, on the built file |
 | `test/consumer.ts`, `test/surface.mjs` | the declarations, as a page uses them and against the module |
-| `build.mjs` | the build, the declarations and the size budget |
+| `build.mjs` | the build, the declarations, the package for npm and the size budget |
+| `package.npm.json`, `npm-readme.md` | the package npm publishes, and its page there |

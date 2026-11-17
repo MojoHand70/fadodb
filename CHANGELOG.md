@@ -8,7 +8,16 @@ All notable changes to FadoDB are recorded here. The format follows
 
 ### Added
 
-- ADR-0068, proposed, with the owner's rulings of 2026-11-17: what a
+- ADR-0069, proposed, with the owner's rulings of 2026-11-17: the
+  screen is the face's, and a class has sections. The engine keeps no
+  layouts: a face draws a document from the class, its words and its
+  compiled formulas, and a condition it needs is a computed variable of
+  the class. A class may declare `sections`, an outline of its
+  variables with a label, a description and words in other languages,
+  nested at most four deep, one section per variable; `rights` may name
+  a section, and the most specific name wins. It withdraws ADR-0054.
+  Nothing of it is built yet.
+- ADR-0068, accepted, with the owner's rulings of 2026-11-17: what a
   class says to people. A `label` and a `description` on a variable, a
   state and a transition, and on a column and a field in a long form;
   `"list": true` for the columns The List may show; `format` in Excel's

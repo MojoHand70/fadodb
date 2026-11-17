@@ -373,11 +373,14 @@ type options struct {
 // As runs the call as the principal.
 func As(p Principal) Option { return func(o *options) { o.principal = p } }
 
-// Reason says why the caller acts, for a command that only a content
-// administrator's group lets through (ADR-0052, item 4): such a command
-// is an override of the rule that would have refused it, it is refused
-// with reason_required without a reason, and the event of its commit
-// keeps the reason beside the rule. A command the rules let through
+// Reason says why the caller acts or reads, for a call that only a
+// content administrator's group lets through (ADR-0052, item 4): such a
+// command is an override of the rule that would have refused it, it is
+// refused with reason_required without a reason, and the event of its
+// commit keeps the reason beside the rule. A read past a rule needs one
+// too, and the log of reads keeps it with what the read showed; without
+// one a content administrator reads as anybody (ADR-0067). A SQL
+// statement keeps it when it is given. A call the rules let through
 // ignores it.
 func Reason(text string) Option { return func(o *options) { o.reason = text } }
 

@@ -226,7 +226,7 @@ func TestRoles_TableRules(t *testing.T) {
 	if e, ok := err.(*Error); !ok || e.Code != CodeForbidden || e.Path != "/access/read" {
 		t.Errorf("a stranger reads the rates: %v", err)
 	}
-	if rows, err := s.TableRows(ctx, "Rates", As(root)); err != nil || len(rows) != 1 {
+	if rows, err := s.TableRows(ctx, "Rates", readAs(root)...); err != nil || len(rows) != 1 {
 		t.Errorf("a content administrator reads the rates: %v %d", err, len(rows))
 	}
 	// A formula reads the table with the engine's eyes (ADR-0046): the

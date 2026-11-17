@@ -91,6 +91,8 @@ type door interface {
 	Action(name string) (*ActionInfo, bool)
 	// Listen opens the stream of changes of the caller (ADR-0058).
 	Listen(ctx context.Context, c stepCall) (hearing, error)
+	// Reads lists the log of reads (ADR-0067).
+	Reads(ctx context.Context, f ReadsFilter, c stepCall) ([]Read, error)
 }
 
 // hearing is the stream of changes of one caller of a suite, read
@@ -177,6 +179,9 @@ func (d goDoor) Listen(ctx context.Context, c stepCall) (hearing, error) {
 		return nil, err
 	}
 	return goHearing{stream}, nil
+}
+func (d goDoor) Reads(ctx context.Context, f ReadsFilter, c stepCall) ([]Read, error) {
+	return d.s.Reads(ctx, f, c.opts()...)
 }
 func (d goDoor) DefineAction(ctx context.Context, def []byte, c stepCall) error {
 	_, err := d.s.DefineAction(ctx, def, c.opts()...)
@@ -294,13 +299,13 @@ func SetListenHTTP(listen func(s *Store) (func(ctx context.Context, p Principal,
 // by one, each held to the form of the wire, and stop closes it. Both
 // are set as execCommand is.
 var (
-	subscriptionOf func(p Principal, object []byte) (ChangeFilter, Principal, error)
+	subscriptionOf func(p Principal, object []byte) (ChangeFilter, Principal, []Option, error)
 	hearHTTP       func(s *Store, p Principal, object []byte) (next func() (*Event, error), stop func(), err error)
 )
 
 // SetSubscribe gives the tests of this package the stream of changes
 // as the command set and the HTTP door have it.
-func SetSubscribe(read func(p Principal, object []byte) (ChangeFilter, Principal, error), hear func(s *Store, p Principal, object []byte) (func() (*Event, error), func(), error)) {
+func SetSubscribe(read func(p Principal, object []byte) (ChangeFilter, Principal, []Option, error), hear func(s *Store, p Principal, object []byte) (func() (*Event, error), func(), error)) {
 	subscriptionOf, hearHTTP = read, hear
 }
 
@@ -336,6 +341,9 @@ func (d commandDoor) Listen(ctx context.Context, c stepCall) (hearing, error) {
 		p = *c.as
 	}
 	object := []byte(`{}`)
+	if c.reason != "" {
+		object = mustJSON(map[string]string{"reason": c.reason})
+	}
 	if d.overHTTP {
 		next, stop, err := hearHTTP(d.s, p, object)
 		if err != nil {
@@ -343,11 +351,11 @@ func (d commandDoor) Listen(ctx context.Context, c stepCall) (hearing, error) {
 		}
 		return &httpHearing{s: d.s, next: next, stop: stop}, nil
 	}
-	f, p, err := subscriptionOf(p, object)
+	f, p, opts, err := subscriptionOf(p, object)
 	if err != nil {
 		return nil, err
 	}
-	stream, err := d.s.Subscribe(ctx, f, As(p))
+	stream, err := d.s.Subscribe(ctx, f, append([]Option{As(p)}, opts...)...)
 	if err != nil {
 		return nil, err
 	}
@@ -588,6 +596,13 @@ func (d commandDoor) ImportRows(ctx context.Context, table string, rows []Values
 	}
 	err := d.send(ctx, c, "import_rows", object(c, "table", table, "rows", rows), &out)
 	return out.Imported, err
+}
+func (d commandDoor) Reads(ctx context.Context, f ReadsFilter, c stepCall) ([]Read, error) {
+	var out struct {
+		Reads []Read `json:"reads"`
+	}
+	err := d.send(ctx, c, "reads", object(c, "after", int(f.After)), &out)
+	return out.Reads, err
 }
 func (d commandDoor) TableRows(ctx context.Context, table string, c stepCall) ([]Values, error) {
 	var out struct {

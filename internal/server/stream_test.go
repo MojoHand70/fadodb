@@ -44,7 +44,7 @@ func newJournal() *journal {
 	return &journal{events: make(chan *store.Event), failures: make(chan error, 1)}
 }
 
-func (j *journal) Subscribe(_ context.Context, p store.Principal, f store.ChangeFilter) (Stream, error) {
+func (j *journal) Subscribe(_ context.Context, p store.Principal, f store.ChangeFilter, _ ...store.Option) (Stream, error) {
 	if j.fail != nil {
 		return nil, j.fail
 	}

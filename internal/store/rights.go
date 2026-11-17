@@ -145,9 +145,11 @@ func (c *class) cells(state string) []rightCell {
 // read in the row's state (ADR-0041). The rights table of the current
 // class c applies by variable name to every row; a row computed by an
 // older version vc is read into the current layout by path first. The
-// system variables stay.
+// system variables stay. A content administrator is projected too: the
+// caller does not project a document shown whole past the rules
+// (ADR-0067).
 func (s *Store) project(e *evaluator, c, vc *class, row *docRow, d *Document, p Principal, now int64) {
-	if c.rights == nil || p.content() {
+	if c.rights == nil {
 		return
 	}
 	cells := c.cells(row.state)

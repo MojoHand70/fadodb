@@ -334,7 +334,8 @@ func (s *Store) OpenFile(ctx context.Context, class, id, hash string, opts ...Op
 	if e != nil {
 		return nil, nil, e
 	}
-	if seen, err := s.sees(ctx, c, id, o); err != nil {
+	r := newRead("open_file", c)
+	if seen, err := s.lookID(ctx, c, id, o, r); err != nil {
 		return nil, nil, err
 	} else if !seen {
 		return nil, nil, errf(CodeUnknownDocument, "", "no document %s of class %s at that version", id, c.cls.Name)
@@ -361,12 +362,22 @@ func (s *Store) OpenFile(ctx context.Context, class, id, hash string, opts ...Op
 	// the rights table of the current class, by name, over that row
 	// (ADR-0041, item 4).
 	hidden := s.hiddenFor(cur, c, row, o)
+	// A content administrator who passes the rules opens a file in any
+	// variable, and the entry notes a variable a right would have hidden
+	// (ADR-0067).
+	skip := hidden
+	if o.passes(cur) {
+		skip = nil
+	}
 	var info *FileInfo
+	holder := ""
 	for _, fp := range c.files {
-		if hidden[strings.ToUpper(strings.SplitN(fp.path, ".", 2)[0])] {
+		name := strings.SplitN(fp.path, ".", 2)[0]
+		if skip[strings.ToUpper(name)] {
 			continue
 		}
 		if info = fileOfPairs([]filePair{fp}, row.vals, hash); info != nil {
+			holder = name
 			break
 		}
 	}
@@ -376,21 +387,28 @@ func (s *Store) OpenFile(ctx context.Context, class, id, hash string, opts ...Op
 			return nil, nil, err
 		}
 		for ch, rows := range kids {
-			if hidden[strings.ToUpper(ch.v.Name)] {
+			if skip[strings.ToUpper(ch.v.Name)] {
 				continue
 			}
-			for _, r := range rows {
-				if info = ch.fileOf(r, hash); info != nil {
+			for _, kid := range rows {
+				if info = ch.fileOf(kid, hash); info != nil {
 					break
 				}
 			}
 			if info != nil {
+				holder = ch.v.Name
 				break
 			}
 		}
 	}
 	if info == nil {
 		return nil, nil, errf(CodeUnknownBlob, "", "the document %s of class %s does not hold a file %s", id, c.cls.Name, hash)
+	}
+	if o.records(cur) && hidden[strings.ToUpper(holder)] {
+		r.saw(id, rightRead(row.state, holder))
+	}
+	if r.past {
+		r.blob = hash
 	}
 	rc, _, err := s.blobs.Open(ctx, hash)
 	if err != nil {
@@ -399,11 +417,17 @@ func (s *Store) OpenFile(ctx context.Context, class, id, hash string, opts ...Op
 		}
 		return nil, nil, &Error{Code: CodeStorage, Message: "open the blob: " + err.Error()}
 	}
+	if err := s.logRead(ctx, o, r); err != nil {
+		rc.Close()
+		return nil, nil, err
+	}
 	return rc, info, nil
 }
 
 // OpenBlob opens a blob by hash alone, which a content administrator may
-// (ADR-0033); anyone else goes through OpenFile.
+// (ADR-0033); anyone else goes through OpenFile. It passes every rule of
+// every document that holds the file, so it needs a reason every time,
+// and the log of reads keeps the hash (ADR-0067, item 2).
 func (s *Store) OpenBlob(ctx context.Context, hash string, opts ...Option) (io.ReadCloser, int64, error) {
 	o, e := s.asked(ctx, opts, "")
 	if e != nil {
@@ -412,12 +436,21 @@ func (s *Store) OpenBlob(ctx context.Context, hash string, opts ...Option) (io.R
 	if !o.principal.content() {
 		return nil, 0, hintf(CodeNotAllowed, "", "a blob is served through a document", "use OpenFile with the class and the document that hold it; a content administrator may open a blob by hash")
 	}
+	if o.reason == "" {
+		return nil, 0, reasonToRead(o.principal, "the file "+hash+" by its hash alone", "")
+	}
 	rc, size, err := s.blobs.Open(ctx, hash)
 	if err != nil {
 		if errors.Is(err, ErrNoBlob) {
 			return nil, 0, errf(CodeUnknownBlob, "", "the blob store does not hold %s", hash)
 		}
 		return nil, 0, &Error{Code: CodeStorage, Message: "open the blob: " + err.Error()}
+	}
+	r := newRead("open_blob", nil)
+	r.blob, r.past = hash, true
+	if err := s.logRead(ctx, o, r); err != nil {
+		rc.Close()
+		return nil, 0, err
 	}
 	return rc, size, nil
 }

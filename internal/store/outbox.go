@@ -930,11 +930,23 @@ func (s *Store) perform(ctx context.Context, row *outboxRow, day int64, now time
 			return nil, false, e
 		}
 		// The write rule of the table, asked of the person who set the
-		// rule off (ADR-0051, item 7).
-		if e := s.tableRefusal(t, true, row.principal, now.Unix()); e != nil {
+		// rule off (ADR-0051, item 7), with the reason their commit gave:
+		// past it, the action is written down in the log of reads, in the
+		// worker's transaction (ADR-0067, item 7).
+		past, e := s.tableRefusal(t, true, cmd.o, now.Unix())
+		if e != nil {
 			return nil, false, e
 		}
-		return nil, false, s.tableAction(ctx, t, row.action, args.Row, args.Key, args.Set)
+		if e := s.tableAction(ctx, t, row.action, args.Row, args.Key, args.Set); e != nil {
+			return nil, false, e
+		}
+		if past {
+			r := &readLog{command: row.action, table: t.def.Name, rules: []string{"/access/write"}, rows: 1, hasRows: true, past: true}
+			if err := s.insertRead(ctx, s.writer, cmd.o, r); err != nil {
+				return nil, false, asError(err)
+			}
+		}
+		return nil, false, nil
 	default:
 		return nil, false, hintf(CodeUnknownAction, "", "the engine does not run the action "+row.action, "the actions it runs are in the class's rules as the definition accepted them; this row was queued by another build")
 	}

@@ -155,7 +155,7 @@ func (d *Door) subscribe(out *reply, r *http.Request, told *Request) {
 		out.refusal(Status(refusal.Code), refusal)
 		return
 	}
-	f, p, err := command.Subscription(p, object)
+	f, p, opts, err := command.Subscription(p, object)
 	if err == nil {
 		// A caller that connects again says where it was in the header,
 		// beside the object it sent the first time: the header counts.
@@ -165,7 +165,7 @@ func (d *Door) subscribe(out *reply, r *http.Request, told *Request) {
 	}
 	var stream Stream
 	if err == nil {
-		stream, err = d.db.Subscribe(ctx, p, f)
+		stream, err = d.db.Subscribe(ctx, p, f, opts...)
 	}
 	if err != nil {
 		var refused *store.Error

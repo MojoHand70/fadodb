@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -96,6 +97,11 @@ type command struct {
 	// whose command caused the action, for the record and for the actions
 	// the write queues in its turn.
 	engine bool
+	// takenBack marks a commit that is made and then taken back, one of
+	// the moves of a preview of many (ADR-0048): no event of it stays,
+	// so what its answer shows past a rule goes to the log of reads as a
+	// preview's does (ADR-0067).
+	takenBack bool
 }
 
 type result struct {
@@ -115,6 +121,10 @@ type result struct {
 	transitions []TransitionInfo
 	rules       []RuleRun
 	now         int64
+	// read is what a preview, or a commit that wrote nothing, showed a
+	// content administrator past a rule: no event keeps it, so the log
+	// of reads does (ADR-0067).
+	read *readLog
 }
 
 // eventInfo is what the event of a commit says beyond its versions.
@@ -283,6 +293,13 @@ func (s *Store) commit(ctx context.Context, cmd command) (*result, error) {
 		if _, rerr := s.writer.ExecContext(ctx, "ROLLBACK"); rerr != nil && err == nil {
 			return nil, storageErr("rollback", rerr)
 		}
+		// What the answer shows past a rule, with no event to keep it, is
+		// written down before the answer leaves (ADR-0067, item 6).
+		if err == nil && res.read != nil {
+			if err := s.logReadHeld(ctx, cmd.o, res.read); err != nil {
+				return nil, err
+			}
+		}
 		return res, err
 	}
 	if err := s.endTransaction(ctx); err != nil {
@@ -363,7 +380,9 @@ func (s *Store) run(ctx context.Context, cmd command, now time.Time) (*result, e
 				if err != nil {
 					return nil, err
 				}
-				s.project(&s.wev, c, vc, vrow, &h.Document, cmd.o.principal, clock)
+				if !cmd.whole() {
+					s.project(&s.wev, c, vc, vrow, &h.Document, cmd.o.principal, clock)
+				}
 				// Whoever repeats a key is answered as the command answers:
 				// the document if they may see it now, the bare reply if
 				// not (ADR-0049, item 7).
@@ -479,7 +498,7 @@ func (s *Store) run(ctx context.Context, cmd command, now time.Time) (*result, e
 				return nil, err
 			}
 			res.doc = beforeClass.document(before, all)
-			s.project(&s.wev, c, beforeClass, before, res.doc, cmd.o.principal, clock)
+			s.answerWhole(c, beforeClass, before, res, &cmd, clock, "preview_delete")
 			return res, nil
 		}
 		if err := s.writeDelete(ctx, c, before, secs, eventID, actor, cmd.o.key, hash, day); err != nil {
@@ -683,7 +702,7 @@ func (s *Store) run(ctx context.Context, cmd command, now time.Time) (*result, e
 			}
 			res.noop = true
 			res.doc = c.document(before, all)
-			s.project(&s.wev, c, c, before, res.doc, cmd.o.principal, clock)
+			s.answerWhole(c, c, before, res, &cmd, clock, cmd.op.String())
 			return res, nil
 		}
 		// A preview of a set that changes nothing answers what a commit
@@ -873,8 +892,9 @@ func (s *Store) run(ctx context.Context, cmd command, now time.Time) (*result, e
 			evalCtx.State = final.state
 			res.transitions = s.listTransitions(c, final, evalCtx, cmd.o.principal, fresh)
 		}
-		s.project(&s.wev, c, c, final, res.doc, cmd.o.principal, clock)
-		s.veil(c, final, res.doc, &cmd, evalCtx)
+		if !s.answerWhole(c, c, final, res, &cmd, clock, "preview") {
+			s.veil(c, final, res.doc, &cmd, evalCtx)
+		}
 		return res, nil
 	}
 	if ev.kind == EventCreated {
@@ -967,10 +987,53 @@ func (s *Store) run(ctx context.Context, cmd command, now time.Time) (*result, e
 		}
 	}
 	res.doc = c.document(prev, all)
-	s.project(&s.wev, c, c, prev, res.doc, cmd.o.principal, clock)
-	s.veil(c, prev, res.doc, &cmd, evalCtx)
+	name := cmd.op.String()
+	if cmd.takenBack {
+		name = "preview_many"
+	}
+	if !s.answerWhole(c, c, prev, res, &cmd, clock, name) {
+		s.veil(c, prev, res.doc, &cmd, evalCtx)
+	}
+	// What the answer of a commit shows past a rule that its event does
+	// not name is written down with the commit (ADR-0067, item 6).
+	if res.read != nil && !cmd.takenBack {
+		if err := s.insertRead(ctx, s.writer, cmd.o, res.read); err != nil {
+			return nil, err
+		}
+	}
 	res.eventID = eventID
 	return res, nil
+}
+
+// answerWhole projects the document a command answers with, unless the
+// command shows it whole to a content administrator who gives a reason
+// (ADR-0067, item 2). It reports which. The result notes for the log of
+// reads what the answer shows past a read rule or a read right, under
+// the name of the command: all of it for a preview, a commit that wrote
+// nothing and a batch that is taken back, which keep no event; for a
+// commit, what its event does not name already (item 9). The worker's
+// commands answer the engine, and are not noted.
+func (s *Store) answerWhole(c, vc *class, row *docRow, res *result, cmd *command, clock int64, command string) bool {
+	if !cmd.whole() {
+		s.project(&s.wev, c, vc, row, res.doc, cmd.o.principal, clock)
+		return false
+	}
+	if !cmd.o.records(c) || cmd.internal {
+		return true
+	}
+	kept := !cmd.preview && !res.noop && !cmd.takenBack
+	var rules []string
+	for _, rule := range s.pastRow(&s.wev, c, vc, row, cmd.o.principal, clock) {
+		if !kept || !slices.Contains(cmd.lifted, rule) {
+			rules = append(rules, rule)
+		}
+	}
+	if len(rules) > 0 {
+		r := newRead(command, c)
+		r.saw(row.id, rules...)
+		res.read = r
+	}
+	return true
 }
 
 // adopted is a row computed by another version of the class, moved to

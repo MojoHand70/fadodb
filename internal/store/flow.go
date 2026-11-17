@@ -99,7 +99,7 @@ func (s *Store) Flow(ctx context.Context, class string, period FlowPeriod, opts 
 	}
 	// The read rule of the class for this caller, as query and count
 	// ask it.
-	plan, err := query.Compile(Filter{Class: c.cls.Name}, c.cls, s.sources(), caller(o))
+	plan, err := query.Compile(Filter{Class: c.cls.Name}, c.cls, s.sources(), caller(o, c))
 	if err != nil {
 		return nil, filterErr(err)
 	}
@@ -262,6 +262,30 @@ func (s *Store) Flow(ctx context.Context, class string, period FlowPeriod, opts 
 	})
 	for _, at := range gone {
 		flow.Transitions = append(flow.Transitions, FlowTransition{Name: at.name, From: at.from, To: at.to, Automatic: at.name == "", Retired: true, Moves: moved[at]})
+	}
+	// A content administrator past the rules: the entry holds how many of
+	// the documents in the states now only the override counted
+	// (ADR-0067, item 3).
+	if o.records(c) {
+		var all int64
+		for _, in := range flow.States {
+			all += in.Documents
+		}
+		past, err := s.pastCount(ctx, c, o, all, func(p query.Principal) (string, []any, error) {
+			plan, err := query.Compile(Filter{Class: c.cls.Name}, c.cls, s.sources(), p)
+			if err != nil {
+				return "", nil, filterErr(err)
+			}
+			return plan.Where, plan.Args, nil
+		})
+		if err != nil {
+			return nil, err
+		}
+		r := newRead("flow", c)
+		r.counted, r.hasCounted, r.past = past, true, past > 0
+		if err := s.logRead(ctx, o, r); err != nil {
+			return nil, err
+		}
 	}
 	return flow, nil
 }

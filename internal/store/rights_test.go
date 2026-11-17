@@ -233,7 +233,7 @@ func TestRights_Projection(t *testing.T) {
 		p            Principal
 		secret, note bool
 	}{{ticketOwner, false, true}, {ticketFinance, true, true}, {ticketStranger, false, true}, {ticketAdmin, true, true}, {Principal{}, false, true}} {
-		d, err := s.Get(ctx, "Ticket", doc.ID, As(tc.p))
+		d, err := s.Get(ctx, "Ticket", doc.ID, readAs(tc.p)...)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -252,7 +252,7 @@ func TestRights_Projection(t *testing.T) {
 		p    Principal
 		note bool
 	}{{ticketOwner, true}, {ticketFinance, true}, {ticketStranger, false}, {ticketAdmin, true}, {Principal{}, false}} {
-		d, err := s.Get(ctx, "Ticket", doc.ID, As(tc.p))
+		d, err := s.Get(ctx, "Ticket", doc.ID, readAs(tc.p)...)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -374,14 +374,14 @@ func TestRights_Filter(t *testing.T) {
 		p    Principal
 		want int64
 	}{{ticketOwner, 2}, {ticketFinance, 2}, {ticketStranger, 1}, {ticketAdmin, 2}, {Principal{}, 1}} {
-		n, err := s.Count(ctx, Filter{Class: "Ticket", Where: `note = "n"`}, As(tc.p))
+		n, err := s.Count(ctx, Filter{Class: "Ticket", Where: `note = "n"`}, readAs(tc.p)...)
 		if err != nil {
 			t.Fatalf("%q: %v", tc.p.ID, err)
 		}
 		if n != tc.want {
 			t.Errorf("%q counts %d notes, want %d", tc.p.ID, n, tc.want)
 		}
-		docs, err := s.Query(ctx, Filter{Class: "Ticket", Order: []string{"note", "-amount"}}, As(tc.p))
+		docs, err := s.Query(ctx, Filter{Class: "Ticket", Order: []string{"note", "-amount"}}, readAs(tc.p)...)
 		if err != nil {
 			t.Fatalf("%q: %v", tc.p.ID, err)
 		}

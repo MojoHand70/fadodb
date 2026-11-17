@@ -75,15 +75,27 @@ func (s *Store) Transitions(ctx context.Context, class, id string, opts ...Optio
 	evalCtx := &ctxOf
 	evalCtx.State, evalCtx.ID = row.state, row.id
 	// A document the caller may not see does not exist for them
-	// (ADR-0049, item 3).
-	content := o.principal.content()
-	if ok, _ := s.wev.may(c, ruleRead, row, evalCtx); !ok && !content {
-		return nil, noDocument(c, id)
+	// (ADR-0049, item 3). A content administrator sees it past the rule
+	// only with a reason, which the log of reads keeps (ADR-0067).
+	var r *readLog
+	if ok, _ := s.wev.may(c, ruleRead, row, evalCtx); !ok && !(c.brought && o.principal.content()) {
+		switch {
+		case !o.principal.content():
+			return nil, noDocument(c, id)
+		case o.reason == "":
+			return nil, reasonToRead(o.principal, "the document "+id+" of "+c.cls.Name, "/access/read")
+		}
+		r = newRead("transitions", c)
+		r.saw(id, "/access/read")
 	}
-	if c.cls.States == nil {
-		return []TransitionInfo{}, nil
+	out := []TransitionInfo{}
+	if c.cls.States != nil {
+		out = s.listTransitions(c, row, evalCtx, o.principal, false)
 	}
-	return s.listTransitions(c, row, evalCtx, o.principal, false), nil
+	if err := s.logReadHeld(ctx, o, r); err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 // listTransitions is the listing of Transitions and Preview over a row in

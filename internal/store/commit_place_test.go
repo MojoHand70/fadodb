@@ -10,7 +10,9 @@ import (
 // Every commit of the store ends in one place, endTransaction, which
 // tells the streams of changes that the log grew (ADR-0058, item 9). A
 // commit written beside it would leave the streams asleep until the
-// next one. So the statement stands once in the package.
+// next one. So the statement stands once in the package, in changes.go,
+// where endQuietly shares it for the log of reads, which adds no event
+// (ADR-0067).
 func TestEveryCommitEndsInOnePlace(t *testing.T) {
 	files, err := filepath.Glob("*.go")
 	if err != nil {

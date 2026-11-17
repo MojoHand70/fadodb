@@ -41,7 +41,7 @@ func TestTriggered_MomentAtEveryVersion(t *testing.T) {
 	s, _ := openStore(t, Options{}) // the test clock moves a second per commit
 	defineQuote(t, s)
 	ctx := context.Background()
-	admin := As(root)
+	admin := seeing(root)
 	doc, err := s.Create(ctx, "Quote", Values{"amount": 200, "rate": 0.5}, admin)
 	if err != nil {
 		t.Fatal(err)
@@ -183,7 +183,7 @@ func TestTriggered_Preview(t *testing.T) {
 	s, _ := openStore(t, Options{Now: atStart})
 	defineQuote(t, s)
 	ctx := context.Background()
-	admin := As(root)
+	admin := seeing(root)
 	doc, err := s.Create(ctx, "Quote", Values{"amount": 200, "rate": 0.5}, admin)
 	if err != nil {
 		t.Fatal(err)
@@ -291,9 +291,10 @@ func TestTriggered_EngineSchema(t *testing.T) {
 	// item 4); the record of who defined each version made it 9
 	// (ADR-0052, item 7); the tables of the users, their keys and the
 	// changes to them made it 10 (ADR-0057); the tables of the inlets,
-	// whose names no class may take, made it 11 (ADR-0065).
-	if engineSchema != 11 {
-		t.Fatalf("the engine schema is %d, want 11", engineSchema)
+	// whose names no class may take, made it 11 (ADR-0065); the log of
+	// reads made it 12 (ADR-0067).
+	if engineSchema != 12 {
+		t.Fatalf("the engine schema is %d, want 12", engineSchema)
 	}
 	if _, err := s.writer.ExecContext(context.Background(), "UPDATE schema_version SET version = 3"); err != nil {
 		t.Fatal(err)

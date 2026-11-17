@@ -271,7 +271,10 @@ func (s *Store) Get(ctx context.Context, class, id string, opts ...Option) (*Doc
 	}
 	// A document the caller may not see does not exist for them
 	// (ADR-0049, item 3).
-	if !s.seesRow(c, vc, row, o) {
+	r := newRead("get", c)
+	if seen, err := s.look(c, vc, row, o, r); err != nil {
+		return nil, err
+	} else if !seen {
 		return nil, noDocument(c, id)
 	}
 	kids, err := vc.loadChildren(ctx, id, row.version, nil, false)
@@ -279,19 +282,40 @@ func (s *Store) Get(ctx context.Context, class, id string, opts ...Option) (*Doc
 		return nil, err
 	}
 	d := vc.document(row, kids)
-	s.projectRead(c, vc, row, d, o)
+	s.projectRead(c, vc, row, d, o, r)
+	if err := s.logRead(ctx, o, r); err != nil {
+		return nil, err
+	}
 	return d, nil
 }
 
 // projectRead projects a document on a read path with a borrowed
-// evaluator (ADR-0041), at the call's clock (ADR-0042).
-func (s *Store) projectRead(c, vc *class, row *docRow, d *Document, o options) {
-	if c.rights == nil || o.principal.content() {
+// evaluator (ADR-0041), at the call's clock (ADR-0042). A content
+// administrator who passes the rules sees it whole, and the entry notes
+// each variable a right would have hidden (ADR-0067).
+func (s *Store) projectRead(c, vc *class, row *docRow, d *Document, o options, r *readLog) {
+	if c.rights == nil {
 		return
 	}
 	ev := s.reader()
+	defer s.release(ev)
+	if o.passes(c) {
+		if o.records(c) {
+			s.noteRights(ev, c, vc, row, o, r)
+		}
+		return
+	}
 	s.project(ev, c, vc, row, d, o.principal, s.clock(o))
-	s.release(ev)
+}
+
+// noteRights notes in the entry the read rights that would hide a
+// variable of the row from the caller.
+func (s *Store) noteRights(ev *evaluator, c, vc *class, row *docRow, o options, r *readLog) {
+	for _, rule := range s.pastRow(ev, c, vc, row, o.principal, s.clock(o)) {
+		if rule != "/access/read" {
+			r.saw(row.id, rule)
+		}
+	}
 }
 
 // underVersion returns the class that computed a row and the row read
@@ -332,7 +356,8 @@ func (s *Store) Version(ctx context.Context, class, id string, version int64, op
 	}
 	// The past is read under the rule of today (ADR-0049, item 6): who may
 	// not see the document now is told there is no such version.
-	if seen, err := s.sees(ctx, c, id, o); err != nil {
+	r := newRead("version", c)
+	if seen, err := s.lookID(ctx, c, id, o, r); err != nil {
 		return nil, err
 	} else if !seen {
 		return nil, noVersion(c, id, version)
@@ -345,7 +370,10 @@ func (s *Store) Version(ctx context.Context, class, id string, version int64, op
 	if err != nil {
 		return nil, err
 	}
-	s.projectRead(c, vc, row, &h.Document, o)
+	s.projectRead(c, vc, row, &h.Document, o, r)
+	if err := s.logRead(ctx, o, r); err != nil {
+		return nil, err
+	}
 	return h, nil
 }
 
@@ -390,7 +418,8 @@ func (s *Store) History(ctx context.Context, class, id string, opts ...Option) (
 	}
 	// A document the caller may not see has no history for them, as an id
 	// no document has (ADR-0049, item 6).
-	if seen, err := s.sees(ctx, c, id, o); err != nil {
+	r := newRead("history", c)
+	if seen, err := s.lookID(ctx, c, id, o, r); err != nil {
 		return nil, err
 	} else if !seen {
 		return []*HistoryRow{}, nil
@@ -425,8 +454,16 @@ func (s *Store) History(ctx context.Context, class, id string, opts ...Option) (
 		if err != nil {
 			return nil, err
 		}
-		s.project(ev, c, vc, row, &h.Document, o.principal, now)
+		switch {
+		case !o.passes(c):
+			s.project(ev, c, vc, row, &h.Document, o.principal, now)
+		case o.records(c) && c.rights != nil:
+			s.noteRights(ev, c, vc, row, o, r)
+		}
 		out = append(out, h)
+	}
+	if err := s.logRead(ctx, o, r); err != nil {
+		return nil, err
 	}
 	return out, nil
 }
@@ -442,7 +479,8 @@ func (s *Store) Events(ctx context.Context, class, id string, opts ...Option) ([
 	if e != nil {
 		return nil, e
 	}
-	if seen, err := s.sees(ctx, c, id, o); err != nil {
+	r := newRead("events", c)
+	if seen, err := s.lookID(ctx, c, id, o, r); err != nil {
 		return nil, err
 	} else if !seen {
 		return nil, nil
@@ -472,5 +510,11 @@ func (s *Store) Events(ctx context.Context, class, id string, opts ...Option) ([
 		ev.BusinessDate = formula.Render(formula.Date(day))
 		out = append(out, &ev)
 	}
-	return out, storageErr("read the events", rows.Err())
+	if err := rows.Err(); err != nil {
+		return nil, storageErr("read the events", err)
+	}
+	if err := s.logRead(ctx, o, r); err != nil {
+		return nil, err
+	}
+	return out, nil
 }

@@ -587,20 +587,20 @@ func TestTheStreamIsACommandWithItsObject(t *testing.T) {
 	}
 
 	// The object: the four members, each left out or given.
-	f, p, err := Subscription(bob, []byte(`{"classes": ["Invoice", "Memo"], "kinds": ["transition"], "to_states": ["approved"], "after": "01KA2F8Q7ZJ4M0X3T5V9B1C6DE"}`))
+	f, p, _, err := Subscription(bob, []byte(`{"classes": ["Invoice", "Memo"], "kinds": ["transition"], "to_states": ["approved"], "after": "01KA2F8Q7ZJ4M0X3T5V9B1C6DE"}`))
 	want := store.ChangeFilter{Classes: []string{"Invoice", "Memo"}, Kinds: []string{"transition"}, ToStates: []string{"approved"}, After: "01KA2F8Q7ZJ4M0X3T5V9B1C6DE"}
 	if err != nil || !reflect.DeepEqual(f, want) || !reflect.DeepEqual(p, bob) {
 		t.Errorf("the object of subscribe read as %+v for %+v: %v", f, p, err)
 	}
-	if f, _, err := Subscription(bob, []byte(`{}`)); err != nil || !reflect.DeepEqual(f, store.ChangeFilter{}) {
+	if f, _, _, err := Subscription(bob, []byte(`{}`)); err != nil || !reflect.DeepEqual(f, store.ChangeFilter{}) {
 		t.Errorf("an empty object read as %+v: %v", f, err)
 	}
-	if f, _, err := Subscription(bob, []byte(`{"classes": null, "after": null}`)); err != nil || !reflect.DeepEqual(f, store.ChangeFilter{}) {
+	if f, _, _, err := Subscription(bob, []byte(`{"classes": null, "after": null}`)); err != nil || !reflect.DeepEqual(f, store.ChangeFilter{}) {
 		t.Errorf("members that are null read as %+v: %v", f, err)
 	}
 	// For whom the caller acts is passed on, and the engine refuses it
 	// in its own words.
-	_, p, err = Subscription(bob, []byte(`{"for": "ann"}`))
+	_, p, _, err = Subscription(bob, []byte(`{"for": "ann"}`))
 	if err != nil || p.For != "ann" || p.ID != bob.ID {
 		t.Errorf("an object with for read for %+v: %v", p, err)
 	}
@@ -618,14 +618,14 @@ func TestTheStreamIsACommandWithItsObject(t *testing.T) {
 		{`["Invoice"]`, "", "not an object"},
 		{``, "", "not JSON"},
 	} {
-		_, _, err := Subscription(bob, []byte(c.object))
+		_, _, _, err := Subscription(bob, []byte(c.object))
 		e, _ := err.(*store.Error)
 		if e == nil || e.Code != CodeBadJSON || e.Path != c.path || !strings.Contains(e.Message, c.says) {
 			t.Errorf("subscribe %s: refused with %+v, want %s at %q saying %q", c.object, err, CodeBadJSON, c.path, c.says)
 		}
 	}
-	_, _, err = Subscription(bob, []byte(`{"states": ["approved"]}`))
-	if e, _ := err.(*store.Error); e == nil || e.Hint != "subscribe takes classes, kinds, to_states, after" {
+	_, _, _, err = Subscription(bob, []byte(`{"states": ["approved"]}`))
+	if e, _ := err.(*store.Error); e == nil || e.Hint != "subscribe takes classes, kinds, to_states, after, reason" {
 		t.Errorf("the hint of an unknown member is %v", err)
 	}
 }
@@ -1024,6 +1024,35 @@ func TestTheCommandsOfTheInlets(t *testing.T) {
 	}
 	if e := refused(t, s, ann, "get_inlet", `{"name": "bank.nothing"}`); e.Code != store.CodeUnknownInlet {
 		t.Errorf("get_inlet of a name that is no inlet: %+v", e)
+	}
+}
+
+// The log of reads is a command like the rest (ADR-0067): a read past a
+// rule takes the member reason, and a database administrator lists what
+// was read, by whom and why.
+func TestTheLogOfReads(t *testing.T) {
+	s := open(t)
+	run(t, s, olga, "define_class", `{"definition": {"name": "Review", "variables": {"employee": {"type": "text"}},
+	  "states": {"initial": "draft", "list": ["draft"]},
+	  "access": {"read": "employee = USER()", "create": "TRUE", "update": "FALSE", "delete": "FALSE"}}}`)
+	review := run(t, s, ann, "create", `{"class": "Review", "values": {"employee": "ann"}}`)
+	id := at(t, review, "document.id").(string)
+	cora := store.Principal{ID: "cora", Kind: store.ActorPerson, System: []string{store.GroupContentAdministrators}}
+	if e := refused(t, s, cora, "get", `{"class": "Review", "id": `+string(mustJSON(id))+`}`); e.Code != store.CodeReasonRequired || e.Path != "/access/read" {
+		t.Fatalf("a read past the rule with no reason: %+v", e)
+	}
+	run(t, s, cora, "get", `{"class": "Review", "id": `+string(mustJSON(id))+`, "reason": "the manager left"}`)
+	run(t, s, olga, "sql", `{"statement": "SELECT count(*) FROM Review", "reason": "how many reviews"}`)
+	reads := run(t, s, olga, "reads", `{"class": "Review", "id": `+string(mustJSON(id))+`}`)["reads"].([]any)
+	if len(reads) != 1 || at(t, reads[0].(map[string]any), "by") != "cora" || at(t, reads[0].(map[string]any), "reason") != "the manager left" {
+		t.Fatalf("reads answered %v", reads)
+	}
+	all := run(t, s, olga, "reads", `{"after": 0, "limit": 10}`)["reads"].([]any)
+	if len(all) != 2 || at(t, all[1].(map[string]any), "command") != "sql" || at(t, all[1].(map[string]any), "rows") != float64(1) {
+		t.Fatalf("reads answered %v", all)
+	}
+	if e := refused(t, s, cora, "reads", `{}`); e.Code != store.CodeForbidden || e.Path != "/system/administrators" {
+		t.Fatalf("the log read by a content administrator: %+v", e)
 	}
 }
 

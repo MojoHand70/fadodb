@@ -62,13 +62,13 @@ func (s *Store) worker(ctx context.Context, w work, opts []Option) (options, *Er
 // through (ADR-0051, item 7): read for its rows, write for an import and
 // for a rule's table action, which asks as the person who set the rule
 // off (ADR-0044, item 11). A rule is a condition over the caller and the
-// clock; one that errors is FALSE. A content administrator passes
-// (ADR-0052), and a rule the definition leaves out answers as a class's
-// does.
-func (s *Store) tableRefusal(t *table, write bool, p Principal, now int64) *Error {
-	if p.content() {
-		return nil
-	}
+// clock; one that errors is FALSE, and a rule the definition leaves out
+// answers as a class's does. A content administrator the rule refuses
+// passes it with a reason, and past says so, for the log of reads; one
+// without a reason is refused with reason_required (ADR-0067, items 2
+// and 7).
+func (s *Store) tableRefusal(t *table, write bool, o options, now int64) (past bool, refusal *Error) {
+	p := o.principal
 	prog, kind, what := t.def.Read, "read", "read the rows of "
 	if write {
 		prog, kind, what = t.def.Write, "write", "write the rows of "
@@ -87,7 +87,16 @@ func (s *Store) tableRefusal(t *table, write bool, p Principal, now int64) *Erro
 		s.release(ev)
 	}
 	if held {
-		return nil
+		return false, nil
+	}
+	if p.content() {
+		if o.reason == "" {
+			e := hintf(CodeReasonRequired, "", who(p)+" would "+what+t.def.Name+" past its "+kind+" rule, as a content administrator only, and an act past a rule needs a reason",
+				"give the reason with the command; the log of reads keeps it beside the rule, and without one the rule applies as to anybody")
+			e.Path = "/access/" + kind
+			return false, e
+		}
+		return true, nil
 	}
 	msg := who(p) + " may not " + what + t.def.Name
 	if failure != nil {
@@ -103,5 +112,5 @@ func (s *Store) tableRefusal(t *table, write bool, p Principal, now int64) *Erro
 	}
 	e := hintf(CodeForbidden, "", msg, hint)
 	e.Path = "/access/" + kind
-	return e
+	return false, e
 }

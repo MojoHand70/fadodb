@@ -59,7 +59,7 @@
     {"name": "and file it", "do": "transition", "doc": "small", "as": "assistant", "transition": "file", "expect": {"state": "filed"}},
     {"name": "a manager's agent approves a small one", "do": "transition", "doc": "small", "as": "approver", "transition": "approve",
      "expect": {"state": "approved", "values": {"approved_by_kind": "agent"}}},
-    {"name": "the log says who was an agent, and for whom", "do": "get", "doc": "small", "as": "root",
+    {"name": "the log says who was an agent, and for whom", "do": "get", "doc": "small", "as": "root", "reason": "the suite reads the log",
      "expect": {"actors": ["agent-7 agent for ann", "agent-7 agent for ann", "agent-7 agent for ann", "agent-9 agent"]}},
 
     {"name": "Ann files a large one herself", "do": "create", "doc": "large", "as": "ann", "values": {"total": 25000}, "expect": {"values": {"owner": "ann", "made_by": "person"}}},
@@ -69,7 +69,7 @@
     {"name": "the listing says the same to the agent", "do": "transitions", "doc": "large", "as": "approver",
      "expect": {"transitions": [{"name": "approve", "to": "approved", "enabled": false, "code": "forbidden"}]}},
     {"name": "a person approves it", "do": "transition", "doc": "large", "as": "boss", "transition": "approve", "expect": {"state": "approved", "values": {"approved_by_kind": "person"}}},
-    {"name": "the log of the large one", "do": "get", "doc": "large", "as": "root", "expect": {"actors": ["ann person", "ann person", "mia person"]}},
+    {"name": "the log of the large one", "do": "get", "doc": "large", "as": "root", "reason": "the suite reads the log", "expect": {"actors": ["ann person", "ann person", "mia person"]}},
 
     {"name": "what the rule of approve queued runs as the one who approved, with what they were", "do": "drain", "expect": {"drained": 2}},
     {"name": "the notes say so in their own values", "do": "query", "class": "Note", "as": "root", "order": ["by_kind"], "expect": {"found": [{"state": "kept", "values": {"by_kind": "agent"}}, {"state": "kept", "values": {"by_kind": "person"}}]}},
@@ -77,6 +77,6 @@
     {"name": "a service is neither", "do": "create", "doc": "loaded", "as": "import", "values": {"total": 1}, "expect": {"values": {"owner": "loader", "made_by": "service"}}},
     {"name": "it files what it loaded, as its owner", "do": "transition", "doc": "loaded", "as": "import", "transition": "file", "expect": {"state": "filed"}},
     {"name": "a caller whose host says nothing has a blank kind", "do": "transition", "doc": "loaded", "as": "legacy", "transition": "approve", "expect": {"state": "approved", "values": {"approved_by_kind": null}}},
-    {"name": "and the log leaves it out", "do": "get", "doc": "loaded", "as": "root", "expect": {"actors": ["loader service", "loader service", "old"]}}
+    {"name": "and the log leaves it out", "do": "get", "doc": "loaded", "as": "root", "reason": "the suite reads the log", "expect": {"actors": ["loader service", "loader service", "old"]}}
   ]
 }

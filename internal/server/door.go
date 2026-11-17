@@ -24,8 +24,9 @@ type Database interface {
 	PutBlob(ctx context.Context, name, mediaType string, r io.Reader, opts ...store.Option) (store.Values, error)
 	OpenFile(ctx context.Context, class, id, hash string, opts ...store.Option) (io.ReadCloser, *store.FileInfo, error)
 	OpenBlob(ctx context.Context, hash string, opts ...store.Option) (io.ReadCloser, int64, error)
-	// Subscribe opens a stream of changes for the caller p (ADR-0058).
-	Subscribe(ctx context.Context, p store.Principal, f store.ChangeFilter) (Stream, error)
+	// Subscribe opens a stream of changes for the caller p (ADR-0058),
+	// with the options of the call: a reason (ADR-0067).
+	Subscribe(ctx context.Context, p store.Principal, f store.ChangeFilter, opts ...store.Option) (Stream, error)
 	// Receive takes a message from outside for an inlet (ADR-0065).
 	Receive(ctx context.Context, inlet string, m *store.Message) (*store.Receipt, error)
 }

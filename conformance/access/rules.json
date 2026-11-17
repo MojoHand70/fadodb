@@ -31,7 +31,9 @@
     "bob":  {"id": "bob",  "groups": ["staff"]},
     "hana": {"id": "hana", "groups": ["hr"]},
     "eve":  {"id": "eve"},
-    "root": {"id": "root", "system": ["content-administrators"]}
+    "root": {"id": "root", "system": ["content-administrators"]},
+    "cora": {"id": "cora", "system": ["content-administrators"]},
+    "dana": {"id": "dana", "system": ["content-administrators"]}
   },
   "script": [
     {"name": "a preview of a create reports the refusal of the rule and goes on", "do": "preview", "as": "eve", "values": {"amount": 1}, "expect": {"errors": [{"code": "forbidden", "action": "/access/create"}]}},
@@ -45,14 +47,18 @@
 
     {"name": "the owner reads her claim", "do": "get", "doc": "c1", "as": "ann", "expect": {"state": "draft", "values": {"note": "taxi"}}},
     {"name": "HR reads it", "do": "get", "doc": "c1", "as": "hana", "expect": {"values": {"note": "taxi"}}},
-    {"name": "an administrator reads it", "do": "get", "doc": "c1", "as": "root", "expect": {"values": {"note": "taxi"}}},
+    {"name": "an administrator reads it, with a reason", "do": "get", "doc": "c1", "as": "root", "reason": "checking the claims for HR", "expect": {"values": {"note": "taxi"}}},
+    {"name": "a content administrator who gives no reason is told that a read past the rule needs one (ADR-0067)", "do": "get", "doc": "c1", "as": "cora", "expect": {"code": "reason_required", "action": "/access/read"}},
+    {"name": "with a reason she reads it, and the log of reads keeps it", "do": "get", "doc": "c1", "as": "cora", "reason": "checking the claims for HR", "expect": {"values": {"note": "taxi"}, "reads": ["get c1 /access/read"]}},
     {"name": "for another clerk it does not exist", "do": "get", "doc": "c1", "as": "bob", "expect": {"code": "unknown_document"}},
     {"name": "nor for nobody", "do": "get", "doc": "c1", "expect": {"code": "unknown_document"}},
 
     {"name": "a filter shows each caller their own", "do": "query", "as": "ann", "expect": {"docs": ["c1"]}},
     {"name": "a filter shows each caller their own, 2", "do": "query", "as": "bob", "expect": {"docs": ["c2"]}},
     {"name": "a filter shows HR all", "do": "query", "as": "hana", "expect": {"docs": ["c1", "c0", "c2"]}},
-    {"name": "a filter shows an administrator all", "do": "query", "as": "root", "expect": {"docs": ["c1", "c0", "c2"]}},
+    {"name": "a filter shows an administrator all, with a reason", "do": "query", "as": "root", "reason": "checking the claims for HR", "expect": {"docs": ["c1", "c0", "c2"]}},
+    {"name": "a filter shows a content administrator who gives no reason what it shows anybody: none of the claims is hers", "do": "query", "as": "cora", "expect": {"docs": [], "reads": []}},
+    {"name": "with a reason it shows her all, and the log names each claim only the override showed", "do": "query", "as": "cora", "reason": "checking the claims for HR", "expect": {"docs": ["c1", "c0", "c2"], "reads": ["query c1 c0 c2 /access/read"]}},
     {"name": "a filter shows a stranger none", "do": "query", "as": "eve", "expect": {"docs": []}},
     {"name": "a filter shows nobody none", "do": "query", "expect": {"docs": []}},
     {"name": "the rule joins the caller's own condition", "do": "query", "as": "hana", "where": "amount < 1000", "order": ["-amount"], "expect": {"docs": ["c1", "c2"]}},
@@ -61,7 +67,9 @@
     {"name": "a count agrees with the filter, 2", "do": "count", "as": "hana", "expect": {"count": 3}},
     {"name": "a count agrees with the filter, 3", "do": "count", "as": "eve", "expect": {"count": 0}},
     {"name": "a count agrees with the filter, 4", "do": "count", "as": "bob", "where": "amount > 60 OR note = \"taxi\"", "expect": {"count": 0}},
-    {"name": "a count agrees with the filter, 5", "do": "count", "as": "root", "where": "amount > 60", "expect": {"count": 2}},
+    {"name": "a count agrees with the filter, 5", "do": "count", "as": "root", "reason": "checking the claims for HR", "where": "amount > 60", "expect": {"count": 2}},
+    {"name": "a count for a content administrator who gives no reason agrees with her filter", "do": "count", "as": "cora", "where": "amount > 60", "expect": {"count": 0}},
+    {"name": "with a reason it counts all, and the log keeps how many only the override counted", "do": "count", "as": "cora", "reason": "checking the claims for HR", "where": "amount > 60", "expect": {"count": 2, "reads": ["count counted 2"]}},
 
     {"name": "a set by one who may not see it finds no document", "do": "set", "doc": "c1", "as": "bob", "values": {"note": "x"}, "expect": {"code": "unknown_document"}},
     {"name": "a reset likewise", "do": "reset", "doc": "c1", "as": "bob", "variables": ["note"], "expect": {"code": "unknown_document"}},
@@ -91,7 +99,9 @@
 
     {"name": "what is due is listed for those who see it: the owner", "do": "due", "as": "ann", "at": "2027-01-05", "expect": {"due": [["c1", "filed", "late"]]}},
     {"name": "HR", "do": "due", "as": "hana", "at": "2027-01-05", "expect": {"due": [["c1", "filed", "late"]]}},
-    {"name": "an administrator", "do": "due", "as": "root", "at": "2027-01-05", "expect": {"due": [["c1", "filed", "late"]]}},
+    {"name": "an administrator, with a reason", "do": "due", "as": "root", "reason": "checking the claims for HR", "at": "2027-01-05", "expect": {"due": [["c1", "filed", "late"]]}},
+    {"name": "not for a content administrator who gives no reason", "do": "due", "as": "cora", "at": "2027-01-05", "expect": {"due": []}},
+    {"name": "with a reason, and the log keeps it with the moment she read at", "do": "due", "as": "cora", "reason": "checking the claims for HR", "at": "2027-01-05", "expect": {"due": [["c1", "filed", "late"]], "reads": ["due c1 /access/read"]}},
     {"name": "and not for another clerk", "do": "due", "as": "bob", "at": "2027-01-05", "expect": {"due": []}},
     {"name": "nor for nobody", "do": "due", "at": "2027-01-05", "expect": {"due": []}},
 
@@ -111,9 +121,10 @@
      "expect": {"heard": ["created c2", "deleted c2"]}},
     {"name": "the stream told HR of every claim, in the order of the commits", "do": "heard", "as": "hana",
      "expect": {"heard": ["created c1", "created c0", "created c2", "refresh c1", "set c1", "transition c1 file", "transition c1 approve", "deleted c2"]}},
-    {"name": "the stream told an administrator of every claim", "do": "heard", "as": "root",
+    {"name": "the stream told an administrator of every claim, since she gave a reason", "do": "heard", "as": "root", "reason": "checking the claims for HR",
      "expect": {"heard": ["created c1", "created c0", "created c2", "refresh c1", "set c1", "transition c1 file", "transition c1 approve", "deleted c2"]}},
     {"name": "the stream told a stranger nothing, not even that a claim exists", "do": "heard", "as": "eve", "expect": {"heard": []}},
+    {"name": "nor a content administrator who gave no reason", "do": "heard", "as": "dana", "expect": {"heard": []}},
     {"name": "the stream told nobody nothing", "do": "heard", "expect": {"heard": []}}
   ]
 }

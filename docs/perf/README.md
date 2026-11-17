@@ -66,8 +66,10 @@ FADODB_BENCH_DIR=/path/on/disk FADODB_BENCH_DOCS=1000000 go test -run '^$' -benc
 The campaigns of the server run beside them since v0.6.0. One measures
 `fadodb serve`: a transition and a read through it on a connection
 that is kept open, by one caller and by sixteen, beside the same calls
-through the Go API and beside a request to Go's own server that does
-nothing (ADR-0011, ADR-0055, ADR-0059); a message from outside through
+through the Go API, beside a request to Go's own server that does
+nothing, and beside the same transition made through the Go API by
+that server, which is what the server's budget is measured beside
+(ADR-0011, ADR-0055, ADR-0059, ADR-0066); a message from outside through
 an inlet (ADR-0065); and the door for agents (ADR-0064). One measures
 what it takes to open a database of fifty classes and what it holds
 open (ADR-0056), one the stream of changes on the wire (ADR-0058), and

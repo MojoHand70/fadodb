@@ -12,7 +12,8 @@ import { log10, ln, pow, roundTo, scaledStep } from "./numbers.js";
 import { render, renderNumber } from "./render.js";
 import { compareText, longerThan, lower, proper, runeCount, runes, trimSpace, upper, utf8Bytes } from "./text.js";
 import { BLANK, Kind, Value, bool, date, datetime, isExact, number, text } from "./value.js";
-import type { VM } from "./vm.js";
+import { DAY, addMonths, civilOf, dateOfText, dateTimeOfText, dateTimeValue, dateValue, dayNumber, makeDate } from "./dates.js";
+import type { Life, StateLife, VM } from "./vm.js";
 
 /** A function: the VM, the stack, where its arguments begin and how many. */
 export type Fn = (vm: VM, s: readonly Value[], a: number, n: number) => Value | EvalError;
@@ -144,6 +145,74 @@ function regexOf(pattern: string): RegExp {
   return new RegExp(p, flags);
 }
 
+// ---- Dates
+
+function datePart(name: string, part: (y: number, m: number, d: number) => number): Builtin {
+  return {
+    name,
+    fn: (_vm, s, a) => {
+      if (s[a]!.kind === Kind.Blank) return BLANK;
+      const [y, m, d] = civilOf(s[a]!);
+      return number(part(y, m, d));
+    },
+  };
+}
+
+function bothOrBlank(s: readonly Value[], a: number, f: (x: Value, y: Value) => Value): Value {
+  if (s[a]!.kind === Kind.Blank || s[a + 1]!.kind === Kind.Blank) return BLANK;
+  return f(s[a]!, s[a + 1]!);
+}
+
+// ---- The life of the document
+
+function lifeMoment(name: string, get: (d: Life) => number | undefined): Builtin {
+  return {
+    name,
+    fn: (vm) => {
+      const d = vm.ctx?.doc;
+      const secs = d ? get(d) : undefined;
+      return secs ? datetime(secs) : BLANK;
+    },
+  };
+}
+
+function lifeText(name: string, get: (d: Life) => string | undefined): Builtin {
+  return {
+    name,
+    fn: (vm) => {
+      const d = vm.ctx?.doc;
+      const t = d ? get(d) : undefined;
+      return t ? text(t) : BLANK;
+    },
+  };
+}
+
+function stateOf(vm: VM, name: string): StateLife | undefined {
+  return vm.ctx?.doc?.states?.find((st) => st.state === name);
+}
+
+function stateMoment(name: string, get: (st: StateLife) => number | undefined): Builtin {
+  return {
+    name,
+    fn: (vm, s, a) => {
+      const st = stateOf(vm, s[a]!.str);
+      const secs = st ? get(st) : undefined;
+      return secs ? datetime(secs) : BLANK;
+    },
+  };
+}
+
+function stateText(name: string, get: (st: StateLife) => string | undefined): Builtin {
+  return {
+    name,
+    fn: (vm, s, a) => {
+      const st = stateOf(vm, s[a]!.str);
+      const t = st ? get(st) : undefined;
+      return t ? text(t) : BLANK;
+    },
+  };
+}
+
 // ---- Context
 
 const ctxText = (v: string | undefined): Value => (v ? text(v) : BLANK);
@@ -230,19 +299,35 @@ export const builtins: readonly Builtin[] = [
     },
   },
   // Dates: a date is a calendar day, a datetime an instant (ADR-0023)
-  later("DATE", "a function of dates"),
-  later("DATEVALUE", "a function of dates"),
-  later("YEAR", "a function of dates"),
-  later("MONTH", "a function of dates"),
-  later("DAY", "a function of dates"),
-  later("QUARTER", "a function of dates"),
-  later("DAYS", "a function of dates"),
-  later("DAYSBETWEEN", "a function of dates"),
-  later("MONTHSBETWEEN", "a function of dates"),
-  later("YEARSBETWEEN", "a function of dates"),
-  later("ADDDAYS", "a function of dates"),
-  later("ADDMONTHS", "a function of dates"),
-  later("ADDYEARS", "a function of dates"),
+  { name: "DATE", fn: (_vm, s, a) => makeDate(s[a]!.num, s[a + 1]!.num, s[a + 2]!.num) },
+  { name: "DATEVALUE", fn: (_vm, s, a) => dateOfText(s[a]!.str) },
+  datePart("YEAR", (y) => y),
+  datePart("MONTH", (_y, m) => m),
+  datePart("DAY", (_y, _m, d) => d),
+  datePart("QUARTER", (_y, m) => Math.floor((m - 1) / 3) + 1),
+  { name: "DAYS", fn: (_vm, s, a) => bothOrBlank(s, a, (x, y) => number(dayNumber(x) - dayNumber(y))) },
+  { name: "DAYSBETWEEN", fn: (_vm, s, a) => bothOrBlank(s, a, (x, y) => number(dayNumber(y) - dayNumber(x))) },
+  {
+    name: "MONTHSBETWEEN",
+    fn: (_vm, s, a) =>
+      bothOrBlank(s, a, (x, y) => {
+        const [ys, ms] = civilOf(x);
+        const [ye, me] = civilOf(y);
+        return number(ye * 12 + me - (ys * 12 + ms));
+      }),
+  },
+  { name: "YEARSBETWEEN", fn: (_vm, s, a) => bothOrBlank(s, a, (x, y) => number(civilOf(y)[0] - civilOf(x)[0])) },
+  {
+    name: "ADDDAYS",
+    fn: (_vm, s, a) => {
+      const x = s[a]!;
+      if (x.kind === Kind.Blank) return BLANK;
+      if (x.kind === Kind.Date) return dateValue(x.num + Math.trunc(s[a + 1]!.num));
+      return dateTimeValue(x.num + s[a + 1]!.num * DAY);
+    },
+  },
+  { name: "ADDMONTHS", fn: (_vm, s, a) => addMonths(s[a]!, s[a + 1]!.num) },
+  { name: "ADDYEARS", fn: (_vm, s, a) => addMonths(s[a]!, 12 * Math.trunc(s[a + 1]!.num)) },
   // Context
   { name: "NOW", fn: (vm) => datetime(vm.now()) },
   { name: "TODAY", fn: (vm) => date(Math.floor(vm.now() / 86400)) },
@@ -472,9 +557,9 @@ export const builtins: readonly Builtin[] = [
   later("AMOUNT", "a function of money"),
   later("CURRENCY", "a function of money"),
   // Calendar days and instants (ADR-0023)
-  later("DATETIMEVALUE", "a function of dates"),
-  later("DATEOF", "a function of dates"),
-  later("DATETIME", "a function of dates"),
+  { name: "DATETIMEVALUE", fn: (_vm, s, a) => dateTimeOfText(s[a]!.str) },
+  { name: "DATEOF", fn: (_vm, s, a) => (s[a]!.kind === Kind.Blank ? BLANK : date(Math.floor(s[a]!.num / DAY))) },
+  { name: "DATETIME", fn: (_vm, s, a) => (s[a]!.kind === Kind.Blank ? BLANK : datetime(s[a]!.num * DAY)) },
   // Text made safe for a URL (ADR-0045)
   {
     name: "URLENCODE",
@@ -490,27 +575,50 @@ export const builtins: readonly Builtin[] = [
     },
   },
   // The life of the document, from its row (ADR-0047, item 5)
-  later("CREATEDAT", "a function of the document's life"),
-  later("CREATEDBY", "a function of the document's life"),
-  later("UPDATEDAT", "a function of the document's life"),
-  later("UPDATEDBY", "a function of the document's life"),
-  later("ENTEREDAT", "a function of the document's life"),
-  later("ENTEREDBY", "a function of the document's life"),
-  later("ENTEREDFROM", "a function of the document's life"),
-  later("VERSION", "a function of the document's life"),
+  lifeMoment("CREATEDAT", (d) => d.created_at),
+  lifeText("CREATEDBY", (d) => d.created_by),
+  lifeMoment("UPDATEDAT", (d) => d.updated_at),
+  lifeText("UPDATEDBY", (d) => d.updated_by),
+  lifeMoment("ENTEREDAT", (d) => d.entered_at),
+  lifeText("ENTEREDBY", (d) => d.entered_by),
+  lifeText("ENTEREDFROM", (d) => d.entered_from),
+  {
+    name: "VERSION",
+    fn: (vm) => {
+      const v = vm.ctx?.doc?.version;
+      return v ? number(v) : BLANK;
+    },
+  },
   // The life of the document by state, from its events (ADR-0047, item 6)
-  later("FIRSTENTERED", "a function of a state"),
-  later("FIRSTENTEREDBY", "a function of a state"),
-  later("LASTENTERED", "a function of a state"),
-  later("LASTENTEREDBY", "a function of a state"),
-  later("FIRSTLEFT", "a function of a state"),
-  later("FIRSTLEFTBY", "a function of a state"),
-  later("LASTLEFT", "a function of a state"),
-  later("LASTLEFTBY", "a function of a state"),
-  later("ENTRIES", "a function of a state"),
-  later("DAYSIN", "a function of a state"),
-  later("FIRSTEDITOR", "a function of a state"),
-  later("LASTEDITOR", "a function of a state"),
+  stateMoment("FIRSTENTERED", (st) => st.fe),
+  stateText("FIRSTENTEREDBY", (st) => st.feb),
+  stateMoment("LASTENTERED", (st) => st.le),
+  stateText("LASTENTEREDBY", (st) => st.leb),
+  stateMoment("FIRSTLEFT", (st) => st.fl),
+  stateText("FIRSTLEFTBY", (st) => st.flb),
+  stateMoment("LASTLEFT", (st) => st.ll),
+  stateText("LASTLEFTBY", (st) => st.llb),
+  {
+    name: "ENTRIES",
+    fn: (vm, s, a) => {
+      if (!vm.ctx?.doc) return BLANK;
+      const st = stateOf(vm, s[a]!.str);
+      return number(st ? (st.n ?? 0) : 0);
+    },
+  },
+  {
+    name: "DAYSIN",
+    fn: (vm, s, a) => {
+      if (!vm.ctx?.doc) return BLANK;
+      const st = stateOf(vm, s[a]!.str);
+      if (!st) return number(0);
+      let secs = st.secs ?? 0;
+      if (st.here) secs += vm.now() - (st.le ?? 0);
+      return number(secs / DAY);
+    },
+  },
+  stateText("FIRSTEDITOR", (st) => st.fed),
+  stateText("LASTEDITOR", (st) => st.led),
 ];
 
 /** Compares two scalar values that are neither exact: -1, 0 or 1. */

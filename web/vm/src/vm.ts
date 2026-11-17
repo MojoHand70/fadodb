@@ -20,9 +20,42 @@ export const DEFAULT_MAX_TEXT = 65536;
 /** The deepest nesting of IFERROR, as the binder allows it. */
 const MAX_TRIES = 16;
 
+/**
+ * What a document's life says of one state it has been in (ADR-0047, item
+ * 6), in the form the engine writes it: the moments in seconds, who made
+ * each move, how many times it entered, how long its stays that ended
+ * lasted, whether it is there now, and who first and last changed it
+ * there.
+ */
+export interface StateLife {
+  state: string;
+  /** First entered, and by whom. */
+  fe?: number;
+  feb?: string;
+  /** Last entered, and by whom. */
+  le?: number;
+  leb?: string;
+  /** First left, and by whom. */
+  fl?: number;
+  flb?: string;
+  /** Last left, and by whom. */
+  ll?: number;
+  llb?: string;
+  /** How many times it entered. */
+  n?: number;
+  /** The seconds of the stays that ended. */
+  secs?: number;
+  /** Whether the document is in the state now. */
+  here?: boolean;
+  /** Who first and last changed it in the state. */
+  fed?: string;
+  led?: string;
+}
+
 /** What a document keeps of its life (ADR-0047), for the functions that read it. */
 export interface Life {
   version?: number;
+  /** Moments in seconds since the epoch, and who. */
   created_at?: number;
   created_by?: string;
   updated_at?: number;
@@ -30,7 +63,8 @@ export interface Life {
   entered_at?: number;
   entered_by?: string;
   entered_from?: string;
-  states?: readonly unknown[];
+  /** Each state it has been in, in the order it first entered them. */
+  states?: readonly StateLife[];
 }
 
 /** What the context functions see (ADR-0015, ADR-0050, ADR-0052). */

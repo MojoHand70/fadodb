@@ -18,21 +18,22 @@ is worked out by the server, and the page is given its last value.
 
 ## Where it stands
 
-Phase 7 builds it in four parts. **Parts 1 and 2 are built: the
-machine, plain numbers, text and logic; dates and moments, and the
-functions of a document's life.** Every instruction runs but those of
-exact numbers, and every function but those of exact numbers and
-money, which wait for part 3; part 4 adds what is left and measures the
-speed. What waits says so: it throws an error named `NotBuilt` and
-never answers a value.
+Phase 7 builds it in four parts. **Parts 1 to 3 are built: every
+instruction of the bytecode and every function a page runs**, plain
+numbers, text and logic, dates and moments, the functions of a
+document's life, and exact numbers and money on `BigInt`. Part 4
+measures the speed, 200 formulas in under a millisecond, and publishes
+the files with a release.
 
 On every push, CI builds the file and runs every case of the
 conformance suite through it, compiled by the engine
-(`conformance/formula`): what parts 1 and 2 run passes, case for case.
-Beside the suite, 3,000 numbers are rendered as text as Go renders
-them, and 4,200 calls of the functions of dates, drawn at random over
-year 1 to year 9999 with texts that are almost a date, answer what the
-Go VM answers.
+(`conformance/formula`): every one a page runs passes. Beside the
+suite, 3,000 numbers are rendered as text as Go renders them, 4,200
+calls of the functions of dates are drawn at random over year 1 to year
+9999 with texts that are almost a date, and 4,800 calls of exact numbers
+and money at every scale, with mantissas next to the 64-bit limit, the
+six methods of rounding on halves and two currencies in one operation:
+each answers what the Go VM answers.
 
 ## Building and testing
 
@@ -58,6 +59,7 @@ The build writes `dist/fadodb-vm.js`, an ES module, and
 | `src/numbers.ts` | plain numbers worked out to the last bit as Go does |
 | `src/text.ts` | text by code point, Unicode's simple case mappings |
 | `src/dates.ts` | calendar days and instants, as Go's time.Date carries them |
+| `src/exact.ts` | exact numbers and money: a BigInt mantissa held to Go's 64 bits |
 | `src/render.ts` | a value as text, the TEXT rule |
 | `src/errors.ts` | the codes a formula stops with |
 | `cases/main.go` | writes the conformance cases, compiled, for the runner |

@@ -31,6 +31,16 @@ All notable changes to FadoDB are recorded here. The format follows
   pass, none fails, and the 379 that wait are all exact numbers and
   money; 4,200 calls of the functions of dates drawn at random answer
   what the Go VM answers. 27.8 KB.
+- The browser VM, part 3 of 4: exact numbers and money (ADR-0022), with
+  the mantissa a `BigInt` held to the 64 bits of the engine's, so that
+  what overflows on the server overflows on the page: the exact
+  operators and comparisons, the six methods of rounding, `DECIMAL`,
+  `NUMBER`, `MONEY`, `MONEYVALUE`, `DECIMALVALUE`, `AMOUNT`, `CURRENCY`,
+  and the exact paths of `ROUND`, `FLOOR`, `CEILING`, `TRUNC`, `ABS`,
+  `SIGN`, `MIN`, `MAX`, `SUM`, `AVERAGE` and `MOD`. Every instruction
+  and every function a page runs is built: every case of the suite a
+  page runs passes, 1,388, and 4,800 calls of exact numbers and money
+  drawn at random answer what the Go VM answers. 34.7 KB.
 - Phase 7, the browser VM and the reference frontend, has started;
   the roadmap says what the owner ruled it holds.
 - The log of reads (ADR-0067, accepted). A content administrator who

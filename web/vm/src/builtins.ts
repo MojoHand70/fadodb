@@ -7,11 +7,12 @@
 // answers a value or the error the formula stops with. The binder has
 // checked every argument's type, so a function trusts what it is given.
 
-import { EvalError, ErrorCode, NotBuilt, errModByZero, errNotANumber, outOfRange, tooLong } from "./errors.js";
-import { log10, ln, pow, roundTo, scaledStep } from "./numbers.js";
+import { EvalError, ErrorCode, errModByZero, errNotANumber, outOfRange, tooLong } from "./errors.js";
+import { RoundMethod, addInt, decDiv, decFromFloat, decMod, decToFloat, errCurrencyMix, errOverflow, exactOfText, exactOperand, exactResult, isCurrency, methodNamed, roundMant, sameKind, scaleBy } from "./exact.js";
+import { log10, ln, pow, pow10, roundTo, scaledStep } from "./numbers.js";
 import { render, renderNumber } from "./render.js";
 import { compareText, longerThan, lower, proper, runeCount, runes, trimSpace, upper, utf8Bytes } from "./text.js";
-import { BLANK, Kind, Value, bool, date, datetime, isExact, number, text } from "./value.js";
+import { BLANK, Kind, Value, bool, date, datetime, decimal, isExact, money, number, text } from "./value.js";
 import { DAY, addMonths, civilOf, dateOfText, dateTimeOfText, dateTimeValue, dateValue, dayNumber, makeDate } from "./dates.js";
 import type { Life, StateLife, VM } from "./vm.js";
 
@@ -29,17 +30,8 @@ function finite(f: number): Value | EvalError {
   return Number.isFinite(f) ? number(f) : errNotANumber;
 }
 
-/** A function that a later part of Phase 7 builds. */
-function later(name: string, what: string): Builtin {
-  return {
-    name,
-    fn: () => {
-      throw new NotBuilt(`${name}, ${what},`);
-    },
-  };
-}
 
-/** Whether any argument is an exact number; the exact paths come later. */
+/** Whether any argument is an exact number. */
 function anyExact(s: readonly Value[], a: number, n: number): boolean {
   for (let i = a; i < a + n; i++) {
     if (isExact(s[i]!.kind)) {
@@ -49,28 +41,97 @@ function anyExact(s: readonly Value[], a: number, n: number): boolean {
   return false;
 }
 
-function plainOnly(name: string, s: readonly Value[], a: number, n: number): void {
-  if (anyExact(s, a, n)) {
-    throw new NotBuilt(`${name} of an exact number`);
+// ---- Exact numbers (ADR-0022)
+
+/** The places an argument gives, its whole part; 0 when it is left out. */
+const placesOf = (s: readonly Value[], a: number, n: number): number => (n > 1 ? Math.trunc(s[a + 1]!.num) : 0);
+
+function roundExact(x: Value, places: number, rm: number): Value | EvalError {
+  const r = roundMant(x.mant, x.scale, places, rm as Parameters<typeof roundMant>[3]);
+  return r === null ? errOverflow : sameKind(x, r[0], r[1]);
+}
+
+/**
+ * The fold of MIN, MAX, SUM and AVERAGE over exact arguments: the binder
+ * passes the scale they align at as one more exact argument, the last.
+ * Every money argument must be of one currency.
+ */
+function exactFold(s: readonly Value[], a: number, n: number, step: (acc: bigint, x: bigint) => bigint | null): { m: bigint; scale: number; cur: string; count: number } | EvalError {
+  const scale = Number(s[a + n - 1]!.mant);
+  let cur = "";
+  for (let i = a; i < a + n - 1; i++) {
+    const v = s[i]!;
+    if (v.kind === Kind.Money) {
+      if (cur !== "" && v.str !== cur) return errCurrencyMix;
+      cur = v.str;
+    }
   }
+  let acc = 0n;
+  let count = 0;
+  for (let i = a; i < a + n - 1; i++) {
+    const v = s[i]!;
+    if (v.kind === Kind.Blank) continue;
+    const [m0, sc] = exactOperand(v);
+    const m = scaleBy(m0, scale - sc);
+    if (m === null) return errOverflow;
+    if (count === 0) {
+      acc = m;
+    } else {
+      const r = step(acc, m);
+      if (r === null) return errOverflow;
+      acc = r;
+    }
+    count++;
+  }
+  return { m: acc, scale, cur, count };
+}
+
+/** ROUND of a plain number by a method, as Go's roundFloat. */
+function roundFloat(v: number, digits: number, rm: number): number {
+  switch (rm) {
+    case RoundMethod.HalfUp:
+      return roundTo(v, digits);
+    case RoundMethod.HalfEven: {
+      const d = Math.trunc(digits);
+      if (d > 300) return v;
+      if (d < -300) return 0;
+      const p = pow10(d);
+      const scaled = v * p;
+      if (Math.abs(scaled) >= 2 ** 52) return v;
+      const t = Math.trunc(scaled);
+      const f = Math.abs(scaled - t);
+      return (f > 0.5 || (f === 0.5 && t % 2 !== 0) ? t + Math.sign(scaled) : t) / p;
+    }
+    case RoundMethod.Down:
+      return scaledStep(v, digits, Math.trunc);
+    case RoundMethod.Up:
+      return scaledStep(v, digits, (x) => (x < 0 ? Math.floor(x) : Math.ceil(x)));
+    case RoundMethod.Floor:
+      return scaledStep(v, digits, Math.floor);
+  }
+  return scaledStep(v, digits, Math.ceil);
 }
 
 // ---- Numbers
 
 const digitsArg = (s: readonly Value[], a: number, n: number): number => (n > 1 ? s[a + 1]!.num : 0);
 
-function stepFn(name: string, step: (x: number) => number): Builtin {
+function stepFn(name: string, step: (x: number) => number, rm: number): Builtin {
   return {
     name,
     fn: (_vm, s, a, n) => {
-      plainOnly(name, s, a, n);
+      if (isExact(s[a]!.kind)) return roundExact(s[a]!, placesOf(s, a, n), rm);
       return finite(scaledStep(s[a]!.num, digitsArg(s, a, n), step));
     },
   };
 }
 
-function fold(name: string, s: readonly Value[], a: number, n: number, pick: (m: number, x: number) => boolean): Value {
-  plainOnly(name, s, a, n);
+function fold(s: readonly Value[], a: number, n: number, pick: (m: number, x: number) => boolean, pickExact: (acc: bigint, x: bigint) => bigint): Value | EvalError {
+  if (anyExact(s, a, n)) {
+    const f = exactFold(s, a, n, pickExact);
+    if (f instanceof EvalError) return f;
+    return f.count === 0 ? BLANK : exactResult(f.m, f.scale, f.cur);
+  }
   let m = 0;
   let any = false;
   for (let i = a; i < a + n; i++) {
@@ -226,43 +287,57 @@ export const builtins: readonly Builtin[] = [
   {
     name: "ROUND",
     fn: (_vm, s, a, n) => {
-      if (isExact(s[a]!.kind) || n > 2) {
-        throw new NotBuilt(n > 2 ? "ROUND with a method" : "ROUND of an exact number");
-      }
-      return finite(roundTo(s[a]!.num, digitsArg(s, a, n)));
+      const x = s[a]!;
+      if (!isExact(x.kind) && n < 3) return finite(roundTo(x.num, digitsArg(s, a, n)));
+      const rm = methodNamed(n > 2 ? s[a + 2]!.str : undefined);
+      if (isExact(x.kind)) return roundExact(x, placesOf(s, a, n), rm);
+      return finite(roundFloat(x.num, digitsArg(s, a, n), rm));
     },
   },
-  stepFn("FLOOR", Math.floor),
-  stepFn("CEILING", Math.ceil),
-  stepFn("TRUNC", Math.trunc),
+  stepFn("FLOOR", Math.floor, RoundMethod.Floor),
+  stepFn("CEILING", Math.ceil, RoundMethod.Ceiling),
+  stepFn("TRUNC", Math.trunc, RoundMethod.Down),
   {
     name: "ABS",
-    fn: (_vm, s, a, n) => {
-      plainOnly("ABS", s, a, n);
-      return number(Math.abs(s[a]!.num));
+    fn: (_vm, s, a) => {
+      const x = s[a]!;
+      if (isExact(x.kind)) {
+        if (x.mant < 0n && x.mant === -(2n ** 63n)) return errOverflow;
+        return sameKind(x, x.mant < 0n ? -x.mant : x.mant, x.scale);
+      }
+      return number(Math.abs(x.num));
     },
   },
   {
     name: "SIGN",
-    fn: (_vm, s, a, n) => {
-      plainOnly("SIGN", s, a, n);
-      const x = s[a]!.num;
-      return number(x > 0 ? 1 : x < 0 ? -1 : 0);
+    fn: (_vm, s, a) => {
+      const x = s[a]!;
+      if (isExact(x.kind)) return decimal(x.mant > 0n ? 1n : x.mant < 0n ? -1n : 0n, 0);
+      return number(x.num > 0 ? 1 : x.num < 0 ? -1 : 0);
     },
   },
-  { name: "MIN", fn: (_vm, s, a, n) => fold("MIN", s, a, n, (m, x) => x < m) },
-  { name: "MAX", fn: (_vm, s, a, n) => fold("MAX", s, a, n, (m, x) => x > m) },
+  { name: "MIN", fn: (_vm, s, a, n) => fold(s, a, n, (m, x) => x < m, (acc, x) => (x < acc ? x : acc)) },
+  { name: "MAX", fn: (_vm, s, a, n) => fold(s, a, n, (m, x) => x > m, (acc, x) => (x > acc ? x : acc)) },
   {
     name: "SUM",
     fn: (_vm, s, a, n) => {
-      plainOnly("SUM", s, a, n);
+      if (anyExact(s, a, n)) {
+        const f = exactFold(s, a, n, addInt);
+        return f instanceof EvalError ? f : exactResult(f.m, f.scale, f.cur);
+      }
       return finite(sum(s, a, n)[0]);
     },
   },
   {
     name: "AVERAGE",
     fn: (_vm, s, a, n) => {
-      plainOnly("AVERAGE", s, a, n);
+      if (anyExact(s, a, n)) {
+        const f = exactFold(s, a, n, addInt);
+        if (f instanceof EvalError) return f;
+        if (f.count === 0) return BLANK;
+        const q = decDiv(f.m, f.scale, BigInt(f.count), 0);
+        return q instanceof EvalError ? q : exactResult(q[0], q[1], f.cur);
+      }
       const [total, count] = sum(s, a, n);
       return count === 0 ? BLANK : finite(total / count);
     },
@@ -291,7 +366,20 @@ export const builtins: readonly Builtin[] = [
   {
     name: "MOD",
     fn: (_vm, s, a, n) => {
-      plainOnly("MOD", s, a, n);
+      if (anyExact(s, a, n)) {
+        const scale = Number(s[a + n - 1]!.mant);
+        const p = s[a]!;
+        const q = s[a + 1]!;
+        if (p.kind === Kind.Money && q.kind === Kind.Money && p.str !== q.str) return errCurrencyMix;
+        const [ma, sa] = exactOperand(p);
+        const [mb, sb] = exactOperand(q);
+        const x = scaleBy(ma, scale - sa);
+        const y = scaleBy(mb, scale - sb);
+        if (x === null || y === null) return errOverflow;
+        const r = decMod(x, y);
+        if (r instanceof EvalError) return r;
+        return exactResult(r, scale, p.kind === Kind.Money ? p.str : q.kind === Kind.Money ? q.str : "");
+      }
       const x = s[a]!.num;
       const y = s[a + 1]!.num;
       if (y === 0) return errModByZero;
@@ -549,13 +637,44 @@ export const builtins: readonly Builtin[] = [
     },
   },
   // Exact numbers and money (ADR-0022)
-  later("DECIMAL", "a function of exact numbers"),
-  later("NUMBER", "a function of exact numbers"),
-  later("MONEY", "a function of money"),
-  later("MONEYVALUE", "a function of money"),
-  later("DECIMALVALUE", "a function of exact numbers"),
-  later("AMOUNT", "a function of money"),
-  later("CURRENCY", "a function of money"),
+  {
+    name: "DECIMAL",
+    fn: (_vm, s, a, n) => {
+      const x = s[a]!;
+      const places = placesOf(s, a, n);
+      const rm = methodNamed(n > 2 ? s[a + 2]!.str : undefined);
+      if (x.kind === Kind.Blank) return BLANK;
+      if (isExact(x.kind)) {
+        const r = roundMant(x.mant, x.scale, places, rm);
+        return r === null ? errOverflow : decimal(r[0], r[1]);
+      }
+      const m = decFromFloat(x.num, places, rm);
+      return m instanceof EvalError ? m : decimal(m, places);
+    },
+  },
+  {
+    name: "NUMBER",
+    fn: (_vm, s, a) => {
+      const x = s[a]!;
+      if (x.kind === Kind.Blank) return BLANK;
+      return number(isExact(x.kind) ? decToFloat(x.mant, x.scale) : x.num);
+    },
+  },
+  {
+    name: "MONEY",
+    fn: (_vm, s, a) => {
+      const x = s[a]!;
+      if (x.kind === Kind.Blank) return BLANK;
+      const cur = s[a + 1]!.str;
+      if (!isCurrency(cur)) return new EvalError(ErrorCode.BadText, "a currency is three upper-case letters, got " + JSON.stringify(cur));
+      const [m, sc] = exactOperand(x);
+      return money(m, sc, cur);
+    },
+  },
+  { name: "MONEYVALUE", fn: (_vm, s, a, n) => exactOfText(s[a]!.str, placesOf(s, a, n), true) },
+  { name: "DECIMALVALUE", fn: (_vm, s, a, n) => exactOfText(s[a]!.str, placesOf(s, a, n), false) },
+  { name: "AMOUNT", fn: (_vm, s, a) => (s[a]!.kind === Kind.Blank ? BLANK : decimal(s[a]!.mant, s[a]!.scale)) },
+  { name: "CURRENCY", fn: (_vm, s, a) => (s[a]!.kind === Kind.Blank ? BLANK : text(s[a]!.str)) },
   // Calendar days and instants (ADR-0023)
   { name: "DATETIMEVALUE", fn: (_vm, s, a) => dateTimeOfText(s[a]!.str) },
   { name: "DATEOF", fn: (_vm, s, a) => (s[a]!.kind === Kind.Blank ? BLANK : date(Math.floor(s[a]!.num / DAY))) },

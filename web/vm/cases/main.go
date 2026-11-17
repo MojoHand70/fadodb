@@ -223,6 +223,11 @@ func run(dir string) error {
 		return err
 	}
 	out.Suites = append(out.Suites, drawnSuite)
+	exactSuite, err := drawnExact()
+	if err != nil {
+		return err
+	}
+	out.Suites = append(out.Suites, exactSuite)
 	enc := json.NewEncoder(os.Stdout)
 	return enc.Encode(out)
 }
@@ -272,10 +277,7 @@ func drawn() (suite, error) {
 		}
 		return formula.Text(forms[r.IntN(len(forms))])
 	}
-	calls := []struct {
-		formula string
-		draw    func() map[string]formula.Value
-	}{
+	calls := []call{
 		{"DATE(Y, M, D)", func() map[string]formula.Value {
 			return map[string]formula.Value{"Y": num(-50, 10050), "M": num(-40, 40), "D": num(-800, 800)}
 		}},
@@ -297,17 +299,29 @@ func drawn() (suite, error) {
 			return map[string]formula.Value{"S": instant(), "R": instant(), "T": day()}
 		}},
 	}
+	return runDrawn("dates drawn", scope, calls, 300)
+}
+
+// call is a formula and how to draw the values of its variables.
+type call struct {
+	formula string
+	draw    func() map[string]formula.Value
+}
+
+// runDrawn binds each formula, draws its variables per times and has the
+// Go VM work each case out: its value or the code it stops with.
+func runDrawn(name string, scope *formula.Scope, calls []call, per int) (suite, error) {
 	vm := formula.NewVM()
-	got := suite{Suite: "dates drawn"}
+	got := suite{Suite: name}
 	for _, c := range calls {
 		prog, err := formula.Bind(c.formula, scope, formula.BindOptions{})
 		if err != nil {
 			return suite{}, fmt.Errorf("%s: %w", c.formula, err)
 		}
 		code := base64.StdEncoding.EncodeToString(prog.Encode())
-		for i := 0; i < 300; i++ {
+		for i := 0; i < per; i++ {
 			given := c.draw()
-			e := exported{Label: fmt.Sprintf("dates drawn: %s with", c.formula), Program: code, Result: prog.Result.String(), MaxText: formula.DefaultMaxText}
+			e := exported{Label: fmt.Sprintf("%s: %s with", name, c.formula), Program: code, Result: prog.Result.String(), MaxText: formula.DefaultMaxText}
 			vars := make([]formula.Value, len(prog.Slots))
 			for si, slot := range prog.Slots {
 				vars[si] = given[slot.Name]
@@ -329,4 +343,74 @@ func drawn() (suite, error) {
 		}
 	}
 	return got, nil
+}
+
+// drawnExact is the same for exact numbers and money (ADR-0022): the
+// operators at every pair of scales, the six methods of rounding on
+// halves, a division's four more places, mantissas next to the limit of
+// 64 bits, two currencies in one operation, and texts that are almost an
+// amount.
+func drawnExact() (suite, error) {
+	scope, err := formula.ScopeOf(map[string]string{"P": "decimal(2)", "Q": "decimal(5)", "R": "int", "K": "money(2)", "L": "money(2)",
+		"F": "number", "X": "text"}, nil)
+	if err != nil {
+		return suite{}, err
+	}
+	r := rand.New(rand.NewPCG(22, 2026))
+	mant := func() int64 {
+		switch r.IntN(10) {
+		case 0:
+			return math.MaxInt64 - r.Int64N(1000)
+		case 1:
+			return math.MinInt64 + r.Int64N(1000)
+		case 2:
+			return r.Int64N(1e16) - 5e15
+		case 3:
+			return 0
+		default:
+			return r.Int64N(2e8) - 1e8
+		}
+	}
+	cur := func() string {
+		if r.IntN(12) == 0 {
+			return "EUR"
+		}
+		return "PLN"
+	}
+	vals := func() map[string]formula.Value {
+		f := float64(r.Int64N(2e7)-1e7) / 1000
+		if r.IntN(3) == 0 {
+			f += 0.0005 * float64(1-2*r.IntN(2)) // a half at the third place
+		}
+		texts := []string{
+			fmt.Sprintf("%d.%02d", r.Int64N(1e6)-5e5, r.IntN(100)),
+			fmt.Sprintf("%d.%05d", r.Int64N(1e4), r.IntN(1e5)),
+			fmt.Sprintf("%de%d", r.Int64N(1e4), r.IntN(40)-20),
+			fmt.Sprintf("  -%d.%d ", r.Int64N(1e6), r.IntN(1000)),
+			fmt.Sprintf("%d.%02d %s", r.Int64N(1e6), r.IntN(100), cur()),
+			fmt.Sprintf("%d,%02d PLN", r.Int64N(1e6), r.IntN(100)),
+			fmt.Sprintf("%d.%02d pln", r.Int64N(1e6), r.IntN(100)),
+			fmt.Sprintf("%d%d", r.Int64N(1e10), r.Int64N(1e10)),
+			".5", "1.", "-.25e1", "e3", "0.000", "+",
+		}
+		return map[string]formula.Value{
+			"P": formula.Decimal(mant(), 2), "Q": formula.Decimal(mant(), 5), "R": formula.Decimal(mant()/1000, 0),
+			"K": formula.Money(mant(), 2, cur()), "L": formula.Money(mant(), 2, cur()),
+			"F": formula.Number(f), "X": formula.Text(texts[r.IntN(len(texts))]),
+		}
+	}
+	var calls []call
+	for _, f := range []string{
+		"P + Q", "P - Q", "P * Q", "P / Q", "Q / R", "-P", "P%", "K + L", "K - L", "K * R", "K / R", "P < Q", "K = L",
+		"ROUND(Q, 0)", "ROUND(Q, 2, \"half_up\")", "ROUND(Q, 2, \"half_even\")", "ROUND(Q, 2, \"down\")", "ROUND(Q, 2, \"up\")",
+		"ROUND(Q, 2, \"floor\")", "ROUND(Q, 2, \"ceiling\")", "ROUND(K, 1, \"half_even\")", "ROUND(F, 2, \"half_even\")", "ROUND(F, 2, \"up\")",
+		"DECIMAL(F, 2)", "DECIMAL(F, 2, \"half_even\")", "DECIMAL(F, 2, \"floor\")", "DECIMAL(Q, 3, \"ceiling\")",
+		"FLOOR(Q, 1)", "CEILING(Q, 1)", "TRUNC(Q, 3)", "ABS(Q)", "SIGN(Q)", "NUMBER(Q)",
+		"SUM(P, Q, R)", "MIN(P, Q)", "MAX(P, Q, R)", "AVERAGE(P, Q, R)", "MOD(P, Q)", "SUM(K, L)", "MOD(K, L)",
+		"DECIMALVALUE(X, 2)", "DECIMALVALUE(X, 5)", "MONEYVALUE(X, 2)", "AMOUNT(K)", "CURRENCY(K)", "MONEY(P, \"EUR\")",
+		"TEXT(K) & \" \" & TEXT(Q)", "IFERROR(P / R, -1)",
+	} {
+		calls = append(calls, call{f, vals})
+	}
+	return runDrawn("exact drawn", scope, calls, 100)
 }

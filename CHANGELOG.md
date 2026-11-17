@@ -8,6 +8,13 @@ All notable changes to FadoDB are recorded here. The format follows
 
 ### Added
 
+- ADR-0068, proposed, with the owner's rulings of 2026-11-17: what a
+  class says to people. A `label` and a `description` on a variable, a
+  state and a transition, and on a column and a field in a long form;
+  `"list": true` for the columns The List may show; `format` in Excel's
+  patterns, applied in the person's language; the words of a class in
+  other languages as definitions beside it; a note for each missing
+  description. Nothing of it is built yet.
 - The browser VM, part 1 of 4 (ADR-0029): the engine's formulas run in a
   page, from the bytecode the engine compiles, with the same answers as
   the server. TypeScript under `web/vm/`, built into one ES module and

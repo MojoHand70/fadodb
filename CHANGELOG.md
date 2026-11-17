@@ -6,6 +6,11 @@ All notable changes to FadoDB are recorded here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- The chapter on containers says where the image is pulled from,
+  `ghcr.io/mojohand70/fadodb:0.6.0`, now that v0.6.0 has published it.
+
 ## [0.6.0] - 2026-11-17
 
 ### Added
@@ -318,7 +323,7 @@ All notable changes to FadoDB are recorded here. The format follows
   running, with a health check, a file system it cannot write to and
   none of the rights of the machine. A release publishes the image at
   `ghcr.io/mojohand70/fadodb` under its version, for `linux/amd64` and
-  `linux/arm64`, and under no other name; none has yet. The manual has
+  `linux/arm64`, and under no other name; v0.6.0 is the first. The manual has
   a chapter, In a container, and a test plays its commands against the
   image, on GitHub with every push (`make imagecheck`).
 - `fadodb health` asks a server whether it answers, `GET /v1/health`,

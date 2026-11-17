@@ -16,7 +16,22 @@ What is not here yet is listed at the end.
 
 ## The image
 
-Today the image is built from a checkout of the repository:
+A release publishes the image at `ghcr.io/mojohand70/fadodb`, for
+`linux/amd64` and `linux/arm64`, under its version and under no other
+name: there is no `latest`, so that a server never changes its engine
+by itself. The first is v0.6.0:
+
+<!-- pulling it -->
+```sh
+docker pull ghcr.io/mojohand70/fadodb:0.6.0
+docker tag ghcr.io/mojohand70/fadodb:0.6.0 fadodb
+```
+
+The second command gives the image the short name `fadodb`, which the
+commands of this chapter use.
+
+The image is also built from a checkout of the repository, and that
+one is what the test of this chapter plays:
 
 <!-- building it -->
 ```sh
@@ -330,12 +345,6 @@ what to keep with each backup.
 
 ## Not here yet
 
-- **An image to pull.** No release has published one yet. The first
-  release after this chapter was written publishes the image at
-  `ghcr.io/mojohand70/fadodb`, for `linux/amd64` and `linux/arm64`,
-  under its version and under no other name, so that a server never
-  changes its engine by itself. Until then the image is built from a
-  checkout.
 - **Several databases in one container.** A container serves one, as
   [`fadodb serve` does](serving-a-database.md#not-here-yet).
 - **A backup of a database that is served**, without stopping the

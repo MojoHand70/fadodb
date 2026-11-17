@@ -85,6 +85,8 @@ A campaign of a million commits a row runs longer than the ten minutes
 
 `FADODB_BENCH_COMMITS` sizes the store campaign (default 100,000),
 `FADODB_BENCH_ITERS` the lookups per table size (default 50,000),
+`FADODB_BENCH_CLASSES` and `FADODB_BENCH_HELD` the campaign of opening
+(fifty classes, and fifty databases held open at once),
 `FADODB_BENCH_TARGET` selects the targets whose name contains it (for
 one variant, such as `"background checkpoints"` or `"1 thread"`) and
 `FADODB_BENCH_DIR` the directory for the database files, by default the

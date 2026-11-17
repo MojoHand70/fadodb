@@ -242,7 +242,9 @@ All notable changes to FadoDB are recorded here. The format follows
   sent a request for it, on the same machine. Measured so, three
   times, the server adds nothing that can be told from the noise. The
   page first gave the server 0.155 ms of its own, from a comparison
-  that did not repeat; it is corrected. Three
+  that did not repeat; it is corrected. So is what it said of the
+  memory of an open database: 23 MB is a database of fifty classes,
+  and one of four holds 3 MB, as ADR-0056 measured. Three
   campaigns are new: `TestServeCampaign`, which measures `fadodb serve`
   on a connection that is kept open, the way in and the door for
   agents; `TestOpenCampaign`, which measures what it takes to open a

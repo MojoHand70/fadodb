@@ -13,6 +13,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -27,7 +28,10 @@ import (
 // beside a request that does nothing, which is what this machine's
 // loopback and Go's HTTP cost with no FadoDB in them. The budget is
 // that the server adds under 200 µs at p99 to a transition over the Go
-// API.
+// API (ADR-0011), and ADR-0066 says beside what: the same transition
+// made through the Go API by a server of Go's own that was sent a
+// request for it, on the same machine and in the same run. The
+// campaign prints what the server adds.
 //
 // It measures the way in as well (ADR-0065): a message of 2 KiB with
 // its signature, taken by an inlet and made a document, through the
@@ -97,7 +101,7 @@ func TestServeCampaign(t *testing.T) {
 		}
 		return ids
 	}
-	rowsWithTickets := []string{"api", "exec", "http1", "http16", "mcp"}
+	rowsWithTickets := []string{"api", "exec", "plain", "http1", "http16", "mcp"}
 	db, err := fado.Open(path, opened)
 	if err != nil {
 		t.Fatal(err)
@@ -204,25 +208,28 @@ func TestServeCampaign(t *testing.T) {
 	sign("call")
 	took, elapsed = one(receive)
 	add("the same messages again, the Go call", took, elapsed)
-	if err := db.Close(); err != nil {
-		t.Fatal(err)
-	}
-
-	// A request that does nothing: a server of Go's own on this
-	// machine, one connection kept open, a body sent and one answered.
-	idle := http.NewServeMux()
-	idle.HandleFunc("/v1/nothing", func(w http.ResponseWriter, r *http.Request) {
+	// A server of Go's own on this machine: one connection kept open, a
+	// body sent and one answered. It has two addresses. One does
+	// nothing, which is what this machine's loopback and Go's HTTP cost
+	// with no FadoDB in them. The other makes the transition through
+	// the Go API and answers nothing of it: the transition over the Go
+	// API as a program makes it that was sent a request for it. What
+	// fadodb serve adds is measured beside that one (ADR-0066): the
+	// same machine, the same request, the same commit.
+	plain := http.NewServeMux()
+	plain.HandleFunc("/v1/nothing", func(w http.ResponseWriter, r *http.Request) {
 		_, _ = io.Copy(io.Discard, r.Body)
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = io.WriteString(w, "{}\n")
 	})
-	// And one that is busy for as long as a transition takes, and does
-	// nothing with it: what the machine costs a request whose caller
-	// has to wait for its answer.
-	const asLongAsATransition = 53 * time.Microsecond
-	idle.HandleFunc("/v1/busy", func(w http.ResponseWriter, r *http.Request) {
+	moved := tickets("plain")
+	var turn atomic.Int64
+	plain.HandleFunc("/v1/move", func(w http.ResponseWriter, r *http.Request) {
 		_, _ = io.Copy(io.Discard, r.Body)
-		for began := time.Now(); time.Since(began) < asLongAsATransition; {
+		i := int(turn.Add(1) - 1)
+		if _, err := db.Transition(r.Context(), "Ticket", moved[i%each], move(i), nil, fado.As(agent)); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
 		}
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = io.WriteString(w, "{}\n")
@@ -231,7 +238,7 @@ func TestServeCampaign(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	bare := &http.Server{Handler: idle}
+	bare := &http.Server{Handler: plain}
 	go func() { _ = bare.Serve(ln) }()
 	defer bare.Close()
 	caller := func() *http.Client { return &http.Client{Transport: &http.Transport{MaxIdleConnsPerHost: 4}} }
@@ -262,9 +269,16 @@ func TestServeCampaign(t *testing.T) {
 	object := []byte(`{"class": "Ticket", "id": "api-0", "transition": "hold"}`)
 	took, elapsed = one(func(int) error { return post(client, "http://"+ln.Addr().String()+"/v1/nothing", "", nil, object) })
 	add("a request that does nothing, Go's own server on this machine", took, elapsed)
-	took, elapsed = one(func(int) error { return post(client, "http://"+ln.Addr().String()+"/v1/busy", "", nil, object) })
-	add("a request that is busy for 0.053 ms and does nothing, the same server", took, elapsed)
+	took, elapsed = one(func(int) error { return post(client, "http://"+ln.Addr().String()+"/v1/move", "", nil, object) })
+	add("transition, the Go API called by a request to Go's own server", took, elapsed)
+	besideMedian, beside := quantile(took, 0.50), quantile(took, 0.99)
 	client.CloseIdleConnections()
+	if err := bare.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
 
 	// The server, as fadodb serve runs it.
 	addr, _, stop := serving(t, path, "--listen", "127.0.0.1:0", "--settings", settings, "--secrets-dir", filepath.Join(base, "secrets"))
@@ -281,6 +295,7 @@ func TestServeCampaign(t *testing.T) {
 		return post(client, url+"transition", keys["ap-agent"], nil, []byte(`{"class": "Ticket", "id": "`+ids[i%each]+`", "transition": "`+move(i)+`"}`))
 	})
 	add("transition, through the server", took, elapsed)
+	servedMedian, served := quantile(took, 0.50), quantile(took, 0.99)
 
 	// Sixteen callers at once, each on a connection of its own and on
 	// documents of its own.
@@ -366,21 +381,32 @@ func TestServeCampaign(t *testing.T) {
 	}
 
 	t.Logf("\n%d calls a row, one caller on one connection unless the row says otherwise.\n\n| Work | Calls | Throughput | p50 | p90 | p99 | max |\n|---|---|---|---|---|---|---|\n%s\n\n"+
+		"The budget (ADR-0011, as ADR-0066 reads it): the server adds under 0.200 ms at p99 to a transition over the Go API, both called by a request on this machine. "+
+		"It adds %s at p99 and %s at the median: a transition through the server takes %s and %s, and one made through the Go API by Go's own server %s and %s.\n\n"+
 		"The door for agents: %d reads through one door in %s, %.0f a second. Started, asked for its tools and ended: %s at the median of %d, %s the longest.",
-		n, strings.Join(rows, "\n"), reads, through.Round(time.Millisecond), float64(reads)/through.Seconds(),
+		n, strings.Join(rows, "\n"), milliseconds(served-beside), milliseconds(servedMedian-besideMedian), milliseconds(served), milliseconds(servedMedian), milliseconds(beside), milliseconds(besideMedian),
+		reads, through.Round(time.Millisecond), float64(reads)/through.Seconds(),
 		starts[len(starts)/2].Round(10*time.Microsecond), len(starts), starts[len(starts)-1].Round(10*time.Microsecond))
 }
 
 // campaignRow is a row of the campaign's table: how many calls, how
 // many a second, and how long one took.
 func campaignRow(work string, took []time.Duration, elapsed time.Duration) string {
+	at := func(q float64) string { return milliseconds(quantile(took, q)) }
+	return fmt.Sprintf("| %s | %d | %.0f/s | %s | %s | %s | %s |", work, len(took), float64(len(took))/elapsed.Seconds(), at(0.50), at(0.90), at(0.99), at(1))
+}
+
+// quantile is how long the call took that a part q of the calls were
+// quicker than: 0.50 is the median, 0.99 is p99.
+func quantile(took []time.Duration, q float64) time.Duration {
 	sorted := append([]time.Duration(nil), took...)
 	sort.Slice(sorted, func(i, j int) bool { return sorted[i] < sorted[j] })
-	at := func(q float64) string {
-		d := sorted[min(len(sorted)-1, int(q*float64(len(sorted))))]
-		return strconv.FormatFloat(float64(d.Nanoseconds())/1e6, 'f', 3, 64) + " ms"
-	}
-	return fmt.Sprintf("| %s | %d | %.0f/s | %s | %s | %s | %s |", work, len(took), float64(len(took))/elapsed.Seconds(), at(0.50), at(0.90), at(0.99), at(1))
+	return sorted[min(len(sorted)-1, int(q*float64(len(sorted))))]
+}
+
+// milliseconds writes a time as the campaign's table does.
+func milliseconds(d time.Duration) string {
+	return strconv.FormatFloat(float64(d.Nanoseconds())/1e6, 'f', 3, 64) + " ms"
 }
 
 // The classes and the inlet of the campaign: a ticket that support

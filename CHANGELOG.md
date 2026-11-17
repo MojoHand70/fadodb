@@ -236,9 +236,13 @@ All notable changes to FadoDB are recorded here. The format follows
   one subscriber and 3.12 ms with a hundred, against a budget of 5 ms.
 - `docs/perf/v0.6.0.md` has the measurements of the phase against its
   budgets, with the rows of Phases 2 to 5 run again on the same build.
-  Every budget holds but the 200 µs that ADR-0011 gives the server
-  beyond the Go API, which the machine of the measurements cannot
-  judge: a request that does nothing takes it more than that. Three
+  Every budget holds, the 200 µs that ADR-0011 gives the server
+  beyond the Go API as ADR-0066 (proposed) measures it: beside the
+  same transition made through the Go API by a plain server that was
+  sent a request for it, on the same machine. Measured so, three
+  times, the server adds nothing that can be told from the noise. The
+  page first gave the server 0.155 ms of its own, from a comparison
+  that did not repeat; it is corrected. Three
   campaigns are new: `TestServeCampaign`, which measures `fadodb serve`
   on a connection that is kept open, the way in and the door for
   agents; `TestOpenCampaign`, which measures what it takes to open a

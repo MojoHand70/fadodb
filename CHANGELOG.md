@@ -49,7 +49,13 @@ All notable changes to FadoDB are recorded here. The format follows
   declarations, one file beside the two, checked as a page in
   TypeScript uses them and against what the module exports. Every
   release attaches the three files, with their checksums beside the
-  binaries'. Publishing on npm waits for the owner's account.
+  binaries'.
+- The browser VM on npm as `fadodb-vm`, version 4.0.0: its major
+  version is the bytecode format version, by the owner's ruling of
+  2026-11-17. The release workflow publishes it by itself through npm's
+  trusted publishing, once the owner has published 4.0.0 by hand, which
+  npm asks of a new package, and named the workflow its trusted
+  publisher.
 - Phase 7, the browser VM and the reference frontend, has started;
   the roadmap says what the owner ruled it holds.
 - The log of reads (ADR-0067, accepted). A content administrator who

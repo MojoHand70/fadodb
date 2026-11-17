@@ -14,3 +14,12 @@ if (JSON.stringify(exported) !== JSON.stringify(declared)) {
   process.exit(1);
 }
 console.log(`surface      the declarations and the module export the same ${exported.length} values`);
+
+// The package's major version is the bytecode format the VM reads.
+const { FORMAT_VERSION } = await import(join(dist, "fadodb-vm.js"));
+const version = JSON.parse(readFileSync(join(dist, "package.json"), "utf8")).version;
+if (Number(version.split(".")[0]) !== FORMAT_VERSION) {
+  console.error(`the package is version ${version}, and the VM reads bytecode format ${FORMAT_VERSION}: the major version is the format`);
+  process.exit(1);
+}
+console.log(`package      fadodb-vm ${version}, for bytecode format ${FORMAT_VERSION}`);

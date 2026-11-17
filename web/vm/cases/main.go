@@ -108,6 +108,100 @@ type file struct {
 	Builtins []string    `json:"builtins"`
 	Suites   []suite     `json:"suites"`
 	Renders  []rendering `json:"renders"`
+	Bench    []benchDoc  `json:"bench"`
+}
+
+// benchDoc is a document of 200 formulas for the recalculation budget of
+// ADR-0003, each formula reading an input and the formula before it: its
+// inputs, each formula's program and the names its slots read, and the
+// value of every formula as the Go VM works them out, in order.
+type benchDoc struct {
+	Name     string           `json:"name"`
+	Inputs   map[string]value `json:"inputs"`
+	Formulas []benchFormula   `json:"formulas"`
+}
+
+type benchFormula struct {
+	Name    string   `json:"name"`
+	Program string   `json:"program"`
+	Reads   []string `json:"reads"`
+	Value   value    `json:"value"`
+}
+
+// benchDocs are the document of the budget in plain numbers, and the same
+// with decimals and with money in place of numbers (ADR-0029), each
+// formula rounded to two places so that an exact chain keeps its scale.
+func benchDocs() ([]benchDoc, error) {
+	inputs := []string{"a", "b", "c", "d", "e", "f", "g", "h", "i", "j"}
+	pattern := func(k int, prev, in string) string {
+		switch k % 5 {
+		case 0:
+			return fmt.Sprintf("ROUND(%s * 1.1 + %s, 2)", prev, in)
+		case 1:
+			return fmt.Sprintf("IF(%s > %s, %s - %s, %s + %s)", prev, in, prev, in, prev, in)
+		case 2:
+			return fmt.Sprintf("MAX(%s, %s) / 2", prev, in)
+		case 3:
+			return fmt.Sprintf("ABS(%s - %s) + %s", prev, in, in)
+		}
+		return fmt.Sprintf("%s * 0.5 + %s", prev, in)
+	}
+	var docs []benchDoc
+	for _, kind := range []string{"number", "decimal", "money"} {
+		types := map[string]string{}
+		doc := benchDoc{Name: kind, Inputs: map[string]value{}}
+		vals := map[string]formula.Value{}
+		for i, in := range inputs {
+			var v formula.Value
+			switch kind {
+			case "number":
+				types[in] = "number"
+				v = formula.Number(float64(i + 1))
+			case "decimal":
+				types[in] = "decimal(2)"
+				v = formula.Decimal(int64(i+1)*100+25, 2)
+			default:
+				types[in] = "money(2)"
+				v = formula.Money(int64(i+1)*100+25, 2, "PLN")
+			}
+			vals[in] = v
+			doc.Inputs[in] = typed(v)
+		}
+		vm := formula.NewVM()
+		prev := "a"
+		for k := 1; k <= 200; k++ {
+			text := pattern(k, prev, inputs[k%len(inputs)])
+			if kind != "number" {
+				text = "ROUND(" + text + ", 2)"
+			}
+			scope, err := formula.ScopeOf(types, nil)
+			if err != nil {
+				return nil, err
+			}
+			prog, err := formula.Bind(text, scope, formula.BindOptions{})
+			if err != nil {
+				return nil, fmt.Errorf("the %s document, formula %d %s: %w", kind, k, text, err)
+			}
+			name := fmt.Sprintf("f%03d", k)
+			f := benchFormula{Name: name, Program: base64.StdEncoding.EncodeToString(prog.Encode())}
+			vars := make([]formula.Value, len(prog.Slots))
+			for si, slot := range prog.Slots {
+				f.Reads = append(f.Reads, slot.Name)
+				vars[si] = vals[slot.Name]
+			}
+			v, err := vm.Run(prog, vars, nil)
+			if err != nil {
+				return nil, fmt.Errorf("the %s document, formula %d %s: %w", kind, k, text, err)
+			}
+			f.Value = typed(v)
+			vals[name] = v
+			types[name] = prog.Result.String()
+			doc.Formulas = append(doc.Formulas, f)
+			prev = name
+		}
+		docs = append(docs, doc)
+	}
+	return docs, nil
 }
 
 // renders are numbers the cases do not reach: the edges of float64, ties
@@ -157,6 +251,9 @@ func run(dir string) error {
 		return err
 	}
 	out := file{Builtins: formula.BuiltinNames(), Renders: renders()}
+	if out.Bench, err = benchDocs(); err != nil {
+		return err
+	}
 	for _, s := range suites {
 		scope, err := s.Scope()
 		if err != nil {

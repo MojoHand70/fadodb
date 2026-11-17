@@ -41,6 +41,15 @@ All notable changes to FadoDB are recorded here. The format follows
   and every function a page runs is built: every case of the suite a
   page runs passes, 1,388, and 4,800 calls of exact numbers and money
   drawn at random answer what the Go VM answers. 34.7 KB.
+- The browser VM, part 4 of 4, so it is built (ADR-0003, ADR-0029): a
+  document of 200 formulas recalculates whole in about 13 µs on the
+  built file, against the budget of 1,000 µs, and in about 42 µs with
+  decimals or money, which ADR-0029 asked to be measured and published;
+  `make vmtest` fails when the budget is reached. `fadodb-vm.d.ts`, the
+  declarations, one file beside the two, checked as a page in
+  TypeScript uses them and against what the module exports. Every
+  release attaches the three files, with their checksums beside the
+  binaries'. Publishing on npm waits for the owner's account.
 - Phase 7, the browser VM and the reference frontend, has started;
   the roadmap says what the owner ruled it holds.
 - The log of reads (ADR-0067, accepted). A content administrator who

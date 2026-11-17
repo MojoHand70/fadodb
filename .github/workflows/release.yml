@@ -19,6 +19,14 @@ jobs:
           go-version-file: go.mod
           check-latest: true
       - run: go test -count=1 ./...
+      # The browser VM, built and checked, for goreleaser to attach to
+      # the release beside the binaries (ADR-0029).
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: make vmtest
       - uses: goreleaser/goreleaser-action@v7
         with:
           distribution: goreleaser

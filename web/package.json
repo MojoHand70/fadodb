@@ -6,6 +6,7 @@
   "type": "module",
   "scripts": {
     "build": "tsc -p vm/tsconfig.json && node vm/build.mjs",
+    "check": "tsc -p vm/test/tsconfig.json && node vm/test/surface.mjs",
     "test": "node vm/test/run.mjs"
   },
   "devDependencies": {

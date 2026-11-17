@@ -5,7 +5,8 @@
 // never committed.
 
 import { build } from "esbuild";
-import { statSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -24,6 +25,86 @@ const common = {
 
 await build({ ...common, format: "esm", outfile: join(dist, "fadodb-vm.js") });
 await build({ ...common, format: "iife", globalName: "FadoDB", outfile: join(dist, "fadodb-vm.iife.js") });
+
+// The declarations, in one file beside the two (ADR-0029). TypeScript
+// writes one file of declarations for each source; they are joined here,
+// the public names exported, and of the rest only what a public one
+// refers to kept, without export.
+const types = join(dist, "types");
+rmSync(types, { recursive: true, force: true });
+execFileSync(join(here, "..", "node_modules", ".bin", "tsc"), ["-p", join(here, "tsconfig.json"), "--noEmit", "false", "--declaration", "--emitDeclarationOnly", "--rootDir", join(here, "src"), "--outDir", types], { stdio: "inherit" });
+writeFileSync(join(dist, "fadodb-vm.d.ts"), joinDeclarations(types));
+rmSync(types, { recursive: true, force: true });
+
+/** One file of declarations out of the files TypeScript wrote. */
+function joinDeclarations(dir) {
+  const declaration = /^(?:export )?(?:declare )?(?:abstract )?(?:class|interface|type|const|function|enum) ([A-Za-z_$][\w$]*)/;
+  const chunks = new Map();
+  const order = [];
+  const publicNames = new Set();
+  for (const file of readdirSync(dir).sort()) {
+    let doc = [];
+    let inDoc = false;
+    let current = null;
+    for (const line of readFileSync(join(dir, file), "utf8").split("\n")) {
+      if (inDoc || line.startsWith("/**")) {
+        // A doc comment belongs to the declaration that follows it.
+        doc.push(line);
+        inDoc = !line.includes("*/");
+        current = null;
+        continue;
+      }
+      if (line.startsWith("import ") || line.startsWith("export {")) {
+        // What index.ts exports from the other files is public.
+        if (file === "index.d.ts") {
+          const m = /^export \{([^}]*)\}/.exec(line);
+          if (m) for (const part of m[1].split(",")) if (part.trim()) publicNames.add(part.trim().replace(/^type /, ""));
+        }
+        doc = [];
+        current = null;
+        continue;
+      }
+      const m = declaration.exec(line);
+      if (m) {
+        current = m[1];
+        if (file === "index.d.ts") publicNames.add(current);
+        if (!chunks.has(current)) {
+          order.push(current);
+          chunks.set(current, []);
+        }
+        chunks.get(current).push(...doc, line);
+        doc = [];
+        continue;
+      }
+      if (current !== null) chunks.get(current).push(line);
+    }
+  }
+  // What the public names refer to, and what that refers to.
+  const keep = new Set(publicNames);
+  for (let grew = true; grew; ) {
+    grew = false;
+    for (const name of [...keep]) {
+      const text = (chunks.get(name) ?? []).join("\n");
+      for (const other of chunks.keys()) {
+        if (!keep.has(other) && new RegExp("\\b" + other.replace(/\$/g, "\\$") + "\\b").test(text)) {
+          keep.add(other);
+          grew = true;
+        }
+      }
+    }
+  }
+  for (const name of publicNames) {
+    if (!chunks.has(name)) throw new Error("index.ts exports " + name + ", which no file of declarations declares");
+  }
+  let out = "// fadodb-vm: the formula machine of FadoDB for a page (ADR-0029).\n// Generated from the TypeScript sources by web/vm/build.mjs.\n\n";
+  for (const name of order) {
+    if (!keep.has(name)) continue;
+    let text = chunks.get(name).join("\n").trimEnd();
+    if (!publicNames.has(name)) text = text.replace(/^export /gm, "");
+    out += text + "\n\n";
+  }
+  return out.trimEnd() + "\nexport {};\n";
+}
 
 let over = false;
 for (const name of ["fadodb-vm.js", "fadodb-vm.iife.js"]) {

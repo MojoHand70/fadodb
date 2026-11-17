@@ -91,3 +91,27 @@ and values are copied across the boundary.
 The owner ruled the same day: keep TypeScript. This record stands as
 written; the first part of the browser VM, built on 2026-11-17, is
 24.7 KB.
+
+## Measured on 2026-11-17
+
+The four parts of the browser VM built, the budgets above were measured
+on the built file, `fadodb-vm.js`, in Node 24 on the machine every
+campaign of this project runs on (`web/vm/test/bench.mjs`, run by
+`make vmtest`). The document is the one of the Go recalculation
+benchmark grown to 200 formulas, each reading an input and the formula
+before it, recalculated whole in the order of its dependencies; the
+exact documents round each formula to two places, so that the chain
+keeps its scale. Every recalculation is held to the values the Go VM
+works out. Three runs, the median of 60 batches of 100
+recalculations:
+
+| The document of 200 formulas | Run 1 | Run 2 | Run 3 | The budget |
+|---|---|---|---|---|
+| plain numbers | 13.0 µs | 13.3 µs | 12.8 µs | 1,000 µs (ADR-0003) |
+| decimals, on `BigInt` | 41.0 µs | 42.0 µs | 41.5 µs | none; measured as this record asks |
+| money, on `BigInt` | 43.4 µs | 44.8 µs | 43.6 µs | none; measured as this record asks |
+
+The exact path costs a little more than three times the plain one, and
+both are far inside the budget. The size: 34.7 KB for the ES module and
+35.2 KB for the classic script, of 100 KB. `make vmtest` fails when the
+plain document reaches the budget or a file the size.

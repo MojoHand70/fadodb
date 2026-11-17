@@ -3,14 +3,24 @@
   "description": "One person's yes or no to a purchase. The Purchase sample's rule creates one for each approver, and only that approver, or whoever acts for them with a substitution, may grant or refuse it. Either refreshes the purchase, which then counts its approvals again. Defined together with the Purchase sample, with DefineClasses, since each names the other.",
   "title": "approver & \" on \" & purchase",
   "variables": {
-    "purchase": {"type": "text", "required": true, "index": true},
-    "approver": {"type": "text", "required": true},
-    "comment":  {"type": "text"}
+    "purchase": {"type": "text", "required": true, "index": true, "label": "Purchase", "list": true,
+                 "description": "The id of the purchase this answer is for."},
+    "approver": {"type": "text", "required": true, "label": "Approver", "list": true,
+                 "description": "The id of the person asked. Only they, or whoever acts for them, answer."},
+    "comment":  {"type": "text", "label": "Comment",
+                 "description": "What the approver adds to their yes or no."}
   },
-  "states": {"initial": "asked", "list": ["asked", "granted", "refused"], "final": ["granted", "refused"]},
+  "states": {"initial": "asked", "list": ["asked", "granted", "refused"], "final": ["granted", "refused"],
+             "labels": {"asked": "Asked", "granted": "Granted", "refused": "Refused"},
+             "descriptions": {
+               "asked":   "Waiting for the approver's answer.",
+               "granted": "The approver said yes.",
+               "refused": "The approver said no."}},
   "transitions": [
-    {"name": "grant", "from": "asked", "to": "granted"},
-    {"name": "refuse", "from": "asked", "to": "refused"}
+    {"name": "grant", "from": "asked", "to": "granted", "label": "Grant",
+     "description": "The approver says yes, and the purchase counts its approvals again."},
+    {"name": "refuse", "from": "asked", "to": "refused", "label": "Refuse",
+     "description": "The approver says no, and the purchase is rejected."}
   ],
   "access": {
     "read":   "INGROUP(\"everyone\")",

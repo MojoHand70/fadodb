@@ -795,7 +795,7 @@ func TestAccess_LeftOutIsNoted(t *testing.T) {
 	s, _ := openStore(t, Options{})
 	ctx := context.Background()
 	const slip = `{"name": "Slip", "variables": {"note": {"type": "text"}}, "states": {"initial": "a", "list": ["a"]}}`
-	notes := s.Validate([]byte(slip))
+	notes := withoutDescriptions(s.Validate([]byte(slip)))
 	var paths []string
 	for _, d := range notes {
 		if !d.Note || d.Code != model.CodeRuleLeftOut || d.Hint == "" || !strings.Contains(d.Message, "Slip has no ") {
@@ -825,7 +825,7 @@ func TestAccess_LeftOutIsNoted(t *testing.T) {
 			defs = append(defs, []byte(d))
 		}
 		var got []string
-		for _, d := range s.ValidateClasses(defs) {
+		for _, d := range withoutDescriptions(s.ValidateClasses(defs)) {
 			got = append(got, d.Path)
 		}
 		if strings.Join(got, " ") != want.paths {
@@ -838,7 +838,7 @@ func TestAccess_LeftOutIsNoted(t *testing.T) {
 	}
 	// The class is defined all the same, and carries its notes.
 	cls, err := s.DefineClass(ctx, []byte(slip), asSetup)
-	if err != nil || len(cls.Notes) != 4 {
+	if err != nil || len(withoutDescriptions(cls.Notes)) != 4 {
 		t.Fatalf("defining a class with no access block: %v, %d notes", err, len(cls.Notes))
 	}
 	// Nobody but a content administrator reaches its documents, and the

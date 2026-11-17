@@ -47,7 +47,8 @@ A field may hold an object of another schema, the engine's or yours:
     "code":     "text",
     "contact":  "object<Contact>",
     "address":  "object<Address>",
-    "capacity": "int",
+    "capacity": {"type": "int", "label": "Capacity", "format": "#,##0",
+                 "description": "How many pallets the depot holds."},
     "rent":     "money(2)"
   }
 }
@@ -56,7 +57,7 @@ A field may hold an object of another schema, the engine's or yours:
 | Word | Meaning |
 |---|---|
 | `name` | the name of the schema: letters, digits and underscores. A class names it, in any case of letters |
-| `fields` | each field with its type: any simple type but `json`, written as in a table, or `object<Name>` for an object of another schema |
+| `fields` | each field with its type: any simple type but `json`, written as in a table, or `object<Name>` for an object of another schema. A field may also be written in the long form, as `capacity` is: an object with its `type`, a `label`, a `description` and a `format` ([what a class says to people](class.md#what-a-class-says-to-people)) |
 | `extends` | the name of one other schema. The fields of that schema come first, and this one adds its own |
 | `presentation` | how a screen shows an object of this schema: `title` and `subtitle`, formulas over the fields that give text; `avatar`, the name of a text field with a picture; `icon` and `color` |
 
@@ -65,8 +66,8 @@ A field may hold an object of another schema, the engine's or yours:
 - **A schema that another one names is defined first.**
 - **Objects nest at most four deep** below a variable.
 - **A schema and a class may have the same name.** They do not meet.
-- **A field has a type and nothing else**: no `required`, no default,
-  no list of values.
+- **A field has a type and what it says to people, nothing else**: no
+  `required`, no default, no list of values.
 
 The simple types are those of a column, in [Tables](tables.md#the-types-of-a-column).
 

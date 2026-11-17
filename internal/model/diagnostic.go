@@ -156,6 +156,10 @@ const (
 	// CodeNotSupported: a construct the format allows that the engine
 	// does not implement yet.
 	CodeNotSupported = "not_supported"
+	// CodeNoDescription: a note and no refusal. A variable, a state or a
+	// transition has no description, which a person reads as help and an
+	// agent as what the thing is for (ADR-0068, item 3).
+	CodeNoDescription = "no_description"
 )
 
 // collector gathers diagnostics while compiling, and carries the

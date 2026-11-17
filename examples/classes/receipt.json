@@ -3,12 +3,19 @@
   "description": "The receipt of a paid invoice. Nobody writes one by hand in the walk-through: the Invoice sample's rule creates it when an invoice enters paid, through the outbox.",
   "title": "\"Receipt for \" & invoice",
   "variables": {
-    "invoice": {"type": "text", "required": true},
-    "amount":  {"type": "money", "scale": 2}
+    "invoice": {"type": "text", "required": true, "label": "Invoice", "list": true,
+                "description": "The id of the paid invoice this receipt is for."},
+    "amount":  {"type": "money", "scale": 2, "label": "Amount", "list": true, "format": "#,##0.00",
+                "description": "What was paid: the invoice's total when it entered paid."}
   },
-  "states": {"initial": "issued", "list": ["issued", "voided"], "final": ["voided"]},
+  "states": {"initial": "issued", "list": ["issued", "voided"], "final": ["voided"],
+             "labels": {"issued": "Issued", "voided": "Voided"},
+             "descriptions": {
+               "issued": "The receipt stands for the payment.",
+               "voided": "Finance took the receipt back. It is kept, and changes no more."}},
   "transitions": [
-    {"name": "void", "from": "issued", "to": "voided"}
+    {"name": "void", "from": "issued", "to": "voided", "label": "Void",
+     "description": "Finance takes the receipt back, when the payment it stands for did not happen."}
   ],
   "access": {
     "read":   "INGROUP(\"finance\")",

@@ -26,6 +26,10 @@ exactly so in a class or a formula.
 | schema | a named set of fields, defined on its own, for a variable that holds an object such as an address; see [Schemas and objects](schemas-and-objects.md) |
 | file | a file attached to a document: the document holds its facts, the hash, the name, the kind and the size, in an object of the schema `File`, and the bytes are kept beside under the hash; see [Files](files.md) |
 | object | one value with named fields, by a schema. It has no id and no life of its own, and a formula reads its fields one at a time, as `depot.address.city` |
+| `label` | what a person reads in place of a name: of a class, a variable, a state, a transition, a column or a field. Without one, the name is shown; see [what a class says to people](class.md#what-a-class-says-to-people) |
+| `description` | what a thing of a class is for, for people and for agents; the engine notes each variable, state and transition that has none |
+| The List | the table of the documents of a class that a page shows, one document to a row. The variables marked `"list": true` are the columns it may show |
+| `format` | how a page shows a number or a date, in the patterns of Excel's number formats; the person's language gives the separators and the names of the months |
 
 ## Who may
 

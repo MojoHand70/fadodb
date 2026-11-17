@@ -1344,7 +1344,7 @@ func TestNotion_WhoMay(t *testing.T) {
 	// A line left out is noted, and lets nobody through.
 	bare := `{"name":"Bare","variables":{"n":{"type":"number"}},"states":{"initial":"a","list":["a"]}}`
 	notes := 0
-	for _, d := range db.ValidateClass([]byte(bare)) {
+	for _, d := range withoutDescriptions(db.ValidateClass([]byte(bare))) {
 		if !d.Note || d.Code != "rule_left_out" {
 			t.Errorf("a class with no access block: %s, note %v", d.Code, d.Note)
 		}

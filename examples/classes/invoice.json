@@ -1,19 +1,39 @@
 {
   "name": "Invoice",
+  "label": "Invoice",
+  "description": "An invoice to a customer, from its draft to its payment. Sales writes it, finance approves it and records the payment, and the payment creates its Receipt.",
   "title": "\"Invoice for \" & customer",
   "variables": {
-    "customer": {"type": "text", "required": true},
-    "due":      {"type": "date", "default": "ADDDAYS(TODAY(), 30)"},
-    "discount": {"type": "decimal", "scale": 2, "default": "0", "min": 0, "max": "0.50"},
-    "net":      {"type": "money", "scale": 2},
-    "lines":    {"type": "rows", "schema": {"sku": "text", "qty": "int", "price": "money"}},
-    "total":    {"formula": "ROUND(net * (1 - discount), 2)"}
+    "customer": {"type": "text", "required": true, "label": "Customer", "list": true,
+                 "description": "The id of the customer the invoice is sent to. The customer may read their own invoices."},
+    "due":      {"type": "date", "default": "ADDDAYS(TODAY(), 30)", "label": "Due date", "list": true, "format": "d mmm yyyy",
+                 "description": "The day the customer pays by: thirty days from the day the invoice is written, unless sales writes another."},
+    "discount": {"type": "decimal", "scale": 2, "default": "0", "min": 0, "max": "0.50", "label": "Discount", "format": "0%",
+                 "description": "The share taken off the net amount, at most half. Only sales sets it, and once the invoice is approved only finance sees it."},
+    "net":      {"type": "money", "scale": 2, "label": "Net amount", "list": true, "format": "#,##0.00",
+                 "description": "The amount before the discount."},
+    "lines":    {"type": "rows", "label": "Lines",
+                 "description": "What is invoiced, one product to a line.",
+                 "schema": {"sku":   {"type": "text",  "label": "Product code"},
+                            "qty":   {"type": "int",   "label": "Quantity", "format": "#,##0"},
+                            "price": {"type": "money", "label": "Unit price", "format": "#,##0.00"}}},
+    "total":    {"formula": "ROUND(net * (1 - discount), 2)", "label": "Total", "list": true, "format": "#,##0.00",
+                 "description": "What the customer pays: the net amount less the discount, to the cent."}
   },
-  "states": {"initial": "draft", "list": ["draft", "submitted", "approved", "paid"], "final": ["paid"]},
+  "states": {"initial": "draft", "list": ["draft", "submitted", "approved", "paid"], "final": ["paid"],
+             "labels": {"draft": "Draft", "submitted": "Submitted", "approved": "Approved", "paid": "Paid"},
+             "descriptions": {
+               "draft":     "Sales writes the invoice; it may change it until it submits it.",
+               "submitted": "Waiting for finance to approve it.",
+               "approved":  "Sent to the customer, and waiting for the payment.",
+               "paid":      "Paid. Its receipt is created, and the invoice changes no more."}},
   "transitions": [
-    {"name": "submit",  "from": "draft",     "to": "submitted", "guard": "total > 0"},
-    {"name": "approve", "from": "submitted", "to": "approved",  "guard": "INGROUP(\"finance\")"},
-    {"name": "pay",     "from": "approved",  "to": "paid"}
+    {"name": "submit",  "from": "draft",     "to": "submitted", "guard": "total > 0", "label": "Submit",
+     "description": "Sales sends the invoice to finance. It needs a total above zero."},
+    {"name": "approve", "from": "submitted", "to": "approved",  "guard": "INGROUP(\"finance\")", "label": "Approve",
+     "description": "Finance accepts the invoice and it goes to the customer."},
+    {"name": "pay",     "from": "approved",  "to": "paid", "label": "Record payment",
+     "description": "Finance records that the customer paid."}
   ],
   "rules": [
     {"on": "enter", "state": "paid",

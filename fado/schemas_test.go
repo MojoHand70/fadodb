@@ -216,7 +216,7 @@ func TestSchemasAndObjects(t *testing.T) {
 	}
 	guarded, err := db.DefineClass(ctx, []byte(`{"name":"Guarded","variables":{"a":{"type":"object","schema":"Contact"}},"states":{"initial":"s","list":["s"]},`+
 		`"access":{"read":"TRUE","create":"TRUE","update":"TRUE","delete":"TRUE"},"rights":{"*":{"a":{"read":["hr"]}}}}`), setup)
-	if err != nil || len(guarded.Notes) != 0 {
+	if err != nil || len(withoutDescriptions(guarded.Notes)) != 0 {
 		t.Fatalf("a class with a read right on an object: %v", err)
 	}
 	secret, err := db.Create(ctx, "Guarded", fado.Values{"a": map[string]any{"name": "Ewa"}}, ola)

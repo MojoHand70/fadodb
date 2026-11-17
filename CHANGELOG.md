@@ -8,14 +8,28 @@ All notable changes to FadoDB are recorded here. The format follows
 
 ### Added
 
-- ADR-0069, proposed, with the owner's rulings of 2026-11-17: the
+- What a class says to people (ADR-0068), built. A variable takes a
+  `label`, a `description`, `"list": true` for a column The List may
+  show, and a `format` in Excel's patterns; the states block takes
+  `labels` and `descriptions` by state; a transition takes a `label` and
+  a `description`; a column of a `rows` variable or of a table and a
+  field of a schema may be written in a long form,
+  `{"type": "int", "label": "Quantity"}`, beside the short one. The
+  engine checks a format when the class is defined and refuses one it
+  does not read, with the offset in the pattern; it never applies one,
+  and a value on the wire is as it was. Each variable, state and
+  transition without a description gets the note `no_description`, which
+  refuses nothing. The engine's own class `Substitution` and the four
+  sample classes describe everything. The words in other languages are
+  not built yet.
+- ADR-0069, accepted by the owner, with his rulings of 2026-11-17: the
   screen is the face's, and a class has sections. The engine keeps no
   layouts: a face draws a document from the class, its words and its
   compiled formulas, and a condition it needs is a computed variable of
   the class. A class may declare `sections`, an outline of its
   variables with a label, a description and words in other languages,
   nested at most four deep, one section per variable; `rights` may name
-  a section, and the most specific name wins. It withdraws ADR-0054.
+  a section, and the most specific name wins. ADR-0054 is withdrawn.
   Nothing of it is built yet.
 - ADR-0068, accepted, with the owner's rulings of 2026-11-17: what a
   class says to people. A `label` and a `description` on a variable, a

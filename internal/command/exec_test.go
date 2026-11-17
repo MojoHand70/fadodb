@@ -28,15 +28,17 @@ const invoiceClass = `{
   "name": "Invoice",
   "title": "number",
   "variables": {
-    "number": {"type": "text", "required": true},
-    "net":    {"type": "money", "scale": 2},
-    "note":   {"type": "text"},
-    "total":  {"formula": "net"}
+    "number": {"type": "text", "required": true, "label": "Number", "list": true, "description": "The supplier's number."},
+    "net":    {"type": "money", "scale": 2, "label": "Net amount", "list": true, "format": "#,##0.00", "description": "The amount before VAT."},
+    "note":   {"type": "text", "description": "Anything the next person should know."},
+    "total":  {"formula": "net", "description": "What is paid."}
   },
-  "states": {"initial": "draft", "list": ["draft", "approved", "paid"], "final": ["paid"]},
+  "states": {"initial": "draft", "list": ["draft", "approved", "paid"], "final": ["paid"],
+             "labels": {"approved": "Approved"},
+             "descriptions": {"draft": "Being filled in.", "approved": "Waiting for payment.", "paid": "Paid, and kept."}},
   "transitions": [
-    {"name": "approve", "from": "draft", "to": "approved"},
-    {"name": "pay", "from": "approved", "to": "paid"}
+    {"name": "approve", "from": "draft", "to": "approved", "label": "Approve", "description": "Finance accepts it for payment."},
+    {"name": "pay", "from": "approved", "to": "paid", "description": "Finance records the payment."}
   ],
   "access": {
     "read": "TRUE", "create": "INGROUP(\"sales\")", "update": "INGROUP(\"sales\")", "delete": "INGROUP(\"sales\")",
@@ -350,7 +352,8 @@ func TestDefinitionsAreReadBackAsTheyWereGiven(t *testing.T) {
 	}
 
 	// The next version, and the first one still read back.
-	next := strings.Replace(invoiceClass, `"note":   {"type": "text"},`, `"note":   {"type": "text"}, "po": {"type": "text"},`, 1)
+	next := strings.Replace(invoiceClass, `"note":   {"type": "text", "description": "Anything the next person should know."},`,
+		`"note":   {"type": "text", "description": "Anything the next person should know."}, "po": {"type": "text", "description": "The order it answers."},`, 1)
 	if second := run(t, s, dan, "define_class", `{"definition": `+next+`}`); at(t, second, "class.version") != float64(2) {
 		t.Fatalf("the second definition answered %v", second)
 	}
@@ -382,7 +385,7 @@ func TestDefinitionsAreReadBackAsTheyWereGiven(t *testing.T) {
 	}
 
 	// A draft tried on a create.
-	draft := run(t, s, dan, "preview_draft", `{"definition": `+strings.Replace(invoiceClass, `"total":  {"formula": "net"}`, `"total":  {"formula": "net * 2"}`, 1)+`,
+	draft := run(t, s, dan, "preview_draft", `{"definition": `+strings.Replace(invoiceClass, `"total":  {"formula": "net",`, `"total":  {"formula": "net * 2",`, 1)+`,
 	  "values": {"number": "D-1", "net": "10.00 PLN"}}`)
 	if at(t, draft, "preview.document.values.total") != "20.00 PLN" {
 		t.Fatalf("preview_draft answered %v", draft)

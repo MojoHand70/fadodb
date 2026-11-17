@@ -263,22 +263,35 @@ departments or cost centres was made twice.
 ## The shape of a class
 
 A class is one JSON document with these blocks. This one is small and
-complete; the engine accepts it as it stands.
+complete; the engine accepts it as it stands, with no note.
 
 ```json
 {
   "name": "Request",
+  "label": "Request",
+  "description": "A request for money that an employee files and a named approver decides.",
   "title": "subject",
   "variables": {
-    "subject":  {"type": "text", "required": true},
-    "amount":   {"type": "money", "scale": 2},
-    "approver": {"type": "text", "required": true},
-    "with_tax": {"formula": "ROUND(amount * 1.23, 2)"}
+    "subject":  {"type": "text", "required": true, "label": "Subject", "list": true,
+                 "description": "What the money is for, in the employee's words."},
+    "amount":   {"type": "money", "scale": 2, "label": "Amount", "list": true, "format": "#,##0.00",
+                 "description": "How much is asked for, before tax."},
+    "approver": {"type": "text", "required": true, "label": "Approver",
+                 "description": "The id of the person who decides the request."},
+    "with_tax": {"formula": "ROUND(amount * 1.23, 2)", "label": "With tax", "format": "#,##0.00",
+                 "description": "The amount with 23% VAT, to the cent."}
   },
-  "states": {"initial": "draft", "list": ["draft", "filed", "approved"], "final": ["approved"]},
+  "states": {"initial": "draft", "list": ["draft", "filed", "approved"], "final": ["approved"],
+             "labels": {"draft": "Draft", "filed": "Waiting for approval", "approved": "Approved"},
+             "descriptions": {
+               "draft":    "The employee writes the request.",
+               "filed":    "Waiting for the approver's decision.",
+               "approved": "Approved; the request changes no more."}},
   "transitions": [
-    {"name": "file",    "from": "draft", "to": "filed", "guard": "amount > 0"},
-    {"name": "approve", "from": "filed", "to": "approved"}
+    {"name": "file",    "from": "draft", "to": "filed", "guard": "amount > 0", "label": "File",
+     "description": "The employee sends the request to the approver."},
+    {"name": "approve", "from": "filed", "to": "approved", "label": "Approve",
+     "description": "The approver accepts the request."}
   ],
   "access": {
     "read":   "CREATEDBY() = USER() OR approver = USER()",
@@ -371,6 +384,7 @@ read the diagnostics, fix, preview against live data, define.
 | inlets, a way in for the messages of a system that speaks only its own language: `validate_inlet`, `try_inlet`, `define_inlet` (an administrator's), `list_inlets`; from a file, `fadodb inlet check` | shipped (ADR-0065): a definition says how a message proves who sent it, with a secret of a connection, and the one command it becomes, `create`, `set` or `transition`, whose values are formulas over `BODY`, `HEADERS`, `PARAMS` and `RAW`, typed against the class. It is carried out as a service user. `docs/manual/a-way-in-for-messages.md` |
 | action definitions: `DefineAction`, `ValidateAction`, `Actions`, `PreviewAction`, `TryAction` | shipped with Phase 4: a definition with a `request` needs no code and reads secrets with `SECRET("name")`; it can be defined only where the host program allows outbound calls and names the definition's connection; `docs/actions.md` is the guide and `examples/actions/webhook.json` a generic webhook; definitions for particular services come with real needs, and a format for packages of them is planned |
 | the class-level access rules: `"access": {"read": ..., "create": ..., "update": ..., "delete": ...}` | shipped with Phase 5: each is a condition over the document for the caller, such as `owner = USER() OR INGROUP("finance")`. A document its caller may not `read` does not exist for them: `unknown_document` from every call that names it, and absent from a filter, a count and `Due`. `create` is asked over the new document with its defaults and computed values; `update` over the stored document, by a set, a reset and a named transition that has no rule of its own; `delete` over the stored document. A refusal is `forbidden`, with the place of the rule as its path, `/access/update`. A `read` rule uses the document's own variables, the functions of its row, the caller and the clock, and no lookup. Put `"index": true` on the variable a read rule compares with the caller, as in `"owner": {"type": "text", "default": "USER()", "index": true}`: a caller's own documents are then listed through the index, and a group that sees everything, `OR INGROUP("finance")`, costs its members nothing. A rule left out lets every caller through today; a ruling on that is pending (ADR-0049), so write all four **Write all four.** A rule a class leaves out lets nobody through but a content administrator: a class with no `access` block holds documents nobody creates or sees. `ValidateClass` says so with a note for each rule left out, code `rule_left_out` and `note: true`, which refuses nothing; a definition is refused only when `Refuses()` is true. `INGROUP("everyone")` opens a rule to every caller that has an id, and `TRUE` to a call without a principal too |
+| what a class says to people: `label`, `description`, `"list": true` and `format` on a variable, `labels` and `descriptions` in the states block, a `label` and a `description` on a transition, and the long form of a column or a field | shipped with Phase 7 (ADR-0068): checked when the class is defined, a `no_description` note for each variable, state and transition with none; the words in other languages are not built yet |
 | class versions, terminal states, migrations | shipped: a redefinition is a new version and touches no document; a document adopts it at its next commit, or all at once with `Migrate`; a terminal state freezes the document |
 
 ## Procedure
@@ -386,12 +400,21 @@ read the diagnostics, fix, preview against live data, define.
 3. **List the fields and type each one.** Money is exact, with a scale
    and a currency; a date is a calendar day; a value from a fixed list is
    an enum; a repeated line is a `rows` variable with a schema. Mark what
-   is required and write defaults as formulas.
+   is required and write defaults as formulas. **Give each a `label` and
+   a `description`.** The label is what a person reads in place of the
+   name; the description is what an agent reads before it fills the
+   field and a person reads as help. Write it as a programmer writes a
+   comment: what the field holds and where it comes from. Mark `"list":
+   true` on the fields The List should offer as columns, in the order
+   you want them, and give a number or a date a person reads a `format`
+   in Excel's patterns, `#,##0.00` or `d mmm yyyy`.
 4. **Write the formulas you would write in the spreadsheet.** The engine
    computes; the agent never does arithmetic. Division by zero is an
    error unless the formula says what to do with `IFERROR`.
 5. **Draw the states, then the transitions, then the guards.** Give
-   every transition a name. A guard says what must hold for the
+   every transition a name, and each state and transition a label and a
+   description: the states' under `labels` and `descriptions` in the
+   states block, by name. A guard says what must hold for the
    document (`total > 0`); who may take the transition goes under
    `access.transition` in step 7. A terminal state freezes the
    document.
@@ -456,7 +479,8 @@ read the diagnostics, fix, preview against live data, define.
    that name each other go in one call, `fadodb class check
    receipt.json invoice.json`, and `--db FILE` checks against the
    database the class is meant for, writing nothing. Loop: check, mend
-   the place the finding names, check again, until it ends with 0. The
+   the place the finding names, check again, until it ends with 0 and
+   no `no_description` note is left. The
    same check is the command `validate_class` on a server, and
    `ValidateClass` and `ValidateClasses` on the Go API, whose findings
    for several classes start with the position of the definition,

@@ -39,7 +39,8 @@ A table is written once, as one JSON document, like a class.
   "columns": {
     "currency": "text",
     "day":      "date",
-    "rate":     "decimal(4)",
+    "rate":     {"type": "decimal(4)", "label": "Rate", "format": "0.0000",
+                 "description": "How many PLN one unit of the currency was worth that day."},
     "source":   "text"
   },
   "key": ["currency", "day"],
@@ -55,7 +56,7 @@ A table is written once, as one JSON document, like a class.
 |---|---|
 | `name` | the name of the table: letters, digits and underscores. A formula names it, in any case of letters. A class may not have the same name |
 | `label`, `description` | words for people. The engine keeps them and does nothing with them |
-| `columns` | each column with its type; the types are below |
+| `columns` | each column with its type; the types are below. A column may also be written in the long form, an object with its `type`, a `label`, a `description` and a `format`, as `rate` is: the words a person reads in place of its name, and how a page shows its value ([what a class says to people](class.md#what-a-class-says-to-people)) |
 | `key` | the columns that identify a row. No two rows have the same values in them, none of them is ever blank, and the table is ordered by them |
 | `indexes` | further sets of columns to keep an index on, for lookups that do not begin with the first column of the key |
 | `access` | who may read the rows and who may write them; see [Who may](#who-may) |

@@ -99,8 +99,8 @@ func TestTheCheckOfAClass(t *testing.T) {
 	if code != 1 || !strings.Contains(out, "bill.json: 1 finding refuses it\n  bad_formula at /variables/total/formula, offset 6: ") {
 		t.Errorf("a formula that names no variable: exit %d\n%s", code, out)
 	}
-	memo := write("memo.json", `{"name": "Memo", "variables": {"text": {"type": "text"}},
-	  "states": {"initial": "new", "list": ["new"]}, "access": {"read": "TRUE", "create": "TRUE", "update": "TRUE"}}`)
+	memo := write("memo.json", `{"name": "Memo", "variables": {"text": {"type": "text", "description": "What the memo says."}},
+	  "states": {"initial": "new", "list": ["new"], "descriptions": {"new": "Written, and read by anyone."}}, "access": {"read": "TRUE", "create": "TRUE", "update": "TRUE"}}`)
 	// A class that leaves a rule out is taken, and told so in a note,
 	// with what to write.
 	if code, out, _ := tool("class", "check", memo); code != 0 || !strings.Contains(out, "memo.json: the engine takes it, with 1 note\n  note: rule_left_out at /access/delete: ") || !strings.Contains(out, "\n    fix: add access.delete") {

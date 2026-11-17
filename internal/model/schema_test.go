@@ -69,7 +69,7 @@ func TestDefineSchema(t *testing.T) {
 	}
 	// A second definition is a new version; a class that resolved the
 	// first keeps its shape, which is the caller's to hold.
-	def.Fields["badge"] = "int"
+	def.Fields["badge"] = FieldDef{Type: "int"}
 	sch2, diags := s.Define(def)
 	if len(diags) > 0 || sch2.Version != 2 || sch2.Type.Fields()[5].Type.String() != "int" || sch.Type.Fields()[5].Type.String() != "text" {
 		t.Errorf("redefinition: %v, version %d, new badge %s, old badge %s", diags, sch2.Version, sch2.Type.Fields()[5].Type, sch.Type.Fields()[5].Type)

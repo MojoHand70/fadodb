@@ -336,7 +336,11 @@ administrators read with the command `reads`. Then, in this order: the
 browser VM, which is built: every function a page runs, exact numbers
 and money too, passing every case of the conformance suite a page runs,
 200 formulas recalculated in about 13 µs of the 1,000 µs budget, and
-attached to every release; layouts and the class bundle at the server; signing in
+attached to every release; what a class says to people (ADR-0068),
+whose labels, descriptions, columns of The List and formats are built
+and whose words in other languages are not yet; the sections of a class
+(ADR-0069, the screen being the face's and no layout the engine's) and
+the class bundle at the server; signing in
 for people at `fadodb serve` itself, a password or a company's
 sign-on, with its own record; a kit of plain pages the server serves
 (the classes, the list of a class, the document and a designer made of
@@ -345,8 +349,8 @@ door for agents at the server itself; one starter, the approval of an
 expense by the employee's manager; then the tool that waits for a
 change and files through the door. Its test, besides the plan's: an
 agent with only the skills and the door is told a business story in
-plain words and builds the table, the class and the layouts, and the
-people of the story use them in a browser. The rest is not built yet.
+plain words and builds the table and the class, and the people of the
+story use them through the kit in a browser. The rest is not built yet.
 This page is updated when a phase starts and when it ends;
 it never describes a phase as done before its acceptance criteria pass.
 
@@ -361,7 +365,7 @@ Legend: ✅ done · 🚧 in progress · ⬜ not started
 | 4 | Rules and actions: event-condition-action rules run inside the commit, the synchronous actions `set`, `reset`, `refresh` and `emit`, triggered variables with their moment, the transactional outbox with its worker, retries and dead rows, the engine's actions on other documents and tables, actions as an extension point with definitions, declared HTTP actions, Go actions the embedder registers, connections and results written back, the delivered event, formulas that read other documents (`LOOKUP` over a class, with a count, a sum, the smallest and the largest), conditions on time and timers | ✅ |
 | 5 | Security: the class-level access rules enforced on every path, who may see, create, change and delete a document, with the read rule compiled to a SQL predicate; the kind of actor, a person, an agent or a service, and whom it acts for, on every event, checked against a substitution the database keeps; who may define, operate and query, by four system groups; a content administrator who acts past a rule with a reason; the rules of a table | ✅ |
 | 6 | Server and CLI: the JSON command set over HTTP, one address for each command; users, groups and API keys kept in the database, and the authenticator for a host program that has its own; the stream of changes filtered by the read rule; documents on the wire; the door for agents (MCP); the command-line tool with a check of a class and of an action; the flow of a class in one call; a way in for messages from outside; OpenAPI; `fadodb serve` | ✅ |
-| 7 | Browser VM and reference frontend: the log of reads first; TypeScript VM on the same bytecode shipped as one plain JavaScript file, layouts and the class bundle, `QUERY` when the first layout needs a list of rows (otherwise with the reports of Phase 8), layout renderer with the chip, card, coins and rating components, signing in with a password or a company's sign-on, a kit of pages served by `fadodb serve`, the door for agents at the server itself, a small client file beside the VM, one starter | 🚧 |
+| 7 | Browser VM and reference frontend: the log of reads first; TypeScript VM on the same bytecode shipped as one plain JavaScript file, what a class says to people and its sections, the class bundle, `QUERY` when the first page needs a list of rows (otherwise with the reports of Phase 8), signing in with a password or a company's sign-on, a kit of pages served by `fadodb serve` that draws a document from its class (chip, card, coins and rating are the kit's), the door for agents at the server itself, a small client file beside the VM, one starter | 🚧 |
 | 8 | Analytical engine: DuckDB projection of document tables, native and attached bindings, set-wise recompute, mining views, full build per OS | ⬜ |
 | 9 | Embedding: C ABI, Python client, embedding guides | ⬜ |
 | 10 | Postgres backend | ⬜ |

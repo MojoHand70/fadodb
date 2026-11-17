@@ -89,8 +89,10 @@ class; the evidence is the log.
   for reading and analysis, not for writing.
 - **Not a workflow tool beside your data.** There is no separate
   process to keep in step: the state is in the document.
-- **Not an application with screens.** Today it is the engine. Screens
-  are built on it, by you or, later, from layouts the engine serves.
+- **Not an application with screens.** It is the engine, and a screen
+  is never the engine's: each face draws a document from its class, the
+  words the class has for people and its formulas. Screens are built on
+  it by you, by an agent, or, later, by the kit its server serves.
 - **Not a user directory.** FadoDB checks no passwords. The program
   that embeds it says on every call who the caller is and which groups
   they are in. A database can also keep its own users, groups and

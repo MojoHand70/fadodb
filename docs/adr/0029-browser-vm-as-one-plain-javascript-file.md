@@ -72,3 +72,22 @@ measured on the built file, not on the sources. The `BigInt` path is
 benchmarked in Phase 7 on the same 200-formula document with `decimal` and
 `money` in place of `number`, and the result is published with the Phase 7
 release.
+
+## Weighed on 2026-11-17: the Go VM compiled to WebAssembly
+
+The owner asked, as Phase 7 opened, whether WebAssembly matters to it.
+One engine in place of two would spare writing the functions again, so
+it was measured that day with Go 1.26.11 (`GOOS=js GOARCH=wasm`, built
+with `-s -w`): `internal/formula` with `Decode` and `VM.Run` came to
+4.5 MB, 1.2 MB compressed with gzip; an empty Go program alone to
+1.8 MB, 0.54 MB compressed, which is Go's runtime. The budget above is
+100 KB. TinyGo was not measured: the formula package carries the
+compiler, the SQL generator, `database/sql`, `regexp` and
+`encoding/json`, and the VM would first have to be split out of it.
+WebAssembly also needs a loader where a script tag would do, a page
+with a strict content security policy must allow `'wasm-unsafe-eval'`,
+and values are copied across the boundary.
+
+The owner ruled the same day: keep TypeScript. This record stands as
+written; the first part of the browser VM, built on 2026-11-17, is
+24.7 KB.

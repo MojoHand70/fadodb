@@ -32,6 +32,24 @@ dependency gate does not see it.
 | The list of certificate authorities, `/etc/ssl/certs/ca-certificates.crt` | the `ca-certificates` package of the image the tool is built in, which is Mozilla's list | MPL-2.0 | An action's request to another service is checked against it. The image holds no other file but the tool. |
 | `golang:<the Go of go.mod>-alpine`, Docker's official image of Go | Docker Hub | BSD-3 (Go); nothing of Alpine is passed on | Builds the tool. Nothing of it reaches the image but the list above. A test holds its version to the `go` line of `go.mod`. |
 
+## The browser VM's build tools
+
+The browser VM (ADR-0029) is written in TypeScript under `web/vm/` and
+built into one plain JavaScript file. What builds it is listed in
+`web/package.json`, pinned to an exact version, with its lock file
+beside it. Nothing of it reaches the file a page loads: the file has no
+dependency, so an audit of it is an audit of the one file. The Go
+gates do not see these; the step `make vmtest` of the job `checks` uses
+them.
+
+| Tool | Version | License | Why |
+|---|---|---|---|
+| `typescript` | 7.0.2 | Apache-2.0 | Checks the types of the sources before every build. The VM's public surface is a contract (ADR-0029), and the checker holds it. |
+| `esbuild` | 0.28.2 | MIT | Bundles the sources into one ES module and one classic script and minifies both, so that the size budget of 100 KB is measured on what a page loads. Its install script is not run; it finds its binary through its platform package. |
+
+Node 24 runs the conformance suite on the built file, as CI does with
+`actions/setup-node`.
+
 ## Developer tools
 
 Installed with `go install`, never added to `go.mod`.

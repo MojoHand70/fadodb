@@ -133,6 +133,17 @@ var builtins = []*builtin{
 	{name: "LASTEDITOR", class: ClassContext, args: []argKind{akText}, result: KindText, fn: stateText(func(s *StateLife) string { return s.LastEditor })},
 }
 
+// BuiltinNames lists the functions of the VM in the order of the table,
+// which the operand of OpCall indexes. The browser VM keeps the same
+// table in the same order (ADR-0029), and its test holds it to this list.
+func BuiltinNames() []string {
+	names := make([]string, len(builtins))
+	for i, b := range builtins {
+		names[i] = b.name
+	}
+	return names
+}
+
 // builtinByName indexes the table by canonical name.
 var builtinByName = func() map[string]int {
 	m := make(map[string]int, len(builtins))

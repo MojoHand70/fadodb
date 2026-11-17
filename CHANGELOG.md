@@ -8,6 +8,19 @@ All notable changes to FadoDB are recorded here. The format follows
 
 ### Added
 
+- The browser VM, part 1 of 4 (ADR-0029): the engine's formulas run in a
+  page, from the bytecode the engine compiles, with the same answers as
+  the server. TypeScript under `web/vm/`, built into one ES module and
+  one classic script that defines the global `FadoDB`, 24.7 KB each of
+  the 100 KB budget. Part 1 is the machine with every instruction but
+  those of exact numbers, plain numbers worked out to the last bit as Go
+  works them out, text by code point, logic, IFERROR and the context of
+  the caller. On every push, `make vmtest` builds it and runs every case
+  of the conformance suite through the built file: 748 pass, none fails,
+  640 wait for the dates, the exact numbers and money of parts 2 and 3,
+  and the 86 that read other documents are the server's. 3,000 numbers
+  are rendered as text as Go renders them. Not yet published: the files
+  go with a release when the four parts are built.
 - Phase 7, the browser VM and the reference frontend, has started;
   the roadmap says what the owner ruled it holds.
 - The log of reads (ADR-0067, accepted). A content administrator who

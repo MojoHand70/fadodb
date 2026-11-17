@@ -4,6 +4,7 @@ private/
 # Build output
 bin/
 dist/
+node_modules/
 /fadodb
 *.exe
 *.test

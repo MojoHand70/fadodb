@@ -245,8 +245,11 @@ sales; the agent, which is in finance; and Eve, who is in no group.
   stream keeps such a row until the list is asked for again.
 - **A delete is told to whoever could read the document just before
   it.**
-- **A content administrator hears of every document**, as they see
-  every document.
+- **A content administrator hears of every document when they give a
+  reason** in the member `reason`, as they see every document with one;
+  each batch told past the read rule is kept in the
+  [log of reads](the-log-of-reads.md). Without a reason they hear what
+  anybody in their groups hears.
 - **A stream is heard as oneself.** A caller that says it acts for
   somebody is refused: who may act for whom is asked class by class,
   for a command.

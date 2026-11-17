@@ -329,9 +329,10 @@ and three things for agents, each its own step: the door at the server
 itself, with the signing in of Phase 7, a tool that waits for a
 change, and files through the door.
 Phase 7 started on 2026-11-17, and the owner ruled its scope that
-day. Its first step is the log of reads (ADR-0067, proposed): what a
-content administrator sees past a rule, given a reason, and every SQL
-statement, read by database administrators. Then, in this order: the
+day. Its first step, the log of reads (ADR-0067), is built: a content
+administrator sees past a rule only with a reason, and what they saw,
+with every SQL statement, is kept in a log that database
+administrators read with the command `reads`. Then, in this order: the
 browser VM; layouts and the class bundle at the server; signing in
 for people at `fadodb serve` itself, a password or a company's
 sign-on, with its own record; a kit of plain pages the server serves
@@ -342,7 +343,7 @@ expense by the employee's manager; then the tool that waits for a
 change and files through the door. Its test, besides the plan's: an
 agent with only the skills and the door is told a business story in
 plain words and builds the table, the class and the layouts, and the
-people of the story use them in a browser. Nothing of it is built yet.
+people of the story use them in a browser. The rest is not built yet.
 This page is updated when a phase starts and when it ends;
 it never describes a phase as done before its acceptance criteria pass.
 

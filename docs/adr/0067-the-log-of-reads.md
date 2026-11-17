@@ -244,6 +244,60 @@ listed what is not recorded (item 9).
 The owner accepted the record the same day ("accept ADR-0067"), and
 merged it.
 
+## Settled while building
+
+Each of these is mine, decided while building on 2026-11-17, and the
+owner's to overrule.
+
+1. **A class the engine brings is seen as before.** A content
+   administrator reads `Substitution` with no reason and leaves no
+   entry, since ADR-0052 has them see such a class as any member does.
+2. **The answer of a change.** With a reason, the document a change
+   answers with is shown whole. What it shows past a read rule or a
+   read right that its event does not name already is written to the
+   log in the same transaction as the commit: had the class a right
+   that hides the salary from Olga, her change past the update rule of
+   Jan's review would name `/access/read` and `/access/update` on its
+   event, and that right in the log. Without a reason the answer is
+   projected and veiled as for anybody. A preview, a change that wrote nothing and a preview of
+   many keep no event, so their entry names every rule the answer got
+   past; a preview of many writes one entry for the batch once it is
+   taken back.
+3. **A count and the flow** count twice, as the content administrator
+   passes the rules and as anybody would, and keep the difference as
+   `counted`. The flow's is of the documents in its states now.
+4. **The stream** writes its entries, one for each class of a batch,
+   before it tells the batch; if they cannot be written it tells
+   nothing and stays where it was. `subscribe` takes `reason`, and the
+   server's door passes it to the engine.
+5. **Files.** An entry for a file names the document and, under `blob`,
+   the hash; a file in a variable a right hides names that right. Over
+   HTTP both addresses of files take `reason=`; bytes opened by their
+   hash alone always need it, and that refusal names no path, since
+   no rule of a class is in play.
+6. **Tables.** A content administrator without a reason is refused
+   with `reason_required` at `/access/read` or `/access/write`, and not
+   `forbidden`, so that they know a reason would do. A rule's table
+   action carries the reason of the commit that queued it; a commit
+   that gave none queues an action the table refuses with
+   `reason_required`, and it fails as any refused action does. Its
+   entry is named after the action, `table.insert`.
+7. **SQL.** A statement refused before it runs, because its caller is
+   no analyst, is not recorded: it read nothing. One that fails while
+   it runs is recorded with its code, and so is one whose caller left
+   before the answer.
+8. **The log wakes no stream.** Its transaction adds no event, so it
+   ends without telling the streams of changes, which would read the
+   log of events for nothing: fifty streams of content administrators
+   would otherwise wake one another at every batch.
+9. **The names.** The table is `fado_reads`. An entry names its call
+   as the command set does, `get`, `query`, `sql`; a file is
+   `open_file` or `open_blob`. `reads` counts `since` in and `until`
+   out, as `flow` does.
+10. **An entry costs an ordinary read nothing.** It is made only when
+    a content administrator gives a reason, so every other read
+    allocates no more than before.
+
 ## Consequences
 
 - An act past a rule is now one kind of act, whether it reads or
@@ -287,3 +341,22 @@ merged it.
   statement takes milliseconds and the row is small; it is measured in
   the same step.
 - No budget of ADR-0012 changes.
+
+### Measured on 2026-11-17
+
+On disk, on the machine every campaign of this project runs on, three
+runs each, with the same file of benchmarks run on main, where nothing
+is written down, as the control
+(`internal/store/reads_bench_test.go`; logs under
+`~/.cache/fadodb-bench/v0.7.0/adr-0067/`):
+
+| One call | Main | With the log | What the entry costs |
+|---|---|---|---|
+| Ewa reads the review she manages, `BenchmarkReadByRule` | 6.75, 6.72, 6.69 µs | 6.75, 7.11, 6.78 µs | nothing: 95 allocations either way |
+| Olga reads it past the rule, with a reason, `BenchmarkReadPastRule` | 6.59, 6.63, 6.52 µs | 36.9, 37.1, 36.8 µs | about 30 µs and 42 allocations |
+| Marek's statement, `BenchmarkSQLStatement` | 8.83, 8.86, 8.87 µs | 40.8, 38.8, 38.5 µs | about 30 µs and 38 allocations |
+
+The 30 µs are the small transaction the entry is written in. The full
+comparison of the gate (`make benchgate`, five placements of five
+rounds) holds every budgeted benchmark to main: no allocation more,
+and the time of all of them together +0.05%.

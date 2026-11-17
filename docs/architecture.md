@@ -1130,7 +1130,7 @@ a user.
 > The server runs in a container as on a machine: the image the
 > repository builds holds the tool and nothing else
 > ([in a container](manual/in-a-container.md)). A system that
-> speaks only its own language has a way in (ADR-0065, proposed): an
+> speaks only its own language has a way in (ADR-0065): an
 > inlet, a definition that says how its message proves who sent it
 > and which one command it becomes; the server takes the message at
 > `POST /v1/in/<inlet>`, with no key, once its settings have

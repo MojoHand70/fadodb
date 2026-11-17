@@ -1,6 +1,6 @@
 # ADR-0065: A way in for messages from outside
 
-- Status: Proposed
+- Status: Accepted; amends ADR-0055 (six commands join the table), ADR-0059 (the settings gain `inbound`, and with it the server takes messages at an address that asks for no key)
 - Date: 2026-11-16
 
 ## Context
@@ -313,9 +313,12 @@ the message into one command.
       table.
     - **Limits for each sender**, such as messages a minute.
 
-## Questions for the owner
+## The owner's rulings
 
-1. **Where a way in lives.** Acme's bank can tell Acme of a payment.
+The first on 2026-11-16, the others on 2026-11-17, each as the record
+proposed. He accepted the record on 2026-11-17.
+
+1. **Where a way in lives: ruled.** Acme's bank can tell Acme of a payment.
    Dan, who designs Acme's classes, asks his agent to join the two.
    Proposed: the agent writes an inlet, a definition of twenty lines,
    and the server runs it. Nothing is hosted beside the server.
@@ -325,15 +328,19 @@ the message into one command.
    one as an example, and a guide. It costs every company a second
    program to run, to secure and to keep alive for each sender, and it
    costs the engine nothing: no address that answers without a key.
+   On 2026-11-16 the owner asked whether an agent would then write
+   code inside the engine. Told that an inlet is data and that nothing
+   is compiled, he answered: "Then we are fine."
 
-2. **The word.** This record says *inlet*: `define_inlet`,
+2. **The word: ruled.** This record says *inlet*: `define_inlet`,
    `/v1/in/bank.paid`, "the inlet `bank.paid`".
    The other way: *channel*, which also means a place in Slack that
    an action posts to; or *webhook*, which most services call the
    message they send, and which is already the name of the way out,
    `webhook.send`.
+   On 2026-11-17 the owner ruled: *inlet*.
 
-3. **Who lets a stranger in.** The inlet `bank.paid` acts as
+3. **Who lets a stranger in: ruled.** The inlet `bank.paid` acts as
    `bank-in`. If Dan, a designer, could define it, he could define one
    that acts as any service of the database, with a connection whose
    secret he knows, and so do what that service may.
@@ -342,8 +349,10 @@ the message into one command.
    The other way: a designer defines it, and it stays closed until an
    administrator opens that version of it. Two more commands, and the
    same two people each time it changes.
+   On 2026-11-17 the owner ruled: as built, an administrator defines
+   it.
 
-4. **A message the database refuses.** The bank says that
+4. **A message the database refuses: ruled.** The bank says that
    `FV/2026/11/0044` was paid, and that invoice is not in `sent`:
    `guard_false`.
    Proposed: the bank is answered 409 and nothing is kept. The line of
@@ -354,12 +363,14 @@ the message into one command.
    in the database, for an administrator to read and to run again,
    as the outbox keeps a dead action. It is a second queue, and it
    holds what strangers sent: who may read it has to be ruled with it.
+   On 2026-11-17 the owner ruled: as built, nothing is kept.
 
-5. **What an inlet may do.** Proposed: one of `create`, `set` and
+5. **What an inlet may do: ruled.** Proposed: one of `create`, `set` and
    `transition`, on one document.
    The other way: `create` only, so that a message can add to the
    database and change nothing in it, and a rule of the class does the
    rest; or every command that commits a document, `delete` among them.
+   On 2026-11-17 the owner ruled: as built, one of the three.
 
 ## Settled while building the engine's part
 
@@ -486,7 +497,7 @@ command line. With it the record is built as it proposes.
 
 A message is one command and what stands before it: reading at most
 1 MiB, one HMAC over it, and a few formulas over a value of JSON. The
-budget proposed for the part before the command is 100 µs for a
+budget for the part before the command is 100 µs for a
 message of 2 KiB, measured when it is built. The command is the
 command's budget (ADR-0055). Nothing of this is on the path of a
 command that comes with a key.
@@ -499,5 +510,5 @@ from it: 79.2 µs against 52.1 µs for the same move sent with a key
 JSON of the message, read once for each formula. Through the server a
 message that makes a document takes 0.377 ms at the median on the
 machine of the measurements, where a transition takes 0.318 ms. The
-proposed budget of 100 µs holds; the two benchmarks join the benchmark
-gate when the record is accepted.
+budget of 100 µs holds, and the two benchmarks are in the benchmark
+gate since the record was accepted.

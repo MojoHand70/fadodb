@@ -587,11 +587,16 @@ func BenchmarkTransitionKeyed(b *testing.B) {
 		b.Fatal(err)
 	}
 	names := [2]string{"submit", "back"}
-	key := []byte("move-")
+	// The key is as long every time, so that a run of twenty thousand
+	// moves allocates for a move what a run of two thousand does: the
+	// benchmark gate holds this number to no increase at all.
+	key := []byte("move-0000000000")
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; b.Loop(); i++ {
-		key = strconv.AppendInt(key[:5], int64(i), 10)
+		for n, at := i, len(key)-1; n > 0; n, at = n/10, at-1 {
+			key[at] = byte('0' + n%10)
+		}
 		if _, err := s.Transition(ctx, "Flow", doc.ID, names[i%2], nil, As(alice), Key(string(key))); err != nil {
 			b.Fatal(err)
 		}

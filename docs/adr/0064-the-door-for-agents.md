@@ -1,6 +1,6 @@
 # ADR-0064: The door for agents
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-11-16
 
 ## Context
@@ -181,9 +181,15 @@ user in `finance` with a key of its own.
     Acme and for Globex is given two doors, each with its server and
     its key.
 
-## Questions for the owner
+## The owner's rulings
 
-1. **Where the door stands.** Ann wants her assistant to work Acme's
+All of 2026-11-17, each as the record proposed. The door stays as it
+is built. Three things the record proposed beyond it are wanted and
+come after v0.6.0, each as its own step: the door at the server
+itself, the tool that waits for a change, and files from a named
+folder. He accepted the record the same day.
+
+1. **Where the door stands: ruled.** Ann wants her assistant to work Acme's
    invoices from her laptop. `ap-agent` runs in the cloud, with nobody
    at a keyboard and no machine to start a program on.
    Proposed: both places, in two steps. First `fadodb mcp`, as in item
@@ -194,8 +200,11 @@ user in `finance` with a key of its own.
    and not in this phase. A key in a header works with the programs
    that let their user set a header, and not with the ones that only
    sign in through OAuth.
+   On 2026-11-17 the owner ruled: both places, as proposed, and the
+   door at the server is its own step after v0.6.0, built with the
+   signing in of Phase 7.
 
-2. **A key through the door.** Olga, an administrator, tells her
+2. **A key through the door: ruled.** Olga, an administrator, tells her
    assistant to make a key for `ap-agent`. The answer of `create_key`
    holds the secret, which would then stay in the conversation, in its
    transcript on Olga's disk, and with whoever runs the model.
@@ -203,8 +212,10 @@ user in `finance` with a key of its own.
    terminal, where it goes into a file. Every other command on users
    and keys is a tool, and the rights decide, as everywhere.
    The other way: it is offered as any other command.
+   On 2026-11-17 the owner ruled: as built, the door does not offer
+   it.
 
-3. **Waiting for a change.** `ap-agent` wants to be told when an
+3. **Waiting for a change: ruled.** `ap-agent` wants to be told when an
    invoice enters `review`.
    Proposed: a tool that waits. It takes what `subscribe` takes and a
    number of seconds, and answers the events that came in that time
@@ -213,8 +224,10 @@ user in `finance` with a key of its own.
    that asks twice must miss nothing between.
    The other way: none. An agent asks `query` when it is started, and
    a program that hears the stream starts it.
+   On 2026-11-17 the owner ruled: the tool that waits is wanted, as
+   its own step after v0.6.0.
 
-4. **Files.** Bob's assistant attaches `scan-0045.pdf` to an invoice.
+4. **Files: ruled.** Bob's assistant attaches `scan-0045.pdf` to an invoice.
    The bytes cannot sensibly pass through the agent's conversation, so
    the door would read the file from Bob's disk itself; an agent that
    was misled could then send any file Bob can read.
@@ -223,6 +236,8 @@ user in `finance` with a key of its own.
    from that folder and writes into it, and nowhere else. Its own
    step.
    The other way: no files through the door in this phase.
+   On 2026-11-17 the owner ruled: files from a named folder are
+   wanted, as their own step after v0.6.0.
 
 ## Consequences
 

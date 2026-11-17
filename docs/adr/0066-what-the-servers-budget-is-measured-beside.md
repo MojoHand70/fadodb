@@ -1,6 +1,6 @@
 # ADR-0066: What the server's budget is measured beside
 
-- Status: Proposed; when accepted it amends ADR-0011 (what its budget is measured beside)
+- Status: Accepted; amends ADR-0011 (what its budget is measured beside)
 - Date: 2026-11-17
 
 ## Context
@@ -84,7 +84,8 @@ virtual. He chose the first.
 What FadoDB's part is measured beside was settled after his ruling, by
 the measurements of this record. He was first shown a figure of
 0.155 ms, taken another way, which did not repeat (see the last of the
-alternatives). Item 2 is his to accept with the record.
+alternatives). He accepted item 2 with the record, on the same
+day.
 
 ## Consequences
 
@@ -104,7 +105,7 @@ alternatives). Item 2 is his to accept with the record.
 - A certificate is not in it. The campaign serves without one, as it
   did.
 - ADR-0011's sentence stays as it is written, and its status line names
-  this record once this record is accepted.
+  this record.
 
 ## Alternatives considered
 

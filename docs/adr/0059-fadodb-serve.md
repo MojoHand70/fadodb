@@ -1,6 +1,6 @@
 # ADR-0059: `fadodb serve`: one database, what it is told when it starts, and what it refuses
 
-- Status: Accepted; amends ADR-0011 (what the server is and what it is told), ADR-0027 and ADR-0045 (an action implemented by a Go function does not run under `fadodb serve`), ADR-0052 (which settings are an administrator's), ADR-0055 (two codes, `timeout` and `busy`, join the codes of the door)
+- Status: Accepted; amends ADR-0011 (what the server is and what it is told), ADR-0027 and ADR-0045 (an action implemented by a Go function does not run under `fadodb serve`), ADR-0052 (which settings are an administrator's), ADR-0055 (two codes, `timeout` and `busy`, join the codes of the door); amended by ADR-0065 (the settings gain `inbound`, and with it the server takes messages at an address that asks for no key)
 - Date: 2026-11-14
 
 ## Context

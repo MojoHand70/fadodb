@@ -156,15 +156,24 @@ func TestAReaderDoesNotHoldTheWriters(t *testing.T) {
 	if err := reader.QueryRowContext(ctx, "SELECT count(*) FROM outbox").Scan(&n); err != nil {
 		t.Fatal(err)
 	}
-	// While the reader keeps its view, the writers commit.
+	// While the reader keeps its view, the writers commit. A
+	// checkpointer that waited for the reader in the writer's turn
+	// would hold every commit for the five seconds a connection waits,
+	// again and again, and let some twenty through between two waits.
+	// A slow machine with the race detector makes a few hundred commits
+	// in half a second. So the writers are given five seconds for a
+	// hundred: a machine that stands still for a moment has them, and
+	// a checkpointer that waits does not. (The test counted the commits
+	// of one half second, and a runner on Windows once made none in
+	// it.)
 	time.Sleep(100 * time.Millisecond)
-	before := commits.Load()
-	time.Sleep(500 * time.Millisecond)
-	// A checkpointer that waited for the reader in the writer's turn
-	// would let no commit through for as long as it waits: the test saw
-	// none. A slow machine with the race detector makes a few hundred.
-	if made := commits.Load() - before; made < 20 {
-		t.Errorf("%d commits in half a second while a reader kept its view: the checkpointer held the writers for the reader", made)
+	const want, within = 100, 5 * time.Second
+	before, began := commits.Load(), time.Now()
+	for commits.Load()-before < want && time.Since(began) < within {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if made := commits.Load() - before; made < want {
+		t.Errorf("%d commits in %s while a reader kept its view: the checkpointer held the writers for the reader", made, time.Since(began).Round(time.Millisecond))
 	}
 	if err := reader.Rollback(); err != nil {
 		t.Fatal(err)

@@ -67,8 +67,8 @@ line says so. Copy `0000-template.md` to start.
 | [0059](0059-fadodb-serve.md) | `fadodb serve`: one database, what it is told when it starts, and what it refuses | Accepted |
 | [0060](0060-the-organisations-rule-book.md) | The organisation's rule-book: the things it keeps and the look of its faces | Proposed |
 | [0061](0061-apache-license.md) | License: Apache 2.0 | Accepted |
-| [0062](0062-commands-from-a-terminal.md) | Commands from a terminal: `fadodb exec` | Proposed |
-| [0063](0063-the-flow-of-a-class.md) | The flow of a class in one call | Proposed |
-| [0064](0064-the-door-for-agents.md) | The door for agents: `fadodb mcp`, each command a tool | Proposed |
-| [0065](0065-a-way-in-for-messages-from-outside.md) | A way in for messages from outside: an inlet, a definition the server runs | Proposed |
-| [0066](0066-what-the-servers-budget-is-measured-beside.md) | What the server's budget is measured beside: the Go API called by a request | Proposed |
+| [0062](0062-commands-from-a-terminal.md) | Commands from a terminal: `fadodb exec` | Accepted |
+| [0063](0063-the-flow-of-a-class.md) | The flow of a class in one call | Accepted |
+| [0064](0064-the-door-for-agents.md) | The door for agents: `fadodb mcp`, each command a tool | Accepted |
+| [0065](0065-a-way-in-for-messages-from-outside.md) | A way in for messages from outside: an inlet, a definition the server runs | Accepted |
+| [0066](0066-what-the-servers-budget-is-measured-beside.md) | What the server's budget is measured beside: the Go API called by a request | Accepted |

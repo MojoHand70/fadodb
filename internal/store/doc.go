@@ -100,5 +100,6 @@
 // it says the caller may, by its dates. A host program that keeps its
 // own substitutions opens with Options.HostAnswersFor.
 //
-// Not here yet: the server (Phase 6).
+// The server is not in this package: the door is internal/server, and
+// fadodb serve is in cmd/fadodb.
 package store

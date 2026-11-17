@@ -28,6 +28,11 @@ import (
 // files and the goroutines of each are what the process holds after
 // the collector ran, less what it held before.
 //
+// What a database holds grows with its classes, so the campaign takes
+// its size from the environment: FADODB_BENCH_CLASSES classes, fifty
+// by default, and FADODB_BENCH_HELD copies held open at once, fifty by
+// default. ADR-0056 measured 300 databases of four classes.
+//
 // It runs only with FADODB_BENCH_DIR set to a directory on a real disk.
 // It prints a Markdown table with -v.
 func TestOpenCampaign(t *testing.T) {
@@ -35,7 +40,14 @@ func TestOpenCampaign(t *testing.T) {
 	if dir == "" {
 		t.Skip("set FADODB_BENCH_DIR to a directory on disk to run the campaign of opening")
 	}
-	const classes, documents, opens, held = 50, 200, 20, 50
+	const documents, opens = 200, 20
+	classes, held := 50, 50
+	if v, err := strconv.Atoi(os.Getenv("FADODB_BENCH_CLASSES")); err == nil && v > 0 {
+		classes = v
+	}
+	if v, err := strconv.Atoi(os.Getenv("FADODB_BENCH_HELD")); err == nil && v > 0 {
+		held = v
+	}
 	base := filepath.Join(dir, fmt.Sprintf("open-%d", time.Now().UnixNano()))
 	if err := os.MkdirAll(base, 0o700); err != nil {
 		t.Fatal(err)
@@ -154,12 +166,12 @@ func TestOpenCampaign(t *testing.T) {
 	// moved.
 	ids := make([]string, len(stores))
 	for i, s := range stores {
-		docs, err := s.Query(ctx, Filter{Class: "Class07", Limit: 1}, setup)
+		docs, err := s.Query(ctx, Filter{Class: "Class00", Limit: 1}, setup)
 		if err != nil || len(docs) != 1 {
 			t.Fatalf("a document of an open database: %v %v", docs, err)
 		}
 		ids[i] = docs[0].ID
-		if _, err := s.Transition(ctx, "Class07", docs[0].ID, "submit", nil, setup); err != nil {
+		if _, err := s.Transition(ctx, "Class00", docs[0].ID, "submit", nil, setup); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -167,8 +179,9 @@ func TestOpenCampaign(t *testing.T) {
 
 	// Ten of them are read by sixteen callers at once: each reader has
 	// a connection of its own, which the database keeps ready for a
-	// minute after.
-	const busy, readers = 10, 16
+	// quarter of a minute after.
+	const readers = 16
+	busy := min(10, held)
 	var reading sync.WaitGroup
 	for i := range busy {
 		for range readers {
@@ -176,7 +189,7 @@ func TestOpenCampaign(t *testing.T) {
 			go func() {
 				defer reading.Done()
 				for range 200 {
-					if _, err := stores[i].Get(ctx, "Class07", ids[i], setup); err != nil {
+					if _, err := stores[i].Get(ctx, "Class00", ids[i], setup); err != nil {
 						t.Error(err)
 						return
 					}
@@ -211,21 +224,21 @@ func TestOpenCampaign(t *testing.T) {
 	}
 	fileCount := "not counted on this system"
 	if filesBefore >= 0 {
-		fileCount = strconv.FormatFloat(float64(filesAfter-filesBefore)/held, 'f', 1, 64)
+		fileCount = strconv.FormatFloat(float64(filesAfter-filesBefore)/float64(held), 'f', 1, 64)
 	}
 	rows := []string{
 		fmt.Sprintf("| the database | %d classes, %d documents, %.1f MB; defining the classes took %s |", classes, classes*documents, float64(info.Size())/1e6, ms(defined)),
 		fmt.Sprintf("| opening it, one after the other, %d times | %s at the median, %s the longest |", opens, ms(took[opens/2]), ms(took[opens-1])),
 		fmt.Sprintf("| closing it | %s at the median, %s the longest |", ms(closed[opens/2]), ms(closed[opens-1])),
-		fmt.Sprintf("| opening %d copies and holding them | %s for all, %s each |", held, ms(openedAll), ms(openedAll/held)),
-		fmt.Sprintf("| memory an open database holds, after a read and a commit | %.2f MB of Go's own, %.2f MB as the system counts it |", float64(heapAfter-heapBefore)/held/1e6, float64(residentAfter-residentBefore)/held/1e6),
+		fmt.Sprintf("| opening %d copies and holding them | %s for all, %s each |", held, ms(openedAll), ms(openedAll/time.Duration(held))),
+		fmt.Sprintf("| memory an open database holds, after a read and a commit | %.2f MB of Go's own, %.2f MB as the system counts it |", float64(heapAfter-heapBefore)/float64(held)/1e6, float64(residentAfter-residentBefore)/float64(held)/1e6),
 		fmt.Sprintf("| open files an open database holds | %s |", fileCount),
 		fmt.Sprintf("| what %d callers reading at once add to one, as they finish | %.2f MB of Go's own, %.2f MB as the system counts it, %.1f open files; it has %.1f connections open |", readers,
-			float64(int64(heapBusy)-int64(heapAfter))/busy/1e6, float64(int64(residentBusy)-int64(residentAfter))/busy/1e6, float64(filesBusy-filesAfter)/busy, float64(connectionsBusy)/busy),
+			float64(int64(heapBusy)-int64(heapAfter))/float64(busy)/1e6, float64(int64(residentBusy)-int64(residentAfter))/float64(busy)/1e6, float64(filesBusy-filesAfter)/float64(busy), float64(connectionsBusy)/float64(busy)),
 		fmt.Sprintf("| the same, %s after the last read | %.2f MB as the system counts it, %.1f open files; it has %.1f connections open |", (2*readerIdle + 5*time.Second).String(),
-			float64(int64(residentQuiet)-int64(residentAfter))/busy/1e6, float64(filesQuiet-filesAfter)/busy, float64(connectionsQuiet)/busy),
-		fmt.Sprintf("| goroutines an open database holds | %.1f |", float64(routinesAfter-routinesBefore)/held),
-		fmt.Sprintf("| closing the %d | %s for all, %s each |", held, ms(closedAll), ms(closedAll/held)),
+			float64(int64(residentQuiet)-int64(residentAfter))/float64(busy)/1e6, float64(filesQuiet-filesAfter)/float64(busy), float64(connectionsQuiet)/float64(busy)),
+		fmt.Sprintf("| goroutines an open database holds | %.1f |", float64(routinesAfter-routinesBefore)/float64(held)),
+		fmt.Sprintf("| closing the %d | %s for all, %s each |", held, ms(closedAll), ms(closedAll/time.Duration(held))),
 	}
 	t.Logf("\n| What | Measured |\n|---|---|\n%s", strings.Join(rows, "\n"))
 }

@@ -41,7 +41,8 @@ const DefaultMaxIndexedRows = 100000
 // eight has its connection opened for its read. Measured with sixteen
 // callers reading at once, a read takes 11.9 µs with two kept ready,
 // 6.7 µs with four, 4.3 µs with eight and 3.6 µs with sixteen, and each
-// connection kept takes about 3.5 MB of the machine's memory.
+// connection kept takes about 3.5 MB of the machine's memory in a
+// database of fifty classes, and 0.5 MB in one of four.
 const readersKept = 8
 
 // readerIdle is how long a connection that reads stays ready after its
@@ -424,7 +425,8 @@ func open(path string, o Options) (*Store, error) {
 	// had their connections opened and closed over and over. Eight are
 	// kept ready, and one that nobody has used for a quarter of a
 	// minute is closed, so that a quiet database holds what it held: a
-	// connection that reads takes about 3.5 MB and two open files.
+	// connection that reads takes two open files, and about 3.5 MB
+	// where the database has fifty classes.
 	db.SetMaxIdleConns(readersKept)
 	db.SetConnMaxIdleTime(readerIdle)
 	s := &Store{

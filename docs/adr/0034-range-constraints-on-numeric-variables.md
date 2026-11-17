@@ -1,6 +1,6 @@
 # ADR-0034: Range constraints on numeric variables
 
-- Status: Accepted; amends ADR-0013, ADR-0018
+- Status: Accepted; amends ADR-0013, ADR-0018; amended by ADR-0069 (the `rating` component is no longer the engine's)
 - Date: 2026-11-07
 
 ## Context

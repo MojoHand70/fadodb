@@ -1,6 +1,6 @@
 # ADR-0054: The screen on a layout component: `mobile` and `desktop`
 
-- Status: Proposed; amends ADR-0018 (two properties of a component that are not formulas)
+- Status: Withdrawn by ADR-0069 (the screen is the face's: what a phone shows is decided by the face that draws it); it was Proposed and never accepted
 - Date: 2026-11-13
 
 ## Context

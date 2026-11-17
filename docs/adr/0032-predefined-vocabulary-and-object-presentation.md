@@ -1,6 +1,6 @@
 # ADR-0032: A predefined vocabulary of objects, and how an object is presented
 
-- Status: Accepted; amends ADR-0018
+- Status: Accepted; amends ADR-0018; amended by ADR-0069 (the four components for objects are no longer the engine's)
 - Date: 2026-11-07
 
 ## Context

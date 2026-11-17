@@ -13,17 +13,17 @@ line says so. Copy `0000-template.md` to start.
 | [0005](0005-blank-semantics.md) | Blank and null semantics | Accepted |
 | [0006](0006-event-log-as-source-of-truth.md) | Event log as the source of truth | Accepted, amended by 0014, 0026, 0044 |
 | [0007](0007-one-table-per-class.md) | One table per document class | Accepted, amended by 0014 |
-| [0008](0008-statechart-semantics.md) | Statechart semantics, SCXML subset | Accepted, amended by 0039, 0040, 0047 |
+| [0008](0008-statechart-semantics.md) | Statechart semantics, SCXML subset | Accepted, amended by 0039, 0040, 0047, 0068 |
 | [0009](0009-action-execution-model.md) | Action execution model: synchronous versus outbox | Accepted, amended by 0027, 0044, 0045 |
 | [0010](0010-security-rules-as-predicates.md) | Security rules compiled to SQL predicates | Accepted, amended by 0027, 0028, 0041, 0046, 0049, 0052 |
 | [0011](0011-one-json-command-set.md) | One JSON command set over HTTP, WebSocket and C ABI | Accepted, amended by 0025, 0026, 0027, 0033, 0045, 0046 |
 | [0012](0012-performance-gates.md) | Performance budgets and gates | Accepted, amended by 0030 |
-| [0013](0013-document-variables-and-types.md) | Document variables and the type system | Accepted, amended by 0019, 0022, 0023, 0031, 0034, 0047 |
+| [0013](0013-document-variables-and-types.md) | Document variables and the type system | Accepted, amended by 0019, 0022, 0023, 0031, 0034, 0047, 0068 |
 | [0014](0014-document-tables.md) | Document tables: current, history, child tables and views | Accepted, amended by 0026, 0031, 0039, 0040, 0043, 0047 |
 | [0015](0015-commits-and-recalculation.md) | Commits, recalculation modes, defaults, reset and refresh | Accepted, amended by 0020, 0025, 0040, 0043 |
-| [0016](0016-explicit-tables-and-query-functions.md) | Explicit tables, storage bindings, LOOKUP and QUERY | Accepted, amended by 0020, 0036, 0037, 0046 |
+| [0016](0016-explicit-tables-and-query-functions.md) | Explicit tables, storage bindings, LOOKUP and QUERY | Accepted, amended by 0020, 0036, 0037, 0046, 0068 |
 | [0017](0017-duckdb-as-the-analytical-engine.md) | DuckDB as the analytical engine, full and lite builds | Accepted, amended by 0035 |
-| [0018](0018-class-metadata-layouts-and-wire-format.md) | JSON for definitions and interchange: class metadata, layouts and the wire format | Accepted, amended by 0022, 0023, 0028, 0031, 0032, 0033, 0034, 0039, 0043, 0047 |
+| [0018](0018-class-metadata-layouts-and-wire-format.md) | JSON for definitions and interchange: class metadata, layouts and the wire format | Accepted, amended by 0022, 0023, 0028, 0031, 0032, 0033, 0034, 0039, 0043, 0047, 0068, 0069 |
 | [0019](0019-formula-language-semantics.md) | Formula language semantics: grammar, types, coercion, comparison, dates, text, composites and errors | Accepted, amended by 0021, 0022, 0023, 0024, 0031, 0043, 0047, 0050 |
 | [0020](0020-query-function-execution.md) | LOOKUP and QUERY execution: one engine call per invocation | Accepted, amended by 0036, 0037, 0046 |
 | [0021](0021-size-limits.md) | Size limits: one text limit per database, enforced before building | Accepted, amended by 0033 |
@@ -33,13 +33,13 @@ line says so. Copy `0000-template.md` to start.
 | [0025](0025-evaluate-without-committing.md) | Evaluate a class or a document without committing | Accepted, amended by 0042, 0043, 0048, 0049 |
 | [0026](0026-idempotency-keys-business-dates-and-the-transition-event.md) | Idempotency keys on commands, a business date on events, and the transition event | Accepted, amended by 0040, 0044, 0045, 0047, 0048, 0049, 0050 |
 | [0027](0027-principal-from-the-embedder-and-registered-executors.md) | The principal comes from the embedder; action executors are registered | Accepted, amended by 0044, 0045, 0049, 0050, 0051, 0052, 0053 |
-| [0028](0028-field-level-rights-per-state.md) | Field-level rights per state | Accepted, amended by 0041 |
+| [0028](0028-field-level-rights-per-state.md) | Field-level rights per state | Accepted, amended by 0041, 0069 |
 | [0029](0029-browser-vm-as-one-plain-javascript-file.md) | The browser VM ships as one plain JavaScript file | Accepted |
 | [0030](0030-benchmark-gate-measures-the-minimum-over-placements.md) | The benchmark gate measures the minimum over code placements | Accepted |
-| [0031](0031-named-schemas-and-object-values.md) | Named schemas and object values | Accepted |
-| [0032](0032-predefined-vocabulary-and-object-presentation.md) | A predefined vocabulary of objects, and how an object is presented | Accepted |
+| [0031](0031-named-schemas-and-object-values.md) | Named schemas and object values | Accepted, amended by 0068 |
+| [0032](0032-predefined-vocabulary-and-object-presentation.md) | A predefined vocabulary of objects, and how an object is presented | Accepted, amended by 0069 |
 | [0033](0033-attachments-as-file-values-behind-a-blob-store.md) | Attachments are File values; the bytes live behind a blob store | Accepted, amended by 0049, 0052, 0055, 0067 |
-| [0034](0034-range-constraints-on-numeric-variables.md) | Range constraints on numeric variables | Accepted |
+| [0034](0034-range-constraints-on-numeric-variables.md) | Range constraints on numeric variables | Accepted, amended by 0069 |
 | [0035](0035-sqlite-is-the-transactional-store.md) | SQLite is the transactional store, by measurement | Accepted |
 | [0036](0036-in-memory-index-for-lookups-in-commits.md) | An in-memory index serves LOOKUP inside commits, by measurement | Accepted |
 | [0037](0037-explicit-tables-and-the-compiled-lookup.md) | Explicit tables bound to SQLite and the compiled LOOKUP | Accepted, amended by 0046, 0051 |
@@ -59,7 +59,7 @@ line says so. Copy `0000-template.md` to start.
 | [0051](0051-who-may-define-operate-and-query.md) | Who may define, operate and query, and the rules of a table | Accepted, amended by 0052, 0067 |
 | [0052](0052-system-groups-and-the-content-administrator.md) | System groups: who runs the database, who designs, who reads everything and who may act on any document | Accepted, amended by 0057, 0059, 0067 |
 | [0053](0053-acting-for-somebody.md) | Acting for somebody: a recorded substitution for people and assistants | Accepted |
-| [0054](0054-the-screen-on-a-layout-component.md) | The screen on a layout component: `mobile` and `desktop` | Proposed |
+| [0054](0054-the-screen-on-a-layout-component.md) | The screen on a layout component: `mobile` and `desktop` | Withdrawn by 0069 |
 | [0055](0055-the-command-set-on-the-wire.md) | The command set on the wire: every command, its JSON, and one address each | Accepted, amended by 0057, 0058, 0059, 0063, 0065, 0067 |
 | [0056](0056-one-database-for-each-customer.md) | One database for each customer, and a server that serves one database | Accepted |
 | [0057](0057-users-groups-and-keys.md) | Who is calling: users, groups and keys, kept in the database | Accepted |
@@ -73,5 +73,5 @@ line says so. Copy `0000-template.md` to start.
 | [0065](0065-a-way-in-for-messages-from-outside.md) | A way in for messages from outside: an inlet, a definition the server runs | Accepted |
 | [0066](0066-what-the-servers-budget-is-measured-beside.md) | What the server's budget is measured beside: the Go API called by a request | Accepted |
 | [0067](0067-the-log-of-reads.md) | The log of reads: what a content administrator sees past a rule, and every SQL statement | Accepted |
-| [0068](0068-what-a-class-says-to-people.md) | What a class says to people: labels, The List, formats, descriptions and other languages | Accepted |
-| [0069](0069-the-screen-is-the-faces-and-a-class-has-sections.md) | The screen is the face's, and a class has sections | Proposed |
+| [0068](0068-what-a-class-says-to-people.md) | What a class says to people: labels, The List, formats, descriptions and other languages | Accepted, amended by 0069 |
+| [0069](0069-the-screen-is-the-faces-and-a-class-has-sections.md) | The screen is the face's, and a class has sections | Accepted |

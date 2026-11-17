@@ -1,6 +1,6 @@
 # ADR-0031: Named schemas and object values
 
-- Status: Accepted; amends ADR-0013, ADR-0014, ADR-0018, ADR-0019
+- Status: Accepted; amends ADR-0013, ADR-0014, ADR-0018, ADR-0019; amended by ADR-0068 (a field has a long form with a label, a description and a format)
 - Date: 2026-11-07
 
 ## Context

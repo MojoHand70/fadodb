@@ -824,6 +824,43 @@ func runGetInlet(c *call) error {
 
 func runListInlets(c *call) error { return c.answer("inlets", list(c.s.Inlets()), nil) }
 
+// wordsOf reads the class, the table or the schema and the language a
+// command about words names.
+func (c *call) wordsOf() store.WordsOf {
+	return store.WordsOf{Class: c.text("class"), Table: c.text("table"), Schema: c.text("schema"), Language: c.text("language")}
+}
+
+func runDefineWords(c *call) error {
+	w, err := c.s.DefineWords(c.ctx, c.given("definition"), c.opts...)
+	if err != nil {
+		return err
+	}
+	return c.stored("words", store.DefinitionWords, w.Name, w.Version, nil)
+}
+
+func runGetWords(c *call) error {
+	version, e := c.integer("version")
+	if e != nil {
+		return e
+	}
+	of := c.wordsOf()
+	kind, target := model.WordsOfClass, of.Class
+	switch {
+	case of.Table != "":
+		kind, target = model.WordsOfTable, of.Table
+	case of.Schema != "":
+		kind, target = model.WordsOfSchema, of.Schema
+	}
+	if target == "" {
+		return badJSON("/class", "get_words names the class, the table or the schema the words translate", `write {"class": "Invoice", "language": "pl"}`)
+	}
+	return c.stored("words", store.DefinitionWords, model.WordsName(kind, target, of.Language), int(version), nil)
+}
+
+func runListWords(c *call) error { return c.answer("words", list(c.s.ListWords(c.wordsOf())), nil) }
+
+func runRemoveWords(c *call) error { return c.empty(c.s.RemoveWords(c.ctx, c.wordsOf(), c.opts...)) }
+
 func runOutbox(c *call) error {
 	limit, e := c.integer("limit")
 	if e != nil {

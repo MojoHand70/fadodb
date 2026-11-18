@@ -1059,6 +1059,72 @@ func TestTheLogOfReads(t *testing.T) {
 	}
 }
 
+// The words of a class in another language (ADR-0068, item 6): a
+// designer defines them, every caller reads and lists them, a path the
+// class does not have is refused, and a later version of the class that
+// drops a variable leaves its words noted as unused.
+func TestTheCommandsOfTheWords(t *testing.T) {
+	s := open(t)
+	define(t, s)
+	const polish = `{"class": "Invoice", "language": "pl", "label": "Faktura",
+	  "variables": {"number": {"label": "Numer"}, "net": {"label": "Kwota netto", "description": "Kwota przed VAT."}},
+	  "states": {"approved": {"label": "Zatwierdzona"}},
+	  "transitions": {"approve": {"label": "Zatwierdź"}}}`
+	if e := refused(t, s, bob, "define_words", `{"definition": `+polish+`}`); e.Code != store.CodeForbidden {
+		t.Errorf("words defined by somebody who is no designer: %+v", e)
+	}
+	defined := run(t, s, dan, "define_words", `{"definition": `+polish+`}`)
+	if at(t, defined, "words.name") != "class/Invoice/pl" || at(t, defined, "words.version") != 1.0 || at(t, defined, "words.defined.by") != "dan" {
+		t.Errorf("define_words answered %v", defined)
+	}
+	if got := run(t, s, dan, "define_words", `{"definition": `+polish+`}`); at(t, got, "words.version") != 1.0 {
+		t.Errorf("the same words again: %v", got)
+	}
+	// A path the class does not have is refused with its place.
+	answer, err := Exec(context.Background(), s, dan, "define_words", []byte(`{"definition": {"class": "Invoice", "language": "pl", "variables": {"vat": {"label": "VAT"}}}}`))
+	if err == nil || !strings.Contains(string(answer), `"path":"/variables/vat"`) || !strings.Contains(string(answer), `"code":"bad_value"`) {
+		t.Errorf("words of a variable the class does not have: %v %s", err, answer)
+	}
+	// Every caller reads them, as a page of every person does.
+	got := run(t, s, bob, "get_words", `{"class": "invoice", "language": "pl"}`)
+	if at(t, got, "words.name") != "class/Invoice/pl" || at(t, got, "words.definition.label") != "Faktura" {
+		t.Errorf("get_words answered %v", got)
+	}
+	if e := refused(t, s, bob, "get_words", `{"class": "Invoice", "language": "de"}`); e.Code != store.CodeUnknownWords {
+		t.Errorf("words in a language nobody defined: %+v", e)
+	}
+	// A version of the class without net leaves the words of net unused.
+	withoutNet := strings.Replace(invoiceClass, `"total":  {"formula": "net", "description": "What is paid."}`, `"total":  {"formula": "0", "description": "What is paid."}`, 1)
+	withoutNet = strings.Replace(withoutNet, `    "net":    {"type": "money", "scale": 2, "label": "Net amount", "list": true, "format": "#,##0.00", "description": "The amount before VAT."},
+`, "", 1)
+	run(t, s, dan, "define_class", `{"definition": `+withoutNet+`}`)
+	listed := run(t, s, bob, "list_words", `{"language": "pl"}`)["words"].([]any)
+	if len(listed) != 1 || listed[0].(map[string]any)["class"] != "Invoice" {
+		t.Fatalf("list_words answered %v", listed)
+	}
+	if notes := listed[0].(map[string]any)["notes"].([]any); len(notes) != 1 || notes[0].(map[string]any)["code"] != model.CodeUnusedWords || notes[0].(map[string]any)["path"] != "/variables/net" {
+		t.Errorf("the notes of words the class no longer uses: %v", notes)
+	}
+	again := strings.Replace(polish, `"label": "Faktura"`, `"label": "Faktura dostawcy"`, 1)
+	again = strings.Replace(again, `, "net": {"label": "Kwota netto", "description": "Kwota przed VAT."}`, "", 1)
+	run(t, s, dan, "define_words", `{"definition": `+again+`}`)
+	if versions := run(t, s, bob, "definitions", `{"what": "words", "name": "class/Invoice/pl"}`)["versions"].([]any); len(versions) != 2 {
+		t.Errorf("the versions of the words: %v", versions)
+	}
+	if got := run(t, s, bob, "get_words", `{"class": "Invoice", "language": "pl", "version": 1}`); at(t, got, "words.definition.label") != "Faktura" {
+		t.Errorf("the first version of the words: %v", got)
+	}
+	if got := run(t, s, dan, "remove_words", `{"class": "Invoice", "language": "pl"}`); len(got) != 0 {
+		t.Errorf("remove_words answered %v", got)
+	}
+	if listed := run(t, s, bob, "list_words", `{}`)["words"].([]any); len(listed) != 0 {
+		t.Errorf("the words after they were taken away: %v", listed)
+	}
+	if e := refused(t, s, dan, "remove_words", `{"class": "Invoice", "language": "pl"}`); e.Code != store.CodeUnknownWords {
+		t.Errorf("words taken away twice: %+v", e)
+	}
+}
+
 // TestEveryCommandIsRun fails when a command of the table was run by no
 // test of this package. It runs last: the tests of a package run in the
 // order of their files and, in a file, as written. When the tests that

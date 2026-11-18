@@ -256,8 +256,8 @@ section refused, the hint naming the cell that decided.
 
 ## Settled while building
 
-Items 3, 4, 5 and 7 are built; item 6 is built with the words of
-ADR-0068, and the bundle of item 2 by the record that follows. Settled
+Items 3, 4, 5, 6 and 7 are built, item 6 with the words of ADR-0068;
+the bundle of item 2 comes with the record that follows. Settled
 by me while building, each the owner's to strike:
 
 1. **A fifth level is refused with `too_deep`**, not `bad_value` as

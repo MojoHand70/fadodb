@@ -57,7 +57,7 @@ A field may hold an object of another schema, the engine's or yours:
 | Word | Meaning |
 |---|---|
 | `name` | the name of the schema: letters, digits and underscores. A class names it, in any case of letters |
-| `fields` | each field with its type: any simple type but `json`, written as in a table, or `object<Name>` for an object of another schema. A field may also be written in the long form, as `capacity` is: an object with its `type`, a `label`, a `description` and a `format` ([what a class says to people](class.md#what-a-class-says-to-people)) |
+| `fields` | each field with its type: any simple type but `json`, written as in a table, or `object<Name>` for an object of another schema. A field may also be written in the long form, as `capacity` is: an object with its `type`, a `label`, a `description` and a `format` ([what a class says to people](class.md#what-a-class-says-to-people)). In another language a field's words are given beside the schema, the engine's own schemas too ([words in other languages](class.md#words-in-other-languages)) |
 | `extends` | the name of one other schema. The fields of that schema come first, and this one adds its own |
 | `presentation` | how a screen shows an object of this schema: `title` and `subtitle`, formulas over the fields that give text; `avatar`, the name of a text field with a picture; `icon` and `color` |
 

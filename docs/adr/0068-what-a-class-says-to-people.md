@@ -215,9 +215,9 @@ All of 2026-11-17, put in the chat with the case above.
 
 ## Settled while building
 
-Items 1 to 5 and 7 are built; item 6, the words in other languages, is
-built after the sections of ADR-0069, which it covers too. Settled by
-me while building, each the owner's to strike:
+Every item is built: 1 to 5 and 7 first, then item 6, the words in
+other languages, after the sections of ADR-0069, which it covers too.
+Settled by me while building, each the owner's to strike:
 
 1. **The limit of a label and a description is 65,536 code points**,
    the default text limit of a database (ADR-0021), and not a
@@ -273,3 +273,40 @@ when a class is defined and when it is answered, never in a commit or a
 recalculation. A definition of words is read with its class, once per
 language, and cached by the page with the class (the record that
 follows).
+8. **The name of words** in the record of who defined what, and for
+   `Definition` and `definitions`, is what they translate, its name and
+   the language: `class/Invoice/pl`. A class and a schema may share a
+   name, so the kind is part of it. `get_words` takes the three apart.
+9. **The language is checked by its shape**, as RFC 5646 gives it, and
+   not against the registry, and must be written in the standard's
+   case: `pt-br` is refused with a hint that gives `pt-BR`, so that one
+   language is never kept under two spellings.
+10. **Words that say nothing**, an entry with neither a label nor a
+    description, are refused with `missing`. A schema has no label and
+    no description of its own, so words that give one for a schema are
+    refused with `not_allowed`, as are the columns of a class and the
+    variables of a table.
+11. **A field of an object variable** is not a path of the class:
+    `contact.email` is refused with a hint that names the schema, whose
+    words give its fields. A column of a `rows` variable written inline,
+    `lines.qty`, is a path. The engine's own schemas take words too.
+12. **What they translate comes first**: words of a class, a table or a
+    schema the database does not have are refused with
+    `unknown_class`, `unknown_table` or `unknown_schema`. A version of
+    the words is checked against the current version of what they
+    translate.
+13. **Who.** `define_words` and `remove_words` are for the system group
+    designers, as a class is; `get_words` and `list_words` are open to
+    every caller, as reading a definition is, because every person's
+    page reads them.
+14. **Taken away, kept.** `remove_words` takes the words out of the
+    list, and keeps their versions and who defined each; defining them
+    again makes their next version. A version may be named in the
+    definition, `"version": 3`, as in a class, and must be the next.
+15. **Unused words are noted** by `get_words` and `list_words`, code
+    `unused_words`, one note for each path the current version no
+    longer has. A note refuses nothing.
+16. **The engine's schema stays 12.** The words add two tables,
+    `words` and `words_versions`, and change none, so a database of
+    this schema opens with this engine and gains them. A new database
+    grows from about 200 KB to about 250 KB.

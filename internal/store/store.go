@@ -255,6 +255,10 @@ type Store struct {
 	inlets     map[string]*inlet
 	inletOrder []string
 	inbound    bool
+	// words are the words in other languages by kind, upper-cased name
+	// and language (ADR-0068, item 6), in the order first defined.
+	words      map[string]*wordsDef
+	wordsOrder []string
 
 	// sqlConn is the read-only SQL endpoint's connection, with its
 	// authorizer, made on first use; sqlMu serialises its statements.
@@ -434,7 +438,7 @@ func open(path string, o Options) (*Store, error) {
 		schemas: model.NewSchemaSet(), schemaJSON: map[string][]byte{}, classes: map[string]*class{}, versions: map[string]map[int]*class{},
 		tables: map[string]*table{}, plans: map[*formula.QuerySlot]*lookupPlan{},
 		actions: map[string]*action{}, funcs: funcs, inFlight: map[flight]struct{}{}, writesBack: map[string]bool{},
-		outbound: o.Outbound, secretFn: o.Secrets, inlets: map[string]*inlet{}, inbound: o.Inbound,
+		outbound: o.Outbound, secretFn: o.Secrets, inlets: map[string]*inlet{}, inbound: o.Inbound, words: map[string]*wordsDef{},
 		stop: make(chan struct{}), done: make(chan struct{}),
 		outbox: o.Outbox, wake: make(chan struct{}, 1), workDone: make(chan struct{}),
 	}
@@ -881,7 +885,12 @@ func (s *Store) load(ctx context.Context) error {
 		}
 	}
 	// The inlets, which name the classes (ADR-0065).
-	return s.loadInlets(ctx)
+	if err := s.loadInlets(ctx); err != nil {
+		return err
+	}
+	// The words, which translate the classes, the tables and the schemas
+	// (ADR-0068, item 6).
+	return s.loadWords(ctx)
 }
 
 // env is what definitions compile against: the schemas, the tables, the

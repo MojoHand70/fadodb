@@ -24,6 +24,8 @@ const (
 	DefinitionInlet  = "inlet"
 )
 
+// DefinitionWords is declared with the words, in words.go.
+
 // Defined says who defined a version and when: By, the id of the caller,
 // Kind, what it was, For, the id it acted for, and At, the moment in
 // seconds since the epoch.
@@ -60,7 +62,7 @@ func recordDefinition(ctx context.Context, w execer, what, name string, version 
 // was defined under answers an empty list.
 func (s *Store) Definitions(ctx context.Context, what, name string) ([]Definition, error) {
 	switch what {
-	case DefinitionClass, DefinitionSchema, DefinitionTable, DefinitionAction, DefinitionInlet:
+	case DefinitionClass, DefinitionSchema, DefinitionTable, DefinitionAction, DefinitionInlet, DefinitionWords:
 	default:
 		return nil, noSuchDefinition(what)
 	}
@@ -87,7 +89,7 @@ func (s *Store) Definitions(ctx context.Context, what, name string) ([]Definitio
 
 // noSuchDefinition is the refusal of a kind of definition that is none.
 func noSuchDefinition(what string) *Error {
-	return hintf(CodeBadValue, "", "a definition is a "+DefinitionClass+", a "+DefinitionSchema+", a "+DefinitionTable+", an "+DefinitionAction+" or an "+DefinitionInlet+", got "+strings.TrimSpace(what), "name one of the five")
+	return hintf(CodeBadValue, "", "a definition is a "+DefinitionClass+", a "+DefinitionSchema+", a "+DefinitionTable+", an "+DefinitionAction+", an "+DefinitionInlet+" or "+DefinitionWords+", got "+strings.TrimSpace(what), "name one of the six")
 }
 
 // loadDefined gives every class, table, action and inlet that was loaded the

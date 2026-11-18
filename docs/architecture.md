@@ -162,7 +162,11 @@ class (ADR-0069): which variables belong together, a section inside a
 section, each with a label and a description. A section stands where a
 variable stands in `rights`, so a designer gives the rights of a part in
 one line. None of it is a value: nothing of it is stored with a
-document, and no formula, filter or export reads it.
+document, and no formula, filter or export reads it. The same words in
+another language are a definition of their own beside the class, under
+the class and a tag of BCP 47 (`define_words`, `get_words`,
+`list_words`, `remove_words`): a translation makes no new version of the
+class.
 
 ### JSON: definitions and interchange, not storage
 

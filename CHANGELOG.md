@@ -8,6 +8,23 @@ All notable changes to FadoDB are recorded here. The format follows
 
 ### Added
 
+- Words in other languages (ADR-0068, item 6; ADR-0069, item 6),
+  built. The words of a class, a table or a schema in one language are
+  a definition of their own beside it: its label and description, and
+  those of each variable, column (`lines.qty`), section, state and
+  transition by its path, or of a table's columns and a schema's fields.
+  The commands `define_words` and `remove_words`, for designers, and
+  `get_words` and `list_words`, for every caller; `fado.DB` has
+  `DefineWords`, `ListWords` and `RemoveWords`, and `Definition` and
+  `Definitions` read them under `words` and the name
+  `class/Invoice/pl`. The language is a tag of BCP 47 written as the
+  standard writes it. A path the current version does not have is
+  refused with `bad_value`; a later version of the class that drops one
+  leaves the words noted, `unused_words`. Words make no new version of
+  what they translate and touch no document; each of their versions is
+  kept with who defined it. Two tables, `words` and `words_versions`,
+  join the engine's own; a database of the same engine schema opens and
+  gains them. A new database is about 250 KB.
 - Sections (ADR-0069), built. A class may declare `sections`, the
   outline of its variables: a section has a `label`, a `description`,
   the `variables` it holds and `sections` inside it, at most four deep.

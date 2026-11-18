@@ -529,9 +529,13 @@ It answers:
 | [`list_schemas`](#list_schemas) | Lists the schemas. | reads |
 | [`list_tables`](#list_tables) | Lists the tables. | reads |
 | [`list_actions`](#list_actions) | Lists every action a rule may name, the engine's own first. | reads |
-| [`definitions`](#definitions) | Lists the versions of one class, schema, table, action or inlet, with who defined each and when. | reads |
+| [`definitions`](#definitions) | Lists the versions of one class, schema, table, action, inlet or words, with who defined each and when. | reads |
 | [`preview_draft`](#preview_draft) | Tries a class definition that is not stored on a create, or on a document of the stored class of the same name, writing nothing. | reads |
 | [`migrate`](#migrate) | Brings every live document of a class that an earlier version computed to the current version. | writes |
+| [`define_words`](#define_words) | Defines the words of a class, a table or a schema in another language: the label and the description of each thing, by its path. It makes no new version of what it translates. | writes |
+| [`get_words`](#get_words) | Reads the words of a class, a table or a schema in one language back as they were defined. | reads |
+| [`list_words`](#list_words) | Lists the words in other languages: of every class, table and schema, or of the one named, in every language or in the one named. | reads |
+| [`remove_words`](#remove_words) | Takes away the words of a class, a table or a schema in one language: a page shows it in its own words from then on. Their versions stay. | writes |
 | [`validate_inlet`](#validate_inlet) | Reports what define_inlet would refuse, storing nothing. | reads |
 | [`try_inlet`](#try_inlet) | Answers what an inlet would do with a message, and does nothing: whether it acts on it, and the command the message would become. The proof is not asked for. | reads |
 | [`define_inlet`](#define_inlet) | Defines an inlet: how a message from outside proves who sent it, and the one command it becomes, carried out as a service user. For a database administrator. | writes |
@@ -769,12 +773,12 @@ It answers:
 
 ### definitions
 
-Lists the versions of one class, schema, table, action or inlet, with who defined each and when. It reads; in Go it is the call `Definitions`.
+Lists the versions of one class, schema, table, action, inlet or words, with who defined each and when. It reads; in Go it is the call `Definitions`.
 
 | Member | Type | | What it is |
 |---|---|---|---|
-| `what` | text | needed | class, schema, table, action or inlet |
-| `name` | text | needed | its name |
+| `what` | text | needed | class, schema, table, action, inlet or words |
+| `name` | text | needed | its name; for words, what they translate, its name and the language: class/Invoice/pl |
 
 It answers:
 
@@ -816,6 +820,72 @@ It answers:
 | Member | What it holds |
 |---|---|
 | `migrated` | how many documents it moved |
+
+### define_words
+
+Defines the words of a class, a table or a schema in another language: the label and the description of each thing, by its path. It makes no new version of what it translates. It writes; in Go it is the call `DefineWords`.
+
+| Member | Type | | What it is |
+|---|---|---|---|
+| `definition` | definition | needed | the definition, as JSON |
+
+And, of the members that mean the same everywhere: `for`.
+
+It answers:
+
+| Member | What it holds |
+|---|---|
+| `words` | the definition as it was given, with its name, its version and who defined it, and a note for each path the class no longer has |
+
+### get_words
+
+Reads the words of a class, a table or a schema in one language back as they were defined. It reads; in Go it is the call `Definition`.
+
+| Member | Type | | What it is |
+|---|---|---|---|
+| `class` | text |  | the class they translate |
+| `table` | text |  | the table, in place of a class |
+| `schema` | text |  | the schema, in place of a class |
+| `language` | text | needed | the language, a tag of BCP 47: pl, pt-BR |
+| `version` | whole number |  | an earlier version; the current one when left out |
+
+It answers:
+
+| Member | What it holds |
+|---|---|
+| `words` | the definition as it was given, with its name, its version and who defined it, and a note for each path the class no longer has |
+
+### list_words
+
+Lists the words in other languages: of every class, table and schema, or of the one named, in every language or in the one named. It reads; in Go it is the call `ListWords`.
+
+| Member | Type | | What it is |
+|---|---|---|---|
+| `class` | text |  | only the words of this class |
+| `table` | text |  | only the words of this table |
+| `schema` | text |  | only the words of this schema |
+| `language` | text |  | only the words in this language |
+
+It answers:
+
+| Member | What it holds |
+|---|---|
+| `words` | the words, in the order first defined, each with its name, its version, who defined it and a note for each path the class no longer has |
+
+### remove_words
+
+Takes away the words of a class, a table or a schema in one language: a page shows it in its own words from then on. Their versions stay. It writes; in Go it is the call `RemoveWords`.
+
+| Member | Type | | What it is |
+|---|---|---|---|
+| `class` | text |  | the class they translate |
+| `table` | text |  | the table, in place of a class |
+| `schema` | text |  | the schema, in place of a class |
+| `language` | text | needed | the language |
+
+And, of the members that mean the same everywhere: `for`.
+
+It answers `{}`.
 
 ### validate_inlet
 

@@ -196,6 +196,10 @@ const (
 	// CodeUnknownInlet: the database has no inlet of that name, or the
 	// program that holds it takes no messages from outside (ADR-0065).
 	CodeUnknownInlet = "unknown_inlet"
+	// CodeUnknownWords: the database has no words of that class, table or
+	// schema in that language, or no such version of them (ADR-0068,
+	// item 6).
+	CodeUnknownWords = "unknown_words"
 	// CodeBadMessage: a message from outside is not what its inlet
 	// reads: it holds no JSON, lacks what a formula of the inlet looks
 	// for, or gives a value the formula cannot turn into what it fills

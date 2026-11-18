@@ -503,7 +503,7 @@ func TestRunningIt(t *testing.T) {
 	checks(t, page, "the size", map[string]func([]string){
 		"a new database, with no class": func(row []string) {
 			open(sized, looking).Close()
-			if empty = size(); empty < 150<<10 || empty > 250<<10 || row[1] != "about 200 KB" {
+			if empty = size(); empty < 200<<10 || empty > 300<<10 || row[1] != "about 250 KB" {
 				t.Errorf("a new database is %d bytes", empty)
 			}
 		},

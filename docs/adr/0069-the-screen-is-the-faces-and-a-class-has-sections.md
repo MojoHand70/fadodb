@@ -254,6 +254,38 @@ section's variables before the sections inside it, four levels, names
 unique across the outline and apart from the variables', an empty
 section refused, the hint naming the cell that decided.
 
+## Settled while building
+
+Items 3, 4, 5 and 7 are built; item 6 is built with the words of
+ADR-0068, and the bundle of item 2 by the record that follows. Settled
+by me while building, each the owner's to strike:
+
+1. **A fifth level is refused with `too_deep`**, not `bad_value` as
+   item 3 says: `too_deep` is the engine's code for anything nested past
+   its limit, objects (ADR-0031) and the templates of an action, and an
+   agent that knows it for one knows it for all.
+2. **The hint of a refused write** reads `the write right of net, from
+   the cell review / amounts: the groups finance`: the variable, the
+   cell that decided, and the rule written in it.
+3. **An override is recorded as ADR-0052 has it**, with the document's
+   state and the variable, `/rights/review/net/write`, and not with the
+   cell that decided. The record says what was set past a rule; the hint
+   says which line to change. Two variables of one section set past it
+   are two places, as they are without sections.
+4. **A section's name** is checked as an identifier and against the
+   keywords of the formula language, and not against the names of the
+   system columns, `id` and `state` among them, which a section never
+   meets.
+5. **A variable refused for its own fault**, a type the engine does not
+   know, is not refused again by the section that lists it.
+6. **A name in `rights` that is neither a variable nor a section** is
+   refused with `unknown_variable`, as an unknown variable was, and the
+   message says it looked for both.
+7. **The samples.** The invoice and the purchase under
+   `examples/classes`, the expense of the chapter on the class and the
+   request of the designer's skill have sections. The receipt and the
+   approval, with two and three variables, have none.
+
 ## Consequences
 
 - The engine's part ends at the document. A face needs the class, its

@@ -71,7 +71,7 @@ func compileWords(c *collector, cls *Class, def *Definition) {
 	}
 }
 
-// noDescription notes each variable, state and transition that has no
+// noDescription notes each variable, section, state and transition that has no
 // description (ADR-0068, item 3). A note refuses nothing: a person may
 // define a class quickly, and an agent loops until no note is left, as a
 // programmer writes a comment for each thing a reader needs.
@@ -86,6 +86,24 @@ func noDescription(def *Definition) Diagnostics {
 				"add \"description\": what it holds and where it comes from, as a programmer writes a comment")
 		}
 	}
+	var outline func(path string, defs map[string]*SectionDef, order []string)
+	outline = func(path string, defs map[string]*SectionDef, order []string) {
+		if order == nil {
+			order = sortedSections(defs)
+		}
+		for _, name := range order {
+			sd := defs[name]
+			if sd == nil {
+				continue
+			}
+			if sd.Description == "" {
+				note(path+"/"+name+"/description", "section "+name+" has no description: nobody is told what this part of the document is for",
+					"add \"description\": what the part holds and who fills it in")
+			}
+			outline(path+"/"+name+"/sections", sd.Sections, sd.Order)
+		}
+	}
+	outline("/sections", def.Sections, def.SectionOrder)
 	if def.States != nil {
 		for _, name := range def.States.List {
 			if def.States.Descriptions[name] == "" {

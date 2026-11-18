@@ -30,6 +30,7 @@ exactly so in a class or a formula.
 | `description` | what a thing of a class is for, for people and for agents; the engine notes each variable, state and transition that has none |
 | The List | the table of the documents of a class that a page shows, one document to a row. The variables marked `"list": true` are the columns it may show |
 | `format` | how a page shows a number or a date, in the patterns of Excel's number formats; the person's language gives the separators and the names of the months |
+| section | a part of a class's outline: the variables that belong together, such as the amounts of an invoice, with a label and a description, and sections inside it. `rights` may name a section for every variable in it; see [sections](class.md#sections) |
 
 ## Who may
 

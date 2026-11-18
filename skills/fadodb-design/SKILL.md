@@ -281,6 +281,12 @@ complete; the engine accepts it as it stands, with no note.
     "with_tax": {"formula": "ROUND(amount * 1.23, 2)", "label": "With tax", "format": "#,##0.00",
                  "description": "The amount with 23% VAT, to the cent."}
   },
+  "sections": {
+    "money":    {"label": "Money", "description": "What is asked for, with and without tax.",
+                 "variables": ["subject", "amount", "with_tax"]},
+    "decision": {"label": "Decision", "description": "Who decides the request.",
+                 "variables": ["approver"]}
+  },
   "states": {"initial": "draft", "list": ["draft", "filed", "approved"], "final": ["approved"],
              "labels": {"draft": "Draft", "filed": "Waiting for approval", "approved": "Approved"},
              "descriptions": {
@@ -385,6 +391,7 @@ read the diagnostics, fix, preview against live data, define.
 | action definitions: `DefineAction`, `ValidateAction`, `Actions`, `PreviewAction`, `TryAction` | shipped with Phase 4: a definition with a `request` needs no code and reads secrets with `SECRET("name")`; it can be defined only where the host program allows outbound calls and names the definition's connection; `docs/actions.md` is the guide and `examples/actions/webhook.json` a generic webhook; definitions for particular services come with real needs, and a format for packages of them is planned |
 | the class-level access rules: `"access": {"read": ..., "create": ..., "update": ..., "delete": ...}` | shipped with Phase 5: each is a condition over the document for the caller, such as `owner = USER() OR INGROUP("finance")`. A document its caller may not `read` does not exist for them: `unknown_document` from every call that names it, and absent from a filter, a count and `Due`. `create` is asked over the new document with its defaults and computed values; `update` over the stored document, by a set, a reset and a named transition that has no rule of its own; `delete` over the stored document. A refusal is `forbidden`, with the place of the rule as its path, `/access/update`. A `read` rule uses the document's own variables, the functions of its row, the caller and the clock, and no lookup. Put `"index": true` on the variable a read rule compares with the caller, as in `"owner": {"type": "text", "default": "USER()", "index": true}`: a caller's own documents are then listed through the index, and a group that sees everything, `OR INGROUP("finance")`, costs its members nothing. A rule left out lets every caller through today; a ruling on that is pending (ADR-0049), so write all four **Write all four.** A rule a class leaves out lets nobody through but a content administrator: a class with no `access` block holds documents nobody creates or sees. `ValidateClass` says so with a note for each rule left out, code `rule_left_out` and `note: true`, which refuses nothing; a definition is refused only when `Refuses()` is true. `INGROUP("everyone")` opens a rule to every caller that has an id, and `TRUE` to a call without a principal too |
 | what a class says to people: `label`, `description`, `"list": true` and `format` on a variable, `labels` and `descriptions` in the states block, a `label` and a `description` on a transition, and the long form of a column or a field | shipped with Phase 7 (ADR-0068): checked when the class is defined, a `no_description` note for each variable, state and transition with none; the words in other languages are not built yet |
+| sections, the outline of a class: `"sections": {"amounts": {"label": ..., "description": ..., "variables": [...], "sections": {...}}}`, and a section's name in `rights` | shipped with Phase 7 (ADR-0069): one section per variable, four levels, names apart from the variables'; a section without a description is noted; in `rights` the most specific name wins, and a refusal's hint names the cell that decided. The words of a section in other languages are not built yet |
 | class versions, terminal states, migrations | shipped: a redefinition is a new version and touches no document; a document adopts it at its next commit, or all at once with `Migrate`; a terminal state freezes the document |
 
 ## Procedure
@@ -408,6 +415,15 @@ read the diagnostics, fix, preview against live data, define.
    true` on the fields The List should offer as columns, in the order
    you want them, and give a number or a date a person reads a `format`
    in Excel's patterns, `#,##0.00` or `d mmm yyyy`.
+   **Group the fields in sections**, the outline of the document a page
+   draws and an agent reads: `"sections": {"amounts": {"label":
+   "Amounts", "description": "What the invoice asks us to pay.",
+   "variables": ["net", "vat", "total"]}}`. A field is in one section at
+   most, and one in none belongs to the document as a whole; a section
+   may hold sections, four deep, and its name is not a field's. A
+   section has no condition: a part shown only when something holds
+   reads a computed variable, `has_delivery`, which every page and every
+   agent reads alike. Where the screen puts a section is the page's.
 4. **Write the formulas you would write in the spreadsheet.** The engine
    computes; the agent never does arithmetic. Division by zero is an
    error unless the formula says what to do with `IFERROR`.
@@ -425,8 +441,14 @@ read the diagnostics, fix, preview against live data, define.
    formula or a list of groups. "In review only reviewers edit" is
    `"rights": {"review": {"*": {"write": ["reviewers"]}}}`. The line of
    the document's state is asked before the line of `*`, and within a
-   state a named variable before `*`. Rights narrow what `access`
-   allows and never widen it.
+   state the most specific name wins. **A section stands where a
+   variable stands**: `"review": {"amounts": {"write": ["finance"]}}`
+   gives every field of the amounts, and of the sections inside it, to
+   finance in review, and `"vat": {"write": "FALSE"}` beside it still
+   closes one of them. The order is the variable's own line, its
+   section's, each section around that one, then `*`. A refusal's hint
+   names the line that decided, `review / amounts`: mend that line.
+   Rights narrow what `access` allows and never widen it.
 7. **Write the rules.** They run. Read `Actions` first: a rule names an
    engine action or one the catalogue lists, and gives a defined action
    its arguments under `args`, a formula for each parameter. To reach

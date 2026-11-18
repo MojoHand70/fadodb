@@ -7,6 +7,8 @@ described below, the formula engine exists as of v0.1.0, with the
 exceptions its section lists; the rest is design. See
 [ROADMAP.md](../ROADMAP.md) for what exists today and [perf/](perf/) for
 the measured numbers. Decisions with their reasoning are in [adr/](adr/).
+Revised 2026-11-18: the engine keeps no layouts, and a class has
+sections (ADR-0069).
 
 FadoDB is an embeddable active document database. A document class declares
 typed variables, Excel-like formulas, a statechart, and rules that fire
@@ -104,6 +106,11 @@ A class is one JSON document.
                   "formula": "LOOKUP(Invoice, COUNT(id), customer = THIS.customer AND state <> \"paid\")",
                   "mode": "triggered", "on": ["refresh", "enter:submitted"]}
   },
+  "sections": {
+    "billing":  {"label": "Billing",  "variables": ["number", "customer", "issued", "due", "owner", "contact", "scan"]},
+    "delivery": {"label": "Delivery", "variables": ["shipping", "ship_city"]},
+    "amounts":  {"label": "Amounts",  "variables": ["lines", "subtotal", "discount", "total", "rate", "total_eur"]}
+  },
   "states": {
     "initial": "draft",
     "list":    ["draft", "submitted", "approved", "paid", "cancelled"],
@@ -135,8 +142,8 @@ A class is one JSON document.
 }
 ```
 
-Every string in `default`, `formula`, `guard`, `if`, `access`, `title`,
-action arguments and layout bindings is a formula. Literal text inside a
+Every string in `default`, `formula`, `guard`, `if`, `access`, `title`
+and action arguments is a formula. Literal text inside a
 formula is quoted. Classes are versioned; a change to variables creates a
 new version and a migration (see Class migrations).
 
@@ -147,10 +154,20 @@ its display name. The title is computed like an auto variable and exposed as
 the system variable `TITLE`, so a list sorts by it and a `ref` renders it
 with one join.
 
+What a class says to people is part of it (ADR-0068): a `label` and a
+`description` on the class, each variable, state and transition, `list`
+for the columns The List may show, and `format`, an Excel pattern a page
+applies in the person's language. `sections` is the outline of the
+class (ADR-0069): which variables belong together, a section inside a
+section, each with a label and a description. A section stands where a
+variable stands in `rights`, so a designer gives the rights of a part in
+one line. None of it is a value: nothing of it is stored with a
+document, and no formula, filter or export reads it.
+
 ### JSON: definitions and interchange, not storage
 
 JSON is FadoDB's format for definitions and for interchange. Class
-definitions, layouts, the function catalog and the bytecode debug form are
+definitions, the function catalog and the bytecode debug form are
 JSON documents and are stored as such. Every command, every document on the
 wire and the bundle a frontend fetches are JSON. What is not JSON is the
 stored document: its values are typed columns in the current and history
@@ -191,8 +208,9 @@ sees an object value. An object is a value, not a reference: a `Person` on two d
 two copies, its `id` is any text the embedder understands, and `ref` remains
 the pointer to a document. The engine ships `Person`, `Organization`,
 `Address`, `GeoPoint`, `Place`, `Period`, `Event`, `Quantity` and `File`,
-each with a presentation a layout renders as a chip, a card or coins; a
-class author defines more, or extends one (ADR-0031, ADR-0032). Values are
+each with a presentation block that says how it is titled, which every
+face draws as it likes; a class author defines more, or extends one
+(ADR-0031, ADR-0032, ADR-0069). Values are
 immutable; assigning a field or an element produces a whole new value in a
 new commit. Composite variables are meant to hold up to a few hundred
 elements. The soft limit is 1,000 elements with a definition-time warning,
@@ -254,9 +272,9 @@ result:
 | Class | Examples | Allowed in |
 |---|---|---|
 | Pure | `IF IFERROR ROUND SUM LEFT DATE ADDMONTHS DECIMAL MONEY JSONVALUE` | everywhere |
-| Context | `USER() INGROUP() USERKIND() ACTINGFOR() NOW() TODAY() STATE() ID()` | defaults, triggered formulas, guards, rules, access rules, layouts; not in auto formulas |
+| Context | `USER() INGROUP() USERKIND() ACTINGFOR() NOW() TODAY() STATE() ID()` | defaults, triggered formulas, guards, rules, access rules; not in auto formulas |
 | Lookup | `LOOKUP(source, column, condition)` | everywhere; in auto formulas only against explicit tables |
-| Query | `QUERY(source, columns, condition, sort, groupby, limit)` | defaults, triggered formulas, rules, layouts; not in auto formulas |
+| Query | `QUERY(source, columns, condition, sort, groupby, limit)` | defaults, triggered formulas, rules; not in auto formulas |
 | Secret | `SECRET("token")` | the request of an action definition, and nowhere else (ADR-0045) |
 
 The rule behind the table: the stored value of an auto variable must be a
@@ -699,7 +717,7 @@ the caller and the clock that say who may read its rows with
 `TableRows` and who may write them, by `ImportRows` or by a rule's
 action (ADR-0051); only the
 `sqlite` binding exists; the other bindings come with the analytical
-engine, and `QUERY` with the first layout or report that needs a list of
+engine, and `QUERY` with the first face or report that needs a list of
 rows (ADR-0046). A lookup
 whose condition is one equality of a column with an expression of the
 document is answered from an in-memory index while the table has at most
@@ -728,7 +746,8 @@ key order, to the function the Go VM adds with.
   keep them, a key turns a request into a principal, and every change
   to a user or a key is kept (ADR-0057).
 - Access rules per class: `read`, `create`, `update`, `delete`, and per-transition rules. Tables have `read` and `write` rules.
-- A class may declare `rights` per state and variable, a table of ticks:
+- A class may declare `rights` per state and variable or section, a
+  table of ticks, the most specific name winning (ADR-0069):
   a variable whose `write` rule is FALSE in the document's state cannot be
   set, one whose `read` rule is FALSE is absent from the wire document
   and query results; the SQL endpoint and the views stay row-level
@@ -834,42 +853,39 @@ two. The SQL endpoint adds no rule
 and reads every row and every variable. It is for the system group
 `analysts` (ADR-0051, ADR-0052), and for nobody else.
 
-### Layouts
+### The screen is the face's
 
-Visuals live at class level, never per document. A class has any number of
-named **layouts**, each a JSON document that binds components to variables:
-`form`, `list`, `card`, `print`, or whatever a frontend needs. `visible`,
-`enabled`, `editable`, `style` and templates are formulas evaluated live in
-the browser VM; a `rows` variable renders as a grid, an object as a chip or
-a card and a collection of objects as coins (ADR-0032). A layout that looks
-different per document does so through those formulas, not through stored
-per-document presentation.
+The engine keeps no screen (ADR-0069). A class has no layouts; the
+engine stores none, checks none and serves none. A face, FadoFace, the
+kit of plain pages or a page an agent writes, decides what goes where,
+drawn as what and on which screen, from what the class says to people,
+its sections, the rights and the commands. A condition a face needs is
+a computed variable of the class, `has_delivery`, which the engine and
+the browser VM work out alike, so every face and every agent reads the
+same answer; who may see and set a value is the rights table, which
+protects it on every path whatever a face draws. A face that keeps
+screens of its own keeps them as documents of a class it defines, as it
+keeps the views of The List.
+
+A class's sections are its outline:
 
 ```json
-{
-  "class": "Invoice",
-  "name": "form",
-  "components": [
-    {"type": "field",   "variable": "number"},
-    {"type": "field",   "variable": "customer"},
-    {"type": "grid",    "variable": "lines", "editable": "STATE() = \"draft\""},
-    {"type": "chip",    "variable": "contact"},
-    {"type": "field",   "variable": "scan", "editable": "STATE() = \"draft\""},
-    {"type": "text",    "template": "Total: {total} {currency}", "visible": "total > 0"},
-    {"type": "badge",   "template": "OVERDUE", "visible": "overdue", "style": "\"danger\""},
-    {"type": "button",  "label": "Refresh backlog", "command": {"refresh": ["backlog"]}},
-    {"type": "actions", "transitions": ["submit", "approve", "pay"]}
-  ]
+"sections": {
+  "supplier": {"label": "Supplier", "description": "Who sent the invoice.", "variables": ["customer", "number"]},
+  "amounts":  {"label": "Amounts",  "description": "What the invoice asks us to pay.", "variables": ["net", "vat", "total"]},
+  "delivery": {"label": "Delivery", "description": "Where the goods came to.", "variables": ["has_delivery"],
+               "sections": {"address": {"label": "Address", "variables": ["street", "city"]}}}
 }
 ```
 
-Layouts are stored in their own table and versioned independently of the
-class, so a layout change never bumps the class version or migrates
-documents. Saving a layout validates every binding and formula against the
-class; removing a variable that a layout binds to is rejected until the
-layout changes. The reference renderer is one implementation of the layout
-format; Flutter, terminal or spreadsheet frontends are others, and all of
-them fetch the same bundle (see Documents on the wire).
+A variable is in one section at most, and one in none belongs to the
+document as a whole. The order is the written order, a section's own
+variables before the sections inside it; sections nest four deep, and a
+section's name is unique in the outline and apart from the variables'.
+A section has no condition: whether it is shown or folded is the face's.
+The rule of each variable in each state, through its sections, is
+worked out once when the class is laid out, so a commit and a
+projection cost what they cost without sections.
 
 Attachments are `File` values: a variable of type `object<File>` or
 `rows<File>` holds the hash, name, media type and size, attaching is a
@@ -979,7 +995,7 @@ against their own VM port.
 
 - WAL mode, `synchronous=NORMAL`, one writer goroutine with batching,
   prepared statements, read connections pooled.
-- Schema: `classes`, `class_versions`, `schemas`, `layouts`, per class the
+- Schema: `classes`, `class_versions`, `schemas`, per class the
   current, history and child tables, `events`, `event_docs`, `outbox`,
   the users and keys of a database that keeps its own (ADR-0057),
   `tables_registry`, `schema_version`, `blobs` when the blob store is the
@@ -1053,7 +1069,6 @@ db, err := fado.Open("app.fado", fado.Options{
 })
 act, err := db.DefineAction(ctx, actionJSON)
 cls, err := db.DefineClass(ctx, classJSON)
-err  = db.DefineLayout(ctx, "Invoice", layoutJSON)
 p := fado.Principal{ID: "alice", Groups: []string{"finance"}}
 doc, err := db.Create(ctx, "Invoice", fado.Values{"customer": "Customer:42"}, fado.As(p), fado.Key("ksef-2026-0042"))
 doc, err  = db.Set(ctx, "Invoice", doc.ID, fado.Values{"discount": "0.10"}, fado.As(p))
@@ -1094,7 +1109,7 @@ is a `fado.Error` with a stable code and the variable it is about, or the
 table or an action back as it was given, and `Schema` and `Schemas`
 read the schemas. `Exec` runs any of these calls sent as a command, a
 name and one JSON object, and `Commands` lists them (ADR-0055).
-Layouts, `QUERY` and subscriptions arrive with their phases.
+`QUERY` arrives with its phase; the engine keeps no layouts (ADR-0069).
 
 ### JSON command set
 
@@ -1167,8 +1182,8 @@ a user.
   to the hosts its settings list, and no action written as a Go
   function; its settings are the operator's, and no secret is among
   them (ADR-0059).
-- Layouts and the class bundle come with the frontend in Phase 7, by
-  the owner's ruling of 2026-11-14.
+- The class bundle comes with the frontend in Phase 7, by the owner's
+  ruling of 2026-11-14; the engine keeps no layouts (ADR-0069).
 
 The OpenAPI document is generated from the table of the commands and
 checked into `api/`.
@@ -1205,11 +1220,12 @@ is blank, `json` variables embedded as they are.
 ```
 
 The bundle, which comes with the frontend in Phase 7 and whose address
-that phase decides (ADR-0055, item 8), is the class definition, its
-layouts, the compiled bytecode of every formula including layout bindings,
-and the slice of the function catalog they use. A frontend needs nothing
-else to render a document and evaluate it live. The bundle is cached by an
-ETag derived from the class and layout versions. Encoding documents is on
+that phase decides (ADR-0055, item 8), is the class definition, with what
+it says to people and its sections, its words in the person's language,
+the rights, the compiled bytecode of every formula, and the slice of the
+function catalog they use. A face needs nothing else to draw a document
+and evaluate it live. The bundle is cached by an ETag derived from the
+class and its words. Encoding documents is on
 the read path, so the encoder is hand-written and reflection-free.
 
 ### C ABI
@@ -1322,14 +1338,14 @@ fadodb/
   cmd/fadodb/            single binary: init, user, key, serve, exec (any command sent to a server, a query as an Excel file or as CSV), file put and file get, class check, action check, formula, check today; bench to come
   fado/                  public Go API (small surface, see Go API)
   internal/formula/      lexer, parser, binder, bytecode, vm, sqlgen (dialects), catalog
-  internal/model/        class definitions, layouts, variables, defaults, validation, migrations
+  internal/model/        class definitions, sections, variables, defaults, validation, migrations
   internal/store/        sqlite store, history, child tables, events, outbox, schema
   internal/state/        statechart engine
   fado/outbound/         the sender of an action's HTTP requests; only a program that allows outbound calls imports it
   fado/httpdoor/         the HTTP door of a database; only a program that answers HTTP imports it
   internal/query/        LOOKUP/QUERY compilation, filter DSL, SQL endpoint, authorizer
   internal/server/       the HTTP door: requests to commands, the stream of changes
-  api/                   openapi.json, json schemas for class, layout and wire documents
+  api/                   openapi.json, json schemas for class and wire documents
   analytics/             duckdb module: projection, native tables, attach, mining views
   postgres/              postgres dialect and driver (separate module)
   cabi/                  c-shared build and header (lite build)
@@ -1352,4 +1368,5 @@ Parallel statechart regions; BPMN; multi-tenancy inside one database file
 (run one file per tenant); replication and clustering; WASM plugin actions;
 a visual class designer; OCEL export; nested
 composites (rows inside rows, arrays of arrays); raw SQL inside formulas;
-comments (planned as side objects after 1.0); per-document layouts.
+comments (planned as side objects after 1.0); layouts of any kind, which
+are the face's (ADR-0069).

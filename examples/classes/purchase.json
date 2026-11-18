@@ -18,6 +18,12 @@
                   "description": "How many approvers have refused it, counted again each time one answers.",
                   "formula": "LOOKUP(Approval, COUNT(id), purchase = ID() AND state = \"refused\")"}
   },
+  "sections": {
+    "request":  {"label": "Request", "description": "What is bought, and for how much.",
+                 "variables": ["number", "amount"]},
+    "approval": {"label": "Approval", "description": "Who is asked, how many must grant it, and how they answered.",
+                 "variables": ["approvers", "needed", "granted", "refused"]}
+  },
   "states": {"initial": "draft", "list": ["draft", "waiting", "approved", "rejected"], "final": ["approved", "rejected"],
              "labels": {"draft": "Draft", "waiting": "Waiting for approvals", "approved": "Approved", "rejected": "Rejected"},
              "descriptions": {

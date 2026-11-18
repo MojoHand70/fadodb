@@ -50,6 +50,11 @@ type Class struct {
 	// Rights is the rights table by state, then variable, "*" included
 	// (ADR-0028); nil when the class declares none.
 	Rights map[string]map[string]*Right
+	// Sections are the outline of the class (ADR-0069), in the written
+	// order; nil when it declares none.
+	Sections      []*Section
+	sectionByName map[string]*Section
+	sectionsOf    map[string][]string
 	// Reads names the classes whose documents a formula of the class
 	// reads (ADR-0046), itself among them when it reads its own.
 	Reads []string
@@ -286,19 +291,29 @@ type Right struct {
 }
 
 // RightRule is a formula or a group list; Src is the rule as written,
-// for the hint of a refusal.
+// for the hint of a refusal. State and Name are the cell it is written
+// in, a state or "*" and a variable, a section or "*" (ADR-0069, item
+// 4): the cell that decided, which a refusal names and an override
+// records.
 type RightRule struct {
-	Formula *formula.Program
-	Groups  []string
-	Src     string
+	Formula     *formula.Program
+	Groups      []string
+	Src         string
+	State, Name string
 }
 
+// Cell words the cell a rule is written in, as a refusal names it:
+// review / amounts.
+func (r *RightRule) Cell() string { return r.State + " / " + r.Name }
+
 // ReadRule resolves the read right that governs a variable in a state
-// (ADR-0028, ADR-0041): the cell of the named state and variable, then
-// the state's "*", then the "*" state's cell of the variable, then its
-// "*"; the first cell declaring a read rule decides. nil means the class
-// rules alone apply and the variable is readable. A state of "" reads the
-// "*" row alone.
+// (ADR-0028, ADR-0041, ADR-0069): the state's cell of the variable, then
+// its cell of the variable's section and of each section around that
+// one, outwards, then its "*"; then the same in the "*" state. The first
+// cell declaring a read rule decides, so the most specific name wins.
+// nil means the class rules alone apply and the variable is readable. A
+// state of "" reads the "*" row alone. It is resolved once per class,
+// when the store lays the class out, never in a commit.
 func (c *Class) ReadRule(state, variable string) *RightRule {
 	return c.rule(state, variable, func(r *Right) *RightRule { return r.Read })
 }
@@ -313,6 +328,13 @@ func (c *Class) rule(state, variable string, pick func(*Right) *RightRule) *Righ
 	if c.Rights == nil {
 		return nil
 	}
+	in := func(row map[string]*Right, name string) *RightRule {
+		if r, ok := row[name]; ok {
+			return pick(r)
+		}
+		return nil
+	}
+	sections := c.SectionsOf(variable)
 	for _, st := range [2]string{state, "*"} {
 		if st == "" {
 			continue
@@ -321,12 +343,16 @@ func (c *Class) rule(state, variable string, pick func(*Right) *RightRule) *Righ
 		if !ok {
 			continue
 		}
-		for _, name := range [2]string{variable, "*"} {
-			if r, ok := row[name]; ok {
-				if rule := pick(r); rule != nil {
-					return rule
-				}
+		if rule := in(row, variable); rule != nil {
+			return rule
+		}
+		for _, s := range sections {
+			if rule := in(row, s); rule != nil {
+				return rule
 			}
+		}
+		if rule := in(row, "*"); rule != nil {
+			return rule
 		}
 	}
 	return nil
@@ -454,6 +480,9 @@ func CompileIn(def *Definition, env Env) (*Class, Diagnostics) {
 			cls.Schemas = append(cls.Schemas, s)
 		}
 	}
+
+	// The outline, over the variables; the rights name its sections.
+	compileSections(c, cls, def)
 
 	// States first, since triggers, transitions and rules refer to them.
 	cls.States = compileStates(c, def.States)
@@ -1413,15 +1442,18 @@ func compileRights(c *collector, cls *Class, def *Definition, scope *formula.Sco
 			vpath := spath + "/" + name
 			key := name
 			if name != "*" {
-				v, ok := cls.Variable(name)
-				if !ok {
-					c.addf(CodeUnknownVariable, vpath, "unknown variable %s", quote(name))
+				if v, ok := cls.Variable(name); ok {
+					key = v.Name
+				} else if s, ok := cls.Section(name); ok {
+					key = s.Name
+				} else {
+					c.hint(CodeUnknownVariable, vpath, "the class has no variable and no section named "+quote(name),
+						"name a variable, a section of the outline, or \"*\" for every variable")
 					continue
 				}
-				key = v.Name
 			}
 			if _, dup := row[key]; dup {
-				c.add(CodeDuplicate, vpath, "the variable is listed twice; names differ in case only")
+				c.add(CodeDuplicate, vpath, "the name is listed twice in the state; names differ in case only")
 				continue
 			}
 			rd := def.Rights[st][name]
@@ -1432,6 +1464,11 @@ func compileRights(c *collector, cls *Class, def *Definition, scope *formula.Sco
 			r := &Right{}
 			r.Read = rightRule(c, vpath+"/read", rd.Read, scope, true)
 			r.Write = rightRule(c, vpath+"/write", rd.Write, scope, false)
+			for _, rule := range [2]*RightRule{r.Read, r.Write} {
+				if rule != nil {
+					rule.State, rule.Name = st, key
+				}
+			}
 			if r.Read == nil && r.Write == nil && !c.failed() {
 				c.add(CodeMissing, vpath, "a right has read, write or both")
 			}

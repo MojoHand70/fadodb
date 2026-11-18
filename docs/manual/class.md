@@ -14,6 +14,7 @@ yet, start there.
 | `label`, `plural`, `description`, `icon`, `color` | how the class is shown to people | no |
 | `title` | a formula that names each document | no; without it the title is the document's id |
 | [`variables`](#variables) | what each document holds, and what is computed | always |
+| [`sections`](#sections) | which variables belong together: the outline of the document | no |
 | [`states`](#states) | the states a document can be in | for a class that stores documents |
 | [`transitions`](#transitions) | the moves between states | no |
 | [`rules`](#rules) | what happens by itself when something changes | no |
@@ -49,6 +50,12 @@ rest of the chapter takes its examples from it.
     "tags":       {"type": "array<text>"},
     "large":      {"formula": "amount > 1000"},
     "decided_by": {"type": "text"}
+  },
+  "sections": {
+    "spending": {"label": "Spending", "description": "What was spent, when, and on what.",
+                 "variables": ["kind", "amount", "spent_on", "nights", "lines", "tags"]},
+    "decision": {"label": "Decision", "description": "Who decides the expense, what they decided, and whether it is paid.",
+                 "variables": ["approver", "decided_by", "paid"]}
   },
   "states": {"initial": "draft", "list": ["draft", "filed", "approved", "rejected", "expired"], "final": ["approved", "rejected", "expired"],
              "labels": {"draft": "Draft", "filed": "Waiting for approval", "approved": "Approved", "rejected": "Rejected", "expired": "Expired"},
@@ -304,6 +311,126 @@ class like any other: it makes a new version, and moves no document
 > class as definitions of their own (ADR-0068, item 6), are not built
 > yet.
 
+## Sections
+
+Which variables belong together. An invoice has a supplier, amounts
+and a delivery. A page draws them as parts of its form, an agent reads
+them as the outline of the document, and a designer gives the rights
+of a part in one line, not one line for each variable in it.
+
+```json
+{
+  "name": "Invoice",
+  "label": "Invoice",
+  "description": "A supplier's invoice, from receipt to payment.",
+  "variables": {
+    "customer":     {"type": "text",  "label": "Supplier",   "list": true},
+    "number":       {"type": "text",  "label": "Number",     "list": true, "required": true},
+    "net":          {"type": "money", "label": "Net amount", "list": true},
+    "vat":          {"type": "money", "label": "VAT"},
+    "total":        {"type": "money", "label": "Total",      "formula": "net + vat"},
+    "has_delivery": {"type": "bool",  "label": "Delivered to us"},
+    "street":       {"type": "text",  "label": "Street"},
+    "city":         {"type": "text",  "label": "City"},
+    "notes":        {"type": "text",  "label": "Notes"}
+  },
+  "sections": {
+    "supplier": {"label": "Supplier", "description": "Who sent the invoice.",
+                 "variables": ["customer", "number"]},
+    "amounts":  {"label": "Amounts",  "description": "What the invoice asks us to pay.",
+                 "variables": ["net", "vat", "total"]},
+    "delivery": {"label": "Delivery", "description": "Where the goods came to.",
+                 "variables": ["has_delivery"],
+                 "sections": {
+                   "address": {"label": "Address", "description": "The address on the delivery note.",
+                               "variables": ["street", "city"]}
+                 }}
+  },
+  "states": {"initial": "draft", "list": ["draft", "review", "paid"], "final": ["paid"]},
+  "transitions": [
+    {"name": "file",    "from": "draft",  "to": "review", "label": "Send for approval"},
+    {"name": "approve", "from": "review", "to": "paid",   "label": "Approve"}
+  ],
+  "access": {
+    "read":   "CREATEDBY() = USER() OR INGROUP(\"finance\") OR INGROUP(\"approvers\")",
+    "create": "INGROUP(\"everyone\")",
+    "update": "TRUE",
+    "delete": "FALSE",
+    "transition": {"file": "CREATEDBY() = USER()", "approve": "INGROUP(\"approvers\")"}
+  },
+  "rights": {
+    "review": {"amounts": {"write": ["finance"]}, "vat": {"write": "FALSE"}}
+  }
+}
+```
+
+A section has a `label`, a `description`, the `variables` it holds and
+the `sections` inside it, so the outline reads as it nests: Delivery
+holds `has_delivery`, and the Address inside it holds the street and
+the city.
+
+- **A variable is in one section at most.** A variable listed twice,
+  in one section or in two, is refused with `duplicate` at the place of
+  the second. A variable in no section, as `notes` here, belongs to the
+  document as a whole.
+- **The order is the written order**, of the sections and of the
+  variables in each. A section's own variables come before the sections
+  inside it, as a chapter's text comes before its subchapters. The
+  order of `variables` still decides the order The List offers its
+  columns in.
+- **A section is named as a variable is**, without regard to case. The
+  name is unique in the whole outline, however deep, and is not the
+  name of a variable, because `rights` names a section by its name
+  alone. A clash is refused with `duplicate`.
+- **Sections nest at most four deep**, the top level counted as the
+  first. A fifth level is refused with `too_deep`.
+- **A section lists the class's own variables.** A name the class does
+  not have is refused with `unknown_variable`, so a version of the
+  class that drops a variable takes it out of its section too. A
+  section with neither variables nor sections is refused with
+  `missing`.
+- A `rows` or an object variable is listed whole: its columns and its
+  fields are its own.
+- **A section without a description is noted**, code
+  `no_description`, as a variable is.
+- **A section has no condition.** Whether a page shows it, folds it or
+  leaves it out is the page's. A page that hides the delivery when
+  nothing was delivered reads `has_delivery`, a variable of the class,
+  so that every page and every agent reads the same answer.
+
+A section is not a value. Nothing of it is stored with a document, no
+formula, filter or export reads it, and the engine answers it as it
+was written. Changing the outline makes a new version of the class and
+moves no document.
+
+**Rights by section.** In `rights`, the name of a section stands where
+the name of a variable stands, and the line holds for every variable
+in the section and in the sections inside it:
+
+```json
+"rights": {
+  "review": {"amounts": {"write": ["finance"]}, "vat": {"write": "FALSE"}}
+}
+```
+
+The most specific name wins: a variable may narrow the line of its
+section, as `vat` does here, or widen it. Jan files the invoice, Ewa
+approves invoices and Marta is in finance. With the invoice in
+`review`:
+
+<!-- who sets what in review -->
+| Who | Sets | Decided by | Answer |
+|---|---|---|---|
+| Ewa, an approver | `net` | `review / amounts`: finance only | refused, `forbidden` |
+| Marta, in finance | `net` | `review / amounts`: finance only | set |
+| Marta, in finance | `vat` | `review / vat`: nobody | refused, `forbidden` |
+| Marta, in finance | `street` | no line: `access` alone | set |
+
+A refusal names the variable, and its hint names the line that
+decided, `review / amounts`, so that a designer and an agent see which
+line to change. [Rights](#rights) gives the whole order the lines are
+looked in.
+
 ## Rules
 
 A rule is something that happens by itself when something else
@@ -423,7 +550,7 @@ The table has three levels: a state, then a variable, then `write` or
 | Level | Written as | `*` means |
 |---|---|---|
 | the state | the name of a state | every state |
-| the variable | the name of a variable | every variable |
+| the variable | the name of a variable, or of a [section](#sections) | every variable |
 | the right | `write`, who may set it; `read`, who may see it | |
 
 A right is a formula, or a list of groups, which is the short way to
@@ -434,12 +561,16 @@ the first of these that says something about the right in question,
 `write` or `read`.
 
 1. the document's state, and the variable by name
-2. the document's state, and `*`
-3. the state `*`, and the variable by name
-4. the state `*`, and `*`
+2. the document's state, and the variable's section, then each section
+   around that one, outwards
+3. the document's state, and `*`
+4. the state `*`, and the variable by name
+5. the state `*`, and the variable's sections, as in 2
+6. the state `*`, and `*`
 
 So what a state says wins over what `*` says for every state, and
-within a state a named variable wins over `*`.
+within a state the most specific name wins: a variable over its
+section, a section over the one around it, and any of them over `*`.
 
 That holds even for a variable that the state `*` names. A state with
 a line of its own for `*` opens such a variable to whoever that line

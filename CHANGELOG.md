@@ -8,6 +8,23 @@ All notable changes to FadoDB are recorded here. The format follows
 
 ### Added
 
+- Sections (ADR-0069), built. A class may declare `sections`, the
+  outline of its variables: a section has a `label`, a `description`,
+  the `variables` it holds and `sections` inside it, at most four deep.
+  A variable is in one section at most; a name is unique in the outline
+  and apart from the variables'. A variable listed twice, a section
+  named like a variable or like another section, an unknown variable and
+  an empty section are refused with their place, a fifth level with
+  `too_deep`; a section without a description gets the note
+  `no_description`. In `rights` a section stands where a variable
+  stands: the rule of a variable is looked for in its own cell, then in
+  its section's and each section around it, then in `*`, in the state
+  and then in the state `*`, so the most specific name wins. The rule is
+  resolved once when the class is laid out. A refusal of a write names
+  the cell that decided in its hint, `review / amounts`. The chapter on
+  the class shows the outline and plays the record's table; the sample
+  invoice and purchase have sections, and `docs/architecture.md` no
+  longer describes layouts.
 - What a class says to people (ADR-0068), built. A variable takes a
   `label`, a `description`, `"list": true` for a column The List may
   show, and a `format` in Excel's patterns; the states block takes
@@ -30,7 +47,6 @@ All notable changes to FadoDB are recorded here. The format follows
   variables with a label, a description and words in other languages,
   nested at most four deep, one section per variable; `rights` may name
   a section, and the most specific name wins. ADR-0054 is withdrawn.
-  Nothing of it is built yet.
 - ADR-0068, accepted, with the owner's rulings of 2026-11-17: what a
   class says to people. A `label` and a `description` on a variable, a
   state and a transition, and on a column and a field in a long form;

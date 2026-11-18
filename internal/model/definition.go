@@ -21,15 +21,20 @@ type Definition struct {
 	Color       string `json:"color,omitempty"`
 	// Title is a formula over pure functions and the document's own
 	// variables (ADR-0018); empty means TITLE equals ID.
-	Title       string                          `json:"title,omitempty"`
-	Variables   map[string]*VariableDef         `json:"variables"`
+	Title     string                  `json:"title,omitempty"`
+	Variables map[string]*VariableDef `json:"variables"`
+	// Sections is the outline of the class (ADR-0069): which variables
+	// belong together, with sections inside sections.
+	Sections    map[string]*SectionDef          `json:"sections,omitempty"`
 	States      *StatesDef                      `json:"states,omitempty"`
 	Transitions []TransitionDef                 `json:"transitions,omitempty"`
 	Rules       []RuleDef                       `json:"rules,omitempty"`
 	Access      *AccessDef                      `json:"access,omitempty"`
 	Rights      map[string]map[string]*RightDef `json:"rights,omitempty"`
-	// VariableOrder lists the variables in the order they were written.
+	// VariableOrder lists the variables in the order they were written,
+	// SectionOrder the sections of the top level.
 	VariableOrder []string `json:"-"`
+	SectionOrder  []string `json:"-"`
 	// RightsOrder lists the states of the rights table, then per state its
 	// variables, in the order they were written.
 	RightsOrder  map[string][]string `json:"-"`
@@ -72,6 +77,17 @@ type VariableDef struct {
 	Format      string `json:"format,omitempty"`
 	// schemaOrder is the column order of an inline rows schema.
 	schemaOrder []string
+}
+
+// SectionDef is one section of the outline as written (ADR-0069): what
+// it says to people, the variables it holds and the sections inside it.
+type SectionDef struct {
+	Label       string                 `json:"label,omitempty"`
+	Description string                 `json:"description,omitempty"`
+	Variables   []string               `json:"variables,omitempty"`
+	Sections    map[string]*SectionDef `json:"sections,omitempty"`
+	// Order lists the sections inside it in the order they were written.
+	Order []string `json:"-"`
 }
 
 // FieldDef is a column of a rows variable or of an explicit table, or a
@@ -210,6 +226,11 @@ func Parse(data []byte) (*Definition, Diagnostics) {
 			}
 		}
 	}
+	if raw, ok := top["sections"]; ok && len(def.Sections) > 0 {
+		if def.SectionOrder, err = sectionOrder(raw, def.Sections); err != nil {
+			c.add(CodeBadJSON, "/sections", err.Error())
+		}
+	}
 	if raw, ok := top["rights"]; ok && len(def.Rights) > 0 {
 		def.RightsOrder = map[string][]string{}
 		if def.rightsStates, err = orderedKeys(raw); err != nil {
@@ -225,6 +246,33 @@ func Parse(data []byte) (*Definition, Diagnostics) {
 		}
 	}
 	return &def, c.list
+}
+
+// sectionOrder reads the order of the sections of one level, and of the
+// levels inside each, as written.
+func sectionOrder(raw json.RawMessage, defs map[string]*SectionDef) ([]string, error) {
+	names, err := orderedKeys(raw)
+	if err != nil {
+		return nil, err
+	}
+	var each map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &each); err != nil {
+		return nil, err
+	}
+	for _, name := range names {
+		sd := defs[name]
+		if sd == nil || len(sd.Sections) == 0 {
+			continue
+		}
+		var parts map[string]json.RawMessage
+		if err := json.Unmarshal(each[name], &parts); err != nil {
+			return nil, err
+		}
+		if sd.Order, err = sectionOrder(parts["sections"], sd.Sections); err != nil {
+			return nil, err
+		}
+	}
+	return names, nil
 }
 
 // orderedKeys reads the keys of a JSON object in the order written.

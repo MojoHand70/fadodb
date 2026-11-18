@@ -1,6 +1,6 @@
 # ADR-0053: Acting for somebody: a recorded substitution for people and assistants
 
-- Status: Accepted; amends ADR-0027 (the engine keeps who may act for whom and checks it, where ADR-0027 left it to the host), ADR-0050 (the claim of its item 1 is checked)
+- Status: Accepted; amends ADR-0027 (the engine keeps who may act for whom and checks it, where ADR-0027 left it to the host), ADR-0050 (the claim of its item 1 is checked); amended by ADR-0071 (item 5: an agent a person connects has that person's groups while it acts for them)
 - Date: 2026-11-13
 
 ## Context

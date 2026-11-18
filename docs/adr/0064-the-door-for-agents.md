@@ -1,6 +1,6 @@
 # ADR-0064: The door for agents
 
-- Status: Accepted
+- Status: Accepted; amended by ADR-0071 (an agent signs in at `/mcp` with a pass)
 - Date: 2026-11-16
 
 ## Context

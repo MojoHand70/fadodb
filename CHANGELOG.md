@@ -8,6 +8,16 @@ All notable changes to FadoDB are recorded here. The format follows
 
 ### Added
 
+- ADR-0070, proposed, with the owner's rulings of 2026-11-18: the
+  bundle, a class, its words and its compiled formulas in one call, so
+  that a page works a document out as the server does without asking it
+  at each key press. One command, `get_bundle`, with a `tag` that
+  answers `unchanged`, and a `GET` form for the browser's cache. The
+  words of the person's language are put in place in the class; the
+  rights come worked out for each state and variable; a formula that
+  reads other documents, a table or the history of states is marked as
+  the server's, and the page asks `preview`. No document and no row of a
+  table is ever in it, and it is the same for everyone.
 - Words in other languages (ADR-0068, item 6; ADR-0069, item 6),
   built. The words of a class, a table or a schema in one language are
   a definition of their own beside it: its label and description, and

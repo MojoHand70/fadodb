@@ -598,7 +598,7 @@ func TestActionsGuide(t *testing.T) {
 			class := `{"name": "Fragment", "access": {"read": "TRUE", "create": "TRUE", "update": "TRUE", "delete": "TRUE"}, "variables": {"subject": {"type": "text"}, "ticket_error": {"type": "text"}},
  "states": {"initial": "a", "list": ["a", "b"]}, "transitions": [{"name": "go", "from": "a", "to": "b"}],
  "rules": [{"on": "enter", "state": "b", "do": [` + src + `]}]}`
-			if diags := db.ValidateClass([]byte(class)); len(diags) > 0 {
+			if diags := db.ValidateClass([]byte(class)); diags.Refuses() {
 				t.Errorf("the action of block %d is refused: %v", i, diags)
 			}
 		default:

@@ -102,8 +102,8 @@ func TestManualExamples(t *testing.T) {
 			cls, err := db.DefineClass(ctx, []byte(class), setup)
 			if err != nil {
 				t.Errorf("%s: class %d is refused: %v", name, i+1, err)
-			} else if len(cls.Notes) > 0 {
-				t.Errorf("%s: the class %s leaves a rule out: %v", name, cls.Name, cls.Notes)
+			} else if notes := withoutDescriptions(cls.Notes); len(notes) > 0 {
+				t.Errorf("%s: the class %s leaves a rule out: %v", name, cls.Name, notes)
 			}
 			db.Close()
 		}

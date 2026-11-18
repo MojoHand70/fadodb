@@ -216,7 +216,7 @@ func TestGuide_FourEyes(t *testing.T) {
 		if variant == class {
 			t.Fatal("the condition of approve is not where the test looks for it")
 		}
-		if diags := db.ValidateClass([]byte(strings.Replace(variant, `"name": "Payment"`, `"name": "Payment2"`, 1))); len(diags) > 0 {
+		if diags := db.ValidateClass([]byte(strings.Replace(variant, `"name": "Payment"`, `"name": "Payment2"`, 1))); len(withoutDescriptions(diags)) > 0 {
 			t.Errorf("the variation %s is refused: %v", condition, diags)
 		}
 	}
@@ -272,7 +272,7 @@ func TestGuide_RemindersAndDeadlines(t *testing.T) {
 	// The variation: a deadline counted from the first entry.
 	class := string(guideClass(t, "reminders-and-deadlines.md"))
 	variant := strings.Replace(class, `"at": "deadline"`, `"at": "ADDDAYS(FIRSTENTERED(\"waiting\"), 30)"`, 1)
-	if diags := db.ValidateClass([]byte(strings.Replace(variant, `"name": "Request"`, `"name": "Request2"`, 1))); variant == class || len(diags) > 0 {
+	if diags := db.ValidateClass([]byte(strings.Replace(variant, `"name": "Request"`, `"name": "Request2"`, 1))); variant == class || len(withoutDescriptions(diags)) > 0 {
 		t.Errorf("the variation with FIRSTENTERED is refused: %v", diags)
 	}
 }

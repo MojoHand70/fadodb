@@ -20,10 +20,10 @@ const MaxColumns = 1000
 // scalar type other than json or object<Name> of another schema, with an
 // optional base to extend and a presentation block (ADR-0031, ADR-0032).
 type SchemaDef struct {
-	Name         string            `json:"name"`
-	Extends      string            `json:"extends,omitempty"`
-	Fields       map[string]string `json:"fields"`
-	Presentation *PresentationDef  `json:"presentation,omitempty"`
+	Name         string              `json:"name"`
+	Extends      string              `json:"extends,omitempty"`
+	Fields       map[string]FieldDef `json:"fields"`
+	Presentation *PresentationDef    `json:"presentation,omitempty"`
 	// FieldOrder lists the fields in the order written; ParseSchema fills
 	// it, and a caller building a SchemaDef in code may.
 	FieldOrder []string `json:"-"`
@@ -182,11 +182,12 @@ func (s *SchemaSet) define(def *SchemaDef, predefined bool) (*Schema, Diagnostic
 			continue
 		}
 		seen[upper(name)] = true
-		ft, depth, ok := s.fieldType(&c, path, def.Fields[name], def.Name)
+		ft, depth, ok := s.fieldType(&c, path, def.Fields[name].Type, def.Name)
 		if !ok {
 			continue
 		}
 		sch.Depth = max(sch.Depth, depth+1)
+		checkField(&c, path, def.Fields[name], ft)
 		fields = append(fields, formula.Field{Name: name, Type: ft})
 	}
 	if sch.Depth > MaxObjectDepth {
@@ -314,39 +315,39 @@ func leavesOf(prefix string, t formula.Type) []Leaf {
 // and never removes or retypes one.
 var vocabulary = []*SchemaDef{
 	{Name: "Person",
-		Fields:       map[string]string{"id": "text", "name": "text", "email": "text", "phone": "text", "avatar": "text"},
+		Fields:       typesOnly(map[string]string{"id": "text", "name": "text", "email": "text", "phone": "text", "avatar": "text"}),
 		FieldOrder:   []string{"id", "name", "email", "phone", "avatar"},
 		Presentation: &PresentationDef{Title: "name", Subtitle: "email", Avatar: "avatar", Icon: "user"}},
 	{Name: "Address",
-		Fields:       map[string]string{"line1": "text", "line2": "text", "city": "text", "postal_code": "text", "region": "text", "country": "text"},
+		Fields:       typesOnly(map[string]string{"line1": "text", "line2": "text", "city": "text", "postal_code": "text", "region": "text", "country": "text"}),
 		FieldOrder:   []string{"line1", "line2", "city", "postal_code", "region", "country"},
 		Presentation: &PresentationDef{Title: "line1", Subtitle: `IF(ISBLANK(country), city, city & ", " & country)`, Icon: "map-pin"}},
 	{Name: "Organization",
-		Fields:       map[string]string{"id": "text", "name": "text", "tax_id": "text", "email": "text", "phone": "text", "address": "object<Address>"},
+		Fields:       typesOnly(map[string]string{"id": "text", "name": "text", "tax_id": "text", "email": "text", "phone": "text", "address": "object<Address>"}),
 		FieldOrder:   []string{"id", "name", "tax_id", "email", "phone", "address"},
 		Presentation: &PresentationDef{Title: "name", Subtitle: "address.city", Icon: "building"}},
 	{Name: "GeoPoint",
-		Fields:       map[string]string{"lat": "number", "lon": "number"},
+		Fields:       typesOnly(map[string]string{"lat": "number", "lon": "number"}),
 		FieldOrder:   []string{"lat", "lon"},
 		Presentation: &PresentationDef{Title: `TEXT(lat) & ", " & TEXT(lon)`, Icon: "crosshair"}},
 	{Name: "Place",
-		Fields:       map[string]string{"name": "text", "address": "object<Address>", "geo": "object<GeoPoint>"},
+		Fields:       typesOnly(map[string]string{"name": "text", "address": "object<Address>", "geo": "object<GeoPoint>"}),
 		FieldOrder:   []string{"name", "address", "geo"},
 		Presentation: &PresentationDef{Title: "name", Subtitle: `IF(ISBLANK(address.country), address.city, address.city & ", " & address.country)`, Icon: "map"}},
 	{Name: "Period",
-		Fields:       map[string]string{"start": "datetime", "end": "datetime"},
+		Fields:       typesOnly(map[string]string{"start": "datetime", "end": "datetime"}),
 		FieldOrder:   []string{"start", "end"},
 		Presentation: &PresentationDef{Title: `TEXT(start) & " to " & TEXT(end)`, Icon: "calendar-range"}},
 	{Name: "Event",
-		Fields:       map[string]string{"title": "text", "start": "datetime", "end": "datetime", "all_day": "bool", "place": "object<Place>", "organizer": "object<Person>"},
+		Fields:       typesOnly(map[string]string{"title": "text", "start": "datetime", "end": "datetime", "all_day": "bool", "place": "object<Place>", "organizer": "object<Person>"}),
 		FieldOrder:   []string{"title", "start", "end", "all_day", "place", "organizer"},
 		Presentation: &PresentationDef{Title: "title", Subtitle: `IF(all_day, TEXT(DATEOF(start)), TEXT(start))`, Icon: "calendar"}},
 	{Name: "Quantity",
-		Fields:       map[string]string{"value": "decimal(6)", "unit": "text"},
+		Fields:       typesOnly(map[string]string{"value": "decimal(6)", "unit": "text"}),
 		FieldOrder:   []string{"value", "unit"},
 		Presentation: &PresentationDef{Title: `TEXT(value) & " " & unit`, Icon: "scale"}},
 	{Name: "File",
-		Fields:       map[string]string{"hash": "text", "name": "text", "media_type": "text", "size": "int"},
+		Fields:       typesOnly(map[string]string{"hash": "text", "name": "text", "media_type": "text", "size": "int"}),
 		FieldOrder:   []string{"hash", "name", "media_type", "size"},
 		Presentation: &PresentationDef{Title: "name", Subtitle: `TEXT(size) & " bytes"`, Icon: "paperclip"}},
 }

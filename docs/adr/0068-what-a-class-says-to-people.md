@@ -1,6 +1,6 @@
 # ADR-0068: What a class says to people: labels, The List, formats, descriptions and other languages
 
-- Status: Accepted; amends ADR-0013 (a variable gains `label`, `description`, `list` and `format`), ADR-0008 (a state and a transition gain a label and a description), ADR-0016 and ADR-0031 (a column of a table and a field of a schema may be written in a long form), ADR-0018 (the class header's `label` is the word for every caption)
+- Status: Accepted; amends ADR-0013 (a variable gains `label`, `description`, `list` and `format`), ADR-0008 (a state and a transition gain a label and a description), ADR-0016 and ADR-0031 (a column of a table and a field of a schema may be written in a long form), ADR-0018 (the class header's `label` is the word for every caption); amended by ADR-0069 (a section has a label, a description and words in other languages)
 - Date: 2026-11-17
 
 ## Context
@@ -212,6 +212,42 @@ All of 2026-11-17, put in the chat with the case above.
    Agent, when building a class should fill descriptions, it's like a
    comment in programming." The note for a missing one was proposed
    with his answer, and taken as agreed with his "Yes, agreed".
+
+## Settled while building
+
+Items 1 to 5 and 7 are built; item 6, the words in other languages, is
+built after the sections of ADR-0069, which it covers too. Settled by
+me while building, each the owner's to strike:
+
+1. **The limit of a label and a description is 65,536 code points**,
+   the default text limit of a database (ADR-0021), and not a
+   database's own: `fadodb class check` checks a class with no database,
+   and a lower limit a database chooses is for the values of its
+   documents.
+2. **A format is refused with `not_allowed` on any type but a number,
+   an int, a decimal, a money, a date and a datetime**: a text, a bool
+   and a ref as item 5 says, and a list, an object, rows and `json`
+   too.
+3. **What of Excel's language is read, exactly.** Besides the parts of
+   item 5, a space and the characters Excel shows without quotes,
+   `$ - + / ( ) : ! ^ & ' ~ { } < > =`, and in a date also `.` and `,`,
+   for `dd.mm.yyyy`. A comma after the last digit place, Excel's "in
+   thousands", is refused, as are `s` alone, a year of one or three
+   letters, and an hour, seconds or `AM/PM` on a date.
+4. **A refused pattern names its place**, the offset in the pattern
+   under `pos`, as a refused formula does.
+5. **Where a note points.** Each `no_description` note names the place
+   the description goes: `/variables/net/description`,
+   `/states/descriptions/review`, `/transitions/0/description`. A
+   transition without a name is named by the state it goes to.
+6. **The engine's own class `Substitution`** (ADR-0053) carries a label
+   and a description for each of its variables, states and transitions,
+   so it is defined with no note; a database opened by this engine takes
+   it as its next version, as it takes every change of it.
+7. **The examples.** The four samples under `examples/classes` and the
+   class of the designer's skill describe everything and are checked
+   with no note left. A chapter or a guide of the manual that teaches
+   one thing is held to every other note, and not to this one.
 
 ## Consequences
 

@@ -63,8 +63,65 @@ type VariableDef struct {
 	Max json.RawMessage `json:"max,omitempty"`
 	// Index asks for a B-tree index on the column.
 	Index bool `json:"index,omitempty"`
+	// What the variable says to people (ADR-0068): its caption, its help
+	// for people and agents, whether The List may show it as a column,
+	// and how a page shows its value.
+	Label       string `json:"label,omitempty"`
+	Description string `json:"description,omitempty"`
+	List        bool   `json:"list,omitempty"`
+	Format      string `json:"format,omitempty"`
 	// schemaOrder is the column order of an inline rows schema.
 	schemaOrder []string
+}
+
+// FieldDef is a column of a rows variable or of an explicit table, or a
+// field of a schema, as written (ADR-0068, item 2): a type in the short
+// form, "int", or an object with the type and what the column says to
+// people, {"type": "int", "label": "Quantity"}. The short form means
+// the long one with a type alone, and is written back so.
+type FieldDef struct {
+	Type        string `json:"type"`
+	Label       string `json:"label,omitempty"`
+	Description string `json:"description,omitempty"`
+	Format      string `json:"format,omitempty"`
+}
+
+// UnmarshalJSON reads the short form or the long one; the long form's
+// unknown properties are refused, as everywhere in a definition.
+func (f *FieldDef) UnmarshalJSON(data []byte) error {
+	trimmed := bytes.TrimSpace(data)
+	if len(trimmed) > 0 && trimmed[0] == '"' {
+		*f = FieldDef{}
+		return json.Unmarshal(trimmed, &f.Type)
+	}
+	type long FieldDef
+	dec := json.NewDecoder(bytes.NewReader(trimmed))
+	dec.DisallowUnknownFields()
+	var l long
+	if err := dec.Decode(&l); err != nil {
+		return err
+	}
+	*f = FieldDef(l)
+	return nil
+}
+
+// MarshalJSON writes the short form when the field has a type alone.
+func (f FieldDef) MarshalJSON() ([]byte, error) {
+	if f.Label == "" && f.Description == "" && f.Format == "" {
+		return json.Marshal(f.Type)
+	}
+	type long FieldDef
+	return json.Marshal(long(f))
+}
+
+// typesOnly makes fields of the short form, for definitions written in
+// code.
+func typesOnly(types map[string]string) map[string]FieldDef {
+	out := make(map[string]FieldDef, len(types))
+	for name, t := range types {
+		out[name] = FieldDef{Type: t}
+	}
+	return out
 }
 
 // StatesDef is the statechart's states (ADR-0008).
@@ -72,6 +129,10 @@ type StatesDef struct {
 	Initial string   `json:"initial"`
 	List    []string `json:"list"`
 	Final   []string `json:"final,omitempty"`
+	// Labels and Descriptions say what each state is to people, by its
+	// name (ADR-0068), beside the list so that it stays a list of names.
+	Labels       map[string]string `json:"labels,omitempty"`
+	Descriptions map[string]string `json:"descriptions,omitempty"`
 }
 
 // TransitionDef is one transition. From is one state as text or a list
@@ -86,6 +147,10 @@ type TransitionDef struct {
 	Guard string          `json:"guard,omitempty"`
 	After string          `json:"after,omitempty"`
 	At    string          `json:"at,omitempty"`
+	// Label is the caption of its button, Description what it does, for
+	// people and agents (ADR-0068).
+	Label       string `json:"label,omitempty"`
+	Description string `json:"description,omitempty"`
 }
 
 // RuleDef is one event-condition-action rule (ADR-0009). The actions are

@@ -256,7 +256,7 @@ func TestDefineClass(t *testing.T) {
 	if cls4, err := s.defineOpen(ctx, []byte(v4), asSetup); err != nil || cls4.Version != 4 {
 		t.Errorf("redefining under documents: %v", err)
 	}
-	if diags := s.Validate(opened([]byte(v4))); len(diags) > 0 {
+	if diags := withoutDescriptions(s.Validate(opened([]byte(v4)))); len(diags) > 0 {
 		t.Errorf("Validate under documents: %v", diags)
 	}
 	if again, err := s.defineOpen(ctx, []byte(v4), asSetup); err != nil || again.Version != 4 {

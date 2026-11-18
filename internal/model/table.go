@@ -20,7 +20,7 @@ type TableDef struct {
 	Description string `json:"description,omitempty"`
 	// Columns maps a column name to its type: a scalar type other than
 	// object; money is stored as two columns.
-	Columns map[string]string `json:"columns"`
+	Columns map[string]FieldDef `json:"columns"`
 	// Key lists the columns that identify a row and order the table; a
 	// LOOKUP returns the first matching row in this order (ADR-0020).
 	Key []string `json:"key"`
@@ -143,6 +143,7 @@ func CompileTable(def *TableDef) (*Table, Diagnostics) {
 			c.hint(CodeNotSupported, "/binding", "the "+t.Binding+" binding is not implemented yet", "sqlite is the binding of this build")
 		}
 	}
+	checkWords(c, "", def.Label, def.Description)
 	order := def.ColumnOrder
 	if order == nil {
 		for name := range def.Columns {
@@ -164,7 +165,7 @@ func CompileTable(def *TableDef) (*Table, Diagnostics) {
 			continue
 		}
 		seen[upper(name)] = true
-		typ := def.Columns[name]
+		typ := def.Columns[name].Type
 		if typ == "object" || strings.HasPrefix(typ, "object<") {
 			c.add(CodeNotSupported, path, "object columns in tables are not supported yet; one column per field")
 			continue
@@ -181,6 +182,7 @@ func CompileTable(def *TableDef) (*Table, Diagnostics) {
 			c.add(CodeNotAllowed, path, "a table column is a scalar; "+typ+" is a composite")
 			continue
 		}
+		checkField(c, path, def.Columns[name], ft)
 		t.Fields = append(t.Fields, formula.Field{Name: name, Type: ft})
 		t.Columns = append(t.Columns, Column{Name: name, Type: ft, Variable: name, Path: name})
 		if ft.Kind == formula.KindMoney {

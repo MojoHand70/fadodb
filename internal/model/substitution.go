@@ -47,18 +47,33 @@ const substitutionJSON = `{
   "description": "Who may act for whom, from when, until when and on which classes (ADR-0053). The engine brings this class and asks it of every call that names somebody the caller acts for.",
   "title": "by & \" for \" & for",
   "variables": {
-    "by":      {"type": "text", "required": true, "index": true},
-    "for":     {"type": "text", "required": true, "default": "USER()", "index": true},
-    "from":    {"type": "datetime", "required": true, "default": "NOW()"},
-    "until":   {"type": "datetime"},
-    "classes": {"type": "array<text>"},
-    "reason":  {"type": "text"}
+    "by":      {"type": "text", "required": true, "index": true, "label": "Acting person",
+                "description": "The id of the person who may act for the other one."},
+    "for":     {"type": "text", "required": true, "default": "USER()", "index": true, "label": "On behalf of",
+                "description": "The id of the person acted for: the one who gives the substitution, unless a database administrator gives it for them."},
+    "from":    {"type": "datetime", "required": true, "default": "NOW()", "label": "From",
+                "description": "When the substitution begins; now, when it is left out."},
+    "until":   {"type": "datetime", "label": "Until",
+                "description": "When it ends. Left out, it holds until it is withdrawn."},
+    "classes": {"type": "array<text>", "label": "Classes",
+                "description": "The classes it holds for. Left out, it holds for every class."},
+    "reason":  {"type": "text", "label": "Reason",
+                "description": "Why a database administrator gave it for somebody else; required then, and kept as evidence."}
   },
-  "states": {"initial": "planned", "list": ["planned", "active", "ended", "withdrawn"], "final": ["ended", "withdrawn"]},
+  "states": {"initial": "planned", "list": ["planned", "active", "ended", "withdrawn"], "final": ["ended", "withdrawn"],
+             "labels": {"planned": "Planned", "active": "Active", "ended": "Ended", "withdrawn": "Withdrawn"},
+             "descriptions": {
+               "planned":   "Given, and waiting for its from.",
+               "active":    "The acting person may act for the other one now.",
+               "ended":     "Its until has passed. Kept as the evidence of who was allowed.",
+               "withdrawn": "Taken back before it ended. Kept as the evidence of who was allowed."}},
   "transitions": [
-    {"from": "planned", "to": "active", "at": "from"},
-    {"from": "active", "to": "ended", "at": "until"},
-    {"name": "withdraw", "from": ["planned", "active"], "to": "withdrawn"}
+    {"from": "planned", "to": "active", "at": "from", "label": "Begins",
+     "description": "Taken by the engine at the moment from."},
+    {"from": "active", "to": "ended", "at": "until", "label": "Ends",
+     "description": "Taken by the engine at the moment until."},
+    {"name": "withdraw", "from": ["planned", "active"], "to": "withdrawn", "label": "Withdraw",
+     "description": "The person acted for, or a database administrator, takes the substitution back."}
   ],
   "access": {
     "read":   "for = USER() OR by = USER() OR INGROUP(\"administrators\")",

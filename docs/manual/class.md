@@ -38,22 +38,26 @@ rest of the chapter takes its examples from it.
   "title": "\"Expense of \" & owner",
   "variables": {
     "owner":      {"type": "text", "default": "USER()", "index": true},
-    "approver":   {"type": "text", "required": true},
+    "approver":   {"type": "text", "required": true, "label": "Approver", "list": true,
+                   "description": "The id of the person who decides the expense: the employee's manager."},
     "kind":       {"type": "text", "values": ["travel", "hotel", "meal", "other"], "default": "\"other\""},
     "amount":     {"type": "money", "scale": 2, "required": true},
-    "spent_on":   {"type": "date", "default": "TODAY()"},
+    "spent_on":   {"type": "date", "default": "TODAY()", "label": "Spent on", "list": true, "format": "d mmm yyyy"},
     "nights":     {"type": "int", "min": 0, "max": 60, "default": "0"},
     "paid":       {"type": "bool", "default": "FALSE"},
-    "lines":      {"type": "rows", "schema": {"what": "text", "cost": "money"}},
+    "lines":      {"type": "rows", "schema": {"what": "text", "cost": {"type": "money", "label": "Cost", "format": "#,##0.00"}}},
     "tags":       {"type": "array<text>"},
     "large":      {"formula": "amount > 1000"},
     "decided_by": {"type": "text"}
   },
-  "states": {"initial": "draft", "list": ["draft", "filed", "approved", "rejected", "expired"], "final": ["approved", "rejected", "expired"]},
+  "states": {"initial": "draft", "list": ["draft", "filed", "approved", "rejected", "expired"], "final": ["approved", "rejected", "expired"],
+             "labels": {"draft": "Draft", "filed": "Waiting for approval", "approved": "Approved", "rejected": "Rejected", "expired": "Expired"},
+             "descriptions": {"filed": "The approver has thirty days to decide; after them the expense expires."}},
   "transitions": [
     {"name": "file",    "from": "draft", "to": "filed", "guard": "amount > 0"},
     {"name": "recall",  "from": "filed", "to": "draft"},
-    {"name": "approve", "from": "filed", "to": "approved"},
+    {"name": "approve", "from": "filed", "to": "approved", "label": "Approve",
+     "description": "The approver accepts the expense for payment."},
     {"name": "reject",  "from": "filed", "to": "rejected"},
     {"name": "expire",  "from": "filed", "to": "expired", "after": "30d"}
   ],
@@ -102,6 +106,10 @@ Each entry is one variable: its name, and what it is.
 | `index` | keeps an index on the variable, so that finding documents by it is fast |
 | `class` | for a `ref`: the class it points at |
 | `schema` | for `rows`: the columns of the table, each with its type, or the name of a schema. For `object`: the name of a schema, which is defined on its own before the class; see [Schemas and objects](schemas-and-objects.md) |
+| `label` | what a person reads in place of the name; see [what a class says to people](#what-a-class-says-to-people) |
+| `description` | what the variable is for, for people and for agents |
+| `list` | `true`: The List of the class may show the variable as a column |
+| `format` | for a number, an int, a decimal, a money, a date or a datetime: how a page shows the value, in Excel's patterns |
 
 The types:
 
@@ -145,7 +153,9 @@ document by itself.
 ## States
 
 ```json
-"states": {"initial": "draft", "list": ["draft", "filed", "approved", "rejected", "expired"], "final": ["approved", "rejected", "expired"]},
+"states": {"initial": "draft", "list": ["draft", "filed", "approved", "rejected", "expired"], "final": ["approved", "rejected", "expired"],
+           "labels": {"draft": "Draft", "filed": "Waiting for approval", "approved": "Approved", "rejected": "Rejected", "expired": "Expired"},
+           "descriptions": {"filed": "The approver has thirty days to decide; after them the expense expires."}},
 ```
 
 | Word | Meaning |
@@ -153,6 +163,8 @@ document by itself.
 | `list` | every state, by name |
 | `initial` | the state a new document starts in |
 | `final` | the states in which a document is finished |
+| `labels` | what a person reads in place of each state's name, by the name |
+| `descriptions` | what a document waits for in each state, by the name, for people and for agents |
 
 A document in a final state is frozen: its values cannot change, and
 it can only move to another final state.
@@ -177,6 +189,8 @@ A transition is a move from one state to another.
 | `guard` | a formula over the document that must be TRUE for the move |
 | `after` | the move is made by time: so long after the document entered the state, as `"30d"`, `"12h"`, `"90m"` or `"45s"` |
 | `at` | the move is made by time: at a date or a moment the document holds, as `"ADDDAYS(spent_on, 60)"` |
+| `label` | the caption of its button |
+| `description` | what taking it means, for people and for agents |
 
 A guard is about the document: is the amount above zero, is the
 account filled in. Who may take the transition is a different question
@@ -204,6 +218,91 @@ thirty days in `filed` have passed.
 > name. The owner ruled on 2026-11-13 that every transition has a name
 > and an automatic one carries a mark; that is not built yet, and this
 > chapter will show the form when it is.
+
+## What a class says to people
+
+A name is for formulas, commands and the log, and never changes for
+people. What a person reads is written beside it: a label, a
+description, whether The List shows it, and a format. None of it is a
+value. Nothing of it is stored with a document, no formula, command or
+export reads it, and the engine answers it as it was written, to every
+page and every agent that asks for the class.
+
+```json
+"approver":   {"type": "text", "required": true, "label": "Approver", "list": true,
+               "description": "The id of the person who decides the expense: the employee's manager."},
+```
+
+- **`label`** is what a person reads in place of the name: the heading
+  of a column, the caption of a field, the word on a button. A
+  variable, a transition, a column, a field and the class itself have
+  one; a state's is under `labels` in the states block. Without one, a
+  page shows the name.
+- **`description`** says what the thing is for, to people and to
+  agents. A page shows it as help beside a field; an agent reads it
+  before it fills the variable. It may be long, several paragraphs,
+  and may use Markdown. **A variable, a state or a transition without
+  one is noted**, code `no_description`, each with its place: a note
+  refuses nothing, and the class is defined all the same. Write one for
+  each, as a programmer writes a comment.
+- **`"list": true`** lets The List of the class, the table of its
+  documents a page shows, have the variable as a column. The columns
+  are offered in the order the variables are written, and all of them
+  are shown at first. Which of them a person hides, shows and reorders,
+  and the views they save by name, are the page's; the engine keeps no
+  view. A variable that is not on The List is still in every answer
+  that holds the document.
+- **`format`** says how a page shows a number, an int, a decimal, a
+  money, a date or a datetime, in the patterns of Excel's number
+  formats. The person's language gives the separators and the names of
+  the months, so one pattern serves every language.
+
+```json
+"spent_on":   {"type": "date", "default": "TODAY()", "label": "Spent on", "list": true, "format": "d mmm yyyy"},
+```
+
+| Pattern | Ola reads, in Polish | Ann reads, in English |
+|---|---|---|
+| `d mmm yyyy` on 2026-12-05 | 5 gru 2026 | 5 Dec 2026 |
+| `#,##0.00` on 12345.67 | 12 345,67 | 12,345.67 |
+| `0%` on 0.15 | 15% | 15% |
+
+The engine checks a pattern when the class is defined and never applies
+it: on the wire, in an export and in a formula the value is as it always
+was, `"2026-12-05"`. It reads these parts of Excel's language:
+
+| For | The parts |
+|---|---|
+| a number, an int, a decimal, a money | `0` a digit, `#` a digit when there is one, `,` the thousands separator between digit places, `.` the decimal point, `%` the value times a hundred, and up to three sections split by `;`, for the positive, the negative and the zero |
+| a date | `d` and `dd` the day, `ddd` and `dddd` its name, `m` and `mm` the month, `mmm` and `mmmm` its name, `yy` and `yyyy` the year |
+| a datetime | the same, and `h` and `hh` the hour, `m` and `mm` the minutes after an hour, `ss` the seconds, `AM/PM` |
+
+Text in quotes stands as it is, as do a space and `$ - + / ( ) : ! ^ &
+' ~ { } < > =`, and in a date also `.` and `,`: `dd.mm.yyyy`. Anything
+else is refused with `bad_value` and its place in the pattern: colours
+and conditions in brackets, the scientific notation, `General`. A format
+on a text, a bool, a ref, a list, an object or rows is refused with
+`not_allowed`.
+
+**A column or a field says the same.** A column of a `rows` variable,
+written as a type, may be written as an object with the type, a
+`label`, a `description` and a `format`; the short form stays and means
+the long one with a type alone.
+
+```json
+"lines":      {"type": "rows", "schema": {"what": "text", "cost": {"type": "money", "label": "Cost", "format": "#,##0.00"}}},
+```
+
+A column of an explicit table and a field of a schema take the same
+long form ([tables](tables.md), [schemas and objects](schemas-and-objects.md)).
+
+Changing a label, a description, `list` or a format is a change of the
+class like any other: it makes a new version, and moves no document
+([change a class](guides/change-a-class.md)).
+
+> **Status.** The words of a class in other languages, kept beside the
+> class as definitions of their own (ADR-0068, item 6), are not built
+> yet.
 
 ## Rules
 

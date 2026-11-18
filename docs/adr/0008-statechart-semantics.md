@@ -1,6 +1,6 @@
 # ADR-0008: Statechart semantics, SCXML subset
 
-- Status: Accepted; amended by ADR-0039 (a final state freezes the document), ADR-0040 (what a chain of eventless transitions writes), ADR-0047 (a transition may fire by time, with `after` or `at`)
+- Status: Accepted; amended by ADR-0039 (a final state freezes the document), ADR-0040 (what a chain of eventless transitions writes), ADR-0047 (a transition may fire by time, with `after` or `at`), ADR-0068 (a state and a transition have a label and a description)
 - Date: 2026-11-05
 
 ## Context

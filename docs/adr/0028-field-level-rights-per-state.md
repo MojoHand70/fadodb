@@ -1,6 +1,6 @@
 # ADR-0028: Field-level rights per state
 
-- Status: Accepted; amends ADR-0010, ADR-0018; amended by ADR-0041 (the row a right is evaluated over, the filter compiles a read right, read rights use the functions of a read rule)
+- Status: Accepted; amends ADR-0010, ADR-0018; amended by ADR-0041 (the row a right is evaluated over, the filter compiles a read right, read rights use the functions of a read rule), ADR-0069 (a section stands where a variable stands; the layout's advisory formulas are gone)
 - Date: 2026-11-06
 
 ## Context

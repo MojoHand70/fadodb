@@ -415,7 +415,7 @@ func TestRights_ReadRightWithoutLookups(t *testing.T) {
 	}
 	write := `{"name": "Q", "variables": {"cur": {"type": "text"}, "net": {"type": "number"}}, "states": {"initial": "s", "list": ["s"]},
 	  "rights": {"*": {"net": {"write": "LOOKUP(Fx, rate, code = THIS.cur) > 1"}}}}`
-	if diags := s.Validate(opened([]byte(write))); len(diags) != 0 {
+	if diags := withoutDescriptions(s.Validate(opened([]byte(write)))); len(diags) != 0 {
 		t.Errorf("write right with a lookup: %v", diags)
 	}
 }

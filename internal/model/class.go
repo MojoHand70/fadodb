@@ -528,12 +528,13 @@ func CompileIn(def *Definition, env Env) (*Class, Diagnostics) {
 	compileRules(c, cls, def.Rules, scope)
 	compileAccess(c, cls, def.Access, scope)
 	compileRights(c, cls, def, scope)
+	compileWords(c, cls, def)
 
 	if c.failed() {
 		return nil, c.list
 	}
 	cls.Reads = c.reads
-	cls.Notes = leftOut(def)
+	cls.Notes = append(leftOut(def), noDescription(def)...)
 	return cls, nil
 }
 
@@ -755,9 +756,9 @@ func rowsColumns(c *collector, path string, vd *VariableDef, schemas *SchemaSet,
 		used[upper(sch.Name)] = sch
 		return sch.Type.Fields(), sch.Name, true
 	}
-	var cols map[string]string
+	var cols map[string]FieldDef
 	if err := json.Unmarshal(vd.Schema, &cols); err != nil {
-		c.add(CodeBadJSON, path+"/schema", "a rows schema is a schema name or an object of column name to type")
+		c.add(CodeBadJSON, path+"/schema", "a rows schema is a schema name or an object of column name to type, or to a column with its type, label, description and format: "+jsonMessage(err))
 		return nil, "", false
 	}
 	order := vd.schemaOrder
@@ -785,11 +786,12 @@ func rowsColumns(c *collector, path string, vd *VariableDef, schemas *SchemaSet,
 			continue
 		}
 		seen[upper(col)] = true
-		ft, _, good := schemas.fieldType(c, cpath, cols[col], "")
+		ft, _, good := schemas.fieldType(c, cpath, cols[col].Type, "")
 		if !good {
 			ok = false
 			continue
 		}
+		checkField(c, cpath, cols[col], ft)
 		if ft.Kind == formula.KindObject {
 			if sch, found := schemas.Lookup(ft.Schema()); found {
 				used[upper(sch.Name)] = sch

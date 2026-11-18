@@ -109,6 +109,7 @@ What the engine reports when it checks a class, a table, a schema or an action b
 | `rule_left_out` | A note and no refusal. The class leaves an access rule out; it is accepted, and nobody but a content administrator passes that rule (ADR-0052, item 5). |
 | `too_many_columns` | A generated table would exceed MaxColumns. |
 | `not_supported` | A construct the format allows that the engine does not implement yet. |
+| `no_description` | A note and no refusal. A variable, a state or a transition has no description, which a person reads as help and an agent as what the thing is for (ADR-0068, item 3). |
 
 ## Refusals of a command
 

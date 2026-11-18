@@ -1,6 +1,6 @@
 # ADR-0069: The screen is the face's, and a class has sections
 
-- Status: Proposed; amends ADR-0018 (the engine keeps no layouts, and the bundle carries none), ADR-0028 (a section stands where a variable stands in `rights`), ADR-0032 (the four components for objects are no longer the engine's), ADR-0034 (the `rating` component is no longer the engine's), ADR-0068 (a section has a label, a description and words in other languages); withdraws ADR-0054
+- Status: Accepted; amends ADR-0018 (the engine keeps no layouts, and the bundle carries none), ADR-0028 (a section stands where a variable stands in `rights`), ADR-0032 (the four components for objects are no longer the engine's), ADR-0034 (the `rating` component is no longer the engine's), ADR-0068 (a section has a label, a description and words in other languages); withdraws ADR-0054
 - Date: 2026-11-17
 
 ## Context

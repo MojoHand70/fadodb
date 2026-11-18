@@ -430,7 +430,7 @@ func TestDefineClasses(t *testing.T) {
 			t.Fatalf("definition %d alone: %v", i, err)
 		}
 	}
-	if diags := s.ValidateClasses(openedAll(pair)); len(diags) != 0 {
+	if diags := withoutDescriptions(s.ValidateClasses(openedAll(pair))); len(diags) != 0 {
 		t.Fatalf("the pair validates with %v", diags)
 	}
 	// A definition that is wrong by itself is the one reported: the class

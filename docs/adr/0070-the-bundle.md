@@ -1,6 +1,6 @@
 # ADR-0070: The bundle: a class, its words and its compiled formulas in one call
 
-- Status: Proposed; amends ADR-0003 (the dependency graph is the order of the formulas and what each reads), ADR-0018 (the bundle's command, address, contents and tag), ADR-0028 (the rights travel worked out for each state and variable), ADR-0055 (item 8: the bundle is the first read with a `GET` form)
+- Status: Accepted; amends ADR-0003 (the dependency graph is the order of the formulas and what each reads), ADR-0018 (the bundle's command, address, contents and tag), ADR-0028 (the rights travel worked out for each state and variable), ADR-0055 (item 8: the bundle is the first read with a `GET` form)
 - Date: 2026-11-18
 
 ## Context

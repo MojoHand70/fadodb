@@ -1130,6 +1130,30 @@ func TestTheCommandsOfTheWords(t *testing.T) {
 // order of their files and, in a file, as written. When the tests that
 // run the commands were left out, by -run or by -short, it has nothing
 // to say.
+// The bundle of a class (ADR-0070): every caller reads it, in the
+// words of a language; a page that holds it is answered that it has not
+// changed; a language that is no tag is refused at its place.
+func TestTheBundleCommand(t *testing.T) {
+	s := open(t)
+	define(t, s)
+	run(t, s, dan, "define_words", `{"definition": {"class": "Invoice", "language": "pl", "label": "Faktura", "variables": {"net": {"label": "Kwota netto"}}}}`)
+	got := run(t, s, bob, "get_bundle", `{"class": "invoice", "language": "PL"}`)
+	if at(t, got, "class") != "Invoice" || at(t, got, "language") != "pl" || at(t, got, "definition.label") != "Faktura" ||
+		at(t, got, "definition.variables.net.label") != "Kwota netto" || at(t, got, "words.class/Invoice/pl") != 1.0 {
+		t.Errorf("get_bundle answered %v", got)
+	}
+	tag, _ := got["tag"].(string)
+	if same := run(t, s, bob, "get_bundle", `{"class": "Invoice", "language": "pl", "tag": "`+tag+`"}`); len(same) != 2 || same["unchanged"] != true || same["tag"] != tag {
+		t.Errorf("a page that holds the bundle is answered %v", same)
+	}
+	if e := refused(t, s, bob, "get_bundle", `{"class": "Invoice", "language": "polish"}`); e.Code != store.CodeBadValue || e.Path != "/language" {
+		t.Errorf("a language that is no tag: %+v", e)
+	}
+	if e := refused(t, s, bob, "get_bundle", `{"class": "Nothing"}`); e.Code != store.CodeUnknownClass {
+		t.Errorf("a class the database does not have: %+v", e)
+	}
+}
+
 func TestEveryCommandIsRun(t *testing.T) {
 	if used["create"] == 0 || used["get_class"] == 0 || used["drain"] == 0 {
 		t.Skip("the tests that run the commands did not all run")

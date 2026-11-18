@@ -144,8 +144,9 @@ func TestTheDescriptionOfTheCommands(t *testing.T) {
 			t.Errorf("%s: the description does not say what it answers as %s, or how it is refused", c.Name, kind)
 		}
 	}
-	// And nothing else but the files and what the server answers itself.
-	besides := map[string]string{"/v1/blobs": "post", "/v1/file": "get", "/v1/blob": "get", "/v1/in/{inlet}": "post", "/v1/health": "get", "/v1/metrics": "get"}
+	// And nothing else but the files, the bundle's form for a browser and
+	// what the server answers itself.
+	besides := map[string]string{"/v1/blobs": "post", "/v1/file": "get", "/v1/blob": "get", "/v1/bundle": "get", "/v1/in/{inlet}": "post", "/v1/health": "get", "/v1/metrics": "get"}
 	if want := len(command.Commands()) + len(besides); len(doc.Paths) != want {
 		t.Errorf("the description has %d addresses, want %d", len(doc.Paths), want)
 	}

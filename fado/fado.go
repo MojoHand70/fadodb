@@ -144,6 +144,10 @@ type (
 	// the words of one thing in one language.
 	WordsInfo = store.WordsInfo
 	WordsOf   = store.WordsOf
+	// Bundle is a class in a language with its compiled formulas, as one
+	// JSON object a page reads (ADR-0070), and BundleOf names one.
+	Bundle   = store.Bundle
+	BundleOf = store.BundleOf
 	// Outbound sends the HTTP requests of declared actions, in
 	// Options.Outbound (ADR-0045, item 7); package fado/outbound makes one
 	// that calls only the hosts a program lists. OutboundRequest and
@@ -682,6 +686,16 @@ func (db *DB) DefineWords(ctx context.Context, definition []byte, opts ...Option
 // is open to every caller. Definition reads the words themselves, under
 // DefinitionWords and the name a listing gives, class/Invoice/pl.
 func (db *DB) ListWords(of WordsOf) []WordsInfo { return db.s.ListWords(of) }
+
+// GetBundle answers the bundle of a class in a language (ADR-0070): the
+// class as it was defined with the words of the language put in place,
+// the schemas it uses, and every formula a page runs to show a document
+// and check it before it is sent, compiled for the browser VM, with the
+// tag a page sends back to learn whether it changed. Reading it is open
+// to every caller.
+func (db *DB) GetBundle(ctx context.Context, of BundleOf) (*Bundle, error) {
+	return db.s.Bundle(ctx, of)
+}
 
 // RemoveWords takes away the words of one thing in one language: a page
 // shows it in its own words from then on. Their versions stay. It is for

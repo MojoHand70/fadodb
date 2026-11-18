@@ -1186,8 +1186,8 @@ a user.
   to the hosts its settings list, and no action written as a Go
   function; its settings are the operator's, and no secret is among
   them (ADR-0059).
-- The class bundle comes with the frontend in Phase 7, by the owner's
-  ruling of 2026-11-14; the engine keeps no layouts (ADR-0069).
+- The class bundle, `get_bundle`, and its form for a browser's cache,
+  `GET /v1/bundle` (ADR-0070); the engine keeps no layouts (ADR-0069).
 
 The OpenAPI document is generated from the table of the commands and
 checked into `api/`.
@@ -1223,13 +1223,18 @@ is blank, `json` variables embedded as they are.
 }
 ```
 
-The bundle, which comes with the frontend in Phase 7 and whose address
-that phase decides (ADR-0055, item 8), is the class definition, with what
-it says to people and its sections, its words in the person's language,
-the rights, the compiled bytecode of every formula, and the slice of the
-function catalog they use. A face needs nothing else to draw a document
-and evaluate it live. The bundle is cached by an ETag derived from the
-class and its words. Encoding documents is on
+The bundle (ADR-0070), the command `get_bundle` and its form for a
+browser's cache, `GET /v1/bundle`, is the class definition with the
+words of the person's language put in place, the schemas it uses, and
+every formula a page runs to show a document and check it before it is
+sent, compiled: the title, the defaults, the computed variables in
+their order with what each reads, the access rules but the read rule,
+the guards, and the rights worked out for each state and variable. A
+formula that reads other documents, a table or the history of states is
+marked as the server's, and the page asks `preview`. It carries no
+document and no row of a table, so it is the same for everyone; its tag
+is a hash of what it says, and the store keeps it built until a class,
+a schema or words are defined again. Encoding documents is on
 the read path, so the encoder is hand-written and reflection-free.
 
 ### C ABI

@@ -857,6 +857,29 @@ func runGetWords(c *call) error {
 	return c.stored("words", store.DefinitionWords, model.WordsName(kind, target, of.Language), int(version), nil)
 }
 
+// runGetBundle answers the bundle of a class (ADR-0070), or that the
+// page holds it already.
+func runGetBundle(c *call) error {
+	version, e := c.integer("version")
+	if e != nil {
+		return e
+	}
+	b, err := c.s.Bundle(c.ctx, store.BundleOf{Class: c.text("class"), Language: c.text("language"), Version: int(version)})
+	if err != nil {
+		return err
+	}
+	if tag := c.text("tag"); tag != "" && tag == b.Tag {
+		c.open("unchanged")
+		c.out = append(c.out, "true"...)
+		c.next("tag")
+		c.out = strconv.AppendQuote(c.out, b.Tag)
+		c.close()
+		return nil
+	}
+	c.out = append(c.out, b.JSON...)
+	return nil
+}
+
 func runListWords(c *call) error { return c.answer("words", list(c.s.ListWords(c.wordsOf())), nil) }
 
 func runRemoveWords(c *call) error { return c.empty(c.s.RemoveWords(c.ctx, c.wordsOf(), c.opts...)) }

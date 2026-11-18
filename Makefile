@@ -96,3 +96,5 @@ vmtest: vm
 	go run ./web/vm/cases > web/vm/dist/cases.json
 	node web/vm/test/run.mjs web/vm/dist/cases.json
 	node web/vm/test/bench.mjs web/vm/dist/cases.json
+	go run ./web/vm/bundle > web/vm/dist/bundle.json
+	node web/vm/test/bundle.mjs web/vm/dist/bundle.json

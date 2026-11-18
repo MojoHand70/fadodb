@@ -295,6 +295,53 @@ lookup of a language (item 4), the tag a hash of the content (item
 10), the rights worked out by the engine (item 6), and the proof
 (item 12).
 
+## Settled while building
+
+Every item is built. Settled by me while building, each the owner's to
+strike:
+
+1. **The answer is the bundle itself**, its members at the top, and not
+   wrapped in a member `bundle` as most answers are, so that the
+   command and `GET /v1/bundle` answer the same bytes. A page that
+   holds it is answered `{"unchanged": true, "tag": …}`.
+2. **A compiled access rule or guard is its bytecode alone**, a text;
+   one that is the server's is `{"server": true, "reads": [...]}`. A
+   right carries `formula` or `groups` beside its `cell`, or `server`
+   and `reads`. A right of a list of groups holds when the person is in
+   one of them; the system groups are not among them, as at the server.
+3. **The `type` of a computed variable and of a default** is the type
+   as the engine resolved it, `money(2)` for a `money` written without a
+   scale, which `parseType` of the browser VM reads.
+4. **The schemas** are those the class uses, and the schemas they
+   extend and their object fields name, in the order the database
+   lists them.
+5. **A guard of a transition without a name** is left out: nobody takes
+   such a transition by a command, and the words leave it out too.
+6. **The tag** is the first sixteen hexadecimal digits of the SHA-256
+   of the bundle without it, as item 10 says. The store keeps at most
+   256 bundles built and starts again past that, so a caller asking in
+   every tag there is costs time and not memory.
+7. **An earlier version** is answered while the store keeps it
+   compiled: while a document it computed is live. A version that
+   computed no document is refused with `unknown_class`, its current
+   version in the hint.
+8. **In Go the call is `GetBundle`**, so that the command keeps the
+   name ADR-0055 gives the command of a call, `get_bundle`, as the
+   owner agreed it; the store's call is `Bundle`.
+9. **The list of the door's tools** grows by the tool `get_bundle`, to
+   about 55,000 characters, which the chapter on the door now says.
+10. **The proof.** `make vmtest` runs `go run ./web/vm/bundle`, which
+   plays two stories against the engine: the chapter's invoice in
+   Ola's words, and the sample invoice, which has a title, defaults,
+   guards and rights in every state. For each person and step it
+   writes the document as that person reads it and the server's
+   answers: the values a set works out (`preview`), a new document's
+   defaults at two moments, and what each person may set, read, move
+   and delete. `web/vm/test/bundle.mjs` works every answer out again
+   from the bundle, the person and the document alone: 394 answers,
+   each the server's. A page in a final state sets nothing, as the
+   server refuses it.
+
 ## Consequences
 
 - A page runs a document as the server does, from one call, and keeps

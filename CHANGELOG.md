@@ -8,7 +8,7 @@ All notable changes to FadoDB are recorded here. The format follows
 
 ### Added
 
-- ADR-0072, proposed, with the owner's ruling of 2026-11-18: the core
+- ADR-0072, accepted, with the owner's ruling of 2026-11-18: the core
   program may be 20 MB, where it was 15. The size gate holds every pull
   request to it. `text/template`, `html/template` and calls of methods
   by their names stay out of the core: they keep every method of the

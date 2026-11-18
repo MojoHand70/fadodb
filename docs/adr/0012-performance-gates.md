@@ -1,6 +1,6 @@
 # ADR-0012: Performance budgets and gates
 
-- Status: Accepted; amended by ADR-0030 (the gate measures the minimum over code placements); the gate's scope narrowed on 2026-11-09 and again on 2026-11-14, and since 2026-11-15 a pull request is held on GitHub to a short form of the gate (see Gates)
+- Status: Accepted; amended by ADR-0030 (the gate measures the minimum over code placements), ADR-0072 (the core program may be 20 MB); the gate's scope narrowed on 2026-11-09 and again on 2026-11-14, and since 2026-11-15 a pull request is held on GitHub to a short form of the gate (see Gates)
 - Date: 2026-11-05
 
 ## Context

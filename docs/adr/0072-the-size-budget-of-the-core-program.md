@@ -1,6 +1,6 @@
 # ADR-0072: The size budget of the core program: 20 MB
 
-- Status: Proposed; amends ADR-0002 and ADR-0012 (the core program may be 20 MB, where it was 15), ADR-0017 (the budget of the lite build)
+- Status: Accepted; amends ADR-0002 and ADR-0012 (the core program may be 20 MB, where it was 15), ADR-0017 (the budget of the lite build)
 - Date: 2026-11-18
 
 ## Context

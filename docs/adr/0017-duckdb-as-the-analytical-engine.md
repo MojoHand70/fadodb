@@ -1,6 +1,6 @@
 # ADR-0017: DuckDB as the analytical engine, full and lite builds
 
-- Status: Accepted; amends ADR-0002
+- Status: Accepted; amends ADR-0002; amended by ADR-0072 (the size budget of the lite build is 20 MB)
 - Date: 2026-11-05
 
 ## Context

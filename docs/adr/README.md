@@ -77,3 +77,4 @@ line says so. Copy `0000-template.md` to start.
 | [0069](0069-the-screen-is-the-faces-and-a-class-has-sections.md) | The screen is the face's, and a class has sections | Accepted |
 | [0070](0070-the-bundle.md) | The bundle: a class, its words and its compiled formulas in one call | Accepted |
 | [0071](0071-signing-in.md) | Signing in: passwords, company sign-on, sessions and passes for agents | Accepted |
+| [0072](0072-the-size-budget-of-the-core-program.md) | The size budget of the core program: 20 MB | Proposed |

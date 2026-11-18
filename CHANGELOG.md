@@ -8,6 +8,11 @@ All notable changes to FadoDB are recorded here. The format follows
 
 ### Added
 
+- ADR-0072, proposed, with the owner's ruling of 2026-11-18: the core
+  program may be 20 MB, where it was 15. The size gate holds every pull
+  request to it. `text/template`, `html/template` and calls of methods
+  by their names stay out of the core: they keep every method of the
+  program.
 - Signing in, part 1 (ADR-0071): passwords, the second step and
   sessions. People sign in to `fadodb serve` on its own pages under
   `/auth/`: a password, kept as a PBKDF2-SHA256 hash of the standard

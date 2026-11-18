@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # Binary size gate: a release-style build of the core binary must stay under
-# the budget in docs/adr/0012-performance-gates.md.
+# the budget in docs/adr/0012-performance-gates.md, 20 MB since ADR-0072.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-LIMIT_MB="${SIZE_LIMIT_MB:-15}"
+LIMIT_MB="${SIZE_LIMIT_MB:-20}"
 out="$(mktemp -d)"
 trap 'rm -rf "$out"' EXIT
 

@@ -14,6 +14,8 @@ import (
 
 	"github.com/MojoHand70/fadodb/fado/httpdoor"
 	"github.com/MojoHand70/fadodb/internal/model"
+	"github.com/MojoHand70/fadodb/internal/server"
+	"github.com/MojoHand70/fadodb/internal/store"
 )
 
 // settings are what the operator tells the server in one JSON file,
@@ -39,6 +41,11 @@ import (
 //	  "inbound": {
 //	    "message_bytes": 1048576,
 //	    "messages": 16
+//	  },
+//	  "url": "https://fado.acme.example",
+//	  "sessions": {
+//	    "idle_hours": 8,
+//	    "days": 30
 //	  }
 //	}
 type settings struct {
@@ -55,11 +62,19 @@ type settings struct {
 	// member inbound, whatever is in it. The limits of the messages are
 	// among the limits of the door.
 	inbound bool
+	// url is the address people and clients reach the server at, from
+	// which its pages, its sessions and their cookie are named (ADR-0071,
+	// item 12); empty, the pages answer this machine alone. sessions is
+	// how long a session holds, the usual 8 hours unused and 30 days at
+	// most, which the file may shorten.
+	url      string
+	sessions store.SessionLengths
 }
 
 // The names a settings file may hold, at each place.
 var (
-	settingsMembers = []string{"outbound", "limits", "inbound"}
+	settingsMembers = []string{"outbound", "limits", "inbound", "url", "sessions"}
+	sessionMembers  = []string{"idle_hours", "days"}
 	outboundMembers = []string{"hosts", "connections"}
 	limitMembers    = []string{"request_bytes", "command_seconds", "commands", "streams"}
 	inboundMembers  = []string{"message_bytes", "messages"}
@@ -166,6 +181,34 @@ func parseSettings(data []byte) (*settings, error) {
 				return nil, err
 			}
 			s.limits.Messages = int(n)
+		}
+	}
+	if raw, given := top["url"]; given {
+		if err := json.Unmarshal(raw, &s.url); err != nil || s.url == "" {
+			return nil, fmt.Errorf("url is the address people reach the server at, as text such as \"https://fado.acme.example\", and here it is %s", shown(raw))
+		}
+		if _, err := server.NewPages(nil, server.PagesOptions{URL: s.url}); err != nil {
+			return nil, fmt.Errorf("url is %s: %v", shown(raw), err)
+		}
+	}
+	if raw, given := top["sessions"]; given {
+		ses, err := members(raw, "sessions", sessionMembers)
+		if err != nil {
+			return nil, err
+		}
+		if raw, given := ses["idle_hours"]; given {
+			n, err := countOf(raw, "sessions.idle_hours")
+			if err != nil || n > 8 {
+				return nil, fmt.Errorf("sessions.idle_hours is a whole number of hours from 1 to 8, and here it is %s", shown(raw))
+			}
+			s.sessions.Idle = time.Duration(n) * time.Hour
+		}
+		if raw, given := ses["days"]; given {
+			n, err := countOf(raw, "sessions.days")
+			if err != nil || n > 30 {
+				return nil, fmt.Errorf("sessions.days is a whole number of days from 1 to 30, and here it is %s", shown(raw))
+			}
+			s.sessions.Max = time.Duration(n) * 24 * time.Hour
 		}
 	}
 	return s, nil

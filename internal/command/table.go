@@ -465,6 +465,20 @@ var commands = []*Command{
 		Answer: answer("keys", "the keys, oldest first, the revoked ones among them"), takes: asCaller, run: runListKeys},
 	{Group: Users, Users: true, Name: "revoke_key", Mark: Writes, Call: "RevokeKey", Does: "Ends a key: the next command sent with it is refused. A database administrator may revoke any key, and a user its own.",
 		Fields: []Field{req("key", Text, "the id of the key, as list_keys shows it, and not the key itself")}, takes: asWriter, run: runRevokeKey},
+	{Group: Users, Users: true, Name: "create_password_link", Mark: Writes, Call: "CreatePasswordLink", Does: "Makes a link that lets a person set their password, good once and for a day, and answers its secret, this once. Nobody sets another's password. It is a database administrator's.",
+		Fields: []Field{req("user", Text, "the id of the person the link is for")},
+		Answer: answer("link", "the link: its user, the moment it ends, who made it, and under token the secret the server's page /auth/password takes, shown this once"), takes: asWriter, run: runCreatePasswordLink},
+	{Group: Users, Users: true, Name: "list_sessions", Mark: Reads, Call: "Sessions", Does: "Lists the sessions of a user that still hold, never a secret. A database administrator may ask of any user, and a user of itself.",
+		Fields: []Field{opt("user", Text, "the id of the user; left out, the caller")},
+		Answer: answer("sessions", "the sessions, oldest first: their id, the way the user signed in, where from, when they began and were last used, and when they end"), takes: asCaller, run: runListSessions},
+	{Group: Users, Users: true, Name: "end_session", Mark: Writes, Call: "EndSession", Does: "Ends a session: the next request with it is refused. A database administrator may end any, and a user its own.",
+		Fields: []Field{req("session", Text, "the id of the session, as list_sessions shows it")}, takes: asWriter, run: runEndSession},
+	{Group: Users, Users: true, Name: "clear_second_step", Mark: Writes, Call: "ClearSecondStep", Does: "Takes away the second step of a user, for a person who lost the phone and its codes; it is set up again at the next sign-in when the user's system groups require one. A database administrator clears anybody's, and a user its own when its groups do not require one.",
+		Fields: []Field{opt("user", Text, "the id of the user; left out, the caller")}, takes: asWriter, run: runClearSecondStep},
+	{Group: Users, Users: true, Name: "sign_ins", Mark: Reads, Call: "SignIns", Does: "Lists the log of sign-ins, refused ones among them, oldest first. It is a database administrator's.",
+		Fields: []Field{opt("user", Text, "only the sign-ins of this user"), opt("since", Moment, "the first moment of the period"),
+			opt("after", Integer, "the seq of the last entry already read, to read on from"), opt("limit", Integer, "the most entries to answer, at most 1,000")},
+		Answer: answer("sign_ins", "the sign-ins: their seq, when, the user named, the way, the address they came from and whether they were let through"), takes: asCaller, run: runSignIns},
 	{Group: Users, Users: true, Name: "whoami", Mark: Reads, Call: "Whoami", Does: "Answers who the database takes the caller for.",
 		Answer: answer("user", theUser, "for", "the id of whoever the caller acts for, when the command names one"), takes: asCaller, run: runWhoami},
 }
@@ -486,6 +500,20 @@ var NotCommands = map[string]string{
 	"Action":       "it answers one entry of the catalogue that list_actions answers whole",
 	"Inlet":        "it answers one entry of the list that list_inlets answers whole",
 	"Receive":      "it takes a message from outside, which proves itself and carries no key of a user: a server answers it at POST /v1/in/<inlet>",
+	// Signing in (ADR-0071): a password, a code and a session's token
+	// never travel in a command, where they would stay in a log or in an
+	// agent's conversation. The server's own pages take them.
+	"BeginSignIn":         "a password never travels in a command: the server's page /auth/signin takes it",
+	"SetUpSecondStep":     "it belongs to a sign-in under way on the server's page /auth/signin",
+	"FinishSignIn":        "it belongs to a sign-in under way on the server's page /auth/signin",
+	"SessionCaller":       "it answers who a session belongs to, for the door that is given the session; a caller that wants to know who it is sends whoami",
+	"SignOut":             "it ends the session it is sent with, on the server's page /auth/signout; end_session ends one by its id",
+	"ChangePassword":      "a password never travels in a command: the server's page /auth/account takes it",
+	"PasswordLinkUser":    "it belongs to the server's page /auth/password, which a link opens",
+	"UsePasswordLink":     "a password never travels in a command: the server's page /auth/password takes it",
+	"SetUpMySecondStep":   "its secret never travels in a command: the server's page /auth/account shows it",
+	"ConfirmMySecondStep": "its codes never travel in a command: the server's page /auth/account shows them",
+	"HasSecondStep":       "the server's page /auth/account shows it to the person",
 }
 
 var byName = map[string]*Command{}

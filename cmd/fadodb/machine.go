@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/MojoHand70/fadodb/fado"
 )
@@ -41,10 +42,11 @@ Then make the first administrator and serve the database:
   fadodb serve FILE
 `
 
-const userUsage = `fadodb user add - make a user, on the machine that holds the database
+const userUsage = `fadodb user - make a user, or a link to set a password, on the machine that holds the database
 
 Usage:
   fadodb user add ID --kind KIND --db FILE [flags]
+  fadodb user password ID --db FILE [--url URL]
 
   --kind KIND      person, agent or service
   --name NAME      how a screen shows the user
@@ -57,6 +59,13 @@ Usage:
 This is how the first administrator of a database is made, and the way
 back in when every administrator's key is lost. While a server serves
 the database, users are kept through it, with the command create_user.
+
+fadodb user password prints a link that lets a person set their
+password on the server's page, good once and for a day; a password is
+never typed here. --url is the address the server is reached at,
+http://localhost:8080 when left out. Nobody sets another's password:
+the link goes to the person. While a server serves the database, an
+administrator makes one with the command create_password_link.
 `
 
 const keyUsage = `fadodb key new - make a key for a user, on the machine that holds the database
@@ -196,8 +205,11 @@ func openOnTheMachine(name, path string, stderr io.Writer) (*fado.DB, int) {
 	return db, 0
 }
 
-// runUser is "fadodb user add ID …".
+// runUser is "fadodb user add ID …" and "fadodb user password ID …".
 func runUser(args []string, stdout, stderr io.Writer) int {
+	if len(args) > 0 && args[0] == "password" {
+		return runPasswordLink(args[1:], stdout, stderr)
+	}
 	const name = "fadodb user add"
 	if len(args) == 0 || args[0] != "add" {
 		fmt.Fprint(stderr, userUsage)
@@ -238,6 +250,38 @@ func runUser(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stdout, ", of the system groups %s", strings.Join(u.System, ", "))
 	}
 	fmt.Fprintln(stdout)
+	return 0
+}
+
+// runPasswordLink is "fadodb user password ID …": a link that lets the
+// person set their password on the server's page (ADR-0071, item 2).
+func runPasswordLink(args []string, stdout, stderr io.Writer) int {
+	const name = "fadodb user password"
+	fs := flags(name)
+	path := fs.String("db", "", "")
+	at := fs.String("url", "http://localhost:8080", "")
+	rest, err := parse(fs, args)
+	if err != nil {
+		return asked(name, userUsage, err, stderr)
+	}
+	if len(rest) != 1 {
+		return asked(name, userUsage, errors.New("give the id of the person the link is for"), stderr)
+	}
+	db, code := openOnTheMachine(name, *path, stderr)
+	if db == nil {
+		return code
+	}
+	defer db.Close()
+	link, err := db.CreatePasswordLink(context.Background(), rest[0], onTheMachine)
+	if err != nil {
+		fmt.Fprintf(stderr, "%s: %v\n", name, err)
+		return 1
+	}
+	// The link alone goes to standard output, so that a script takes
+	// it; what is said about it goes beside.
+	fmt.Fprintf(stdout, "%s/auth/password?link=%s\n", strings.TrimSuffix(*at, "/"), link.Token)
+	fmt.Fprintf(stderr, "this link lets %s set their password, once, until %s; give it to them and to nobody else\n",
+		link.User, time.Unix(link.Ends, 0).UTC().Format("2006-01-02 15:04 UTC"))
 	return 0
 }
 

@@ -20,6 +20,7 @@ import (
 	"github.com/MojoHand70/fadodb/fado/httpdoor"
 	"github.com/MojoHand70/fadodb/fado/outbound"
 	"github.com/MojoHand70/fadodb/internal/model"
+	"github.com/MojoHand70/fadodb/internal/server"
 	"github.com/MojoHand70/fadodb/internal/store"
 )
 
@@ -85,6 +86,11 @@ list the hosts they may call:
     "inbound": {
       "message_bytes": 1048576,
       "messages": 16
+    },
+    "url": "https://fado.acme.example",
+    "sessions": {
+      "idle_hours": 8,
+      "days": 30
     }
   }
 
@@ -96,6 +102,13 @@ A secret is never in the settings. Without --secrets-dir, or when the
 file is not there, the secret token of the connection slack is read
 from the environment, as FADODB_SECRET_SLACK__TOKEN. A secret is read
 again for every request, so it is changed without a restart.
+
+People sign in on the server's own pages, at /auth/signin, and their
+browser keeps a session (8 hours unused, 30 days at most; sessions
+makes both shorter). url is the address people reach the server at:
+without it they sign in on this machine only. A person's first
+password is set with a link, made on the machine with
+fadodb user password.
 
 The server runs no Go function: an action is the engine's own, or a
 request the server sends.
@@ -194,7 +207,15 @@ func runServe(ctx context.Context, args []string, stdout, stderr io.Writer, read
 		log.write(r)
 		counted.record(r)
 	}
-	who := httpdoor.Keys(db)
+	// People sign in on the server's own pages, and a page of the server
+	// sends commands with its session; everybody else sends a key
+	// (ADR-0071).
+	pages, err := server.NewPages(db, server.PagesOptions{URL: told.url, Lengths: told.sessions, Report: report})
+	if err != nil {
+		fmt.Fprintf(stderr, "%s: %v\n", name, err)
+		return 1
+	}
+	who := pages.Who(httpdoor.Keys(db))
 	door, err := httpdoor.New(db, httpdoor.Options{Who: who, Limits: told.limits, Report: report, Inbound: told.inbound})
 	if err != nil {
 		fmt.Fprintf(stderr, "%s: %v\n", name, err)
@@ -206,7 +227,7 @@ func runServe(ctx context.Context, args []string, stdout, stderr io.Writer, read
 		return 1
 	}
 	srv := &http.Server{
-		Handler: &served{db: db, door: door, path: path, who: who, metrics: counted, report: report},
+		Handler: &served{db: db, door: door, pages: pages, path: path, who: who, metrics: counted, report: report},
 		// A caller that connects and says nothing is not waited for
 		// forever. A body and a reply have no limit of time here: a
 		// large file takes as long as its line allows.
@@ -221,7 +242,19 @@ func runServe(ctx context.Context, args []string, stdout, stderr io.Writer, read
 	fmt.Fprintf(stderr, "%s: serving %s at %s://%s\n", name, path, scheme, ln.Addr())
 	if users, err := db.Users(ctx, fado.UserFilter{}, onTheMachine); err == nil && len(users) == 0 {
 		fmt.Fprintf(stderr, "%s: the database has no user yet, so nobody can call it. Stop the server and make the first:\n"+
-			"  fadodb user add olga --kind person --system administrators --db %s\n  fadodb key new olga --label laptop --db %s\n", name, path, path)
+			"  fadodb user add olga --kind person --system administrators --db %s\n  fadodb user password olga --db %s\n", name, path, path)
+	}
+	signIn := told.url
+	if signIn == "" {
+		signIn = scheme + "://" + ln.Addr().String()
+		if !thisMachineOnly(*listen) {
+			signIn = ""
+		}
+	}
+	if signIn != "" {
+		fmt.Fprintf(stderr, "%s: people sign in at %s%s\n", name, strings.TrimSuffix(signIn, "/"), server.PageSignIn)
+	} else {
+		fmt.Fprintf(stderr, "%s: nobody signs in on a page: give the settings the address people reach the server at, url\n", name)
 	}
 	fmt.Fprintf(stderr, "%s: %s\n", name, told.mayCall())
 	for _, line := range waiting(db.Actions(), kept) {
@@ -378,8 +411,9 @@ func interrupted() (context.Context, context.CancelFunc) {
 // served is what the server answers: the health of the server, for
 // anybody, and everything else through the door of the database.
 type served struct {
-	db   *fado.DB
-	door *httpdoor.Door
+	db    *fado.DB
+	door  *httpdoor.Door
+	pages *server.Pages
 	// path is the file of the database; who says who sends a request,
 	// as the door asks it; metrics are the counts of the server, and
 	// report is what every request is told to once it was answered.
@@ -396,6 +430,11 @@ func (s *served) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	case metricsPath:
 		s.counts(w, r)
+		return
+	}
+	// The pages where people sign in (ADR-0071, item 9).
+	if strings.HasPrefix(r.URL.Path, "/auth/") {
+		s.pages.ServeHTTP(w, r)
 		return
 	}
 	s.door.ServeHTTP(w, r)

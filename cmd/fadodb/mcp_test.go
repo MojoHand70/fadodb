@@ -459,10 +459,10 @@ func TestHowTheDoorEnds(t *testing.T) {
 		t.Errorf("a door that cannot write: exit %d, said %q", code, stderr.String())
 	}
 
-	// The help is for a person, and names the two commands that are no
+	// The help is for a person, and names the three commands that are no
 	// tool.
 	code, out, said := tool("mcp", "--help")
-	if code != 0 || out != "" || !strings.Contains(said, "fadodb mcp - the door for agents") || !strings.Contains(said, "subscribe") || !strings.Contains(said, "create_key") {
+	if code != 0 || out != "" || !strings.Contains(said, "fadodb mcp - the door for agents") || !strings.Contains(said, "subscribe") || !strings.Contains(said, "create_key") || !strings.Contains(said, "create_password_link") {
 		t.Errorf("the help of the door: exit %d, printed %q, said %q", code, out, said)
 	}
 }

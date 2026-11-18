@@ -199,6 +199,18 @@ type (
 	UserFilter = store.UserFilter
 	UserKey    = store.UserKey
 	UserChange = store.UserChange
+	// Signing in (ADR-0071): SignIn is a sign-in under way after its
+	// password, SecondStep the secret a person enters in an
+	// authenticator app, Session a session and SessionLengths how long
+	// one holds, PasswordLink a link that sets a password, and
+	// SignInEntry and SignInFilter the log of sign-ins.
+	SignIn         = store.SignIn
+	SecondStep     = store.SecondStep
+	Session        = store.Session
+	SessionLengths = store.SessionLengths
+	PasswordLink   = store.PasswordLink
+	SignInEntry    = store.SignInEntry
+	SignInFilter   = store.SignInFilter
 	// Read is one entry of the log of reads, and ReadsFilter narrows the
 	// log (ADR-0067).
 	Read        = store.Read
@@ -943,6 +955,103 @@ func (db *DB) Keys(ctx context.Context, user string, opts ...Option) ([]*UserKey
 func (db *DB) RevokeKey(ctx context.Context, key string, opts ...Option) error {
 	return db.s.RevokeKey(ctx, key, opts...)
 }
+
+// BeginSignIn takes the password of a person and answers what comes
+// next: the session, the code of the second step, or setting the second
+// step up (ADR-0071). Every refusal is in the same words. address is
+// where the request came from. It is the server's sign-in page's: a
+// password never travels in a command.
+func (db *DB) BeginSignIn(ctx context.Context, user, password, address string) (*SignIn, error) {
+	return db.s.BeginSignIn(ctx, user, password, address)
+}
+
+// SetUpSecondStep gives the secret of the second step of a sign-in that
+// must set one up.
+func (db *DB) SetUpSecondStep(ctx context.Context, signIn string) (*SecondStep, error) {
+	return db.s.SetUpSecondStep(ctx, signIn)
+}
+
+// FinishSignIn takes the code of the second step, when one comes next,
+// and gives the session, with its token this once.
+func (db *DB) FinishSignIn(ctx context.Context, signIn, code, address string, lengths SessionLengths) (*Session, error) {
+	return db.s.FinishSignIn(ctx, signIn, code, address, lengths)
+}
+
+// SessionCaller answers who a session's token belongs to, as Authenticate
+// answers for a key.
+func (db *DB) SessionCaller(ctx context.Context, token string) (Principal, *Session, error) {
+	return db.s.SessionCaller(ctx, token)
+}
+
+// SignOut ends the session of a token.
+func (db *DB) SignOut(ctx context.Context, token string) error { return db.s.SignOut(ctx, token) }
+
+// ChangePassword changes the caller's own password, given the one it has.
+func (db *DB) ChangePassword(ctx context.Context, old, password, address string, opts ...Option) error {
+	return db.s.ChangePassword(ctx, old, password, address, opts...)
+}
+
+// CreatePasswordLink makes a link that lets a person set their password,
+// good once and for a day. It is a database administrator's.
+func (db *DB) CreatePasswordLink(ctx context.Context, user string, opts ...Option) (*PasswordLink, error) {
+	return db.s.CreatePasswordLink(ctx, user, opts...)
+}
+
+// PasswordLinkUser answers whose a link to set a password is, while it
+// holds.
+func (db *DB) PasswordLinkUser(ctx context.Context, token string) (string, error) {
+	return db.s.PasswordLinkUser(ctx, token)
+}
+
+// UsePasswordLink sets the password of the person a link is for; the
+// link then holds no more, and the person's sessions end.
+func (db *DB) UsePasswordLink(ctx context.Context, token, password, address string) error {
+	return db.s.UsePasswordLink(ctx, token, password, address)
+}
+
+// SetUpMySecondStep gives the caller a secret for a second step of its
+// own, which ConfirmMySecondStep confirms with its first code.
+func (db *DB) SetUpMySecondStep(ctx context.Context, opts ...Option) (*SecondStep, error) {
+	return db.s.SetUpMySecondStep(ctx, opts...)
+}
+
+// ConfirmMySecondStep keeps the caller's second step and answers the
+// codes for when the phone is lost, this once.
+func (db *DB) ConfirmMySecondStep(ctx context.Context, code, address string, opts ...Option) ([]string, error) {
+	return db.s.ConfirmMySecondStep(ctx, code, address, opts...)
+}
+
+// HasSecondStep reports whether a user has a second step, and whether
+// its system groups require one.
+func (db *DB) HasSecondStep(ctx context.Context, user string, opts ...Option) (has, required bool, err error) {
+	return db.s.HasSecondStep(ctx, user, opts...)
+}
+
+// ClearSecondStep takes away the second step of a user.
+func (db *DB) ClearSecondStep(ctx context.Context, user string, opts ...Option) error {
+	return db.s.ClearSecondStep(ctx, user, opts...)
+}
+
+// Sessions lists the sessions of a user that still hold.
+func (db *DB) Sessions(ctx context.Context, user string, opts ...Option) ([]*Session, error) {
+	return db.s.Sessions(ctx, user, opts...)
+}
+
+// EndSession ends a session by its id.
+func (db *DB) EndSession(ctx context.Context, id string, opts ...Option) error {
+	return db.s.EndSession(ctx, id, opts...)
+}
+
+// SignIns lists the log of sign-ins, refused ones among them. It is a
+// database administrator's.
+func (db *DB) SignIns(ctx context.Context, f SignInFilter, opts ...Option) ([]SignInEntry, error) {
+	return db.s.SignIns(ctx, f, opts...)
+}
+
+// StepCode is the code an authenticator app shows for the secret of a
+// second step at a moment, for tests and for a program that signs a
+// person in on their behalf.
+func StepCode(secret string, at time.Time) string { return store.StepCode(secret, at) }
 
 // Whoami answers who the database takes the caller for, and whom the
 // caller acts for when the call names somebody.

@@ -304,6 +304,59 @@ has Ann's system groups as well as her groups, so that Dan's Claude
 designs the class of the north star as Dan may; and its id is the
 person's, a `~` and the client's host.
 
+## Settled while building
+
+The first of the three pull requests built passwords, the second step,
+sessions and the pages (items 2, 3, 5, 9 and 11, and the part of items
+8, 10 and 12 that is theirs). Settled by me while building, each the
+owner's to strike:
+
+1. **The first password is set through a link, on the machine too.**
+   `fadodb user password olga` prints a link to the server's page,
+   good once and for a day, so that a password is typed only where it
+   is checked and never at a terminal. `--url` gives the server's
+   address in the link.
+2. **Sign-ins that keep failing wait** from the fifth failure for one
+   user and the twentieth from one address, within a quarter of an
+   hour, which many people of one office share: one second, then twice
+   as long after each failure, up to a quarter of an hour. A wait is
+   refused with `too_many_attempts`, which says how long.
+3. **A person signs in with the id of their user.** The e-mail comes
+   with the company's sign-on, the next pull request.
+4. **The page shows the key of the second step as text and as an
+   `otpauth://` link**, which authenticator apps take; a picture to
+   scan waits, since the standard library draws none.
+5. **The codes.** Ten codes for a lost phone, of ten characters each,
+   kept as hashes; a code from the app holds once and one step either
+   side of the moment; five wrong codes end the sign-in under way.
+6. **An administrator clears anybody's second step, her own among
+   them**, and sets it up again at her next sign-in; a person whose
+   groups require none clears their own on the account page.
+7. **Who is refused, and how.** A person only signs in with a
+   password: an agent and a service are refused in the same words as a
+   wrong password, and no link is made for them. A link that sets a
+   password ends every session of the person; changing the password on
+   the account page ends every session but the one it is changed in.
+8. **The tokens** of a session and of a link are written as a key is,
+   `fados_` and `fadol_`, an id and a secret of which the database
+   keeps a hash. The moment a session was last used is kept in memory
+   and written at most every five minutes, so that a request is no
+   write.
+9. **A form of the pages, and a command sent with a session, are taken
+   only from the server's own origin**, as the browser says in `Origin`,
+   or in `Sec-Fetch-Site` when it sends no `Origin`. The pages forbid
+   being framed, send no referrer, and allow no script.
+10. **The commands** are `create_password_link`, `list_sessions`,
+    `end_session`, `clear_second_step` and `sign_ins`, named by the rule
+    of ADR-0055, item 2. A password, a code and a session's token
+    travel in none: the calls that take them are the pages', and
+    `create_password_link` is no tool of the door for agents.
+11. **The codes and their statuses** join the table of ADR-0055, item
+    8: `sign_in_refused` 401, `too_many_attempts` 429, `unknown_session`
+    404.
+12. **The settings** take `sessions.idle_hours`, 1 to 8, and
+    `sessions.days`, 1 to 30: shorter than the usual, never longer.
+
 ## Consequences
 
 - A person signs in on a screen, an agent connects as the protocol

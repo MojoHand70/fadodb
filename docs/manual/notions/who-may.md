@@ -140,23 +140,27 @@ the short form of it.
 ## How a right is found
 
 `rights` is a table: a state, then a variable, then `write` or `read`.
-`*` stands for every state, or every variable. For one variable in one
+`*` stands for every state, or every variable, and the name of a
+[section](../class.md#sections) for every variable in it. For one variable in one
 state, several places of the table could speak. The engine looks in
 this order and takes the first place that says something about the
 right it is asking for:
 
 1. the state of the document, and the variable by name
-2. the state of the document, and `*`
-3. the state `*`, and the variable by name
-4. the state `*`, and `*`
+2. the state of the document, and the variable's section, then each
+   section around that one, outwards
+3. the state of the document, and `*`
+4. the state `*`, and the variable by name
+5. the state `*`, and the variable's sections, as in 2
+6. the state `*`, and `*`
 
 `write` and `read` are looked up separately. A place that gives only
 `write` says nothing about `read`, and the search for `read` goes on.
 
 **A line for a state wins over the line for `*`, even for a variable
 that `*` names.** The class above has to say twice who writes
-`audit_note`. Under `*` alone, place 3, the line of `INAPPROVAL` for
-every variable, place 2, would be found first, and the approver could
+`audit_note`. Under `*` alone, place 4, the line of `INAPPROVAL` for
+every variable, place 3, would be found first, and the approver could
 write the audit note while the invoice is in approval. So when a state
 has its own line with `*`, name in that state every variable that
 somebody else must keep.

@@ -20,6 +20,12 @@
     "total":    {"formula": "ROUND(net * (1 - discount), 2)", "label": "Total", "list": true, "format": "#,##0.00",
                  "description": "What the customer pays: the net amount less the discount, to the cent."}
   },
+  "sections": {
+    "billing": {"label": "Billing", "description": "Who the invoice goes to, and by when they pay.",
+                "variables": ["customer", "due"]},
+    "amounts": {"label": "Amounts", "description": "What the customer pays, line by line and in total.",
+                "variables": ["lines", "net", "discount", "total"]}
+  },
   "states": {"initial": "draft", "list": ["draft", "submitted", "approved", "paid"], "final": ["paid"],
              "labels": {"draft": "Draft", "submitted": "Submitted", "approved": "Approved", "paid": "Paid"},
              "descriptions": {

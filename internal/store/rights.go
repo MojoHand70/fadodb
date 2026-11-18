@@ -314,7 +314,7 @@ func forbiddenWrite(p Principal, variable, state string, rule *model.RightRule, 
 	if err != nil {
 		msg += ": the write right failed, " + guardFailure(err)
 	}
-	return hintf(CodeForbidden, variable, msg, "the write right of "+variable+": "+ruleText(rule))
+	return hintf(CodeForbidden, variable, msg, "the write right of "+variable+", from the cell "+rule.Cell()+": "+ruleText(rule))
 }
 
 func forbiddenTransition(p Principal, t *model.Transition, state, src string, err error) *Error {

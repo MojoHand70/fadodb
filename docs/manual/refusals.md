@@ -89,7 +89,7 @@ What the engine reports when it checks a class, a table, a schema or an action b
 | `unknown_type` | A type the type system does not have. |
 | `unknown_schema` | An object or rows type names a schema that is not defined. |
 | `schema_cycle` | A schema contains itself. |
-| `too_deep` | Objects nest more than MaxObjectDepth deep. |
+| `too_deep` | Something nests past its limit: objects below a variable or sections in an outline more than four deep, or the template of an action too deep. |
 | `not_allowed` | A property that this kind of variable, field or element may not have. |
 | `bad_formula` | A formula does not parse or bind; Pos says where. |
 | `type_mismatch` | A formula's type is not the variable's. |

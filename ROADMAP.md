@@ -339,8 +339,10 @@ and money too, passing every case of the conformance suite a page runs,
 attached to every release; what a class says to people (ADR-0068),
 whose labels, descriptions, columns of The List and formats are built
 and whose words in other languages are not yet; the sections of a class
-(ADR-0069, the screen being the face's and no layout the engine's) and
-the class bundle at the server; signing in
+(ADR-0069, the screen being the face's and no layout the engine's),
+which are built: the outline of a class, a section inside a section,
+and a section's rights for every variable in it, the most specific name
+winning; the class bundle at the server; signing in
 for people at `fadodb serve` itself, a password or a company's
 sign-on, with its own record; a kit of plain pages the server serves
 (the classes, the list of a class, the document and a designer made of

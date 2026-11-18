@@ -104,7 +104,9 @@ const (
 	CodeUnknownSchema = "unknown_schema"
 	// CodeSchemaCycle: a schema contains itself.
 	CodeSchemaCycle = "schema_cycle"
-	// CodeTooDeep: objects nest more than MaxObjectDepth deep.
+	// CodeTooDeep: something nests past its limit: objects below a
+	// variable or sections in an outline more than four deep, or the
+	// template of an action too deep.
 	CodeTooDeep = "too_deep"
 	// CodeNotAllowed: a property that this kind of variable, field or
 	// element may not have.

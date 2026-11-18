@@ -75,3 +75,4 @@ line says so. Copy `0000-template.md` to start.
 | [0067](0067-the-log-of-reads.md) | The log of reads: what a content administrator sees past a rule, and every SQL statement | Accepted |
 | [0068](0068-what-a-class-says-to-people.md) | What a class says to people: labels, The List, formats, descriptions and other languages | Accepted, amended by 0069 |
 | [0069](0069-the-screen-is-the-faces-and-a-class-has-sections.md) | The screen is the face's, and a class has sections | Accepted |
+| [0070](0070-the-bundle.md) | The bundle: a class, its words and its compiled formulas in one call | Proposed |

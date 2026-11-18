@@ -424,6 +424,7 @@ To standard error, before the first request:
 <!-- what it says when it starts -->
 ```
 fadodb serve: serving acme.fado at http://127.0.0.1:8080
+fadodb serve: people sign in at http://127.0.0.1:8080/auth/signin
 fadodb serve: its actions may call over the connection books, books.acme.internal:8443
 ```
 

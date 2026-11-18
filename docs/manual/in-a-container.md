@@ -84,8 +84,15 @@ The server says where it serves, as on a machine. Tomek reads it with
 <!-- what the server says -->
 ```
 fadodb serve: serving acme.fado at http://[::]:8080
+fadodb serve: nobody signs in on a page: give the settings the address people reach the server at, url
 fadodb serve: its actions may call no host; the settings list the hosts they may call (--settings)
 ```
+
+The second line is about people. A server that listens beyond its
+machine, as one in a container does, shows its pages for
+[signing in](signing-in.md) only at the address its settings give,
+`url`: `"url": "http://127.0.0.1:8080"` here, the address Tomek's
+machine hands on. Olga and Ann call with keys until then.
 
 ## Calling it
 

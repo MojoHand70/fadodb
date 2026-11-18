@@ -471,7 +471,7 @@ func TestTheChapterOnServing(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if said := blockOfTheChapter(t, "what it says when it starts"); said != "fadodb serve: serving acme.fado at http://"+defaultListen+"\nfadodb serve: "+told.mayCall() {
+	if said := blockOfTheChapter(t, "what it says when it starts"); said != "fadodb serve: serving acme.fado at http://"+defaultListen+"\nfadodb serve: people sign in at http://"+defaultListen+"/auth/signin\nfadodb serve: "+told.mayCall() {
 		t.Errorf("the chapter shows a server that says:\n%s\nand the server says of the same settings:\n%s", said, told.mayCall())
 	}
 }

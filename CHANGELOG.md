@@ -8,6 +8,15 @@ All notable changes to FadoDB are recorded here. The format follows
 
 ### Added
 
+- ADR-0071, proposed, with the owner's rulings of 2026-11-18: signing
+  in. `fadodb serve` signs people in, with a password (PBKDF2 of the
+  standard library) and a second step from an authenticator app,
+  required for administrators and designers, or with the company's
+  sign-on (OpenID Connect: Microsoft, Google and others), and gives out
+  passes: a session for its own pages, and OAuth passes for every other
+  client, an agent at `/mcp` among them. An administrator adds a person
+  first; a person's Claude is an agent of its own that acts for them
+  with their groups. No new dependency.
 - The bundle (ADR-0070), built. The command `get_bundle` answers a
   class in one call: its definition with the words of the person's
   language put in place, looked for as a browser's tag falls back

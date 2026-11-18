@@ -40,6 +40,8 @@ send a key of a user of the database:
                          have inbound
   POST /v1/blobs         a file, put
   GET  /v1/file          a file, read through its document
+  GET  /v1/bundle        a class, its words and its formulas, for a
+                         page that keeps it in the browser's cache
   GET  /v1/health        that the server answers, for anybody
   GET  /v1/metrics       its counts, for a database administrator, in
                          the text form Prometheus reads

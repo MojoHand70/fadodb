@@ -522,6 +522,7 @@ It answers:
 | [`validate_classes`](#validate_classes) | Reports what define_classes would refuse, storing nothing. | reads |
 | [`validate_action`](#validate_action) | Reports what define_action would refuse, storing nothing. | reads |
 | [`get_class`](#get_class) | Reads a class back as it was defined. | reads |
+| [`get_bundle`](#get_bundle) | Reads the bundle of a class, for a page: the class in the person's words and its formulas compiled, so that the page works a document out as the server does. | reads |
 | [`get_schema`](#get_schema) | Reads a schema back as it was defined. | reads |
 | [`get_table`](#get_table) | Reads a table's definition back as it was defined. | reads |
 | [`get_action`](#get_action) | Reads an action's definition back as it was defined. | reads |
@@ -679,6 +680,33 @@ It answers:
 | Member | What it holds |
 |---|---|
 | `class` | the definition as it was given, with its name, its version and who defined it, and the notes of the class |
+
+### get_bundle
+
+Reads the bundle of a class, for a page: the class in the person's words and its formulas compiled, so that the page works a document out as the server does. It reads; in Go it is the call `GetBundle`.
+
+| Member | Type | | What it is |
+|---|---|---|---|
+| `class` | text | needed | the name of the class |
+| `language` | text |  | the person's language, a tag of BCP 47 in any case: pl, pt-BR; the class's own words when left out |
+| `version` | whole number |  | an earlier version of the class that computed a document; the current one when left out |
+| `tag` | text |  | the tag of the bundle the page holds; when it is still the bundle's, the answer is unchanged and nothing more |
+
+It answers:
+
+| Member | What it holds |
+|---|---|
+| `class` | the class |
+| `version` | its version |
+| `bytecode` | the format of the compiled formulas |
+| `language` | the language asked for |
+| `languages` | the languages the class has words in |
+| `words` | the words put in place, by name and version |
+| `tag` | what the page sends back |
+| `definition` | the class, the words put in place |
+| `schemas` | the schemas it uses |
+| `compiled` | the formulas a page runs, compiled or marked as the server's |
+| `unchanged` | true, with the tag alone, when the page holds the bundle |
 
 ### get_schema
 
@@ -1409,6 +1437,16 @@ facts, is a value like any other and travels in the commands;
   that the caller may read the file.
 - **A file in transfer holds the place of a command**, and is not
   stopped by the time one command may run.
+
+### The bundle for a browser's cache
+
+`GET /v1/bundle?class=Invoice&language=pl` answers what the command
+`get_bundle` answers, with its tag as the `ETag` and `Cache-Control:
+private, no-cache`, so that a browser keeps it. It takes `class`,
+`language` and `version`. A browser that sends the tag back in
+`If-None-Match` is answered with the status 304 and no body until
+something changes. [The bundle](the-bundle.md) says what a page does
+with it.
 
 ## What is not a command
 

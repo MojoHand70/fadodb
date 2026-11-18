@@ -342,7 +342,9 @@ other languages are built; the sections of a class
 (ADR-0069, the screen being the face's and no layout the engine's),
 which are built: the outline of a class, a section inside a section,
 and a section's rights for every variable in it, the most specific name
-winning; the class bundle at the server; signing in
+winning; the class bundle, `get_bundle` and `GET /v1/bundle`, which is
+built: a class in the person's words and its formulas compiled, proved
+in the browser VM against the server's answers; signing in
 for people at `fadodb serve` itself, a password or a company's
 sign-on, with its own record; a kit of plain pages the server serves
 (the classes, the list of a class, the document and a designer made of

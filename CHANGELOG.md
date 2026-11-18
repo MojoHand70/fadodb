@@ -8,6 +8,24 @@ All notable changes to FadoDB are recorded here. The format follows
 
 ### Added
 
+- The bundle (ADR-0070), built. The command `get_bundle` answers a
+  class in one call: its definition with the words of the person's
+  language put in place, looked for as a browser's tag falls back
+  (`pl-PL` finds `pl`), the schemas it uses, and every formula a page
+  runs to show a document and check it before it is sent, compiled for
+  the browser VM: the title, the defaults, the computed variables in
+  their order with what each reads, the access rules but the read
+  rule, the guards, and the rights worked out for each state and
+  variable with the cell that decides. A formula that reads other
+  documents, a table or the history of states is marked as the
+  server's. A page that sends its `tag` is answered `unchanged`;
+  `GET /v1/bundle?class=…&language=…` answers the same with the tag as
+  the `ETag` and 304 to a browser that holds it. It carries no document
+  and no row of a table, and every caller may read it. `fado.DB` has
+  `GetBundle`. The chapter [The bundle](docs/manual/the-bundle.md) is
+  played by a test, and `make vmtest` works out every answer of two
+  stories in the browser VM from the bundle alone and compares each
+  with the server's.
 - ADR-0070, proposed, with the owner's rulings of 2026-11-18: the
   bundle, a class, its words and its compiled formulas in one call, so
   that a page works a document out as the server does without asking it

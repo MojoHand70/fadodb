@@ -141,6 +141,8 @@ func (s *Store) DefineWords(ctx context.Context, data []byte, opts ...Option) (*
 	}
 	s.cmu.Lock()
 	defer s.cmu.Unlock()
+	// A bundle built before this definition is built again (ADR-0070).
+	s.defined++
 	compact, err := compactJSON(data)
 	if err != nil {
 		return nil, model.Diagnostics{{Code: model.CodeBadJSON, Pos: -1, Message: err.Error()}}
@@ -259,6 +261,8 @@ func (s *Store) RemoveWords(ctx context.Context, of WordsOf, opts ...Option) err
 	}
 	s.cmu.Lock()
 	defer s.cmu.Unlock()
+	// A bundle built before this definition is built again (ADR-0070).
+	s.defined++
 	w := s.findWords(kind, target, of.Language)
 	if w == nil || w.removed {
 		return unknownWords(kind, target, of.Language)

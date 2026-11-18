@@ -202,6 +202,64 @@
         ]
       }
     },
+    "/v1/bundle": {
+      "get": {
+        "description": "The same bundle the command get_bundle answers, with its tag as the `ETag` and `Cache-Control: private, no-cache`. A browser that sends the tag back in `If-None-Match` is answered 304 and no body until something changes.",
+        "operationId": "bundle",
+        "parameters": [
+          {
+            "description": "the name of the class",
+            "in": "query",
+            "name": "class",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "the person's language, a tag of BCP 47 in any case: pl, pt-BR; the class's own words when left out",
+            "in": "query",
+            "name": "language",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "an earlier version of the class that computed a document; the current one when left out",
+            "in": "query",
+            "name": "version",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "the class in the person's words, the schemas it uses and its compiled formulas, as get_bundle answers them",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "The bundle."
+          },
+          "304": {
+            "description": "The browser holds this bundle already: it sent its tag in `If-None-Match`."
+          },
+          "default": {
+            "$ref": "#/components/responses/Refused"
+          }
+        },
+        "summary": "Reads the bundle of a class, for a page that keeps it in the browser's cache.",
+        "tags": [
+          "Definitions"
+        ]
+      }
+    },
     "/v1/check_blobs": {
       "post": {
         "description": "It reads. In Go it is the call `CheckBlobs`.",
@@ -1674,6 +1732,113 @@
           "Definitions"
         ],
         "x-fado-call": "Definition",
+        "x-fado-mark": "reads"
+      }
+    },
+    "/v1/get_bundle": {
+      "post": {
+        "description": "It reads. In Go it is the call `GetBundle`.",
+        "operationId": "get_bundle",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "class": {
+                    "description": "the name of the class",
+                    "type": "string"
+                  },
+                  "language": {
+                    "description": "the person's language, a tag of BCP 47 in any case: pl, pt-BR; the class's own words when left out",
+                    "type": "string"
+                  },
+                  "tag": {
+                    "description": "the tag of the bundle the page holds; when it is still the bundle's, the answer is unchanged and nothing more",
+                    "type": "string"
+                  },
+                  "version": {
+                    "description": "an earlier version of the class that computed a document; the current one when left out",
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "class"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "bytecode": {
+                      "description": "the format of the compiled formulas"
+                    },
+                    "class": {
+                      "description": "the class"
+                    },
+                    "compiled": {
+                      "description": "the formulas a page runs, compiled or marked as the server's"
+                    },
+                    "definition": {
+                      "description": "the class, the words put in place"
+                    },
+                    "language": {
+                      "description": "the language asked for"
+                    },
+                    "languages": {
+                      "description": "the languages the class has words in"
+                    },
+                    "schemas": {
+                      "description": "the schemas it uses"
+                    },
+                    "tag": {
+                      "description": "what the page sends back"
+                    },
+                    "unchanged": {
+                      "description": "true, with the tag alone, when the page holds the bundle"
+                    },
+                    "version": {
+                      "description": "its version"
+                    },
+                    "words": {
+                      "description": "the words put in place, by name and version"
+                    }
+                  },
+                  "required": [
+                    "class",
+                    "version",
+                    "bytecode",
+                    "language",
+                    "languages",
+                    "words",
+                    "tag",
+                    "definition",
+                    "schemas",
+                    "compiled",
+                    "unchanged"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "The command ran."
+          },
+          "default": {
+            "$ref": "#/components/responses/Refused"
+          }
+        },
+        "summary": "Reads the bundle of a class, for a page: the class in the person's words and its formulas compiled, so that the page works a document out as the server does.",
+        "tags": [
+          "Definitions"
+        ],
+        "x-fado-call": "GetBundle",
         "x-fado-mark": "reads"
       }
     },

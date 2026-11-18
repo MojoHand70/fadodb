@@ -852,6 +852,8 @@ func (s *Store) defineClasses(ctx context.Context, datas [][]byte, set bool, by 
 	}
 	s.cmu.Lock()
 	defer s.cmu.Unlock()
+	// A bundle built before this definition is built again (ADR-0070).
+	s.defined++
 	ps, diags := s.compileClasses(ctx, datas, set)
 	if len(diags) > 0 {
 		return nil, diags
@@ -1060,6 +1062,8 @@ func (s *Store) DefineSchema(ctx context.Context, data []byte, opts ...Option) (
 	}
 	s.cmu.Lock()
 	defer s.cmu.Unlock()
+	// A bundle built before this definition is built again (ADR-0070).
+	s.defined++
 	compact, err := compactJSON(data)
 	if err != nil {
 		return nil, model.Diagnostics{{Code: model.CodeBadJSON, Pos: -1, Message: err.Error()}}

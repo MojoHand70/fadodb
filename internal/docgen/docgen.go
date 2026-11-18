@@ -380,6 +380,9 @@ func overHTTP(b *strings.Builder, root string) error {
 	b.WriteString("- **A browser is told to save the file and not to show it**, whatever\n  kind the one who put it said it is.\n")
 	b.WriteString("- **The hash is the tag of the bytes**, sent as `ETag`. A caller that\n  holds them and sends the tag back in `If-None-Match` is answered with\n  the status 304 and no bytes, after the engine has checked once more\n  that the caller may read the file.\n")
 	b.WriteString("- **A file in transfer holds the place of a command**, and is not\n  stopped by the time one command may run.\n\n")
+
+	b.WriteString("### The bundle for a browser's cache\n\n")
+	b.WriteString("`GET /v1/bundle?class=Invoice&language=pl` answers what the command\n`get_bundle` answers, with its tag as the `ETag` and `Cache-Control:\nprivate, no-cache`, so that a browser keeps it. It takes `class`,\n`language` and `version`. A browser that sends the tag back in\n`If-None-Match` is answered with the status 304 and no body until\nsomething changes. [The bundle](the-bundle.md) says what a page does\nwith it.\n\n")
 	return nil
 }
 

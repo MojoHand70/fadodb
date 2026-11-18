@@ -494,9 +494,9 @@ works in Polish, and reads the invoice above in these words:
 | `list_words` | lists them: all, of one thing, or in one language | every caller |
 | `remove_words` | takes them away; their versions stay | a designer |
 
-> **Status.** A page asks for the words of its person's language with
-> the class in one call, the bundle, which is the record after this
-> one and not built yet. Until then it asks `get_words`.
+A page asks for the words of its person's language with the class in
+one call, the bundle, and finds them put in place:
+[The bundle](the-bundle.md).
 
 ## Rules
 

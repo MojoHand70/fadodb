@@ -176,6 +176,23 @@ func OpenAPI(root string) (string, error) {
 		}),
 	}}
 
+	// The bundle's form for a browser's cache (ADR-0070, item 2).
+	paths["/v1/bundle"] = object{"get": object{
+		"operationId": "bundle",
+		"tags":        []string{command.Definitions},
+		"summary":     "Reads the bundle of a class, for a page that keeps it in the browser's cache.",
+		"description": "The same bundle the command get_bundle answers, with its tag as the `ETag` and `Cache-Control: private, no-cache`. A browser that sends the tag back in `If-None-Match` is answered 304 and no body until something changes.",
+		"parameters": []object{
+			query("class", "the name of the class", true, text),
+			query("language", "the person's language, a tag of BCP 47 in any case: pl, pt-BR; the class's own words when left out", false, text),
+			query("version", "an earlier version of the class that computed a document; the current one when left out", false, object{"type": "integer"}),
+		},
+		"responses": with(object{
+			"200": object{"description": "The bundle.", "content": object{"application/json": object{"schema": object{"type": "object", "description": "the class in the person's words, the schemas it uses and its compiled formulas, as get_bundle answers them"}}}},
+			"304": object{"description": "The browser holds this bundle already: it sent its tag in `If-None-Match`."},
+		}),
+	}}
+
 	// The way in for messages from outside (ADR-0065): a message carries
 	// no key and proves itself as its inlet says.
 	paths["/v1/in/{inlet}"] = object{"post": object{

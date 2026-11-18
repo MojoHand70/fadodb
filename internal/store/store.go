@@ -259,6 +259,13 @@ type Store struct {
 	// and language (ADR-0068, item 6), in the order first defined.
 	words      map[string]*wordsDef
 	wordsOrder []string
+	// defined counts the definitions of classes, schemas and words made
+	// since the store opened, under cmu; a bundle built before the last
+	// of them is built again (ADR-0070). bundles holds the bundles
+	// built, by class, version and language, under bmu.
+	defined uint64
+	bmu     sync.Mutex
+	bundles map[string]*keptBundle
 
 	// sqlConn is the read-only SQL endpoint's connection, with its
 	// authorizer, made on first use; sqlMu serialises its statements.

@@ -31,6 +31,7 @@ exactly so in a class or a formula.
 | The List | the table of the documents of a class that a page shows, one document to a row. The variables marked `"list": true` are the columns it may show |
 | `format` | how a page shows a number or a date, in the patterns of Excel's number formats; the person's language gives the separators and the names of the months |
 | words | what a class, a table or a schema says to people in another language: the labels and the descriptions of its things by their paths, kept beside it as a definition of their own, under a tag of BCP 47 such as `pl`; see [words in other languages](class.md#words-in-other-languages) |
+| bundle | a class in a person's words with its formulas compiled, in one call, `get_bundle`, so that a page works a document out as the server does; see [The bundle](the-bundle.md) |
 | section | a part of a class's outline: the variables that belong together, such as the amounts of an invoice, with a label and a description, and sections inside it. `rights` may name a section for every variable in it; see [sections](class.md#sections) |
 
 ## Who may

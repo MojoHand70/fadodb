@@ -271,7 +271,7 @@ func (d *Door) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	name := r.URL.Path[len(prefix):]
 	told.Command = name
 	// The files travel beside the commands (ADR-0055, item 9), at three
-	// addresses that are not commands.
+	// addresses that are not commands, and the bundle has a fourth.
 	if inlet, ok := strings.CutPrefix(name, addressIn); ok {
 		// A message from outside: it proves itself, and carries no key
 		// of a user (ADR-0065).
@@ -285,6 +285,9 @@ func (d *Door) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		d.file(out, r, &told)
 	case addressBlob:
 		d.blob(out, r, &told)
+	case addressBundle:
+		// The bundle's form for a browser's cache (ADR-0070, item 2).
+		d.bundle(out, r, &told)
 	case addressSubscribe:
 		// The one command whose answer is a stream (ADR-0058).
 		d.subscribe(out, r, &told)

@@ -258,6 +258,11 @@ const (
 	formatVersion = 4
 )
 
+// FormatVersion is the version of the binary format Encode writes, which
+// a browser VM of the same version reads and one of another refuses
+// (ADR-0029); the bundle carries it (ADR-0070).
+const FormatVersion = formatVersion
+
 // Encode serializes the program in the binary format.
 func (p *Program) Encode() []byte {
 	var b bytes.Buffer

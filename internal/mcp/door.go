@@ -39,6 +39,8 @@ func Withheld(name string) string {
 		return "its answer is a stream, and a tool is one question and one answer"
 	case "create_key":
 		return "its answer holds the secret of a key, which would stay in the conversation of an agent; a key is made at a terminal"
+	case "create_password_link":
+		return "its answer holds the secret of a link that sets a password, which would stay in the conversation of an agent; a link is made at a terminal and given to the person"
 	}
 	return ""
 }

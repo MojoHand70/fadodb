@@ -41,10 +41,12 @@ An agent's program is told to start it, with the server and the key:
   --tools NAMES    offer only these commands, as create,get,transition;
                    left out, every command the door offers
 ` + serverUsage + `
-Two commands are no tool. subscribe is a stream, and a tool is one
-question and one answer. create_key answers the secret of a key, which
+Three commands are no tool. subscribe is a stream, and a tool is one
+question and one answer. create_key answers the secret of a key, and
+create_password_link the secret of a link that sets a password, which
 would stay in the conversation of the agent: a key is made at a
-terminal, with fadodb key new or fadodb exec create_key.
+terminal, with fadodb key new or fadodb exec create_key, and a link
+with fadodb exec create_password_link.
 
 Nothing is written to standard output but the answers to the agent's
 program. What goes wrong with the door itself is said on standard

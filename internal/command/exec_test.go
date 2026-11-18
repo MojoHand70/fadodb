@@ -915,8 +915,8 @@ func TestTheCommandsOfUsersAndKeys(t *testing.T) {
 			marked++
 		}
 	}
-	if marked != 9 {
-		t.Errorf("%d commands are of the users, want the nine of ADR-0057", marked)
+	if marked != 14 {
+		t.Errorf("%d commands are of the users, want the nine of ADR-0057 and the five of ADR-0071", marked)
 	}
 }
 
@@ -1151,6 +1151,67 @@ func TestTheBundleCommand(t *testing.T) {
 	}
 	if e := refused(t, s, bob, "get_bundle", `{"class": "Nothing"}`); e.Code != store.CodeUnknownClass {
 		t.Errorf("a class the database does not have: %+v", e)
+	}
+}
+
+// The commands of signing in (ADR-0071): an administrator makes a link,
+// lists and ends a person's sessions, clears a second step and reads the
+// log of sign-ins; a person lists and ends their own sessions.
+func TestTheCommandsOfSigningIn(t *testing.T) {
+	o := store.Options{Users: true, Now: func() time.Time { return clock }}
+	o.Outbox.Manual = true
+	s, err := store.Open(filepath.Join(t.TempDir(), "acme.fado"), o)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { s.Close() })
+	machine := store.Principal{System: []string{store.GroupAdministrators}}
+	olga := store.Principal{ID: "olga", Kind: store.ActorPerson, System: []string{store.GroupAdministrators}}
+	ann := store.Principal{ID: "ann", Kind: store.ActorPerson, Groups: []string{"finance"}}
+	run(t, s, machine, "create_user", `{"id": "olga", "kind": "person", "system_groups": ["administrators"]}`)
+	run(t, s, olga, "create_user", `{"id": "ann", "kind": "person", "groups": ["finance"]}`)
+	ctx := context.Background()
+
+	link := run(t, s, olga, "create_password_link", `{"user": "ann"}`)["link"].(map[string]any)
+	token, _ := link["token"].(string)
+	if link["user"] != "ann" || link["made_by"] != "olga" || !strings.HasPrefix(token, "fadol_") {
+		t.Fatalf("create_password_link answers %v", link)
+	}
+	if e := refused(t, s, ann, "create_password_link", `{"user": "olga"}`); e.Code != store.CodeForbidden {
+		t.Errorf("Ann makes a link: %+v", e)
+	}
+	if err := s.UsePasswordLink(ctx, token, "ann's long password", "10.0.0.8"); err != nil {
+		t.Fatal(err)
+	}
+	in, err := s.BeginSignIn(ctx, "ann", "ann's long password", "10.0.0.8")
+	if err != nil {
+		t.Fatal(err)
+	}
+	sess, err := s.FinishSignIn(ctx, in.ID, "", "10.0.0.8", store.SessionLengths{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	listed := run(t, s, ann, "list_sessions", `{}`)["sessions"].([]any)
+	if len(listed) != 1 || listed[0].(map[string]any)["id"] != sess.ID || listed[0].(map[string]any)["token"] != nil {
+		t.Errorf("Ann's sessions: %v", listed)
+	}
+	if e := refused(t, s, ann, "list_sessions", `{"user": "olga"}`); e.Code != store.CodeForbidden {
+		t.Errorf("Ann lists Olga's sessions: %+v", e)
+	}
+	run(t, s, olga, "end_session", `{"session": "`+sess.ID+`"}`)
+	if got := run(t, s, ann, "list_sessions", `{}`)["sessions"].([]any); len(got) != 0 {
+		t.Errorf("the sessions after one was ended: %v", got)
+	}
+	if e := refused(t, s, ann, "end_session", `{"session": "NOSUCH0000"}`); e.Code != store.CodeUnknownSession || e.Path != "/session" {
+		t.Errorf("a session the database does not have: %+v", e)
+	}
+	run(t, s, olga, "clear_second_step", `{"user": "ann"}`)
+	entries := run(t, s, olga, "sign_ins", `{"user": "ann"}`)["sign_ins"].([]any)
+	if len(entries) != 2 || entries[0].(map[string]any)["way"] != "link" || entries[1].(map[string]any)["way"] != "password" {
+		t.Errorf("Ann's sign-ins: %v", entries)
+	}
+	if e := refused(t, s, ann, "sign_ins", `{}`); e.Code != store.CodeForbidden {
+		t.Errorf("Ann reads the log of sign-ins: %+v", e)
 	}
 }
 

@@ -75,6 +75,9 @@ What a call is answered with when the engine does not carry it out: a create, a 
 | `unknown_words` | The database has no words of that class, table or schema in that language, or no such version of them (ADR-0068, item 6). |
 | `bad_message` | A message from outside is not what its inlet reads: it holds no JSON, lacks what a formula of the inlet looks for, or gives a value the formula cannot turn into what it fills (ADR-0065). |
 | `unknown_key` | The database has no key of that id, or the key is another user's and the caller is no administrator (ADR-0057). |
+| `sign_in_refused` | The user, the password, the code of the second step, the sign-in under way or the link to set a password is not one the database lets through. The words are the same whatever was wrong, so that a guess learns nothing (ADR-0071, item 2). |
+| `too_many_attempts` | Sign-ins for this user, or from this address, failed too often of late; the next is taken after a wait, which the message gives (ADR-0071, item 2). |
+| `unknown_session` | The database has no session of that id, or it is another user's and the caller is no administrator (ADR-0071). |
 
 ## Findings in a definition
 

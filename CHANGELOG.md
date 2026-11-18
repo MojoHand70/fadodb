@@ -8,6 +8,25 @@ All notable changes to FadoDB are recorded here. The format follows
 
 ### Added
 
+- Signing in, part 1 (ADR-0071): passwords, the second step and
+  sessions. People sign in to `fadodb serve` on its own pages under
+  `/auth/`: a password, kept as a PBKDF2-SHA256 hash of the standard
+  library at 600,000 rounds, set through a link good once and for a
+  day, which `fadodb user password` makes on the machine and the
+  command `create_password_link` through the server; a code from an
+  authenticator app (TOTP) after the password of an administrator or a
+  designer, set up at the first sign-in, with ten codes for a lost
+  phone; and a session the browser keeps, 8 hours unused and 30 days at
+  most, with which the server's own pages send commands. The account
+  page changes the password, sets up or takes away the second step and
+  ends sessions. Every sign-in is logged, refused ones too; sign-ins
+  that keep failing wait. New commands `list_sessions`, `end_session`,
+  `clear_second_step` and `sign_ins`; new codes `sign_in_refused`
+  (401), `too_many_attempts` (429) and `unknown_session` (404). The
+  settings gain `url` and `sessions`. Five tables join the engine's
+  own; a database of the same engine schema opens and gains them. The
+  chapter [Signing in](docs/manual/signing-in.md) is played against a
+  server.
 - ADR-0071, proposed, with the owner's rulings of 2026-11-18: signing
   in. `fadodb serve` signs people in, with a password (PBKDF2 of the
   standard library) and a second step from an authenticator app,

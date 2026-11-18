@@ -1017,6 +1017,46 @@ func runRevokeKey(c *call) error {
 	return c.empty(c.s.RevokeKey(c.ctx, c.text("key"), c.opts...))
 }
 
+func runCreatePasswordLink(c *call) error {
+	link, err := c.s.CreatePasswordLink(c.ctx, c.text("user"), c.opts...)
+	return c.answer("link", link, err)
+}
+
+func runListSessions(c *call) error {
+	sessions, err := c.s.Sessions(c.ctx, c.text("user"), c.opts...)
+	return c.answer("sessions", list(sessions), err)
+}
+
+func runEndSession(c *call) error {
+	return c.empty(c.s.EndSession(c.ctx, c.text("session"), c.opts...))
+}
+
+func runClearSecondStep(c *call) error {
+	return c.empty(c.s.ClearSecondStep(c.ctx, c.text("user"), c.opts...))
+}
+
+// runSignIns lists the log of sign-ins (ADR-0071, item 11).
+func runSignIns(c *call) error {
+	f := store.SignInFilter{User: c.text("user")}
+	since, e := c.moment("since")
+	if e != nil {
+		return e
+	}
+	if !since.IsZero() {
+		f.Since = since.Unix()
+	}
+	if f.After, e = c.integer("after"); e != nil {
+		return e
+	}
+	limit, e := c.integer("limit")
+	if e != nil {
+		return e
+	}
+	f.Limit = int(limit)
+	entries, err := c.s.SignIns(c.ctx, f, c.opts...)
+	return c.answer("sign_ins", list(entries), err)
+}
+
 func runWhoami(c *call) error {
 	u, acts, err := c.s.Whoami(c.ctx, c.opts...)
 	if err != nil {

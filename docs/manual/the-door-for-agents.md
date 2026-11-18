@@ -164,8 +164,8 @@ before one that removes:
 <!-- the marks -->
 | The command | Tools | `readOnlyHint` | `destructiveHint` | `openWorldHint` |
 |---|---|---|---|---|
-| reads | 43 | true | false | false |
-| writes | 22 | false | false | false |
+| reads | 45 | true | false | false |
+| writes | 24 | false | false | false |
 | writes, and runs an action now: `try_action`, `drain` | 2 | false | false | true |
 | removes: `delete` | 1 | false | true | false |
 
@@ -384,6 +384,7 @@ Unknown tool: transition. This door was started to offer only the tools that rea
 |---|---|
 | `subscribe` | its answer is a stream, and a tool is one question and one answer |
 | `create_key` | its answer holds the secret of a key, which would stay in the conversation of an agent; a key is made at a terminal |
+| `create_password_link` | its answer holds the secret of a link that sets a password, which would stay in the conversation of an agent; a link is made at a terminal and given to the person |
 
 The files are not in the door either: the bytes of a file do not pass
 through an agent's conversation. From a terminal, `fadodb file` puts a

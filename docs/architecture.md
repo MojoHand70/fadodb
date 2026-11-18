@@ -1171,11 +1171,16 @@ a user.
   and the address alone says which: no command, no JSON and no key
   names a customer (ADR-0056).
 - **Users, groups and keys are kept in the database.** A caller proves
-  who it is with a key, `Authorization: Bearer fado_…`. There is no
-  password and no session in this phase. Database administrators keep
-  the users and alone make keys, with nine commands. A host program
-  with its own people gives the door its own function, and the nine
-  commands are then not offered (ADR-0057).
+  who it is with a key, `Authorization: Bearer fado_…`. Database
+  administrators keep the users and alone make keys, with nine
+  commands. A host program with its own people gives the door its own
+  function, and the nine commands are then not offered (ADR-0057).
+- **People sign in on the server's own pages** (ADR-0071), under
+  `/auth/`: a password kept as a PBKDF2 hash, set through a link that
+  is good once, and a second step from an authenticator app for
+  administrators and designers. The browser keeps a session, a cookie
+  that the server's own pages send commands with. Every sign-in is
+  logged. A company's sign-on and passes for agents follow.
 - **The stream sends the event alone.** A subscriber reads the document
   when it acts. A document that leaves a subscriber's sight is not
   mentioned (ADR-0058).

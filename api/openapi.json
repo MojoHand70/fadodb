@@ -9,7 +9,7 @@
             }
           }
         },
-        "description": "The command was not carried out. The body holds the refusal under `error`, with its code; a caller reads the code, and the status is worked out from it:\n\n| Status | Codes |\n|---|---|\n| 400 | `bad_json` |\n| 401 | `unauthenticated` |\n| 403 | `forbidden`, `reason_required` |\n| 404 | `unknown_class`, `unknown_document`, `unknown_table`, `unknown_schema`, `unknown_blob`, `unknown_action`, `unknown_row`, `unknown_user`, `unknown_inlet`, `unknown_key`, `unknown_command` |\n| 409 | `key_reused`, `duplicate`, `terminal`, `wrong_state`, `guard_false` |\n| 413 | `blob_too_large`, `too_large` |\n| 499 | `caller_left` |\n| 500 | `storage`, `internal` |\n| 503 | `closed`, `busy` |\n| 504 | `timeout` |\n| 422 | every other refusal |\n"
+        "description": "The command was not carried out. The body holds the refusal under `error`, with its code; a caller reads the code, and the status is worked out from it:\n\n| Status | Codes |\n|---|---|\n| 400 | `bad_json` |\n| 401 | `sign_in_refused`, `unauthenticated` |\n| 403 | `forbidden`, `reason_required` |\n| 404 | `unknown_class`, `unknown_document`, `unknown_table`, `unknown_schema`, `unknown_blob`, `unknown_action`, `unknown_row`, `unknown_user`, `unknown_inlet`, `unknown_key`, `unknown_session`, `unknown_command` |\n| 409 | `key_reused`, `duplicate`, `terminal`, `wrong_state`, `guard_false` |\n| 413 | `blob_too_large`, `too_large` |\n| 429 | `too_many_attempts` |\n| 499 | `caller_left` |\n| 500 | `storage`, `internal` |\n| 503 | `closed`, `busy` |\n| 504 | `timeout` |\n| 422 | every other refusal |\n"
       }
     },
     "schemas": {
@@ -320,6 +320,55 @@
         "x-fado-mark": "reads"
       }
     },
+    "/v1/clear_second_step": {
+      "post": {
+        "description": "It writes. In Go it is the call `ClearSecondStep`. It is offered only by a database that keeps its own users, groups and keys; any other answers `unknown_command`.",
+        "operationId": "clear_second_step",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "for": {
+                    "description": "the id of whoever the caller acts for; let through only while a substitution says so",
+                    "type": "string"
+                  },
+                  "user": {
+                    "description": "the id of the user; left out, the caller",
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {},
+                  "type": "object"
+                }
+              }
+            },
+            "description": "The command ran."
+          },
+          "default": {
+            "$ref": "#/components/responses/Refused"
+          }
+        },
+        "summary": "Takes away the second step of a user, for a person who lost the phone and its codes; it is set up again at the next sign-in when the user's system groups require one. A database administrator clears anybody's, and a user its own when its groups do not require one.",
+        "tags": [
+          "Users, groups and keys"
+        ],
+        "x-fado-call": "ClearSecondStep",
+        "x-fado-mark": "writes"
+      }
+    },
     "/v1/count": {
       "post": {
         "description": "It reads. In Go it is the call `Count`.",
@@ -612,6 +661,65 @@
           "Documents"
         ],
         "x-fado-call": "CreateMany",
+        "x-fado-mark": "writes"
+      }
+    },
+    "/v1/create_password_link": {
+      "post": {
+        "description": "It writes. In Go it is the call `CreatePasswordLink`. It is offered only by a database that keeps its own users, groups and keys; any other answers `unknown_command`.",
+        "operationId": "create_password_link",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "for": {
+                    "description": "the id of whoever the caller acts for; let through only while a substitution says so",
+                    "type": "string"
+                  },
+                  "user": {
+                    "description": "the id of the person the link is for",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "user"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "link": {
+                      "description": "the link: its user, the moment it ends, who made it, and under token the secret the server's page /auth/password takes, shown this once"
+                    }
+                  },
+                  "required": [
+                    "link"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "The command ran."
+          },
+          "default": {
+            "$ref": "#/components/responses/Refused"
+          }
+        },
+        "summary": "Makes a link that lets a person set their password, good once and for a day, and answers its secret, this once. Nobody sets another's password. It is a database administrator's.",
+        "tags": [
+          "Users, groups and keys"
+        ],
+        "x-fado-call": "CreatePasswordLink",
         "x-fado-mark": "writes"
       }
     },
@@ -1362,6 +1470,58 @@
         ],
         "x-fado-call": "Due",
         "x-fado-mark": "reads"
+      }
+    },
+    "/v1/end_session": {
+      "post": {
+        "description": "It writes. In Go it is the call `EndSession`. It is offered only by a database that keeps its own users, groups and keys; any other answers `unknown_command`.",
+        "operationId": "end_session",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "for": {
+                    "description": "the id of whoever the caller acts for; let through only while a substitution says so",
+                    "type": "string"
+                  },
+                  "session": {
+                    "description": "the id of the session, as list_sessions shows it",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "session"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {},
+                  "type": "object"
+                }
+              }
+            },
+            "description": "The command ran."
+          },
+          "default": {
+            "$ref": "#/components/responses/Refused"
+          }
+        },
+        "summary": "Ends a session: the next request with it is refused. A database administrator may end any, and a user its own.",
+        "tags": [
+          "Users, groups and keys"
+        ],
+        "x-fado-call": "EndSession",
+        "x-fado-mark": "writes"
       }
     },
     "/v1/events": {
@@ -2705,6 +2865,62 @@
           "Definitions"
         ],
         "x-fado-call": "Schemas",
+        "x-fado-mark": "reads"
+      }
+    },
+    "/v1/list_sessions": {
+      "post": {
+        "description": "It reads. In Go it is the call `Sessions`. It is offered only by a database that keeps its own users, groups and keys; any other answers `unknown_command`.",
+        "operationId": "list_sessions",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "for": {
+                    "description": "the id of whoever the caller acts for; let through only while a substitution says so",
+                    "type": "string"
+                  },
+                  "user": {
+                    "description": "the id of the user; left out, the caller",
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "sessions": {
+                      "description": "the sessions, oldest first: their id, the way the user signed in, where from, when they began and were last used, and when they end"
+                    }
+                  },
+                  "required": [
+                    "sessions"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "The command ran."
+          },
+          "default": {
+            "$ref": "#/components/responses/Refused"
+          }
+        },
+        "summary": "Lists the sessions of a user that still hold, never a secret. A database administrator may ask of any user, and a user of itself.",
+        "tags": [
+          "Users, groups and keys"
+        ],
+        "x-fado-call": "Sessions",
         "x-fado-mark": "reads"
       }
     },
@@ -4155,6 +4371,77 @@
         ],
         "x-fado-call": "SetUser",
         "x-fado-mark": "writes"
+      }
+    },
+    "/v1/sign_ins": {
+      "post": {
+        "description": "It reads. In Go it is the call `SignIns`. It is offered only by a database that keeps its own users, groups and keys; any other answers `unknown_command`.",
+        "operationId": "sign_ins",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "after": {
+                    "description": "the seq of the last entry already read, to read on from",
+                    "type": "integer"
+                  },
+                  "for": {
+                    "description": "the id of whoever the caller acts for; let through only while a substitution says so",
+                    "type": "string"
+                  },
+                  "limit": {
+                    "description": "the most entries to answer, at most 1,000",
+                    "type": "integer"
+                  },
+                  "since": {
+                    "description": "the first moment of the period",
+                    "type": [
+                      "string",
+                      "integer"
+                    ]
+                  },
+                  "user": {
+                    "description": "only the sign-ins of this user",
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "sign_ins": {
+                      "description": "the sign-ins: their seq, when, the user named, the way, the address they came from and whether they were let through"
+                    }
+                  },
+                  "required": [
+                    "sign_ins"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "The command ran."
+          },
+          "default": {
+            "$ref": "#/components/responses/Refused"
+          }
+        },
+        "summary": "Lists the log of sign-ins, refused ones among them, oldest first. It is a database administrator's.",
+        "tags": [
+          "Users, groups and keys"
+        ],
+        "x-fado-call": "SignIns",
+        "x-fado-mark": "reads"
       }
     },
     "/v1/sql": {

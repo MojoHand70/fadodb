@@ -1188,6 +1188,11 @@ database this way, and a Go program does with `Options.Users`.
 | [`create_key`](#create_key) | Makes a key for a user and answers it with its secret, this once. It is a database administrator's. | writes |
 | [`list_keys`](#list_keys) | Lists the keys of a user, never a secret. A database administrator may ask of any user, and a user of itself. | reads |
 | [`revoke_key`](#revoke_key) | Ends a key: the next command sent with it is refused. A database administrator may revoke any key, and a user its own. | writes |
+| [`create_password_link`](#create_password_link) | Makes a link that lets a person set their password, good once and for a day, and answers its secret, this once. Nobody sets another's password. It is a database administrator's. | writes |
+| [`list_sessions`](#list_sessions) | Lists the sessions of a user that still hold, never a secret. A database administrator may ask of any user, and a user of itself. | reads |
+| [`end_session`](#end_session) | Ends a session: the next request with it is refused. A database administrator may end any, and a user its own. | writes |
+| [`clear_second_step`](#clear_second_step) | Takes away the second step of a user, for a person who lost the phone and its codes; it is set up again at the next sign-in when the user's system groups require one. A database administrator clears anybody's, and a user its own when its groups do not require one. | writes |
+| [`sign_ins`](#sign_ins) | Lists the log of sign-ins, refused ones among them, oldest first. It is a database administrator's. | reads |
 | [`whoami`](#whoami) | Answers who the database takes the caller for. | reads |
 
 ### create_user
@@ -1325,6 +1330,81 @@ And, of the members that mean the same everywhere: `for`.
 
 It answers `{}`.
 
+### create_password_link
+
+Makes a link that lets a person set their password, good once and for a day, and answers its secret, this once. Nobody sets another's password. It is a database administrator's. It writes; in Go it is the call `CreatePasswordLink`.
+
+| Member | Type | | What it is |
+|---|---|---|---|
+| `user` | text | needed | the id of the person the link is for |
+
+And, of the members that mean the same everywhere: `for`.
+
+It answers:
+
+| Member | What it holds |
+|---|---|
+| `link` | the link: its user, the moment it ends, who made it, and under token the secret the server's page /auth/password takes, shown this once |
+
+### list_sessions
+
+Lists the sessions of a user that still hold, never a secret. A database administrator may ask of any user, and a user of itself. It reads; in Go it is the call `Sessions`.
+
+| Member | Type | | What it is |
+|---|---|---|---|
+| `user` | text |  | the id of the user; left out, the caller |
+
+And, of the members that mean the same everywhere: `for`.
+
+It answers:
+
+| Member | What it holds |
+|---|---|
+| `sessions` | the sessions, oldest first: their id, the way the user signed in, where from, when they began and were last used, and when they end |
+
+### end_session
+
+Ends a session: the next request with it is refused. A database administrator may end any, and a user its own. It writes; in Go it is the call `EndSession`.
+
+| Member | Type | | What it is |
+|---|---|---|---|
+| `session` | text | needed | the id of the session, as list_sessions shows it |
+
+And, of the members that mean the same everywhere: `for`.
+
+It answers `{}`.
+
+### clear_second_step
+
+Takes away the second step of a user, for a person who lost the phone and its codes; it is set up again at the next sign-in when the user's system groups require one. A database administrator clears anybody's, and a user its own when its groups do not require one. It writes; in Go it is the call `ClearSecondStep`.
+
+| Member | Type | | What it is |
+|---|---|---|---|
+| `user` | text |  | the id of the user; left out, the caller |
+
+And, of the members that mean the same everywhere: `for`.
+
+It answers `{}`.
+
+### sign_ins
+
+Lists the log of sign-ins, refused ones among them, oldest first. It is a database administrator's. It reads; in Go it is the call `SignIns`.
+
+| Member | Type | | What it is |
+|---|---|---|---|
+| `user` | text |  | only the sign-ins of this user |
+| `since` | moment |  | the first moment of the period |
+| `after` | whole number |  | the seq of the last entry already read, to read on from |
+| `limit` | whole number |  | the most entries to answer, at most 1,000 |
+
+And, of the members that mean the same everywhere: `for`.
+
+It answers:
+
+| Member | What it holds |
+|---|---|
+| `sign_ins` | the sign-ins: their seq, when, the user named, the way, the address they came from and whether they were let through |
+
 ### whoami
 
 Answers who the database takes the caller for. It reads; in Go it is the call `Whoami`.
@@ -1395,12 +1475,13 @@ Authorization: Bearer …
   |---|---|
   | 200 | the command ran |
   | 400 | `bad_json` |
-  | 401 | `unauthenticated` |
+  | 401 | `sign_in_refused`, `unauthenticated` |
   | 403 | `forbidden`, `reason_required` |
-  | 404 | `unknown_class`, `unknown_document`, `unknown_table`, `unknown_schema`, `unknown_blob`, `unknown_action`, `unknown_row`, `unknown_user`, `unknown_inlet`, `unknown_key`, `unknown_command` |
+  | 404 | `unknown_class`, `unknown_document`, `unknown_table`, `unknown_schema`, `unknown_blob`, `unknown_action`, `unknown_row`, `unknown_user`, `unknown_inlet`, `unknown_key`, `unknown_session`, `unknown_command` |
   | 409 | `key_reused`, `duplicate`, `terminal`, `wrong_state`, `guard_false` |
   | 413 | `blob_too_large`, `too_large` |
   | 422 | every other refusal |
+  | 429 | `too_many_attempts` |
   | 499 | `caller_left` |
   | 500 | `storage`, `internal` |
   | 503 | `closed`, `busy` |
@@ -1456,15 +1537,26 @@ A few calls of the Go package have no command.
 |---|---|
 | `Action` | it answers one entry of the catalogue that list_actions answers whole |
 | `Authenticate` | it answers who a key belongs to, for the door that is given the key; a caller that wants to know who it is sends whoami |
+| `BeginSignIn` | a password never travels in a command: the server's page /auth/signin takes it |
+| `ChangePassword` | a password never travels in a command: the server's page /auth/account takes it |
 | `Class` | it answers the engine's compiled form to a Go program; get_class answers the definition |
 | `Close` | closing a database is for the program that opened it |
+| `ConfirmMySecondStep` | its codes never travel in a command: the server's page /auth/account shows them |
 | `Exec` | it is the door the commands come through |
+| `FinishSignIn` | it belongs to a sign-in under way on the server's page /auth/signin |
+| `HasSecondStep` | the server's page /auth/account shows it to the person |
 | `Inlet` | it answers one entry of the list that list_inlets answers whole |
 | `OpenBlob` | the bytes of a file are not JSON: they travel beside the commands, with the server |
 | `OpenFile` | the bytes of a file are not JSON: they travel beside the commands, with the server |
 | `OutboxCounts` | it counts what of the queue is still to do, for whoever watches a server, which answers it at GET /v1/metrics; outbox lists the actions themselves |
+| `PasswordLinkUser` | it belongs to the server's page /auth/password, which a link opens |
 | `Ping` | it asks whether the database answers; a server answers it at GET /v1/health, for anybody |
 | `PutBlob` | the bytes of a file are not JSON: they travel beside the commands, with the server |
 | `Receive` | it takes a message from outside, which proves itself and carries no key of a user: a server answers it at POST /v1/in/<inlet> |
 | `Schema` | it answers the engine's compiled form to a Go program; get_schema answers the definition |
+| `SessionCaller` | it answers who a session belongs to, for the door that is given the session; a caller that wants to know who it is sends whoami |
+| `SetUpMySecondStep` | its secret never travels in a command: the server's page /auth/account shows it |
+| `SetUpSecondStep` | it belongs to a sign-in under way on the server's page /auth/signin |
+| `SignOut` | it ends the session it is sent with, on the server's page /auth/signout; end_session ends one by its id |
 | `Table` | it answers the engine's compiled form to a Go program; get_table answers the definition |
+| `UsePasswordLink` | a password never travels in a command: the server's page /auth/password takes it |

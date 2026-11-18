@@ -58,22 +58,22 @@ line says so. Copy `0000-template.md` to start.
 | [0050](0050-person-agent-or-service-and-for-whom.md) | Person, agent or service, and for whom it acts | Accepted, amended by 0053 |
 | [0051](0051-who-may-define-operate-and-query.md) | Who may define, operate and query, and the rules of a table | Accepted, amended by 0052, 0067 |
 | [0052](0052-system-groups-and-the-content-administrator.md) | System groups: who runs the database, who designs, who reads everything and who may act on any document | Accepted, amended by 0057, 0059, 0067 |
-| [0053](0053-acting-for-somebody.md) | Acting for somebody: a recorded substitution for people and assistants | Accepted |
+| [0053](0053-acting-for-somebody.md) | Acting for somebody: a recorded substitution for people and assistants | Accepted, amended by 0071 |
 | [0054](0054-the-screen-on-a-layout-component.md) | The screen on a layout component: `mobile` and `desktop` | Withdrawn by 0069 |
 | [0055](0055-the-command-set-on-the-wire.md) | The command set on the wire: every command, its JSON, and one address each | Accepted, amended by 0057, 0058, 0059, 0063, 0065, 0067, 0070 |
 | [0056](0056-one-database-for-each-customer.md) | One database for each customer, and a server that serves one database | Accepted |
-| [0057](0057-users-groups-and-keys.md) | Who is calling: users, groups and keys, kept in the database | Accepted |
+| [0057](0057-users-groups-and-keys.md) | Who is calling: users, groups and keys, kept in the database | Accepted, amended by 0071 |
 | [0058](0058-the-stream-of-changes.md) | The stream of changes: the log read forward, over plain HTTP | Accepted, amended by 0067 |
-| [0059](0059-fadodb-serve.md) | `fadodb serve`: one database, what it is told when it starts, and what it refuses | Accepted |
+| [0059](0059-fadodb-serve.md) | `fadodb serve`: one database, what it is told when it starts, and what it refuses | Accepted, amended by 0065, 0071 |
 | [0060](0060-the-organisations-rule-book.md) | The organisation's rule-book: the things it keeps and the look of its faces | Proposed |
 | [0061](0061-apache-license.md) | License: Apache 2.0 | Accepted |
 | [0062](0062-commands-from-a-terminal.md) | Commands from a terminal: `fadodb exec` | Accepted |
 | [0063](0063-the-flow-of-a-class.md) | The flow of a class in one call | Accepted |
-| [0064](0064-the-door-for-agents.md) | The door for agents: `fadodb mcp`, each command a tool | Accepted |
+| [0064](0064-the-door-for-agents.md) | The door for agents: `fadodb mcp`, each command a tool | Accepted, amended by 0071 |
 | [0065](0065-a-way-in-for-messages-from-outside.md) | A way in for messages from outside: an inlet, a definition the server runs | Accepted |
 | [0066](0066-what-the-servers-budget-is-measured-beside.md) | What the server's budget is measured beside: the Go API called by a request | Accepted |
 | [0067](0067-the-log-of-reads.md) | The log of reads: what a content administrator sees past a rule, and every SQL statement | Accepted |
 | [0068](0068-what-a-class-says-to-people.md) | What a class says to people: labels, The List, formats, descriptions and other languages | Accepted, amended by 0069 |
 | [0069](0069-the-screen-is-the-faces-and-a-class-has-sections.md) | The screen is the face's, and a class has sections | Accepted |
 | [0070](0070-the-bundle.md) | The bundle: a class, its words and its compiled formulas in one call | Accepted |
-| [0071](0071-signing-in.md) | Signing in: passwords, company sign-on, sessions and passes for agents | Proposed |
+| [0071](0071-signing-in.md) | Signing in: passwords, company sign-on, sessions and passes for agents | Accepted |

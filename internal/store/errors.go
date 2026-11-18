@@ -208,6 +208,18 @@ const (
 	// CodeUnknownKey: the database has no key of that id, or the key is
 	// another user's and the caller is no administrator (ADR-0057).
 	CodeUnknownKey = "unknown_key"
+	// CodeSignInRefused: the user, the password, the code of the second
+	// step, the sign-in under way or the link to set a password is not
+	// one the database lets through. The words are the same whatever was
+	// wrong, so that a guess learns nothing (ADR-0071, item 2).
+	CodeSignInRefused = "sign_in_refused"
+	// CodeTooManyAttempts: sign-ins for this user, or from this address,
+	// failed too often of late; the next is taken after a wait, which the
+	// message gives (ADR-0071, item 2).
+	CodeTooManyAttempts = "too_many_attempts"
+	// CodeUnknownSession: the database has no session of that id, or it
+	// is another user's and the caller is no administrator (ADR-0071).
+	CodeUnknownSession = "unknown_session"
 )
 
 func errf(code, variable, format string, args ...any) *Error {

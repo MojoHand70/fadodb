@@ -402,6 +402,9 @@ func TestTheChapterOnServing(t *testing.T) {
 		"outbound.connections":   "none",
 		"inbound.message_bytes":  strconv.Itoa(server.DefaultMessageBytes),
 		"inbound.messages":       strconv.Itoa(server.DefaultMessages),
+		"url":                    "people sign in on this machine only",
+		"sessions.idle_hours":    "8",
+		"sessions.days":          "30",
 	}
 	var all []string
 	for _, m := range outboundMembers {
@@ -412,6 +415,10 @@ func TestTheChapterOnServing(t *testing.T) {
 	}
 	for _, m := range inboundMembers {
 		all = append(all, "inbound."+m)
+	}
+	all = append(all, "url")
+	for _, m := range sessionMembers {
+		all = append(all, "sessions."+m)
 	}
 	if len(all) != len(usual) {
 		t.Errorf("the test knows what is usual for %d members, and a file of settings may have %d", len(usual), len(all))
@@ -429,7 +436,11 @@ func TestTheChapterOnServing(t *testing.T) {
 		if !found {
 			t.Errorf("the chapter has no row for the setting %s", member)
 		}
-		if _, name, _ := strings.Cut(member, "."); !strings.Contains(serveUsage, `"`+name+`"`) {
+		name := member
+		if _, leaf, nested := strings.Cut(member, "."); nested {
+			name = leaf
+		}
+		if !strings.Contains(serveUsage, `"`+name+`"`) {
 			t.Errorf("the help of the server does not show the setting %s", member)
 		}
 	}
@@ -460,7 +471,7 @@ func TestTheChapterOnServing(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if said := blockOfTheChapter(t, "what it says when it starts"); said != "fadodb serve: serving acme.fado at http://"+defaultListen+"\nfadodb serve: "+told.mayCall() {
+	if said := blockOfTheChapter(t, "what it says when it starts"); said != "fadodb serve: serving acme.fado at http://"+defaultListen+"\nfadodb serve: people sign in at http://"+defaultListen+"/auth/signin\nfadodb serve: "+told.mayCall() {
 		t.Errorf("the chapter shows a server that says:\n%s\nand the server says of the same settings:\n%s", said, told.mayCall())
 	}
 }

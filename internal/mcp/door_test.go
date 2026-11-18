@@ -224,8 +224,8 @@ func TestEveryCommandIsATool(t *testing.T) {
 			t.Errorf("%s: marks %+v, want %+v", c.Name, tl.Annotations, want)
 		}
 	}
-	if len(tools) != len(command.Commands())-2 {
-		t.Errorf("%d tools for %d commands, two of them withheld", len(tools), len(command.Commands()))
+	if len(tools) != len(command.Commands())-3 {
+		t.Errorf("%d tools for %d commands, three of them withheld", len(tools), len(command.Commands()))
 	}
 	// The names the door knows by heart are commands still.
 	for _, known := range []string{"subscribe", "create_key", "try_action", "drain", "whoami", "list_classes", "preview", "sql"} {
@@ -283,7 +283,7 @@ func TestTheModernForm(t *testing.T) {
 	if list["resultType"] != "complete" || list["cacheScope"] != "private" || list["ttlMs"] != float64(3_600_000) || list["nextCursor"] != nil {
 		t.Errorf("the list of the tools carries %v", keysOf(list))
 	}
-	if n := len(list["tools"].([]any)); n != len(command.Commands())-2 {
+	if n := len(list["tools"].([]any)); n != len(command.Commands())-3 {
 		t.Errorf("%d tools listed", n)
 	}
 

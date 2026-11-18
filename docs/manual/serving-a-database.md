@@ -125,6 +125,9 @@ fadodb serve acme.fado --settings settings.json --secrets-dir /run/secrets/fadod
 | `inbound` | the server takes [messages from outside](a-way-in-for-messages.md), at the inlets of its database | it takes none |
 | `inbound.message_bytes` | the largest message from outside, in bytes | 1048576, which is 1 MiB |
 | `inbound.messages` | how many messages from outside are worked at once | 16 |
+| `url` | the address people reach the server at, from which its pages and their sessions are named ([Signing in](signing-in.md)) | people sign in on this machine only |
+| `sessions.idle_hours` | how long a session holds unused, in hours, at most 8 | 8 |
+| `sessions.days` | how long a session holds at most, in days, at most 30 | 30 |
 
 - **The settings are the operator's.** Where the server listens, what
   it may call and how much it takes on are decided by whoever runs the
@@ -421,13 +424,17 @@ To standard error, before the first request:
 <!-- what it says when it starts -->
 ```
 fadodb serve: serving acme.fado at http://127.0.0.1:8080
+fadodb serve: people sign in at http://127.0.0.1:8080/auth/signin
 fadodb serve: its actions may call over the connection books, books.acme.internal:8443
 ```
 
 and a line for everything the database needs that this server does not
 have as it was started: an action of a Go function, an action whose
 connection the settings do not have, a secret that is in neither
-place, a database that has no user yet.
+place, a database that has no user yet. It also says where people
+[sign in](signing-in.md), or that nobody signs in on a page because
+the server listens beyond this machine and its settings have no
+`url`.
 
 ## One program holds the database
 

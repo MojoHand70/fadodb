@@ -10,9 +10,8 @@ key, as [Serving a database](serving-a-database.md) says.
 The story is Acme's. Olga is an administrator, and the first person
 who signs in. Ann is in finance.
 
-> **Status.** Passwords, the second step and sessions are built. A
-> company's sign-on (Microsoft, Google) and passes for agents at
-> `/mcp` come next, in that order.
+> **Status.** Passwords, the second step, sessions and a company's
+> sign-on are built. Passes for agents at `/mcp` come next.
 
 ## The first password, on the machine
 
@@ -124,6 +123,7 @@ answered `{"user": {"id": "ann", …}}`.
 | `end_session` | ends a session by its id | an administrator; a user, its own |
 | `clear_second_step` | takes away the second step of a user | an administrator; a user, its own when its groups do not require one |
 | `sign_ins` | lists the log of sign-ins, refused ones among them | an administrator |
+| `create_user`, `set_user` | take `email`, a person's company e-mail, which a first company sign-on finds | an administrator |
 
 Olga makes Ann a link with her key:
 
@@ -138,8 +138,76 @@ conversation. A password, a code and a session never travel in a
 command: the pages take them.
 
 **Every sign-in is kept**, refused ones too: when, the user it named,
-the way, `password`, `second_step` or `link`, the address it came from
-and whether it was let through. `sign_ins` lists them.
+the way, `password`, `second_step`, `link` or `signon`, the address it
+came from and whether it was let through. `sign_ins` lists them.
+
+## A company's sign-on
+
+Acme uses Microsoft 365. Its people sign in with Microsoft: the
+server sends them to Microsoft, Microsoft hands back a signed note that
+says who they are, and the server checks the note: its signature by a
+key Microsoft publishes, that it is for this server, that it has not
+ended, and that it answers the sign-in the server began. The server
+never sees a Microsoft password, and asks no second step after it:
+Microsoft brings Acme's own.
+
+The operator registers the server with Microsoft as an application,
+with the address `https://fado.acme.example/auth/callback` to come back
+to, and writes what Microsoft gives into the settings:
+
+<!-- a company's sign-on -->
+```jsonc
+{
+  "url": "https://fado.acme.example",
+  "signon": {
+    "microsoft": {
+      "label": "Sign in with Microsoft",
+      "issuer": "https://login.microsoftonline.com/7d1e3c52-0000-4000-8000-000000000000/v2.0",
+      "client_id": "3f2a7c90-0000-4000-8000-000000000000",
+      "company_emails": true
+    }
+  }
+}
+```
+
+- **`issuer`** is the address of the company's directory, the one of
+  Acme's own tenant, never Microsoft's common one: everybody with a
+  Microsoft account would be its people.
+- **The client secret is found as every secret is**: the file
+  `microsoft/client_secret` in the directory of secrets, or
+  `FADODB_SECRET_MICROSOFT__CLIENT_SECRET`. The server says when it
+  starts that a sign-on has none.
+- **`company_emails`** says the provider's e-mails are the company's
+  own, kept by its administrators. Microsoft says no word on an e-mail
+  and Google does: without it, an e-mail is taken only when the
+  provider vouches for it.
+- **Google, Okta and any provider of OpenID Connect** are written the
+  same way, each under its own name. Each is a button on the page.
+
+**Olga adds Ewa first**, with her company e-mail:
+
+```
+fadodb exec create_user '{"id": "ewa", "kind": "person", "email": "ewa@acme.example", "groups": ["approvers"]}'
+```
+
+The first time Ewa signs in with Microsoft, the e-mail Microsoft
+vouches for finds her user, and the server ties her Microsoft account
+to it. From then on Microsoft's id for her finds her, whatever her
+e-mail becomes: an e-mail can pass to somebody else, the id never does.
+
+<!-- signing on -->
+| What happens | Answer |
+|---|---|
+| Ewa signs in with Microsoft the first time | she is signed in, and her Microsoft account is tied to her user |
+| Ewa signs in again, her e-mail at Microsoft changed | she is signed in: her account finds her |
+| Zed, who has no user, signs in with Microsoft | refused, `sign_in_refused` |
+| another Microsoft account with Ewa's e-mail signs in | refused, `sign_in_refused`: her user is tied to her own |
+| Microsoft's answer comes to another browser than the one that began | refused, `sign_in_refused` |
+
+Nobody gets in for being in Acme's directory: an account with no user
+is refused in the same words as a wrong password. Groups stay the
+database's own: Olga gives them, as before. Every sign-on is in the
+log of sign-ins, as `signon`.
 
 ## The settings
 

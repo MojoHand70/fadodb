@@ -440,10 +440,12 @@ var commands = []*Command{
 	{Group: Users, Users: true, Name: "create_user", Mark: Writes, Call: "CreateUser", Does: "Makes a user: a person, an agent or a service the database knows by its id. It is a database administrator's.",
 		Fields: []Field{req("id", Text, "the id every event will record; it never changes and is never given to somebody else"),
 			req("kind", Text, "person, agent or service"), opt("name", Text, "how a screen shows the user"),
+			opt("email", Text, "a person's company e-mail, by which a first sign-in with the company's sign-on finds them"),
 			opt("groups", Texts, "the groups of the user, which INGROUP answers"), opt("system_groups", Texts, "the system groups of the user: administrators, designers, content-administrators, analysts")},
 		Answer: answer("user", theUser), takes: asWriter, run: runCreateUser},
 	{Group: Users, Users: true, Name: "set_user", Mark: Writes, Call: "SetUser", Does: "Changes a user: the members given, and no other. It is a database administrator's, who may change their own groups too.",
 		Fields: []Field{req("id", Text, "the id of the user"), opt("name", Text, "how a screen shows the user"),
+			opt("email", Text, "a person's company e-mail, in place of the one they have; empty takes it away"),
 			opt("groups", Texts, "the groups of the user, in place of the ones it has"), opt("system_groups", Texts, "the system groups of the user, in place of the ones it has"),
 			opt("disabled", Flag, "true stops every key of the user at the next command; false lets them through again")},
 		Answer: answer("user", theUser+", after the change"), takes: asWriter, run: runSetUser},
@@ -514,6 +516,7 @@ var NotCommands = map[string]string{
 	"SetUpMySecondStep":   "its secret never travels in a command: the server's page /auth/account shows it",
 	"ConfirmMySecondStep": "its codes never travel in a command: the server's page /auth/account shows them",
 	"HasSecondStep":       "the server's page /auth/account shows it to the person",
+	"SignOn":              "it takes who a company's provider vouched for, which the server checked on its page /auth/callback; no command carries a provider's word",
 }
 
 var byName = map[string]*Command{}

@@ -44,6 +44,7 @@ exactly so in a class or a formula.
 | user | a caller that a database knows by its id, when the database keeps its own users; see [the commands](commands.md#users-groups-and-keys) |
 | key | how such a user proves who it is: one line of text that begins `fado_`, shown once when it is made |
 | session | how a person's browser stays signed in to `fadodb serve`: a cookie the server's own pages send, 8 hours unused and 30 days at most; see [Signing in](signing-in.md) |
+| company sign-on | signing in with the company's own provider, such as Microsoft or Google, by OpenID Connect: the provider vouches for the person, and the server ties their account to the user an administrator added; see [Signing in](signing-in.md#a-companys-sign-on) |
 | second step | a code of six digits from an authenticator app, asked after the password of an administrator or a designer; see [Signing in](signing-in.md) |
 | group | a named set of callers, as the host program knows them, such as `ACCOUNTING` |
 | system group | one of four groups that hold work which is not about one document: `administrators`, `designers`, `content-administrators`, `analysts` |

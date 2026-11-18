@@ -954,7 +954,7 @@ func runCreateUser(c *call) error {
 	if e != nil {
 		return e
 	}
-	u, err := c.s.CreateUser(c.ctx, store.User{ID: c.text("id"), Kind: c.text("kind"), Name: c.text("name"), Groups: groups, System: system}, c.opts...)
+	u, err := c.s.CreateUser(c.ctx, store.User{ID: c.text("id"), Kind: c.text("kind"), Name: c.text("name"), Email: c.text("email"), Groups: groups, System: system}, c.opts...)
 	return c.answer("user", u, err)
 }
 
@@ -963,6 +963,10 @@ func runSetUser(c *call) error {
 	if c.given("name") != nil {
 		name := c.text("name")
 		edit.Name = &name
+	}
+	if c.given("email") != nil {
+		email := c.text("email")
+		edit.Email = &email
 	}
 	if c.given("groups") != nil {
 		groups, e := c.texts("groups")

@@ -15,6 +15,7 @@ import (
 	"github.com/MojoHand70/fadodb/fado/httpdoor"
 	"github.com/MojoHand70/fadodb/internal/model"
 	"github.com/MojoHand70/fadodb/internal/server"
+	"github.com/MojoHand70/fadodb/internal/signon"
 	"github.com/MojoHand70/fadodb/internal/store"
 )
 
@@ -46,6 +47,14 @@ import (
 //	  "sessions": {
 //	    "idle_hours": 8,
 //	    "days": 30
+//	  },
+//	  "signon": {
+//	    "microsoft": {
+//	      "label": "Sign in with Microsoft",
+//	      "issuer": "https://login.microsoftonline.com/7d1e…/v2.0",
+//	      "client_id": "3f2a…",
+//	      "company_emails": true
+//	    }
 //	  }
 //	}
 type settings struct {
@@ -69,12 +78,17 @@ type settings struct {
 	// most, which the file may shorten.
 	url      string
 	sessions store.SessionLengths
+	// signon are the company sign-ons people may sign in with (ADR-0071,
+	// item 4), in the order of their names; the secret of each is found
+	// as a connection's is.
+	signon []signon.Provider
 }
 
 // The names a settings file may hold, at each place.
 var (
-	settingsMembers = []string{"outbound", "limits", "inbound", "url", "sessions"}
+	settingsMembers = []string{"outbound", "limits", "inbound", "url", "sessions", "signon"}
 	sessionMembers  = []string{"idle_hours", "days"}
+	signonMembers   = []string{"label", "issuer", "client_id", "company_emails"}
 	outboundMembers = []string{"hosts", "connections"}
 	limitMembers    = []string{"request_bytes", "command_seconds", "commands", "streams"}
 	inboundMembers  = []string{"message_bytes", "messages"}
@@ -211,6 +225,11 @@ func parseSettings(data []byte) (*settings, error) {
 			s.sessions.Max = time.Duration(n) * 24 * time.Hour
 		}
 	}
+	if raw, given := top["signon"]; given {
+		if s.signon, err = signOns(raw, s.connections); err != nil {
+			return nil, err
+		}
+	}
 	return s, nil
 }
 
@@ -304,6 +323,63 @@ func connections(raw []byte) (map[string][]string, error) {
 		if out[name], err = hostList(named[name], "outbound.connections."+name); err != nil {
 			return nil, err
 		}
+	}
+	return out, nil
+}
+
+// signOns reads the company sign-ons of the settings. A sign-on is
+// named as a connection is, and never as one: its secret is found under
+// its name, as a connection's is, and one name finds one secret.
+func signOns(raw []byte, conns map[string][]string) ([]signon.Provider, error) {
+	named, err := members(raw, "signon", nil)
+	if err != nil {
+		return nil, err
+	}
+	names := make([]string, 0, len(named))
+	for name := range named {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	var out []signon.Provider
+	seen := map[string]string{}
+	for _, name := range names {
+		if reason := model.NameReason(name); reason != "" {
+			return nil, fmt.Errorf("signon has %q, which is no name: %s", name, reason)
+		}
+		if other, twice := seen[strings.ToUpper(name)]; twice {
+			return nil, fmt.Errorf("signon has %s and %s, which differ in case only", other, name)
+		}
+		seen[strings.ToUpper(name)] = name
+		for conn := range conns {
+			if strings.EqualFold(conn, name) {
+				return nil, fmt.Errorf("signon.%s has the name of a connection, and one name finds one secret: name it otherwise", name)
+			}
+		}
+		where := "signon." + name
+		one, err := members(named[name], where, signonMembers)
+		if err != nil {
+			return nil, err
+		}
+		p := signon.Provider{Name: name}
+		for member, into := range map[string]*string{"label": &p.Label, "issuer": &p.Issuer, "client_id": &p.ClientID} {
+			if raw, given := one[member]; given {
+				if json.Unmarshal(raw, into) != nil || *into == "" {
+					return nil, fmt.Errorf("%s.%s is text, and here it is %s", where, member, shown(raw))
+				}
+			}
+		}
+		if p.Issuer == "" || p.ClientID == "" {
+			return nil, fmt.Errorf("%s needs issuer and client_id, as the company's provider gives them", where)
+		}
+		if err := signon.CheckIssuer(p.Issuer); err != nil {
+			return nil, fmt.Errorf("%s.issuer is %q: %v", where, p.Issuer, err)
+		}
+		if raw, given := one["company_emails"]; given {
+			if json.Unmarshal(raw, &p.CompanyEmails) != nil {
+				return nil, fmt.Errorf("%s.company_emails is true or false, and here it is %s", where, shown(raw))
+			}
+		}
+		out = append(out, p)
 	}
 	return out, nil
 }

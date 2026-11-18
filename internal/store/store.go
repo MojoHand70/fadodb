@@ -578,7 +578,7 @@ func (s *Store) init(ctx context.Context, wantSync string, wantMaxText int, want
 		_, _ = w.ExecContext(ctx, "ROLLBACK")
 		return err
 	}
-	for _, ddl := range append(append(append(append([]string(nil), engineDDL...), usersDDL...), signinDDL...), readsDDL...) {
+	for _, ddl := range append(append(append(append(append([]string(nil), engineDDL...), usersDDL...), signinDDL...), signonDDL...), readsDDL...) {
 		if _, err := w.ExecContext(ctx, ddl); err != nil {
 			return rollback(storageErr("create the engine tables", err))
 		}

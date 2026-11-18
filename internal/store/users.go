@@ -37,6 +37,10 @@ type User struct {
 	Kind string `json:"kind"`
 	// Name is how a screen shows the user.
 	Name string `json:"name,omitempty"`
+	// Email is a person's company e-mail, in small letters, by which a
+	// first sign-in with the company's sign-on finds them (ADR-0071,
+	// item 4).
+	Email string `json:"email,omitempty"`
 	// Groups are the user's groups, which INGROUP answers; System are
 	// the system groups it is in (ADR-0052), in a list of their own.
 	Groups   []string `json:"groups"`
@@ -48,6 +52,7 @@ type User struct {
 // other. A list that is set replaces the list the user has.
 type UserEdit struct {
 	Name     *string
+	Email    *string
 	Groups   *[]string
 	System   *[]string
 	Disabled *bool
@@ -165,6 +170,23 @@ func (s *Store) loadPeople(ctx context.Context) error {
 	}
 	if err := rows.Close(); err != nil {
 		return storageErr("read the users", err)
+	}
+	rows, err = s.writer.QueryContext(ctx, "SELECT user, email FROM fado_user_emails")
+	if err != nil {
+		return storageErr("read the e-mails of the users", err)
+	}
+	for rows.Next() {
+		var id, email string
+		if err := rows.Scan(&id, &email); err != nil {
+			rows.Close()
+			return storageErr("read an e-mail", err)
+		}
+		if u := users[id]; u != nil {
+			u.Email = email
+		}
+	}
+	if err := rows.Close(); err != nil {
+		return storageErr("read the e-mails of the users", err)
 	}
 	keys := map[string]*heldKey{}
 	rows, err = s.writer.QueryContext(ctx, "SELECT id, user, label, hash, created_at, created_by, ends, revoked_at, revoked_by FROM fado_keys")
@@ -415,6 +437,11 @@ func (s *Store) CreateUser(ctx context.Context, u User, opts ...Option) (*User, 
 		return nil, e
 	}
 	made := &User{ID: u.ID, Kind: u.Kind, Name: u.Name, Groups: groups, System: system}
+	if u.Email != "" {
+		if made.Email, e = s.checkEmail(u.Email, u.Kind, ""); e != nil {
+			return nil, e
+		}
+	}
 	s.people.mu.RLock()
 	_, exists := s.people.users[u.ID]
 	s.people.mu.RUnlock()
@@ -425,6 +452,9 @@ func (s *Store) CreateUser(ctx context.Context, u User, opts ...Option) (*User, 
 		if _, err := w.ExecContext(ctx, "INSERT INTO fado_users (id, kind, name, groups, system_groups, disabled, created_at, updated_at) VALUES (?, ?, ?, ?, ?, 0, ?, ?)",
 			made.ID, made.Kind, made.Name, listJSON(made.Groups), listJSON(made.System), now, now); err != nil {
 			return storageErr("store the user", err)
+		}
+		if err := writeEmail(ctx, w, made.ID, made.Email); err != nil {
+			return err
 		}
 		return recordUserChange(ctx, w, made.ID, UserCreated, o.principal, now, made)
 	}, func() { s.people.users[made.ID] = made })
@@ -447,8 +477,8 @@ func (s *Store) SetUser(ctx context.Context, id string, edit UserEdit, opts ...O
 	if e := refuseAt(o, "change to a user"); e != nil {
 		return nil, e
 	}
-	if edit.Name == nil && edit.Groups == nil && edit.System == nil && edit.Disabled == nil {
-		return nil, hintf(CodeBadValue, "", "set_user was given nothing to change", "give any of name, groups, system_groups and disabled")
+	if edit.Name == nil && edit.Email == nil && edit.Groups == nil && edit.System == nil && edit.Disabled == nil {
+		return nil, hintf(CodeBadValue, "", "set_user was given nothing to change", "give any of name, email, groups, system_groups and disabled")
 	}
 	s.people.mu.RLock()
 	old := s.people.users[id]
@@ -460,6 +490,14 @@ func (s *Store) SetUser(ctx context.Context, id string, edit UserEdit, opts ...O
 	changed := *old
 	if edit.Name != nil {
 		changed.Name = *edit.Name
+	}
+	if edit.Email != nil {
+		changed.Email = ""
+		if *edit.Email != "" {
+			if changed.Email, e = s.checkEmail(*edit.Email, old.Kind, id); e != nil {
+				return nil, e
+			}
+		}
 	}
 	groups, system := old.Groups, old.System
 	if edit.Groups != nil {
@@ -484,6 +522,11 @@ func (s *Store) SetUser(ctx context.Context, id string, edit UserEdit, opts ...O
 		if _, err := w.ExecContext(ctx, "UPDATE fado_users SET name = ?, groups = ?, system_groups = ?, disabled = ?, updated_at = ? WHERE id = ?",
 			changed.Name, listJSON(changed.Groups), listJSON(changed.System), changed.Disabled, now, id); err != nil {
 			return storageErr("store the user", err)
+		}
+		if changed.Email != old.Email {
+			if err := writeEmail(ctx, w, id, changed.Email); err != nil {
+				return err
+			}
 		}
 		return recordUserChange(ctx, w, id, UserChanged, o.principal, now, &changed)
 	}, func() { s.people.users[id] = &changed })

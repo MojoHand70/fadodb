@@ -4,14 +4,16 @@ People sign in to `fadodb serve` on its own pages, with a password
 and, for the people who define and keep the database, a second step
 from an app on their phone (ADR-0071). The server gives them a
 session, which their browser keeps, so that the pages of the server
-send commands as them. A program and an agent go on calling with a
-key, as [Serving a database](serving-a-database.md) says.
+send commands as them. A client a person allows, such as Claude, is
+given a pass by OAuth. A program goes on calling with a key, as
+[Serving a database](serving-a-database.md) says.
 
 The story is Acme's. Olga is an administrator, and the first person
 who signs in. Ann is in finance.
 
-> **Status.** Passwords, the second step, sessions and a company's
-> sign-on are built. Passes for agents at `/mcp` come next.
+> **Status.** Passwords, the second step, sessions, a company's
+> sign-on and the passes of clients are built. The door for agents at
+> `/mcp`, which takes Claude's pass, is the next step of Phase 7.
 
 ## The first password, on the machine
 
@@ -124,6 +126,11 @@ answered `{"user": {"id": "ann", …}}`.
 | `clear_second_step` | takes away the second step of a user | an administrator; a user, its own when its groups do not require one |
 | `sign_ins` | lists the log of sign-ins, refused ones among them | an administrator |
 | `create_user`, `set_user` | take `email`, a person's company e-mail, which a first company sign-on finds | an administrator |
+| `add_client` | adds a face, an app or an agent of the company that the server gives passes to | an administrator |
+| `list_clients` | lists the clients an administrator added, the removed ones among them | an administrator |
+| `remove_client` | removes a client: every grant of it ends | an administrator |
+| `list_grants` | lists the clients a person allowed that still hold | an administrator; a user, its own |
+| `end_grant` | ends a grant by its id: its passes are refused | an administrator; a person, their own |
 
 Olga makes Ann a link with her key:
 
@@ -209,13 +216,104 @@ is refused in the same words as a wrong password. Groups stay the
 database's own: Olga gives them, as before. Every sign-on is in the
 log of sign-ins, as `signon`.
 
+## Connecting a client
+
+A client is a program that calls the server for a person: Claude,
+which Ann connects to act for her, or FadoFace, a face of Acme's. It is
+given a pass by OAuth, as the protocol of agents asks, and never sees
+a password.
+
+**How Ann connects Claude.** Ann adds the server to Claude as a
+connector, at `https://fado.acme.example/mcp`. Claude reads where
+passes come from, and sends Ann's browser to the server's page:
+
+1. Ann signs in, if her browser has no session.
+2. She reads: *"**Claude** (claude.ai) wants to act for you, **ann**,
+   in this database, as the agent ann~claude.ai. It may do what your
+   groups let you do, in finance, until you end it on your account
+   page. Where a class asks for a person, it is refused."* She allows
+   it.
+3. Claude is sent a code, which it exchanges, with the proof it made
+   the request with, for a pass of one hour and a pass that renews it.
+
+The first time, the server makes the user `ann~claude.ai`, an agent
+named "Claude for Ann", and a substitution that lets it act for Ann,
+given by Ann. `USER()` is the agent and `ACTINGFOR()` is Ann. The agent
+has Ann's groups and system groups, as they are at each request, and
+never more:
+
+- **What Ann's groups let her do, her Claude does**: a rule such as
+  `INGROUP("approvers")` lets it through.
+- **A rule that asks for a person refuses it**, as
+  `USERKIND() = "person"` does in the class of
+  [Who may](notions/who-may.md).
+- **A rule that names Ann lets it through only where the class takes
+  whoever acts for her**, with `ACTINGFOR()`, as in
+  [Acting for somebody](guides/acting-for-somebody.md).
+
+It acts for Ann alone: a command of it that names somebody else under
+`for` is refused with `forbidden`.
+
+**Claude is known by the document it publishes**, at the address it
+gives as its client id, which says its name and where its codes go.
+The server reads it when Ann is asked: over HTTPS only, at most 5 KB,
+never past a redirect and never from an address inside the network.
+Nobody registers Claude, and the page shows Ann the host the document
+came from, and where the pass goes.
+
+**FadoFace is added by Olga**, as a face or an app of Acme's would be,
+with the addresses its codes are sent to and the address it is given
+passes for:
+
+```
+fadodb exec add_client '{"id": "fadoface", "name": "FadoFace", "redirect_uris": ["https://face.acme.example/callback"], "address": "/v1"}'
+```
+
+A face's pass is Ann herself at the commands, `/v1`, as her session is
+on the server's own pages. An agent's pass is for the door for agents,
+`/mcp`. A pass is refused at the other address, and a client known by
+its document is given passes for `/mcp` alone.
+
+**What the server publishes**, as the protocol asks:
+
+<!-- how passes are given -->
+| Address | What it is |
+|---|---|
+| `/.well-known/oauth-authorization-server` | how passes are given: a code proven with PKCE (S256), clients that hold no secret, clients known by their document |
+| `/.well-known/oauth-protected-resource/v1` | where passes for the commands come from |
+| `/auth/authorize` | where a client sends the person |
+| `/auth/allow` | the page that asks the person |
+| `/auth/token` | where a client exchanges its code for passes, and renews them |
+| `/auth/revoke` | where a client gives its pass back |
+
+<!-- connecting a client -->
+| What happens | Answer |
+|---|---|
+| Ann allows Claude | Claude is given a pass for `/mcp`, as `ann~claude.ai` acting for Ann |
+| FadoFace sends `whoami` with its pass | answered `ann` |
+| Claude's pass is sent to the commands | refused, `unauthenticated`: a pass is for one address |
+| a code is exchanged without the proof it was asked with | refused, `invalid_grant` |
+| a code is exchanged a second time | refused, `invalid_grant`, and the grant ends |
+| a renewing pass is used a second time | refused, `invalid_grant`, and the grant ends: it was stolen |
+| Ann does not allow it | the client is told `access_denied` |
+| a client the server does not know | the page says so, and nothing is sent to the client |
+| Ann ends the grant on her account page | its passes are refused, and the substitution is withdrawn |
+
+**A grant holds until it is ended.** It ends by itself when no pass
+was renewed for 30 days, and the settings may make that shorter. A
+pass holds one hour. Ann's account page lists the clients she allowed,
+and she ends any; Olga ends anybody's, with `end_grant`. Withdrawing
+the substitution ends the grant too, and disabling Ann or her agent
+refuses its passes.
+
 ## The settings
 
 <!-- the settings -->
 ```jsonc
 {
   "url": "https://fado.acme.example",
-  "sessions": {"idle_hours": 4, "days": 7}
+  "sessions": {"idle_hours": 4, "days": 7},
+  "grants": {"idle_days": 14}
 }
 ```
 
@@ -228,6 +326,10 @@ log of sign-ins, as `signon`.
   shows no page, and says so when it starts.
 - **`sessions`** shortens how long a session holds: `idle_hours` 1 to
   8, `days` 1 to 30.
+- **`grants`** shortens how long a client a person allowed holds with
+  no pass renewed: `idle_days` 1 to 30.
+- **Without `url`, clients are given passes on the machine itself
+  only**, as people sign in there.
 
 ## What is refused
 

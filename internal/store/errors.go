@@ -220,6 +220,14 @@ const (
 	// CodeUnknownSession: the database has no session of that id, or it
 	// is another user's and the caller is no administrator (ADR-0071).
 	CodeUnknownSession = "unknown_session"
+	// CodeUnknownClient: the database has no client of that id that an
+	// administrator added, or it was removed (ADR-0071, item 6).
+	CodeUnknownClient = "unknown_client"
+	// CodeUnknownGrant: the database has no grant of that id that
+	// stands, or it is another person's and the caller is no
+	// administrator; or the request of a client that waits for the
+	// person ended (ADR-0071, item 6).
+	CodeUnknownGrant = "unknown_grant"
 )
 
 func errf(code, variable, format string, args ...any) *Error {

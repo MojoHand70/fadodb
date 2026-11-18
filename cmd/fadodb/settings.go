@@ -48,6 +48,9 @@ import (
 //	    "idle_hours": 8,
 //	    "days": 30
 //	  },
+//	  "grants": {
+//	    "idle_days": 30
+//	  },
 //	  "signon": {
 //	    "microsoft": {
 //	      "label": "Sign in with Microsoft",
@@ -78,6 +81,10 @@ type settings struct {
 	// most, which the file may shorten.
 	url      string
 	sessions store.SessionLengths
+	// grants is how long a client a person allowed holds with no pass
+	// renewed, the usual 30 days, which the file may shorten (ADR-0071,
+	// item 6).
+	grants time.Duration
 	// signon are the company sign-ons people may sign in with (ADR-0071,
 	// item 4), in the order of their names; the secret of each is found
 	// as a connection's is.
@@ -86,8 +93,9 @@ type settings struct {
 
 // The names a settings file may hold, at each place.
 var (
-	settingsMembers = []string{"outbound", "limits", "inbound", "url", "sessions", "signon"}
+	settingsMembers = []string{"outbound", "limits", "inbound", "url", "sessions", "grants", "signon"}
 	sessionMembers  = []string{"idle_hours", "days"}
+	grantMembers    = []string{"idle_days"}
 	signonMembers   = []string{"label", "issuer", "client_id", "company_emails"}
 	outboundMembers = []string{"hosts", "connections"}
 	limitMembers    = []string{"request_bytes", "command_seconds", "commands", "streams"}
@@ -223,6 +231,19 @@ func parseSettings(data []byte) (*settings, error) {
 				return nil, fmt.Errorf("sessions.days is a whole number of days from 1 to 30, and here it is %s", shown(raw))
 			}
 			s.sessions.Max = time.Duration(n) * 24 * time.Hour
+		}
+	}
+	if raw, given := top["grants"]; given {
+		gr, err := members(raw, "grants", grantMembers)
+		if err != nil {
+			return nil, err
+		}
+		if raw, given := gr["idle_days"]; given {
+			n, err := countOf(raw, "grants.idle_days")
+			if err != nil || n > 30 {
+				return nil, fmt.Errorf("grants.idle_days is a whole number of days from 1 to 30, and here it is %s", shown(raw))
+			}
+			s.grants = time.Duration(n) * 24 * time.Hour
 		}
 	}
 	if raw, given := top["signon"]; given {

@@ -216,6 +216,15 @@ type (
 	// page of signing in offers it.
 	SignedOn       = store.SignedOn
 	SignOnProvider = store.SignOnProvider
+	// The passes the server gives clients (ADR-0071, items 6 and 7):
+	// Client is a client the server gives passes to, Asked its request
+	// for a code, CodeExchange what it sends for its passes, Passes what
+	// it is given, and Grant a client a person allowed.
+	Client       = store.Client
+	Asked        = store.Asked
+	CodeExchange = store.CodeExchange
+	Passes       = store.Passes
+	Grant        = store.Grant
 	// Read is one entry of the log of reads, and ReadsFilter narrows the
 	// log (ADR-0067).
 	Read        = store.Read
@@ -888,6 +897,10 @@ func (db *DB) Ping(ctx context.Context) error { return db.s.Ping(ctx) }
 // let through, whatever is wrong with it.
 var ErrUnknownKey = store.ErrUnknownKey
 
+// ErrNoGrant is what Exchange and Renew answer for every code and pass
+// they do not let through, whatever is wrong with it.
+var ErrNoGrant = store.ErrNoGrant
+
 // ErrNotProven is what Receive answers for every message whose proof
 // does not hold, whatever is wrong with it, so that a guess learns
 // nothing (ADR-0065, item 3).
@@ -1060,6 +1073,90 @@ func (db *DB) EndSession(ctx context.Context, id string, opts ...Option) error {
 // database administrator's.
 func (db *DB) SignIns(ctx context.Context, f SignInFilter, opts ...Option) ([]SignInEntry, error) {
 	return db.s.SignIns(ctx, f, opts...)
+}
+
+// AddClient adds a client the server gives passes to: a face or an app
+// of the company, for the commands, or an agent, for the door for agents
+// (ADR-0071, item 6). A client known by the document it publishes, as
+// Claude is, is never added. It is a database administrator's.
+func (db *DB) AddClient(ctx context.Context, c Client, opts ...Option) (*Client, error) {
+	return db.s.AddClient(ctx, c, opts...)
+}
+
+// Clients lists the clients an administrator added, the removed ones
+// among them. It is a database administrator's.
+func (db *DB) Clients(ctx context.Context, opts ...Option) ([]*Client, error) {
+	return db.s.Clients(ctx, opts...)
+}
+
+// RemoveClient removes a client an administrator added: every grant of
+// it ends. It is a database administrator's.
+func (db *DB) RemoveClient(ctx context.Context, id string, opts ...Option) error {
+	return db.s.RemoveClient(ctx, id, opts...)
+}
+
+// KnownClient answers a client an administrator added and did not
+// remove, for the server's page that takes a client's request.
+func (db *DB) KnownClient(ctx context.Context, id string) (*Client, error) {
+	return db.s.KnownClient(ctx, id)
+}
+
+// AskConsent keeps a client's request, which the server checked, while
+// the person signs in and is asked, and answers its id.
+func (db *DB) AskConsent(ctx context.Context, a Asked) (string, error) {
+	return db.s.AskConsent(ctx, a)
+}
+
+// Consent answers a client's request that waits for the person, for the
+// page that asks them.
+func (db *DB) Consent(ctx context.Context, id string, opts ...Option) (*Asked, error) {
+	return db.s.Consent(ctx, id, opts...)
+}
+
+// Allow gives the client of a request the person allowed its code, good
+// once and for five minutes.
+func (db *DB) Allow(ctx context.Context, id string, opts ...Option) (string, *Asked, error) {
+	return db.s.Allow(ctx, id, opts...)
+}
+
+// Deny answers a request the person did not allow.
+func (db *DB) Deny(ctx context.Context, id string, opts ...Option) (*Asked, error) {
+	return db.s.Deny(ctx, id, opts...)
+}
+
+// Exchange gives a client its passes for its code, proven with PKCE.
+// For the door for agents, the agent the person connects is made the
+// first time, with a substitution the person gives (ADR-0071, item 7).
+func (db *DB) Exchange(ctx context.Context, x CodeExchange) (*Passes, error) {
+	return db.s.Exchange(ctx, x)
+}
+
+// Renew gives a client new passes for its renewing pass, which holds no
+// more after it; shown twice, it ends the grant.
+func (db *DB) Renew(ctx context.Context, client, token, resource string) (*Passes, error) {
+	return db.s.Renew(ctx, client, token, resource)
+}
+
+// Revoke ends the grant of a pass its client gives back.
+func (db *DB) Revoke(ctx context.Context, client, token string) error {
+	return db.s.Revoke(ctx, client, token)
+}
+
+// PassCaller answers who a pass belongs to at an address: the person at
+// the commands, the person's agent at the door for agents. It writes
+// nothing.
+func (db *DB) PassCaller(ctx context.Context, token, address string) (Principal, error) {
+	return db.s.PassCaller(ctx, token, address)
+}
+
+// Grants lists the clients a person allowed that still hold.
+func (db *DB) Grants(ctx context.Context, user string, opts ...Option) ([]*Grant, error) {
+	return db.s.Grants(ctx, user, opts...)
+}
+
+// EndGrant ends a grant by its id.
+func (db *DB) EndGrant(ctx context.Context, id string, opts ...Option) error {
+	return db.s.EndGrant(ctx, id, opts...)
 }
 
 // StepCode is the code an authenticator app shows for the secret of a

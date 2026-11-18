@@ -317,8 +317,10 @@ type Store struct {
 	// people is what a database that keeps its own users holds of them
 	// in memory (ADR-0057).
 	people people
-	// sign is what the store holds of signing in (ADR-0071).
+	// sign is what the store holds of signing in, and auth of the passes
+	// it gives clients (ADR-0071).
 	sign signing
+	auth passing
 	// subs is what the check of "for" keeps (ADR-0053), and bringing says
 	// Open is defining a class of the engine's own, which may carry a
 	// name the engine keeps.
@@ -500,6 +502,9 @@ func open(path string, o Options) (*Store, error) {
 		if err := s.loadSessions(ctx); err != nil {
 			return fail(err)
 		}
+		if err := s.loadPasses(ctx); err != nil {
+			return fail(err)
+		}
 	}
 	switch s.blobKind {
 	case "sqlite":
@@ -578,7 +583,7 @@ func (s *Store) init(ctx context.Context, wantSync string, wantMaxText int, want
 		_, _ = w.ExecContext(ctx, "ROLLBACK")
 		return err
 	}
-	for _, ddl := range append(append(append(append(append([]string(nil), engineDDL...), usersDDL...), signinDDL...), signonDDL...), readsDDL...) {
+	for _, ddl := range append(append(append(append(append(append([]string(nil), engineDDL...), usersDDL...), signinDDL...), signonDDL...), oauthDDL...), readsDDL...) {
 		if _, err := w.ExecContext(ctx, ddl); err != nil {
 			return rollback(storageErr("create the engine tables", err))
 		}

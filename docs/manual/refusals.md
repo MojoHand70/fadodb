@@ -78,6 +78,8 @@ What a call is answered with when the engine does not carry it out: a create, a 
 | `sign_in_refused` | The user, the password, the code of the second step, the sign-in under way or the link to set a password is not one the database lets through. The words are the same whatever was wrong, so that a guess learns nothing (ADR-0071, item 2). |
 | `too_many_attempts` | Sign-ins for this user, or from this address, failed too often of late; the next is taken after a wait, which the message gives (ADR-0071, item 2). |
 | `unknown_session` | The database has no session of that id, or it is another user's and the caller is no administrator (ADR-0071). |
+| `unknown_client` | The database has no client of that id that an administrator added, or it was removed (ADR-0071, item 6). |
+| `unknown_grant` | The database has no grant of that id that stands, or it is another person's and the caller is no administrator; or the request of a client that waits for the person ended (ADR-0071, item 6). |
 
 ## Findings in a definition
 

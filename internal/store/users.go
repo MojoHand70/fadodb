@@ -10,6 +10,7 @@ import (
 	"errors"
 	"sort"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 )
@@ -423,6 +424,14 @@ func (s *Store) CreateUser(ctx context.Context, u User, opts ...Option) (*User, 
 		return nil, e
 	}
 	if e := checkUserID(u.ID); e != nil {
+		return nil, e
+	}
+	if strings.Contains(u.ID, "~") {
+		// The ~ marks the agent a person connects (ADR-0071, item 7),
+		// which the server makes, so that no other user takes its id.
+		e := hintf(CodeBadValue, "", "the id "+strconv.Quote(u.ID)+" holds a ~, which marks an agent a person connected",
+			"the server makes those, as ann~claude.ai, when the person allows the agent; give the user an id without a ~")
+		e.Path = "/id"
 		return nil, e
 	}
 	switch u.Kind {

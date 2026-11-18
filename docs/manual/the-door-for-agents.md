@@ -164,8 +164,8 @@ before one that removes:
 <!-- the marks -->
 | The command | Tools | `readOnlyHint` | `destructiveHint` | `openWorldHint` |
 |---|---|---|---|---|
-| reads | 45 | true | false | false |
-| writes | 24 | false | false | false |
+| reads | 47 | true | false | false |
+| writes | 27 | false | false | false |
 | writes, and runs an action now: `try_action`, `drain` | 2 | false | false | true |
 | removes: `delete` | 1 | false | true | false |
 
@@ -363,7 +363,7 @@ not see them:
   cannot move an invoice.
 - `--tools get,query,transitions,transition` offers these tools and no
   other. A short list also costs an agent less to read: the whole list
-  is about 55,000 characters.
+  is about 62,000 characters.
 
 An agent that calls a tool the door does not offer is told why:
 

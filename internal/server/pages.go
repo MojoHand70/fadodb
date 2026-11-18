@@ -36,6 +36,18 @@ type Accounts interface {
 	Sessions(ctx context.Context, user string, opts ...store.Option) ([]*store.Session, error)
 	EndSession(ctx context.Context, id string, opts ...store.Option) error
 	SignOn(ctx context.Context, who store.SignedOn, address string, lengths store.SessionLengths) (*store.Session, error)
+	// The passes the server gives clients (ADR-0071, items 6 and 7).
+	KnownClient(ctx context.Context, id string) (*store.Client, error)
+	AskConsent(ctx context.Context, a store.Asked) (string, error)
+	Consent(ctx context.Context, id string, opts ...store.Option) (*store.Asked, error)
+	Allow(ctx context.Context, id string, opts ...store.Option) (string, *store.Asked, error)
+	Deny(ctx context.Context, id string, opts ...store.Option) (*store.Asked, error)
+	Exchange(ctx context.Context, x store.CodeExchange) (*store.Passes, error)
+	Renew(ctx context.Context, client, token, resource string) (*store.Passes, error)
+	Revoke(ctx context.Context, client, token string) error
+	PassCaller(ctx context.Context, token, address string) (store.Principal, error)
+	Grants(ctx context.Context, user string, opts ...store.Option) ([]*store.Grant, error)
+	EndGrant(ctx context.Context, id string, opts ...store.Option) error
 }
 
 // SignOn is a company's sign-on as the pages ask it (ADR-0071, item 4):
@@ -56,16 +68,24 @@ type PagesOptions struct {
 	Report  func(Request)
 	// SignOn is the company sign-ons the pages offer; nil for none.
 	SignOn SignOn
+	// Documents reads the documents clients publish to name themselves,
+	// as Claude does; nil gives passes to the clients an administrator
+	// added alone. Unused is how long a grant holds with no pass renewed,
+	// zero for the usual 30 days.
+	Documents Documents
+	Unused    time.Duration
 }
 
 // Pages answers the server's own pages, under /auth/.
 type Pages struct {
-	signOn   SignOn
-	accounts Accounts
-	origin   string
-	secure   bool
-	lengths  store.SessionLengths
-	report   func(Request)
+	signOn    SignOn
+	documents Documents
+	accounts  Accounts
+	origin    string
+	secure    bool
+	lengths   store.SessionLengths
+	unused    time.Duration
+	report    func(Request)
 }
 
 // SessionCookie is the name of the cookie a browser keeps its session
@@ -95,7 +115,7 @@ const signOnCookie = "fado_signon"
 // over HTTPS the cookie travels only encrypted. Without one the pages
 // answer requests to this machine alone.
 func NewPages(a Accounts, o PagesOptions) (*Pages, error) {
-	p := &Pages{accounts: a, lengths: o.Lengths, report: o.Report, signOn: o.SignOn}
+	p := &Pages{accounts: a, lengths: o.Lengths, report: o.Report, signOn: o.SignOn, documents: o.Documents, unused: o.Unused}
 	if o.URL != "" {
 		u, err := url.Parse(o.URL)
 		if err != nil || (u.Scheme != "https" && u.Scheme != "http") || u.Host == "" || u.User != nil || (u.Path != "" && u.Path != "/") || u.RawQuery != "" {
@@ -130,26 +150,32 @@ func (p *Pages) originOf(r *http.Request) (string, bool) {
 
 // sameOrigin reports whether a request that changes something comes from
 // a page of the server itself, as the browser says in Origin, or in
-// Sec-Fetch-Site when it sends no Origin.
+// Sec-Fetch-Site when it sends no Origin, or sends it as null, which a
+// browser does for a page that sends no referrer. A page cannot set
+// either header: the browser does.
 func (p *Pages) sameOrigin(r *http.Request) bool {
 	origin, ok := p.originOf(r)
 	if !ok {
 		return false
 	}
-	if sent := r.Header.Get("Origin"); sent != "" {
+	if sent := r.Header.Get("Origin"); sent != "" && sent != "null" {
 		return sent == origin
 	}
 	return r.Header.Get("Sec-Fetch-Site") == "same-origin"
 }
 
-// Who is the door's Who of a server whose pages sign people in: a key or
-// a pass in the header as keys says, or else the session a browser
-// keeps, for a request from a page of the server itself (ADR-0071,
-// item 8). A command that changes something with a session must say it
-// comes from the server's own page.
+// Who is the door's Who of a server whose pages sign people in: a pass
+// the server gave, for the address the request is sent to; a key in the
+// header as keys says; or else the session a browser keeps, for a
+// request from a page of the server itself (ADR-0071, item 8). A command
+// that changes something with a session must say it comes from the
+// server's own page.
 func (p *Pages) Who(keys Who) Who {
 	return func(r *http.Request) (store.Principal, error) {
-		if r.Header.Get("Authorization") != "" {
+		if sent := r.Header.Get("Authorization"); sent != "" {
+			if token, ok := bearer(sent); ok && strings.HasPrefix(token, store.PassPrefix) {
+				return p.accounts.PassCaller(r.Context(), token, addressOf(r.URL.Path))
+			}
 			return keys(r)
 		}
 		c, err := r.Cookie(SessionCookie)
@@ -201,6 +227,16 @@ type page struct {
 	List    []*store.Session
 	// Providers are the company sign-ons the sign-in page offers.
 	Providers []store.SignOnProvider
+	// Asked is the request of a client the page asks the person about,
+	// and Request its id; Agent is the agent the client acts as, for the
+	// door for agents; Groups and System are the person's.
+	Asked   *store.Asked
+	Request string
+	Agent   string
+	Groups  []string
+	System  []string
+	// Grants are the clients the person allowed.
+	Grants []*store.Grant
 	// Refresh is where the page sends the browser at once, by itself.
 	Refresh string
 }
@@ -220,10 +256,24 @@ func (p *Pages) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	h.Set("Cache-Control", "no-store")
 	h.Set("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'")
 	h.Set("X-Frame-Options", "DENY")
-	h.Set("Referrer-Policy", "no-referrer")
+	// A referrer goes to the server itself alone, never to another site.
+	// With none at all, a browser sends the Origin of a form as null.
+	h.Set("Referrer-Policy", "same-origin")
 	h.Set("X-Content-Type-Options", "nosniff")
 	if _, ok := p.originOf(r); !ok {
 		p.draw(out, &told, http.StatusNotFound, "notHere", &page{Title: "Not here"})
+		return
+	}
+	// What a client calls, not a page: no cookie, from anywhere.
+	switch {
+	case strings.HasPrefix(r.URL.Path, "/.well-known/"):
+		p.metadata(out, r, &told)
+		return
+	case r.URL.Path == PageToken:
+		p.token(out, r, &told)
+		return
+	case r.URL.Path == PageRevoke:
+		p.revoke(out, r, &told)
 		return
 	}
 	if r.Method != http.MethodGet && r.Method != http.MethodHead {
@@ -257,6 +307,10 @@ func (p *Pages) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		p.beginSignOn(out, r, &told)
 	case PageCallback:
 		p.callback(out, r, &told)
+	case PageAuthorize:
+		p.authorize(out, r, &told)
+	case PageAllow:
+		p.allow(out, r, &told)
 	default:
 		p.draw(out, &told, http.StatusNotFound, "notHere", &page{Title: "Not here"})
 	}
@@ -366,7 +420,11 @@ func (p *Pages) signedIn(out *reply, r *http.Request, told *Request) (store.Prin
 			return principal, sess, true
 		}
 	}
-	redirect(out, PageSignIn+"?next="+url.QueryEscape(r.URL.Path))
+	back := r.URL.Path
+	if r.Method == http.MethodGet && r.URL.RawQuery != "" {
+		back = r.URL.RequestURI()
+	}
+	redirect(out, PageSignIn+"?next="+url.QueryEscape(back))
 	return store.Principal{}, nil, false
 }
 
@@ -413,6 +471,10 @@ func (p *Pages) account(out *reply, r *http.Request, told *Request) {
 			if err = p.accounts.ClearSecondStep(r.Context(), "", as); err == nil {
 				shown.Note = "Your second step is taken away."
 			}
+		case "end-grant":
+			if err = p.accounts.EndGrant(r.Context(), r.FormValue("grant"), as); err == nil {
+				shown.Note = "The client holds no pass any more."
+			}
 		case "end":
 			if err = p.accounts.EndSession(r.Context(), r.FormValue("session"), as); err == nil {
 				if r.FormValue("session") == sess.ID {
@@ -433,7 +495,9 @@ func (p *Pages) account(out *reply, r *http.Request, told *Request) {
 	}
 	var err error
 	if shown.Has, shown.Needs, err = p.accounts.HasSecondStep(r.Context(), "", as); err == nil {
-		shown.List, err = p.accounts.Sessions(r.Context(), "", as)
+		if shown.List, err = p.accounts.Sessions(r.Context(), "", as); err == nil {
+			shown.Grants, err = p.accounts.Grants(r.Context(), "", as)
+		}
 	}
 	if err != nil {
 		told.Code = codeOf(err)
@@ -710,7 +774,23 @@ func drawn(name string, d *page) string {
 			hidden(&b, "session", s.ID)
 			b.WriteString(`<button type="submit">End</button></form></td></tr>`)
 		}
-		b.WriteString("</table>")
+		b.WriteString("</table>\n<h2>Clients you allowed</h2>\n")
+		if len(d.Grants) == 0 {
+			b.WriteString("<p>None. A client you allow, such as Claude, is listed here, and you end it here.</p>")
+		} else {
+			b.WriteString("<table>")
+			for _, g := range d.Grants {
+				b.WriteString("<tr><td><strong>" + esc(g.ClientName) + "</strong>")
+				if g.Agent != "" {
+					b.WriteString(", acting for you as " + esc(g.Agent))
+				}
+				b.WriteString("<br>allowed " + esc(moment(g.CreatedAt)) + ", last renewed " + esc(moment(g.UsedAt)) + `</td><td><form class="inline" method="post" action="` + PageAccount + `">`)
+				hidden(&b, "do", "end-grant")
+				hidden(&b, "grant", g.ID)
+				b.WriteString(`<button type="submit">End</button></form></td></tr>`)
+			}
+			b.WriteString("</table>")
+		}
 	case "setPassword":
 		b.WriteString("<p>Choose the password of <strong>" + esc(d.User) + "</strong>: at least 12 characters. A sentence of four or five words is long enough and easy to remember.</p>\n")
 		b.WriteString(`<form method="post" action="` + PagePassword + `">`)
@@ -723,6 +803,46 @@ func drawn(name string, d *page) string {
 		b.WriteString("<p>You are signed in as <strong>" + esc(d.User) + "</strong>.</p>\n<p><a href=\"" + esc(d.Next) + "\">Go on</a></p>")
 	case "passwordSet":
 		b.WriteString(`<p class="note">The password of ` + esc(d.User) + ` is set.</p>` + "\n<p><a href=\"" + PageSignIn + "\">Sign in</a></p>")
+	case "onward":
+		b.WriteString("<p><a href=\"" + esc(d.Next) + "\">Go on</a></p>")
+	case "consent":
+		a := d.Asked
+		host := a.Client.Host()
+		if a.Client.Address == store.AddressAgents {
+			b.WriteString("<p><strong>" + esc(a.Client.Name) + "</strong> (" + esc(host) + ") wants to act for you, <strong>" + esc(d.User) +
+				"</strong>, in this database, as the agent " + esc(d.Agent) + ".</p>\n<p>It may do what your groups let you do")
+		} else {
+			b.WriteString("<p><strong>" + esc(a.Client.Name) + "</strong> (" + esc(host) + ") wants to use this database as you, <strong>" + esc(d.User) +
+				"</strong>.</p>\n<p>It may do what your groups let you do")
+		}
+		if len(d.Groups) > 0 {
+			b.WriteString(", in " + esc(strings.Join(d.Groups, ", ")))
+		}
+		if len(d.System) > 0 {
+			b.WriteString(", and the work of " + esc(strings.Join(d.System, ", ")))
+		}
+		b.WriteString(", until you end it on your account page.")
+		if a.Client.Address == store.AddressAgents {
+			b.WriteString(" Where a class asks for a person, it is refused.")
+		}
+		b.WriteString("</p>\n")
+		to := originOfURI(a.RedirectURI)
+		if u, err := url.Parse(a.RedirectURI); err == nil && (u.Hostname() == "localhost" || strings.HasPrefix(u.Hostname(), "127.") || u.Hostname() == "::1") {
+			b.WriteString("<p>Its pass goes to a program on your own computer, at " + esc(to) + ". Allow it only if you started that program.</p>\n")
+		} else {
+			b.WriteString("<p>Its pass goes to " + esc(to) + ".</p>\n")
+		}
+		b.WriteString(`<form class="inline" method="post" action="` + PageAllow + `">`)
+		hidden(&b, "request", d.Request)
+		hidden(&b, "do", "allow")
+		b.WriteString(`<button type="submit">Allow</button></form> <form class="inline" method="post" action="` + PageAllow + `">`)
+		hidden(&b, "request", d.Request)
+		hidden(&b, "do", "deny")
+		b.WriteString(`<button type="submit">Deny</button></form>`)
+	case "requestGone":
+		b.WriteString("<p>The request of the client ended, was answered, or is not one. Go back to the client and connect again.</p>")
+	case "notAllowed":
+		b.WriteString("<p>Nothing was sent to the client. If you followed a link to get here, the link may not be what it said.</p>")
 	case "linkGone":
 		b.WriteString("<p>This link does not hold: it was used, it ended, or it is not one. Ask an administrator of the database for a new one.</p>")
 	default:

@@ -1193,6 +1193,11 @@ database this way, and a Go program does with `Options.Users`.
 | [`end_session`](#end_session) | Ends a session: the next request with it is refused. A database administrator may end any, and a user its own. | writes |
 | [`clear_second_step`](#clear_second_step) | Takes away the second step of a user, for a person who lost the phone and its codes; it is set up again at the next sign-in when the user's system groups require one. A database administrator clears anybody's, and a user its own when its groups do not require one. | writes |
 | [`sign_ins`](#sign_ins) | Lists the log of sign-ins, refused ones among them, oldest first. It is a database administrator's. | reads |
+| [`add_client`](#add_client) | Adds a client the server gives passes to by OAuth: a face or an app of the company, or an agent. A client known by its published document, as Claude is, is never added. For a database administrator. | writes |
+| [`list_clients`](#list_clients) | Lists the clients an administrator added, removed ones too. For a database administrator. | reads |
+| [`remove_client`](#remove_client) | Removes a client: every grant of it ends. For a database administrator. | writes |
+| [`list_grants`](#list_grants) | Lists the clients a person allowed that still hold, never a pass. An administrator asks of anybody, a user of itself. | reads |
+| [`end_grant`](#end_grant) | Ends a grant: its passes are refused, and its agent's substitution is withdrawn. An administrator ends any, a person their own. | writes |
 | [`whoami`](#whoami) | Answers who the database takes the caller for. | reads |
 
 ### create_user
@@ -1407,6 +1412,77 @@ It answers:
 |---|---|
 | `sign_ins` | the sign-ins: their seq, when, the user named, the way, the address they came from and whether they were let through |
 
+### add_client
+
+Adds a client the server gives passes to by OAuth: a face or an app of the company, or an agent. A client known by its published document, as Claude is, is never added. For a database administrator. It writes; in Go it is the call `AddClient`.
+
+| Member | Type | | What it is |
+|---|---|---|---|
+| `id` | text | needed | the client_id it sends: letters, digits, dots, dashes and underscores |
+| `name` | text | needed | the name the person is shown |
+| `redirect_uris` | list of texts | needed | where its codes go: over https, or over http on its own machine |
+| `address` | text | needed | /v1, the commands, as the person; or /mcp, the door for agents, as the person's agent |
+
+And, of the members that mean the same everywhere: `for`.
+
+It answers:
+
+| Member | What it holds |
+|---|---|
+| `client` | the client as added |
+
+### list_clients
+
+Lists the clients an administrator added, removed ones too. For a database administrator. It reads; in Go it is the call `Clients`.
+
+It takes nothing of its own; of the members that mean the same everywhere, `for`.
+
+It answers:
+
+| Member | What it holds |
+|---|---|
+| `clients` | the clients, by id |
+
+### remove_client
+
+Removes a client: every grant of it ends. For a database administrator. It writes; in Go it is the call `RemoveClient`.
+
+| Member | Type | | What it is |
+|---|---|---|---|
+| `client` | text | needed | the id of the client |
+
+And, of the members that mean the same everywhere: `for`.
+
+It answers `{}`.
+
+### list_grants
+
+Lists the clients a person allowed that still hold, never a pass. An administrator asks of anybody, a user of itself. It reads; in Go it is the call `Grants`.
+
+| Member | Type | | What it is |
+|---|---|---|---|
+| `user` | text |  | the id of the user; left out, the caller |
+
+And, of the members that mean the same everywhere: `for`.
+
+It answers:
+
+| Member | What it holds |
+|---|---|
+| `grants` | the grants, oldest first: the person, the agent, the client, the address, the substitution, when allowed and last renewed, and when it ends unless renewed |
+
+### end_grant
+
+Ends a grant: its passes are refused, and its agent's substitution is withdrawn. An administrator ends any, a person their own. It writes; in Go it is the call `EndGrant`.
+
+| Member | Type | | What it is |
+|---|---|---|---|
+| `grant` | text | needed | the id of the grant, as list_grants shows it |
+
+And, of the members that mean the same everywhere: `for`.
+
+It answers `{}`.
+
 ### whoami
 
 Answers who the database takes the caller for. It reads; in Go it is the call `Whoami`.
@@ -1479,7 +1555,7 @@ Authorization: Bearer …
   | 400 | `bad_json` |
   | 401 | `sign_in_refused`, `unauthenticated` |
   | 403 | `forbidden`, `reason_required` |
-  | 404 | `unknown_class`, `unknown_document`, `unknown_table`, `unknown_schema`, `unknown_blob`, `unknown_action`, `unknown_row`, `unknown_user`, `unknown_inlet`, `unknown_key`, `unknown_session`, `unknown_command` |
+  | 404 | `unknown_class`, `unknown_document`, `unknown_table`, `unknown_schema`, `unknown_blob`, `unknown_action`, `unknown_row`, `unknown_user`, `unknown_inlet`, `unknown_key`, `unknown_session`, `unknown_client`, `unknown_grant`, `unknown_command` |
   | 409 | `key_reused`, `duplicate`, `terminal`, `wrong_state`, `guard_false` |
   | 413 | `blob_too_large`, `too_large` |
   | 422 | every other refusal |
@@ -1538,23 +1614,32 @@ A few calls of the Go package have no command.
 | Call | Why |
 |---|---|
 | `Action` | it answers one entry of the catalogue that list_actions answers whole |
+| `Allow` | a code never travels in a command: the server's page /auth/allow sends it to the client |
+| `AskConsent` | it keeps a client's request, which the server's page /auth/authorize took |
 | `Authenticate` | it answers who a key belongs to, for the door that is given the key; a caller that wants to know who it is sends whoami |
 | `BeginSignIn` | a password never travels in a command: the server's page /auth/signin takes it |
 | `ChangePassword` | a password never travels in a command: the server's page /auth/account takes it |
 | `Class` | it answers the engine's compiled form to a Go program; get_class answers the definition |
 | `Close` | closing a database is for the program that opened it |
 | `ConfirmMySecondStep` | its codes never travel in a command: the server's page /auth/account shows them |
+| `Consent` | it belongs to the server's page /auth/allow, which asks the person |
+| `Deny` | it belongs to the server's page /auth/allow, which asks the person |
+| `Exchange` | a code and a pass never travel in a command: the server's address /auth/token takes them |
 | `Exec` | it is the door the commands come through |
 | `FinishSignIn` | it belongs to a sign-in under way on the server's page /auth/signin |
 | `HasSecondStep` | the server's page /auth/account shows it to the person |
 | `Inlet` | it answers one entry of the list that list_inlets answers whole |
+| `KnownClient` | it answers a client to the server's page /auth/authorize; list_clients lists them |
 | `OpenBlob` | the bytes of a file are not JSON: they travel beside the commands, with the server |
 | `OpenFile` | the bytes of a file are not JSON: they travel beside the commands, with the server |
 | `OutboxCounts` | it counts what of the queue is still to do, for whoever watches a server, which answers it at GET /v1/metrics; outbox lists the actions themselves |
+| `PassCaller` | it answers who a pass belongs to, for the door that is given the pass; a caller that wants to know who it is sends whoami |
 | `PasswordLinkUser` | it belongs to the server's page /auth/password, which a link opens |
 | `Ping` | it asks whether the database answers; a server answers it at GET /v1/health, for anybody |
 | `PutBlob` | the bytes of a file are not JSON: they travel beside the commands, with the server |
 | `Receive` | it takes a message from outside, which proves itself and carries no key of a user: a server answers it at POST /v1/in/<inlet> |
+| `Renew` | a pass never travels in a command: the server's address /auth/token takes it |
+| `Revoke` | a pass never travels in a command: the server's address /auth/revoke takes it; end_grant ends a grant by its id |
 | `Schema` | it answers the engine's compiled form to a Go program; get_schema answers the definition |
 | `SessionCaller` | it answers who a session belongs to, for the door that is given the session; a caller that wants to know who it is sends whoami |
 | `SetUpMySecondStep` | its secret never travels in a command: the server's page /auth/account shows it |

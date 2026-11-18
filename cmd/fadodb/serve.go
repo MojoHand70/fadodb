@@ -93,6 +93,9 @@ list the hosts they may call:
       "idle_hours": 8,
       "days": 30
     },
+    "grants": {
+      "idle_days": 30
+    },
     "signon": {
       "microsoft": {
         "label": "Sign in with Microsoft",
@@ -121,9 +124,19 @@ fadodb user password. signon offers a company's sign-on (OpenID
 Connect: Microsoft, Google and others); its secret client_secret is
 found as a connection's is, as FADODB_SECRET_MICROSOFT__CLIENT_SECRET.
 
+A client a person allows is given passes by OAuth, which the server
+describes at /.well-known/oauth-authorization-server: an agent known
+by the document it publishes, as Claude is, and the faces and apps an
+administrator adds with the command add_client. A grant ends when no
+pass was renewed for 30 days; grants makes it shorter.
+
 The server runs no Go function: an action is the engine's own, or a
 request the server sends.
 `
+
+// documentOptions are how the server reads a client's document: from
+// the network outside alone. A test lets it read one from this machine.
+var documentOptions = signon.DocumentOptions{}
 
 // defaultListen is where the server listens when it is told nothing:
 // this machine only (ADR-0059, item 2).
@@ -232,7 +245,11 @@ func runServe(ctx context.Context, args []string, stdout, stderr io.Writer, read
 		}
 		signOn = set
 	}
-	pages, err := server.NewPages(db, server.PagesOptions{URL: told.url, Lengths: told.sessions, Report: report, SignOn: signOn})
+	// Clients are given passes by OAuth (ADR-0071, item 6): the ones an
+	// administrator added, and the ones known by the document they
+	// publish, as Claude is.
+	pages, err := server.NewPages(db, server.PagesOptions{URL: told.url, Lengths: told.sessions, Report: report, SignOn: signOn,
+		Documents: signon.NewDocuments(documentOptions), Unused: told.grants})
 	if err != nil {
 		fmt.Fprintf(stderr, "%s: %v\n", name, err)
 		return 1
@@ -459,8 +476,9 @@ func (s *served) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		s.counts(w, r)
 		return
 	}
-	// The pages where people sign in (ADR-0071, item 9).
-	if strings.HasPrefix(r.URL.Path, "/auth/") {
+	// The pages where people sign in, and how clients are given passes
+	// (ADR-0071, item 9).
+	if strings.HasPrefix(r.URL.Path, "/auth/") || strings.HasPrefix(r.URL.Path, "/.well-known/") {
 		s.pages.ServeHTTP(w, r)
 		return
 	}

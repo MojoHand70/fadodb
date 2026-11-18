@@ -345,7 +345,8 @@ owner's to strike:
 9. **A form of the pages, and a command sent with a session, are taken
    only from the server's own origin**, as the browser says in `Origin`,
    or in `Sec-Fetch-Site` when it sends no `Origin`. The pages forbid
-   being framed, send no referrer, and allow no script.
+   being framed, send no referrer to another site (item 36), and allow
+   no script.
 10. **The commands** are `create_password_link`, `list_sessions`,
     `end_session`, `clear_second_step` and `sign_ins`, named by the rule
     of ADR-0055, item 2. A password, a code and a session's token
@@ -394,6 +395,112 @@ to strike:
 19. **The secret is `client_secret`** of the sign-on's name, found as a
     connection's secret is; a sign-on and a connection never share a
     name. The server says when it starts that a sign-on has no secret.
+
+The third pull request built the passes of clients and the agent a
+person connects (items 6, 7 and 8, and the part of items 9, 10 and 12
+that is theirs). Settled by me, each the owner's to strike:
+
+20. **What the record calls a connection is a grant** in the commands
+    and the code: `list_grants`, `end_grant`, `unknown_grant`. A
+    connection is already the outbound connection of an action
+    (ADR-0045), with its own code `unknown_connection`. The account page
+    says "Clients you allowed".
+21. **A client is for one address.** A client known by its document is
+    given passes for `/mcp` alone, as an agent; a client an
+    administrator adds names `/v1`, for a face or an app, whose pass is
+    the person, or `/mcp`, for an agent. A request that names no
+    `resource` is for the client's address.
+22. **A client holds no secret.** Every client proves each code with
+    PKCE, and the server says `none` alone at its token address, which
+    is what makes Claude name itself by its document. A request with a
+    client secret is refused with `invalid_client`.
+23. **A client's document is read each time a person is asked**, and
+    kept nowhere: over HTTPS, at most 5 KB, within five seconds, past no
+    redirect and through no proxy, never from an address of RFC 6890
+    (asked of the address the connection is made to, after the name is
+    looked up), at most eight at once. Its `client_id` is the address it
+    was read from; a document with a client secret, or whose client
+    proves itself otherwise than with PKCE, is refused; its addresses
+    that are neither https nor http on the client's machine are left
+    out; without a name, its host names it.
+24. **The page that asks is `/auth/allow`.** `/auth/authorize` checks
+    the request and keeps it a quarter of an hour, and its page sends
+    the browser on by itself, so that the browser sends the session's
+    cookie, which it holds back on a request another site began. A
+    person with no session signs in on the way and comes back. The page
+    shows the client's name and host, the agent's id, the person's
+    groups and system groups, and where the pass goes, with a warning
+    when that is a program on the person's own computer; its form may
+    go to that address alone. The person is asked every time.
+25. **Where a refusal goes.** A client the server does not know, an
+    address the client is not sent codes at, and a member given twice
+    are told to the person on the page, and nothing is sent to the
+    client; every other refusal goes back to the client, with its state
+    and the server's own name (RFC 9207).
+26. **A code holds once and for five minutes.** A code that failed once
+    is spent; one shown a second time ends the grant it gave. Codes and
+    requests are kept in memory, at most 10,000 of each: a server that
+    starts again forgets them, and the client asks again.
+27. **The passes** are `fadoat_` for an address and `fadort_` to renew
+    it, each an id and a secret of which the database keeps the hash.
+    The pass for an address is held in memory and checked with no
+    read; renewing reads the database. A pass of an earlier renewal
+    holds to the end of its hour.
+28. **A grant ends** when its person or an administrator ends it; when
+    its client gives either pass back (RFC 7009); when a renewing pass
+    or a code is shown twice; when an administrator removes its client;
+    when its substitution is withdrawn, found at the next pass; and when
+    no pass was renewed for 30 days, found when a pass is renewed or
+    grants are listed, so that the server needs no clock of its own for
+    it. A disabled person or agent is refused and the grant kept, as a
+    session is.
+29. **The agent and its substitution are made when the first code is
+    exchanged**, not when the person allows, so that a code never
+    exchanged leaves nothing. The agent is named after the client and
+    the person, "Claude for Ann", and the change is recorded as
+    `agent_connected`, by the person. A substitution for every class
+    that stands is used again; otherwise the person gives a new one. It
+    is withdrawn when the agent's last grant ends, as the engine's own
+    command, recorded as by whoever ended the grant. An agent an
+    administrator disabled stays disabled: connecting again is refused.
+30. **An id with a `~` is the server's.** `create_user` refuses one, so
+    that no user takes the id of an agent a person may connect.
+31. **The agent acts for its person alone.** A command of it that names
+    somebody else under `for` is refused with `forbidden`. A stream of
+    changes is heard as oneself (ADR-0058) and the agent always acts
+    for its person, so it opens none; the tool that waits, later in
+    this phase, settles how an agent waits.
+32. **The commands** are `add_client`, `list_clients`, `remove_client`,
+    `list_grants` and `end_grant`, with the codes `unknown_client` and
+    `unknown_grant`, 404. The door for agents offers all five: their
+    answers hold no secret. A client's id is 1 to 64 letters, digits,
+    dots, dashes and underscores, never given again; its addresses are
+    over https, or over http on the client's machine, whose port may
+    then be any (RFC 8252).
+33. **The settings** take `grants.idle_days`, 1 to 30. Without `url`,
+    clients are given passes on the machine itself only, as people sign
+    in there.
+34. **The server publishes** `/.well-known/oauth-authorization-server`
+    and `/.well-known/oauth-protected-resource/v1`; the one of `/mcp`
+    comes with the door at `/mcp`. The addresses a client calls answer
+    a page of any site, since they take no cookie; the commands that
+    answer a page of another site wait for the kit.
+35. **The test against Claude's real connector** needs the door at
+    `/mcp` and a server Claude reaches: it comes with step 6. This pull
+    request is tested against the protocol's rules, with a client's
+    document published over HTTPS on the test machine.
+36. **A form of the pages was refused in a real browser.** With no
+    referrer at all, Chromium sends the `Origin` of a form as `null`,
+    which item 9 took for another site: every form of the pages,
+    signing in among them, was refused with 403. The tests had sent
+    `Origin` themselves. The pages now send a referrer to the server
+    itself alone (`same-origin`), never to another site, and a form
+    whose `Origin` is `null` is taken when the browser says, in
+    `Sec-Fetch-Site`, that it comes from the same origin. Headless
+    Chromium found it, and then showed a connection working: the
+    session's cookie held back on a request another site began, sent
+    after the page that sends on, and the code reaching the client
+    after Allow.
 
 ## Consequences
 

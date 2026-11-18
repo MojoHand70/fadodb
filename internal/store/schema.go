@@ -62,8 +62,15 @@ var engineDDL = []string{
 	// marks one whose address was closed.
 	`CREATE TABLE IF NOT EXISTS inlets (name TEXT PRIMARY KEY COLLATE NOCASE, version INTEGER NOT NULL, json TEXT NOT NULL, removed INTEGER NOT NULL DEFAULT 0, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)`,
 	`CREATE TABLE IF NOT EXISTS inlet_versions (inlet TEXT NOT NULL COLLATE NOCASE, version INTEGER NOT NULL, json TEXT NOT NULL, created_at INTEGER NOT NULL, PRIMARY KEY (inlet, version))`,
-	// Who defined each version of a class, a schema, a table, an action
-	// and an inlet, and when (ADR-0052, item 7): a row for every version,
+	// The words of a class, a table or a schema in another language
+	// (ADR-0068, item 6), each with every version it had. removed marks
+	// words that were taken away.
+	`CREATE TABLE IF NOT EXISTS words (kind TEXT NOT NULL, target TEXT NOT NULL COLLATE NOCASE, language TEXT NOT NULL COLLATE NOCASE, version INTEGER NOT NULL, json TEXT NOT NULL,
+		removed INTEGER NOT NULL DEFAULT 0, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, PRIMARY KEY (kind, target, language))`,
+	`CREATE TABLE IF NOT EXISTS words_versions (kind TEXT NOT NULL, target TEXT NOT NULL COLLATE NOCASE, language TEXT NOT NULL COLLATE NOCASE, version INTEGER NOT NULL, json TEXT NOT NULL,
+		created_at INTEGER NOT NULL, PRIMARY KEY (kind, target, language, version))`,
+	// Who defined each version of a class, a schema, a table, an action,
+	// an inlet and words, and when (ADR-0052, item 7): a row for every version,
 	// never changed.
 	`CREATE TABLE IF NOT EXISTS definitions (what TEXT NOT NULL, name TEXT NOT NULL COLLATE NOCASE, version INTEGER NOT NULL, defined_at INTEGER NOT NULL,
 		defined_by TEXT, defined_kind TEXT, defined_for TEXT, PRIMARY KEY (what, name, version))`,

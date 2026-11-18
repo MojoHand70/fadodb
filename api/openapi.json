@@ -996,6 +996,65 @@
         "x-fado-mark": "writes"
       }
     },
+    "/v1/define_words": {
+      "post": {
+        "description": "It writes. In Go it is the call `DefineWords`.",
+        "operationId": "define_words",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "definition": {
+                    "description": "the definition, as JSON",
+                    "type": "object"
+                  },
+                  "for": {
+                    "description": "the id of whoever the caller acts for; let through only while a substitution says so",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "definition"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "words": {
+                      "description": "the definition as it was given, with its name, its version and who defined it, and a note for each path the class no longer has"
+                    }
+                  },
+                  "required": [
+                    "words"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "The command ran."
+          },
+          "default": {
+            "$ref": "#/components/responses/Refused"
+          }
+        },
+        "summary": "Defines the words of a class, a table or a schema in another language: the label and the description of each thing, by its path. It makes no new version of what it translates.",
+        "tags": [
+          "Definitions"
+        ],
+        "x-fado-call": "DefineWords",
+        "x-fado-mark": "writes"
+      }
+    },
     "/v1/definitions": {
       "post": {
         "description": "It reads. In Go it is the call `Definitions`.",
@@ -1007,11 +1066,11 @@
                 "additionalProperties": false,
                 "properties": {
                   "name": {
-                    "description": "its name",
+                    "description": "its name; for words, what they translate, its name and the language: class/Invoice/pl",
                     "type": "string"
                   },
                   "what": {
-                    "description": "class, schema, table, action or inlet",
+                    "description": "class, schema, table, action, inlet or words",
                     "type": "string"
                   }
                 },
@@ -1048,7 +1107,7 @@
             "$ref": "#/components/responses/Refused"
           }
         },
-        "summary": "Lists the versions of one class, schema, table, action or inlet, with who defined each and when.",
+        "summary": "Lists the versions of one class, schema, table, action, inlet or words, with who defined each and when.",
         "tags": [
           "Definitions"
         ],
@@ -1905,6 +1964,77 @@
         "x-fado-mark": "reads"
       }
     },
+    "/v1/get_words": {
+      "post": {
+        "description": "It reads. In Go it is the call `Definition`.",
+        "operationId": "get_words",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "class": {
+                    "description": "the class they translate",
+                    "type": "string"
+                  },
+                  "language": {
+                    "description": "the language, a tag of BCP 47: pl, pt-BR",
+                    "type": "string"
+                  },
+                  "schema": {
+                    "description": "the schema, in place of a class",
+                    "type": "string"
+                  },
+                  "table": {
+                    "description": "the table, in place of a class",
+                    "type": "string"
+                  },
+                  "version": {
+                    "description": "an earlier version; the current one when left out",
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "language"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "words": {
+                      "description": "the definition as it was given, with its name, its version and who defined it, and a note for each path the class no longer has"
+                    }
+                  },
+                  "required": [
+                    "words"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "The command ran."
+          },
+          "default": {
+            "$ref": "#/components/responses/Refused"
+          }
+        },
+        "summary": "Reads the words of a class, a table or a schema in one language back as they were defined.",
+        "tags": [
+          "Definitions"
+        ],
+        "x-fado-call": "Definition",
+        "x-fado-mark": "reads"
+      }
+    },
     "/v1/health": {
       "get": {
         "description": "It asks for no key and says nothing of what the database holds. It is answered by `fadodb serve`.",
@@ -2517,6 +2647,70 @@
           "Users, groups and keys"
         ],
         "x-fado-call": "Users",
+        "x-fado-mark": "reads"
+      }
+    },
+    "/v1/list_words": {
+      "post": {
+        "description": "It reads. In Go it is the call `ListWords`.",
+        "operationId": "list_words",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "class": {
+                    "description": "only the words of this class",
+                    "type": "string"
+                  },
+                  "language": {
+                    "description": "only the words in this language",
+                    "type": "string"
+                  },
+                  "schema": {
+                    "description": "only the words of this schema",
+                    "type": "string"
+                  },
+                  "table": {
+                    "description": "only the words of this table",
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "words": {
+                      "description": "the words, in the order first defined, each with its name, its version, who defined it and a note for each path the class no longer has"
+                    }
+                  },
+                  "required": [
+                    "words"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "The command ran."
+          },
+          "default": {
+            "$ref": "#/components/responses/Refused"
+          }
+        },
+        "summary": "Lists the words in other languages: of every class, table and schema, or of the one named, in every language or in the one named.",
+        "tags": [
+          "Definitions"
+        ],
+        "x-fado-call": "ListWords",
         "x-fado-mark": "reads"
       }
     },
@@ -3383,6 +3577,70 @@
           "Definitions"
         ],
         "x-fado-call": "RemoveInlet",
+        "x-fado-mark": "writes"
+      }
+    },
+    "/v1/remove_words": {
+      "post": {
+        "description": "It writes. In Go it is the call `RemoveWords`.",
+        "operationId": "remove_words",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "class": {
+                    "description": "the class they translate",
+                    "type": "string"
+                  },
+                  "for": {
+                    "description": "the id of whoever the caller acts for; let through only while a substitution says so",
+                    "type": "string"
+                  },
+                  "language": {
+                    "description": "the language",
+                    "type": "string"
+                  },
+                  "schema": {
+                    "description": "the schema, in place of a class",
+                    "type": "string"
+                  },
+                  "table": {
+                    "description": "the table, in place of a class",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "language"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {},
+                  "type": "object"
+                }
+              }
+            },
+            "description": "The command ran."
+          },
+          "default": {
+            "$ref": "#/components/responses/Refused"
+          }
+        },
+        "summary": "Takes away the words of a class, a table or a schema in one language: a page shows it in its own words from then on. Their versions stay.",
+        "tags": [
+          "Definitions"
+        ],
+        "x-fado-call": "RemoveWords",
         "x-fado-mark": "writes"
       }
     },

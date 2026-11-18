@@ -164,8 +164,8 @@ before one that removes:
 <!-- the marks -->
 | The command | Tools | `readOnlyHint` | `destructiveHint` | `openWorldHint` |
 |---|---|---|---|---|
-| reads | 40 | true | false | false |
-| writes | 20 | false | false | false |
+| reads | 42 | true | false | false |
+| writes | 22 | false | false | false |
 | writes, and runs an action now: `try_action`, `drain` | 2 | false | false | true |
 | removes: `delete` | 1 | false | true | false |
 

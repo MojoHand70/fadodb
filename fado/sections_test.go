@@ -1,6 +1,7 @@
 package fado_test
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"os"
@@ -11,13 +12,15 @@ import (
 	"github.com/MojoHand70/fadodb/fado"
 )
 
-// classIn returns the class of a chapter of the manual by its name.
+// classIn returns the class of a chapter of the manual by its name,
+// with the line endings of a checkout on Windows made plain.
 func classIn(t *testing.T, chapter, name string) []byte {
 	t.Helper()
 	page, err := os.ReadFile(filepath.Join("..", "docs", "manual", chapter))
 	if err != nil {
 		t.Fatal(err)
 	}
+	page = bytes.ReplaceAll(page, []byte("\r\n"), []byte("\n"))
 	for _, class := range notionClasses(t, page) {
 		if className(string(class)) == name {
 			return class

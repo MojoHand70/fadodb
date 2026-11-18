@@ -337,8 +337,8 @@ browser VM, which is built: every function a page runs, exact numbers
 and money too, passing every case of the conformance suite a page runs,
 200 formulas recalculated in about 13 µs of the 1,000 µs budget, and
 attached to every release; what a class says to people (ADR-0068),
-whose labels, descriptions, columns of The List and formats are built
-and whose words in other languages are not yet; the sections of a class
+whose labels, descriptions, columns of The List, formats and words in
+other languages are built; the sections of a class
 (ADR-0069, the screen being the face's and no layout the engine's),
 which are built: the outline of a class, a section inside a section,
 and a section's rights for every variable in it, the most specific name

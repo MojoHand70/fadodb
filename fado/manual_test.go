@@ -31,7 +31,7 @@ func TestManualExamples(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		var classes, tables, actions, schemas, pieces []string
+		var classes, tables, actions, schemas, words, pieces []string
 		for _, m := range block.FindAllSubmatch(data, -1) {
 			switch kindOf(m[1]) {
 			case "class":
@@ -42,6 +42,8 @@ func TestManualExamples(t *testing.T) {
 				actions = append(actions, string(m[1]))
 			case "schema":
 				schemas = append(schemas, string(m[1]))
+			case "words":
+				words = append(words, string(m[1]))
 			case "document", "answer":
 				// A document as the engine answers it, or the answer of a
 				// command. The test of its chapter compares it with the
@@ -69,6 +71,9 @@ func TestManualExamples(t *testing.T) {
 				funcs[def.Name] = func(context.Context, *fado.ActionCall) (fado.Values, error) { return nil, nil }
 			}
 		}
+		// Words in another language are defined beside the class, the
+		// table or the schema they translate, and must be taken.
+		tried := make([]bool, len(words))
 		for i, class := range classes {
 			db, err := fado.Open(filepath.Join(t.TempDir(), "manual.fado"), fado.Options{Outbox: fado.OutboxOptions{Manual: true}, Actions: funcs})
 			if err != nil {
@@ -105,7 +110,22 @@ func TestManualExamples(t *testing.T) {
 			} else if notes := withoutDescriptions(cls.Notes); len(notes) > 0 {
 				t.Errorf("%s: the class %s leaves a rule out: %v", name, cls.Name, notes)
 			}
+			for j, w := range words {
+				var of fado.WordsOf
+				json.Unmarshal([]byte(w), &of)
+				if strings.EqualFold(of.Class, className(class)) || of.Class == "" && i == len(classes)-1 {
+					tried[j] = true
+					if _, err := db.DefineWords(ctx, []byte(w), setup); err != nil {
+						t.Errorf("%s: words %d are refused: %v", name, j+1, err)
+					}
+				}
+			}
 			db.Close()
+		}
+		for j, done := range tried {
+			if !done {
+				t.Errorf("%s: words %d translate a class the chapter does not show", name, j+1)
+			}
 		}
 		for _, piece := range pieces {
 			found := false
@@ -121,7 +141,7 @@ func TestManualExamples(t *testing.T) {
 		if len(classes) == 0 && len(tables)+len(actions) > 0 {
 			t.Errorf("%s shows a table or an action and no class that uses it", name)
 		}
-		t.Logf("%s: %d classes, %d tables and %d actions defined, %d pieces found in them", name, len(classes), len(tables), len(actions), len(pieces))
+		t.Logf("%s: %d classes, %d tables, %d actions and %d words defined, %d pieces found in them", name, len(classes), len(tables), len(actions), len(words), len(pieces))
 	}
 }
 
@@ -197,9 +217,9 @@ func className(definition string) string {
 }
 
 // kindOf says what a block of JSON in the manual is: a whole class, a
-// whole table, a whole action definition, a whole schema, a document as
-// the engine answers it, the answer of a command, or a piece of one of
-// them.
+// whole table, a whole action definition, a whole schema, the words of
+// one of them in another language, a document as the engine answers it,
+// the answer of a command, or a piece of one of them.
 func kindOf(block []byte) string {
 	var whole struct {
 		Name      string          `json:"name"`
@@ -212,6 +232,9 @@ func kindOf(block []byte) string {
 		Fields    json.RawMessage `json:"fields"`
 		Document  json.RawMessage `json:"document"`
 		Error     json.RawMessage `json:"error"`
+		Language  string          `json:"language"`
+		Table     string          `json:"table"`
+		Schema    string          `json:"schema"`
 	}
 	if json.Unmarshal(block, &whole) != nil {
 		return "piece"
@@ -221,6 +244,9 @@ func kindOf(block []byte) string {
 	}
 	if whole.Class != "" && whole.Values != nil {
 		return "document"
+	}
+	if whole.Language != "" && whole.Name == "" && (whole.Class != "" || whole.Table != "" || whole.Schema != "") {
+		return "words"
 	}
 	if whole.Name == "" {
 		return "piece"

@@ -305,11 +305,9 @@ long form ([tables](tables.md), [schemas and objects](schemas-and-objects.md)).
 
 Changing a label, a description, `list` or a format is a change of the
 class like any other: it makes a new version, and moves no document
-([change a class](guides/change-a-class.md)).
-
-> **Status.** The words of a class in other languages, kept beside the
-> class as definitions of their own (ADR-0068, item 6), are not built
-> yet.
+([change a class](guides/change-a-class.md)). The same words in
+another language are kept beside the class:
+[words in other languages](#words-in-other-languages).
 
 ## Sections
 
@@ -430,6 +428,75 @@ A refusal names the variable, and its hint names the line that
 decided, `review / amounts`, so that a designer and an agent see which
 line to change. [Rights](#rights) gives the whole order the lines are
 looked in.
+
+## Words in other languages
+
+A name is never translated: `net` is `net` in every formula, command
+and log. What a person reads is, and the words of a class in another
+language are a definition of their own, kept beside the class. Ola
+works in Polish, and reads the invoice above in these words:
+
+```json
+{
+  "class": "Invoice",
+  "language": "pl",
+  "label": "Faktura",
+  "description": "Faktura dostawcy, od przyjęcia do zapłaty.",
+  "variables": {
+    "customer":     {"label": "Dostawca"},
+    "number":       {"label": "Numer"},
+    "net":          {"label": "Kwota netto"},
+    "total":        {"label": "Razem"},
+    "has_delivery": {"label": "Dostarczono do nas"},
+    "street":       {"label": "Ulica"},
+    "city":         {"label": "Miasto"},
+    "notes":        {"label": "Uwagi"}
+  },
+  "sections": {
+    "supplier": {"label": "Dostawca", "description": "Kto przysłał fakturę."},
+    "amounts":  {"label": "Kwoty"},
+    "delivery": {"label": "Dostawa"},
+    "address":  {"label": "Adres", "description": "Adres z dokumentu dostawy."}
+  },
+  "states":      {"draft": {"label": "Szkic"}, "review": {"label": "Do zatwierdzenia"}, "paid": {"label": "Zapłacona"}},
+  "transitions": {"file": {"label": "Wyślij do zatwierdzenia"}, "approve": {"label": "Zatwierdź"}}
+}
+```
+
+- **Each thing is named by its path**: a variable by its name, a
+  column of a `rows` variable as `lines.qty`, a section, a state and a
+  transition by their names. Each has a `label`, a `description` or
+  both. A path the class does not have is refused with `bad_value` and
+  its place, and words that say nothing with `missing`.
+- **The language is a tag of BCP 47**, written as the standard writes
+  it: `pl`, `de`, `pt-BR`, `zh-Hant`. `pt-br` is refused, and the hint
+  gives `pt-BR`.
+- **A word left out is the class's own.** Ola reads `VAT` beside the
+  Polish words, because the words above do not give one.
+- **The words make no new version of the class**, and touch no
+  document. Defining them again makes their next version, and each
+  version is kept with who defined it: `definitions` with `"what":
+  "words"` and the name `class/Invoice/pl` lists them.
+- **A later version of the class that drops a variable** leaves its
+  words in place, unused. `list_words` and `get_words` note each such
+  path, code `unused_words`; the words defined again without it clear
+  the note.
+- **A table and a schema have words too**, with `"table"` or
+  `"schema"` in place of `"class"`: a table its `label`, its
+  `description` and its `columns`, a schema its `fields`. The fields of
+  an object variable are its schema's, and are given in the schema's
+  words.
+
+| Command | What it does | Who may |
+|---|---|---|
+| `define_words` | defines the words of one class, table or schema in one language, or their next version | a designer |
+| `get_words` | reads them back: `{"class": "Invoice", "language": "pl"}` | every caller |
+| `list_words` | lists them: all, of one thing, or in one language | every caller |
+| `remove_words` | takes them away; their versions stay | a designer |
+
+> **Status.** A page asks for the words of its person's language with
+> the class in one call, the bundle, which is the record after this
+> one and not built yet. Until then it asks `get_words`.
 
 ## Rules
 

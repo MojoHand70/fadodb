@@ -292,7 +292,7 @@ these documents hold a file that the store does not have:
 <!-- the size -->
 | What | The file |
 |---|---|
-| a new database, with no class | about 200 KB |
+| a new database, with no class | about 250 KB |
 | a receipt created, or changed | about half a kilobyte more each time |
 | a receipt deleted | not smaller. Its versions and its events stay |
 

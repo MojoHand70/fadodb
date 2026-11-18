@@ -139,6 +139,11 @@ type (
 	Message    = store.Message
 	Receipt    = store.Receipt
 	InletTrial = store.InletTrial
+	// WordsInfo is one definition of the words of a class, a table or a
+	// schema in another language (ADR-0068, item 6), and WordsOf names
+	// the words of one thing in one language.
+	WordsInfo = store.WordsInfo
+	WordsOf   = store.WordsOf
 	// Outbound sends the HTTP requests of declared actions, in
 	// Options.Outbound (ADR-0045, item 7); package fado/outbound makes one
 	// that calls only the hosts a program lists. OutboundRequest and
@@ -448,6 +453,7 @@ const (
 	DefinitionTable  = store.DefinitionTable
 	DefinitionAction = store.DefinitionAction
 	DefinitionInlet  = store.DefinitionInlet
+	DefinitionWords  = store.DefinitionWords
 )
 
 // Definitions lists the versions of one class, schema, table or action,
@@ -657,6 +663,31 @@ func (db *DB) Inlet(name string) (*InletInfo, bool) { return db.s.Inlet(name) }
 // it as its next version. It is for a database administrator.
 func (db *DB) RemoveInlet(ctx context.Context, name string, opts ...Option) error {
 	return db.s.RemoveInlet(ctx, name, opts...)
+}
+
+// DefineWords stores the words of a class, a table or a schema in
+// another language (ADR-0068, item 6): the label and the description of
+// each thing that has one, named by its path, checked against the
+// current version of what they translate. A path it does not have is
+// refused with bad_value. It makes no new version of what it translates
+// and touches no document; the same words again are a no-op, and other
+// words are their next version. It is for the system group designers.
+func (db *DB) DefineWords(ctx context.Context, definition []byte, opts ...Option) (*WordsInfo, error) {
+	return db.s.DefineWords(ctx, definition, opts...)
+}
+
+// ListWords lists the words of the database, each with its version, who
+// defined it, and a note for each path that what it translates no longer
+// has. A field of of narrows the list; an empty one lists every one. It
+// is open to every caller. Definition reads the words themselves, under
+// DefinitionWords and the name a listing gives, class/Invoice/pl.
+func (db *DB) ListWords(of WordsOf) []WordsInfo { return db.s.ListWords(of) }
+
+// RemoveWords takes away the words of one thing in one language: a page
+// shows it in its own words from then on. Their versions stay. It is for
+// the system group designers.
+func (db *DB) RemoveWords(ctx context.Context, of WordsOf, opts ...Option) error {
+	return db.s.RemoveWords(ctx, of, opts...)
 }
 
 // TryInlet answers what an inlet would do with a message, and does

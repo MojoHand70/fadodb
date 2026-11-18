@@ -1314,7 +1314,7 @@ in 13.7 ns with no allocation, and the core binary is 2.9 MB
 | Indexed filter over 1,000,000 documents | < 10 ms |
 | `mining_dfg` over 10,000,000 state visits, full build | < 2 s |
 | Browser VM recalculation of 200 formulas | < 1 ms |
-| Lite binary and library size | ≤ 15 MB |
+| Lite binary and library size | ≤ 20 MB (ADR-0072) |
 | Open an existing database | < 50 ms |
 | Encode a 50-variable document to JSON | < 5 µs |
 

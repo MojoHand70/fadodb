@@ -4,7 +4,8 @@
 # allow outbound calls links no HTTP client.
 # See docs/adr/0002-pure-go-core-and-dependency-budget.md,
 # docs/adr/0045-actions-are-an-extension-point.md, item 7, and
-# docs/adr/0059-fadodb-serve.md, item 4.
+# docs/adr/0059-fadodb-serve.md, item 4, and
+# docs/adr/0072-the-size-budget-of-the-core-program.md, item 3.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -46,6 +47,13 @@ CGO_ENABLED=0 go build -o "$out/fadodb" ./cmd/fadodb
 go tool nm "$out/fadodb" > "$out/fadodb.symbols"
 if ! grep -q "$round_trip" "$out/fadodb.symbols"; then
   echo "depgate: the fadodb tool links no HTTP client, so this gate no longer sees one where there is one"
+  missing=1
+fi
+
+# No package that calls methods by their names (ADR-0072, item 3): a
+# template keeps every method of the program, which made it 2 MB larger.
+if go list -deps ./cmd/fadodb | grep -qE '^(text|html)/template$'; then
+  echo "depgate: the core program imports text/template or html/template, which keep every method of the program (ADR-0072)"
   missing=1
 fi
 

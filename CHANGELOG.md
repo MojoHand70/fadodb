@@ -8,6 +8,28 @@ All notable changes to FadoDB are recorded here. The format follows
 
 ### Added
 
+- Signing in, part 3 (ADR-0071, items 6 to 8): passes for clients, by
+  OAuth 2.1. A client sends the person to `/auth/authorize`; the
+  server's page `/auth/allow` asks "Claude (claude.ai) wants to act for
+  you. Allow?"; the client exchanges its code, proven with PKCE (S256),
+  at `/auth/token` for a pass of one hour, `fadoat_`, and a renewing
+  pass that changes each time it is used: one used twice ends the
+  grant. A pass is for one address. Claude, known by the document it
+  publishes, is given passes for the door for agents, as an agent of
+  the person's own, `ann~claude.ai`, which the server makes with a
+  substitution the person gives, and which has the person's groups and
+  system groups while it acts for them. A face or an app that an
+  administrator adds with `add_client` is given passes for the
+  commands, as the person. New commands `add_client`, `list_clients`,
+  `remove_client`, `list_grants`, `end_grant`; codes `unknown_client`
+  and `unknown_grant`; the setting `grants.idle_days`; the account page
+  lists the clients a person allowed. The server publishes
+  `/.well-known/oauth-authorization-server` and
+  `/.well-known/oauth-protected-resource/v1`, and gives back passes at
+  `/auth/revoke`. It reads a client's document over HTTPS only, at most
+  5 KB, past no redirect and never from an address inside the network.
+  `create_user` refuses an id with `~`. No new dependency. Three tables
+  join the engine's own.
 - Signing in, part 2 (ADR-0071, item 4): a company's sign-on. The
   settings name each provider of OpenID Connect under `signon`, with
   its `issuer`, `client_id`, `label` and `company_emails`; its client
@@ -238,6 +260,18 @@ All notable changes to FadoDB are recorded here. The format follows
 
 - The chapter on containers says where the image is pulled from,
   `ghcr.io/mojohand70/fadodb:0.6.0`, now that v0.6.0 has published it.
+
+### Fixed
+
+- **The sign-in pages took no form from a real browser.** They sent no
+  referrer at all, so Chromium sent the `Origin` of every form as
+  `null`, which the server took for another site and refused with 403:
+  setting a password and signing in among them. The tests had sent
+  `Origin` themselves. The pages now send a referrer to the server
+  itself alone, and a form whose `Origin` is `null` is taken when the
+  browser says, in `Sec-Fetch-Site`, that it is the server's own.
+  Found with headless Chromium, which then went through a whole
+  connection of a client.
 
 ### Security
 

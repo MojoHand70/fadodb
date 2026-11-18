@@ -1184,7 +1184,15 @@ a user.
   and whose account the first sign-in ties to the user an
   administrator added with the person's e-mail. The browser keeps a
   session, a cookie that the server's own pages send commands with.
-  Every sign-in is logged. Passes for agents follow.
+  Every sign-in is logged. Every other client is given a pass by
+  OAuth: the person allows it on the server's page, and the client
+  proves its code with PKCE. A pass is for one address: the commands,
+  as the person, for a face or an app an administrator added; or the
+  door for agents, as an agent of the person's own, `ann~claude.ai`,
+  acting for them through a substitution and with their groups. A
+  client such as Claude is known by the document it publishes, which
+  the server reads in `internal/signon`, never from inside the
+  network.
 - **The stream sends the event alone.** A subscriber reads the document
   when it acts. A document that leaves a subscriber's sight is not
   mentioned (ADR-0058).

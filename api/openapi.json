@@ -9,7 +9,7 @@
             }
           }
         },
-        "description": "The command was not carried out. The body holds the refusal under `error`, with its code; a caller reads the code, and the status is worked out from it:\n\n| Status | Codes |\n|---|---|\n| 400 | `bad_json` |\n| 401 | `sign_in_refused`, `unauthenticated` |\n| 403 | `forbidden`, `reason_required` |\n| 404 | `unknown_class`, `unknown_document`, `unknown_table`, `unknown_schema`, `unknown_blob`, `unknown_action`, `unknown_row`, `unknown_user`, `unknown_inlet`, `unknown_key`, `unknown_session`, `unknown_command` |\n| 409 | `key_reused`, `duplicate`, `terminal`, `wrong_state`, `guard_false` |\n| 413 | `blob_too_large`, `too_large` |\n| 429 | `too_many_attempts` |\n| 499 | `caller_left` |\n| 500 | `storage`, `internal` |\n| 503 | `closed`, `busy` |\n| 504 | `timeout` |\n| 422 | every other refusal |\n"
+        "description": "The command was not carried out. The body holds the refusal under `error`, with its code; a caller reads the code, and the status is worked out from it:\n\n| Status | Codes |\n|---|---|\n| 400 | `bad_json` |\n| 401 | `sign_in_refused`, `unauthenticated` |\n| 403 | `forbidden`, `reason_required` |\n| 404 | `unknown_class`, `unknown_document`, `unknown_table`, `unknown_schema`, `unknown_blob`, `unknown_action`, `unknown_row`, `unknown_user`, `unknown_inlet`, `unknown_key`, `unknown_session`, `unknown_client`, `unknown_grant`, `unknown_command` |\n| 409 | `key_reused`, `duplicate`, `terminal`, `wrong_state`, `guard_false` |\n| 413 | `blob_too_large`, `too_large` |\n| 429 | `too_many_attempts` |\n| 499 | `caller_left` |\n| 500 | `storage`, `internal` |\n| 503 | `closed`, `busy` |\n| 504 | `timeout` |\n| 422 | every other refusal |\n"
       }
     },
     "schemas": {
@@ -97,6 +97,83 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/v1/add_client": {
+      "post": {
+        "description": "It writes. In Go it is the call `AddClient`. It is offered only by a database that keeps its own users, groups and keys; any other answers `unknown_command`.",
+        "operationId": "add_client",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "address": {
+                    "description": "/v1, the commands, as the person; or /mcp, the door for agents, as the person's agent",
+                    "type": "string"
+                  },
+                  "for": {
+                    "description": "the id of whoever the caller acts for; let through only while a substitution says so",
+                    "type": "string"
+                  },
+                  "id": {
+                    "description": "the client_id it sends: letters, digits, dots, dashes and underscores",
+                    "type": "string"
+                  },
+                  "name": {
+                    "description": "the name the person is shown",
+                    "type": "string"
+                  },
+                  "redirect_uris": {
+                    "description": "where its codes go: over https, or over http on its own machine",
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "id",
+                  "name",
+                  "redirect_uris",
+                  "address"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "client": {
+                      "description": "the client as added"
+                    }
+                  },
+                  "required": [
+                    "client"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "The command ran."
+          },
+          "default": {
+            "$ref": "#/components/responses/Refused"
+          }
+        },
+        "summary": "Adds a client the server gives passes to by OAuth: a face or an app of the company, or an agent. A client known by its published document, as Claude is, is never added. For a database administrator.",
+        "tags": [
+          "Users, groups and keys"
+        ],
+        "x-fado-call": "AddClient",
+        "x-fado-mark": "writes"
+      }
+    },
     "/v1/blob": {
       "get": {
         "description": "Bytes opened by their hash alone get past the rules of every document that holds them, so the reason is needed every time, and the log of reads keeps it with the hash.",
@@ -1476,6 +1553,58 @@
         "x-fado-mark": "reads"
       }
     },
+    "/v1/end_grant": {
+      "post": {
+        "description": "It writes. In Go it is the call `EndGrant`. It is offered only by a database that keeps its own users, groups and keys; any other answers `unknown_command`.",
+        "operationId": "end_grant",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "for": {
+                    "description": "the id of whoever the caller acts for; let through only while a substitution says so",
+                    "type": "string"
+                  },
+                  "grant": {
+                    "description": "the id of the grant, as list_grants shows it",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "grant"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {},
+                  "type": "object"
+                }
+              }
+            },
+            "description": "The command ran."
+          },
+          "default": {
+            "$ref": "#/components/responses/Refused"
+          }
+        },
+        "summary": "Ends a grant: its passes are refused, and its agent's substitution is withdrawn. An administrator ends any, a person their own.",
+        "tags": [
+          "Users, groups and keys"
+        ],
+        "x-fado-call": "EndGrant",
+        "x-fado-mark": "writes"
+      }
+    },
     "/v1/end_session": {
       "post": {
         "description": "It writes. In Go it is the call `EndSession`. It is offered only by a database that keeps its own users, groups and keys; any other answers `unknown_command`.",
@@ -2722,6 +2851,114 @@
         "x-fado-mark": "reads"
       }
     },
+    "/v1/list_clients": {
+      "post": {
+        "description": "It reads. In Go it is the call `Clients`. It is offered only by a database that keeps its own users, groups and keys; any other answers `unknown_command`.",
+        "operationId": "list_clients",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "for": {
+                    "description": "the id of whoever the caller acts for; let through only while a substitution says so",
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "clients": {
+                      "description": "the clients, by id"
+                    }
+                  },
+                  "required": [
+                    "clients"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "The command ran."
+          },
+          "default": {
+            "$ref": "#/components/responses/Refused"
+          }
+        },
+        "summary": "Lists the clients an administrator added, removed ones too. For a database administrator.",
+        "tags": [
+          "Users, groups and keys"
+        ],
+        "x-fado-call": "Clients",
+        "x-fado-mark": "reads"
+      }
+    },
+    "/v1/list_grants": {
+      "post": {
+        "description": "It reads. In Go it is the call `Grants`. It is offered only by a database that keeps its own users, groups and keys; any other answers `unknown_command`.",
+        "operationId": "list_grants",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "for": {
+                    "description": "the id of whoever the caller acts for; let through only while a substitution says so",
+                    "type": "string"
+                  },
+                  "user": {
+                    "description": "the id of the user; left out, the caller",
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "grants": {
+                      "description": "the grants, oldest first: the person, the agent, the client, the address, the substitution, when allowed and last renewed, and when it ends unless renewed"
+                    }
+                  },
+                  "required": [
+                    "grants"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "The command ran."
+          },
+          "default": {
+            "$ref": "#/components/responses/Refused"
+          }
+        },
+        "summary": "Lists the clients a person allowed that still hold, never a pass. An administrator asks of anybody, a user of itself.",
+        "tags": [
+          "Users, groups and keys"
+        ],
+        "x-fado-call": "Grants",
+        "x-fado-mark": "reads"
+      }
+    },
     "/v1/list_inlets": {
       "post": {
         "description": "It reads. In Go it is the call `Inlets`.",
@@ -3910,6 +4147,58 @@
           "Documents"
         ],
         "x-fado-call": "Refresh",
+        "x-fado-mark": "writes"
+      }
+    },
+    "/v1/remove_client": {
+      "post": {
+        "description": "It writes. In Go it is the call `RemoveClient`. It is offered only by a database that keeps its own users, groups and keys; any other answers `unknown_command`.",
+        "operationId": "remove_client",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "client": {
+                    "description": "the id of the client",
+                    "type": "string"
+                  },
+                  "for": {
+                    "description": "the id of whoever the caller acts for; let through only while a substitution says so",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "client"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {},
+                  "type": "object"
+                }
+              }
+            },
+            "description": "The command ran."
+          },
+          "default": {
+            "$ref": "#/components/responses/Refused"
+          }
+        },
+        "summary": "Removes a client: every grant of it ends. For a database administrator.",
+        "tags": [
+          "Users, groups and keys"
+        ],
+        "x-fado-call": "RemoveClient",
         "x-fado-mark": "writes"
       }
     },

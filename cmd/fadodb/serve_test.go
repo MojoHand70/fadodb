@@ -405,6 +405,7 @@ func TestTheChapterOnServing(t *testing.T) {
 		"url":                        "people sign in on this machine only",
 		"sessions.idle_hours":        "8",
 		"sessions.days":              "30",
+		"grants.idle_days":           "30",
 		"signon.NAME.issuer":         "no company sign-on",
 		"signon.NAME.client_id":      "none",
 		"signon.NAME.label":          "Sign in with NAME",
@@ -423,6 +424,9 @@ func TestTheChapterOnServing(t *testing.T) {
 	all = append(all, "url")
 	for _, m := range sessionMembers {
 		all = append(all, "sessions."+m)
+	}
+	for _, m := range grantMembers {
+		all = append(all, "grants."+m)
 	}
 	for _, m := range signonMembers {
 		all = append(all, "signon.NAME."+m)

@@ -66,6 +66,13 @@ func TestPagesAnswerTheirOwnOrigin(t *testing.T) {
 		{"127.0.0.1:8080", "", "same-origin", true},
 		{"127.0.0.1:8080", "", "cross-site", false},
 		{"127.0.0.1:8080", "", "", false},
+		// A browser sends the Origin of a form as null for a page that
+		// sends no referrer; Sec-Fetch-Site then says where it is from.
+		// Chromium did so with every form of the pages until they sent
+		// a referrer to the server itself.
+		{"127.0.0.1:8080", "null", "same-origin", true},
+		{"127.0.0.1:8080", "null", "cross-site", false},
+		{"127.0.0.1:8080", "null", "", false},
 	} {
 		if got := p.sameOrigin(form(c.host, c.origin, c.site)); got != c.same {
 			t.Errorf("a form to %s from %q (%q) is the server's own: %v", c.host, c.origin, c.site, got)
@@ -87,5 +94,22 @@ func TestPagesAnswerTheirOwnOrigin(t *testing.T) {
 		if _, err := NewPages(nil, PagesOptions{URL: bad}); err == nil {
 			t.Errorf("the address %q is taken", bad)
 		}
+	}
+}
+
+// The pages send a referrer to the server itself alone: never to another
+// site, where a link's secret in the address would be read, and to the
+// server, so that a browser says the true Origin of a form.
+func TestPagesSendAReferrerToThemselvesAlone(t *testing.T) {
+	p, err := NewPages(nil, PagesOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodGet, "/auth/nothing", nil)
+	r.Host = "127.0.0.1:8080"
+	p.ServeHTTP(w, r)
+	if got := w.Header().Get("Referrer-Policy"); got != "same-origin" {
+		t.Errorf("the pages' referrer policy is %q", got)
 	}
 }

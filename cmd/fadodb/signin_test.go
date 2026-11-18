@@ -354,7 +354,7 @@ func TestTheChapterOnSigningIn(t *testing.T) {
 	}
 	// The settings of the chapter are taken.
 	s, err := parseSettings([]byte(fenceAfter(t, text, "<!-- the settings -->")))
-	if err != nil || s.url != "https://fado.acme.example" || s.sessions.Idle != 4*time.Hour || s.sessions.Max != 7*24*time.Hour {
+	if err != nil || s.url != "https://fado.acme.example" || s.sessions.Idle != 4*time.Hour || s.sessions.Max != 7*24*time.Hour || s.grants != 14*24*time.Hour {
 		t.Errorf("the chapter's settings: %v %+v", err, s)
 	}
 }

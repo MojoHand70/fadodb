@@ -481,6 +481,21 @@ var commands = []*Command{
 		Fields: []Field{opt("user", Text, "only the sign-ins of this user"), opt("since", Moment, "the first moment of the period"),
 			opt("after", Integer, "the seq of the last entry already read, to read on from"), opt("limit", Integer, "the most entries to answer, at most 1,000")},
 		Answer: answer("sign_ins", "the sign-ins: their seq, when, the user named, the way, the address they came from and whether they were let through"), takes: asCaller, run: runSignIns},
+	{Group: Users, Users: true, Name: "add_client", Mark: Writes, Call: "AddClient", Does: "Adds a client the server gives passes to by OAuth: a face or an app of the company, or an agent. A client known by its published document, as Claude is, is never added. For a database administrator.",
+		Fields: []Field{req("id", Text, "the client_id it sends: letters, digits, dots, dashes and underscores"),
+			req("name", Text, "the name the person is shown"),
+			req("redirect_uris", Texts, "where its codes go: over https, or over http on its own machine"),
+			req("address", Text, "/v1, the commands, as the person; or /mcp, the door for agents, as the person's agent")},
+		Answer: answer("client", "the client as added"), takes: asWriter, run: runAddClient},
+	{Group: Users, Users: true, Name: "list_clients", Mark: Reads, Call: "Clients", Does: "Lists the clients an administrator added, removed ones too. For a database administrator.",
+		Answer: answer("clients", "the clients, by id"), takes: asCaller, run: runListClients},
+	{Group: Users, Users: true, Name: "remove_client", Mark: Writes, Call: "RemoveClient", Does: "Removes a client: every grant of it ends. For a database administrator.",
+		Fields: []Field{req("client", Text, "the id of the client")}, takes: asWriter, run: runRemoveClient},
+	{Group: Users, Users: true, Name: "list_grants", Mark: Reads, Call: "Grants", Does: "Lists the clients a person allowed that still hold, never a pass. An administrator asks of anybody, a user of itself.",
+		Fields: []Field{opt("user", Text, "the id of the user; left out, the caller")},
+		Answer: answer("grants", "the grants, oldest first: the person, the agent, the client, the address, the substitution, when allowed and last renewed, and when it ends unless renewed"), takes: asCaller, run: runListGrants},
+	{Group: Users, Users: true, Name: "end_grant", Mark: Writes, Call: "EndGrant", Does: "Ends a grant: its passes are refused, and its agent's substitution is withdrawn. An administrator ends any, a person their own.",
+		Fields: []Field{req("grant", Text, "the id of the grant, as list_grants shows it")}, takes: asWriter, run: runEndGrant},
 	{Group: Users, Users: true, Name: "whoami", Mark: Reads, Call: "Whoami", Does: "Answers who the database takes the caller for.",
 		Answer: answer("user", theUser, "for", "the id of whoever the caller acts for, when the command names one"), takes: asCaller, run: runWhoami},
 }
@@ -517,6 +532,18 @@ var NotCommands = map[string]string{
 	"ConfirmMySecondStep": "its codes never travel in a command: the server's page /auth/account shows them",
 	"HasSecondStep":       "the server's page /auth/account shows it to the person",
 	"SignOn":              "it takes who a company's provider vouched for, which the server checked on its page /auth/callback; no command carries a provider's word",
+	// The passes the server gives clients (ADR-0071, item 6): a code and
+	// a pass never travel in a command. The server's addresses of OAuth
+	// take them.
+	"KnownClient": "it answers a client to the server's page /auth/authorize; list_clients lists them",
+	"AskConsent":  "it keeps a client's request, which the server's page /auth/authorize took",
+	"Consent":     "it belongs to the server's page /auth/allow, which asks the person",
+	"Allow":       "a code never travels in a command: the server's page /auth/allow sends it to the client",
+	"Deny":        "it belongs to the server's page /auth/allow, which asks the person",
+	"Exchange":    "a code and a pass never travel in a command: the server's address /auth/token takes them",
+	"Renew":       "a pass never travels in a command: the server's address /auth/token takes it",
+	"Revoke":      "a pass never travels in a command: the server's address /auth/revoke takes it; end_grant ends a grant by its id",
+	"PassCaller":  "it answers who a pass belongs to, for the door that is given the pass; a caller that wants to know who it is sends whoami",
 }
 
 var byName = map[string]*Command{}

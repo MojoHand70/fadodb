@@ -209,7 +209,14 @@ func (c *call) options(p store.Principal) *store.Error {
 		return nil
 	}
 	if value := c.given("for"); value != nil {
-		p.For = unquote(value)
+		named := unquote(value)
+		if p.For != "" && named != p.For {
+			// An agent a person connected acts for that person alone, as
+			// its pass says (ADR-0071, item 7).
+			return &store.Error{Code: store.CodeForbidden, Path: "/for", Message: p.ID + " acts for " + p.For + " alone, as its pass says, and the command names " + strconv.Quote(named),
+				Hint: "leave for out: the agent acts for the person who connected it"}
+		}
+		p.For = named
 	}
 	c.opts = make([]store.Option, 1, 5)
 	c.opts[0] = store.As(p)
@@ -1037,6 +1044,33 @@ func runEndSession(c *call) error {
 
 func runClearSecondStep(c *call) error {
 	return c.empty(c.s.ClearSecondStep(c.ctx, c.text("user"), c.opts...))
+}
+
+func runAddClient(c *call) error {
+	uris, e := c.texts("redirect_uris")
+	if e != nil {
+		return e
+	}
+	added, err := c.s.AddClient(c.ctx, store.Client{ID: c.text("id"), Name: c.text("name"), RedirectURIs: uris, Address: c.text("address")}, c.opts...)
+	return c.answer("client", added, err)
+}
+
+func runListClients(c *call) error {
+	clients, err := c.s.Clients(c.ctx, c.opts...)
+	return c.answer("clients", list(clients), err)
+}
+
+func runRemoveClient(c *call) error {
+	return c.empty(c.s.RemoveClient(c.ctx, c.text("client"), c.opts...))
+}
+
+func runListGrants(c *call) error {
+	grants, err := c.s.Grants(c.ctx, c.text("user"), c.opts...)
+	return c.answer("grants", list(grants), err)
+}
+
+func runEndGrant(c *call) error {
+	return c.empty(c.s.EndGrant(c.ctx, c.text("grant"), c.opts...))
 }
 
 // runSignIns lists the log of sign-ins (ADR-0071, item 11).

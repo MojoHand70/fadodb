@@ -2,6 +2,8 @@ package command
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -915,8 +917,8 @@ func TestTheCommandsOfUsersAndKeys(t *testing.T) {
 			marked++
 		}
 	}
-	if marked != 14 {
-		t.Errorf("%d commands are of the users, want the nine of ADR-0057 and the five of ADR-0071", marked)
+	if marked != 19 {
+		t.Errorf("%d commands are of the users, want the nine of ADR-0057 and the ten of ADR-0071", marked)
 	}
 }
 
@@ -1212,6 +1214,84 @@ func TestTheCommandsOfSigningIn(t *testing.T) {
 	}
 	if e := refused(t, s, ann, "sign_ins", `{}`); e.Code != store.CodeForbidden {
 		t.Errorf("Ann reads the log of sign-ins: %+v", e)
+	}
+}
+
+// The clients and the grants (ADR-0071, items 6 and 10): Olga adds
+// FadoFace, Ann connects Claude, and the commands list them and end
+// them. Ann's Claude acts for Ann alone: a command of it that names
+// somebody else is refused.
+func TestTheCommandsOfClientsAndGrants(t *testing.T) {
+	s, err := store.Open(filepath.Join(t.TempDir(), "acme.fado"), store.Options{Users: true, Now: func() time.Time { return clock }})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { s.Close() })
+	machine := store.Principal{System: []string{store.GroupAdministrators}}
+	olga := store.Principal{ID: "olga", Kind: store.ActorPerson, System: []string{store.GroupAdministrators}}
+	ann := store.Principal{ID: "ann", Kind: store.ActorPerson, Groups: []string{"finance"}}
+	run(t, s, machine, "create_user", `{"id": "olga", "kind": "person", "system_groups": ["administrators"]}`)
+	run(t, s, olga, "create_user", `{"id": "ann", "kind": "person", "groups": ["finance"]}`)
+	run(t, s, olga, "create_user", `{"id": "bob", "kind": "person"}`)
+
+	added := run(t, s, olga, "add_client", `{"id": "fadoface", "name": "FadoFace", "redirect_uris": ["https://face.acme.example/callback"], "address": "/v1"}`)["client"].(map[string]any)
+	if added["id"] != "fadoface" || added["added_by"] != "olga" || added["address"] != "/v1" {
+		t.Errorf("add_client answers %v", added)
+	}
+	if e := refused(t, s, ann, "add_client", `{"id": "x", "name": "X", "redirect_uris": ["https://x.example/cb"], "address": "/v1"}`); e.Code != store.CodeForbidden {
+		t.Errorf("Ann adds a client: %+v", e)
+	}
+	if e := refused(t, s, olga, "add_client", `{"id": "x", "name": "X", "redirect_uris": ["http://x.example/cb"], "address": "/v1"}`); e.Code != store.CodeBadValue || e.Path != "/redirect_uris" {
+		t.Errorf("a code sent over http: %+v", e)
+	}
+	if clients := run(t, s, olga, "list_clients", `{}`)["clients"].([]any); len(clients) != 1 {
+		t.Errorf("the clients: %v", clients)
+	}
+
+	// Ann connects Claude, as the server's pages do it.
+	ctx := context.Background()
+	claude := store.Client{ID: "https://claude.ai/oauth/mcp-oauth-client-metadata", Name: "Claude", RedirectURIs: []string{"https://claude.ai/api/mcp/auth_callback"}, Address: store.AddressAgents}
+	verifier := strings.Repeat("v", 43)
+	sum := sha256.Sum256([]byte(verifier))
+	id, err := s.AskConsent(ctx, store.Asked{Client: claude, RedirectURI: claude.RedirectURIs[0], Challenge: base64.RawURLEncoding.EncodeToString(sum[:]), Resource: "https://fado.acme.example/mcp"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	code, _, err := s.Allow(ctx, id, store.As(ann))
+	if err != nil {
+		t.Fatal(err)
+	}
+	passes, err := s.Exchange(ctx, store.CodeExchange{Client: claude.ID, Code: code, RedirectURI: claude.RedirectURIs[0], Verifier: verifier})
+	if err != nil {
+		t.Fatal(err)
+	}
+	agent, err := s.PassCaller(ctx, passes.Pass, store.AddressAgents)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := run(t, s, agent, "whoami", `{}`); got["for"] != "ann" || got["user"].(map[string]any)["id"] != "ann~claude.ai" {
+		t.Errorf("Ann's Claude is %v", got)
+	}
+	if e := refused(t, s, agent, "whoami", `{"for": "bob"}`); e.Code != store.CodeForbidden || e.Path != "/for" {
+		t.Errorf("Ann's Claude acts for Bob: %+v", e)
+	}
+	grants := run(t, s, ann, "list_grants", `{}`)["grants"].([]any)
+	if len(grants) != 1 || grants[0].(map[string]any)["agent"] != "ann~claude.ai" || grants[0].(map[string]any)["address"] != "/mcp" {
+		t.Fatalf("Ann's grants: %v", grants)
+	}
+	if e := refused(t, s, ann, "list_grants", `{"user": "olga"}`); e.Code != store.CodeForbidden {
+		t.Errorf("Ann lists Olga's grants: %+v", e)
+	}
+	if e := refused(t, s, ann, "end_grant", `{"grant": "NOSUCH0000"}`); e.Code != store.CodeUnknownGrant || e.Path != "/grant" {
+		t.Errorf("a grant the database does not have: %+v", e)
+	}
+	run(t, s, olga, "end_grant", `{"grant": "`+grants[0].(map[string]any)["id"].(string)+`"}`)
+	if got := run(t, s, ann, "list_grants", `{}`)["grants"].([]any); len(got) != 0 {
+		t.Errorf("the grants after one was ended: %v", got)
+	}
+	run(t, s, olga, "remove_client", `{"client": "fadoface"}`)
+	if e := refused(t, s, olga, "remove_client", `{"client": "nobody"}`); e.Code != store.CodeUnknownClient {
+		t.Errorf("a client the database does not have: %+v", e)
 	}
 }
 

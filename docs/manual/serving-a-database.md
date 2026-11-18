@@ -128,6 +128,7 @@ fadodb serve acme.fado --settings settings.json --secrets-dir /run/secrets/fadod
 | `url` | the address people reach the server at, from which its pages and their sessions are named ([Signing in](signing-in.md)) | people sign in on this machine only |
 | `sessions.idle_hours` | how long a session holds unused, in hours, at most 8 | 8 |
 | `sessions.days` | how long a session holds at most, in days, at most 30 | 30 |
+| `grants.idle_days` | how long a client a person allowed holds with no pass renewed, in days, at most 30 ([Signing in](signing-in.md#connecting-a-client)) | 30 |
 | `signon.NAME.issuer` | a company's sign-on: the address of the company's directory, of OpenID Connect ([Signing in](signing-in.md#a-companys-sign-on)) | no company sign-on |
 | `signon.NAME.client_id` | the id the provider gave the server | none |
 | `signon.NAME.label` | the words of its button | Sign in with NAME |

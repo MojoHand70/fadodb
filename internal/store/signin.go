@@ -623,12 +623,7 @@ func (s *Store) FinishSignIn(ctx context.Context, signIn, code, address string, 
 		}
 		way = WaySecondStep
 	}
-	if lengths.Idle <= 0 || lengths.Idle > DefaultSessionLengths.Idle {
-		lengths.Idle = DefaultSessionLengths.Idle
-	}
-	if lengths.Max <= 0 || lengths.Max > DefaultSessionLengths.Max {
-		lengths.Max = DefaultSessionLengths.Max
-	}
+	lengths = fitLengths(lengths)
 	id, secret, err := secretText()
 	if err != nil {
 		return nil, &Error{Code: CodeStorage, Message: "make the session: " + err.Error()}

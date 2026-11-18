@@ -394,17 +394,21 @@ func TestTheChapterOnServing(t *testing.T) {
 	// the server does when the member is not given.
 	rows := between(chapter, "<!-- the members of the settings -->\n", "\n\n")
 	usual := map[string]string{
-		"limits.request_bytes":   strconv.Itoa(server.DefaultRequestBytes),
-		"limits.command_seconds": strconv.Itoa(int(server.DefaultCommandTime.Seconds())),
-		"limits.commands":        strconv.Itoa(server.DefaultCommands),
-		"limits.streams":         "256",
-		"outbound.hosts":         "none",
-		"outbound.connections":   "none",
-		"inbound.message_bytes":  strconv.Itoa(server.DefaultMessageBytes),
-		"inbound.messages":       strconv.Itoa(server.DefaultMessages),
-		"url":                    "people sign in on this machine only",
-		"sessions.idle_hours":    "8",
-		"sessions.days":          "30",
+		"limits.request_bytes":       strconv.Itoa(server.DefaultRequestBytes),
+		"limits.command_seconds":     strconv.Itoa(int(server.DefaultCommandTime.Seconds())),
+		"limits.commands":            strconv.Itoa(server.DefaultCommands),
+		"limits.streams":             "256",
+		"outbound.hosts":             "none",
+		"outbound.connections":       "none",
+		"inbound.message_bytes":      strconv.Itoa(server.DefaultMessageBytes),
+		"inbound.messages":           strconv.Itoa(server.DefaultMessages),
+		"url":                        "people sign in on this machine only",
+		"sessions.idle_hours":        "8",
+		"sessions.days":              "30",
+		"signon.NAME.issuer":         "no company sign-on",
+		"signon.NAME.client_id":      "none",
+		"signon.NAME.label":          "Sign in with NAME",
+		"signon.NAME.company_emails": "false",
 	}
 	var all []string
 	for _, m := range outboundMembers {
@@ -419,6 +423,9 @@ func TestTheChapterOnServing(t *testing.T) {
 	all = append(all, "url")
 	for _, m := range sessionMembers {
 		all = append(all, "sessions."+m)
+	}
+	for _, m := range signonMembers {
+		all = append(all, "signon.NAME."+m)
 	}
 	if len(all) != len(usual) {
 		t.Errorf("the test knows what is usual for %d members, and a file of settings may have %d", len(usual), len(all))
@@ -436,10 +443,7 @@ func TestTheChapterOnServing(t *testing.T) {
 		if !found {
 			t.Errorf("the chapter has no row for the setting %s", member)
 		}
-		name := member
-		if _, leaf, nested := strings.Cut(member, "."); nested {
-			name = leaf
-		}
+		name := member[strings.LastIndexByte(member, '.')+1:]
 		if !strings.Contains(serveUsage, `"`+name+`"`) {
 			t.Errorf("the help of the server does not show the setting %s", member)
 		}

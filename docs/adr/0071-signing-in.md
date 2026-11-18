@@ -357,6 +357,44 @@ owner's to strike:
 12. **The settings** take `sessions.idle_hours`, 1 to 8, and
     `sessions.days`, 1 to 30: shorter than the usual, never longer.
 
+The second pull request built the company's sign-on (item 4, and the
+part of items 9 and 12 that is its). Settled by me, each the owner's
+to strike:
+
+13. **`company_emails`** in the settings of a provider says its e-mails
+    are the company's own, kept by its administrators. Microsoft's
+    directory of one company sends no word on an e-mail; without the
+    setting, an e-mail is taken only with the provider's
+    `email_verified`. With it, Microsoft's `preferred_username` stands
+    for an e-mail it does not send.
+14. **A user is tied to one account of an issuer.** Another account of
+    the same issuer with the user's e-mail is refused: the e-mail passed
+    to somebody else. The same person's account of another issuer, a
+    second provider, is tied too.
+15. **An e-mail is a person's**, in small letters, one user's at a time;
+    an empty one takes it away. It is kept in a table of its own, so a
+    database of the same engine schema opens and gains it.
+16. **The note is checked** for its signature (RS256, PS256 or ES256, an
+    RSA key of 2048 bits or more or a key of P-256), its issuer, that it
+    is for the server's client (and `azp` when it has more audiences),
+    its end and its start, with a minute either way, and its nonce. The
+    provider's addresses and keys are read again after a day, and the
+    keys at once when a note names one not read yet, at most once a
+    minute.
+17. **The state of a sign-on is kept in the browser that began it**, in
+    a cookie of its own, `fado_signon`, sent back on the provider's
+    redirect; the answer is taken only with it. The page after the
+    callback sends the person on by itself, so that the browser sends
+    the session's cookie, which it holds back at the end of redirects
+    that began on another site.
+18. **The code lives in `internal/signon`**, which only `fadodb serve`
+    links: the engine and the door still send no request of their own,
+    as the dependency gate checks. A provider of the tests,
+    `internal/signon/signontest`, is linked only in tests.
+19. **The secret is `client_secret`** of the sign-on's name, found as a
+    connection's secret is; a sign-on and a connection never share a
+    name. The server says when it starts that a sign-on has no secret.
+
 ## Consequences
 
 - A person signs in on a screen, an agent connects as the protocol

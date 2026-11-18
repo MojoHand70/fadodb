@@ -35,6 +35,16 @@ type Accounts interface {
 	ClearSecondStep(ctx context.Context, user string, opts ...store.Option) error
 	Sessions(ctx context.Context, user string, opts ...store.Option) ([]*store.Session, error)
 	EndSession(ctx context.Context, id string, opts ...store.Option) error
+	SignOn(ctx context.Context, who store.SignedOn, address string, lengths store.SessionLengths) (*store.Session, error)
+}
+
+// SignOn is a company's sign-on as the pages ask it (ADR-0071, item 4):
+// the providers to offer, sending a person to one, and taking them back
+// with who the provider says they are. Package signon is one.
+type SignOn interface {
+	Providers() []store.SignOnProvider
+	Begin(ctx context.Context, name, redirect, next string) (to, state string, err error)
+	Finish(ctx context.Context, state, code, redirect string) (*store.SignedOn, string, error)
 }
 
 // PagesOptions are what the pages are told: the address people reach
@@ -44,10 +54,13 @@ type PagesOptions struct {
 	URL     string
 	Lengths store.SessionLengths
 	Report  func(Request)
+	// SignOn is the company sign-ons the pages offer; nil for none.
+	SignOn SignOn
 }
 
 // Pages answers the server's own pages, under /auth/.
 type Pages struct {
+	signOn   SignOn
 	accounts Accounts
 	origin   string
 	secure   bool
@@ -66,7 +79,15 @@ const (
 	PageSignOut  = "/auth/signout"
 	PageAccount  = "/auth/account"
 	PagePassword = "/auth/password"
+	PageSignOn   = "/auth/signon"
+	PageCallback = "/auth/callback"
 )
+
+// signOnCookie keeps the state of a sign-on in the browser that began
+// it, so that the provider's answer is taken only from that browser. It
+// is sent back on the provider's redirect, which comes from another
+// site, so it is Lax where the session is Strict.
+const signOnCookie = "fado_signon"
 
 // NewPages makes the pages of a database that keeps its users. A URL,
 // when given, is the address people reach the server at: its scheme and
@@ -74,7 +95,7 @@ const (
 // over HTTPS the cookie travels only encrypted. Without one the pages
 // answer requests to this machine alone.
 func NewPages(a Accounts, o PagesOptions) (*Pages, error) {
-	p := &Pages{accounts: a, lengths: o.Lengths, report: o.Report}
+	p := &Pages{accounts: a, lengths: o.Lengths, report: o.Report, signOn: o.SignOn}
 	if o.URL != "" {
 		u, err := url.Parse(o.URL)
 		if err != nil || (u.Scheme != "https" && u.Scheme != "http") || u.Host == "" || u.User != nil || (u.Path != "" && u.Path != "/") || u.RawQuery != "" {
@@ -178,6 +199,10 @@ type page struct {
 	Needs   bool
 	Current string
 	List    []*store.Session
+	// Providers are the company sign-ons the sign-in page offers.
+	Providers []store.SignOnProvider
+	// Refresh is where the page sends the browser at once, by itself.
+	Refresh string
 }
 
 // ServeHTTP answers a page.
@@ -228,6 +253,10 @@ func (p *Pages) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		p.account(out, r, &told)
 	case PagePassword:
 		p.password(out, r, &told)
+	case PageSignOn:
+		p.beginSignOn(out, r, &told)
+	case PageCallback:
+		p.callback(out, r, &told)
 	default:
 		p.draw(out, &told, http.StatusNotFound, "notHere", &page{Title: "Not here"})
 	}
@@ -260,7 +289,7 @@ func (p *Pages) signIn(out *reply, r *http.Request, told *Request) {
 				return
 			}
 		}
-		p.draw(out, told, http.StatusOK, "signIn", &page{Title: "Sign in", Next: next(r)})
+		p.draw(out, told, http.StatusOK, "signIn", &page{Title: "Sign in", Next: next(r), Providers: p.providers()})
 		return
 	}
 	user := strings.TrimSpace(r.FormValue("user"))
@@ -268,7 +297,7 @@ func (p *Pages) signIn(out *reply, r *http.Request, told *Request) {
 	in, err := p.accounts.BeginSignIn(r.Context(), user, r.FormValue("password"), address(r))
 	if err != nil {
 		told.Code = codeOf(err)
-		p.draw(out, told, http.StatusUnauthorized, "signIn", &page{Title: "Sign in", Error: said(err), Next: next(r), User: user})
+		p.draw(out, told, http.StatusUnauthorized, "signIn", &page{Title: "Sign in", Error: said(err), Next: next(r), User: user, Providers: p.providers()})
 		return
 	}
 	switch in.Next {
@@ -442,6 +471,86 @@ func (p *Pages) password(out *reply, r *http.Request, told *Request) {
 	p.draw(out, told, http.StatusOK, "passwordSet", shown)
 }
 
+// providers are the company sign-ons to offer.
+func (p *Pages) providers() []store.SignOnProvider {
+	if p.signOn == nil {
+		return nil
+	}
+	return p.signOn.Providers()
+}
+
+// callbackOf is the address a provider sends a person back to.
+func (p *Pages) callbackOf(r *http.Request) string {
+	origin, _ := p.originOf(r)
+	return origin + PageCallback
+}
+
+// beginSignOn sends a person to the company's provider they chose, and
+// keeps the state of the sign-on in their browser.
+func (p *Pages) beginSignOn(out *reply, r *http.Request, told *Request) {
+	if p.signOn == nil || r.Method != http.MethodPost {
+		p.draw(out, told, http.StatusNotFound, "notHere", &page{Title: "Not here"})
+		return
+	}
+	to, state, err := p.signOn.Begin(r.Context(), r.FormValue("provider"), p.callbackOf(r), next(r))
+	if err != nil {
+		told.Code, told.Err = store.CodeSignInRefused, err
+		p.draw(out, told, http.StatusBadGateway, "signIn", &page{Title: "Sign in", Error: "the sign-on did not start; try again, or sign in with your password", Next: next(r), Providers: p.providers()})
+		return
+	}
+	http.SetCookie(out.w, &http.Cookie{Name: signOnCookie, Value: state, Path: PageCallback, HttpOnly: true, Secure: p.secure, SameSite: http.SameSiteLaxMode, MaxAge: 600})
+	out.w.Header().Set("Location", to)
+	out.status, out.wrote = http.StatusSeeOther, true
+	out.w.WriteHeader(http.StatusSeeOther)
+}
+
+// callback takes a person back from the provider: the state must be the
+// one their browser keeps, the provider's note must hold, and the store
+// must know them. The session is set, and the page sends them on with a
+// link of its own, so that the browser sends the session's cookie, which
+// it holds back on the end of a chain of redirects begun on another
+// site.
+func (p *Pages) callback(out *reply, r *http.Request, told *Request) {
+	if p.signOn == nil || r.Method != http.MethodGet {
+		p.draw(out, told, http.StatusNotFound, "notHere", &page{Title: "Not here"})
+		return
+	}
+	http.SetCookie(out.w, &http.Cookie{Name: signOnCookie, Value: "", Path: PageCallback, HttpOnly: true, Secure: p.secure, SameSite: http.SameSiteLaxMode, MaxAge: -1})
+	q := r.URL.Query()
+	failed := func(err error) {
+		told.Code, told.Err = store.CodeSignInRefused, err
+		p.draw(out, told, http.StatusUnauthorized, "signIn", &page{Title: "Sign in", Error: "the sign-on was not completed; try again, or ask an administrator of the database", Providers: p.providers()})
+	}
+	if e := q.Get("error"); e != "" {
+		failed(errors.New("the provider answered " + e + ": " + q.Get("error_description")))
+		return
+	}
+	c, err := r.Cookie(signOnCookie)
+	state := q.Get("state")
+	if err != nil || state == "" || c.Value != state {
+		failed(errors.New("the answer of the provider came to a browser that did not begin the sign-on"))
+		return
+	}
+	who, to, err := p.signOn.Finish(r.Context(), state, q.Get("code"), p.callbackOf(r))
+	if err != nil {
+		failed(err)
+		return
+	}
+	sess, err := p.accounts.SignOn(r.Context(), *who, address(r), p.lengths)
+	if err != nil {
+		told.Code = codeOf(err)
+		p.draw(out, told, http.StatusUnauthorized, "signIn", &page{Title: "Sign in", Error: said(err), Providers: p.providers()})
+		return
+	}
+	told.User = sess.User
+	http.SetCookie(out.w, &http.Cookie{Name: SessionCookie, Value: sess.Token, Path: "/", HttpOnly: true, Secure: p.secure,
+		SameSite: http.SameSiteStrictMode, MaxAge: int(sess.Ends - time.Now().Unix())})
+	if to == "" || to[0] != '/' || strings.HasPrefix(to, "//") {
+		to = PageAccount
+	}
+	p.draw(out, told, http.StatusOK, "signedOn", &page{Title: "Signed in", User: sess.User, Next: to, Refresh: to})
+}
+
 // redirect sends the browser on, after a form, with a GET.
 func redirect(out *reply, to string) {
 	out.w.Header().Set("Location", to)
@@ -471,6 +580,14 @@ table{border-collapse:collapse;width:100%}td{padding:.3rem 0;border-bottom:1px s
 form.inline{display:inline}form.inline button{margin:0;padding:.2rem .6rem}
 @media (prefers-color-scheme:dark){body{color:#e8e8ec;background:#141418}input{background:#1f1f25;color:inherit}td{border-color:#333}.error{color:#ff8a80}.note{color:#8fd19e}}`
 
+// refresh is the line of a page that sends the browser on by itself.
+func refresh(to string) string {
+	if to == "" {
+		return ""
+	}
+	return `<meta http-equiv="refresh" content="0; url=` + esc(to) + `">` + "\n"
+}
+
 // esc is a value as HTML writes it, in text and in an attribute.
 func esc(s string) string { return html.EscapeString(s) }
 
@@ -497,7 +614,7 @@ func drawn(name string, d *page) string {
 	b.WriteString(`<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>` + esc(d.Title) + ` · FadoDB</title>
-<style>` + style + `</style></head><body>
+` + refresh(d.Refresh) + `<style>` + style + `</style></head><body>
 <h1>` + esc(d.Title) + "</h1>\n")
 	if d.Error != "" {
 		b.WriteString(`<p class="error" role="alert">` + esc(d.Error) + "</p>\n")
@@ -512,6 +629,12 @@ func drawn(name string, d *page) string {
 		b.WriteString(`<label for="user">User</label><input id="user" name="user" autocomplete="username" value="` + esc(d.User) + `" required autofocus>
 <label for="password">Password</label><input id="password" name="password" type="password" autocomplete="current-password" required>
 <button type="submit">Sign in</button></form>`)
+		for _, pr := range d.Providers {
+			b.WriteString(`<form method="post" action="` + PageSignOn + `">`)
+			hidden(&b, "provider", pr.Name)
+			hidden(&b, "next", d.Next)
+			b.WriteString(`<button type="submit">` + esc(pr.Label) + `</button></form>`)
+		}
 	case "code":
 		b.WriteString("<p>Enter the six digits your authenticator app shows for " + esc(d.User) + ", or one of your codes for a lost phone.</p>\n")
 		b.WriteString(`<form method="post" action="` + PageCode + `">`)
@@ -596,6 +719,8 @@ func drawn(name string, d *page) string {
 <label for="password">Password</label><input id="password" name="password" type="password" autocomplete="new-password" minlength="12" required autofocus>
 <label for="again">The password again</label><input id="again" name="again" type="password" autocomplete="new-password" minlength="12" required>
 <button type="submit">Set it</button></form>`)
+	case "signedOn":
+		b.WriteString("<p>You are signed in as <strong>" + esc(d.User) + "</strong>.</p>\n<p><a href=\"" + esc(d.Next) + "\">Go on</a></p>")
 	case "passwordSet":
 		b.WriteString(`<p class="note">The password of ` + esc(d.User) + ` is set.</p>` + "\n<p><a href=\"" + PageSignIn + "\">Sign in</a></p>")
 	case "linkGone":

@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/MojoHand70/fadodb/fado"
+	"github.com/MojoHand70/fadodb/internal/signon/signontest"
 )
 
 // browser is a person's browser in a test: it keeps cookies, follows
@@ -341,12 +342,14 @@ func TestTheChapterOnSigningIn(t *testing.T) {
 
 	// The commands of the chapter are the engine's.
 	for _, row := range tableAfter(t, text, "<!-- the commands -->") {
-		found := false
-		for _, c := range fado.Commands() {
-			found = found || c.Name == row[0]
-		}
-		if !found {
-			t.Errorf("the chapter names %s, which is no command", row[0])
+		for _, name := range strings.Split(row[0], ", ") {
+			found := false
+			for _, c := range fado.Commands() {
+				found = found || c.Name == name
+			}
+			if !found {
+				t.Errorf("the chapter names %s, which is no command", name)
+			}
 		}
 	}
 	// The settings of the chapter are taken.
@@ -387,4 +390,132 @@ func tableAfter(t *testing.T, text, marker string) [][]string {
 		out = append(out, cells)
 	}
 	return out
+}
+
+// The chapter's company sign-on, played against a server and a provider
+// of OpenID Connect that the test runs: the settings of the chapter
+// with the provider's address, the secret from the environment, Ewa
+// added with her e-mail, and every row of its table.
+func TestTheChapterOnACompanysSignOn(t *testing.T) {
+	chapter, err := os.ReadFile(filepath.Join("..", "..", "docs", "manual", "signing-in.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := strings.ReplaceAll(string(chapter), "\r\n", "\n")
+	provider := signontest.New()
+	defer provider.Close()
+
+	// The chapter's settings, with the address of this provider and no
+	// url: the server is on this machine.
+	told, err := parseSettings([]byte(fenceAfter(t, text, "<!-- a company's sign-on -->")))
+	if err != nil || len(told.signon) != 1 || told.signon[0].Name != "microsoft" || !told.signon[0].CompanyEmails || told.url != "https://fado.acme.example" {
+		t.Fatalf("the chapter's settings: %v %+v", err, told)
+	}
+	dir := t.TempDir()
+	settings := filepath.Join(dir, "settings.json")
+	written, _ := json.Marshal(map[string]any{"signon": map[string]any{"microsoft": map[string]any{
+		"label": told.signon[0].Label, "issuer": provider.Issuer, "client_id": provider.ClientID, "company_emails": false}}})
+	if err := os.WriteFile(settings, written, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("FADODB_SECRET_MICROSOFT__CLIENT_SECRET", provider.Secret)
+	path := filepath.Join(dir, "acme.fado")
+	for _, args := range [][]string{
+		{"init", path},
+		{"user", "add", "olga", "--kind", "person", "--system", "administrators", "--db", path},
+	} {
+		if code, _, said := tool(args...); code != 0 {
+			t.Fatalf("%v: %s", args, said)
+		}
+	}
+	_, key, _ := tool("key", "new", "olga", "--db", path)
+	key = strings.TrimSpace(key)
+	addr, said, _ := serving(t, "--listen", "127.0.0.1:0", "--settings", settings, path)
+	base := "http://" + addr
+	if strings.Contains(said.String(), "the sign-on microsoft reads the secret") {
+		t.Errorf("the server says the sign-on has no secret:\n%s", said)
+	}
+	client := &http.Client{Timeout: 10 * time.Second}
+	create := strings.TrimPrefix(strings.TrimSpace(between(text, "**Olga adds Ewa first**, with her company e-mail:\n\n```\n", "\n```")), "fadodb exec create_user ")
+	if code, body := ask(t, client, "POST", base+"/v1/create_user", key, strings.Trim(create, "'")); code != 200 || !strings.Contains(body, `"email":"ewa@acme.example"`) {
+		t.Fatalf("Olga adds Ewa: %d %s", code, body)
+	}
+
+	// The page offers the button.
+	ewa := newBrowser(t, base)
+	if _, page := ewa.get("/auth/signin"); !strings.Contains(page, ">Sign in with Microsoft</button>") {
+		t.Fatalf("the page offers no sign-on:\n%s", page)
+	}
+	signOn := func(b *browser) (int, string) {
+		return b.post("/auth/signon", url.Values{"provider": {"microsoft"}, "next": {"/auth/account"}})
+	}
+	yes := true
+	for _, row := range tableAfter(t, text, "<!-- signing on -->") {
+		var got string
+		switch row[0] {
+		case "Ewa signs in with Microsoft the first time":
+			provider.Person = signontest.Person{Subject: "oid-ewa", Email: "ewa@acme.example", Verified: &yes}
+			_, page := signOn(ewa)
+			_, account := ewa.get("/auth/account")
+			if strings.Contains(page, `http-equiv="refresh" content="0; url=/auth/account"`) && strings.Contains(account, "signed in as <strong>ewa</strong>") {
+				got = "she is signed in"
+			}
+			if _, body := ask(t, client, "POST", base+"/v1/user_changes", key, `{"id": "ewa"}`); strings.Contains(body, `"what":"signon_linked"`) {
+				got += ", and her Microsoft account is tied to her user"
+			}
+		case "Ewa signs in again, her e-mail at Microsoft changed":
+			provider.Person = signontest.Person{Subject: "oid-ewa", Email: "ewa.nowak@acme.example"}
+			again := newBrowser(t, base)
+			signOn(again)
+			if _, account := again.get("/auth/account"); strings.Contains(account, "signed in as <strong>ewa</strong>") {
+				got = "she is signed in: her account finds her"
+			}
+		case "Zed, who has no user, signs in with Microsoft", "another Microsoft account with Ewa's e-mail signs in":
+			provider.Person = signontest.Person{Subject: "oid-zed", Email: "zed@acme.example", Verified: &yes}
+			if strings.HasPrefix(row[0], "another") {
+				provider.Person = signontest.Person{Subject: "oid-other", Email: "ewa@acme.example", Verified: &yes}
+			}
+			code, _ := signOn(newBrowser(t, base))
+			got = "refused, " + lastCode(t, said)
+			if code != http.StatusUnauthorized {
+				got += ", status " + strconv.Itoa(code)
+			}
+			if strings.HasPrefix(row[0], "another") {
+				got += ": her user is tied to her own"
+			}
+		case "Microsoft's answer comes to another browser than the one that began":
+			provider.Person = signontest.Person{Subject: "oid-ewa", Email: "ewa@acme.example", Verified: &yes}
+			began := newBrowser(t, base)
+			began.client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+			req, _ := http.NewRequest(http.MethodPost, base+"/auth/signon", strings.NewReader("provider=microsoft"))
+			req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+			req.Header.Set("Origin", base)
+			resp, err := began.client.Do(req)
+			if err != nil {
+				t.Fatal(err)
+			}
+			resp.Body.Close()
+			resp, err = began.client.Get(resp.Header.Get("Location"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			resp.Body.Close()
+			callback := resp.Header.Get("Location")
+			other := newBrowser(t, base)
+			resp, err = other.client.Get(callback)
+			if err != nil {
+				t.Fatal(err)
+			}
+			resp.Body.Close()
+			got = "refused, " + lastCode(t, said)
+		default:
+			t.Fatalf("the test does not know the row %q", row[0])
+		}
+		if got != row[1] {
+			t.Errorf("%s: %s, the chapter says %s", row[0], got, row[1])
+		}
+	}
+	if _, body := ask(t, client, "POST", base+"/v1/sign_ins", key, `{"user": "ewa"}`); !strings.Contains(body, `"way":"signon"`) {
+		t.Errorf("the sign-ins of Ewa: %s", body)
+	}
 }

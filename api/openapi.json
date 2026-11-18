@@ -733,6 +733,10 @@
               "schema": {
                 "additionalProperties": false,
                 "properties": {
+                  "email": {
+                    "description": "a person's company e-mail, by which a first sign-in with the company's sign-on finds them",
+                    "type": "string"
+                  },
                   "for": {
                     "description": "the id of whoever the caller acts for; let through only while a substitution says so",
                     "type": "string"
@@ -4305,6 +4309,10 @@
                   "disabled": {
                     "description": "true stops every key of the user at the next command; false lets them through again",
                     "type": "boolean"
+                  },
+                  "email": {
+                    "description": "a person's company e-mail, in place of the one they have; empty takes it away",
+                    "type": "string"
                   },
                   "for": {
                     "description": "the id of whoever the caller acts for; let through only while a substitution says so",

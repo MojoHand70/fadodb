@@ -21,6 +21,7 @@ import (
 	"github.com/MojoHand70/fadodb/fado/outbound"
 	"github.com/MojoHand70/fadodb/internal/model"
 	"github.com/MojoHand70/fadodb/internal/server"
+	"github.com/MojoHand70/fadodb/internal/signon"
 	"github.com/MojoHand70/fadodb/internal/store"
 )
 
@@ -91,6 +92,14 @@ list the hosts they may call:
     "sessions": {
       "idle_hours": 8,
       "days": 30
+    },
+    "signon": {
+      "microsoft": {
+        "label": "Sign in with Microsoft",
+        "issuer": "https://login.microsoftonline.com/TENANT/v2.0",
+        "client_id": "3f2a7c90-0000-4000-8000-000000000000",
+        "company_emails": true
+      }
     }
   }
 
@@ -108,7 +117,9 @@ browser keeps a session (8 hours unused, 30 days at most; sessions
 makes both shorter). url is the address people reach the server at:
 without it they sign in on this machine only. A person's first
 password is set with a link, made on the machine with
-fadodb user password.
+fadodb user password. signon offers a company's sign-on (OpenID
+Connect: Microsoft, Google and others); its secret client_secret is
+found as a connection's is, as FADODB_SECRET_MICROSOFT__CLIENT_SECRET.
 
 The server runs no Go function: an action is the engine's own, or a
 request the server sends.
@@ -210,7 +221,18 @@ func runServe(ctx context.Context, args []string, stdout, stderr io.Writer, read
 	// People sign in on the server's own pages, and a page of the server
 	// sends commands with its session; everybody else sends a key
 	// (ADR-0071).
-	pages, err := server.NewPages(db, server.PagesOptions{URL: told.url, Lengths: told.sessions, Report: report})
+	var signOn server.SignOn
+	if len(told.signon) > 0 {
+		set, err := signon.New(signon.Options{Providers: told.signon, Secret: func(ctx context.Context, provider string) (string, error) {
+			return kept.find(ctx, provider, "client_secret")
+		}})
+		if err != nil {
+			fmt.Fprintf(stderr, "%s: %v\n", name, err)
+			return 2
+		}
+		signOn = set
+	}
+	pages, err := server.NewPages(db, server.PagesOptions{URL: told.url, Lengths: told.sessions, Report: report, SignOn: signOn})
 	if err != nil {
 		fmt.Fprintf(stderr, "%s: %v\n", name, err)
 		return 1
@@ -253,6 +275,11 @@ func runServe(ctx context.Context, args []string, stdout, stderr io.Writer, read
 	}
 	if signIn != "" {
 		fmt.Fprintf(stderr, "%s: people sign in at %s%s\n", name, strings.TrimSuffix(signIn, "/"), server.PageSignIn)
+		for _, p := range told.signon {
+			if _, err := kept.find(ctx, p.Name, "client_secret"); err != nil {
+				fmt.Fprintf(stderr, "%s: the sign-on %s reads the secret client_secret, and %v: nobody signs in with it until the secret is there\n", name, p.Name, err)
+			}
+		}
 	} else {
 		fmt.Fprintf(stderr, "%s: nobody signs in on a page: give the settings the address people reach the server at, url\n", name)
 	}

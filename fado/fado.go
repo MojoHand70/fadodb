@@ -211,6 +211,11 @@ type (
 	PasswordLink   = store.PasswordLink
 	SignInEntry    = store.SignInEntry
 	SignInFilter   = store.SignInFilter
+	// SignedOn is who a company's provider says a person is, as the
+	// server checked it, and SignOnProvider a company's sign-on as the
+	// page of signing in offers it.
+	SignedOn       = store.SignedOn
+	SignOnProvider = store.SignOnProvider
 	// Read is one entry of the log of reads, and ReadsFilter narrows the
 	// log (ADR-0067).
 	Read        = store.Read
@@ -975,6 +980,15 @@ func (db *DB) SetUpSecondStep(ctx context.Context, signIn string) (*SecondStep, 
 // and gives the session, with its token this once.
 func (db *DB) FinishSignIn(ctx context.Context, signIn, code, address string, lengths SessionLengths) (*Session, error) {
 	return db.s.FinishSignIn(ctx, signIn, code, address, lengths)
+}
+
+// SignOn gives the session of a person a company's provider vouched for
+// (ADR-0071, item 4): the provider's id for them finds the user it was
+// tied to, and the first time the e-mail the provider vouches for finds
+// the user an administrator gave it. Everybody else is refused as a
+// wrong password is.
+func (db *DB) SignOn(ctx context.Context, who SignedOn, address string, lengths SessionLengths) (*Session, error) {
+	return db.s.SignOn(ctx, who, address, lengths)
 }
 
 // SessionCaller answers who a session's token belongs to, as Authenticate

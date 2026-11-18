@@ -1178,9 +1178,13 @@ a user.
 - **People sign in on the server's own pages** (ADR-0071), under
   `/auth/`: a password kept as a PBKDF2 hash, set through a link that
   is good once, and a second step from an authenticator app for
-  administrators and designers. The browser keeps a session, a cookie
-  that the server's own pages send commands with. Every sign-in is
-  logged. A company's sign-on and passes for agents follow.
+  administrators and designers; or a company's sign-on, OpenID Connect
+  to Microsoft, Google or another provider, whose signed note the
+  server checks in `internal/signon`, a package only the server links,
+  and whose account the first sign-in ties to the user an
+  administrator added with the person's e-mail. The browser keeps a
+  session, a cookie that the server's own pages send commands with.
+  Every sign-in is logged. Passes for agents follow.
 - **The stream sends the event alone.** A subscriber reads the document
   when it acts. A document that leaves a subscriber's sight is not
   mentioned (ADR-0058).

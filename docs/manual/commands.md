@@ -1204,6 +1204,7 @@ Makes a user: a person, an agent or a service the database knows by its id. It i
 | `id` | text | needed | the id every event will record; it never changes and is never given to somebody else |
 | `kind` | text | needed | person, agent or service |
 | `name` | text |  | how a screen shows the user |
+| `email` | text |  | a person's company e-mail, by which a first sign-in with the company's sign-on finds them |
 | `groups` | list of texts |  | the groups of the user, which INGROUP answers |
 | `system_groups` | list of texts |  | the system groups of the user: administrators, designers, content-administrators, analysts |
 
@@ -1223,6 +1224,7 @@ Changes a user: the members given, and no other. It is a database administrator'
 |---|---|---|---|
 | `id` | text | needed | the id of the user |
 | `name` | text |  | how a screen shows the user |
+| `email` | text |  | a person's company e-mail, in place of the one they have; empty takes it away |
 | `groups` | list of texts |  | the groups of the user, in place of the ones it has |
 | `system_groups` | list of texts |  | the system groups of the user, in place of the ones it has |
 | `disabled` | true or false |  | true stops every key of the user at the next command; false lets them through again |
@@ -1557,6 +1559,7 @@ A few calls of the Go package have no command.
 | `SessionCaller` | it answers who a session belongs to, for the door that is given the session; a caller that wants to know who it is sends whoami |
 | `SetUpMySecondStep` | its secret never travels in a command: the server's page /auth/account shows it |
 | `SetUpSecondStep` | it belongs to a sign-in under way on the server's page /auth/signin |
+| `SignOn` | it takes who a company's provider vouched for, which the server checked on its page /auth/callback; no command carries a provider's word |
 | `SignOut` | it ends the session it is sent with, on the server's page /auth/signout; end_session ends one by its id |
 | `Table` | it answers the engine's compiled form to a Go program; get_table answers the definition |
 | `UsePasswordLink` | a password never travels in a command: the server's page /auth/password takes it |

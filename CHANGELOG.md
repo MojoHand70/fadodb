@@ -8,6 +8,21 @@ All notable changes to FadoDB are recorded here. The format follows
 
 ### Added
 
+- Signing in, part 2 (ADR-0071, item 4): a company's sign-on. The
+  settings name each provider of OpenID Connect under `signon`, with
+  its `issuer`, `client_id`, `label` and `company_emails`; its client
+  secret is found as a connection's is. The sign-in page offers a
+  button for each; the server sends the person to the provider with
+  PKCE, a state and a nonce, and checks the provider's signed note:
+  RS256, PS256 or ES256 by a key the provider publishes, the issuer,
+  the audience, the time and the nonce. A user gains `email`
+  (`create_user`, `set_user`): the first sign-on finds the person by
+  the e-mail the provider vouches for and ties the account to the
+  user, and every later one finds them by the provider's id. An account
+  with no user is refused as a wrong password is. No new dependency:
+  the code is the standard library's, in a package only the server
+  links. Two tables join the engine's own; a new database is about
+  310 KB.
 - ADR-0072, accepted, with the owner's ruling of 2026-11-18: the core
   program may be 20 MB, where it was 15. The size gate holds every pull
   request to it. `text/template`, `html/template` and calls of methods

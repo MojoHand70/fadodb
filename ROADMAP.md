@@ -346,8 +346,8 @@ winning; the class bundle, `get_bundle` and `GET /v1/bundle`, which is
 built: a class in the person's words and its formulas compiled, proved
 in the browser VM against the server's answers; signing in
 for people at `fadodb serve` itself (ADR-0071), of which passwords,
-the second step for administrators and designers, and sessions are
-built, and a company's sign-on and passes for agents follow; a kit of plain pages the server serves
+the second step for administrators and designers, sessions and a
+company's sign-on are built, and passes for agents follow; a kit of plain pages the server serves
 (the classes, the list of a class, the document and a designer made of
 lists), with `--pages` for a face of one's own in their place; the
 door for agents at the server itself; one starter, the approval of an

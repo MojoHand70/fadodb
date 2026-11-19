@@ -60,7 +60,7 @@ line says so. Copy `0000-template.md` to start.
 | [0052](0052-system-groups-and-the-content-administrator.md) | System groups: who runs the database, who designs, who reads everything and who may act on any document | Accepted, amended by 0057, 0059, 0067 |
 | [0053](0053-acting-for-somebody.md) | Acting for somebody: a recorded substitution for people and assistants | Accepted, amended by 0071 |
 | [0054](0054-the-screen-on-a-layout-component.md) | The screen on a layout component: `mobile` and `desktop` | Withdrawn by 0069 |
-| [0055](0055-the-command-set-on-the-wire.md) | The command set on the wire: every command, its JSON, and one address each | Accepted, amended by 0057, 0058, 0059, 0063, 0065, 0067, 0070 |
+| [0055](0055-the-command-set-on-the-wire.md) | The command set on the wire: every command, its JSON, and one address each | Accepted, amended by 0057, 0058, 0059, 0063, 0065, 0067, 0070, 0074 |
 | [0056](0056-one-database-for-each-customer.md) | One database for each customer, and a server that serves one database | Accepted |
 | [0057](0057-users-groups-and-keys.md) | Who is calling: users, groups and keys, kept in the database | Accepted, amended by 0071 |
 | [0058](0058-the-stream-of-changes.md) | The stream of changes: the log read forward, over plain HTTP | Accepted, amended by 0067 |
@@ -79,4 +79,4 @@ line says so. Copy `0000-template.md` to start.
 | [0071](0071-signing-in.md) | Signing in: passwords, company sign-on, sessions and passes for agents | Accepted, amended by 0073 |
 | [0072](0072-the-size-budget-of-the-core-program.md) | The size budget of the core program: 20 MB | Accepted |
 | [0073](0073-the-server-hands-out-the-pages-of-a-face.md) | The server hands out the pages of a face from a folder, and has none of its own | Accepted |
-| [0074](0074-the-engine-hands-out-its-list-of-functions.md) | The engine hands out its list of functions | Proposed |
+| [0074](0074-the-engine-hands-out-its-list-of-functions.md) | The engine hands out its list of functions | Accepted |

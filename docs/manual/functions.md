@@ -4,6 +4,9 @@
 
 Every function a formula can call, by what it is for. The list is written
 from the engine's own catalogue, so it has every function and no other.
+A program asks the engine for the same list with the command
+[`list_functions`](commands.md#list_functions): a formula editor offers
+names from it, and an agent reads it before it writes a formula.
 
 A name is written in capitals and matches in any case. An argument in
 square brackets may be left out, and `...` means it may be repeated.

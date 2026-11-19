@@ -252,6 +252,9 @@ func says(o Options, tools map[string]bool) string {
 	if tools["list_classes"] {
 		b.WriteString(" list_classes answers which classes there are, and get_class how one is defined: its variables, its states, its transitions and who may do what.")
 	}
+	if tools["list_functions"] {
+		b.WriteString(" list_functions answers every function a formula can call, with its arguments; read it before you write a formula.")
+	}
 	for name := range tools {
 		if !builds(name) {
 			continue

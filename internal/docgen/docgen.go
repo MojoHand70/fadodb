@@ -48,7 +48,7 @@ func Functions() string {
 	var b strings.Builder
 	b.WriteString(generated)
 	b.WriteString("# The functions\n\n")
-	b.WriteString("Every function a formula can call, by what it is for. The list is written\nfrom the engine's own catalogue, so it has every function and no other.\n\n")
+	b.WriteString("Every function a formula can call, by what it is for. The list is written\nfrom the engine's own catalogue, so it has every function and no other.\nA program asks the engine for the same list with the command\n[`list_functions`](commands.md#list_functions): a formula editor offers\nnames from it, and an agent reads it before it writes a formula.\n\n")
 	b.WriteString("A name is written in capitals and matches in any case. An argument in\nsquare brackets may be left out, and `...` means it may be repeated.\nA function marked **not built yet** is part of the language and is\nrefused by this version of the engine.\n\n")
 
 	b.WriteString("## Where a function may stand\n\nEach function is of one kind, which decides where it may be used.\n\n| Kind | Meaning |\n|---|---|\n")

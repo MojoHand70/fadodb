@@ -121,3 +121,33 @@ func TestCatalog_RejectsMalformedEntries(t *testing.T) {
 		}
 	}
 }
+
+// What the catalogue tells a caller is the catalogue the parser reads,
+// entry for entry, and the answer is the caller's own to change.
+func TestCatalog_ToldIsTheCatalogue(t *testing.T) {
+	told := Tell()
+	all := Functions()
+	if len(told.Functions) != len(all) {
+		t.Fatalf("told %d functions, the catalogue has %d", len(told.Functions), len(all))
+	}
+	for i, fn := range all {
+		got := told.Functions[i]
+		if got.Name != fn.Name || got.Kind != fn.Class || got.Category != fn.Category || got.Returns != fn.Returns ||
+			got.Description != fn.Summary || got.Signature != fn.Signature(fn.Name) || len(got.Params) != len(fn.Params) ||
+			len(got.Aliases) != len(fn.Aliases) || got.NotBuilt == Implemented(fn.Name) {
+			t.Errorf("%s is told as %+v", fn.Name, got)
+		}
+		if got.Params == nil {
+			t.Errorf("%s is told with no list of arguments", fn.Name)
+		}
+	}
+	if len(told.Kinds) != len(Classes()) {
+		t.Errorf("told %d kinds, the catalogue has %d", len(told.Kinds), len(Classes()))
+	}
+	// A caller that changes its answer changes nothing of the engine's.
+	told.Functions[0].Name = "CHANGED"
+	told.Functions[0].Params = append(told.Functions[0].Params[:0], Param{Name: "x", Type: "x"})
+	if again := Tell(); again.Functions[0].Name != all[0].Name || again.Functions[0].Params[0].Name != all[0].Params[0].Name {
+		t.Errorf("the catalogue was changed through an answer: %+v", again.Functions[0])
+	}
+}

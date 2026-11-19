@@ -117,6 +117,14 @@ type (
 	// ActionInfo is one action a rule may name, as Actions lists it, with
 	// its parameters and what it returns, each an ActionParam.
 	ActionInfo = store.ActionInfo
+	// FunctionCatalogue is the engine's list of the functions a formula
+	// can call, as Functions answers it (ADR-0074): each function a
+	// FunctionInfo with its arguments, each a FunctionParam, and each
+	// kind of function a FunctionKind.
+	FunctionCatalogue = store.FunctionCatalogue
+	FunctionInfo      = store.FunctionInfo
+	FunctionKind      = store.FunctionKind
+	FunctionParam     = store.FunctionParam
 	// Defined says who defined a version of a class, a schema, a table
 	// or an action, and when (ADR-0052); Definition is one version in the
 	// listing Definitions answers.
@@ -643,6 +651,16 @@ func (db *DB) Actions() []ActionInfo { return db.s.Actions() }
 
 // Action returns one action of the catalogue by name.
 func (db *DB) Action(name string) (*ActionInfo, bool) { return db.s.Action(name) }
+
+// Functions answers the engine's list of the functions a formula can
+// call (ADR-0074): each with its other names, its kind, which decides
+// where it may stand, its arguments, what it returns, the call as the
+// manual writes it and a sentence on what it answers, and whether this
+// version of the engine has built it. The list is the engine's own and
+// the same for every database; a formula editor offers names from it,
+// and an agent reads it before it writes a formula. The check of a
+// formula stays ValidateClass.
+func (db *DB) Functions() *FunctionCatalogue { return db.s.Functions() }
 
 // PreviewAction answers what a defined action would be called with for
 // the arguments, given as values, and for a declared action the request

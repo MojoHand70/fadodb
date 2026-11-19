@@ -96,17 +96,19 @@ their class. Each tool is one command of the database at
 https://fado.acme.example, sent as the user whose key this door was
 given. whoami answers who that user is. list_classes answers which
 classes there are, and get_class how one is defined: its variables,
-its states, its transitions and who may do what. Look before you
-build: before you define a class, a table or a schema, list what the
-database has (list_classes, list_tables, list_schemas) and read each
-one that may be the same thing; match by meaning, not by name. Ask the
-person you work for which one to use, and never keep a thing twice.
-preview answers what a create, a set or a transition would do, and
-writes nothing. A command the database refuses is answered with the
-refusal under error: a code, a message, the place in the command and a
-hint. The tools that commit a document take a key, and one sent again
-with the same key makes no second commit: create, set, reset, refresh,
-transition, transition_many, delete. No other tool takes one.
+its states, its transitions and who may do what. list_functions
+answers every function a formula can call, with its arguments; read it
+before you write a formula. Look before you build: before you define a
+class, a table or a schema, list what the database has (list_classes,
+list_tables, list_schemas) and read each one that may be the same
+thing; match by meaning, not by name. Ask the person you work for
+which one to use, and never keep a thing twice. preview answers what a
+create, a set or a transition would do, and writes nothing. A command
+the database refuses is answered with the refusal under error: a code,
+a message, the place in the command and a hint. The tools that commit
+a document take a key, and one sent again with the same key makes no
+second commit: create, set, reset, refresh, transition,
+transition_many, delete. No other tool takes one.
 ```
 
 - **Look before you build** is on the sign because the door is the one
@@ -164,7 +166,7 @@ before one that removes:
 <!-- the marks -->
 | The command | Tools | `readOnlyHint` | `destructiveHint` | `openWorldHint` |
 |---|---|---|---|---|
-| reads | 47 | true | false | false |
+| reads | 48 | true | false | false |
 | writes | 27 | false | false | false |
 | writes, and runs an action now: `try_action`, `drain` | 2 | false | false | true |
 | removes: `delete` | 1 | false | true | false |

@@ -1,6 +1,6 @@
 # ADR-0071: Signing in: passwords, company sign-on, sessions and passes for agents
 
-- Status: Accepted; amends ADR-0057 (a password, a session and a pass join the key as ways to say who calls; a user gains an e-mail and a second step), ADR-0053 (item 5: an agent a person connects has that person's groups while it acts for them), ADR-0059 (the settings gain the address of the server, the company sign-on and the lengths of sessions), ADR-0064 (an agent signs in at `/mcp` with a pass)
+- Status: Accepted; amends ADR-0057 (a password, a session and a pass join the key as ways to say who calls; a user gains an e-mail and a second step), ADR-0053 (item 5: an agent a person connects has that person's groups while it acts for them), ADR-0059 (the settings gain the address of the server, the company sign-on and the lengths of sessions), ADR-0064 (an agent signs in at `/mcp` with a pass); amended by ADR-0073 (item 1: the pages the server serves beside its own are those of a face, handed out from a folder; no kit is built into the server)
 - Date: 2026-11-18
 
 ## Context

@@ -1,6 +1,6 @@
 # ADR-0073: The server hands out the pages of a face from a folder, and has none of its own
 
-- Status: Proposed
+- Status: Accepted; amends ADR-0071 (item 1: the pages the server serves beside its own are those of a face, handed out from a folder the operator names; no kit is built into the server)
 - Date: 2026-11-19
 
 ## Context
@@ -120,6 +120,9 @@ Of 2026-11-19, two questions:
 Settled by me, his to veto: items 4 to 6 and 9 to 11; the list of
 kinds; that the header lets a style be written in a page; and the name
 `--pages`, which stood in the roadmap.
+
+Accepted by him on 2026-11-19, when the pull request that built it was
+merged: "ADR-0073 accepted".
 
 ## Consequences
 

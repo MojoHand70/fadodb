@@ -76,6 +76,6 @@ line says so. Copy `0000-template.md` to start.
 | [0068](0068-what-a-class-says-to-people.md) | What a class says to people: labels, The List, formats, descriptions and other languages | Accepted, amended by 0069 |
 | [0069](0069-the-screen-is-the-faces-and-a-class-has-sections.md) | The screen is the face's, and a class has sections | Accepted |
 | [0070](0070-the-bundle.md) | The bundle: a class, its words and its compiled formulas in one call | Accepted |
-| [0071](0071-signing-in.md) | Signing in: passwords, company sign-on, sessions and passes for agents | Accepted |
+| [0071](0071-signing-in.md) | Signing in: passwords, company sign-on, sessions and passes for agents | Accepted, amended by 0073 |
 | [0072](0072-the-size-budget-of-the-core-program.md) | The size budget of the core program: 20 MB | Accepted |
-| [0073](0073-the-server-hands-out-the-pages-of-a-face.md) | The server hands out the pages of a face from a folder, and has none of its own | Proposed |
+| [0073](0073-the-server-hands-out-the-pages-of-a-face.md) | The server hands out the pages of a face from a folder, and has none of its own | Accepted |

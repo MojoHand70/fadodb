@@ -8,7 +8,7 @@ All notable changes to FadoDB are recorded here. The format follows
 
 ### Added
 
-- The pages of a face (ADR-0073, Proposed): `fadodb serve FILE --pages
+- The pages of a face (ADR-0073): `fadodb serve FILE --pages
   DIR` hands out the files of a folder at the root of the server's
   address, `index.html` first, so that a face made of plain files, as
   FadoDB Workshop is, needs no server of its own and signs people in

@@ -860,8 +860,8 @@ and reads every row and every variable. It is for the system group
 ### The screen is the face's
 
 The engine keeps no screen (ADR-0069). A class has no layouts; the
-engine stores none, checks none and serves none. A face, FadoFace, the
-kit of plain pages or a page an agent writes, decides what goes where,
+engine stores none, checks none and serves none. A face, FadoFace,
+FadoDB Workshop or a page an agent writes, decides what goes where,
 drawn as what and on which screen, from what the class says to people,
 its sections, the rights and the commands. A condition a face needs is
 a computed variable of the class, `has_delivery`, which the engine and

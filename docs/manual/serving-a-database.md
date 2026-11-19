@@ -76,6 +76,7 @@ each is written.
 | `--plain-http` | the server may listen beyond this machine without a certificate, because something in front of it encrypts: a proxy, or the network of a container | it may not |
 | `--settings FILE` | [the settings](#the-settings): what the actions of the database may call, and how much the server takes on | the actions call no host, and the limits are the usual ones |
 | `--secrets-dir DIR` | the directory that holds [the secrets](#the-secrets) of the connections | a secret is read from the environment |
+| `--pages DIR` | the folder of a face, whose files the server hands out at its own address: [the pages of a face](#the-pages-of-a-face) | the server hands out no page but those where people sign in |
 
 - **A key never travels in the clear by accident.** A key goes with
   every request. So the server refuses to start when it would listen
@@ -422,6 +423,79 @@ program and refused by `fadodb serve`.
 answers; [Opening a database](opening-a-database.md) lists what a
 program may say when it opens one.
 
+## The pages of a face
+
+The server has no pages of a face of its own. What people see is a
+face: a program of its own, which sends the commands as every other
+caller does. A face made of plain files, as
+[FadoDB Workshop](https://github.com/MojoHand70/fadodb-workshop) is,
+needs no server of its own. Olga starts the server with the folder:
+
+<!-- the server with a face -->
+```
+fadodb serve acme.fado --pages ./workshop
+```
+
+and Ann opens the server's address and is in Workshop. Where she signs
+in is still the server's own page ([signing in](signing-in.md)), and
+the page she comes back to sends its commands with her session.
+
+- **The files answer at the root** of the server's address,
+  `index.html` first, and the same for a folder inside the folder.
+- **The server's own addresses always come first**: `/v1/`, `/auth/`,
+  `/mcp` and `/.well-known/`. A file of the folder under one of those
+  names is never handed out, and the server says so when it starts.
+- **The folder is only read**, with `GET` and `HEAD`.
+- **A changed file is seen at the next load.** The browser asks each
+  time whether its copy is still the file.
+- **Only these kinds of file are handed out**, by the ending of the
+  name:
+
+<!-- the kinds of file -->
+| A name that ends in | is sent as | It is |
+|---|---|---|
+| `.html` | `text/html; charset=utf-8` | a page |
+| `.css` | `text/css; charset=utf-8` | a style sheet |
+| `.js` | `text/javascript; charset=utf-8` | a script |
+| `.mjs` | `text/javascript; charset=utf-8` | a script |
+| `.json` | `application/json; charset=utf-8` | data |
+| `.txt` | `text/plain; charset=utf-8` | a text, such as a licence |
+| `.svg` | `image/svg+xml` | a drawing |
+| `.png` | `image/png` | a picture |
+| `.jpg` | `image/jpeg` | a picture |
+| `.jpeg` | `image/jpeg` | a picture |
+| `.gif` | `image/gif` | a picture |
+| `.webp` | `image/webp` | a picture |
+| `.ico` | `image/x-icon` | the icon of a tab |
+| `.woff2` | `font/woff2` | a font |
+
+  Nothing else in the folder is there for a browser: a file of another
+  kind, a file or a folder whose name begins with a dot, and whatever a
+  link in the folder points to outside it.
+
+**The folder is yours to answer for**, as the program and its settings
+are. A script of such a page runs at the server's own address, so it
+sends commands with the session of whoever is signed in, and can do
+what that person may do. The rules of the classes still hold: it can
+do nothing that person may not. Put there only what you would run.
+
+Every file is sent with one header, which is not yours to change:
+
+<!-- the header of a page -->
+```
+Content-Security-Policy: default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'
+```
+
+A page loads script, style, pictures and fonts from the server alone,
+calls the server alone, and is shown inside no other page. No script is
+written in a page: each is a file of the folder. A face that needs
+something from another site, a map or a font, answers at an address of
+its own, which the server [does not answer yet](#not-here-yet).
+
+A file that people attach to a document is not a page, wherever it
+came from: the server hands it out so that a browser runs nothing in
+it ([files](files.md)).
+
 ## What it says when it starts
 
 To standard error, before the first request:
@@ -431,6 +505,13 @@ To standard error, before the first request:
 fadodb serve: serving acme.fado at http://127.0.0.1:8080
 fadodb serve: people sign in at http://127.0.0.1:8080/auth/signin
 fadodb serve: its actions may call over the connection books, books.acme.internal:8443
+```
+
+With `--pages`, it says where the pages answer:
+
+<!-- what it says of the pages -->
+```
+fadodb serve: it hands out the pages of ./workshop at http://127.0.0.1:8080/
 ```
 
 and a line for everything the database needs that this server does not
@@ -632,6 +713,9 @@ answered beyond them.
 
 ## Not here yet
 
+- **A face at an address of its own.** A page that another server
+  hands out cannot send commands here yet: the server answers the
+  pages of its own address only.
 - **Changing the settings without a restart.**
 - **Limits for each user**, such as commands a minute. The limits are
   for the whole database.

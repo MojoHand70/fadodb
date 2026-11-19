@@ -8,6 +8,21 @@ All notable changes to FadoDB are recorded here. The format follows
 
 ### Added
 
+- The pages of a face (ADR-0073, Proposed): `fadodb serve FILE --pages
+  DIR` hands out the files of a folder at the root of the server's
+  address, `index.html` first, so that a face made of plain files, as
+  FadoDB Workshop is, needs no server of its own and signs people in
+  with the server's own pages. The server's own addresses, `/v1/`,
+  `/auth/`, `/mcp` and `/.well-known/`, always come first. The folder
+  is only read, a fixed list of kinds of file is handed out, and
+  nothing whose name begins with a dot or that a link points to
+  outside the folder. Every file is sent with one header, not the
+  operator's to change: a page loads script, style, pictures and fonts
+  from the server alone and calls the server alone. A script of such a
+  page acts as whoever is signed in, so the folder is the operator's to
+  answer for. The server has no pages of a face of its own: the kit
+  once planned inside it is FadoDB Workshop, in a repository of its
+  own.
 - Signing in, part 3 (ADR-0071, items 6 to 8): passes for clients, by
   OAuth 2.1. A client sends the person to `/auth/authorize`; the
   server's page `/auth/allow` asks "Claude (claude.ai) wants to act for

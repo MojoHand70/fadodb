@@ -8,7 +8,7 @@ All notable changes to FadoDB are recorded here. The format follows
 
 ### Added
 
-- The list of functions as a command (ADR-0074, Proposed):
+- The list of functions as a command (ADR-0074):
   `list_functions` answers every function a formula can call, each
   with its other names, its kind, which decides where it may stand, its
   arguments, what it returns, the call as the manual writes it and a

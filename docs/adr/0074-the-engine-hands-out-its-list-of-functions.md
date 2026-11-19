@@ -1,6 +1,6 @@
 # ADR-0074: The engine hands out its list of functions
 
-- Status: Proposed; adds one command to the set of ADR-0055
+- Status: Accepted; amends ADR-0055 (one command joins the table)
 - Date: 2026-11-19
 
 ## Context
@@ -90,13 +90,16 @@ to design a class for travel requests through the door.
 
 ## The owner's ruling
 
-None yet. Of 2026-11-19, on what the open face is to have: "a formula
-editor with intellisense for calculated variables".
+Of 2026-11-19, on what the open face is to have: "a formula editor
+with intellisense for calculated variables".
 
 Settled by me, his to veto: everything in this record. Nothing in it
 was put to him as a question. The names of the members follow
 `list_actions` (`name`, `kind`, `params`, `returns`) and the words of
 a class (`description`).
+
+Accepted by him on 2026-11-19, when the pull request that built it was
+merged: "ADR-0074 accepted".
 
 ## Consequences
 

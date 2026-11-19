@@ -176,6 +176,77 @@ func Classes() map[Class]string {
 	return out
 }
 
+// Told is the catalogue as it is told to a caller (ADR-0074): every
+// function a formula can call, and what each kind of function means for
+// where one may stand.
+type Told struct {
+	Functions []ToldFunction `json:"functions"`
+	Kinds     []ToldKind     `json:"kinds"`
+}
+
+// ToldFunction is one function of the catalogue as it is told to a
+// caller: what somebody who writes a formula needs to know of it.
+type ToldFunction struct {
+	Name string `json:"name"`
+	// Aliases are the other names the function is written by.
+	Aliases []string `json:"aliases,omitempty"`
+	// Kind decides where the function may stand: pure, context, lookup,
+	// query or secret.
+	Kind Class `json:"kind"`
+	// Category is what the function is for: logic, numeric, text and so
+	// on, as the manual groups them.
+	Category string `json:"category"`
+	// Signature is the call as the manual writes it: ROUND(number[,
+	// digits]), an argument in square brackets being one that may be left
+	// out.
+	Signature string `json:"signature"`
+	// Params are the arguments in their order, never absent.
+	Params []Param `json:"params"`
+	// Returns names the type of the answer.
+	Returns string `json:"returns"`
+	// Description is a sentence or two on what the function answers.
+	Description string `json:"description"`
+	// NotBuilt marks a function that is part of the language and that
+	// this version of the engine refuses where a formula calls it.
+	NotBuilt bool `json:"not_built,omitempty"`
+}
+
+// ToldKind is one kind of function and what it means.
+type ToldKind struct {
+	Name        Class  `json:"name"`
+	Description string `json:"description"`
+}
+
+// kindOrder is the order the kinds are told in: from the function that
+// may stand anywhere to the one that may stand in one place.
+var kindOrder = [...]Class{ClassPure, ClassContext, ClassLookup, ClassQuery, ClassSecret}
+
+// Tell answers the catalogue as it is told to a caller, in the order of
+// the catalogue. The answer is the caller's own: it is made anew each
+// time, from the one catalogue the parser and the binder read.
+func Tell() *Told {
+	out := &Told{Functions: make([]ToldFunction, 0, len(catalog.functions)), Kinds: make([]ToldKind, 0, len(kindOrder))}
+	for _, fn := range catalog.functions {
+		out.Functions = append(out.Functions, ToldFunction{
+			Name:        fn.Name,
+			Aliases:     append([]string(nil), fn.Aliases...),
+			Kind:        fn.Class,
+			Category:    fn.Category,
+			Signature:   fn.Signature(fn.Name),
+			Params:      append([]Param{}, fn.Params...),
+			Returns:     fn.Returns,
+			Description: fn.Summary,
+			NotBuilt:    !Implemented(fn.Name),
+		})
+	}
+	for _, kind := range kindOrder {
+		if text, ok := catalog.classes[kind]; ok {
+			out.Kinds = append(out.Kinds, ToldKind{Name: kind, Description: text})
+		}
+	}
+	return out
+}
+
 // MinArgs is the fewest arguments a call may pass.
 func (fn *Function) MinArgs() int {
 	n := 0

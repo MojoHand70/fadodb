@@ -26,7 +26,7 @@ goes wrong most often.
 | [`docs/manual/schemas-and-objects.md`](../../docs/manual/schemas-and-objects.md) | a value with named fields: defining a schema, the nine the engine brings, and the table of what a class can and cannot do with an object today. Read it before you give a class an object |
 | [`docs/manual/files.md`](../../docs/manual/files.md) | a file on a document: the bytes are put first, the document then names their hash; who may open a file, and the guard `NOT ISBLANK(scan.hash)` |
 | [`docs/manual/triggered-variables.md`](../../docs/manual/triggered-variables.md) | a computed variable worked out only at chosen moments and kept in between: the rate of the day an invoice was checked, who made a move, a count of other documents. Read it before you write `"mode": "triggered"`: the guard of a move does not see what the move works out, and whoever may see a document may refresh it |
-| [`docs/manual/functions.md`](../../docs/manual/functions.md) | every function, with the ones this engine does not have yet marked. Check a function here before you use it |
+| [`docs/manual/functions.md`](../../docs/manual/functions.md) | every function, with the ones this engine does not have yet marked. Check a function here before you use it. The engine you talk to answers the same list, for its own version, with the command `list_functions` |
 | [`docs/manual/refusals.md`](../../docs/manual/refusals.md) | every code the engine answers with, and what it means |
 | [`docs/manual/glossary.md`](../../docs/manual/glossary.md) | the words, and which are the engine's and which are yours |
 

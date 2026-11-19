@@ -1156,6 +1156,79 @@ func TestTheBundleCommand(t *testing.T) {
 	}
 }
 
+// The list of functions is a command (ADR-0074): the engine's own
+// catalogue, whole, for whoever writes a formula, with nothing taken
+// and nothing kept from any caller.
+func TestTheListOfFunctionsIsACommand(t *testing.T) {
+	s := open(t)
+	got := run(t, s, ann, "list_functions", `{}`)
+	if len(got) != 2 {
+		t.Fatalf("list_functions answers the members %v", got)
+	}
+	functions := got["functions"].([]any)
+	byName := map[string]map[string]any{}
+	for _, f := range functions {
+		entry := f.(map[string]any)
+		byName[entry["name"].(string)] = entry
+		for _, member := range []string{"name", "kind", "category", "signature", "params", "returns", "description"} {
+			if _, ok := entry[member]; !ok {
+				t.Errorf("%v has no %s", entry["name"], member)
+			}
+		}
+	}
+	// The catalogue is the one the manual's page of functions is written
+	// from; the test of the generated pages holds the two together.
+	if len(functions) < 100 || len(byName) != len(functions) {
+		t.Fatalf("list_functions answers %d functions, %d by name", len(functions), len(byName))
+	}
+	if round := byName["ROUND"]; round["signature"] != "ROUND(number[, digits[, method]])" {
+		t.Errorf("ROUND is told as %v", round)
+	}
+	ceiling := byName["CEILING"]
+	if ceiling["signature"] != "CEILING(number[, digits])" || ceiling["kind"] != "pure" || ceiling["category"] != "numeric" || ceiling["returns"] != "number" {
+		t.Errorf("CEILING is told as %v", ceiling)
+	}
+	if params := ceiling["params"].([]any); len(params) != 2 || !reflect.DeepEqual(params[0], map[string]any{"name": "number", "type": "number"}) ||
+		!reflect.DeepEqual(params[1], map[string]any{"name": "digits", "type": "number", "optional": true}) {
+		t.Errorf("the arguments of CEILING are told as %v", ceiling["params"])
+	}
+	if _, marked := ceiling["not_built"]; marked {
+		t.Errorf("CEILING is built, and is told as %v", ceiling)
+	}
+	if also := ceiling["aliases"]; !reflect.DeepEqual(also, []any{"CEIL"}) {
+		t.Errorf("the other names of CEILING are told as %v", also)
+	}
+	if today := byName["TODAY"]; today["kind"] != "context" || len(today["params"].([]any)) != 0 || today["signature"] != "TODAY()" {
+		t.Errorf("TODAY is told as %v", today)
+	}
+	if first := byName["FIRST"]; first["not_built"] != true {
+		t.Errorf("FIRST is not built yet, and is told as %v", first)
+	}
+	if lookup := byName["LOOKUP"]; lookup["kind"] != "lookup" {
+		t.Errorf("LOOKUP is told as %v", lookup)
+	}
+	var kinds []string
+	for _, k := range got["kinds"].([]any) {
+		kind := k.(map[string]any)
+		if text, _ := kind["description"].(string); text == "" {
+			t.Errorf("the kind %v says nothing", kind["name"])
+		}
+		kinds = append(kinds, kind["name"].(string))
+	}
+	if strings.Join(kinds, " ") != "pure context lookup query secret" {
+		t.Errorf("the kinds are told as %v", kinds)
+	}
+	// Every kind a function has is one the answer explains.
+	for name, entry := range byName {
+		if !strings.Contains(" "+strings.Join(kinds, " ")+" ", " "+entry["kind"].(string)+" ") {
+			t.Errorf("%s is of the kind %v, which the answer does not explain", name, entry["kind"])
+		}
+	}
+	if e := refused(t, s, ann, "list_functions", `{"name": "ROUND"}`); e.Code != CodeBadJSON || e.Path != "/name" {
+		t.Errorf("list_functions takes nothing: %+v", e)
+	}
+}
+
 // The commands of signing in (ADR-0071): an administrator makes a link,
 // lists and ends a person's sessions, clears a second step and reads the
 // log of sign-ins; a person lists and ends their own sessions.

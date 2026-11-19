@@ -530,6 +530,7 @@ It answers:
 | [`list_schemas`](#list_schemas) | Lists the schemas. | reads |
 | [`list_tables`](#list_tables) | Lists the tables. | reads |
 | [`list_actions`](#list_actions) | Lists every action a rule may name, the engine's own first. | reads |
+| [`list_functions`](#list_functions) | Lists every function a formula can call, for whoever writes one: a formula editor, or an agent before it defines a class. | reads |
 | [`definitions`](#definitions) | Lists the versions of one class, schema, table, action, inlet or words, with who defined each and when. | reads |
 | [`preview_draft`](#preview_draft) | Tries a class definition that is not stored on a create, or on a document of the stored class of the same name, writing nothing. | reads |
 | [`migrate`](#migrate) | Brings every live document of a class that an earlier version computed to the current version. | writes |
@@ -798,6 +799,19 @@ It answers:
 | Member | What it holds |
 |---|---|
 | `actions` | the actions, each with its parameters, what it returns and whether this server can run it |
+
+### list_functions
+
+Lists every function a formula can call, for whoever writes one: a formula editor, or an agent before it defines a class. It reads; in Go it is the call `Functions`.
+
+It takes nothing: its object is `{}`.
+
+It answers:
+
+| Member | What it holds |
+|---|---|
+| `functions` | the functions in the order of the manual, each with its other names, its kind, its category, the call as the manual writes it, its arguments, what it returns, a sentence on what it answers, and not_built where this version of the engine refuses it |
+| `kinds` | the kinds of function, each with what it means for where a function may stand |
 
 ### definitions
 

@@ -8,6 +8,15 @@ All notable changes to FadoDB are recorded here. The format follows
 
 ### Added
 
+- The list of functions as a command (ADR-0074, Proposed):
+  `list_functions` answers every function a formula can call, each
+  with its other names, its kind, which decides where it may stand, its
+  arguments, what it returns, the call as the manual writes it and a
+  sentence on what it answers, and marks the ones this version of the
+  engine has not built. It is the catalogue the parser itself reads, so
+  a formula editor needs no copy of its own, and an agent reads it
+  through the door before it writes a formula; the sign above the door
+  says so. In Go: `DB.Functions()`.
 - The pages of a face (ADR-0073): `fadodb serve FILE --pages
   DIR` hands out the files of a folder at the root of the server's
   address, `index.html` first, so that a face made of plain files, as

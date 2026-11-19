@@ -708,6 +708,25 @@ func runListSchemas(c *call) error { return c.answer("schemas", list(c.s.SchemaN
 func runListTables(c *call) error  { return c.answer("tables", list(c.s.Tables()), nil) }
 func runListActions(c *call) error { return c.answer("actions", list(c.s.Actions()), nil) }
 
+// runListFunctions answers the engine's list of functions (ADR-0074).
+func runListFunctions(c *call) error {
+	told := c.s.Functions()
+	functions, err := Marshal(told.Functions)
+	if err != nil {
+		return err
+	}
+	kinds, err := Marshal(told.Kinds)
+	if err != nil {
+		return err
+	}
+	c.open("functions")
+	c.out = append(c.out, functions...)
+	c.next("kinds")
+	c.out = append(c.out, kinds...)
+	c.close()
+	return nil
+}
+
 func runDefinitions(c *call) error {
 	versions, err := c.s.Definitions(c.ctx, c.text("what"), c.text("name"))
 	return c.answer("versions", list(versions), err)

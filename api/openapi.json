@@ -2903,6 +2903,57 @@
         "x-fado-mark": "reads"
       }
     },
+    "/v1/list_functions": {
+      "post": {
+        "description": "It reads. In Go it is the call `Functions`.",
+        "operationId": "list_functions",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {},
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "functions": {
+                      "description": "the functions in the order of the manual, each with its other names, its kind, its category, the call as the manual writes it, its arguments, what it returns, a sentence on what it answers, and not_built where this version of the engine refuses it"
+                    },
+                    "kinds": {
+                      "description": "the kinds of function, each with what it means for where a function may stand"
+                    }
+                  },
+                  "required": [
+                    "functions",
+                    "kinds"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "The command ran."
+          },
+          "default": {
+            "$ref": "#/components/responses/Refused"
+          }
+        },
+        "summary": "Lists every function a formula can call, for whoever writes one: a formula editor, or an agent before it defines a class.",
+        "tags": [
+          "Definitions"
+        ],
+        "x-fado-call": "Functions",
+        "x-fado-mark": "reads"
+      }
+    },
     "/v1/list_grants": {
       "post": {
         "description": "It reads. In Go it is the call `Grants`. It is offered only by a database that keeps its own users, groups and keys; any other answers `unknown_command`.",

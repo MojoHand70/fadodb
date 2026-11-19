@@ -47,6 +47,8 @@ send a key of a user of the database:
   GET  /v1/health        that the server answers, for anybody
   GET  /v1/metrics       its counts, for a database administrator, in
                          the text form Prometheus reads
+  GET  /...              the pages of a face, when --pages names their
+                         folder
 
 Told nothing, it listens on this machine only, at 127.0.0.1:8080.
 
@@ -62,6 +64,9 @@ Told nothing, it listens on this machine only, at 127.0.0.1:8080.
   --secrets-dir DIR  where the secrets of the connections are: the
                      secret token of the connection slack is the file
                      DIR/slack/token
+  --pages DIR        the folder of a face, whose files the server hands
+                     out at its own address: FadoDB Workshop's, or one
+                     of your own
 
 A key travels with every request, so the server refuses to listen
 beyond this machine in the clear unless --plain-http says that it may.
@@ -130,6 +135,17 @@ by the document it publishes, as Claude is, and the faces and apps an
 administrator adds with the command add_client. A grant ends when no
 pass was renewed for 30 days; grants makes it shorter.
 
+The server has no pages of a face of its own. With --pages it hands
+out the files of a folder at the root of its address, index.html
+first, to GET and HEAD: pages, style sheets, scripts, data, pictures
+and fonts, and nothing whose name begins with a dot. Its own addresses,
+/v1/, /auth/, /mcp and /.well-known/, always come first. A script of
+such a page sends commands with the session of whoever is signed in,
+so the folder is yours to answer for, as this program and its settings
+are. Every file is sent with one header that is not yours to change: a
+page loads script, style, pictures and fonts from the server alone and
+calls the server alone.
+
 The server runs no Go function: an action is the engine's own, or a
 request the server sends.
 `
@@ -158,6 +174,7 @@ func runServe(ctx context.Context, args []string, stdout, stderr io.Writer, read
 	plain := fs.Bool("plain-http", false, "")
 	settingsFile := fs.String("settings", "", "")
 	secretsDir := fs.String("secrets-dir", "", "")
+	pagesDir := fs.String("pages", "", "")
 	rest, err := parse(fs, args)
 	if err != nil {
 		return asked(name, serveUsage, err, stderr)
@@ -196,6 +213,23 @@ func runServe(ctx context.Context, args []string, stdout, stderr io.Writer, read
 			return 2
 		}
 	}
+	// The pages of a face, when the operator names their folder
+	// (ADR-0073). A folder that is not there, or has no first page, is
+	// found now too. Its requests are told as every other is, once the
+	// log is there.
+	var report func(httpdoor.Request)
+	var folder *server.Folder
+	if *pagesDir != "" {
+		if folder, err = server.NewFolder(*pagesDir, func(r httpdoor.Request) {
+			if report != nil {
+				report(r)
+			}
+		}); err != nil {
+			fmt.Fprintf(stderr, "%s: %v\n", name, err)
+			return 2
+		}
+		defer folder.Close()
+	}
 	// The database is opened with no Go function: the server runs none
 	// (item 6). It sends requests only when the settings list a host,
 	// and only to the hosts they list (items 2 and 4).
@@ -227,7 +261,7 @@ func runServe(ctx context.Context, args []string, stdout, stderr io.Writer, read
 	// and is counted (item 9).
 	log := &requestLog{w: stderr}
 	counted := newMetrics(version, time.Now())
-	report := func(r httpdoor.Request) {
+	report = func(r httpdoor.Request) {
 		log.write(r)
 		counted.record(r)
 	}
@@ -266,7 +300,7 @@ func runServe(ctx context.Context, args []string, stdout, stderr io.Writer, read
 		return 1
 	}
 	srv := &http.Server{
-		Handler: &served{db: db, door: door, pages: pages, path: path, who: who, metrics: counted, report: report},
+		Handler: &served{db: db, door: door, pages: pages, folder: folder, path: path, who: who, metrics: counted, report: report},
 		// A caller that connects and says nothing is not waited for
 		// forever. A body and a reply have no limit of time here: a
 		// large file takes as long as its line allows.
@@ -299,6 +333,11 @@ func runServe(ctx context.Context, args []string, stdout, stderr io.Writer, read
 		}
 	} else {
 		fmt.Fprintf(stderr, "%s: nobody signs in on a page: give the settings the address people reach the server at, url\n", name)
+	}
+	if folder != nil {
+		for _, line := range handingOut(folder, *pagesDir, signIn) {
+			fmt.Fprintf(stderr, "%s: %s\n", name, line)
+		}
 	}
 	fmt.Fprintf(stderr, "%s: %s\n", name, told.mayCall())
 	for _, line := range waiting(db.Actions(), kept) {
@@ -452,12 +491,31 @@ func interrupted() (context.Context, context.CancelFunc) {
 	return signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 }
 
+// handingOut is what the server says of the folder of pages it hands
+// out: where, and which of its names are the server's own addresses and
+// so are never handed out. at is the address people reach the server at,
+// empty when the server cannot tell.
+func handingOut(folder *server.Folder, dir, at string) []string {
+	where := "its own address"
+	if at != "" {
+		where = strings.TrimSuffix(at, "/") + "/"
+	}
+	lines := []string{"it hands out the pages of " + dir + " at " + where}
+	for _, held := range folder.Shadowed() {
+		lines = append(lines, "the folder of pages holds "+held+", which is an address of the server's own: it is never handed out")
+	}
+	return lines
+}
+
 // served is what the server answers: the health of the server, for
-// anybody, and everything else through the door of the database.
+// anybody, the pages of a face when a folder of them was named, and
+// everything else through the door of the database.
 type served struct {
 	db    *fado.DB
 	door  *httpdoor.Door
 	pages *server.Pages
+	// folder hands out the pages of a face; nil when no folder was named.
+	folder *server.Folder
 	// path is the file of the database; who says who sends a request,
 	// as the door asks it; metrics are the counts of the server, and
 	// report is what every request is told to once it was answered.
@@ -482,7 +540,19 @@ func (s *served) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		s.pages.ServeHTTP(w, r)
 		return
 	}
+	// The pages of a face answer everywhere else but at the server's own
+	// addresses, which always come first (ADR-0073, item 2).
+	if s.folder != nil && !ownAddress(r.URL.Path) {
+		s.folder.ServeHTTP(w, r)
+		return
+	}
 	s.door.ServeHTTP(w, r)
+}
+
+// ownAddress reports whether a path is one of the server's own: the
+// commands, and the door for agents.
+func ownAddress(path string) bool {
+	return strings.HasPrefix(path, "/v1/") || path == "/v1" || path == "/mcp" || strings.HasPrefix(path, "/mcp/")
 }
 
 // health answers that the server answers and can read its database, and

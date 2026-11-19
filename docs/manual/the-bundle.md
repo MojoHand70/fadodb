@@ -1,7 +1,7 @@
 # The bundle
 
-For the developer of a page: the kit, FadoFace, or a page an agent
-writes. Ola works in Polish and opens an invoice in her browser. As
+For the developer of a page: FadoDB Workshop, FadoFace, or a page an
+agent writes. Ola works in Polish and opens an invoice in her browser. As
 she types the net amount, the total changes at once; a field she may
 not set is greyed out; "Zatwierdź" is offered only when she may
 approve. Her page asks the server none of it while she types. It asks

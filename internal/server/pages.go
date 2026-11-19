@@ -254,7 +254,7 @@ func (p *Pages) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}()
 	h := w.Header()
 	h.Set("Cache-Control", "no-store")
-	h.Set("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'")
+	h.Set("Content-Security-Policy", pagesPolicy("'self'"))
 	h.Set("X-Frame-Options", "DENY")
 	// A referrer goes to the server itself alone, never to another site.
 	// With none at all, a browser sends the Origin of a form as null.
@@ -672,12 +672,30 @@ func stepShown(b *strings.Builder, step *store.SecondStep) {
 	b.WriteString("<p><code>" + esc(step.Secret) + "</code></p>\n<p>Or open this link on the phone: <code>" + esc(step.Link) + "</code></p>\n")
 }
 
+// pagesPolicy is the Content-Security-Policy a page of the server is
+// sent with: it loads nothing and runs nothing, its style is written in
+// it, and its form goes where forms says, the server itself and, for
+// the one page that sends a person on to a client, that client.
+//
+// A picture may be written in the page, and none is loaded: the page
+// names an empty icon that way (pageIcon). A browser asks for
+// /favicon.ico on a page that names no icon, the header refuses the
+// request, and the browser writes the refusal for whoever looks.
+func pagesPolicy(forms string) string {
+	return "default-src 'none'; style-src 'unsafe-inline'; img-src data:; form-action " + forms + "; frame-ancestors 'none'; base-uri 'none'"
+}
+
+// pageIcon names an empty icon in a page of the server, so that a
+// browser asks for none.
+const pageIcon = `<link rel="icon" href="data:,">`
+
 // drawn is a page of the server: the frame, and what the page holds.
 func drawn(name string, d *page) string {
 	var b strings.Builder
 	b.WriteString(`<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>` + esc(d.Title) + ` · FadoDB</title>
+` + pageIcon + `
 ` + refresh(d.Refresh) + `<style>` + style + `</style></head><body>
 <h1>` + esc(d.Title) + "</h1>\n")
 	if d.Error != "" {

@@ -28,6 +28,38 @@ func TestPagesSendOnlyToThemselves(t *testing.T) {
 	}
 }
 
+// A page of the server names an empty icon, written in the page, and its
+// header lets such a picture be: a browser then asks the server for no
+// /favicon.ico. Firefox asks for one on a page that names none, the
+// header refuses the request, and the refusal is written in the
+// browser's console on every page where a person signs in.
+func TestPagesNameAnEmptyIcon(t *testing.T) {
+	p, err := NewPages(nil, PagesOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodGet, "/auth/nothing", nil)
+	r.Host = "127.0.0.1:8080"
+	p.ServeHTTP(w, r)
+	if body := w.Body.String(); !strings.Contains(body, `<link rel="icon" href="data:,">`) {
+		t.Errorf("the page names no empty icon:\n%s", body)
+	}
+	policy := w.Header().Get("Content-Security-Policy")
+	if !strings.Contains(policy, "; img-src data:;") {
+		t.Errorf("the header lets no picture written in the page be: %q", policy)
+	}
+	// Nothing is loaded and nothing runs, as before.
+	for _, never := range []string{"script-src", "connect-src", "http:", "https:", "'self' data:"} {
+		if strings.Contains(policy, never) {
+			t.Errorf("the header of a page of the server holds %q: %q", never, policy)
+		}
+	}
+	if !strings.HasPrefix(policy, "default-src 'none';") || !strings.Contains(policy, "form-action 'self';") {
+		t.Errorf("the header of a page of the server is %q", policy)
+	}
+}
+
 // Without the address of the server the pages answer this machine alone,
 // and take a form only from a page of the same origin.
 func TestPagesAnswerTheirOwnOrigin(t *testing.T) {

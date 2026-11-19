@@ -278,6 +278,13 @@ All notable changes to FadoDB are recorded here. The format follows
 
 ### Fixed
 
+- **The pages where people sign in made Firefox write a refusal in its
+  console.** They named no icon, so Firefox asked the server for
+  `/favicon.ico`, and the header of those pages lets nothing load. The
+  pages now name an empty icon, written in the page itself, and their
+  header lets a picture written in a page be (`img-src data:`). Nothing
+  is loaded from anywhere, as before, and nothing a person saw was
+  wrong. Found by opening FadoDB Workshop in Firefox.
 - **The sign-in pages took no form from a real browser.** They sent no
   referrer at all, so Chromium sent the `Origin` of every form as
   `null`, which the server took for another site and refused with 403:

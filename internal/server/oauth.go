@@ -235,7 +235,7 @@ func (p *Pages) allow(out *reply, r *http.Request, told *Request) {
 		}
 		// The form is sent here, and its answer sends the browser on to
 		// the client: the page lets the one form go there.
-		out.w.Header().Set("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; form-action 'self' "+originOfURI(a.RedirectURI)+"; frame-ancestors 'none'; base-uri 'none'")
+		out.w.Header().Set("Content-Security-Policy", pagesPolicy("'self' "+originOfURI(a.RedirectURI)))
 		shown := &page{Title: "Allow " + a.Client.Name + "?", User: who.ID, Asked: a, Request: id, Groups: who.Groups, System: who.System}
 		if a.Client.Address == store.AddressAgents {
 			shown.Agent = store.AgentOf(who.ID, &a.Client)

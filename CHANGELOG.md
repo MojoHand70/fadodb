@@ -8,6 +8,23 @@ All notable changes to FadoDB are recorded here. The format follows
 
 ### Added
 
+- ADR-0075, proposed, at the owner's direction of 2026-11-20, and
+  nothing of it built: the engine makes the index of every question a
+  class declares, a pointer to be followed back, the key of a `LOOKUP`,
+  the variable the read rule compares with the caller, and three of
+  every class, and says when a class is defined which declared question
+  no index can serve. Measured that day on 100,000,000 invoices in one
+  file of 92 GB: a question through an index takes 0.3 to 0.9 ms, a
+  question past its index minutes, and an index added without care made
+  another question slow. The record has the figures, what the indexes
+  cost, what stays open and one question for the owner.
+- ADR-0076, proposed, with the owner's rulings of 2026-11-20, and
+  nothing of it built: a value worked out when it is read. A computed
+  variable gains a third mode, `"mode": "live"`: worked out for the
+  reader, with the reader's rights, and kept nowhere. `QUERY` is built
+  for it, so that an order lists its invoices; `REF()` gives a `ref`
+  something to compare with; a command `live` reads one page of such a
+  list. Two questions for the owner.
 - Apps (ADR-0077): an app is a name for the classes that belong
   together, such as Expenses or a help desk, with a label and a
   description for people. `define_app` stores one, for a designer;

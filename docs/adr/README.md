@@ -80,4 +80,6 @@ line says so. Copy `0000-template.md` to start.
 | [0072](0072-the-size-budget-of-the-core-program.md) | The size budget of the core program: 20 MB | Accepted |
 | [0073](0073-the-server-hands-out-the-pages-of-a-face.md) | The server hands out the pages of a face from a folder, and has none of its own | Accepted |
 | [0074](0074-the-engine-hands-out-its-list-of-functions.md) | The engine hands out its list of functions | Accepted |
+| [0075](0075-the-engine-makes-its-own-indexes.md) | The engine makes its own indexes, and says which question it cannot serve | Proposed |
+| [0076](0076-a-value-worked-out-when-it-is-read.md) | A value worked out when it is read: the mode `live`, the list of other documents, and what a `ref` compares with | Proposed |
 | [0077](0077-the-app.md) | The app, a name for the classes that belong together | Accepted |

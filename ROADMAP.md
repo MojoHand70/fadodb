@@ -354,7 +354,7 @@ and which is built: the server has no pages of a face of its own, and
 the open face, FadoDB Workshop, is in a repository of its own, where a
 person signs in, reads the list of a class and reads, changes, makes
 and moves a document, in development, and a designer made of lists is
-not built; the app (ADR-0077, proposed), a name for the classes that
+not built; the app (ADR-0077), a name for the classes that
 belong together, which is built: `define_app`, `get_app`, `list_apps`,
 and a class that says which app it belongs to, while an app's own
 groups and tables, and exporting an app, are not built; the

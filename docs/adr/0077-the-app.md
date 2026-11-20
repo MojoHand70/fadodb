@@ -1,6 +1,6 @@
 # ADR-0077: The app, a name for the classes that belong together
 
-- Status: Proposed
+- Status: Accepted; amends ADR-0068 (an app is the database's: item 8 left it to the face "for now"), ADR-0055 (three commands join the table, and `list_classes` takes `app`), ADR-0018 (the class header gains `app`)
 - Date: 2026-11-20
 
 ## Context
@@ -120,11 +120,14 @@ Acme's, an agent, is asked through the door to add travel requests.
     `list_apps` before it makes an app, and puts a class into the app
     it belongs to.
 
-## Questions for the owner
+## The owner's ruling
 
-Three things are built as I proposed them on 2026-11-20, so that the
-first page of Workshop is not held up. Each is the owner's to turn
-round.
+Accepted by him on 2026-11-20, after the pull request that built it
+was merged: "Mark ADR's as accepted."
+
+Three things were built as I proposed them that day, so that the
+first page of Workshop was not held up. They were put to him by name
+with the record, and he turned none of them round.
 
 1. **Who makes an app: a designer.** Dan makes classes; an app is a
    name and a few words. The other way: an administrator only, and
@@ -150,9 +153,9 @@ round.
   commands and one more member (ADR-0055), the store one more table,
   `apps`, whose name no class may take. The engine schema is 13: a
   database made by an earlier pre-release engine is recreated.
-- ADR-0068, item 8, said of an app "the face's for now". When this
-  record is accepted, that line no longer holds, and ADR-0068 and
-  ADR-0055 are marked as amended by it.
+- ADR-0068, item 8, said of an app "the face's for now". That line no
+  longer holds: ADR-0068, ADR-0055 and ADR-0018 are marked as amended
+  by this record.
 
 ## What this record leaves out
 

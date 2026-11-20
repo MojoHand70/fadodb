@@ -320,3 +320,8 @@ are the most useful contributions at this stage.
 
 Apache License 2.0, see [LICENSE](LICENSE). Releases up to v0.5.0 were
 published under the MIT license, and those copies stay under it.
+
+The mark of FadoDB, which the server's own pages carry
+(`internal/server/mark.png`), is not licensed with the code. It is its
+owner's, who keeps every right in it. A copy of FadoDB shows it to say
+that it is FadoDB; it is not for another product.

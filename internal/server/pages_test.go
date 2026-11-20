@@ -1,9 +1,12 @@
 package server
 
 import (
+	"bytes"
+	"encoding/base64"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
 	"strings"
 	"testing"
 )
@@ -57,6 +60,43 @@ func TestPagesNameAnEmptyIcon(t *testing.T) {
 	}
 	if !strings.HasPrefix(policy, "default-src 'none';") || !strings.Contains(policy, "form-action 'self';") {
 		t.Errorf("the header of a page of the server is %q", policy)
+	}
+}
+
+// Every page of the server carries FadoDB's mark and name above what it
+// holds, once, in a card. The picture is written in the page: the
+// header lets a page load nothing. The constant the pages write is the
+// picture mark.png, byte for byte.
+func TestPagesCarryTheMark(t *testing.T) {
+	png, err := os.ReadFile("mark.png")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.HasPrefix(png, []byte("\x89PNG\r\n")) {
+		t.Fatal("mark.png is no PNG picture")
+	}
+	if want := "data:image/png;base64," + base64.StdEncoding.EncodeToString(png); markData != want {
+		t.Fatalf("markData is not mark.png in base64: it has %d signs, the file gives %d", len(markData), len(want))
+	}
+	head := `<p class="brand"><img src="` + markData + `" width="40" height="40" alt=""><span>FadoDB</span></p>`
+	for _, name := range []string{"signIn", "code", "codes", "account", "setPassword", "signedOn", "passwordSet", "onward", "requestGone", "notAllowed", "linkGone", "no such page"} {
+		body := drawn(name, &page{Title: "A page"})
+		if strings.Count(body, head) != 1 {
+			t.Errorf("%s: the page carries the mark and the name %d times, want once", name, strings.Count(body, head))
+			continue
+		}
+		if strings.Count(body, "<main>") != 1 || strings.Count(body, "</main>") != 1 {
+			t.Errorf("%s: the page is not one card", name)
+		}
+		if strings.Index(body, head) > strings.Index(body, "<h1>") {
+			t.Errorf("%s: the mark stands below the title of the page", name)
+		}
+		// A picture, a style or a script that the browser would have to fetch is refused by the header.
+		for _, never := range []string{`src="http`, `src="/`, `href="http`, "<script", "url("} {
+			if strings.Contains(body, never) {
+				t.Errorf("%s: the page holds %q, which it would have to load", name, never)
+			}
+		}
 	}
 }
 

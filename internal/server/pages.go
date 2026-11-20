@@ -635,14 +635,34 @@ func (p *Pages) draw(out *reply, told *Request, status int, name string, data *p
 // html/template: a template calls methods by their names, which keeps
 // every method of the program in it, two megabytes more of the server.
 
-// style is the look of every page, light and dark.
-const style = `body{font:16px/1.5 system-ui,sans-serif;max-width:32rem;margin:2rem auto;padding:0 1rem;color:#1b1b1f;background:#fff}
-h1{font-size:1.4rem}label{display:block;margin:.8rem 0 .2rem}input{font:inherit;width:100%;box-sizing:border-box;padding:.45rem;border:1px solid #888;border-radius:4px}
-button{font:inherit;margin-top:1rem;padding:.45rem 1rem;border:0;border-radius:4px;background:#1f5fbf;color:#fff;cursor:pointer}
-.error{color:#a40000}.note{color:#1d6b2c}code,.codes{font-family:ui-monospace,monospace}.codes li{margin:.2rem 0}
-table{border-collapse:collapse;width:100%}td{padding:.3rem 0;border-bottom:1px solid #ddd;vertical-align:top}
-form.inline{display:inline}form.inline button{margin:0;padding:.2rem .6rem}
-@media (prefers-color-scheme:dark){body{color:#e8e8ec;background:#141418}input{background:#1f1f25;color:inherit}td{border-color:#333}.error{color:#ff8a80}.note{color:#8fd19e}}`
+// style is the look of every page, light and dark: the colours of
+// FadoDB, warm white and steel blue, a card on the page, and the mark
+// above it. The letters are the machine's own: the header lets a page
+// load no font.
+const style = `:root{--bg:#F7F5F0;--surface:#FFF;--ink:#24262B;--ink-2:#4B4F57;--line:#DAD6CC;--line-2:#E8E4DA;--blue:#3F74A3;--blue-strong:#2E5C86;--on-blue:#FFF;--err:#8C2A1C;--ok:#2F6A4C}
+@media (prefers-color-scheme:dark){:root{--bg:#17191D;--surface:#22252B;--ink:#ECE8DF;--ink-2:#C7C3B9;--line:#33373E;--line-2:#2B2F36;--blue:#6FA3D4;--blue-strong:#8DB8E2;--on-blue:#0F1114;--err:#FF9B8A;--ok:#7FC39E}}
+*{box-sizing:border-box}
+body{margin:0;padding:2.5rem 1rem;font:16px/1.55 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;color:var(--ink);background:var(--bg)}
+main{max-width:30rem;margin:0 auto;padding:1.75rem 1.75rem 2rem;background:var(--surface);border:1px solid var(--line);border-radius:12px;box-shadow:0 1px 2px rgba(36,38,43,.05),0 8px 24px rgba(36,38,43,.06)}
+.brand{display:flex;align-items:center;gap:.6rem;margin:0 0 1.25rem;font-weight:700;font-size:1.15rem;letter-spacing:-.02em}
+.brand img{display:block;width:40px;height:40px}
+h1{margin:0 0 .75rem;font-size:1.45rem;letter-spacing:-.01em}
+h2{margin:1.75rem 0 .5rem;padding-top:1.25rem;border-top:1px solid var(--line-2);font-size:1.05rem}
+p{margin:.6rem 0}a{color:var(--blue-strong)}
+label{display:block;margin:.9rem 0 .25rem;font-weight:600;font-size:.92rem;color:var(--ink-2)}
+input{font:inherit;width:100%;padding:.55rem .7rem;border:1px solid var(--line);border-radius:8px;background:var(--surface);color:inherit}
+input:focus-visible,button:focus-visible,a:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
+button{font:inherit;font-weight:600;margin-top:1.1rem;padding:.55rem 1.1rem;border:0;border-radius:8px;background:var(--blue);color:var(--on-blue);cursor:pointer}
+button:hover{background:var(--blue-strong)}
+.error{color:var(--err);font-weight:600}.note{color:var(--ok);font-weight:600}
+code,.codes{font-family:ui-monospace,"Cascadia Mono",Consolas,monospace;overflow-wrap:anywhere}.codes li{margin:.2rem 0}
+table{border-collapse:collapse;width:100%}td{padding:.5rem 0;border-bottom:1px solid var(--line-2);vertical-align:top}
+form.inline{display:inline}form.inline button{margin:0;padding:.3rem .7rem;font-weight:500}`
+
+// brand is the head of every page: the mark and the name. The picture
+// is written in the page, as the header asks: a page loads nothing.
+// The words beside it say what it is, so it has none of its own.
+const brand = `<p class="brand"><img src="` + markData + `" width="40" height="40" alt=""><span>FadoDB</span></p>` + "\n"
 
 // refresh is the line of a page that sends the browser on by itself.
 func refresh(to string) string {
@@ -697,7 +717,8 @@ func drawn(name string, d *page) string {
 <title>` + esc(d.Title) + ` · FadoDB</title>
 ` + pageIcon + `
 ` + refresh(d.Refresh) + `<style>` + style + `</style></head><body>
-<h1>` + esc(d.Title) + "</h1>\n")
+<main>
+` + brand + `<h1>` + esc(d.Title) + "</h1>\n")
 	if d.Error != "" {
 		b.WriteString(`<p class="error" role="alert">` + esc(d.Error) + "</p>\n")
 	}
@@ -866,6 +887,6 @@ func drawn(name string, d *page) string {
 	default:
 		b.WriteString("<p>There is no page here. A server that is reached from other machines signs people in only when its operator gives it its address, url, in its settings.</p>")
 	}
-	b.WriteString("\n</body></html>\n")
+	b.WriteString("\n</main>\n</body></html>\n")
 	return b.String()
 }

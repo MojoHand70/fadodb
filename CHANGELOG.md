@@ -264,6 +264,18 @@ All notable changes to FadoDB are recorded here. The format follows
 
 ### Changed
 
+- The server's own pages have FadoDB's look: sign in, the second step,
+  the codes for a lost phone, a new password, the account, and what a
+  client asks to be allowed. They were bare, black on white with a
+  browser's own fields, and they are the first thing a person sees of
+  a FadoDB server. Each page is now a card on warm white, in the
+  colours of fadodb.org, light and dark, with FadoDB's mark and name
+  above its title. The mark is written inside the page, since a page of
+  the server loads nothing, and the header the pages are sent with is
+  the same as before. No field, no name of a field and no address
+  changed. The mark is its owner's and is not licensed with the code;
+  the README says so.
+
 - **A content administrator reads past a rule only with a reason.**
   Without one they read as anybody in their groups: a document only
   the override would show them is refused with `reason_required` and

@@ -80,3 +80,4 @@ line says so. Copy `0000-template.md` to start.
 | [0072](0072-the-size-budget-of-the-core-program.md) | The size budget of the core program: 20 MB | Accepted |
 | [0073](0073-the-server-hands-out-the-pages-of-a-face.md) | The server hands out the pages of a face from a folder, and has none of its own | Accepted |
 | [0074](0074-the-engine-hands-out-its-list-of-functions.md) | The engine hands out its list of functions | Accepted |
+| [0077](0077-the-app.md) | The app, a name for the classes that belong together | Proposed |

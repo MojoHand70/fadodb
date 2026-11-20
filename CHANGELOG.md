@@ -8,6 +8,19 @@ All notable changes to FadoDB are recorded here. The format follows
 
 ### Added
 
+- Apps (ADR-0077): an app is a name for the classes that belong
+  together, such as Expenses or a help desk, with a label and a
+  description for people. `define_app` stores one, for a designer;
+  `get_app` and `list_apps` read them back, for everybody. A class
+  says which app it belongs to with `"app": "Expenses"` in its own
+  definition; a class of an app the database does not have is refused
+  with `unknown_app` at `/app`, and a class may belong to none.
+  `list_classes` takes `app` and answers the classes of one. A class
+  moves to another app by its next version. The door for agents says
+  that there are apps, and `define_app` tells an agent to look before
+  it builds. In Go: `DB.DefineApp`, `DB.Apps`, `DB.App`,
+  `DB.ClassesOf`. The engine schema is 13: a database made by an
+  earlier pre-release engine is recreated.
 - The list of functions as a command (ADR-0074):
   `list_functions` answers every function a formula can call, each
   with its other names, its kind, which decides where it may stand, its

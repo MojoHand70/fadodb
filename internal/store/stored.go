@@ -141,6 +141,8 @@ func (s *Store) stored(ctx context.Context, what, name string, version int) (*St
 		return &StoredDefinition{Name: a.spec.Name, Version: version, Definition: json.RawMessage(text)}, nil
 	case DefinitionInlet:
 		return s.storedInlet(ctx, name, version)
+	case DefinitionApp:
+		return s.storedApp(name, version)
 	case DefinitionWords:
 		return s.storedWords(ctx, name, version)
 	}

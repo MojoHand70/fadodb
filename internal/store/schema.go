@@ -55,6 +55,9 @@ var engineDDL = []string{
 	`CREATE TABLE IF NOT EXISTS classes (name TEXT PRIMARY KEY COLLATE NOCASE, version INTEGER NOT NULL, json TEXT NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)`,
 	`CREATE TABLE IF NOT EXISTS class_versions (class TEXT NOT NULL COLLATE NOCASE, version INTEGER NOT NULL, json TEXT NOT NULL, created_at INTEGER NOT NULL, PRIMARY KEY (class, version))`,
 	`CREATE TABLE IF NOT EXISTS tables_registry (name TEXT PRIMARY KEY COLLATE NOCASE, version INTEGER NOT NULL, binding TEXT NOT NULL, json TEXT NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)`,
+	// The apps (ADR-0077): a name for the classes that belong together.
+	// The database keeps the current version of each.
+	`CREATE TABLE IF NOT EXISTS apps (name TEXT PRIMARY KEY COLLATE NOCASE, version INTEGER NOT NULL, json TEXT NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)`,
 	// The action definitions (ADR-0045), each with every version it had.
 	`CREATE TABLE IF NOT EXISTS actions (name TEXT PRIMARY KEY COLLATE NOCASE, version INTEGER NOT NULL, json TEXT NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)`,
 	`CREATE TABLE IF NOT EXISTS action_versions (action TEXT NOT NULL COLLATE NOCASE, version INTEGER NOT NULL, json TEXT NOT NULL, created_at INTEGER NOT NULL, PRIMARY KEY (action, version))`,

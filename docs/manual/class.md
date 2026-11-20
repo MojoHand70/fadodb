@@ -12,6 +12,7 @@ yet, start there.
 |---|---|---|
 | `name` | the name of the class | always |
 | `label`, `plural`, `description`, `icon`, `color` | how the class is shown to people | no |
+| `app` | the [app](apps.md) the class belongs to, by its name | no; a class may belong to none |
 | `title` | a formula that names each document | no; without it the title is the document's id |
 | [`variables`](#variables) | what each document holds, and what is computed | always |
 | [`sections`](#sections) | which variables belong together: the outline of the document | no |

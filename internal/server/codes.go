@@ -59,7 +59,7 @@ func Status(code string) int {
 	case command.CodeUnknownCommand, store.CodeUnknownClass, store.CodeUnknownDocument,
 		store.CodeUnknownTable, store.CodeUnknownSchema, store.CodeUnknownAction,
 		store.CodeUnknownBlob, store.CodeUnknownRow, store.CodeUnknownUser, store.CodeUnknownKey, store.CodeUnknownInlet, store.CodeUnknownSession,
-		store.CodeUnknownClient, store.CodeUnknownGrant:
+		store.CodeUnknownClient, store.CodeUnknownGrant, store.CodeUnknownApp:
 		return http.StatusNotFound
 	case store.CodeKeyReused, store.CodeDuplicate, store.CodeWrongState,
 		store.CodeTerminal, store.CodeGuardFalse:

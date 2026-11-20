@@ -162,6 +162,9 @@ const (
 	// state or a transition has no description, which a person reads as
 	// help and an agent as what the thing is for (ADR-0068, item 3).
 	CodeNoDescription = "no_description"
+	// CodeUnknownApp: a class names an app the database does not have
+	// (ADR-0077).
+	CodeUnknownApp = "unknown_app"
 	// CodeUnusedWords: a note and no refusal. The words in another
 	// language name something the current version of the class, the
 	// table or the schema no longer has (ADR-0068, item 6).

@@ -292,9 +292,10 @@ func TestTriggered_EngineSchema(t *testing.T) {
 	// (ADR-0052, item 7); the tables of the users, their keys and the
 	// changes to them made it 10 (ADR-0057); the tables of the inlets,
 	// whose names no class may take, made it 11 (ADR-0065); the log of
-	// reads made it 12 (ADR-0067).
-	if engineSchema != 12 {
-		t.Fatalf("the engine schema is %d, want 12", engineSchema)
+	// reads made it 12 (ADR-0067); the table of the apps, whose name no
+	// class may take, made it 13 (ADR-0077).
+	if engineSchema != 13 {
+		t.Fatalf("the engine schema is %d, want 13", engineSchema)
 	}
 	if _, err := s.writer.ExecContext(context.Background(), "UPDATE schema_version SET version = 3"); err != nil {
 		t.Fatal(err)

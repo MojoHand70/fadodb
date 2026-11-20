@@ -518,6 +518,7 @@ It answers:
 | [`define_schema`](#define_schema) | Defines a named schema of an object. | writes |
 | [`define_table`](#define_table) | Defines a table of reference data. | writes |
 | [`define_action`](#define_action) | Defines an action a rule may name. | writes |
+| [`define_app`](#define_app) | Defines an app, a name for the classes that belong together, or the next version of one. | writes |
 | [`validate_class`](#validate_class) | Reports what define_class would refuse, storing nothing. | reads |
 | [`validate_classes`](#validate_classes) | Reports what define_classes would refuse, storing nothing. | reads |
 | [`validate_action`](#validate_action) | Reports what define_action would refuse, storing nothing. | reads |
@@ -526,12 +527,14 @@ It answers:
 | [`get_schema`](#get_schema) | Reads a schema back as it was defined. | reads |
 | [`get_table`](#get_table) | Reads a table's definition back as it was defined. | reads |
 | [`get_action`](#get_action) | Reads an action's definition back as it was defined. | reads |
-| [`list_classes`](#list_classes) | Lists the classes. | reads |
+| [`get_app`](#get_app) | Reads an app back as it was defined. | reads |
+| [`list_classes`](#list_classes) | Lists the classes: all of them, or those of one app. | reads |
+| [`list_apps`](#list_apps) | Lists the apps. | reads |
 | [`list_schemas`](#list_schemas) | Lists the schemas. | reads |
 | [`list_tables`](#list_tables) | Lists the tables. | reads |
 | [`list_actions`](#list_actions) | Lists every action a rule may name, the engine's own first. | reads |
 | [`list_functions`](#list_functions) | Lists every function a formula can call, for whoever writes one: a formula editor, or an agent before it defines a class. | reads |
-| [`definitions`](#definitions) | Lists the versions of one class, schema, table, action, inlet or words, with who defined each and when. | reads |
+| [`definitions`](#definitions) | Lists the versions of one class, schema, table, action, inlet, app or words, with who defined each and when. | reads |
 | [`preview_draft`](#preview_draft) | Tries a class definition that is not stored on a create, or on a document of the stored class of the same name, writing nothing. | reads |
 | [`migrate`](#migrate) | Brings every live document of a class that an earlier version computed to the current version. | writes |
 | [`define_words`](#define_words) | Defines the words of a class, a table or a schema in another language: the label and the description of each thing, by its path. It makes no new version of what it translates. | writes |
@@ -624,6 +627,22 @@ It answers:
 | Member | What it holds |
 |---|---|
 | `action` | the definition as it was given, with its name, its version and who defined it |
+
+### define_app
+
+Defines an app, a name for the classes that belong together, or the next version of one. It writes; in Go it is the call `DefineApp`.
+
+| Member | Type | | What it is |
+|---|---|---|---|
+| `definition` | definition | needed | the definition, as JSON |
+
+And, of the members that mean the same everywhere: `for`.
+
+It answers:
+
+| Member | What it holds |
+|---|---|
+| `app` | the definition as it was given, with its name, its version and who defined it |
 
 ### validate_class
 
@@ -752,9 +771,37 @@ It answers:
 |---|---|
 | `action` | the definition as it was given, with its name, its version and who defined it |
 
+### get_app
+
+Reads an app back as it was defined. It reads; in Go it is the call `Definition`.
+
+| Member | Type | | What it is |
+|---|---|---|---|
+| `name` | text | needed | the name of the app |
+
+It answers:
+
+| Member | What it holds |
+|---|---|
+| `app` | the definition as it was given, with its name, its version and who defined it |
+
 ### list_classes
 
-Lists the classes. It reads; in Go it is the call `Classes`.
+Lists the classes: all of them, or those of one app. It reads; in Go it is the call `Classes`.
+
+| Member | Type | | What it is |
+|---|---|---|---|
+| `app` | text |  | the name of an app, for the classes that belong to it; every class when left out |
+
+It answers:
+
+| Member | What it holds |
+|---|---|
+| `classes` | the names, in the order they were defined |
+
+### list_apps
+
+Lists the apps. It reads; in Go it is the call `Apps`.
 
 It takes nothing: its object is `{}`.
 
@@ -762,7 +809,7 @@ It answers:
 
 | Member | What it holds |
 |---|---|
-| `classes` | the names, in the order they were defined |
+| `apps` | the names, in the order they were defined |
 
 ### list_schemas
 
@@ -815,11 +862,11 @@ It answers:
 
 ### definitions
 
-Lists the versions of one class, schema, table, action, inlet or words, with who defined each and when. It reads; in Go it is the call `Definitions`.
+Lists the versions of one class, schema, table, action, inlet, app or words, with who defined each and when. It reads; in Go it is the call `Definitions`.
 
 | Member | Type | | What it is |
 |---|---|---|---|
-| `what` | text | needed | class, schema, table, action, inlet or words |
+| `what` | text | needed | class, schema, table, action, inlet, app or words |
 | `name` | text | needed | its name; for words, what they translate, its name and the language: class/Invoice/pl |
 
 It answers:
@@ -1569,7 +1616,7 @@ Authorization: Bearer …
   | 400 | `bad_json` |
   | 401 | `sign_in_refused`, `unauthenticated` |
   | 403 | `forbidden`, `reason_required` |
-  | 404 | `unknown_class`, `unknown_document`, `unknown_table`, `unknown_schema`, `unknown_blob`, `unknown_action`, `unknown_row`, `unknown_user`, `unknown_inlet`, `unknown_key`, `unknown_session`, `unknown_client`, `unknown_grant`, `unknown_command` |
+  | 404 | `unknown_class`, `unknown_document`, `unknown_table`, `unknown_schema`, `unknown_app`, `unknown_blob`, `unknown_action`, `unknown_row`, `unknown_user`, `unknown_inlet`, `unknown_key`, `unknown_session`, `unknown_client`, `unknown_grant`, `unknown_command` |
   | 409 | `key_reused`, `duplicate`, `terminal`, `wrong_state`, `guard_false` |
   | 413 | `blob_too_large`, `too_large` |
   | 422 | every other refusal |
@@ -1629,11 +1676,13 @@ A few calls of the Go package have no command.
 |---|---|
 | `Action` | it answers one entry of the catalogue that list_actions answers whole |
 | `Allow` | a code never travels in a command: the server's page /auth/allow sends it to the client |
+| `App` | it answers the engine's parsed form to a Go program; get_app answers the definition |
 | `AskConsent` | it keeps a client's request, which the server's page /auth/authorize took |
 | `Authenticate` | it answers who a key belongs to, for the door that is given the key; a caller that wants to know who it is sends whoami |
 | `BeginSignIn` | a password never travels in a command: the server's page /auth/signin takes it |
 | `ChangePassword` | a password never travels in a command: the server's page /auth/account takes it |
 | `Class` | it answers the engine's compiled form to a Go program; get_class answers the definition |
+| `ClassesOf` | it is list_classes with its app given, for a Go program |
 | `Close` | closing a database is for the program that opened it |
 | `ConfirmMySecondStep` | its codes never travel in a command: the server's page /auth/account shows them |
 | `Consent` | it belongs to the server's page /auth/allow, which asks the person |

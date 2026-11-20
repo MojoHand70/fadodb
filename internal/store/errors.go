@@ -56,6 +56,8 @@ const (
 	CodeUnknownTable = "unknown_table"
 	// CodeUnknownSchema: no schema of that name.
 	CodeUnknownSchema = "unknown_schema"
+	// CodeUnknownApp: no app of that name (ADR-0077).
+	CodeUnknownApp = "unknown_app"
 	// CodeUnknownVariable: a value names a variable or a field the class
 	// does not have.
 	CodeUnknownVariable = "unknown_variable"

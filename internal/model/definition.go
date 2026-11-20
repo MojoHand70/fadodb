@@ -19,6 +19,9 @@ type Definition struct {
 	Description string `json:"description,omitempty"`
 	Icon        string `json:"icon,omitempty"`
 	Color       string `json:"color,omitempty"`
+	// App names the app the class belongs to (ADR-0077); empty for a
+	// class that belongs to none.
+	App string `json:"app,omitempty"`
 	// Title is a formula over pure functions and the document's own
 	// variables (ADR-0018); empty means TITLE equals ID.
 	Title     string                  `json:"title,omitempty"`

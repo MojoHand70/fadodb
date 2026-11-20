@@ -421,8 +421,8 @@ func TestNoAnswerSaysWhatIsSafe(t *testing.T) {
 // may show its agent the tools and not the sign. A door with no such
 // tool says nothing of it, and a door names only the tools it offers.
 func TestLookBeforeYouBuild(t *testing.T) {
-	const sign = " Look before you build: before you define a class, a table or a schema, list what the database has (list_classes, list_tables, list_schemas) and read each one that may be the same thing; match by meaning, not by name. Ask the person you work for which one to use, and never keep a thing twice."
-	const onATool = " Look before you build: list_classes, list_tables and list_schemas answer what the database already keeps, and a thing is never kept twice."
+	const sign = " Look before you build: before you define an app, a class, a table or a schema, list what the database has (list_apps, list_classes, list_tables, list_schemas) and read each one that may be the same thing; match by meaning, not by name. Ask the person you work for which one to use, and never keep a thing twice."
+	const onATool = " Look before you build: list_apps, list_classes, list_tables and list_schemas answer what the database already keeps, and a thing is never kept twice."
 	described := func(d *Door) map[string]string {
 		t.Helper()
 		var tools []struct{ Name, Description string }
@@ -453,7 +453,7 @@ func TestLookBeforeYouBuild(t *testing.T) {
 		}
 	}
 	sort.Strings(building)
-	if got := strings.Join(building, ","); got != "define_class,define_classes,define_schema,define_table" {
+	if got := strings.Join(building, ","); got != "define_app,define_class,define_classes,define_schema,define_table" {
 		t.Errorf("the tools that build are %s", got)
 	}
 

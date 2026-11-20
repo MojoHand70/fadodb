@@ -28,6 +28,7 @@ What a call is answered with when the engine does not carry it out: a create, a 
 | `unknown_document` | No current document with that id, no such version in its history, or a document the caller may not see, who is answered in the same words (ADR-0049). |
 | `unknown_table` | No explicit table of that name. |
 | `unknown_schema` | No schema of that name. |
+| `unknown_app` | No app of that name (ADR-0077). |
 | `unknown_variable` | A value names a variable or a field the class does not have. |
 | `read_only` | A value is given for a computed variable. |
 | `required` | A required input is blank. |
@@ -116,6 +117,7 @@ What the engine reports when it checks a class, a table, a schema or an action b
 | `too_many_columns` | A generated table would exceed MaxColumns. |
 | `not_supported` | A construct the format allows that the engine does not implement yet. |
 | `no_description` | A note and no refusal. A variable, a section, a state or a transition has no description, which a person reads as help and an agent as what the thing is for (ADR-0068, item 3). |
+| `unknown_app` | A class names an app the database does not have (ADR-0077). |
 | `unused_words` | A note and no refusal. The words in another language name something the current version of the class, the table or the schema no longer has (ADR-0068, item 6). |
 
 ## Refusals of a command

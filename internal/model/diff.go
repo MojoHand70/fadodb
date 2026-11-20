@@ -101,7 +101,7 @@ func Diff(old, new *Class) []Change {
 	}
 	if !sameJSON(old.Def.States, new.Def.States) || !sameJSON(old.Def.Transitions, new.Def.Transitions) || !sameJSON(old.Def.Rules, new.Def.Rules) ||
 		!sameJSON(old.Def.Access, new.Def.Access) || !sameJSON(old.Def.Rights, new.Def.Rights) ||
-		old.Label != new.Label || old.Plural != new.Plural || old.Description != new.Description || old.Icon != new.Icon || old.Color != new.Color {
+		old.Label != new.Label || old.Plural != new.Plural || old.Description != new.Description || old.Icon != new.Icon || old.Color != new.Color || old.App != new.App {
 		out = append(out, Change{Kind: ChangeBehaviour, Path: ""})
 	}
 	return out

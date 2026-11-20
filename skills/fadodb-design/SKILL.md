@@ -41,15 +41,17 @@ them. So before you draw a state, find out what the organisation
 keeps, and never keep a thing twice.
 
 An agent that comes through `fadodb mcp` reads the short of this on
-the door itself, and again on each tool that defines a class, a table
-or a schema
+the door itself, and again on each tool that defines an app, a class,
+a table or a schema
 ([the door for agents](../../docs/manual/the-door-for-agents.md#what-the-door-says-of-itself)).
 This section is the whole of it.
 
-1. **List what the database has**: `list_classes`, `list_tables` and
-   `list_schemas`. They answer names only.
+1. **List what the database has**: `list_apps`, `list_classes`,
+   `list_tables` and `list_schemas`. They answer names only. An app is
+   a name for the classes that belong together; `list_classes` with
+   `"app"` answers the classes of one.
 2. **Read every one that may be a thing the story names**:
-   `get_class`, `get_table` and `get_schema` answer the definition,
+   `get_app`, `get_class`, `get_table` and `get_schema` answer the definition,
    with its `label` and its `description`. Match by meaning, not by
    name: the story says "employee", and the table may be called
    `People`.
@@ -385,6 +387,7 @@ read the diagnostics, fix, preview against live data, define.
 | a transition that carries its time: `"after": "30d"`, a time in the state as a whole number and `d`, `h`, `m` or `s`, or `"at": "ADDDAYS(due, 1)"`, a date or a datetime the document holds | shipped with Phase 4: it needs neither a name nor a guard, and a guard beside it is still asked. It fires in the first commit that touches the document once its time has come, in the order of the class with the eventless transitions; its event has the origin `timer`. A reminder is a named transition back into its own state with an `after` and a rule on its name; an escalation that reminders must not push back is `"at": "ADDDAYS(FIRSTENTERED(\"waiting\"), 14)"`. With a name a person may take it before its time; give it the access rule `FALSE` to leave it to time alone. An `at` may not read `NOW()`, `TODAY()`, `USER()`, another document or a table, and a blank `at` never comes. Put `"index": true` on the date an `at` names |
 | the engine moving a document by itself when its timer comes | shipped with Phase 4: the move is made as the person whose commit set the timer, who moved the document into the state or who last changed the date, so `USER()` in its rules is theirs and its actions run with their rights. A reminder missed while the engine was stopped is made once, not once for every period missed. A guard beside a timer is asked when the time comes; if it does not hold then, the document waits for a commit to touch it, and `Due` lists it once the guard holds |
 | what the database keeps: `list_classes`, `list_tables` and `list_schemas` answer the names; `get_class`, `get_table` and `get_schema` the definition with its `label` and `description` | shipped |
+| apps, a name for the classes that belong together: `define_app`, `get_app`, `list_apps`, and `"app": "Expenses"` in a class | shipped (ADR-0077): define the app first, then each class with `app`; a class of an app the database does not have is refused with `unknown_app` at `/app`. Before you make an app, look whether the story belongs in one that is there. An app has no groups, tables or actions of its own yet, and is not exported |
 | field rights per state, per-transition rules | shipped with Phase 3 |
 | rules and actions | shipped with Phase 4: rules fire inside the commit with `set`, `reset`, `refresh` and `emit`, a preview lists them, and triggered variables are computed at their triggers; what a rule does beyond its own document runs through the outbox, exactly once and as the person who caused it: `create` (with `each`, one document per element of a list), `transition` and `refresh` of another document, `table.insert`, `table.update`, `table.delete`; a rule may also call an action that has a definition, with typed `args`, whether a Go function of the host program implements it or the engine sends it as an HTTP request, and `http.call` for one request written in the rule; `Actions` lists every action a rule may name and whether this process can run it (`available`); on a database served by `fadodb serve` an action of your own is always a request, to a host its operator listed, since the server runs no Go function: a definition with no request is refused there with `not_registered`; `into` writes what an action returned, or the code it failed with, back to the document, and the eventless transitions follow |
 | inlets, a way in for the messages of a system that speaks only its own language: `validate_inlet`, `try_inlet`, `define_inlet` (an administrator's), `list_inlets`; from a file, `fadodb inlet check` | shipped (ADR-0065): a definition says how a message proves who sent it, with a secret of a connection, and the one command it becomes, `create`, `set` or `transition`, whose values are formulas over `BODY`, `HEADERS`, `PARAMS` and `RAW`, typed against the class. It is carried out as a service user. `docs/manual/a-way-in-for-messages.md` |

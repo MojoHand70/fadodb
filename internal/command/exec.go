@@ -640,6 +640,14 @@ func runDefineSchema(c *call) error {
 	return c.stored("schema", store.DefinitionSchema, sch.Name, sch.Version, nil)
 }
 
+func runDefineApp(c *call) error {
+	a, err := c.s.DefineApp(c.ctx, c.given("definition"), c.opts...)
+	if err != nil {
+		return err
+	}
+	return c.stored("app", store.DefinitionApp, a.Name, a.Version, nil)
+}
+
 func runDefineTable(c *call) error {
 	t, err := c.s.DefineTable(c.ctx, c.given("definition"), c.opts...)
 	if err != nil {
@@ -691,6 +699,10 @@ func runGetSchema(c *call) error {
 	return c.stored("schema", store.DefinitionSchema, c.text("name"), 0, nil)
 }
 
+func runGetApp(c *call) error {
+	return c.stored("app", store.DefinitionApp, c.text("name"), 0, nil)
+}
+
 func runGetTable(c *call) error {
 	return c.stored("table", store.DefinitionTable, c.text("name"), 0, nil)
 }
@@ -703,7 +715,19 @@ func runGetAction(c *call) error {
 	return c.stored("action", store.DefinitionAction, c.text("name"), int(version), nil)
 }
 
-func runListClasses(c *call) error { return c.answer("classes", list(c.s.Classes()), nil) }
+// runListClasses answers the classes, or those of one app (ADR-0077).
+func runListClasses(c *call) error {
+	if c.given("app") == nil {
+		return c.answer("classes", list(c.s.Classes()), nil)
+	}
+	classes, err := c.s.ClassesOf(c.text("app"))
+	if err != nil {
+		return err
+	}
+	return c.answer("classes", list(classes), nil)
+}
+
+func runListApps(c *call) error    { return c.answer("apps", list(c.s.Apps()), nil) }
 func runListSchemas(c *call) error { return c.answer("schemas", list(c.s.SchemaNames()), nil) }
 func runListTables(c *call) error  { return c.answer("tables", list(c.s.Tables()), nil) }
 func runListActions(c *call) error { return c.answer("actions", list(c.s.Actions()), nil) }

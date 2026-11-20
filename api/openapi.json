@@ -9,7 +9,7 @@
             }
           }
         },
-        "description": "The command was not carried out. The body holds the refusal under `error`, with its code; a caller reads the code, and the status is worked out from it:\n\n| Status | Codes |\n|---|---|\n| 400 | `bad_json` |\n| 401 | `sign_in_refused`, `unauthenticated` |\n| 403 | `forbidden`, `reason_required` |\n| 404 | `unknown_class`, `unknown_document`, `unknown_table`, `unknown_schema`, `unknown_blob`, `unknown_action`, `unknown_row`, `unknown_user`, `unknown_inlet`, `unknown_key`, `unknown_session`, `unknown_client`, `unknown_grant`, `unknown_command` |\n| 409 | `key_reused`, `duplicate`, `terminal`, `wrong_state`, `guard_false` |\n| 413 | `blob_too_large`, `too_large` |\n| 429 | `too_many_attempts` |\n| 499 | `caller_left` |\n| 500 | `storage`, `internal` |\n| 503 | `closed`, `busy` |\n| 504 | `timeout` |\n| 422 | every other refusal |\n"
+        "description": "The command was not carried out. The body holds the refusal under `error`, with its code; a caller reads the code, and the status is worked out from it:\n\n| Status | Codes |\n|---|---|\n| 400 | `bad_json` |\n| 401 | `sign_in_refused`, `unauthenticated` |\n| 403 | `forbidden`, `reason_required` |\n| 404 | `unknown_class`, `unknown_document`, `unknown_table`, `unknown_schema`, `unknown_app`, `unknown_blob`, `unknown_action`, `unknown_row`, `unknown_user`, `unknown_inlet`, `unknown_key`, `unknown_session`, `unknown_client`, `unknown_grant`, `unknown_command` |\n| 409 | `key_reused`, `duplicate`, `terminal`, `wrong_state`, `guard_false` |\n| 413 | `blob_too_large`, `too_large` |\n| 429 | `too_many_attempts` |\n| 499 | `caller_left` |\n| 500 | `storage`, `internal` |\n| 503 | `closed`, `busy` |\n| 504 | `timeout` |\n| 422 | every other refusal |\n"
       }
     },
     "schemas": {
@@ -945,6 +945,65 @@
         "x-fado-mark": "writes"
       }
     },
+    "/v1/define_app": {
+      "post": {
+        "description": "It writes. In Go it is the call `DefineApp`.",
+        "operationId": "define_app",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "definition": {
+                    "description": "the definition, as JSON",
+                    "type": "object"
+                  },
+                  "for": {
+                    "description": "the id of whoever the caller acts for; let through only while a substitution says so",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "definition"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "app": {
+                      "description": "the definition as it was given, with its name, its version and who defined it"
+                    }
+                  },
+                  "required": [
+                    "app"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "The command ran."
+          },
+          "default": {
+            "$ref": "#/components/responses/Refused"
+          }
+        },
+        "summary": "Defines an app, a name for the classes that belong together, or the next version of one.",
+        "tags": [
+          "Definitions"
+        ],
+        "x-fado-call": "DefineApp",
+        "x-fado-mark": "writes"
+      }
+    },
     "/v1/define_class": {
       "post": {
         "description": "It writes. In Go it is the call `DefineClass`.",
@@ -1317,7 +1376,7 @@
                     "type": "string"
                   },
                   "what": {
-                    "description": "class, schema, table, action, inlet or words",
+                    "description": "class, schema, table, action, inlet, app or words",
                     "type": "string"
                   }
                 },
@@ -1354,7 +1413,7 @@
             "$ref": "#/components/responses/Refused"
           }
         },
-        "summary": "Lists the versions of one class, schema, table, action, inlet or words, with who defined each and when.",
+        "summary": "Lists the versions of one class, schema, table, action, inlet, app or words, with who defined each and when.",
         "tags": [
           "Definitions"
         ],
@@ -2021,6 +2080,61 @@
           }
         },
         "summary": "Reads an action's definition back as it was defined.",
+        "tags": [
+          "Definitions"
+        ],
+        "x-fado-call": "Definition",
+        "x-fado-mark": "reads"
+      }
+    },
+    "/v1/get_app": {
+      "post": {
+        "description": "It reads. In Go it is the call `Definition`.",
+        "operationId": "get_app",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "name": {
+                    "description": "the name of the app",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "name"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "app": {
+                      "description": "the definition as it was given, with its name, its version and who defined it"
+                    }
+                  },
+                  "required": [
+                    "app"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "The command ran."
+          },
+          "default": {
+            "$ref": "#/components/responses/Refused"
+          }
+        },
+        "summary": "Reads an app back as it was defined.",
         "tags": [
           "Definitions"
         ],
@@ -2804,6 +2918,53 @@
         "x-fado-mark": "reads"
       }
     },
+    "/v1/list_apps": {
+      "post": {
+        "description": "It reads. In Go it is the call `Apps`.",
+        "operationId": "list_apps",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {},
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "apps": {
+                      "description": "the names, in the order they were defined"
+                    }
+                  },
+                  "required": [
+                    "apps"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "The command ran."
+          },
+          "default": {
+            "$ref": "#/components/responses/Refused"
+          }
+        },
+        "summary": "Lists the apps.",
+        "tags": [
+          "Definitions"
+        ],
+        "x-fado-call": "Apps",
+        "x-fado-mark": "reads"
+      }
+    },
     "/v1/list_classes": {
       "post": {
         "description": "It reads. In Go it is the call `Classes`.",
@@ -2813,7 +2974,12 @@
             "application/json": {
               "schema": {
                 "additionalProperties": false,
-                "properties": {},
+                "properties": {
+                  "app": {
+                    "description": "the name of an app, for the classes that belong to it; every class when left out",
+                    "type": "string"
+                  }
+                },
                 "type": "object"
               }
             }
@@ -2843,7 +3009,7 @@
             "$ref": "#/components/responses/Refused"
           }
         },
-        "summary": "Lists the classes.",
+        "summary": "Lists the classes: all of them, or those of one app.",
         "tags": [
           "Definitions"
         ],

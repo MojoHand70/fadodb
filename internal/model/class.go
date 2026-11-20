@@ -19,6 +19,9 @@ type Class struct {
 	Description string
 	Icon        string
 	Color       string
+	// App is the app the class belongs to, as the class names it
+	// (ADR-0077); empty for a class that belongs to none.
+	App string
 	// Title is the compiled title formula, nil when TITLE is ID.
 	Title *formula.Program
 	// Variables in declaration order.
@@ -376,6 +379,10 @@ type Env struct {
 	// Actions finds an action definition by name, for a rule that names
 	// one (ADR-0045); nil when there are none.
 	Actions func(name string) (*ActionSpec, bool)
+	// Apps says whether the database has an app of that name, for a
+	// class that names the app it belongs to (ADR-0077); nil when there
+	// are none.
+	Apps func(name string) bool
 	// Lenient compiles a stored definition, which was checked when it was
 	// defined: what an action says about another class, or about the
 	// definition of an action, is taken as it is, typed against it where
@@ -423,7 +430,7 @@ func Compile(def *Definition, schemas *SchemaSet) (*Class, Diagnostics) {
 var reservedClassNames = map[string]bool{
 	"events": true, "event_docs": true, "classes": true, "class_versions": true, "schemas": true,
 	"layouts": true, "outbox": true, "blobs": true, "tables_registry": true, "schema_version": true, "metadata": true,
-	"actions": true, "action_versions": true, "inlets": true, "inlet_versions": true, "words": true, "words_versions": true,
+	"actions": true, "action_versions": true, "inlets": true, "inlet_versions": true, "words": true, "words_versions": true, "apps": true,
 	"fado_users": true, "fado_keys": true, "fado_user_changes": true,
 }
 
@@ -437,7 +444,7 @@ func CompileIn(def *Definition, env Env) (*Class, Diagnostics) {
 	}
 	c := &collector{env: env}
 	cls := &Class{Name: def.Name, Version: def.Version, Label: def.Label, Plural: def.Plural, Description: def.Description,
-		Icon: def.Icon, Color: def.Color, Def: def, byName: map[string]*Variable{}}
+		Icon: def.Icon, Color: def.Color, App: def.App, Def: def, byName: map[string]*Variable{}}
 	c.self = cls
 	if c.checkName("/name", def.Name, reservedClassNames) && strings.HasPrefix(strings.ToLower(def.Name), "doc_") {
 		c.add(CodeReservedName, "/name", "a class name may not start with doc_, the prefix of the generated tables")
@@ -450,6 +457,11 @@ func CompileIn(def *Definition, env Env) (*Class, Diagnostics) {
 		cls.Version = 1
 	} else if cls.Version < 0 {
 		c.add(CodeBadValue, "/version", "the version is a positive number")
+	}
+	// The app the class belongs to is one the database has (ADR-0077). A
+	// stored definition was checked when it was defined.
+	if def.App != "" && !env.Lenient && (env.Apps == nil || !env.Apps(def.App)) {
+		c.hint(CodeUnknownApp, "/app", "unknown app "+quote(def.App), "define the app first, with define_app, or leave app out: a class may belong to none")
 	}
 
 	// Variables: names, types and properties.

@@ -63,7 +63,7 @@ const lastOfCommandSQL = "SELECT max(after_version) FROM events WHERE class = ? 
 // engineSchema is the version of the store's own tables. A database made
 // by another engine schema is refused: before 1.0 there is no upgrade
 // path, and a pre-release file is recreated.
-const engineSchema = 12
+const engineSchema = 13
 
 // Options configure Open. The ones that are properties of the database,
 // Synchronous and MaxText, are read at creation and kept in the metadata
@@ -255,6 +255,10 @@ type Store struct {
 	inlets     map[string]*inlet
 	inletOrder []string
 	inbound    bool
+	// apps are the apps by upper-cased name (ADR-0077), and appOrder
+	// their names in the order they were defined.
+	apps     map[string]*app
+	appOrder []string
 	// words are the words in other languages by kind, upper-cased name
 	// and language (ADR-0068, item 6), in the order first defined.
 	words      map[string]*wordsDef
@@ -449,7 +453,7 @@ func open(path string, o Options) (*Store, error) {
 		schemas: model.NewSchemaSet(), schemaJSON: map[string][]byte{}, classes: map[string]*class{}, versions: map[string]map[int]*class{},
 		tables: map[string]*table{}, plans: map[*formula.QuerySlot]*lookupPlan{},
 		actions: map[string]*action{}, funcs: funcs, inFlight: map[flight]struct{}{}, writesBack: map[string]bool{},
-		outbound: o.Outbound, secretFn: o.Secrets, inlets: map[string]*inlet{}, inbound: o.Inbound, words: map[string]*wordsDef{},
+		outbound: o.Outbound, secretFn: o.Secrets, inlets: map[string]*inlet{}, inbound: o.Inbound, words: map[string]*wordsDef{}, apps: map[string]*app{},
 		stop: make(chan struct{}), done: make(chan struct{}),
 		outbox: o.Outbox, wake: make(chan struct{}, 1), workDone: make(chan struct{}),
 	}
@@ -767,6 +771,10 @@ func (s *Store) prepareEngine(ctx context.Context) error {
 // load reads the stored schemas and classes, in the order they were
 // defined, and compiles them.
 func (s *Store) load(ctx context.Context) error {
+	// The apps, which the classes name (ADR-0077).
+	if err := s.loadApps(ctx); err != nil {
+		return err
+	}
 	rows, err := s.db.QueryContext(ctx, "SELECT name, version, json FROM schemas ORDER BY rowid")
 	if err != nil {
 		return storageErr("read the schemas", err)
@@ -911,8 +919,9 @@ func (s *Store) load(ctx context.Context) error {
 }
 
 // env is what definitions compile against: the schemas, the tables, the
-// classes an action may name (ADR-0044) and the action definitions a rule
-// may name (ADR-0045). The caller holds cmu.
+// classes an action may name (ADR-0044), the action definitions a rule
+// may name (ADR-0045) and the apps a class may belong to (ADR-0077). The
+// caller holds cmu.
 func (s *Store) env() model.Env {
 	set := formula.NewSourceSet()
 	for _, name := range s.tableOrder {
@@ -928,6 +937,9 @@ func (s *Store) env() model.Env {
 			return a.spec, true
 		}
 		return nil, false
+	}, Apps: func(name string) bool {
+		_, ok := s.apps[strings.ToUpper(name)]
+		return ok
 	}}
 }
 

@@ -999,7 +999,7 @@ against their own VM port.
 
 - WAL mode, `synchronous=NORMAL`, one writer goroutine with batching,
   prepared statements, read connections pooled.
-- Schema: `classes`, `class_versions`, `schemas`, per class the
+- Schema: `classes`, `class_versions`, `schemas`, `apps`, per class the
   current, history and child tables, `events`, `event_docs`, `outbox`,
   the users and keys of a database that keeps its own (ADR-0057),
   `tables_registry`, `schema_version`, `blobs` when the blob store is the

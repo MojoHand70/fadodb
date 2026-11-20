@@ -147,6 +147,9 @@ type (
 	Message    = store.Message
 	Receipt    = store.Receipt
 	InletTrial = store.InletTrial
+	// App is an app of the database (ADR-0077): a name for the classes
+	// that belong together, with its definition and its version.
+	App = store.App
 	// WordsInfo is one definition of the words of a class, a table or a
 	// schema in another language (ADR-0068, item 6), and WordsOf names
 	// the words of one thing in one language.
@@ -463,6 +466,25 @@ func (db *DB) DefineSchema(ctx context.Context, definition []byte, opts ...Optio
 	return db.s.DefineSchema(ctx, definition, opts...)
 }
 
+// DefineApp checks the definition of an app in JSON and stores it
+// (ADR-0077): a name for the classes that belong together, with what the
+// app says of itself to people. A class names the app it belongs to with
+// "app" in its own definition. The error is Diagnostics when the
+// definition is refused.
+func (db *DB) DefineApp(ctx context.Context, definition []byte, opts ...Option) (*App, error) {
+	return db.s.DefineApp(ctx, definition, opts...)
+}
+
+// Apps lists the names of the apps in definition order.
+func (db *DB) Apps() []string { return db.s.Apps() }
+
+// App returns an app by name.
+func (db *DB) App(name string) (*App, bool) { return db.s.App(name) }
+
+// ClassesOf lists the classes that belong to an app, in definition
+// order. A name that is no app is refused with unknown_app.
+func (db *DB) ClassesOf(app string) ([]string, error) { return db.s.ClassesOf(app) }
+
 // Classes lists the class names in definition order.
 func (db *DB) Classes() []string { return db.s.Classes() }
 
@@ -491,6 +513,7 @@ const (
 	DefinitionTable  = store.DefinitionTable
 	DefinitionAction = store.DefinitionAction
 	DefinitionInlet  = store.DefinitionInlet
+	DefinitionApp    = store.DefinitionApp
 	DefinitionWords  = store.DefinitionWords
 )
 

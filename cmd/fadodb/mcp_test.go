@@ -329,14 +329,14 @@ func TestTheChapterOnTheDoor(t *testing.T) {
 			look = append(look, tl.Name)
 		}
 	}
-	_, after4, _ := strings.Cut(chapter, "- **The four tools that build say it again**")
+	_, after4, _ := strings.Cut(chapter, "- **The five tools that build say it again**")
 	item, _, _ := strings.Cut(after4, "\n- **")
 	for _, n := range named.FindAllStringSubmatch(item, -1) {
 		lookShown = append(lookShown, n[1])
 	}
 	sort.Strings(look)
 	sort.Strings(lookShown)
-	if len(look) != 4 || !reflect.DeepEqual(look, lookShown) {
+	if len(look) != 5 || !reflect.DeepEqual(look, lookShown) {
 		t.Errorf("the chapter says %v tell an agent to look first, and the tools that do are %v", lookShown, look)
 	}
 

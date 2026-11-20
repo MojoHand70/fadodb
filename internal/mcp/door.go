@@ -58,7 +58,7 @@ func reachesOut(name string) bool { return name == "try_action" || name == "drai
 // designer's skill.
 func builds(name string) bool {
 	switch name {
-	case "define_class", "define_classes", "define_table", "define_schema":
+	case "define_app", "define_class", "define_classes", "define_table", "define_schema":
 		return true
 	}
 	return false
@@ -67,7 +67,7 @@ func builds(name string) bool {
 // lists names the tools offered that answer what the database keeps.
 func lists(tools map[string]bool) []string {
 	var names []string
-	for _, name := range []string{"list_classes", "list_tables", "list_schemas"} {
+	for _, name := range []string{"list_apps", "list_classes", "list_tables", "list_schemas"} {
 		if tools[name] {
 			names = append(names, name)
 		}
@@ -252,6 +252,9 @@ func says(o Options, tools map[string]bool) string {
 	if tools["list_classes"] {
 		b.WriteString(" list_classes answers which classes there are, and get_class how one is defined: its variables, its states, its transitions and who may do what.")
 	}
+	if tools["list_apps"] {
+		b.WriteString(" list_apps answers which apps there are: an app is a name for the classes that belong together, and a class says in its definition which app it belongs to.")
+	}
 	if tools["list_functions"] {
 		b.WriteString(" list_functions answers every function a formula can call, with its arguments; read it before you write a formula.")
 	}
@@ -259,7 +262,7 @@ func says(o Options, tools map[string]bool) string {
 		if !builds(name) {
 			continue
 		}
-		b.WriteString(" Look before you build: before you define a class, a table or a schema, list what the database has")
+		b.WriteString(" Look before you build: before you define an app, a class, a table or a schema, list what the database has")
 		if lists := lists(tools); len(lists) > 0 {
 			b.WriteString(" (" + strings.Join(lists, ", ") + ")")
 		}

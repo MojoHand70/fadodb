@@ -1368,6 +1368,120 @@ func TestTheCommandsOfClientsAndGrants(t *testing.T) {
 	}
 }
 
+// TestTheCommandsOfTheApps follows Acme (ADR-0077): Dan, a designer,
+// makes the app Expenses and puts two classes in it; Ann, who is no
+// designer, reads what there is.
+func TestTheCommandsOfTheApps(t *testing.T) {
+	s := open(t)
+
+	// A database has no app until somebody makes one.
+	if got := run(t, s, ann, "list_apps", `{}`)["apps"].([]any); len(got) != 0 {
+		t.Fatalf("list_apps of a new database answered %v", got)
+	}
+	if e := refused(t, s, ann, "get_app", `{"name": "Expenses"}`); e.Code != store.CodeUnknownApp || !strings.Contains(e.Hint, "define_app") {
+		t.Fatalf("an app that does not exist: %+v", e)
+	}
+
+	// Making one is for a designer.
+	expenses := `{"name": "Expenses", "label": "Expenses", "description": "What employees paid for the company, approved and paid back."}`
+	if e := refused(t, s, ann, "define_app", `{"definition": `+expenses+`}`); e.Code != store.CodeForbidden {
+		t.Fatalf("Ann, who is no designer, defined an app: %+v", e)
+	}
+	made := run(t, s, dan, "define_app", `{"definition": `+expenses+`}`)
+	if at(t, made, "app.name") != "Expenses" || at(t, made, "app.version") != float64(1) || at(t, made, "app.defined.by") != "dan" ||
+		at(t, made, "app.definition.description") != "What employees paid for the company, approved and paid back." {
+		t.Fatalf("define_app answered %v", made)
+	}
+	// The same definition again changes nothing; another one is the next
+	// version, and the database keeps the current one.
+	if again := run(t, s, dan, "define_app", `{"definition": `+expenses+`}`); !reflect.DeepEqual(again, made) {
+		t.Fatalf("the same app defined again answered %v", again)
+	}
+	next := run(t, s, dan, "define_app", `{"definition": {"name": "Expenses", "label": "Expenses", "description": "What employees paid for the company.", "icon": "receipt", "color": "blue"}}`)
+	if at(t, next, "app.version") != float64(2) || at(t, next, "app.definition.icon") != "receipt" {
+		t.Fatalf("the next version of an app answered %v", next)
+	}
+	// Anybody reads an app back, as anybody reads a class.
+	if got := run(t, s, ann, "get_app", `{"name": "expenses"}`); !reflect.DeepEqual(got, next) {
+		t.Fatalf("get_app answered %v", got)
+	}
+	run(t, s, dan, "define_app", `{"definition": {"name": "Helpdesk", "label": "Help desk"}}`)
+	if got := run(t, s, ann, "list_apps", `{}`)["apps"]; !reflect.DeepEqual(got, []any{"Expenses", "Helpdesk"}) {
+		t.Fatalf("list_apps answered %v", got)
+	}
+
+	// What is wrong with a definition is found, each thing at its place.
+	for wrong, path := range map[string]string{
+		`{"label": "No name"}`:                  "/name",
+		`{"name": "2fast"}`:                     "/name",
+		`{"name": "EXPENSES", "label": "Loud"}`: "/name",
+		`{"name": "Trips", "colour": "blue"}`:   "",
+	} {
+		answer, err := Exec(context.Background(), s, dan, "define_app", []byte(`{"definition": `+wrong+`}`))
+		var refusal struct {
+			Diagnostics []model.Diagnostic `json:"diagnostics"`
+		}
+		if _, ok := err.(model.Diagnostics); !ok || json.Unmarshal(answer, &refusal) != nil || len(refusal.Diagnostics) != 1 || refusal.Diagnostics[0].Path != path {
+			t.Fatalf("define_app of %s answered %s", wrong, answer)
+		}
+	}
+
+	// A class says which app it belongs to, in its own definition. An
+	// app the database does not have is a finding at that line, before
+	// anything is stored.
+	expense := func(app string) string {
+		return `{"name": "Expense", "label": "Expense", "plural": "Expenses", "app": "` + app + `", "description": "What an employee paid for the company.",
+		  "variables": {"what": {"type": "text", "description": "What was bought."}}}`
+	}
+	report := run(t, s, dan, "validate_class", `{"definition": `+expense("Travel")+`}`)
+	found := report["diagnostics"].([]any)
+	if len(found) != 1 || at(t, found[0].(map[string]any), "code") != model.CodeUnknownApp || at(t, found[0].(map[string]any), "path") != "/app" {
+		t.Fatalf("a class of an app that does not exist: %v", report)
+	}
+	if _, err := Exec(context.Background(), s, dan, "define_class", []byte(`{"definition": `+expense("Travel")+`}`)); Code(err) != CodeBadDefinition {
+		t.Fatalf("define_class of a class of an app that does not exist returned %v", err)
+	}
+	defined := run(t, s, dan, "define_class", `{"definition": `+expense("Expenses")+`}`)
+	if at(t, defined, "class.definition.app") != "Expenses" {
+		t.Fatalf("define_class answered %v", defined)
+	}
+	run(t, s, dan, "define_class", `{"definition": {"name": "CostCentre", "app": "Expenses", "description": "The part of the company that pays.", "variables": {"name": {"type": "text", "description": "Its name."}}}}`)
+	define(t, s) // Invoice, which belongs to no app
+
+	// The classes of an app, in the order they were defined; every class
+	// when no app is named; and an app nothing belongs to yet.
+	if got := run(t, s, ann, "list_classes", `{"app": "Expenses"}`)["classes"]; !reflect.DeepEqual(got, []any{"Expense", "CostCentre"}) {
+		t.Fatalf("the classes of Expenses: %v", got)
+	}
+	if got := run(t, s, ann, "list_classes", `{}`)["classes"].([]any); len(got) != 4 {
+		t.Fatalf("every class, the engine's own Substitution among them: %v", got)
+	}
+	if got := run(t, s, ann, "list_classes", `{"app": "Helpdesk"}`)["classes"].([]any); len(got) != 0 {
+		t.Fatalf("the classes of an app that has none: %v", got)
+	}
+	if e := refused(t, s, ann, "list_classes", `{"app": "Travel"}`); e.Code != store.CodeUnknownApp || !strings.Contains(e.Hint, "Expenses, Helpdesk") {
+		t.Fatalf("the classes of an app that does not exist: %+v", e)
+	}
+
+	// A class moves to another app as it changes in any way: by its next
+	// version. No document is touched.
+	moved := run(t, s, dan, "define_class", `{"definition": `+expense("Helpdesk")+`}`)
+	if at(t, moved, "class.version") != float64(2) {
+		t.Fatalf("a class moved to another app answered %v", moved)
+	}
+	if got := run(t, s, ann, "list_classes", `{"app": "Helpdesk"}`)["classes"]; !reflect.DeepEqual(got, []any{"Expense"}) {
+		t.Fatalf("the classes of Helpdesk after the move: %v", got)
+	}
+	// The page of a face reads the app of a class with the rest of it.
+	if bundle := run(t, s, ann, "get_bundle", `{"class": "Expense"}`); at(t, bundle, "definition.app") != "Helpdesk" {
+		t.Fatalf("the bundle of a class does not say its app: %v", bundle["definition"])
+	}
+	// Who defined each version of an app is kept, as for every definition.
+	if got := run(t, s, ann, "definitions", `{"what": "app", "name": "Expenses"}`)["versions"].([]any); len(got) != 2 {
+		t.Fatalf("the versions of the app Expenses: %v", got)
+	}
+}
+
 func TestEveryCommandIsRun(t *testing.T) {
 	if used["create"] == 0 || used["get_class"] == 0 || used["drain"] == 0 {
 		t.Skip("the tests that run the commands did not all run")

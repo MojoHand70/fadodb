@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 
@@ -32,7 +33,13 @@ func TestManualExamples(t *testing.T) {
 			t.Fatal(err)
 		}
 		var classes, tables, actions, schemas, words, pieces []string
+		// An app a page shows is marked as one: its definition has no
+		// block of its own to tell it by.
+		apps := shownApps(data)
 		for _, m := range block.FindAllSubmatch(data, -1) {
+			if slices.Contains(apps, string(m[1])) {
+				continue
+			}
 			switch kindOf(m[1]) {
 			case "class":
 				classes = append(classes, string(m[1]))
@@ -80,6 +87,11 @@ func TestManualExamples(t *testing.T) {
 				t.Fatal(err)
 			}
 			// What the classes of the page name is defined before them.
+			for _, app := range apps {
+				if _, err := db.DefineApp(ctx, []byte(app), setup); err != nil {
+					t.Errorf("%s: an app is refused: %v", name, err)
+				}
+			}
 			for _, schema := range schemas {
 				if _, err := db.DefineSchema(ctx, []byte(schema), setup); err != nil {
 					t.Errorf("%s: a schema is refused: %v", name, err)
@@ -143,6 +155,16 @@ func TestManualExamples(t *testing.T) {
 		}
 		t.Logf("%s: %d classes, %d tables, %d actions and %d words defined, %d pieces found in them", name, len(classes), len(tables), len(actions), len(words), len(pieces))
 	}
+}
+
+// shownApps returns the definitions of the apps a page shows, each
+// marked as one, in the order of the page.
+func shownApps(page []byte) []string {
+	var out []string
+	for _, m := range regexp.MustCompile("(?s)<!-- an app -->\r?\n```json\r?\n(.*?)\r?\n```").FindAllSubmatch(page, -1) {
+		out = append(out, string(m[1]))
+	}
+	return out
 }
 
 // shownTables returns the definitions of the tables a page shows as the

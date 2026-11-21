@@ -98,10 +98,11 @@ For the developer whose program holds the engine.
 
 ## For agents
 
-An agent works from the five skills under [`skills/`](../skills/README.md),
+An agent works from the six skills under [`skills/`](../skills/README.md),
 one for each role it can take: designing a class, working on
 documents, trying what would happen, finding out how a process runs,
-and keeping its own work as documents. All five are written. A skill
+keeping its own work as documents, and building what people see of a
+server. All six are written. A skill
 shows one piece of work with the engine's own answers and says what
 goes wrong most often; for the syntax it points here.
 

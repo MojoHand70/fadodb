@@ -1,7 +1,7 @@
 # ADR-0060: The organisation's rule-book: the things it keeps and the look of its faces
 
-- Status: Proposed
-- Date: 2026-11-15
+- Status: Accepted by the owner on 2026-11-21 ("accept adr-0060"). Built: the look, item 3, as a sample class a test walks, and the face builder's skill of item 4. Decided and not built yet: the things the organisation keeps, item 2, the designer's skill reading them, and the starter of question 4.
+- Date: 2026-11-15; the look rewritten 2026-11-21
 
 ## Context
 
@@ -77,20 +77,48 @@ in them at all.
    an id may read the entities.
 
 3. **`Look`: one document for each look of the organisation's faces.**
+   Rewritten on 2026-11-21. The owner saw the faces an agent had built
+   without a rule and said what was missing, in three steps: "Define a
+   direction. Verify that direction with user. Stay consistent in
+   styling, the look-and-feel becomes this FadoDB server visual
+   identity and unless [the] designer asks [explicitly] to create
+   something different, once identity is created, all apps should
+   follow." And of every face that will be built on FadoDB: "each can
+   be different", but "if we don't teach them and their apps will look
+   [bad] we will not win. We have to guide them by hand."
 
    | Variable | Holds |
    |---|---|
-   | `name` | whose look it is: the company, or one brand of it |
-   | `colours` | the main colour, the accent, the background and the text, each a colour code |
-   | `fonts` | the fonts of headings and of text |
-   | `logo` | a file |
+   | `name` | whose look it is: the organisation, or one brand of it |
+   | `design` | the look itself, as a DESIGN.md: the exact colours, type, corners and spacing, and in words why each is so and where it is used |
+   | `direction` | what the person asked for, and what they said when they saw it drawn |
    | `tone` | how a face speaks to people: formal or plain, "you" or "we" |
-   | `languages` | the languages faces are shown in, the first the default |
-   | `rules` | what else holds: buttons named by their verb, how a date is written |
+   | `approved_by`, `approved_on` | who saw it and said yes, and when; the engine writes both at the approval |
 
-   Its states are `draft`, `approved` and `replaced`. The group
-   `brand` approves a draft; approving one replaces the look that was
-   approved before, so one look of a name holds at a time.
+   - **The look is written in the DESIGN.md format** (Google Labs,
+     Apache License 2.0): exact values an agent uses, and prose that
+     says why. It is a format the agents of every vendor read, and it
+     comes with a check for contrast and for a value that names
+     nothing. The colours, the fonts and the rules that this item
+     first kept as three variables are inside it.
+   - **Its states are `draft`, `approved` and `replaced`.** A designer,
+     an agent among them, writes a draft and may change it. **Only a
+     person of the group `brand` approves**: the rule of the
+     transition is `INGROUP("brand") AND USERKIND() = "person"`, so
+     the engine refuses an agent, whoever gave it its rights.
+   - **An approved look is not changed.** A change is a new draft,
+     shown and approved as the first was. Of two approved looks of
+     one name the one approved last holds; a person of `brand`
+     replaces the earlier one, which is kept.
+   - **A face that is to look different** is given a look of its own,
+     under its own `name`, drafted and approved the same way. Nothing
+     else makes a face of the server look different.
+   - The class is `examples/classes/look.json`, and a test defines it
+     and walks it on each push.
+
+   Not in the class yet: the organisation's mark, as a file. The
+   languages faces are shown in are the classes' own words in other
+   languages (ADR-0068), not the look's.
 
 4. **What agents do with it**, taught by the skills:
    - The designer's skill reads the confirmed entities before it draws
@@ -99,9 +127,16 @@ in them at all.
      It never defines a class or a table for a thing an entity keeps
      elsewhere. It proposes an entity for a thing it finds nowhere,
      and a class to keep it when it is born nowhere.
-   - The face skill of Phase 7 reads the approved look before it draws
-     a face, and asks for one when there is none. A class's `icon` and
-     `color` are taken from it.
+   - The face builder's skill, `skills/fadodb-face/`, written on
+     2026-11-21 as the sixth hat, reads the approved look before it
+     draws anything. With none, it defines a direction with the
+     person, shows it to them drawn, never described, and stores the
+     draft with their words; it builds only once a person has
+     approved. From then on it takes every value from the look, draws
+     each component once, in a gallery, and checks the face against
+     both. Its method of defining a direction follows Anthropic's
+     `frontend-design` skill (Apache License 2.0). A class's `icon`
+     and `color` are taken from the look.
    - Neither skill writes to the rule-book without a person's yes, and
      an agent never confirms or approves its own proposal.
 
@@ -110,25 +145,42 @@ in them at all.
    them works as it does today. Until they exist, the descriptions of
    classes and tables are the rule-book, as the designer's skill says.
 
-## Questions for the owner
+## The owner's ruling
+
+Accepted by him on 2026-11-21: "accept adr-0060". The four questions
+below stood in this record from 2026-11-15. He answered the second in
+his own words that day, for the look; of the other three he turned
+none round, so each stands as it was proposed. They are kept here as
+they were asked, with the other way, so that he can turn one round
+later.
 
 1. **A copy of a thing born elsewhere.** Employees are born in the HR
-   system, and Ola's training request needs them. Proposed: a table in
+   system, and Ola's training request needs them. Stands as proposed: a table in
    this database may copy them, when its entity names the source, an
    import refreshes it, and nobody edits it here. The other way: no
    copies, ever; a process reads the source where it lives, through
    the binding `external` once it is built. That is purer, slower, and
    the process stops whenever the HR system is down.
-2. **Where the rule-book lives.** Proposed: in the database, as in
+2. **Where the rule-book lives.** **Answered for the look on
+   2026-11-21: in the database.** The owner: "Yes, it definitely needs
+   to be on our server, served as other skills." The skills are not
+   served by the server yet: they are files an agent's program copies,
+   and the server handing them to an agent that connects is a record
+   of its own, to come. With the record accepted the same holds for
+   the things the organisation keeps: in the database, as in
    items 1 to 3. The other way: a file beside the faces, simpler to
    start with, with no owner, no approval and no history but the
    repository's, and invisible to an agent outside that repository.
 3. **Who changes it.** While an agent builds a face, Marek says "our
-   green is darker now". Proposed: the agent writes a new draft of the
-   look and the group `brand` approves it. The other way: the agent
+   green is darker now". Stands as proposed, and built so on
+   2026-11-21: the agent writes a new draft of the
+   look and a person of the group `brand` approves it. The other way: the agent
    changes the approved look itself once Marek says yes in the
    conversation.
-4. **The engine's own classes, or a starter.** Proposed: a starter,
+4. **The engine's own classes, or a starter.** Stands as proposed,
+   and not built yet: until a starter exists, an agent defines the
+   class of the look from the skill's page on a server that has
+   none. The proposal: a starter,
    two ordinary classes a new database is given and the organisation
    may extend, with a field for a data steward or a privacy class, say.
    The skills find them by their names. The other way: the engine's

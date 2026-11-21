@@ -65,7 +65,7 @@ line says so. Copy `0000-template.md` to start.
 | [0057](0057-users-groups-and-keys.md) | Who is calling: users, groups and keys, kept in the database | Accepted, amended by 0071 |
 | [0058](0058-the-stream-of-changes.md) | The stream of changes: the log read forward, over plain HTTP | Accepted, amended by 0067 |
 | [0059](0059-fadodb-serve.md) | `fadodb serve`: one database, what it is told when it starts, and what it refuses | Accepted, amended by 0065, 0071 |
-| [0060](0060-the-organisations-rule-book.md) | The organisation's rule-book: the things it keeps and the look of its faces | Proposed |
+| [0060](0060-the-organisations-rule-book.md) | The organisation's rule-book: the things it keeps and the look of its faces | Accepted |
 | [0061](0061-apache-license.md) | License: Apache 2.0 | Accepted |
 | [0062](0062-commands-from-a-terminal.md) | Commands from a terminal: `fadodb exec` | Accepted |
 | [0063](0063-the-flow-of-a-class.md) | The flow of a class in one call | Accepted |

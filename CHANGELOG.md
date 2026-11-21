@@ -8,6 +8,26 @@ All notable changes to FadoDB are recorded here. The format follows
 
 ### Added
 
+- A sixth skill for agents, `skills/fadodb-face/`, at the owner's
+  direction of 2026-11-21: how to build what people see of a server
+  so that it is good to look at and looks like every other face of
+  that server. An agent reads the server's look before it draws;
+  with none, it defines a direction with the person, shows it to them
+  drawn, and stores it; once a person approves, the look is the visual
+  identity of the server and every face follows it. A test on each
+  push sends the commands of the page and compares the answers.
+- A fifth sample class, `examples/classes/look.json`: the look of a
+  server's faces as a document, written in the DESIGN.md format. A
+  designer drafts it, an agent among them; only a person of the group
+  `brand` approves it; an approved look is not changed, and of two
+  the one approved last holds. It is an ordinary class: the engine is
+  unchanged, and no database has to be made again.
+- ADR-0060, the organisation's rule-book, accepted by the owner on
+  2026-11-21, after its part on the look was rewritten as he asked
+  that day, with his answer to where a look lives: on the server. The
+  look and the face builder's skill are built; the things the
+  organisation keeps, and a starter that gives a new database both
+  classes, are decided and not built yet.
 - ADR-0075, proposed, at the owner's direction of 2026-11-20, and
   nothing of it built: the engine makes the index of every question a
   class declares, a pointer to be followed back, the key of a `LOOKUP`,

@@ -364,6 +364,14 @@ change and files through the door. Its test, besides the plan's: an
 agent with only the skills and the door is told a business story in
 plain words and builds the table and the class, and the people of the
 story use them through Workshop in a browser. The rest is not built yet.
+Two records are proposed on 2026-11-20, at the owner's direction of
+that day, and nothing of them is built: ADR-0075, the engine makes the
+index of every question a class declares and says which question it
+cannot serve, so that a class of a hundred million documents answers
+a declared question in under a thousandth of a second; and ADR-0076, a
+value worked out when it is read, `"mode": "live"`, with `QUERY` for
+the list of other documents on a document and `REF` for what a `ref`
+compares with.
 This page is updated when a phase starts and when it ends;
 it never describes a phase as done before its acceptance criteria pass.
 

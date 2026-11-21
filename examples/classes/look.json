@@ -1,0 +1,43 @@
+{
+  "name": "Look",
+  "label": "Look",
+  "plural": "Looks",
+  "description": "How the faces of this server look: its visual identity. One document is one look, written as a DESIGN.md. A person approves it, and from then on every face is built from the approved look of its name that was approved last. Born: here. Owner: the group brand. List: the documents of this class in the state approved.",
+  "title": "name",
+  "variables": {
+    "name":        {"type": "text", "required": true, "index": true, "label": "Name", "list": true,
+                    "description": "Whose look it is: the organisation, or one brand of it."},
+    "design":      {"type": "text", "required": true, "label": "Design",
+                    "description": "The look itself, as a DESIGN.md: the exact colours, type, corners and spacing, and in words why each is so and where it is used."},
+    "direction":   {"type": "text", "label": "Direction",
+                    "description": "What the person asked for, and what they said when they saw it drawn. Kept so that the next change starts from their words."},
+    "tone":        {"type": "text", "label": "Tone",
+                    "description": "How a face speaks to people: formal or plain, \"you\" or \"we\"."},
+    "approved_by": {"formula": "USER()", "mode": "triggered", "on": ["transition:approve"], "label": "Approved by", "list": true,
+                    "description": "The person who saw the look and said yes."},
+    "approved_on": {"formula": "NOW()", "mode": "triggered", "on": ["transition:approve"], "label": "Approved on", "list": true,
+                    "description": "When they said yes. Of two approved looks of one name, the later one holds."}
+  },
+  "states": {"initial": "draft", "list": ["draft", "approved", "replaced"], "final": ["replaced"],
+             "labels": {"draft": "Draft", "approved": "Approved", "replaced": "Replaced"},
+             "descriptions": {
+               "draft":    "Proposed, and shown to a person. No face is built from it.",
+               "approved": "A person saw it and said yes. Faces are built from it.",
+               "replaced": "A later look took its place. Kept as the record of how the faces looked."}},
+  "transitions": [
+    {"name": "approve", "from": "draft", "to": "approved", "label": "Approve",
+     "description": "A person of the group brand has seen the look drawn and says yes. An agent does not approve a look."},
+    {"name": "replace", "from": "approved", "to": "replaced", "label": "Replace",
+     "description": "A person of the group brand takes the look out of use, when a later one has taken its place."}
+  ],
+  "access": {
+    "read":   "INGROUP(\"everyone\")",
+    "create": "INGROUP(\"designers\") OR INGROUP(\"brand\")",
+    "update": "STATE() = \"draft\" AND (CREATEDBY() = USER() OR INGROUP(\"brand\"))",
+    "delete": "STATE() = \"draft\" AND (CREATEDBY() = USER() OR INGROUP(\"brand\"))",
+    "transition": {
+      "approve": "INGROUP(\"brand\") AND USERKIND() = \"person\"",
+      "replace": "INGROUP(\"brand\") AND USERKIND() = \"person\""
+    }
+  }
+}

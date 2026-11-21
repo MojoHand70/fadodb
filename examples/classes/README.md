@@ -10,7 +10,7 @@ defines them in an order that works. Samples that name each other, so
 that neither could be first, are defined together with `DefineClasses`,
 which takes several definitions in one call.
 
-**Status on 2026-11-11:** four samples. The Invoice from the README is
+**Status on 2026-11-11:** four samples; a fifth since 2026-11-21, below. The Invoice from the README is
 `invoice.json` and the Receipt its rule creates `receipt.json`.
 `purchase.json` and `approval.json` are parallel approvals: submitting a
 purchase creates one approval for each approver, each approver answers
@@ -19,6 +19,12 @@ Approval class and moves by its own guards. The two name each other.
 An approval is answered by its approver or by whoever acts for them
 with a substitution (ADR-0053): `approver = USER() OR approver =
 ACTINGFOR()`. `TestExampleApprovals` walks them through.
+
+**Added on 2026-11-21:** `look.json`, the look of a server's faces
+(ADR-0060): one document is one look, written as a DESIGN.md, drafted
+by a designer and approved by a person of the group `brand`. It is the
+class the face builder's skill shows, word for word, and
+`TestFaceSkill` walks it through.
 
 ## Naming
 

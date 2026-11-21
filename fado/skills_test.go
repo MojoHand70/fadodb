@@ -869,3 +869,131 @@ func TestDesignerSkill(t *testing.T) {
 		t.Errorf("the tables after the story: %v", tables)
 	}
 }
+
+// The face builder's skill shows the look of a server as a class, and
+// one piece of work command by command: an agent reads the look and
+// finds none, drafts one, is refused when it tries to approve it, and
+// reads it once a person has. TestFaceSkill defines the class of the
+// page, which is the sample class word for word, sends each command as
+// the agent of the skill and compares the answer with the one on the
+// page; then it holds the points of the list that the engine can hold.
+func TestFaceSkill(t *testing.T) {
+	page := skill(t, "fadodb-face")
+	ctx := context.Background()
+	clock := time.Date(2026, 11, 21, 9, 0, 0, 0, time.UTC)
+	db := notionDB(t, fado.Options{Now: func() time.Time { return clock }})
+	class := notionClass(t, page)
+	sample, err := os.ReadFile(filepath.Join("..", "examples", "classes", "look.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(bytes.TrimSpace(class), bytes.TrimSpace(bytes.ReplaceAll(sample, []byte("\r\n"), []byte("\n")))) {
+		t.Error("the class Look of the skill and examples/classes/look.json differ: they are one class, shown twice")
+	}
+	if _, err := db.DefineClass(ctx, class, setup); err != nil {
+		t.Fatal(err)
+	}
+	agent := fado.Principal{ID: "face-agent", Kind: fado.ActorAgent, System: []string{fado.GroupDesigners}}
+	marta := fado.Principal{ID: "marta", Kind: fado.ActorPerson, Groups: []string{"brand"}}
+
+	// The look of the page is a DESIGN.md of its own. The commands name
+	// it in place of carrying it, and it is put in before they are sent.
+	shown := regexp.MustCompile("(?s)<!-- design -->\n```md\n(.*?)\n```").FindSubmatch(page)
+	if shown == nil {
+		t.Fatal("the skill shows no DESIGN.md")
+	}
+	for _, part := range []string{"---\nname: Acme\n", "\ncolors:\n", "\ntypography:\n", "\n## Overview\n"} {
+		if !strings.Contains(string(shown[1]), part) {
+			t.Errorf("the DESIGN.md of the skill has no %q: it is the format's own front matter and prose", strings.TrimSpace(part))
+		}
+	}
+	design, err := json.Marshal(string(shown[1]))
+	if err != nil {
+		t.Fatal(err)
+	}
+	whole := func(text []byte) []byte {
+		return bytes.ReplaceAll(text, []byte(`"(the DESIGN.md above)"`), design)
+	}
+	approve := func(who fado.Principal, id string) error {
+		_, err := db.Exec(ctx, who, "transition", []byte(`{"class":"Look","id":"`+id+`","transition":"approve"}`))
+		return err
+	}
+
+	exchange := exchangesOf(page)
+	if len(exchange) != 4 {
+		t.Fatalf("the skill shows %d commands with their answers; the test knows four", len(exchange))
+	}
+	for i, m := range exchange {
+		if i == 3 {
+			// Between steps 5 and 6 Marta approves, two hours later.
+			clock = clock.Add(2 * time.Hour)
+			if err := approve(marta, "acme-1"); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if got, _ := db.Exec(ctx, agent, m.name, whole(m.sent)); !sameAnswer(got, whole(m.shown)) {
+			t.Errorf("the command %s %s is answered\n%s\nand the skill shows\n%s", m.name, m.sent, got, m.shown)
+		}
+	}
+
+	// What goes wrong most often: the list has eleven points. The ones
+	// that are the engine's to hold are held here by their numbers; the
+	// rest are a face builder's own work.
+	if n := points(t, page); n != 11 {
+		t.Errorf("the list has %d points, and the test knows eleven", n)
+	}
+	code := func(who fado.Principal, name, object string) string {
+		t.Helper()
+		_, err := db.Exec(ctx, who, name, []byte(object))
+		return fado.ErrorCode(err)
+	}
+	draft := func(id string) {
+		t.Helper()
+		if got := code(agent, "create", `{"class":"Look","id":"`+id+`","values":{"name":"Acme","design":"---\nname: Acme\n---\n"}}`); got != "" {
+			t.Fatalf("a second draft: %s", got)
+		}
+	}
+	// 3. Approving your own look: an agent is refused, in the group
+	// brand too, and so is a person outside it.
+	draft("acme-2")
+	if got := fado.ErrorCode(approve(agent, "acme-2")); got != "forbidden" {
+		t.Errorf("3: an agent approves a look: %s", got)
+	}
+	if got := fado.ErrorCode(approve(fado.Principal{ID: "brand-agent", Kind: fado.ActorAgent, Groups: []string{"brand"}}, "acme-2")); got != "forbidden" {
+		t.Errorf("3: an agent of the group brand approves a look: %s", got)
+	}
+	if got := fado.ErrorCode(approve(fado.Principal{ID: "ola", Kind: fado.ActorPerson}, "acme-2")); got != "forbidden" {
+		t.Errorf("3: a person outside the group brand approves a look: %s", got)
+	}
+	// 4. Changing an approved look in place is refused, for the agent
+	// that wrote it and for the person who approved it; a draft is
+	// changed by its writer.
+	for _, who := range []fado.Principal{agent, marta} {
+		if got := code(who, "set", `{"class":"Look","id":"acme-1","values":{"tone":"Formal."}}`); got != "forbidden" {
+			t.Errorf("4: %s changes an approved look: %s", who.ID, got)
+		}
+	}
+	if got := code(agent, "set", `{"class":"Look","id":"acme-2","values":{"tone":"Formal."}}`); got != "" {
+		t.Errorf("4: the writer changes a draft: %s", got)
+	}
+	// 5. Of two approved looks of one name the later one holds, and the
+	// query of the page answers it; the earlier one is then replaced by
+	// a person, and kept.
+	clock = clock.Add(24 * time.Hour)
+	if err := approve(marta, "acme-2"); err != nil {
+		t.Fatal(err)
+	}
+	holds, err := db.Exec(ctx, agent, "query", exchange[0].sent)
+	if err != nil || !strings.Contains(string(holds), `"id":"acme-2"`) || strings.Contains(string(holds), `"id":"acme-1"`) {
+		t.Errorf("5: of two approved looks the query of the page answers\n%s, %v", holds, err)
+	}
+	if got := code(agent, "transition", `{"class":"Look","id":"acme-1","transition":"replace"}`); got != "forbidden" {
+		t.Errorf("5: an agent replaces a look: %s", got)
+	}
+	if got := code(marta, "transition", `{"class":"Look","id":"acme-1","transition":"replace"}`); got != "" {
+		t.Errorf("5: the person replaces the earlier look: %s", got)
+	}
+	if got := code(agent, "get", `{"class":"Look","id":"acme-1"}`); got != "" {
+		t.Errorf("5: a replaced look is still read: %s", got)
+	}
+}

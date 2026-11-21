@@ -83,3 +83,4 @@ line says so. Copy `0000-template.md` to start.
 | [0075](0075-the-engine-makes-its-own-indexes.md) | The engine makes its own indexes, and says which question it cannot serve | Proposed |
 | [0076](0076-a-value-worked-out-when-it-is-read.md) | A value worked out when it is read: the mode `live`, the list of other documents, and what a `ref` compares with | Proposed |
 | [0077](0077-the-app.md) | The app, a name for the classes that belong together | Accepted |
+| [0078](0078-a-decision-stands-on-what-the-document-holds.md) | A decision stands on what the document holds: the version a command saw, who may bring a value again, and what a condition saw | Proposed |

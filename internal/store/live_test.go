@@ -153,3 +153,63 @@ func TestLive_WithTheReadersRights(t *testing.T) {
 		t.Errorf("the entry = %+v; want live by root on FV-17 past the read rule and the read right of mine", r)
 	}
 }
+
+// A class may turn a kept variable into a live one, and a live one into
+// a kept one, with a new version of its definition. A document is what
+// the version that last computed it made of it (ADR-0039): one made
+// before the change still carries the value that was kept then, until a
+// commit brings it to the current version; from then on, and in every
+// document made since, the value is worked out when it is read.
+func TestLive_AVariableChangesItsMode(t *testing.T) {
+	s, ctx, _ := openLive(t)
+	if _, err := s.Create(ctx, "Invoice", Values{"number": "FV-17"}, As(liveJan), WithID("FV-17")); err != nil {
+		t.Fatal(err)
+	}
+	// shout was kept; now it is live, and mine, which was live, is kept.
+	next := strings.NewReplacer(
+		`"shout":        {"formula": "UPPER(number)"}`, `"shout":        {"mode": "live", "formula": "UPPER(number)"}`,
+		`"mine":         {"type": "bool", "mode": "live", "formula": "owner = USER()"}`, `"mine":         {"type": "bool", "mode": "triggered", "on": ["refresh"], "formula": "owner = USER()"}`,
+	).Replace(liveInvoice)
+	if next == liveInvoice {
+		t.Fatal("the next version of the class is the first")
+	}
+	if _, err := s.DefineClass(ctx, []byte(next), asSetup); err != nil {
+		t.Fatalf("the next version of the class: %v", err)
+	}
+	// The document of the first version, untouched: as that version left it.
+	got, err := s.Get(ctx, "Invoice", "FV-17", As(liveJan))
+	if err != nil || got.ClassVersion != 1 || got.Values["shout"] != "FV-17" || has(got, "waiting_days") {
+		t.Fatalf("get after the change = %v, %v; want the document as version 1 computed it", got, err)
+	}
+	// The call asks the class as it is now.
+	if v, err := s.Live(ctx, "Invoice", "FV-17", "shout", As(liveJan)); err != nil || v.Value != "FV-17" {
+		t.Errorf("live shout = %v, %v; want FV-17", v, err)
+	}
+	if _, err := s.Live(ctx, "Invoice", "FV-17", "mine", As(liveJan)); err == nil || err.(*Error).Code != CodeNotAllowed {
+		t.Errorf("live mine = %v, want not_allowed: it is kept now", err)
+	}
+	// A commit brings the document to the current version: shout is no
+	// longer carried, and the live read answers what the document says now.
+	set, err := s.Set(ctx, "Invoice", "FV-17", Values{"number": "fv-17a"}, As(liveJan))
+	if err != nil || set.ClassVersion != 2 || has(set, "shout") {
+		t.Fatalf("set after the change = %v, %v; want the document at version 2 of the class, without shout", set, err)
+	}
+	if v, err := s.Live(ctx, "Invoice", "FV-17", "shout", As(liveJan)); err != nil || v.Value != "FV-17A" {
+		t.Errorf("live shout after the set = %v, %v; want FV-17A", v, err)
+	}
+	// A document made under the new version carries no shout from the start.
+	made, err := s.Create(ctx, "Invoice", Values{"number": "FV-18"}, As(liveJan), WithID("FV-18"))
+	if err != nil || has(made, "shout") {
+		t.Fatalf("create after the change = %v, %v; want a document without shout", made, err)
+	}
+	if v, err := s.Live(ctx, "Invoice", "FV-18", "shout", As(liveJan)); err != nil || v.Value != "FV-18" {
+		t.Errorf("live shout of a new document = %v, %v; want FV-18", v, err)
+	}
+	if found, err := s.Query(ctx, Filter{Class: "Invoice"}, As(liveJan)); err != nil || len(found) != 2 || has(found[0], "shout") || has(found[1], "shout") {
+		t.Errorf("query after the change = %v, %v; want two documents without shout", found, err)
+	}
+	// The history keeps what each version of the document was.
+	if versions, err := s.History(ctx, "Invoice", "FV-17", As(liveJan)); err != nil || len(versions) != 2 || versions[0].Values["shout"] != "FV-17" || has(&versions[1].Document, "shout") {
+		t.Errorf("history after the change = %v, %v; want the first version with shout and the second without", versions, err)
+	}
+}

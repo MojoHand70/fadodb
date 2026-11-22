@@ -470,7 +470,8 @@ type BundleCompiled struct {
 // defaults and the computed variables that work themselves out, in the
 // order the engine works them out; the access rules but the read rule;
 // the guards; the rights of each variable in each state, worked out; and
-// the presentation of the schemas the class uses. Triggered variables,
+// the presentation of the schemas the class uses. A live variable is
+// listed among the computed ones as the server's. Triggered variables,
 // timers, rules and actions are the server's and are left out.
 func Compiled(cls *Class) *BundleCompiled {
 	out := &BundleCompiled{
@@ -500,6 +501,14 @@ func Compiled(cls *Class) *BundleCompiled {
 		f := bundleFormula(v.Name, v.Formula, v.Deps)
 		f.Type = v.Type.String()
 		out.Computed = append(out.Computed, f)
+	}
+	// A live variable is the server's (ADR-0076, item 13): it is worked
+	// out for one reader at one moment, so the page asks the command live
+	// for it and never works it out itself.
+	for _, v := range cls.Variables {
+		if v.Live() && v.Formula != nil {
+			out.Computed = append(out.Computed, BundleFormula{Variable: v.Name, Type: v.Type.String(), Reads: nonNil(v.Deps), Server: true})
+		}
 	}
 	if a := cls.Access; a != nil {
 		out.Access = &BundleAccess{Create: bundleRule(a.Create), Update: bundleRule(a.Update), Delete: bundleRule(a.Delete)}

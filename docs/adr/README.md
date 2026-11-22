@@ -18,22 +18,22 @@ line says so. Copy `0000-template.md` to start.
 | [0010](0010-security-rules-as-predicates.md) | Security rules compiled to SQL predicates | Accepted, amended by 0027, 0028, 0041, 0046, 0049, 0052 |
 | [0011](0011-one-json-command-set.md) | One JSON command set over HTTP, WebSocket and C ABI | Accepted, amended by 0025, 0026, 0027, 0033, 0045, 0046 |
 | [0012](0012-performance-gates.md) | Performance budgets and gates | Accepted, amended by 0030, 0072 |
-| [0013](0013-document-variables-and-types.md) | Document variables and the type system | Accepted, amended by 0019, 0022, 0023, 0031, 0034, 0047, 0068 |
-| [0014](0014-document-tables.md) | Document tables: current, history, child tables and views | Accepted, amended by 0026, 0031, 0039, 0040, 0043, 0047 |
-| [0015](0015-commits-and-recalculation.md) | Commits, recalculation modes, defaults, reset and refresh | Accepted, amended by 0020, 0025, 0040, 0043 |
-| [0016](0016-explicit-tables-and-query-functions.md) | Explicit tables, storage bindings, LOOKUP and QUERY | Accepted, amended by 0020, 0036, 0037, 0046, 0068 |
+| [0013](0013-document-variables-and-types.md) | Document variables and the type system | Accepted, amended by 0019, 0022, 0023, 0031, 0034, 0047, 0068, 0075 |
+| [0014](0014-document-tables.md) | Document tables: current, history, child tables and views | Accepted, amended by 0026, 0031, 0039, 0040, 0043, 0047, 0075 |
+| [0015](0015-commits-and-recalculation.md) | Commits, recalculation modes, defaults, reset and refresh | Accepted, amended by 0020, 0025, 0040, 0043, 0076, 0078 |
+| [0016](0016-explicit-tables-and-query-functions.md) | Explicit tables, storage bindings, LOOKUP and QUERY | Accepted, amended by 0020, 0036, 0037, 0046, 0068, 0076 |
 | [0017](0017-duckdb-as-the-analytical-engine.md) | DuckDB as the analytical engine, full and lite builds | Accepted, amended by 0035, 0072 |
 | [0018](0018-class-metadata-layouts-and-wire-format.md) | JSON for definitions and interchange: class metadata, layouts and the wire format | Accepted, amended by 0022, 0023, 0028, 0031, 0032, 0033, 0034, 0039, 0043, 0047, 0068, 0069, 0070, 0077 |
-| [0019](0019-formula-language-semantics.md) | Formula language semantics: grammar, types, coercion, comparison, dates, text, composites and errors | Accepted, amended by 0021, 0022, 0023, 0024, 0031, 0043, 0047, 0050 |
-| [0020](0020-query-function-execution.md) | LOOKUP and QUERY execution: one engine call per invocation | Accepted, amended by 0036, 0037, 0046 |
+| [0019](0019-formula-language-semantics.md) | Formula language semantics: grammar, types, coercion, comparison, dates, text, composites and errors | Accepted, amended by 0021, 0022, 0023, 0024, 0031, 0043, 0047, 0050, 0076 |
+| [0020](0020-query-function-execution.md) | LOOKUP and QUERY execution: one engine call per invocation | Accepted, amended by 0036, 0037, 0046, 0076 |
 | [0021](0021-size-limits.md) | Size limits: one text limit per database, enforced before building | Accepted, amended by 0033 |
 | [0022](0022-exact-decimal-int-and-money.md) | Exact numbers: decimal, int and money | Accepted |
 | [0023](0023-calendar-day-datetime-and-enum-values.md) | A date is a calendar day, a datetime an instant, an enum a text with a value set | Accepted |
 | [0024](0024-division-by-zero-is-an-error-and-iferror.md) | Division by zero is an error, and IFERROR catches one | Accepted |
 | [0025](0025-evaluate-without-committing.md) | Evaluate a class or a document without committing | Accepted, amended by 0042, 0043, 0048, 0049 |
-| [0026](0026-idempotency-keys-business-dates-and-the-transition-event.md) | Idempotency keys on commands, a business date on events, and the transition event | Accepted, amended by 0040, 0044, 0045, 0047, 0048, 0049, 0050 |
+| [0026](0026-idempotency-keys-business-dates-and-the-transition-event.md) | Idempotency keys on commands, a business date on events, and the transition event | Accepted, amended by 0040, 0044, 0045, 0047, 0048, 0049, 0050, 0078 |
 | [0027](0027-principal-from-the-embedder-and-registered-executors.md) | The principal comes from the embedder; action executors are registered | Accepted, amended by 0044, 0045, 0049, 0050, 0051, 0052, 0053 |
-| [0028](0028-field-level-rights-per-state.md) | Field-level rights per state | Accepted, amended by 0041, 0069, 0070 |
+| [0028](0028-field-level-rights-per-state.md) | Field-level rights per state | Accepted, amended by 0041, 0069, 0070, 0076, 0078 |
 | [0029](0029-browser-vm-as-one-plain-javascript-file.md) | The browser VM ships as one plain JavaScript file | Accepted |
 | [0030](0030-benchmark-gate-measures-the-minimum-over-placements.md) | The benchmark gate measures the minimum over code placements | Accepted |
 | [0031](0031-named-schemas-and-object-values.md) | Named schemas and object values | Accepted, amended by 0068 |
@@ -43,24 +43,24 @@ line says so. Copy `0000-template.md` to start.
 | [0035](0035-sqlite-is-the-transactional-store.md) | SQLite is the transactional store, by measurement | Accepted |
 | [0036](0036-in-memory-index-for-lookups-in-commits.md) | An in-memory index serves LOOKUP inside commits, by measurement | Accepted |
 | [0037](0037-explicit-tables-and-the-compiled-lookup.md) | Explicit tables bound to SQLite and the compiled LOOKUP | Accepted, amended by 0046, 0051 |
-| [0038](0038-the-filter-and-the-read-only-sql-endpoint.md) | The filter and the read-only SQL endpoint | Accepted, amended by 0049, 0051, 0067 |
+| [0038](0038-the-filter-and-the-read-only-sql-endpoint.md) | The filter and the read-only SQL endpoint | Accepted, amended by 0049, 0051, 0067, 0075, 0076 |
 | [0039](0039-class-versions-terminal-states-and-migrations.md) | Class versions, terminal states and migrations | Accepted, amended by 0040, 0043, 0051 |
-| [0040](0040-transitions-as-commits.md) | Transitions as commits: the command, eventless chains and state visits | Accepted, amended by 0043, 0047, 0048 |
-| [0041](0041-field-rights-and-transition-rules-in-the-go-api.md) | Field rights and transition rules in the Go API | Accepted, amended by 0049, 0052 |
+| [0040](0040-transitions-as-commits.md) | Transitions as commits: the command, eventless chains and state visits | Accepted, amended by 0043, 0047, 0048, 0078 |
+| [0041](0041-field-rights-and-transition-rules-in-the-go-api.md) | Field rights and transition rules in the Go API | Accepted, amended by 0049, 0052, 0078 |
 | [0042](0042-a-moment-the-caller-chooses.md) | A moment the caller chooses, for previews and reads | Accepted |
-| [0043](0043-rules-inside-the-commit.md) | Rules inside the commit: triggers, synchronous actions and triggered variables | Accepted, amended by 0044 |
+| [0043](0043-rules-inside-the-commit.md) | Rules inside the commit: triggers, synchronous actions and triggered variables | Accepted, amended by 0044, 0078 |
 | [0044](0044-the-outbox.md) | The outbox: what a commit queues, the worker and the engine's own actions | Accepted, amended by 0047, 0049, 0050, 0051 |
 | [0045](0045-actions-are-an-extension-point.md) | Actions are an extension point: definitions, declared HTTP actions, registered Go actions, connections and results | Accepted, amended by 0051 |
-| [0046](0046-formulas-that-read-other-documents.md) | Formulas that read other documents: a class as the source of LOOKUP, with COUNT, SUM, MIN and MAX | Accepted, amended by 0051 |
+| [0046](0046-formulas-that-read-other-documents.md) | Formulas that read other documents: a class as the source of LOOKUP, with COUNT, SUM, MIN and MAX | Accepted, amended by 0051, 0075, 0076, 0078 |
 | [0047](0047-time.md) | Time: a document's life in formulas, what is due, and timed transitions | Accepted, amended by 0052 |
-| [0048](0048-moving-many-documents-in-one-command.md) | Moving many documents in one command: `TransitionMany`, the refused reported and the rest moved | Accepted |
+| [0048](0048-moving-many-documents-in-one-command.md) | Moving many documents in one command: `TransitionMany`, the refused reported and the rest moved | Accepted, amended by 0078 |
 | [0049](0049-who-may-see-create-change-and-delete-a-document.md) | Who may see, create, change and delete a document | Accepted, amended by 0052 |
 | [0050](0050-person-agent-or-service-and-for-whom.md) | Person, agent or service, and for whom it acts | Accepted, amended by 0053 |
 | [0051](0051-who-may-define-operate-and-query.md) | Who may define, operate and query, and the rules of a table | Accepted, amended by 0052, 0067 |
 | [0052](0052-system-groups-and-the-content-administrator.md) | System groups: who runs the database, who designs, who reads everything and who may act on any document | Accepted, amended by 0057, 0059, 0067 |
 | [0053](0053-acting-for-somebody.md) | Acting for somebody: a recorded substitution for people and assistants | Accepted, amended by 0071 |
 | [0054](0054-the-screen-on-a-layout-component.md) | The screen on a layout component: `mobile` and `desktop` | Withdrawn by 0069 |
-| [0055](0055-the-command-set-on-the-wire.md) | The command set on the wire: every command, its JSON, and one address each | Accepted, amended by 0057, 0058, 0059, 0063, 0065, 0067, 0070, 0074, 0077 |
+| [0055](0055-the-command-set-on-the-wire.md) | The command set on the wire: every command, its JSON, and one address each | Accepted, amended by 0057, 0058, 0059, 0063, 0065, 0067, 0070, 0074, 0077, 0076, 0078 |
 | [0056](0056-one-database-for-each-customer.md) | One database for each customer, and a server that serves one database | Accepted |
 | [0057](0057-users-groups-and-keys.md) | Who is calling: users, groups and keys, kept in the database | Accepted, amended by 0071 |
 | [0058](0058-the-stream-of-changes.md) | The stream of changes: the log read forward, over plain HTTP | Accepted, amended by 0067 |
@@ -75,12 +75,12 @@ line says so. Copy `0000-template.md` to start.
 | [0067](0067-the-log-of-reads.md) | The log of reads: what a content administrator sees past a rule, and every SQL statement | Accepted |
 | [0068](0068-what-a-class-says-to-people.md) | What a class says to people: labels, The List, formats, descriptions and other languages | Accepted, amended by 0069, 0077 |
 | [0069](0069-the-screen-is-the-faces-and-a-class-has-sections.md) | The screen is the face's, and a class has sections | Accepted |
-| [0070](0070-the-bundle.md) | The bundle: a class, its words and its compiled formulas in one call | Accepted |
+| [0070](0070-the-bundle.md) | The bundle: a class, its words and its compiled formulas in one call | Accepted, amended by 0076 |
 | [0071](0071-signing-in.md) | Signing in: passwords, company sign-on, sessions and passes for agents | Accepted, amended by 0073 |
 | [0072](0072-the-size-budget-of-the-core-program.md) | The size budget of the core program: 20 MB | Accepted |
 | [0073](0073-the-server-hands-out-the-pages-of-a-face.md) | The server hands out the pages of a face from a folder, and has none of its own | Accepted |
 | [0074](0074-the-engine-hands-out-its-list-of-functions.md) | The engine hands out its list of functions | Accepted |
-| [0075](0075-the-engine-makes-its-own-indexes.md) | The engine makes its own indexes, and says which question it cannot serve | Proposed |
-| [0076](0076-a-value-worked-out-when-it-is-read.md) | A value worked out when it is read: the mode `live`, the list of other documents, and what a `ref` compares with | Proposed |
+| [0075](0075-the-engine-makes-its-own-indexes.md) | The engine makes its own indexes, and says which question it cannot serve | Accepted |
+| [0076](0076-a-value-worked-out-when-it-is-read.md) | A value worked out when it is read: the mode `live`, the list of other documents, and what a `ref` compares with | Accepted, amended by 0078 |
 | [0077](0077-the-app.md) | The app, a name for the classes that belong together | Accepted |
-| [0078](0078-a-decision-stands-on-what-the-document-holds.md) | A decision stands on what the document holds: the version a command saw, who may bring a value again, and what a condition saw | Proposed |
+| [0078](0078-a-decision-stands-on-what-the-document-holds.md) | A decision stands on what the document holds: the version a command saw, who may bring a value again, and what a condition saw | Accepted |

@@ -1,6 +1,6 @@
 # ADR-0076: A value worked out when it is read: the mode `live`, the list of other documents, and what a `ref` compares with
 
-- Status: Proposed; amends ADR-0015 (a third mode of a computed variable), ADR-0016 and ADR-0020 (`QUERY` is built for a live variable, and how its lists are written), ADR-0019 (the function `REF`), ADR-0028 (a read right on a live variable), ADR-0038 (a `ref` in a filter is answered through its index), ADR-0046 (item 2: a live value reads with the reader's eyes; item 15: `QUERY`), ADR-0055 (one command joins the table), ADR-0070 (a live variable in the bundle)
+- Status: Accepted; amends ADR-0015 (a third mode of a computed variable), ADR-0016 and ADR-0020 (`QUERY` is built for a live variable, and how its lists are written), ADR-0019 (the function `REF`), ADR-0028 (a read right on a live variable), ADR-0038 (a `ref` in a filter is answered through its index), ADR-0046 (item 2: a live value reads with the reader's eyes; item 15: `QUERY`), ADR-0055 (one command joins the table), ADR-0070 (a live variable in the bundle); amended by ADR-0078 (the list that is kept)
 - Date: 2026-11-20
 
 ## Context
@@ -301,6 +301,9 @@ answered: item 9. Question 2, a `ref` that names a document which is
 not there, is answered: item 11. Both are in the rulings below.
 
 ## The owner's rulings
+
+Accepted by him on 2026-11-22: "accept all three and start building
+QUERY." Nothing of the record was built when he accepted it.
 
 Of 2026-11-20:
 

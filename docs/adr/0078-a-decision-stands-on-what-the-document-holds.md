@@ -1,6 +1,6 @@
 # ADR-0078: A decision stands on what the document holds: the version a command saw, who may bring a value again, and what a condition saw
 
-- Status: Proposed; amends ADR-0015 (the order inside a commit; a trigger before a condition), ADR-0026 (the event keeps the version a command saw), ADR-0028 and ADR-0041 (the write right of a triggered variable), ADR-0040 (one more refusal; what a guard may read), ADR-0043 (what a `Refresh` asks; a triggered variable that fails before a condition), ADR-0046 (item 6: where a lookup may be written), ADR-0048 (`versions` in `transition_many`), ADR-0055 (a sixth member that means the same), ADR-0076 (the list that is kept)
+- Status: Accepted; amends ADR-0015 (the order inside a commit; a trigger before a condition), ADR-0026 (the event keeps the version a command saw), ADR-0028 and ADR-0041 (the write right of a triggered variable), ADR-0040 (one more refusal; what a guard may read), ADR-0043 (what a `Refresh` asks; a triggered variable that fails before a condition), ADR-0046 (item 6: where a lookup may be written), ADR-0048 (`versions` in `transition_many`), ADR-0055 (a sixth member that means the same), ADR-0076 (the list that is kept)
 - Date: 2026-11-21
 
 ## Context
@@ -42,7 +42,7 @@ change.
 | when a value of the document that it reads changes | a computed variable that looks in a table; a rule on `values_change` | built |
 | at a state change | `enter:`, `exit:`, `transition:` | built |
 | when somebody asks, the owner's manual rebind | `refresh` | built |
-| whenever it is read, and kept nowhere | `"mode": "live"` | proposed (ADR-0076) |
+| whenever it is read, and kept nowhere | `"mode": "live"` | accepted, not built (ADR-0076) |
 | when its source changes, and kept | `table:` | planned (ADR-0015); refused today with `not_supported` |
 | at a time | `schedule:` | planned (ADR-0015); refused today |
 
@@ -397,6 +397,9 @@ were asked, with the other way, so that he can turn one round later.
 
 ## The owner's rulings
 
+Accepted by him on 2026-11-22: "accept all three and start building
+QUERY." Nothing of the record was built when he accepted it.
+
 Of 2026-11-18: the requirement and the direction quoted in the
 Context.
 
@@ -413,7 +416,7 @@ agreed"**. Those are items 3 and 4: the `write` right of a triggered
 variable says who may bring its value again, and a guard that looks
 in a table or at other documents is refused when the class is defined.
 
-The record stays Proposed until he accepts it by name.
+He accepted the record by name on 2026-11-22.
 
 Settled by me, his to veto: the name of the member, `version`, as it
 stood in the question put to him, and `versions` for many documents;

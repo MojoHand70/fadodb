@@ -1,6 +1,6 @@
 # ADR-0048: Moving many documents in one command
 
-- Status: Accepted; amends ADR-0040 (a second command that takes a transition), ADR-0025 (the preview of a batch), ADR-0026 (a key on a batch of moves)
+- Status: Accepted; amends ADR-0040 (a second command that takes a transition), ADR-0025 (the preview of a batch), ADR-0026 (a key on a batch of moves); amended by ADR-0078 (`versions` in `transition_many`)
 - Date: 2026-11-12
 
 ## Context

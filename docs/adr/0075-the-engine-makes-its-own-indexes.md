@@ -1,6 +1,6 @@
 # ADR-0075: The engine makes its own indexes, and says which question it cannot serve
 
-- Status: Proposed; amends ADR-0013 (what `index` on a variable means), ADR-0014 (the indexes of a document table), ADR-0038 (a filter that no index serves), ADR-0046 (item 10: the index of a key is the engine's to make)
+- Status: Accepted; amends ADR-0013 (what `index` on a variable means), ADR-0014 (the indexes of a document table), ADR-0038 (a filter that no index serves), ADR-0046 (item 10: the index of a key is the engine's to make)
 - Date: 2026-11-20
 
 ## Context
@@ -270,6 +270,9 @@ on a large class is stopped or answered however long it takes, is
 answered: item 6, and the rulings below.
 
 ## The owner's rulings
+
+Accepted by him on 2026-11-22: "accept all three and start building
+QUERY." Nothing of the record was built when he accepted it.
 
 Of 2026-11-20, in his words: "We have to support hundreds of millions
 of rows and more, and not be worried. We need an architectural solution

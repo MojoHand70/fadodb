@@ -1,6 +1,6 @@
 # ADR-0043: Rules inside the commit: triggers, synchronous actions and triggered variables
 
-- Status: Accepted; amends ADR-0014 and ADR-0018 (the moment of a triggered value, in the tables and on the wire), ADR-0015 (the order inside a commit, the order of triggered variables, `Reset` and `Refresh` as commands with their events), ADR-0019 (what an error in an action means), ADR-0025 (what a preview reports of the rules), ADR-0039 (rules and a frozen document), ADR-0040 (a hop's commit runs its own triggers and rules); amended by ADR-0044 (a `refresh` that names another document is an outbox action; a `create` with `each` queues a row for each element)
+- Status: Accepted; amends ADR-0014 and ADR-0018 (the moment of a triggered value, in the tables and on the wire), ADR-0015 (the order inside a commit, the order of triggered variables, `Reset` and `Refresh` as commands with their events), ADR-0019 (what an error in an action means), ADR-0025 (what a preview reports of the rules), ADR-0039 (rules and a frozen document), ADR-0040 (a hop's commit runs its own triggers and rules); amended by ADR-0044 (a `refresh` that names another document is an outbox action; a `create` with `each` queues a row for each element), ADR-0078 (what a `Refresh` asks; a triggered variable that fails before a condition)
 - Date: 2026-11-09
 
 ## Context

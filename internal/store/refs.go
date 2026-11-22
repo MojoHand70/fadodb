@@ -93,7 +93,13 @@ func (s *Store) pointsAtOne(ctx context.Context, cmd *command, variable, ref str
 	if e != nil || t.w.selectCurrent == nil {
 		return gone()
 	}
-	row, err := t.scanW(t.w.selectCurrent.QueryRowContext(ctx, id), false)
+	// The row is read without who made it unless a formula of the class
+	// pointed at asks for that, as a listing of transitions reads it.
+	read := t.w.selectLean
+	if t.who {
+		read = t.w.selectCurrent
+	}
+	row, err := t.scanW(read.QueryRowContext(ctx, id), !t.who)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return gone()

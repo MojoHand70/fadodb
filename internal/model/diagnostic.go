@@ -184,6 +184,19 @@ type collector struct {
 	// inlet gives are read from a message, and from nothing else
 	// (ADR-0065, item 4).
 	pure bool
+	// live are the live variables of the class being compiled, by upper
+	// case name: no formula of the class may read one (ADR-0076, item 4).
+	live map[string]bool
+}
+
+// liveRead says a formula reads a live variable. A live value is worked
+// out when it is read, for the reader, and kept nowhere, so nothing that
+// is kept or decided may stand on it: what a guard saw must be there to
+// read afterwards.
+type liveRead struct{ name string }
+
+func (e *liveRead) Error() string {
+	return e.name + " is a live variable: it is worked out when it is read and kept nowhere, so no formula of the class may read it"
 }
 
 // errUnbound says a formula that reads the documents of a class was left
@@ -197,6 +210,17 @@ func (c *collector) bind(src string, scope *formula.Scope, mode formula.Mode) (*
 	prog, err := formula.Bind(src, scope, formula.BindOptions{Mode: mode, Sources: r, States: c.states()})
 	if err != nil && r.class && c.env.Shallow {
 		return nil, errUnbound
+	}
+	if err == nil && len(c.live) > 0 {
+		for _, s := range prog.Slots {
+			name := s.Name
+			if i := strings.IndexByte(name, '.'); i >= 0 {
+				name = name[:i]
+			}
+			if c.live[upper(name)] {
+				return nil, &liveRead{name: name}
+			}
+		}
 	}
 	return prog, err
 }
@@ -286,6 +310,11 @@ func (c *collector) hint(code, path, message, hint string) {
 // the error's position when it has one.
 func (c *collector) formulaErr(path string, err error) {
 	if err == errUnbound {
+		return
+	}
+	var lr *liveRead
+	if errors.As(err, &lr) {
+		c.hint(CodeNotAllowed, path, lr.Error(), `keep the value so that it can be read: "mode": "triggered" on `+lr.name)
 		return
 	}
 	d := Diagnostic{Code: CodeBadFormula, Path: path, Pos: -1, Message: err.Error()}

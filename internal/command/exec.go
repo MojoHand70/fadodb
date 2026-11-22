@@ -472,27 +472,13 @@ func runLive(c *call) error {
 	if err != nil {
 		return err
 	}
-	if !v.List {
-		return c.answer("value", v.Value, nil)
-	}
-	// A list: its columns, its rows and whether rows follow.
-	cols, err := Marshal(v.Columns)
+	// One value answers {"value": …}; a list its columns, its rows and
+	// whether rows follow, which the value writes itself.
+	text, err := Marshal(v)
 	if err != nil {
 		return err
 	}
-	rows := []byte("[]")
-	if len(v.Rows) > 0 {
-		if rows, err = Marshal(v.Rows); err != nil {
-			return err
-		}
-	}
-	c.open("columns")
-	c.out = append(c.out, cols...)
-	c.next("rows")
-	c.out = append(c.out, rows...)
-	c.next("more")
-	c.out = strconv.AppendBool(c.out, v.More)
-	c.close()
+	c.out = append(c.out, text...)
 	return nil
 }
 

@@ -306,7 +306,7 @@ obstacle. The guards hold whoever is asking, the agent included.
 
 | Surface | Mark |
 |---|---|
-| the Go API: `Create`, `CreateMany`, `Set`, `Reset`, `Refresh`, `Transition`, `Transitions`, `Drain`, `Outbox`, `RetryAction`, `Get`, `Live`, `Delete`, `Query`, `Count`, `SQL`, `History`, `Events`, `Preview` | shipped |
+| the Go API: `Create`, `CreateMany`, `Set`, `Reset`, `Refresh`, `Transition`, `Transitions`, `Drain`, `Outbox`, `RetryAction`, `Get`, `Live`, `LivePage`, `Delete`, `Query`, `Count`, `SQL`, `History`, `Events`, `Preview` | shipped |
 | many documents moved by one call: `TransitionMany` takes up to 10,000 ids of one class and one transition, moves each that can move in one transaction, and answers for every id with the document or the refusal and its code. No error does not mean that all moved: read the outcomes. Send 1,000 a call. `Key` makes the call safe to send again | shipped in v0.4.1 (ADR-0048) |
 | the principal on every call, `As`; the idempotency key, `Key`; a moment for reads and previews, `At` | shipped |
 | who may operate: `Outbox`, `RetryAction`, `Drain`, `PreviewAction`, `TryAction` and `CheckBlobs` are for the system group `administrators`, which the host program gives a caller in `Principal.System`; anybody else, a call without a principal too, gets `forbidden` naming the group | shipped with Phase 5: pass `As` on these calls. A database administrator sees no document by being one |

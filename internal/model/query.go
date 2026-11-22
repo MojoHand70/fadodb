@@ -162,6 +162,9 @@ func compileQuery(c *collector, cls *Class, v *Variable, call *formula.Call, sco
 		}
 		if hv, ok := cls.Variable(name); ok {
 			name = hv.Name
+			// What the list reads of its own document, as a page is told
+			// of any live variable (ADR-0070).
+			v.Deps = append(v.Deps, hv.Name)
 		}
 		q.This = append(q.This, name)
 	}

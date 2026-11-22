@@ -17,18 +17,18 @@ import (
 // (ADR-0076): a single value in the wire shape of its type, or, for a
 // variable whose formula is a QUERY, a list.
 type LiveValue struct {
-	Value any `json:"value"`
+	Value any
 	// List says the variable is a list: Columns, Rows and More then hold
 	// the answer, and Value nothing.
-	List bool `json:"-"`
+	List bool
 	// Columns are the columns of the list in the order its formula
 	// writes them, each with the type and the label its source gives it,
 	// so that a list with no rows still has its headings.
-	Columns []LiveColumn `json:"columns,omitempty"`
+	Columns []LiveColumn
 	// Rows are the documents the reader may read, in the order asked
 	// for, at most the limit, and More says that rows follow the last.
-	Rows []LiveRow `json:"rows,omitempty"`
-	More bool      `json:"more,omitempty"`
+	Rows []LiveRow
+	More bool
 }
 
 // LiveColumn is one column of a live list.
@@ -51,18 +51,9 @@ type LiveRow struct {
 // MarshalJSON writes the row as one object: the id, then the columns in
 // the order of the list.
 func (r LiveRow) MarshalJSON() ([]byte, error) {
-	var buf bytes.Buffer
-	enc := json.NewEncoder(&buf)
-	enc.SetEscapeHTML(false)
-	put := func(v any) error {
-		if err := enc.Encode(v); err != nil {
-			return err
-		}
-		buf.Truncate(buf.Len() - 1) // the line end Encode writes
-		return nil
-	}
-	buf.WriteString(`{"id":`)
-	if err := put(r.ID); err != nil {
+	out := []byte(`{"id":`)
+	var err error
+	if out, err = appendPlain(out, r.ID); err != nil {
 		return nil, err
 	}
 	for _, name := range r.columns {
@@ -70,17 +61,48 @@ func (r LiveRow) MarshalJSON() ([]byte, error) {
 		if !ok {
 			continue
 		}
-		buf.WriteByte(',')
-		if err := put(name); err != nil {
+		out = append(out, ',')
+		if out, err = appendPlain(out, name); err != nil {
 			return nil, err
 		}
-		buf.WriteByte(':')
-		if err := put(v); err != nil {
+		out = append(out, ':')
+		if out, err = appendPlain(out, v); err != nil {
 			return nil, err
 		}
 	}
-	buf.WriteByte('}')
-	return buf.Bytes(), nil
+	return append(out, '}'), nil
+}
+
+// MarshalJSON writes what the command live answers (ADR-0076, item 7):
+// the value of a single value, and of a list its columns, its rows and
+// whether rows follow.
+func (v LiveValue) MarshalJSON() ([]byte, error) {
+	if !v.List {
+		return appendPlain(nil, struct {
+			Value any `json:"value"`
+		}{v.Value})
+	}
+	rows := v.Rows
+	if rows == nil {
+		rows = []LiveRow{}
+	}
+	return appendPlain(nil, struct {
+		Columns []LiveColumn `json:"columns"`
+		Rows    []LiveRow    `json:"rows"`
+		More    bool         `json:"more"`
+	}{v.Columns, rows, v.More})
+}
+
+// appendPlain appends a value as JSON, with the characters of a text as
+// they are and no line end.
+func appendPlain(out []byte, v any) ([]byte, error) {
+	var buf bytes.Buffer
+	enc := json.NewEncoder(&buf)
+	enc.SetEscapeHTML(false)
+	if err := enc.Encode(v); err != nil {
+		return nil, err
+	}
+	return append(out, bytes.TrimRight(buf.Bytes(), "\n")...), nil
 }
 
 // LiveRead names a live variable of a document and, when the variable

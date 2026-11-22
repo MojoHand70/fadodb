@@ -171,7 +171,9 @@ own, [Triggered variables](triggered-variables.md).
 And it can be worked out when somebody reads it, for that reader, and
 kept nowhere: that is `"mode": "live"`, for a value such as the days a
 document has waited, which is wrong the day after it is stored. It has
-a chapter too, [Live variables](live-variables.md).
+a chapter too, [Live variables](live-variables.md). A live variable
+whose formula is a `QUERY` is a list of other documents, such as the
+invoices of an order: see [Lists of other documents](lists.md).
 
 Some names are the engine's and cannot be used for a variable, among
 them `id`, `title`, `state`, `version`, `created_at`, `created_by`,

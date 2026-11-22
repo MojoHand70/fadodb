@@ -35,6 +35,9 @@ All notable changes to FadoDB are recorded here. The format follows
   look and the face builder's skill are built; the things the
   organisation keeps, and a starter that gives a new database both
   classes, are decided and not built yet.
+- ADR-0075, ADR-0076 and ADR-0078 accepted by the owner on 2026-11-22,
+  and the records they amend say so. Nothing of the three is built yet;
+  what each one decides is in the three lines below.
 - ADR-0075, proposed, at the owner's direction of 2026-11-20, and
   nothing of it built: the engine makes the index of every question a
   class declares, a pointer to be followed back, the key of a `LOOKUP`,

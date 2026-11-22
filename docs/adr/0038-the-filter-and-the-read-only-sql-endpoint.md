@@ -1,6 +1,6 @@
 # ADR-0038: The filter and the read-only SQL endpoint
 
-- Status: Accepted; amends ADR-0011 (the shape of the query command) and ADR-0016 (the SQL endpoint's rules); amended by ADR-0049 (the read rule joins every filter; the SQL endpoint is not for every caller), ADR-0051 (who may use the SQL endpoint), ADR-0067 (every SQL statement is recorded)
+- Status: Accepted; amends ADR-0011 (the shape of the query command) and ADR-0016 (the SQL endpoint's rules); amended by ADR-0049 (the read rule joins every filter; the SQL endpoint is not for every caller), ADR-0051 (who may use the SQL endpoint), ADR-0067 (every SQL statement is recorded), ADR-0075 (a filter that no index serves), ADR-0076 (a `ref` in a filter is answered through its index)
 - Date: 2026-11-08
 
 ## Context

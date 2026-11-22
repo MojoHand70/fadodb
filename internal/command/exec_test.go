@@ -694,6 +694,34 @@ func TestALiveValueIsACommand(t *testing.T) {
 	}
 }
 
+// A ref is checked when a command sets it, and get_class says what
+// points at a class (ADR-0076, items 11 and 12).
+func TestAPointerIsCheckedAndListed(t *testing.T) {
+	s := open(t)
+	open := `"states": {"initial": "open", "list": ["open"], "descriptions": {"open": "It is there."}}, "access": {"read": "TRUE", "create": "TRUE", "update": "TRUE", "delete": "FALSE"}`
+	run(t, s, dan, "define_class", `{"definition": {"name": "Order", "title": "number", "variables": {"number": {"type": "text", "description": "Its number."}}, `+open+`}}`)
+	run(t, s, dan, "define_class", `{"definition": {"name": "Parcel", "variables": {"of": {"type": "ref", "class": "Order", "description": "The order it carries."}}, `+open+`}}`)
+	run(t, s, bob, "create", `{"class": "Order", "id": "ORD-17", "values": {"number": "ORD-17"}}`)
+	made := run(t, s, bob, "create", `{"class": "Parcel", "id": "P-1", "values": {"of": "Order:ORD-17"}}`)
+	if at(t, made, "document.values.of") != "Order:ORD-17" {
+		t.Errorf("create answered %v", made)
+	}
+	if e := refused(t, s, bob, "create", `{"class": "Parcel", "values": {"of": "Order:ORD-71"}}`); e.Code != store.CodeUnknownDocument || e.Variable != "of" {
+		t.Errorf("a pointer at an order that is not there was refused with %+v, want unknown_document about of", e)
+	}
+	if e := refused(t, s, bob, "set", `{"class": "Parcel", "id": "P-1", "values": {"of": "Order:ORD-71"}}`); e.Code != store.CodeUnknownDocument || e.Variable != "of" {
+		t.Errorf("a set to an order that is not there was refused with %+v, want unknown_document about of", e)
+	}
+	got := run(t, s, ann, "get_class", `{"name": "Order"}`)
+	pointers, ok := at(t, got, "class.pointed_at_by").([]any)
+	if !ok || len(pointers) != 1 || !reflect.DeepEqual(pointers[0], map[string]any{"class": "Parcel", "variable": "of"}) {
+		t.Errorf("get_class answered pointed_at_by %v, want the variable of of Parcel", at(t, got, "class.pointed_at_by"))
+	}
+	if _, has := run(t, s, ann, "get_class", `{"name": "Parcel"}`)["class"].(map[string]any)["pointed_at_by"]; has {
+		t.Errorf("get_class says something points at Parcel")
+	}
+}
+
 func TestTheFlowIsACommand(t *testing.T) {
 	s := open(t)
 	define(t, s)

@@ -718,7 +718,7 @@ It answers:
 
 | Member | What it holds |
 |---|---|
-| `class` | the definition as it was given, with its name, its version and who defined it, and the notes of the class |
+| `class` | the definition as it was given, with its name, its version and who defined it, the notes of the class, and under pointed_at_by the ref variables of the classes defined now that point at it |
 
 ### get_bundle
 

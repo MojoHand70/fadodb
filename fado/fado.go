@@ -134,7 +134,10 @@ type (
 	// action as Definition reads it back: the JSON as it was given, with
 	// its version, who defined it and a class's notes beside it.
 	StoredDefinition = store.StoredDefinition
-	ActionParam      = store.ActionParam
+	// Pointer is one ref variable that points at a class, as the
+	// definition of that class lists them under PointedAtBy (ADR-0076).
+	Pointer     = store.Pointer
+	ActionParam = store.ActionParam
 	// ActionPreview is what an action would be called with, and
 	// ActionOutcome what became of one trial of it.
 	ActionPreview = store.ActionPreview

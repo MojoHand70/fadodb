@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/MojoHand70/fadodb/internal/formula"
 	"github.com/MojoHand70/fadodb/internal/model"
 )
 
@@ -23,13 +24,45 @@ import (
 // that version and when (ADR-0052), and Notes the findings that refused
 // nothing when a class was defined. Predefined marks a schema of the
 // engine's vocabulary, which nobody defined and which has no version.
+// PointedAtBy says, for a class, which ref variables of the classes
+// defined now point at it (ADR-0076, item 12): worked out from the
+// current definitions, and written by nobody.
 type StoredDefinition struct {
-	Name       string            `json:"name"`
-	Version    int               `json:"version,omitempty"`
-	Predefined bool              `json:"predefined,omitempty"`
-	Defined    *Defined          `json:"defined,omitempty"`
-	Notes      model.Diagnostics `json:"notes,omitempty"`
-	Definition json.RawMessage   `json:"definition"`
+	Name        string            `json:"name"`
+	Version     int               `json:"version,omitempty"`
+	Predefined  bool              `json:"predefined,omitempty"`
+	Defined     *Defined          `json:"defined,omitempty"`
+	Notes       model.Diagnostics `json:"notes,omitempty"`
+	PointedAtBy []Pointer         `json:"pointed_at_by,omitempty"`
+	Definition  json.RawMessage   `json:"definition"`
+}
+
+// Pointer is one ref variable that points at a class: the class it is
+// in, and its name there. A designer who puts a list of invoices on an
+// order's page, and an agent asked what belongs to an order, find the
+// invoices by it and type no condition.
+type Pointer struct {
+	Class    string `json:"class"`
+	Variable string `json:"variable"`
+}
+
+// pointersAt lists the ref variables of the current classes that point
+// at the class named, in the order the classes were defined and their
+// variables declared. The caller holds the lock of the definitions.
+func (s *Store) pointersAt(name string) []Pointer {
+	var out []Pointer
+	for _, class := range s.order {
+		c, ok := s.classes[strings.ToUpper(class)]
+		if !ok {
+			continue
+		}
+		for _, v := range c.cls.Variables {
+			if v.Type.Kind == formula.KindRef && strings.EqualFold(v.RefClass, name) {
+				out = append(out, Pointer{Class: c.cls.Name, Variable: v.Name})
+			}
+		}
+	}
+	return out
 }
 
 // Definition reads one class, schema, table or action back as it was
@@ -93,10 +126,10 @@ func (s *Store) stored(ctx context.Context, what, name string, version int) (*St
 				if err != nil {
 					return nil, asError(storageErr("read the version of the class", err))
 				}
-				return &StoredDefinition{Name: current.cls.Name, Version: version, Definition: json.RawMessage(text)}, nil
+				return &StoredDefinition{Name: current.cls.Name, Version: version, PointedAtBy: s.pointersAt(current.cls.Name), Definition: json.RawMessage(text)}, nil
 			}
 		}
-		return &StoredDefinition{Name: c.cls.Name, Version: c.cls.Version, Notes: c.cls.Notes, Definition: copyJSON(c.json)}, nil
+		return &StoredDefinition{Name: c.cls.Name, Version: c.cls.Version, Notes: c.cls.Notes, PointedAtBy: s.pointersAt(c.cls.Name), Definition: copyJSON(c.json)}, nil
 	case DefinitionSchema:
 		sch, ok := s.schemas.Lookup(name)
 		if !ok {

@@ -178,8 +178,15 @@ type (
 	// transition the moment it fires (ADR-0047).
 	TransitionInfo = store.TransitionInfo
 	// LiveValue is what a live variable is for one caller at one moment
-	// (ADR-0076): a value in the wire shape of its type.
-	LiveValue = store.LiveValue
+	// (ADR-0076): a value in the wire shape of its type, or, for a
+	// variable whose formula is a QUERY, a list: its columns, its rows
+	// and whether rows follow. LiveColumn is one column of such a list,
+	// LiveRow one row, a document of the source with its id, and LiveRead
+	// names the variable and the page of the list to read.
+	LiveValue  = store.LiveValue
+	LiveColumn = store.LiveColumn
+	LiveRow    = store.LiveRow
+	LiveRead   = store.LiveRead
 	// DueDocument is one document a commit would move now, as Due lists
 	// it: its state, the state it would move to and, when a timed
 	// transition would move it, the moment since which it has been due
@@ -850,8 +857,21 @@ func (db *DB) Transitions(ctx context.Context, class, id string, opts ...Option)
 // kept nowhere, so no other call answers it, and it may differ from
 // caller to caller and from one moment to the next. Whoever may read the
 // document asks, and the variable by its read right. It writes nothing.
+//
+// A live variable whose formula is a QUERY is a list of the documents of
+// another class: the answer then has Columns, Rows and More, each row a
+// document the caller may read with the columns the caller may read in
+// it. Live reads its first page; LivePage chooses the page.
 func (db *DB) Live(ctx context.Context, class, id, variable string, opts ...Option) (*LiveValue, error) {
 	return db.s.Live(ctx, class, id, variable, opts...)
+}
+
+// LivePage is Live with the page of a list chosen (ADR-0076, item 7):
+// what to sort by, how many rows at most, how many to skip and which
+// columns. The formula says which documents the list has; the caller
+// says which of them to read, and the engine reads no more than that.
+func (db *DB) LivePage(ctx context.Context, read LiveRead, opts ...Option) (*LiveValue, error) {
+	return db.s.LivePage(ctx, read, opts...)
 }
 
 // Due lists the documents of a class that a commit would move if it

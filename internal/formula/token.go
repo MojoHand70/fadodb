@@ -45,6 +45,8 @@ const (
 	TokLe
 	TokGt
 	TokGe
+	TokLBrace
+	TokRBrace
 )
 
 // IsKeyword reports whether a name, in any case, is a keyword of the
@@ -69,6 +71,7 @@ var tokenNames = [...]string{
 	TokPlus: "'+'", TokMinus: "'-'", TokStar: "'*'", TokSlash: "'/'", TokBackslash: "'\\'",
 	TokCaret: "'^'", TokPercent: "'%'", TokAmp: "'&'", TokEq: "'='", TokNe: "'<>'",
 	TokLt: "'<'", TokLe: "'<='", TokGt: "'>'", TokGe: "'>='",
+	TokLBrace: "'{'", TokRBrace: "'}'",
 }
 
 func (k TokenKind) String() string {

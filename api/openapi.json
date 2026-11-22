@@ -3574,6 +3574,13 @@
                     "description": "the name of the class",
                     "type": "string"
                   },
+                  "fields": {
+                    "description": "for a list: the columns to answer; every one when left out",
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
                   "for": {
                     "description": "the id of whoever the caller acts for; let through only while a substitution says so",
                     "type": "string"
@@ -3581,6 +3588,21 @@
                   "id": {
                     "description": "the id of the document",
                     "type": "string"
+                  },
+                  "limit": {
+                    "description": "for a list: the most rows to answer; 1,000 when left out, 10,000 at most",
+                    "type": "integer"
+                  },
+                  "offset": {
+                    "description": "for a list: how many rows to skip",
+                    "type": "integer"
+                  },
+                  "order": {
+                    "description": "for a list: the columns to sort by, a leading \"-\" for descending; the order of the formula when left out",
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
                   },
                   "reason": {
                     "description": "why a content administrator acts or reads past a rule; a change keeps it on its event, a read in the log of reads",
@@ -3608,12 +3630,24 @@
               "application/json": {
                 "schema": {
                   "properties": {
+                    "columns": {
+                      "description": "for a list: its columns in the order of the formula, each with its name, its type and the label the source gives it"
+                    },
+                    "more": {
+                      "description": "for a list: true when rows follow the last one answered"
+                    },
+                    "rows": {
+                      "description": "for a list: the documents the caller may read, each with its id and the columns the caller may read in it"
+                    },
                     "value": {
-                      "description": "what the variable is for this caller at this moment"
+                      "description": "for one value: what the variable is for this caller at this moment"
                     }
                   },
                   "required": [
-                    "value"
+                    "value",
+                    "columns",
+                    "rows",
+                    "more"
                   ],
                   "type": "object"
                 }
@@ -3625,7 +3659,7 @@
             "$ref": "#/components/responses/Refused"
           }
         },
-        "summary": "Works a live variable of a document out for the caller, now. Nothing is kept.",
+        "summary": "Works a live variable of a document out for the caller, now: one value, or the list a QUERY gives. Nothing is kept.",
         "tags": [
           "Documents"
         ],

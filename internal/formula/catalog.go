@@ -151,7 +151,7 @@ func LookupFunction(name string) *Function {
 // "not implemented yet".
 func Implemented(name string) bool {
 	switch name = strings.ToUpper(name); name {
-	case "IF", "NOT", "AND", "OR", "IFERROR", "LOOKUP", "SECRET":
+	case "IF", "NOT", "AND", "OR", "IFERROR", "LOOKUP", "SECRET", "QUERY", "REF":
 		// These are forms of the language that the parser and the binder
 		// compile themselves, and no entry of the table of builtins.
 		return true

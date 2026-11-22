@@ -46,35 +46,53 @@ func (s *Store) Query(ctx context.Context, f Filter, opts ...Option) ([]*Documen
 	if err != nil {
 		return nil, filterErr(err)
 	}
+	docs, _, err := s.answer(ctx, c, o, plan, "query", false)
+	return docs, err
+}
+
+// answer runs a compiled filter over the documents of a class and
+// projects each document found for the caller. command is the call the
+// log of reads names. With probe it reads one document past the limit,
+// leaves it out, and says whether there was one: the caller of a page
+// then knows that rows follow, and nothing else was fetched to learn it.
+func (s *Store) answer(ctx context.Context, c *class, o options, plan *query.Plan, command string, probe bool) ([]*Document, bool, error) {
+	limit := plan.Limit
+	if probe {
+		limit++
+	}
 	cols := append(quoteAll(systemColumns), quoteAll(columnNames(c.cls.Columns))...)
 	cols = append(cols, quoteAll(c.atNames())...)
 	text := "SELECT " + strings.Join(cols, ", ") + " FROM " + quote(c.cls.Name)
 	if plan.Where != "" {
 		text += " WHERE " + plan.Where
 	}
-	text += " ORDER BY " + plan.Order + " LIMIT " + fmt.Sprint(plan.Limit) + " OFFSET " + fmt.Sprint(plan.Offset)
+	text += " ORDER BY " + plan.Order + " LIMIT " + fmt.Sprint(limit) + " OFFSET " + fmt.Sprint(plan.Offset)
 	args := append(plan.Args, s.contextArgs(o)...)
 	st, err := s.filters.acquire(ctx, s.db, text)
 	if err != nil {
-		return nil, storageErr("prepare the query of "+c.cls.Name, err)
+		return nil, false, storageErr("prepare the query of "+c.cls.Name, err)
 	}
 	defer s.filters.release(st)
 	rows, err := st.stmt.QueryContext(ctx, args...)
 	if err != nil {
-		return nil, storageErr("query "+c.cls.Name, err)
+		return nil, false, storageErr("query "+c.cls.Name, err)
 	}
 	var found []*docRow
 	for rows.Next() {
 		row, err := c.scanRow(rows, false)
 		if err != nil {
 			rows.Close()
-			return nil, storageErr("query "+c.cls.Name, err)
+			return nil, false, storageErr("query "+c.cls.Name, err)
 		}
 		found = append(found, row)
 	}
 	rows.Close()
 	if err := rows.Err(); err != nil {
-		return nil, storageErr("query "+c.cls.Name, err)
+		return nil, false, storageErr("query "+c.cls.Name, err)
+	}
+	more := false
+	if probe && len(found) > plan.Limit {
+		found, more = found[:plan.Limit], true
 	}
 	// The composites of every document in one statement per child table,
 	// for the fields asked for.
@@ -94,7 +112,7 @@ func (s *Store) Query(ctx context.Context, f Filter, opts ...Option) ([]*Documen
 	for ch := range wanted {
 		byDoc, err := ch.loadCurrent(ctx, s.db, c, found)
 		if err != nil {
-			return nil, err
+			return nil, false, err
 		}
 		kids[ch] = byDoc
 	}
@@ -104,7 +122,7 @@ func (s *Store) Query(ctx context.Context, f Filter, opts ...Option) ([]*Documen
 	// A content administrator who passes the rules sees every document
 	// whole; the entry names each one only the override showed, and the
 	// rules it got past (ADR-0067, item 3).
-	passes, r := o.passes(c), o.newRead("query", c)
+	passes, r := o.passes(c), o.newRead(command, c)
 	shown := func(vc *class, row *docRow, d *Document) {
 		switch {
 		case !passes:
@@ -120,11 +138,11 @@ func (s *Store) Query(ctx context.Context, f Filter, opts ...Option) ([]*Documen
 			// A document computed by an older version is read under it.
 			vc, vrow, err := s.underVersion(ctx, c, row, false)
 			if err != nil {
-				return nil, err
+				return nil, false, err
 			}
 			vkids, err := vc.loadChildren(ctx, vrow.id, vrow.version, nil, false)
 			if err != nil {
-				return nil, err
+				return nil, false, err
 			}
 			d = vc.document(vrow, vkids)
 			shown(vc, vrow, d)
@@ -157,9 +175,9 @@ func (s *Store) Query(ctx context.Context, f Filter, opts ...Option) ([]*Documen
 		docs[i] = d
 	}
 	if err := s.logRead(ctx, o, r); err != nil {
-		return nil, err
+		return nil, false, err
 	}
-	return docs, nil
+	return docs, more, nil
 }
 
 // caller is the principal as the filter compiler sees it over the class:

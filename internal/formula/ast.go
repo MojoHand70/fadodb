@@ -62,6 +62,14 @@ type ThisRef struct {
 	P    int
 }
 
+// List is several names written in braces, {number, net}: the columns
+// of a QUERY or what it sorts by, where an item may carry a leading
+// minus for descending (ADR-0076, item 9). It stands nowhere else.
+type List struct {
+	Items []Node
+	P     int
+}
+
 // Unary is -x, NOT x, or the postfix x%. Op is TokMinus, TokNot or
 // TokPercent. Const marks a minus or a percent of a constant expression,
 // which the binder folds.
@@ -135,6 +143,9 @@ func (n *Member) Pos() int { return n.P }
 func (n *ThisRef) Pos() int { return n.P }
 
 // Pos implements Node.
+func (n *List) Pos() int { return n.P }
+
+// Pos implements Node.
 func (n *Unary) Pos() int { return n.P }
 
 // Pos implements Node.
@@ -189,6 +200,13 @@ func writeSexpr(b *strings.Builder, n Node) {
 	case *ThisRef:
 		b.WriteString("THIS.")
 		b.WriteString(n.Name)
+	case *List:
+		b.WriteString("(list")
+		for _, item := range n.Items {
+			b.WriteByte(' ')
+			writeSexpr(b, item)
+		}
+		b.WriteByte(')')
 	case *Unary:
 		switch n.Op {
 		case TokMinus:

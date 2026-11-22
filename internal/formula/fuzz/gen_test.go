@@ -14,6 +14,8 @@ var notGenerated = map[string]bool{
 	"LOOKUP": true, "QUERY": true, "IF": true, "AND": true, "OR": true, "NOT": true, "IFERROR": true,
 	// SECRET binds only in the request of an action definition (ADR-0045).
 	"SECRET": true,
+	// REF binds only in the condition of a live QUERY (ADR-0076, item 10).
+	"REF": true,
 }
 
 func TestGenerator_FormulasBindAndRun(t *testing.T) {

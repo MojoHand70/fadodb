@@ -155,7 +155,22 @@ type BindOptions struct {
 	// they are not known and no name is checked; an empty list is a class
 	// without states, which no name is one of.
 	States []string
+	// This is set for the condition of a QUERY that a live variable holds
+	// (ADR-0076, items 9 and 10): the variables of the document the QUERY
+	// belongs to. The scope is then the source's columns; THIS.name reads
+	// a variable of that document and REF() is the pointer to it, each
+	// through a slot whoever runs the program fills in.
+	This *Scope
 }
+
+// ThisSlot starts the name of the slot through which the condition of a
+// QUERY reads a variable of the document the QUERY belongs to, and
+// RefSlot names the slot that holds the pointer to that document
+// (ADR-0076, items 9 and 10). Neither can be the name of a variable.
+const (
+	ThisSlot = "THIS."
+	RefSlot  = "REF()"
+)
 
 // SecretSlot starts the name of the slot a SECRET call reads. The binder
 // turns SECRET("token") into the read of a text variable SECRET.token,
@@ -506,7 +521,12 @@ func (b *binder) expr(n Node) (Type, error) {
 		if b.source != nil {
 			return b.thisRef(n)
 		}
+		if b.opts.This != nil {
+			return b.holderVar(n)
+		}
 		return Type{}, b.errAt(n.P, "THIS.%s is only valid inside LOOKUP and QUERY", n.Name)
+	case *List:
+		return Type{}, b.errAt(n.P, "a list in braces stands only where QUERY takes its columns or what it sorts by")
 	case *Unary:
 		return b.unary(n)
 	case *Binary:
@@ -938,6 +958,12 @@ func (b *binder) call(n *Call) (Type, error) {
 	}
 	if n.Name == "SECRET" {
 		return b.secret(n)
+	}
+	if n.Name == "REF" {
+		return b.ref(n)
+	}
+	if n.Name == "QUERY" {
+		return Type{}, b.errAt(n.P, "QUERY is built as the whole formula of a live variable, and nowhere else yet (ADR-0076)")
 	}
 	id, ok := builtinByName[n.Name]
 	if !ok {
@@ -1402,6 +1428,38 @@ func (b *binder) column(n *Ident) (Type, error) {
 	b.emit(OpLoad, b.slot(Variable(col)), n.P)
 	b.push(1)
 	return col.Type, nil
+}
+
+// holderVar binds THIS.name in the condition of a live QUERY: a scalar
+// variable of the document the QUERY belongs to, read through a slot
+// that whoever runs the condition fills in (ADR-0076, item 9).
+func (b *binder) holderVar(n *ThisRef) (Type, error) {
+	v, ok := b.opts.This.Lookup(n.Name)
+	if !ok {
+		return Type{}, b.errAt(n.P, "THIS.%s: the document has no variable %s", n.Name, n.Name)
+	}
+	if !v.Type.IsScalar() {
+		return Type{}, b.errAt(n.P, "THIS.%s is %s; only a scalar variable can be read inside QUERY yet", v.Name, v.Type)
+	}
+	b.emit(OpLoad, b.slot(Variable{Name: ThisSlot + v.Name, Type: v.Type}), n.P)
+	b.push(1)
+	return v.Type, nil
+}
+
+// ref binds REF(): the pointer to the document the formula belongs to
+// (ADR-0076, item 10). It is built for the condition of a live QUERY,
+// where it is one value handed to the statement; the rest of the
+// function is not built.
+func (b *binder) ref(n *Call) (Type, error) {
+	if len(n.Args) != 0 {
+		return Type{}, b.errAt(n.P, "REF with a class and an id is not built yet; REF() alone is the pointer to this document (ADR-0076, item 10)")
+	}
+	if b.opts.This == nil || b.source != nil {
+		return Type{}, b.errAt(n.P, "REF() is built for the condition of a QUERY in a live variable, and nowhere else yet (ADR-0076, item 10)")
+	}
+	b.emit(OpLoad, b.slot(Variable{Name: RefSlot, Type: Scalar(KindRef)}), n.P)
+	b.push(1)
+	return Scalar(KindRef), nil
 }
 
 // thisRef binds THIS.name inside a LOOKUP: a scalar variable of the

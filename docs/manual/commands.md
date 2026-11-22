@@ -105,7 +105,7 @@ A command takes the ones its list below shows, and no other.
 | [`transition_many`](#transition_many) | Moves several documents of one class along one transition; a document that cannot move is reported and the others move. | writes |
 | [`delete`](#delete) | Removes a document; its history and its events stay. | destroys |
 | [`transitions`](#transitions) | Lists the transitions leaving a document's state, each with whether the caller may take it now. | reads |
-| [`live`](#live) | Works a live variable of a document out for the caller, now. Nothing is kept. | reads |
+| [`live`](#live) | Works a live variable of a document out for the caller, now: one value, or the list a QUERY gives. Nothing is kept. | reads |
 | [`due`](#due) | Lists the documents of a class that a commit would move now: a guard on time holds, or a timer has come. | reads |
 | [`history`](#history) | Reads every committed version of a document, oldest first. | reads |
 | [`version`](#version) | Reads one committed version of a document. | reads |
@@ -295,13 +295,17 @@ It answers:
 
 ### live
 
-Works a live variable of a document out for the caller, now. Nothing is kept. It reads; in Go it is the call `Live`.
+Works a live variable of a document out for the caller, now: one value, or the list a QUERY gives. Nothing is kept. It reads; in Go it is the call `Live`.
 
 | Member | Type | | What it is |
 |---|---|---|---|
 | `class` | text | needed | the name of the class |
 | `id` | text | needed | the id of the document |
 | `variable` | text | needed | the live variable: one that says "mode": "live" in its class |
+| `order` | list of texts |  | for a list: the columns to sort by, a leading "-" for descending; the order of the formula when left out |
+| `limit` | whole number |  | for a list: the most rows to answer; 1,000 when left out, 10,000 at most |
+| `offset` | whole number |  | for a list: how many rows to skip |
+| `fields` | list of texts |  | for a list: the columns to answer; every one when left out |
 
 And, of the members that mean the same everywhere: `reason`, `at`, `for`.
 
@@ -309,7 +313,10 @@ It answers:
 
 | Member | What it holds |
 |---|---|
-| `value` | what the variable is for this caller at this moment |
+| `value` | for one value: what the variable is for this caller at this moment |
+| `columns` | for a list: its columns in the order of the formula, each with its name, its type and the label the source gives it |
+| `rows` | for a list: the documents the caller may read, each with its id and the columns the caller may read in it |
+| `more` | for a list: true when rows follow the last one answered |
 
 ### due
 
@@ -1712,6 +1719,7 @@ A few calls of the Go package have no command.
 | `HasSecondStep` | the server's page /auth/account shows it to the person |
 | `Inlet` | it answers one entry of the list that list_inlets answers whole |
 | `KnownClient` | it answers a client to the server's page /auth/authorize; list_clients lists them |
+| `LivePage` | it is live with the page of a list given, for a Go program: the command takes the page in the same call |
 | `OpenBlob` | the bytes of a file are not JSON: they travel beside the commands, with the server |
 | `OpenFile` | the bytes of a file are not JSON: they travel beside the commands, with the server |
 | `OutboxCounts` | it counts what of the queue is still to do, for whoever watches a server, which answers it at GET /v1/metrics; outbox lists the actions themselves |

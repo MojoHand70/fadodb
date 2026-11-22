@@ -8,6 +8,13 @@ All notable changes to FadoDB are recorded here. The format follows
 
 ### Added
 
+- ADR-0075 and ADR-0076: the owner ruled on 2026-11-22 on the three
+  questions they had put, and none is open. A search that no index
+  serves on a large class is stopped after five seconds and told which
+  index would serve it; `QUERY` writes several columns in braces,
+  `{number, net, state}`; a `ref` that names a document which is not
+  there is refused when it is set. Both records stay proposed, and
+  nothing of them is built.
 - A sixth skill for agents, `skills/fadodb-face/`, at the owner's
   direction of 2026-11-21: how to build what people see of a server
   so that it is good to look at and looks like every other face of

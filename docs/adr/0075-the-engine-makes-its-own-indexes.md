@@ -208,7 +208,7 @@ the classes, and an agent of Acme's designs some of them too.
    no index; say `"index": true` on it". The question of an analyst,
    `sql`, keeps its own limits (ADR-0038).
 
-   This item is question 1 for the owner.
+   The owner ruled so on 2026-11-22; it was question 1 of this record.
 
 7. **An index on a class that already holds documents is built when
    the definition is taken**, and the commits of the database wait
@@ -265,18 +265,9 @@ the classes, and an agent of Acme's designs some of them too.
 
 ## Questions for the owner
 
-1. **A free question that no index serves, on a large class** (item 6).
-   The case: Ewa types a customer's name into the search of a face,
-   over a hundred million invoices, and nobody indexed `customer`.
-   - Proposed: the question is stopped after five seconds and refused,
-     and the refusal names the mend, `"index": true` on `customer`. A
-     database with many such searches at once still answers everybody
-     else.
-   - The other way: it is answered however long it takes, two and a
-     half minutes and more here. Nothing is refused that used to work;
-     ten such searches at once keep ten readers busy for minutes each,
-     and while they read, the log the commits write to cannot be
-     emptied (ADR-0035).
+None is open. Question 1, whether a free question that no index serves
+on a large class is stopped or answered however long it takes, is
+answered: item 6, and the rulings below.
 
 ## The owner's rulings
 
@@ -289,6 +280,19 @@ and names what it cannot serve, with DuckDB for questions over
 everything in Phase 8; the other way: the designer writes
 `"index": true` as today and the engine only warns", he answered
 "yes".
+
+Of 2026-11-22, to the question as it was put to him that day, "a
+search no index serves: stopped after five seconds with the mend named
+(my proposal), or left to run": **"1. yes"**. That is item 6. The case:
+Ewa types a customer's name into the search of a face, over a hundred
+million invoices, and nobody indexed `customer`. She is refused after
+five seconds, and the refusal names the mend, `"index": true` on
+`customer`; a database with many such searches at once still answers
+everybody else. The way not taken: the search is answered however long
+it takes, two and a half minutes and more here. Nothing would be
+refused that used to work; ten such searches at once would keep ten
+readers busy for minutes each, and while they read, the log the
+commits write to could not be emptied (ADR-0035).
 
 Settled by me, his to veto: which questions count as declared, and the
 four rows of item 2; that every index goes on to the moment a document

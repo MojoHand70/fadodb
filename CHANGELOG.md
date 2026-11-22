@@ -8,6 +8,15 @@ All notable changes to FadoDB are recorded here. The format follows
 
 ### Added
 
+- A `ref` is checked when it is set, and a class says what points at
+  it: two more parts of ADR-0076. A commit that sets a `ref` to a
+  document which is not there, or which its caller may not read, is
+  refused with `unknown_document`, the same answer either way; a `ref`
+  the document held already is not asked about again. **This refuses
+  what was taken before**: load the documents pointed at before the
+  ones that point at them. `get_class` answers under `pointed_at_by`
+  the `ref` variables of the classes defined now that point at the
+  class. The layout of a database does not change.
 - A live variable, the first part of ADR-0076: a computed variable may
   say `"mode": "live"`. It is worked out when somebody reads it, for
   that reader, and kept nowhere: it has no column, no history and no

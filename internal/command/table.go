@@ -336,7 +336,7 @@ var commands = []*Command{
 		Answer: answer("diagnostics", "the findings; an empty list when nothing is wrong"), run: runValidateAction},
 	{Group: Definitions, Name: "get_class", Mark: Reads, Call: "Definition", Does: "Reads a class back as it was defined.", takes: asNobody,
 		Fields: []Field{req("name", Text, theClass), opt("version", Integer, "an earlier version; the current one when left out")},
-		Answer: answer("class", theStored+", and the notes of the class"), run: runGetClass},
+		Answer: answer("class", theStored+", the notes of the class, and under pointed_at_by the ref variables of the classes defined now that point at it"), run: runGetClass},
 	{Group: Definitions, Name: "get_bundle", Mark: Reads, Call: "GetBundle", Does: "Reads the bundle of a class, for a page: the class in the person's words and its formulas compiled, so that the page works a document out as the server does.", takes: asNobody,
 		Fields: []Field{req("class", Text, theClass), opt("language", Text, "the person's language, a tag of BCP 47 in any case: pl, pt-BR; the class's own words when left out"),
 			opt("version", Integer, "an earlier version of the class that computed a document; the current one when left out"),

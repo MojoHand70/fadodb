@@ -137,6 +137,21 @@ The types:
 | `object` | one value with named fields, by a schema | `{"city": "Gdańsk"}` |
 | `rows` | a table inside the document, by a schema | `[{"what": "taxi", "cost": "40.00 PLN"}]` |
 
+**A pointer is checked when it is set.** A `ref` names a document of
+the class it points at, as `"Customer:C-17"`. The document must be
+there, and whoever sets the pointer must be able to read it; otherwise
+the change is refused with `unknown_document`, in the same words for a
+document that is not there and for one the caller may not read. So
+documents are loaded in the order they point: the customers before the
+invoices that name them. A pointer a document holds already is not
+asked about again when its other values change.
+
+**A class says what points at it.** `get_class` answers, under
+`pointed_at_by`, the `ref` variables of the classes defined now that
+point at the class, each as its class and its name there:
+`[{"class": "Invoice", "variable": "customer"}]`. Nobody writes that
+list; the engine works it out from the definitions.
+
 A variable is one of two kinds.
 
 - **An input** has a `type`. A caller sets it, or its `default` does.

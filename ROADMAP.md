@@ -374,8 +374,9 @@ value worked out when it is read, `"mode": "live"`, with `QUERY` for
 the list of other documents on a document and `REF` for what a `ref`
 compares with: its first part is built, a live variable that reads its
 own document, the caller and the clock, and the command `live` that
-reads it; `QUERY`, a `LOOKUP` in a live variable, `REF`, the check of a
-`ref` when it is set and what points at a class are not built yet.
+reads it, the check of a `ref` when it is set, and what points at a
+class in the answer of `get_class`; `QUERY`, a `LOOKUP` in a live
+variable and `REF` are not built yet.
 The third is of 2026-11-21, and nothing of it is built yet:
 ADR-0078, a decision stands on what the document holds. A command
 says which version of a document its sender saw, the `write` right of

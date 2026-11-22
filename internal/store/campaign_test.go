@@ -85,6 +85,16 @@ func TestCommitCampaign(t *testing.T) {
 		table = append(table, fmt.Sprintf("| %s | %s | %s/s | %s | %s | %s | %s |", work, thousands(commits), thousands(int(float64(commits)/elapsed.Seconds())),
 			ms(pct(0.5)), ms(pct(0.9)), ms(pct(0.99)), ms(lat[len(lat)-1])))
 	}
+	// A ref is checked when it is set (ADR-0076, item 11): the five
+	// thousand customers the invoices point at are there first.
+	if _, err := s.defineOpen(ctx, []byte(customerClass), asSetup); err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 5000; i++ {
+		if _, err := s.Create(ctx, "Customer", Values{"name": fmt.Sprintf("Customer %d", i)}, asSetup, WithID(fmt.Sprint(i))); err != nil {
+			t.Fatal(err)
+		}
+	}
 	values := func(i int) Values {
 		return Values{
 			"number": fmt.Sprintf("INV-%07d", i), "customer": fmt.Sprintf("Customer:%d", i%5000), "net": fmt.Sprintf("%d.00 PLN", 10+i%990),

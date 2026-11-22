@@ -363,10 +363,13 @@ thinks for a minute, and acts, with no person watching.
 
 ## Questions for the owner
 
-Question 1, whether a command may or must say which version it saw,
-is answered: item 2, and the rulings below. Two are open.
+All three are answered, each as it was proposed; the owner's words are
+in the rulings below. Question 1, whether a command may or must say
+which version it saw, is item 2. The other two are kept here as they
+were asked, with the other way, so that he can turn one round later.
 
-2. **Who may bring a value again** (item 3). The case: Piotr refreshes
+2. **Who may bring a value again** (item 3). **Answered on
+   2026-11-22: the rights of the class.** The case: Piotr refreshes
    the limit of a purchase in review, in step 6.
    - Proposed, the rights of the class: the `write` right of `limit`.
      Edit and rebind are said in one table, by state and by formula,
@@ -380,7 +383,8 @@ is answered: item 2, and the rulings below. Two are open.
      more word in the class, and a second place, beside `rights`,
      where "in which state" is said.
 
-3. **A condition that looks outside** (item 4). The case: `approve`
+3. **A condition that looks outside** (item 4). **Answered on
+   2026-11-22: refused when the class is defined.** The case: `approve`
    written with `amount <= LOOKUP(Limits, limit, grade = THIS.grade)`.
    - Proposed, refused when the class is defined, with the mend named.
      Then what a condition saw is on the document by construction, and
@@ -402,6 +406,14 @@ command is refused and writes nothing; the event of a move keeps the
 version its sender saw, or that it named none; what we ship always
 sends it. The other way: every transition must name it, and a caller
 that did not look has to say so": **"1. agreed"**. That is item 2.
+
+Of 2026-11-22, to questions 2 and 3 as they stand above, each put to
+him with its case, the proposal and the other way: **"2. agreed, 3.
+agreed"**. Those are items 3 and 4: the `write` right of a triggered
+variable says who may bring its value again, and a guard that looks
+in a table or at other documents is refused when the class is defined.
+
+The record stays Proposed until he accepts it by name.
 
 Settled by me, his to veto: the name of the member, `version`, as it
 stood in the question put to him, and `versions` for many documents;

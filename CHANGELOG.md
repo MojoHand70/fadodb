@@ -45,16 +45,17 @@ All notable changes to FadoDB are recorded here. The format follows
   for it, so that an order lists its invoices; `REF()` gives a `ref`
   something to compare with; a command `live` reads one page of such a
   list. Two questions for the owner.
-- ADR-0078, proposed, with the owner's ruling of 2026-11-21 on its
-  first point, and nothing of it built: a decision stands on what the
-  document holds. A command that changes a document may say which
-  version its sender saw, and is refused with `stale_version` when
-  the document has moved on; the event keeps the version. The `write`
+- ADR-0078, proposed, with the owner's rulings of 2026-11-21 and
+  2026-11-22 on its three questions, and nothing of it built: a
+  decision stands on what the document holds. A command that changes
+  a document may say which version its sender saw, and is refused
+  with `stale_version` when the document has moved on; the event
+  keeps the version. The `write`
   right of a triggered variable says who may bring its value again,
   and in which state. A trigger `before:<transition>` brings a value
   before the condition of the transition is asked, and a guard no
   longer looks in a table or at other documents itself, so that what
-  a condition saw is on the document. Two questions for the owner.
+  a condition saw is on the document.
 - Apps (ADR-0077): an app is a name for the classes that belong
   together, such as Expenses or a help desk, with a label and a
   description for people. `define_app` stores one, for a designer;

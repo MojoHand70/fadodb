@@ -300,28 +300,32 @@ func (s *Store) liveList(ctx context.Context, src *class, v *model.Variable, on 
 		f.Order = q.Order
 	}
 	// The columns: the list's, or the ones of them the caller names.
-	cols := q.Columns
+	asked := q.Columns
 	if len(r.Fields) > 0 {
-		cols = make([]string, 0, len(r.Fields))
+		asked = make([]string, 0, len(r.Fields))
 	fields:
 		for i, name := range r.Fields {
-			for _, have := range cols {
+			for _, have := range asked {
 				if strings.EqualFold(have, name) {
 					continue fields
 				}
 			}
 			for _, col := range q.Columns {
 				if strings.EqualFold(col, name) {
-					cols = append(cols, col)
+					asked = append(asked, col)
 					continue fields
 				}
 			}
 			return nil, errf(CodeUnknownVariable, fmt.Sprintf("fields/%d", i), "the list %s has no column %s; its columns are %s", v.Name, name, strings.Join(q.Columns, ", "))
 		}
 	}
-	out := &LiveValue{List: true, Columns: make([]LiveColumn, 0, len(cols))}
-	for _, name := range cols {
+	// Each by the name the source gives it, whatever the case the formula
+	// or the caller wrote it in.
+	out := &LiveValue{List: true, Columns: make([]LiveColumn, 0, len(asked))}
+	cols := make([]string, 0, len(asked))
+	for _, name := range asked {
 		if sc, ok := model.FilterColumn(name); ok {
+			cols = append(cols, sc.Name)
 			out.Columns = append(out.Columns, LiveColumn{Name: sc.Name, Type: sc.Type.String()})
 			continue
 		}
@@ -330,6 +334,7 @@ func (s *Store) liveList(ctx context.Context, src *class, v *model.Variable, on 
 			// The source was defined anew since the list was, without it.
 			return nil, errf(CodeUnknownVariable, name, "the list %s names the column %s, which the class %s no longer has", v.Name, name, src.cls.Name)
 		}
+		cols = append(cols, sv.Name)
 		f.Fields = append(f.Fields, sv.Name)
 		out.Columns = append(out.Columns, LiveColumn{Name: sv.Name, Type: sv.Type.String(), Label: sv.Def.Label})
 	}

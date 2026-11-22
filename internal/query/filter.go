@@ -191,13 +191,16 @@ func CompileOn(f Filter, on *On, cls *model.Class, sources formula.Sources, p Pr
 	}
 	quoted := quoter(cols)
 	src, opts, notBlank := f.Where, formula.BindOptions{Sources: sources}, p.named
+	// bound gives the SQL of a slot of the caller's condition: a column
+	// of the class, or a value of the document a list is read on.
+	bound := quoted
 	var node formula.Node
 	// given are the values of the document a list is read on, each a
 	// parameter of the statement.
 	var given []any
 	if on != nil {
 		src, node, opts.This = on.Src, on.Cond, on.Scope
-		quoted, notBlank = on.bound(quoted, d, &given), func(n formula.Node) bool { return isRef(n) || p.named(n) }
+		bound, notBlank = on.bound(quoted, d, &given), func(n formula.Node) bool { return isRef(n) || p.named(n) }
 	} else if strings.TrimSpace(f.Where) != "" {
 		if node, err = formula.Parse(f.Where); err != nil {
 			return nil, formulaError(err)
@@ -234,7 +237,7 @@ func CompileOn(f Filter, on *On, cls *model.Class, sources formula.Sources, p Pr
 		}
 		// STATE() and ID() are the row's columns here (ADR-0040): the
 		// function and the bare column spell the same predicate.
-		stmt, err := formula.GenerateSQLBound(prog, d, formula.SQLBinding{Column: quoted, Row: quoteIdent})
+		stmt, err := formula.GenerateSQLBound(prog, d, formula.SQLBinding{Column: bound, Row: quoteIdent})
 		if err != nil {
 			return nil, &Error{Code: CodeBadFormula, Element: "where", Pos: -1, Message: err.Error()}
 		}
@@ -242,7 +245,7 @@ func CompileOn(f Filter, on *On, cls *model.Class, sources formula.Sources, p Pr
 		if stmt.Error != "" {
 			where = "(" + stmt.Error + ") IS NULL AND " + where
 		}
-		pre, args, indexed := prefilter(node, src, cols, d, constantOf(src, scope, opts, d, quoted), "f", notBlank)
+		pre, args, indexed := prefilter(node, src, cols, d, constantOf(src, scope, opts, d, bound), "f", notBlank)
 		if pre != "" {
 			where = pre + " AND (" + where + ")"
 		}

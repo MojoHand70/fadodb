@@ -372,6 +372,13 @@ a declared question in under a thousandth of a second; and ADR-0076, a
 value worked out when it is read, `"mode": "live"`, with `QUERY` for
 the list of other documents on a document and `REF` for what a `ref`
 compares with.
+A third is proposed on 2026-11-21, with the owner's rulings of that day
+and the next on its three questions, and nothing of it is built:
+ADR-0078, a decision stands on what the document holds. A command
+says which version of a document its sender saw, the `write` right of
+a triggered variable
+says who may bring its value again, and what a condition needs from
+outside the document is brought onto it before the condition is asked.
 This page is updated when a phase starts and when it ends;
 it never describes a phase as done before its acceptance criteria pass.
 

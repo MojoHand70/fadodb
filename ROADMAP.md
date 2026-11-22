@@ -364,15 +364,19 @@ change and files through the door. Its test, besides the plan's: an
 agent with only the skills and the door is told a business story in
 plain words and builds the table and the class, and the people of the
 story use them through Workshop in a browser. The rest is not built yet.
-Three records were accepted by the owner on 2026-11-22, and nothing of
-them is built yet. Two are of 2026-11-20: ADR-0075, the engine makes the
+Three records were accepted by the owner on 2026-11-22. Two are of
+2026-11-20. ADR-0075, the engine makes the
 index of every question a class declares and says which question it
 cannot serve, so that a class of a hundred million documents answers
-a declared question in under a thousandth of a second; and ADR-0076, a
+a declared question in under a thousandth of a second: nothing of it is
+built yet. ADR-0076, a
 value worked out when it is read, `"mode": "live"`, with `QUERY` for
 the list of other documents on a document and `REF` for what a `ref`
-compares with.
-The third is of 2026-11-21:
+compares with: its first part is built, a live variable that reads its
+own document, the caller and the clock, and the command `live` that
+reads it; `QUERY`, a `LOOKUP` in a live variable, `REF`, the check of a
+`ref` when it is set and what points at a class are not built yet.
+The third is of 2026-11-21, and nothing of it is built yet:
 ADR-0078, a decision stands on what the document holds. A command
 says which version of a document its sender saw, the `write` right of
 a triggered variable

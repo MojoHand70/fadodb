@@ -174,6 +174,9 @@ type (
 	// and whether it may be taken now (ADR-0040), and for a timed
 	// transition the moment it fires (ADR-0047).
 	TransitionInfo = store.TransitionInfo
+	// LiveValue is what a live variable is for one caller at one moment
+	// (ADR-0076): a value in the wire shape of its type.
+	LiveValue = store.LiveValue
 	// DueDocument is one document a commit would move now, as Due lists
 	// it: its state, the state it would move to and, when a timed
 	// transition would move it, the moment since which it has been due
@@ -837,6 +840,15 @@ func (db *DB) PreviewMany(ctx context.Context, class, name string, ids []string,
 // (ADR-0047). It writes nothing.
 func (db *DB) Transitions(ctx context.Context, class, id string, opts ...Option) ([]TransitionInfo, error) {
 	return db.s.Transitions(ctx, class, id, opts...)
+}
+
+// Live works a live variable of a document out for its caller, now
+// (ADR-0076). A live variable says "mode": "live" in its class: it is
+// kept nowhere, so no other call answers it, and it may differ from
+// caller to caller and from one moment to the next. Whoever may read the
+// document asks, and the variable by its read right. It writes nothing.
+func (db *DB) Live(ctx context.Context, class, id, variable string, opts ...Option) (*LiveValue, error) {
+	return db.s.Live(ctx, class, id, variable, opts...)
 }
 
 // Due lists the documents of a class that a commit would move if it

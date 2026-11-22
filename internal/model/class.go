@@ -131,13 +131,15 @@ type Variable struct {
 	Def     *VariableDef
 }
 
-// ComputeMode is how a computed variable recalculates (ADR-0015).
+// ComputeMode is how a computed variable recalculates (ADR-0015), or
+// that it is worked out when it is read and kept nowhere (ADR-0076).
 type ComputeMode string
 
 // The modes.
 const (
 	ModeAuto      ComputeMode = "auto"
 	ModeTriggered ComputeMode = "triggered"
+	ModeLive      ComputeMode = "live"
 )
 
 // Trigger is one trigger of a triggered variable: refresh, enter:<state>,
@@ -178,6 +180,11 @@ func MomentColumn(variable, moment string) string { return variable + PathSepara
 
 // Triggered reports whether the variable is computed on triggers.
 func (v *Variable) Triggered() bool { return v.Computed && v.Mode == ModeTriggered }
+
+// Live reports whether the variable is worked out when it is read, for
+// the reader, and kept nowhere (ADR-0076): it has no column, no history
+// and no event, and nothing that is kept or decided reads it.
+func (v *Variable) Live() bool { return v.Computed && v.Mode == ModeLive }
 
 // On reports whether the variable lists the trigger: On("refresh", ""),
 // On("enter", "approved").
@@ -486,6 +493,14 @@ func CompileIn(def *Definition, env Env) (*Class, Diagnostics) {
 		}
 		cls.Variables = append(cls.Variables, v)
 		cls.byName[upper(name)] = v
+		if v.Mode == ModeLive {
+			// From here on no formula of the class binds while it reads
+			// this variable (ADR-0076, item 4).
+			if c.live == nil {
+				c.live = map[string]bool{}
+			}
+			c.live[upper(name)] = true
+		}
 	}
 	for _, name := range schemas.Names() {
 		if s, ok := usedSchemas[upper(name)]; ok {
@@ -510,10 +525,10 @@ func CompileIn(def *Definition, env Env) (*Class, Diagnostics) {
 		if v.Computed {
 			if v.Formula == nil && v.Type.Kind != formula.KindNull {
 				mode := formula.ModeAuto
-				if v.Mode == ModeTriggered {
+				if v.Mode != ModeAuto {
 					mode = formula.ModeAny
 				}
-				if prog := bindAs(c, path+"/formula", v.Def.Formula, scope, mode, v.Type); prog != nil {
+				if prog := bindAs(c, path+"/formula", v.Def.Formula, scope, mode, v.Type); prog != nil && readsOnlyItsDocument(c, path, v, prog) {
 					v.Formula = prog
 					v.Deps = depsOf(prog)
 					v.Sources = sourcesOf(prog)
@@ -608,8 +623,22 @@ func compileVariable(c *collector, path, name string, vd *VariableDef, schemas *
 			if len(vd.On) == 0 {
 				c.hint(CodeMissing, path+"/on", "a triggered variable names its triggers", `"on": ["refresh"] recalculates on the refresh command`)
 			}
+		case "live":
+			v.Mode = ModeLive
+			// What speaks of a kept value has no place on a value that is
+			// kept nowhere (ADR-0076, item 6).
+			for _, m := range []struct {
+				has  bool
+				name string
+			}{{len(vd.On) > 0, "on"}, {len(vd.Values) > 0, "values"}, {len(vd.Min) > 0, "min"}, {len(vd.Max) > 0, "max"}, {vd.Index, "index"}, {vd.List, "list"}} {
+				if m.has {
+					c.hint(CodeNotAllowed, path+"/"+m.name, "a live variable is worked out when it is read and kept nowhere, so it has no "+m.name,
+						`remove "`+m.name+`", or keep the value: "mode": "triggered"`)
+				}
+			}
+			v.Values, v.Index = nil, false
 		default:
-			c.addf(CodeBadValue, path+"/mode", "the mode is auto or triggered, got %s", quote(vd.Mode))
+			c.addf(CodeBadValue, path+"/mode", "the mode is auto, triggered or live, got %s", quote(vd.Mode))
 		}
 	} else {
 		if vd.Mode != "" {
@@ -689,7 +718,11 @@ func compileVariable(c *collector, path, name string, vd *VariableDef, schemas *
 		c.add(CodeNotSupported, path+"/default", "a default for "+v.Type.String()+" is not supported yet; a formula computes a scalar")
 	}
 
-	// Enum values, ranges, indexes.
+	// Enum values, ranges, indexes. A live variable was told above that it
+	// has none of them.
+	if v.Mode == ModeLive {
+		return v
+	}
 	if len(vd.Values) > 0 {
 		if v.Type.Kind != formula.KindText {
 			c.hint(CodeNotAllowed, path+"/values", "only a text variable has values (ADR-0023)", "declare the variable as text")
@@ -898,7 +931,7 @@ func inferTypes(c *collector, cls *Class, schemas *SchemaSet) {
 		v, _ := cls.Variable(name)
 		path := "/variables/" + name
 		mode := formula.ModeAuto
-		if v.Mode == ModeTriggered {
+		if v.Mode != ModeAuto {
 			mode = formula.ModeAny
 		}
 		prog, err := c.bind(v.Def.Formula, scopeOf(cls.Variables), mode)
@@ -908,6 +941,9 @@ func inferTypes(c *collector, cls *Class, schemas *SchemaSet) {
 		}
 		if prog.Result.Kind == formula.KindNull {
 			c.hint(CodeMissing, path+"/type", "the formula is always blank, so its type cannot be inferred", `declare "type"`)
+			continue
+		}
+		if !readsOnlyItsDocument(c, path, v, prog) {
 			continue
 		}
 		if c.readsClass(prog) {
@@ -924,10 +960,31 @@ func inferTypes(c *collector, cls *Class, schemas *SchemaSet) {
 	}
 }
 
+// readsOnlyItsDocument refuses a live variable whose formula looks in a
+// table or at the documents of a class. The record lets it (ADR-0076,
+// item 5), with the reader's rights; until that is built a live formula
+// reads the values of its document, the caller, the clock, the state and
+// the life of the document.
+func readsOnlyItsDocument(c *collector, path string, v *Variable, prog *formula.Program) bool {
+	if v.Mode != ModeLive || len(prog.Queries) == 0 {
+		return true
+	}
+	c.hint(CodeNotSupported, path+"/formula", "a live variable that looks in a table or at the documents of a class is not built yet (ADR-0076)",
+		`until it is, a live formula reads its own document, the caller and the clock; a triggered variable looks things up: "mode": "triggered"`)
+	return false
+}
+
 // checkInferred applies the property checks a declared type would have
-// had to a variable that took its formula's type.
+// had to a variable that took its formula's type. A live variable was
+// told, with its mode, which of them it has not.
 func checkInferred(c *collector, path string, v *Variable) {
 	vd := v.Def
+	if v.Mode == ModeLive {
+		if vd.Scale != nil {
+			c.hint(CodeNotAllowed, path+"/scale", "a computed variable without a type takes its formula's scale", "declare the type as decimal(s) or money(s) to fix the scale")
+		}
+		return
+	}
 	if vd.Scale != nil {
 		c.hint(CodeNotAllowed, path+"/scale", "a computed variable without a type takes its formula's scale", "declare the type as decimal(s) or money(s) to fix the scale")
 	}
@@ -1235,6 +1292,9 @@ func compileColumns(c *collector, cls *Class) {
 		return cols
 	}
 	for _, v := range cls.Variables {
+		if v.Live() {
+			continue // kept nowhere: no column, so no history either (ADR-0076, item 3)
+		}
 		switch v.Type.Kind {
 		case formula.KindRows:
 			child := ChildTable{Variable: v.Name}

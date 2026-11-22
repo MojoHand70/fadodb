@@ -150,6 +150,11 @@ func (c *class) document(r *docRow, kids map[*child][]childRow) *Document {
 	}
 	for _, cv := range c.vars {
 		v := cv.v
+		if v.Live() {
+			// Kept nowhere, and for one reader at one moment: no document
+			// carries it. The call Live works it out (ADR-0076, item 3).
+			continue
+		}
 		switch v.Type.Kind {
 		case formula.KindRows, formula.KindArray:
 			d.Values[v.Name] = cv.child.out(kids[cv.child])

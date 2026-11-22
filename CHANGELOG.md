@@ -8,6 +8,20 @@ All notable changes to FadoDB are recorded here. The format follows
 
 ### Added
 
+- A live variable, the first part of ADR-0076: a computed variable may
+  say `"mode": "live"`. It is worked out when somebody reads it, for
+  that reader, and kept nowhere: it has no column, no history and no
+  event, and no read of a document carries it. A new command reads it,
+  `live`, in Go the call `Live`: whoever may read the document asks,
+  and the variable by its read right. What speaks of a kept value is
+  refused on it (`on`, `default`, `required`, `values`, `min`, `max`,
+  `index`, `list`), and nothing that is kept or decided may read it: no
+  other formula of the class, no guard, no access rule, no filter. In
+  the bundle it is the server's. A live formula reads its own document,
+  the caller, the clock, the state and the life of the document; one
+  that looks in a table or lists other documents, with `LOOKUP` or
+  `QUERY`, is refused as not built yet. The layout of a database does
+  not change. New chapter of the manual: Live variables.
 - ADR-0075 and ADR-0076: the owner ruled on 2026-11-22 on the three
   questions they had put, and none is open. A search that no index
   serves on a large class is stopped after five seconds and told which

@@ -186,6 +186,9 @@ func Compile(f Filter, cls *model.Class, sources formula.Sources, p Principal) (
 		if err != nil {
 			return nil, formulaError(err)
 		}
+		if e := noLive(cls, prog, "where"); e != nil {
+			return nil, e
+		}
 		for _, c := range prog.Classes {
 			if c == formula.ClassLookup || c == formula.ClassQuery {
 				return nil, &Error{Code: CodeNotAllowed, Element: "where", Pos: -1,
@@ -259,6 +262,9 @@ func Compile(f Filter, cls *model.Class, sources formula.Sources, p Principal) (
 			desc, name = true, strings.TrimSpace(name[1:])
 		} else if strings.HasPrefix(name, "+") {
 			name = strings.TrimSpace(name[1:])
+		}
+		if v, is := cls.Variable(name); is && v.Live() {
+			return nil, liveIn(v.Name, fmt.Sprintf("order/%d", i))
 		}
 		c, ok := cols[strings.ToUpper(name)]
 		if !ok || !c.typ.IsScalar() {
@@ -346,6 +352,9 @@ func Compile(f Filter, cls *model.Class, sources formula.Sources, p Principal) (
 			if !ok {
 				return nil, &Error{Code: CodeUnknownVariable, Element: fmt.Sprintf("fields/%d", i), Pos: -1,
 					Message: "the class " + cls.Name + " has no variable " + strconv.Quote(name)}
+			}
+			if v.Live() {
+				return nil, liveIn(v.Name, fmt.Sprintf("fields/%d", i))
 			}
 			if !fseen[strings.ToUpper(v.Name)] {
 				fseen[strings.ToUpper(v.Name)] = true
@@ -614,6 +623,29 @@ func (f *folder) probe(n formula.Node) (isBool, fails bool) {
 	return prog.Result.Kind == formula.KindBool, stmt.Error != ""
 }
 
+// liveIn refuses a live variable in a filter. A live value is worked out
+// when it is read, for one reader, and kept nowhere (ADR-0076), so no
+// statement over the stored documents can compare, sort by or answer it.
+func liveIn(name, element string) *Error {
+	return &Error{Code: CodeNotAllowed, Element: element, Variable: name, Pos: -1,
+		Message: name + " is a live variable: it is worked out when it is read and kept nowhere, so a filter cannot read it",
+		Hint:    "read it with the command live, for one document; to filter on it, keep it: \"mode\": \"triggered\""}
+}
+
+// noLive refuses a formula of a filter that reads a live variable.
+func noLive(cls *model.Class, prog *formula.Program, element string) *Error {
+	for _, s := range prog.Slots {
+		name := s.Name
+		if i := strings.IndexByte(name, '.'); i >= 0 {
+			name = name[:i]
+		}
+		if v, ok := cls.Variable(name); ok && v.Live() {
+			return liveIn(v.Name, element)
+		}
+	}
+	return nil
+}
+
 // scopeOf is what the formulas of a filter over a class bind against: the
 // system columns and the class's variables, and the stored column of
 // each name a formula may compare.
@@ -670,6 +702,9 @@ func Value(src string, cls *model.Class, sources formula.Sources) (string, formu
 	prog, err := formula.Bind(src, scope, formula.BindOptions{Sources: sources})
 	if err != nil {
 		return "", 0, formulaError(err)
+	}
+	if e := noLive(cls, prog, "value"); e != nil {
+		return "", 0, e
 	}
 	for _, c := range prog.Classes {
 		if c != formula.ClassPure && c != formula.ClassContext {

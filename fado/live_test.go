@@ -1,6 +1,7 @@
 package fado_test
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -24,6 +25,8 @@ func TestLiveVariables(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// Windows checks the chapter out with \r\n; the blocks are found by \n.
+	page = bytes.ReplaceAll(page, []byte("\r\n"), []byte("\n"))
 	ctx := context.Background()
 	var class []byte
 	for _, m := range regexp.MustCompile("(?s)```json\r?\n(.*?)\r?\n```").FindAllSubmatch(page, -1) {

@@ -3553,6 +3553,86 @@
         "x-fado-mark": "reads"
       }
     },
+    "/v1/live": {
+      "post": {
+        "description": "It reads. In Go it is the call `Live`.",
+        "operationId": "live",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "at": {
+                    "description": "the moment the command reads at: \"2026-11-13\", \"2026-11-13 09:30:00\" in UTC, or seconds since the epoch; now when left out",
+                    "type": [
+                      "string",
+                      "integer"
+                    ]
+                  },
+                  "class": {
+                    "description": "the name of the class",
+                    "type": "string"
+                  },
+                  "for": {
+                    "description": "the id of whoever the caller acts for; let through only while a substitution says so",
+                    "type": "string"
+                  },
+                  "id": {
+                    "description": "the id of the document",
+                    "type": "string"
+                  },
+                  "reason": {
+                    "description": "why a content administrator acts or reads past a rule; a change keeps it on its event, a read in the log of reads",
+                    "type": "string"
+                  },
+                  "variable": {
+                    "description": "the live variable: one that says \"mode\": \"live\" in its class",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "class",
+                  "id",
+                  "variable"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "value": {
+                      "description": "what the variable is for this caller at this moment"
+                    }
+                  },
+                  "required": [
+                    "value"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "The command ran."
+          },
+          "default": {
+            "$ref": "#/components/responses/Refused"
+          }
+        },
+        "summary": "Works a live variable of a document out for the caller, now. Nothing is kept.",
+        "tags": [
+          "Documents"
+        ],
+        "x-fado-call": "Live",
+        "x-fado-mark": "reads"
+      }
+    },
     "/v1/metrics": {
       "get": {
         "description": "The requests by command and status, how long they took, the streams that are open, the queue of actions and the sizes of the files, in the text form Prometheus reads. It is answered by `fadodb serve`.",

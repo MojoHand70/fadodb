@@ -105,6 +105,7 @@ A command takes the ones its list below shows, and no other.
 | [`transition_many`](#transition_many) | Moves several documents of one class along one transition; a document that cannot move is reported and the others move. | writes |
 | [`delete`](#delete) | Removes a document; its history and its events stay. | destroys |
 | [`transitions`](#transitions) | Lists the transitions leaving a document's state, each with whether the caller may take it now. | reads |
+| [`live`](#live) | Works a live variable of a document out for the caller, now. Nothing is kept. | reads |
 | [`due`](#due) | Lists the documents of a class that a commit would move now: a guard on time holds, or a timer has come. | reads |
 | [`history`](#history) | Reads every committed version of a document, oldest first. | reads |
 | [`version`](#version) | Reads one committed version of a document. | reads |
@@ -291,6 +292,24 @@ It answers:
 | Member | What it holds |
 |---|---|
 | `transitions` | the transitions, in the order of the class |
+
+### live
+
+Works a live variable of a document out for the caller, now. Nothing is kept. It reads; in Go it is the call `Live`.
+
+| Member | Type | | What it is |
+|---|---|---|---|
+| `class` | text | needed | the name of the class |
+| `id` | text | needed | the id of the document |
+| `variable` | text | needed | the live variable: one that says "mode": "live" in its class |
+
+And, of the members that mean the same everywhere: `reason`, `at`, `for`.
+
+It answers:
+
+| Member | What it holds |
+|---|---|
+| `value` | what the variable is for this caller at this moment |
 
 ### due
 

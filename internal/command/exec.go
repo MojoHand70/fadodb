@@ -449,6 +449,15 @@ func runTransitions(c *call) error {
 	return c.answer("transitions", list(infos), err)
 }
 
+// runLive works a live variable out for the caller (ADR-0076, item 7).
+func runLive(c *call) error {
+	v, err := c.s.Live(c.ctx, c.text("class"), c.text("id"), c.text("variable"), c.opts...)
+	if err != nil {
+		return err
+	}
+	return c.answer("value", v.Value, nil)
+}
+
 func runDue(c *call) error {
 	due, err := c.s.Due(c.ctx, c.text("class"), c.opts...)
 	return c.answer("due", list(due), err)

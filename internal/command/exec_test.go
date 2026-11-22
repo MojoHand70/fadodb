@@ -638,6 +638,62 @@ func TestTheStreamIsACommandWithItsObject(t *testing.T) {
 // The flow of a class is a command (ADR-0063): the answer of the Go
 // call under "flow", a period given as two moments, and the documents
 // the caller may read.
+// A live variable is worked out when the command live asks for it, for
+// the caller, and no other command answers it (ADR-0076, item 7).
+func TestALiveValueIsACommand(t *testing.T) {
+	s := open(t)
+	run(t, s, dan, "define_class", `{"definition": {
+  "name": "Note", "title": "subject",
+  "variables": {
+    "subject": {"type": "text", "required": true, "description": "What it is about."},
+    "owner":   {"type": "text", "default": "USER()", "description": "Who wrote it."},
+    "mine":    {"type": "bool", "mode": "live", "formula": "owner = USER()", "label": "Mine", "description": "Whether the reader wrote it."},
+    "shout":   {"formula": "UPPER(subject)", "description": "The subject, loud."}
+  },
+  "states": {"initial": "open", "list": ["open"], "descriptions": {"open": "It is read."}},
+  "access": {"read": "TRUE", "create": "TRUE", "update": "owner = USER()", "delete": "FALSE"}
+}}`)
+	made := run(t, s, bob, "create", `{"class": "Note", "id": "N-1", "values": {"subject": "Lunch"}}`)
+	if doc := made["document"].(map[string]any)["values"].(map[string]any); doc["shout"] != "LUNCH" {
+		t.Errorf("create answered %v, want the kept value shout", doc)
+	} else if _, carried := doc["mine"]; carried {
+		t.Errorf("create answered the live value mine: %v", doc)
+	}
+	// For the caller: Bob wrote it, Ann did not.
+	if got := run(t, s, bob, "live", `{"class": "Note", "id": "N-1", "variable": "mine"}`); got["value"] != true {
+		t.Errorf("live answered Bob %v, want true", got)
+	}
+	if got := run(t, s, ann, "live", `{"class": "Note", "id": "N-1", "variable": "mine"}`); got["value"] != false {
+		t.Errorf("live answered Ann %v, want false", got)
+	}
+	want, err := s.Live(context.Background(), "Note", "N-1", "mine", store.As(bob))
+	if err != nil || want.Value != true {
+		t.Errorf("the Go call answered %v, %v", want, err)
+	}
+	// What it refuses: a kept variable, an unknown one, a document that is
+	// not there, and a member left out.
+	for _, tc := range []struct{ object, code string }{
+		{`{"class": "Note", "id": "N-1", "variable": "shout"}`, store.CodeNotAllowed},
+		{`{"class": "Note", "id": "N-1", "variable": "nothing"}`, store.CodeUnknownVariable},
+		{`{"class": "Note", "id": "N-9", "variable": "mine"}`, store.CodeUnknownDocument},
+		{`{"class": "Note", "id": "N-1"}`, CodeBadJSON},
+	} {
+		if e := refused(t, s, bob, "live", tc.object); e.Code != tc.code {
+			t.Errorf("live %s was refused with %s, want %s", tc.object, e.Code, tc.code)
+		}
+	}
+	// A live value cannot be set, and no filter reads it.
+	if e := refused(t, s, bob, "set", `{"class": "Note", "id": "N-1", "values": {"mine": true}}`); e.Code != store.CodeReadOnly || e.Variable != "mine" {
+		t.Errorf("setting a live value was refused with %+v, want read_only about mine", e)
+	}
+	if e := refused(t, s, bob, "query", `{"class": "Note", "where": "mine"}`); e.Code != store.CodeNotAllowed {
+		t.Errorf("a filter on a live value was refused with %+v, want not_allowed", e)
+	}
+	if e := refused(t, s, bob, "query", `{"class": "Note", "fields": ["mine"]}`); e.Code != store.CodeNotAllowed {
+		t.Errorf("a live value among the fields was refused with %+v, want not_allowed", e)
+	}
+}
+
 func TestTheFlowIsACommand(t *testing.T) {
 	s := open(t)
 	define(t, s)

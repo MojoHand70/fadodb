@@ -80,9 +80,23 @@ func openStore(t *testing.T, o Options) (*Store, string) {
 	return s, path
 }
 
+// customerClass is the class the invoice's customer points at. A ref is
+// checked when it is set (ADR-0076, item 11), so the customer of the
+// sample values is there before an invoice names it.
+const customerClass = `{"name": "Customer", "title": "name",
+  "variables": {"name": {"type": "text"}},
+  "states": {"initial": "known", "list": ["known"]}}`
+
 func defineInvoice(t *testing.T, s *Store) *model.Class {
 	t.Helper()
-	cls, err := s.defineOpen(context.Background(), []byte(invoice), asSetup)
+	ctx := context.Background()
+	if _, err := s.defineOpen(ctx, []byte(customerClass), asSetup); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Create(ctx, "Customer", Values{"name": "Acme"}, asSetup, WithID("42")); err != nil {
+		t.Fatal(err)
+	}
+	cls, err := s.defineOpen(ctx, []byte(invoice), asSetup)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -172,7 +186,8 @@ func TestDefineClass(t *testing.T) {
 	cls := defineInvoice(t, s)
 	// The engine's own class is there before the first of the database's
 	// (ADR-0053, item 7).
-	if got := s.Classes(); cls.Version != 1 || len(got) != 2 || got[0] != model.SubstitutionClass {
+	// The fixture defines the customer an invoice points at beside it.
+	if got := s.Classes(); cls.Version != 1 || len(got) != 3 || got[0] != model.SubstitutionClass || got[1] != "Customer" {
 		t.Errorf("version %d, classes %v", cls.Version, s.Classes())
 	}
 	rows, err := s.db.Query("SELECT type, name FROM sqlite_master WHERE name NOT LIKE 'sqlite_%' ORDER BY type, name")
@@ -439,7 +454,7 @@ func TestCreate_Refusals(t *testing.T) {
 		}
 	}
 	var n int
-	if err := s.db.QueryRow("SELECT count(*) FROM events").Scan(&n); err != nil || n != 0 {
+	if err := s.db.QueryRow("SELECT count(*) FROM events WHERE class = 'Invoice'").Scan(&n); err != nil || n != 0 {
 		t.Errorf("a refused commit writes nothing: %d events", n)
 	}
 	// Too many elements.
@@ -630,7 +645,7 @@ func TestPreview(t *testing.T) {
 	if n != 0 {
 		t.Errorf("a preview wrote %d history rows", n)
 	}
-	s.db.QueryRow("SELECT count(*) FROM events").Scan(&n)
+	s.db.QueryRow("SELECT count(*) FROM events WHERE class = 'Invoice'").Scan(&n)
 	if n != 0 {
 		t.Errorf("a preview wrote %d events", n)
 	}
@@ -678,7 +693,7 @@ func TestReopen(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer s2.Close()
-	if got := strings.Join(s2.Classes(), ","); got != "Substitution,Invoice,Task" {
+	if got := strings.Join(s2.Classes(), ","); got != "Substitution,Customer,Invoice,Task" {
 		t.Errorf("classes %s", got)
 	}
 	if sch, ok := s2.Schemas().Lookup("Employee"); !ok || sch.Version != 1 {

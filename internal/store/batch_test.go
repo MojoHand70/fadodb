@@ -35,7 +35,7 @@ func TestCreateMany(t *testing.T) {
 		t.Errorf("%d documents stored", n)
 	}
 	var events int
-	s.db.QueryRow("SELECT count(*) FROM events").Scan(&events)
+	s.db.QueryRow("SELECT count(*) FROM events WHERE class = 'Invoice'").Scan(&events)
 	if events != 50 {
 		t.Errorf("%d events, want one per document", events)
 	}

@@ -557,6 +557,9 @@ func (s *Store) run(ctx context.Context, cmd command, now time.Time) (*result, e
 		if err := s.checkFiles(ctx, c, after, dirty, kids); err != nil {
 			return nil, err
 		}
+		if err := s.checkRefs(ctx, c, &cmd, nil, after, dirty, kids, evalCtx, res); err != nil {
+			return nil, err
+		}
 		for _, cv := range c.defaults {
 			if dirty[cv.idx] {
 				continue
@@ -671,6 +674,9 @@ func (s *Store) run(ctx context.Context, cmd command, now time.Time) (*result, e
 			}
 		}
 		if err := s.checkFiles(ctx, c, after, dirty, kids); err != nil {
+			return nil, err
+		}
+		if err := s.checkRefs(ctx, c, &cmd, before, after, dirty, kids, evalCtx, res); err != nil {
 			return nil, err
 		}
 		for ch, rows := range kids {

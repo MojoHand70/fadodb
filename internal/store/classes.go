@@ -70,6 +70,10 @@ type class struct {
 	sources map[string]bool
 	// files are the File objects among the leaves (ADR-0033).
 	files []filePair
+	// refs are the leaves that point at a document, each with the variable
+	// it belongs to (ADR-0076, item 11); nil when the class has none, so
+	// that a commit of such a class does not look.
+	refs []refLeaf
 	// rights is the rights table resolved per state (ADR-0041): for each
 	// state of the class, and "" for the "*" row alone, one cell per
 	// variable in declared order; nil when the class declares no rights.
@@ -91,6 +95,13 @@ type class struct {
 
 	w writeStmts
 	r readStmts
+}
+
+// refLeaf is a leaf that points at a document: a ref variable, or a ref
+// among the fields of an object.
+type refLeaf struct {
+	leaf int
+	cv   *cvar
 }
 
 // cvar is one variable's place in the layout.
@@ -137,6 +148,9 @@ type child struct {
 	fields []formula.Field
 	// files are the File objects among a row's leaves (ADR-0033).
 	files []filePair
+	// refs are the leaves of a row that point at a document (ADR-0076,
+	// item 11).
+	refs []int
 
 	insert, copyRows, selectRows *sql.Stmt // on the writer
 	readRows                     *sql.Stmt // on the pool
@@ -303,6 +317,9 @@ func newClass(cls *model.Class, src []byte) (*class, error) {
 		if cv.v.Type.Kind != formula.KindObject {
 			cv.leaf = i
 		}
+		if l.typ.Kind == formula.KindRef && !cv.v.Computed {
+			c.refs = append(c.refs, refLeaf{leaf: i, cv: cv})
+		}
 	}
 	for _, v := range cls.Variables {
 		if v.Type.Kind == formula.KindObject {
@@ -317,6 +334,11 @@ func newClass(cls *model.Class, src []byte) (*class, error) {
 			ch.leaves[i].v = cv.v
 		}
 		ch.leafIndex = indexOf(ch.leaves)
+		for i := range ch.leaves {
+			if ch.leaves[i].typ.Kind == formula.KindRef {
+				ch.refs = append(ch.refs, i)
+			}
+		}
 		if cv.v.Type.Kind == formula.KindArray {
 			ch.fields = []formula.Field{{Name: "value", Type: formula.Type{Kind: cv.v.Type.Elem, Scale: cv.v.Type.Scale}}}
 		} else {

@@ -36,6 +36,21 @@ func Example() {
 	defer db.Close()
 	ctx := context.Background()
 
+	// The customer an invoice points at. A ref is checked when it is set,
+	// so the customer is there before an invoice names it.
+	if _, err = db.DefineClass(ctx, []byte(`{
+	  "name": "Customer",
+	  "access": {"read": "TRUE", "create": "TRUE", "update": "TRUE", "delete": "TRUE"},
+	  "title": "name",
+	  "variables": {"name": {"type": "text", "required": true}},
+	  "states": {"initial": "known", "list": ["known"]}
+	}`), setup); err != nil {
+		panic(err)
+	}
+	if _, err = db.Create(ctx, "Customer", fado.Values{"name": "Acme"}, setup, fado.WithID("42")); err != nil {
+		panic(err)
+	}
+
 	_, err = db.DefineClass(ctx, []byte(`{
 	  "name": "Invoice",
 	  "access": {"read": "TRUE", "create": "TRUE", "update": "TRUE", "delete": "TRUE"},

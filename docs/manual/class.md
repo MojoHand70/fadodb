@@ -109,7 +109,7 @@ Each entry is one variable: its name, and what it is.
 | `formula` | the variable is computed, and nobody sets it |
 | `values` | for a text: the list of values it may take |
 | `min`, `max` | for a number: the range it must stay in. On a computed variable they hold only when it names its `type` |
-| `mode`, `on` | for a computed variable: `"mode": "triggered"` and the list of moments at which it is worked out; see [Triggered variables](triggered-variables.md) |
+| `mode`, `on` | for a computed variable: `"mode": "triggered"` and the list of moments at which it is worked out, see [Triggered variables](triggered-variables.md); or `"mode": "live"`, worked out when it is read and kept nowhere, see [Live variables](live-variables.md) |
 | `scale` | for `decimal` and `money`: the number of decimal places, two when left out |
 | `index` | keeps an index on the variable, so that finding documents by it is fast |
 | `class` | for a `ref`: the class it points at |
@@ -152,6 +152,11 @@ A computed variable can also be worked out only at chosen moments,
 such as the entry into a state, and kept in between: that is
 `"mode": "triggered"`, an advanced technique with a chapter of its
 own, [Triggered variables](triggered-variables.md).
+
+And it can be worked out when somebody reads it, for that reader, and
+kept nowhere: that is `"mode": "live"`, for a value such as the days a
+document has waited, which is wrong the day after it is stored. It has
+a chapter too, [Live variables](live-variables.md).
 
 Some names are the engine's and cannot be used for a variable, among
 them `id`, `title`, `state`, `version`, `created_at`, `created_by`,

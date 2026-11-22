@@ -13,6 +13,7 @@ exactly so in a class or a formula.
 | input | a variable that a caller sets, or that takes its default |
 | computed variable | a variable with a `formula`; the engine works it out and nobody sets it |
 | triggered variable | a computed variable that is worked out only at the moments its class names, such as the entry into a state, and keeps its value in between; see [Triggered variables](triggered-variables.md) |
+| live variable | a computed variable that is worked out when somebody reads it, for that reader, and kept nowhere; the command `live` reads it; see [Live variables](live-variables.md) |
 | refresh | a commit that works triggered variables out again |
 | formula | an expression in the style of a spreadsheet, such as `ROUND(net * (1 + vat_rate), 2)` |
 | state | where a document is in its process, such as `INAPPROVAL` |

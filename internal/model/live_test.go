@@ -50,6 +50,20 @@ func TestLive_Definition(t *testing.T) {
 	if gross, _ := cls.Variable("gross"); gross.Live() || gross.Mode != ModeAuto {
 		t.Errorf("gross = %+v, want an auto variable beside the live ones", gross)
 	}
+	// In the bundle a live variable is the server's (item 13): a page gets
+	// no formula for it, and asks the command live.
+	served := map[string]BundleFormula{}
+	for _, f := range Compiled(cls).Computed {
+		served[f.Variable] = f
+	}
+	for _, name := range []string{"waiting_days", "mine"} {
+		if f, ok := served[name]; !ok || !f.Server || f.Formula != "" || f.Type == "" {
+			t.Errorf("the bundle has %s as %+v (%v), want it as the server's, with its type and no formula", name, f, ok)
+		}
+	}
+	if f := served["gross"]; f.Server || f.Formula == "" {
+		t.Errorf("the bundle has gross as %+v, want its formula for the page", f)
+	}
 }
 
 // What speaks of a kept value has no place on a live one, and nothing

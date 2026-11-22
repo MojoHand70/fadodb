@@ -238,8 +238,8 @@ finance and reads every invoice. Olga designs the classes.
    **Several columns are written in braces**, `{number, net, state}`,
    as a spreadsheet writes a list of constants, and so are several
    columns to sort by, `{-net, number}`, a leading `-` for descending
-   as in the commands. One column needs no braces. This is question 1
-   for the owner.
+   as in the commands. One column needs no braces. The owner ruled so
+   on 2026-11-22; it was question 1 of this record.
 
    Not built by this record: a `QUERY` in a triggered variable, whose
    rows are kept; grouping and aggregates among its columns; the
@@ -268,7 +268,8 @@ finance and reads every invoice. Olga designs the classes.
     change is refused with `unknown_document`, the same answer for
     "not there" and "not yours", as `get` gives, so that setting a
     pointer tells nobody what exists. A `ref` already in a document is
-    not checked again when other values change.
+    not checked again when other values change. The owner ruled so on
+    2026-11-22; it was question 2 of this record.
 
 12. **A class says what points at it.** The answer of `get_class`
     gains `pointed_at_by`, worked out from the current definitions and
@@ -295,25 +296,9 @@ finance and reads every invoice. Olga designs the classes.
 
 ## Questions for the owner
 
-1. **How `QUERY` writes several columns** (item 9). The case is the
-   formula of `invoices` in the class Order.
-   - Proposed, braces: `QUERY(Invoice, {number, net, state}, order =
-     REF(), {-net, number})`. Each name is a name to the checker: it is
-     coloured, offered while typing, and found at its place when it is
-     wrong. It is one new piece of grammar.
-   - The other way, a text: `QUERY(Invoice, "number, net, state",
-     order = REF(), "-net, number")`, as the `QUERY` of Google Sheets
-     takes a text. Nothing new in the grammar; the names sit inside a
-     text, where an editor offers and colours nothing.
-
-2. **A `ref` that names a document which is not there** (item 11). The
-   case: an agent files invoice FV-9 on `Order:ORD-71`, a slip for
-   ORD-17.
-   - Proposed: refused when it is set. A list never shows a document
-     under an order that does not exist, and whoever loads documents
-     from another system loads the orders before their invoices.
-   - The other way, as today: taken. Documents may be loaded in any
-     order; the slip is found when somebody misses the invoice.
+None is open. Question 1, how `QUERY` writes several columns, is
+answered: item 9. Question 2, a `ref` that names a document which is
+not there, is answered: item 11. Both are in the rulings below.
 
 ## The owner's rulings
 
@@ -329,6 +314,28 @@ Of 2026-11-20:
   the same choice with no second function; the other way: your
   `LIST()`, which shows the difference in the formula itself but needs
   a twin for every reading function", he answered "yes".
+
+Of 2026-11-22, to the two questions of this record as they were put
+to him that day, numbered 2 and 3 after the one of ADR-0075:
+
+- "QUERY's columns: in braces (my proposal), or in a text": **"2.
+  yes"**. That is item 9. The case is the formula of `invoices` in the
+  class Order: `QUERY(Invoice, {number, net, state}, order = REF(),
+  {-net, number})`. Each name is a name to the checker: it is
+  coloured, offered while typing, and found at its place when it is
+  wrong; it is one new piece of grammar. The way not taken, a text:
+  `QUERY(Invoice, "number, net, state", order = REF(), "-net,
+  number")`, as the `QUERY` of Google Sheets takes one. Nothing new in
+  the grammar; the names would sit inside a text, where an editor
+  offers and colours nothing.
+- "A pointer to a document that is not there: refused when set (my
+  proposal), or taken as today": **"3. yes"**. That is item 11. The
+  case: an agent files invoice FV-9 on `Order:ORD-71`, a slip for
+  ORD-17, and is refused. A list never shows a document under an order
+  that does not exist, and whoever loads documents from another system
+  loads the orders before their invoices. The way not taken, as today:
+  the pointer is taken, documents may be loaded in any order, and the
+  slip is found when somebody misses the invoice.
 
 Settled by me, his to veto: that a live value reads with the reader's
 eyes (item 2; told to him with the mode, not put as a question); that

@@ -152,10 +152,11 @@ func TestDefineTable(t *testing.T) {
 	if _, err := s.defineOpenTable(ctx, []byte(`{"name": "Invoice", "columns": {"a": "text"}, "key": ["a"]}`), asSetup); !errors.As(err, &diags) || !diags.Has(model.CodeDuplicate) {
 		t.Errorf("a table named like a class: %v", err)
 	}
-	// A column of a table with rows is not changed (a column added is,
-	// ADR-0080); an empty table is the next version.
+	// A column of a table with rows changes only where every value of it
+	// converts: "Euro" is no number (ADR-0084); an empty table is the next
+	// version.
 	_, err = s.defineOpenTable(ctx, []byte(strings.Replace(ratesTable, `"name": "text"`, `"name": "number"`, 1)), asSetup)
-	if !errors.As(err, &diags) || !diags.Has(model.CodeNotSupported) {
+	if !errors.As(err, &diags) || !diags.Has(model.CodeBadValue) {
 		t.Errorf("redefining with rows: %v", err)
 	}
 	if _, err := s.defineOpenTable(ctx, []byte(`{"name": "Empty", "columns": {"a": "text"}, "key": ["a"]}`), asSetup); err != nil {
@@ -251,7 +252,7 @@ func TestLookup(t *testing.T) {
 		t.Errorf("unknown table in a class: %v", err)
 	}
 	_, err = s.defineOpenTable(ctx, []byte(strings.Replace(ratesTable, `"name": "text"`, `"name": "number"`, 1)), asSetup)
-	if !errors.As(err, &diags) || !diags.Has(model.CodeNotSupported) || !strings.Contains(diags.Error(), "the class Order reads the table") {
+	if !errors.As(err, &diags) || !diags.Has(model.CodeNotAllowed) || !strings.Contains(diags.Error(), "the class Order uses a column") {
 		t.Errorf("redefining a table in use: %v", err)
 	}
 	// Everything comes back after a reopen, tables before classes.

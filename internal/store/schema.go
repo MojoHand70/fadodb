@@ -74,7 +74,9 @@ var engineDDL = []string{
 		created_at INTEGER NOT NULL, PRIMARY KEY (kind, target, language, version))`,
 	// Who defined each version of a class, a schema, a table, an action,
 	// an inlet and words, and when (ADR-0052, item 7): a row for every version,
-	// never changed.
+	// never changed. A table or words that were removed have a row more,
+	// "table removed" or "words removed" with the version they had, and
+	// who removed them and when in the same four columns (ADR-0083).
 	`CREATE TABLE IF NOT EXISTS definitions (what TEXT NOT NULL, name TEXT NOT NULL COLLATE NOCASE, version INTEGER NOT NULL, defined_at INTEGER NOT NULL,
 		defined_by TEXT, defined_kind TEXT, defined_for TEXT, PRIMARY KEY (what, name, version))`,
 	`CREATE TABLE IF NOT EXISTS events (event_id TEXT PRIMARY KEY, class TEXT NOT NULL, doc_id TEXT NOT NULL, kind TEXT NOT NULL, name TEXT, from_state TEXT, to_state TEXT,

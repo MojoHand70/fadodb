@@ -488,9 +488,35 @@ words. It is for the system group `designers`, as defining one is.
 - **Its versions stay** in the log of definitions. A table defined
   again under its name is the next version after them, and starts
   empty.
-- **Nothing records who removed it**, as nothing records who removed
-  words: the log of definitions has a line for each version and none
-  for a removal.
+- **The log of definitions says who removed it and when**, on the
+  version it had. Its words in other languages go with it, and each
+  says the same on the version it had. Every caller may read it, as
+  every caller may read who defined a version.
+
+Dan made the table Scratch to try an import, changed it once and
+removed it. Anybody sends `definitions`
+
+<!-- the versions of Scratch -->
+```jsonc
+{"what": "table", "name": "Scratch"}
+```
+
+and is answered:
+
+<!-- who removed Scratch -->
+```jsonc
+{"versions": [{"what": "table", "name": "Scratch", "version": 1, "by": "dan", "kind": "person", "at": 1794992400},
+              {"what": "table", "name": "Scratch", "version": 2, "by": "dan", "kind": "person", "at": 1794996000,
+               "removed": {"by": "dan", "kind": "person", "at": 1794999600}}]}
+```
+
+`removed` holds what a version holds of who defined it: `by`, the id
+of who removed it; `kind`, a person, an agent or a service; `for`, the
+id they acted for, when they acted for somebody; and `at`, the moment
+in seconds since 1970. A version nobody removed has no `removed`. The
+Polish words of Scratch are asked with `"what": "words"` and the name
+`table/Scratch/pl`, and words taken away with `remove_words` say who
+took them away in the same way.
 
 ## With SQL
 

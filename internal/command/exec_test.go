@@ -1611,6 +1611,18 @@ func TestTheCommandsOfTheApps(t *testing.T) {
 	if got := run(t, s, ann, "list_tables", `{}`)["tables"].([]any); len(got) != 0 {
 		t.Fatalf("the tables after the removal: %v", got)
 	}
+	// Who removed it, and when, is on the version it had (ADR-0083), and
+	// anybody reads it, as anybody reads who defined a version.
+	versions := run(t, s, ann, "definitions", `{"what": "table", "name": "Rates"}`)["versions"].([]any)
+	last, _ := versions[len(versions)-1].(map[string]any)
+	if removed, _ := last["removed"].(map[string]any); removed["by"] != "dan" || removed["kind"] != store.ActorPerson || removed["at"] == nil {
+		t.Fatalf("definitions of a removed table answered %v", versions)
+	}
+	for _, v := range versions[:len(versions)-1] {
+		if _, removed := v.(map[string]any)["removed"]; removed {
+			t.Fatalf("a version that was not removed says it was: %v", versions)
+		}
+	}
 }
 
 func TestEveryCommandIsRun(t *testing.T) {

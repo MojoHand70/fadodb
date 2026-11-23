@@ -1285,3 +1285,62 @@ func TestTables(t *testing.T) {
 		t.Errorf("a class with the name of a table is found %s", got)
 	}
 }
+
+// TestTables_WhoRemovedATable plays the end of "Removing a table": Dan
+// defines Scratch, changes it an hour later and removes it an hour after
+// that, and the chapter's command is answered as the chapter shows. The
+// Polish words of Scratch say the same, and words taken away on their own
+// say who took them away.
+func TestTables_WhoRemovedATable(t *testing.T) {
+	page, err := os.ReadFile(filepath.Join("..", "docs", "manual", "tables.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	at := time.Unix(1794992400, 0).UTC()
+	db, err := fado.Open(filepath.Join(t.TempDir(), "scratch.fado"), fado.Options{Now: func() time.Time { return at }, Outbox: fado.OutboxOptions{Manual: true}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	dan := fado.Principal{ID: "dan", Kind: fado.ActorPerson, System: []string{fado.GroupDesigners}}
+	ann := fado.Principal{ID: "ann", Kind: fado.ActorPerson}
+	for i, def := range []string{`{"name": "Scratch", "columns": {"k": "text"}, "key": ["k"]}`, `{"name": "Scratch", "columns": {"k": "text", "v": "text"}, "key": ["k"]}`} {
+		at = time.Unix(1794992400+int64(i)*3600, 0).UTC()
+		if _, err := db.DefineTable(ctx, []byte(def), fado.As(dan)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, def := range []string{`{"table": "Scratch", "language": "pl", "label": "Brudnopis"}`, `{"table": "Scratch", "language": "de", "label": "Notizen"}`} {
+		if _, err := db.DefineWords(ctx, []byte(def), fado.As(dan)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := db.RemoveWords(ctx, fado.WordsOf{Table: "Scratch", Language: "de"}, fado.As(dan)); err != nil {
+		t.Fatal(err)
+	}
+	at = time.Unix(1794999600, 0).UTC()
+	if err := db.RemoveTable(ctx, "Scratch", fado.As(dan)); err != nil {
+		t.Fatal(err)
+	}
+	answered, err := db.Exec(ctx, ann, "definitions", []byte(fenced(t, page, "the versions of Scratch")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var have, want any
+	if err := json.Unmarshal(answered, &have); err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal([]byte(fenced(t, page, "who removed Scratch")), &want); err != nil {
+		t.Fatalf("the answer the chapter shows: %v", err)
+	}
+	if !reflect.DeepEqual(have, want) {
+		t.Errorf("definitions answers\n%s\nand the chapter shows\n%s", answered, fenced(t, page, "who removed Scratch"))
+	}
+	for name, when := range map[string]int64{"table/Scratch/pl": 1794999600, "table/Scratch/de": 1794996000} {
+		versions, err := db.Definitions(ctx, fado.DefinitionWords, name)
+		if err != nil || len(versions) != 1 || versions[0].Removed == nil || versions[0].Removed.By != "dan" || versions[0].Removed.At != when {
+			t.Errorf("the words %s: %+v, %v", name, versions, err)
+		}
+	}
+}

@@ -359,10 +359,11 @@ and moves a document of plain values; work on it stopped on
 belong together, which is built: `define_app`, `get_app`, `list_apps`,
 and a class or a table that says which app it belongs to (a table's,
 ADR-0079, proposed), while an app's own
-groups, and exporting an app, are not built. Left of the phase's
-steps, in this order: the
-door for agents at the server itself, at `/mcp`, which is the next
-step; one starter, the approval of an
+groups, and exporting an app, are not built; the door for agents at
+the server itself, at `/mcp`, which is built: the same tools, for a
+caller that proves who it is with a pass a person gives, as Claude
+does, or with a key, in both forms of the protocol, with no session.
+Left of the phase's steps, in this order: one starter, the approval of an
 expense by the employee's manager; then the tool that waits for a
 change and files through the door; then the measurements and the
 release. Its test, besides the plan's: an

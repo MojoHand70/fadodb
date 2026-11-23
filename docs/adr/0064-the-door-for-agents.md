@@ -1,6 +1,6 @@
 # ADR-0064: The door for agents
 
-- Status: Accepted; amended by ADR-0071 (an agent signs in at `/mcp` with a pass)
+- Status: Accepted; amended by ADR-0071 (an agent signs in at `/mcp` with a pass); the door at the server built on 2026-11-23, items 11 to 21
 - Date: 2026-11-16
 
 ## Context
@@ -239,6 +239,64 @@ folder. He accepted the record the same day.
    On 2026-11-17 the owner ruled: files from a named folder are
    wanted, as their own step after v0.6.0.
 
+## Settled while building the door at the server
+
+Built on 2026-11-23 as the owner's ruling 1 has it, the same tools at
+`/mcp`, with the passes of ADR-0071. Settled by me while building, each
+the owner's to strike:
+
+11. **One message to a POST, one JSON object to answer it.** The door
+    at `/mcp` never answers with a stream, which both forms of the
+    protocol allow a door to choose. Nothing it does streams: a tool is
+    one question and one answer.
+12. **No session.** The door keeps nothing between two requests, as the
+    revision of 2026-07-28 has it, and mints no session for the
+    revisions before, which lets a door keep none. A greeting is
+    answered and kept nowhere; a request of those revisions says its
+    revision in the header `MCP-Protocol-Version`, and one that says
+    none is taken for 2025-03-26, as the protocol says. A GET, for a
+    stream the door does not open, and a DELETE, for a session it does
+    not keep, are answered 405.
+13. **The headers of the modern form are held to its body.** A request
+    of 2026-07-28 names its revision in `MCP-Protocol-Version`, its
+    method in `Mcp-Method` and the tool it calls in `Mcp-Name`; one
+    that leaves a header out, or says something else than its body, is
+    refused 400 with -32020, and a revision the door does not speak
+    with -32022, as that revision asks.
+14. **A method the door does not have** is answered 404 in the modern
+    form, as that revision asks, and 200 with the error in the forms
+    before it, to which a 404 says that their session ended and makes
+    them greet again.
+15. **Every other error of the protocol is answered 200**, an unknown
+    tool and arguments that are no object among them, and so is a
+    command the database refuses, which is the answer of its tool, as
+    at `fadodb mcp`.
+16. **Who calls is asked as at `/v1/`**, with a key or a pass in the
+    header, and never with the session of a browser, which is for the
+    server's own pages. A request that proves nobody is refused 401
+    with `WWW-Authenticate: Bearer resource_metadata="…"`, naming
+    `/.well-known/oauth-protected-resource/mcp` when the server knows
+    the address it is reached at (ADR-0071, items 8 and 34); a server
+    that does not know it names none.
+17. **A page of another site is refused 403**, as the protocol asks of
+    a door at an address: a request whose `Origin` is not the server's
+    own address. A request from a program sends no `Origin`.
+18. **A tool runs as a command sent to `/v1/` does**: one of the
+    server's slots for commands, its time, and its refusals `timeout`
+    and `caller_left`. A notice that stops a call stops only a call of
+    the same caller, since without a session an id is the caller's
+    alone; a closed request stops its call as well.
+19. **The log and the counts.** A request to the door is a line of the
+    server's log with `"door":"mcp"`; a tool called is logged and
+    counted with its command, and any other request under `mcp`. The
+    counts gain the status 202, which a notice is answered with.
+20. **The server says where agents connect** when it starts, beside
+    where people sign in: `agents connect at <address>/mcp`.
+21. **Every tool is offered at `/mcp`.** `--read-only` and `--tools`
+    are for whoever starts `fadodb mcp`; at the server the rights of
+    the classes decide what each caller may do. The three commands
+    that are no tool (items 2 and 7) are none here either.
+
 ## Consequences
 
 - An agent is set up in two commands and a few lines of its program's
@@ -250,6 +308,8 @@ folder. He accepted the record the same day.
   agent's program reads once. `--tools` shortens it.
 - An agent hears of no change by itself until question 3 is ruled and
   built, and puts no file on a document until question 4 is.
+- An agent that cannot start a program, Claude on claude.ai among them,
+  reaches a server at `/mcp`, with a pass a person gives it or a key.
 - The door listed in a catalogue for people to find, and the door with
   the skills as one thing to install, are steps after this one, each
   on the owner's word.

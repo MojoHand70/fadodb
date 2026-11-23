@@ -113,13 +113,13 @@ row what the main branch adds for v0.7.0:
 
 | Works today | Comes later |
 |---|---|
-| classes, variables, formulas, exact money, dates | the door for agents at the server itself, at `/mcp` |
-| states, transitions, guards, automatic moves by time | a tool with which an agent waits for a change, and files through that door |
-| rules and actions, calls to other systems, exactly once | the engine's own indexes, and a decision that stands on what the document holds |
-| who may: access, rights, system groups, substitutions | an analytical engine for large reports |
-| versions, events, previews, filters, read-only SQL | the engine called from other languages than Go |
-| a server with its own users, groups and keys, and a door for agents (MCP) that an agent's program starts | Postgres as the store |
-| formulas in the browser, people signing in, apps, lists of other documents | |
+| classes, variables, formulas, exact money, dates | a tool with which an agent waits for a change, and files through the door for agents |
+| states, transitions, guards, automatic moves by time | the engine's own indexes, and a decision that stands on what the document holds |
+| rules and actions, calls to other systems, exactly once | an analytical engine for large reports |
+| who may: access, rights, system groups, substitutions | the engine called from other languages than Go |
+| versions, events, previews, filters, read-only SQL | Postgres as the store |
+| a server with its own users, groups and keys, and a door for agents (MCP) that an agent's program starts | |
+| formulas in the browser, people signing in, apps, lists of other documents, the door for agents at the server itself | |
 
 The [roadmap](../../ROADMAP.md) has the phases, the
 [changelog](../../CHANGELOG.md) what each release changed, and

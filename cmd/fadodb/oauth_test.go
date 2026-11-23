@@ -192,6 +192,21 @@ func TestTheChapterOnConnectingAClient(t *testing.T) {
 		t.Errorf("how the server gives passes: %s", meta)
 	}
 
+	// Where passes for the door for agents come from, which a request to
+	// it that proves nobody is told (ADR-0071, item 8).
+	_, meta = ask(t, web, "GET", base+"/.well-known/oauth-protected-resource/mcp", "", "")
+	if !strings.Contains(meta, `"resource":"`+base+`/mcp"`) || !strings.Contains(meta, `"authorization_servers":["`+base+`"]`) {
+		t.Errorf("where passes for /mcp come from: %s", meta)
+	}
+	if resp, err := web.Post(base+"/mcp", "application/json", strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"tools/list"}`)); err != nil {
+		t.Fatal(err)
+	} else {
+		resp.Body.Close()
+		if want := `Bearer resource_metadata="` + base + `/.well-known/oauth-protected-resource/mcp"`; resp.StatusCode != 401 || resp.Header.Get("WWW-Authenticate") != want {
+			t.Errorf("/mcp with no pass: %d, WWW-Authenticate %q", resp.StatusCode, resp.Header.Get("WWW-Authenticate"))
+		}
+	}
+
 	// The page that asks says what the chapter says.
 	request, page := ann.authorize(claude, testVerifier)
 	quote := between(text, `She reads: *"`, `"* She allows`)
@@ -244,6 +259,32 @@ func TestTheChapterOnConnectingAClient(t *testing.T) {
 			}
 		case "Claude's pass is sent to the commands":
 			code, body := whoami(claudes["access_token"].(string))
+			if code == 401 {
+				got = "refused, " + codeIn(body) + ": a pass is for one address"
+			}
+		case "Claude calls whoami at /mcp with its pass":
+			code, body := ask(t, web, "POST", base+"/mcp", claudes["access_token"].(string), `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"whoami"}}`)
+			var answered struct {
+				Result struct {
+					Content []struct{ Text string } `json:"content"`
+					IsError bool                    `json:"isError"`
+				} `json:"result"`
+			}
+			var who struct {
+				User struct {
+					ID string `json:"id"`
+				} `json:"user"`
+				For string `json:"for"`
+			}
+			if json.Unmarshal([]byte(body), &answered) == nil && len(answered.Result.Content) == 1 && !answered.Result.IsError &&
+				json.Unmarshal([]byte(answered.Result.Content[0].Text), &who) == nil && code == 200 {
+				got = "answered " + strings.Replace(who.User.ID, host, "claude.ai", 1) + ", acting for " + who.For
+			} else {
+				t.Errorf("Claude's whoami at /mcp: %d %s", code, body)
+			}
+		case "FadoFace's pass is sent to /mcp":
+			passes, _ := connected(t, ann, face)
+			code, body := ask(t, web, "POST", base+"/mcp", passes["access_token"].(string), `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"whoami"}}`)
 			if code == 401 {
 				got = "refused, " + codeIn(body) + ": a pass is for one address"
 			}

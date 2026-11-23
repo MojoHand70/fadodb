@@ -100,9 +100,9 @@ func (p *Pages) metadata(out *reply, r *http.Request, told *Request) {
 			"client_id_metadata_document_supported":          p.documents != nil,
 		}
 		answerJSON(out, http.StatusOK, m)
-	case WellKnownResource + store.AddressCommands:
+	case WellKnownResource + store.AddressCommands, WellKnownResource + store.AddressAgents:
 		answerJSON(out, http.StatusOK, map[string]any{
-			"resource":                 origin + store.AddressCommands,
+			"resource":                 origin + strings.TrimPrefix(r.URL.Path, WellKnownResource),
 			"authorization_servers":    []string{origin},
 			"bearer_methods_supported": []string{"header"},
 		})

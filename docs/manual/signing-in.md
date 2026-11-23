@@ -12,8 +12,8 @@ The story is Acme's. Olga is an administrator, and the first person
 who signs in. Ann is in finance.
 
 > **Status.** Passwords, the second step, sessions, a company's
-> sign-on and the passes of clients are built. The door for agents at
-> `/mcp`, which takes Claude's pass, is the next step of Phase 7.
+> sign-on, the passes of clients, and the door for agents at `/mcp`,
+> which takes Claude's pass, are built.
 
 ## The first password, on the machine
 
@@ -37,11 +37,12 @@ http://localhost:8080/auth/password?link=fadol_7GQ2M4XK0P_3ZD9…
 ```
 
 `--url` gives the address the server is reached at, when it is not
-`http://localhost:8080`. The server says where people sign in when it
-starts:
+`http://localhost:8080`. The server says where people sign in, and
+where agents connect, when it starts:
 
 ```
 fadodb serve: people sign in at http://127.0.0.1:8080/auth/signin
+fadodb serve: agents connect at http://127.0.0.1:8080/mcp
 ```
 
 ## Setting a password with a link
@@ -281,6 +282,7 @@ its document is given passes for `/mcp` alone.
 |---|---|
 | `/.well-known/oauth-authorization-server` | how passes are given: a code proven with PKCE (S256), clients that hold no secret, clients known by their document |
 | `/.well-known/oauth-protected-resource/v1` | where passes for the commands come from |
+| `/.well-known/oauth-protected-resource/mcp` | where passes for the door for agents come from |
 | `/auth/authorize` | where a client sends the person |
 | `/auth/allow` | the page that asks the person |
 | `/auth/token` | where a client exchanges its code for passes, and renews them |
@@ -292,6 +294,8 @@ its document is given passes for `/mcp` alone.
 | Ann allows Claude | Claude is given a pass for `/mcp`, as `ann~claude.ai` acting for Ann |
 | FadoFace sends `whoami` with its pass | answered `ann` |
 | Claude's pass is sent to the commands | refused, `unauthenticated`: a pass is for one address |
+| Claude calls `whoami` at `/mcp` with its pass | answered `ann~claude.ai`, acting for `ann` |
+| FadoFace's pass is sent to `/mcp` | refused, `unauthenticated`: a pass is for one address |
 | a code is exchanged without the proof it was asked with | refused, `invalid_grant` |
 | a code is exchanged a second time | refused, `invalid_grant`, and the grant ends |
 | a renewing pass is used a second time | refused, `invalid_grant`, and the grant ends: it was stolen |

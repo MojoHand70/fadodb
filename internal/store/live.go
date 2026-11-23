@@ -170,9 +170,15 @@ func (s *Store) LivePage(ctx context.Context, r LiveRead, opts ...Option) (*Live
 	}
 	q := cv.v.Query
 	var src *class
+	// lists are the lists of the document that a single value works
+	// figures out of (ADR-0081).
+	var lists []*cvar
 	if q == nil {
 		if len(r.Order) > 0 || r.Limit != 0 || r.Offset != 0 || len(r.Fields) > 0 {
 			return nil, hintf(CodeNotAllowed, cv.v.Name, cv.v.Name+" is one value and no list, so it has no order, limit, offset or fields", "leave them out")
+		}
+		if lists, e = s.figureLists(ctx, c, cv, opts); e != nil {
+			return nil, e
 		}
 	} else {
 		if src, e = s.class(q.Source); e != nil {
@@ -184,9 +190,15 @@ func (s *Store) LivePage(ctx context.Context, r LiveRead, opts ...Option) (*Live
 			return nil, e
 		}
 	}
-	val, on, err := s.liveOn(ctx, c, cv, id, o)
+	val, on, held, err := s.liveOn(ctx, c, cv, id, o, lists)
 	if err != nil {
 		return nil, err
+	}
+	if held != nil {
+		// The figures are asked beside the writer, as a list is.
+		if val, err = s.liveFigures(ctx, c, cv, held, o); err != nil {
+			return nil, err
+		}
 	}
 	if q == nil {
 		return &LiveValue{Value: val}, nil
@@ -196,19 +208,22 @@ func (s *Store) LivePage(ctx context.Context, r LiveRead, opts ...Option) (*Live
 
 // liveOn reads the document a live variable is asked of, for the caller,
 // on the writer's turn. It answers the value of a variable that is one
-// value, and for a list what its condition reads of the document.
-func (s *Store) liveOn(ctx context.Context, c *class, cv *cvar, id string, o options) (any, *query.On, error) {
+// value, and for a list what its condition reads of the document. A
+// value that works figures out of lists of the document (ADR-0081) is
+// not worked out here: held is then what its figures and its formula
+// need of the document, taken while the row is the writer's to read.
+func (s *Store) liveOn(ctx context.Context, c *class, cv *cvar, id string, o options, lists []*cvar) (any, *query.On, *liveHeld, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.closed {
-		return nil, nil, errf(CodeClosed, "", "the store is closed")
+		return nil, nil, nil, errf(CodeClosed, "", "the store is closed")
 	}
 	row, err := c.scanW(c.w.selectCurrent.QueryRowContext(ctx, id), false)
 	if err != nil {
 		if err == sql.ErrNoRows {
-			return nil, nil, noDocument(c, id)
+			return nil, nil, nil, noDocument(c, id)
 		}
-		return nil, nil, storageErr("read the document", err)
+		return nil, nil, nil, storageErr("read the document", err)
 	}
 	ctxOf := contextOf(o.principal, s.clock(o))
 	evalCtx := &ctxOf
@@ -231,39 +246,48 @@ func (s *Store) liveOn(ctx context.Context, c *class, cv *cvar, id string, o opt
 	}
 	if ok, _ := s.wev.may(c, ruleRead, row, evalCtx); !ok && !(c.brought && o.principal.content()) {
 		if !o.principal.content() {
-			return nil, nil, noDocument(c, id)
+			return nil, nil, nil, noDocument(c, id)
 		}
 		if e := past("the document "+id+" of "+c.cls.Name, "/access/read"); e != nil {
-			return nil, nil, e
+			return nil, nil, nil, e
 		}
 	}
-	// The read right of the variable, in the document's state (ADR-0041).
-	if c.rights != nil {
-		if rule := c.cells(row.state)[cv.idx].read; rule != nil {
-			if held, rerr := s.wev.allowed(c, rule, row, evalCtx); !held {
-				if !o.principal.content() || c.brought {
-					msg := fmt.Sprintf("%s may not read %s", who(o.principal), cv.v.Name)
-					if row.state != "" {
-						msg += " while the document is in " + row.state
-					}
-					if rerr != nil {
-						msg += ": the read right failed, " + guardFailure(rerr)
-					}
-					return nil, nil, hintf(CodeForbidden, cv.v.Name, msg, "the read right of "+cv.v.Name+", from the cell "+rule.Cell()+": "+ruleText(rule))
+	// The read right of a variable, in the document's state (ADR-0041).
+	mayRead := func(v *cvar) error {
+		if c.rights == nil {
+			return nil
+		}
+		rule := c.cells(row.state)[v.idx].read
+		if rule == nil {
+			return nil
+		}
+		if held, rerr := s.wev.allowed(c, rule, row, evalCtx); !held {
+			if !o.principal.content() || c.brought {
+				msg := fmt.Sprintf("%s may not read %s", who(o.principal), v.v.Name)
+				if row.state != "" {
+					msg += " while the document is in " + row.state
 				}
-				if e := past(cv.v.Name+" of the document "+id+" of "+c.cls.Name, rightRead(row.state, cv.v.Name)); e != nil {
-					return nil, nil, e
+				if rerr != nil {
+					msg += ": the read right failed, " + guardFailure(rerr)
 				}
+				return hintf(CodeForbidden, v.v.Name, msg, "the read right of "+v.v.Name+", from the cell "+rule.Cell()+": "+ruleText(rule))
+			}
+			if e := past(v.v.Name+" of the document "+id+" of "+c.cls.Name, rightRead(row.state, v.v.Name)); e != nil {
+				return e
 			}
 		}
+		return nil
 	}
-	if q := cv.v.Query; q != nil {
-		// What the condition reads of the document: the pointer to it, and
-		// the variables it names as THIS.name, taken while the row is the
-		// writer's to read.
+	if err := mayRead(cv); err != nil {
+		return nil, nil, nil, err
+	}
+	// What the condition of a list reads of the document: the pointer to
+	// it, and the variables it names as THIS.name, taken while the row is
+	// the writer's to read.
+	onOf := func(q *model.Query) (*query.On, error) {
 		scope, err := c.cls.Scope()
 		if err != nil {
-			return nil, nil, storageErr("read the variables of "+c.cls.Name, err)
+			return nil, storageErr("read the variables of "+c.cls.Name, err)
 		}
 		held := make(map[string]formula.Value, len(q.This))
 		for _, name := range q.This {
@@ -271,24 +295,56 @@ func (s *Store) liveOn(ctx context.Context, c *class, cv *cvar, id string, o opt
 				held[strings.ToUpper(name)] = row.vals[hv.leaf]
 			}
 		}
-		on := &query.On{Cond: q.Cond, Src: q.Src, Scope: scope, Ref: c.cls.Name + ":" + row.id,
+		return &query.On{Cond: q.Cond, Src: q.Src, Scope: scope, Ref: c.cls.Name + ":" + row.id,
 			Value: func(name string) (formula.Value, bool) {
 				v, ok := held[strings.ToUpper(name)]
 				return v, ok
-			}}
-		if err := s.logReadHeld(ctx, o, r); err != nil {
-			return nil, nil, err
+			}}, nil
+	}
+	if q := cv.v.Query; q != nil {
+		on, err := onOf(q)
+		if err != nil {
+			return nil, nil, nil, err
 		}
-		return nil, on, nil
+		if err := s.logReadHeld(ctx, o, r); err != nil {
+			return nil, nil, nil, err
+		}
+		return nil, on, nil, nil
+	}
+	if len(lists) > 0 {
+		// A figure over a list is the list's to its reader: whoever may
+		// not read the list of this document may not count it either.
+		held := &liveHeld{row: row, ctx: ctxOf, on: make(map[string]*query.On, len(lists))}
+		for _, lv := range lists {
+			if err := mayRead(lv); err != nil {
+				return nil, nil, nil, err
+			}
+			on, err := onOf(lv.v.Query)
+			if err != nil {
+				return nil, nil, nil, err
+			}
+			held.on[strings.ToUpper(lv.v.Name)] = on
+		}
+		// What the log says of the document's states is the writer's to
+		// read: it is told to the row here, for a formula that asks.
+		if cv.v.Formula.ReadsStates && !row.told {
+			if err := s.wev.tell(c, row); err != nil {
+				return nil, nil, nil, evalErr(cv.v.Name, err)
+			}
+		}
+		if err := s.logReadHeld(ctx, o, r); err != nil {
+			return nil, nil, nil, err
+		}
+		return nil, nil, held, nil
 	}
 	val, err := s.wev.run(c, cv.v.Formula, row, evalCtx)
 	if err != nil {
-		return nil, nil, evalErr(cv.v.Name, err)
+		return nil, nil, nil, evalErr(cv.v.Name, err)
 	}
 	if err := s.logReadHeld(ctx, o, r); err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
-	return valueOut(val), nil, nil
+	return valueOut(val), nil, nil, nil
 }
 
 // liveList asks the question a live list is, on the document read, and

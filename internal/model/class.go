@@ -539,7 +539,10 @@ func CompileIn(def *Definition, env Env) (*Class, Diagnostics) {
 				if v.Mode != ModeAuto {
 					mode = formula.ModeAny
 				}
-				if prog := bindAs(c, path+"/formula", v.Def.Formula, scope, mode, v.Type); prog != nil && readsOnlyItsDocument(c, path, v, prog) {
+				c.listsOf, c.listsFor = cls, v
+				prog := bindAs(c, path+"/formula", v.Def.Formula, scope, mode, v.Type)
+				c.listsOf, c.listsFor = nil, nil
+				if prog != nil && readsOnlyItsDocument(c, path, v, prog) {
 					v.Formula = prog
 					v.Deps = depsOf(prog)
 					v.Sources = sourcesOf(prog)
@@ -958,7 +961,9 @@ func inferTypes(c *collector, cls *Class, schemas *SchemaSet) {
 		if v.Mode != ModeAuto {
 			mode = formula.ModeAny
 		}
+		c.listsOf, c.listsFor = cls, v
 		prog, err := c.bind(v.Def.Formula, scopeOf(cls.Variables), mode)
+		c.listsOf, c.listsFor = nil, nil
 		if err != nil {
 			c.formulaErr(path+"/formula", err)
 			continue
@@ -970,7 +975,7 @@ func inferTypes(c *collector, cls *Class, schemas *SchemaSet) {
 		if !readsOnlyItsDocument(c, path, v, prog) {
 			continue
 		}
-		if c.readsClass(prog) {
+		if v.Mode != ModeLive && c.readsClass(prog) {
 			// The type of a stored value may not follow another class: it
 			// is the layout of this class's documents and of their history.
 			c.hint(CodeMissing, path+"/type", "a variable computed from the documents of a class declares its type, which must stay what it is when that class changes (ADR-0046)",
@@ -985,17 +990,57 @@ func inferTypes(c *collector, cls *Class, schemas *SchemaSet) {
 }
 
 // readsOnlyItsDocument refuses a live variable whose formula looks in a
-// table or at the documents of a class. The record lets it (ADR-0076,
-// item 5), with the reader's rights; until that is built a live formula
-// reads the values of its document, the caller, the clock, the state and
-// the life of the document.
+// table or at the documents of a class with LOOKUP. The record lets it
+// (ADR-0076, item 5), with the reader's rights; until that is built a
+// live formula reads the values of its document, the caller, the clock,
+// the state and the life of the document, and figures over the lists of
+// its document (ADR-0081), which are asked with the reader's rights.
 func readsOnlyItsDocument(c *collector, path string, v *Variable, prog *formula.Program) bool {
-	if v.Mode != ModeLive || len(prog.Queries) == 0 {
+	if v.Mode != ModeLive {
 		return true
 	}
-	c.hint(CodeNotSupported, path+"/formula", "a live variable that looks in a table or at the documents of a class is not built yet (ADR-0076)",
-		`until it is, a live formula reads its own document, the caller and the clock; a triggered variable looks things up: "mode": "triggered"`)
-	return false
+	for _, q := range prog.Queries {
+		if q.List == "" {
+			c.hint(CodeNotSupported, path+"/formula", "a live variable that looks in a table or at the documents of a class is not built yet (ADR-0076)",
+				`until it is, a live formula reads its own document, the caller and the clock, and counts and sums the lists of its document; a triggered variable looks things up: "mode": "triggered"`)
+			return false
+		}
+	}
+	return true
+}
+
+// listsOf gives the binder the lists of the class a variable belongs to
+// (ADR-0081): its live variables whose formula is a QUERY, each by its
+// name the class it lists. A live variable may work figures out of
+// them; any other is told why it may not. The listed class is found as
+// the source of a LOOKUP is, through the sources of the formula being
+// bound: so the class is noted as read, and one that is not known yet,
+// in a compilation that looks at one definition alone, leaves the
+// formula unbound and no finding.
+func listsOf(cls *Class, v *Variable, r *envSources) func(name string) (*formula.Source, bool) {
+	return func(name string) (*formula.Source, bool) {
+		lv, ok := cls.Variable(name)
+		if !ok || lv == v {
+			return nil, false
+		}
+		source := ""
+		switch {
+		case lv.Query != nil:
+			source = lv.Query.Source
+		case lv.queryCall != nil && len(lv.queryCall.Args) > 0:
+			if id, ok := lv.queryCall.Args[0].(*formula.Ident); ok {
+				source = id.Name
+			}
+		}
+		if source == "" {
+			return nil, false
+		}
+		src, ok := r.Source(source)
+		if !ok || !src.Class {
+			return nil, false
+		}
+		return src, true
+	}
 }
 
 // checkInferred applies the property checks a declared type would have

@@ -1,0 +1,305 @@
+package store
+
+import (
+	"strings"
+	"testing"
+
+	"github.com/MojoHand70/fadodb/internal/query"
+)
+
+// Acme's order with figures over the list of its invoices (ADR-0081):
+// how many there are, what they add up to, and which of them are filed.
+// Each figure is a live variable, worked out for whoever reads it.
+const figureOrder = `{
+ "name": "Order",
+ "title": "number",
+ "variables": {
+   "number":   {"type": "text", "required": true},
+   "customer": {"type": "text"},
+   "owner":    {"type": "text", "default": "USER()"},
+   "invoices": {"label": "Invoices", "mode": "live",
+                "formula": "QUERY(Invoice, {number, net, state, margin}, order = REF(), {number})"},
+   "count":    {"mode": "live", "formula": "COUNT(invoices)"},
+   "priced":   {"mode": "live", "formula": "COUNT(invoices.net)"},
+   "total":    {"mode": "live", "formula": "SUM(invoices.net)"},
+   "largest":  {"mode": "live", "formula": "MAX(invoices.net)"},
+   "smallest": {"mode": "live", "formula": "MIN(invoices.net)"},
+   "margins":  {"mode": "live", "formula": "SUM(invoices.margin)"},
+   "drafts":   {"mode": "live", "formula": "COUNTIF(invoices, state = \"draft\")"},
+   "filed":    {"mode": "live", "formula": "SUMIF(invoices, state <> \"draft\", net)"},
+   "top":      {"mode": "live", "formula": "MAXIF(invoices, state = \"draft\", net)"},
+   "low":      {"mode": "live", "formula": "MINIF(invoices, state = \"draft\", net)"},
+   "any":      {"mode": "live", "formula": "ANY(invoices, state = \"review\")"},
+   "all":      {"mode": "live", "formula": "ALL(invoices, state = \"draft\")"},
+   "mean":     {"mode": "live", "formula": "IF(COUNT(invoices) = 0, BLANK, SUM(invoices.net) / DECIMAL(COUNT(invoices), 0))"},
+   "words":    {"mode": "live", "formula": "IF(COUNT(invoices) = 0, \"none\", TEXT(COUNT(invoices)) & \" invoices\")"},
+   "mine":     {"mode": "live", "formula": "COUNTIF(invoices, owner = THIS.owner)"}
+ },
+ "states": {"initial": "open", "list": ["open", "closed"], "final": ["closed"]},
+ "transitions": [{"name": "close", "from": "open", "to": "closed"}],
+ "access": {"read": "INGROUP(\"sales\") OR INGROUP(\"finance\")", "create": "INGROUP(\"sales\")", "update": "owner = USER()", "delete": "FALSE"}
+}`
+
+// openFigures is openList with the order of figureOrder: ORD-17 has
+// FV-1 (1000.00) and FV-2 (250.00), which Jan wrote, and FV-3 (70.00),
+// which Piotr wrote; ORD-18 has Jan's FV-4 (5.00). Every margin is 1.00.
+func openFigures(t *testing.T) (*Store, func(order, variable string, who Principal) any) {
+	t.Helper()
+	s, ctx := openList(t)
+	if _, err := s.DefineClass(ctx, []byte(figureOrder), asSetup); err != nil {
+		t.Fatal(err)
+	}
+	return s, func(order, variable string, who Principal) any {
+		t.Helper()
+		v, err := s.Live(ctx, "Order", order, variable, As(who))
+		if err != nil {
+			t.Fatalf("%s of %s for %s: %v", variable, order, who.ID, err)
+		}
+		if v.List {
+			t.Fatalf("%s of %s is a list; want one value", variable, order)
+		}
+		return v.Value
+	}
+}
+
+// A figure over a list counts what its reader may read of the list, as
+// the list itself shows it (ADR-0081, item 3).
+func TestLiveFigure_ForTheReader(t *testing.T) {
+	_, read := openFigures(t)
+	for _, tc := range []struct {
+		order string
+		who   Principal
+		want  map[string]any
+	}{
+		{"ORD-17", liveJan, map[string]any{"count": 2.0, "priced": 2.0, "total": "1250.00 PLN", "largest": "1000.00 PLN", "smallest": "250.00 PLN", "mean": "625.000000 PLN", "words": "2 invoices", "mine": 2.0}},
+		{"ORD-17", livePiotr, map[string]any{"count": 1.0, "total": "70.00 PLN", "largest": "70.00 PLN", "smallest": "70.00 PLN", "mean": "70.000000 PLN", "words": "1 invoices", "mine": 0.0}},
+		{"ORD-17", liveEwa, map[string]any{"count": 3.0, "priced": 3.0, "total": "1320.00 PLN", "largest": "1000.00 PLN", "smallest": "70.00 PLN", "mean": "440.000000 PLN", "words": "3 invoices", "mine": 2.0}},
+		{"ORD-18", liveJan, map[string]any{"count": 1.0, "total": "5.00 PLN"}},
+		// A list with no rows: a count is zero, a sum of money, a least
+		// and a greatest are blank, and a formula says what it wants.
+		{"ORD-18", livePiotr, map[string]any{"count": 0.0, "priced": 0.0, "total": nil, "largest": nil, "smallest": nil, "mean": nil, "words": "none", "mine": 0.0, "any": false, "all": true}},
+	} {
+		for name, want := range tc.want {
+			if got := read(tc.order, name, tc.who); got != want {
+				t.Errorf("%s of %s for %s = %v (%T); want %v", name, tc.order, tc.who.ID, got, got, want)
+			}
+		}
+	}
+}
+
+// A column its reader may read in no state gives a blank, and a column
+// they may read counts as the list shows it (ADR-0081, item 3).
+func TestLiveFigure_AColumnTheReaderMayNotRead(t *testing.T) {
+	_, read := openFigures(t)
+	if got := read("ORD-17", "margins", liveEwa); got != "3.00 PLN" {
+		t.Errorf("the margins for finance = %v; want 3.00 PLN", got)
+	}
+	for _, who := range []Principal{liveJan, livePiotr} {
+		if got := read("ORD-17", "margins", who); got != nil {
+			t.Errorf("the margins for %s = %v; want blank: sales may not read a margin", who.ID, got)
+		}
+	}
+}
+
+// The figures with a condition, and the two that answer yes or no; each
+// follows the documents as they are when it is read, and none is kept.
+func TestLiveFigure_WithACondition(t *testing.T) {
+	s, read := openFigures(t)
+	ctx := t.Context()
+	for name, want := range map[string]any{"drafts": 2.0, "filed": nil, "top": "1000.00 PLN", "low": "250.00 PLN", "any": false, "all": true} {
+		if got := read("ORD-17", name, liveJan); got != want {
+			t.Errorf("%s with every invoice a draft = %v; want %v", name, got, want)
+		}
+	}
+	if _, err := s.Transition(ctx, "Invoice", "FV-1", "file", nil, As(liveJan)); err != nil {
+		t.Fatal(err)
+	}
+	for name, want := range map[string]any{"drafts": 1.0, "filed": "1000.00 PLN", "top": "250.00 PLN", "low": "250.00 PLN", "any": true, "all": false} {
+		if got := read("ORD-17", name, liveJan); got != want {
+			t.Errorf("%s after FV-1 was filed = %v; want %v", name, got, want)
+		}
+	}
+	// Ewa sees Piotr's draft too.
+	if got := read("ORD-17", "drafts", liveEwa); got != 2.0 {
+		t.Errorf("the drafts for finance = %v; want 2", got)
+	}
+	// Kept nowhere: the order is at the version it was made at, and a
+	// read of it answers no figure.
+	d, err := s.Get(ctx, "Order", "ORD-17", As(liveJan))
+	if err != nil || d.Version != 1 {
+		t.Fatalf("the order: %+v, %v; want version 1", d, err)
+	}
+	for _, name := range []string{"count", "total", "drafts", "any"} {
+		if has(d, name) {
+			t.Errorf("a read of the order answers %s", name)
+		}
+	}
+}
+
+// Who may not read the order, the list or the class it lists gets no
+// figure of it.
+func TestLiveFigure_WhoMayRead(t *testing.T) {
+	s, _ := openFigures(t)
+	ctx := t.Context()
+	nobody := Principal{ID: "olaf", Groups: []string{"warehouse"}}
+	if _, err := s.Live(ctx, "Order", "ORD-17", "count", As(nobody)); err == nil || err.(*Error).Code != CodeUnknownDocument {
+		t.Errorf("a figure of an order its reader may not see: %v; want %s", err, CodeUnknownDocument)
+	}
+	// A figure has no page: it is one value.
+	if _, err := s.LivePage(ctx, LiveRead{Class: "Order", ID: "ORD-17", Variable: "count", Limit: 5}, As(liveJan)); err == nil || err.(*Error).Code != CodeNotAllowed {
+		t.Errorf("a figure asked with a limit: %v; want %s", err, CodeNotAllowed)
+	}
+	// The read right of the list holds for a figure over it.
+	guarded := strings.Replace(figureOrder, `"access":`, `"rights": {"*": {"invoices": {"read": ["finance"]}}}, "access":`, 1)
+	if _, err := s.DefineClass(ctx, []byte(guarded), asSetup); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Live(ctx, "Order", "ORD-17", "count", As(liveJan)); err == nil || err.(*Error).Code != CodeForbidden || err.(*Error).Variable != "invoices" {
+		t.Errorf("a figure over a list its reader may not read: %v; want %s on invoices", err, CodeForbidden)
+	}
+	if v, err := s.Live(ctx, "Order", "ORD-17", "count", As(liveEwa)); err != nil || v.Value != 3.0 {
+		t.Errorf("the same for finance: %+v, %v; want 3", v, err)
+	}
+}
+
+// What a figure may be is checked when its class is defined.
+func TestLiveFigure_RefusedWhenDefined(t *testing.T) {
+	s, ctx := openList(t)
+	for _, tc := range []struct {
+		name, variable, code, says string
+	}{
+		{"a figure that is kept", `"x": {"type": "number", "mode": "triggered", "on": ["refresh"], "formula": "COUNT(invoices)"}`, "bad_formula", "stands only in a live variable"},
+		{"a figure in a computed value", `"x": {"type": "number", "formula": "COUNT(invoices)"}`, "bad_formula", "stands only in a live variable"},
+		{"a sum of a list and no column", `"x": {"mode": "live", "formula": "SUM(invoices)"}`, "bad_formula", "SUM takes a column of the list"},
+		{"a column the listed class has not", `"x": {"mode": "live", "formula": "SUM(invoices.nothing)"}`, "bad_formula", "the list invoices has no column nothing"},
+		{"a sum of texts", `"x": {"mode": "live", "formula": "SUM(invoices.number)"}`, "bad_formula", "must be a number, got text"},
+		{"a condition that is none", `"x": {"mode": "live", "formula": "COUNTIF(invoices, net)"}`, "bad_formula", "must be a condition"},
+		{"a condition over what the listed class has not", `"x": {"mode": "live", "formula": "COUNTIF(invoices, nothing = 1)"}`, "bad_formula", "unknown column nothing of Invoice"},
+		{"the state of the document in a condition", `"x": {"mode": "live", "formula": "COUNTIF(invoices, STATE() = \"paid\")"}`, "bad_formula", "STATE() is a function of the document the formula belongs to"},
+		{"a function of a life in a condition", `"x": {"mode": "live", "formula": "COUNTIF(invoices, CREATEDBY() = USER())"}`, "bad_formula", "a function of a document's life"},
+		{"a figure over what is no list", `"x": {"mode": "live", "formula": "COUNTIF(number, TRUE)"}`, "bad_formula", "the first argument is a list of the document"},
+		{"a figure with too little", `"x": {"mode": "live", "formula": "SUMIF(invoices, TRUE)"}`, "bad_formula", "SUMIF takes 3 arguments, got 2"},
+		{"a figure inside a figure", `"x": {"mode": "live", "formula": "COUNTIF(invoices, net > SUM(invoices.net))"}`, "bad_formula", "inside another's arguments"},
+		{"a lookup beside a figure", `"x": {"mode": "live", "formula": "COUNT(invoices) + LOOKUP(Invoice, COUNT(id), TRUE)"}`, "not_supported", "is not built yet (ADR-0076)"},
+		{"another live value", `"y": {"mode": "live", "formula": "COUNT(invoices)"}, "x": {"mode": "live", "formula": "y + 1"}`, "not_allowed", "y is a live variable"},
+	} {
+		def := `{"name": "Order", "title": "number", "variables": {"number": {"type": "text", "required": true}, "customer": {"type": "text"}, "owner": {"type": "text", "default": "USER()"},
+		  "invoices": {"mode": "live", "formula": "QUERY(Invoice, {number, net, state, margin}, order = REF(), {number})"}, ` + tc.variable + `},
+		  "states": {"initial": "open", "list": ["open", "closed"], "final": ["closed"]}, "transitions": [{"name": "close", "from": "open", "to": "closed"}]}`
+		_, err := s.DefineClass(ctx, []byte(def), asSetup)
+		if err == nil {
+			t.Errorf("%s: the class was taken", tc.name)
+			continue
+		}
+		if text := err.Error(); !strings.Contains(text, tc.code) || !strings.Contains(text, tc.says) {
+			t.Errorf("%s: %v; want %s, %q", tc.name, err, tc.code, tc.says)
+		}
+	}
+}
+
+// The listed class may not lose a column a figure names, and a database
+// opened again answers the figures as before.
+func TestLiveFigure_TheSourceKeepsWhatIsCounted(t *testing.T) {
+	s, path := openStore(t, Options{})
+	ctx := t.Context()
+	const invoice = `{"name": "Invoice", "title": "number", "variables": {"number": {"type": "text"}, "order": {"type": "ref", "class": "Order"}, "net": {"type": "money(2)"}, "paid": {"type": "bool"}},
+	  "states": {"initial": "draft", "list": ["draft"]}, "access": {"read": "TRUE", "create": "TRUE", "update": "TRUE", "delete": "FALSE"}}`
+	const order = `{"name": "Order", "title": "number", "variables": {"number": {"type": "text"},
+	  "invoices": {"mode": "live", "formula": "QUERY(Invoice, {number}, order = REF())"},
+	  "open": {"mode": "live", "formula": "SUMIF(invoices, NOT(paid), net)"}},
+	  "states": {"initial": "open", "list": ["open"]}, "access": {"read": "TRUE", "create": "TRUE", "update": "TRUE", "delete": "FALSE"}}`
+	if _, err := s.DefineClasses(ctx, [][]byte{[]byte(order), []byte(invoice)}, asSetup); err != nil {
+		t.Fatal(err)
+	}
+	// Neither net nor paid is a column of the list; the figure names
+	// both, so Invoice keeps both.
+	for _, gone := range []string{`, "net": {"type": "money(2)"}`, `, "paid": {"type": "bool"}`} {
+		if _, err := s.DefineClass(ctx, []byte(strings.Replace(invoice, gone, "", 1)), asSetup); err == nil {
+			t.Errorf("Invoice was defined anew without %s, which a figure of Order names", gone)
+		}
+	}
+	if _, err := s.Create(ctx, "Order", Values{"number": "ORD-1"}, As(liveJan), WithID("ORD-1")); err != nil {
+		t.Fatal(err)
+	}
+	for _, inv := range []Values{{"number": "A", "net": "10.00 PLN", "paid": true}, {"number": "B", "net": "7.50 PLN"}, {"number": "C", "net": "2.50 PLN", "paid": false}} {
+		inv["order"] = "Order:ORD-1"
+		if _, err := s.Create(ctx, "Invoice", inv, As(liveJan)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if v, err := s.Live(ctx, "Order", "ORD-1", "open", As(liveJan)); err != nil || v.Value != "10.00 PLN" {
+		t.Fatalf("what is open of ORD-1: %+v, %v; want 10.00 PLN", v, err)
+	}
+	if err := s.Close(); err != nil {
+		t.Fatal(err)
+	}
+	again, err := Open(path, Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer again.Close()
+	if v, err := again.Live(ctx, "Order", "ORD-1", "open", As(liveJan)); err != nil || v.Value != "10.00 PLN" {
+		t.Errorf("the same after the database was opened again: %+v, %v", v, err)
+	}
+}
+
+// A figure is one statement, and it finds the rows of its list as the
+// list does: through the index of the pointer (ADR-0081, item 2).
+func TestLiveFigure_SeeksTheIndex(t *testing.T) {
+	s, _ := openStore(t, Options{})
+	ctx := t.Context()
+	if _, err := s.DefineClasses(ctx, [][]byte{
+		[]byte(`{"name": "Order", "title": "number", "variables": {"number": {"type": "text"},
+		  "invoices": {"mode": "live", "formula": "QUERY(Invoice, {number}, order = REF())"},
+		  "total": {"mode": "live", "formula": "SUM(invoices.net)"}}, "states": {"initial": "open", "list": ["open"]}, "access": {"read": "TRUE", "create": "TRUE", "update": "TRUE", "delete": "FALSE"}}`),
+		[]byte(`{"name": "Invoice", "title": "number", "variables": {"number": {"type": "text"}, "order": {"type": "ref", "class": "Order", "index": true}, "net": {"type": "decimal(2)"}},
+		  "states": {"initial": "draft", "list": ["draft"]}, "access": {"read": "TRUE", "create": "TRUE", "update": "TRUE", "delete": "FALSE"}}`),
+	}, asSetup); err != nil {
+		t.Fatal(err)
+	}
+	for _, o := range []string{"ORD-1", "ORD-2"} {
+		if _, err := s.Create(ctx, "Order", Values{"number": o}, As(liveJan), WithID(o)); err != nil {
+			t.Fatal(err)
+		}
+		for i := 0; i < 40; i++ {
+			if _, err := s.Create(ctx, "Invoice", Values{"number": "FV", "order": "Order:" + o, "net": "1.25"}, As(liveJan)); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	if v, err := s.Live(ctx, "Order", "ORD-1", "total", As(liveJan)); err != nil || v.Value != "50.00" {
+		t.Fatalf("the total of ORD-1: %+v, %v; want 50.00", v, err)
+	}
+	// The rows of the figure are the rows of the list for the reader:
+	// SQLite is asked how it finds them.
+	c, _ := s.class("Order")
+	src, _ := s.class("Invoice")
+	o := options{principal: liveJan}
+	_, on, _, err := s.liveOn(ctx, c, c.byName["INVOICES"], "ORD-1", o, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	read := *on
+	read.Reads = []string{"net"}
+	plan, err := query.CompileOn(Filter{Class: "Invoice"}, &read, src.cls, s.sources(), caller(o, src))
+	if err != nil {
+		t.Fatal(err)
+	}
+	rows, err := s.db.QueryContext(ctx, `EXPLAIN QUERY PLAN SELECT SUM("net") FROM (SELECT * FROM "Invoice" WHERE `+plan.Where+`)`, append(append([]any{}, plan.Args...), s.contextArgs(o)...)...)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows.Close()
+	var how []string
+	for rows.Next() {
+		var id, parent, unused int
+		var detail string
+		if err := rows.Scan(&id, &parent, &unused, &detail); err != nil {
+			t.Fatal(err)
+		}
+		how = append(how, detail)
+	}
+	if text := strings.Join(how, "; "); !strings.Contains(text, "doc_Invoice_order") || strings.Contains(text, "SCAN") {
+		t.Errorf("the figure finds its rows by %q; want the index doc_Invoice_order and no scan", text)
+	}
+}

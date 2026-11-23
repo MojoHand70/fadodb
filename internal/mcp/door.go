@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"sync"
 
 	"github.com/MojoHand70/fadodb/internal/command"
 )
@@ -15,6 +16,10 @@ import (
 // answered: the answer of the command, or, with refused set, its
 // refusal as the database wrote it. An error says that no answer came
 // through, so that nobody knows whether the command was carried out.
+//
+// The door that an agent's program starts has one Send, for the user
+// whose key it was given. The door at the server itself is given the
+// Send of each request, for whoever that request proves to be.
 type Send func(ctx context.Context, name string, object []byte) (answer []byte, refused bool, err error)
 
 // Options say what a door offers.
@@ -29,6 +34,10 @@ type Options struct {
 	ReadOnly bool
 	// Only names the commands to offer; every command when it is empty.
 	Only []string
+	// AtServer says the door stands at the server itself, at /mcp, where
+	// each request proves who sends it, and not in a program that was
+	// given the key of one user.
+	AtServer bool
 }
 
 // Withheld answers why the door offers a command as no tool, and "" for
@@ -111,9 +120,17 @@ type Door struct {
 	listed json.RawMessage
 	// readOnly and narrowed say why a command is no tool of this door.
 	readOnly, narrowed bool
+
+	// running are the calls of tools under way that came over HTTP, by
+	// who sent them and the id of their request, each with what stops
+	// it: a notice that stops a call names only the id.
+	mu      sync.Mutex
+	running map[string]*underway
 }
 
-// New makes a door that sends its commands through send.
+// New makes a door that sends its commands through send. A door that is
+// asked only over HTTP, with Exchange, which is given the Send of each
+// request, is made with none.
 func New(send Send, o Options) (*Door, error) {
 	only := map[string]bool{}
 	for _, name := range o.Only {
@@ -130,6 +147,7 @@ func New(send Send, o Options) (*Door, error) {
 	}
 	d := &Door{
 		send:     send,
+		running:  map[string]*underway{},
 		tools:    map[string]bool{},
 		readOnly: o.ReadOnly,
 		narrowed: len(only) > 0,
@@ -245,7 +263,11 @@ func says(o Options, tools map[string]bool) string {
 	if o.Database != "" {
 		b.WriteString(" at " + o.Database)
 	}
-	b.WriteString(", sent as the user whose key this door was given.")
+	if o.AtServer {
+		b.WriteString(", sent as whoever each request proves to be: the agent a person connected acts for that person, with that person's groups, and a key is its user's own.")
+	} else {
+		b.WriteString(", sent as the user whose key this door was given.")
+	}
 	if tools["whoami"] {
 		b.WriteString(" whoami answers who that user is.")
 	}
@@ -296,8 +318,8 @@ func keyed(tools map[string]bool) []string {
 
 // call sends a command and answers the text of a tool's answer, and
 // whether it is an error.
-func (d *Door) call(ctx context.Context, name string, object []byte) (string, bool) {
-	answer, refused, err := d.send(ctx, name, object)
+func (d *Door) call(ctx context.Context, send Send, name string, object []byte) (string, bool) {
+	answer, refused, err := send(ctx, name, object)
 	if err != nil {
 		return noAnswer(name, err), true
 	}

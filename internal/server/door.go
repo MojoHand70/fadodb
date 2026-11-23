@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/MojoHand70/fadodb/internal/command"
+	"github.com/MojoHand70/fadodb/internal/mcp"
 	"github.com/MojoHand70/fadodb/internal/store"
 )
 
@@ -113,6 +114,21 @@ type Options struct {
 	// Report, when set, is called once for every request, after it was
 	// answered. It is how a program writes its log and counts.
 	Report func(Request)
+	// Agents opens the door for agents at the server itself, at /mcp
+	// (ADR-0064, item 1): every command a tool, in the Model Context
+	// Protocol over HTTP, for callers who prove who they are as they do
+	// at /v1/, with a key or a pass, and never with the session of a
+	// browser. Version is the version of the program, which the door
+	// tells an agent's program.
+	Agents  bool
+	Version string
+	// Origin, when set, answers the address a request reached the server
+	// at, as people reach it: a scheme and a host, such as
+	// https://fadodb.acme.example, or false when the server does not know
+	// it. The door for agents names with it where passes come from, when
+	// it refuses a request that proves nobody (ADR-0071, item 8), and
+	// takes a request from a page of that address alone.
+	Origin func(r *http.Request) (string, bool)
 }
 
 // Request is what a door tells of one request (ADR-0059, item 9). It
@@ -151,6 +167,10 @@ type Request struct {
 	Stream  bool
 	Lasted  time.Duration
 	Entries int
+	// Agents says the request came to the door for agents, at /mcp.
+	// Command is then the command of the tool it called, or mcp for a
+	// request that called none.
+	Agents bool
 }
 
 // Door is the HTTP door of one database. It is an http.Handler, safe for
@@ -180,6 +200,10 @@ type Door struct {
 	mu      sync.Mutex
 	streams map[*subscription]struct{}
 	ended   bool
+	// agents is the door for agents, nil when it is not open, and origin
+	// the address the server is reached at.
+	agents *mcp.Door
+	origin func(r *http.Request) (string, bool)
 }
 
 // New makes the door of a database.
@@ -212,7 +236,16 @@ func New(db Database, o Options) (*Door, error) {
 	if l.Messages == 0 {
 		l.Messages = DefaultMessages
 	}
+	var agents *mcp.Door
+	if o.Agents {
+		var err error
+		if agents, err = mcp.New(nil, mcp.Options{Version: o.Version, AtServer: true}); err != nil {
+			return nil, err
+		}
+	}
 	return &Door{
+		agents:   agents,
+		origin:   o.Origin,
 		db:       db,
 		who:      o.Who,
 		limits:   l,
@@ -259,6 +292,10 @@ func (d *Door) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}()
 
+	if r.URL.Path == AddressAgents && d.agents != nil {
+		d.serveAgents(out, r, &told)
+		return
+	}
 	if !strings.HasPrefix(r.URL.Path, prefix) {
 		told.Code = command.CodeUnknownCommand
 		out.refusal(Status(told.Code), &store.Error{
@@ -351,16 +388,22 @@ func (d *Door) command(out *reply, r *http.Request, told *Request, name string) 
 		out.refusal(Status(refusal.Code), refusal)
 		return
 	}
+	out.send(d.run(r.Context(), p, name, object, told))
+}
 
-	ctx, cancel := context.WithTimeout(r.Context(), d.limits.CommandTime)
+// run runs a command as p, for as long as the door lets one run, and
+// answers the status and the body of the answer: the command's own, its
+// refusal, or the door's refusal of a command that was stopped. told is
+// told the code.
+func (d *Door) run(ctx context.Context, p store.Principal, name string, object []byte, told *Request) (int, []byte) {
+	ctx, cancel := context.WithTimeout(ctx, d.limits.CommandTime)
 	answer, err := d.db.Exec(ctx, p, name, object)
 	// Why the command was told to stop, if it was: its time was up, or
 	// the request it came in was closed.
 	why := ctx.Err()
 	cancel()
 	if err == nil {
-		out.send(http.StatusOK, answer)
-		return
+		return http.StatusOK, answer
 	}
 	code := command.Code(err)
 	// A command that was stopped fails in the engine or in its storage;
@@ -368,12 +411,11 @@ func (d *Door) command(out *reply, r *http.Request, told *Request, name string) 
 	broke := code == command.CodeInternal || code == store.CodeStorage
 	if why == context.DeadlineExceeded && (broke || errors.Is(err, context.DeadlineExceeded)) {
 		told.Code = CodeTimeout
-		out.refusal(Status(CodeTimeout), &store.Error{
+		return Status(CodeTimeout), refusalText(&store.Error{
 			Code:    CodeTimeout,
 			Message: "the command ran longer than " + d.limits.CommandTime.String() + ", the longest the server lets one run, and was stopped",
 			Hint:    "a command that is one commit wrote nothing; migrate and drain commit as they go and keep what they had done",
 		})
-		return
 	}
 	// A command whose caller left is stopped the same way. Nobody reads
 	// the reply: the code is for the log and the counts, which would
@@ -382,18 +424,17 @@ func (d *Door) command(out *reply, r *http.Request, told *Request, name string) 
 	// caller left.
 	if why == context.Canceled && (broke || errors.Is(err, context.Canceled)) && !d.stops() {
 		told.Code = CodeCallerLeft
-		out.refusal(Status(CodeCallerLeft), &store.Error{
+		return Status(CodeCallerLeft), refusalText(&store.Error{
 			Code:    CodeCallerLeft,
 			Message: "the caller closed the request before the command ended, and the command was stopped",
 			Hint:    "a command that is one commit wrote nothing; migrate and drain commit as they go and keep what they had done",
 		})
-		return
 	}
 	told.Code = code
 	if code == command.CodeInternal {
 		told.Err = err
 	}
-	out.send(Status(code), answer)
+	return Status(code), answer
 }
 
 // notSentWith refuses a request that has not the method its address
@@ -562,11 +603,16 @@ func (o *reply) send(status int, answer []byte) {
 // refusal writes a refusal of the door's own, in the shape of every
 // refusal: {"error": …}.
 func (o *reply) refusal(status int, e *store.Error) {
+	o.send(status, refusalText(e))
+}
+
+// refusalText is a refusal of the door's own, written.
+func refusalText(e *store.Error) []byte {
 	text, err := command.Marshal(struct {
 		Error *store.Error `json:"error"`
 	}{e})
 	if err != nil {
 		text = []byte(`{"error":{"code":"internal","message":"the command failed in the engine; the program that runs it has the words"}}`)
 	}
-	o.send(status, text)
+	return text
 }

@@ -1142,7 +1142,9 @@ door for agents is `fadodb mcp` (ADR-0064,
 [the door for agents](manual/the-door-for-agents.md)): a program an
 agent's program starts, which offers each command as a tool of the
 Model Context Protocol and sends each call to a server with the key of
-a user.
+a user; and the same door at the server itself, `/mcp`, where each
+request proves who sends it with a pass or a key and its tool runs as
+a command sent to `/v1/` does.
 
 > What is built today: the Go call `Exec` takes the name of a command
 > and its JSON object and answers one JSON object; and the package

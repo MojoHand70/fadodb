@@ -69,7 +69,9 @@ for him to veto:
 - **That a column a formula uses keeps even a type that would still
   work** (item 3). Dan cannot widen `rate` from four places to six
   while Expense reads it. The other way: the engine recompiles the
-  class against the new type, and refuses only what breaks.
+  class against the new type, and refuses only what breaks. Put to
+  him on 2026-11-23, after this was built; his ruling: "no, keep it as
+  built". A column a formula or a rule uses keeps its type exactly.
 - **That the key does not change** (item 5). The other way: a new key
   is taken where the rows are still told apart by it.
 

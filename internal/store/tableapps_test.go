@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 
@@ -198,5 +199,116 @@ func TestAddColumns_ATableInUse(t *testing.T) {
 	}
 	if rows, err := again.TableRows(ctx, "Rates", asSetup); err != nil || len(rows) != 3 {
 		t.Fatalf("the rows after an open: %v, %v", rows, err)
+	}
+}
+
+// TestRemove_RowsAndTables holds ADR-0082: rows are removed by their keys,
+// all of them or none, as the table's write rule lets; a table is taken
+// away with its rows and its words by a designer, unless a class reads it
+// or a rule writes it; and a table made again under its name goes on from
+// its versions.
+func TestRemove_RowsAndTables(t *testing.T) {
+	s, path := openStore(t, Options{})
+	ctx := context.Background()
+	setupTables(t, s)
+	if _, err := s.defineOpen(ctx, []byte(order), asSetup); err != nil {
+		t.Fatal(err)
+	}
+	// Rows by their keys: a key the table lacks removes nothing.
+	if n, err := s.DeleteRows(ctx, "Rates", []Values{{"code": "EUR"}, {"code": "XXX"}}); err != nil || n != 1 {
+		t.Fatalf("two keys, one of them in the table: %d, %v", n, err)
+	}
+	if rows, err := s.TableRows(ctx, "Rates", asSetup); err != nil || len(rows) != 1 || rows[0]["code"] != "USD" {
+		t.Fatalf("the rows after the delete: %v, %v", rows, err)
+	}
+	// A key names every column of the table's key and no other; one that
+	// does not refuses them all, and nothing is removed.
+	var refusal *Error
+	if _, err := s.DeleteRows(ctx, "Prices", []Values{{"sku": "B2", "min_qty": 1}, {"sku": "A1"}}); !errors.As(err, &refusal) || refusal.Code != CodeRequired || refusal.Variable != "Prices[1].min_qty" {
+		t.Fatalf("a key without all its columns: %v", err)
+	}
+	if _, err := s.DeleteRows(ctx, "Rates", []Values{{"code": "USD", "rate": "1"}}); !errors.As(err, &refusal) || refusal.Code != CodeUnknownVariable {
+		t.Fatalf("a key with a column outside the key: %v", err)
+	}
+	if rows, _ := s.TableRows(ctx, "Prices", asSetup); len(rows) != 3 {
+		t.Fatalf("a refused delete removed rows: %v", rows)
+	}
+	if n, err := s.DeleteRows(ctx, "Prices", []Values{{"sku": "A1", "min_qty": 10}}); err != nil || n != 1 {
+		t.Fatalf("a row of a key of two columns: %d, %v", n, err)
+	}
+	// The table's write rule is asked, as for an import.
+	if _, err := s.DefineTable(ctx, []byte(`{"name": "Kept", "columns": {"k": "text"}, "key": ["k"], "access": {"read": "TRUE", "write": "INGROUP(\"treasury\")"}}`), asSetup); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.DeleteRows(ctx, "Kept", []Values{{"k": "a"}}, As(Principal{ID: "ann", Kind: ActorPerson})); !errors.As(err, &refusal) || refusal.Code != CodeForbidden {
+		t.Fatalf("somebody the write rule does not let through deleted rows: %v", err)
+	}
+
+	// A table a class reads, or a rule of a class writes, is not removed.
+	if err := s.RemoveTable(ctx, "rates", asSetup); !errors.As(err, &refusal) || refusal.Code != CodeNotAllowed || !strings.Contains(refusal.Message, "the class Order reads") {
+		t.Fatalf("removing a table a class reads: %v", err)
+	}
+	if _, err := s.DefineTable(ctx, []byte(`{"name": "Fed", "columns": {"k": "text"}, "key": ["k"], "access": {"read": "TRUE", "write": "TRUE"}}`), asSetup); err != nil {
+		t.Fatal(err)
+	}
+	feeds := `{"name": "Feeds", "variables": {"c": {"type": "text"}}, "states": {"initial": "a", "list": ["a", "b"]}, "transitions": [{"name": "go", "from": "a", "to": "b"}],
+	  "rules": [{"on": "transition", "name": "go", "do": [{"action": "table.insert", "table": "Fed", "row": {"k": "c"}}]}]}`
+	if _, err := s.defineOpen(ctx, []byte(feeds), asSetup); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.RemoveTable(ctx, "Fed", asSetup); !errors.As(err, &refusal) || refusal.Code != CodeNotAllowed || !strings.Contains(refusal.Message, "a rule of the class Feeds writes") {
+		t.Fatalf("removing a table a rule writes: %v", err)
+	}
+	// Somebody who is no designer removes no table.
+	if err := s.RemoveTable(ctx, "Kept", As(Principal{ID: "ann", Kind: ActorPerson})); !errors.As(err, &refusal) || refusal.Code != CodeForbidden {
+		t.Fatalf("somebody who is no designer removed a table: %v", err)
+	}
+	// Scratch goes, with its rows and its words; made again, it is its next version.
+	for _, def := range []string{`{"name": "Scratch", "columns": {"k": "text"}, "key": ["k"]}`, `{"name": "Scratch", "columns": {"k": "text", "v": "text"}, "key": ["k"]}`} {
+		if _, err := s.defineOpenTable(ctx, []byte(def), asSetup); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := s.ImportRows(ctx, "Scratch", []Values{{"k": "a", "v": "b"}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.DefineWords(ctx, []byte(`{"table": "Scratch", "language": "pl", "label": "Brudnopis"}`), asSetup); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.RemoveTable(ctx, "SCRATCH", asSetup); err != nil {
+		t.Fatalf("removing a table nothing reads: %v", err)
+	}
+	if _, ok := s.Table("Scratch"); ok || slices.Contains(s.Tables(), "Scratch") {
+		t.Fatalf("the table is still there: %v", s.Tables())
+	}
+	if _, err := s.TableRows(ctx, "Scratch", asSetup); !errors.As(err, &refusal) || refusal.Code != CodeUnknownTable {
+		t.Fatalf("the rows of a removed table: %v", err)
+	}
+	if err := s.RemoveTable(ctx, "Scratch", asSetup); !errors.As(err, &refusal) || refusal.Code != CodeUnknownTable {
+		t.Fatalf("removing it again: %v", err)
+	}
+	if got := s.ListWords(WordsOf{Table: "Scratch"}); len(got) != 0 {
+		t.Fatalf("the words of a removed table are still there: %v", got)
+	}
+	again, err := s.defineOpenTable(ctx, []byte(`{"name": "Scratch", "columns": {"k": "text"}, "key": ["k"]}`), asSetup)
+	if err != nil || again.Version != 3 {
+		t.Fatalf("the table made again: %+v, %v", again, err)
+	}
+	if rows, err := s.TableRows(ctx, "Scratch", asSetup); err != nil || len(rows) != 0 {
+		t.Fatalf("the table made again holds rows: %v, %v", rows, err)
+	}
+	if err := s.Close(); err != nil {
+		t.Fatal(err)
+	}
+	reopened, err := Open(path, Options{Now: (&clock{now: start}).Now, Outbox: OutboxOptions{Manual: true}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reopened.Close()
+	if tbl, ok := reopened.Table("Scratch"); !ok || tbl.Version != 3 {
+		t.Fatalf("the table made again, after an open: %+v", tbl)
+	}
+	if versions, err := reopened.Definitions(ctx, DefinitionTable, "Scratch"); err != nil || len(versions) != 3 {
+		t.Fatalf("the versions of Scratch: %v, %v", versions, err)
 	}
 }

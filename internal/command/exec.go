@@ -834,6 +834,16 @@ func runImportRows(c *call) error {
 	return c.answer("imported", n, err)
 }
 
+// runDeleteRows removes rows of a table by their keys (ADR-0082).
+func runDeleteRows(c *call) error {
+	keys, e := c.objects("keys")
+	if e != nil {
+		return e
+	}
+	n, err := c.s.DeleteRows(c.ctx, c.text("table"), keys, c.opts...)
+	return c.answer("deleted", n, err)
+}
+
 func runPreviewAction(c *call) error {
 	args, e := c.values("args")
 	if e != nil {
@@ -978,6 +988,9 @@ func runGetBundle(c *call) error {
 func runListWords(c *call) error { return c.answer("words", list(c.s.ListWords(c.wordsOf())), nil) }
 
 func runRemoveWords(c *call) error { return c.empty(c.s.RemoveWords(c.ctx, c.wordsOf(), c.opts...)) }
+
+// runRemoveTable takes a table away (ADR-0082).
+func runRemoveTable(c *call) error { return c.empty(c.s.RemoveTable(c.ctx, c.text("name"), c.opts...)) }
 
 func runOutbox(c *call) error {
 	limit, e := c.integer("limit")

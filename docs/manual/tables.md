@@ -109,8 +109,11 @@ its columns.
 - **An import can replace the table.** With that option the table is
   emptied first, so that it holds the rows of this import and no
   others. An import of no rows with that option empties the table.
-- **No call removes a single row.** A rule removes one, as below;
-  otherwise the table is imported again, replaced.
+- **`delete_rows` removes rows by their keys**, all of them in one
+  go: each key a value for every column of the table's key, and for no
+  other. A key the table does not have removes nothing. The `write`
+  line of the table is asked, as for an import. A rule removes one row,
+  as below.
 - **An import is not an event.** The rows of a table have no versions
   and no log. Nothing says who wrote a row, or what it was before.
 
@@ -421,6 +424,8 @@ with `bad_formula`, and the message says which.
 | read the definition of a table | nothing: a definition is open to every caller |
 | read the rows | the `read` line of the table |
 | write rows, by an import or through a rule | the `write` line of the table |
+| remove rows | the `write` line of the table |
+| remove a table | the system group `designers` |
 | read the rows with SQL | the system group `analysts` |
 
 - **The two lines are about the table as a whole.** Each is a
@@ -459,13 +464,33 @@ The system groups are in [Who may](notions/who-may.md).
   stays.
 - **Every version says who defined it and when**, and every caller may
   read that.
-- **No call removes a table.**
+- **`remove_table` takes a table away**; see [Removing a
+  table](#removing-a-table).
 
 For any other change of a table that is in use, the engine's own
 advice is to define the new shape under another name. A class moves over to the new table with
 a new version of the class, and the old table can be changed once no
 class reads it; see [Change a class that already has
 documents](guides/change-a-class.md).
+
+## Removing a table
+
+`remove_table` takes a table away with its rows, its view and its
+words. It is for the system group `designers`, as defining one is.
+
+<!-- removing a table -->
+| The table | `remove_table` |
+|---|---|
+| is read by a formula of a class | is refused, `not_allowed`, and names the class |
+| is written by a rule of a class | is refused, `not_allowed`, and names the class |
+| is neither | is taken away, its rows with it |
+
+- **Its versions stay** in the log of definitions. A table defined
+  again under its name is the next version after them, and starts
+  empty.
+- **Nothing records who removed it**, as nothing records who removed
+  words: the log of definitions has a line for each version and none
+  for a removal.
 
 ## With SQL
 
@@ -523,6 +548,8 @@ an agent that speaks to the engine in JSON.
 | list the tables, or those of one app | `list_tables` |
 | write rows | `import_rows` |
 | read the rows | `table_rows` |
+| remove rows | `delete_rows` |
+| remove a table | `remove_table` |
 
 What each takes and what it answers is in
 [The commands](commands.md#definitions).
@@ -578,7 +605,7 @@ import.
 
 - Changing or removing a column of a table that has rows, or that a
   class reads, and a new column in its key.
-- Removing a table.
+- A record of who removed a table.
 - The last row in the order of the key, and `MIN` and `MAX` of days.
   So "the newest rate on or before a day" has no short form today: a
   table of rates needs a row for every day that is asked for.

@@ -502,7 +502,8 @@ works in Polish, and reads the invoice above in these words:
   version is kept with who defined it: `definitions` with `"what":
   "words"` and the name `class/Invoice/pl` lists them. Words taken
   away with `remove_words` say there, on the version they had, who
-  took them away and when, under `removed`.
+  took them away and when, under `removed`, to database administrators
+  and designers (see [Removing a table](tables.md#removing-a-table)).
 - **A later version of the class that drops a variable** leaves its
   words in place, unused. `list_words` and `get_words` note each such
   path, code `unused_words`; the words defined again without it clear

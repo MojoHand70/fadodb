@@ -56,7 +56,7 @@ line says so. Copy `0000-template.md` to start.
 | [0048](0048-moving-many-documents-in-one-command.md) | Moving many documents in one command: `TransitionMany`, the refused reported and the rest moved | Accepted, amended by 0078 |
 | [0049](0049-who-may-see-create-change-and-delete-a-document.md) | Who may see, create, change and delete a document | Accepted, amended by 0052 |
 | [0050](0050-person-agent-or-service-and-for-whom.md) | Person, agent or service, and for whom it acts | Accepted, amended by 0053 |
-| [0051](0051-who-may-define-operate-and-query.md) | Who may define, operate and query, and the rules of a table | Accepted, amended by 0052, 0067 |
+| [0051](0051-who-may-define-operate-and-query.md) | Who may define, operate and query, and the rules of a table | Accepted, amended by 0052, 0067, 0083 |
 | [0052](0052-system-groups-and-the-content-administrator.md) | System groups: who runs the database, who designs, who reads everything and who may act on any document | Accepted, amended by 0057, 0059, 0067, 0083 |
 | [0053](0053-acting-for-somebody.md) | Acting for somebody: a recorded substitution for people and assistants | Accepted, amended by 0071 |
 | [0054](0054-the-screen-on-a-layout-component.md) | The screen on a layout component: `mobile` and `desktop` | Withdrawn by 0069 |

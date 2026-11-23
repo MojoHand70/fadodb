@@ -1371,6 +1371,10 @@
               "schema": {
                 "additionalProperties": false,
                 "properties": {
+                  "for": {
+                    "description": "the id of whoever the caller acts for; let through only while a substitution says so",
+                    "type": "string"
+                  },
                   "name": {
                     "description": "its name; for words, what they translate, its name and the language: class/Invoice/pl",
                     "type": "string"
@@ -1397,7 +1401,7 @@
                 "schema": {
                   "properties": {
                     "versions": {
-                      "description": "the versions, oldest first; the one a table or words had when they were removed says who removed them and when, under removed"
+                      "description": "the versions, oldest first; for a caller who may see it, the one a table or words had when they were removed says who removed them and when, under removed"
                     }
                   },
                   "required": [
@@ -1413,7 +1417,7 @@
             "$ref": "#/components/responses/Refused"
           }
         },
-        "summary": "Lists the versions of one class, schema, table, action, inlet, app or words, with who defined each and when, and who removed a table or words and when.",
+        "summary": "Lists the versions of one class, schema, table, action, inlet, app or words, with who defined each and when; to administrators and designers, and to an agent working for an administrator, also who removed a table or words and when.",
         "tags": [
           "Definitions"
         ],

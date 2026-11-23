@@ -426,6 +426,7 @@ with `bad_formula`, and the message says which.
 | write rows, by an import or through a rule | the `write` line of the table |
 | remove rows | the `write` line of the table |
 | remove a table | the system group `designers` |
+| read who removed a table | the system group `administrators` or `designers`, or, for an agent, to work for a user the database keeps in `administrators` |
 | read the rows with SQL | the system group `analysts` |
 
 - **The two lines are about the table as a whole.** Each is a
@@ -503,11 +504,18 @@ words. It is for the system group `designers`, as defining one is.
   empty.
 - **The log of definitions says who removed it and when**, on the
   version it had. Its words in other languages go with it, and each
-  says the same on the version it had. Every caller may read it, as
-  every caller may read who defined a version.
+  says the same on the version it had.
+- **Who removed it is read by database administrators and
+  designers**: a person, a service, or a caller whose kind the host
+  program does not give, in the system group `administrators` or
+  `designers`. An agent reads it only while it works for a user the
+  database keeps in `administrators`, named in `for`; its own system
+  groups give it nothing. Every other caller, and a call that names
+  nobody, gets the same versions without `removed`, and is not
+  refused.
 
 Dan made the table Scratch to try an import, changed it once and
-removed it. Anybody sends `definitions`
+removed it. Dan, a designer, sends `definitions`
 
 <!-- the versions of Scratch -->
 ```jsonc

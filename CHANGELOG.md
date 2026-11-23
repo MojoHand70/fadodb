@@ -13,8 +13,12 @@ All notable changes to FadoDB are recorded here. The format follows
   definitions, in the transaction that removes: who removed it, what
   they were, for whom they acted, when, and the version it had. The
   words that go with a table write a line each. `definitions` answers
-  that version with `removed`; in Go, `Definition.Removed`. A refused
-  removal writes nothing. The engine schema stays 13: a database made
+  that version with `removed`, in Go `Definition.Removed`, to database
+  administrators and designers and to an agent working for an
+  administrator the database keeps, the owner's ruling; anyone else
+  gets the versions without it, and is not refused. `definitions` now
+  takes its caller, and `for`; in Go, `Definitions` takes options. A
+  refused removal writes nothing. The engine schema stays 13: a database made
   before opens as it is, and an engine made before reads one made now
   as it did, without the removals.
 - Changing a table that holds rows (ADR-0084, proposed), with the

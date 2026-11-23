@@ -561,7 +561,7 @@ It answers:
 | [`list_tables`](#list_tables) | Lists the tables: all of them, or those of one app. | reads |
 | [`list_actions`](#list_actions) | Lists every action a rule may name, the engine's own first. | reads |
 | [`list_functions`](#list_functions) | Lists every function a formula can call, for whoever writes one: a formula editor, or an agent before it defines a class. | reads |
-| [`definitions`](#definitions) | Lists the versions of one class, schema, table, action, inlet, app or words, with who defined each and when, and who removed a table or words and when. | reads |
+| [`definitions`](#definitions) | Lists the versions of one class, schema, table, action, inlet, app or words, with who defined each and when; to administrators and designers, and to an agent working for an administrator, also who removed a table or words and when. | reads |
 | [`preview_draft`](#preview_draft) | Tries a class definition that is not stored on a create, or on a document of the stored class of the same name, writing nothing. | reads |
 | [`migrate`](#migrate) | Brings every live document of a class that an earlier version computed to the current version. | writes |
 | [`define_words`](#define_words) | Defines the words of a class, a table or a schema in another language: the label and the description of each thing, by its path. It makes no new version of what it translates. | writes |
@@ -903,18 +903,20 @@ It answers:
 
 ### definitions
 
-Lists the versions of one class, schema, table, action, inlet, app or words, with who defined each and when, and who removed a table or words and when. It reads; in Go it is the call `Definitions`.
+Lists the versions of one class, schema, table, action, inlet, app or words, with who defined each and when; to administrators and designers, and to an agent working for an administrator, also who removed a table or words and when. It reads; in Go it is the call `Definitions`.
 
 | Member | Type | | What it is |
 |---|---|---|---|
 | `what` | text | needed | class, schema, table, action, inlet, app or words |
 | `name` | text | needed | its name; for words, what they translate, its name and the language: class/Invoice/pl |
 
+And, of the members that mean the same everywhere: `for`.
+
 It answers:
 
 | Member | What it holds |
 |---|---|
-| `versions` | the versions, oldest first; the one a table or words had when they were removed says who removed them and when, under removed |
+| `versions` | the versions, oldest first; for a caller who may see it, the one a table or words had when they were removed says who removed them and when, under removed |
 
 ### preview_draft
 

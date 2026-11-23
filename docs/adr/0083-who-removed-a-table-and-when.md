@@ -1,6 +1,6 @@
 # ADR-0083: Who removed a table or words, and when
 
-- Status: Proposed; amends ADR-0082 (item 4: the log of definitions records who removed a table), ADR-0068 (item 14: words taken away record who took them away), ADR-0052 (item 7: a removal is in sight, as a definition is), ADR-0055 (the answer of `definitions` says who removed a version)
+- Status: Proposed; amends ADR-0082 (item 4: the log of definitions records who removed a table), ADR-0068 (item 14: words taken away record who took them away), ADR-0052 (item 7: a removal is in sight, as a definition is), ADR-0055 (the answer of `definitions` says who removed a version, and the command takes its caller), ADR-0051 (item 4: who removed a version is not open to every caller)
 - Date: 2026-11-23
 
 ## Context
@@ -57,12 +57,37 @@ among them.
 
    A version nobody removed has no `removed`. Scratch defined again is
    its version 3, with no `removed`; removed again, version 3 has its
-   own. Every caller may read it, as every caller may read who defined
-   a version (ADR-0051, item 4). In Go, `Definition.Removed`. A
-   removal is no kind of definition a caller names: `definitions` with
-   `"what": "table removed"` is refused with `bad_value`, as before.
+   own. In Go, `Definition.Removed`. A removal is no kind of definition
+   a caller names: `definitions` with `"what": "table removed"` is
+   refused with `bad_value`, as before.
 
-4. **The engine schema stays 13**, and every database opens as it is:
+4. **Who reads it: database administrators and designers, and an agent
+   working for an administrator** (the owner's ruling, below).
+   `removed` is answered to:
+
+   - a caller in the system group `administrators` or `designers` who
+     is no agent: a person, a service, or a caller whose kind the host
+     program does not give. Olga, who runs the database, and Dan, a
+     designer, read that Dan removed Scratch.
+   - an agent, only while it works for a user the database keeps in
+     `administrators`, named in `for` and held as every `for` is
+     (ADR-0053). The agent `bot`, working for Olga, reads it. The
+     agent's own system groups give it nothing, and the user it works
+     for is one the database keeps and has not disabled: in a database
+     that does not keep its users the engine cannot tell whom an agent
+     works for, and no agent reads it there.
+
+   Every other caller gets the same versions without `removed`, and
+   is not refused: Ann, who is neither, reads who defined each version
+   of Scratch, as before. So does a call that names nobody, which is
+   nobody (ADR-0041, item 6), and a caller whose principal the engine
+   refuses elsewhere, such as one whose `for` no substitution holds.
+   The versions and who defined them stay open to every caller
+   (ADR-0051, item 4). The command `definitions` now takes its caller,
+   and `for` with it, as other reads do; in Go, `Definitions` takes the
+   options every call takes.
+
+5. **The engine schema stays 13**, and every database opens as it is:
 
    - The table `definitions` is in every database of schema 13 (it
      came with schema 9), with the columns a removal needs. A removal
@@ -76,7 +101,7 @@ among them.
    - Item 4 of ADR-0082 was wrong on this point: a line in a table
      that is there already is no change of the storage.
 
-5. **Why earlier records raised the schema for a new table, and this
+6. **Why earlier records raised the schema for a new table, and this
    one does not need to.** Records disagree. ADR-0045 added the tables
    of the actions and said "the engine schema stays at 3: tables are
    added and none is changed"; ADR-0068, item 16, added the tables of
@@ -96,8 +121,16 @@ among them.
 ## The owner's words
 
 "Yes, it should", 2026-11-23, to whether the engine should record who
-removed a table and when. What follows is added for him to veto, each
-with its case, the proposal, and the other way:
+removed a table and when.
+
+On who reads it, the same day, he first asked: "How and where are you
+going to show who removed a table to everyone? There is no such place.
+Settings are only visible to admin and designers. Log is in settings."
+And ruled: "administrators and designers only, Agents if work on
+Administrator behalf". Item 4 is that ruling.
+
+What follows is added for him to veto, each with its case, the
+proposal, and the other way:
 
 - **Where it is kept.** Dan removes Scratch: the line is in the log
   of definitions, beside the versions of Scratch. The other way: a log
@@ -106,7 +139,7 @@ with its case, the proposal, and the other way:
   missing; but it takes a name no class and no table may have
   afterwards, and a file whose class or table has that name already
   would not open, or would have to be made again.
-- **Where it is read.** Ann asks `definitions` of Scratch and finds
+- **Where it is read.** Olga asks `definitions` of Scratch and finds
   version 2 removed by Dan. The other way: a command of its own that
   lists every removal of the database, "what was removed this week",
   which answers without the name of what was removed. Today the
@@ -119,22 +152,35 @@ with its case, the proposal, and the other way:
   the German words of Rates: `definitions` of `table/Rates/de` says
   removed by `dee`, an agent, for the lead. The other way: only tables,
   as his words name, and words stay as ADR-0068 left them.
-- **Who may read it.** Ann, who is no designer, reads who removed
-  Scratch, as she reads who defined it. The other way: only designers
-  and database administrators read who removed a thing, and then who
-  defined it should follow the same line.
+- **An agent reads it only for an administrator, as his words read.**
+  The agent `ap-agent` is itself in `administrators` and works for
+  nobody: it does not read who removed Scratch. Nor does `bot` while it
+  works for Dan, a designer, nor while it works for Ewa, an
+  administrator who has left and whose user is disabled. The other
+  way: an agent in `administrators` or `designers` reads it on its
+  own, as a person in those groups does; and an agent working for a
+  designer reads it too, as the designer would.
+- **A call that names nobody does not read it.** A program that calls
+  `Definitions` in Go with no caller gets the versions without
+  `removed`, as such a call is nobody everywhere in the engine
+  (ADR-0041, item 6; ADR-0052, item 6). The other way: a call without
+  a principal is the host program itself and reads it; that would be
+  the one place where nobody is let through further than a person.
 
 ## Consequences
 
-- A face shows, on the history of a table, who removed it and when,
-  and an agent asks before it makes a table of a name that was used.
+- A face shows who removed a table and when in its settings, where its
+  log is and which only administrators and designers see; the engine
+  answers the same people. An agent asks, before it makes a table, for
+  the versions of the name, whoever it works for.
 - An agent that removes a table or words is named in the log as a
   person is, with whom it acted for.
 - `remove_words` now runs in a transaction of its own, since it
   writes two things.
 - The manual's chapter Tables shows the answer of `definitions` for
-  a removed table and plays it; the chapter on the class says that
-  words taken away say who took them away.
+  a removed table and plays it, and its table of who may has a line
+  for who reads a removal; the chapter on the class says that words
+  taken away say who took them away, to whom.
 
 ## What this record leaves out
 

@@ -536,9 +536,12 @@ const (
 // definition is: what a designer changed is in sight. Class, Table and
 // Action answer the same of the current version, under Defined. The
 // version a table or words had when they were removed says who removed
-// them and when, under Removed (ADR-0083).
-func (db *DB) Definitions(ctx context.Context, what, name string) ([]Definition, error) {
-	return db.s.Definitions(ctx, what, name)
+// them and when, under Removed (ADR-0083), to a caller in the system
+// group administrators or designers who is no agent, and to an agent
+// that works for a user the database keeps in administrators; anyone
+// else, and a call that names nobody, gets the versions without it.
+func (db *DB) Definitions(ctx context.Context, what, name string, opts ...Option) ([]Definition, error) {
+	return db.s.Definitions(ctx, what, name, opts...)
 }
 
 // DefineTable compiles an explicit table definition in JSON, creates the

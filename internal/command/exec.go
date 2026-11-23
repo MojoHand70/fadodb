@@ -1125,6 +1125,46 @@ func runListKeys(c *call) error {
 	return c.answer("keys", list(keys), err)
 }
 
+// Groups (ADR-0086).
+
+func runCreateGroup(c *call) error {
+	g, err := c.s.CreateGroup(c.ctx, store.Group{Name: c.text("name"), Label: c.text("label"), Description: c.text("description")}, c.opts...)
+	return c.answer("group", g, err)
+}
+
+func runSetGroup(c *call) error {
+	var edit store.GroupEdit
+	if c.given("label") != nil {
+		label := c.text("label")
+		edit.Label = &label
+	}
+	if c.given("description") != nil {
+		description := c.text("description")
+		edit.Description = &description
+	}
+	g, err := c.s.SetGroup(c.ctx, c.text("name"), edit, c.opts...)
+	return c.answer("group", g, err)
+}
+
+func runGetGroup(c *call) error {
+	g, err := c.s.GetGroup(c.ctx, c.text("name"), c.opts...)
+	return c.answer("group", g, err)
+}
+
+func runListGroups(c *call) error {
+	groups, err := c.s.Groups(c.ctx, c.opts...)
+	return c.answer("groups", list(groups), err)
+}
+
+func runRemoveGroup(c *call) error {
+	return c.empty(c.s.RemoveGroup(c.ctx, c.text("name"), c.opts...))
+}
+
+func runGroupChanges(c *call) error {
+	changes, err := c.s.GroupChanges(c.ctx, c.text("name"), c.opts...)
+	return c.answer("changes", list(changes), err)
+}
+
 func runRevokeKey(c *call) error {
 	return c.empty(c.s.RevokeKey(c.ctx, c.text("key"), c.opts...))
 }

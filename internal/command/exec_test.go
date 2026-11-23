@@ -1001,8 +1001,8 @@ func TestTheCommandsOfUsersAndKeys(t *testing.T) {
 			marked++
 		}
 	}
-	if marked != 19 {
-		t.Errorf("%d commands are of the users, want the nine of ADR-0057 and the ten of ADR-0071", marked)
+	if marked != 25 {
+		t.Errorf("%d commands are of the users, want the nine of ADR-0057, the ten of ADR-0071 and the six of ADR-0086", marked)
 	}
 }
 

@@ -1,6 +1,6 @@
 # ADR-0057: Who is calling: users, groups and keys, kept in the database
 
-- Status: Accepted; amends ADR-0027 (the optional package of users, groups and keys is built, with keys and without passwords or sessions; its commands are part of the command set and not routes of their own), ADR-0052 (who keeps the members of a group), ADR-0055 (nine commands join the table); amended by ADR-0071 (a password, a session and a pass join the key; a user gains an e-mail and a second step)
+- Status: Accepted; amends ADR-0027 (the optional package of users, groups and keys is built, with keys and without passwords or sessions; its commands are part of the command set and not routes of their own), ADR-0052 (who keeps the members of a group), ADR-0055 (nine commands join the table); amended by ADR-0071 (a password, a session and a pass join the key; a user gains an e-mail and a second step); and by ADR-0086 (Proposed: a group is a record of its own, and every group a user is in has one)
 - Date: 2026-11-14
 
 ## Context

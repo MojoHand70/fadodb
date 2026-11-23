@@ -218,6 +218,7 @@ const (
 	thePreview    = "what the command would do: the document as it would be, the errors, the states visited, the transitions then open and the rules that would run"
 	theStored     = "the definition as it was given, with its name, its version and who defined it"
 	theUser       = "the user: its id, its kind, its name, its groups, its system groups and whether it is disabled"
+	theGroup      = "the group: its name, its label, what it is for, when and by whom it was made, and how many users are in it"
 )
 
 var commands = []*Command{
@@ -482,6 +483,25 @@ var commands = []*Command{
 	{Group: Users, Users: true, Name: "list_users", Mark: Reads, Call: "Users", Does: "Lists the users, in the order of their ids. Every user may ask.",
 		Fields: []Field{opt("group", Text, "only the members of this group, of either kind"), opt("kind", Text, "only the users of this kind")},
 		Answer: answer("users", "the users, the disabled ones among them"), takes: asCaller, run: runListUsers},
+	// Groups (ADR-0086): a record of their own; who is in one stays on the user.
+	{Group: Users, Users: true, Name: "create_group", Mark: Writes, Call: "CreateGroup", Does: "Makes a group, with nobody in it yet: its name, which INGROUP and a user's groups name and which never changes, its label and what it is for. It is a database administrator's.",
+		Fields: []Field{req("name", Text, "the name of the group, which a rule names with INGROUP; it never changes"), opt("label", Text, "how a screen shows the group"),
+			opt("description", Text, "what the group is for, for the person or the agent who puts somebody in it")},
+		Answer: answer("group", theGroup), takes: asWriter, run: runCreateGroup},
+	{Group: Users, Users: true, Name: "set_group", Mark: Writes, Call: "SetGroup", Does: "Changes a group's label and what it is for: the members given, and no other. Its name never changes. It is a database administrator's.",
+		Fields: []Field{req("name", Text, "the name of the group"), opt("label", Text, "how a screen shows the group, in place of the one it has"),
+			opt("description", Text, "what the group is for, in place of what it says")},
+		Answer: answer("group", theGroup+", after the change"), takes: asWriter, run: runSetGroup},
+	{Group: Users, Users: true, Name: "get_group", Mark: Reads, Call: "GetGroup", Does: "Reads one group. Every user may ask.",
+		Fields: []Field{req("name", Text, "the name of the group")},
+		Answer: answer("group", theGroup), takes: asCaller, run: runGetGroup},
+	{Group: Users, Users: true, Name: "list_groups", Mark: Reads, Call: "Groups", Does: "Lists the groups, in the order of their names; not the system groups, which are the engine's. Every user may ask.",
+		Answer: answer("groups", "the groups, each "+theGroup), takes: asCaller, run: runListGroups},
+	{Group: Users, Users: true, Name: "remove_group", Mark: Writes, Call: "RemoveGroup", Does: "Takes a group away; refused while somebody is in it. A rule that names it is not changed. It is a database administrator's.",
+		Fields: []Field{req("name", Text, "the name of the group")}, takes: asWriter, run: runRemoveGroup},
+	{Group: Users, Users: true, Name: "group_changes", Mark: Reads, Call: "GroupChanges", Does: "Lists every change to a group, a removed one's too. It is a database administrator's.",
+		Fields: []Field{req("name", Text, "the name of the group")},
+		Answer: answer("changes", "the changes, oldest first: what was done, by whom, of what kind, for whom and when, with the group as the change left it"), takes: asCaller, run: runGroupChanges},
 	{Group: Users, Users: true, Name: "user_changes", Mark: Reads, Call: "UserChanges", Does: "Lists every change to a user and to its keys. A database administrator may ask of any user, and a user of itself.",
 		Fields: []Field{req("id", Text, "the id of the user")},
 		Answer: answer("changes", "the changes, oldest first: what was done, by whom, of what kind, for whom and when, with the user or the key as the change left it"), takes: asCaller, run: runUserChanges},

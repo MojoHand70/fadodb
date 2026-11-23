@@ -209,9 +209,28 @@ caller, a designer and a content administrator included. So:
 
 A database can also keep its own users, groups and keys, and say
 itself who a key belongs to: the program opens it with `Users`, and
-the nine commands of [Users, groups and keys](commands.md#users-groups-and-keys)
+the commands of [Users, groups and keys](commands.md#users-groups-and-keys)
 keep them. That is how the server, `fadodb serve`, opens a database:
 see [Serving a database](serving-a-database.md).
+
+Such a database keeps its groups too, each a record of its own
+(ADR-0086): a name, which `INGROUP` and a user's `groups` name and
+which never changes, a label a screen shows, and what the group is
+for. Who is in a group stays on the user. A group gets its record the
+first time somebody is put in it; an administrator can also make one
+before that, so that a designer can name it in a rule, and say what it
+is for:
+
+```sh
+fadodb exec create_group '{"name": "auditors", "label": "Auditors", "description": "May read every expense; changes nothing."}'
+```
+
+`list_groups` answers the groups with how many users are in each, and
+`list_users` with `"group": "auditors"` says who. `set_group` changes
+a group's label and what it is for, never its name, which the rules
+name. `remove_group` takes away a group nobody is in. A program that
+says itself who is calling keeps no groups: its callers' groups are
+what it says they are.
 
 ## The system groups
 

@@ -295,8 +295,10 @@ under another name.
 
 The `presentation` of a schema says how a screen shows an object: a
 title, a line under it, a picture, an icon and a colour. The engine
-checks it when the schema is defined and keeps it. Nothing in the
-engine reads it today: it is there for the screens of Phase 7.
+checks it when the schema is defined and keeps it. The engine
+compiles its `title` and `subtitle` into the bundle, for a page to
+work out ([the bundle](the-bundle.md)); how a screen shows the rest is
+the face's.
 
 ## The commands
 
@@ -365,4 +367,3 @@ And in a class:
 - A default for an object, and an index on one of its fields.
 - Rights for single fields.
 - Changing a schema that a class uses, and removing one.
-- The screens that use `presentation`.

@@ -68,7 +68,7 @@ This section is the whole of it.
    |---|---|
    | in a class or a table of this database | read it with `LOOKUP` |
    | in another system | a table filled by an import from that system and never edited here, its `description` naming the system. Rows read where they live, the binding `external`, are planned, and whether such a copy stays the way is question 1 of ADR-0060 |
-   | nowhere: a spreadsheet, somebody's memory | propose a class that keeps it, with its owner's approval as its process, and define it only on the person's yes. A face for it comes with Phase 7; until then its owner works it through the program that hosts the engine |
+   | nowhere: a spreadsheet, somebody's memory | propose a class that keeps it, with its owner's approval as its process, and define it only on the person's yes. A face for it is built with [`fadodb-face`](../fadodb-face/SKILL.md) and handed out by `fadodb serve` from a folder; without one, its owner works it through the commands |
 
 5. **Write the answer down where the next agent looks**: in the
    `description` of the class or the table, as `Born: ... Owner: ...

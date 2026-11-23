@@ -444,4 +444,6 @@ document, and in SQL, when a filter or a rule of `access` is asked of
 many documents at once. Both give the same answer, digit for digit.
 The suites under [conformance](../../conformance/README.md) are the
 specification of the language: every case runs on both, and they must
-agree. The browser will be the third place, with Phase 7.
+agree. The browser is the third place: the browser VM
+([web/vm](../../web/vm/README.md)) runs every case a page works out,
+and the functions that read data are worked out by the server.

@@ -1,6 +1,8 @@
 # Naming the caller
 
-FadoDB checks no passwords, and keeps no users unless it is told to.
+The engine checks no passwords, and keeps no users unless it is told
+to; `fadodb serve` signs people in for a database that keeps them
+([signing in](signing-in.md)).
 The program that holds the engine knows who is calling, from its own
 login, a token or a queue, and says so on every call. The engine trusts the program for
 that, and decides everything else itself. This chapter is for the

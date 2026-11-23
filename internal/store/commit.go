@@ -520,7 +520,10 @@ func (s *Store) run(ctx context.Context, cmd command, now time.Time) (*result, e
 		return res, nil
 	}
 
-	kids := map[*child][]childRow{}
+	if s.kids == nil {
+		s.kids = map[*child][]childRow{}
+	}
+	kids := s.kids
 	s.beginLists(ctx, c, cmd.stored, before, kids)
 	dirty := s.dirtyFor(c)
 	changedKids := s.changedKids[:0]
@@ -1082,6 +1085,9 @@ func (s *Store) changesFor(c, beforeClass *class, before, after *docRow, kids []
 // the commit worked on, and the writer's lock is given back.
 func (s *Store) endCommit() {
 	s.wev.commit = commitLists{}
+	// The lists of the commit are let go with it: the next commit starts
+	// with none, and no row of this one is held on to.
+	clear(s.kids)
 	s.mu.Unlock()
 }
 

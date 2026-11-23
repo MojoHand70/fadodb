@@ -340,8 +340,11 @@ is in no commit.
 
 A figure over a list the document holds is in the commit that changes
 the list. Measured on 2026-11-23, a commit that changes the twenty
-lines of a bill, three rounds each: 0.13 to 0.14 ms and 989
+lines of a bill, three rounds each: 0.13 to 0.14 ms and 987
 allocations with a count and a total of the lines
-(`BenchmarkHeldFigure`), 0.13 to 0.14 ms and 971 without
+(`BenchmarkHeldFigure`), 0.13 to 0.14 ms and 969 without
 (`BenchmarkHeldFigureNone`). A class with no fold pays one comparison
-for each formula it runs.
+for each formula it runs, and no allocation: the map of the lists a
+command assigns is the store's own, one for every commit, since the
+writer's evaluator now holds it, and a map made per commit would have
+been one allocation more in each.

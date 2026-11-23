@@ -324,18 +324,19 @@ never carry raw SQL. A formula that reads the documents of a class sees
 every one of them, whoever caused it to be computed; who may see the
 result is decided by the rights on the variable that holds it (ADR-0046).
 Today `LOOKUP` reads explicit tables and the documents of a class, with
-one column or with `COUNT`, `SUM`, `MIN` or `MAX` over one expression of
-the columns. `QUERY` is built as the whole formula of a live variable
+one column or with `COUNT`, `SUM`, `MIN`, `MAX`, `AVERAGE`, `MEDIAN` or
+`COUNTUNIQUE` over one expression of the columns. `QUERY` is built as the whole formula of a live variable
 (ADR-0076): a list of the documents of a class, asked when somebody
 reads it and answered through what answers a filter, so that reader
 gets the documents and the values they may read. A `QUERY` over a
 table, with aggregates or kept in a triggered variable is not built
 yet. A live variable may work a figure out of such a list (ADR-0081):
-`COUNT(invoices)`, `SUM(invoices.net)`, `MIN`, `MAX`, their forms with
-a condition, `ANY` and `ALL`. Each is the aggregate a `LOOKUP` has,
-over the rows the list has for its reader, in one statement; the
-other functions over a list, and every one of them over the lists a
-document holds, are not built yet.
+`COUNT(invoices)`, `SUM(invoices.net)`, `MIN`, `MAX`, `AVERAGE`,
+`MEDIAN`, `COUNTUNIQUE`, the forms with a condition, `ANY` and `ALL`.
+Each is the aggregate a `LOOKUP` has, over the rows the list has for
+its reader, in one statement; the functions that give a list again,
+and every function over the lists a document holds, are not built
+yet.
 
 A class as a source is its documents as they are now: the system columns
 `id`, `title`, `state`, `version`, `created_at`, `updated_at`,

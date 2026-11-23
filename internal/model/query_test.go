@@ -146,7 +146,8 @@ func TestFigure_CompiledAsASlot(t *testing.T) {
 		`"type": "number", "formula": "COUNT(invoices)"`:                                              "stands only in a live variable",
 		`"type": "number", "mode": "triggered", "on": ["refresh"], "formula": "COUNT(invoices)"`:      "stands only in a live variable",
 		`"mode": "live", "formula": "COUNT(invoices) + LOOKUP(Invoice, COUNT(id), state = \"paid\")"`: "is not built yet (ADR-0076)",
-		`"mode": "live", "formula": "AVERAGE(invoices.net)"`:                                          "AVERAGE over a list is not built yet (ADR-0081)",
+		`"mode": "live", "formula": "MEDIAN(number)"`:                                                 "MEDIAN: the argument is a list of the document",
+		`"type": "number", "formula": "COUNTUNIQUE(invoices.state)"`:                                  "stands only in a live variable",
 		`"mode": "live", "formula": "COUNTIF(invoices, ID() = \"x\")"`:                                "ID() is a function of the document the formula belongs to",
 	} {
 		_, diags := DefineIn([]byte(order(`, "x": {`+formula+`}`)), env)

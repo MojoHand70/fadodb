@@ -157,7 +157,7 @@ var builtinByName = func() map[string]int {
 // control flow, or for SECRET and REF into the read of a slot, rather than
 // calls.
 var specialForms = map[string]bool{"IF": true, "AND": true, "OR": true, "NOT": true, "IFERROR": true, "SECRET": true, "REF": true,
-	"COUNTIF": true, "SUMIF": true, "MINIF": true, "MAXIF": true, "ANY": true, "ALL": true}
+	"COUNTIF": true, "SUMIF": true, "MINIF": true, "MAXIF": true, "AVERAGEIF": true, "MEDIAN": true, "COUNTUNIQUE": true, "ANY": true, "ALL": true}
 
 // notYetImplemented lists the catalog functions the binder refuses for now:
 // the composite functions and the query functions of ADR-0020.

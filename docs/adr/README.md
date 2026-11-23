@@ -51,7 +51,7 @@ line says so. Copy `0000-template.md` to start.
 | [0043](0043-rules-inside-the-commit.md) | Rules inside the commit: triggers, synchronous actions and triggered variables | Accepted, amended by 0044, 0078 |
 | [0044](0044-the-outbox.md) | The outbox: what a commit queues, the worker and the engine's own actions | Accepted, amended by 0047, 0049, 0050, 0051 |
 | [0045](0045-actions-are-an-extension-point.md) | Actions are an extension point: definitions, declared HTTP actions, registered Go actions, connections and results | Accepted, amended by 0051 |
-| [0046](0046-formulas-that-read-other-documents.md) | Formulas that read other documents: a class as the source of LOOKUP, with COUNT, SUM, MIN and MAX | Accepted, amended by 0051, 0075, 0076, 0078 |
+| [0046](0046-formulas-that-read-other-documents.md) | Formulas that read other documents: a class as the source of LOOKUP, with COUNT, SUM, MIN and MAX | Accepted, amended by 0051, 0075, 0076, 0078, 0081 |
 | [0047](0047-time.md) | Time: a document's life in formulas, what is due, and timed transitions | Accepted, amended by 0052 |
 | [0048](0048-moving-many-documents-in-one-command.md) | Moving many documents in one command: `TransitionMany`, the refused reported and the rest moved | Accepted, amended by 0078 |
 | [0049](0049-who-may-see-create-change-and-delete-a-document.md) | Who may see, create, change and delete a document | Accepted, amended by 0052 |

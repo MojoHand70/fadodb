@@ -1021,13 +1021,13 @@ func LookupSQL(q *QuerySlot, d Dialect, arg func(i int, currency bool) string, t
 		if err != nil {
 			return SQLExpr{}, err
 		}
-		e := SQLExpr{Val: "(SELECT " + a.val + r.from + ")", Kind: q.Type.Kind, Scale: q.Type.Scale}
+		e := SQLExpr{Val: "(SELECT " + a.val + a.from + ")", Kind: q.Type.Kind, Scale: q.Type.Scale}
 		if a.cur != "" {
-			e.Cur = "(SELECT " + a.cur + r.from + ")"
+			e.Cur = "(SELECT " + a.cur + a.from + ")"
 		}
 		errs := []string{a.rowErr}
 		for _, x := range a.errs {
-			errs = append(errs, "(SELECT "+x+r.from+")")
+			errs = append(errs, "(SELECT "+x+a.from+")")
 		}
 		e.Err = coalesceErr(errs...)
 		return e, nil
@@ -1060,7 +1060,7 @@ func AggregateSQL(q *QuerySlot, d Dialect, arg func(i int, currency bool) string
 		}
 		return x
 	}
-	return "SELECT " + a.val + " AS v, " + orNull(a.cur) + " AS c, " + orNull(coalesceErr(append([]string{a.rowErr}, a.errs...)...)) + " AS e" + r.from, nil
+	return "SELECT " + a.val + " AS v, " + orNull(a.cur) + " AS c, " + orNull(coalesceErr(append([]string{a.rowErr}, a.errs...)...)) + " AS e" + a.from, nil
 }
 
 // lookupAlias names the source inside a lookup's subquery.
@@ -1116,12 +1116,14 @@ func lookupRows(q *QuerySlot, d Dialect, arg func(i int, currency bool) string, 
 }
 
 // aggregateSQL is an aggregate over the matching rows: val, cur and errs
-// are expressions of one SELECT over them, and rowErr a subquery of its
+// are expressions of one SELECT over from, and rowErr a subquery of its
 // own, the error of the first row in key order on which the aggregated
-// expression fails.
+// expression fails. from is the matching rows, or for MEDIAN the ones in
+// the middle of them.
 type aggregateSQL struct {
 	val, cur, rowErr string
 	errs             []string
+	from             string
 }
 
 // aggregate spells the slot's aggregate with the engine's own aggregate
@@ -1133,7 +1135,7 @@ func (r *rowsSQL) aggregate() (aggregateSQL, error) {
 	if err != nil {
 		return aggregateSQL{}, fmt.Errorf("sqlgen: LOOKUP %s: %w", q.Agg, err)
 	}
-	var a aggregateSQL
+	a := aggregateSQL{from: r.from}
 	if x.Err != "" {
 		a.rowErr = "(SELECT " + x.Err + r.from + " AND (" + x.Err + ") IS NOT NULL" + r.order + " LIMIT 1)"
 	}
@@ -1148,7 +1150,8 @@ func (r *rowsSQL) aggregate() (aggregateSQL, error) {
 		num = "(CASE WHEN " + x.Val + " IS NULL THEN NULL ELSE " + d.Num(x) + " END)"
 	}
 	mant := d.RawMant(x)
-	if exact && x.Kind == KindMoney && q.Agg != "COUNT" {
+	money := exact && x.Kind == KindMoney
+	if money && q.Agg != "COUNT" && q.Agg != "COUNTUNIQUE" && q.Agg != "MEDIAN" {
 		a.cur = "MIN(" + x.Cur + ")"
 		a.errs = append(a.errs, "CASE WHEN COUNT(DISTINCT "+x.Cur+") > 1 THEN 'currency_mismatch' END")
 	}
@@ -1176,6 +1179,65 @@ func (r *rowsSQL) aggregate() (aggregateSQL, error) {
 			a.val, e = d.NumberRowSum(num, r.order)
 		}
 		a.errs = append(a.errs, e)
+	case "AVERAGE":
+		// The sum and the count are the engine's own aggregates; the
+		// division is the language's (ADR-0081, item 2): no engine divides
+		// an exact amount as the / operator does.
+		if exact {
+			sum, e := d.ExactRowSum(mant)
+			n := "COUNT(" + mant + ")"
+			list := sum + ", " + d.RawMant(SQLExpr{Val: n, Kind: KindDecimal}) + ", " + strconv.Itoa(divScale(int(x.Scale))-int(x.Scale))
+			a.val = "(CASE WHEN " + n + " = 0 THEN NULL ELSE fado_dec_div(" + list + ") END)"
+			a.errs = append(a.errs, e, "CASE WHEN "+n+" > 0 THEN fado_dec_div_err("+list+") END")
+		} else {
+			sum, e := d.NumberRowSum(num, r.order)
+			n := "COUNT(" + num + ")"
+			a.val = "(CASE WHEN " + n + " = 0 THEN NULL ELSE (" + sum + ") / " + n + " END)"
+			a.errs = append(a.errs, e)
+		}
+	case "MEDIAN":
+		// The rows that have a value are numbered in the order of the
+		// value, and the statement reads the one in the middle, or the
+		// two: those whose number doubled is the count, the count and one,
+		// or the count and two. Their least and greatest are halved and
+		// added: for exact values the sum times five, at one place more.
+		// The matching rows are read once; what must be known of all of
+		// them, the currencies of money, rides on each row of the middle.
+		v := num
+		if exact {
+			v = mant
+		}
+		// One window for every column, the whole of the rows in the order
+		// of the value, so that the engine orders them once.
+		cols := v + " AS v, ROW_NUMBER() OVER (ORDER BY " + v + ") AS rn, COUNT(*) OVER () AS n"
+		if money {
+			cols += ", MIN(" + x.Cur + ") OVER () AS c, MAX(" + x.Cur + ") OVER () AS c2"
+			a.cur = "MIN(m.c)"
+			a.errs = append(a.errs, "CASE WHEN MIN(m.c) <> MAX(m.c2) THEN 'currency_mismatch' END")
+		}
+		a.from = " FROM (SELECT " + cols + r.from + " AND (" + v + ") IS NOT NULL) AS m WHERE 2 * m.rn IN (m.n, m.n + 1, m.n + 2)"
+		if exact {
+			wide := "(MIN(m.v) + MAX(m.v)) * 5"
+			a.val = d.Narrow(wide)
+			a.errs = append(a.errs, d.OverflowErr(wide))
+		} else {
+			// Each half is taken before they are added, as the fold does:
+			// the middle of two numbers is a number, and nothing fails.
+			a.val = "MIN(m.v) / 2 + MAX(m.v) / 2"
+		}
+	case "COUNTUNIQUE":
+		// The values that differ as = compares them: an exact value by its
+		// mantissa, money by its amount and its currency.
+		key := x.Val
+		switch {
+		case x.Kind == KindNull:
+			key = "NULL"
+		case x.Kind == KindMoney:
+			key = "CAST(" + mant + " AS " + d.ColumnType(KindText) + ") || ' ' || " + x.Cur
+		case exact:
+			key = mant
+		}
+		a.val = "CAST(COUNT(DISTINCT " + key + ") AS " + d.ColumnType(KindNumber) + ")"
 	default:
 		return aggregateSQL{}, fmt.Errorf("sqlgen: LOOKUP: unknown aggregate %s", q.Agg)
 	}

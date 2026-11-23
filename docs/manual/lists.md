@@ -228,6 +228,9 @@ variable too, and its formula names the list:
     "count":    {"label": "How many", "mode": "live", "formula": "COUNT(invoices)"},
     "total":    {"label": "Total", "mode": "live", "formula": "SUM(invoices.net)"},
     "largest":  {"label": "Largest", "mode": "live", "formula": "MAX(invoices.net)"},
+    "average":  {"label": "Mean", "mode": "live", "formula": "ROUND(AVERAGE(invoices.net), 2)"},
+    "middle":   {"label": "Middle value", "mode": "live", "formula": "MEDIAN(invoices.net)"},
+    "in_states": {"label": "Different states", "mode": "live", "formula": "COUNTUNIQUE(invoices.state)"},
     "margins":  {"label": "Margins", "mode": "live", "formula": "SUM(invoices.margin)"},
     "by_owner": {"label": "Written by the owner", "mode": "live",
                  "formula": "COUNTIF(invoices, owner = THIS.owner)"},
@@ -262,13 +265,31 @@ wrote both orders:
 Sales may not read a margin, so the sum of the margins is blank for
 Jan and for Piotr.
 
+The mean, the middle value and the number of different states, for the
+same readers:
+
+<!-- more figures -->
+| Who reads | Of the order | `average` | `middle` | `in_states` |
+|---|---|---|---|---|
+| Jan | ORD-17 | 625.00 PLN | 625.000 PLN | 1 |
+| Piotr | ORD-17 | 70.00 PLN | 70.000 PLN | 1 |
+| Ewa | ORD-17 | 440.00 PLN | 250.000 PLN | 1 |
+| Piotr | ORD-18 | blank | blank | 0 |
+
+Jan reads two invoices, so the middle value is the mean of the two.
+Ewa reads three, and the middle one of 70.00, 250.00 and 1000.00 is
+250.00.
+
 | Written | Gives |
 |---|---|
 | `COUNT(invoices)` | how many rows the list has |
 | `COUNT(invoices.net)` | how many of them have a value in the column |
 | `SUM(invoices.net)`, `MIN(invoices.net)`, `MAX(invoices.net)` | the sum, the smallest and the largest value of a column |
+| `AVERAGE(invoices.net)` | the mean of a column |
+| `MEDIAN(invoices.net)` | the middle value of a column; of an even number of values, the mean of the two in the middle |
+| `COUNTUNIQUE(invoices.state)` | how many different values a column has |
 | `COUNTIF(invoices, state = "draft")` | how many rows meet a condition |
-| `SUMIF(invoices, state = "draft", net)`, `MINIF`, `MAXIF` | the same figure, of the rows that meet a condition |
+| `SUMIF(invoices, state = "draft", net)`, `MINIF`, `MAXIF`, `AVERAGEIF` | the same figure, of the rows that meet a condition |
 | `ANY(invoices, state = "draft")` | whether some row meets a condition |
 | `ALL(invoices, state = "paid")` | whether every row meets it |
 
@@ -279,12 +300,21 @@ Jan and for Piotr.
   the listed document, `THIS.owner` a variable of the order. The state
   of a row is its column `state`.
 - **A list with no rows** counts 0. Its sum is 0, or blank for money;
-  its smallest and largest are blank; `ANY` is FALSE and `ALL` TRUE.
+  its smallest and largest, its mean and its middle value are blank;
+  it has 0 different values; `ANY` is FALSE and `ALL` TRUE.
+- **Blanks are skipped**: a row with no value in the column counts for
+  no mean, no middle value and no different value.
 - **Money** adds in one currency; invoices in two give the error
-  `currency_mismatch`.
+  `currency_mismatch`. `COUNTUNIQUE` alone takes them: the same amount
+  in two currencies is two values.
+- **The mean and the middle value of exact amounts are exact.** The
+  mean of amounts with two places has six, as `AVERAGE` of single
+  values has. The middle value has three: one more than the column,
+  which the mean of two needs. `ROUND` cuts either, as `average` does
+  above.
 - **A figure may stand inside a formula**, and two side by side:
-  `SUM(invoices.net) / DECIMAL(COUNT(invoices), 0)` is the mean. One
-  may not stand inside another's arguments.
+  `MAX(invoices.net) - MIN(invoices.net)` is how far the invoices are
+  apart. One may not stand inside another's arguments.
 - **A figure stands only in a live variable.** Two readers get two
   figures, so a value that is kept, a guard and a rule may not hold
   one. For those, a `LOOKUP` in a triggered variable counts and sums:
@@ -294,10 +324,9 @@ A figure is one question to the invoices, with the id of the order in
 its condition, and the answer is one number: no invoice is read to be
 counted. An index on the pointer serves it as it serves the list.
 
-**Not built yet** (ADR-0081): `AVERAGE`, `MEDIAN` and `COUNTUNIQUE`
-over a list; the same functions over the lines and the tags a document
-holds; and the functions that give a list again, `FILTER`, `SORT`,
-`TOP` and `UNIQUE`.
+**Not built yet** (ADR-0081): the same functions over the lines and
+the tags a document holds; and the functions that give a list again,
+`FILTER`, `SORT`, `TOP` and `UNIQUE`.
 
 What is refused when the class is defined:
 
@@ -311,7 +340,8 @@ What is refused when the class is defined:
 | a condition that is no condition | `bad_formula` |
 | `STATE()` in the condition of a figure | `bad_formula` |
 | a figure inside a figure | `bad_formula` |
-| `AVERAGE` of a column of a list | `bad_formula` |
+| a middle value of a text | `bad_formula` |
+| `MEDIAN` of single values | `bad_formula` |
 
 ## What is refused
 

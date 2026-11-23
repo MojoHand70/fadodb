@@ -1,12 +1,21 @@
 package formula
 
-import "math"
+import (
+	"math"
+	"sort"
+)
 
 // Aggregate folds the values of the slot's expression over the matching
 // rows, given in the source's key order, into the aggregate's answer
 // (ADR-0046). It is what the same function gives over the same values
 // inside one document: blanks are skipped, COUNT of nothing is 0, SUM of
 // nothing is 0, or blank for money, and MIN and MAX of nothing are blank.
+// AVERAGE, MEDIAN and COUNTUNIQUE are ADR-0081's: the mean and the middle
+// value of nothing are blank; the mean of exact values is their exact sum
+// divided as the / operator divides, the middle of an even number of them
+// the mean of the two in the middle, exact at one place more; and
+// COUNTUNIQUE counts the values that differ, as = compares them, money of
+// two currencies being two values.
 // Two things belong to rows: numbers are added in the order given, which
 // is why the order is fixed, and an exact sum fails with overflow only
 // when the total does not fit, whatever the order. It may reuse vals.
@@ -37,8 +46,114 @@ func (q *QuerySlot) Aggregate(vals []Value) (Value, *EvalError) {
 			return Value{}, err
 		}
 		return decUnaryValue(OpDecScale, exactResultOf(m, int(in.Scale), cur), decArg(q.Type))
+	case "AVERAGE":
+		if !in.IsExact() {
+			return fnAverage(nil, vals)
+		}
+		m, cur, err := sumExactRows(vals, int(in.Scale))
+		if err != nil {
+			return Value{}, err
+		}
+		n := int64(0)
+		for _, a := range vals {
+			if a.kind != KindNull {
+				n++
+			}
+		}
+		if n == 0 {
+			return Blank(), nil
+		}
+		mean, scale, err := decDiv(m, int(in.Scale), n, 0)
+		if err != nil {
+			return Value{}, err
+		}
+		return decUnaryValue(OpDecScale, exactResultOf(mean, scale, cur), decArg(q.Type))
+	case "MEDIAN":
+		if !in.IsExact() {
+			xs := make([]float64, 0, len(vals))
+			for _, a := range vals {
+				if a.kind != KindNull {
+					xs = append(xs, a.num)
+				}
+			}
+			if len(xs) == 0 {
+				return Blank(), nil
+			}
+			sort.Float64s(xs)
+			// Each half is taken before they are added, so that the middle
+			// of two large numbers is a number, as each of them is.
+			return Number(xs[(len(xs)-1)/2]/2 + xs[len(xs)/2]/2), nil
+		}
+		ms, cur, err := exactRows(vals, int(in.Scale))
+		if err != nil {
+			return Value{}, err
+		}
+		if len(ms) == 0 {
+			return Blank(), nil
+		}
+		sort.Slice(ms, func(i, j int) bool { return ms[i] < ms[j] })
+		// The two in the middle, which are one for an odd number of rows,
+		// added and halved at one place more: their sum times five.
+		lo, hi := ms[(len(ms)-1)/2], ms[len(ms)/2]
+		if hi > 0 && lo > math.MaxInt64-hi || hi < 0 && lo < math.MinInt64-hi {
+			return Value{}, overflow()
+		}
+		sum := lo + hi
+		if sum > math.MaxInt64/5 || sum < math.MinInt64/5 {
+			return Value{}, overflow()
+		}
+		return decUnaryValue(OpDecScale, exactResultOf(sum*5, int(in.Scale)+1, cur), decArg(q.Type))
+	case "COUNTUNIQUE":
+		type key struct {
+			num  float64
+			mant int64
+			str  string
+		}
+		seen := map[key]struct{}{}
+		for _, a := range vals {
+			switch a.kind {
+			case KindNull:
+				continue
+			case KindText, KindRef, KindJSON:
+				seen[key{str: a.str}] = struct{}{}
+			case KindDecimal:
+				seen[key{mant: a.Mant()}] = struct{}{}
+			case KindMoney:
+				seen[key{mant: a.Mant(), str: a.str}] = struct{}{}
+			default:
+				seen[key{num: a.num + 0}] = struct{}{} // -0 and 0 are one value
+			}
+		}
+		return Number(float64(len(seen))), nil
 	}
 	return Value{}, &EvalError{Code: ErrQueryFailed, Pos: -1, Msg: "unknown aggregate " + q.Agg}
+}
+
+// exactRows are the mantissas of the exact values at one scale, blanks
+// left out, and their currency. The currencies must agree.
+func exactRows(vals []Value, scale int) ([]int64, string, *EvalError) {
+	cur := ""
+	for _, a := range vals {
+		if a.kind == KindMoney {
+			if cur != "" && a.str != cur {
+				return nil, "", currencyMismatch()
+			}
+			cur = a.str
+		}
+	}
+	ms := make([]int64, 0, len(vals))
+	for _, a := range vals {
+		if a.kind == KindNull {
+			continue
+		}
+		m, s := exactOperand(a)
+		m, ok := scaleBy(m, scale-s)
+		if !ok {
+			return nil, "", overflow()
+		}
+		ms = append(ms, m)
+	}
+	return ms, cur, nil
 }
 
 // SumRows adds numbers one by one in the order given, blanks skipped, as

@@ -373,11 +373,11 @@ func TestLookup_Aggregates(t *testing.T) {
 	if c, err := s.Create(ctx, "Caught", Values{}); err != nil || c.Values["all"] != "0.00 PLN" {
 		t.Errorf("IFERROR over a failed aggregate: %v %s", err, dump(c))
 	}
-	// AVERAGE waits, and says what to write.
-	_, err = s.defineOpen(ctx, []byte(`{"name": "Mean", "variables": {"m": {"formula": "LOOKUP(Stock, AVERAGE(qty), TRUE)"}}, "states": {"initial": "open", "list": ["open"]}}`), asSetup)
+	// A function over rows that is not built says so.
+	_, err = s.defineOpen(ctx, []byte(`{"name": "Mean", "variables": {"m": {"formula": "LOOKUP(Stock, JOIN(sku, \", \"), TRUE)"}}, "states": {"initial": "open", "list": ["open"]}}`), asSetup)
 	var diags model.Diagnostics
-	if !errors.As(err, &diags) || !diags.Has(model.CodeBadFormula) || !strings.Contains(diags.Error(), "divide a SUM by a COUNT") {
-		t.Errorf("AVERAGE over a table: %v", err)
+	if !errors.As(err, &diags) || !diags.Has(model.CodeBadFormula) || !strings.Contains(diags.Error(), "JOIN cannot stand where the column stands") {
+		t.Errorf("JOIN over a table: %v", err)
 	}
 }
 

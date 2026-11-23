@@ -27,6 +27,15 @@ const liveFigures = `,
   "total": {"mode": "live", "formula": "SUM(invoices.net)"},
   "drafts": {"mode": "live", "formula": "SUMIF(invoices, state = \"draft\", net)"}`
 
+// liveFiguresMore are the mean, the middle value and the number of
+// different values of the same column. They stand on an order of their
+// own, so that the order of BenchmarkLiveFigure, which the gate holds to
+// its allocations, stays as it was.
+const liveFiguresMore = `,
+  "mean": {"mode": "live", "formula": "AVERAGE(invoices.net)"},
+  "middle": {"mode": "live", "formula": "MEDIAN(invoices.net)"},
+  "kinds": {"mode": "live", "formula": "COUNTUNIQUE(invoices.net)"}`
+
 // liveListStoreWith is liveListStore with more variables on the order.
 func liveListStoreWith(b *testing.B, more string) (*Store, []string) {
 	const each = 100
@@ -151,7 +160,13 @@ func BenchmarkLiveListPage(b *testing.B) {
 // order is read on the writer's turn, the figure beside the writer, with
 // one statement. A read takes the next order each time.
 func benchLiveFigure(b *testing.B, variable string, want any) {
-	s, ids := liveListStoreWith(b, liveFigures)
+	benchLiveFigureOf(b, liveFigures, variable, want)
+}
+
+// benchLiveFigureOf is benchLiveFigure on an order with the figures
+// given.
+func benchLiveFigureOf(b *testing.B, figures, variable string, want any) {
+	s, ids := liveListStoreWith(b, figures)
 	ctx := context.Background()
 	who := As(benchReader)
 	i := 0
@@ -177,3 +192,18 @@ func BenchmarkLiveFigure(b *testing.B) { benchLiveFigure(b, "total", "10000.00 P
 func BenchmarkLiveFigureCount(b *testing.B) { benchLiveFigure(b, "count", 100.0) }
 
 func BenchmarkLiveFigureIf(b *testing.B) { benchLiveFigure(b, "drafts", "10000.00 PLN") }
+
+// BenchmarkLiveFigureAverage is the mean of the column: the sum and the
+// count in one statement, divided as the language divides an exact
+// amount. BenchmarkLiveFigureMedian is its middle value, for which the
+// hundred amounts are put in order inside the statement, and
+// BenchmarkLiveFigureUnique how many different amounts there are.
+func BenchmarkLiveFigureAverage(b *testing.B) {
+	benchLiveFigureOf(b, liveFiguresMore, "mean", "100.000000 PLN")
+}
+
+func BenchmarkLiveFigureMedian(b *testing.B) {
+	benchLiveFigureOf(b, liveFiguresMore, "middle", "100.000 PLN")
+}
+
+func BenchmarkLiveFigureUnique(b *testing.B) { benchLiveFigureOf(b, liveFiguresMore, "kinds", 1.0) }

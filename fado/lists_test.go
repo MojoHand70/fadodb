@@ -102,17 +102,19 @@ func TestLists(t *testing.T) {
 		}
 		return fmt.Sprint(v)
 	}
-	figures := marked(t, page, "figures")
-	names := regexp.MustCompile("`([a-z_]+)`").FindAllStringSubmatch(strings.SplitN(figures, "\n", 2)[0], -1)
-	if len(names) != 6 {
-		t.Fatalf("the chapter's table of figures names %d figures in its heading", len(names))
-	}
-	for _, row := range rows(figures) {
-		who, order := row[0], row[1]
-		for i, name := range names {
-			got, err := db.Live(ctx, "Order", order, name[1], people[who])
-			if err != nil || got.List || shown(got.Value) != row[2+i] {
-				t.Errorf("%s reads %s of %s: the engine answers %v, %v, and the chapter says %s", who, name[1], order, got, err, row[2+i])
+	for mark, many := range map[string]int{"figures": 6, "more figures": 3} {
+		figures := marked(t, page, mark)
+		names := regexp.MustCompile("`([a-z_]+)`").FindAllStringSubmatch(strings.SplitN(figures, "\n", 2)[0], -1)
+		if len(names) != many {
+			t.Fatalf("the chapter's table of %s names %d figures in its heading", mark, len(names))
+		}
+		for _, row := range rows(figures) {
+			who, order := row[0], row[1]
+			for i, name := range names {
+				got, err := db.Live(ctx, "Order", order, name[1], people[who])
+				if err != nil || got.List || shown(got.Value) != row[2+i] {
+					t.Errorf("%s reads %s of %s: the engine answers %v, %v, and the chapter says %s", who, name[1], order, got, err, row[2+i])
+				}
 			}
 		}
 	}
@@ -210,7 +212,8 @@ func TestLists(t *testing.T) {
 		"a condition that is no condition":        {fig(`COUNTIF(invoices, net)`)},
 		"STATE() in the condition of a figure":    {fig(`COUNTIF(invoices, STATE() = \"paid\")`)},
 		"a figure inside a figure":                {fig(`COUNTIF(invoices, net > MAX(invoices.net))`)},
-		"AVERAGE of a column of a list":           {fig(`AVERAGE(invoices.net)`)},
+		"a middle value of a text":                {fig(`MEDIAN(invoices.number)`)},
+		"MEDIAN of single values":                 {fig(`MEDIAN(number)`), fig(`COUNTUNIQUE(customer)`)},
 	}, func(definition string) string { return finding(db, definition) })
 
 	// The source may not lose what a list names.

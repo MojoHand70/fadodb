@@ -281,13 +281,12 @@ work on functions over the lines a document holds (ADR-0081, step 2).
    after any `into` (ADR-0045). A list spread over several pages of
    answers is not read here.
 
-4. **Where the lines of a request come from.** In this record, from a
-   `rows` variable: lines a document holds. Lines that are documents of
-   their own, Globex's OrderLine documents each with its own states,
-   reach a request through a kept list (ADR-0078, item 5), which is
-   planned and not built. That record says that what reads an entered
-   list may read a kept one; a `rows` parameter is such a reader, so the
-   kept list will need nothing more from this record. Question 2.
+4. **Where the lines of a request come from.** From a `rows`
+   variable: lines a document holds. How lines that are documents of
+   their own reach a request, Globex's OrderLine documents each with
+   its own states, this record does not say. The owner deferred it on
+   2026-11-23 with the relation of parent and child documents, which he
+   wants as a concept of the engine, designed first (question 2).
 
 5. **What changes.** The definitions of an inlet and of an action
    (`api/action.schema.json`, and the definition of an inlet in
@@ -297,10 +296,11 @@ work on functions over the lines a document holds (ADR-0081, step 2).
    change: a definition is kept as its JSON, and a queued action keeps
    its arguments as JSON already.
 
-## Questions for the owner
+## The owner's answers
 
-Each with a case, what this record proposes, and the other way. Answer
-in the chat, by number.
+Each question was put to him in the chat on 2026-11-23, with a case,
+what the record proposed and the other way. His words are given as he
+wrote them.
 
 1. **Where the lines of a message go.** Globex's order 1001 arrives
    with two lines.
@@ -314,8 +314,10 @@ in the chat, by number.
    commit or none. One step fewer, and the lines are not held twice. It
    costs an inlet that is no longer one command, with an id and a key
    for every document it makes.
+   The owner answered "1. yes": as proposed.
 
-2. **Where a request's lines come from when they are documents.**
+2. **Where a request's lines come from when they are documents:
+   deferred.**
    Globex books order 1001 after the chairs were cancelled: Business
    Central should get the sofa alone.
    Proposed: this record sends the lines a document holds. Lines as
@@ -328,6 +330,20 @@ in the chat, by number.
    now, without waiting. It is a second way to read other documents
    inside a commit beside LOOKUP, which ADR-0078 set out to keep to
    one.
+   The owner took neither. "We have to do it completely different. One
+   of the worst and most difficult things in my previous system was to
+   synchronise master document states and children documents states. I
+   think we need to treat in FadoDB parent-child document relation as
+   a first class concept, design it first and implement second." He
+   named what he sees in it: children take the states of their parent
+   and may add their own; moving the parent sometimes moves the
+   children in the same state; moving all the children sometimes moves
+   the parent; and sometimes the parent may not move unless some or all
+   children are in a state. "Each child document can have an action
+   'book' and depending on its state book to different accounts. It is
+   a big subject and I think we should defer it for now." So this
+   record sends only the lines a document holds (item 4), and the
+   question waits for that concept's own design and record.
 
 3. **A list in an answer, here or later.** A rule asks Business Central
    for the lines of a sales order.
@@ -335,6 +351,7 @@ in the chat, by number.
    It is the pull of a list, which every way in needs.
    The other way: its own record later, with lists spread over pages of
    answers and fetched on a schedule.
+   The owner answered "yes": as proposed.
 
 ## Consequences
 
@@ -348,7 +365,8 @@ in the chat, by number.
   document depends on it.
 - The two definitions grow, and so do their checks.
 - Not served yet: lists inside lines; lists spread over pages; lines
-  that are documents of their own, until the kept list.
+  that are documents of their own, which wait for the relation of
+  parent and child documents (deferred by the owner).
 
 ## What this record leaves out
 

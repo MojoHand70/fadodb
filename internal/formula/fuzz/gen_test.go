@@ -18,7 +18,10 @@ var notGenerated = map[string]bool{
 	"REF": true,
 	// The functions over a list bind only in a live variable, over a list
 	// of its document (ADR-0081).
-	"COUNTIF": true, "SUMIF": true, "MINIF": true, "MAXIF": true, "ANY": true, "ALL": true,
+	"COUNTIF": true, "SUMIF": true, "MINIF": true, "MAXIF": true, "AVERAGEIF": true, "ANY": true, "ALL": true,
+	// MEDIAN and COUNTUNIQUE work over rows alone: over a list, and in the
+	// column position of a LOOKUP.
+	"MEDIAN": true, "COUNTUNIQUE": true,
 }
 
 func TestGenerator_FormulasBindAndRun(t *testing.T) {

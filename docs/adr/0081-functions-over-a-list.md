@@ -1,6 +1,6 @@
 # ADR-0081: Functions over a list, each with its SQL from the start
 
-- Status: Proposed. Items 1, 2 and 5 and the set of item 6 are the owner's word of 2026-11-23; the rest is settled by me for him to veto, and marked so. Step 1 is built with this record, in part: see "What is built".
+- Status: Proposed; amends ADR-0046 (item 4: `AVERAGE`, `MEDIAN` and `COUNTUNIQUE` stand in the column position of a `LOOKUP`). Items 1, 2 and 5 and the set of item 6 are the owner's word of 2026-11-23; the rest is settled by me for him to veto, and marked so. Step 1 is built: see "What is built".
 - Date: 2026-11-23
 
 ## Context
@@ -141,6 +141,30 @@ planned for a server, is from its documentation.
    and `ALL` is TRUE; a row on which the condition is blank does not
    meet it. *(Mine.)*
 
+8. **The mean, the middle value and the different values.** *(Mine.)*
+   - `AVERAGE` over rows is what `AVERAGE` gives the same values
+     inside one document (ADR-0022): a number for numbers; for exact
+     values the exact sum divided by how many there are, at four
+     places more than the column, by the language's own rule of
+     division. Of nothing it is blank.
+   - `MEDIAN` is the middle value of the values in their order, and
+     of an even number of them the mean of the two in the middle. For
+     exact values it is exact at one place more than the column, which
+     that mean needs and which is enough for it, so nothing is
+     rounded: of 0.01 and 0.02 it is 0.015. Money is in one currency.
+     Of nothing it is blank.
+   - `COUNTUNIQUE` counts the values that differ as `=` compares them,
+     of any type that is one value. Money in two currencies is no
+     error here: the same amount in two currencies is two values.
+   - `MEDIAN` and `COUNTUNIQUE` are functions of rows alone. Over
+     single values, `MEDIAN(a, b, c)`, they are refused: nobody asked
+     for that, and each would need its form in three evaluators.
+   - What stands over a list stands in the column position of a
+     `LOOKUP` too, since both are the same aggregate over rows:
+     `LOOKUP(Rates, AVERAGE(rate), currency = THIS.currency)`. ADR-0046
+     left `AVERAGE` out because its exact division was not written for
+     every executor; now it is.
+
 ## The owner's words
 
 2026-11-23, in this order:
@@ -158,17 +182,35 @@ planned for a server, is from its documentation.
 
 ## What is built
 
-With this record, of step 1: `COUNT`, `SUM`, `MIN` and `MAX` over a
-list that is a `QUERY`, their forms with a condition (`COUNTIF`,
-`SUMIF`, `MINIF`, `MAXIF`), and `ANY` and `ALL`.
+Step 1, the figures over a list that is a `QUERY`: `COUNT`, `SUM`,
+`MIN`, `MAX`, `AVERAGE`, `MEDIAN` and `COUNTUNIQUE`, the forms with a
+condition (`COUNTIF`, `SUMIF`, `MINIF`, `MAXIF`, `AVERAGEIF`), and
+`ANY` and `ALL`.
 
 - Each compiles to a query slot, as the aggregate in the column
   position of a `LOOKUP` does, and the store answers it with the
-  statement `formula.AggregateSQL` writes for that aggregate. Those
-  four aggregates have their SQL for SQLite and for DuckDB since
-  ADR-0046, and the lookup suite proves one answer on the Go fold, on
-  SQLite, on DuckDB and on the store. That is how these ten functions
-  meet item 2.
+  statement `formula.AggregateSQL` writes for that aggregate. `COUNT`,
+  `SUM`, `MIN` and `MAX` have their SQL for SQLite and for DuckDB
+  since ADR-0046. `AVERAGE`, `MEDIAN` and `COUNTUNIQUE` got theirs
+  with this record, and the lookup suite proves one answer for all
+  seven on the Go fold, on SQLite, on DuckDB and on the store. That is
+  how these fourteen functions meet item 2.
+- How the three are asked, the same text in both dialects but for the
+  casts:
+  - `AVERAGE` of numbers is the engine's own sum, added in the order
+    of the key, divided by `COUNT`. Of exact values it is the exact
+    sum and the count given to the function that divides an exact
+    amount as the language does, which both databases already have
+    from the engine. No database's own `AVG` is used: in SQLite and in
+    DuckDB it answers a float.
+  - `MEDIAN` numbers the rows that have a value in the order of the
+    value, with `ROW_NUMBER() OVER (ORDER BY ...)`, takes the one or
+    the two in the middle and adds their halves; for exact values it
+    adds them and multiplies by five, at one place more. DuckDB's own
+    `median` is not used: it answers a float for an even number of
+    exact values.
+  - `COUNTUNIQUE` is `COUNT(DISTINCT ...)`, of the mantissa for an
+    exact value and of the amount with its currency for money.
 - The rows of the statement are the ones the filter compiler gives
   for the list and its reader, so nothing about rights is written a
   second time, and an index on the pointer serves a figure as it
@@ -178,12 +220,6 @@ list that is a `QUERY`, their forms with a condition (`COUNTIF`,
 
 Not built yet, each decided above:
 
-- `AVERAGE`, `AVERAGEIF`, `MEDIAN` and `COUNTUNIQUE` over a query.
-  Each is an aggregate the engine has no SQL for yet, so by item 2
-  each waits for its form in both dialects and its cases. `AVERAGE`
-  needs care: no database divides an exact amount as the language
-  does, so the sum and the count are asked and the engine divides.
-  Until then: `SUM(invoices.net) / DECIMAL(COUNT(invoices), 0)`.
 - The functions over a list a document holds (step 2), and the ones
   that give a list again (step 3).
 
@@ -194,8 +230,13 @@ Not built yet, each decided above:
   counted.
 - Two readers get two figures. That is the list's own rule, and it is
   why a figure is live and no guard may read one.
-- The catalogue gains six functions with this step, and a function
+- The catalogue gains nine functions with this step, and a function
   that is in the catalogue and has no SQL yet stays refused.
+- The mean of amounts with two places has six, and the middle value
+  three. A class that wants two writes `ROUND(AVERAGE(invoices.net), 2)`.
+- An encoded program may name three more aggregates. The format does
+  not change: an engine older than this one refuses such a program as
+  one it does not know, and reads every program it read before.
 - `FILTER` changes its second argument before it is built.
 - A live value's formula now runs on a reader's evaluator when it has
   a figure, and under the writer's lock when it has none, as before.
@@ -232,11 +273,22 @@ order each time, three rounds each:
 | `SUM(invoices.net)` (`BenchmarkLiveFigure`) | 0.055 ms | 0.20 to 0.21 ms | 294 |
 | `COUNT(invoices)` (`BenchmarkLiveFigureCount`) | 0.044 ms | 0.17 to 0.19 ms | 272 |
 | `SUMIF(invoices, state = "draft", net)` (`BenchmarkLiveFigureIf`) | 0.057 ms | 0.22 to 0.27 ms | 300 |
+| `AVERAGE(invoices.net)` (`BenchmarkLiveFigureAverage`) | 0.057 ms | 0.19 to 0.21 ms | 308 |
+| `COUNTUNIQUE(invoices.net)` (`BenchmarkLiveFigureUnique`) | 0.052 ms | 0.18 to 0.19 ms | 276 |
+| `MEDIAN(invoices.net)` (`BenchmarkLiveFigureMedian`) | 0.15 ms | 0.30 ms | 288 |
 
 A figure allocates the same whatever the list holds: no row comes
 into memory. Among a million invoices most of its time is the disk:
 the hundred invoices of an order lie apart in the file, and each is
 visited for its amount. The question of the list is compiled anew at
 every read; keeping it compiled is left for later.
+
+The last three rows were measured with their functions, the same day,
+with `SUM` beside them as the control: 0.054 ms and 0.18 to 0.19 ms.
+The middle value costs about three times a sum among 10,000: the
+hundred amounts are put in order inside the statement, with a window
+function. Its first form read the rows three times, once for the
+value, once for its error and once for the statement around them, and
+took 0.26 ms; this one reads them once.
 
 No budget of a commit changes: a figure is in no commit.

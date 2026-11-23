@@ -8,6 +8,24 @@ All notable changes to FadoDB are recorded here. The format follows
 
 ### Added
 
+- The mean, the middle value and the different values of rows
+  (ADR-0081). `AVERAGE(invoices.net)`, `MEDIAN(invoices.net)` and
+  `COUNTUNIQUE(invoices.state)` are figures over a list in a live
+  variable, beside `COUNT`, `SUM`, `MIN` and `MAX`, and
+  `AVERAGEIF(invoices, state = "draft", net)` is the mean of the rows
+  that meet a condition. The same three stand in the column position
+  of a `LOOKUP`: `LOOKUP(Rates, AVERAGE(rate), currency = THIS.currency)`,
+  which was refused before with the advice to divide a sum by a count.
+  The mean of exact values is exact, with four places more than the
+  column, as `AVERAGE` of single values has; the middle value has one
+  place more, and of an even number of values is the mean of the two
+  in the middle; `ROUND` cuts either. `COUNTUNIQUE` counts the values
+  that differ as `=` compares them, and money in two currencies is two
+  values. `MEDIAN` and `COUNTUNIQUE` work over rows alone and are
+  refused over single values. Each has its SQL for SQLite and for
+  DuckDB, and the lookup suite proves one answer on all the executors.
+  Three functions are new in the catalogue. The layout of a database
+  and the format of a program do not change.
 - Who removed a table or words, and when (ADR-0083, proposed).
   `remove_table` and `remove_words` write a line in the log of
   definitions, in the transaction that removes: who removed it, what

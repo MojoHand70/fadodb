@@ -384,10 +384,12 @@ of a `QUERY` and with a class and an id; the engine's own index on
 every `ref`, which is ADR-0075's, so a list at scale wants
 `"index": true` on its pointer today. ADR-0081, functions over a
 list, each with its SQL from the start: built over a list that is a
-`QUERY` are `COUNT`, `SUM`, `MIN` and `MAX`, their forms with a
-condition (`COUNTIF`, `SUMIF`, `MINIF`, `MAXIF`), and `ANY` and
-`ALL`, each one statement asked for whoever reads the live variable
-that holds it. Not built yet: `AVERAGE`, `MEDIAN` and `COUNTUNIQUE`;
+`QUERY` are `COUNT`, `SUM`, `MIN`, `MAX`, `AVERAGE`, `MEDIAN` and
+`COUNTUNIQUE`, the forms with a condition (`COUNTIF`, `SUMIF`,
+`MINIF`, `MAXIF`, `AVERAGEIF`), and `ANY` and `ALL`, each one
+statement asked for whoever reads the live variable that holds it;
+`AVERAGE`, `MEDIAN` and `COUNTUNIQUE` stand in the column position of
+a `LOOKUP` as well. Not built yet:
 the same functions over the lines and tags a document holds; and
 `FILTER`, `SORT`, `TOP`, `UNIQUE`, `FIRST`, `LAST`, `INDEX`,
 `CONTAINS` and `JOIN`.

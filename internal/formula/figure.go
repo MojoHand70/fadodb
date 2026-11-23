@@ -6,33 +6,38 @@ import "strings"
 // variable whose formula is a QUERY. A function over such a list gives
 // one value: how many rows it has, the sum of a column, whether every
 // row meets a condition. It compiles to one query slot, as a LOOKUP with
-// COUNT, SUM, MIN or MAX in its column position does (ADR-0046), so that
+// an aggregate in its column position does (ADR-0046), so that
 // the engine of the listed class answers it with one statement and no
 // row is read into the VM (ADR-0020). The slot names the list; whoever
 // runs the program gives the slot the rows the list has for its reader.
 
-// figureForm says which aggregate a function over a list is, and
-// whether it takes a condition and a column.
+// figureForm says which aggregate a function over a list is, whether it
+// takes a condition and a column, and whether it works over rows alone:
+// MEDIAN and COUNTUNIQUE are no functions of single values.
 type figureForm struct {
 	agg       string
 	cond, col bool
+	rows      bool
 }
 
 var figureForms = map[string]figureForm{
 	"COUNT": {agg: "COUNT"}, "SUM": {agg: "SUM", col: true}, "MIN": {agg: "MIN", col: true}, "MAX": {agg: "MAX", col: true},
+	"AVERAGE": {agg: "AVERAGE", col: true},
+	"MEDIAN":  {agg: "MEDIAN", col: true, rows: true}, "COUNTUNIQUE": {agg: "COUNTUNIQUE", col: true, rows: true},
 	"COUNTIF": {agg: "COUNT", cond: true}, "SUMIF": {agg: "SUM", cond: true, col: true},
 	"MINIF": {agg: "MIN", cond: true, col: true}, "MAXIF": {agg: "MAX", cond: true, col: true},
+	"AVERAGEIF": {agg: "AVERAGE", cond: true, col: true},
 }
 
-// IsFigureFunction reports whether name is a function that works over a
-// list alone, and is no function of single values.
+// IsFigureFunction reports whether name is a function that works over
+// rows alone, and is no function of single values.
 func IsFigureFunction(name string) bool {
 	switch name = strings.ToUpper(name); name {
 	case "ANY", "ALL":
 		return true
 	}
 	f, ok := figureForms[name]
-	return ok && f.cond
+	return ok && (f.cond || f.rows)
 }
 
 // listOf is the name of the list an argument names, as its class
@@ -60,10 +65,10 @@ func (b *binder) listOf(n Node) (name string, src *Source) {
 	return name, src
 }
 
-// figure binds a function over a list of the document. COUNT, SUM, MIN
-// and MAX are functions of single values too: a call of one is a figure
-// when its one argument is a list or a column of one, and handled is
-// false otherwise, so that the function itself takes the call.
+// figure binds a function over a list of the document. COUNT, SUM, MIN,
+// MAX and AVERAGE are functions of single values too: a call of one is a
+// figure when its one argument is a list or a column of one, and handled
+// is false otherwise, so that the function itself takes the call.
 func (b *binder) figure(n *Call) (t Type, handled bool, err error) {
 	if n.Name == "ANY" || n.Name == "ALL" {
 		t, err = b.anyAll(n)
@@ -71,26 +76,21 @@ func (b *binder) figure(n *Call) (t Type, handled bool, err error) {
 	}
 	form, ok := figureForms[n.Name]
 	if !ok {
-		// AVERAGE is decided and has no SQL yet (ADR-0081, item 2): over a
-		// list it says so, and what gives the same until it has.
-		if n.Name == "AVERAGE" && len(n.Args) == 1 {
-			if list, _ := b.listOf(n.Args[0]); list != "" {
-				col := "column"
-				if m, ok := n.Args[0].(*Member); ok && len(m.Path) == 1 {
-					col = m.Path[0]
-				}
-				return Type{}, true, b.errAt(n.P, "AVERAGE over a list is not built yet (ADR-0081); until it is, divide the sum by the count: SUM(%s.%s) / COUNT(%s.%s) for numbers, SUM(%s.%s) / DECIMAL(COUNT(%s.%s), 0) for exact amounts", list, col, list, col, list, col, list, col)
-			}
-		}
 		return Type{}, false, nil
 	}
-	if !form.cond {
+	if !form.cond && !form.rows {
 		if len(n.Args) != 1 {
 			return Type{}, false, nil
 		}
 		if name, _ := b.listOf(n.Args[0]); name == "" {
 			return Type{}, false, nil
 		}
+	}
+	if form.rows && b.source != nil {
+		// The column position of a LOOKUP is bound by the LOOKUP itself;
+		// what comes here stands among the arguments of a function over
+		// rows, where no other may stand.
+		return Type{}, true, b.errAt(n.P, "%s works over rows, and may not be used inside the arguments of another function over rows (ADR-0020); over the rows of %s it stands in the column position of a LOOKUP alone: LOOKUP(%s, %s(column), condition)", n.Name, b.source.Name, b.source.Name, n.Name)
 	}
 	t, err = b.figureSlot(n, form)
 	return t, true, err
@@ -122,12 +122,20 @@ func (b *binder) figureSlot(n *Call, form figureForm) (Type, error) {
 	if len(n.Args) != want {
 		return Type{}, b.errAt(n.P, "%s over a list is written %s", n.Name, shape)
 	}
+	also := ""
+	if form.rows {
+		also = "; over the rows of another class it stands in the column position of a LOOKUP"
+	}
 	if b.opts.Lists == nil {
-		return Type{}, b.errAt(n.P, "%s works over a list of the document, and a list is read only by a live variable: one that says \"mode\": \"live\" (ADR-0081)", n.Name)
+		return Type{}, b.errAt(n.P, "%s works over a list of the document, and a list is read only by a live variable: one that says \"mode\": \"live\" (ADR-0081)%s", n.Name, also)
 	}
 	list, src := b.listOf(n.Args[0])
 	if list == "" {
-		return Type{}, b.errAt(n.Args[0].Pos(), "%s: the first argument is a list of the document: a live variable of this class whose formula is a QUERY", n.Name)
+		what := "the first argument"
+		if !form.cond {
+			what = "the argument"
+		}
+		return Type{}, b.errAt(n.Args[0].Pos(), "%s: %s is a list of the document: a live variable of this class whose formula is a QUERY%s", n.Name, what, also)
 	}
 	if !b.opts.Live {
 		return Type{}, b.errAt(n.P, "%s over the list %s counts what its reader may read, so it stands only in a live variable: one that says \"mode\": \"live\". A value that is kept, or that a decision reads, may not depend on who looks (ADR-0081)", n.Name, list)
@@ -135,7 +143,7 @@ func (b *binder) figureSlot(n *Call, form figureForm) (Type, error) {
 	if b.source != nil {
 		return Type{}, b.errAt(n.P, "a function over a list may not be used inside another's arguments (ADR-0020)")
 	}
-	// The column: after the dot for COUNT, SUM, MIN and MAX, the last
+	// The column: after the dot for a function of one argument, the last
 	// argument for an -IF form; COUNT of a list counts its rows.
 	col, colAt := "", n.P
 	switch {

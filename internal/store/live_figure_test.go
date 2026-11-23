@@ -33,7 +33,14 @@ const figureOrder = `{
    "all":      {"mode": "live", "formula": "ALL(invoices, state = \"draft\")"},
    "mean":     {"mode": "live", "formula": "IF(COUNT(invoices) = 0, BLANK, SUM(invoices.net) / DECIMAL(COUNT(invoices), 0))"},
    "words":    {"mode": "live", "formula": "IF(COUNT(invoices) = 0, \"none\", TEXT(COUNT(invoices)) & \" invoices\")"},
-   "mine":     {"mode": "live", "formula": "COUNTIF(invoices, owner = THIS.owner)"}
+   "mine":     {"mode": "live", "formula": "COUNTIF(invoices, owner = THIS.owner)"},
+   "average":  {"mode": "live", "formula": "AVERAGE(invoices.net)"},
+   "middle":   {"mode": "live", "formula": "MEDIAN(invoices.net)"},
+   "kinds":    {"mode": "live", "formula": "COUNTUNIQUE(invoices.state)"},
+   "amounts":  {"mode": "live", "formula": "COUNTUNIQUE(invoices.margin)"},
+   "usual":    {"mode": "live", "formula": "AVERAGEIF(invoices, state = \"draft\", net)"},
+   "midmargin": {"mode": "live", "formula": "MEDIAN(invoices.margin)"},
+   "spread":   {"mode": "live", "formula": "MAX(invoices.net) - MEDIAN(invoices.net)"}
  },
  "states": {"initial": "open", "list": ["open", "closed"], "final": ["closed"]},
  "transitions": [{"name": "close", "from": "open", "to": "closed"}],
@@ -71,13 +78,19 @@ func TestLiveFigure_ForTheReader(t *testing.T) {
 		who   Principal
 		want  map[string]any
 	}{
-		{"ORD-17", liveJan, map[string]any{"count": 2.0, "priced": 2.0, "total": "1250.00 PLN", "largest": "1000.00 PLN", "smallest": "250.00 PLN", "mean": "625.000000 PLN", "words": "2 invoices", "mine": 2.0}},
-		{"ORD-17", livePiotr, map[string]any{"count": 1.0, "total": "70.00 PLN", "largest": "70.00 PLN", "smallest": "70.00 PLN", "mean": "70.000000 PLN", "words": "1 invoices", "mine": 0.0}},
-		{"ORD-17", liveEwa, map[string]any{"count": 3.0, "priced": 3.0, "total": "1320.00 PLN", "largest": "1000.00 PLN", "smallest": "70.00 PLN", "mean": "440.000000 PLN", "words": "3 invoices", "mine": 2.0}},
+		{"ORD-17", liveJan, map[string]any{"count": 2.0, "priced": 2.0, "total": "1250.00 PLN", "largest": "1000.00 PLN", "smallest": "250.00 PLN", "mean": "625.000000 PLN", "words": "2 invoices", "mine": 2.0,
+			"average": "625.000000 PLN", "middle": "625.000 PLN", "kinds": 1.0, "usual": "625.000000 PLN", "spread": "375.000 PLN"}},
+		{"ORD-17", livePiotr, map[string]any{"count": 1.0, "total": "70.00 PLN", "largest": "70.00 PLN", "smallest": "70.00 PLN", "mean": "70.000000 PLN", "words": "1 invoices", "mine": 0.0,
+			"average": "70.000000 PLN", "middle": "70.000 PLN", "kinds": 1.0}},
+		{"ORD-17", liveEwa, map[string]any{"count": 3.0, "priced": 3.0, "total": "1320.00 PLN", "largest": "1000.00 PLN", "smallest": "70.00 PLN", "mean": "440.000000 PLN", "words": "3 invoices", "mine": 2.0,
+			"average": "440.000000 PLN", "middle": "250.000 PLN", "kinds": 1.0, "amounts": 1.0, "spread": "750.000 PLN"}},
 		{"ORD-18", liveJan, map[string]any{"count": 1.0, "total": "5.00 PLN"}},
 		// A list with no rows: a count is zero, a sum of money, a least
-		// and a greatest are blank, and a formula says what it wants.
-		{"ORD-18", livePiotr, map[string]any{"count": 0.0, "priced": 0.0, "total": nil, "largest": nil, "smallest": nil, "mean": nil, "words": "none", "mine": 0.0, "any": false, "all": true}},
+		// and a greatest are blank, and a formula says what it wants. A
+		// mean and a middle value of nothing are blank, and nothing has
+		// no different values.
+		{"ORD-18", livePiotr, map[string]any{"count": 0.0, "priced": 0.0, "total": nil, "largest": nil, "smallest": nil, "mean": nil, "words": "none", "mine": 0.0, "any": false, "all": true,
+			"average": nil, "middle": nil, "kinds": 0.0, "usual": nil, "spread": nil}},
 	} {
 		for name, want := range tc.want {
 			if got := read(tc.order, name, tc.who); got != want {
@@ -94,9 +107,14 @@ func TestLiveFigure_AColumnTheReaderMayNotRead(t *testing.T) {
 	if got := read("ORD-17", "margins", liveEwa); got != "3.00 PLN" {
 		t.Errorf("the margins for finance = %v; want 3.00 PLN", got)
 	}
+	if got := read("ORD-17", "midmargin", liveEwa); got != "1.000 PLN" {
+		t.Errorf("the middle margin for finance = %v; want 1.000 PLN", got)
+	}
 	for _, who := range []Principal{liveJan, livePiotr} {
-		if got := read("ORD-17", "margins", who); got != nil {
-			t.Errorf("the margins for %s = %v; want blank: sales may not read a margin", who.ID, got)
+		for _, name := range []string{"margins", "midmargin", "amounts"} {
+			if got := read("ORD-17", name, who); got != nil {
+				t.Errorf("%s for %s = %v; want blank: sales may not read a margin", name, who.ID, got)
+			}
 		}
 	}
 }
@@ -106,7 +124,7 @@ func TestLiveFigure_AColumnTheReaderMayNotRead(t *testing.T) {
 func TestLiveFigure_WithACondition(t *testing.T) {
 	s, read := openFigures(t)
 	ctx := t.Context()
-	for name, want := range map[string]any{"drafts": 2.0, "filed": nil, "top": "1000.00 PLN", "low": "250.00 PLN", "any": false, "all": true} {
+	for name, want := range map[string]any{"drafts": 2.0, "filed": nil, "top": "1000.00 PLN", "low": "250.00 PLN", "any": false, "all": true, "kinds": 1.0, "usual": "625.000000 PLN"} {
 		if got := read("ORD-17", name, liveJan); got != want {
 			t.Errorf("%s with every invoice a draft = %v; want %v", name, got, want)
 		}
@@ -114,7 +132,7 @@ func TestLiveFigure_WithACondition(t *testing.T) {
 	if _, err := s.Transition(ctx, "Invoice", "FV-1", "file", nil, As(liveJan)); err != nil {
 		t.Fatal(err)
 	}
-	for name, want := range map[string]any{"drafts": 1.0, "filed": "1000.00 PLN", "top": "250.00 PLN", "low": "250.00 PLN", "any": true, "all": false} {
+	for name, want := range map[string]any{"drafts": 1.0, "filed": "1000.00 PLN", "top": "250.00 PLN", "low": "250.00 PLN", "any": true, "all": false, "kinds": 2.0, "usual": "250.000000 PLN", "average": "625.000000 PLN"} {
 		if got := read("ORD-17", name, liveJan); got != want {
 			t.Errorf("%s after FV-1 was filed = %v; want %v", name, got, want)
 		}
@@ -178,6 +196,15 @@ func TestLiveFigure_RefusedWhenDefined(t *testing.T) {
 		{"the state of the document in a condition", `"x": {"mode": "live", "formula": "COUNTIF(invoices, STATE() = \"paid\")"}`, "bad_formula", "STATE() is a function of the document the formula belongs to"},
 		{"a function of a life in a condition", `"x": {"mode": "live", "formula": "COUNTIF(invoices, CREATEDBY() = USER())"}`, "bad_formula", "a function of a document's life"},
 		{"a figure over what is no list", `"x": {"mode": "live", "formula": "COUNTIF(number, TRUE)"}`, "bad_formula", "the first argument is a list of the document"},
+		{"a middle value that is kept", `"x": {"type": "money(3)", "formula": "MEDIAN(invoices.net)"}`, "bad_formula", "stands only in a live variable"},
+		{"a mean of a list and no column", `"x": {"mode": "live", "formula": "AVERAGE(invoices)"}`, "bad_formula", "AVERAGE takes a column of the list"},
+		{"a middle value of a list and no column", `"x": {"mode": "live", "formula": "MEDIAN(invoices)"}`, "bad_formula", "MEDIAN takes a column of the list"},
+		{"a middle value of texts", `"x": {"mode": "live", "formula": "MEDIAN(invoices.number)"}`, "bad_formula", "MEDIAN: argument 1 must be a number or an exact amount, got text"},
+		{"a mean of texts", `"x": {"mode": "live", "formula": "AVERAGEIF(invoices, TRUE, number)"}`, "bad_formula", "must be a number, got text"},
+		{"a middle value of what is no list", `"x": {"mode": "live", "formula": "MEDIAN(number)"}`, "bad_formula", "MEDIAN: the argument is a list of the document"},
+		{"different values of what is no list", `"x": {"mode": "live", "formula": "COUNTUNIQUE(customer)"}`, "bad_formula", "in the column position of a LOOKUP"},
+		{"a middle value inside a figure", `"x": {"mode": "live", "formula": "COUNTIF(invoices, net > MEDIAN(invoices.net))"}`, "bad_formula", "inside the arguments of another function over rows"},
+		{"a mean inside a figure", `"x": {"mode": "live", "formula": "COUNTIF(invoices, net > AVERAGE(invoices.net))"}`, "bad_formula", "inside another's arguments"},
 		{"a figure with too little", `"x": {"mode": "live", "formula": "SUMIF(invoices, TRUE)"}`, "bad_formula", "SUMIF takes 3 arguments, got 2"},
 		{"a figure inside a figure", `"x": {"mode": "live", "formula": "COUNTIF(invoices, net > SUM(invoices.net))"}`, "bad_formula", "inside another's arguments"},
 		{"a lookup beside a figure", `"x": {"mode": "live", "formula": "COUNT(invoices) + LOOKUP(Invoice, COUNT(id), TRUE)"}`, "not_supported", "is not built yet (ADR-0076)"},

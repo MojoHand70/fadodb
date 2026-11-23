@@ -272,9 +272,9 @@ document's `spent_on`.
 
 ### One value from many rows
 
-In the place of the column may stand `COUNT`, `SUM`, `MIN` or `MAX`.
-The answer is then worked out from every row that matches. With the
-three rows Tess imported:
+In the place of the column may stand `COUNT`, `SUM`, `MIN`, `MAX`,
+`AVERAGE`, `MEDIAN` or `COUNTUNIQUE`. The answer is then worked out
+from every row that matches. With the three rows Tess imported:
 
 <!-- one value from many rows -->
 | Formula | Gives | For EUR | For a currency with no row |
@@ -284,11 +284,21 @@ three rows Tess imported:
 | `LOOKUP(Rates, SUM(rate), currency = THIS.currency)` | the sum of the column | 8.5200 | 0.0000 |
 | `LOOKUP(Rates, MIN(rate), currency = THIS.currency)` | the smallest | 4.2500 | blank |
 | `LOOKUP(Rates, MAX(rate), currency = THIS.currency)` | the largest | 4.2700 | blank |
+| `LOOKUP(Rates, AVERAGE(rate), currency = THIS.currency)` | the mean | 4.26000000 | blank |
+| `LOOKUP(Rates, MEDIAN(rate), currency = THIS.currency)` | the middle value | 4.26000 | blank |
+| `LOOKUP(Rates, COUNTUNIQUE(rate), currency = THIS.currency)` | how many different values | 2 | 0 |
 
 - `COUNT` counts the rows that have a value in the column. Count a key
   column to count the rows.
-- `SUM`, `MIN` and `MAX` take numbers and amounts. Over a day or a
-  text they are refused when the class is defined.
+- `SUM`, `MIN`, `MAX`, `AVERAGE` and `MEDIAN` take numbers and
+  amounts. Over a day or a text they are refused when the class is
+  defined.
+- The mean of exact numbers is exact, with four places more than the
+  column, as `AVERAGE` of single values has. The middle value has one
+  place more: of an even number of rows it is the mean of the two in
+  the middle. `ROUND` cuts either.
+- `COUNTUNIQUE` counts the values that differ, of any type, as `=`
+  compares them.
 - One lookup may not stand inside another. Two may stand side by side
   in one formula. To feed one into another, give the first a variable
   of its own.

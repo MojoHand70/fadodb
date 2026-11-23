@@ -1257,7 +1257,7 @@ func (b *binder) lookup(n *Call) (Type, error) {
 			return Type{}, err
 		}
 	default:
-		return Type{}, b.errAt(n.Args[1].Pos(), "LOOKUP: the column is the name of a column of %s, or COUNT, SUM, MIN or MAX over its columns", src.Name)
+		return Type{}, b.errAt(n.Args[1].Pos(), "LOOKUP: the column is the name of a column of %s, or COUNT, SUM, MIN, MAX, AVERAGE, MEDIAN or COUNTUNIQUE over its columns", src.Name)
 	}
 	cond, ct, err := b.subProgram(n.Args[2], src, q, argOf)
 	if err != nil {
@@ -1300,19 +1300,21 @@ func (b *binder) lookup(n *Call) (Type, error) {
 }
 
 // rowAggregates are the functions that may stand in the column position
-// of a LOOKUP (ADR-0046).
-var rowAggregates = map[string]bool{"COUNT": true, "SUM": true, "MIN": true, "MAX": true}
+// of a LOOKUP (ADR-0046), and that a figure over a list is one of
+// (ADR-0081). Each has its fold in QuerySlot.Aggregate and its SQL in
+// every dialect, and the lookup suite holds them to one answer.
+var rowAggregates = map[string]bool{"COUNT": true, "SUM": true, "MIN": true, "MAX": true, "AVERAGE": true, "MEDIAN": true, "COUNTUNIQUE": true}
 
-// aggregate binds COUNT, SUM, MIN or MAX in the column position of a
-// LOOKUP: the expression it runs over is a program of its own, like the
-// condition, and its type is what the same function gives one value of
-// that type.
+// aggregate binds COUNT, SUM, MIN, MAX or AVERAGE in the column position
+// of a LOOKUP: the expression it runs over is a program of its own, like
+// the condition, and its type is what the same function gives one value
+// of that type. MEDIAN and COUNTUNIQUE are functions of rows alone: the
+// middle value of numbers is a number and of exact values exact at one
+// place more, which the mean of the two in the middle needs; the count
+// of the values that differ is a number.
 func (b *binder) aggregate(n *Call, src *Source, q *QuerySlot, argOf map[string]int) error {
 	if !rowAggregates[n.Name] {
-		if n.Name == "AVERAGE" {
-			return b.errAt(n.P, "LOOKUP: AVERAGE over a source is not built yet; divide a SUM by a COUNT")
-		}
-		return b.errAt(n.P, "LOOKUP: %s cannot stand where the column stands; a column of %s can, and COUNT, SUM, MIN or MAX over its columns", n.Name, src.Name)
+		return b.errAt(n.P, "LOOKUP: %s cannot stand where the column stands; a column of %s can, and COUNT, SUM, MIN, MAX, AVERAGE, MEDIAN or COUNTUNIQUE over its columns", n.Name, src.Name)
 	}
 	if len(n.Args) != 1 {
 		return b.errAt(n.P, "LOOKUP: %s over a source takes one expression, such as %s(%s)", n.Name, n.Name, src.Columns[0].Name)
@@ -1321,13 +1323,32 @@ func (b *binder) aggregate(n *Call, src *Source, q *QuerySlot, argOf map[string]
 	if err != nil {
 		return err
 	}
-	spec := builtins[builtinByName[n.Name]]
-	if k := spec.args[0]; !k.accepts(vt) {
-		return b.errAt(n.Args[0].Pos(), "%s: argument 1 must be %s, got %s%s", n.Name, k, vt, k.hint(vt))
-	}
-	rt, err := b.resultType(spec, n, []Type{vt}, []litInfo{{}})
-	if err != nil {
-		return err
+	var rt Type
+	switch n.Name {
+	case "MEDIAN":
+		switch {
+		case vt.Kind == KindNumber:
+			rt = Scalar(KindNumber)
+		case vt.IsExact() && int(vt.Scale) < MaxScale:
+			rt = Type{Kind: vt.Kind, Scale: vt.Scale + 1}
+		case vt.IsExact():
+			return b.errAt(n.Args[0].Pos(), "MEDIAN: %s has the most places an exact value keeps, and the middle of two of them needs one more; round the values first", vt)
+		default:
+			return b.errAt(n.Args[0].Pos(), "MEDIAN: argument 1 must be a number or an exact amount, got %s", vt)
+		}
+	case "COUNTUNIQUE":
+		if !vt.IsScalar() {
+			return b.errAt(n.Args[0].Pos(), "COUNTUNIQUE: argument 1 must be one value of each row, got %s", vt)
+		}
+		rt = Scalar(KindNumber)
+	default:
+		spec := builtins[builtinByName[n.Name]]
+		if k := spec.args[0]; !k.accepts(vt) {
+			return b.errAt(n.Args[0].Pos(), "%s: argument 1 must be %s, got %s%s", n.Name, k, vt, k.hint(vt))
+		}
+		if rt, err = b.resultType(spec, n, []Type{vt}, []litInfo{{}}); err != nil {
+			return err
+		}
 	}
 	q.Agg, q.Value, q.Type = n.Name, val, rt
 	return nil

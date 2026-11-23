@@ -224,7 +224,7 @@ func TestProgram_LookupRoundTrip(t *testing.T) {
 	// key is a part of nothing, is not a program.
 	for name, spoil := range map[string]func(q *QuerySlot){
 		"an aggregate with a column":   func(q *QuerySlot) { q.Column = "rate" },
-		"an aggregate nobody knows":    func(q *QuerySlot) { q.Agg = "AVERAGE" },
+		"an aggregate nobody knows":    func(q *QuerySlot) { q.Agg = "MODE" },
 		"an aggregate over nothing":    func(q *QuerySlot) { q.Value = nil },
 		"neither column nor aggregate": func(q *QuerySlot) { q.Agg, q.Value = "", nil },
 		"a part of no key":             func(q *QuerySlot) { q.Key, q.IndexColumn = nil, "" },

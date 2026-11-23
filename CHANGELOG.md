@@ -490,6 +490,15 @@ All notable changes to FadoDB are recorded here. The format follows
 
 ### Fixed
 
+- **The README, the roadmap, the manual and two skills said things of
+  Phase 7 that were no longer true.** The README named nothing Phase 7
+  built and still called the log of reads not built; the roadmap and
+  the manual called the open face in development, after work on it
+  stopped on 2026-11-21; the manual said FadoDB checks no passwords,
+  that the browser will be the third place a formula is worked out, and
+  that it stood at release v0.5.0, with the server still to come. Each
+  now says what works on main, what is left of the phase in its order,
+  and which records wait for the owner's acceptance.
 - **The pages where people sign in made Firefox write a refusal in its
   console.** They named no icon, so Firefox asked the server for
   `/favicon.ico`, and the header of those pages lets nothing load. The

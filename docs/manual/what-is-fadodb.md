@@ -92,27 +92,34 @@ class; the evidence is the log.
 - **Not an application with screens.** It is the engine, and a screen
   is never the engine's: each face draws a document from its class, the
   words the class has for people and its formulas. Screens are built on
-  it by you or by an agent; the open face,
+  it by you or by an agent, and a server hands out their pages from a
+  folder ([serving a database](serving-a-database.md#the-pages-of-a-face)).
+  The open face,
   [FadoDB Workshop](https://github.com/MojoHand70/fadodb-workshop), is a
-  project of its own, in development, whose pages a server hands out
-  from a folder ([serving a database](serving-a-database.md#the-pages-of-a-face)).
-- **Not a user directory.** FadoDB checks no passwords. The program
+  project of its own, where a person signs in and works the documents
+  of a class of plain values; work on it stopped on 2026-11-21.
+- **Not a user directory.** The engine checks no passwords. The program
   that embeds it says on every call who the caller is and which groups
   they are in. A database can also keep its own users, groups and
-  keys, for callers that reach it with a key.
+  keys, for callers that reach it with a key, and `fadodb serve` signs
+  its people in with a password or a company's sign-on
+  ([signing in](signing-in.md)).
 
 ## Where it stands
 
-FadoDB is before version 1.0. This is what works today, in release
-v0.5.0, through the Go package `fado`:
+FadoDB is before version 1.0. This is what works today: release
+v0.6.0, through the Go package `fado` and the server, and in its last
+row what the main branch adds for v0.7.0:
 
 | Works today | Comes later |
 |---|---|
-| classes, variables, formulas, exact money, dates | a server that takes the same commands over the network |
-| states, transitions, guards, automatic moves by time | formulas and forms in the browser |
-| rules and actions, calls to other systems, exactly once | an analytical engine for large reports |
-| who may: access, rights, system groups, substitutions | the engine's own users, groups and keys |
-| versions, events, previews, filters, read-only SQL | a server for agents (MCP) |
+| classes, variables, formulas, exact money, dates | the door for agents at the server itself, at `/mcp` |
+| states, transitions, guards, automatic moves by time | a tool with which an agent waits for a change, and files through that door |
+| rules and actions, calls to other systems, exactly once | the engine's own indexes, and a decision that stands on what the document holds |
+| who may: access, rights, system groups, substitutions | an analytical engine for large reports |
+| versions, events, previews, filters, read-only SQL | the engine called from other languages than Go |
+| a server with its own users, groups and keys, and a door for agents (MCP) that an agent's program starts | Postgres as the store |
+| formulas in the browser, people signing in, apps, lists of other documents | |
 
 The [roadmap](../../ROADMAP.md) has the phases, the
 [changelog](../../CHANGELOG.md) what each release changed, and

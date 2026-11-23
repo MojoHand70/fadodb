@@ -353,17 +353,23 @@ face, which the server hands out from a folder, `--pages` (ADR-0073),
 and which is built: the server has no pages of a face of its own, and
 the open face, FadoDB Workshop, is in a repository of its own, where a
 person signs in, reads the list of a class and reads, changes, makes
-and moves a document, in development, and a designer made of lists is
-not built; the app (ADR-0077), a name for the classes that
+and moves a document of plain values; work on it stopped on
+2026-11-21, and a designer made of lists is not built; the app
+(ADR-0077), a name for the classes that
 belong together, which is built: `define_app`, `get_app`, `list_apps`,
-and a class that says which app it belongs to, while an app's own
-groups and tables, and exporting an app, are not built; the
-door for agents at the server itself; one starter, the approval of an
+and a class or a table that says which app it belongs to (a table's,
+ADR-0079, proposed), while an app's own
+groups, and exporting an app, are not built. Left of the phase's
+steps, in this order: the
+door for agents at the server itself, at `/mcp`, which is the next
+step; one starter, the approval of an
 expense by the employee's manager; then the tool that waits for a
-change and files through the door. Its test, besides the plan's: an
+change and files through the door; then the measurements and the
+release. Its test, besides the plan's: an
 agent with only the skills and the door is told a business story in
 plain words and builds the table and the class, and the people of the
-story use them through Workshop in a browser. The rest is not built yet.
+story use them in a browser, through a face the owner names before
+that step. The rest is not built yet.
 Three records were accepted by the owner on 2026-11-22. Two are of
 2026-11-20. ADR-0075, the engine makes the
 index of every question a class declares and says which question it
@@ -382,7 +388,7 @@ its condition, read a page at a time for its reader. Not built yet: a
 variable; a `LOOKUP` in a live variable; `REF` outside the condition
 of a `QUERY` and with a class and an id; the engine's own index on
 every `ref`, which is ADR-0075's, so a list at scale wants
-`"index": true` on its pointer today. ADR-0081, functions over a
+`"index": true` on its pointer today. ADR-0081, proposed, functions over a
 list, each with its SQL from the start: built over a list that is a
 `QUERY` are `COUNT`, `SUM`, `MIN`, `MAX`, `AVERAGE`, `MEDIAN` and
 `COUNTUNIQUE`, the forms with a condition (`COUNTIF`, `SUMIF`,
@@ -399,6 +405,15 @@ says which version of a document its sender saw, the `write` right of
 a triggered variable
 says who may bring its value again, and what a condition needs from
 outside the document is brought onto it before the condition is asked.
+Five more records proposed while the phase ran are built and wait for
+the owner's acceptance, all of them on the tables: ADR-0079, a table
+belongs to an app; ADR-0080, a column added to a table in use;
+ADR-0082, removing rows and removing a table; ADR-0083, who removed a
+table or words, and when; and ADR-0084, changing a table that holds
+rows. The owner ruled on 2026-11-23 that what ADR-0075, ADR-0076,
+ADR-0078 and ADR-0081 leave unbuilt does not hold back v0.7.0: what of
+it is not built when the phase's own steps are done is built first
+after the release, as the log of reads was after v0.6.0.
 This page is updated when a phase starts and when it ends;
 it never describes a phase as done before its acceptance criteria pass.
 
@@ -413,7 +428,7 @@ Legend: ✅ done · 🚧 in progress · ⬜ not started
 | 4 | Rules and actions: event-condition-action rules run inside the commit, the synchronous actions `set`, `reset`, `refresh` and `emit`, triggered variables with their moment, the transactional outbox with its worker, retries and dead rows, the engine's actions on other documents and tables, actions as an extension point with definitions, declared HTTP actions, Go actions the embedder registers, connections and results written back, the delivered event, formulas that read other documents (`LOOKUP` over a class, with a count, a sum, the smallest and the largest), conditions on time and timers | ✅ |
 | 5 | Security: the class-level access rules enforced on every path, who may see, create, change and delete a document, with the read rule compiled to a SQL predicate; the kind of actor, a person, an agent or a service, and whom it acts for, on every event, checked against a substitution the database keeps; who may define, operate and query, by four system groups; a content administrator who acts past a rule with a reason; the rules of a table | ✅ |
 | 6 | Server and CLI: the JSON command set over HTTP, one address for each command; users, groups and API keys kept in the database, and the authenticator for a host program that has its own; the stream of changes filtered by the read rule; documents on the wire; the door for agents (MCP); the command-line tool with a check of a class and of an action; the flow of a class in one call; a way in for messages from outside; OpenAPI; `fadodb serve` | ✅ |
-| 7 | Browser VM and reference frontend: the log of reads first; TypeScript VM on the same bytecode shipped as one plain JavaScript file, what a class says to people and its sections, the class bundle, `QUERY` when the first page needs a list of rows (otherwise with the reports of Phase 8), signing in with a password or a company's sign-on, the pages of a face handed out by `fadodb serve` from a folder (the face that draws a document from its class is FadoDB Workshop, in a repository of its own; chip, card, coins and rating are the face's), the door for agents at the server itself, a small client file beside the VM, one starter | 🚧 |
+| 7 | Browser VM and reference frontend: the log of reads first; TypeScript VM on the same bytecode shipped as one plain JavaScript file, what a class says to people and its sections, the class bundle, `QUERY` when the first page needs a list of rows (otherwise with the reports of Phase 8), signing in with a password or a company's sign-on, the pages of a face handed out by `fadodb serve` from a folder (a face, which draws a document from its class, lives apart from the engine; chip, card, coins and rating are the face's), the door for agents at the server itself, a small client file beside the VM, one starter | 🚧 |
 | 8 | Analytical engine: DuckDB projection of document tables, native and attached bindings, set-wise recompute, mining views, full build per OS | ⬜ |
 | 9 | Embedding: C ABI, Python client, embedding guides | ⬜ |
 | 10 | Postgres backend | ⬜ |

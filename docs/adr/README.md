@@ -90,3 +90,4 @@ line says so. Copy `0000-template.md` to start.
 | [0082](0082-removing-rows-and-removing-a-table.md) | Removing rows and removing a table | Proposed, amended by 0083 |
 | [0083](0083-who-removed-a-table-and-when.md) | Who removed a table or words, and when | Proposed |
 | [0084](0084-changing-a-table-that-holds-rows.md) | Changing a table that holds rows | Proposed |
+| [0085](0085-lists-in-and-out.md) | Lists in and out: the lines of a message, the lines of a request | Proposed |

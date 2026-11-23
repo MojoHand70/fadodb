@@ -313,6 +313,19 @@ func (s *Store) DefineTable(ctx context.Context, data []byte, opts ...Option) (*
 			adding, _ = model.AddsColumns(old.def.Def, def.Def)
 		}
 	}
+	// A table removed before under this name left its versions in the log
+	// of definitions: this one is the next after them (ADR-0082, item 3).
+	if old == nil {
+		var last sql.NullInt64
+		if err := s.writer.QueryRowContext(ctx, "SELECT max(version) FROM definitions WHERE what = ? AND name = ?", DefinitionTable, def.Name).Scan(&last); err == nil && last.Valid {
+			next := int(last.Int64) + 1
+			if def.Def.Version != 0 && def.Def.Version != next {
+				diags = append(diags, model.Diagnostic{Code: model.CodeBadValue, Path: "/version", Pos: -1,
+					Message: "a table of this name was removed at version " + itoa(int(last.Int64)) + "; this one is version " + itoa(next), Hint: "omit version, or write " + itoa(next)})
+			}
+			version = next
+		}
+	}
 	// A version that adds columns and changes nothing else is taken
 	// whatever the table holds and whoever reads it (ADR-0080): the rows
 	// it holds are blank in each new column. A rule of a class that writes

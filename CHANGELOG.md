@@ -26,6 +26,15 @@ All notable changes to FadoDB are recorded here. The format follows
   lines and tags a document holds, and the functions that give a list
   again. `BenchmarkLiveFigure` joined the benchmark gate. The layout
   of a database does not change.
+- Removing rows and removing a table (ADR-0082, proposed).
+  `delete_rows` removes the rows of a table that have the keys given,
+  in one transaction, as the table's write rule lets; a key the table
+  does not have removes nothing. `remove_table` takes a table away with
+  its rows and its words, for a designer, and is refused with
+  `not_allowed` while a class reads the table or a rule writes it. A
+  table defined again under its name takes the next version after the
+  removed one's. In Go, `DB.DeleteRows` and `DB.RemoveTable`. Nothing
+  records who removed a table yet.
 - A column added to a table in use (ADR-0080, proposed). A version of a
   table that adds columns and changes nothing else is taken while the
   table holds rows or a class reads it; its rows are blank in each new

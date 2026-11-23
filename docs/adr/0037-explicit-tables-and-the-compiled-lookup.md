@@ -1,6 +1,6 @@
 # ADR-0037: Explicit tables bound to SQLite and the compiled LOOKUP
 
-- Status: Accepted; amends ADR-0003 (bytecode format v3), ADR-0016 (the table definition) and ADR-0020 (how a LOOKUP condition is compiled and carried); amended by ADR-0046 (the query slot carries an aggregate, the key is found inside a conjunction, an aggregate may fail, the other bindings come with Phase 8), ADR-0051 (a table has a read rule and a write rule), ADR-0080 (a table in use gains columns by its next version)
+- Status: Accepted; amends ADR-0003 (bytecode format v3), ADR-0016 (the table definition) and ADR-0020 (how a LOOKUP condition is compiled and carried); amended by ADR-0046 (the query slot carries an aggregate, the key is found inside a conjunction, an aggregate may fail, the other bindings come with Phase 8), ADR-0051 (a table has a read rule and a write rule), ADR-0080 (a table in use gains columns by its next version), ADR-0082 (rows are removed by their keys, and a table is removed)
 - Date: 2026-11-08
 
 ## Context

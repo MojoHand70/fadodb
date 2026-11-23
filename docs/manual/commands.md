@@ -543,6 +543,7 @@ It answers:
 | [`define_classes`](#define_classes) | Defines several classes in one call, all or none: how classes that name each other are defined. | writes |
 | [`define_schema`](#define_schema) | Defines a named schema of an object. | writes |
 | [`define_table`](#define_table) | Defines a table of reference data. | writes |
+| [`remove_table`](#remove_table) | Takes a table away with its rows, its definition and its words; refused while a class reads it or a rule writes it. | writes |
 | [`define_action`](#define_action) | Defines an action a rule may name. | writes |
 | [`define_app`](#define_app) | Defines an app, a name for the classes and tables that belong together, or the next version of one. | writes |
 | [`validate_class`](#validate_class) | Reports what define_class would refuse, storing nothing. | reads |
@@ -637,6 +638,18 @@ It answers:
 | Member | What it holds |
 |---|---|
 | `table` | the definition as it was given, with its name, its version and who defined it |
+
+### remove_table
+
+Takes a table away with its rows, its definition and its words; refused while a class reads it or a rule writes it. It writes; in Go it is the call `RemoveTable`.
+
+| Member | Type | | What it is |
+|---|---|---|---|
+| `name` | text | needed | the name of the table |
+
+And, of the members that mean the same everywhere: `for`.
+
+It answers `{}`.
 
 ### define_action
 
@@ -1097,6 +1110,7 @@ It answers:
 |---|---|---|
 | [`table_rows`](#table_rows) | Reads every row of a table, in the order of its key. | reads |
 | [`import_rows`](#import_rows) | Writes rows into a table; a row whose key exists is replaced. | writes |
+| [`delete_rows`](#delete_rows) | Removes the rows of a table that have the keys given; a key the table does not have removes nothing. | writes |
 | [`preview_action`](#preview_action) | Answers what an action would be called with, or the request it would send, with every secret masked; nothing is called or sent. | reads |
 | [`try_action`](#try_action) | Runs an action once, outside any document; a request is sent for real. | writes |
 | [`outbox`](#outbox) | Lists the actions commits queued: what waits, what ran and what is dead. | reads |
@@ -1138,6 +1152,23 @@ It answers:
 | Member | What it holds |
 |---|---|
 | `imported` | how many rows it wrote |
+
+### delete_rows
+
+Removes the rows of a table that have the keys given; a key the table does not have removes nothing. It writes; in Go it is the call `DeleteRows`.
+
+| Member | Type | | What it is |
+|---|---|---|---|
+| `table` | text | needed | the name of the table |
+| `keys` | list of objects | needed | the keys of the rows, each an object with a value for every column of the table's key and for no other |
+
+And, of the members that mean the same everywhere: `reason`, `for`.
+
+It answers:
+
+| Member | What it holds |
+|---|---|
+| `deleted` | how many rows it removed |
 
 ### preview_action
 

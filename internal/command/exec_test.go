@@ -1599,6 +1599,18 @@ func TestTheCommandsOfTheApps(t *testing.T) {
 	if got := run(t, s, ann, "table_rows", `{"table": "Rates"}`)["rows"].([]any); len(got) != 1 {
 		t.Fatalf("the rows after the move: %v", got)
 	}
+	// A row goes by its key, and the table goes with what is left of it
+	// (ADR-0082); a designer removes a table, and nobody else.
+	if got := run(t, s, dan, "delete_rows", `{"table": "Rates", "keys": [{"currency": "EUR"}, {"currency": "GBP"}]}`)["deleted"]; got != float64(1) {
+		t.Fatalf("delete_rows answered %v", got)
+	}
+	if e := refused(t, s, ann, "remove_table", `{"name": "Rates"}`); e.Code != store.CodeForbidden {
+		t.Fatalf("somebody who is no designer removed a table: %+v", e)
+	}
+	run(t, s, dan, "remove_table", `{"name": "Rates"}`)
+	if got := run(t, s, ann, "list_tables", `{}`)["tables"].([]any); len(got) != 0 {
+		t.Fatalf("the tables after the removal: %v", got)
+	}
 }
 
 func TestEveryCommandIsRun(t *testing.T) {

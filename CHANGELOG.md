@@ -8,6 +8,15 @@ All notable changes to FadoDB are recorded here. The format follows
 
 ### Added
 
+- A table belongs to an app, as a class does (ADR-0079, proposed). A
+  table names its app in its definition, `"app": "Expenses"`, and an
+  app the database does not have is refused with `unknown_app` at
+  `/app`. `list_tables` takes `app` and answers the tables of one app;
+  in Go, `DB.TablesOf`. A table moves to another app by its next
+  version even while it holds rows or a class reads it: nothing of its
+  columns or rows changes. Any other change of a table in use is
+  refused as before. A database in which a table names an app is not
+  opened by an earlier engine.
 - A list of other documents on a document, the next part of ADR-0076:
   a live variable whose whole formula is a `QUERY`. In the class Order,
   `QUERY(Invoice, {number, net, state}, order = REF(), {number})` lists

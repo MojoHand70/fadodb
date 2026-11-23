@@ -39,7 +39,7 @@ The work has three steps, and their order is the point:
 |---|---|
 | [`docs/manual/class.md`](../../docs/manual/class.md#what-a-class-says-to-people) | what a class already says to people: labels, descriptions, The List, formats, sections and the words in other languages. A face shows these and never writes its own |
 | [`docs/manual/the-bundle.md`](../../docs/manual/the-bundle.md) | the class in the person's words with its formulas compiled, so that a page works a document out as the server does |
-| [`docs/manual/apps.md`](../../docs/manual/apps.md) | an app: the name for the classes that belong together, and what a face groups its screens by |
+| [`docs/manual/apps.md`](../../docs/manual/apps.md) | an app: the name for the classes and tables that belong together, and what a face groups its screens by |
 | [`docs/manual/serving-a-database.md`](../../docs/manual/serving-a-database.md) | the server, and how it hands out the pages of a face at its own address |
 | [`docs/manual/signing-in.md`](../../docs/manual/signing-in.md) | how a person signs in: on the server's own page, never in the face |
 | [`docs/manual/commands.md`](../../docs/manual/commands.md) | every command a face may send |

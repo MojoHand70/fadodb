@@ -1564,6 +1564,41 @@ func TestTheCommandsOfTheApps(t *testing.T) {
 	if got := run(t, s, ann, "definitions", `{"what": "app", "name": "Expenses"}`)["versions"].([]any); len(got) != 2 {
 		t.Fatalf("the versions of the app Expenses: %v", got)
 	}
+
+	// A table says which app it belongs to as a class does (ADR-0079); the
+	// tables of an app are listed as its classes are; and a table moves to
+	// another app by its next version while it holds rows.
+	rates := func(app string) string {
+		return `{"name": "Rates", "app": "` + app + `", "columns": {"currency": "text", "rate": "decimal(4)"}, "key": ["currency"], "access": {"read": "TRUE", "write": "TRUE"}}`
+	}
+	if _, err := Exec(context.Background(), s, dan, "define_table", []byte(`{"definition": `+rates("Travel")+`}`)); Code(err) != CodeBadDefinition {
+		t.Fatalf("define_table of a table of an app that does not exist returned %v", err)
+	}
+	if table := run(t, s, dan, "define_table", `{"definition": `+rates("Expenses")+`}`); at(t, table, "table.definition.app") != "Expenses" {
+		t.Fatalf("define_table answered %v", table)
+	}
+	if got := run(t, s, ann, "list_tables", `{"app": "Expenses"}`)["tables"]; !reflect.DeepEqual(got, []any{"Rates"}) {
+		t.Fatalf("the tables of Expenses: %v", got)
+	}
+	if got := run(t, s, ann, "list_tables", `{"app": "Helpdesk"}`)["tables"].([]any); len(got) != 0 {
+		t.Fatalf("the tables of an app that has none: %v", got)
+	}
+	if got := run(t, s, ann, "list_tables", `{}`)["tables"]; !reflect.DeepEqual(got, []any{"Rates"}) {
+		t.Fatalf("every table: %v", got)
+	}
+	if e := refused(t, s, ann, "list_tables", `{"app": "Travel"}`); e.Code != store.CodeUnknownApp {
+		t.Fatalf("the tables of an app that does not exist: %+v", e)
+	}
+	run(t, s, dan, "import_rows", `{"table": "Rates", "rows": [{"currency": "EUR", "rate": "4.27"}]}`)
+	if moved := run(t, s, dan, "define_table", `{"definition": `+rates("Helpdesk")+`}`); at(t, moved, "table.version") != float64(2) {
+		t.Fatalf("a table moved to another app answered %v", moved)
+	}
+	if got := run(t, s, ann, "list_tables", `{"app": "Helpdesk"}`)["tables"]; !reflect.DeepEqual(got, []any{"Rates"}) {
+		t.Fatalf("the tables of Helpdesk after the move: %v", got)
+	}
+	if got := run(t, s, ann, "table_rows", `{"table": "Rates"}`)["rows"].([]any); len(got) != 1 {
+		t.Fatalf("the rows after the move: %v", got)
+	}
 }
 
 func TestEveryCommandIsRun(t *testing.T) {

@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"fmt"
 	"math"
+	"strconv"
 	"strings"
 
 	"github.com/MojoHand70/fadodb/internal/formula"
@@ -223,6 +224,25 @@ func (s *Store) Tables() []string {
 	return append([]string(nil), s.tableOrder...)
 }
 
+// TablesOf lists the tables that belong to an app, in the order they
+// were defined (ADR-0079), as ClassesOf lists its classes. An app no
+// table belongs to answers an empty list; a name that is no app is
+// refused.
+func (s *Store) TablesOf(name string) ([]string, error) {
+	s.cmu.RLock()
+	defer s.cmu.RUnlock()
+	if _, ok := s.apps[strings.ToUpper(name)]; !ok {
+		return nil, s.noSuchApp(name)
+	}
+	out := []string{}
+	for _, n := range s.tableOrder {
+		if t, ok := s.tables[strings.ToUpper(n)]; ok && strings.EqualFold(t.def.App, name) {
+			out = append(out, n)
+		}
+	}
+	return out, nil
+}
+
 // Table returns a compiled table definition by name.
 func (s *Store) Table(name string) (*model.Table, bool) {
 	t, err := s.table(name)
@@ -261,6 +281,18 @@ func (s *Store) DefineTable(ctx context.Context, data []byte, opts ...Option) (*
 		return nil, diags
 	}
 	version := def.Version
+	// The app the table belongs to is one the database has (ADR-0079,
+	// item 2), as for a class (ADR-0077, item 3).
+	if def.App != "" {
+		if _, ok := s.apps[strings.ToUpper(def.App)]; !ok {
+			diags = append(diags, model.Diagnostic{Code: model.CodeUnknownApp, Path: "/app", Pos: -1, Message: "unknown app " + strconv.Quote(def.App),
+				Hint: "define the app first, with define_app, or leave app out: a table may belong to none"})
+		}
+	}
+	// A table moves to another app by its next version, whatever it holds
+	// and whoever reads it (ADR-0079, item 4): its columns, key and
+	// indexes stay as they are, and so do its rows and its storage.
+	moving := false
 	if old != nil {
 		if old.def.Name != def.Name {
 			diags = append(diags, model.Diagnostic{Code: model.CodeDuplicate, Path: "/name", Pos: -1, Message: "a table " + old.def.Name + " exists; names differ in case only"})
@@ -270,6 +302,9 @@ func (s *Store) DefineTable(ctx context.Context, data []byte, opts ...Option) (*
 			diags = append(diags, model.Diagnostic{Code: model.CodeBadValue, Path: "/version", Pos: -1,
 				Message: "the stored table is at version " + itoa(old.def.Version) + "; a redefinition is version " + itoa(version), Hint: "omit version, or write " + itoa(version)})
 		}
+		moving = model.OnlyTheApp(old.def.Def, def.Def)
+	}
+	if old != nil && !moving {
 		for _, name := range s.order {
 			if s.classes[strings.ToUpper(name)].sources[strings.ToUpper(def.Name)] {
 				diags = append(diags, model.Diagnostic{Code: model.CodeNotSupported, Path: "/name", Pos: -1,
@@ -303,25 +338,29 @@ func (s *Store) DefineTable(ctx context.Context, data []byte, opts ...Option) (*
 		_, _ = w.ExecContext(ctx, "ROLLBACK")
 		return nil, err
 	}
-	if old != nil {
-		for _, ddl := range old.dropDDL() {
-			if _, err := w.ExecContext(ctx, ddl); err != nil {
-				return rollback(storageErr("drop the table "+old.def.Name, err))
+	// A move to another app keeps the storage as it is; any other version
+	// is the table made again, empty.
+	if !moving {
+		if old != nil {
+			for _, ddl := range old.dropDDL() {
+				if _, err := w.ExecContext(ctx, ddl); err != nil {
+					return rollback(storageErr("drop the table "+old.def.Name, err))
+				}
 			}
 		}
-	}
-	for _, name := range []string{t.name, def.Name} {
-		var n int64
-		if err := w.QueryRowContext(ctx, "SELECT count(*) FROM sqlite_master WHERE name = ? COLLATE NOCASE", name).Scan(&n); err != nil {
-			return rollback(storageErr("check the names", err))
+		for _, name := range []string{t.name, def.Name} {
+			var n int64
+			if err := w.QueryRowContext(ctx, "SELECT count(*) FROM sqlite_master WHERE name = ? COLLATE NOCASE", name).Scan(&n); err != nil {
+				return rollback(storageErr("check the names", err))
+			}
+			if n > 0 {
+				return rollback(hintf(CodeDuplicate, "", "the name "+name+" is taken by another table or view", "rename the table"))
+			}
 		}
-		if n > 0 {
-			return rollback(hintf(CodeDuplicate, "", "the name "+name+" is taken by another table or view", "rename the table"))
-		}
-	}
-	for _, ddl := range t.createDDL() {
-		if _, err := w.ExecContext(ctx, ddl); err != nil {
-			return rollback(storageErr("create the table "+def.Name, err))
+		for _, ddl := range t.createDDL() {
+			if _, err := w.ExecContext(ctx, ddl); err != nil {
+				return rollback(storageErr("create the table "+def.Name, err))
+			}
 		}
 	}
 	if _, err := w.ExecContext(ctx, "INSERT INTO tables_registry (name, version, binding, json, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)"+
@@ -336,6 +375,21 @@ func (s *Store) DefineTable(ctx context.Context, data []byte, opts ...Option) (*
 	def.Defined = defined
 	if err := s.endTransaction(ctx); err != nil {
 		return nil, storageErr("commit", err)
+	}
+	if moving {
+		// The same storage, the same statements and the same rows in
+		// memory, under the new definition. A reader that looked the
+		// table up before goes on with the old one, which names the old
+		// app and nothing else that differs; its statements stay open,
+		// since the new one holds them too. A lookup's plan holds the
+		// table it was made for, so the plans are made again, against
+		// this one, as after any other version: an import empties the
+		// rows in memory of the table the database holds now.
+		moved := *old
+		moved.def, moved.json = def, compact
+		s.closePlans()
+		s.registerTable(&moved)
+		return def, nil
 	}
 	if old != nil {
 		old.close()

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/MojoHand70/fadodb/internal/formula"
@@ -14,7 +15,11 @@ import (
 // a row, optional secondary indexes, and the storage binding its rows
 // live in.
 type TableDef struct {
-	Name        string `json:"name"`
+	Name string `json:"name"`
+	// App is the app the table belongs to, or none (ADR-0079), as a
+	// class names its app (ADR-0077). The store checks that the database
+	// has it.
+	App         string `json:"app,omitempty"`
 	Version     int    `json:"version,omitempty"`
 	Label       string `json:"label,omitempty"`
 	Description string `json:"description,omitempty"`
@@ -48,6 +53,7 @@ type Table struct {
 	// (ADR-0052, item 7); the store sets it.
 	Defined     Defined
 	Name        string
+	App         string // the app it belongs to, or none (ADR-0079)
 	Version     int
 	Label       string
 	Description string
@@ -122,7 +128,7 @@ var (
 // CompileTable checks a table definition and lays it out.
 func CompileTable(def *TableDef) (*Table, Diagnostics) {
 	c := &collector{}
-	t := &Table{Name: def.Name, Version: def.Version, Label: def.Label, Description: def.Description, Binding: def.Binding, Def: def}
+	t := &Table{Name: def.Name, App: def.App, Version: def.Version, Label: def.Label, Description: def.Description, Binding: def.Binding, Def: def}
 	if c.checkName("/name", def.Name, reservedClassNames) {
 		if lower := strings.ToLower(def.Name); strings.HasPrefix(lower, "doc_") || strings.HasPrefix(lower, "tbl_") {
 			c.add(CodeReservedName, "/name", "a table name may not start with doc_ or tbl_, the prefixes of the generated tables")
@@ -267,6 +273,22 @@ func tableRule(c *collector, path, src, what string) *formula.Program {
 		return nil
 	}
 	return prog
+}
+
+// OnlyTheApp says whether two definitions of a table differ in nothing
+// but the app they name (and the version they write): the columns in
+// their order, the key, the indexes, the binding, the rules and the
+// words are the same. A table moves to another app so (ADR-0079, item
+// 4), whatever it holds.
+func OnlyTheApp(a, b *TableDef) bool {
+	if a == nil || b == nil || !slices.Equal(a.ColumnOrder, b.ColumnOrder) {
+		return false
+	}
+	x, y := *a, *b
+	x.App, y.App, x.Version, y.Version = "", "", 0, 0
+	l, errL := json.Marshal(x)
+	r, errR := json.Marshal(y)
+	return errL == nil && errR == nil && bytes.Equal(l, r)
 }
 
 // DefineTable parses and compiles a table definition in one step.

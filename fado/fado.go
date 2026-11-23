@@ -480,9 +480,9 @@ func (db *DB) DefineSchema(ctx context.Context, definition []byte, opts ...Optio
 }
 
 // DefineApp checks the definition of an app in JSON and stores it
-// (ADR-0077): a name for the classes that belong together, with what the
-// app says of itself to people. A class names the app it belongs to with
-// "app" in its own definition. The error is Diagnostics when the
+// (ADR-0077): a name for the classes and tables that belong together,
+// with what the app says of itself to people. A class or a table names
+// the app it belongs to with "app" in its own definition (ADR-0079). The error is Diagnostics when the
 // definition is refused.
 func (db *DB) DefineApp(ctx context.Context, definition []byte, opts ...Option) (*App, error) {
 	return db.s.DefineApp(ctx, definition, opts...)
@@ -560,6 +560,10 @@ func (db *DB) TableRows(ctx context.Context, table string, opts ...Option) ([]Va
 
 // Tables lists the table names in definition order.
 func (db *DB) Tables() []string { return db.s.Tables() }
+
+// TablesOf lists the tables that belong to an app, in definition order
+// (ADR-0079). A name that is no app is refused with unknown_app.
+func (db *DB) TablesOf(app string) ([]string, error) { return db.s.TablesOf(app) }
 
 // Table returns a compiled table definition by name.
 func (db *DB) Table(name string) (*Table, bool) { return db.s.Table(name) }

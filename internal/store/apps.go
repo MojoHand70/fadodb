@@ -9,9 +9,10 @@ import (
 	"github.com/MojoHand70/fadodb/internal/model"
 )
 
-// An app is a name for the classes that belong together (ADR-0077):
-// Expenses, a help desk. The database keeps its definition, the words it
-// says of itself to people, and each class names the app it belongs to.
+// An app is a name for the classes and tables that belong together
+// (ADR-0077, ADR-0079): Expenses, a help desk. The database keeps its
+// definition, the words it says of itself to people, and each class and
+// each table names the app it belongs to.
 // An app holds nothing else: no rule and no right hangs on it.
 
 // App is an app as the database holds it: its definition and the version

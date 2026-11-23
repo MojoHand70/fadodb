@@ -1040,7 +1040,7 @@ func TestTables(t *testing.T) {
 		{"read its definition back", "get_table", func() bool {
 			return strings.Contains(string(exec(reader, "get_table", `{"name":"Rates"}`)["table"]), `"Exchange rates"`)
 		}},
-		{"list the tables", "list_tables", func() bool {
+		{"list the tables, or those of one app", "list_tables", func() bool {
 			return string(exec(reader, "list_tables", `{}`)["tables"]) == `["Rates"]`
 		}},
 	}
@@ -1121,6 +1121,32 @@ func TestTables(t *testing.T) {
 			}
 			define(plain("Read", lines+`,"label":"Changed"`))
 		},
+		"names another app, or none, and nothing else changes": func(row []string) {
+			// Rates is in use: it holds a row and a class reads it. It
+			// moves into the app Expenses, and out of every app again,
+			// keeping its row (ADR-0079, item 4).
+			if _, err := db3.DefineApp(ctx, []byte(`{"name":"Expenses"}`), setup); err != nil {
+				t.Fatal(err)
+			}
+			define(plain("Kept", lines))
+			if _, err := db3.ImportRows(ctx, "Kept", []fado.Values{{"k": "a", "v": "b"}}, ann); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := db3.DefineClass(ctx, []byte(scratch("ReadsKept", `"c":{"type":"text"},"r":{"formula":"LOOKUP(Kept, v, k = THIS.c)"}`, oneState)), setup); err != nil {
+				t.Fatal(err)
+			}
+			define(plain("Kept", lines+`,"app":"Expenses"`))
+			def, _ := db3.Table("Kept")
+			in, err := db3.TablesOf("Expenses")
+			rows, rerr := db3.TableRows(ctx, "Kept", ann)
+			if def == nil || def.Version != 2 || def.App != "Expenses" || err != nil || len(in) != 1 || rerr != nil || len(rows) != 1 || row[1] != "is taken, as the next version, whatever rows it holds and whoever reads it" {
+				t.Errorf("a table in use moved to another app: %+v, %v %v, %d rows %v, and the chapter says it %s", def, in, err, len(rows), rerr, row[1])
+			}
+			define(plain("Kept", lines))
+			if in, err := db3.TablesOf("Expenses"); err != nil || len(in) != 0 {
+				t.Errorf("the table did not leave the app: %v, %v", in, err)
+			}
+		},
 		"would break a rule of a class that writes it": func(row []string) {
 			define(plain("Fed", lines))
 			class := scratch("Feeds", `"c":{"type":"text"}`,
@@ -1148,6 +1174,7 @@ func TestTables(t *testing.T) {
 			col("my table", `"k":"text"`, key),
 		},
 		"has a name that begins with doc_ or tbl_":                       {col("doc_x", `"k":"text"`, key), col("tbl_x", `"k":"text"`, key)},
+		"names an app the database does not have":                        {col("T", `"k":"text"`, key+`,"app":"Nowhere"`)},
 		"has the name of a class":                                        {col("Taken", `"k":"text"`, key)},
 		"has the name of another table in another case of letters":       {col("empty", `"k":"text"`, key)},
 		"has no columns":                                                 {`{"name":"T","columns":{},"key":[]}`},

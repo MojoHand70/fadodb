@@ -760,9 +760,21 @@ func runListClasses(c *call) error {
 	return c.answer("classes", list(classes), nil)
 }
 
+// runListTables answers the tables, or those of one app (ADR-0079).
+func runListTables(c *call) error {
+	if c.given("app") == nil {
+		return c.answer("tables", list(c.s.Tables()), nil)
+	}
+	tables, err := c.s.TablesOf(c.text("app"))
+	if err != nil {
+		return err
+	}
+	return c.answer("tables", list(tables), nil)
+}
+
 func runListApps(c *call) error    { return c.answer("apps", list(c.s.Apps()), nil) }
 func runListSchemas(c *call) error { return c.answer("schemas", list(c.s.SchemaNames()), nil) }
-func runListTables(c *call) error  { return c.answer("tables", list(c.s.Tables()), nil) }
+
 func runListActions(c *call) error { return c.answer("actions", list(c.s.Actions()), nil) }
 
 // runListFunctions answers the engine's list of functions (ADR-0074).

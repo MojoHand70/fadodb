@@ -1,6 +1,6 @@
 # ADR-0077: The app, a name for the classes that belong together
 
-- Status: Accepted; amends ADR-0068 (an app is the database's: item 8 left it to the face "for now"), ADR-0055 (three commands join the table, and `list_classes` takes `app`), ADR-0018 (the class header gains `app`)
+- Status: Accepted; amends ADR-0068 (an app is the database's: item 8 left it to the face "for now"), ADR-0055 (three commands join the table, and `list_classes` takes `app`), ADR-0018 (the class header gains `app`); amended by ADR-0079 (a table names its app too, and `list_tables` takes `app`)
 - Date: 2026-11-20
 
 ## Context

@@ -117,8 +117,16 @@ func NearlyEqual(a, b Value, rel float64) bool {
 // a money column is its amount and its currency column.
 func SetupSources(db *sql.DB, d Dialect, rows map[*Source][][]Value) error {
 	for src, data := range rows {
+		table := src.Name
 		cols := make([]string, 0, len(src.Columns))
 		names := make([]string, 0, len(src.Columns))
+		if src.Held {
+			// A list the document holds: a table of its own, as a store
+			// keeps it, with the place of each row in the list.
+			table = HeldTable(src.Name)
+			cols = append(cols, quoteIdent(HeldOrder)+" "+d.ColumnType(KindNumber))
+			names = append(names, quoteIdent(HeldOrder))
+		}
 		for _, f := range src.Columns {
 			cols = append(cols, quoteIdent(f.Name)+" "+d.ColumnType(f.Type.Kind))
 			names = append(names, quoteIdent(f.Name))
@@ -127,16 +135,19 @@ func SetupSources(db *sql.DB, d Dialect, rows map[*Source][][]Value) error {
 				names = append(names, quoteIdent(f.Name+CurrencySuffix))
 			}
 		}
-		if _, err := db.Exec("DROP TABLE IF EXISTS " + quoteIdent(src.Name)); err != nil {
+		if _, err := db.Exec("DROP TABLE IF EXISTS " + quoteIdent(table)); err != nil {
 			return fmt.Errorf("%s: %w", src.Name, err)
 		}
-		if _, err := db.Exec("CREATE TABLE " + quoteIdent(src.Name) + " (" + strings.Join(cols, ", ") + ")"); err != nil {
+		if _, err := db.Exec("CREATE TABLE " + quoteIdent(table) + " (" + strings.Join(cols, ", ") + ")"); err != nil {
 			return fmt.Errorf("%s: %w", src.Name, err)
 		}
 		marks := strings.TrimSuffix(strings.Repeat("?, ", len(names)), ", ")
-		insert := "INSERT INTO " + quoteIdent(src.Name) + " (" + strings.Join(names, ", ") + ") VALUES (" + marks + ")"
-		for _, row := range data {
+		insert := "INSERT INTO " + quoteIdent(table) + " (" + strings.Join(names, ", ") + ") VALUES (" + marks + ")"
+		for ri, row := range data {
 			args := make([]any, 0, len(names))
+			if src.Held {
+				args = append(args, float64(ri))
+			}
 			for i, f := range src.Columns {
 				v := row[i]
 				args = append(args, v.DriverValue())

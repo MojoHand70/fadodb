@@ -32,6 +32,12 @@ type Suite struct {
 	// Sources declares the explicit tables LOOKUP may read (ADR-0020),
 	// with their rows.
 	Sources map[string]*SuiteSource `json:"sources,omitempty"`
+	// Lists declares the lists the document of the suite holds (ADR-0081,
+	// step 2), with their rows in the order of the list: by the name of
+	// the variable, the columns of a rows variable, or the one column
+	// "value" of a variable that Variables declares as an array. A list
+	// has no key.
+	Lists map[string]*SuiteSource `json:"lists,omitempty"`
 	// Limits sets the size limits the cases evaluate under (ADR-0021);
 	// absent, the defaults. A suite at a small limit reaches the boundary
 	// with short texts.
@@ -58,15 +64,63 @@ type SuiteSource struct {
 // SourceSet resolves the suite's sources.
 func (s *Suite) SourceSet() (*SourceSet, error) { return sourcesOf(s.Sources) }
 
-// SourceRows parses the rows of every source, row-major in column order.
+// listSources resolves the lists the suite's document holds: each a
+// source that is Held, its columns in name order.
+func (s *Suite) listSources() (map[string]*Source, error) {
+	out := map[string]*Source{}
+	for name, ls := range s.Lists {
+		if name == "" || ls == nil || len(ls.Columns) == 0 {
+			return nil, fmt.Errorf("list %q: no name or no columns", name)
+		}
+		src := &Source{Name: name, Held: true, Key: []string{HeldOrder}}
+		cols := make([]string, 0, len(ls.Columns))
+		for c := range ls.Columns {
+			cols = append(cols, c)
+		}
+		sort.Strings(cols)
+		for _, c := range cols {
+			t, err := ParseType(ls.Columns[c])
+			if err != nil || !t.IsScalar() || t.Kind == KindNull {
+				return nil, fmt.Errorf("list %s: column %s has type %q; a column is a scalar", name, c, ls.Columns[c])
+			}
+			src.Columns = append(src.Columns, Field{Name: c, Type: t})
+		}
+		if _, array := s.Variables[name]; array {
+			if len(src.Columns) != 1 || src.Columns[0].Name != HeldValue {
+				return nil, fmt.Errorf("list %s: a list that is an array has the one column %q", name, HeldValue)
+			}
+			src.Key = nil
+		}
+		out[name] = src
+	}
+	return out, nil
+}
+
+// SourceRows parses the rows of every source and of every list the
+// document holds, row-major in column order; a list is a source that is
+// Held.
 func (s *Suite) SourceRows() (map[*Source][][]Value, error) {
 	set, err := sourcesOf(s.Sources)
 	if err != nil {
 		return nil, err
 	}
-	out := map[*Source][][]Value{}
+	lists, err := s.listSources()
+	if err != nil {
+		return nil, err
+	}
+	decl := make(map[string]*SuiteSource, len(s.Sources)+len(s.Lists))
 	for name, ss := range s.Sources {
+		decl[name] = ss
+	}
+	for name, ls := range s.Lists {
+		decl["\x00"+name] = ls
+	}
+	out := map[*Source][][]Value{}
+	for name, ss := range decl {
 		src, _ := set.Source(name)
+		if held, ok := strings.CutPrefix(name, "\x00"); ok {
+			src, name = lists[held], held
+		}
 		rows := make([][]Value, 0, len(ss.Rows))
 		for ri, raw := range ss.Rows {
 			row := make([]Value, len(src.Columns))
@@ -92,6 +146,10 @@ func (s *Suite) Executor() (*MemoryExecutor, error) {
 	}
 	m := NewMemoryExecutor()
 	for src, data := range rows {
+		if src.Held {
+			m.AddList(src, data)
+			continue
+		}
 		m.AddTable(src, data)
 	}
 	return m, nil
@@ -153,7 +211,30 @@ type SuiteLimits struct {
 }
 
 // Scope builds the scope of the suite's variables, in name order.
-func (s *Suite) Scope() (*Scope, error) { return ScopeOf(s.Variables, s.Schemas) }
+func (s *Suite) Scope() (*Scope, error) {
+	if len(s.Lists) == 0 {
+		return ScopeOf(s.Variables, s.Schemas)
+	}
+	lists, err := s.listSources()
+	if err != nil {
+		return nil, err
+	}
+	vs, err := variablesOf(s.Variables, s.Schemas)
+	if err != nil {
+		return nil, err
+	}
+	names := make([]string, 0, len(lists))
+	for name := range lists {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	for _, name := range names {
+		if _, array := s.Variables[name]; !array {
+			vs = append(vs, Variable{Name: name, Type: RowsType("", lists[name].Columns)})
+		}
+	}
+	return NewScope(vs...)
+}
 
 // declares reports whether an input name is a declared variable or, as
 // "variable.field.field", a scalar leaf of a declared object variable.
@@ -540,6 +621,15 @@ func validateVariables(vars map[string]string, schemas map[string]map[string]str
 // ScopeOf builds the scope of a suite's variables, in name order, with
 // object<Name> types resolved against the schemas.
 func ScopeOf(vars map[string]string, schemas map[string]map[string]string) (*Scope, error) {
+	vs, err := variablesOf(vars, schemas)
+	if err != nil {
+		return nil, err
+	}
+	return NewScope(vs...)
+}
+
+// variablesOf are the declared variables of a suite, in name order.
+func variablesOf(vars map[string]string, schemas map[string]map[string]string) ([]Variable, error) {
 	names := make([]string, 0, len(vars))
 	for n := range vars {
 		names = append(names, n)
@@ -553,7 +643,7 @@ func ScopeOf(vars map[string]string, schemas map[string]map[string]string) (*Sco
 		}
 		vs = append(vs, Variable{Name: n, Type: t})
 	}
-	return NewScope(vs...)
+	return vs, nil
 }
 
 // ParseCaseDate reads an instant as the suite writes it: YYYY-MM-DD or

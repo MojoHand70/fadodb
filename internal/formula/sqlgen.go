@@ -470,6 +470,23 @@ func (t *sqlTranslator) block(start, end int) (SQLExpr, error) {
 				return SQLExpr{}, err
 			}
 			push(e)
+		case OpFold:
+			q := &t.p.Folds[in.Arg]
+			arg := func(i int, currency bool) string {
+				slot := t.p.Slots[q.Args[i]]
+				if currency {
+					return t.column(Slot{Name: slot.Name + CurrencySuffix, Type: Scalar(KindText)})
+				}
+				return t.column(slot)
+			}
+			// The rows are the elements of the document's own variable, in
+			// the order of the list (ADR-0081, step 2).
+			held := func(name string) string { return t.table(HeldTable(name)) }
+			e, err := LookupSQL(q, d, arg, held, t.params)
+			if err != nil {
+				return SQLExpr{}, err
+			}
+			push(e)
 		case OpQuery:
 			return SQLExpr{}, fmt.Errorf("sqlgen: instruction %d: QUERY is not implemented yet", pc)
 		case OpReturn:

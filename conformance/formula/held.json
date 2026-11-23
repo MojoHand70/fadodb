@@ -1,0 +1,412 @@
+{
+ "suite": "held",
+ "description": "Functions over a list the document itself holds (ADR-0081, step 2): its lines, a rows variable, and its tags, an array. Each is the aggregate a LOOKUP has, over the elements of the variable in their order: blanks skipped, exact values exact, money in one currency. A column is written list.column, and the one argument may be an expression of the columns of one list, beside which a bare name is a variable of the document (ADR-0019). In a form with a condition a bare name is a column of the row and THIS.name a variable of the document. An array has the one column value.",
+ "variables": {
+  "rate": "decimal(2)",
+  "limit": "number",
+  "code": "text",
+  "tags": "array<text>",
+  "amounts": "array<number>"
+ },
+ "lists": {
+  "lines": {
+   "columns": {
+    "sku": "text",
+    "qty": "number",
+    "unit": "number",
+    "price": "decimal(2)",
+    "cost": "money(2)",
+    "done": "bool",
+    "day": "date"
+   },
+   "rows": [
+    {
+     "sku": "A",
+     "qty": 2,
+     "unit": 10.5,
+     "price": "10.50",
+     "cost": "21.00 PLN",
+     "done": true,
+     "day": "2026-01-05"
+    },
+    {
+     "sku": "B",
+     "qty": 1,
+     "unit": 0.25,
+     "price": "0.25",
+     "cost": "0.25 PLN",
+     "done": false,
+     "day": "2026-01-07"
+    },
+    {
+     "sku": "C",
+     "qty": null,
+     "unit": null,
+     "price": null,
+     "cost": null,
+     "done": null,
+     "day": null
+    },
+    {
+     "sku": "A",
+     "qty": 3.5,
+     "unit": 4,
+     "price": "99.99",
+     "cost": "349.97 PLN",
+     "done": true,
+     "day": "2026-01-05"
+    }
+   ]
+  },
+  "mixed": {
+   "columns": {
+    "fee": "money(2)"
+   },
+   "rows": [
+    {
+     "fee": "1.00 PLN"
+    },
+    {
+     "fee": "2.00 EUR"
+    },
+    {
+     "fee": "1.00 EUR"
+    }
+   ]
+  },
+  "none": {
+   "columns": {
+    "qty": "number",
+    "price": "decimal(2)",
+    "cost": "money(2)"
+   },
+   "rows": []
+  },
+  "tags": {
+   "columns": {
+    "value": "text"
+   },
+   "rows": [
+    {
+     "value": "red"
+    },
+    {
+     "value": "blue"
+    },
+    {
+     "value": "red"
+    },
+    {
+     "value": null
+    }
+   ]
+  },
+  "amounts": {
+   "columns": {
+    "value": "number"
+   },
+   "rows": [
+    {
+     "value": 4
+    },
+    {
+     "value": 1
+    },
+    {
+     "value": 2.5
+    }
+   ]
+  }
+ },
+ "cases": [
+  {
+   "name": "COUNT of a list counts its rows",
+   "formula": "COUNT(lines)",
+   "type": "number",
+   "expected": 4
+  },
+  {
+   "name": "COUNT of a column counts the rows that have a value in it",
+   "formula": "COUNT(lines.qty)",
+   "expected": 3
+  },
+  {
+   "name": "SUM of a number column",
+   "formula": "SUM(lines.qty)",
+   "type": "number",
+   "expected": 6.5
+  },
+  {
+   "name": "SUM of an exact column is exact",
+   "formula": "SUM(lines.price)",
+   "type": "decimal(2)",
+   "expected": "110.74"
+  },
+  {
+   "name": "SUM of money keeps the currency",
+   "formula": "SUM(lines.cost)",
+   "type": "money(2)",
+   "expected": "371.22 PLN"
+  },
+  {
+   "name": "MIN of an exact column",
+   "formula": "MIN(lines.price)",
+   "expected": "0.25"
+  },
+  {
+   "name": "MAX of money",
+   "formula": "MAX(lines.cost)",
+   "expected": "349.97 PLN"
+  },
+  {
+   "name": "AVERAGE of numbers skips the blank row",
+   "formula": "AVERAGE(lines.qty)",
+   "expected": 2.1666666666666665
+  },
+  {
+   "name": "AVERAGE of exact values is exact, at four places more",
+   "formula": "AVERAGE(lines.price)",
+   "type": "decimal(6)",
+   "expected": "36.913333"
+  },
+  {
+   "name": "MEDIAN of an odd number of numbers",
+   "formula": "MEDIAN(lines.qty)",
+   "expected": 2
+  },
+  {
+   "name": "MEDIAN of exact values, at one place more",
+   "formula": "MEDIAN(lines.price)",
+   "type": "decimal(3)",
+   "expected": "10.500"
+  },
+  {
+   "name": "COUNTUNIQUE of texts",
+   "formula": "COUNTUNIQUE(lines.sku)",
+   "expected": 3
+  },
+  {
+   "name": "COUNTUNIQUE of days skips the blank",
+   "formula": "COUNTUNIQUE(lines.day)",
+   "expected": 2
+  },
+  {
+   "name": "an expression of two columns, row by row",
+   "formula": "SUM(lines.qty * lines.unit)",
+   "expected": 35.25
+  },
+  {
+   "name": "a variable of the document beside the columns is the same for every row",
+   "formula": "SUM(lines.qty * lines.unit * limit)",
+   "inputs": {
+    "limit": 2
+   },
+   "expected": 70.5
+  },
+  {
+   "name": "an exact expression with a variable of the document",
+   "formula": "SUM(lines.price * rate)",
+   "inputs": {
+    "rate": "1.50"
+   },
+   "type": "decimal(4)",
+   "expected": "166.1100"
+  },
+  {
+   "name": "a blank variable of the document reads as 0 in the arithmetic of each row",
+   "formula": "SUM(lines.qty * limit)",
+   "expected": 0
+  },
+  {
+   "name": "MAX of an expression",
+   "formula": "MAX(lines.qty * 2)",
+   "expected": 7
+  },
+  {
+   "name": "a function of single values inside the expression",
+   "formula": "SUM(ROUND(lines.unit, 0))",
+   "expected": 15
+  },
+  {
+   "name": "COUNTIF with a condition that is a column",
+   "formula": "COUNTIF(lines, done)",
+   "expected": 2
+  },
+  {
+   "name": "COUNTIF: a row on which the condition is blank does not meet it",
+   "formula": "COUNTIF(lines, qty > 1)",
+   "expected": 2
+  },
+  {
+   "name": "SUMIF of money",
+   "formula": "SUMIF(lines, sku = \"A\", cost)",
+   "expected": "370.97 PLN"
+  },
+  {
+   "name": "SUMIF with a variable of the document in the condition",
+   "formula": "SUMIF(lines, sku = THIS.code, qty)",
+   "inputs": {
+    "code": "A"
+   },
+   "expected": 5.5
+  },
+  {
+   "name": "SUMIF over no matching row is 0",
+   "formula": "SUMIF(lines, sku = THIS.code, qty)",
+   "inputs": {
+    "code": "Z"
+   },
+   "expected": 0
+  },
+  {
+   "name": "SUMIF of an expression of the row's columns",
+   "formula": "SUMIF(lines, done, qty * unit)",
+   "expected": 35
+  },
+  {
+   "name": "AVERAGEIF",
+   "formula": "AVERAGEIF(lines, sku = \"A\", qty)",
+   "expected": 2.75
+  },
+  {
+   "name": "MAXIF",
+   "formula": "MAXIF(lines, sku = \"B\", price)",
+   "expected": "0.25"
+  },
+  {
+   "name": "MINIF over no matching row is blank",
+   "formula": "MINIF(lines, sku = \"Z\", price)",
+   "expected": null
+  },
+  {
+   "name": "ANY: some row meets the condition",
+   "formula": "ANY(lines, qty > 3)",
+   "expected": true
+  },
+  {
+   "name": "ALL: a row with a blank does not meet the condition",
+   "formula": "ALL(lines, qty > 0)",
+   "expected": false
+  },
+  {
+   "name": "ALL: every row meets it",
+   "formula": "ALL(lines, sku <> \"Z\")",
+   "expected": true
+  },
+  {
+   "name": "two figures in one formula",
+   "formula": "SUM(lines.qty) + COUNT(lines)",
+   "expected": 10.5
+  },
+  {
+   "name": "a figure inside IF",
+   "formula": "IF(COUNT(lines) > 3, \"many\", \"few\")",
+   "expected": "many"
+  },
+  {
+   "name": "a list with no rows counts 0",
+   "formula": "COUNT(none)",
+   "expected": 0
+  },
+  {
+   "name": "the sum of no numbers is 0",
+   "formula": "SUM(none.qty)",
+   "expected": 0
+  },
+  {
+   "name": "the sum of no exact numbers is 0, exact",
+   "formula": "SUM(none.price)",
+   "expected": "0.00"
+  },
+  {
+   "name": "the sum of no money is blank",
+   "formula": "SUM(none.cost)",
+   "expected": null
+  },
+  {
+   "name": "the smallest of nothing is blank",
+   "formula": "MIN(none.qty)",
+   "expected": null
+  },
+  {
+   "name": "the mean of nothing is blank",
+   "formula": "AVERAGE(none.qty)",
+   "expected": null
+  },
+  {
+   "name": "the middle value of nothing is blank",
+   "formula": "MEDIAN(none.price)",
+   "expected": null
+  },
+  {
+   "name": "nothing has no different values",
+   "formula": "COUNTUNIQUE(none.qty)",
+   "expected": 0
+  },
+  {
+   "name": "ANY of no rows is FALSE",
+   "formula": "ANY(none, qty > 0)",
+   "expected": false
+  },
+  {
+   "name": "ALL of no rows is TRUE",
+   "formula": "ALL(none, qty > 0)",
+   "expected": true
+  },
+  {
+   "name": "money in two currencies does not add",
+   "formula": "SUM(mixed.fee)",
+   "error": "currency_mismatch"
+  },
+  {
+   "name": "the same amount in two currencies is two values",
+   "formula": "COUNTUNIQUE(mixed.fee)",
+   "expected": 3
+  },
+  {
+   "name": "COUNT of an array counts the elements that have a value",
+   "formula": "COUNT(tags)",
+   "expected": 3
+  },
+  {
+   "name": "COUNTUNIQUE of an array",
+   "formula": "COUNTUNIQUE(tags)",
+   "expected": 2
+  },
+  {
+   "name": "SUM of an array of numbers",
+   "formula": "SUM(amounts)",
+   "expected": 7.5
+  },
+  {
+   "name": "MAX of an array",
+   "formula": "MAX(amounts)",
+   "expected": 4
+  },
+  {
+   "name": "MEDIAN of an array",
+   "formula": "MEDIAN(amounts)",
+   "expected": 2.5
+  },
+  {
+   "name": "AVERAGE of an array",
+   "formula": "AVERAGE(amounts)",
+   "expected": 2.5
+  },
+  {
+   "name": "a condition over an array names its elements value",
+   "formula": "COUNTIF(tags, value = \"red\")",
+   "expected": 2
+  },
+  {
+   "name": "ANY over an array",
+   "formula": "ANY(tags, value = \"blue\")",
+   "expected": true
+  },
+  {
+   "name": "ALL over an array: the blank element does not meet it",
+   "formula": "ALL(tags, value <> \"green\")",
+   "expected": false
+  }
+ ]
+}

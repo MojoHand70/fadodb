@@ -187,6 +187,11 @@ type collector struct {
 	// live are the live variables of the class being compiled, by upper
 	// case name: no formula of the class may read one (ADR-0076, item 4).
 	live map[string]bool
+	// listsOf and listsFor are set while the formula of a computed
+	// variable is bound: its class, whose lists a live variable may work
+	// figures out of (ADR-0081), and the variable itself.
+	listsOf  *Class
+	listsFor *Variable
 }
 
 // liveRead says a formula reads a live variable. A live value is worked
@@ -207,7 +212,11 @@ var errUnbound = errors.New("the formula reads a class and was not bound")
 // its explicit tables and the documents of its classes.
 func (c *collector) bind(src string, scope *formula.Scope, mode formula.Mode) (*formula.Program, error) {
 	r := &envSources{c: c}
-	prog, err := formula.Bind(src, scope, formula.BindOptions{Mode: mode, Sources: r, States: c.states()})
+	opts := formula.BindOptions{Mode: mode, Sources: r, States: c.states()}
+	if c.listsOf != nil {
+		opts.Lists, opts.Live = listsOf(c.listsOf, c.listsFor, r), c.listsFor.Mode == ModeLive
+	}
+	prog, err := formula.Bind(src, scope, opts)
 	if err != nil && r.class && c.env.Shallow {
 		return nil, errUnbound
 	}

@@ -8,6 +8,19 @@ All notable changes to FadoDB are recorded here. The format follows
 
 ### Added
 
+- Who removed a table or words, and when (ADR-0083, proposed).
+  `remove_table` and `remove_words` write a line in the log of
+  definitions, in the transaction that removes: who removed it, what
+  they were, for whom they acted, when, and the version it had. The
+  words that go with a table write a line each. `definitions` answers
+  that version with `removed`, in Go `Definition.Removed`, to database
+  administrators and designers and to an agent working for an
+  administrator the database keeps, the owner's ruling; anyone else
+  gets the versions without it, and is not refused. `definitions` now
+  takes its caller, and `for`; in Go, `Definitions` takes options. A
+  refused removal writes nothing. The engine schema stays 13: a database made
+  before opens as it is, and an engine made before reads one made now
+  as it did, without the removals.
 - Changing a table that holds rows (ADR-0084, proposed), with the
   owner's two checks. A version of a table that holds rows, or that a
   class reads, is taken when it keeps its key, every value of a changed
@@ -41,8 +54,7 @@ All notable changes to FadoDB are recorded here. The format follows
   its rows and its words, for a designer, and is refused with
   `not_allowed` while a class reads the table or a rule writes it. A
   table defined again under its name takes the next version after the
-  removed one's. In Go, `DB.DeleteRows` and `DB.RemoveTable`. Nothing
-  records who removed a table yet.
+  removed one's. In Go, `DB.DeleteRows` and `DB.RemoveTable`.
 - A column added to a table in use (ADR-0080, proposed). A version of a
   table that adds columns and changes nothing else is taken while the
   table holds rows or a class reads it; its rows are blank in each new

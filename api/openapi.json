@@ -1371,6 +1371,10 @@
               "schema": {
                 "additionalProperties": false,
                 "properties": {
+                  "for": {
+                    "description": "the id of whoever the caller acts for; let through only while a substitution says so",
+                    "type": "string"
+                  },
                   "name": {
                     "description": "its name; for words, what they translate, its name and the language: class/Invoice/pl",
                     "type": "string"
@@ -1397,7 +1401,7 @@
                 "schema": {
                   "properties": {
                     "versions": {
-                      "description": "the versions, oldest first"
+                      "description": "the versions, oldest first; for a caller who may see it, the one a table or words had when they were removed says who removed them and when, under removed"
                     }
                   },
                   "required": [
@@ -1413,7 +1417,7 @@
             "$ref": "#/components/responses/Refused"
           }
         },
-        "summary": "Lists the versions of one class, schema, table, action, inlet, app or words, with who defined each and when.",
+        "summary": "Lists the versions of one class, schema, table, action, inlet, app or words, with who defined each and when; to administrators and designers, and to an agent working for an administrator, also who removed a table or words and when.",
         "tags": [
           "Definitions"
         ],
@@ -4705,7 +4709,7 @@
             "$ref": "#/components/responses/Refused"
           }
         },
-        "summary": "Takes a table away with its rows, its definition and its words; refused while a class reads it or a rule writes it.",
+        "summary": "Takes a table away with its rows, its definition and its words; refused while a class reads it or a rule writes it. The log of definitions says who removed it.",
         "tags": [
           "Definitions"
         ],
@@ -4769,7 +4773,7 @@
             "$ref": "#/components/responses/Refused"
           }
         },
-        "summary": "Takes away the words of a class, a table or a schema in one language: a page shows it in its own words from then on. Their versions stay.",
+        "summary": "Takes away the words of a class, a table or a schema in one language: a page shows it in its own words from then on. Their versions stay, and the log of definitions says who took them away.",
         "tags": [
           "Definitions"
         ],

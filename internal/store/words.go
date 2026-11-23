@@ -243,10 +243,12 @@ func (of WordsOf) kind() (string, string) {
 
 // RemoveWords takes away the words of one thing in one language: a page
 // shows that thing in its own words from then on. Their versions stay,
-// and defining them again makes their next version. It is for the system
-// group designers.
+// and defining them again makes their next version. The log of
+// definitions records who removed them and when, on the version they had
+// (ADR-0083). It is for the system group designers.
 func (s *Store) RemoveWords(ctx context.Context, of WordsOf, opts ...Option) error {
-	if _, e := s.worker(ctx, workDesign, opts); e != nil {
+	o, e := s.worker(ctx, workDesign, opts)
+	if e != nil {
 		return e
 	}
 	kind, target := of.kind()
@@ -267,9 +269,24 @@ func (s *Store) RemoveWords(ctx context.Context, of WordsOf, opts ...Option) err
 	if w == nil || w.removed {
 		return unknownWords(kind, target, of.Language)
 	}
-	if _, err := s.writer.ExecContext(ctx, "UPDATE words SET removed = 1, updated_at = ? WHERE kind = ? AND target = ? AND language = ?",
-		s.now().Unix(), w.kind, w.target, w.def.Language); err != nil {
-		return storageErr("remove the words", err)
+	now := s.now().Unix()
+	wr := s.writer
+	if _, err := wr.ExecContext(ctx, "BEGIN IMMEDIATE"); err != nil {
+		return storageErr("begin", err)
+	}
+	rollback := func(err error) error {
+		_, _ = wr.ExecContext(ctx, "ROLLBACK")
+		return err
+	}
+	if _, err := wr.ExecContext(ctx, "UPDATE words SET removed = 1, updated_at = ? WHERE kind = ? AND target = ? AND language = ?",
+		now, w.kind, w.target, w.def.Language); err != nil {
+		return rollback(storageErr("remove the words", err))
+	}
+	if err := recordRemoval(ctx, wr, DefinitionWords, w.name(), w.version, o.principal, now); err != nil {
+		return rollback(err)
+	}
+	if err := s.endTransaction(ctx); err != nil {
+		return rollback(storageErr("commit", err))
 	}
 	gone := *w
 	gone.removed = true

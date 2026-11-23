@@ -426,6 +426,7 @@ with `bad_formula`, and the message says which.
 | write rows, by an import or through a rule | the `write` line of the table |
 | remove rows | the `write` line of the table |
 | remove a table | the system group `designers` |
+| read who removed a table | the system group `administrators` or `designers`, or, for an agent, to work for a user the database keeps in `administrators` |
 | read the rows with SQL | the system group `analysts` |
 
 - **The two lines are about the table as a whole.** Each is a
@@ -501,9 +502,42 @@ words. It is for the system group `designers`, as defining one is.
 - **Its versions stay** in the log of definitions. A table defined
   again under its name is the next version after them, and starts
   empty.
-- **Nothing records who removed it**, as nothing records who removed
-  words: the log of definitions has a line for each version and none
-  for a removal.
+- **The log of definitions says who removed it and when**, on the
+  version it had. Its words in other languages go with it, and each
+  says the same on the version it had.
+- **Who removed it is read by database administrators and
+  designers**: a person, a service, or a caller whose kind the host
+  program does not give, in the system group `administrators` or
+  `designers`. An agent reads it only while it works for a user the
+  database keeps in `administrators`, named in `for`; its own system
+  groups give it nothing. Every other caller, and a call that names
+  nobody, gets the same versions without `removed`, and is not
+  refused.
+
+Dan made the table Scratch to try an import, changed it once and
+removed it. Dan, a designer, sends `definitions`
+
+<!-- the versions of Scratch -->
+```jsonc
+{"what": "table", "name": "Scratch"}
+```
+
+and is answered:
+
+<!-- who removed Scratch -->
+```jsonc
+{"versions": [{"what": "table", "name": "Scratch", "version": 1, "by": "dan", "kind": "person", "at": 1794992400},
+              {"what": "table", "name": "Scratch", "version": 2, "by": "dan", "kind": "person", "at": 1794996000,
+               "removed": {"by": "dan", "kind": "person", "at": 1794999600}}]}
+```
+
+`removed` holds what a version holds of who defined it: `by`, the id
+of who removed it; `kind`, a person, an agent or a service; `for`, the
+id they acted for, when they acted for somebody; and `at`, the moment
+in seconds since 1970. A version nobody removed has no `removed`. The
+Polish words of Scratch are asked with `"what": "words"` and the name
+`table/Scratch/pl`, and words taken away with `remove_words` say who
+took them away in the same way.
 
 ## With SQL
 

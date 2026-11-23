@@ -552,6 +552,24 @@ func (db *DB) ImportRows(ctx context.Context, table string, rows []Values, opts 
 	return db.s.ImportRows(ctx, table, rows, opts...)
 }
 
+// DeleteRows removes the rows of a table that have the keys given, in one
+// transaction (ADR-0082): each key a value for every column of the
+// table's key. A key the table does not have removes nothing. It asks the
+// table's write rule, as an import does, and answers how many rows it
+// removed.
+func (db *DB) DeleteRows(ctx context.Context, table string, keys []Values, opts ...Option) (int, error) {
+	return db.s.DeleteRows(ctx, table, keys, opts...)
+}
+
+// RemoveTable takes a table away with its rows, its definition and its
+// words (ADR-0082). It is for a designer. A table a class reads, or a rule
+// of a class writes, is refused with not_allowed. Its versions stay in the
+// log of definitions, and a table defined again under its name takes the
+// next version.
+func (db *DB) RemoveTable(ctx context.Context, name string, opts ...Option) error {
+	return db.s.RemoveTable(ctx, name, opts...)
+}
+
 // TableRows reads every row of a table in key order, for a principal the
 // table's read rule lets through (ADR-0051).
 func (db *DB) TableRows(ctx context.Context, table string, opts ...Option) ([]Values, error) {

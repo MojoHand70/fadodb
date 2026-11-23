@@ -671,6 +671,21 @@ func TestTables(t *testing.T) {
 			}
 			// Through a rule: the table of refused actions, above.
 		},
+		"remove rows": func(row []string) {
+			gone := []fado.Values{{"currency": "XXX", "day": "2026-11-13"}}
+			_, err := db.DeleteRows(ctx, "Rates", gone, ann)
+			needs(row, err)
+			if n, err := db.DeleteRows(ctx, "Rates", gone, tess); err != nil || n != 0 {
+				t.Errorf("Tess removes the row of a key the table does not have: %d, %v", n, err)
+			}
+		},
+		"remove a table": func(row []string) {
+			err := db.RemoveTable(ctx, "Mine", tess)
+			needs(row, err)
+			if err := db.RemoveTable(ctx, "Mine", dan); err != nil || len(db.Tables()) != 1 {
+				t.Errorf("Dan removes a table: %v, %v", err, db.Tables())
+			}
+		},
 		"read the rows with SQL": func(row []string) {
 			_, err := db.SQL(ctx, string(statement[1]), nil, tess)
 			needs(row, err)
@@ -1043,6 +1058,14 @@ func TestTables(t *testing.T) {
 		{"list the tables, or those of one app", "list_tables", func() bool {
 			return string(exec(reader, "list_tables", `{}`)["tables"]) == `["Rates"]`
 		}},
+		{"remove rows", "delete_rows", func() bool {
+			return string(exec(treasurer, "delete_rows", `{"table":"Rates","keys":[{"currency":"XXX","day":"2026-11-13"}]}`)["deleted"]) == "0"
+		}},
+		{"remove a table", "remove_table", func() bool {
+			exec(designer, "define_table", `{"definition":{"name":"Gone","columns":{"k":"text"},"key":["k"]}}`)
+			exec(designer, "remove_table", `{"name":"Gone"}`)
+			return string(exec(reader, "list_tables", `{}`)["tables"]) == `["Rates"]`
+		}},
 	}
 	listed := map[string]string{}
 	for _, row := range rows(marked(t, page, "the commands")) {
@@ -1183,6 +1206,33 @@ func TestTables(t *testing.T) {
 			}
 			// A change the rule still fits is taken.
 			define(plain("Fed", lines+`,"label":"Changed"`))
+		},
+	})
+
+	// Removing a table: refused while a class reads it or a rule writes it
+	// (Read and Fed, above), taken away when neither.
+	checks(t, page, "removing a table", map[string]func(row []string){
+		"is read by a formula of a class": func(row []string) {
+			if got := "is refused, " + codeOf(db3.RemoveTable(ctx, "Read2", setup)) + ", and names the class"; got != row[1] {
+				t.Errorf("removing a table a class reads %s, and the chapter says it %s", got, row[1])
+			}
+		},
+		"is written by a rule of a class": func(row []string) {
+			if got := "is refused, " + codeOf(db3.RemoveTable(ctx, "Fed", setup)) + ", and names the class"; got != row[1] {
+				t.Errorf("removing a table a rule writes %s, and the chapter says it %s", got, row[1])
+			}
+		},
+		"is neither": func(row []string) {
+			define(plain("Spare", lines))
+			if _, err := db3.ImportRows(ctx, "Spare", []fado.Values{{"k": "a"}}, ann); err != nil {
+				t.Fatal(err)
+			}
+			if err := db3.RemoveTable(ctx, "Spare", setup); err != nil || row[1] != "is taken away, its rows with it" {
+				t.Errorf("removing a table nothing uses: %v, and the chapter says it %s", err, row[1])
+			}
+			if _, ok := db3.Table("Spare"); ok {
+				t.Error("the table is still there")
+			}
 		},
 	})
 

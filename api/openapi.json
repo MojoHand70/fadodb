@@ -1490,6 +1490,77 @@
         "x-fado-mark": "destroys"
       }
     },
+    "/v1/delete_rows": {
+      "post": {
+        "description": "It writes. In Go it is the call `DeleteRows`.",
+        "operationId": "delete_rows",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "for": {
+                    "description": "the id of whoever the caller acts for; let through only while a substitution says so",
+                    "type": "string"
+                  },
+                  "keys": {
+                    "description": "the keys of the rows, each an object with a value for every column of the table's key and for no other",
+                    "items": {
+                      "type": "object"
+                    },
+                    "type": "array"
+                  },
+                  "reason": {
+                    "description": "why a content administrator acts or reads past a rule; a change keeps it on its event, a read in the log of reads",
+                    "type": "string"
+                  },
+                  "table": {
+                    "description": "the name of the table",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "table",
+                  "keys"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "deleted": {
+                      "description": "how many rows it removed"
+                    }
+                  },
+                  "required": [
+                    "deleted"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "The command ran."
+          },
+          "default": {
+            "$ref": "#/components/responses/Refused"
+          }
+        },
+        "summary": "Removes the rows of a table that have the keys given; a key the table does not have removes nothing.",
+        "tags": [
+          "Tables, actions and the queue"
+        ],
+        "x-fado-call": "DeleteRows",
+        "x-fado-mark": "writes"
+      }
+    },
     "/v1/drain": {
       "post": {
         "description": "It writes. In Go it is the call `Drain`.",
@@ -4587,6 +4658,58 @@
           "Definitions"
         ],
         "x-fado-call": "RemoveInlet",
+        "x-fado-mark": "writes"
+      }
+    },
+    "/v1/remove_table": {
+      "post": {
+        "description": "It writes. In Go it is the call `RemoveTable`.",
+        "operationId": "remove_table",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "for": {
+                    "description": "the id of whoever the caller acts for; let through only while a substitution says so",
+                    "type": "string"
+                  },
+                  "name": {
+                    "description": "the name of the table",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "name"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {},
+                  "type": "object"
+                }
+              }
+            },
+            "description": "The command ran."
+          },
+          "default": {
+            "$ref": "#/components/responses/Refused"
+          }
+        },
+        "summary": "Takes a table away with its rows, its definition and its words; refused while a class reads it or a rule writes it.",
+        "tags": [
+          "Definitions"
+        ],
+        "x-fado-call": "RemoveTable",
         "x-fado-mark": "writes"
       }
     },

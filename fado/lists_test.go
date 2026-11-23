@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -215,6 +216,99 @@ func TestLists(t *testing.T) {
 		"a middle value of a text":                {fig(`MEDIAN(invoices.number)`)},
 		"MEDIAN of single values":                 {fig(`MEDIAN(number)`), fig(`COUNTUNIQUE(customer)`)},
 	}, func(definition string) string { return finding(db, definition) })
+
+	// The figures over the lines a document holds (ADR-0081, step 2):
+	// the bill of the chapter, step by step.
+	if classes["Bill"] == nil {
+		t.Fatal("the chapter shows the class Bill")
+	}
+	if _, err := db.DefineClass(ctx, classes["Bill"], setup); err != nil {
+		t.Fatal(err)
+	}
+	ewa := people["Ewa"]
+	line := func(what string, qty int, price string, delivered bool) map[string]any {
+		return map[string]any{"what": what, "qty": qty, "price": price, "delivered": delivered}
+	}
+	paper, pens := line("paper", 2, "10.50 PLN", true), line("pens", 1, "0.25 PLN", true)
+	steps := map[string]func() (*fado.Document, error){
+		"writes B-1 with its three lines": func() (*fado.Document, error) {
+			return db.Create(ctx, "Bill", fado.Values{"number": "B-1", "tags": []any{"red", "urgent", "red"},
+				"lines": []any{paper, pens, line("ink", 3, "100.00 PLN", false)}}, ewa, fado.WithID("B-1"))
+		},
+		"marks the ink as delivered": func() (*fado.Document, error) {
+			return db.Set(ctx, "Bill", "B-1", fado.Values{"lines": []any{paper, pens, line("ink", 3, "100.00 PLN", true)}}, ewa)
+		},
+		"takes the ink off the bill": func() (*fado.Document, error) {
+			return db.Set(ctx, "Bill", "B-1", fado.Values{"lines": []any{paper, pens}}, ewa)
+		},
+		"changes the number alone": func() (*fado.Document, error) {
+			return db.Set(ctx, "Bill", "B-1", fado.Values{"number": "B-1/A"}, ewa)
+		},
+	}
+	held := marked(t, page, "held figures")
+	heldNames := regexp.MustCompile("`([a-z_]+)`").FindAllStringSubmatch(strings.SplitN(held, "\n", 2)[0], -1)
+	if len(heldNames) != 5 || len(rows(held)) != len(steps) {
+		t.Fatalf("the chapter's table of the bill names %d figures in %d steps", len(heldNames), len(rows(held)))
+	}
+	for _, row := range rows(held) {
+		do := steps[row[0]]
+		if do == nil {
+			t.Fatalf("the chapter has a step the test does not play: %s", row[0])
+		}
+		d, err := do()
+		if err != nil {
+			t.Fatalf("Ewa %s: %v", row[0], err)
+		}
+		for i, name := range heldNames {
+			if got := shown(d.Values[name[1]]); got != row[1+i] {
+				t.Errorf("Ewa %s: %s is %s, and the chapter says %s", row[0], name[1], got, row[1+i])
+			}
+		}
+	}
+	// The guard counts the lines: a bill with none is not sent, one with
+	// a line of no quantity neither, and B-1 is.
+	for id, lines := range map[string][]any{"B-2": nil, "B-3": {map[string]any{"what": "ink", "price": "1.00 PLN"}}} {
+		values := fado.Values{"number": id}
+		if lines != nil {
+			values["lines"] = lines
+		}
+		if _, err := db.Create(ctx, "Bill", values, ewa, fado.WithID(id)); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := db.Transition(ctx, "Bill", id, "send", nil, ewa); err == nil {
+			t.Errorf("the bill %s was sent", id)
+		}
+	}
+	if sent, err := db.Transition(ctx, "Bill", "B-1", "send", nil, ewa); err != nil || sent.State != "sent" {
+		t.Errorf("B-1 is sent: %v, %v", sent, err)
+	}
+	// A filter reads the computed figure, and does not fold by itself.
+	if docs, err := db.Query(ctx, fado.Filter{Class: "Bill", Where: "count > 1"}, ewa); err != nil || len(docs) != 1 || docs[0].ID != "B-1" {
+		t.Errorf("a filter on the count of lines: %v, %v", docs, err)
+	}
+	bill := func(old, with string) string {
+		changed := strings.Replace(string(classes["Bill"]), old, with, 1)
+		if changed == string(classes["Bill"]) {
+			t.Fatalf("the test changes %s of the bill of the chapter", old)
+		}
+		return changed
+	}
+	heldBy(t, page, "held refused", map[string][]string{
+		"a figure over the lines in a read rule": {bill(`"read": "INGROUP(\"finance\")"`, `"read": "COUNT(lines) > 0"`)},
+		"a figure over the lines in a filter":    {"a filter"},
+		"a figure over the lines in a title":     {bill(`"title": "number"`, `"title": "TEXT(COUNT(lines))"`)},
+		"the list as a value":                    {bill(`"formula": "COUNT(lines)"`, `"formula": "lines"`), bill(`"formula": "MAX(lines.price)"`, `"formula": "lines.price"`)},
+	}, func(definition string) string {
+		if definition != "a filter" {
+			return finding(db, definition)
+		}
+		_, err := db.Query(ctx, fado.Filter{Class: "Bill", Where: "COUNT(lines) > 1"}, ewa)
+		var fe *fado.Error
+		if !errors.As(err, &fe) {
+			return fmt.Sprint(err)
+		}
+		return fe.Code
+	})
 
 	// The source may not lose what a list names.
 	without := strings.Replace(string(classes["Invoice"]), `"margin": {"type": "money", "scale": 2, "label": "Margin"},`, "", 1)

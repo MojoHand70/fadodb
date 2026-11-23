@@ -351,17 +351,29 @@ objects, are in [Schemas and objects](schemas-and-objects.md).
 | `depot` | refused: `bad_formula` | |
 
 > **Status.** A formula reads the fields of an object, and not the
-> object as a whole. It cannot read a list or rows yet either: a
-> variable of type `array<...>` or `rows` is stored and answered with
-> the document, and a formula that names it is refused.
+> object as a whole.
+
+## Lists and rows
+
+A variable of type `array<...>` or `rows` is a list the document
+holds: its tags, its lines. A formula works one value out of such a
+list with a function over a list: how many elements it has, the sum of
+a column, whether every row meets a condition. The list itself is no
+value of a formula.
 
 <!-- examples -->
 | Formula | Answer | Type |
 |---|---|---|
-| `COUNT(tags)` | refused: `bad_formula` | |
+| `COUNT(tags)` | 2 | number |
+| `COUNTUNIQUE(tags)` | 2 | number |
+| `ANY(tags, value = "urgent")` | TRUE | bool |
+| `IF(COUNT(tags) > 1, "several", "one")` | "several" | text |
+| `tags` | refused: `bad_formula` | |
 
-The functions that work on lists are in the language and are marked
-in [The functions](functions.md) where they are not built yet.
+The whole of it, with the lines of a bill, is in
+[Lists of other documents](lists.md), under "Figures over the lines a
+document holds". The functions that are in the language and not built
+yet are marked in [The functions](functions.md).
 
 ## Tables and other documents
 

@@ -324,9 +324,9 @@ A figure is one question to the invoices, with the id of the order in
 its condition, and the answer is one number: no invoice is read to be
 counted. An index on the pointer serves it as it serves the list.
 
-**Not built yet** (ADR-0081): the same functions over the lines and
-the tags a document holds; and the functions that give a list again,
-`FILTER`, `SORT`, `TOP` and `UNIQUE`.
+**Not built yet** (ADR-0081): the functions that give a list again,
+`FILTER`, `SORT`, `TOP` and `UNIQUE`. The same figures over the lines
+and the tags a document holds are below.
 
 What is refused when the class is defined:
 
@@ -342,6 +342,94 @@ What is refused when the class is defined:
 | a figure inside a figure | `bad_formula` |
 | a middle value of a text | `bad_formula` |
 | `MEDIAN` of single values | `bad_formula` |
+
+## Figures over the lines a document holds
+
+A document has lists of its own as well: its lines, a variable of type
+`rows`, and its tags, an `array<text>`. The same functions work over
+them. Here nothing is asked of another class: the lines are the
+document's, so the figure is the same for every reader, and it is kept
+with the document as any computed value is.
+
+```json
+{
+  "name": "Bill",
+  "title": "number",
+  "variables": {
+    "number":  {"type": "text", "label": "Number", "required": true},
+    "lines":   {"type": "rows", "label": "Lines",
+                "schema": {"what": "text", "qty": "decimal(0)", "price": "money(2)", "delivered": "bool"}},
+    "tags":    {"type": "array<text>", "label": "Tags"},
+    "count":   {"label": "Lines", "formula": "COUNT(lines)"},
+    "net":     {"label": "Net", "formula": "SUM(lines.qty * lines.price)"},
+    "dearest": {"label": "Dearest", "formula": "MAX(lines.price)"},
+    "waiting": {"label": "Not delivered", "formula": "COUNTIF(lines, NOT delivered)"},
+    "labels":  {"label": "Different tags", "formula": "COUNTUNIQUE(tags)"}
+  },
+  "states": {"initial": "draft", "list": ["draft", "sent"]},
+  "transitions": [
+    {"name": "send", "from": "draft", "to": "sent",
+     "guard": "COUNT(lines) > 0 AND ALL(lines, qty > 0)"}
+  ],
+  "access": {
+    "read": "INGROUP(\"finance\")",
+    "create": "INGROUP(\"finance\")",
+    "update": "INGROUP(\"finance\")",
+    "delete": "FALSE"
+  }
+}
+```
+
+Ewa writes the bill B-1 with three lines: 2 of paper at 10.50, 1 of
+pens at 0.25, both delivered, and 3 of ink at 100.00, not delivered
+yet. Its tags are red, urgent and red.
+
+<!-- held figures -->
+| What Ewa does | `count` | `net` | `dearest` | `waiting` | `labels` |
+|---|---|---|---|---|---|
+| writes B-1 with its three lines | 3 | 321.25 PLN | 100.00 PLN | 1 | 2 |
+| marks the ink as delivered | 3 | 321.25 PLN | 100.00 PLN | 0 | 2 |
+| takes the ink off the bill | 2 | 21.25 PLN | 10.50 PLN | 0 | 2 |
+| changes the number alone | 2 | 21.25 PLN | 10.50 PLN | 0 | 2 |
+
+- **A figure is worked out again when its list changes**, in the same
+  commit, as any computed value follows what it reads. A change of
+  something else leaves it.
+- **It stands in a computed variable, a triggered one, a guard and a
+  rule.** `send` is refused for a bill with no line, and for one with a
+  line that has no quantity: the guard counts the lines.
+- **An expression of the columns** stands in the one argument, each
+  column written with the list before the dot:
+  `SUM(lines.qty * lines.price)` multiplies line by line and adds. A
+  bare name beside them is a variable of the document, the same for
+  every line: `SUM(lines.qty * lines.price * rate)`.
+- **In a form with a condition** the names are the row's, as in
+  `QUERY`: `COUNTIF(lines, NOT delivered)`,
+  `SUMIF(lines, delivered, qty * price)`. A variable of the document
+  is written `THIS.name` there.
+- **Tags are a list of single values.** `COUNT(tags)` counts the ones
+  that have a value, `COUNTUNIQUE(tags)` the different ones. In a
+  condition an element is called `value`: `ANY(tags, value = "red")`.
+- **A list with no element** follows the rules above: it counts 0, its
+  sum of money is blank.
+- **The list itself is no value**: `lines` alone in a formula is
+  refused, and so is `lines.qty` outside a function over the list.
+
+**Not built yet** (ADR-0081), each said when the class is defined or
+the question asked:
+
+<!-- held refused -->
+| Written | Refused with |
+|---|---|
+| a figure over the lines in a read rule | `not_allowed` |
+| a figure over the lines in a filter | `not_allowed` |
+| a figure over the lines in a title | `bad_formula` |
+| the list as a value | `bad_formula` |
+
+Keep the figure in a computed variable, and read or filter that
+variable: `count > 1` in a filter works. A page does not work such a
+figure out by itself yet: it asks the server, as it does for a
+`LOOKUP`.
 
 ## What is refused
 

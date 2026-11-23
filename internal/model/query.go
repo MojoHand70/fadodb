@@ -284,6 +284,10 @@ func checkQueryCond(c *collector, cls, src *Class, q *Query, path string, scope 
 			ok = false
 		}
 	}
+	if len(prog.Folds) > 0 {
+		c.at(CodeNotAllowed, path, q.Cond, "the condition of a QUERY may not work a figure out of the lines or tags of a document yet: it runs inside the one question the list is (ADR-0081)", "keep the figure in a computed variable of "+src.Name+", and compare that variable")
+		ok = false
+	}
 	if prog.ReadsStates {
 		c.at(CodeNotAllowed, path, q.Cond, "the condition of a QUERY may not call a function of a state, which reads the events of one document", "keep the answer in a triggered variable of "+src.Name+", and compare that variable")
 		ok = false

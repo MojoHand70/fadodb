@@ -279,7 +279,7 @@ func run(dir string) error {
 				return fmt.Errorf("%s: bind: %w", label, err)
 			}
 			e.Program, e.Result = base64.StdEncoding.EncodeToString(prog.Encode()), prog.Result.String()
-			e.Server = len(prog.Queries) > 0
+			e.Server = len(prog.Queries) > 0 || len(prog.Folds) > 0
 			for _, slot := range prog.Slots {
 				raw, ok := c.Inputs[slot.Name]
 				if !ok {

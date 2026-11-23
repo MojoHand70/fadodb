@@ -223,6 +223,11 @@ func CompileOn(f Filter, on *On, cls *model.Class, sources formula.Sources, p Pr
 		if e := noLive(cls, prog, "where"); e != nil {
 			return nil, e
 		}
+		if len(prog.Folds) > 0 {
+			return nil, &Error{Code: CodeNotAllowed, Element: "where", Pos: -1,
+				Message: "a filter may not work a figure out of the lines or tags of a document yet; it runs inside the query as a predicate (ADR-0081)",
+				Hint:    "keep the figure in a computed variable and filter on that variable"}
+		}
 		for _, c := range prog.Classes {
 			if c == formula.ClassLookup || c == formula.ClassQuery {
 				return nil, &Error{Code: CodeNotAllowed, Element: "where", Pos: -1,
@@ -795,6 +800,10 @@ func Value(src string, cls *model.Class, sources formula.Sources) (string, formu
 	}
 	if e := noLive(cls, prog, "value"); e != nil {
 		return "", 0, e
+	}
+	if len(prog.Folds) > 0 {
+		return "", 0, &Error{Code: CodeNotAllowed, Element: "value", Pos: -1, Message: "the formula works a figure out of the lines or tags of a document, which a formula over every row of the class does not do yet (ADR-0081)",
+			Hint: "keep the figure in a computed variable and name that variable"}
 	}
 	for _, c := range prog.Classes {
 		if c != formula.ClassPure && c != formula.ClassContext {

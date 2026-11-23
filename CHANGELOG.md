@@ -8,6 +8,12 @@ All notable changes to FadoDB are recorded here. The format follows
 
 ### Added
 
+- A column added to a table in use (ADR-0080, proposed). A version of a
+  table that adds columns and changes nothing else is taken while the
+  table holds rows or a class reads it; its rows are blank in each new
+  column. A new column of a table in use is not part of its key. Any
+  other change of a table in use is refused as before, and the refusal
+  says that columns can be added.
 - A table belongs to an app, as a class does (ADR-0079, proposed). A
   table names its app in its definition, `"app": "Expenses"`, and an
   app the database does not have is refused with `unknown_app` at

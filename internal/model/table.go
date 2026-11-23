@@ -291,6 +291,49 @@ func OnlyTheApp(a, b *TableDef) bool {
 	return errL == nil && errR == nil && bytes.Equal(l, r)
 }
 
+// AddsColumns says whether the second definition of a table is the first
+// with columns added and nothing else changed (ADR-0080): every column of
+// the first is in the second, written the same, the old ones in the same
+// order among themselves; the key, the indexes, the binding, the rules
+// and the words are the same, so no new column is in the key. The app may
+// differ (ADR-0079, item 4). It answers the names of the columns added.
+func AddsColumns(a, b *TableDef) ([]string, bool) {
+	if a == nil || b == nil || len(b.ColumnOrder) <= len(a.ColumnOrder) {
+		return nil, false
+	}
+	had := make(map[string]bool, len(a.ColumnOrder))
+	for _, name := range a.ColumnOrder {
+		had[name] = true
+	}
+	var kept, added []string
+	for _, name := range b.ColumnOrder {
+		if had[name] {
+			kept = append(kept, name)
+		} else {
+			added = append(added, name)
+		}
+	}
+	if !slices.Equal(kept, a.ColumnOrder) {
+		return nil, false
+	}
+	for _, name := range a.ColumnOrder {
+		l, errL := json.Marshal(a.Columns[name])
+		r, errR := json.Marshal(b.Columns[name])
+		if errL != nil || errR != nil || !bytes.Equal(l, r) {
+			return nil, false
+		}
+	}
+	x, y := *a, *b
+	x.App, y.App, x.Version, y.Version = "", "", 0, 0
+	x.Columns, y.Columns, x.ColumnOrder, y.ColumnOrder = nil, nil, nil, nil
+	l, errL := json.Marshal(x)
+	r, errR := json.Marshal(y)
+	if errL != nil || errR != nil || !bytes.Equal(l, r) {
+		return nil, false
+	}
+	return added, true
+}
+
 // DefineTable parses and compiles a table definition in one step.
 func DefineTable(data []byte) (*Table, Diagnostics) {
 	def, diags := ParseTable(data)

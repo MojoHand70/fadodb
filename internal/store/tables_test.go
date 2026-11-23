@@ -152,8 +152,9 @@ func TestDefineTable(t *testing.T) {
 	if _, err := s.defineOpenTable(ctx, []byte(`{"name": "Invoice", "columns": {"a": "text"}, "key": ["a"]}`), asSetup); !errors.As(err, &diags) || !diags.Has(model.CodeDuplicate) {
 		t.Errorf("a table named like a class: %v", err)
 	}
-	// A table with rows is not redefined; an empty one is the next version.
-	_, err = s.defineOpenTable(ctx, []byte(strings.Replace(ratesTable, `"name": "text"`, `"name": "text", "note": "text"`, 1)), asSetup)
+	// A column of a table with rows is not changed (a column added is,
+	// ADR-0080); an empty table is the next version.
+	_, err = s.defineOpenTable(ctx, []byte(strings.Replace(ratesTable, `"name": "text"`, `"name": "number"`, 1)), asSetup)
 	if !errors.As(err, &diags) || !diags.Has(model.CodeNotSupported) {
 		t.Errorf("redefining with rows: %v", err)
 	}
@@ -249,7 +250,7 @@ func TestLookup(t *testing.T) {
 	if !errors.As(err, &diags) || !diags.Has(model.CodeBadFormula) || !strings.Contains(diags.Error(), "unknown source Fx") {
 		t.Errorf("unknown table in a class: %v", err)
 	}
-	_, err = s.defineOpenTable(ctx, []byte(strings.Replace(ratesTable, `"name": "text"`, `"name": "text", "note": "text"`, 1)), asSetup)
+	_, err = s.defineOpenTable(ctx, []byte(strings.Replace(ratesTable, `"name": "text"`, `"name": "number"`, 1)), asSetup)
 	if !errors.As(err, &diags) || !diags.Has(model.CodeNotSupported) || !strings.Contains(diags.Error(), "the class Order reads the table") {
 		t.Errorf("redefining a table in use: %v", err)
 	}

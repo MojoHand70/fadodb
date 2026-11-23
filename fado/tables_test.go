@@ -1095,7 +1095,7 @@ func TestTables(t *testing.T) {
 				t.Errorf("the versions of the table: %v, %v", versions, err)
 			}
 		},
-		"has rows": func(row []string) {
+		"has rows, and the change is more than new columns": func(row []string) {
 			define(plain("Filled", lines))
 			if _, err := db3.ImportRows(ctx, "Filled", []fado.Values{{"k": "a"}}, ann); err != nil {
 				t.Fatal(err)
@@ -1104,7 +1104,7 @@ func TestTables(t *testing.T) {
 				t.Errorf("a changed definition of a table with rows %s, and the chapter says it %s", got, row[1])
 			}
 		},
-		"is read by a formula of a class": func(row []string) {
+		"is read by a formula of a class, and the change is more than new columns": func(row []string) {
 			define(plain("Read", lines))
 			if _, err := db3.DefineClass(ctx, []byte(scratch("Reads", `"c":{"type":"text"},"r":{"formula":"LOOKUP(Read, v, k = THIS.c)"}`, oneState)), setup); err != nil {
 				t.Fatal(err)
@@ -1120,6 +1120,29 @@ func TestTables(t *testing.T) {
 				t.Fatalf("the class moves over to another table: %v", err)
 			}
 			define(plain("Read", lines+`,"label":"Changed"`))
+		},
+		"gains columns, none of them in its key, and nothing else changes": func(row []string) {
+			// Grown is in use: it holds a row and a class reads it. Two
+			// columns join it, and its row is blank in them (ADR-0080).
+			define(plain("Grown", lines))
+			if _, err := db3.ImportRows(ctx, "Grown", []fado.Values{{"k": "a", "v": "b"}}, ann); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := db3.DefineClass(ctx, []byte(scratch("ReadsGrown", `"c":{"type":"text"},"r":{"formula":"LOOKUP(Grown, v, k = THIS.c)"}`, oneState)), setup); err != nil {
+				t.Fatal(err)
+			}
+			grown := `{"name":"Grown","columns":{"k":"text","v":"text","w":"text","n":"decimal(2)"},"key":["k"]` + lines + `}`
+			define(grown)
+			def, _ := db3.Table("Grown")
+			rows, err := db3.TableRows(ctx, "Grown", ann)
+			if def == nil || def.Version != 2 || err != nil || len(rows) != 1 || rows[0]["v"] != "b" || rows[0]["w"] != nil || rows[0]["n"] != nil ||
+				row[1] != "is taken, as the next version, whatever rows it holds and whoever reads it; its rows are blank in each new column" {
+				t.Errorf("a table in use gained columns: %+v, %v %v, and the chapter says it %s", def, rows, err, row[1])
+			}
+			// A new column in its key is refused: its rows would have none.
+			if got := tableFinding(db3, `{"name":"Grown","columns":{"k":"text","v":"text","w":"text","n":"decimal(2)","x":"text"},"key":["k","x"]`+lines+`}`); got != "not_supported" {
+				t.Errorf("a new column in the key of a table in use is found %s", got)
+			}
 		},
 		"names another app, or none, and nothing else changes": func(row []string) {
 			// Rates is in use: it holds a row and a class reads it. It

@@ -92,14 +92,19 @@ func newTable(def *model.Table, src []byte) *table {
 }
 
 func (t *table) createDDL() []string {
-	cols := quoteAll(columnNames(t.def.Columns))
 	ddl := []string{
 		"CREATE TABLE " + quote(t.name) + " (" + columnDDL(t.def.Columns) + ", PRIMARY KEY (" + strings.Join(quoteAll(t.def.Key), ", ") + "))",
 	}
 	for _, idx := range t.def.Indexes {
 		ddl = append(ddl, "CREATE INDEX "+quote(t.name+"_"+strings.Join(idx, "_"))+" ON "+quote(t.name)+" ("+strings.Join(quoteAll(idx), ", ")+")")
 	}
-	return append(ddl, "CREATE VIEW "+quote(t.def.Name)+" AS SELECT "+strings.Join(cols, ", ")+" FROM "+quote(t.name))
+	return append(ddl, t.viewDDL())
+}
+
+// viewDDL makes the view of the table that SQL reads, under the table's
+// own name, with every column.
+func (t *table) viewDDL() string {
+	return "CREATE VIEW " + quote(t.def.Name) + " AS SELECT " + strings.Join(quoteAll(columnNames(t.def.Columns)), ", ") + " FROM " + quote(t.name)
 }
 
 func (t *table) dropDDL() []string {
@@ -293,6 +298,7 @@ func (s *Store) DefineTable(ctx context.Context, data []byte, opts ...Option) (*
 	// and whoever reads it (ADR-0079, item 4): its columns, key and
 	// indexes stay as they are, and so do its rows and its storage.
 	moving := false
+	var adding []string
 	if old != nil {
 		if old.def.Name != def.Name {
 			diags = append(diags, model.Diagnostic{Code: model.CodeDuplicate, Path: "/name", Pos: -1, Message: "a table " + old.def.Name + " exists; names differ in case only"})
@@ -303,12 +309,22 @@ func (s *Store) DefineTable(ctx context.Context, data []byte, opts ...Option) (*
 				Message: "the stored table is at version " + itoa(old.def.Version) + "; a redefinition is version " + itoa(version), Hint: "omit version, or write " + itoa(version)})
 		}
 		moving = model.OnlyTheApp(old.def.Def, def.Def)
+		if !moving {
+			adding, _ = model.AddsColumns(old.def.Def, def.Def)
+		}
 	}
-	if old != nil && !moving {
+	// A version that adds columns and changes nothing else is taken
+	// whatever the table holds and whoever reads it (ADR-0080): the rows
+	// it holds are blank in each new column. A rule of a class that writes
+	// the table is held to it as to any version.
+	if len(adding) > 0 {
+		diags = append(diags, s.brokenRules(nil, def, nil)...)
+	}
+	if old != nil && !moving && len(adding) == 0 {
 		for _, name := range s.order {
 			if s.classes[strings.ToUpper(name)].sources[strings.ToUpper(def.Name)] {
 				diags = append(diags, model.Diagnostic{Code: model.CodeNotSupported, Path: "/name", Pos: -1,
-					Message: "the class " + name + " reads the table; redefining a table in use is not supported yet", Hint: "define the new shape under another name"})
+					Message: "the class " + name + " reads the table; of a table in use, columns can be added and nothing else can change yet", Hint: "add columns and change nothing else, or define the new shape under another name"})
 				break
 			}
 		}
@@ -318,7 +334,7 @@ func (s *Store) DefineTable(ctx context.Context, data []byte, opts ...Option) (*
 		var n int64
 		if err := s.writer.QueryRowContext(ctx, "SELECT count(*) FROM "+quote(old.name)).Scan(&n); err == nil && n > 0 {
 			diags = append(diags, model.Diagnostic{Code: model.CodeNotSupported, Path: "/name", Pos: -1,
-				Message: "the table has rows; redefining a table with rows is not supported yet", Hint: "a table with no rows can be redefined"})
+				Message: "the table has rows; of a table with rows, columns can be added and nothing else can change yet", Hint: "add columns, none of them in the key, and change nothing else; a table with no rows can be redefined"})
 		}
 	}
 	if len(diags) > 0 {
@@ -338,9 +354,28 @@ func (s *Store) DefineTable(ctx context.Context, data []byte, opts ...Option) (*
 		_, _ = w.ExecContext(ctx, "ROLLBACK")
 		return nil, err
 	}
-	// A move to another app keeps the storage as it is; any other version
+	// A move to another app keeps the storage as it is; columns added are
+	// added to it, and its view is made again with them; any other version
 	// is the table made again, empty.
-	if !moving {
+	if len(adding) > 0 {
+		added := make(map[string]bool, len(adding))
+		for _, name := range adding {
+			added[strings.ToUpper(name)] = true
+		}
+		for _, c := range t.def.Columns {
+			if !added[strings.ToUpper(c.Variable)] {
+				continue
+			}
+			if _, err := w.ExecContext(ctx, "ALTER TABLE "+quote(t.name)+" ADD COLUMN "+quote(c.Name)+" "+sqlType(c.Type.Kind)); err != nil {
+				return rollback(storageErr("add the column "+c.Name+" to "+def.Name, err))
+			}
+		}
+		for _, ddl := range []string{"DROP VIEW IF EXISTS " + quote(def.Name), t.viewDDL()} {
+			if _, err := w.ExecContext(ctx, ddl); err != nil {
+				return rollback(storageErr("make the view of "+def.Name+" again", err))
+			}
+		}
+	} else if !moving {
 		if old != nil {
 			for _, ddl := range old.dropDDL() {
 				if _, err := w.ExecContext(ctx, ddl); err != nil {

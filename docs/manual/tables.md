@@ -449,9 +449,10 @@ The system groups are in [Who may](notions/who-may.md).
 | The table | A changed definition |
 |---|---|
 | has no rows, and no class reads it | is taken, as the next version |
-| has rows | is refused, `not_supported` |
-| is read by a formula of a class | is refused, `not_supported` |
+| has rows, and the change is more than new columns | is refused, `not_supported` |
+| is read by a formula of a class, and the change is more than new columns | is refused, `not_supported` |
 | would break a rule of a class that writes it | is refused, `not_allowed` |
+| gains columns, none of them in its key, and nothing else changes | is taken, as the next version, whatever rows it holds and whoever reads it; its rows are blank in each new column |
 | names another app, or none, and nothing else changes | is taken, as the next version, whatever rows it holds and whoever reads it |
 
 - **The same definition again changes nothing**, and the version
@@ -460,8 +461,8 @@ The system groups are in [Who may](notions/who-may.md).
   read that.
 - **No call removes a table.**
 
-For a table that is in use, the engine's own advice is to define the
-new shape under another name. A class moves over to the new table with
+For any other change of a table that is in use, the engine's own
+advice is to define the new shape under another name. A class moves over to the new table with
 a new version of the class, and the old table can be changed once no
 class reads it; see [Change a class that already has
 documents](guides/change-a-class.md).
@@ -575,7 +576,8 @@ import.
 
 ## Not here yet
 
-- Changing a table that has rows, or that a class reads.
+- Changing or removing a column of a table that has rows, or that a
+  class reads, and a new column in its key.
 - Removing a table.
 - The last row in the order of the key, and `MIN` and `MAX` of days.
   So "the newest rate on or before a day" has no short form today: a

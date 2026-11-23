@@ -113,9 +113,9 @@ func TestTableApps_ATableInUseMovesToAnotherApp(t *testing.T) {
 	// A change of anything else, with or without the app, is refused while
 	// the table is in use.
 	var diags model.Diagnostics
-	wider := strings.Replace(moved, `"name": "text"}`, `"name": "text", "note": "text"}`, 1)
-	if _, err := s.defineOpenTable(ctx, []byte(wider), asSetup); !errors.As(err, &diags) || diags[0].Code != model.CodeNotSupported {
-		t.Fatalf("a column added while the table is in use: %v", err)
+	changed := strings.Replace(moved, `"name": "text"}`, `"name": "number"}`, 1)
+	if _, err := s.defineOpenTable(ctx, []byte(changed), asSetup); !errors.As(err, &diags) || diags[0].Code != model.CodeNotSupported {
+		t.Fatalf("a column changed while the table is in use: %v", err)
 	}
 	relabelled := strings.Replace(ratesTable, `"label": "Exchange rates"`, `"app": "Expenses", "label": "Rates of exchange"`, 1)
 	if _, err := s.defineOpenTable(ctx, []byte(relabelled), asSetup); !errors.As(err, &diags) || diags[0].Code != model.CodeNotSupported {
@@ -134,5 +134,69 @@ func TestTableApps_ATableInUseMovesToAnotherApp(t *testing.T) {
 	}
 	if versions, err := s.Definitions(ctx, DefinitionTable, "Rates"); err != nil || len(versions) != 3 {
 		t.Fatalf("who defined each version: %v, %v", versions, err)
+	}
+}
+
+// TestAddColumns_ATableInUse holds ADR-0080: Dan adds two columns to Rates
+// while it holds rows and the class Order reads it. The version is taken,
+// the rows it holds are blank in the new columns, the new columns are
+// written and read like the others and by SQL, what reads the table goes
+// on reading it, and so it is when the database is opened again. Any other
+// change of the table in use is still refused.
+func TestAddColumns_ATableInUse(t *testing.T) {
+	s, path := openStore(t, Options{})
+	ctx := context.Background()
+	setupTables(t, s)
+	if _, err := s.defineOpen(ctx, []byte(order), asSetup); err != nil {
+		t.Fatal(err)
+	}
+	if doc, err := s.Create(ctx, "Order", Values{"currency": "EUR", "net": "100.00"}); err != nil || doc.Values["rate"] != "4.321000" {
+		t.Fatalf("before the columns: %v, %v", doc, err)
+	}
+	wider := strings.Replace(ratesTable, `"name": "text"}`, `"name": "text", "note": {"type": "text", "label": "Note"}, "card_fee": "money(2)"}`, 1)
+	tbl, err := s.defineOpenTable(ctx, []byte(wider), asSetup)
+	if err != nil || tbl.Version != 2 || len(tbl.Fields) != 6 {
+		t.Fatalf("two columns added to a table in use: %+v, %v", tbl, err)
+	}
+	rows, err := s.TableRows(ctx, "Rates", asSetup)
+	if err != nil || len(rows) != 2 || rows[0]["note"] != nil || rows[0]["card_fee"] != nil || rows[0]["rate"] != "4.321000" {
+		t.Fatalf("the rows after the columns were added: %v, %v", rows, err)
+	}
+	if _, err := s.ImportRows(ctx, "Rates", []Values{{"code": "EUR", "rate": "4.5", "fee": "1.00 EUR", "name": "Euro", "note": "NBP", "card_fee": "0.50 EUR"}}); err != nil {
+		t.Fatal(err)
+	}
+	if doc, err := s.Create(ctx, "Order", Values{"currency": "EUR", "net": "100.00"}); err != nil || doc.Values["rate"] != "4.500000" {
+		t.Fatalf("a lookup after the columns and an import: %v, %v", doc, err)
+	}
+	var note, fee, cur string
+	if err := s.db.QueryRowContext(ctx, `SELECT note, card_fee, card_fee_currency FROM Rates WHERE code = 'EUR'`).Scan(&note, &fee, &cur); err != nil || note != "NBP" || cur != "EUR" {
+		t.Fatalf("the view after the columns were added: %q %q %q, %v", note, fee, cur, err)
+	}
+	// Anything more than columns added is refused while the table is in
+	// use: a new column in the key, a column changed, a new label.
+	var diags model.Diagnostics
+	for what, def := range map[string]string{
+		"a new column in the key": strings.Replace(wider, `"key": ["code"]`, `"key": ["code", "note"]`, 1),
+		"a column changed":        strings.Replace(wider, `"rate": "decimal(6)"`, `"rate": "decimal(4)"`, 1),
+		"a column added and a new label": strings.Replace(strings.Replace(wider, `"card_fee": "money(2)"}`, `"card_fee": "money(2)", "x": "text"}`, 1),
+			`"Exchange rates"`, `"Rates of exchange"`, 1),
+	} {
+		if _, err := s.defineOpenTable(ctx, []byte(def), asSetup); !errors.As(err, &diags) || diags[0].Code != model.CodeNotSupported {
+			t.Errorf("%s while the table is in use: %v", what, err)
+		}
+	}
+	if err := s.Close(); err != nil {
+		t.Fatal(err)
+	}
+	again, err := Open(path, Options{Now: (&clock{now: start}).Now, Outbox: OutboxOptions{Manual: true}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer again.Close()
+	if _, err := again.ImportRows(ctx, "Rates", []Values{{"code": "GBP", "rate": "5.1", "name": "Pound", "note": "ECB"}}); err != nil {
+		t.Fatalf("a row with the new column after an open: %v", err)
+	}
+	if rows, err := again.TableRows(ctx, "Rates", asSetup); err != nil || len(rows) != 3 {
+		t.Fatalf("the rows after an open: %v, %v", rows, err)
 	}
 }

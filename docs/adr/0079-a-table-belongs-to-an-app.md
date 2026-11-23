@@ -68,15 +68,22 @@ its rate up in it.
 ## The owner's words
 
 Item 1 is his of 2026-11-23. Items 2, 3, 5 and 6 are what ADR-0077,
-which he accepted, says of a class, said of a table. One is added for
-him to veto:
+which he accepted, says of a class, said of a table.
 
-- **Item 4**, that a move to another app is taken while the table is
-  in use. Without it, Dan cannot put Rates into Expenses at all: it
-  holds rows and Expense reads it, so every new version of it is
-  refused. The other way: such a move is refused like any change of a
-  table in use, and Dan defines a copy under another name in the app,
-  moves Expense over to it, and imports the sixty rows again.
+Item 4 was put to him the same day, after the pull request that built
+it was merged: that a move to another app is taken while the table is
+in use. Without it, Dan cannot put Rates into Expenses at all: it holds
+rows and Expense reads it, so every new version of it is refused. The
+other way was that such a move is refused like any change of a table
+in use, and Dan defines a copy under another name in the app, moves
+Expense over to it, and imports the sixty rows again. His ruling: "My
+answer is yes, we can freely move a table between apps. Table name
+must be unique on server."
+
+The name was unique on the server already, and stays so whatever the
+app (item 6): no two tables have names that differ only in the case
+of letters, and a table may not have the name of a class (the manual,
+chapter Tables).
 
 ## Consequences
 

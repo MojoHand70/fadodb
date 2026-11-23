@@ -289,7 +289,10 @@ func runServe(ctx context.Context, args []string, stdout, stderr io.Writer, read
 		return 1
 	}
 	who := pages.Who(httpdoor.Keys(db))
-	door, err := httpdoor.New(db, httpdoor.Options{Who: who, Limits: told.limits, Report: report, Inbound: told.inbound})
+	// The door for agents at the server itself, at /mcp (ADR-0064, item
+	// 1): a pass for it comes by OAuth, and a key works as at /v1/.
+	door, err := httpdoor.New(db, httpdoor.Options{Who: who, Limits: told.limits, Report: report, Inbound: told.inbound,
+		Agents: true, Version: version, Origin: pages.Origin})
 	if err != nil {
 		fmt.Fprintf(stderr, "%s: %v\n", name, err)
 		return 1
@@ -326,6 +329,7 @@ func runServe(ctx context.Context, args []string, stdout, stderr io.Writer, read
 	}
 	if signIn != "" {
 		fmt.Fprintf(stderr, "%s: people sign in at %s%s\n", name, strings.TrimSuffix(signIn, "/"), server.PageSignIn)
+		fmt.Fprintf(stderr, "%s: agents connect at %s%s\n", name, strings.TrimSuffix(signIn, "/"), server.AddressAgents)
 		for _, p := range told.signon {
 			if _, err := kept.find(ctx, p.Name, "client_secret"); err != nil {
 				fmt.Fprintf(stderr, "%s: the sign-on %s reads the secret client_secret, and %v: nobody signs in with it until the secret is there\n", name, p.Name, err)
@@ -596,6 +600,9 @@ func (l *requestLog) write(r httpdoor.Request) {
 	b = r.At.UTC().AppendFormat(b, "2006-01-02T15:04:05.000Z")
 	b = append(b, `","command":`...)
 	b = strconv.AppendQuote(b, r.Command)
+	if r.Agents {
+		b = append(b, `,"door":"mcp"`...)
+	}
 	b = append(b, `,"user":`...)
 	b = strconv.AppendQuote(b, r.User)
 	b = append(b, `,"status":`...)

@@ -127,6 +127,12 @@ func NewPages(a Accounts, o PagesOptions) (*Pages, error) {
 	return p, nil
 }
 
+// Origin is the address a request reached the server at, as people
+// reach it: the server's url when it was given one, and otherwise the
+// address of a request made on the machine itself, or false. The door
+// for agents is given it (Options.Origin).
+func (p *Pages) Origin(r *http.Request) (string, bool) { return p.originOf(r) }
+
 // originOf answers the origin a request may come from, and whether the
 // pages answer it at all: the one of the address the server was told,
 // or, without one, the machine itself.

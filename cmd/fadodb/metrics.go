@@ -88,16 +88,18 @@ func (m *metrics) inlet(name, command string) *counted {
 }
 
 // The address of the counts, and the name its requests are counted and
-// logged under.
+// logged under; and the name of a request to the door for agents that
+// called no tool. A call of a tool is counted with its command.
 const (
 	metricsPath = "/v1/metrics"
 	metricsName = "metrics"
+	agentsName  = "mcp"
 	otherName   = "other"
 )
 
 // statuses are the statuses a reply is counted under; any other is
 // counted last, as other.
-var statuses = [...]int{200, 304, 400, 401, 403, 404, 405, 409, 413, 415, 422, 499, 500, 503, 504}
+var statuses = [...]int{200, 202, 304, 400, 401, 403, 404, 405, 409, 413, 415, 422, 499, 500, 503, 504}
 
 // withinSeconds are the bounds requests are counted within, in seconds.
 var withinSeconds = [...]float64{0.0001, 0.00025, 0.0005, 0.001, 0.0025, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 30}
@@ -116,7 +118,7 @@ func newMetrics(version string, started time.Time) *metrics {
 	for _, c := range fado.Commands() {
 		add(c.Name)
 	}
-	for _, name := range []string{"blobs", "file", "blob", metricsName, otherName} {
+	for _, name := range []string{"blobs", "file", "blob", agentsName, metricsName, otherName} {
 		add(name)
 	}
 	m.answered = make([][]atomic.Uint64, len(m.names))

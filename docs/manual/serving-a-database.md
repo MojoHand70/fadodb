@@ -504,6 +504,7 @@ To standard error, before the first request:
 ```
 fadodb serve: serving acme.fado at http://127.0.0.1:8080
 fadodb serve: people sign in at http://127.0.0.1:8080/auth/signin
+fadodb serve: agents connect at http://127.0.0.1:8080/mcp
 fadodb serve: its actions may call over the connection books, books.acme.internal:8443
 ```
 
@@ -552,7 +553,8 @@ health, as JSON:
 | Member | What it is |
 |---|---|
 | `time` | when the request came, in UTC |
-| `command` | the name the request was sent to: a command, `blobs`, `file` or `blob` for a file, `metrics` for the counts, or `in/` and the name of an inlet for [a message from outside](a-way-in-for-messages.md) |
+| `command` | the name the request was sent to: a command, `blobs`, `file` or `blob` for a file, `metrics` for the counts, or `in/` and the name of an inlet for [a message from outside](a-way-in-for-messages.md); for a request to [the door for agents](the-door-for-agents.md#at-the-server-itself), the command of the tool it called, or `mcp` when it called none |
+| `door` | `mcp` for a request to the door for agents; left out otherwise |
 | `user` | the id of who sent it, empty when the server could not tell; for a message from outside, the user its inlet acts as |
 | `status` | the status of the reply; 499 when the caller left before the command ended |
 | `code` | the code of the refusal; left out when the command ran |
@@ -659,7 +661,9 @@ fadodb_actions_oldest_due_seconds 60
 ```
 
 - **Every request is counted when it was answered**: a command, a
-  file, and a request for the counts themselves, under `metrics`.
+  file, and a request for the counts themselves, under `metrics`. A
+  tool called at `/mcp` is counted with its command, and any other
+  request to the door for agents under `mcp`.
 - **A stream of changes is one request**, counted under `subscribe`
   when it ended. Its time is the time until it was open, and not how
   long it stayed open. How many are open now is `fadodb_streams`.

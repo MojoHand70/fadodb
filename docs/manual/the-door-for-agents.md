@@ -17,7 +17,9 @@ The door is a caller as any other. It holds no database. The agent's
 program starts it on its own machine, and the door sends each call to
 the server with the key of a user. So what an agent does is judged by
 the rules of the classes and written to the log under that user, and
-no tool lets an agent say that it is somebody else.
+no tool lets an agent say that it is somebody else. The same door
+stands at the server itself, at `/mcp`, for an agent that cannot start
+a program on a machine ([at the server itself](#at-the-server-itself)).
 
 The story of this chapter: Acme keeps its invoices in a database that
 [`fadodb serve` serves](serving-a-database.md), with the class of an
@@ -81,6 +83,73 @@ The door is told the server and the key as `fadodb exec` is:
 - **A person's assistant is that person.** Ann may give her own key to
   the door of her own assistant. What it does is then done as Ann, and
   the log says Ann.
+
+## At the server itself
+
+`fadodb serve` has the same door at its own address, `/mcp`, for an
+agent that cannot start a program: Claude on claude.ai, or an agent
+that runs in the cloud. Its tools are the same, and each request
+proves who sends it, as one sent to the commands does:
+
+- **Ann connects Claude.** In Claude she adds a connector with the
+  address `https://fado.acme.example/mcp`. Claude asks the door, is
+  told where passes come from, and sends Ann to the server, where she
+  signs in and allows it
+  ([connecting a client](signing-in.md#connecting-a-client)). What
+  Claude does is then done by `ann~claude.ai`, acting for Ann, with
+  her groups.
+- **`ap-agent` sends its key**, from a program that lets its user set
+  a header. Claude Code reads it as JSON of this form:
+
+<!-- the agent's program is told, at the server -->
+```jsonc
+{
+  "mcpServers": {
+    "acme": {
+      "type": "http",
+      "url": "https://fado.acme.example/mcp",
+      "headers": {"Authorization": "Bearer fado_…"}
+    }
+  }
+}
+```
+
+The two places differ in what starts the door and who it sends as:
+
+<!-- the two places -->
+| | `fadodb mcp` | `/mcp` at the server |
+|---|---|---|
+| started by | the agent's program, on its own machine | `fadodb serve`, always |
+| sends as | the user whose key it was given | whoever each request proves to be, with a pass or a key |
+| offers | every tool, or fewer with `--read-only` and `--tools` | every tool; the rights decide what each caller may do |
+| carries at once | 16 calls | as many as the server runs commands, 64 unless [its settings](serving-a-database.md#the-settings) say otherwise |
+| stops a call | when the agent's program sends a notice | when the agent's program sends a notice, or closes the request |
+
+Over HTTP the door takes one message to a POST and answers it with one
+JSON object, never with a stream. It keeps no session, so each request
+carries what the door needs: one of the revision 2026-07-28 says its
+revision in its params and in the header `MCP-Protocol-Version`, and
+names its method in `Mcp-Method` and the tool it calls in `Mcp-Name`;
+one of the revisions before says its revision in
+`MCP-Protocol-Version`, and one that says none is taken for
+2025-03-26. A notice is taken with 202 and no body.
+
+A request is refused before any tool runs when:
+
+<!-- refused at the door for agents -->
+| The request | Status |
+|---|---|
+| proves nobody: no pass or key, one the server does not know, or the session of a browser alone | 401, with `WWW-Authenticate` naming where passes for `/mcp` come from |
+| carries a pass for the commands | 401: a pass is for one address |
+| comes from a page of another site | 403 |
+| is no POST | 405 |
+| does not say its body is JSON | 415 |
+| is larger than the server reads | 413 |
+| has headers that do not say what its body says | 400 |
+| names a method the door does not have | 404 in the revision 2026-07-28, and 200 with the error in the revisions before |
+
+Every request is a line of [the server's log](serving-a-database.md#what-it-writes),
+with `"door":"mcp"` and the command of the tool it called.
 
 ## What the door says of itself
 
@@ -455,12 +524,9 @@ answered what was asked before.
 
 ## Not here yet
 
-- **The door at the server itself**, for an agent that cannot start a
-  program on its machine.
 - **A tool that waits for a change**, in place of the stream.
 - **Files.**
 
 Each is wanted and is its own step after v0.6.0, by the owner's
 rulings of 2026-11-17
-([ADR-0064](../adr/0064-the-door-for-agents.md)). The door at the
-server comes with the signing in of the frontend.
+([ADR-0064](../adr/0064-the-door-for-agents.md)).

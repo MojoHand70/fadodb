@@ -8,6 +8,23 @@ All notable changes to FadoDB are recorded here. The format follows
 
 ### Added
 
+- The door for agents at the server itself (ADR-0064, ruling 1).
+  `fadodb serve` offers every command as a tool at `/mcp`, in the
+  Model Context Protocol over HTTP, for an agent that cannot start a
+  program on a machine: Claude on claude.ai connects with the pass a
+  person gives it (ADR-0071) and acts as `ann~claude.ai` for Ann, and
+  an agent's program that sets a header sends a key. Both forms of the
+  protocol are spoken, the revision of 2026-07-28 and the ones that
+  open with a greeting; the door keeps no session and answers each
+  message with one JSON object. A request that proves nobody is told
+  where passes come from, at
+  `/.well-known/oauth-protected-resource/mcp`; a pass for the commands
+  is refused there, as one for `/mcp` is at `/v1/`; a page of another
+  site is refused. A tool runs as a command sent to `/v1/` does, with
+  the server's limits, and its request is a line of the log with
+  `"door":"mcp"`. The server says where agents connect when it starts,
+  and the counts gain the status 202. Settled while building, the
+  owner's to strike: ADR-0064, items 11 to 21.
 - The mean, the middle value and the different values of rows
   (ADR-0081). `AVERAGE(invoices.net)`, `MEDIAN(invoices.net)` and
   `COUNTUNIQUE(invoices.state)` are figures over a list in a live

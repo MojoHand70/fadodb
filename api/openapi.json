@@ -996,7 +996,7 @@
             "$ref": "#/components/responses/Refused"
           }
         },
-        "summary": "Defines an app, a name for the classes that belong together, or the next version of one.",
+        "summary": "Defines an app, a name for the classes and tables that belong together, or the next version of one.",
         "tags": [
           "Definitions"
         ],
@@ -3391,7 +3391,12 @@
             "application/json": {
               "schema": {
                 "additionalProperties": false,
-                "properties": {},
+                "properties": {
+                  "app": {
+                    "description": "the name of an app, for the tables that belong to it; every table when left out",
+                    "type": "string"
+                  }
+                },
                 "type": "object"
               }
             }
@@ -3421,7 +3426,7 @@
             "$ref": "#/components/responses/Refused"
           }
         },
-        "summary": "Lists the tables.",
+        "summary": "Lists the tables: all of them, or those of one app.",
         "tags": [
           "Definitions"
         ],

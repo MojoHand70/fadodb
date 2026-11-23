@@ -1,7 +1,7 @@
 # Apps
 
-An app is a name for the classes that belong together: the expenses
-of a company, its help desk. A person sees the app as one place of
+An app is a name for the classes and the tables that belong together:
+the expenses of a company, its help desk. A person sees the app as one place of
 work; a designer keeps its classes together; an agent that is asked to
 build something for the help desk finds what is there already.
 
@@ -71,6 +71,37 @@ The class names its app in its own definition, with `app`:
 - **The app does not list its classes.** `list_classes` with `app`
   answers them.
 
+## A table says which app it belongs to
+
+A [table](tables.md) names its app the same way. Rates are kept for
+the expenses, so Dan puts them into Expenses:
+
+```json
+{
+  "name": "Rates",
+  "app": "Expenses",
+  "label": "Exchange rates",
+  "description": "The rate of a currency in PLN on a day.",
+  "columns": {"currency": "text", "day": "date", "rate": "decimal(4)"},
+  "key": ["currency", "day"],
+  "access": {"read": "INGROUP(\"everyone\")", "write": "INGROUP(\"treasury\")"}
+}
+```
+
+- **The app is there first**, as for a class: a table that names an
+  app the database does not have is refused with `unknown_app` at
+  `/app`.
+- **A table belongs to one app, or to none.** A table without `app`
+  works as every table did before.
+- **A table moves to another app by its next version**, and that
+  change is taken whatever the table holds and whoever reads it: it
+  touches neither its columns nor its rows. Any other change of a table
+  that has rows, or that a class reads, is refused as before
+  ([changing a table](tables.md#changing-a-table)).
+- **A class of one app reads a table of another**, as it reads one of
+  none. The app decides nothing.
+- **`list_tables` with `app`** answers the tables of the app.
+
 ## Reading what there is
 
 | Command | What it answers |
@@ -78,7 +109,8 @@ The class names its app in its own definition, with `app`:
 | `list_apps` | the names of the apps, in the order they were defined |
 | `get_app` | one app as it was defined, with its version and who defined it |
 | `list_classes` with `"app": "Expenses"` | the names of the classes that belong to the app; an empty list for an app that has none yet |
-| `get_class`, `get_bundle` | the class with its `app`, as it was defined |
+| `list_tables` with `"app": "Expenses"` | the names of the tables that belong to the app, in the same way |
+| `get_class`, `get_bundle`, `get_table` | the class or the table with its `app`, as it was defined |
 | `definitions` with `"what": "app"` | every version of an app, with who defined it and when |
 
 They are open to everybody, as reading any definition is. A name that
@@ -88,7 +120,9 @@ there are.
 ## What an app does not do yet
 
 - An app cannot be removed or renamed.
-- An app has no groups, tables, schemas or actions of its own: only a
-  class names its app today.
+- An app has no groups, schemas or actions of its own: a class and a
+  table name their app, nothing else does today.
+- Every database is to have an app of the engine's own, System, for
+  the system tables: planned, not built yet.
 - An app is not exported from one database and brought into another.
 - An app has no words in other languages.

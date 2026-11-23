@@ -544,7 +544,7 @@ It answers:
 | [`define_schema`](#define_schema) | Defines a named schema of an object. | writes |
 | [`define_table`](#define_table) | Defines a table of reference data. | writes |
 | [`define_action`](#define_action) | Defines an action a rule may name. | writes |
-| [`define_app`](#define_app) | Defines an app, a name for the classes that belong together, or the next version of one. | writes |
+| [`define_app`](#define_app) | Defines an app, a name for the classes and tables that belong together, or the next version of one. | writes |
 | [`validate_class`](#validate_class) | Reports what define_class would refuse, storing nothing. | reads |
 | [`validate_classes`](#validate_classes) | Reports what define_classes would refuse, storing nothing. | reads |
 | [`validate_action`](#validate_action) | Reports what define_action would refuse, storing nothing. | reads |
@@ -557,7 +557,7 @@ It answers:
 | [`list_classes`](#list_classes) | Lists the classes: all of them, or those of one app. | reads |
 | [`list_apps`](#list_apps) | Lists the apps. | reads |
 | [`list_schemas`](#list_schemas) | Lists the schemas. | reads |
-| [`list_tables`](#list_tables) | Lists the tables. | reads |
+| [`list_tables`](#list_tables) | Lists the tables: all of them, or those of one app. | reads |
 | [`list_actions`](#list_actions) | Lists every action a rule may name, the engine's own first. | reads |
 | [`list_functions`](#list_functions) | Lists every function a formula can call, for whoever writes one: a formula editor, or an agent before it defines a class. | reads |
 | [`definitions`](#definitions) | Lists the versions of one class, schema, table, action, inlet, app or words, with who defined each and when. | reads |
@@ -656,7 +656,7 @@ It answers:
 
 ### define_app
 
-Defines an app, a name for the classes that belong together, or the next version of one. It writes; in Go it is the call `DefineApp`.
+Defines an app, a name for the classes and tables that belong together, or the next version of one. It writes; in Go it is the call `DefineApp`.
 
 | Member | Type | | What it is |
 |---|---|---|---|
@@ -851,9 +851,11 @@ It answers:
 
 ### list_tables
 
-Lists the tables. It reads; in Go it is the call `Tables`.
+Lists the tables: all of them, or those of one app. It reads; in Go it is the call `Tables`.
 
-It takes nothing: its object is `{}`.
+| Member | Type | | What it is |
+|---|---|---|---|
+| `app` | text |  | the name of an app, for the tables that belong to it; every table when left out |
 
 It answers:
 
@@ -1737,4 +1739,5 @@ A few calls of the Go package have no command.
 | `SignOn` | it takes who a company's provider vouched for, which the server checked on its page /auth/callback; no command carries a provider's word |
 | `SignOut` | it ends the session it is sent with, on the server's page /auth/signout; end_session ends one by its id |
 | `Table` | it answers the engine's compiled form to a Go program; get_table answers the definition |
+| `TablesOf` | it is list_tables with its app given, for a Go program |
 | `UsePasswordLink` | a password never travels in a command: the server's page /auth/password takes it |

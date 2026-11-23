@@ -97,9 +97,9 @@ https://fado.acme.example, sent as the user whose key this door was
 given. whoami answers who that user is. list_classes answers which
 classes there are, and get_class how one is defined: its variables,
 its states, its transitions and who may do what. list_apps answers
-which apps there are: an app is a name for the classes that belong
-together, and a class says in its definition which app it belongs to.
-list_functions answers every function a formula can call, with its
+which apps there are: an app is a name for the classes and the tables
+that belong together, and a class or a table says in its definition
+which app it belongs to. list_functions answers every function a formula can call, with its
 arguments; read it before you write a formula. Look before you build:
 before you define an app, a class, a table or a schema, list what the
 database has (list_apps, list_classes, list_tables, list_schemas) and

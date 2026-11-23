@@ -21,7 +21,7 @@ line says so. Copy `0000-template.md` to start.
 | [0013](0013-document-variables-and-types.md) | Document variables and the type system | Accepted, amended by 0019, 0022, 0023, 0031, 0034, 0047, 0068, 0075 |
 | [0014](0014-document-tables.md) | Document tables: current, history, child tables and views | Accepted, amended by 0026, 0031, 0039, 0040, 0043, 0047, 0075 |
 | [0015](0015-commits-and-recalculation.md) | Commits, recalculation modes, defaults, reset and refresh | Accepted, amended by 0020, 0025, 0040, 0043, 0076, 0078 |
-| [0016](0016-explicit-tables-and-query-functions.md) | Explicit tables, storage bindings, LOOKUP and QUERY | Accepted, amended by 0020, 0036, 0037, 0046, 0068, 0076 |
+| [0016](0016-explicit-tables-and-query-functions.md) | Explicit tables, storage bindings, LOOKUP and QUERY | Accepted, amended by 0020, 0036, 0037, 0046, 0068, 0076, 0079 |
 | [0017](0017-duckdb-as-the-analytical-engine.md) | DuckDB as the analytical engine, full and lite builds | Accepted, amended by 0035, 0072 |
 | [0018](0018-class-metadata-layouts-and-wire-format.md) | JSON for definitions and interchange: class metadata, layouts and the wire format | Accepted, amended by 0022, 0023, 0028, 0031, 0032, 0033, 0034, 0039, 0043, 0047, 0068, 0069, 0070, 0077 |
 | [0019](0019-formula-language-semantics.md) | Formula language semantics: grammar, types, coercion, comparison, dates, text, composites and errors | Accepted, amended by 0021, 0022, 0023, 0024, 0031, 0043, 0047, 0050, 0076 |
@@ -60,7 +60,7 @@ line says so. Copy `0000-template.md` to start.
 | [0052](0052-system-groups-and-the-content-administrator.md) | System groups: who runs the database, who designs, who reads everything and who may act on any document | Accepted, amended by 0057, 0059, 0067 |
 | [0053](0053-acting-for-somebody.md) | Acting for somebody: a recorded substitution for people and assistants | Accepted, amended by 0071 |
 | [0054](0054-the-screen-on-a-layout-component.md) | The screen on a layout component: `mobile` and `desktop` | Withdrawn by 0069 |
-| [0055](0055-the-command-set-on-the-wire.md) | The command set on the wire: every command, its JSON, and one address each | Accepted, amended by 0057, 0058, 0059, 0063, 0065, 0067, 0070, 0074, 0077, 0076, 0078 |
+| [0055](0055-the-command-set-on-the-wire.md) | The command set on the wire: every command, its JSON, and one address each | Accepted, amended by 0057, 0058, 0059, 0063, 0065, 0067, 0070, 0074, 0077, 0076, 0078, 0079 |
 | [0056](0056-one-database-for-each-customer.md) | One database for each customer, and a server that serves one database | Accepted |
 | [0057](0057-users-groups-and-keys.md) | Who is calling: users, groups and keys, kept in the database | Accepted, amended by 0071 |
 | [0058](0058-the-stream-of-changes.md) | The stream of changes: the log read forward, over plain HTTP | Accepted, amended by 0067 |
@@ -82,5 +82,6 @@ line says so. Copy `0000-template.md` to start.
 | [0074](0074-the-engine-hands-out-its-list-of-functions.md) | The engine hands out its list of functions | Accepted |
 | [0075](0075-the-engine-makes-its-own-indexes.md) | The engine makes its own indexes, and says which question it cannot serve | Accepted |
 | [0076](0076-a-value-worked-out-when-it-is-read.md) | A value worked out when it is read: the mode `live`, the list of other documents, and what a `ref` compares with | Accepted, amended by 0078 |
-| [0077](0077-the-app.md) | The app, a name for the classes that belong together | Accepted |
+| [0077](0077-the-app.md) | The app, a name for the classes that belong together | Accepted, amended by 0079 |
 | [0078](0078-a-decision-stands-on-what-the-document-holds.md) | A decision stands on what the document holds: the version a command saw, who may bring a value again, and what a condition saw | Accepted |
+| [0079](0079-a-table-belongs-to-an-app.md) | A table belongs to an app | Proposed |

@@ -16,7 +16,19 @@ import (
 // by default and 1,000,000 for the budget of the record; with
 // FADODB_BENCH_DIR the file is on disk. It answers the ids of the
 // orders.
-func liveListStore(b *testing.B) (*Store, []string) {
+func liveListStore(b *testing.B) (*Store, []string) { return liveListStoreWith(b, "") }
+
+// liveFigures are three figures over the list of an order's invoices
+// (ADR-0081), for the benchmarks of a figure. The benchmarks of the
+// list run on the order without them, as they did before figures were
+// built, so that the gate compares like with like.
+const liveFigures = `,
+  "count": {"mode": "live", "formula": "COUNT(invoices)"},
+  "total": {"mode": "live", "formula": "SUM(invoices.net)"},
+  "drafts": {"mode": "live", "formula": "SUMIF(invoices, state = \"draft\", net)"}`
+
+// liveListStoreWith is liveListStore with more variables on the order.
+func liveListStoreWith(b *testing.B, more string) (*Store, []string) {
 	const each = 100
 	docs := 10000
 	if v := os.Getenv("FADODB_BENCH_DOCS"); v != "" {
@@ -41,7 +53,7 @@ func liveListStore(b *testing.B) (*Store, []string) {
 	const open = `"access": {"read": "TRUE", "create": "TRUE", "update": "TRUE", "delete": "FALSE"}`
 	if _, err := s.DefineClasses(ctx, [][]byte{
 		[]byte(`{"name": "Order", "title": "number", "variables": {"number": {"type": "text"},
-  "invoices": {"mode": "live", "formula": "QUERY(Invoice, {number, net, state}, order = REF(), {number})"}},
+  "invoices": {"mode": "live", "formula": "QUERY(Invoice, {number, net, state}, order = REF(), {number})"}` + more + `},
   "states": {"initial": "open", "list": ["open"]}, ` + open + `}`),
 		[]byte(`{"name": "Invoice", "title": "number", "variables": {"number": {"type": "text"},
   "order": {"type": "ref", "class": "Order", "index": true}, "net": {"type": "money(2)"}},
@@ -132,3 +144,36 @@ func BenchmarkLiveListPage(b *testing.B) {
 		i++
 	}
 }
+
+// benchLiveFigure reads one figure over the list of one order: one
+// value worked out of its hundred invoices, which no read brings into
+// memory (ADR-0081). It is the whole call of the command `live`: the
+// order is read on the writer's turn, the figure beside the writer, with
+// one statement. A read takes the next order each time.
+func benchLiveFigure(b *testing.B, variable string, want any) {
+	s, ids := liveListStoreWith(b, liveFigures)
+	ctx := context.Background()
+	who := As(benchReader)
+	i := 0
+	b.ReportAllocs()
+	b.ResetTimer()
+	for b.Loop() {
+		v, err := s.Live(ctx, "Order", ids[i*7919%len(ids)], variable, who)
+		if err != nil || v.Value != want {
+			b.Fatalf("%v, %v; want %v", err, v, want)
+		}
+		i++
+	}
+}
+
+// BenchmarkLiveFigure adds up a column of the hundred invoices of one
+// order, found through the index of the pointer among every invoice of
+// the class. The budget of ADR-0081 is under 0.5 ms with 1,000,000
+// invoices; the gate watches it with 10,000.
+func BenchmarkLiveFigure(b *testing.B) { benchLiveFigure(b, "total", "10000.00 PLN") }
+
+// BenchmarkLiveFigureCount counts them, and BenchmarkLiveFigureIf adds
+// up those that meet a condition.
+func BenchmarkLiveFigureCount(b *testing.B) { benchLiveFigure(b, "count", 100.0) }
+
+func BenchmarkLiveFigureIf(b *testing.B) { benchLiveFigure(b, "drafts", "10000.00 PLN") }

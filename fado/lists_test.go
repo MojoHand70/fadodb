@@ -4,9 +4,11 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -85,6 +87,36 @@ func TestLists(t *testing.T) {
 		}
 	}
 
+	// The figures over the list, for each reader (ADR-0081): one value
+	// each, which counts what that reader may read of the list.
+	shown := func(v any) string {
+		switch v := v.(type) {
+		case nil:
+			return "blank"
+		case bool:
+			return strings.ToUpper(strconv.FormatBool(v))
+		case float64:
+			return strconv.FormatFloat(v, 'f', -1, 64)
+		case string:
+			return v
+		}
+		return fmt.Sprint(v)
+	}
+	figures := marked(t, page, "figures")
+	names := regexp.MustCompile("`([a-z_]+)`").FindAllStringSubmatch(strings.SplitN(figures, "\n", 2)[0], -1)
+	if len(names) != 6 {
+		t.Fatalf("the chapter's table of figures names %d figures in its heading", len(names))
+	}
+	for _, row := range rows(figures) {
+		who, order := row[0], row[1]
+		for i, name := range names {
+			got, err := db.Live(ctx, "Order", order, name[1], people[who])
+			if err != nil || got.List || shown(got.Value) != row[2+i] {
+				t.Errorf("%s reads %s of %s: the engine answers %v, %v, and the chapter says %s", who, name[1], order, got, err, row[2+i])
+			}
+		}
+	}
+
 	// The command and its answer, as the chapter shows them.
 	squeeze := func(text []byte) string { return strings.Join(strings.Fields(string(text)), "") }
 	var asked fado.LiveRead
@@ -157,6 +189,28 @@ func TestLists(t *testing.T) {
 		"a live variable of the source as a column":      {live(`QUERY(Order, {number, invoices})`)},
 		"braces anywhere else":                           {live(`LEN({n, n})`)},
 		"REF() anywhere else":                            {live(`TEXT(REF())`), list(`"formula": "TEXT(REF())"`)},
+	}, func(definition string) string { return finding(db, definition) })
+
+	// What is refused of a figure when the class is defined.
+	figure := func(variable string) string {
+		return strings.Replace(string(classes["Order"]), `"all_paid":`, variable+`, "all_paid":`, 1)
+	}
+	fig := func(formula string) string { return figure(`"x": {"mode": "live", "formula": "` + formula + `"}`) }
+	if fig("COUNT(invoices)") == string(classes["Order"]) {
+		t.Fatal("the test adds a variable to the order of the chapter")
+	}
+	if got := finding(db, fig("COUNT(invoices)")); got != "accepted" {
+		t.Fatalf("the order of the chapter with one more figure is refused: %s", got)
+	}
+	heldBy(t, page, "figures refused", map[string][]string{
+		"a figure in a variable that is not live": {figure(`"x": {"type": "number", "formula": "COUNT(invoices)"}`), figure(`"x": {"type": "number", "mode": "triggered", "on": ["refresh"], "formula": "COUNT(invoices)"}`)},
+		"a sum of a list and no column":           {fig(`SUM(invoices)`)},
+		"a column the listed class has not":       {fig(`SUM(invoices.nothing)`)},
+		"a sum of a text":                         {fig(`SUM(invoices.number)`)},
+		"a condition that is no condition":        {fig(`COUNTIF(invoices, net)`)},
+		"STATE() in the condition of a figure":    {fig(`COUNTIF(invoices, STATE() = \"paid\")`)},
+		"a figure inside a figure":                {fig(`COUNTIF(invoices, net > MAX(invoices.net))`)},
+		"AVERAGE of a column of a list":           {fig(`AVERAGE(invoices.net)`)},
 	}, func(definition string) string { return finding(db, definition) })
 
 	// The source may not lose what a list names.

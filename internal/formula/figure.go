@@ -71,6 +71,17 @@ func (b *binder) figure(n *Call) (t Type, handled bool, err error) {
 	}
 	form, ok := figureForms[n.Name]
 	if !ok {
+		// AVERAGE is decided and has no SQL yet (ADR-0081, item 2): over a
+		// list it says so, and what gives the same until it has.
+		if n.Name == "AVERAGE" && len(n.Args) == 1 {
+			if list, _ := b.listOf(n.Args[0]); list != "" {
+				col := "column"
+				if m, ok := n.Args[0].(*Member); ok && len(m.Path) == 1 {
+					col = m.Path[0]
+				}
+				return Type{}, true, b.errAt(n.P, "AVERAGE over a list is not built yet (ADR-0081); until it is, divide the sum by the count: SUM(%s.%s) / COUNT(%s.%s) for numbers, SUM(%s.%s) / DECIMAL(COUNT(%s.%s), 0) for exact amounts", list, col, list, col, list, col, list, col)
+			}
+		}
 		return Type{}, false, nil
 	}
 	if !form.cond {

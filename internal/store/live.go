@@ -252,57 +252,11 @@ func (s *Store) liveOn(ctx context.Context, c *class, cv *cvar, id string, o opt
 			return nil, nil, nil, e
 		}
 	}
-	// The read right of a variable, in the document's state (ADR-0041).
-	mayRead := func(v *cvar) error {
-		if c.rights == nil {
-			return nil
-		}
-		rule := c.cells(row.state)[v.idx].read
-		if rule == nil {
-			return nil
-		}
-		if held, rerr := s.wev.allowed(c, rule, row, evalCtx); !held {
-			if !o.principal.content() || c.brought {
-				msg := fmt.Sprintf("%s may not read %s", who(o.principal), v.v.Name)
-				if row.state != "" {
-					msg += " while the document is in " + row.state
-				}
-				if rerr != nil {
-					msg += ": the read right failed, " + guardFailure(rerr)
-				}
-				return hintf(CodeForbidden, v.v.Name, msg, "the read right of "+v.v.Name+", from the cell "+rule.Cell()+": "+ruleText(rule))
-			}
-			if e := past(v.v.Name+" of the document "+id+" of "+c.cls.Name, rightRead(row.state, v.v.Name)); e != nil {
-				return e
-			}
-		}
-		return nil
-	}
-	if err := mayRead(cv); err != nil {
+	if err := s.mayReadLive(c, cv, row, evalCtx, o, id, past); err != nil {
 		return nil, nil, nil, err
 	}
-	// What the condition of a list reads of the document: the pointer to
-	// it, and the variables it names as THIS.name, taken while the row is
-	// the writer's to read.
-	onOf := func(q *model.Query) (*query.On, error) {
-		scope, err := c.cls.Scope()
-		if err != nil {
-			return nil, storageErr("read the variables of "+c.cls.Name, err)
-		}
-		held := make(map[string]formula.Value, len(q.This))
-		for _, name := range q.This {
-			if hv, ok := c.byName[strings.ToUpper(name)]; ok && hv.leaf >= 0 {
-				held[strings.ToUpper(name)] = row.vals[hv.leaf]
-			}
-		}
-		return &query.On{Cond: q.Cond, Src: q.Src, Scope: scope, Ref: c.cls.Name + ":" + row.id,
-			Value: func(name string) (formula.Value, bool) {
-				v, ok := held[strings.ToUpper(name)]
-				return v, ok
-			}}, nil
-	}
 	if q := cv.v.Query; q != nil {
-		on, err := onOf(q)
+		on, err := listOn(c, q, row)
 		if err != nil {
 			return nil, nil, nil, err
 		}
@@ -316,10 +270,10 @@ func (s *Store) liveOn(ctx context.Context, c *class, cv *cvar, id string, o opt
 		// not read the list of this document may not count it either.
 		held := &liveHeld{row: row, ctx: ctxOf, on: make(map[string]*query.On, len(lists))}
 		for _, lv := range lists {
-			if err := mayRead(lv); err != nil {
+			if err := s.mayReadLive(c, lv, row, evalCtx, o, id, past); err != nil {
 				return nil, nil, nil, err
 			}
-			on, err := onOf(lv.v.Query)
+			on, err := listOn(c, lv.v.Query, row)
 			if err != nil {
 				return nil, nil, nil, err
 			}
@@ -345,6 +299,56 @@ func (s *Store) liveOn(ctx context.Context, c *class, cv *cvar, id string, o opt
 		return nil, nil, nil, err
 	}
 	return valueOut(val), nil, nil, nil
+}
+
+// mayReadLive holds a live variable to its read right in the document's
+// state (ADR-0041). past is what a content administrator who passes the
+// rules is written down with.
+func (s *Store) mayReadLive(c *class, v *cvar, row *docRow, evalCtx *formula.Context, o options, id string, past func(what, path string) *Error) error {
+	if c.rights == nil {
+		return nil
+	}
+	rule := c.cells(row.state)[v.idx].read
+	if rule == nil {
+		return nil
+	}
+	if held, rerr := s.wev.allowed(c, rule, row, evalCtx); !held {
+		if !o.principal.content() || c.brought {
+			msg := fmt.Sprintf("%s may not read %s", who(o.principal), v.v.Name)
+			if row.state != "" {
+				msg += " while the document is in " + row.state
+			}
+			if rerr != nil {
+				msg += ": the read right failed, " + guardFailure(rerr)
+			}
+			return hintf(CodeForbidden, v.v.Name, msg, "the read right of "+v.v.Name+", from the cell "+rule.Cell()+": "+ruleText(rule))
+		}
+		if e := past(v.v.Name+" of the document "+id+" of "+c.cls.Name, rightRead(row.state, v.v.Name)); e != nil {
+			return e
+		}
+	}
+	return nil
+}
+
+// listOn is what the condition of a list reads of the document it is
+// read on: the pointer to it, and the variables it names as THIS.name,
+// taken while the row is the writer's to read.
+func listOn(c *class, q *model.Query, row *docRow) (*query.On, error) {
+	scope, err := c.cls.Scope()
+	if err != nil {
+		return nil, storageErr("read the variables of "+c.cls.Name, err)
+	}
+	held := make(map[string]formula.Value, len(q.This))
+	for _, name := range q.This {
+		if hv, ok := c.byName[strings.ToUpper(name)]; ok && hv.leaf >= 0 {
+			held[strings.ToUpper(name)] = row.vals[hv.leaf]
+		}
+	}
+	return &query.On{Cond: q.Cond, Src: q.Src, Scope: scope, Ref: c.cls.Name + ":" + row.id,
+		Value: func(name string) (formula.Value, bool) {
+			v, ok := held[strings.ToUpper(name)]
+			return v, ok
+		}}, nil
 }
 
 // liveList asks the question a live list is, on the document read, and

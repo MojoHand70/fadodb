@@ -382,7 +382,15 @@ its condition, read a page at a time for its reader. Not built yet: a
 variable; a `LOOKUP` in a live variable; `REF` outside the condition
 of a `QUERY` and with a class and an id; the engine's own index on
 every `ref`, which is ADR-0075's, so a list at scale wants
-`"index": true` on its pointer today.
+`"index": true` on its pointer today. ADR-0081, functions over a
+list, each with its SQL from the start: built over a list that is a
+`QUERY` are `COUNT`, `SUM`, `MIN` and `MAX`, their forms with a
+condition (`COUNTIF`, `SUMIF`, `MINIF`, `MAXIF`), and `ANY` and
+`ALL`, each one statement asked for whoever reads the live variable
+that holds it. Not built yet: `AVERAGE`, `MEDIAN` and `COUNTUNIQUE`;
+the same functions over the lines and tags a document holds; and
+`FILTER`, `SORT`, `TOP`, `UNIQUE`, `FIRST`, `LAST`, `INDEX`,
+`CONTAINS` and `JOIN`.
 The third is of 2026-11-21, and nothing of it is built yet:
 ADR-0078, a decision stands on what the document holds. A command
 says which version of a document its sender saw, the `write` right of

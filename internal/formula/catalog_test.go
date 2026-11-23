@@ -151,3 +151,21 @@ func TestCatalog_ToldIsTheCatalogue(t *testing.T) {
 		t.Errorf("the catalogue was changed through an answer: %+v", again.Functions[0])
 	}
 }
+
+// The type of a parameter is one of a short list of words. A sentence in
+// its place is a slip of the hand in catalog.json, which no reader of
+// the catalogue would forgive.
+func TestCatalog_ParameterTypesAreKnownWords(t *testing.T) {
+	known := map[string]bool{}
+	for _, w := range []string{"any", "array", "bool", "column", "columns", "composite", "condition", "date", "date or datetime",
+		"datetime", "decimal", "groupby", "json", "list", "money", "number", "numbers", "scalar", "sort", "source", "text", "values"} {
+		known[w] = true
+	}
+	for _, f := range Functions() {
+		for _, p := range f.Params {
+			if !known[p.Type] {
+				t.Errorf("%s: the parameter %s has the type %q, which is no type of a parameter", f.Name, p.Name, p.Type)
+			}
+		}
+	}
+}

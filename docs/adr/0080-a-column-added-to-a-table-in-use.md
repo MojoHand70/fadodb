@@ -46,13 +46,17 @@ rate came from, so Dan adds the column `source`.
 
 ## The owner's words
 
-Item 1 is his of 2026-11-23. Items 2, 3 and 5 follow from it. Two are
-added for him to veto:
+Item 1 is his of 2026-11-23. Items 2 and 5 follow from it.
 
-- **Item 3**, that a new column of a table in use is never in its key.
-  The other way would need a value for every row the table holds,
-  given with the version: a default, which a column of a table does not
-  have today.
+Item 3 was put to him the same day, after the pull request that built
+it was merged: may a new column of a table that holds rows be part of
+its key? The other way would have needed a value for every row the
+table holds, given with the version: a default, which a column of a
+table does not have today. His answer: "no". A new column of a table
+in use is never in its key.
+
+One is added for him to veto:
+
 - **Item 6**, that a version which adds columns and also changes
   anything else (a label, a column's type) is refused whole. The other
   way: the columns are added and the rest refused. One version is one

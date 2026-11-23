@@ -26,7 +26,11 @@ type QueryExecutor interface {
 // its index and its statements.
 type MemoryExecutor struct {
 	tables map[string]*memTable
-	vm     *VM
+	// lists are the lists the document of a suite holds (ADR-0081, step
+	// 2), which a fold reads.
+	lists map[string]*memTable
+	vm    *VM
+	fold  *RowFold
 }
 
 type memTable struct {
@@ -71,57 +75,129 @@ func (m *MemoryExecutor) Lookup(q *QuerySlot, args []Value, ctx *Context) (Value
 	if !ok {
 		return Value{}, &EvalError{Code: ErrQueryFailed, Pos: -1, Msg: "unknown source " + q.Source}
 	}
+	return m.over(t, q, args, ctx)
+}
+
+// AddList adds or replaces a list the document holds (ADR-0081, step 2):
+// rows are row-major in the source's column order, and stay in the order
+// given, which is the order of the list.
+func (m *MemoryExecutor) AddList(src *Source, rows [][]Value) {
+	t := &memTable{src: src, cols: make(map[string]int, len(src.Columns)), rows: rows}
+	for i, f := range src.Columns {
+		t.cols[strings.ToUpper(f.Name)] = i
+	}
+	if m.lists == nil {
+		m.lists = map[string]*memTable{}
+	}
+	m.lists[strings.ToUpper(src.Name)] = t
+}
+
+// Fold implements ListFolder over the lists added.
+func (m *MemoryExecutor) Fold(q *QuerySlot, args []Value, ctx *Context) (Value, *EvalError) {
+	t, ok := m.lists[strings.ToUpper(q.Source)]
+	if !ok {
+		return Value{}, &EvalError{Code: ErrQueryFailed, Pos: -1, Msg: "the document has no list " + q.Source}
+	}
+	return m.over(t, q, args, ctx)
+}
+
+// over answers a slot over the rows of one table or list.
+func (m *MemoryExecutor) over(t *memTable, q *QuerySlot, args []Value, ctx *Context) (Value, *EvalError) {
 	ci := -1
 	if q.Agg == "" {
+		var ok bool
 		if ci, ok = t.cols[strings.ToUpper(q.Column)]; !ok {
 			return Value{}, &EvalError{Code: ErrQueryFailed, Pos: -1, Msg: "unknown column " + q.Column + " of " + q.Source}
 		}
 	}
-	// Each slot of a program of the slot is a column of the row or one of
-	// the arguments.
-	places := func(p *Program) ([]int, *EvalError) {
-		from := make([]int, len(p.Slots))
-		for i, s := range p.Slots {
-			if j := q.ArgIndex(s.Name); j >= 0 {
-				from[i] = -1 - j
-				continue
-			}
-			cj, ok := t.cols[strings.ToUpper(s.Name)]
-			if !ok {
-				return nil, &EvalError{Code: ErrQueryFailed, Pos: -1, Msg: "unknown column " + s.Name + " of " + q.Source}
-			}
-			from[i] = cj
-		}
-		return from, nil
+	colOf := func(name string) (int, bool) {
+		i, ok := t.cols[strings.ToUpper(name)]
+		return i, ok
 	}
-	fill := func(vars []Value, from []int, row []Value) {
-		for i, f := range from {
-			if f < 0 {
-				vars[i] = args[-1-f]
-			} else {
-				vars[i] = row[f]
-			}
-		}
-	}
-	from, perr := places(q.Cond)
+	condFrom, perr := q.Places(q.Cond, colOf)
 	if perr != nil {
 		return Value{}, perr
 	}
-	vars := make([]Value, len(from))
-	var (
-		valFrom []int
-		valVars []Value
-		vals    []Value
-	)
+	var valFrom []int
 	if q.Agg != "" {
-		if valFrom, perr = places(q.Value); perr != nil {
+		if valFrom, perr = q.Places(q.Value, colOf); perr != nil {
 			return Value{}, perr
 		}
-		valVars = make([]Value, len(valFrom))
 	}
-	for _, row := range t.rows {
-		fill(vars, from, row)
-		v, err := m.vm.Run(q.Cond, vars, ctx)
+	if m.fold == nil {
+		m.fold = &RowFold{vm: m.vm}
+	}
+	return m.fold.Run(q, t.rows, condFrom, valFrom, ci, args, ctx)
+}
+
+// ListFolder answers a function over a list the document holds
+// (ADR-0081, step 2): the slot's aggregate over the elements of the
+// variable the slot names as its source, in their order. The VM hands it
+// the compiled slot and the values of the document's variables the
+// slot's programs read.
+type ListFolder interface {
+	Fold(q *QuerySlot, args []Value, ctx *Context) (Value, *EvalError)
+}
+
+// Places says where each slot of a program of the query slot is read
+// from: a column of the row, by its place in the row, or the i-th
+// argument, as -1-i. colOf gives the place of a column by its name.
+func (q *QuerySlot) Places(p *Program, colOf func(name string) (int, bool)) ([]int, *EvalError) {
+	from := make([]int, len(p.Slots))
+	for i, s := range p.Slots {
+		if j := q.ArgIndex(s.Name); j >= 0 {
+			from[i] = -1 - j
+			continue
+		}
+		cj, ok := colOf(s.Name)
+		if !ok {
+			return nil, &EvalError{Code: ErrQueryFailed, Pos: -1, Msg: "unknown column " + s.Name + " of " + q.Source}
+		}
+		from[i] = cj
+	}
+	return from, nil
+}
+
+// RowFold answers a query slot over rows held in memory: it runs the
+// slot's condition on every row with a VM of its own, and folds the
+// slot's expression over the rows that match. It keeps its buffers, so
+// one RowFold serves many runs, one at a time.
+type RowFold struct {
+	vm                  *VM
+	vars, valVars, vals []Value
+}
+
+// NewRowFold makes a RowFold whose VM evaluates under the limits given.
+func NewRowFold(limits Limits) *RowFold {
+	vm := NewVM()
+	vm.Limits = limits
+	return &RowFold{vm: vm}
+}
+
+// Run answers the slot over rows, in the order given: the column at
+// place ci of the first row on which the condition holds, or the slot's
+// aggregate over those rows. condFrom and valFrom are the Places of the
+// slot's condition and of its expression.
+func (f *RowFold) Run(q *QuerySlot, rows [][]Value, condFrom, valFrom []int, ci int, args []Value, ctx *Context) (Value, *EvalError) {
+	fill := func(vars []Value, from []int, row []Value) {
+		for i, at := range from {
+			if at < 0 {
+				vars[i] = args[-1-at]
+			} else {
+				vars[i] = row[at]
+			}
+		}
+	}
+	if cap(f.vars) < len(condFrom) {
+		f.vars = make([]Value, len(condFrom))
+	}
+	if cap(f.valVars) < len(valFrom) {
+		f.valVars = make([]Value, len(valFrom))
+	}
+	vars, valVars, vals := f.vars[:len(condFrom)], f.valVars[:len(valFrom)], f.vals[:0]
+	for _, row := range rows {
+		fill(vars, condFrom, row)
+		v, err := f.vm.Run(q.Cond, vars, ctx)
 		if err != nil || !v.Truth() {
 			continue
 		}
@@ -131,7 +207,7 @@ func (m *MemoryExecutor) Lookup(q *QuerySlot, args []Value, ctx *Context) (Value
 		// The expression of an aggregate failing on a matching row fails
 		// the aggregate, with the error of the first such row.
 		fill(valVars, valFrom, row)
-		x, err := m.vm.Run(q.Value, valVars, ctx)
+		x, err := f.vm.Run(q.Value, valVars, ctx)
 		if err != nil {
 			var ee *EvalError
 			if !errors.As(err, &ee) {
@@ -141,6 +217,7 @@ func (m *MemoryExecutor) Lookup(q *QuerySlot, args []Value, ctx *Context) (Value
 		}
 		vals = append(vals, x)
 	}
+	f.vals = vals
 	if q.Agg != "" {
 		return q.Aggregate(vals)
 	}

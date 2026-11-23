@@ -220,8 +220,11 @@ func TestFiles(t *testing.T) {
 	} else if _, sees := after.Values["audit"]; sees {
 		t.Error("Ola is shown the working paper")
 	}
-	if got := finding(db, scratch("Counts", `"pages":{"type":"rows","schema":"File"},"n":{"formula":"COUNT(pages.hash)"}`, oneState)); got != "bad_formula" {
+	if got := finding(db, scratch("Counts", `"pages":{"type":"rows","schema":"File"},"n":{"formula":"COUNT(pages.hash)"},"bytes":{"formula":"SUM(pages.size)"}`, oneState)); got != "accepted" {
 		t.Errorf("a formula over the files of rows is found %s", got)
+	}
+	if got := finding(db, scratch("Whole", `"pages":{"type":"rows","schema":"File"},"n":{"formula":"pages.hash"}`, oneState)); got != "bad_formula" {
+		t.Errorf("a column of the files of rows as a value is found %s", got)
 	}
 
 	// Opening. Piotr holds the same bytes on a receipt of his own.

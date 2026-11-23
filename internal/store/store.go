@@ -222,10 +222,15 @@ type Store struct {
 	emptied     []*child
 	changed     []bool
 	changedKids []*child
-	ids         idGen
-	stmts       engineStmts
-	plans       map[*formula.QuerySlot]*lookupPlan
-	filters     filterStmts // the prepared statements of Query and Count, by text
+	// kids are the lists the command of the commit in progress assigns,
+	// and the ones read for it: one map for every commit, emptied at each,
+	// so that the writer's evaluator can hold it for the folds of the
+	// commit's formulas (ADR-0081, step 2) without a map made per commit.
+	kids    map[*child][]childRow
+	ids     idGen
+	stmts   engineStmts
+	plans   map[*formula.QuerySlot]*lookupPlan
+	filters filterStmts // the prepared statements of Query and Count, by text
 
 	cmu        sync.RWMutex
 	schemas    *model.SchemaSet
@@ -528,6 +533,7 @@ func open(path string, o Options) (*Store, error) {
 	s.vm.Executor = (*executor)(s)
 	s.wev.vm = s.vm
 	s.wev.life = s.tellLife
+	s.wev.writer = true
 	if err := s.prepareEngine(ctx); err != nil {
 		return fail(err)
 	}

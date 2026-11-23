@@ -244,6 +244,12 @@ type binder struct {
 	source *Source
 	q      *QuerySlot
 	argOf  map[string]int
+	// lift is set inside the one argument of a function over a list when
+	// it is written in the words of the document (ADR-0019):
+	// SUM(lines.qty * lines.price). It names the list; list.column is
+	// then a column of the row and a bare name a variable of the
+	// document. liftNext hands it to the next nested program.
+	lift, liftNext string
 
 	// lit describes the last constant expr emitted, so that an operation
 	// can make its operand exact when the other operand is (ADR-0022);
@@ -503,6 +509,9 @@ func (b *binder) expr(n Node) (Type, error) {
 		return Scalar(KindNull), nil
 	case *Ident:
 		if b.source != nil {
+			if b.lift != "" {
+				return b.liftedName(n)
+			}
 			return b.column(n)
 		}
 		v, ok := b.scope.Lookup(n.Name)
@@ -523,6 +532,9 @@ func (b *binder) expr(n Node) (Type, error) {
 		return v.Type, nil
 	case *Member:
 		if b.source != nil {
+			if b.lift != "" {
+				return b.liftedMember(n)
+			}
 			return Type{}, b.errAt(n.P, "inside LOOKUP a bare name is a column of %s; the document's variables are THIS.name, and their fields are not reachable yet", b.source.Name)
 		}
 		return b.member(n)
@@ -1405,7 +1417,7 @@ func (b *binder) lookupKey(term Node, src *Source, q *QuerySlot, argOf map[strin
 func (b *binder) subProgram(n Node, src *Source, q *QuerySlot, argOf map[string]int) (*Program, Type, error) {
 	sub := &binder{src: b.src, scope: b.scope, opts: b.opts, prog: &Program{},
 		slotOf: map[string]int32{}, numIndex: map[float64]int32{}, textIndex: map[string]int32{}, classes: map[Class]bool{},
-		source: src, q: q, argOf: argOf}
+		source: src, q: q, argOf: argOf, lift: b.liftNext}
 	t, err := sub.expr(n)
 	if err != nil {
 		return nil, Type{}, err

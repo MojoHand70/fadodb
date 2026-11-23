@@ -238,7 +238,8 @@ This is what is built today. The rest of the design is in
 | compute an object | no, `bad_formula` |
 | give an object a default | no, `not_supported` |
 | keep an index on an object | no, `not_supported` |
-| read a field of `rows` in a formula: `stops.name` | no, `bad_formula` |
+| work a figure out of a field of `rows`: `COUNT(stops.name)` | yes |
+| read a field of `rows` as a value: `stops.name` | no, `bad_formula` |
 
 So today a formula reads fields, one at a time. To ask whether an
 object is there, test the field that matters: `NOT ISBLANK(depot.code)`.
@@ -362,7 +363,8 @@ And in a class:
 
 - Whole objects in formulas: `ISBLANK(depot)`, `a = b`, a computed
   object, an object as the value a rule sets.
-- A field of `rows` in a formula, and so the functions over lists.
+- A field of an object inside `rows` in a formula: the functions
+  over a list read the fields of a row that are single values.
 - `required` on an object, a list or rows.
 - A default for an object, and an index on one of its fields.
 - Rights for single fields.

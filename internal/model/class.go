@@ -1202,6 +1202,15 @@ func depsOf(prog *formula.Program) []string {
 			deps = append(deps, name)
 		}
 	}
+	// A function over a list the document holds reads that list
+	// (ADR-0081, step 2): the formula is worked out again when the lines
+	// change.
+	for _, q := range prog.Folds {
+		if !seen[upper(q.Source)] {
+			seen[upper(q.Source)] = true
+			deps = append(deps, q.Source)
+		}
+	}
 	return deps
 }
 
@@ -1533,6 +1542,11 @@ func compileAccess(c *collector, cls *Class, def *AccessDef, scope *formula.Scop
 			}
 		}
 	}
+	if a.Read != nil && len(a.Read.Folds) > 0 {
+		c.hint(CodeNotAllowed, "/access/read", "a read rule may not work a figure out of the lines or tags of the document yet: it runs inside every query as a predicate (ADR-0081)",
+			"keep the figure in a computed variable and test that variable")
+		a.Read = nil
+	}
 	if a.Read != nil && a.Read.ReadsStates {
 		c.hint(CodeNotAllowed, "/access/read", "a read rule may not call a function of a state: it runs inside every query as a predicate, and those functions read the events of one document",
 			"keep the answer in a triggered variable and test that variable")
@@ -1640,6 +1654,11 @@ func rightRule(c *collector, path string, raw json.RawMessage, scope *formula.Sc
 						"move the lookup into a computed variable and test that variable")
 					return nil
 				}
+			}
+			if len(prog.Folds) > 0 {
+				c.hint(CodeNotAllowed, path, "a read right may not work a figure out of the lines or tags of the document yet: it is compiled into every filter as a predicate (ADR-0081)",
+					"keep the figure in a computed variable and test that variable")
+				return nil
 			}
 			if prog.ReadsStates {
 				c.hint(CodeNotAllowed, path, "a read right may not call a function of a state: it is compiled into every filter as a predicate, and those functions read the events of one document",

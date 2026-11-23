@@ -283,8 +283,11 @@ func TestSchemasAndObjects(t *testing.T) {
 		"keep an index on an object": holds("keep an index", each(
 			with(`"a":{"type":"object","schema":"Contact","index":true}`, ""),
 		)),
-		"read a field of rows in a formula: stops.name": holds("read a field of rows", each(
+		"work a figure out of a field of rows: COUNT(stops.name)": holds("work a figure out of a field of rows", each(
 			with(`"stops":{"type":"rows","schema":"Contact"},"r":{"formula":"COUNT(stops.name)"}`, ""),
+		)),
+		"read a field of rows as a value: stops.name": holds("read a field of rows as a value", each(
+			with(`"stops":{"type":"rows","schema":"Contact"},"r":{"formula":"stops.name"}`, ""),
 		)),
 	})
 

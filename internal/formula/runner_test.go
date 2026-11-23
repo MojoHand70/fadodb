@@ -27,9 +27,11 @@ func TestConformance_VM(t *testing.T) {
 		if err != nil {
 			t.Fatalf("%s: %v", s.File, err)
 		}
-		if vm.Executor, err = s.Executor(); err != nil {
+		exec, err := s.Executor()
+		if err != nil {
 			t.Fatalf("%s: %v", s.File, err)
 		}
+		vm.Executor, vm.Lists = exec, exec
 		vm.Limits = s.EvalLimits()
 		for i, c := range s.Cases {
 			total++

@@ -549,9 +549,10 @@ func Compiled(cls *Class) *BundleCompiled {
 // ByServer reports whether a page cannot work a program out itself: it
 // reads other documents or a table, with LOOKUP or an aggregate (ADR-0020,
 // ADR-0046), or the history of the document's states (ADR-0047, item 6),
-// whose stays are not on the wire.
+// whose stays are not on the wire; or it folds a list of its document
+// (ADR-0081, step 2), which the page's own evaluator does not do yet.
 func ByServer(p *formula.Program) bool {
-	if len(p.Queries) > 0 || p.ReadsStates {
+	if len(p.Queries) > 0 || len(p.Folds) > 0 || p.ReadsStates {
 		return true
 	}
 	for _, c := range p.Classes {

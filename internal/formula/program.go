@@ -63,6 +63,7 @@ const (
 	OpDecScale    // bring the exact top to the static scale and kind; arg as dec.neg
 	OpTry         // on an error before the matching end.try, restore the stack and pc = arg (IFERROR)
 	OpEndTry      // leave the innermost try
+	OpFold        // a function over a list the document holds, through fold slot arg (ADR-0081)
 )
 
 // The operand of the exact operations: the result's scale in the low byte
@@ -88,6 +89,7 @@ var opNames = [...]string{
 	OpToBool: "to.bool", OpCall: "call", OpLookup: "lookup", OpQuery: "query", OpReturn: "return",
 	OpConstDec: "const.dec", OpDecNeg: "dec.neg", OpDecPercent: "dec.percent", OpDecAdd: "dec.add",
 	OpDecSub: "dec.sub", OpDecMul: "dec.mul", OpDecDiv: "dec.div", OpDecScale: "dec.scale", OpTry: "try", OpEndTry: "end.try",
+	OpFold: "fold",
 }
 
 func (o Op) String() string {
@@ -193,6 +195,15 @@ type Program struct {
 	Result  Type
 	Classes []Class // function classes used, in catalog order
 	Queries []QuerySlot
+	// Folds are the functions over a list the document itself holds, its
+	// lines or its tags (ADR-0081, step 2): each is a query slot whose
+	// Source is the name of that variable and whose rows are its
+	// elements in their order, which whoever runs the program has at
+	// hand with the document. A fold reads no other document and no
+	// table, so it is none of Queries. It runs where the document is,
+	// and is no part of an encoded program yet: a program with a fold is
+	// the server's.
+	Folds []QuerySlot
 	// ReadsLife says the program, or a program nested in one of its
 	// lookups, calls a function of the document's life (ADR-0047), so
 	// that whoever runs it knows to give the context that life. It is
@@ -478,6 +489,10 @@ func (p *Program) validate() error {
 			if id := int(in.Arg >> 8); id < 0 || id >= len(builtins) {
 				return fmt.Errorf("instruction %d: unknown builtin %d", i, id)
 			}
+		case OpFold:
+			if in.Arg < 0 || int(in.Arg) >= len(p.Folds) {
+				return fmt.Errorf("instruction %d: fold slot %d out of range", i, in.Arg)
+			}
 		case OpLookup, OpQuery:
 			if in.Arg < 0 || int(in.Arg) >= len(p.Queries) {
 				return fmt.Errorf("instruction %d: query slot %d out of range", i, in.Arg)
@@ -644,7 +659,7 @@ func (p *Program) describe(i int, in Instr) string {
 		return fmt.Sprintf("%03d %s %d (%s)", i, in.Op, in.Arg, p.Slots[in.Arg].Name)
 	case OpCall:
 		return fmt.Sprintf("%03d %s %d (%s/%d)", i, in.Op, in.Arg, builtins[in.Arg>>8].name, in.Arg&0xff)
-	case OpJump, OpJumpIfFalse, OpAndJump, OpOrJump, OpLookup, OpQuery, OpTry:
+	case OpJump, OpJumpIfFalse, OpAndJump, OpOrJump, OpLookup, OpQuery, OpTry, OpFold:
 		return fmt.Sprintf("%03d %s %d", i, in.Op, in.Arg)
 	case OpDecNeg, OpDecPercent, OpDecAdd, OpDecSub, OpDecMul, OpDecDiv, OpDecScale:
 		kind := "decimal"

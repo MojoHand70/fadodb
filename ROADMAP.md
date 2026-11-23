@@ -396,8 +396,10 @@ list, each with its SQL from the start: built over a list that is a
 `MINIF`, `MAXIF`, `AVERAGEIF`), and `ANY` and `ALL`, each one
 statement asked for whoever reads the live variable that holds it;
 `AVERAGE`, `MEDIAN` and `COUNTUNIQUE` stand in the column position of
-a `LOOKUP` as well. Not built yet:
-the same functions over the lines and tags a document holds; and
+a `LOOKUP` as well. The same functions work over the lines and the
+tags a document holds, `SUM(lines.qty * lines.price)`, in a computed
+variable, a guard and a rule; not yet in a read rule, a filter, a
+title, nor in the page's own evaluator. Not built yet:
 `FILTER`, `SORT`, `TOP`, `UNIQUE`, `FIRST`, `LAST`, `INDEX`,
 `CONTAINS` and `JOIN`.
 The third is of 2026-11-21, and nothing of it is built yet:

@@ -22,7 +22,25 @@ type Source struct {
 	// column for the key, so that the order the author wrote the terms in
 	// does not decide what the lookup costs.
 	Indexed []string
+	// Held says the source is a list the document itself holds, its
+	// lines or its tags (ADR-0081, step 2): Name is the variable, the
+	// columns are the fields of a row, or the one column "value" of an
+	// array, and the rows are in the order of the list.
+	Held bool
 }
+
+// HeldValue names the one column of a list that is an array: its
+// elements.
+const HeldValue = "value"
+
+// HeldOrder names what orders the rows of a list a document holds: the
+// place of each in the list.
+const HeldOrder = "idx"
+
+// HeldTable is the name by which the SQL generator asks for the rows of
+// a list the document holds: whoever translates a program gives, for it,
+// the elements of that variable of the document the statement is about.
+func HeldTable(list string) string { return "THIS." + list }
 
 // indexed reports whether the column leads an index of the source.
 func (s *Source) indexed(name string) bool {

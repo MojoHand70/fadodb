@@ -271,7 +271,7 @@ func (s *Store) PreviewDelete(ctx context.Context, class, id string, opts ...Opt
 // commit runs a command in a transaction on the writer.
 func (s *Store) commit(ctx context.Context, cmd command) (*result, error) {
 	s.mu.Lock()
-	defer s.mu.Unlock()
+	defer s.endCommit()
 	if s.closed {
 		return nil, errf(CodeClosed, "", "the store is closed")
 	}
@@ -520,7 +520,11 @@ func (s *Store) run(ctx context.Context, cmd command, now time.Time) (*result, e
 		return res, nil
 	}
 
-	kids := map[*child][]childRow{}
+	if s.kids == nil {
+		s.kids = map[*child][]childRow{}
+	}
+	kids := s.kids
+	s.beginLists(ctx, c, cmd.stored, before, kids)
 	dirty := s.dirtyFor(c)
 	changedKids := s.changedKids[:0]
 	unchanged := false
@@ -543,6 +547,7 @@ func (s *Store) run(ctx context.Context, cmd command, now time.Time) (*result, e
 		}
 		after = &docRow{id: id, version: 1, classVersion: c.cls.Version, vals: make([]formula.Value, len(c.leaves)),
 			life: formula.Life{Version: 1, CreatedAt: secs, UpdatedAt: secs, CreatedBy: actor, UpdatedBy: actor}}
+		s.wev.commit.id = id
 		if len(c.triggered) > 0 {
 			after.ats = make([]int64, len(c.triggered))
 		}
@@ -857,6 +862,7 @@ func (s *Store) run(ctx context.Context, cmd command, now time.Time) (*result, e
 					h.kids = make(map[*child][]childRow, len(s.emptied))
 					for _, ch := range s.emptied {
 						h.kids[ch] = nil
+						s.wev.commit.emptyList(ch)
 					}
 				}
 			}
@@ -1073,6 +1079,16 @@ func (s *Store) changesFor(c, beforeClass *class, before, after *docRow, kids []
 		return nil
 	}
 	return s.changes(c, beforeClass, before, after, kids)
+}
+
+// endCommit ends a commit: the writer's evaluator forgets the document
+// the commit worked on, and the writer's lock is given back.
+func (s *Store) endCommit() {
+	s.wev.commit = commitLists{}
+	// The lists of the commit are let go with it: the next commit starts
+	// with none, and no row of this one is held on to.
+	clear(s.kids)
+	s.mu.Unlock()
 }
 
 // eval runs a program over the row.

@@ -8,6 +8,23 @@ All notable changes to FadoDB are recorded here. The format follows
 
 ### Added
 
+- Figures over the lines and the tags a document holds (ADR-0081,
+  step 2). The functions over a list work over a `rows` or an `array`
+  variable of the document: on a bill, `SUM(lines.qty * lines.price)`
+  is its net, `COUNT(lines)` how many lines it has,
+  `COUNTIF(lines, NOT delivered)` how many are not delivered, and the
+  guard `COUNT(lines) > 0 AND ALL(lines, qty > 0)` lets a bill be sent
+  only with lines that have a quantity. Such a figure reads its own
+  document, so it is the same for every reader and stands in a
+  computed variable, a triggered one, a guard, a rule and a live
+  variable; it is worked out again in the commit that changes the
+  list. The one argument may be an expression of the columns of the
+  list, and in a condition an element of an array is `value`:
+  `ANY(tags, value = "red")`. Before, a formula that named a list was
+  refused with "composite values are not supported yet". Not yet, each
+  refused in words: a figure over the lines in a read rule, a read
+  right, a filter or a title; a page asks the server for one. The
+  layout of a database and the format of a program do not change.
 - The door for agents at the server itself (ADR-0064, ruling 1).
   `fadodb serve` offers every command as a tool at `/mcp`, in the
   Model Context Protocol over HTTP, for an agent that cannot start a

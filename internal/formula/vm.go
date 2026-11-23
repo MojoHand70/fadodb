@@ -214,6 +214,10 @@ type VM struct {
 	// Executor answers LOOKUP (ADR-0020). A program with a lookup and no
 	// executor stops with query_failed.
 	Executor QueryExecutor
+	// Lists answers a function over a list the document holds (ADR-0081,
+	// step 2). Whoever runs a program with a fold sets it for the
+	// document the program runs over.
+	Lists ListFolder
 
 	stack []Value
 	qargs []Value
@@ -406,6 +410,26 @@ func (vm *VM) Run(p *Program, vars []Value, ctx *Context) (Value, error) {
 			}
 			stack[sp] = v
 			sp++
+		case OpFold:
+			q := &p.Folds[in.Arg]
+			if vm.Lists == nil {
+				err = errNoLists
+				break
+			}
+			if cap(vm.qargs) < len(q.Args) {
+				vm.qargs = make([]Value, len(q.Args))
+			}
+			args := vm.qargs[:len(q.Args)]
+			for i, a := range q.Args {
+				args[i] = vars[a]
+			}
+			v, e := vm.Lists.Fold(q, args, vm.ctx)
+			if e != nil {
+				err = e
+				break
+			}
+			stack[sp] = v
+			sp++
 		case OpQuery:
 			err = &EvalError{Code: ErrQueryFailed, Msg: "QUERY is not implemented yet"}
 		case OpReturn:
@@ -445,6 +469,7 @@ var (
 	errDateRange   = &EvalError{Code: ErrOutOfRange, Msg: "the date is outside year 1 to year 9999"}
 	errCurrencyMix = &EvalError{Code: ErrCurrencyMismatch, Msg: "the currencies of one operation must agree"}
 	errNoExecutor  = &EvalError{Code: ErrQueryFailed, Msg: "no query executor: the formula reads a table and the VM has nothing to read it with"}
+	errNoLists     = &EvalError{Code: ErrQueryFailed, Msg: "the formula reads a list of its document, and the VM was given no document's lists"}
 )
 
 // notFinite reports an infinite or NaN result with one comparison: the

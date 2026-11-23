@@ -34,10 +34,25 @@ type evaluator struct {
 	// life tells a row what its document's life says of its states
 	// (ADR-0047, item 6); the writer's evaluator has it.
 	life func(c *class, row *docRow) error
+	// writer says the evaluator is the writer's: it reads the lists of a
+	// document with the writer's statements, inside the transaction.
+	writer bool
+	// What answers the folds of a program (ADR-0081, step 2): the class
+	// and the row the program runs over, the commit in progress when the
+	// evaluator is the writer's, and the fold with its buffers. A program
+	// without a fold touches none of it.
+	foldC   *class
+	foldRow *docRow
+	commit  commitLists
+	fold    *formula.RowFold
+	places  map[*formula.QuerySlot]*foldPlaces
 }
 
 // run evaluates a program over the row's values in the class's layout.
 func (e *evaluator) run(c *class, prog *formula.Program, row *docRow, ctx *formula.Context) (formula.Value, error) {
+	if len(prog.Folds) > 0 {
+		e.foldC, e.foldRow, e.vm.Lists = c, row, e
+	}
 	idx := c.slotsOf(prog)
 	if cap(e.vars) < len(idx) {
 		e.vars = make([]formula.Value, max(len(idx), c.maxSlots))
@@ -74,6 +89,9 @@ func (e *evaluator) tell(c *class, row *docRow) error {
 // element of the list (ADR-0044, item 12): a slot below zero reads the
 // element, -1 its first leaf.
 func (e *evaluator) runWith(c *class, prog *formula.Program, row *docRow, elem childRow, ctx *formula.Context) (formula.Value, error) {
+	if len(prog.Folds) > 0 {
+		e.foldC, e.foldRow, e.vm.Lists = c, row, e
+	}
 	idx := c.slotsOf(prog)
 	if cap(e.vars) < len(idx) {
 		e.vars = make([]formula.Value, max(len(idx), c.maxSlots))

@@ -141,8 +141,9 @@ What the history keeps:
   and `rights`, as for any value. Anna may write `audit` and nothing
   else.
 - **A formula reads the facts**, one field at a time: `scan.size`,
-  `scan.media_type`, `scan.name`. The files of `pages` cannot be read
-  in a formula yet, as no rows can.
+  `scan.media_type`, `scan.name`. Of the files of `pages` it works a
+  figure out, as of any rows: `COUNT(pages.hash)` is how many pages
+  there are, `SUM(pages.size)` their size together.
 
 ## Opening
 
@@ -275,6 +276,5 @@ terminal the tool sends them, with `fadodb file put` and
   not built.
 - A caller for putting bytes.
 - Copying the bytes of a database to another store.
-- Reading the files of `rows` in a formula, such as their number.
 - Previews, thumbnails and the text of a file. They are the host
   program's, which may attach them as further files.

@@ -1,6 +1,6 @@
 # ADR-0081: Functions over a list, each with its SQL from the start
 
-- Status: Proposed; amends ADR-0046 (item 4: `AVERAGE`, `MEDIAN` and `COUNTUNIQUE` stand in the column position of a `LOOKUP`). Items 1, 2 and 5 and the set of item 6 are the owner's word of 2026-11-23; the rest is settled by me for him to veto, and marked so. Step 1 is built: see "What is built".
+- Status: Proposed; amends ADR-0046 (item 4: `AVERAGE`, `MEDIAN` and `COUNTUNIQUE` stand in the column position of a `LOOKUP`). Items 1, 2 and 5 and the set of item 6 are the owner's word of 2026-11-23; the rest is settled by me for him to veto, and marked so. Step 1 and step 2 are built: see "What is built".
 - Date: 2026-11-23
 
 ## Context
@@ -165,6 +165,37 @@ planned for a server, is from its documentation.
      left `AVERAGE` out because its exact division was not written for
      every executor; now it is.
 
+9. **Over a list the document holds, the function is worked out where
+   the document is.** *(Mine.)*
+   - A list is a variable of type `rows`, with the scalar fields of a
+     row as its columns, or an `array`, with the one column `value`.
+   - The figure reads its own document and nothing else, so it is the
+     same for every reader and is kept as any computed value is: it
+     stands in a computed variable, a triggered one, a default, a
+     guard, a rule and a live variable. The formula depends on the
+     list, and is worked out again in the commit that changes it.
+   - The engine folds the elements it has in memory with the commit:
+     the ones the command assigns, and for a list the command leaves
+     alone the rows the store has. No statement is asked for a list
+     the command gave. Item 2 holds all the same: each function has
+     its SQL over the table the store keeps the list in, and the cases
+     prove one answer on the fold and on both databases.
+   - The one argument may be an expression of the columns of one list,
+     as ADR-0019 wrote it: `SUM(lines.qty * lines.price)`. A column is
+     `list.column` there, and a bare name a variable of the document,
+     the same for every row. In a form with a condition the names are
+     the row's, as in item 4, and its last argument may be an
+     expression of them: `SUMIF(lines, delivered, qty * price)`.
+   - It compiles to a fold, an instruction of its own beside the
+     lookup: a fold reads no other document, so none of the rules for
+     a formula that does apply to it. The instruction is added at the
+     end of the list, and a program with a fold is not encoded yet: it
+     is the server's, and a page asks the server for it.
+   - Not taken yet, each refused in words when the class is defined
+     or the question asked: a fold in a read rule, a read right, a
+     filter and the condition of a `QUERY`, which run as a predicate
+     over every row; in a title; in the page's own evaluator.
+
 ## The owner's words
 
 2026-11-23, in this order:
@@ -218,10 +249,23 @@ condition (`COUNTIF`, `SUMIF`, `MINIF`, `MAXIF`, `AVERAGEIF`), and
 - The document is read on the writer's turn; the figures are asked
   beside the writer.
 
+Step 2, the same figures over the lines and the tags a document holds
+(item 9): every function of step 1 over a `rows` or an `array`
+variable.
+
+- The binder gives a list the document holds as the source of the
+  slot, and the slot is one of the program's folds. The store's
+  evaluator answers a fold with the elements of the document it runs
+  the program over, through the fold the in-memory executor of the
+  suites uses.
+- `conformance/formula/held.json` proves one answer on the Go fold, on
+  SQLite and on DuckDB, where the list is a table with the place of
+  each row.
+
 Not built yet, each decided above:
 
-- The functions over a list a document holds (step 2), and the ones
-  that give a list again (step 3).
+- A fold in the places item 9 leaves out, and in the browser VM.
+- The functions that give a list again (step 3).
 
 ## Consequences
 
@@ -291,4 +335,16 @@ function. Its first form read the rows three times, once for the
 value, once for its error and once for the statement around them, and
 took 0.26 ms; this one reads them once.
 
-No budget of a commit changes: a figure is in no commit.
+No budget of a commit changes: a figure over a list that is a `QUERY`
+is in no commit.
+
+A figure over a list the document holds is in the commit that changes
+the list. Measured on 2026-11-23, a commit that changes the twenty
+lines of a bill, three rounds each: 0.13 to 0.14 ms and 987
+allocations with a count and a total of the lines
+(`BenchmarkHeldFigure`), 0.13 to 0.14 ms and 969 without
+(`BenchmarkHeldFigureNone`). A class with no fold pays one comparison
+for each formula it runs, and no allocation: the map of the lists a
+command assigns is the store's own, one for every commit, since the
+writer's evaluator now holds it, and a map made per commit would have
+been one allocation more in each.

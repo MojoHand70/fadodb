@@ -10,6 +10,13 @@ import "strings"
 // the engine of the listed class answers it with one statement and no
 // row is read into the VM (ADR-0020). The slot names the list; whoever
 // runs the program gives the slot the rows the list has for its reader.
+//
+// A list is also what the document itself holds (step 2 of the record):
+// its lines, a variable of type rows, and its tags, an array. The same
+// functions work over it, and compile to a fold slot: the same slot,
+// over the elements the document has, which whoever runs the program
+// folds where the document is. Such a figure reads its own document
+// alone, so it is the same for every reader and stands in any formula.
 
 // figureForm says which aggregate a function over a list is, whether it
 // takes a condition and a column, and whether it works over rows alone:
@@ -44,9 +51,6 @@ func IsFigureFunction(name string) bool {
 // declares it: a bare name, or the base of list.column. It is "" when
 // the argument names no list, and when the formula may read none.
 func (b *binder) listOf(n Node) (name string, src *Source) {
-	if b.opts.Lists == nil {
-		return "", nil
-	}
 	switch n := n.(type) {
 	case *Ident:
 		name = n.Name
@@ -55,14 +59,21 @@ func (b *binder) listOf(n Node) (name string, src *Source) {
 	default:
 		return "", nil
 	}
-	src, ok := b.opts.Lists(name)
-	if !ok {
-		return "", nil
+	v, declared := b.scope.Lookup(name)
+	if b.opts.Lists != nil {
+		if src, ok := b.opts.Lists(name); ok {
+			if declared {
+				name = v.Name
+			}
+			return name, src
+		}
 	}
-	if v, is := b.scope.Lookup(name); is {
-		name = v.Name
+	if declared {
+		if src := heldSource(v); src != nil {
+			return v.Name, src
+		}
 	}
-	return name, src
+	return "", nil
 }
 
 // figure binds a function over a list of the document. COUNT, SUM, MIN,
@@ -82,7 +93,7 @@ func (b *binder) figure(n *Call) (t Type, handled bool, err error) {
 		if len(n.Args) != 1 {
 			return Type{}, false, nil
 		}
-		if name, _ := b.listOf(n.Args[0]); name == "" {
+		if name, _ := b.listOf(n.Args[0]); name == "" && b.listIn(n.Args[0]) == "" {
 			return Type{}, false, nil
 		}
 	}
@@ -126,18 +137,27 @@ func (b *binder) figureSlot(n *Call, form figureForm) (Type, error) {
 	if form.rows {
 		also = "; over the rows of another class it stands in the column position of a LOOKUP"
 	}
-	if b.opts.Lists == nil {
-		return Type{}, b.errAt(n.P, "%s works over a list of the document, and a list is read only by a live variable: one that says \"mode\": \"live\" (ADR-0081)%s", n.Name, also)
-	}
 	list, src := b.listOf(n.Args[0])
+	lifted := false
+	if list == "" && !form.cond {
+		// The argument written in the words of the document (ADR-0019):
+		// an expression of the columns of one list, each list.column.
+		if list = b.listIn(n.Args[0]); list != "" {
+			list, src = b.listOf(&Ident{Name: list})
+			lifted = true
+		}
+	}
 	if list == "" {
 		what := "the first argument"
 		if !form.cond {
 			what = "the argument"
 		}
-		return Type{}, b.errAt(n.Args[0].Pos(), "%s: %s is a list of the document: a live variable of this class whose formula is a QUERY%s", n.Name, what, also)
+		return Type{}, b.errAt(n.Args[0].Pos(), "%s: %s is a list of the document: its lines or its tags, or a live variable of this class whose formula is a QUERY%s", n.Name, what, also)
 	}
-	if !b.opts.Live {
+	if src.Held && b.opts.Mode == ModePure {
+		return Type{}, b.errAt(n.P, "%s over the list %s is not built yet in %s; keep the figure in a computed variable and name that variable", n.Name, list, b.opts.Mode.where())
+	}
+	if !src.Held && !b.opts.Live {
 		return Type{}, b.errAt(n.P, "%s over the list %s counts what its reader may read, so it stands only in a live variable: one that says \"mode\": \"live\". A value that is kept, or that a decision reads, may not depend on who looks (ADR-0081)", n.Name, list)
 	}
 	if b.source != nil {
@@ -145,8 +165,15 @@ func (b *binder) figureSlot(n *Call, form figureForm) (Type, error) {
 	}
 	// The column: after the dot for a function of one argument, the last
 	// argument for an -IF form; COUNT of a list counts its rows.
+	// An array has one column, its elements: every function of one
+	// argument runs over it, and COUNT counts the elements that have a
+	// value, as it does over single values.
+	array := src.Held && len(src.Key) == 0
 	col, colAt := "", n.P
+	var val Node
 	switch {
+	case lifted:
+		val = n.Args[0]
 	case form.cond && form.col:
 		switch c := n.Args[2].(type) {
 		case *Ident:
@@ -157,7 +184,12 @@ func (b *binder) figureSlot(n *Call, form figureForm) (Type, error) {
 			}
 			col, colAt = c.Path[0], c.P
 		default:
-			return Type{}, b.errAt(n.Args[2].Pos(), "%s: the column is the name of a column of %s, such as %s", n.Name, list, firstColumn(src))
+			if !src.Held {
+				return Type{}, b.errAt(n.Args[2].Pos(), "%s: the column is the name of a column of %s, such as %s", n.Name, list, firstColumn(src))
+			}
+			// Over a list the document holds, an expression of the row's
+			// columns, written as the condition is: qty * price.
+			val = n.Args[2]
 		}
 	case form.cond:
 		if _, ok := n.Args[0].(*Ident); !ok {
@@ -165,27 +197,44 @@ func (b *binder) figureSlot(n *Call, form figureForm) (Type, error) {
 		}
 	default:
 		if m, ok := n.Args[0].(*Member); ok {
-			if len(m.Path) != 1 {
+			if len(m.Path) != 1 || array {
 				return Type{}, b.errAt(m.P, "%s: %s.%s is no column of %s; a column is written %s.%s", n.Name, m.Base, strings.Join(m.Path, "."), list, list, firstColumn(src))
 			}
 			col, colAt = m.Path[0], m.P
+		} else if array {
+			col = HeldValue
 		} else if form.col {
 			return Type{}, b.errAt(n.Args[0].Pos(), "%s takes a column of the list: %s(%s.%s)", n.Name, n.Name, list, firstColumn(src))
 		}
 	}
-	var val Node
-	if col == "" {
+	switch {
+	case val != nil:
+	case col == "" && src.Held:
+		// The rows of a list the document holds have no column that
+		// every one of them fills: each row counts as one.
+		val = &NumberLit{Value: 1, P: int32(n.P)}
+	case col == "":
 		val = &Ident{Name: src.Key[0], P: n.P}
-	} else {
+	default:
 		f, ok := src.Column(col)
 		if !ok {
 			return Type{}, b.errAt(colAt, "the list %s has no column %s; the columns of %s are %s", list, col, src.Name, strings.Join(src.ColumnNames(), ", "))
 		}
 		val = &Ident{Name: f.Name, P: colAt}
 	}
-	q := &QuerySlot{Source: src.Name, List: list, Order: append([]string(nil), src.Key...)}
+	q := &QuerySlot{Source: src.Name, Order: append([]string(nil), src.Key...)}
+	if src.Held {
+		q.Order = []string{HeldOrder}
+	} else {
+		q.List = list
+	}
 	argOf := map[string]int{}
-	if err := b.aggregate(&Call{Name: form.agg, Args: []Node{val}, P: n.P}, src, q, argOf); err != nil {
+	if lifted {
+		b.liftNext = list
+	}
+	err := b.aggregate(&Call{Name: form.agg, Args: []Node{val}, P: n.P}, src, q, argOf)
+	b.liftNext = ""
+	if err != nil {
 		return Type{}, err
 	}
 	var condNode Node = &BoolLit{Value: true, P: n.P}
@@ -211,12 +260,120 @@ func (b *binder) figureSlot(n *Call, form figureForm) (Type, error) {
 		v, _ := b.scope.Lookup(name)
 		q.Args = append(q.Args, b.slot(v))
 	}
+	if src.Held {
+		// A fold reads the document it belongs to and nothing else, as a
+		// pure function does.
+		b.prog.Folds = append(b.prog.Folds, *q)
+		b.emit(OpFold, int32(len(b.prog.Folds)-1), n.P)
+		b.push(1)
+		return q.Type, nil
+	}
 	idx := int32(len(b.prog.Queries))
 	b.prog.Queries = append(b.prog.Queries, *q)
 	b.classes[ClassQuery] = true
 	b.emit(OpLookup, idx, n.P)
 	b.push(1)
 	return q.Type, nil
+}
+
+// heldSource is a variable of the document as the source of a function
+// over it, when the variable is a list the document holds: the scalar
+// fields of rows as its columns, or the elements of an array as the one
+// column "value". It is nil for any other variable.
+func heldSource(v Variable) *Source {
+	switch v.Type.Kind {
+	case KindRows:
+		// A list that is a QUERY is rows too, and holds nothing: its type
+		// names no column.
+		if len(v.Type.Fields()) == 0 {
+			return nil
+		}
+		src := &Source{Name: v.Name, Held: true, Key: []string{HeldOrder}}
+		for _, f := range v.Type.Fields() {
+			if f.Type.IsScalar() {
+				src.Columns = append(src.Columns, f)
+			}
+		}
+		return src
+	case KindArray:
+		return &Source{Name: v.Name, Held: true, Columns: []Field{{Name: HeldValue, Type: Type{Kind: v.Type.Elem, Scale: v.Type.Scale}}}}
+	}
+	return nil
+}
+
+// listIn finds, in an expression, the list whose column it names as
+// list.column: the first such list, by the name its class declares. It
+// is "" when the expression names the column of no list.
+func (b *binder) listIn(n Node) string {
+	switch n := n.(type) {
+	case *Member:
+		if name, src := b.listOf(n); name != "" && len(src.Key) > 0 {
+			return name
+		}
+	case *Unary:
+		return b.listIn(n.X)
+	case *Binary:
+		if name := b.listIn(n.L); name != "" {
+			return name
+		}
+		return b.listIn(n.R)
+	case *If:
+		for _, x := range []Node{n.Cond, n.Then, n.Else} {
+			if name := b.listIn(x); name != "" {
+				return name
+			}
+		}
+	case *Call:
+		// A function over a list among the arguments is a figure of its
+		// own: SUM(lines.cost) + 1 is no expression of the columns.
+		if _, figure := figureForms[n.Name]; figure || n.Name == "ANY" || n.Name == "ALL" || n.Name == "LOOKUP" {
+			return ""
+		}
+		for _, a := range n.Args {
+			if name := b.listIn(a); name != "" {
+				return name
+			}
+		}
+	}
+	return ""
+}
+
+// liftedName binds a bare name inside an expression of a list's columns
+// that is written in the words of the document: a variable of the
+// document, the same for every row.
+func (b *binder) liftedName(n *Ident) (Type, error) {
+	v, ok := b.scope.Lookup(n.Name)
+	if !ok {
+		if _, isCol := b.source.Column(n.Name); isCol {
+			return Type{}, b.errAt(n.P, "unknown variable %s; the column of the list is written %s.%s", n.Name, b.lift, n.Name)
+		}
+		return Type{}, b.errAt(n.P, "unknown variable %s", n.Name)
+	}
+	if strings.EqualFold(v.Name, b.lift) {
+		return Type{}, b.errAt(n.P, "%s is the whole list; a column of it is written %s.%s", v.Name, v.Name, firstColumn(b.source))
+	}
+	if !v.Type.IsScalar() {
+		return Type{}, b.errAt(n.P, "%s is %s; beside the columns of %s only a single value of the document can be read yet", v.Name, v.Type, b.lift)
+	}
+	return b.thisRef(&ThisRef{Name: v.Name, P: n.P})
+}
+
+// liftedMember binds list.column inside such an expression: a column of
+// the row.
+func (b *binder) liftedMember(n *Member) (Type, error) {
+	if !strings.EqualFold(n.Base, b.lift) {
+		if name, _ := b.listOf(n); name != "" {
+			return Type{}, b.errAt(n.P, "%s.%s: one function runs over one list, and this one runs over %s", n.Base, strings.Join(n.Path, "."), b.lift)
+		}
+		return Type{}, b.errAt(n.P, "%s.%s: beside the columns of %s only a single value of the document can be read yet, and no field of an object", n.Base, strings.Join(n.Path, "."), b.lift)
+	}
+	if len(n.Path) != 1 {
+		return Type{}, b.errAt(n.P, "%s.%s is no column of %s; a column is written %s.%s", n.Base, strings.Join(n.Path, "."), b.lift, b.lift, firstColumn(b.source))
+	}
+	if _, ok := b.source.Column(n.Path[0]); !ok {
+		return Type{}, b.errAt(n.P, "the list %s has no column %s; its columns are %s", b.lift, n.Path[0], strings.Join(b.source.ColumnNames(), ", "))
+	}
+	return b.column(&Ident{Name: n.Path[0], P: n.P})
 }
 
 // anyAll binds ANY and ALL as what they are of counts: some row meets

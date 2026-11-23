@@ -293,7 +293,9 @@ func TestTriggered_EngineSchema(t *testing.T) {
 	// changes to them made it 10 (ADR-0057); the tables of the inlets,
 	// whose names no class may take, made it 11 (ADR-0065); the log of
 	// reads made it 12 (ADR-0067); the table of the apps, whose name no
-	// class may take, made it 13 (ADR-0077).
+	// class may take, made it 13 (ADR-0077). Who removed a table or words
+	// is a row of the log of definitions, which every database of schema
+	// 13 has, and left it 13 (ADR-0083).
 	if engineSchema != 13 {
 		t.Fatalf("the engine schema is %d, want 13", engineSchema)
 	}

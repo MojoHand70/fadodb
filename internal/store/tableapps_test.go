@@ -3,10 +3,12 @@ package store
 import (
 	"context"
 	"errors"
+	"fmt"
 	"reflect"
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/MojoHand70/fadodb/internal/model"
 )
@@ -410,5 +412,188 @@ func TestChange_ATableInUse(t *testing.T) {
 	defer again.Close()
 	if rows, err := again.TableRows(ctx, "Codes", asSetup); err != nil || len(rows) != 3 || rows[1]["d"] != "2.5500" {
 		t.Fatalf("the rows after an open: %v, %v", rows, err)
+	}
+}
+
+// TestRemove_WhoRemovedIt follows Acme (ADR-0083): Dan the designer
+// removes the table Scratch, which has Polish words, and Dee, an agent
+// working for the lead, removes the German words of Rates. The log of
+// definitions says, on the version each had, who removed it, what they
+// were, for whom they acted and when; a removal that is refused records
+// nothing; and the record is in the file, so another process reads the
+// same. The engine schema stays 13: the record is a row of a table every
+// such database has.
+func TestRemove_WhoRemovedIt(t *testing.T) {
+	now := &clock{now: start}
+	s, path := openStore(t, Options{Now: now.Now})
+	ctx := context.Background()
+	dan := Principal{ID: "dan", Kind: ActorPerson, System: []string{GroupDesigners}}
+	dee := Principal{ID: "dee", Kind: ActorAgent, For: "lead", System: []string{GroupDesigners}}
+	gives(t, s, "dee", "lead")
+	for _, def := range []string{`{"name": "Scratch", "columns": {"k": "text"}, "key": ["k"]}`, `{"name": "Scratch", "columns": {"k": "text", "v": "text"}, "key": ["k"]}`,
+		`{"name": "Rates", "columns": {"code": "text", "rate": "number"}, "key": ["code"]}`} {
+		if _, err := s.defineOpenTable(ctx, []byte(def), As(dan)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, def := range []string{`{"table": "Scratch", "language": "pl", "label": "Brudnopis"}`, `{"table": "Rates", "language": "de", "label": "Kurse"}`,
+		`{"table": "Rates", "language": "pl", "label": "Kursy"}`} {
+		if _, err := s.DefineWords(ctx, []byte(def), As(dan)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// A removal that is refused records nothing: Ann is no designer.
+	var refusal *Error
+	if err := s.RemoveTable(ctx, "Scratch", As(Principal{ID: "ann", Kind: ActorPerson})); !errors.As(err, &refusal) || refusal.Code != CodeForbidden {
+		t.Fatalf("somebody who is no designer removed a table: %v", err)
+	}
+	now.mu.Lock()
+	now.now = now.now.Add(time.Hour)
+	now.mu.Unlock()
+	if err := s.RemoveTable(ctx, "scratch", As(dan)); err != nil {
+		t.Fatal(err)
+	}
+	now.mu.Lock()
+	now.now = now.now.Add(time.Hour)
+	now.mu.Unlock()
+	if err := s.RemoveWords(ctx, WordsOf{Table: "Rates", Language: "de"}, As(dee)); err != nil {
+		t.Fatal(err)
+	}
+	// Dan reads the log: a designer is answered who removed a thing.
+	removed := func(s *Store, what, name string) string {
+		t.Helper()
+		defs, err := s.Definitions(ctx, what, name, As(dan))
+		if err != nil {
+			t.Fatal(err)
+		}
+		var out []string
+		for _, d := range defs {
+			line := fmt.Sprintf("v%d by %s", d.Version, d.By)
+			if d.Removed != nil {
+				line += strings.TrimSpace(fmt.Sprintf(", removed by %s %s for %s at +%dh", d.Removed.By, d.Removed.Kind, d.Removed.For, hours(d.Removed.At)))
+			}
+			out = append(out, line)
+		}
+		return strings.Join(out, "; ")
+	}
+	check := func(s *Store, scratch string) {
+		t.Helper()
+		for key, want := range map[string]string{
+			// The table at the version it had, and its words with it, by
+			// the same person at the same moment.
+			"table Scratch":          scratch,
+			"words table/Scratch/pl": "v1 by dan, removed by dan person for  at +1h",
+			// Words removed on their own, by an agent for the lead.
+			"words table/Rates/de": "v1 by dan, removed by dee agent for lead at +2h",
+			// What was not removed says nothing of a removal.
+			"table Rates":          "v1 by dan",
+			"words table/Rates/pl": "v1 by dan",
+		} {
+			what, name, _ := strings.Cut(key, " ")
+			if got := removed(s, what, name); got != want {
+				t.Errorf("the log of %s: %s, want %s", key, got, want)
+			}
+		}
+		// A removal is no kind of definition a caller names.
+		if _, err := s.Definitions(ctx, DefinitionTable+removedSuffix, "Scratch", As(dan)); code(err) != CodeBadValue {
+			t.Errorf("the removals asked as a kind of definition: %v", err)
+		}
+		// This database keeps no users, so the engine cannot tell whom Dee
+		// works for: an agent is not answered who removed a thing.
+		if defs, err := s.Definitions(ctx, DefinitionTable, "Scratch", As(dee)); err != nil || len(defs) < 2 || defs[1].Removed != nil {
+			t.Errorf("an agent in a database that keeps no users: %+v, %v", defs, err)
+		}
+	}
+	check(s, "v1 by dan; v2 by dan, removed by dan person for  at +1h")
+	// Made again, the table is its next version and nobody removed it; the
+	// version that was removed still says who did.
+	if again, err := s.defineOpenTable(ctx, []byte(`{"name": "Scratch", "columns": {"k": "text"}, "key": ["k"]}`), As(dan)); err != nil || again.Version != 3 {
+		t.Fatalf("the table made again: %+v, %v", again, err)
+	}
+	made := "v1 by dan; v2 by dan, removed by dan person for  at +1h; v3 by dan"
+	check(s, made)
+	if err := s.Close(); err != nil {
+		t.Fatal(err)
+	}
+	again, err := Open(path, Options{Now: now.Now, Outbox: OutboxOptions{Manual: true}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer again.Close()
+	if tbl, ok := again.Table("Scratch"); !ok || tbl.Version != 3 || tbl.Defined.By != "dan" {
+		t.Fatalf("the table made again, after an open: %+v", tbl)
+	}
+	if got := again.ListWords(WordsOf{Table: "Rates"}); len(got) != 1 || got[0].Language != "pl" {
+		t.Fatalf("the words of Rates after an open: %+v", got)
+	}
+	check(again, made)
+	// Removed twice, the table records each removal on its own version.
+	if err := again.RemoveTable(ctx, "Scratch", As(dee)); err != nil {
+		t.Fatal(err)
+	}
+	if got := removed(again, DefinitionTable, "Scratch"); got != "v1 by dan; v2 by dan, removed by dan person for  at +1h; v3 by dan, removed by dee agent for lead at +2h" {
+		t.Errorf("the log of Scratch removed twice: %s", got)
+	}
+}
+
+// TestRemove_WhoSeesARemoval holds the owner's ruling of 2026-11-23 on
+// who reads who removed a table (ADR-0083): "administrators and designers
+// only, Agents if work on Administrator behalf". Acme keeps its users:
+// Olga is a database administrator, Dan a designer, Ann neither, and Ewa
+// an administrator who has left. Dan removes the table Scratch. Who may
+// not see the removal gets the versions without it, and no refusal.
+func TestRemove_WhoSeesARemoval(t *testing.T) {
+	s, _ := openStore(t, Options{Users: true})
+	ctx := context.Background()
+	for _, u := range []User{{ID: "olga", Kind: ActorPerson, System: []string{GroupAdministrators}}, {ID: "dan", Kind: ActorPerson, System: []string{GroupDesigners}},
+		{ID: "ann", Kind: ActorPerson}, {ID: "ewa", Kind: ActorPerson, System: []string{GroupAdministrators}}} {
+		if _, err := s.CreateUser(ctx, u, machine); err != nil {
+			t.Fatal(err)
+		}
+	}
+	dan := Principal{ID: "dan", Kind: ActorPerson, System: []string{GroupDesigners}}
+	if _, err := s.DefineTable(ctx, []byte(`{"name": "Scratch", "columns": {"k": "text"}, "key": ["k"]}`), As(dan)); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.RemoveTable(ctx, "Scratch", As(dan)); err != nil {
+		t.Fatal(err)
+	}
+	// The agent bot works for Olga, for Dan and for Ewa, each of whom said
+	// so; bot2 says it works for Olga, and she never said so.
+	for _, acts := range []string{"olga", "dan", "ewa"} {
+		gives(t, s, "bot", acts)
+	}
+	disabled := true
+	if _, err := s.SetUser(ctx, "ewa", UserEdit{Disabled: &disabled}, machine); err != nil {
+		t.Fatal(err)
+	}
+	for name, c := range map[string]struct {
+		opts []Option
+		sees bool
+	}{
+		"Dan, a designer":                        {[]Option{As(dan)}, true},
+		"Olga, a database administrator":         {[]Option{As(Principal{ID: "olga", Kind: ActorPerson, System: []string{GroupAdministrators}})}, true},
+		"a service in administrators":            {[]Option{As(Principal{ID: "nightly", Kind: ActorService, System: []string{GroupAdministrators}})}, true},
+		"a designer whose kind is not given":     {[]Option{As(Principal{ID: "setup", System: []string{GroupDesigners}})}, true},
+		"an agent working for Olga":              {[]Option{As(Principal{ID: "bot", Kind: ActorAgent, For: "olga"})}, true},
+		"Ann, who is neither":                    {[]Option{As(Principal{ID: "ann", Kind: ActorPerson})}, false},
+		"an analyst":                             {[]Option{As(Principal{ID: "ana", Kind: ActorPerson, System: []string{GroupAnalysts}})}, false},
+		"an agent working for Dan, a designer":   {[]Option{As(Principal{ID: "bot", Kind: ActorAgent, For: "dan"})}, false},
+		"an agent working for nobody":            {[]Option{As(Principal{ID: "bot", Kind: ActorAgent})}, false},
+		"ap-agent, itself in administrators":     {[]Option{As(Principal{ID: "ap-agent", Kind: ActorAgent, System: []string{GroupAdministrators, GroupDesigners}})}, false},
+		"an agent working for Ewa, who has left": {[]Option{As(Principal{ID: "bot", Kind: ActorAgent, For: "ewa"})}, false},
+		"an agent Olga never let act for her":    {[]Option{As(Principal{ID: "bot2", Kind: ActorAgent, For: "olga"})}, false},
+		"a call that names nobody":               {nil, false},
+	} {
+		defs, err := s.Definitions(ctx, DefinitionTable, "Scratch", c.opts...)
+		if err != nil || len(defs) != 1 || defs[0].By != "dan" {
+			t.Errorf("%s reads the versions of Scratch: %+v, %v", name, defs, err)
+			continue
+		}
+		if got := defs[0].Removed != nil; got != c.sees {
+			t.Errorf("%s is answered who removed Scratch: %v, want %v", name, got, c.sees)
+		} else if got && (defs[0].Removed.By != "dan" || defs[0].Removed.Kind != ActorPerson) {
+			t.Errorf("%s reads that %+v removed Scratch", name, defs[0].Removed)
+		}
 	}
 }

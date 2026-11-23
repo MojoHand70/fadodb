@@ -797,7 +797,7 @@ func runListFunctions(c *call) error {
 }
 
 func runDefinitions(c *call) error {
-	versions, err := c.s.Definitions(c.ctx, c.text("what"), c.text("name"))
+	versions, err := c.s.Definitions(c.ctx, c.text("what"), c.text("name"), c.opts...)
 	return c.answer("versions", list(versions), err)
 }
 

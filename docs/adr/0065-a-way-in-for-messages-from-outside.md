@@ -300,6 +300,10 @@ the message into one command.
 
 12. **What this record leaves out.**
 
+    The author of the record chose this list. None of it was put to the
+    owner, and none of it is his decision: each item is not built, and
+    not discussed with him (corrected 2026-11-23).
+
     - **A file in a message**: a message with an attachment, as a mail
       gateway sends. An inlet reads JSON and forms.
     - **Finding a document by a value.** The id of the document is in
@@ -316,7 +320,8 @@ the message into one command.
 ## The owner's rulings
 
 The first on 2026-11-16, the others on 2026-11-17, each as the record
-proposed. He accepted the record on 2026-11-17.
+proposed. He accepted the record on 2026-11-17. Question 4 is open:
+see its own words below.
 
 1. **Where a way in lives: ruled.** Acme's bank can tell Acme of a payment.
    Dan, who designs Acme's classes, asks his agent to join the two.
@@ -352,7 +357,7 @@ proposed. He accepted the record on 2026-11-17.
    On 2026-11-17 the owner ruled: as built, an administrator defines
    it.
 
-4. **A message the database refuses: ruled.** The bank says that
+4. **A message the database refuses: open.** The bank says that
    `FV/2026/11/0044` was paid, and that invoice is not in `sent`:
    `guard_false`.
    Proposed: the bank is answered 409 and nothing is kept. The line of
@@ -363,7 +368,13 @@ proposed. He accepted the record on 2026-11-17.
    in the database, for an administrator to read and to run again,
    as the outbox keeps a dead action. It is a second queue, and it
    holds what strangers sent: who may read it has to be ruled with it.
-   On 2026-11-17 the owner ruled: as built, nothing is kept.
+   This record said until 2026-11-23 that the owner ruled on
+   2026-11-17 "as built, nothing is kept". That line was written in
+   when Phase 6 was closed, from one answer of "as built" that covered
+   the open questions of five records at once. On 2026-11-23 the owner
+   said that he never decided it. The question is his and open. The
+   engine does what the record proposed, and nothing of a refused
+   message is kept, until he rules.
 
 5. **What an inlet may do: ruled.** Proposed: one of `create`, `set` and
    `transition`, on one document.
@@ -376,7 +387,8 @@ proposed. He accepted the record on 2026-11-17.
 
 The owner took the idea on 2026-11-16, once it was plain that an inlet
 is data and no code ("Then we are fine"). Questions 2 to 5 are his
-still; each is built as proposed and is small to change. Built first:
+still; each is built as proposed and is small to change. Question 4
+stays open (corrected 2026-11-23). Built first:
 the engine's part, which is the definition, its six commands and the
 Go call `Receive`. The address on the server, the setting `inbound`
 and `fadodb inlet check` are the next step. Until then `fadodb serve`

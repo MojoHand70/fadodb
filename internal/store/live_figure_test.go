@@ -303,3 +303,31 @@ func TestLiveFigure_SeeksTheIndex(t *testing.T) {
 		t.Errorf("the figure finds its rows by %q; want the index doc_Invoice_order and no scan", text)
 	}
 }
+
+// A content administrator reads a figure past the rules only with a
+// reason, and the log of reads keeps how many documents only the
+// override let them count (ADR-0067, item 3), as for a count.
+func TestLiveFigure_PastTheRules(t *testing.T) {
+	s, _ := openFigures(t)
+	ctx := t.Context()
+	if _, err := s.Live(ctx, "Order", "ORD-17", "count", As(liveRoot)); err == nil || err.(*Error).Code != CodeReasonRequired {
+		t.Errorf("a content administrator without a reason: %v; want %s", err, CodeReasonRequired)
+	}
+	v, err := s.Live(ctx, "Order", "ORD-17", "total", As(liveRoot), Reason("audit of November"))
+	if err != nil || v.Value != "1320.00 PLN" {
+		t.Fatalf("a content administrator with a reason: %+v, %v; want the total of every invoice", v, err)
+	}
+	// The margin is theirs to read too.
+	if v, err := s.Live(ctx, "Order", "ORD-17", "margins", As(liveRoot), Reason("audit of November")); err != nil || v.Value != "3.00 PLN" {
+		t.Errorf("the margins for a content administrator with a reason: %+v, %v; want 3.00 PLN", v, err)
+	}
+	reads, err := s.Reads(ctx, ReadsFilter{Class: "Invoice"}, As(Principal{ID: "adm", System: []string{GroupAdministrators}}))
+	if err != nil || len(reads) != 2 {
+		t.Fatalf("the log of reads = %+v, %v; want two entries, one for each figure", reads, err)
+	}
+	for _, r := range reads {
+		if r.Command != "live" || r.Reason != "audit of November" || r.Counted == nil || *r.Counted != 3 {
+			t.Errorf("the log of reads keeps %+v; want a live read that counted three invoices past the rules", r)
+		}
+	}
+}

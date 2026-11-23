@@ -528,6 +528,7 @@ func open(path string, o Options) (*Store, error) {
 	s.vm.Executor = (*executor)(s)
 	s.wev.vm = s.vm
 	s.wev.life = s.tellLife
+	s.wev.writer = true
 	if err := s.prepareEngine(ctx); err != nil {
 		return fail(err)
 	}

@@ -1202,6 +1202,15 @@ func depsOf(prog *formula.Program) []string {
 			deps = append(deps, name)
 		}
 	}
+	// A function over a list the document holds reads that list
+	// (ADR-0081, step 2): the formula is worked out again when the lines
+	// change.
+	for _, q := range prog.Folds {
+		if !seen[upper(q.Source)] {
+			seen[upper(q.Source)] = true
+			deps = append(deps, q.Source)
+		}
+	}
 	return deps
 }
 

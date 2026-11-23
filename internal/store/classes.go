@@ -248,7 +248,7 @@ func (r *docRow) clone() *docRow {
 }
 
 // childRow is one element of a composite: its leaves in order.
-type childRow []formula.Value
+type childRow = []formula.Value
 
 // leavesOf turns storage columns into leaves, folding a money's currency
 // column into the money leaf before it.

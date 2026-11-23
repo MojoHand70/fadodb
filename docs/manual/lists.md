@@ -209,6 +209,110 @@ among a million as among a hundred.
 pointer. It is decided (ADR-0075). Until then the designer writes
 `"index": true`.
 
+## Figures over a list
+
+An order shows how many invoices it has and what they add up to. Each
+is a **figure**: one value worked out of a list. A figure is a live
+variable too, and its formula names the list:
+
+```json
+{
+  "name": "Order",
+  "title": "number",
+  "variables": {
+    "number":   {"type": "text", "required": true, "label": "Number"},
+    "customer": {"type": "text", "label": "Customer"},
+    "owner":    {"type": "text", "default": "USER()"},
+    "invoices": {"label": "Invoices", "mode": "live",
+                 "formula": "QUERY(Invoice, {number, net, state, margin}, order = REF(), {number})"},
+    "count":    {"label": "How many", "mode": "live", "formula": "COUNT(invoices)"},
+    "total":    {"label": "Total", "mode": "live", "formula": "SUM(invoices.net)"},
+    "largest":  {"label": "Largest", "mode": "live", "formula": "MAX(invoices.net)"},
+    "margins":  {"label": "Margins", "mode": "live", "formula": "SUM(invoices.margin)"},
+    "by_owner": {"label": "Written by the owner", "mode": "live",
+                 "formula": "COUNTIF(invoices, owner = THIS.owner)"},
+    "all_paid": {"label": "All paid", "mode": "live", "formula": "ALL(invoices, state = \"paid\")"}
+  },
+  "states": {"initial": "open", "list": ["open", "closed"], "final": ["closed"]},
+  "transitions": [{"name": "close", "from": "open", "to": "closed"}],
+  "access": {
+    "read": "INGROUP(\"sales\") OR INGROUP(\"finance\")",
+    "create": "INGROUP(\"sales\")",
+    "update": "owner = USER()",
+    "delete": "FALSE",
+    "transition": {"close": "owner = USER()"}
+  }
+}
+```
+
+A figure is read as any live variable, with the command `live`, and
+answers one value. It counts what its reader may read of the list, as
+the list itself shows it. In the story above FV-1 is 250.00, FV-2
+1000.00, FV-3 70.00 and FV-4 5.00, every margin is 10.00, and Jan
+wrote both orders:
+
+<!-- figures -->
+| Who reads | Of the order | `count` | `total` | `largest` | `margins` | `by_owner` | `all_paid` |
+|---|---|---|---|---|---|---|---|
+| Jan | ORD-17 | 2 | 1250.00 PLN | 1000.00 PLN | blank | 2 | FALSE |
+| Piotr | ORD-17 | 1 | 70.00 PLN | 70.00 PLN | blank | 0 | FALSE |
+| Ewa | ORD-17 | 3 | 1320.00 PLN | 1000.00 PLN | 30.00 PLN | 2 | FALSE |
+| Piotr | ORD-18 | 0 | blank | blank | blank | 0 | TRUE |
+
+Sales may not read a margin, so the sum of the margins is blank for
+Jan and for Piotr.
+
+| Written | Gives |
+|---|---|
+| `COUNT(invoices)` | how many rows the list has |
+| `COUNT(invoices.net)` | how many of them have a value in the column |
+| `SUM(invoices.net)`, `MIN(invoices.net)`, `MAX(invoices.net)` | the sum, the smallest and the largest value of a column |
+| `COUNTIF(invoices, state = "draft")` | how many rows meet a condition |
+| `SUMIF(invoices, state = "draft", net)`, `MINIF`, `MAXIF` | the same figure, of the rows that meet a condition |
+| `ANY(invoices, state = "draft")` | whether some row meets a condition |
+| `ALL(invoices, state = "paid")` | whether every row meets it |
+
+- **A column** is written after a dot, and is any stored variable of
+  the listed class, or its `state`, `title` or `id`, whether the list
+  shows it or not.
+- **A condition** is written as in `QUERY`: a bare name is a column of
+  the listed document, `THIS.owner` a variable of the order. The state
+  of a row is its column `state`.
+- **A list with no rows** counts 0. Its sum is 0, or blank for money;
+  its smallest and largest are blank; `ANY` is FALSE and `ALL` TRUE.
+- **Money** adds in one currency; invoices in two give the error
+  `currency_mismatch`.
+- **A figure may stand inside a formula**, and two side by side:
+  `SUM(invoices.net) / DECIMAL(COUNT(invoices), 0)` is the mean. One
+  may not stand inside another's arguments.
+- **A figure stands only in a live variable.** Two readers get two
+  figures, so a value that is kept, a guard and a rule may not hold
+  one. For those, a `LOOKUP` in a triggered variable counts and sums:
+  see [Tables](tables.md).
+
+A figure is one question to the invoices, with the id of the order in
+its condition, and the answer is one number: no invoice is read to be
+counted. An index on the pointer serves it as it serves the list.
+
+**Not built yet** (ADR-0081): `AVERAGE`, `MEDIAN` and `COUNTUNIQUE`
+over a list; the same functions over the lines and the tags a document
+holds; and the functions that give a list again, `FILTER`, `SORT`,
+`TOP` and `UNIQUE`.
+
+What is refused when the class is defined:
+
+<!-- figures refused -->
+| Written in a class | The class is refused with |
+|---|---|
+| a figure in a variable that is not live | `bad_formula` |
+| a sum of a list and no column | `bad_formula` |
+| a column the listed class has not | `bad_formula` |
+| a sum of a text | `bad_formula` |
+| a condition that is no condition | `bad_formula` |
+| `STATE()` in the condition of a figure | `bad_formula` |
+| a figure inside a figure | `bad_formula` |
+| `AVERAGE` of a column of a list | `bad_formula` |
+
 ## What is refused
 
 A list that is wrong is refused when its class is defined, with the
@@ -239,7 +343,8 @@ Invoice without `margin` is refused while the order lists it.
 Each of these is decided (ADR-0076) and waits its turn.
 
 - A table as the source of a `QUERY`. A `LOOKUP` reads a table today.
-- A count or a sum among the columns, and grouping.
+- A count or a sum among the columns, and grouping: a table of
+  totals. One figure of a list is built: see "Figures over a list".
 - A list that is kept: a `QUERY` in a triggered variable.
 - `REF()` outside the condition of a `QUERY`, and `REF("Order",
   "ORD-17")`, the pointer to a named document.

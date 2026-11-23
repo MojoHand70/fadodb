@@ -54,11 +54,11 @@ Arithmetic on numbers as a spreadsheet keeps them.
 | `TRUNC(number[, digits])` | pure | Cuts the number toward zero at the given decimal places. On an exact value the digits give the result's scale. |
 | `ABS(number)` | pure | The magnitude of the number. An exact value keeps its kind and scale. |
 | `SIGN(number)` | pure | -1, 0 or 1 by the sign of the number; an int for an exact value. |
-| `MIN(value[, value, ...])` | pure | The smallest of the numbers and array elements given, blanks skipped. Blank when nothing is left. The values are of one family: all numbers, or all exact, at the largest scale, money of one currency. |
-| `MAX(value[, value, ...])` | pure | The largest of the numbers and array elements given, blanks skipped. Blank when nothing is left. The values are of one family, as for MIN. |
-| `SUM(value[, value, ...])` | pure | The sum of the numbers and array elements given, blanks skipped. Exact values add exactly at the largest scale, money of one currency. |
+| `MIN(value[, value, ...])` | pure | The smallest of the numbers and array elements given, blanks skipped. Blank when nothing is left. The values are of one family: all numbers, or all exact, at the largest scale, money of one currency. In a live variable MIN(invoices.net) is the smallest value of a column of a list of the document (ADR-0081). |
+| `MAX(value[, value, ...])` | pure | The largest of the numbers and array elements given, blanks skipped. Blank when nothing is left. The values are of one family, as for MIN. In a live variable MAX(invoices.net) is the largest value of a column of a list of the document (ADR-0081). |
+| `SUM(value[, value, ...])` | pure | The sum of the numbers and array elements given, blanks skipped. Exact values add exactly at the largest scale, money of one currency. In a live variable SUM(invoices.net) is the sum of a column of a list of the document, over the rows its reader may read (ADR-0081). |
 | `AVERAGE(value[, value, ...])` | pure | The mean of the numbers and array elements given, blanks skipped. Blank when nothing is left. Exact values divide at the largest scale plus four, half away from zero. |
-| `COUNT(value[, value, ...])` | pure | How many of the values and array elements given are not blank. COUNT of a rows value is its number of rows. |
+| `COUNT(value[, value, ...])` | pure | How many of the values and array elements given are not blank. COUNT of a rows value is its number of rows. In a live variable COUNT(invoices) is the number of rows of a list of the document, and COUNT(invoices.net) how many of them have a value in the column (ADR-0081). |
 | `POWER(number, power)` | pure | The number raised to the power. The same as the ^ operator. |
 | `SQRT(number)` | pure | The square root. A negative number is the error not_a_number. |
 | `EXP(number)` | pure | e raised to the number. |
@@ -142,6 +142,12 @@ Values that hold several values.
 | `CONTAINS(array, value)` | pure | TRUE when an element equals the value, compared as the = operator does. **Not built yet.** |
 | `JOIN(array, separator)` | pure | The elements rendered as TEXT does and joined with the separator, blanks skipped. **Not built yet.** |
 | `JSONVALUE(json, path)` | pure | One value read from a json value at a dotted path such as address.city or items.0.sku, as text: numbers as TEXT renders them, booleans as TRUE and FALSE. Blank when the path is absent or null; an object or array at the path is the error bad_text. Convert with VALUE or DATEVALUE. |
+| `COUNTIF(list, condition)` | query | How many rows of a list of the document meet the condition: COUNTIF(invoices, state = "paid"). A list is a live variable whose formula is a QUERY, and the function stands in a live variable. Inside the condition a bare name is a column of the listed class and THIS.name a variable of the document. It is one question to the listed class, asked for whoever reads the variable: only the rows they may read are counted (ADR-0081). |
+| `SUMIF(list, condition, column)` | query | The sum of a column over the rows of a list that meet the condition: SUMIF(invoices, state <> "paid", net). The rules are those of COUNTIF and of SUM: blanks skipped, exact values added exactly, money of one currency. |
+| `MINIF(list, condition, column)` | query | The smallest value of a column over the rows of a list that meet the condition; blank when none does. The rules are those of COUNTIF and of MIN. |
+| `MAXIF(list, condition, column)` | query | The largest value of a column over the rows of a list that meet the condition; blank when none does. The rules are those of COUNTIF and of MAX. |
+| `ANY(list, condition)` | query | TRUE when some row of a list meets the condition: ANY(invoices, state = "draft"). FALSE for a list with no rows. The rules are those of COUNTIF. |
+| `ALL(list, condition)` | query | TRUE when every row of a list meets the condition: ALL(invoices, state = "paid"). A row on which the condition is blank does not meet it; TRUE for a list with no rows. The rules are those of COUNTIF. |
 
 ## The caller, the clock and the document
 

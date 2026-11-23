@@ -24,8 +24,9 @@
 # the guard loop, the
 # projection, the write check, the rules of a commit, an action of the
 # outbox, a timer, the read of a document's life, a message from
-# outside beside the same move sent with a key (ADR-0065), and the read
-# of a list of other documents (ADR-0076). The others run by hand and
+# outside beside the same move sent with a key (ADR-0065), the read
+# of a list of other documents (ADR-0076), and a figure worked out of
+# such a list (ADR-0081). The others run by hand and
 # for a release's perf page. BENCH_PATTERN overrides the set;
 # BENCH_PATTERN=. runs every benchmark of BENCH_PACKAGES.
 #
@@ -69,7 +70,7 @@ PLACEMENTS="${BENCH_PLACEMENTS:-5}"
 # How long one benchmark runs in a round; the go tool's own second when
 # it is not given.
 BENCHTIME="${BENCH_BENCHTIME:-}"
-PATTERN="${BENCH_PATTERN:-^Benchmark(VM_Arithmetic5|VM_Exact5|Recalculate|Recalculate50|LookupIndexed|LookupKeyedStatement|LookupClass|Transition|ExecTransition|DoorTransition|WhoIsCalling|TransitionAccess|TransitionMany|Transitions10|GuardLoop|Project|WriteCheck|Rules|Outbox|Timer|LifeEditors|TransitionKeyed|Receive|LiveList)$}"
+PATTERN="${BENCH_PATTERN:-^Benchmark(VM_Arithmetic5|VM_Exact5|Recalculate|Recalculate50|LookupIndexed|LookupKeyedStatement|LookupClass|Transition|ExecTransition|DoorTransition|WhoIsCalling|TransitionAccess|TransitionMany|Transitions10|GuardLoop|Project|WriteCheck|Rules|Outbox|Timer|LifeEditors|TransitionKeyed|Receive|LiveList|LiveFigure)$}"
 PACKAGES="${BENCH_PACKAGES:-./internal/formula/ ./internal/store/}"
 
 # evaluate_csv prints every regression found in a benchstat CSV and returns 1

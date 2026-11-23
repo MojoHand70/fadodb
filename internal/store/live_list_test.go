@@ -428,7 +428,7 @@ func TestLiveList_SeeksTheIndex(t *testing.T) {
 	src, _ := s.class("Invoice")
 	cv := c.byName["INVOICES"]
 	o := options{principal: liveEwa}
-	_, on, err := s.liveOn(ctx, c, cv, "ORD-17", o)
+	_, on, _, err := s.liveOn(ctx, c, cv, "ORD-17", o, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

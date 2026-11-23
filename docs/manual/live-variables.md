@@ -92,8 +92,10 @@ what the life of the document says. So it may ask who is reading
 document has been in its state (`ENTEREDAT()`).
 
 A live variable may also be a list of other documents, "the invoices
-of this order": its whole formula is then a `QUERY`. That has a
-chapter of its own, [Lists of other documents](lists.md).
+of this order": its whole formula is then a `QUERY`. And it may work a
+figure out of such a list of its document, "how many invoices, and
+what they add up to": `COUNT(invoices)`, `SUM(invoices.net)`. Both
+have a chapter of their own, [Lists of other documents](lists.md).
 
 **Not built yet:** a live variable that looks one value up, with
 `LOOKUP`. It is decided (ADR-0076). Today the class is refused with

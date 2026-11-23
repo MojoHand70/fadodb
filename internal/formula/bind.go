@@ -161,6 +161,15 @@ type BindOptions struct {
 	// a variable of that document and REF() is the pointer to it, each
 	// through a slot whoever runs the program fills in.
 	This *Scope
+	// Lists is set for the formula of a live variable (ADR-0081): by the
+	// name of a list of its document, a live variable whose formula is a
+	// QUERY, the class that list lists. A function over such a list is
+	// then one figure worked out by whoever reads the variable; nil
+	// means the formula belongs to no class that has lists. Live says the
+	// formula is a live variable's: a figure counts what its reader may
+	// read, so nothing kept or decided may hold one.
+	Lists func(name string) (*Source, bool)
+	Live  bool
 }
 
 // ThisSlot starts the name of the slot through which the condition of a
@@ -964,6 +973,9 @@ func (b *binder) call(n *Call) (Type, error) {
 	}
 	if n.Name == "QUERY" {
 		return Type{}, b.errAt(n.P, "QUERY is built as the whole formula of a live variable, and nowhere else yet (ADR-0076)")
+	}
+	if t, handled, err := b.figure(n); handled {
+		return t, err
 	}
 	id, ok := builtinByName[n.Name]
 	if !ok {

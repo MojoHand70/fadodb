@@ -330,7 +330,12 @@ the columns. `QUERY` is built as the whole formula of a live variable
 reads it and answered through what answers a filter, so that reader
 gets the documents and the values they may read. A `QUERY` over a
 table, with aggregates or kept in a triggered variable is not built
-yet.
+yet. A live variable may work a figure out of such a list (ADR-0081):
+`COUNT(invoices)`, `SUM(invoices.net)`, `MIN`, `MAX`, their forms with
+a condition, `ANY` and `ALL`. Each is the aggregate a `LOOKUP` has,
+over the rows the list has for its reader, in one statement; the
+other functions over a list, and every one of them over the lists a
+document holds, are not built yet.
 
 A class as a source is its documents as they are now: the system columns
 `id`, `title`, `state`, `version`, `created_at`, `updated_at`,

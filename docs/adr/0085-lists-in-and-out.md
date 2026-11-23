@@ -1,6 +1,6 @@
 # ADR-0085: Lists in and out: the lines of a message, the lines of a request
 
-- Status: Proposed; would amend ADR-0045 (an action takes a list and sends it, and its answer may give one), ADR-0065 (an inlet fills the lines of a document from a list in the message)
+- Status: Accepted; amends ADR-0045 (an action takes a list and sends it, and its answer may give one), ADR-0065 (an inlet fills the lines of a document from a list in the message)
 - Date: 2026-11-23
 
 ## Context
@@ -352,6 +352,8 @@ wrote them.
    The other way: its own record later, with lists spread over pages of
    answers and fetched on a schedule.
    The owner answered "yes": as proposed.
+
+The owner accepted the record on 2026-11-23: "accepted".
 
 ## Consequences
 

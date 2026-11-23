@@ -50,7 +50,7 @@ line says so. Copy `0000-template.md` to start.
 | [0042](0042-a-moment-the-caller-chooses.md) | A moment the caller chooses, for previews and reads | Accepted |
 | [0043](0043-rules-inside-the-commit.md) | Rules inside the commit: triggers, synchronous actions and triggered variables | Accepted, amended by 0044, 0078 |
 | [0044](0044-the-outbox.md) | The outbox: what a commit queues, the worker and the engine's own actions | Accepted, amended by 0047, 0049, 0050, 0051 |
-| [0045](0045-actions-are-an-extension-point.md) | Actions are an extension point: definitions, declared HTTP actions, registered Go actions, connections and results | Accepted, amended by 0051 |
+| [0045](0045-actions-are-an-extension-point.md) | Actions are an extension point: definitions, declared HTTP actions, registered Go actions, connections and results | Accepted, amended by 0051, 0085 |
 | [0046](0046-formulas-that-read-other-documents.md) | Formulas that read other documents: a class as the source of LOOKUP, with COUNT, SUM, MIN and MAX | Accepted, amended by 0051, 0075, 0076, 0078, 0081 |
 | [0047](0047-time.md) | Time: a document's life in formulas, what is due, and timed transitions | Accepted, amended by 0052 |
 | [0048](0048-moving-many-documents-in-one-command.md) | Moving many documents in one command: `TransitionMany`, the refused reported and the rest moved | Accepted, amended by 0078 |
@@ -70,7 +70,7 @@ line says so. Copy `0000-template.md` to start.
 | [0062](0062-commands-from-a-terminal.md) | Commands from a terminal: `fadodb exec` | Accepted |
 | [0063](0063-the-flow-of-a-class.md) | The flow of a class in one call | Accepted |
 | [0064](0064-the-door-for-agents.md) | The door for agents: `fadodb mcp`, each command a tool | Accepted, amended by 0071 |
-| [0065](0065-a-way-in-for-messages-from-outside.md) | A way in for messages from outside: an inlet, a definition the server runs | Accepted |
+| [0065](0065-a-way-in-for-messages-from-outside.md) | A way in for messages from outside: an inlet, a definition the server runs | Accepted, amended by 0085 |
 | [0066](0066-what-the-servers-budget-is-measured-beside.md) | What the server's budget is measured beside: the Go API called by a request | Accepted |
 | [0067](0067-the-log-of-reads.md) | The log of reads: what a content administrator sees past a rule, and every SQL statement | Accepted |
 | [0068](0068-what-a-class-says-to-people.md) | What a class says to people: labels, The List, formats, descriptions and other languages | Accepted, amended by 0069, 0077, 0083 |
@@ -90,4 +90,4 @@ line says so. Copy `0000-template.md` to start.
 | [0082](0082-removing-rows-and-removing-a-table.md) | Removing rows and removing a table | Proposed, amended by 0083 |
 | [0083](0083-who-removed-a-table-and-when.md) | Who removed a table or words, and when | Proposed |
 | [0084](0084-changing-a-table-that-holds-rows.md) | Changing a table that holds rows | Proposed |
-| [0085](0085-lists-in-and-out.md) | Lists in and out: the lines of a message, the lines of a request | Proposed |
+| [0085](0085-lists-in-and-out.md) | Lists in and out: the lines of a message, the lines of a request | Accepted |

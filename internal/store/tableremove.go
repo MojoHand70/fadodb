@@ -105,9 +105,12 @@ func (s *Store) DeleteRows(ctx context.Context, name string, keys []Values, opts
 // as defining one is. A table that a class reads, or that a rule of a
 // class writes, is not removed: the class names it first. The versions the
 // table had stay in the log of definitions, and a table defined again
-// under its name takes the next version after them.
+// under its name takes the next version after them. The log records who
+// removed it and when, on the version it had, and the same for each of
+// its words in another language, in the same transaction (ADR-0083).
 func (s *Store) RemoveTable(ctx context.Context, name string, opts ...Option) error {
-	if _, e := s.worker(ctx, workDesign, opts); e != nil {
+	o, e := s.worker(ctx, workDesign, opts)
+	if e != nil {
 		return e
 	}
 	s.mu.Lock()
@@ -147,21 +150,32 @@ func (s *Store) RemoveTable(ctx context.Context, name string, opts ...Option) er
 	if _, err := w.ExecContext(ctx, "DELETE FROM tables_registry WHERE name = ? COLLATE NOCASE", t.def.Name); err != nil {
 		return rollback(storageErr("remove the table "+t.def.Name, err))
 	}
-	// Its words go with it, as remove_words takes them away: their
-	// versions stay.
 	now := s.now().Unix()
+	if err := recordRemoval(ctx, w, DefinitionTable, t.def.Name, t.def.Version, o.principal, now); err != nil {
+		return rollback(err)
+	}
+	// Its words go with it, as remove_words takes them away: their
+	// versions stay, and each that was still in use records its removal
+	// as remove_words does.
+	var words []string
+	for _, k := range s.wordsOrder {
+		if wd := s.words[k]; wd.kind == model.WordsOfTable && strings.EqualFold(wd.target, t.def.Name) && !wd.removed {
+			words = append(words, k)
+			if err := recordRemoval(ctx, w, DefinitionWords, wd.name(), wd.version, o.principal, now); err != nil {
+				return rollback(err)
+			}
+		}
+	}
 	if _, err := w.ExecContext(ctx, "UPDATE words SET removed = 1, updated_at = ? WHERE kind = ? AND target = ? COLLATE NOCASE", now, model.WordsOfTable, t.def.Name); err != nil {
 		return rollback(storageErr("remove the words of "+t.def.Name, err))
 	}
 	if err := s.endTransaction(ctx); err != nil {
 		return rollback(storageErr("commit", err))
 	}
-	for k, wd := range s.words {
-		if wd.kind == model.WordsOfTable && strings.EqualFold(wd.target, t.def.Name) && !wd.removed {
-			gone := *wd
-			gone.removed = true
-			s.words[k] = &gone
-		}
+	for _, k := range words {
+		gone := *s.words[k]
+		gone.removed = true
+		s.words[k] = &gone
 	}
 	s.defined++
 	t.close()

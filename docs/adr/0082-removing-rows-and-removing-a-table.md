@@ -1,6 +1,6 @@
 # ADR-0082: Removing rows and removing a table
 
-- Status: Proposed; amends ADR-0037 (a table can be removed, and its rows one by one), ADR-0055 (two commands join the table)
+- Status: Proposed; amends ADR-0037 (a table can be removed, and its rows one by one), ADR-0055 (two commands join the table); amended by ADR-0083 (item 4: the log of definitions records who removed a table and when, and the storage stays as it is)
 - Date: 2026-11-23
 
 ## Context

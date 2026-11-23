@@ -500,7 +500,10 @@ works in Polish, and reads the invoice above in these words:
 - **The words make no new version of the class**, and touch no
   document. Defining them again makes their next version, and each
   version is kept with who defined it: `definitions` with `"what":
-  "words"` and the name `class/Invoice/pl` lists them.
+  "words"` and the name `class/Invoice/pl` lists them. Words taken
+  away with `remove_words` say there, on the version they had, who
+  took them away and when, under `removed`, to database administrators
+  and designers (see [Removing a table](tables.md#removing-a-table)).
 - **A later version of the class that drops a variable** leaves its
   words in place, unused. `list_words` and `get_words` note each such
   path, code `unused_words`; the words defined again without it clear
@@ -516,7 +519,7 @@ works in Polish, and reads the invoice above in these words:
 | `define_words` | defines the words of one class, table or schema in one language, or their next version | a designer |
 | `get_words` | reads them back: `{"class": "Invoice", "language": "pl"}` | every caller |
 | `list_words` | lists them: all, of one thing, or in one language | every caller |
-| `remove_words` | takes them away; their versions stay | a designer |
+| `remove_words` | takes them away; their versions stay, with who took them away | a designer |
 
 A page asks for the words of its person's language with the class in
 one call, the bundle, and finds them put in place:

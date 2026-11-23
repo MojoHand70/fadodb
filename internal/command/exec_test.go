@@ -1611,6 +1611,28 @@ func TestTheCommandsOfTheApps(t *testing.T) {
 	if got := run(t, s, ann, "list_tables", `{}`)["tables"].([]any); len(got) != 0 {
 		t.Fatalf("the tables after the removal: %v", got)
 	}
+	// Who removed it, and when, is on the version it had (ADR-0083), for
+	// administrators and designers: Dan reads it. Ann reads the same
+	// versions without it, and is not refused.
+	versions := run(t, s, dan, "definitions", `{"what": "table", "name": "Rates"}`)["versions"].([]any)
+	last, _ := versions[len(versions)-1].(map[string]any)
+	if removed, _ := last["removed"].(map[string]any); removed["by"] != "dan" || removed["kind"] != store.ActorPerson || removed["at"] == nil {
+		t.Fatalf("definitions of a removed table answered %v", versions)
+	}
+	for _, v := range versions[:len(versions)-1] {
+		if _, removed := v.(map[string]any)["removed"]; removed {
+			t.Fatalf("a version that was not removed says it was: %v", versions)
+		}
+	}
+	plain := run(t, s, ann, "definitions", `{"what": "table", "name": "Rates"}`)["versions"].([]any)
+	if len(plain) != len(versions) {
+		t.Fatalf("Ann reads other versions: %v", plain)
+	}
+	for _, v := range plain {
+		if _, removed := v.(map[string]any)["removed"]; removed {
+			t.Fatalf("Ann, who is neither an administrator nor a designer, reads who removed Rates: %v", plain)
+		}
+	}
 }
 
 func TestEveryCommandIsRun(t *testing.T) {
@@ -1640,4 +1662,34 @@ func mustJSON(v any) []byte {
 		panic(err)
 	}
 	return text
+}
+
+// The command definitions carries its caller (ADR-0083): an agent that
+// names the administrator it works for, in the member for, is answered
+// who removed a table; the same agent working for a designer is answered
+// the versions without it, and is not refused.
+func TestTheCommandDefinitionsKnowsItsCaller(t *testing.T) {
+	o := store.Options{Users: true, Now: func() time.Time { return clock }}
+	o.Outbox.Manual = true
+	s, err := store.Open(filepath.Join(t.TempDir(), "acme.fado"), o)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { s.Close() })
+	machine := store.Principal{System: []string{store.GroupAdministrators}}
+	run(t, s, machine, "create_user", `{"id": "olga", "kind": "person", "system_groups": ["administrators"]}`)
+	run(t, s, machine, "create_user", `{"id": "dan", "kind": "person", "system_groups": ["designers"]}`)
+	run(t, s, dan, "define_table", `{"definition": {"name": "Scratch", "columns": {"k": "text"}, "key": ["k"]}}`)
+	run(t, s, dan, "remove_table", `{"name": "Scratch"}`)
+	for _, who := range []store.Principal{{ID: "olga", Kind: store.ActorPerson}, {ID: "dan", Kind: store.ActorPerson}} {
+		run(t, s, who, "create", `{"class": "Substitution", "values": {"by": "bot"}}`)
+	}
+	bot := store.Principal{ID: "bot", Kind: store.ActorAgent}
+	for acts, sees := range map[string]bool{"olga": true, "dan": false} {
+		versions := run(t, s, bot, "definitions", `{"what": "table", "name": "Scratch", "for": "`+acts+`"}`)["versions"].([]any)
+		first, _ := versions[0].(map[string]any)
+		if _, got := first["removed"]; len(versions) != 1 || got != sees {
+			t.Errorf("an agent working for %s reads %v", acts, versions)
+		}
+	}
 }

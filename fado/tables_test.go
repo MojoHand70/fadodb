@@ -686,6 +686,21 @@ func TestTables(t *testing.T) {
 				t.Errorf("Dan removes a table: %v, %v", err, db.Tables())
 			}
 		},
+		// Played after the row above, which removes Mine. An agent's part
+		// is played in TestTables_WhoRemovedATable, in a database that
+		// keeps its users.
+		"read who removed a table": func(row []string) {
+			if !strings.HasPrefix(row[1], "the system group administrators or designers") {
+				t.Errorf("to read who removed a table the chapter asks for %q", row[1])
+			}
+			seen := func(opts ...fado.Option) bool {
+				versions, err := db.Definitions(ctx, fado.DefinitionTable, "Mine", opts...)
+				return err == nil && len(versions) > 0 && versions[len(versions)-1].Removed != nil
+			}
+			if !seen(dan) || seen(tess) || seen() {
+				t.Errorf("who reads that Dan removed Mine: Dan %v, Tess %v, nobody %v", seen(dan), seen(tess), seen())
+			}
+		},
 		"read the rows with SQL": func(row []string) {
 			_, err := db.SQL(ctx, string(statement[1]), nil, tess)
 			needs(row, err)
@@ -1304,5 +1319,87 @@ func TestTables(t *testing.T) {
 	_, err = db3.DefineClass(ctx, []byte(scratch("Empty", `"c":{"type":"text"}`, oneState)), setup)
 	if got := codeOf(err); got != "duplicate" {
 		t.Errorf("a class with the name of a table is found %s", got)
+	}
+}
+
+// TestTables_WhoRemovedATable plays the end of "Removing a table": Dan
+// defines Scratch, changes it an hour later and removes it an hour after
+// that, and the chapter's command is answered to him as the chapter
+// shows. The Polish words of Scratch say the same, and words taken away
+// on their own say who took them away. Of the agents, the one that works
+// for Olga, who runs the database, reads who removed it; the one that
+// works for Dan, a designer, and Ann do not, and are not refused.
+func TestTables_WhoRemovedATable(t *testing.T) {
+	page, err := os.ReadFile(filepath.Join("..", "docs", "manual", "tables.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	at := time.Unix(1794992400, 0).UTC()
+	db, err := fado.Open(filepath.Join(t.TempDir(), "scratch.fado"), fado.Options{Users: true, Now: func() time.Time { return at }, Outbox: fado.OutboxOptions{Manual: true}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	dan := fado.Principal{ID: "dan", Kind: fado.ActorPerson, System: []string{fado.GroupDesigners}}
+	ann := fado.Principal{ID: "ann", Kind: fado.ActorPerson}
+	for i, def := range []string{`{"name": "Scratch", "columns": {"k": "text"}, "key": ["k"]}`, `{"name": "Scratch", "columns": {"k": "text", "v": "text"}, "key": ["k"]}`} {
+		at = time.Unix(1794992400+int64(i)*3600, 0).UTC()
+		if _, err := db.DefineTable(ctx, []byte(def), fado.As(dan)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, def := range []string{`{"table": "Scratch", "language": "pl", "label": "Brudnopis"}`, `{"table": "Scratch", "language": "de", "label": "Notizen"}`} {
+		if _, err := db.DefineWords(ctx, []byte(def), fado.As(dan)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := db.RemoveWords(ctx, fado.WordsOf{Table: "Scratch", Language: "de"}, fado.As(dan)); err != nil {
+		t.Fatal(err)
+	}
+	at = time.Unix(1794999600, 0).UTC()
+	if err := db.RemoveTable(ctx, "Scratch", fado.As(dan)); err != nil {
+		t.Fatal(err)
+	}
+	answered, err := db.Exec(ctx, dan, "definitions", []byte(fenced(t, page, "the versions of Scratch")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var have, want any
+	if err := json.Unmarshal(answered, &have); err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal([]byte(fenced(t, page, "who removed Scratch")), &want); err != nil {
+		t.Fatalf("the answer the chapter shows: %v", err)
+	}
+	if !reflect.DeepEqual(have, want) {
+		t.Errorf("definitions answers\n%s\nand the chapter shows\n%s", answered, fenced(t, page, "who removed Scratch"))
+	}
+	for name, when := range map[string]int64{"table/Scratch/pl": 1794999600, "table/Scratch/de": 1794996000} {
+		versions, err := db.Definitions(ctx, fado.DefinitionWords, name, fado.As(dan))
+		if err != nil || len(versions) != 1 || versions[0].Removed == nil || versions[0].Removed.By != "dan" || versions[0].Removed.At != when {
+			t.Errorf("the words %s: %+v, %v", name, versions, err)
+		}
+	}
+	// Who reads it. The database keeps Olga in administrators and Dan in
+	// designers; the agent bot works for each, as each of them said.
+	machine := fado.As(fado.Principal{System: []string{fado.GroupAdministrators}})
+	for _, u := range []fado.User{{ID: "olga", Kind: fado.ActorPerson, System: []string{fado.GroupAdministrators}}, {ID: "dan", Kind: fado.ActorPerson, System: []string{fado.GroupDesigners}}} {
+		if _, err := db.CreateUser(ctx, u, machine); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := db.Create(ctx, "Substitution", fado.Values{"by": "bot"}, fado.As(fado.Principal{ID: u.ID, Kind: fado.ActorPerson})); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for who, sees := range map[string]bool{"olga": true, "dan": false, "": false} {
+		p := fado.Principal{ID: "bot", Kind: fado.ActorAgent, For: who}
+		if who == "" {
+			p = ann
+		}
+		versions, err := db.Definitions(ctx, fado.DefinitionTable, "Scratch", fado.As(p))
+		if err != nil || len(versions) != 2 || (versions[1].Removed != nil) != sees {
+			t.Errorf("%+v reads the versions of Scratch: %+v, %v", p, versions, err)
+		}
 	}
 }

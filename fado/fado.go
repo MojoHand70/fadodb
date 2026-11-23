@@ -534,9 +534,14 @@ const (
 // oldest first, each with who defined it, what they were, for whom they
 // acted and when (ADR-0052). It is open to every caller, as reading a
 // definition is: what a designer changed is in sight. Class, Table and
-// Action answer the same of the current version, under Defined.
-func (db *DB) Definitions(ctx context.Context, what, name string) ([]Definition, error) {
-	return db.s.Definitions(ctx, what, name)
+// Action answer the same of the current version, under Defined. The
+// version a table or words had when they were removed says who removed
+// them and when, under Removed (ADR-0083), to a caller in the system
+// group administrators or designers who is no agent, and to an agent
+// that works for a user the database keeps in administrators; anyone
+// else, and a call that names nobody, gets the versions without it.
+func (db *DB) Definitions(ctx context.Context, what, name string, opts ...Option) ([]Definition, error) {
+	return db.s.Definitions(ctx, what, name, opts...)
 }
 
 // DefineTable compiles an explicit table definition in JSON, creates the
@@ -564,8 +569,8 @@ func (db *DB) DeleteRows(ctx context.Context, table string, keys []Values, opts 
 // RemoveTable takes a table away with its rows, its definition and its
 // words (ADR-0082). It is for a designer. A table a class reads, or a rule
 // of a class writes, is refused with not_allowed. Its versions stay in the
-// log of definitions, and a table defined again under its name takes the
-// next version.
+// log of definitions, which records who removed it and when (ADR-0083),
+// and a table defined again under its name takes the next version.
 func (db *DB) RemoveTable(ctx context.Context, name string, opts ...Option) error {
 	return db.s.RemoveTable(ctx, name, opts...)
 }
@@ -800,8 +805,9 @@ func (db *DB) GetBundle(ctx context.Context, of BundleOf) (*Bundle, error) {
 }
 
 // RemoveWords takes away the words of one thing in one language: a page
-// shows it in its own words from then on. Their versions stay. It is for
-// the system group designers.
+// shows it in its own words from then on. Their versions stay, and the
+// log of definitions records who took them away and when (ADR-0083). It
+// is for the system group designers.
 func (db *DB) RemoveWords(ctx context.Context, of WordsOf, opts ...Option) error {
 	return db.s.RemoveWords(ctx, of, opts...)
 }

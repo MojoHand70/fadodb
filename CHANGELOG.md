@@ -8,6 +8,27 @@ All notable changes to FadoDB are recorded here. The format follows
 
 ### Added
 
+- A list of other documents on a document, the next part of ADR-0076:
+  a live variable whose whole formula is a `QUERY`. In the class Order,
+  `QUERY(Invoice, {number, net, state}, order = REF(), {number})` lists
+  the invoices that point at the order. A list is one question to the
+  documents of its source, the one the command `query` answers, with
+  the id of the document it is read on in its condition: so its reader
+  gets the documents the source's read rule gives them, and in each
+  the columns they may read. Several columns, and several to sort by,
+  are written in braces. Inside the condition a bare name is a column
+  of the listed document, `THIS.name` a variable of the document the
+  list belongs to, and `REF()` the pointer to it. The command `live`
+  takes `order`, `limit`, `offset` and `fields` for a list and answers
+  `columns`, `rows` and `more`; in Go the page is chosen with
+  `LivePage`. A list that names what its source has not is refused when
+  its class is defined, and the source may not lose what a list names.
+  Not built yet: a table as the source, a count or a sum among the
+  columns, grouping, a `QUERY` in a triggered variable, `REF()`
+  anywhere else and `REF(class, id)`. The engine does not index a
+  pointer by itself yet (ADR-0075): a list on a large class wants
+  `"index": true` on its pointer. The layout of a database does not
+  change. New chapter of the manual: Lists of other documents.
 - A `ref` is checked when it is set, and a class says what points at
   it: two more parts of ADR-0076. A commit that sets a `ref` to a
   document which is not there, or which its caller may not read, is
@@ -28,9 +49,10 @@ All notable changes to FadoDB are recorded here. The format follows
   other formula of the class, no guard, no access rule, no filter. In
   the bundle it is the server's. A live formula reads its own document,
   the caller, the clock, the state and the life of the document; one
-  that looks in a table or lists other documents, with `LOOKUP` or
-  `QUERY`, is refused as not built yet. The layout of a database does
-  not change. New chapter of the manual: Live variables.
+  that looks a value up, with `LOOKUP`, is refused as not built yet,
+  and a `LOOKUP` of another class cannot name a live variable of its
+  source. The layout of a database does not change. New chapter of the
+  manual: Live variables.
 - ADR-0075 and ADR-0076: the owner ruled on 2026-11-22 on the three
   questions they had put, and none is open. A search that no index
   serves on a large class is stopped after five seconds and told which

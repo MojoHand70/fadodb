@@ -77,6 +77,10 @@ func (lx *lexer) next() (Token, error) {
 		k = TokRParen
 	case ',':
 		k = TokComma
+	case '{':
+		k = TokLBrace
+	case '}':
+		k = TokRBrace
 	case '.':
 		k = TokDot
 	case '+':

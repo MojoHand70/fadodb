@@ -154,8 +154,9 @@ var builtinByName = func() map[string]int {
 }()
 
 // specialForms are catalog functions the parser or the binder turns into
-// control flow, or for SECRET into the read of a slot, rather than calls.
-var specialForms = map[string]bool{"IF": true, "AND": true, "OR": true, "NOT": true, "IFERROR": true, "SECRET": true}
+// control flow, or for SECRET and REF into the read of a slot, rather than
+// calls.
+var specialForms = map[string]bool{"IF": true, "AND": true, "OR": true, "NOT": true, "IFERROR": true, "SECRET": true, "REF": true}
 
 // notYetImplemented lists the catalog functions the binder refuses for now:
 // the composite functions and the query functions of ADR-0020.

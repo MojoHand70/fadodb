@@ -91,10 +91,13 @@ what the life of the document says. So it may ask who is reading
 (`USER()`, `INGROUP()`), what day it is (`TODAY()`), and since when the
 document has been in its state (`ENTEREDAT()`).
 
-**Not built yet:** a live variable that looks in a table or lists
-other documents, with `LOOKUP` or `QUERY`. It is decided, and it is
-what "the invoices of this order" will be. Today the class is refused
-with `not_supported`.
+A live variable may also be a list of other documents, "the invoices
+of this order": its whole formula is then a `QUERY`. That has a
+chapter of its own, [Lists of other documents](lists.md).
+
+**Not built yet:** a live variable that looks one value up, with
+`LOOKUP`. It is decided (ADR-0076). Today the class is refused with
+`not_supported`.
 
 ## The story
 

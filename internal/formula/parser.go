@@ -188,6 +188,7 @@ func (p *parser) leftAssoc(operand func() (Node, error), ops ...TokenKind) (Node
 // primary := number | text | TRUE | FALSE | BLANK | ( expr ) | IF ...
 //
 //	| (AND | OR | NOT) ( args ) | THIS . name | name ( args ) | name . name | name
+//	| { expr (, expr)* }
 func (p *parser) primary() (Node, error) {
 	t := p.next()
 	switch t.Kind {
@@ -212,6 +213,27 @@ func (p *parser) primary() (Node, error) {
 		return x, nil
 	case TokIf:
 		return p.ifExpr(t)
+	case TokLBrace:
+		// A list in braces (ADR-0076, item 9). What may stand in one, and
+		// where one may stand, is the binder's to say.
+		if p.peek().Kind == TokRBrace {
+			return nil, p.errAt(t.Pos, "a list in braces names at least one thing, as {number, net}")
+		}
+		list := &List{P: t.Pos}
+		for {
+			item, err := p.expr()
+			if err != nil {
+				return nil, err
+			}
+			list.Items = append(list.Items, item)
+			if _, ok := p.accept(TokComma); ok {
+				continue
+			}
+			if _, err := p.expect(TokRBrace); err != nil {
+				return nil, err
+			}
+			return list, nil
+		}
 	case TokAnd, TokOr, TokNot:
 		if p.peek().Kind != TokLParen {
 			return nil, p.errAt(t.Pos, "unexpected %s", t.Kind)

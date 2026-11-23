@@ -278,7 +278,7 @@ result:
 | Pure | `IF IFERROR ROUND SUM LEFT DATE ADDMONTHS DECIMAL MONEY JSONVALUE` | everywhere |
 | Context | `USER() INGROUP() USERKIND() ACTINGFOR() NOW() TODAY() STATE() ID()` | defaults, triggered formulas, guards, rules, access rules; not in auto formulas |
 | Lookup | `LOOKUP(source, column, condition)` | everywhere; in auto formulas only against explicit tables |
-| Query | `QUERY(source, columns, condition, sort, groupby, limit)` | defaults, triggered formulas, rules; not in auto formulas |
+| Query | `QUERY(source, columns, condition, sort)` | the whole formula of a live variable (ADR-0076); grouping, the limit and a `QUERY` anywhere else are not built yet |
 | Secret | `SECRET("token")` | the request of an action definition, and nowhere else (ADR-0045) |
 
 The rule behind the table: the stored value of an auto variable must be a
@@ -325,7 +325,12 @@ every one of them, whoever caused it to be computed; who may see the
 result is decided by the rights on the variable that holds it (ADR-0046).
 Today `LOOKUP` reads explicit tables and the documents of a class, with
 one column or with `COUNT`, `SUM`, `MIN` or `MAX` over one expression of
-the columns; `QUERY` is designed and not built yet.
+the columns. `QUERY` is built as the whole formula of a live variable
+(ADR-0076): a list of the documents of a class, asked when somebody
+reads it and answered through what answers a filter, so that reader
+gets the documents and the values they may read. A `QUERY` over a
+table, with aggregates or kept in a triggered variable is not built
+yet.
 
 A class as a source is its documents as they are now: the system columns
 `id`, `title`, `state`, `version`, `created_at`, `updated_at`,
@@ -721,8 +726,8 @@ the caller and the clock that say who may read its rows with
 `TableRows` and who may write them, by `ImportRows` or by a rule's
 action (ADR-0051); only the
 `sqlite` binding exists; the other bindings come with the analytical
-engine, and `QUERY` with the first face or report that needs a list of
-rows (ADR-0046). A lookup
+engine; `QUERY` lists the documents of a class in a live variable
+(ADR-0076) and does not read a table yet. A lookup
 whose condition is one equality of a column with an expression of the
 document is answered from an in-memory index while the table has at most
 `MaxIndexedRows` rows, and through a prepared statement narrowed by the

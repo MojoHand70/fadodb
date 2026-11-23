@@ -506,7 +506,7 @@ func Compiled(cls *Class) *BundleCompiled {
 	// out for one reader at one moment, so the page asks the command live
 	// for it and never works it out itself.
 	for _, v := range cls.Variables {
-		if v.Live() && v.Formula != nil {
+		if v.Live() && (v.Formula != nil || v.Query != nil) {
 			out.Computed = append(out.Computed, BundleFormula{Variable: v.Name, Type: v.Type.String(), Reads: nonNil(v.Deps), Server: true})
 		}
 	}

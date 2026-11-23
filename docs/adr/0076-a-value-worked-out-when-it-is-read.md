@@ -348,6 +348,31 @@ of a `ref` that compares with a text (item 10: in the chat I had
 sketched `order = ID()`, which would compare an order's pointer with
 the id of a customer without a word); `pointed_at_by` (item 12).
 
+Settled by me when the list was built, on 2026-11-22, his to veto:
+
+- **The list before its index.** He said that day: "Each instance
+  writes its data to a table together with instance id, so getting it
+  is a query to the table with ID in where." A list is built as that
+  query: it is handed to what answers the command `query` (ADR-0038),
+  with the values of the document it is read on as parameters, so the
+  read rule, the rights, the page and the log of reads are the ones a
+  filter has. The index the engine keeps for every `ref` is ADR-0075's
+  and not built; a `ref` that says `"index": true` is served by its
+  index today.
+- **`REF()` is that parameter.** It is built inside the condition of a
+  `QUERY`, where it and `THIS.name` are values handed to the
+  statement. The rest of item 10, `REF()` wherever `ID()` may stand
+  and `REF("Order", "ORD-17")`, is not built.
+- **The answer of `live` says the columns of a list**, beside `rows`
+  and `more`: each with its name, its type and the label the source
+  gives it, in the order of the formula. Item 9 gives a column those;
+  a list with no rows needs them for its headings.
+- **In Go the page of a list is `LivePage`**, and `Live` reads the
+  first page. The command is one, `live`, as item 7 says.
+- **Inside the condition `STATE()` and `ID()` are the listed
+  document's**, as they are the row's in a filter (ADR-0040). The
+  document the list belongs to is `REF()` and `THIS.name`.
+
 ## Consequences
 
 - A list on a document is written once, in the class, and every face

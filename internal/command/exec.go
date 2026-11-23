@@ -451,11 +451,35 @@ func runTransitions(c *call) error {
 
 // runLive works a live variable out for the caller (ADR-0076, item 7).
 func runLive(c *call) error {
-	v, err := c.s.Live(c.ctx, c.text("class"), c.text("id"), c.text("variable"), c.opts...)
+	r := store.LiveRead{Class: c.text("class"), ID: c.text("id"), Variable: c.text("variable")}
+	var e *store.Error
+	if r.Order, e = c.texts("order"); e != nil {
+		return e
+	}
+	if r.Fields, e = c.texts("fields"); e != nil {
+		return e
+	}
+	limit, e := c.integer("limit")
+	if e != nil {
+		return e
+	}
+	offset, e := c.integer("offset")
+	if e != nil {
+		return e
+	}
+	r.Limit, r.Offset = int(limit), int(offset)
+	v, err := c.s.LivePage(c.ctx, r, c.opts...)
 	if err != nil {
 		return err
 	}
-	return c.answer("value", v.Value, nil)
+	// One value answers {"value": …}; a list its columns, its rows and
+	// whether rows follow, which the value writes itself.
+	text, err := Marshal(v)
+	if err != nil {
+		return err
+	}
+	c.out = append(c.out, text...)
+	return nil
 }
 
 func runDue(c *call) error {

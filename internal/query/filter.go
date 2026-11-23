@@ -131,16 +131,7 @@ const (
 
 // systemColumns are the columns every document has, as the filter scope
 // names them (ADR-0013, ADR-0014).
-var systemColumns = []formula.Variable{
-	{Name: "id", Type: formula.Scalar(formula.KindText)},
-	{Name: "title", Type: formula.Scalar(formula.KindText)},
-	{Name: "state", Type: formula.Scalar(formula.KindText)},
-	{Name: "version", Type: formula.Scalar(formula.KindNumber)},
-	{Name: "class_version", Type: formula.Scalar(formula.KindNumber)},
-	{Name: "created_at", Type: formula.Scalar(formula.KindDateTime)},
-	{Name: "updated_at", Type: formula.Scalar(formula.KindDateTime)},
-	{Name: "state_entered_at", Type: formula.Scalar(formula.KindDateTime)},
-}
+var systemColumns = model.FilterColumns
 
 // column is one stored column the where may reference.
 type column struct {
@@ -158,6 +149,31 @@ type column struct {
 // compiled into the predicate for the principal (ADR-0041). The context
 // parameters of the dialect are bound by the caller.
 func Compile(f Filter, cls *model.Class, sources formula.Sources, p Principal) (*Plan, error) {
+	return CompileOn(f, nil, cls, sources, p)
+}
+
+// On is the document a list is read on (ADR-0076, item 9): the where of
+// the filter is then the condition of the QUERY a live variable of that
+// document holds. Inside it THIS.name is a variable of the document and
+// REF() the pointer to it; each is one value handed to the statement, so
+// the list of one order is the query a person would write with the
+// order's id in its where.
+type On struct {
+	// Cond is the condition, parsed, nil for none, and Src the formula
+	// its positions point into. The filter's own Where is not read.
+	Cond formula.Node
+	Src  string
+	// Scope are the variables of the document, and Value the value of
+	// one of them by its declared name.
+	Scope *formula.Scope
+	Value func(name string) (formula.Value, bool)
+	// Ref is the pointer to the document, in its Class:id form.
+	Ref string
+}
+
+// CompileOn is Compile for a list read on a document; on is nil for a
+// filter that stands alone.
+func CompileOn(f Filter, on *On, cls *model.Class, sources formula.Sources, p Principal) (*Plan, error) {
 	scope, cols, err := scopeOf(cls)
 	if err != nil {
 		return nil, err
@@ -174,15 +190,27 @@ func Compile(f Filter, cls *model.Class, sources formula.Sources, p Principal) (
 		return nil, &Error{Code: CodeBadValue, Element: "offset", Pos: -1, Message: fmt.Sprintf("the offset is not negative, got %d", f.Offset)}
 	}
 	quoted := quoter(cols)
+	src, opts, notBlank := f.Where, formula.BindOptions{Sources: sources}, p.named
+	// bound gives the SQL of a slot of the caller's condition: a column
+	// of the class, or a value of the document a list is read on.
+	bound := quoted
+	var node formula.Node
+	// given are the values of the document a list is read on, each a
+	// parameter of the statement.
+	var given []any
+	if on != nil {
+		src, node, opts.This = on.Src, on.Cond, on.Scope
+		bound, notBlank = on.bound(quoted, d, &given), func(n formula.Node) bool { return isRef(n) || p.named(n) }
+	} else if strings.TrimSpace(f.Where) != "" {
+		if node, err = formula.Parse(f.Where); err != nil {
+			return nil, formulaError(err)
+		}
+	}
 	// led says the caller's own condition compares an indexed column, so
 	// that it leads the statement to an index by itself.
 	led := false
-	if strings.TrimSpace(f.Where) != "" {
-		node, err := formula.Parse(f.Where)
-		if err != nil {
-			return nil, formulaError(err)
-		}
-		prog, err := formula.BindNode(f.Where, node, scope, formula.BindOptions{Sources: sources})
+	if node != nil {
+		prog, err := formula.BindNode(src, node, scope, opts)
 		if err != nil {
 			return nil, formulaError(err)
 		}
@@ -209,7 +237,7 @@ func Compile(f Filter, cls *model.Class, sources formula.Sources, p Principal) (
 		}
 		// STATE() and ID() are the row's columns here (ADR-0040): the
 		// function and the bare column spell the same predicate.
-		stmt, err := formula.GenerateSQLBound(prog, d, formula.SQLBinding{Column: quoted, Row: quoteIdent})
+		stmt, err := formula.GenerateSQLBound(prog, d, formula.SQLBinding{Column: bound, Row: quoteIdent})
 		if err != nil {
 			return nil, &Error{Code: CodeBadFormula, Element: "where", Pos: -1, Message: err.Error()}
 		}
@@ -217,7 +245,7 @@ func Compile(f Filter, cls *model.Class, sources formula.Sources, p Principal) (
 		if stmt.Error != "" {
 			where = "(" + stmt.Error + ") IS NULL AND " + where
 		}
-		pre, args, indexed := prefilter(node, f.Where, cols, d, constantOf(f.Where, scope, sources, d, quoted), "f", p.named)
+		pre, args, indexed := prefilter(node, src, cols, d, constantOf(src, scope, opts, d, bound), "f", notBlank)
 		if pre != "" {
 			where = pre + " AND (" + where + ")"
 		}
@@ -362,17 +390,66 @@ func Compile(f Filter, cls *model.Class, sources formula.Sources, p Principal) (
 			}
 		}
 	}
+	plan.Args = append(plan.Args[:len(plan.Args):len(plan.Args)], given...)
 	return plan, nil
+}
+
+// bound gives the SQL of a slot of a condition read on a document: a
+// parameter for a variable of the document and for the pointer to it,
+// whose value joins given the first time it is asked for, and what
+// column gives for a column of the source.
+func (on *On) bound(column func(formula.Slot) string, d formula.Dialect, given *[]any) func(formula.Slot) string {
+	params := map[string]string{}
+	return func(s formula.Slot) string {
+		name, held := strings.CutPrefix(s.Name, formula.ThisSlot)
+		if !held && s.Name != formula.RefSlot {
+			return column(s)
+		}
+		key := strings.ToUpper(s.Name)
+		if text, ok := params[key]; ok {
+			return text
+		}
+		var val any
+		if !held {
+			val = on.Ref
+		} else if v, ok := on.Value(name); ok {
+			val = v.DriverValue()
+		} else if base, isCurrency := strings.CutSuffix(name, formula.CurrencySuffix); isCurrency {
+			// The currency of a money variable, which the generator asks
+			// for beside its amount.
+			if v, ok := on.Value(base); ok && v.Kind() == formula.KindMoney {
+				val = v.Currency()
+			}
+		}
+		param := fmt.Sprintf("this%d", len(params))
+		params[key] = d.Param(param)
+		*given = append(*given, sql.Named(param, val))
+		return params[key]
+	}
+}
+
+// isRef says a node is REF(), the pointer to the document a list is read
+// on, which is never blank.
+func isRef(n formula.Node) bool {
+	call, ok := n.(*formula.Call)
+	return ok && call.Name == "REF" && len(call.Args) == 0
 }
 
 // constantOf answers, for an operand of a condition that reads no
 // document, the clock or the principal alone, its SQL: a constant of the
 // statement, for the prefilter to compare an indexed column with.
-func constantOf(src string, scope *formula.Scope, sources formula.Sources, d formula.Dialect, quoted func(formula.Slot) string) func(formula.Node) (string, formula.Kind, bool) {
+func constantOf(src string, scope *formula.Scope, opts formula.BindOptions, d formula.Dialect, quoted func(formula.Slot) string) func(formula.Node) (string, formula.Kind, bool) {
 	return func(n formula.Node) (string, formula.Kind, bool) {
-		p, err := formula.BindNode(src, n, scope, formula.BindOptions{Sources: sources})
-		if err != nil || len(p.Slots) != 0 || p.ReadsLife || p.Calls("STATE") || p.Calls("ID") {
+		p, err := formula.BindNode(src, n, scope, opts)
+		if err != nil || p.ReadsLife || p.Calls("STATE") || p.Calls("ID") {
 			return "", 0, false
+		}
+		for _, s := range p.Slots {
+			// A value of the document a list is read on is one value for
+			// the whole statement; a column of the source is not.
+			if !strings.HasPrefix(s.Name, formula.ThisSlot) && s.Name != formula.RefSlot {
+				return "", 0, false
+			}
 		}
 		for _, c := range p.Classes {
 			if c != formula.ClassPure && c != formula.ClassContext {
@@ -502,7 +579,7 @@ func readPlanFor(cls *model.Class, scope *formula.Scope, cols map[string]column,
 			where = "(" + stmt.Error + ") IS NULL AND " + where
 		}
 		rp.plain = "(" + where + ")"
-		pre, args, _ := prefilter(node, rr.src, cols, d, constantOf(rr.src, scope, sources, d, quoted), "r", p.named)
+		pre, args, _ := prefilter(node, rr.src, cols, d, constantOf(rr.src, scope, formula.BindOptions{Sources: sources}, d, quoted), "r", p.named)
 		if pre != "" {
 			where = pre + " AND (" + where + ")"
 		}
@@ -896,10 +973,11 @@ func prefilter(n formula.Node, src string, cols map[string]column, d formula.Dia
 			zero := "0"
 			switch c.typ.Kind {
 			case formula.KindDate, formula.KindDateTime, formula.KindNumber:
-			case formula.KindText:
-				// A text against the caller, owner = USER(): equality
-				// alone, which is exact on the bare column as it is
-				// against a literal. A blank on either side reads "".
+			case formula.KindText, formula.KindRef:
+				// A text against the caller, owner = USER(), or a pointer
+				// against the document a list is read on, order = REF():
+				// equality alone, which is exact on the bare column as it
+				// is against a literal. A blank on either side reads "".
 				if op != "=" {
 					return
 				}
@@ -915,7 +993,7 @@ func prefilter(n formula.Node, src string, cols map[string]column, d formula.Dia
 				op = flip[op]
 			}
 			indexed = indexed || c.indexed
-			if c.typ.Kind == formula.KindText && notBlank(expr) {
+			if (c.typ.Kind == formula.KindText || c.typ.Kind == formula.KindRef) && notBlank(expr) {
 				// The value is not blank, so no blank column equals it:
 				// the bare comparison is exact, and seeks the index as
 				// one with a literal does.

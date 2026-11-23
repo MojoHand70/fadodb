@@ -178,6 +178,9 @@
     {"name": "ID", "class": "context", "category": "context", "returns": "text",
      "params": [],
      "summary": "The id of the document the formula runs over. Blank when there is no document."},
+    {"name": "REF", "class": "context", "category": "context", "returns": "ref",
+     "params": [{"name": "class", "type": "text", "optional": true}, {"name": "id", "type": "text", "optional": true}],
+     "summary": "The pointer to the document the formula belongs to, which a ref compares with: order = REF(). Built for the condition of a QUERY in a live variable; not built yet anywhere else, nor with a class and an id, which name another document."},
     {"name": "CREATEDAT", "class": "context", "category": "context", "returns": "datetime",
      "params": [],
      "summary": "The instant the document the formula runs over was created. Blank when there is no document."},
@@ -328,6 +331,6 @@
      "summary": "One column of the first row of the source, in key order, that matches the condition; blank when none does. In place of the column, COUNT, SUM, MIN or MAX over one expression of the source's columns answers for every matching row. Inside, bare names are the source's columns and THIS.name reaches the document."},
     {"name": "QUERY", "class": "query", "category": "data", "returns": "rows",
      "params": [{"name": "source", "type": "source"}, {"name": "columns", "type": "columns"}, {"name": "condition", "type": "condition", "optional": true}, {"name": "sort", "type": "sort", "optional": true}, {"name": "groupby", "type": "groupby", "optional": true}, {"name": "limit", "type": "number", "optional": true}],
-     "summary": "The rows of the source matching the condition, with the given columns, which may be aggregates, in the given sort, grouped by the given columns, at most limit rows (1,000 by default, 10,000 at most)."}
+     "summary": "The documents of the source, a class, that match the condition, with the given columns, in the given sort; every one when there is no condition. Several columns are written in braces, {number, net}, and so are several to sort by, a leading - for descending. It is the whole formula of a live variable and is read for the reader, who gets the documents and the values they may read. Not built yet: a table as the source, aggregates among the columns, grouping and the limit, and a QUERY anywhere else."}
   ]
 }

@@ -372,11 +372,17 @@ a declared question in under a thousandth of a second: nothing of it is
 built yet. ADR-0076, a
 value worked out when it is read, `"mode": "live"`, with `QUERY` for
 the list of other documents on a document and `REF` for what a `ref`
-compares with: its first part is built, a live variable that reads its
-own document, the caller and the clock, and the command `live` that
-reads it, the check of a `ref` when it is set, and what points at a
-class in the answer of `get_class`; `QUERY`, a `LOOKUP` in a live
-variable and `REF` are not built yet.
+compares with: built are a live variable that reads its own document,
+the caller and the clock, the command `live` that reads it, the check
+of a `ref` when it is set, what points at a class in the answer of
+`get_class`, and the list: a `QUERY` over the documents of a class as
+the whole formula of a live variable, with `THIS.name` and `REF()` in
+its condition, read a page at a time for its reader. Not built yet: a
+`QUERY` over a table, with counts or sums, or kept in a triggered
+variable; a `LOOKUP` in a live variable; `REF` outside the condition
+of a `QUERY` and with a class and an id; the engine's own index on
+every `ref`, which is ADR-0075's, so a list at scale wants
+`"index": true` on its pointer today.
 The third is of 2026-11-21, and nothing of it is built yet:
 ADR-0078, a decision stands on what the document holds. A command
 says which version of a document its sender saw, the `write` right of

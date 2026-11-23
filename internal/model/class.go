@@ -88,8 +88,8 @@ func (c *Class) Source() *formula.Source {
 	src := &formula.Source{Name: c.Name, Class: true, Key: []string{"id"}, Indexed: []string{"id"}}
 	src.Columns = append(src.Columns, systemFields...)
 	for _, v := range c.Variables {
-		if v.Type.Kind == formula.KindNull || !v.Type.IsScalar() {
-			continue
+		if v.Type.Kind == formula.KindNull || !v.Type.IsScalar() || v.Live() {
+			continue // a live variable is kept nowhere, so no row has it (ADR-0076, item 3)
 		}
 		src.Columns = append(src.Columns, formula.Field{Name: v.Name, Type: v.Type})
 		if v.Index {
@@ -128,7 +128,14 @@ type Variable struct {
 	// Sources are the explicit tables the formula or default reads
 	// through LOOKUP, by name.
 	Sources []string
-	Def     *VariableDef
+	// Query is the list a live variable answers when its whole formula
+	// is a QUERY (ADR-0076, item 9); nil for every other variable. Such a
+	// variable has no Formula: the store asks the question itself.
+	Query *Query
+	Def   *VariableDef
+	// queryCall is the QUERY of such a variable as it was parsed, until
+	// the formulas are compiled.
+	queryCall *formula.Call
 }
 
 // ComputeMode is how a computed variable recalculates (ADR-0015), or
@@ -523,6 +530,10 @@ func CompileIn(def *Definition, env Env) (*Class, Diagnostics) {
 	for _, v := range cls.Variables {
 		path := "/variables/" + v.Name
 		if v.Computed {
+			if v.queryCall != nil {
+				compileQuery(c, cls, v, v.queryCall, scope)
+				continue
+			}
 			if v.Formula == nil && v.Type.Kind != formula.KindNull {
 				mode := formula.ModeAuto
 				if v.Mode != ModeAuto {
@@ -637,6 +648,7 @@ func compileVariable(c *collector, path, name string, vd *VariableDef, schemas *
 				}
 			}
 			v.Values, v.Index = nil, false
+			v.queryCall = queryOf(vd.Formula)
 		default:
 			c.addf(CodeBadValue, path+"/mode", "the mode is auto, triggered or live, got %s", quote(vd.Mode))
 		}
@@ -652,6 +664,18 @@ func compileVariable(c *collector, path, name string, vd *VariableDef, schemas *
 	// The type. A computed variable without one takes its formula's type
 	// once the formula is bound; its properties are checked then.
 	var composite bool
+	if v.queryCall != nil {
+		// A list: its rows are the documents of another class and its
+		// columns the QUERY's, so it has no schema of its own.
+		if vd.Type != "" && vd.Type != "rows" {
+			c.hint(CodeTypeMismatch, path+"/type", "a QUERY answers rows, and the variable is declared "+vd.Type, `leave "type" out, or write "type": "rows"`)
+		}
+		if vd.Schema != nil {
+			c.hint(CodeNotAllowed, path+"/schema", "the columns of a live list are the ones its QUERY names", `remove "schema"`)
+		}
+		v.Type = formula.RowsType("", nil)
+		return v
+	}
 	switch vd.Type {
 	case "":
 		return v

@@ -1,6 +1,6 @@
 # ADR-0065: A way in for messages from outside
 
-- Status: Accepted; amends ADR-0055 (six commands join the table), ADR-0059 (the settings gain `inbound`, and with it the server takes messages at an address that asks for no key)
+- Status: Accepted; amends ADR-0055 (six commands join the table), ADR-0059 (the settings gain `inbound`, and with it the server takes messages at an address that asks for no key); amended by ADR-0085 (an inlet fills the lines of a document from a list in the message)
 - Date: 2026-11-16
 
 ## Context

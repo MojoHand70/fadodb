@@ -425,5 +425,14 @@ the disk: 0.3 to 0.9 ms (ADR-0075). A benchmark in the
 `store` package proves the budget and joins the gate when the mode is
 built.
 
+Built on 2026-11-23: `BenchmarkLiveList` is that benchmark, and it is
+in the gate. It reads the hundred invoices of one order, a different
+order each time, through the index the designer asked for on the
+pointer (`"index": true`; the engine's own index is ADR-0075's and not
+built), with the whole call of the command `live`. Among 1,000,000
+invoices on disk it took 0.52 to 0.55 ms in three rounds, and the
+first twenty of the hundred 0.25 to 0.29 ms (`BenchmarkLiveListPage`).
+The gate watches it among 10,000, where it takes 0.33 to 0.35 ms.
+
 The check of a `ref` when it is set (item 11) is one read by the
 primary key, 2 to 4 µs (ADR-0036), in the commit that sets it.

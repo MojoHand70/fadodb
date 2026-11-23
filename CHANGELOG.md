@@ -29,6 +29,13 @@ All notable changes to FadoDB are recorded here. The format follows
   pointer by itself yet (ADR-0075): a list on a large class wants
   `"index": true` on its pointer. The layout of a database does not
   change. New chapter of the manual: Lists of other documents.
+- `BenchmarkLiveList` joined the benchmark gate, as ADR-0076 says: the
+  hundred invoices of one order, read through the index of their
+  pointer with the whole call of the command `live`. The gate watches
+  it among 10,000 invoices. The budget of the record, under 1 ms among
+  1,000,000, was measured on disk on 2026-11-23 at 0.52 to 0.55 ms;
+  `BenchmarkLiveListPage`, the first twenty of the hundred, at 0.25 to
+  0.29 ms.
 - A `ref` is checked when it is set, and a class says what points at
   it: two more parts of ADR-0076. A commit that sets a `ref` to a
   document which is not there, or which its caller may not read, is

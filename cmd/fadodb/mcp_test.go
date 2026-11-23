@@ -5,7 +5,11 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"io"
 	"net"
+	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -14,6 +18,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/MojoHand70/fadodb/fado"
 	"github.com/MojoHand70/fadodb/internal/mcp"
@@ -464,5 +469,145 @@ func TestHowTheDoorEnds(t *testing.T) {
 	code, out, said := tool("mcp", "--help")
 	if code != 0 || out != "" || !strings.Contains(said, "fadodb mcp - the door for agents") || !strings.Contains(said, "subscribe") || !strings.Contains(said, "create_key") || !strings.Contains(said, "create_password_link") {
 		t.Errorf("the help of the door: exit %d, printed %q, said %q", code, out, said)
+	}
+}
+
+// The door at the server itself, played against a server: Olga's key
+// calls a tool at /mcp, and every row of the chapter's table of what is
+// refused there, a pass for the commands among them.
+func TestTheChapterOnTheDoorAtTheServer(t *testing.T) {
+	chapter := doorChapter(t)
+	path := filepath.Join(t.TempDir(), "acme.fado")
+	for _, args := range [][]string{
+		{"init", path},
+		{"user", "add", "olga", "--kind", "person", "--system", "administrators", "--db", path},
+	} {
+		if code, _, said := tool(args...); code != 0 {
+			t.Fatalf("%v: exit %d\n%s", args, code, said)
+		}
+	}
+	_, key, _ := tool("key", "new", "olga", "--db", path)
+	key = strings.TrimSpace(key)
+	addr, said, _ := serving(t, "--listen", "127.0.0.1:0", path)
+	base := "http://" + addr
+	web := &http.Client{Timeout: 10 * time.Second}
+	if !strings.Contains(said.String(), "agents connect at "+base+"/mcp") {
+		t.Errorf("the server does not say where agents connect:\n%s", said)
+	}
+
+	// toDoor posts one message to the door, with Olga's key unless the
+	// headers say otherwise, and answers the reply.
+	toDoor := func(method, body string, headers ...string) (*http.Response, string) {
+		t.Helper()
+		req, err := http.NewRequest(method, base+"/mcp", strings.NewReader(body))
+		if err != nil {
+			t.Fatal(err)
+		}
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Authorization", "Bearer "+key)
+		for i := 0; i+1 < len(headers); i += 2 {
+			if headers[i+1] == "" {
+				req.Header.Del(headers[i])
+			} else {
+				req.Header.Set(headers[i], headers[i+1])
+			}
+		}
+		resp, err := web.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		text, _ := io.ReadAll(resp.Body)
+		return resp, string(text)
+	}
+
+	// The modern form, with its headers, and the greeted one, with its
+	// revision in the header alone.
+	resp, body := toDoor("POST", `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"whoami","_meta":`+modernMeta+`}}`,
+		"MCP-Protocol-Version", "2026-07-28", "Mcp-Method", "tools/call", "Mcp-Name", "whoami")
+	if resp.StatusCode != 200 || !strings.Contains(body, `\"id\":\"olga\"`) || !strings.Contains(body, `"resultType":"complete"`) {
+		t.Errorf("whoami in the modern form: %d %s", resp.StatusCode, body)
+	}
+	resp, body = toDoor("POST", `{"jsonrpc":"2.0","id":2,"method":"tools/list"}`, "MCP-Protocol-Version", "2025-11-25")
+	if resp.StatusCode != 200 || !strings.Contains(body, `"name":"whoami"`) || strings.Contains(body, `"name":"create_key"`) {
+		t.Errorf("tools/list in the greeted form: %d %.300s", resp.StatusCode, body)
+	}
+
+	// A pass for the commands, which FadoFace is given for Ann.
+	if code, body := ask(t, web, "POST", base+"/v1/create_user", key, `{"id": "ann", "kind": "person", "groups": ["finance"]}`); code != 200 {
+		t.Fatalf("create_user: %d %s", code, body)
+	}
+	_, linked := ask(t, web, "POST", base+"/v1/create_password_link", key, `{"user": "ann"}`)
+	var made struct {
+		Link fado.PasswordLink `json:"link"`
+	}
+	json.Unmarshal([]byte(linked), &made)
+	ann := newBrowser(t, base)
+	ann.post("/auth/password", url.Values{"link": {made.Link.Token}, "password": {"ann's long password"}, "again": {"ann's long password"}})
+	ann.post("/auth/signin", url.Values{"user": {"ann"}, "password": {"ann's long password"}})
+	if code, body := ask(t, web, "POST", base+"/v1/add_client", key,
+		`{"id": "fadoface", "name": "FadoFace", "redirect_uris": ["https://face.acme.example/callback"], "address": "/v1"}`); code != 200 {
+		t.Fatalf("add_client: %d %s", code, body)
+	}
+	passes, _ := connected(t, ann, client{id: "fadoface", redirect: "https://face.acme.example/callback", resource: base + "/v1"})
+	facePass := passes["access_token"].(string)
+	// And Ann's session, which her browser keeps.
+	at, _ := url.Parse(base)
+	var cookies []string
+	for _, c := range ann.client.Jar.Cookies(at) {
+		cookies = append(cookies, c.Name+"="+c.Value)
+	}
+	if len(cookies) == 0 {
+		t.Fatal("Ann's browser keeps no session")
+	}
+	session := strings.Join(cookies, "; ")
+
+	list := `{"jsonrpc":"2.0","id":3,"method":"tools/list"}`
+	for _, row := range tableAfter(t, chapter, "<!-- refused at the door for agents -->") {
+		var got string
+		status := func(resp *http.Response) string { return fmt.Sprint(resp.StatusCode) }
+		switch row[0] {
+		case "proves nobody: no pass or key, one the server does not know, or the session of a browser alone":
+			want := `Bearer resource_metadata="` + base + `/.well-known/oauth-protected-resource/mcp"`
+			none, _ := toDoor("POST", list, "Authorization", "")
+			unknown, _ := toDoor("POST", list, "Authorization", "Bearer fado_nobody")
+			browser, _ := toDoor("POST", list, "Authorization", "", "Cookie", session)
+			if none.StatusCode == 401 && unknown.StatusCode == 401 && browser.StatusCode == 401 &&
+				none.Header.Get("WWW-Authenticate") == want && unknown.Header.Get("WWW-Authenticate") == want {
+				got = "401, with WWW-Authenticate naming where passes for /mcp come from"
+			}
+		case "carries a pass for the commands":
+			if resp, _ := toDoor("POST", list, "Authorization", "Bearer "+facePass); resp.StatusCode == 401 {
+				got = "401: a pass is for one address"
+			}
+		case "comes from a page of another site":
+			resp, _ := toDoor("POST", list, "Origin", "https://evil.example")
+			got = status(resp)
+		case "is no POST":
+			resp, _ := toDoor("GET", "")
+			got = status(resp)
+		case "does not say its body is JSON":
+			resp, _ := toDoor("POST", list, "Content-Type", "text/plain")
+			got = status(resp)
+		case "is larger than the server reads":
+			resp, _ := toDoor("POST", `{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"sql","arguments":{"sql":"`+strings.Repeat("x", 17<<20)+`"}}}`)
+			got = status(resp)
+		case "has headers that do not say what its body says":
+			resp, _ := toDoor("POST", `{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"whoami","_meta":`+modernMeta+`}}`,
+				"MCP-Protocol-Version", "2026-07-28", "Mcp-Method", "tools/call", "Mcp-Name", "get")
+			got = status(resp)
+		case "names a method the door does not have":
+			modern, _ := toDoor("POST", `{"jsonrpc":"2.0","id":6,"method":"resources/list","params":{"_meta":`+modernMeta+`}}`,
+				"MCP-Protocol-Version", "2026-07-28", "Mcp-Method", "resources/list")
+			greeted, body := toDoor("POST", `{"jsonrpc":"2.0","id":7,"method":"resources/list"}`, "MCP-Protocol-Version", "2025-11-25")
+			if modern.StatusCode == 404 && greeted.StatusCode == 200 && strings.Contains(body, `"code":-32601`) {
+				got = "404 in the revision 2026-07-28, and 200 with the error in the revisions before"
+			}
+		default:
+			t.Fatalf("the test does not know the row %q", row[0])
+		}
+		if got != row[1] {
+			t.Errorf("%s: %s, the chapter says %s", row[0], got, row[1])
+		}
 	}
 }

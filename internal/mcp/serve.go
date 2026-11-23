@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"sync"
 
@@ -137,6 +138,9 @@ type served struct {
 // awaited, and it answers why an answer could not be written, if one
 // could not.
 func (d *Door) Serve(ctx context.Context, in io.Reader, out io.Writer) error {
+	if d.send == nil {
+		return errors.New("mcp: the door was made with no Send, and is asked only over HTTP")
+	}
 	ctx, stop := context.WithCancel(ctx)
 	defer stop()
 	s := &served{door: d, out: out, stop: stop, running: map[string]context.CancelFunc{}, slots: make(chan struct{}, atOnce)}
@@ -257,21 +261,9 @@ func (s *served) take(ctx context.Context, l line) {
 	}
 
 	if m.Method == "initialize" {
-		// The greeting of the revisions before the modern one. The door
-		// answers the revision asked for when it speaks it, and the
-		// newest greeted one when it does not.
-		s.greeting = newestGreeted
-		for _, v := range greeted() {
-			if v == p.ProtocolVersion {
-				s.greeting = v
-			}
-		}
-		s.answer(m.ID, false, map[string]any{
-			"protocolVersion": s.greeting,
-			"capabilities":    map[string]any{"tools": map[string]any{}},
-			"serverInfo":      s.door.info,
-			"instructions":    s.door.says,
-		})
+		var result map[string]any
+		s.greeting, result = s.door.greet(p.ProtocolVersion)
+		s.answer(m.ID, false, result)
 		return
 	}
 	modern, wrong := s.era(&p)
@@ -279,32 +271,76 @@ func (s *served) take(ctx context.Context, l line) {
 		s.fail(m.ID, wrong.Code, wrong.Message, wrong.Data)
 		return
 	}
+	if m.Method == "tools/call" {
+		s.call(ctx, m.ID, modern, &p)
+		return
+	}
+	result, f := s.door.answerOf(m.Method, modern, &p)
+	if f != nil {
+		s.fail(m.ID, f.Code, f.Message, f.Data)
+		return
+	}
+	s.answer(m.ID, modern, result)
+}
+
+// greet answers the greeting of the revisions before the modern one:
+// the revision asked for when the door speaks it, and the newest
+// greeted one when it does not.
+func (d *Door) greet(asked string) (version string, result map[string]any) {
+	version = newestGreeted
+	for _, v := range greeted() {
+		if v == asked {
+			version = v
+		}
+	}
+	return version, map[string]any{
+		"protocolVersion": version,
+		"capabilities":    map[string]any{"tools": map[string]any{}},
+		"serverInfo":      d.info,
+		"instructions":    d.says,
+	}
+}
+
+// answerOf works out the answer of a request that is neither the
+// greeting nor the call of a tool: its result, or the failure of the
+// protocol. A method the door does not have fails with codeNoMethod.
+func (d *Door) answerOf(method string, modern bool, p *params) (map[string]any, *failure) {
 	switch {
-	case m.Method == "server/discover" && modern:
-		s.answer(m.ID, true, map[string]any{
+	case method == "server/discover" && modern:
+		return map[string]any{
 			"supportedVersions": Versions(),
 			"capabilities":      map[string]any{"tools": map[string]any{}},
-			"instructions":      s.door.says,
+			"instructions":      d.says,
 			"ttlMs":             listedFor,
 			"cacheScope":        "private",
-		})
-	case m.Method == "ping":
-		s.answer(m.ID, modern, map[string]any{})
-	case m.Method == "tools/list":
+		}, nil
+	case method == "ping":
+		return map[string]any{}, nil
+	case method == "tools/list":
 		if p.Cursor != nil {
-			s.fail(m.ID, codeInvalidParams, "the door lists its tools on one page, and gave no place to go on from", nil)
-			return
+			return nil, &failure{Code: codeInvalidParams, Message: "the door lists its tools on one page, and gave no place to go on from"}
 		}
-		result := map[string]any{"tools": s.door.listed}
+		result := map[string]any{"tools": d.listed}
 		if modern {
 			result["ttlMs"], result["cacheScope"] = listedFor, "private"
 		}
-		s.answer(m.ID, modern, result)
-	case m.Method == "tools/call":
-		s.call(ctx, m.ID, modern, &p)
-	default:
-		s.fail(m.ID, codeNoMethod, "the door has no method "+m.Method+": it lists its tools at tools/list and runs one at tools/call", nil)
+		return result, nil
 	}
+	return nil, &failure{Code: codeNoMethod, Message: "the door has no method " + method + ": it lists its tools at tools/list and runs one at tools/call"}
+}
+
+// arguments are the object of the command a call of a tool sends: the
+// arguments as they came, {} for none, or the failure of a call whose
+// arguments are no object.
+func arguments(p *params) ([]byte, *failure) {
+	object := bytes.TrimSpace(p.Arguments)
+	switch {
+	case len(object) == 0, string(object) == "null":
+		return []byte("{}"), nil
+	case object[0] != '{':
+		return nil, &failure{Code: codeInvalidParams, Message: "the arguments of a tool are one JSON object: the object of the command"}
+	}
+	return object, nil
 }
 
 // era says which form of the protocol a request is in: the modern one,
@@ -338,12 +374,9 @@ func (s *served) call(ctx context.Context, id json.RawMessage, modern bool, p *p
 		s.fail(id, codeInvalidParams, s.door.unknownTool(p.Name), nil)
 		return
 	}
-	object := bytes.TrimSpace(p.Arguments)
-	switch {
-	case len(object) == 0, string(object) == "null":
-		object = []byte("{}")
-	case object[0] != '{':
-		s.fail(id, codeInvalidParams, "the arguments of a tool are one JSON object: the object of the command", nil)
+	object, f := arguments(p)
+	if f != nil {
+		s.fail(id, f.Code, f.Message, nil)
 		return
 	}
 	// The loop waits here while as many calls run as the door carries.
@@ -357,7 +390,7 @@ func (s *served) call(ctx context.Context, id json.RawMessage, modern bool, p *p
 	go func() {
 		defer s.calls.Done()
 		defer func() { <-s.slots }()
-		text, failed := s.door.call(running, p.Name, object)
+		text, failed := s.door.call(running, s.door.send, p.Name, object)
 		s.mu.Lock()
 		delete(s.running, key)
 		s.mu.Unlock()
@@ -368,11 +401,18 @@ func (s *served) call(ctx context.Context, id json.RawMessage, modern bool, p *p
 		if stopped {
 			return
 		}
-		s.answer(id, modern, map[string]any{
-			"content": []map[string]string{{"type": "text", "text": text}},
-			"isError": failed,
-		})
+		s.answer(id, modern, called(text, failed))
 	}()
+}
+
+// called is the result of a call of a tool: the answer of its command
+// as text, marked as an error when the command was refused or no answer
+// came.
+func called(text string, failed bool) map[string]any {
+	return map[string]any{
+		"content": []map[string]string{{"type": "text", "text": text}},
+		"isError": failed,
+	}
 }
 
 // cancel stops the call of a request, when it is still under way.
@@ -388,20 +428,31 @@ func (s *served) cancel(id string) {
 // answer writes the result of a request. A result of the modern
 // revision says that it is whole and who answers.
 func (s *served) answer(id json.RawMessage, modern bool, result map[string]any) {
-	if modern {
-		result["resultType"] = "complete"
-		result["_meta"] = map[string]any{metaServer: s.door.info}
-	}
-	s.send(reply{JSONRPC: "2.0", ID: id, Result: result})
+	s.send(s.door.result(id, modern, result))
 }
 
-// fail writes an error of the protocol. A message whose id could not be
-// read is answered with no id.
+// fail writes an error of the protocol.
 func (s *served) fail(id json.RawMessage, code int, message string, data any) {
+	s.send(protocolError(id, &failure{Code: code, Message: message, Data: data}))
+}
+
+// result is the answer to a request. A result of the modern revision
+// says that it is whole and who answers.
+func (d *Door) result(id json.RawMessage, modern bool, result map[string]any) reply {
+	if modern {
+		result["resultType"] = "complete"
+		result["_meta"] = map[string]any{metaServer: d.info}
+	}
+	return reply{JSONRPC: "2.0", ID: id, Result: result}
+}
+
+// protocolError is an error of the protocol as an answer. A message whose id
+// could not be read is answered with no id.
+func protocolError(id json.RawMessage, f *failure) reply {
 	if len(id) == 0 {
 		id = json.RawMessage("null")
 	}
-	s.send(reply{JSONRPC: "2.0", ID: id, Error: &failure{Code: code, Message: message, Data: data}})
+	return reply{JSONRPC: "2.0", ID: id, Error: f}
 }
 
 // send writes one message on a line of its own. When it cannot be

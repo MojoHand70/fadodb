@@ -42,7 +42,7 @@ line says so. Copy `0000-template.md` to start.
 | [0034](0034-range-constraints-on-numeric-variables.md) | Range constraints on numeric variables | Accepted, amended by 0069 |
 | [0035](0035-sqlite-is-the-transactional-store.md) | SQLite is the transactional store, by measurement | Accepted |
 | [0036](0036-in-memory-index-for-lookups-in-commits.md) | An in-memory index serves LOOKUP inside commits, by measurement | Accepted |
-| [0037](0037-explicit-tables-and-the-compiled-lookup.md) | Explicit tables bound to SQLite and the compiled LOOKUP | Accepted, amended by 0046, 0051, 0080, 0082 |
+| [0037](0037-explicit-tables-and-the-compiled-lookup.md) | Explicit tables bound to SQLite and the compiled LOOKUP | Accepted, amended by 0046, 0051, 0080, 0082, 0084 |
 | [0038](0038-the-filter-and-the-read-only-sql-endpoint.md) | The filter and the read-only SQL endpoint | Accepted, amended by 0049, 0051, 0067, 0075, 0076 |
 | [0039](0039-class-versions-terminal-states-and-migrations.md) | Class versions, terminal states and migrations | Accepted, amended by 0040, 0043, 0051 |
 | [0040](0040-transitions-as-commits.md) | Transitions as commits: the command, eventless chains and state visits | Accepted, amended by 0043, 0047, 0048, 0078 |
@@ -85,7 +85,8 @@ line says so. Copy `0000-template.md` to start.
 | [0077](0077-the-app.md) | The app, a name for the classes that belong together | Accepted, amended by 0079 |
 | [0078](0078-a-decision-stands-on-what-the-document-holds.md) | A decision stands on what the document holds: the version a command saw, who may bring a value again, and what a condition saw | Accepted |
 | [0079](0079-a-table-belongs-to-an-app.md) | A table belongs to an app | Proposed |
-| [0080](0080-a-column-added-to-a-table-in-use.md) | A column added to a table in use | Proposed |
+| [0080](0080-a-column-added-to-a-table-in-use.md) | A column added to a table in use | Proposed, amended by 0084 |
 | [0081](0081-functions-over-a-list.md) | Functions over a list, each with its SQL from the start | Proposed |
 | [0082](0082-removing-rows-and-removing-a-table.md) | Removing rows and removing a table | Proposed, amended by 0083 |
 | [0083](0083-who-removed-a-table-and-when.md) | Who removed a table or words, and when | Proposed |
+| [0084](0084-changing-a-table-that-holds-rows.md) | Changing a table that holds rows | Proposed |

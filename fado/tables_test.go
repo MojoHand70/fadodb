@@ -1118,22 +1118,43 @@ func TestTables(t *testing.T) {
 				t.Errorf("the versions of the table: %v, %v", versions, err)
 			}
 		},
-		"has rows, and the change is more than new columns": func(row []string) {
+		"holds rows or a class reads it, keeps its key, and every value of a changed column converts": func(row []string) {
+			// Filled holds the text "7": as a whole number it is 7 (ADR-0084).
 			define(plain("Filled", lines))
-			if _, err := db3.ImportRows(ctx, "Filled", []fado.Values{{"k": "a"}}, ann); err != nil {
+			if _, err := db3.ImportRows(ctx, "Filled", []fado.Values{{"k": "a", "v": "7"}}, ann); err != nil {
 				t.Fatal(err)
 			}
-			if got := "is refused, " + tableFinding(db3, plain("Filled", lines+`,"label":"Changed"`)); got != row[1] {
-				t.Errorf("a changed definition of a table with rows %s, and the chapter says it %s", got, row[1])
+			define(`{"name":"Filled","columns":{"k":"text","v":"int"},"key":["k"]` + lines + `}`)
+			rows, err := db3.TableRows(ctx, "Filled", ann)
+			if err != nil || len(rows) != 1 || rows[0]["v"] != "7" || row[1] != "is taken, as the next version; its rows are carried over as it takes them" {
+				t.Errorf("a table with rows, a column retyped: %v, %v, and the chapter says it %s", rows, err, row[1])
 			}
 		},
-		"is read by a formula of a class, and the change is more than new columns": func(row []string) {
+		"holds rows, and a value of a changed column does not convert": func(row []string) {
+			define(plain("Worded", lines))
+			if _, err := db3.ImportRows(ctx, "Worded", []fado.Values{{"k": "a", "v": "seven"}}, ann); err != nil {
+				t.Fatal(err)
+			}
+			if got := "is refused, " + tableFinding(db3, `{"name":"Worded","columns":{"k":"text","v":"int"},"key":["k"]`+lines+`}`) + ", naming the column and the first row"; got != row[1] {
+				t.Errorf("a value that does not convert %s, and the chapter says it %s", got, row[1])
+			}
+		},
+		"holds rows or a class reads it, and changes its key": func(row []string) {
+			define(plain("Keyed", lines))
+			if _, err := db3.ImportRows(ctx, "Keyed", []fado.Values{{"k": "a", "v": "b"}}, ann); err != nil {
+				t.Fatal(err)
+			}
+			if got := "is refused, " + tableFinding(db3, `{"name":"Keyed","columns":{"k":"text","v":"text"},"key":["v"]`+lines+`}`); got != row[1] {
+				t.Errorf("a new key of a table with rows %s, and the chapter says it %s", got, row[1])
+			}
+		},
+		"holds rows or a class reads it, and a formula or a rule of a class uses a column it changes or removes": func(row []string) {
 			define(plain("Read", lines))
 			if _, err := db3.DefineClass(ctx, []byte(scratch("Reads", `"c":{"type":"text"},"r":{"formula":"LOOKUP(Read, v, k = THIS.c)"}`, oneState)), setup); err != nil {
 				t.Fatal(err)
 			}
-			if got := "is refused, " + tableFinding(db3, plain("Read", lines+`,"label":"Changed"`)); got != row[1] {
-				t.Errorf("a changed definition of a table a class reads %s, and the chapter says it %s", got, row[1])
+			if got := "is refused, " + tableFinding(db3, `{"name":"Read","columns":{"k":"text"},"key":["k"]`+lines+`}`) + ", naming the class"; got != row[1] {
+				t.Errorf("a column a class reads, removed: %s, and the chapter says it %s", got, row[1])
 			}
 			// The class moves over to a table under another name, and
 			// the old one can then be changed.

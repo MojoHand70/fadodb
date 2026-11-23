@@ -1,6 +1,6 @@
 # ADR-0080: A column added to a table in use
 
-- Status: Proposed; amends ADR-0037 (a table with rows, or one a class reads, is redefined when the new version only adds columns)
+- Status: Proposed; amends ADR-0037 (a table with rows, or one a class reads, is redefined when the new version only adds columns); amended by ADR-0084 (item 6 no longer holds: a version that adds columns and changes more is taken when it passes the owner's two checks)
 - Date: 2026-11-23
 
 ## Context

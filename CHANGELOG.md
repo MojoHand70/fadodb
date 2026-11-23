@@ -8,6 +8,14 @@ All notable changes to FadoDB are recorded here. The format follows
 
 ### Added
 
+- Changing a table that holds rows (ADR-0084, proposed), with the
+  owner's two checks. A version of a table that holds rows, or that a
+  class reads, is taken when it keeps its key, every value of a changed
+  column converts to the new type exactly, and no formula or rule of a
+  class uses a column it changes or removes. Its rows are carried over
+  in the same transaction. A value that does not convert is refused
+  with `bad_value`, naming the first row by its key; a use with
+  `not_allowed`, naming the class and the place.
 - Figures over a list, the first step of ADR-0081: a live variable
   may count a list of its document or add up a column of it. In the
   class Order, beside the list `invoices`, `COUNT(invoices)` is how

@@ -454,8 +454,10 @@ The system groups are in [Who may](notions/who-may.md).
 | The table | A changed definition |
 |---|---|
 | has no rows, and no class reads it | is taken, as the next version |
-| has rows, and the change is more than new columns | is refused, `not_supported` |
-| is read by a formula of a class, and the change is more than new columns | is refused, `not_supported` |
+| holds rows or a class reads it, keeps its key, and every value of a changed column converts | is taken, as the next version; its rows are carried over as it takes them |
+| holds rows, and a value of a changed column does not convert | is refused, `bad_value`, naming the column and the first row |
+| holds rows or a class reads it, and a formula or a rule of a class uses a column it changes or removes | is refused, `not_allowed`, naming the class |
+| holds rows or a class reads it, and changes its key | is refused, `not_supported` |
 | would break a rule of a class that writes it | is refused, `not_allowed` |
 | gains columns, none of them in its key, and nothing else changes | is taken, as the next version, whatever rows it holds and whoever reads it; its rows are blank in each new column |
 | names another app, or none, and nothing else changes | is taken, as the next version, whatever rows it holds and whoever reads it |
@@ -467,8 +469,19 @@ The system groups are in [Who may](notions/who-may.md).
 - **`remove_table` takes a table away**; see [Removing a
   table](#removing-a-table).
 
-For any other change of a table that is in use, the engine's own
-advice is to define the new shape under another name. A class moves over to the new table with
+A changed column of a table in use is the owner's two checks. **Does
+every value convert?** A value converts as an import of it into the new
+column would take it: exactly, or not at all. Text that is a whole
+number becomes one, a decimal gains places, a figure or a day becomes
+text, `true` and `false` become a yes or no; 2.55 does not fit one
+place, and "Euro" is no number. **Does a formula use the column?** A
+formula of a class that reads the table, or a rule that writes it, that
+names a column the version changes or removes, keeps that column as it
+is: the class is changed first. A removed column takes its values with
+it.
+
+For a new key, the engine's own advice is to define the new shape under
+another name. A class moves over to the new table with
 a new version of the class, and the old table can be changed once no
 class reads it; see [Change a class that already has
 documents](guides/change-a-class.md).
@@ -603,8 +616,9 @@ import.
 
 ## Not here yet
 
-- Changing or removing a column of a table that has rows, or that a
-  class reads, and a new column in its key.
+- A new key for a table that holds rows, or that a class reads.
+- Renaming a column that holds values: a column removed and another
+  added do not carry its values.
 - A record of who removed a table.
 - The last row in the order of the key, and `MIN` and `MAX` of days.
   So "the newest rate on or before a day" has no short form today: a

@@ -333,22 +333,30 @@ func (s *Store) DefineTable(ctx context.Context, data []byte, opts ...Option) (*
 	if len(adding) > 0 {
 		diags = append(diags, s.brokenRules(nil, def, nil)...)
 	}
+	// Any other version of a table in use, one that holds rows or that a
+	// class reads, is taken when it keeps its key, uses of its columns
+	// stay whole and its rows convert (ADR-0084); its rows are carried
+	// over, as it takes them.
+	var carried []Values
 	if old != nil && !moving && len(adding) == 0 {
+		inUse := false
 		for _, name := range s.order {
 			if s.classes[strings.ToUpper(name)].sources[strings.ToUpper(def.Name)] {
-				diags = append(diags, model.Diagnostic{Code: model.CodeNotSupported, Path: "/name", Pos: -1,
-					Message: "the class " + name + " reads the table; of a table in use, columns can be added and nothing else can change yet", Hint: "add columns and change nothing else, or define the new shape under another name"})
+				inUse = true
 				break
 			}
+		}
+		var n int64
+		if err := s.writer.QueryRowContext(ctx, "SELECT count(*) FROM "+quote(old.name)).Scan(&n); err == nil && n > 0 {
+			inUse = true
+		}
+		if inUse {
+			rows, d := s.reshape(ctx, old, def)
+			carried, diags = rows, append(diags, d...)
 		}
 		// A rule of a class may write the table (ADR-0044): a new shape
 		// may not break it.
 		diags = append(diags, s.brokenRules(nil, def, nil)...)
-		var n int64
-		if err := s.writer.QueryRowContext(ctx, "SELECT count(*) FROM "+quote(old.name)).Scan(&n); err == nil && n > 0 {
-			diags = append(diags, model.Diagnostic{Code: model.CodeNotSupported, Path: "/name", Pos: -1,
-				Message: "the table has rows; of a table with rows, columns can be added and nothing else can change yet", Hint: "add columns, none of them in the key, and change nothing else; a table with no rows can be redefined"})
-		}
 	}
 	if len(diags) > 0 {
 		return nil, diags
@@ -408,6 +416,29 @@ func (s *Store) DefineTable(ctx context.Context, data []byte, opts ...Option) (*
 		for _, ddl := range t.createDDL() {
 			if _, err := w.ExecContext(ctx, ddl); err != nil {
 				return rollback(storageErr("create the table "+def.Name, err))
+			}
+		}
+		// The rows the old shape held, as the new one takes them, in the
+		// same transaction (ADR-0084).
+		if len(carried) > 0 {
+			cols := quoteAll(columnNames(t.def.Columns))
+			ins := "INSERT INTO " + quote(t.name) + " (" + strings.Join(cols, ", ") + ") VALUES (" + marks(len(cols)) + ")"
+			vals := make([]formula.Value, len(t.leaves))
+			args := make([]any, 0, len(cols))
+			for _, row := range carried {
+				for j := range vals {
+					vals[j] = formula.Blank()
+				}
+				if e := setFields(vals, t.leafIndex, "", t.def.Fields, row, "", s.limits); e != nil {
+					return rollback(e)
+				}
+				args = args[:0]
+				for j, l := range t.leaves {
+					args = encode(args, l, vals[j])
+				}
+				if _, err := w.ExecContext(ctx, ins, args...); err != nil {
+					return rollback(storageErr("carry the rows of "+def.Name, err))
+				}
 			}
 		}
 	}

@@ -111,29 +111,32 @@ func TestTableApps_ATableInUseMovesToAnotherApp(t *testing.T) {
 	if doc, err := s.Create(ctx, "Order", Values{"currency": "EUR", "net": "100.00"}); err != nil || doc.Values["rate"] != "4.500000" {
 		t.Fatalf("after the move and an import: %v, %v", doc.Values, err)
 	}
-	// A change of anything else, with or without the app, is refused while
-	// the table is in use.
+	// A column a class uses keeps its type while the table is in use; a new
+	// label with the move is taken, its rows carried over (ADR-0084).
 	var diags model.Diagnostics
 	changed := strings.Replace(moved, `"name": "text"}`, `"name": "number"}`, 1)
-	if _, err := s.defineOpenTable(ctx, []byte(changed), asSetup); !errors.As(err, &diags) || diags[0].Code != model.CodeNotSupported {
-		t.Fatalf("a column changed while the table is in use: %v", err)
+	if _, err := s.defineOpenTable(ctx, []byte(changed), asSetup); !errors.As(err, &diags) || diags[0].Code != model.CodeNotAllowed {
+		t.Fatalf("a column Order uses, changed while the table is in use: %v", err)
 	}
 	relabelled := strings.Replace(ratesTable, `"label": "Exchange rates"`, `"app": "Expenses", "label": "Rates of exchange"`, 1)
-	if _, err := s.defineOpenTable(ctx, []byte(relabelled), asSetup); !errors.As(err, &diags) || diags[0].Code != model.CodeNotSupported {
-		t.Fatalf("a move with a new label while the table is in use: %v", err)
+	if tbl, err := s.defineOpenTable(ctx, []byte(relabelled), asSetup); err != nil || tbl.Version != 3 {
+		t.Fatalf("a move with a new label while the table is in use: %+v, %v", tbl, err)
+	}
+	if rows, err := s.TableRows(ctx, "Rates", asSetup); err != nil || len(rows) != 2 {
+		t.Fatalf("the rows after the new label: %v, %v", rows, err)
 	}
 	// Into an app the database does not have, it does not move.
 	if _, err := s.defineOpenTable(ctx, []byte(strings.Replace(moved, `"Treasury"`, `"Travel"`, 1)), asSetup); !errors.As(err, &diags) || diags[0].Code != model.CodeUnknownApp {
 		t.Fatalf("a move to an app that does not exist: %v", err)
 	}
 	// And out of every app, back to none.
-	if tbl, err := s.defineOpenTable(ctx, []byte(ratesTable), asSetup); err != nil || tbl.Version != 3 || tbl.App != "" {
+	if tbl, err := s.defineOpenTable(ctx, []byte(ratesTable), asSetup); err != nil || tbl.Version != 4 || tbl.App != "" {
 		t.Fatalf("the move to no app: %+v, %v", tbl, err)
 	}
 	if got, err := s.TablesOf("Treasury"); err != nil || len(got) != 0 {
 		t.Fatalf("the tables of Treasury after the table left: %v, %v", got, err)
 	}
-	if versions, err := s.Definitions(ctx, DefinitionTable, "Rates"); err != nil || len(versions) != 3 {
+	if versions, err := s.Definitions(ctx, DefinitionTable, "Rates"); err != nil || len(versions) != 4 {
 		t.Fatalf("who defined each version: %v, %v", versions, err)
 	}
 }
@@ -173,18 +176,20 @@ func TestAddColumns_ATableInUse(t *testing.T) {
 	if err := s.db.QueryRowContext(ctx, `SELECT note, card_fee, card_fee_currency FROM Rates WHERE code = 'EUR'`).Scan(&note, &fee, &cur); err != nil || note != "NBP" || cur != "EUR" {
 		t.Fatalf("the view after the columns were added: %q %q %q, %v", note, fee, cur, err)
 	}
-	// Anything more than columns added is refused while the table is in
-	// use: a new column in the key, a column changed, a new label.
+	// While the table is in use its key stays, and a column Order uses
+	// keeps its type (ADR-0084); a column added with a new label is taken.
 	var diags model.Diagnostics
-	for what, def := range map[string]string{
-		"a new column in the key": strings.Replace(wider, `"key": ["code"]`, `"key": ["code", "note"]`, 1),
-		"a column changed":        strings.Replace(wider, `"rate": "decimal(6)"`, `"rate": "decimal(4)"`, 1),
-		"a column added and a new label": strings.Replace(strings.Replace(wider, `"card_fee": "money(2)"}`, `"card_fee": "money(2)", "x": "text"}`, 1),
-			`"Exchange rates"`, `"Rates of exchange"`, 1),
+	for what, c := range map[string]struct{ def, code string }{
+		"a new column in the key":      {strings.Replace(wider, `"key": ["code"]`, `"key": ["code", "note"]`, 1), model.CodeNotSupported},
+		"a column Order uses, changed": {strings.Replace(wider, `"rate": "decimal(6)"`, `"rate": "decimal(4)"`, 1), model.CodeNotAllowed},
 	} {
-		if _, err := s.defineOpenTable(ctx, []byte(def), asSetup); !errors.As(err, &diags) || diags[0].Code != model.CodeNotSupported {
+		if _, err := s.defineOpenTable(ctx, []byte(c.def), asSetup); !errors.As(err, &diags) || diags[0].Code != c.code {
 			t.Errorf("%s while the table is in use: %v", what, err)
 		}
+	}
+	labelled := strings.Replace(strings.Replace(wider, `"card_fee": "money(2)"}`, `"card_fee": "money(2)", "x": "text"}`, 1), `"Exchange rates"`, `"Rates of exchange"`, 1)
+	if _, err := s.defineOpenTable(ctx, []byte(labelled), asSetup); err != nil {
+		t.Errorf("a column added and a new label while the table is in use: %v", err)
 	}
 	if err := s.Close(); err != nil {
 		t.Fatal(err)
@@ -310,5 +315,100 @@ func TestRemove_RowsAndTables(t *testing.T) {
 	}
 	if versions, err := reopened.Definitions(ctx, DefinitionTable, "Scratch"); err != nil || len(versions) != 3 {
 		t.Fatalf("the versions of Scratch: %v, %v", versions, err)
+	}
+}
+
+// TestChange_ATableInUse holds ADR-0084, the owner's two checks of a table
+// that holds rows: a value of a changed column converts to its new type
+// or the version is refused, naming the row; a column a formula or a rule
+// of a class uses keeps its type and stays, or the version is refused,
+// naming the class. What passes both is taken, its rows carried over.
+func TestChange_ATableInUse(t *testing.T) {
+	s, path := openStore(t, Options{})
+	ctx := context.Background()
+	setupTables(t, s)
+	if _, err := s.defineOpen(ctx, []byte(order), asSetup); err != nil {
+		t.Fatal(err)
+	}
+	codes := func(cols string) string {
+		return `{"name": "Codes", "columns": {"code": "text", ` + cols + `}, "key": ["code"], "access": {"read": "TRUE", "write": "TRUE"}}`
+	}
+	if _, err := s.DefineTable(ctx, []byte(codes(`"n": "text", "d": "decimal(2)", "flag": "text", "day": "date"`)), asSetup); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.ImportRows(ctx, "Codes", []Values{{"code": "a", "n": "7", "d": "1.50", "flag": "true", "day": "2026-11-13"}, {"code": "b", "n": "12", "d": "2.55", "flag": "false"}}); err != nil {
+		t.Fatal(err)
+	}
+	var diags model.Diagnostics
+	// Text that is a whole number becomes one; a decimal gains places; text of
+	// true and false becomes a yes or no; a column goes.
+	tbl, err := s.DefineTable(ctx, []byte(codes(`"n": "int", "d": "decimal(4)", "flag": "bool"`)), asSetup)
+	if err != nil || tbl.Version != 2 {
+		t.Fatalf("a version that changes three columns and removes one: %+v, %v", tbl, err)
+	}
+	rows, err := s.TableRows(ctx, "Codes", asSetup)
+	if err != nil || len(rows) != 2 || rows[0]["n"] != "7" || rows[0]["d"] != "1.5000" || rows[0]["flag"] != true || rows[1]["flag"] != false || rows[1]["d"] != "2.5500" {
+		t.Fatalf("the rows carried over: %v, %v", rows, err)
+	}
+	if _, ok := rows[0]["day"]; ok {
+		t.Fatalf("a removed column is still in the rows: %v", rows[0])
+	}
+	// A value that would change or be lost refuses the version: one place
+	// cannot hold 2.55, and "x" is no figure.
+	if _, err := s.DefineTable(ctx, []byte(codes(`"n": "int", "d": "decimal(1)", "flag": "bool"`)), asSetup); !errors.As(err, &diags) || diags[0].Code != model.CodeBadValue || diags[0].Path != "/columns/d" || !strings.Contains(diags[0].Message, `the row b holds "2.5500"`) {
+		t.Fatalf("fewer places than a value has: %v", err)
+	}
+	if _, err := s.ImportRows(ctx, "Codes", []Values{{"code": "c", "n": "1", "d": "1", "flag": true}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.DefineTable(ctx, []byte(codes(`"n": "bool", "d": "decimal(4)", "flag": "bool"`)), asSetup); !errors.As(err, &diags) || diags[0].Code != model.CodeBadValue || !strings.HasPrefix(diags[0].Message, "3 rows do not convert") {
+		t.Fatalf("whole numbers to a yes or no: %v", err)
+	}
+	// The key stays, the same columns of the same types.
+	if _, err := s.DefineTable(ctx, []byte(`{"name": "Codes", "columns": {"code": "int", "n": "int", "d": "decimal(4)", "flag": "bool"}, "key": ["code"], "access": {"read": "TRUE", "write": "TRUE"}}`), asSetup); !errors.As(err, &diags) || diags[0].Code != model.CodeNotSupported || diags[0].Path != "/key" {
+		t.Fatalf("a key of another type: %v", err)
+	}
+	// Everything as text: a figure as its digits, a yes or no as true or false.
+	if _, err := s.DefineTable(ctx, []byte(codes(`"n": "text", "d": "text", "flag": "text"`)), asSetup); err != nil {
+		t.Fatalf("every column to text: %v", err)
+	}
+	if rows, _ := s.TableRows(ctx, "Codes", asSetup); rows[0]["d"] != "1.5000" || rows[0]["flag"] != "true" || rows[2]["n"] != "1" {
+		t.Fatalf("the rows as text: %v", rows)
+	}
+
+	// Rates: Order reads its rate, its fee and its name. Those keep their
+	// type and stay; a column nothing uses changes, with the table read.
+	for what, def := range map[string]string{
+		"the name, which Order's default reads, removed": strings.Replace(ratesTable, `, "name": "text"}, "key": ["code"], "indexes": [["name"]]}`, `}, "key": ["code"]}`, 1),
+		"the rate, which Order's formula reads, retyped": strings.Replace(ratesTable, `"rate": "decimal(6)"`, `"rate": "decimal(8)"`, 1),
+	} {
+		if _, err := s.defineOpenTable(ctx, []byte(def), asSetup); !errors.As(err, &diags) || diags[0].Code != model.CodeNotAllowed || !strings.Contains(diags[0].Message, "the class Order uses a column") {
+			t.Errorf("%s: %v", what, err)
+		}
+	}
+	noted := strings.Replace(ratesTable, `"name": "text"}`, `"name": "text", "note": "text"}`, 1)
+	if _, err := s.defineOpenTable(ctx, []byte(noted), asSetup); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.ImportRows(ctx, "Rates", []Values{{"code": "EUR", "rate": "4.321", "fee": "1.00 EUR", "name": "Euro", "note": "2"}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.defineOpenTable(ctx, []byte(strings.Replace(noted, `"note": "text"`, `"note": "int"`, 1)), asSetup); err != nil {
+		t.Fatalf("a column nothing uses, retyped while Order reads the table: %v", err)
+	}
+	if doc, err := s.Create(ctx, "Order", Values{"currency": "EUR", "net": "100.00"}); err != nil || doc.Values["rate"] != "4.321000" || doc.Values["label"] != "Euro order" {
+		t.Fatalf("Order after the version: %v, %v", doc, err)
+	}
+
+	if err := s.Close(); err != nil {
+		t.Fatal(err)
+	}
+	again, err := Open(path, Options{Now: (&clock{now: start}).Now, Outbox: OutboxOptions{Manual: true}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer again.Close()
+	if rows, err := again.TableRows(ctx, "Codes", asSetup); err != nil || len(rows) != 3 || rows[1]["d"] != "2.5500" {
+		t.Fatalf("the rows after an open: %v, %v", rows, err)
 	}
 }

@@ -151,6 +151,14 @@ type QuerySlot struct {
 	// (ADR-0046). Column is then empty and Type the aggregate's type.
 	Agg   string
 	Value *Program
+	// List names the list of the document that the slot's rows are
+	// (ADR-0081): a live variable of the document whose formula is a
+	// QUERY. The slot is then a figure over that list, and Source the
+	// class the list lists: the rows are the ones the list has for
+	// whoever reads it, and of them the ones Cond holds on. It is "" for
+	// a LOOKUP. A figure runs on the server alone, when a live variable
+	// is read, so List is no part of an encoded program.
+	List string
 }
 
 // ArgIndex returns the position in Args of a "THIS.<name>" slot of Cond or

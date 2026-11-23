@@ -173,7 +173,8 @@ kept nowhere: that is `"mode": "live"`, for a value such as the days a
 document has waited, which is wrong the day after it is stored. It has
 a chapter too, [Live variables](live-variables.md). A live variable
 whose formula is a `QUERY` is a list of other documents, such as the
-invoices of an order: see [Lists of other documents](lists.md).
+invoices of an order, and another live variable may count that list or
+add up a column of it: see [Lists of other documents](lists.md).
 
 Some names are the engine's and cannot be used for a variable, among
 them `id`, `title`, `state`, `version`, `created_at`, `created_by`,

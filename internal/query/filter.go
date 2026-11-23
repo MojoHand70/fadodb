@@ -169,6 +169,12 @@ type On struct {
 	Value func(name string) (formula.Value, bool)
 	// Ref is the pointer to the document, in its Class:id form.
 	Ref string
+	// Reads are variables of the listed class that the statement reads
+	// beside the condition: the column a figure over the list adds up
+	// (ADR-0081). A row counts only where its state lets the principal
+	// read each of them, as for a variable the condition names
+	// (ADR-0041).
+	Reads []string
 }
 
 // CompileOn is Compile for a list read on a document; on is nil for a
@@ -360,6 +366,13 @@ func CompileOn(f Filter, on *On, cls *model.Class, sources formula.Sources, p Pr
 		for i, o := range f.Order {
 			if err := consider(strings.TrimSpace(strings.TrimLeft(strings.TrimSpace(o), "-+")), i); err != nil {
 				return nil, err
+			}
+		}
+		if on != nil {
+			for _, name := range on.Reads {
+				if err := consider(name, -1); err != nil {
+					return nil, err
+				}
 			}
 		}
 		if len(preds) > 0 {

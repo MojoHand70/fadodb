@@ -17,6 +17,24 @@ All notable changes to FadoDB are recorded here. The format follows
   removal writes nothing. The engine schema stays 13: a database made
   before opens as it is, and an engine made before reads one made now
   as it did, without the removals.
+- Figures over a list, the first step of ADR-0081: a live variable
+  may count a list of its document or add up a column of it. In the
+  class Order, beside the list `invoices`, `COUNT(invoices)` is how
+  many invoices the order has and `SUM(invoices.net)` what they add up
+  to; `MIN` and `MAX` give the smallest and the largest value of a
+  column; `COUNTIF`, `SUMIF`, `MINIF` and `MAXIF` do the same over the
+  rows that meet a condition, and `ANY` and `ALL` say whether some
+  row, or every row, meets one. A figure is one statement to the
+  listed class, asked for whoever reads the variable: it counts the
+  rows the list has for that reader, a column they may not read gives
+  a blank, and no row is read to be counted. It may stand inside a
+  formula, and stands in a live variable alone: a kept value, a guard
+  and a rule are refused, and count with `LOOKUP` as before. Six
+  functions are new in the catalogue. Not built yet: `AVERAGE`,
+  `MEDIAN` and `COUNTUNIQUE` over a list, the same functions over the
+  lines and tags a document holds, and the functions that give a list
+  again. `BenchmarkLiveFigure` joined the benchmark gate. The layout
+  of a database does not change.
 - Removing rows and removing a table (ADR-0082, proposed).
   `delete_rows` removes the rows of a table that have the keys given,
   in one transaction, as the table's write rule lets; a key the table

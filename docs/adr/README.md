@@ -86,5 +86,6 @@ line says so. Copy `0000-template.md` to start.
 | [0078](0078-a-decision-stands-on-what-the-document-holds.md) | A decision stands on what the document holds: the version a command saw, who may bring a value again, and what a condition saw | Accepted |
 | [0079](0079-a-table-belongs-to-an-app.md) | A table belongs to an app | Proposed |
 | [0080](0080-a-column-added-to-a-table-in-use.md) | A column added to a table in use | Proposed |
+| [0081](0081-functions-over-a-list.md) | Functions over a list, each with its SQL from the start | Proposed |
 | [0082](0082-removing-rows-and-removing-a-table.md) | Removing rows and removing a table | Proposed, amended by 0083 |
 | [0083](0083-who-removed-a-table-and-when.md) | Who removed a table or words, and when | Proposed |

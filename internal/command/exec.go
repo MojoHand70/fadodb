@@ -202,7 +202,7 @@ func short(value []byte) string {
 	return string(value[:37]) + "…"
 }
 
-// options makes the options of the call from the caller and the five
+// options makes the options of the call from the caller and the six
 // members that mean the same in every command (item 3).
 func (c *call) options(p store.Principal) *store.Error {
 	if c.cmd.takes == asNobody {
@@ -218,7 +218,7 @@ func (c *call) options(p store.Principal) *store.Error {
 		}
 		p.For = named
 	}
-	c.opts = make([]store.Option, 1, 5)
+	c.opts = make([]store.Option, 1, 6)
 	c.opts[0] = store.As(p)
 	if value := c.given("key"); value != nil {
 		c.opts = append(c.opts, store.Key(unquote(value)))
@@ -239,6 +239,15 @@ func (c *call) options(p store.Principal) *store.Error {
 			return e
 		}
 		c.opts = append(c.opts, store.At(t))
+	}
+	if c.cmd.takes&takesVersion != 0 {
+		if value := c.given("version"); value != nil {
+			n, e := version("/version", value)
+			if e != nil {
+				return e
+			}
+			c.opts = append(c.opts, store.Saw(n))
+		}
 	}
 	return nil
 }
@@ -435,6 +444,14 @@ func (c *call) batch() ([]string, store.Values, *store.Error) {
 	ids, e := c.texts("ids")
 	if e != nil {
 		return nil, nil, e
+	}
+	// The version of each document its sender read (ADR-0078, item 2).
+	saw, e := c.versions("versions")
+	if e != nil {
+		return nil, nil, e
+	}
+	if saw != nil {
+		c.opts = append(c.opts, store.SawEach(saw))
 	}
 	values, e := c.values("values")
 	return ids, values, e

@@ -419,10 +419,11 @@ The members of its object:
   values      object          values to assign in the same commit, by variable
 
 And the members that mean the same in every command:
-  key            text          the idempotency key: the same command sent again with the same key makes no second commit and is answered as the first was
-  business_date  text          the business day of the commit, as "2026-11-13"; the server's day when left out
-  reason         text          why a content administrator acts or reads past a rule; a change keeps it on its event, a read in the log of reads
-  for            text          the id of whoever the caller acts for; let through only while a substitution says so
+  key            text                  the idempotency key: the same command sent again with the same key makes no second commit and is answered as the first was
+  business_date  text                  the business day of the commit, as "2026-11-13"; the server's day when left out
+  reason         text                  why a content administrator acts or reads past a rule; a change keeps it on its event, a read in the log of reads
+  for            text                  the id of whoever the caller acts for; let through only while a substitution says so
+  version        whole number          the version of the document its sender read before deciding; when the document is at another, the command is refused with stale_version and nothing is written
 
 The members of its answer:
   document  the document after the command

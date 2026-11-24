@@ -179,7 +179,7 @@ func (k Kind) fits(value []byte) bool {
 		return first == 't' || first == 'f'
 	case Object, JSON:
 		return first == '{'
-	case Texts, Objects, Scalars, JSONs:
+	case Texts, Objects, Scalars, JSONs, Versions:
 		return first == '['
 	case Moment:
 		return first == '"' || first >= '0' && first <= '9'
@@ -241,6 +241,40 @@ func (c *call) texts(name string) ([]string, *store.Error) {
 			return badJSON(pointer(name)+"/"+strconv.Itoa(i), name+" is a list of texts, and element "+strconv.Itoa(i)+" is "+string(element), "")
 		}
 		out = append(out, unquote(element))
+		return nil
+	})
+	return out, e
+}
+
+// version is a version of a document as a command names it: a whole
+// number of 1 or more (ADR-0078, item 2).
+func version(path string, value []byte) (int64, *store.Error) {
+	n, err := strconv.ParseInt(string(value), 10, 64)
+	if err != nil || n < 1 {
+		return 0, &store.Error{Code: store.CodeBadValue, Path: path, Message: "a version of a document is a whole number of 1 or more, got " + short(value),
+			Hint: "send the version the document had when it was read, as its version says; leave the member out to act on the document as it is"}
+	}
+	return n, nil
+}
+
+// versions reads a member that is a list of versions, null where none
+// is named: 0 stands for none in the list it answers.
+func (c *call) versions(name string) ([]int64, *store.Error) {
+	value := c.given(name)
+	if value == nil {
+		return nil, nil
+	}
+	out := []int64{}
+	e := elements(value, func(i int, element []byte) *store.Error {
+		if isNull(element) {
+			out = append(out, 0)
+			return nil
+		}
+		n, e := version(pointer(name)+"/"+strconv.Itoa(i), element)
+		if e != nil {
+			return e
+		}
+		out = append(out, n)
 		return nil
 	})
 	return out, e

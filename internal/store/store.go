@@ -60,10 +60,17 @@ var readerIdle = 15 * time.Second
 // answer of a repeated command, however long it has grown.
 const lastOfCommandSQL = "SELECT max(after_version) FROM events WHERE class = ? AND doc_id = ? AND cause_event_id = ?"
 
-// engineSchema is the version of the store's own tables. A database made
-// by another engine schema is refused: before 1.0 there is no upgrade
-// path, and a pre-release file is recreated.
-const engineSchema = 13
+// engineSchema is the version of the store's own tables. A database of
+// a newer schema is refused. One of an earlier schema is brought to this
+// one when it is opened, in the transaction that opens it, from
+// oldestUpgraded on; a database older than that is refused and made
+// again, as every pre-release file was before v0.7.0.
+const engineSchema = 14
+
+// oldestUpgraded is the earliest engine schema Open brings to the
+// current one in place: 13, the schema of v0.7.0, the first release
+// whose databases hold what people keep.
+const oldestUpgraded = 13
 
 // Options configure Open. The ones that are properties of the database,
 // Synchronous and MaxText, are read at creation and kept in the metadata
@@ -586,6 +593,48 @@ func createPrivate(path string) error {
 	return f.Close()
 }
 
+// upgradeSchema brings the engine's own tables from an earlier schema,
+// oldestUpgraded or later, to the current one. It runs inside the
+// transaction that opens the database, so a database is at one schema or
+// at the other and never between. An engine of the earlier schema no
+// longer opens the file afterwards: whoever may go back keeps a copy.
+func upgradeSchema(ctx context.Context, w *sql.Conn, from int64) error {
+	if from < 14 {
+		// Schema 14 (ADR-0078, item 2): an event keeps the version its
+		// command saw, and the _events view of every class shows it.
+		if _, err := w.ExecContext(ctx, "ALTER TABLE events ADD COLUMN seen_version INTEGER"); err != nil {
+			return storageErr("add seen_version to the events", err)
+		}
+		rows, err := w.QueryContext(ctx, "SELECT name FROM classes ORDER BY rowid")
+		if err != nil {
+			return storageErr("read the classes", err)
+		}
+		var classes []string
+		for rows.Next() {
+			var name string
+			if err := rows.Scan(&name); err != nil {
+				rows.Close()
+				return storageErr("read the classes", err)
+			}
+			classes = append(classes, name)
+		}
+		if err := rows.Close(); err != nil {
+			return storageErr("read the classes", err)
+		}
+		for _, name := range classes {
+			for _, ddl := range []string{"DROP VIEW IF EXISTS " + quote(name+"_events"), eventsViewDDL(name)} {
+				if _, err := w.ExecContext(ctx, ddl); err != nil {
+					return storageErr("make the events view of "+name+" again", err)
+				}
+			}
+		}
+	}
+	if _, err := w.ExecContext(ctx, "UPDATE schema_version SET version = ?", engineSchema); err != nil {
+		return storageErr("write the schema version", err)
+	}
+	return nil
+}
+
 // init creates the engine's tables when the database is new and reads
 // the metadata.
 func (s *Store) init(ctx context.Context, wantSync string, wantMaxText int, wantIndexed int, wantBlobs string, wantMaxBlob int64) error {
@@ -643,9 +692,13 @@ func (s *Store) init(ctx context.Context, wantSync string, wantMaxText int, want
 		return rollback(storageErr("read the schema version", err))
 	case version > engineSchema:
 		return rollback(errf(CodeNotSupported, "", "the database was created by a newer engine (schema %d, this one reads %d)", version, engineSchema))
-	case version < engineSchema:
+	case version < oldestUpgraded:
 		return rollback(hintf(CodeNotSupported, "", fmt.Sprintf("the database was created by an earlier pre-release engine (schema %d, this one reads %d)", version, engineSchema),
-			"there is no upgrade path before 1.0; recreate the file"))
+			fmt.Sprintf("a database is brought to this schema from schema %d on, the one of v0.7.0; an earlier file is recreated", oldestUpgraded)))
+	case version < engineSchema:
+		if err := upgradeSchema(ctx, w, version); err != nil {
+			return rollback(err)
+		}
 	}
 	if wantIndexed > 0 {
 		if _, err := w.ExecContext(ctx, "INSERT INTO metadata (key, value) VALUES ('max_indexed_rows', ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value", strconv.Itoa(wantIndexed)); err != nil {
@@ -727,8 +780,8 @@ func (s *Store) prepareEngine(ctx context.Context) error {
 	}
 	prep(&s.stmts.lookupKey, "SELECT kind, class, doc_id, after_version, command_hash, event_id FROM events WHERE command_key = ?")
 	prep(&s.stmts.lastOfCommand, lastOfCommandSQL)
-	prep(&s.stmts.insertEvent, "INSERT INTO events (event_id, class, doc_id, kind, name, from_state, to_state, actor_id, before_version, after_version, cause_event_id, command_key, command_hash, business_date, ts, origin, actor_kind, actor_for, override, reason)"+
-		" VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
+	prep(&s.stmts.insertEvent, "INSERT INTO events (event_id, class, doc_id, kind, name, from_state, to_state, actor_id, before_version, after_version, cause_event_id, command_key, command_hash, business_date, ts, origin, actor_kind, actor_for, override, reason, seen_version)"+
+		" VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
 	prep(&s.stmts.insertEventDoc, "INSERT INTO event_docs (event_id, class, doc_id, qualifier) VALUES (?, ?, ?, ?)")
 	prep(&s.stmts.selectLife, lifeSQL)
 	prep(&s.stmts.selectMoves, movesSQL)
@@ -743,7 +796,7 @@ func (s *Store) prepareEngine(ctx context.Context) error {
 	// An event of kind action_failed is read with the code its action died
 	// with, which the outbox row holds (ADR-0044).
 	if s.stmts.listEvents, err = s.db.PrepareContext(ctx, "SELECT e.event_id, e.class, e.doc_id, e.kind, e.name, e.from_state, e.to_state, e.actor_id, e.before_version, e.after_version, e.cause_event_id, e.command_key, e.business_date, e.ts,"+
-		" (SELECT o.error_code FROM outbox o WHERE o.outcome_event = e.event_id), e.origin, e.actor_kind, e.actor_for, e.override, e.reason"+
+		" (SELECT o.error_code FROM outbox o WHERE o.outcome_event = e.event_id), e.origin, e.actor_kind, e.actor_for, e.override, e.reason, e.seen_version"+
 		" FROM events e JOIN event_docs d ON d.event_id = e.event_id WHERE d.class = ? AND d.doc_id = ? ORDER BY e.ts, e.event_id"); err != nil {
 		return storageErr("prepare", err)
 	}

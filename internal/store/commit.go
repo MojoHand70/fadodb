@@ -133,6 +133,10 @@ type eventInfo struct {
 	// origin says how an entry into a state came about (ADR-0047, item
 	// 3); empty for an event that is no entry.
 	origin string
+	// seen says the command named the version of the document its sender
+	// read (ADR-0078, item 2). The command was taken, so that version is
+	// the one before the event's, and the event keeps it as seen_version.
+	seen bool
 }
 
 // How an entry into a state came about (ADR-0047, item 3): somebody asked
@@ -339,6 +343,11 @@ func (s *Store) run(ctx context.Context, cmd command, now time.Time) (*result, e
 		return nil, hintf(CodeStateless, "", c.cls.Name+" declares no states: it is a stateless application and stores no documents", "add a states block with an initial state, or evaluate it with Preview")
 	}
 
+	// A new document has no version anybody read (ADR-0078, item 2).
+	if cmd.op == opCreate && cmd.o.saw != 0 {
+		return nil, hintf(CodeNotAllowed, "", "a create makes a document, and names the version "+strconv.FormatInt(cmd.o.saw, 10)+" its sender saw", "leave the version out: it is for a command on a document that is stored")
+	}
+
 	// The idempotency key (ADR-0026). The keys of the worker's own commits
 	// have a prefix a caller may not use (ADR-0044).
 	var hash string
@@ -438,6 +447,14 @@ func (s *Store) run(ctx context.Context, cmd command, now time.Time) (*result, e
 		if e := s.checkRead(c, beforeClass, before, &cmd, evalCtx); e != nil {
 			return nil, e
 		}
+		// The version the sender of the command read (ADR-0078, item 2),
+		// once the caller is known to see the document and before anything
+		// is asked of it or brought: a document that moved on is not acted
+		// on, and nothing is written. A migration moves many documents
+		// and saw no one of them.
+		if cmd.o.saw != 0 && cmd.o.saw != before.version && cmd.op != opMigrate {
+			return nil, staleVersion(c, before, cmd.o.saw)
+		}
 		if cmd.op == opTransition {
 			var e *Error
 			if trans, e = resolveTransition(c, cmd.transition, before.state); e != nil {
@@ -501,7 +518,7 @@ func (s *Store) run(ctx context.Context, cmd command, now time.Time) (*result, e
 			s.answerWhole(c, beforeClass, before, res, &cmd, clock, "preview_delete")
 			return res, nil
 		}
-		if err := s.writeDelete(ctx, c, before, secs, eventID, actor, cmd.o.key, hash, day); err != nil {
+		if err := s.writeDelete(ctx, c, before, secs, eventID, actor, cmd.o.key, hash, day, cmd.o.saw != 0); err != nil {
 			return nil, err
 		}
 		if len(s.emits) > 0 {
@@ -937,6 +954,9 @@ func (s *Store) run(ctx context.Context, cmd command, now time.Time) (*result, e
 		// cause (ADR-0047, item 12).
 		prev, key, cause = before, cmd.o.key, cmd.cause
 	} else {
+		// The command's own event says which version its sender read; the
+		// events of its chain are the engine's, and say none.
+		ev.seen = cmd.o.saw != 0 && before != nil
 		if err := s.write(ctx, c, before, after, kids, secs, eventID, actor, ev, cmd.o.key, hash, day); err != nil {
 			return nil, err
 		}
@@ -1300,7 +1320,7 @@ func sameText(s, boxed string, box any) any {
 	return nullText(s)
 }
 
-func (s *Store) writeDelete(ctx context.Context, c *class, before *docRow, secs int64, eventID, actor, key, hash string, day int64) error {
+func (s *Store) writeDelete(ctx context.Context, c *class, before *docRow, secs int64, eventID, actor, key, hash string, day int64, seen bool) error {
 	if c.brought {
 		s.wroteSubstitution()
 	}
@@ -1310,7 +1330,7 @@ func (s *Store) writeDelete(ctx context.Context, c *class, before *docRow, secs 
 	if _, err := c.w.deleteCurrent.ExecContext(ctx, before.id); err != nil {
 		return storageErr("delete the current row", err)
 	}
-	return s.writeEvent(ctx, eventID, c.cls.Name, before.id, eventInfo{kind: EventDeleted}, actor, before.version, nil, key, hash, day, secs)
+	return s.writeEvent(ctx, eventID, c.cls.Name, before.id, eventInfo{kind: EventDeleted, seen: seen}, actor, before.version, nil, key, hash, day, secs)
 }
 
 func (s *Store) writeEvent(ctx context.Context, eventID, class, docID string, ev eventInfo, actor string, before, after any, key, hash string, day, secs int64) error {
@@ -1325,8 +1345,14 @@ func (s *Store) writeEventArgs(ctx context.Context, eventID, class, docID any, e
 	if s.dayArg == nil || s.dayOf != day {
 		s.dayOf, s.dayArg = day, day
 	}
+	// The version a command saw is the version before its event: the box
+	// of the one serves the other.
+	var seen any
+	if ev.seen {
+		seen = before
+	}
 	args := append(s.eventArgs[:0], eventID, class, docID, word(ev.kind), nullText(ev.name), s.stateArg(ev.from), s.stateArg(ev.to), actor, before, after, nullText(ev.cause), nullText(key), nullText(hash), s.dayArg, secs, originCode(ev.origin),
-		s.acting.kind, s.acting.acts, s.acting.override, s.acting.reason)
+		s.acting.kind, s.acting.acts, s.acting.override, s.acting.reason, seen)
 	s.eventArgs = args
 	// The override is of the command, and its own event, the first it
 	// writes, keeps it; what follows in its chain is the engine's.
@@ -1340,6 +1366,14 @@ func (s *Store) writeEventArgs(ctx context.Context, eventID, class, docID any, e
 		return storageErr("write the event's documents", err)
 	}
 	return nil
+}
+
+// staleVersion refuses a command whose sender read another version of
+// the document than the one it is at (ADR-0078, item 2). A version the
+// document never had is refused in the same words.
+func staleVersion(c *class, row *docRow, saw int64) *Error {
+	return hintf(CodeStaleVersion, "", c.cls.Name+" "+row.id+" is at version "+strconv.FormatInt(row.version, 10)+", and the command saw version "+strconv.FormatInt(saw, 10),
+		"read the document again and decide on what it holds now")
 }
 
 // actAs notes whose command the writer runs: the kind of its principal

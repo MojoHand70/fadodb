@@ -499,11 +499,12 @@ func (s *Store) Events(ctx context.Context, class, id string, opts ...Option) ([
 	for rows.Next() {
 		var ev Event
 		var name, from, to, actor, cause, key, code, kind, acts, override, reason sql.NullString
-		var before, after, origin sql.NullInt64
+		var before, after, origin, seen sql.NullInt64
 		var day int64
-		if err := rows.Scan(&ev.ID, &ev.Class, &ev.DocID, &ev.Kind, &name, &from, &to, &actor, &before, &after, &cause, &key, &day, &ev.TS, &code, &origin, &kind, &acts, &override, &reason); err != nil {
+		if err := rows.Scan(&ev.ID, &ev.Class, &ev.DocID, &ev.Kind, &name, &from, &to, &actor, &before, &after, &cause, &key, &day, &ev.TS, &code, &origin, &kind, &acts, &override, &reason, &seen); err != nil {
 			return nil, storageErr("read the events", err)
 		}
+		ev.SeenVersion = seen.Int64
 		ev.ActorKind, ev.ActorFor = kind.String, acts.String
 		ev.Override, ev.Reason = override.String, reason.String
 		ev.Name, ev.FromState, ev.ToState, ev.ActorID, ev.CauseEventID, ev.CommandKey = name.String, from.String, to.String, actor.String, cause.String, key.String

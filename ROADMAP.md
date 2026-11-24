@@ -362,15 +362,13 @@ ADR-0079, proposed), while an app's own
 groups, and exporting an app, are not built; the door for agents at
 the server itself, at `/mcp`, which is built: the same tools, for a
 caller that proves who it is with a pass a person gives, as Claude
-does, or with a key, in both forms of the protocol, with no session;
-and the starter (ADR-0087, proposed), which is built:
-`fadodb init acme.fado --starter expenses` makes the database with an
-app ready to use, an employee's expenses approved by their manager
-and paid back by finance, while whether a starter brings people to
-try it with, and which face its people use, are the owner's to say.
+does, or with a key, in both forms of the protocol, with no session.
 Left of the phase's steps, in this order: the tool that waits for a
 change and files through the door; then the measurements and the
-release. Its test, besides the plan's: an
+release. No starter is built into the program (the owner, 2026-11-24):
+an app comes with a purchase of FadoDB, or is installed from the
+marketplace by exporting it from one database and importing it into
+another, which is built after v0.7.0. Its test, besides the plan's: an
 agent with only the skills and the door is told a business story in
 plain words and builds the table and the class, and the people of the
 story use them in a browser, through a face the owner names before
@@ -435,7 +433,7 @@ Legend: ✅ done · 🚧 in progress · ⬜ not started
 | 4 | Rules and actions: event-condition-action rules run inside the commit, the synchronous actions `set`, `reset`, `refresh` and `emit`, triggered variables with their moment, the transactional outbox with its worker, retries and dead rows, the engine's actions on other documents and tables, actions as an extension point with definitions, declared HTTP actions, Go actions the embedder registers, connections and results written back, the delivered event, formulas that read other documents (`LOOKUP` over a class, with a count, a sum, the smallest and the largest), conditions on time and timers | ✅ |
 | 5 | Security: the class-level access rules enforced on every path, who may see, create, change and delete a document, with the read rule compiled to a SQL predicate; the kind of actor, a person, an agent or a service, and whom it acts for, on every event, checked against a substitution the database keeps; who may define, operate and query, by four system groups; a content administrator who acts past a rule with a reason; the rules of a table | ✅ |
 | 6 | Server and CLI: the JSON command set over HTTP, one address for each command; users, groups and API keys kept in the database, and the authenticator for a host program that has its own; the stream of changes filtered by the read rule; documents on the wire; the door for agents (MCP); the command-line tool with a check of a class and of an action; the flow of a class in one call; a way in for messages from outside; OpenAPI; `fadodb serve` | ✅ |
-| 7 | Browser VM and reference frontend: the log of reads first; TypeScript VM on the same bytecode shipped as one plain JavaScript file, what a class says to people and its sections, the class bundle, `QUERY` when the first page needs a list of rows (otherwise with the reports of Phase 8), signing in with a password or a company's sign-on, the pages of a face handed out by `fadodb serve` from a folder (a face, which draws a document from its class, lives apart from the engine; chip, card, coins and rating are the face's), the door for agents at the server itself, a small client file beside the VM, one starter | 🚧 |
+| 7 | Browser VM and reference frontend: the log of reads first; TypeScript VM on the same bytecode shipped as one plain JavaScript file, what a class says to people and its sections, the class bundle, `QUERY` when the first page needs a list of rows (otherwise with the reports of Phase 8), signing in with a password or a company's sign-on, the pages of a face handed out by `fadodb serve` from a folder (a face, which draws a document from its class, lives apart from the engine; chip, card, coins and rating are the face's), the door for agents at the server itself, a small client file beside the VM | 🚧 |
 | 8 | Analytical engine: DuckDB projection of document tables, native and attached bindings, set-wise recompute, mining views, full build per OS | ⬜ |
 | 9 | Embedding: C ABI, Python client, embedding guides | ⬜ |
 | 10 | Postgres backend | ⬜ |

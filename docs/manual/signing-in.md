@@ -200,10 +200,12 @@ phone and the codes, who then sets it up again at the next sign-in.
 
 ## The account page
 
-`/auth/account` is Ann's: she adds and removes her passkeys; changes
-her password, giving the one she has; sets up or takes away her second
-step; sees her sessions, when each began, from where and when it was
-last used, and ends any; and signs out.
+`/auth/account` is Ann's: she adds and removes her passkeys; sees her
+sessions, when each began, from where and when it was last used, and
+ends any; and signs out. When she signed in with a password, the page
+also lets her change it, giving the one she has, and set up or take
+away her second step. Signed in with a passkey or the company's
+sign-on, she is asked for no password.
 
 **A session holds 8 hours unused, and 30 days at most.** The settings
 may make both shorter. It ends at once when Ann signs out, when an

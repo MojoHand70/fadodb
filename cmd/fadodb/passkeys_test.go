@@ -255,6 +255,11 @@ func TestTheChapterOnPasskeys(t *testing.T) {
 			if len(ids) != 2 {
 				t.Fatalf("Ann's passkeys on her account page:\n%s", page)
 			}
+			// Signed in with a passkey, she is asked for no password and
+			// offered no second step: they go with passwords.
+			if _, mine := computer.get("/auth/account"); strings.Contains(mine, "<h2>Password</h2>") || strings.Contains(mine, "<h2>Second step</h2>") || strings.Contains(mine, `type="password"`) {
+				t.Errorf("the account page of a passkey's session asks for a password:\n%s", mine)
+			}
 		case "Ann removes her phone's passkey":
 			code, _ := computer.post("/auth/account", url.Values{"do": {"remove-passkey"}, "passkey": {ids[0]}})
 			phoneCode, _ := onPhone.command("whoami", "{}")

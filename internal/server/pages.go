@@ -337,6 +337,10 @@ type page struct {
 	Passkeys []*store.Passkey
 	Passkey  string
 	Admin    bool
+	// ByPassword says the session began with a password: only then does
+	// the account page show the password and the second step, which go
+	// with passwords (ADR-0088, step 4).
+	ByPassword bool
 }
 
 // ServeHTTP answers a page, or a file the pages load.
@@ -634,7 +638,8 @@ func (p *Pages) account(out *reply, r *http.Request, told *Request) {
 	}
 	as := store.As(who)
 	origin, _ := p.originOf(r)
-	shown := &page{Title: "Your account", User: who.ID, Name: who.ID, Current: sess.ID, Passkey: sess.Passkey}
+	shown := &page{Title: "Your account", User: who.ID, Name: who.ID, Current: sess.ID, Passkey: sess.Passkey,
+		ByPassword: sess.Way != store.WayPasskey && sess.Way != store.WaySignOn}
 	for _, g := range who.System {
 		shown.Admin = shown.Admin || g == store.GroupAdministrators
 	}
@@ -1070,7 +1075,9 @@ func providersOf(b *strings.Builder, d *page) {
 
 // accountShown is what the account page holds: the person's passkeys,
 // and the way to add one on this device; the password and the second
-// step, while people have them; the sessions; and the clients allowed.
+// step, to a person who signed in with a password, until passwords go;
+// the sessions; and the clients allowed. A person who signed in with a
+// passkey or the company's sign-on is asked for no password.
 func accountShown(b *strings.Builder, d *page) {
 	b.WriteString("<h2>Passkeys</h2>\n")
 	if d.Admin && len(d.Passkeys) < 2 {
@@ -1107,34 +1114,8 @@ func accountShown(b *strings.Builder, d *page) {
 		saidHere(b)
 		b.WriteString("</form>\n")
 	}
-	b.WriteString("<h2>Password</h2>\n" + `<form method="post" action="` + PageAccount + `">`)
-	hidden(b, "do", "password")
-	b.WriteString(`<input type="text" name="user" value="` + esc(d.User) + `" autocomplete="username" hidden>
-<label for="old">Your password<input id="old" name="old" type="password" autocomplete="current-password" required></label>
-<label for="password">A new password, at least 12 characters<input id="password" name="password" type="password" autocomplete="new-password" minlength="12" required></label>
-<label for="again">The new password again<input id="again" name="again" type="password" autocomplete="new-password" minlength="12" required></label>
-<button class="btn ghost" type="submit">Change it</button></form>
-<h2>Second step</h2>
-`)
-	switch {
-	case d.Has:
-		b.WriteString("<p class=\"small left\">A code from your authenticator app is asked after your password.</p>\n")
-		if !d.Needs {
-			b.WriteString(`<form method="post" action="` + PageAccount + `">`)
-			hidden(b, "do", "clear")
-			b.WriteString(`<button class="btn ghost" type="submit">Take it away</button></form>`)
-		}
-	case d.Needs:
-		b.WriteString("<p class=\"small left\">Your groups ask for one, and you set it up at your next sign-in with your password.</p>\n")
-	default:
-		b.WriteString("<p class=\"small left\">You have none. A code from an app on your phone is asked after your password, when you sign in with one.</p>\n")
-	}
-	b.WriteString(`<form method="post" action="` + PageAccount + `">`)
-	hidden(b, "do", "set-up")
-	if d.Has {
-		b.WriteString(`<button class="btn ghost" type="submit">Set up a new one</button></form>`)
-	} else {
-		b.WriteString(`<button class="btn ghost" type="submit">Set one up</button></form>`)
+	if d.ByPassword {
+		passwordShown(b, d)
 	}
 	b.WriteString("\n<h2>Sessions</h2>\n<div class=\"rows\">")
 	for _, s := range d.List {
@@ -1167,6 +1148,40 @@ func accountShown(b *strings.Builder, d *page) {
 		b.WriteString(`<button class="btn ghost small" type="submit">End</button></form></div>`)
 	}
 	b.WriteString("</div>")
+}
+
+// passwordShown is the part of the account page that goes with a
+// password: changing it, and the second step.
+func passwordShown(b *strings.Builder, d *page) {
+	b.WriteString("<h2>Password</h2>\n" + `<form method="post" action="` + PageAccount + `">`)
+	hidden(b, "do", "password")
+	b.WriteString(`<input type="text" name="user" value="` + esc(d.User) + `" autocomplete="username" hidden>
+<label for="old">Your password<input id="old" name="old" type="password" autocomplete="current-password" required></label>
+<label for="password">A new password, at least 12 characters<input id="password" name="password" type="password" autocomplete="new-password" minlength="12" required></label>
+<label for="again">The new password again<input id="again" name="again" type="password" autocomplete="new-password" minlength="12" required></label>
+<button class="btn ghost" type="submit">Change it</button></form>
+<h2>Second step</h2>
+`)
+	switch {
+	case d.Has:
+		b.WriteString("<p class=\"small left\">A code from your authenticator app is asked after your password.</p>\n")
+		if !d.Needs {
+			b.WriteString(`<form method="post" action="` + PageAccount + `">`)
+			hidden(b, "do", "clear")
+			b.WriteString(`<button class="btn ghost" type="submit">Take it away</button></form>`)
+		}
+	case d.Needs:
+		b.WriteString("<p class=\"small left\">Your groups ask for one, and you set it up at your next sign-in with your password.</p>\n")
+	default:
+		b.WriteString("<p class=\"small left\">You have none. A code from an app on your phone is asked after your password, when you sign in with one.</p>\n")
+	}
+	b.WriteString(`<form method="post" action="` + PageAccount + `">`)
+	hidden(b, "do", "set-up")
+	if d.Has {
+		b.WriteString(`<button class="btn ghost" type="submit">Set up a new one</button></form>`)
+	} else {
+		b.WriteString(`<button class="btn ghost" type="submit">Set one up</button></form>`)
+	}
 }
 
 // consentShown is the page that asks a person to allow a client.

@@ -8,6 +8,18 @@ All notable changes to FadoDB are recorded here. The format follows
 
 ### Added
 
+- Files through the door for agents, from a folder (ADR-0064, ruling 4,
+  items 31 to 38): `fadodb mcp --files FOLDER` offers `put_file`,
+  which reads a file of the folder, puts its bytes and answers its
+  facts, for `create` or `set` to give a variable of the schema File,
+  and `get_file`, which writes a file a document holds into the
+  folder, by its hash, under the rules of the document. Nothing
+  outside the folder is read or written: `..`, a whole path elsewhere
+  and a link that points out are refused. No file is written over, and
+  a file is left only when its bytes have the hash asked for. The bytes
+  never travel in a tool's arguments or answer, and the door at the
+  server, which has no folder of the caller's, offers neither tool.
+
 - The address of a sign-in behind a proxy (ADR-0088, item 8, the first
   of its five steps): the setting `proxies` names the proxies in front
   of `fadodb serve`, each an address or a range such as `10.0.0.0/8`.

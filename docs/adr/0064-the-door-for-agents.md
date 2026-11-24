@@ -1,6 +1,6 @@
 # ADR-0064: The door for agents
 
-- Status: Accepted; amended by ADR-0071 (an agent signs in at `/mcp` with a pass); the door at the server built on 2026-11-23, items 11 to 21
+- Status: Accepted; amended by ADR-0071 (an agent signs in at `/mcp` with a pass); amends ADR-0055 (`wait_for_changes` joins the table) and ADR-0058 (`after` takes `start`); the door at the server built on 2026-11-23, items 11 to 21; the tool that waits built on 2026-11-24, items 22 to 30
 - Date: 2026-11-16
 
 ## Context
@@ -296,6 +296,63 @@ the owner's to strike:
     are for whoever starts `fadodb mcp`; at the server the rights of
     the classes decide what each caller may do. The three commands
     that are no tool (items 2 and 7) are none here either.
+
+## Settled while building the tool that waits
+
+Built on 2026-11-24 as the owner's ruling 3 has it ("yes, go ahead
+with the waiting tool"). Settled by me while building, each the
+owner's to strike:
+
+22. **One command, `wait_for_changes`**, of the command set and so a
+    tool at both doors, `POST /v1/wait_for_changes`, and the Go call
+    `WaitForChanges`. It takes what `subscribe` takes, `classes`,
+    `kinds`, `to_states` and `after`, and `seconds` and `limit`. It
+    answers `events`, each as the stream tells it, `after` and `more`.
+23. **It answers what there is, or waits for it.** It reads the log
+    from its place to the end and answers the events the caller may
+    hear of; when there are none it waits for the next commit, up to
+    `seconds`, from 0 to 60, and answers none when they pass. Left out,
+    `seconds` is 0 and the call answers at once, so that an agent
+    started on a timer asks what happened since it last looked. Sixty
+    is within what the programs of agents give a tool to answer.
+24. **`after` is the place to ask from next.** Given back, it misses
+    nothing and tells nothing twice, also of what came between two
+    calls. It is the last event the call read, which the caller may
+    not be able to read: so it says when that event was written and
+    nothing else of it, not its class, its document or its kind. The
+    other way: the last event the caller heard, which says nothing,
+    but makes a caller that hears little read the log again from there
+    at each call, a longer stretch each time.
+25. **`start` is the place before the first event of the log**, which
+    no event's id can be. A wait in a database whose log holds no event
+    answers it, so that the first events of a new database are not
+    missed between two calls, and `subscribe` takes it too, for a
+    stream that begins with the first event.
+26. **An answer holds 100 events, or `limit`, up to 1,000.** A full
+    answer stops at its last event and says `"more": true`; the next
+    call takes the rest at once. `more` says the same of a call that
+    was stopped before it read the log to its end.
+27. **Who hears of what is the stream's rule** (ADR-0058, item 4, and
+    ADR-0067 for a content administrator, whose reads past the rule
+    the log of reads names under `wait_for_changes`). A caller who acts
+    for somebody may wait, unlike the stream, which is heard as
+    oneself: it hears of an event when it may act for that person on
+    the event's class now, as a command on that class would be let
+    through, and may read the document so. This is how Claude, which
+    acts for its person at `/mcp`, waits (ADR-0071, item 31). The
+    caller is judged as it is when the call begins.
+28. **At the server a wait holds the place of a stream**, not the slot
+    of a command, at `/v1/` and at `/mcp`: as many wait at once as the
+    server holds streams, 256 unless its settings say otherwise
+    (`limits.streams`), and none of them keeps a command waiting. A
+    wait that finds no place is refused `busy`. It runs for the
+    longest wait and then the time of a command, and it is counted in
+    `fadodb_streams` while it waits.
+29. **A wait that is stopped answers what it has**, with its place:
+    when its time is up, when its caller's request ends, and when the
+    server stops and ends its streams.
+30. **Nothing is kept between two calls**: no session, no subscription
+    on the server. The place travels with the caller.
 
 ## Consequences
 

@@ -328,6 +328,9 @@ func (d *Door) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case addressSubscribe:
 		// The one command whose answer is a stream (ADR-0058).
 		d.subscribe(out, r, &told)
+	case addressWait:
+		// The command that waits for changes holds a stream's place.
+		d.waitFor(out, r, &told)
 	default:
 		d.command(out, r, &told, name)
 	}
@@ -396,7 +399,12 @@ func (d *Door) command(out *reply, r *http.Request, told *Request, name string) 
 // refusal, or the door's refusal of a command that was stopped. told is
 // told the code.
 func (d *Door) run(ctx context.Context, p store.Principal, name string, object []byte, told *Request) (int, []byte) {
-	ctx, cancel := context.WithTimeout(ctx, d.limits.CommandTime)
+	return d.runFor(ctx, d.limits.CommandTime, p, name, object, told)
+}
+
+// runFor runs a command as run does, for as long as limit.
+func (d *Door) runFor(ctx context.Context, limit time.Duration, p store.Principal, name string, object []byte, told *Request) (int, []byte) {
+	ctx, cancel := context.WithTimeout(ctx, limit)
 	answer, err := d.db.Exec(ctx, p, name, object)
 	// Why the command was told to stop, if it was: its time was up, or
 	// the request it came in was closed.
@@ -413,7 +421,7 @@ func (d *Door) run(ctx context.Context, p store.Principal, name string, object [
 		told.Code = CodeTimeout
 		return Status(CodeTimeout), refusalText(&store.Error{
 			Code:    CodeTimeout,
-			Message: "the command ran longer than " + d.limits.CommandTime.String() + ", the longest the server lets one run, and was stopped",
+			Message: "the command ran longer than " + limit.String() + ", the longest the server lets one run, and was stopped",
 			Hint:    "a command that is one commit wrote nothing; migrate and drain commit as they go and keep what they had done",
 		})
 	}

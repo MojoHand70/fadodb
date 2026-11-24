@@ -109,7 +109,7 @@ type goHearing struct{ c *Changes }
 func (h goHearing) heard(ctx context.Context) ([]*Event, error) {
 	var out []*Event
 	for {
-		more, err := h.c.fill(ctx)
+		more, err := h.c.fill(ctx, 0)
 		if err != nil {
 			return out, err
 		}

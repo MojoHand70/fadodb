@@ -70,14 +70,15 @@ func (d *Door) serveAgents(out *reply, r *http.Request, told *Request) {
 	if !d.slot(out, r, told) {
 		return
 	}
-	defer d.leave()
+	held := &seat{d: d, slot: true}
+	defer held.give()
 	body, refusal := d.body(out.w, r)
 	if refusal != nil {
 		told.Code = refusal.Code
 		d.agentsRefuse(out, Status(refusal.Code), refusal.Message)
 		return
 	}
-	answered := d.agents.Exchange(r.Context(), d.sendAs(p, told), mcp.Posted{
+	answered := d.agents.Exchange(r.Context(), d.sendAs(p, told, held), mcp.Posted{
 		Body:    body,
 		Version: r.Header.Get("MCP-Protocol-Version"),
 		Method:  r.Header.Get("Mcp-Method"),
@@ -97,11 +98,47 @@ func (d *Door) serveAgents(out *reply, r *http.Request, told *Request) {
 
 // sendAs carries the command of a tool as p, as a command sent to /v1/
 // is carried: within the door's time, its refusal as the database wrote
-// it. told is told the command's code.
-func (d *Door) sendAs(p store.Principal, told *Request) mcp.Send {
+// it. told is told the command's code. The tool that waits for changes
+// gives the request's slot back for the place of a stream, as at /v1/,
+// and runs for as long as it may wait.
+func (d *Door) sendAs(p store.Principal, told *Request, held *seat) mcp.Send {
 	return func(ctx context.Context, name string, object []byte) ([]byte, bool, error) {
-		status, answer := d.run(ctx, p, name, object, told)
+		if name != addressWait {
+			status, answer := d.run(ctx, p, name, object, told)
+			return answer, status != http.StatusOK, nil
+		}
+		ctx, end := context.WithCancel(ctx)
+		defer end()
+		place, refusal := d.hold(end)
+		if refusal != nil {
+			told.Code = refusal.Code
+			return refusalText(refusal), true, nil
+		}
+		held.give()
+		held.place = place
+		status, answer := d.runFor(ctx, d.waitTime(), p, name, object, told)
 		return answer, status != http.StatusOK, nil
+	}
+}
+
+// seat is what a request to the door for agents holds while it runs:
+// the slot of a command, or the place of a stream while its tool waits
+// for changes.
+type seat struct {
+	d     *Door
+	slot  bool
+	place *subscription
+}
+
+// give gives back what the request holds.
+func (s *seat) give() {
+	if s.slot {
+		s.d.leave()
+		s.slot = false
+	}
+	if s.place != nil {
+		s.d.release(s.place)
+		s.place = nil
 	}
 }
 

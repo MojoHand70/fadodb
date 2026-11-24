@@ -111,6 +111,7 @@ A command takes the ones its list below shows, and no other.
 | [`version`](#version) | Reads one committed version of a document. | reads |
 | [`events`](#events) | Reads the events that touched a document, oldest first. | reads |
 | [`subscribe`](#subscribe) | Opens the stream of changes: the caller is told of every event it may read of, in the order of the commits, as each is written. | reads |
+| [`wait_for_changes`](#wait_for_changes) | Answers the events the caller may hear of after a place in the log, as the stream of changes tells them, and waits up to seconds for the first when there is none yet; the answer says where to ask from next. | reads |
 | [`preview`](#preview) | Runs a create, a set or a transition without writing anything. | reads |
 | [`preview_delete`](#preview_delete) | Answers what a delete of a document would do, without deleting it. | reads |
 | [`preview_many`](#preview_many) | Runs the batch transition_many would run, without writing anything. | reads |
@@ -395,7 +396,7 @@ Opens the stream of changes: the caller is told of every event it may read of, i
 | `classes` | list of texts |  | the classes to hear of; every class when left out |
 | `kinds` | list of texts |  | the kinds of event to hear of, such as created, set and transition; every kind when left out |
 | `to_states` | list of texts |  | for a transition, the states entered; every state when left out |
-| `after` | text |  | the id of an event: the stream begins after it, so a caller that was away gives the last one it handled; now when left out |
+| `after` | text |  | the id of an event: the stream begins after it, so a caller that was away gives the last one it handled; start for the first event of the log; now when left out |
 
 And, of the members that mean the same everywhere: `reason`.
 
@@ -405,6 +406,29 @@ open and carries one entry for each event, and in Go a value whose
 refuses this command with `not_supported`.
 [The stream of changes](the-stream-of-changes.md) says what an entry is,
 who hears of what and how a stream ends.
+
+### wait_for_changes
+
+Answers the events the caller may hear of after a place in the log, as the stream of changes tells them, and waits up to seconds for the first when there is none yet; the answer says where to ask from next. It reads; in Go it is the call `WaitForChanges`.
+
+| Member | Type | | What it is |
+|---|---|---|---|
+| `classes` | list of texts |  | the classes to hear of; every class when left out |
+| `kinds` | list of texts |  | the kinds of event to hear of, such as created, set and transition; every kind when left out |
+| `to_states` | list of texts |  | for a transition, the states entered; every state when left out |
+| `after` | text |  | where to begin: the after of the last answer, start for the first event of the log, or the id of an event; now when left out |
+| `seconds` | whole number |  | how long to wait when there is nothing yet, from 0 to 60; 0 when left out, which answers at once |
+| `limit` | whole number |  | the most events to answer; 100 when left out, 1,000 at most |
+
+And, of the members that mean the same everywhere: `reason`, `for`.
+
+It answers:
+
+| Member | What it holds |
+|---|---|
+| `events` | the events, in the order of the commits; none when the time ran out first |
+| `after` | where to ask from next: given back as after, nothing is missed and nothing told twice |
+| `more` | true when the log holds events after after that this answer did not read: ask again at once |
 
 ### preview
 

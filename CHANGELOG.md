@@ -8,6 +8,18 @@ All notable changes to FadoDB are recorded here. The format follows
 
 ### Added
 
+- An agent waits for a change through the door for agents (ADR-0064,
+  ruling 3, items 22 to 30): the command `wait_for_changes`, a tool at
+  both doors, `POST /v1/wait_for_changes` and the Go call
+  `WaitForChanges`. It takes what `subscribe` takes and `seconds`, up
+  to 60, and `limit`; it answers the events after its place that the
+  caller may hear of, or waits for the first, with `after`, the place
+  to ask from next, and `more`. A caller who acts for its person, as
+  Claude does at `/mcp`, hears of what it may read for them. At the
+  server a wait holds the place of a stream and not a command's slot.
+  `after` takes `start`, before the first event of the log, for a wait
+  and for `subscribe`.
+
 - A list narrowed, ordered and cut inside a function over it (ADR-0081,
   step 3, its second group): `FILTER`, `SORT`, `TOP` and `UNIQUE`. On
   a bill, `FIRST(SORT(lines, {-price}).what)` is the dearest thing,

@@ -513,6 +513,57 @@ func runSubscribe(*call) error {
 		Hint: "a Go program opens the stream with the call Subscribe; over HTTP it is POST /v1/subscribe, whose reply stays open"}
 }
 
+// runWaitForChanges answers the events after a place, waiting for the
+// first when there is none yet (ADR-0064, ruling 3).
+func runWaitForChanges(c *call) error {
+	var f store.ChangeFilter
+	var e *store.Error
+	if f.Classes, e = c.texts("classes"); e != nil {
+		return e
+	}
+	if f.Kinds, e = c.texts("kinds"); e != nil {
+		return e
+	}
+	if f.ToStates, e = c.texts("to_states"); e != nil {
+		return e
+	}
+	f.After = c.text("after")
+	var w store.Wait
+	seconds, e := c.integer("seconds")
+	if e != nil {
+		return e
+	}
+	limit, e := c.integer("limit")
+	if e != nil {
+		return e
+	}
+	w.Seconds, w.Limit = clamp(seconds), clamp(limit)
+	waited, err := c.s.WaitForChanges(c.ctx, f, w, c.opts...)
+	if err != nil {
+		return err
+	}
+	text, err := Marshal(waited)
+	if err != nil {
+		return err
+	}
+	c.out = append(c.out, text...)
+	return nil
+}
+
+// clamp is a whole number of the object as an int, kept within what the
+// engine refuses by its bounds so that a number too large for an int is
+// refused as too large and not turned into another.
+func clamp(n int64) int {
+	const most = 1 << 30
+	switch {
+	case n > most:
+		return most
+	case n < -most:
+		return -most
+	}
+	return int(n)
+}
+
 // Subscription reads the object of the command subscribe (ADR-0058,
 // item 2), for the door that answers it with a stream: the filter of
 // the stream, and the caller as the engine is told of it. An object

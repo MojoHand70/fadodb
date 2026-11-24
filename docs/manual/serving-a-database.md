@@ -639,7 +639,7 @@ is no administrator.
 | `fadodb_requests_total` | counter | Requests answered, by the command they were sent to and the status of the reply. A name that is no command is counted as other. |
 | `fadodb_command_seconds` | summary | The time the requests of a command took, added up, and how many they were. |
 | `fadodb_request_seconds` | histogram | How long requests took, all commands together. |
-| `fadodb_streams` | gauge | The streams of changes that are open. |
+| `fadodb_streams` | gauge | The streams of changes that are open, and the calls that wait for changes. |
 | `fadodb_actions` | gauge | The queued actions of the database that are not done: due and not yet run, waiting for their moment, and dead. |
 | `fadodb_actions_oldest_due_seconds` | gauge | How long the action that has been due longest has been due; 0 when none is due. |
 | `fadodb_database_bytes` | gauge | The size of the database file. |

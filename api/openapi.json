@@ -5650,7 +5650,7 @@
                 "additionalProperties": false,
                 "properties": {
                   "after": {
-                    "description": "the id of an event: the stream begins after it, so a caller that was away gives the last one it handled; now when left out",
+                    "description": "the id of an event: the stream begins after it, so a caller that was away gives the last one it handled; start for the first event of the log; now when left out",
                     "type": "string"
                   },
                   "classes": {
@@ -6513,6 +6513,103 @@
           "Documents"
         ],
         "x-fado-call": "Version",
+        "x-fado-mark": "reads"
+      }
+    },
+    "/v1/wait_for_changes": {
+      "post": {
+        "description": "It reads. In Go it is the call `WaitForChanges`.",
+        "operationId": "wait_for_changes",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "after": {
+                    "description": "where to begin: the after of the last answer, start for the first event of the log, or the id of an event; now when left out",
+                    "type": "string"
+                  },
+                  "classes": {
+                    "description": "the classes to hear of; every class when left out",
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "for": {
+                    "description": "the id of whoever the caller acts for; let through only while a substitution says so",
+                    "type": "string"
+                  },
+                  "kinds": {
+                    "description": "the kinds of event to hear of, such as created, set and transition; every kind when left out",
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "limit": {
+                    "description": "the most events to answer; 100 when left out, 1,000 at most",
+                    "type": "integer"
+                  },
+                  "reason": {
+                    "description": "why a content administrator acts or reads past a rule; a change keeps it on its event, a read in the log of reads",
+                    "type": "string"
+                  },
+                  "seconds": {
+                    "description": "how long to wait when there is nothing yet, from 0 to 60; 0 when left out, which answers at once",
+                    "type": "integer"
+                  },
+                  "to_states": {
+                    "description": "for a transition, the states entered; every state when left out",
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  }
+                },
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "after": {
+                      "description": "where to ask from next: given back as after, nothing is missed and nothing told twice"
+                    },
+                    "events": {
+                      "description": "the events, in the order of the commits; none when the time ran out first"
+                    },
+                    "more": {
+                      "description": "true when the log holds events after after that this answer did not read: ask again at once"
+                    }
+                  },
+                  "required": [
+                    "events",
+                    "after",
+                    "more"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "The command ran."
+          },
+          "default": {
+            "$ref": "#/components/responses/Refused"
+          }
+        },
+        "summary": "Answers the events the caller may hear of after a place in the log, as the stream of changes tells them, and waits up to seconds for the first when there is none yet; the answer says where to ask from next.",
+        "tags": [
+          "Documents"
+        ],
+        "x-fado-call": "WaitForChanges",
         "x-fado-mark": "reads"
       }
     },

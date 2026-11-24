@@ -189,7 +189,7 @@ everything through.
 | `classes` | `Classes` | the classes to hear of; every class when left out |
 | `kinds` | `Kinds` | the kinds of event: `created`, `set`, `transition`, `deleted`, `reset`, `refresh`, `migrated`, `action_run`, `action_failed`, `custom`; every kind when left out |
 | `to_states` | `ToStates` | for a transition, the states entered; every state when left out. With it, only transitions are told |
-| `after` | `After` | the id of an event: the stream begins after it. Left out, the stream begins now |
+| `after` | `After` | the id of an event: the stream begins after it; `start` begins it before the first event of the log. Left out, the stream begins now |
 
 A stream that begins now says nothing of what happened before it was
 opened. A filter on the values of a document, such as invoices over

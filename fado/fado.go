@@ -100,6 +100,11 @@ type (
 	// (ADR-0058).
 	ChangeFilter = store.ChangeFilter
 	Changes      = store.Changes
+	// Wait says how WaitForChanges waits, and Waited is what it
+	// answers: the events, and the place to ask from next (ADR-0064,
+	// ruling 3).
+	Wait   = store.Wait
+	Waited = store.Waited
 	// Flow is the flow of a class as one caller sees it, FlowState and
 	// FlowTransition a state and a transition in it, and FlowPeriod the
 	// period its moves are counted in (ADR-0063).
@@ -305,6 +310,21 @@ const (
 	GroupContentAdministrators = store.GroupContentAdministrators
 	GroupAnalysts              = store.GroupAnalysts
 	GroupEveryone              = store.GroupEveryone
+)
+
+// LogStart is the place before the first event of the log, for
+// ChangeFilter.After: a stream or a wait given it begins with the first
+// event there is, and WaitForChanges answers it as its place while the
+// log holds none.
+const LogStart = store.LogStart
+
+// The bounds of WaitForChanges: it waits up to MaxWaitSeconds, and an
+// answer holds DefaultWaitLimit events unless Wait.Limit says otherwise,
+// MaxWaitLimit at most.
+const (
+	MaxWaitSeconds   = store.MaxWaitSeconds
+	DefaultWaitLimit = store.DefaultWaitLimit
+	MaxWaitLimit     = store.MaxWaitLimit
 )
 
 // SubstitutionClass is the class the engine brings to every database
@@ -686,6 +706,23 @@ func (db *DB) OutboxCounts(ctx context.Context, opts ...Option) (OutboxCounts, e
 //	}
 func (db *DB) Subscribe(ctx context.Context, f ChangeFilter, opts ...Option) (*Changes, error) {
 	return db.s.Subscribe(ctx, f, opts...)
+}
+
+// WaitForChanges answers the events of the log after a place that the
+// filter lets through and the caller may hear of, as a stream of changes
+// tells them, with the place to ask from next; when there are none yet,
+// it waits for the first, up to w.Seconds (ADR-0064, ruling 3). It is
+// how a caller waits that cannot hold a stream open, such as an agent
+// through the door for agents, and a caller who acts for somebody: it
+// hears of a class it may act for them on. The filter's After is the
+// After of the last answer, LogStart for the first event of the log, or
+// empty for now. As a command it is wait_for_changes.
+//
+//	w, err := db.WaitForChanges(ctx, fado.ChangeFilter{Classes: []string{"Invoice"}, ToStates: []string{"review"}, After: place},
+//	    fado.Wait{Seconds: 30}, fado.As(agent))
+//	// handle w.Events, then ask again with After: w.After
+func (db *DB) WaitForChanges(ctx context.Context, f ChangeFilter, w Wait, opts ...Option) (*Waited, error) {
+	return db.s.WaitForChanges(ctx, f, w, opts...)
 }
 
 // RetryAction makes a dead action pending again; the outcome it then

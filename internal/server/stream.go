@@ -37,6 +37,11 @@ type Stream interface {
 // addressSubscribe is the name of the command a stream is opened with.
 const addressSubscribe = "subscribe"
 
+// addressWait is the command that waits for changes (ADR-0064, ruling
+// 3): a command answered with one object, which holds the place of a
+// stream while it waits, since it is one, asked again and again.
+const addressWait = "wait_for_changes"
+
 // lastEventID is the header in which a caller that connects again says
 // the last event it handled, as server-sent events resume.
 const lastEventID = "Last-Event-ID"
@@ -290,4 +295,38 @@ func broken() *store.Error {
 		Message: "the stream failed in the engine; the program that runs it has the words",
 		Hint:    "open the stream again with the id of the last event handled as after",
 	}
+}
+
+// waitFor runs the command that waits for changes (ADR-0064, item 28):
+// as a command, in the place of a stream and not in a command's slot, so
+// that the agents that wait do not keep the commands of others waiting;
+// for as long as it may wait and a command may then run. When the
+// server stops it, it answers what it has, with its place.
+func (d *Door) waitFor(out *reply, r *http.Request, told *Request) {
+	p, ok := d.asCommand(out, r, told)
+	if !ok {
+		return
+	}
+	ctx, end := context.WithCancel(r.Context())
+	defer end()
+	held, refusal := d.hold(end)
+	if refusal != nil {
+		told.Code = refusal.Code
+		out.refusal(Status(refusal.Code), refusal)
+		return
+	}
+	defer d.release(held)
+	object, refusal := d.body(out.w, r)
+	if refusal != nil {
+		told.Code = refusal.Code
+		out.refusal(Status(refusal.Code), refusal)
+		return
+	}
+	out.send(d.runFor(ctx, d.waitTime(), p, addressWait, object, told))
+}
+
+// waitTime is the longest the command that waits for changes runs: the
+// longest it waits, and then the time of a command.
+func (d *Door) waitTime() time.Duration {
+	return time.Duration(store.MaxWaitSeconds)*time.Second + d.limits.CommandTime
 }

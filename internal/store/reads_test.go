@@ -324,7 +324,7 @@ func TestReads_TheStream(t *testing.T) {
 		t.Fatal(err)
 	}
 	for name, c := range map[string]*Changes{"with no reason": quiet, "with a reason": told} {
-		if _, err := c.fill(ctx); err != nil {
+		if _, err := c.fill(ctx, 0); err != nil {
 			t.Fatal(err)
 		}
 		var heard []string

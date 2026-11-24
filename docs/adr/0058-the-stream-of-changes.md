@@ -1,6 +1,6 @@
 # ADR-0058: The stream of changes: the log read forward, over plain HTTP
 
-- Status: Accepted; amends ADR-0011 (the stream is carried by an HTTP reply that stays open, and the WebSocket is not built), ADR-0010 and ADR-0049 (how the read rule is asked for an event), ADR-0018 (an entry of the stream is an event and not a document), ADR-0055 (one command joins the table); amended by ADR-0067 (a content administrator hears past the read rule only with a reason, and is recorded)
+- Status: Accepted; amends ADR-0011 (the stream is carried by an HTTP reply that stays open, and the WebSocket is not built), ADR-0010 and ADR-0049 (how the read rule is asked for an event), ADR-0018 (an entry of the stream is an event and not a document), ADR-0055 (one command joins the table); amended by ADR-0067 (a content administrator hears past the read rule only with a reason, and is recorded); and by ADR-0064 (`after` takes `start`, the place before the first event of the log; a caller that cannot hold a stream open waits with `wait_for_changes`)
 - Date: 2026-11-14
 
 ## Context

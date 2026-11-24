@@ -238,7 +238,7 @@ before one that removes:
 <!-- the marks -->
 | The command | Tools | `readOnlyHint` | `destructiveHint` | `openWorldHint` |
 |---|---|---|---|---|
-| reads | 54 | true | false | false |
+| reads | 55 | true | false | false |
 | writes | 33 | false | false | false |
 | writes, and runs an action now: `try_action`, `drain` | 2 | false | false | true |
 | removes: `delete` | 1 | false | true | false |
@@ -437,7 +437,7 @@ not see them:
   cannot move an invoice.
 - `--tools get,query,transitions,transition` offers these tools and no
   other. A short list also costs an agent less to read: the whole list
-  is about 68,000 characters.
+  is about 74,000 characters.
 
 An agent that calls a tool the door does not offer is told why:
 
@@ -451,12 +451,89 @@ An agent that calls a tool the door does not offer is told why:
 Unknown tool: transition. This door was started to offer only the tools that read
 ```
 
+## Waiting for a change
+
+`ap-agent` handles an invoice once it enters `review`. A stream of
+changes stays open, and a tool answers once, so the stream is no
+tool: the agent waits with `wait_for_changes`. It names the changes it
+wants, where it stopped, and how long it will wait. Its first call
+names no place, so it begins now:
+
+<!-- waiting: the call -->
+```jsonc
+{"name": "wait_for_changes", "arguments": {"classes": ["Invoice"], "kinds": ["transition"], "to_states": ["review"], "seconds": 30}}
+```
+
+While it waits, Bob submits FV/2026/11/0042, and the agent reads:
+
+<!-- waiting: the answer -->
+```jsonc
+{
+  "events": [
+    {
+      "event_id": "01KA2F8Q7ZJ4M0X3T5V9B1C6DE",
+      "class": "Invoice",
+      "doc_id": "FV/2026/11/0042",
+      "kind": "transition",
+      "name": "submit",
+      "from_state": "draft",
+      "to_state": "review",
+      "actor_id": "bob",
+      "actor_kind": "person",
+      "before_version": 1,
+      "after_version": 2,
+      "business_date": "2026-11-15",
+      "ts": 1794733200,
+      "origin": "command"
+    }
+  ],
+  "after": "01KA2F8Q7ZJ4M0X3T5V9B1C6DE",
+  "more": false
+}
+```
+
+It handles the invoice, and asks again from where it stopped:
+
+<!-- waiting: again -->
+```jsonc
+{"name": "wait_for_changes", "arguments": {"classes": ["Invoice"], "kinds": ["transition"], "to_states": ["review"], "after": "01KA2F8Q7ZJ4M0X3T5V9B1C6DE", "seconds": 30}}
+```
+
+- **It answers what there is, or waits for it.** The events after its
+  place that it may hear of are answered at once. When there are none
+  yet, it waits for the first, up to `seconds`, from 0 to 60, and
+  answers none when they pass. Left out, `seconds` is 0, and the call
+  answers at once: an agent started every morning asks what happened
+  in the night.
+- **`after` is where to ask from next.** Given back, the agent misses
+  nothing, also of what came between two calls, and is told nothing
+  twice. `start` begins before the first event of the log, and a
+  database that has none yet answers `start`.
+- **The place moves over what the agent may not read**, so that it does
+  not read the log again at each call. It names the last event the call
+  read, which says when that event was written and nothing else of it.
+- **An answer holds 100 events at most**, or `limit` of them, up to
+  1,000. One that is full says `"more": true`, and the next call takes
+  the rest at once.
+- **Who hears of what** is the stream's rule: the agent hears of an
+  event when it may read the document as the event left it
+  ([who hears of what](the-stream-of-changes.md#who-hears-of-what)). An
+  agent that acts for a person, as Claude does for Ann at the server
+  itself, hears of what it may read for her, on the classes it may act
+  for her on. A stream is heard as oneself; this is how such an agent
+  waits.
+- **At the server, a wait holds the place of a stream**, not the slot of
+  a command: as many agents wait at once as the server holds streams,
+  256 unless its operator says otherwise, and none of them keeps a
+  command waiting. When the server stops, a wait answers what it has,
+  with its place.
+
 ## What is no tool
 
 <!-- no tool -->
 | Command | Why |
 |---|---|
-| `subscribe` | its answer is a stream, and a tool is one question and one answer |
+| `subscribe` | its answer is a stream, and a tool is one question and one answer: an agent waits with wait_for_changes |
 | `create_key` | its answer holds the secret of a key, which would stay in the conversation of an agent; a key is made at a terminal |
 | `create_password_link` | its answer holds the secret of a link that sets a password, which would stay in the conversation of an agent; a link is made at a terminal and given to the person |
 
@@ -524,9 +601,5 @@ answered what was asked before.
 
 ## Not here yet
 
-- **A tool that waits for a change**, in place of the stream.
-- **Files.**
-
-Each is wanted and is its own step after v0.6.0, by the owner's
-rulings of 2026-11-17
-([ADR-0064](../adr/0064-the-door-for-agents.md)).
+- **Files.** They are wanted and are their own step, by the owner's
+  ruling of 2026-11-17 ([ADR-0064](../adr/0064-the-door-for-agents.md)).

@@ -45,7 +45,7 @@ type Options struct {
 func Withheld(name string) string {
 	switch name {
 	case "subscribe":
-		return "its answer is a stream, and a tool is one question and one answer"
+		return "its answer is a stream, and a tool is one question and one answer: an agent waits with wait_for_changes"
 	case "create_key":
 		return "its answer holds the secret of a key, which would stay in the conversation of an agent; a key is made at a terminal"
 	case "create_password_link":

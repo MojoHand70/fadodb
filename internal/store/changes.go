@@ -28,9 +28,16 @@ type ChangeFilter struct {
 	// ToStates are, for a transition, the states entered.
 	ToStates []string `json:"to_states,omitempty"`
 	// After is the id of an event: the stream begins after it. Left
-	// out, the stream begins now.
+	// out, the stream begins now; LogStart begins it before the first
+	// event of the log.
 	After string `json:"after,omitempty"`
 }
+
+// LogStart is the place before the first event of the log, which no
+// event's id can be. A stream, or a wait, given it as After begins with
+// the first event there is; a wait answers it as its place while the log
+// holds no event (ADR-0064, item 25).
+const LogStart = "start"
 
 // eventKinds are the kinds of event the log holds.
 var eventKinds = []string{EventCreated, EventSet, EventTransition, EventDeleted, EventReset, EventRefresh, EventMigrated, EventActionRun, EventActionFailed, EventCustom}
@@ -44,9 +51,17 @@ type Changes struct {
 	// name in capitals; nil lets everything through.
 	classes, kinds, states map[string]bool
 	// place is the row of the log the stream has read up to, and read
-	// what it has read and not yet answered.
+	// what it has read and not yet answered. at is the id of the event
+	// at the place, LogStart before the first.
 	place int64
+	at    string
 	read  []*Event
+	// command is what the log of reads names a read past a rule by: the
+	// command the stream was opened for (ADR-0067).
+	command string
+	// acts holds, for a caller who acts for somebody, whether it may act
+	// for them on each class it was asked of, by name in capitals.
+	acts map[string]bool
 	// who, when set, says who the caller of the stream is now (Follow).
 	who func(context.Context) (Principal, error)
 	// wake is told that the log grew; ended that the stream was closed.
@@ -99,22 +114,36 @@ func (s *Store) commitWriter(ctx context.Context) error {
 // before; a content administrator hears of every document. The caller
 // closes the stream when it is done with it.
 func (s *Store) Subscribe(ctx context.Context, f ChangeFilter, opts ...Option) (*Changes, error) {
+	// A stream is heard as oneself. Who may act for whom is asked class
+	// by class when a command is sent (ADR-0053), and a stream is of
+	// every class and of no command.
+	if len(opts) > 0 && apply(opts).principal.For != "" {
+		select {
+		case <-s.stop:
+			return nil, errf(CodeClosed, "", "the store is closed")
+		default:
+		}
+		return nil, hintf(CodeNotSupported, "", "a stream of changes is heard as oneself, and this caller names somebody it acts for", "open the stream without for; the commands the caller then sends name who they are for")
+	}
+	return s.openChanges(ctx, f, "subscribe", opts)
+}
+
+// openChanges opens a stream of changes for the caller, for the command
+// named: the filter read, the place it begins at found, and the stream
+// told of every commit from then on.
+func (s *Store) openChanges(ctx context.Context, f ChangeFilter, command string, opts []Option) (*Changes, error) {
 	select {
 	case <-s.stop:
 		return nil, errf(CodeClosed, "", "the store is closed")
 	default:
 	}
-	// A stream is heard as oneself. Who may act for whom is asked class
-	// by class when a command is sent (ADR-0053), and a stream is of
-	// every class and of no command.
-	if len(opts) > 0 && apply(opts).principal.For != "" {
-		return nil, hintf(CodeNotSupported, "", "a stream of changes is heard as oneself, and this caller names somebody it acts for", "open the stream without for; the commands the caller then sends name who they are for")
-	}
 	o, e := s.asked(ctx, opts, "")
-	if e != nil {
+	if e != nil && !(o.principal.For != "" && e.Path == "/principal/for") {
+		// A caller who acts for somebody is asked class by class, as each
+		// event comes, and not for every class at once.
 		return nil, e
 	}
-	c := &Changes{s: s, o: o, wake: make(chan struct{}, 1), ended: make(chan struct{})}
+	c := &Changes{s: s, o: o, command: command, wake: make(chan struct{}, 1), ended: make(chan struct{})}
 	if len(f.Classes) > 0 {
 		c.classes = map[string]bool{}
 		for _, name := range f.Classes {
@@ -150,16 +179,25 @@ func (s *Store) Subscribe(ctx context.Context, f ChangeFilter, opts ...Option) (
 	// The place the stream begins at. It is read before the stream is
 	// told of commits, and a commit that ends in between is found by the
 	// first reading of the log.
-	if f.After != "" {
+	switch f.After {
+	case LogStart:
+		c.at = LogStart
+	case "":
+		err := s.db.QueryRowContext(ctx, "SELECT rowid, event_id FROM events ORDER BY rowid DESC LIMIT 1").Scan(&c.place, &c.at)
+		if err == sql.ErrNoRows {
+			c.at = LogStart
+		} else if err != nil {
+			return nil, storageErr("read the log", err)
+		}
+	default:
 		err := s.db.QueryRowContext(ctx, "SELECT rowid FROM events WHERE event_id = ?", f.After).Scan(&c.place)
 		if err == sql.ErrNoRows {
-			return nil, hintf(CodeBadValue, "", "after names "+quoted(f.After)+", which is no event of the log", "give the id of the last event the stream handled, or leave after out to begin now")
+			return nil, hintf(CodeBadValue, "", "after names "+quoted(f.After)+", which is no event of the log", "give the id of the last event the stream handled, "+LogStart+" to begin before the first event, or leave after out to begin now")
 		}
 		if err != nil {
 			return nil, storageErr("read the log", err)
 		}
-	} else if err := s.db.QueryRowContext(ctx, "SELECT coalesce(max(rowid), 0) FROM events").Scan(&c.place); err != nil {
-		return nil, storageErr("read the log", err)
+		c.at = f.After
 	}
 	s.listenerMu.Lock()
 	defer s.listenerMu.Unlock()
@@ -244,7 +282,7 @@ func (c *Changes) Next(ctx context.Context) (*Event, error) {
 			return nil, ctx.Err()
 		default:
 		}
-		more, err := c.fill(ctx)
+		more, err := c.fill(ctx, 0)
 		if err != nil {
 			// A caller that gave up while the log was read gave up: that
 			// is what it is told, and not what the reading made of it.
@@ -481,15 +519,17 @@ func (e *logEntry) version(ctx context.Context, s *Store, cls *class) (*class, *
 }
 
 // fill reads the events that follow the place of the stream, and keeps
-// the ones the filter lets through and the caller may hear of. It
+// the ones the filter lets through and the caller may hear of, up to
+// most kept in all when most is not 0: the place then stops at the last
+// of them, and the events after it are read again by the next fill. It
 // reports whether the log had any event to read. When it fails it has
 // kept nothing and stays at its place, so that it can be asked again.
-func (c *Changes) fill(ctx context.Context) (bool, error) {
+func (c *Changes) fill(ctx context.Context, most int) (bool, error) {
 	batch, err := c.s.logSince(ctx, c.place)
 	if err != nil || len(batch) == 0 {
 		return false, err
 	}
-	place := batch[len(batch)-1].rowid
+	last := batch[len(batch)-1]
 	// let are the events of the batch the filter lets through.
 	let := batch[:0]
 	for _, e := range batch {
@@ -518,6 +558,10 @@ func (c *Changes) fill(ctx context.Context) (bool, error) {
 			// The caller's own: the event of the tail is every stream's.
 			ev := e.ev
 			heard = append(heard, &ev)
+			if most > 0 && len(c.read)+len(heard) == most {
+				last = e
+				break
+			}
 		}
 	}
 	// The batch is told only once its entries are written: one for each
@@ -525,7 +569,7 @@ func (c *Changes) fill(ctx context.Context) (bool, error) {
 	if len(past) > 0 {
 		entries := make([]*readLog, 0, len(past))
 		for _, name := range sortedNames(past) {
-			r := &readLog{command: "subscribe", class: name}
+			r := &readLog{command: c.command, class: name}
 			for _, id := range past[name] {
 				r.saw(id, "/access/read")
 			}
@@ -536,7 +580,7 @@ func (c *Changes) fill(ctx context.Context) (bool, error) {
 		}
 	}
 	c.read = append(c.read, heard...)
-	c.place = place
+	c.place, c.at = last.rowid, last.ev.ID
 	return true, nil
 }
 
@@ -567,6 +611,14 @@ func (c *Changes) hears(ctx context.Context, e *logEntry, past map[string][]stri
 	if er != nil {
 		return false, nil
 	}
+	if c.o.principal.For != "" {
+		// A caller who acts for somebody hears of a class it may act for
+		// them on, as a command on that class would be let through.
+		may, err := c.actsFor(ctx, cls.cls.Name)
+		if err != nil || !may {
+			return false, err
+		}
+	}
 	if cls.brought && c.o.principal.content() {
 		return true, nil
 	}
@@ -582,4 +634,22 @@ func (c *Changes) hears(ctx context.Context, e *logEntry, past map[string][]stri
 		return true, nil
 	}
 	return false, nil
+}
+
+// actsFor reports whether the caller may act for the person it names on
+// a class now, asking the substitutions once for each class.
+func (c *Changes) actsFor(ctx context.Context, class string) (bool, error) {
+	key := strings.ToUpper(class)
+	if may, asked := c.acts[key]; asked {
+		return may, nil
+	}
+	e := c.s.actsFor(ctx, &c.o, class)
+	if e != nil && e.Code != CodeForbidden {
+		return false, e
+	}
+	if c.acts == nil {
+		c.acts = map[string]bool{}
+	}
+	c.acts[key] = e == nil
+	return e == nil, nil
 }

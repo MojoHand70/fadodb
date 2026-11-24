@@ -44,7 +44,7 @@ func heard(t *testing.T, c *Changes) []string {
 	t.Helper()
 	var out []string
 	for {
-		more, err := c.fill(context.Background())
+		more, err := c.fill(context.Background(), 0)
 		if err != nil {
 			t.Fatal(err)
 		}

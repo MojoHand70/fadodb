@@ -284,6 +284,10 @@ type Store struct {
 	stop   chan struct{}
 	done   chan struct{}
 	closed bool
+	// turns counts the times the checkpointer took the writer's turn and
+	// emptied a log far past its limit, which nothing else does; the
+	// tests read it.
+	turns atomic.Int64
 	// listeners are the streams of changes that are open (ADR-0058): a
 	// commit that ends wakes each. The list is replaced whole when a
 	// stream opens or closes, so that a commit reads it without a lock.
@@ -1087,8 +1091,8 @@ func (s *Store) checkpoint(conn *sql.Conn, every time.Duration, limit int64) {
 				// program takes, so that no commit runs meanwhile.
 				copyLog.run(ctx)
 				s.mu.Lock()
-				if !s.closed {
-					emptyLog.run(ctx)
+				if !s.closed && emptyLog.emptied(ctx) {
+					s.turns.Add(1)
 				}
 				s.mu.Unlock()
 			case left <= fewPages && s.mu.TryLock():
@@ -1138,6 +1142,19 @@ func (st *statement) left(ctx context.Context) int {
 		return fewPages + 1
 	}
 	return pages - copied
+}
+
+// emptied runs a statement that empties the log, and answers whether it
+// did: SQLite says busy when somebody kept it from it.
+func (st *statement) emptied(ctx context.Context) bool {
+	var busy, pages, copied int
+	var row *sql.Row
+	if st.stmt != nil {
+		row = st.stmt.QueryRowContext(ctx)
+	} else {
+		row = st.conn.QueryRowContext(ctx, st.text)
+	}
+	return row.Scan(&busy, &pages, &copied) == nil && busy == 0
 }
 
 func (st *statement) close() {

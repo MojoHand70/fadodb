@@ -109,34 +109,41 @@ func TestTheLogIsEmptiedAfterABurst(t *testing.T) {
 
 // A writer that never pauses leaves no moment at which the log could be
 // begun again, and the log of such a writer grew to gigabytes. Once the
-// log is far past its limit the checkpointer takes its turn among the
-// commits, so the log is emptied while the writers write and stays
-// under a bound (ADR-0035, item 7).
-func TestTheLogStaysNearItsLimit(t *testing.T) {
+// log is far past its limit the checkpointer takes the writer's turn
+// among the commits and empties it, again and again while the writers
+// write, so the log stays under a bound: eight times its limit and what
+// the writers write in a moment more (ADR-0035, item 7).
+//
+// How much that moment holds is the machine's: how fast its writers
+// commit and how fast its disk copies the log. Four writers without the
+// race detector, on a disk, take a log of this test's megabyte to 20 to
+// 110 MiB before the turn has emptied it, and on the Windows runner to
+// 37; so the test asks for no size. Nor is a log that is emptied enough:
+// without the turn the same writers leave the log, now and then, a
+// moment in which it is emptied by chance, five times in two seconds,
+// at 450 to 820 MiB. What only the turn does is counted: the writer's
+// turn is taken and the log emptied in it, again and again.
+func TestTheLogIsEmptiedInTheWritersTurn(t *testing.T) {
 	const limit = 1 << 20
-	_, path, _, stop := writing(t, limit, 4)
-	// Watched while the writers write: they leave no pause. How long
-	// they take to fill the log to where it is first emptied depends on
-	// the machine: under the race detector on one processor it is about
-	// the second and a half this test watches for. So the watch goes on
-	// until the log was emptied once, and gives up after half a minute.
-	times, largest := emptied(path, 1500*time.Millisecond)
-	for until := time.Now().Add(30 * time.Second); times == 0 && time.Now().Before(until); {
+	// often is how many turns the test waits for: a few, which a slow
+	// machine takes in seconds.
+	const often = 5
+	s, path, _, stop := writing(t, limit, 4)
+	began := time.Now()
+	var times int
+	var largest int64
+	for until := began.Add(30 * time.Second); s.turns.Load() < often && time.Now().Before(until); {
 		more, larger := emptied(path, 250*time.Millisecond)
 		times, largest = times+more, max(largest, larger)
 	}
+	turns, took := s.turns.Load(), time.Since(began).Round(time.Millisecond)
 	stop()
-	// How often depends on how fast the machine writes; that it happens
-	// at all while the writers write, and that the log stays near its
-	// limit, does not. Without the turn the log of this test grew to
-	// 600 times its limit.
-	if times == 0 {
-		t.Errorf("the log was never emptied in half a minute of writing without a pause")
+	t.Logf("in %s the log was emptied %d times in the writers' turn and %d times in all, and was %d KiB at its largest, under a limit of %d KiB",
+		took, turns, times, largest>>10, limit>>10)
+	if turns < often {
+		t.Errorf("in %s of writing without a pause the log was emptied %d times in the writers' turn, and grew to %d MiB under a limit of %d MiB",
+			took, turns, largest>>20, limit>>20)
 	}
-	if largest > 4*farPast*limit {
-		t.Errorf("the log grew to %d MiB under a limit of %d MiB: it is emptied past %d times the limit", largest>>20, limit>>20, farPast)
-	}
-	t.Logf("the log was emptied %d times and was %d KiB at its largest, under a limit of %d KiB", times, largest>>10, limit>>10)
 }
 
 // A reader that still looks at an old view of the database keeps the

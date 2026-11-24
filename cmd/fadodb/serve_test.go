@@ -403,6 +403,7 @@ func TestTheChapterOnServing(t *testing.T) {
 		"inbound.message_bytes":      strconv.Itoa(server.DefaultMessageBytes),
 		"inbound.messages":           strconv.Itoa(server.DefaultMessages),
 		"url":                        "people sign in on this machine only",
+		"proxies":                    "none: the caller is the address of the connection",
 		"sessions.idle_hours":        "8",
 		"sessions.days":              "30",
 		"grants.idle_days":           "30",
@@ -421,7 +422,7 @@ func TestTheChapterOnServing(t *testing.T) {
 	for _, m := range inboundMembers {
 		all = append(all, "inbound."+m)
 	}
-	all = append(all, "url")
+	all = append(all, "url", "proxies")
 	for _, m := range sessionMembers {
 		all = append(all, "sessions."+m)
 	}

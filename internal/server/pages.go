@@ -7,6 +7,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/netip"
 	"net/url"
 	"strings"
 	"time"
@@ -74,6 +75,11 @@ type PagesOptions struct {
 	// zero for the usual 30 days.
 	Documents Documents
 	Unused    time.Duration
+	// Proxies are the addresses of the proxies in front of the server
+	// (ADR-0088, item 8): from a request that comes from one of them,
+	// the caller's address is read in X-Forwarded-For. None, the
+	// address of the connection is the caller's.
+	Proxies []netip.Prefix
 }
 
 // Pages answers the server's own pages, under /auth/.
@@ -86,6 +92,7 @@ type Pages struct {
 	lengths   store.SessionLengths
 	unused    time.Duration
 	report    func(Request)
+	proxies   []netip.Prefix
 }
 
 // SessionCookie is the name of the cookie a browser keeps its session
@@ -115,7 +122,7 @@ const signOnCookie = "fado_signon"
 // over HTTPS the cookie travels only encrypted. Without one the pages
 // answer requests to this machine alone.
 func NewPages(a Accounts, o PagesOptions) (*Pages, error) {
-	p := &Pages{accounts: a, lengths: o.Lengths, report: o.Report, signOn: o.SignOn, documents: o.Documents, unused: o.Unused}
+	p := &Pages{accounts: a, lengths: o.Lengths, report: o.Report, signOn: o.SignOn, documents: o.Documents, unused: o.Unused, proxies: o.Proxies}
 	if o.URL != "" {
 		u, err := url.Parse(o.URL)
 		if err != nil || (u.Scheme != "https" && u.Scheme != "http") || u.Host == "" || u.User != nil || (u.Path != "" && u.Path != "/") || u.RawQuery != "" {
@@ -198,12 +205,68 @@ func (p *Pages) Who(keys Who) Who {
 
 // address is where a request came from, for the log of sign-ins and the
 // count of failures.
-func address(r *http.Request) string {
-	host, _, err := net.SplitHostPort(r.RemoteAddr)
-	if err != nil {
-		return r.RemoteAddr
+func (p *Pages) address(r *http.Request) string { return callerAddress(r, p.proxies) }
+
+// callerAddress is the address a request came from: the address of the
+// connection, or, when that is one of the proxies, the last address of
+// X-Forwarded-For that is not one of them (ADR-0088, item 8). Each
+// proxy adds the address it was called from at the end, so whatever
+// stands left of that was written by the caller and is not believed;
+// from an address that is no proxy, the header is not read at all. An
+// entry that is no address stops the reading at the proxy that passed
+// it on.
+func callerAddress(r *http.Request, proxies []netip.Prefix) string {
+	from := r.RemoteAddr
+	if host, _, err := net.SplitHostPort(r.RemoteAddr); err == nil {
+		from = host
 	}
-	return host
+	at, err := netip.ParseAddr(from)
+	if len(proxies) == 0 || err != nil || !isProxy(at, proxies) {
+		return from
+	}
+	var hops []string
+	for _, line := range r.Header.Values("X-Forwarded-For") {
+		hops = append(hops, strings.Split(line, ",")...)
+	}
+	for i := len(hops) - 1; i >= 0; i-- {
+		hop, ok := hopAddress(strings.TrimSpace(hops[i]))
+		if !ok {
+			break
+		}
+		at = hop
+		if !isProxy(hop, proxies) {
+			break
+		}
+	}
+	return at.Unmap().WithZone("").String()
+}
+
+// isProxy reports whether an address is one of the proxies.
+func isProxy(a netip.Addr, proxies []netip.Prefix) bool {
+	a = a.Unmap().WithZone("")
+	for _, p := range proxies {
+		if p.Contains(a) {
+			return true
+		}
+	}
+	return false
+}
+
+// hopAddress reads one entry of X-Forwarded-For: an address, which some
+// proxies write with its port or, for IPv6, in brackets.
+func hopAddress(s string) (netip.Addr, bool) {
+	if a, err := netip.ParseAddr(s); err == nil {
+		return a, true
+	}
+	if ap, err := netip.ParseAddrPort(s); err == nil {
+		return ap.Addr(), true
+	}
+	if len(s) > 2 && s[0] == '[' && s[len(s)-1] == ']' {
+		if a, err := netip.ParseAddr(s[1 : len(s)-1]); err == nil {
+			return a, true
+		}
+	}
+	return netip.Addr{}, false
 }
 
 // next is where a page sends the person when they are done: a path of
@@ -354,7 +417,7 @@ func (p *Pages) signIn(out *reply, r *http.Request, told *Request) {
 	}
 	user := strings.TrimSpace(r.FormValue("user"))
 	told.User = user
-	in, err := p.accounts.BeginSignIn(r.Context(), user, r.FormValue("password"), address(r))
+	in, err := p.accounts.BeginSignIn(r.Context(), user, r.FormValue("password"), p.address(r))
 	if err != nil {
 		told.Code = codeOf(err)
 		p.draw(out, told, http.StatusUnauthorized, "signIn", &page{Title: "Sign in", Error: said(err), Next: next(r), User: user, Providers: p.providers()})
@@ -387,7 +450,7 @@ func (p *Pages) code(out *reply, r *http.Request, told *Request) {
 // finish gives the session of a sign-in and sends the person on: to the
 // codes for a lost phone when the second step was just set up.
 func (p *Pages) finish(out *reply, r *http.Request, told *Request, signIn, code string) {
-	sess, err := p.accounts.FinishSignIn(r.Context(), signIn, code, address(r), p.lengths)
+	sess, err := p.accounts.FinishSignIn(r.Context(), signIn, code, p.address(r), p.lengths)
 	if err != nil {
 		told.Code = codeOf(err)
 		p.draw(out, told, http.StatusUnauthorized, "signIn", &page{Title: "Sign in", Error: said(err), Next: next(r)})
@@ -448,7 +511,7 @@ func (p *Pages) account(out *reply, r *http.Request, told *Request) {
 		case "password":
 			if r.FormValue("password") != r.FormValue("again") {
 				err = &store.Error{Code: store.CodeBadValue, Message: "the two new passwords differ"}
-			} else if err = p.accounts.ChangePassword(r.Context(), r.FormValue("old"), r.FormValue("password"), address(r), as); err == nil {
+			} else if err = p.accounts.ChangePassword(r.Context(), r.FormValue("old"), r.FormValue("password"), p.address(r), as); err == nil {
 				// Whoever was signed in elsewhere with the old password
 				// signs in again.
 				others, _ := p.accounts.Sessions(r.Context(), "", as)
@@ -469,7 +532,7 @@ func (p *Pages) account(out *reply, r *http.Request, told *Request) {
 			}
 		case "confirm":
 			var codes []string
-			if codes, err = p.accounts.ConfirmMySecondStep(r.Context(), r.FormValue("code"), address(r), as); err == nil {
+			if codes, err = p.accounts.ConfirmMySecondStep(r.Context(), r.FormValue("code"), p.address(r), as); err == nil {
 				p.draw(out, told, http.StatusOK, "codes", &page{Title: "Codes for a lost phone", Codes: codes, Next: PageAccount})
 				return
 			}
@@ -530,7 +593,7 @@ func (p *Pages) password(out *reply, r *http.Request, told *Request) {
 	if r.FormValue("password") != r.FormValue("again") {
 		err = &store.Error{Code: store.CodeBadValue, Message: "the two passwords differ"}
 	} else {
-		err = p.accounts.UsePasswordLink(r.Context(), link, r.FormValue("password"), address(r))
+		err = p.accounts.UsePasswordLink(r.Context(), link, r.FormValue("password"), p.address(r))
 	}
 	if err != nil {
 		told.Code = codeOf(err)
@@ -606,7 +669,7 @@ func (p *Pages) callback(out *reply, r *http.Request, told *Request) {
 		failed(err)
 		return
 	}
-	sess, err := p.accounts.SignOn(r.Context(), *who, address(r), p.lengths)
+	sess, err := p.accounts.SignOn(r.Context(), *who, p.address(r), p.lengths)
 	if err != nil {
 		told.Code = codeOf(err)
 		p.draw(out, told, http.StatusUnauthorized, "signIn", &page{Title: "Sign in", Error: said(err), Providers: p.providers()})

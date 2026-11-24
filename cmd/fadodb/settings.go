@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/netip"
 	"os"
 	"sort"
 	"strconv"
@@ -44,6 +45,7 @@ import (
 //	    "messages": 16
 //	  },
 //	  "url": "https://fado.acme.example",
+//	  "proxies": ["127.0.0.1"],
 //	  "sessions": {
 //	    "idle_hours": 8,
 //	    "days": 30
@@ -81,6 +83,10 @@ type settings struct {
 	// most, which the file may shorten.
 	url      string
 	sessions store.SessionLengths
+	// proxies are the addresses of the proxies in front of the server,
+	// each a range (ADR-0088, item 8): from a request of one of them,
+	// the pages read the caller's address in X-Forwarded-For.
+	proxies []netip.Prefix
 	// grants is how long a client a person allowed holds with no pass
 	// renewed, the usual 30 days, which the file may shorten (ADR-0071,
 	// item 6).
@@ -93,7 +99,7 @@ type settings struct {
 
 // The names a settings file may hold, at each place.
 var (
-	settingsMembers = []string{"outbound", "limits", "inbound", "url", "sessions", "grants", "signon"}
+	settingsMembers = []string{"outbound", "limits", "inbound", "url", "proxies", "sessions", "grants", "signon"}
 	sessionMembers  = []string{"idle_hours", "days"}
 	grantMembers    = []string{"idle_days"}
 	signonMembers   = []string{"label", "issuer", "client_id", "company_emails"}
@@ -213,6 +219,11 @@ func parseSettings(data []byte) (*settings, error) {
 			return nil, fmt.Errorf("url is %s: %v", shown(raw), err)
 		}
 	}
+	if raw, given := top["proxies"]; given {
+		if s.proxies, err = proxyList(raw); err != nil {
+			return nil, err
+		}
+	}
 	if raw, given := top["sessions"]; given {
 		ses, err := members(raw, "sessions", sessionMembers)
 		if err != nil {
@@ -316,6 +327,30 @@ func hostList(raw []byte, where string) ([]string, error) {
 		return nil, fmt.Errorf(`%s is a list of hosts, such as ["hooks.acme.example"], and here it is %s`, where, shown(raw))
 	}
 	return list, nil
+}
+
+// proxyList reads the proxies in front of the server (ADR-0088, item
+// 8): each an address, such as 127.0.0.1, or a range of them, such as
+// 10.0.0.0/8.
+func proxyList(raw []byte) ([]netip.Prefix, error) {
+	var list []string
+	if err := json.Unmarshal(raw, &list); err != nil || list == nil {
+		return nil, fmt.Errorf(`proxies is a list of the addresses of the proxies in front of the server, such as ["127.0.0.1"], and here it is %s`, shown(raw))
+	}
+	out := make([]netip.Prefix, 0, len(list))
+	for _, text := range list {
+		if p, err := netip.ParsePrefix(text); err == nil {
+			out = append(out, p.Masked())
+			continue
+		}
+		a, err := netip.ParseAddr(text)
+		if err != nil || a.Zone() != "" {
+			return nil, fmt.Errorf("proxies has %q, which is no address: write one such as 127.0.0.1 or ::1, or a range such as 10.0.0.0/8", text)
+		}
+		a = a.Unmap()
+		out = append(out, netip.PrefixFrom(a, a.BitLen()))
+	}
+	return out, nil
 }
 
 // connections reads the connections, each with its hosts. A connection

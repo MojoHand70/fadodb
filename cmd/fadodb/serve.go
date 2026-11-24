@@ -94,6 +94,7 @@ list the hosts they may call:
       "messages": 16
     },
     "url": "https://fado.acme.example",
+    "proxies": ["127.0.0.1"],
     "sessions": {
       "idle_hours": 8,
       "days": 30
@@ -123,7 +124,9 @@ again for every request, so it is changed without a restart.
 People sign in on the server's own pages, at /auth/signin, and their
 browser keeps a session (8 hours unused, 30 days at most; sessions
 makes both shorter). url is the address people reach the server at:
-without it they sign in on this machine only. A person's first
+without it they sign in on this machine only. Behind a proxy,
+proxies names its addresses, and a sign-in is recorded at the address
+the proxy read in X-Forwarded-For. A person's first
 password is set with a link, made on the machine with
 fadodb user password. signon offers a company's sign-on (OpenID
 Connect: Microsoft, Google and others); its secret client_secret is
@@ -283,7 +286,7 @@ func runServe(ctx context.Context, args []string, stdout, stderr io.Writer, read
 	// administrator added, and the ones known by the document they
 	// publish, as Claude is.
 	pages, err := server.NewPages(db, server.PagesOptions{URL: told.url, Lengths: told.sessions, Report: report, SignOn: signOn,
-		Documents: signon.NewDocuments(documentOptions), Unused: told.grants})
+		Documents: signon.NewDocuments(documentOptions), Unused: told.grants, Proxies: told.proxies})
 	if err != nil {
 		fmt.Fprintf(stderr, "%s: %v\n", name, err)
 		return 1

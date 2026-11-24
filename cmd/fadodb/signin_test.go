@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/cookiejar"
 	"net/url"
@@ -354,8 +355,57 @@ func TestTheChapterOnSigningIn(t *testing.T) {
 	}
 	// The settings of the chapter are taken.
 	s, err := parseSettings([]byte(fenceAfter(t, text, "<!-- the settings -->")))
-	if err != nil || s.url != "https://fado.acme.example" || s.sessions.Idle != 4*time.Hour || s.sessions.Max != 7*24*time.Hour || s.grants != 14*24*time.Hour {
+	if err != nil || s.url != "https://fado.acme.example" || s.sessions.Idle != 4*time.Hour || s.sessions.Max != 7*24*time.Hour || s.grants != 14*24*time.Hour ||
+		fmt.Sprint(s.proxies) != "[127.0.0.1/32]" {
 		t.Errorf("the chapter's settings: %v %+v", err, s)
+	}
+}
+
+// A sign-in through a proxy on the machine (ADR-0088, item 8): with the
+// proxies of the settings, a failed sign-in is recorded at the address
+// the proxy read, and not at the proxy's, nor at what the caller wrote
+// in the header.
+func TestASignInBehindAProxy(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "acme.fado")
+	settings := filepath.Join(dir, "settings.json")
+	if err := os.WriteFile(settings, []byte(`{"proxies": ["127.0.0.1", "::1"]}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for _, args := range [][]string{{"init", path}, {"user", "add", "olga", "--kind", "person", "--system", "administrators", "--db", path}} {
+		if code, _, said := tool(args...); code != 0 {
+			t.Fatalf("%v: %s", args, said)
+		}
+	}
+	code, out, said := tool("key", "new", "olga", "--label", "laptop", "--db", path)
+	if code != 0 {
+		t.Fatal(said)
+	}
+	key := strings.TrimSpace(out)
+	addr, _, _ := serving(t, "--listen", "127.0.0.1:0", "--settings", settings, path)
+	base := "http://" + addr
+	client := &http.Client{Timeout: 10 * time.Second}
+
+	form := url.Values{"user": {"olga"}, "password": {"not olga's password"}}
+	req, err := http.NewRequest(http.MethodPost, base+"/auth/signin", strings.NewReader(form.Encode()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("Origin", base)
+	// The caller wrote 192.0.2.1; the proxy added the address it saw.
+	req.Header.Set("X-Forwarded-For", "192.0.2.1, 203.0.113.7")
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("a wrong password: %d", resp.StatusCode)
+	}
+	code, body := ask(t, client, "POST", base+"/v1/sign_ins", key, `{"user": "olga"}`)
+	if code != 200 || !strings.Contains(body, `"address":"203.0.113.7"`) || strings.Contains(body, "192.0.2.1") || strings.Contains(body, "127.0.0.1") {
+		t.Errorf("the sign-ins of Olga: %d %s", code, body)
 	}
 }
 

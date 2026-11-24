@@ -8,6 +8,15 @@ All notable changes to FadoDB are recorded here. The format follows
 
 ### Added
 
+- The address of a sign-in behind a proxy (ADR-0088, item 8, the first
+  of its five steps): the setting `proxies` names the proxies in front
+  of `fadodb serve`, each an address or a range such as `10.0.0.0/8`.
+  From a request of one of them, a sign-in is recorded, and failed
+  sign-ins are counted, at the last address of `X-Forwarded-For` that
+  is not a proxy; from any other address the header is not read.
+  Before, every person behind Caddy or nginx had the proxy's address,
+  and twenty failures of anybody made everybody wait.
+
 - An agent waits for a change through the door for agents (ADR-0064,
   ruling 3, items 22 to 30): the command `wait_for_changes`, a tool at
   both doors, `POST /v1/wait_for_changes` and the Go call

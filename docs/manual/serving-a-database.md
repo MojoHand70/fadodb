@@ -127,6 +127,7 @@ fadodb serve acme.fado --settings settings.json --secrets-dir /run/secrets/fadod
 | `inbound.message_bytes` | the largest message from outside, in bytes | 1048576, which is 1 MiB |
 | `inbound.messages` | how many messages from outside are worked at once | 16 |
 | `url` | the address people reach the server at, from which its pages and their sessions are named ([Signing in](signing-in.md)) | people sign in on this machine only |
+| `proxies` | the addresses of the proxies in front of the server, each an address or a range such as `10.0.0.0/8`: from them, a sign-in's address is read in `X-Forwarded-For` ([Signing in](signing-in.md#the-settings)) | none: the caller is the address of the connection |
 | `sessions.idle_hours` | how long a session holds unused, in hours, at most 8 | 8 |
 | `sessions.days` | how long a session holds at most, in days, at most 30 | 30 |
 | `grants.idle_days` | how long a client a person allowed holds with no pass renewed, in days, at most 30 ([Signing in](signing-in.md#connecting-a-client)) | 30 |

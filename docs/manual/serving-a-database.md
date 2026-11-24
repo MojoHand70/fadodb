@@ -22,7 +22,7 @@ fadodb serve acme.fado
 
 | Command | What it does |
 |---|---|
-| `fadodb init acme.fado` | makes an empty database, closed to every user of the machine but the one who made it; with `--starter expenses`, a database with an app ready to use ([starters](starters.md)). A database is made by this command and by no other: the server refuses a file that is not there |
+| `fadodb init acme.fado` | makes an empty database, closed to every user of the machine but the one who made it. A database is made by this command and by no other: the server refuses a file that is not there |
 | `fadodb user add olga …` | makes the first user, Olga, a person among the administrators |
 | `fadodb key new olga …` | makes a key for Olga and prints it, once. The database keeps a hash of the key and cannot show it again; a key that is lost is replaced |
 | `fadodb serve acme.fado` | serves the database, on this machine only, at `127.0.0.1:8080` |

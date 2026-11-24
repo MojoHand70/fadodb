@@ -403,8 +403,11 @@ tags a document holds, `SUM(lines.qty * lines.price)`, in a computed
 variable, a guard and a rule; not yet in a read rule, a filter, a
 title, nor in the page's own evaluator. One value out of a list is
 built over both kinds of list: `FIRST`, `LAST`, `INDEX`, `JOIN` and
-`CONTAINS`, by the order of the list. Not built yet: the functions
-that give a list again, `FILTER`, `SORT`, `TOP` and `UNIQUE`.
+`CONTAINS`, by the order of the list. A list is narrowed, ordered and
+cut inside such a function: `FILTER`, `SORT`, `TOP` and `UNIQUE`, each
+a part of the function's one question. With them every function of
+the catalogue is built. Decided not now: a list one of them gives as
+a variable of its own.
 The third is of 2026-11-21, and nothing of it is built yet:
 ADR-0078, a decision stands on what the document holds. A command
 says which version of a document its sender saw, the `write` right of

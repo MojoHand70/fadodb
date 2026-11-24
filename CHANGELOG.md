@@ -8,6 +8,21 @@ All notable changes to FadoDB are recorded here. The format follows
 
 ### Added
 
+- A list narrowed, ordered and cut inside a function over it (ADR-0081,
+  step 3, its second group): `FILTER`, `SORT`, `TOP` and `UNIQUE`. On
+  a bill, `FIRST(SORT(lines, {-price}).what)` is the dearest thing,
+  `SUM(TOP(SORT(lines, {-price}), 3).price)` the three dearest lines
+  added up, `JOIN(FILTER(lines, NOT delivered).what, ", ")` what is
+  still to deliver, and `JOIN(UNIQUE(lines.what), ", ")` the different
+  things; the same over a list that is a `QUERY`, in a live variable.
+  Such a list stands only inside a function over a list, so a formula
+  always answers one value; written by itself it is refused. A column
+  of what they give is written after the call,
+  `FILTER(lines, delivered).price`, which is new in the grammar. Each
+  is a part of the function's one statement, in SQLite and in DuckDB,
+  and fifty-three cases prove one answer. `FILTER` takes a condition,
+  as `COUNTIF` does, and no mask. With these every function of the
+  catalogue is built.
 - One value out of a list (ADR-0081, step 3, its first group):
   `FIRST`, `LAST`, `INDEX`, `JOIN` and `CONTAINS` work over a list of
   the document. On a bill, `FIRST(lines.what)` is what its first line

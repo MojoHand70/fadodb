@@ -2,6 +2,7 @@ package formula
 
 import (
 	"errors"
+	"math"
 	"sort"
 	"strings"
 )
@@ -114,20 +115,46 @@ func (m *MemoryExecutor) over(t *memTable, q *QuerySlot, args []Value, ctx *Cont
 		i, ok := t.cols[strings.ToUpper(name)]
 		return i, ok
 	}
-	condFrom, perr := q.Places(q.Cond, colOf)
+	at, perr := q.FoldPlaces(colOf)
 	if perr != nil {
 		return Value{}, perr
-	}
-	var valFrom []int
-	if q.Agg != "" {
-		if valFrom, perr = q.Places(q.Value, colOf); perr != nil {
-			return Value{}, perr
-		}
 	}
 	if m.fold == nil {
 		m.fold = &RowFold{vm: m.vm}
 	}
-	return m.fold.Run(q, t.rows, condFrom, valFrom, ci, args, ctx)
+	return m.fold.Run(q, t.rows, at, ci, args, ctx)
+}
+
+// FoldPlaces is where a slot's programs and its order read a row: the
+// Places of its condition and of its expression, and for each column
+// SORT orders by its place in the row and whether it is descending.
+type FoldPlaces struct {
+	Cond, Value []int
+	Sort        []int
+	Desc        []bool
+}
+
+// FoldPlaces finds them, by the place colOf gives a column.
+func (q *QuerySlot) FoldPlaces(colOf func(name string) (int, bool)) (*FoldPlaces, *EvalError) {
+	at := &FoldPlaces{}
+	var err *EvalError
+	if at.Cond, err = q.Places(q.Cond, colOf); err != nil {
+		return nil, err
+	}
+	if q.Agg != "" {
+		if at.Value, err = q.Places(q.Value, colOf); err != nil {
+			return nil, err
+		}
+	}
+	for _, k := range q.Order[:q.Sorted] {
+		name, desc := strings.CutPrefix(k, "-")
+		i, ok := colOf(name)
+		if !ok {
+			return nil, &EvalError{Code: ErrQueryFailed, Pos: -1, Msg: "unknown column " + name + " of " + q.Source}
+		}
+		at.Sort, at.Desc = append(at.Sort, i), append(at.Desc, desc)
+	}
+	return at, nil
 }
 
 // ListFolder answers a function over a list the document holds
@@ -178,7 +205,11 @@ func NewRowFold(limits Limits) *RowFold {
 // place ci of the first row on which the condition holds, or the slot's
 // aggregate over those rows. condFrom and valFrom are the Places of the
 // slot's condition and of its expression.
-func (f *RowFold) Run(q *QuerySlot, rows [][]Value, condFrom, valFrom []int, ci int, args []Value, ctx *Context) (Value, *EvalError) {
+func (f *RowFold) Run(q *QuerySlot, rows [][]Value, at *FoldPlaces, ci int, args []Value, ctx *Context) (Value, *EvalError) {
+	condFrom, valFrom := at.Cond, at.Value
+	if q.Sorted > 0 || q.Limit != nil || q.Distinct {
+		return f.shaped(q, rows, at, args, ctx)
+	}
 	fill := func(vars []Value, from []int, row []Value) {
 		for i, at := range from {
 			if at < 0 {
@@ -253,4 +284,119 @@ func compareValues(a, b Value) int {
 		return c
 	}
 	return compare(a, b)
+}
+
+// shaped is Run for a slot whose list a function shaped first (ADR-0081,
+// step 3): the rows that meet the condition, put in the order SORT
+// gives, cut to the first ones TOP takes, and their values, of which
+// UNIQUE keeps each different one where it first stands. Then the
+// aggregate, as over any rows.
+func (f *RowFold) shaped(q *QuerySlot, rows [][]Value, at *FoldPlaces, args []Value, ctx *Context) (Value, *EvalError) {
+	asEval := func(err error) *EvalError {
+		var ee *EvalError
+		if !errors.As(err, &ee) {
+			ee = &EvalError{Code: ErrQueryFailed, Pos: -1, Msg: err.Error()}
+		}
+		return ee
+	}
+	fill := func(vars []Value, from []int, row []Value) {
+		for i, p := range from {
+			if p < 0 {
+				vars[i] = args[-1-p]
+			} else {
+				vars[i] = row[p]
+			}
+		}
+	}
+	// a program that reads the THIS arguments alone: the count of TOP,
+	// the place of INDEX, the separator of JOIN
+	once := func(p *Program) (Value, *EvalError) {
+		if p == nil {
+			return Blank(), nil
+		}
+		from, perr := q.Places(p, func(string) (int, bool) { return 0, false })
+		if perr != nil {
+			return Value{}, perr
+		}
+		vars := make([]Value, len(from))
+		fill(vars, from, nil)
+		v, err := f.vm.Run(p, vars, ctx)
+		if err != nil {
+			return Value{}, asEval(err)
+		}
+		return v, nil
+	}
+	vars := make([]Value, len(at.Cond))
+	var kept [][]Value
+	for _, row := range rows {
+		fill(vars, at.Cond, row)
+		if v, err := f.vm.Run(q.Cond, vars, ctx); err == nil && v.Truth() {
+			kept = append(kept, row)
+		}
+	}
+	if len(at.Sort) > 0 {
+		// a blank comes before every value, and rows the columns order
+		// alike keep the order of the list
+		sort.SliceStable(kept, func(a, b int) bool {
+			for i, p := range at.Sort {
+				x, y := kept[a][p], kept[b][p]
+				c := 0
+				switch {
+				case x.kind == KindNull && y.kind == KindNull:
+				case x.kind == KindNull:
+					c = -1
+				case y.kind == KindNull:
+					c = 1
+				default:
+					c = compareValues(x, y)
+				}
+				if at.Desc[i] {
+					c = -c
+				}
+				if c != 0 {
+					return c < 0
+				}
+			}
+			return false
+		})
+	}
+	if q.Limit != nil {
+		n, err := once(q.Limit)
+		if err != nil {
+			return Value{}, err
+		}
+		// a blank count is 0, as a blank is in arithmetic: no row is taken
+		if (n.kind != KindNumber && n.kind != KindNull) || n.num != math.Trunc(n.num) || n.num < 0 {
+			return Value{}, outOfRange("the count of TOP is a whole number, 0 or more")
+		}
+		if n.num < float64(len(kept)) {
+			kept = kept[:int(n.num)]
+		}
+	}
+	valVars := make([]Value, len(at.Value))
+	vals := make([]Value, 0, len(kept))
+	seen := map[distinctKey]struct{}{}
+	for _, row := range kept {
+		fill(valVars, at.Value, row)
+		x, err := f.vm.Run(q.Value, valVars, ctx)
+		if err != nil {
+			return Value{}, asEval(err)
+		}
+		if q.Distinct {
+			if x.kind == KindNull {
+				continue
+			}
+			k := keyOf(x)
+			if _, had := seen[k]; had {
+				continue
+			}
+			seen[k] = struct{}{}
+		}
+		vals = append(vals, x)
+	}
+	extra, err := once(q.Extra)
+	if err != nil {
+		return Value{}, err
+	}
+	return q.AggregateWith(vals, extra, f.vm.maxText())
 }

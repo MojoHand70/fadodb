@@ -1,6 +1,6 @@
 {
  "suite": "held",
- "description": "Functions over a list the document itself holds (ADR-0081, step 2): its lines, a rows variable, and its tags, an array. Each is the aggregate a LOOKUP has, over the elements of the variable in their order: blanks skipped, exact values exact, money in one currency. A column is written list.column, and the one argument may be an expression of the columns of one list, beside which a bare name is a variable of the document (ADR-0019). In a form with a condition a bare name is a column of the row and THIS.name a variable of the document. An array has the one column value.",
+ "description": "Functions over a list the document itself holds (ADR-0081, step 2): its lines, a rows variable, and its tags, an array. Each is the aggregate a LOOKUP has, over the elements of the variable in their order: blanks skipped, exact values exact, money in one currency. A column is written list.column, and the one argument may be an expression of the columns of one list, beside which a bare name is a variable of the document (ADR-0019). In a form with a condition a bare name is a column of the row and THIS.name a variable of the document. An array has the one column value. A list may be narrowed, ordered and cut before the function runs over it: FILTER(list, condition) keeps the rows that meet a condition, SORT(list, {columns}) orders them, a minus for descending and a blank before every value, TOP(list, count) takes the first of them, and UNIQUE(list.column) keeps each different value where it first stands. They are written TOP(SORT(FILTER(list, c), {columns}), n), and a column of what they give after a dot.",
  "variables": {
   "rate": "decimal(2)",
   "limit": "number",
@@ -624,6 +624,279 @@
   {
    "name": "CONTAINS beside another figure",
    "formula": "IF(CONTAINS(tags, \"blue\"), COUNT(lines), 0)",
+   "expected": 4
+  },
+  {
+   "name": "FILTER: the rows that meet the condition are counted",
+   "formula": "COUNT(FILTER(lines, done))",
+   "type": "number",
+   "expected": 2
+  },
+  {
+   "name": "FILTER: a column of the rows that are left",
+   "formula": "SUM(FILTER(lines, done).qty)",
+   "expected": 5.5
+  },
+  {
+   "name": "FILTER then JOIN",
+   "formula": "JOIN(FILTER(lines, qty > 1).sku, \",\")",
+   "expected": "A,A"
+  },
+  {
+   "name": "FILTER then FIRST",
+   "formula": "FIRST(FILTER(lines, sku <> \"A\").sku)",
+   "expected": "B"
+  },
+  {
+   "name": "FILTER then LAST",
+   "formula": "LAST(FILTER(lines, sku <> \"A\").sku)",
+   "expected": "C"
+  },
+  {
+   "name": "FILTER then MEDIAN of exact values",
+   "formula": "MEDIAN(FILTER(lines, done).price)",
+   "type": "decimal(3)",
+   "expected": "55.245"
+  },
+  {
+   "name": "FILTER and the function's own condition both hold",
+   "formula": "COUNTIF(FILTER(lines, done), qty > 2)",
+   "expected": 1
+  },
+  {
+   "name": "FILTER of FILTER",
+   "formula": "COUNT(FILTER(FILTER(lines, done), qty > 2))",
+   "expected": 1
+  },
+  {
+   "name": "FILTER with a variable of the document",
+   "formula": "SUM(FILTER(lines, sku = THIS.code).qty)",
+   "inputs": {
+    "code": "A"
+   },
+   "expected": 5.5
+  },
+  {
+   "name": "FILTER that leaves nothing",
+   "formula": "SUM(FILTER(lines, sku = \"Z\").cost)",
+   "expected": null
+  },
+  {
+   "name": "FILTER over an array names its elements value",
+   "formula": "COUNT(FILTER(tags, value = \"red\"))",
+   "expected": 2
+  },
+  {
+   "name": "FILTER over an array, then JOIN",
+   "formula": "JOIN(FILTER(tags, value = \"blue\"), \"/\")",
+   "expected": "blue"
+  },
+  {
+   "name": "CONTAINS in the rows FILTER leaves: not there",
+   "formula": "CONTAINS(FILTER(lines, done).sku, \"B\")",
+   "expected": false
+  },
+  {
+   "name": "CONTAINS in the rows FILTER leaves: there",
+   "formula": "CONTAINS(FILTER(lines, done).sku, \"A\")",
+   "expected": true
+  },
+  {
+   "name": "SORT descending: the first row has the largest value",
+   "formula": "FIRST(SORT(lines, {-qty}).sku)",
+   "expected": "A"
+  },
+  {
+   "name": "SORT descending: the blank comes last",
+   "formula": "LAST(SORT(lines, {-qty}).sku)",
+   "expected": "C"
+  },
+  {
+   "name": "SORT ascending: the blank comes first",
+   "formula": "FIRST(SORT(lines, {qty}).sku)",
+   "expected": "C"
+  },
+  {
+   "name": "SORT then INDEX",
+   "formula": "INDEX(SORT(lines, {qty}).sku, 2)",
+   "expected": "B"
+  },
+  {
+   "name": "SORT keeps the order of the list among equal rows",
+   "formula": "JOIN(SORT(lines, {sku}).qty, \" \")",
+   "expected": "2 3.5 1"
+  },
+  {
+   "name": "SORT by two columns",
+   "formula": "JOIN(SORT(lines, {sku, -qty}).qty, \" \")",
+   "expected": "3.5 2 1"
+  },
+  {
+   "name": "SORT by an exact column",
+   "formula": "JOIN(SORT(lines, {-price}).sku, \">\")",
+   "expected": "A>A>B>C"
+  },
+  {
+   "name": "SORT by a day",
+   "formula": "LAST(SORT(lines, {day}).sku)",
+   "expected": "B"
+  },
+  {
+   "name": "SORT by money",
+   "formula": "FIRST(SORT(lines, {-cost}).qty)",
+   "expected": 3.5
+  },
+  {
+   "name": "SORT changes no sum",
+   "formula": "SUM(SORT(lines, {qty}).qty)",
+   "expected": 6.5
+  },
+  {
+   "name": "SORT of an array by its elements",
+   "formula": "JOIN(SORT(tags, {value}), \",\")",
+   "expected": "blue,red,red"
+  },
+  {
+   "name": "TOP: the first rows of the list",
+   "formula": "SUM(TOP(lines, 2).qty)",
+   "expected": 3
+  },
+  {
+   "name": "TOP of more rows than the list has is the list",
+   "formula": "COUNT(TOP(lines, 10))",
+   "expected": 4
+  },
+  {
+   "name": "TOP of no rows",
+   "formula": "COUNT(TOP(lines, 0))",
+   "expected": 0
+  },
+  {
+   "name": "TOP of a sorted list: the largest",
+   "formula": "SUM(TOP(SORT(lines, {-price}), 2).price)",
+   "expected": "110.49"
+  },
+  {
+   "name": "TOP with the count in a variable of the document",
+   "formula": "JOIN(TOP(SORT(lines, {-qty}), limit).sku, \",\")",
+   "inputs": {
+    "limit": 3
+   },
+   "expected": "A,A,B"
+  },
+  {
+   "name": "TOP, SORT and FILTER together",
+   "formula": "JOIN(TOP(SORT(FILTER(lines, done), {-qty}), 1).sku, \",\")",
+   "expected": "A"
+  },
+  {
+   "name": "FIRST of TOP of SORT of FILTER",
+   "formula": "FIRST(TOP(SORT(FILTER(lines, qty > 0), {qty}), 2).sku)",
+   "expected": "B"
+  },
+  {
+   "name": "LAST of TOP is the last row taken",
+   "formula": "LAST(TOP(lines, 3).sku)",
+   "expected": "C"
+  },
+  {
+   "name": "INDEX in the rows TOP takes",
+   "formula": "INDEX(TOP(SORT(lines, {-qty}), 2).qty, 2)",
+   "expected": 2
+  },
+  {
+   "name": "INDEX past the rows TOP takes is out of range",
+   "formula": "INDEX(TOP(lines, 2).sku, 3)",
+   "error": "out_of_range"
+  },
+  {
+   "name": "TOP with a count below 0 is out of range",
+   "formula": "COUNT(TOP(lines, -1))",
+   "error": "out_of_range"
+  },
+  {
+   "name": "TOP with a count that is no whole number is out of range",
+   "formula": "COUNT(TOP(lines, 1.5))",
+   "error": "out_of_range"
+  },
+  {
+   "name": "TOP with a blank count takes no row: a blank is 0",
+   "formula": "COUNT(TOP(lines, limit))",
+   "expected": 0
+  },
+  {
+   "name": "UNIQUE counted is the number of different values",
+   "formula": "COUNT(UNIQUE(lines.sku))",
+   "expected": 3
+  },
+  {
+   "name": "UNIQUE joined: each value where it first stands",
+   "formula": "JOIN(UNIQUE(lines.sku), \",\")",
+   "expected": "A,B,C"
+  },
+  {
+   "name": "UNIQUE of an array skips the blank",
+   "formula": "JOIN(UNIQUE(tags), \"/\")",
+   "expected": "red/blue"
+  },
+  {
+   "name": "FIRST of UNIQUE",
+   "formula": "FIRST(UNIQUE(lines.day))",
+   "expected": "2026-01-05"
+  },
+  {
+   "name": "LAST of UNIQUE",
+   "formula": "LAST(UNIQUE(lines.day))",
+   "expected": "2026-01-07"
+  },
+  {
+   "name": "INDEX of UNIQUE",
+   "formula": "INDEX(UNIQUE(lines.sku), 3)",
+   "expected": "C"
+  },
+  {
+   "name": "INDEX past the different values is out of range",
+   "formula": "INDEX(UNIQUE(lines.sku), 4)",
+   "error": "out_of_range"
+  },
+  {
+   "name": "UNIQUE after SORT: the order of the sorted list",
+   "formula": "JOIN(UNIQUE(SORT(lines, {qty}).sku), \",\")",
+   "expected": "C,B,A"
+  },
+  {
+   "name": "UNIQUE after FILTER",
+   "formula": "JOIN(UNIQUE(FILTER(lines, done).sku), \",\")",
+   "expected": "A"
+  },
+  {
+   "name": "UNIQUE after TOP",
+   "formula": "JOIN(UNIQUE(TOP(lines, 2).sku), \",\")",
+   "expected": "A,B"
+  },
+  {
+   "name": "UNIQUE of money: the same amount in two currencies is two values",
+   "formula": "COUNT(UNIQUE(mixed.fee))",
+   "expected": 3
+  },
+  {
+   "name": "UNIQUE of money joined",
+   "formula": "JOIN(UNIQUE(lines.cost), \"; \")",
+   "expected": "21.00 PLN; 0.25 PLN; 349.97 PLN"
+  },
+  {
+   "name": "UNIQUE of exact numbers",
+   "formula": "JOIN(UNIQUE(lines.price), \" \")",
+   "expected": "10.50 0.25 99.99"
+  },
+  {
+   "name": "CONTAINS among the different values",
+   "formula": "CONTAINS(UNIQUE(lines.sku), \"B\")",
+   "expected": true
+  },
+  {
+   "name": "a shaped list beside another figure",
+   "formula": "COUNT(FILTER(lines, done)) + COUNT(UNIQUE(tags))",
    "expected": 4
   }
  ]

@@ -255,7 +255,23 @@ func (p *parser) primary() (Node, error) {
 			if err != nil {
 				return nil, err
 			}
-			return p.call(t, args)
+			n, err := p.call(t, args)
+			if err != nil {
+				return nil, err
+			}
+			// A column of the list a function gives: FILTER(lines, x).price
+			// (ADR-0081, step 3). Which functions give a list is the
+			// binder's to say.
+			if c, isCall := n.(*Call); isCall {
+				if _, ok := p.accept(TokDot); ok {
+					name, err := p.expect(TokIdent)
+					if err != nil {
+						return nil, p.errAt(name.Pos, "expected the name of a column after %s(...).", strings.ToUpper(t.Text))
+					}
+					return &CallMember{Call: c, Name: name.Text, P: t.Pos}, nil
+				}
+			}
+			return n, nil
 		}
 		if _, ok := p.accept(TokDot); ok {
 			// A path: a column of a rows variable, or a field of an object

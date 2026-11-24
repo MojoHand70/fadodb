@@ -371,6 +371,10 @@ value of a formula.
 | `FIRST(tags)` | "new" | text |
 | `JOIN(tags, " and ")` | "new and urgent" | text |
 | `INDEX(tags, 2)` | "urgent" | text |
+| `FIRST(SORT(tags, {-value}))` | "urgent" | text |
+| `COUNT(FILTER(tags, value <> "new"))` | 1 | number |
+| `JOIN(UNIQUE(tags), ", ")` | "new, urgent" | text |
+| `FILTER(tags, value = "new")` | refused: `bad_formula` | |
 | `IF(COUNT(tags) > 1, "several", "one")` | "several" | text |
 | `tags` | refused: `bad_formula` | |
 

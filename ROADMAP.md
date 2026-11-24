@@ -345,10 +345,13 @@ and a section's rights for every variable in it, the most specific name
 winning; the class bundle, `get_bundle` and `GET /v1/bundle`, which is
 built: a class in the person's words and its formulas compiled, proved
 in the browser VM against the server's answers; signing in
-for people at `fadodb serve` itself (ADR-0071), of which passwords,
-the second step for administrators and designers, sessions and a
-company's sign-on and the passes of clients by OAuth, Claude among
-them as an agent acting for the person, are built; the pages of a
+for people at `fadodb serve` itself (ADR-0071, ADR-0088), of which
+invitations and passkeys on the device in use, passwords, the second
+step for administrators and designers, sessions and a company's
+sign-on and the passes of clients by OAuth, Claude among them as an
+agent acting for the person, are built, and the code a phone scans to
+add its passkey, then the end of passwords and the second step, are
+planned; the pages of a
 face, which the server hands out from a folder, `--pages` (ADR-0073),
 and which is built: the server has no pages of a face of its own, and
 the open face, FadoDB Workshop, is in a repository of its own, where a
@@ -387,9 +390,10 @@ door is told a business story in plain words and builds the table and
 the class, and the people of the story use them in a browser, runs
 when the owner's face is finished; signing in with a passkey
 (ADR-0088, proposed, its premises ruled the same day), of which the
-first of five steps is built, comes after the release, and until then
-a person signs in with a password, and an administrator or a designer
-with a code as well; and ADR-0085, a list sent by an action and taken
+first of five steps is in the release, comes after it: the second,
+invitations and passkeys on the device in use, is built since, and
+until passwords go a person may still sign in with a password, and an
+administrator or a designer with a code as well; and ADR-0085, a list sent by an action and taken
 from its answer, accepted, is built after the release. Built as they
 propose and still proposed, each the owner's to accept or strike:
 ADR-0079 to ADR-0084 and ADR-0086.

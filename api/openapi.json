@@ -9,7 +9,7 @@
             }
           }
         },
-        "description": "The command was not carried out. The body holds the refusal under `error`, with its code; a caller reads the code, and the status is worked out from it:\n\n| Status | Codes |\n|---|---|\n| 400 | `bad_json` |\n| 401 | `sign_in_refused`, `unauthenticated` |\n| 403 | `forbidden`, `reason_required` |\n| 404 | `unknown_class`, `unknown_document`, `unknown_table`, `unknown_schema`, `unknown_app`, `unknown_blob`, `unknown_action`, `unknown_row`, `unknown_user`, `unknown_group`, `unknown_inlet`, `unknown_key`, `unknown_session`, `unknown_client`, `unknown_grant`, `unknown_command` |\n| 409 | `key_reused`, `duplicate`, `terminal`, `wrong_state`, `guard_false` |\n| 413 | `blob_too_large`, `too_large` |\n| 429 | `too_many_attempts` |\n| 499 | `caller_left` |\n| 500 | `storage`, `internal` |\n| 503 | `closed`, `busy` |\n| 504 | `timeout` |\n| 422 | every other refusal |\n"
+        "description": "The command was not carried out. The body holds the refusal under `error`, with its code; a caller reads the code, and the status is worked out from it:\n\n| Status | Codes |\n|---|---|\n| 400 | `bad_json` |\n| 401 | `sign_in_refused`, `unauthenticated` |\n| 403 | `forbidden`, `reason_required` |\n| 404 | `unknown_class`, `unknown_document`, `unknown_table`, `unknown_schema`, `unknown_app`, `unknown_blob`, `unknown_action`, `unknown_row`, `unknown_user`, `unknown_group`, `unknown_inlet`, `unknown_key`, `unknown_session`, `unknown_client`, `unknown_grant`, `unknown_invitation`, `unknown_passkey`, `unknown_command` |\n| 409 | `key_reused`, `duplicate`, `terminal`, `wrong_state`, `guard_false` |\n| 413 | `blob_too_large`, `too_large` |\n| 429 | `too_many_attempts` |\n| 499 | `caller_left` |\n| 500 | `storage`, `internal` |\n| 503 | `closed`, `busy` |\n| 504 | `timeout` |\n| 422 | every other refusal |\n"
       }
     },
     "schemas": {
@@ -663,6 +663,65 @@
           "Users, groups and keys"
         ],
         "x-fado-call": "CreateGroup",
+        "x-fado-mark": "writes"
+      }
+    },
+    "/v1/create_invitation": {
+      "post": {
+        "description": "It writes. In Go it is the call `CreateInvitation`. It is offered only by a database that keeps its own users, groups and keys; any other answers `unknown_command`.",
+        "operationId": "create_invitation",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "for": {
+                    "description": "the id of whoever the caller acts for; let through only while a substitution says so",
+                    "type": "string"
+                  },
+                  "user": {
+                    "description": "the id of the person the invitation is for",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "user"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "invitation": {
+                      "description": "the invitation: its user, when and by whom it was made, the moment it ends, and under token the secret the server's page /auth/invite takes, shown this once"
+                    }
+                  },
+                  "required": [
+                    "invitation"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "The command ran."
+          },
+          "default": {
+            "$ref": "#/components/responses/Refused"
+          }
+        },
+        "summary": "Makes an invitation for a person, good once and for 7 days, with which they add their first passkey, and answers its secret, this once; an invitation of theirs that still holds ends. It is a database administrator's.",
+        "tags": [
+          "Users, groups and keys"
+        ],
+        "x-fado-call": "CreateInvitation",
         "x-fado-mark": "writes"
       }
     },
@@ -3535,6 +3594,62 @@
         "x-fado-mark": "reads"
       }
     },
+    "/v1/list_invitations": {
+      "post": {
+        "description": "It reads. In Go it is the call `Invitations`. It is offered only by a database that keeps its own users, groups and keys; any other answers `unknown_command`.",
+        "operationId": "list_invitations",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "for": {
+                    "description": "the id of whoever the caller acts for; let through only while a substitution says so",
+                    "type": "string"
+                  },
+                  "user": {
+                    "description": "only the invitation of this person",
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "invitations": {
+                      "description": "the invitations, oldest first: their user, when and by whom they were made, and when they end"
+                    }
+                  },
+                  "required": [
+                    "invitations"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "The command ran."
+          },
+          "default": {
+            "$ref": "#/components/responses/Refused"
+          }
+        },
+        "summary": "Lists the invitations that still hold, never a secret. It is a database administrator's.",
+        "tags": [
+          "Users, groups and keys"
+        ],
+        "x-fado-call": "Invitations",
+        "x-fado-mark": "reads"
+      }
+    },
     "/v1/list_keys": {
       "post": {
         "description": "It reads. In Go it is the call `Keys`. It is offered only by a database that keeps its own users, groups and keys; any other answers `unknown_command`.",
@@ -3588,6 +3703,62 @@
           "Users, groups and keys"
         ],
         "x-fado-call": "Keys",
+        "x-fado-mark": "reads"
+      }
+    },
+    "/v1/list_passkeys": {
+      "post": {
+        "description": "It reads. In Go it is the call `Passkeys`. It is offered only by a database that keeps its own users, groups and keys; any other answers `unknown_command`.",
+        "operationId": "list_passkeys",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "for": {
+                    "description": "the id of whoever the caller acts for; let through only while a substitution says so",
+                    "type": "string"
+                  },
+                  "user": {
+                    "description": "the id of the user; left out, the caller",
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "passkeys": {
+                      "description": "the passkeys, oldest first: their id, their user, the name of their device, whether they are synced, when and how they were added, and when they were last used"
+                    }
+                  },
+                  "required": [
+                    "passkeys"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "The command ran."
+          },
+          "default": {
+            "$ref": "#/components/responses/Refused"
+          }
+        },
+        "summary": "Lists the passkeys of a user, never a key. A database administrator may ask of any user, and a user of itself.",
+        "tags": [
+          "Users, groups and keys"
+        ],
+        "x-fado-call": "Passkeys",
         "x-fado-mark": "reads"
       }
     },
@@ -4951,6 +5122,58 @@
           "Definitions"
         ],
         "x-fado-call": "RemoveInlet",
+        "x-fado-mark": "writes"
+      }
+    },
+    "/v1/remove_passkey": {
+      "post": {
+        "description": "It writes. In Go it is the call `RemovePasskey`. It is offered only by a database that keeps its own users, groups and keys; any other answers `unknown_command`.",
+        "operationId": "remove_passkey",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "for": {
+                    "description": "the id of whoever the caller acts for; let through only while a substitution says so",
+                    "type": "string"
+                  },
+                  "passkey": {
+                    "description": "the id of the passkey, as list_passkeys shows it",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "passkey"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {},
+                  "type": "object"
+                }
+              }
+            },
+            "description": "The command ran."
+          },
+          "default": {
+            "$ref": "#/components/responses/Refused"
+          }
+        },
+        "summary": "Removes a passkey: it opens nothing more, and the sessions it began end. A database administrator removes any, for a lost phone; a user its own, but not its last unless it signs in with the company's sign-on too.",
+        "tags": [
+          "Users, groups and keys"
+        ],
+        "x-fado-call": "RemovePasskey",
         "x-fado-mark": "writes"
       }
     },
@@ -6667,6 +6890,58 @@
         ],
         "x-fado-call": "Whoami",
         "x-fado-mark": "reads"
+      }
+    },
+    "/v1/withdraw_invitation": {
+      "post": {
+        "description": "It writes. In Go it is the call `WithdrawInvitation`. It is offered only by a database that keeps its own users, groups and keys; any other answers `unknown_command`.",
+        "operationId": "withdraw_invitation",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "for": {
+                    "description": "the id of whoever the caller acts for; let through only while a substitution says so",
+                    "type": "string"
+                  },
+                  "user": {
+                    "description": "the id of the person",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "user"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {},
+                  "type": "object"
+                }
+              }
+            },
+            "description": "The command ran."
+          },
+          "default": {
+            "$ref": "#/components/responses/Refused"
+          }
+        },
+        "summary": "Ends the invitation of a person that still holds: its link lets nobody in. It is a database administrator's.",
+        "tags": [
+          "Users, groups and keys"
+        ],
+        "x-fado-call": "WithdrawInvitation",
+        "x-fado-mark": "writes"
       }
     }
   },

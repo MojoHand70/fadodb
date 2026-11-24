@@ -92,18 +92,21 @@ var DefaultSessionLengths = SessionLengths{Idle: 8 * time.Hour, Max: 30 * 24 * t
 // after; Codes are the codes for when the phone is lost, in the answer
 // of the sign-in that set the second step up.
 type Session struct {
-	ID        string   `json:"id"`
-	User      string   `json:"user"`
-	Way       string   `json:"way"`
-	Address   string   `json:"address,omitempty"`
-	CreatedAt int64    `json:"created_at"`
-	UsedAt    int64    `json:"used_at"`
-	Ends      int64    `json:"ends"`
-	Idle      int64    `json:"idle"`
-	EndedAt   int64    `json:"ended_at,omitempty"`
-	EndedBy   string   `json:"ended_by,omitempty"`
-	Token     string   `json:"-"`
-	Codes     []string `json:"-"`
+	ID        string `json:"id"`
+	User      string `json:"user"`
+	Way       string `json:"way"`
+	Address   string `json:"address,omitempty"`
+	CreatedAt int64  `json:"created_at"`
+	UsedAt    int64  `json:"used_at"`
+	Ends      int64  `json:"ends"`
+	Idle      int64  `json:"idle"`
+	EndedAt   int64  `json:"ended_at,omitempty"`
+	EndedBy   string `json:"ended_by,omitempty"`
+	// Passkey is the id of the passkey the session began with, for one
+	// begun with a passkey (ADR-0088): removing it ends the session.
+	Passkey string   `json:"passkey,omitempty"`
+	Token   string   `json:"-"`
+	Codes   []string `json:"-"`
 }
 
 // PasswordLink is a link that lets a person set their password, good
@@ -165,14 +168,18 @@ var signinDDL = []string{
 
 // signing is what the store holds of signing in, under its own lock:
 // the sessions, read when the database is opened; the sign-ins under
-// way; the second steps being set up; and the count of recent failures
-// by user and by address.
+// way; the second steps being set up; the count of recent failures by
+// user and by address; and the key the challenges of passkeys are
+// signed with, made when the database is opened, with the challenges
+// used that have not ended (passkeys.go).
 type signing struct {
 	mu       sync.Mutex
 	sessions map[string]*heldSession
 	pending  map[string]*pendingSignIn
 	setting  map[string]*settingUp
 	fails    map[string]*failures
+	key      [32]byte
+	used     map[string]int64
 }
 
 type heldSession struct {
@@ -212,6 +219,12 @@ func (s *Store) signingIn() *signing {
 		s.sign.pending = map[string]*pendingSignIn{}
 		s.sign.setting = map[string]*settingUp{}
 		s.sign.fails = map[string]*failures{}
+		s.sign.used = map[string]int64{}
+		if _, err := rand.Read(s.sign.key[:]); err != nil {
+			// The system's source of random bytes does not fail; if it
+			// did, no challenge it signs would be let through.
+			panic("store: no random bytes for the key of the challenges: " + err.Error())
+		}
 		if s.sign.sessions == nil {
 			s.sign.sessions = map[string]*heldSession{}
 		}
@@ -224,7 +237,7 @@ func (s *Store) signingIn() *signing {
 // a database that keeps its users.
 func (s *Store) loadSessions(ctx context.Context) error {
 	now := s.now().Unix()
-	rows, err := s.writer.QueryContext(ctx, "SELECT id, user, hash, way, address, created_at, used_at, ends, idle FROM fado_sessions WHERE ended_at = 0 AND ends > ?", now)
+	rows, err := s.writer.QueryContext(ctx, "SELECT s.id, s.user, s.hash, s.way, s.address, s.created_at, s.used_at, s.ends, s.idle, coalesce(p.passkey, '') FROM fado_sessions s LEFT JOIN fado_session_passkeys p ON p.session = s.id WHERE s.ended_at = 0 AND s.ends > ?", now)
 	if err != nil {
 		return storageErr("read the sessions", err)
 	}
@@ -233,7 +246,7 @@ func (s *Store) loadSessions(ctx context.Context) error {
 	for rows.Next() {
 		h := &heldSession{}
 		var hash []byte
-		if err := rows.Scan(&h.ID, &h.User, &hash, &h.Way, &h.Address, &h.CreatedAt, &h.UsedAt, &h.Ends, &h.Idle); err != nil {
+		if err := rows.Scan(&h.ID, &h.User, &hash, &h.Way, &h.Address, &h.CreatedAt, &h.UsedAt, &h.Ends, &h.Idle, &h.Passkey); err != nil {
 			return storageErr("read a session", err)
 		}
 		copy(h.hash[:], hash)

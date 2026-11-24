@@ -50,7 +50,9 @@ exactly so in a class or a formula.
 | company sign-on | signing in with the company's own provider, such as Microsoft or Google, by OpenID Connect: the provider vouches for the person, and the server ties their account to the user an administrator added; see [Signing in](signing-in.md#a-companys-sign-on) |
 | pass | how a client a person allowed calls the server: a line that begins `fadoat_`, good for one hour and for one address, the commands or the door for agents, and renewed by a pass of its own; see [Signing in](signing-in.md#connecting-a-client) |
 | grant | a client a person allowed, such as Claude: its passes hold until the person or an administrator ends it, or no pass was renewed for 30 days; see [Signing in](signing-in.md#connecting-a-client) |
-| second step | a code of six digits from an authenticator app, asked after the password of an administrator or a designer; see [Signing in](signing-in.md) |
+| passkey | how a person signs in to `fadodb serve`: a key their phone or computer makes for the server's address and opens with their fingerprint, their face or the device's PIN; the server keeps its public half; see [Signing in](signing-in.md#signing-in-with-a-passkey) |
+| invitation | a link an administrator makes for a person, good once and for 7 days, with which they add their first passkey; see [Signing in](signing-in.md#an-invitation) |
+| second step | a code of six digits from an authenticator app, asked after the password of an administrator or a designer, until passwords go; see [Signing in](signing-in.md) |
 | group | a named set of callers, as the host program knows them, such as `ACCOUNTING` |
 | system group | one of four groups that hold work which is not about one document: `administrators`, `designers`, `content-administrators`, `analysts` |
 | `everyone` | every caller that has an id |

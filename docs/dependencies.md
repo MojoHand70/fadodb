@@ -12,6 +12,17 @@ justification and a reviewer who agrees with it. See
 | Go standard library | BSD-3 | in use | Everything the core needs for HTTP, JSON, crypto and testing. |
 | `modernc.org/sqlite` | BSD-3 | in use | Pure-Go SQLite. Keeps the core free of cgo so it cross-compiles and embeds anywhere. Used by `internal/formula/sqlitefn` for the SQL conformance runner since Phase 1 (ADR-0020); the transactional store follows in Phase 2. |
 
+### Files in the program
+
+The server's own pages load files the program holds
+(`internal/server/web`, ADR-0088, item 7). No code comes with them.
+
+| File | Where it comes from | License | Why |
+|---|---|---|---|
+| Schibsted Grotesk, Latin and Latin Extended, as WOFF2 | Google Fonts, as Rhea serves it | SIL Open Font License 1.1, its text in `internal/server/web/fonts` | The typeface of words on the pages where people sign in, as on Rhea's sign-in (ADR-0088, the owner's ruling 3). |
+| Martian Mono, Latin and Latin Extended, as WOFF2 | Google Fonts, as Rhea serves it | SIL Open Font License 1.1, its text in `internal/server/web/fonts` | The typeface of the server's address and of codes on those pages. |
+| FadoDB's mark, `mark.png` | fadodb.org | FadoDB's own | The signet above each page's heading, and its icon. |
+
 ## Separate modules
 
 These live in their own Go modules so their weight and cgo never reach the core.

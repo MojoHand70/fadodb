@@ -124,6 +124,10 @@ func BenchmarkLiveList(b *testing.B) {
 	s, ids := liveListStore(b)
 	ctx := context.Background()
 	who := As(benchReader)
+	warmLive(b, func(i int) error {
+		_, err := s.LivePage(ctx, LiveRead{Class: "Order", ID: ids[i*7919%len(ids)], Variable: "invoices"}, who)
+		return err
+	})
 	i := 0
 	b.ReportAllocs()
 	b.ResetTimer()
@@ -142,6 +146,10 @@ func BenchmarkLiveListPage(b *testing.B) {
 	s, ids := liveListStore(b)
 	ctx := context.Background()
 	who := As(benchReader)
+	warmLive(b, func(i int) error {
+		_, err := s.LivePage(ctx, LiveRead{Class: "Order", ID: ids[i*7919%len(ids)], Variable: "invoices", Limit: 20}, who)
+		return err
+	})
 	i := 0
 	b.ReportAllocs()
 	b.ResetTimer()
@@ -151,6 +159,21 @@ func BenchmarkLiveListPage(b *testing.B) {
 			b.Fatalf("%v, %d rows, more %v", err, len(v.Rows), v.More)
 		}
 		i++
+	}
+}
+
+// warmLive reads ten orders before a benchmark of reads begins, so that
+// what the first reads do once, a reading connection opened and its
+// statements and the store's caches made, is not counted among the
+// reads. Counted, its few hundred allocations moved a short run's
+// allocations a read from 4,314 to 4,315, as a change that made it a
+// little more failed the gate, which allows no allocation more.
+func warmLive(b *testing.B, read func(i int) error) {
+	b.Helper()
+	for i := range 10 {
+		if err := read(i); err != nil {
+			b.Fatal(err)
+		}
 	}
 }
 
@@ -169,6 +192,10 @@ func benchLiveFigureOf(b *testing.B, figures, variable string, want any) {
 	s, ids := liveListStoreWith(b, figures)
 	ctx := context.Background()
 	who := As(benchReader)
+	warmLive(b, func(i int) error {
+		_, err := s.Live(ctx, "Order", ids[i*7919%len(ids)], variable, who)
+		return err
+	})
 	i := 0
 	b.ReportAllocs()
 	b.ResetTimer()

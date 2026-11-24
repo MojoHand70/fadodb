@@ -1,6 +1,6 @@
 # ADR-0081: Functions over a list, each with its SQL from the start
 
-- Status: Proposed; amends ADR-0046 (item 4: `AVERAGE`, `MEDIAN` and `COUNTUNIQUE` stand in the column position of a `LOOKUP`). Items 1, 2 and 5 and the set of item 6 are the owner's word of 2026-11-23; the rest is settled by me for him to veto, and marked so. Step 1, step 2 and the first group of step 3 are built: see "What is built".
+- Status: Proposed; amends ADR-0046 (item 4: `AVERAGE`, `MEDIAN` and `COUNTUNIQUE` stand in the column position of a `LOOKUP`). Items 1, 2 and 5 and the set of item 6 are the owner's word of 2026-11-23; the rest is settled by me for him to veto, and marked so. Steps 1, 2 and 3 are built: see "What is built".
 - Date: 2026-11-23
 
 ## Context
@@ -224,6 +224,42 @@ planned for a server, is from its documentation.
       column equals the value. So it needs nothing of its own in any
       executor.
 
+11. **A list out of a list stands only inside a function over a list.**
+    The owner's word of 2026-11-24 on the question; how each is
+    written is mine.
+    - `FILTER`, `SORT`, `TOP` and `UNIQUE` give a list. Such a list is
+      no value of a formula and no variable: it is what a function
+      over a list works on, so the answer of a formula is always one
+      value. Written by itself it is refused.
+    - Each is a part of that function's one question (item 2):
+      `FILTER` its condition, `SORT` its order, `TOP` its limit,
+      `UNIQUE` the different values of its column.
+    - `FILTER(list, condition)`: the condition as in `COUNTIF`, a bare
+      name a column of the row. ADR-0019 wrote a mask,
+      `FILTER(lines, lines.qty > 0)`; it is not taken, so that every
+      condition over a list is written one way.
+    - `SORT(list, {columns})`: the columns in braces, as the last part
+      of a `QUERY`, a minus for descending. Rows the columns order
+      alike keep the order of the list. A blank comes before every
+      value, in every database, so the place of blanks is written into
+      the statement.
+    - `TOP(list, count)`: the first rows. The count is a value of the
+      document; a blank one is 0, as a blank is in arithmetic, and one
+      below 0 or no whole number is the error `out_of_range`.
+    - `UNIQUE(list.column)`: the different values, blanks left out,
+      each where it first stands. It stands inside `COUNT`, `JOIN`,
+      `FIRST`, `LAST`, `INDEX` and `CONTAINS`. `COUNT` of it is
+      `COUNTUNIQUE`. A sum, a mean or a middle value of different
+      values is refused: nobody asked for one.
+    - They are written from the inside out in one order, `FILTER`
+      nearest the list, then `SORT`, then `TOP`, each once but
+      `FILTER`: `TOP(SORT(FILTER(list, c), {columns}), n)`. Another
+      order would be another question, a list cut and then narrowed,
+      and is refused in words that say the order.
+    - A column of what they give is written after the call:
+      `FILTER(lines, delivered).price`. The grammar gained that, a
+      name after a call, and nothing else.
+
 ## The owner's words
 
 2026-11-23, in this order:
@@ -242,6 +278,11 @@ planned for a server, is from its documentation.
 2026-11-24, shown step 3 as two groups, one value out of a list and a
 list out of a list, with the proposal to build the first and to bring
 one page on the second before building it: "go ahead with step 3".
+
+The same day, on the page's question whether such a list may stand
+only inside another function or also as a variable of its own, with
+the proposal "only inside another function, for now": "Question 4: go
+ahead with your proposal".
 
 ## What is built
 
@@ -312,13 +353,28 @@ and `CONTAINS` over both kinds of list.
 - Over a list that is a `QUERY` the store gives the statement the
   list's own order.
 
-Not built yet, each decided above:
+Step 3, its second group (item 11): `FILTER`, `SORT`, `TOP` and
+`UNIQUE`, inside a function over either kind of list.
+
+- The binder reads the shape off the first argument and puts it on
+  the slot: more of the condition, the order with its sorted columns
+  first, a count, and a mark for different values. The fold narrows,
+  orders, cuts and thins the rows before it aggregates.
+- In SQL, `FILTER` is the `WHERE` and `SORT` the `ORDER BY`. `TOP`
+  numbers the rows in their order and keeps those whose number is not
+  past the count (`ROW_NUMBER`, since a database does not take a
+  limit that comes from the document everywhere). `UNIQUE` groups the
+  values and keeps, for each, the lowest place it stands at.
+- Fifty-three more cases in `conformance/formula/held.json`, 147 in
+  all, prove one answer on the Go fold, on SQLite and on DuckDB.
+- With these every function of the catalogue is built.
+
+Not built, each decided above:
 
 - A fold in the places item 9 leaves out, and in the browser VM.
-- The functions that give a list again, `FILTER`, `SORT`, `TOP` and
-  `UNIQUE` (step 3, its second group). Where such a list may stand is
-  not decided: only inside another function, or also as a variable of
-  its own.
+- A list that `FILTER`, `SORT`, `TOP` or `UNIQUE` gives as a variable
+  of its own (item 11): decided not now. For a list that is a `QUERY`
+  it is a second `QUERY` today.
 
 ## Consequences
 

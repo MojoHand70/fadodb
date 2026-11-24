@@ -625,8 +625,14 @@ func (b *binder) shapeOf(n Node) (listShape, error) {
 	default:
 		return sh, b.errAt(n.Pos(), "FILTER, SORT, TOP and UNIQUE work on a list of the document: its lines or its tags, or a live variable whose formula is a QUERY")
 	}
-	if name, _ := b.listOf(n); name == "" {
+	name, src := b.listOf(n)
+	if name == "" {
 		return sh, b.errAt(n.Pos(), "FILTER, SORT, TOP and UNIQUE work on a list of the document: its lines or its tags, or a live variable whose formula is a QUERY")
+	}
+	if _, whole := n.(*Ident); whole && sh.unique && !(src.Held && len(src.Key) == 0) {
+		// the different values are those of one column; only a list of
+		// single values, an array, has none to name
+		return sh, b.errAt(sh.at, "UNIQUE takes a column of the list: UNIQUE(%s.%s)", name, firstColumn(src))
 	}
 	sh.base = n
 	return sh, nil
@@ -645,10 +651,6 @@ func (b *binder) shapeSlot(n *Call, form figureForm, sh listShape, list string, 
 			q.Agg = "COUNTUNIQUE"
 		case "FIRST", "LAST", "INDEX", "JOIN":
 			q.Distinct = true
-		}
-		if len(q.Value.Slots) == 0 {
-			// the figure counts rows and names no column: nothing to tell apart
-			return b.errAt(sh.at, "UNIQUE takes a column of the list: UNIQUE(%s.%s)", list, firstColumn(src))
 		}
 	}
 	if sh.sort != nil {

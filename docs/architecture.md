@@ -339,7 +339,9 @@ its lines or its tags, the same functions are a fold the engine works
 out where the document is, in the commit that changes the list:
 `SUM(lines.qty * lines.price)`. One value is picked out of either
 kind of list by its order, `FIRST`, `LAST`, `INDEX`, joined as one
-text, `JOIN`, or looked for, `CONTAINS`. The functions that give a list again
+text, `JOIN`, or looked for, `CONTAINS`. Inside such a function a
+list is narrowed, ordered and cut, `FILTER`, `SORT`, `TOP`, `UNIQUE`,
+each a part of the one question. The functions that give a list again
 are not built yet.
 
 A class as a source is its documents as they are now: the system columns

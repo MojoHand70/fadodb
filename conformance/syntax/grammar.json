@@ -130,6 +130,11 @@
     "lines.qty",
     "INDEX(lines.qty, 1)",
     "FILTER(lines, lines.qty > 0)",
+    "SUM(FILTER(lines, qty > 0).price)",
+    "FIRST(SORT(lines, {-price, what}).what)",
+    "JOIN(TOP(SORT(FILTER(lines, done), {-price}), 3).what, \", \")",
+    "COUNT(UNIQUE(lines.what))",
+    "filter(lines, done).price",
     "FIRST(lines.sku)",
     "CONTAINS(lines.sku, \"A1\")",
     "JOIN(lines.sku, \", \")",
@@ -152,6 +157,9 @@
     "1+2*3^4%"
   ],
   "reject": [
+    {"formula": "FILTER(lines, done).", "reason": "a dot after a call wants the name of a column"},
+    {"formula": "FILTER(lines, done).price.net", "reason": "a column of the list a function gives has one name"},
+    {"formula": "FILTER(lines, done).1", "reason": "a column is a name"},
     {"formula": "", "reason": "empty"},
     {"formula": "   ", "reason": "empty"},
     {"formula": "Alfa ^", "reason": "missing operand"},

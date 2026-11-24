@@ -234,6 +234,9 @@ variable too, and its formula names the list:
     "first":    {"label": "First invoice", "mode": "live", "formula": "FIRST(invoices.number)"},
     "numbers":  {"label": "Invoices by number", "mode": "live", "formula": "JOIN(invoices.number, \", \")"},
     "has_draft": {"label": "Has a draft", "mode": "live", "formula": "CONTAINS(invoices.state, \"draft\")"},
+    "dearest":  {"label": "Dearest invoice", "mode": "live", "formula": "FIRST(SORT(invoices, {-net}).number)"},
+    "two_smallest": {"label": "The two smallest", "mode": "live",
+                 "formula": "JOIN(TOP(SORT(invoices, {net}), 2).number, \", \")"},
     "margins":  {"label": "Margins", "mode": "live", "formula": "SUM(invoices.margin)"},
     "by_owner": {"label": "Written by the owner", "mode": "live",
                  "formula": "COUNTIF(invoices, owner = THIS.owner)"},
@@ -297,6 +300,21 @@ and whether a value is there:
 "First" is by the order of the list: `invoices` is sorted by number,
 so the first is the lowest number its reader may read.
 
+A list may be narrowed, ordered and cut before the function runs over
+it, inside the same formula:
+
+<!-- shaped figures -->
+| Who reads | Of the order | `dearest` | `two_smallest` |
+|---|---|---|---|
+| Jan | ORD-17 | FV-2 | FV-1, FV-2 |
+| Piotr | ORD-17 | FV-3 | FV-3 |
+| Ewa | ORD-17 | FV-2 | FV-3, FV-1 |
+| Piotr | ORD-18 | blank | blank |
+
+`dearest` orders the invoices by their net from the largest and takes
+the number of the first. `two_smallest` orders them from the smallest,
+takes the first two, and joins their numbers.
+
 | Written | Gives |
 |---|---|
 | `COUNT(invoices)` | how many rows the list has |
@@ -313,6 +331,10 @@ so the first is the lowest number its reader may read.
 | `INDEX(invoices.number, 2)` | the value in the row at a place, counted from 1 |
 | `JOIN(invoices.number, ", ")` | the values of a column as one text, with the separator between them |
 | `CONTAINS(invoices.state, "draft")` | whether some row has the value in the column |
+| `FILTER(invoices, state = "draft")` | inside a function: the rows that meet a condition |
+| `SORT(invoices, {-net})` | inside a function: the rows in another order, a minus for descending |
+| `TOP(invoices, 3)` | inside a function: the first rows, as many as the count says |
+| `UNIQUE(invoices.state)` | inside a function: the different values of a column |
 
 - **A column** is written after a dot, and is any stored variable of
   the listed class, or its `state`, `title` or `id`, whether the list
@@ -353,9 +375,28 @@ A figure is one question to the invoices, with the id of the order in
 its condition, and the answer is one number: no invoice is read to be
 counted. An index on the pointer serves it as it serves the list.
 
-**Not built yet** (ADR-0081): the functions that give a list again,
-`FILTER`, `SORT`, `TOP` and `UNIQUE`. The same figures over the lines
-and the tags a document holds are below.
+- **`FILTER`, `SORT`, `TOP` and `UNIQUE` give a list, and a list
+  stands only inside a function over a list**: the answer of the
+  formula is always one value. A column of what they give is written
+  after them: `SUM(FILTER(invoices, state = "draft").net)`. They are
+  written from the inside out in one order, `FILTER` nearest the list:
+  `TOP(SORT(FILTER(invoices, state = "draft"), {-net}), 3)`. `UNIQUE`
+  goes round a column, and round nothing else:
+  `JOIN(UNIQUE(invoices.state), ", ")`.
+- **Each part becomes a part of the one question**: `FILTER` its
+  condition, `SORT` its order, `TOP` its limit, `UNIQUE` the different
+  values. Rows a `SORT` orders alike keep the order of the list, and a
+  blank comes before every value. The count of `TOP` is a value of the
+  document: a blank one is 0, and one below 0 or no whole number is
+  the error `out_of_range`. `UNIQUE` stands inside `COUNT`, `JOIN`,
+  `FIRST`, `LAST`, `INDEX` and `CONTAINS`; a sum of different values
+  is not built.
+
+**Not built** (ADR-0081, the owner's ruling of 2026-11-24): a list
+that `FILTER`, `SORT`, `TOP` or `UNIQUE` gives as a variable of its
+own. A second `QUERY` with a condition and an order is such a list
+today. The same figures over the lines and the tags a document holds
+are below.
 
 What is refused when the class is defined:
 
@@ -395,7 +436,10 @@ with the document as any computed value is.
     "waiting": {"label": "Not delivered", "formula": "COUNTIF(lines, NOT delivered)"},
     "labels":  {"label": "Different tags", "formula": "COUNTUNIQUE(tags)"},
     "things":  {"label": "What it is for", "formula": "JOIN(lines.what, \", \")"},
-    "urgent":  {"label": "Urgent", "formula": "CONTAINS(tags, \"urgent\")"}
+    "urgent":  {"label": "Urgent", "formula": "CONTAINS(tags, \"urgent\")"},
+    "dearest_thing": {"label": "Dearest thing", "formula": "FIRST(SORT(lines, {-price}).what)"},
+    "to_deliver": {"label": "Still to deliver", "formula": "JOIN(FILTER(lines, NOT delivered).what, \", \")"},
+    "top_two": {"label": "The two dearest lines", "formula": "SUM(TOP(SORT(lines, {-price}), 2).price)"}
   },
   "states": {"initial": "draft", "list": ["draft", "sent"]},
   "transitions": [
@@ -450,6 +494,20 @@ yet. Its tags are red, urgent and red.
   `IFERROR(INDEX(lines.what, 2), "")` where a bill may be shorter.
 - **A list with no element** follows the rules above: it counts 0, its
   sum of money is blank, nothing is first and nothing is joined.
+
+The lines narrowed, ordered and cut inside a formula, for the same
+steps:
+
+<!-- held shaped -->
+| What Ewa does | `dearest_thing` | `to_deliver` | `top_two` |
+|---|---|---|---|
+| writes B-1 with its three lines | ink | ink | 110.50 PLN |
+| marks the ink as delivered | ink | blank | 110.50 PLN |
+| takes the ink off the bill | paper | blank | 10.75 PLN |
+| changes the number alone | paper | blank | 10.75 PLN |
+
+`FILTER`, `SORT`, `TOP` and `UNIQUE` are written over the lines as
+over a list that is a `QUERY`, and stand where the figures stand.
 - **The list itself is no value**: `lines` alone in a formula is
   refused, and so is `lines.qty` outside a function over the list.
 

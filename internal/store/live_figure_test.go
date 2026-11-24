@@ -51,7 +51,13 @@ const figureOrder = `{
    "cheapest": {"mode": "live", "formula": "FIRST(bynet.number)"},
    "dearest":  {"mode": "live", "formula": "LAST(bynet.number)"},
    "bydear":   {"mode": "live", "formula": "JOIN(bynet.number, \" > \")"},
-   "newest":   {"mode": "live", "formula": "FIRST(bydesc.number)"}
+   "newest":   {"mode": "live", "formula": "FIRST(bydesc.number)"},
+   "biggest":  {"mode": "live", "formula": "FIRST(SORT(invoices, {-net}).number)"},
+   "small2":   {"mode": "live", "formula": "JOIN(TOP(SORT(invoices, {net}), 2).number, \"+\")"},
+   "isdraft":  {"mode": "live", "formula": "COUNT(FILTER(invoices, state = \"draft\"))"},
+   "states":   {"mode": "live", "formula": "JOIN(UNIQUE(invoices.state), \",\")"},
+   "least":    {"mode": "live", "formula": "SUM(TOP(bynet, 1).net)"},
+   "latest2":  {"mode": "live", "formula": "JOIN(TOP(bydesc, 2).number, \",\")"}
  },
  "states": {"initial": "open", "list": ["open", "closed"], "final": ["closed"]},
  "transitions": [{"name": "close", "from": "open", "to": "closed"}],
@@ -223,6 +229,20 @@ func TestLiveFigure_RefusedWhenDefined(t *testing.T) {
 		{"the first of a list and no column", `"x": {"mode": "live", "formula": "FIRST(invoices)"}`, "bad_formula", "FIRST takes a column of the list"},
 		{"a value of another type looked for", `"x": {"mode": "live", "formula": "CONTAINS(invoices.number, 3)"}`, "bad_formula", "number"},
 		{"the first of a list that is kept", `"x": {"type": "text", "formula": "FIRST(invoices.number)"}`, "bad_formula", "stands only in a live variable"},
+		{"a list that stands by itself", `"x": {"mode": "live", "formula": "FILTER(invoices, state = \"draft\")"}`, "bad_formula", "a list stands only inside a function over a list"},
+		{"a column of a list that stands by itself", `"x": {"mode": "live", "formula": "FILTER(invoices, state = \"draft\").net"}`, "bad_formula", "a list stands only inside a function over a list"},
+		{"a column SORT has not", `"x": {"mode": "live", "formula": "FIRST(SORT(invoices, {nothing}).number)"}`, "bad_formula", "the list invoices has no column nothing"},
+		{"SORT without braces", `"x": {"mode": "live", "formula": "FIRST(SORT(invoices, net).number)"}`, "bad_formula", "the columns stand in braces"},
+		{"FILTER outside SORT", `"x": {"mode": "live", "formula": "COUNT(FILTER(SORT(invoices, {net}), state = \"draft\"))"}`, "bad_formula", "stands in the wrong place"},
+		{"TOP twice", `"x": {"mode": "live", "formula": "COUNT(TOP(TOP(invoices, 3), 2))"}`, "bad_formula", "stands in the wrong place"},
+		{"the sum of the different values", `"x": {"mode": "live", "formula": "SUM(UNIQUE(invoices.net))"}`, "bad_formula", "of the different values of a column is not built"},
+		{"a column as the count of TOP", `"x": {"mode": "live", "formula": "COUNT(TOP(invoices, invoices.net))"}`, "bad_formula", "the count is a value of the document"},
+		{"a count that is a text", `"x": {"mode": "live", "formula": "COUNT(TOP(invoices, \"two\"))"}`, "bad_formula", "the count must be a number"},
+		{"JOIN of a narrowed list and no column", `"x": {"mode": "live", "formula": "JOIN(FILTER(invoices, state = \"draft\"), \", \")"}`, "bad_formula", "JOIN takes a column of the list"},
+		{"FILTER of a column", `"x": {"mode": "live", "formula": "MAX(FILTER(invoices.net, state = \"draft\"))"}`, "bad_formula", "take the list itself"},
+		{"UNIQUE inside FILTER", `"x": {"mode": "live", "formula": "COUNT(FILTER(UNIQUE(invoices.state), TRUE))"}`, "bad_formula", "UNIQUE gives single values"},
+		{"UNIQUE of a list and no column", `"x": {"mode": "live", "formula": "COUNT(UNIQUE(invoices))"}`, "bad_formula", "UNIQUE takes a column of the list"},
+		{"a narrowed list that is kept", `"x": {"type": "number", "formula": "COUNT(FILTER(invoices, state = \"draft\"))"}`, "bad_formula", "stands only in a live variable"},
 		{"JOIN in a LOOKUP", `"x": {"type": "text", "mode": "triggered", "on": ["refresh"], "formula": "LOOKUP(Invoice, JOIN(number, \", \"), order = ID())"}`, "bad_formula", "cannot stand where the column stands"},
 		{"a figure with too little", `"x": {"mode": "live", "formula": "SUMIF(invoices, TRUE)"}`, "bad_formula", "SUMIF takes 3 arguments, got 2"},
 		{"a figure inside a figure", `"x": {"mode": "live", "formula": "COUNTIF(invoices, net > SUM(invoices.net))"}`, "bad_formula", "inside another's arguments"},
@@ -389,16 +409,22 @@ func TestLiveFigure_OneValueOutOfAList(t *testing.T) {
 		want  map[string]any
 	}{
 		{"ORD-17", liveJan, map[string]any{"first": "FV-1", "lastnet": "250.00 PLN", "second": "FV-2", "numbers": "FV-1, FV-2", "hasfv3": false,
-			"cheapest": "FV-2", "dearest": "FV-1", "bydear": "FV-2 > FV-1", "newest": "FV-2"}},
-		{"ORD-17", livePiotr, map[string]any{"first": "FV-3", "lastnet": "70.00 PLN", "numbers": "FV-3", "hasfv3": true, "dearest": "FV-3", "cheapest": "FV-3", "newest": "FV-3"}},
+			"cheapest": "FV-2", "dearest": "FV-1", "bydear": "FV-2 > FV-1", "newest": "FV-2",
+			"biggest": "FV-1", "small2": "FV-2+FV-1", "isdraft": 2.0, "states": "draft", "least": "250.00 PLN", "latest2": "FV-2,FV-1"}},
+		{"ORD-17", livePiotr, map[string]any{"first": "FV-3", "lastnet": "70.00 PLN", "numbers": "FV-3", "hasfv3": true, "dearest": "FV-3", "cheapest": "FV-3", "newest": "FV-3",
+			"biggest": "FV-3", "small2": "FV-3", "isdraft": 1.0, "least": "70.00 PLN", "latest2": "FV-3"}},
 		// Finance reads all three. The list of the order is by number, one
 		// other by the net from the smallest, a third by number from the
 		// last: each figure follows the order of its own list, which is
 		// none of them the order the invoices were made in.
 		{"ORD-17", liveEwa, map[string]any{"first": "FV-1", "lastnet": "70.00 PLN", "second": "FV-2", "numbers": "FV-1, FV-2, FV-3", "hasfv3": true,
-			"cheapest": "FV-3", "dearest": "FV-1", "bydear": "FV-3 > FV-2 > FV-1", "newest": "FV-3"}},
+			"cheapest": "FV-3", "dearest": "FV-1", "bydear": "FV-3 > FV-2 > FV-1", "newest": "FV-3",
+			// a list narrowed, ordered and cut inside the figure; TOP of a
+			// list takes its first rows by the list's own order
+			"biggest": "FV-1", "small2": "FV-3+FV-2", "isdraft": 3.0, "states": "draft", "least": "70.00 PLN", "latest2": "FV-3,FV-2"}},
 		// A list with no rows: nothing is first, nothing is joined.
-		{"ORD-18", livePiotr, map[string]any{"first": nil, "lastnet": nil, "numbers": nil, "hasfv3": false, "dearest": nil, "bydear": nil}},
+		{"ORD-18", livePiotr, map[string]any{"first": nil, "lastnet": nil, "numbers": nil, "hasfv3": false, "dearest": nil, "bydear": nil,
+			"biggest": nil, "small2": nil, "isdraft": 0.0, "states": nil, "least": nil, "latest2": nil}},
 	} {
 		for name, want := range tc.want {
 			if got := read(tc.order, name, tc.who); got != want {

@@ -103,7 +103,7 @@ func TestLists(t *testing.T) {
 		}
 		return fmt.Sprint(v)
 	}
-	for mark, many := range map[string]int{"figures": 6, "more figures": 3, "picked figures": 3} {
+	for mark, many := range map[string]int{"figures": 6, "more figures": 3, "picked figures": 3, "shaped figures": 2} {
 		figures := marked(t, page, mark)
 		names := regexp.MustCompile("`([a-z_]+)`").FindAllStringSubmatch(strings.SplitN(figures, "\n", 2)[0], -1)
 		if len(names) != many {
@@ -250,6 +250,7 @@ func TestLists(t *testing.T) {
 	if len(heldNames) != 7 || len(rows(held)) != len(steps) {
 		t.Fatalf("the chapter's table of the bill names %d figures in %d steps", len(heldNames), len(rows(held)))
 	}
+	after := map[string]*fado.Document{}
 	for _, row := range rows(held) {
 		do := steps[row[0]]
 		if do == nil {
@@ -259,7 +260,26 @@ func TestLists(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Ewa %s: %v", row[0], err)
 		}
+		after[row[0]] = d
 		for i, name := range heldNames {
+			if got := shown(d.Values[name[1]]); got != row[1+i] {
+				t.Errorf("Ewa %s: %s is %s, and the chapter says %s", row[0], name[1], got, row[1+i])
+			}
+		}
+	}
+	// The same steps, read for the figures over the lines narrowed,
+	// ordered and cut (ADR-0081, step 3).
+	heldShaped := marked(t, page, "held shaped")
+	shapedNames := regexp.MustCompile("`([a-z_]+)`").FindAllStringSubmatch(strings.SplitN(heldShaped, "\n", 2)[0], -1)
+	if len(shapedNames) != 3 || len(rows(heldShaped)) != len(steps) {
+		t.Fatalf("the chapter's second table of the bill names %d figures in %d steps", len(shapedNames), len(rows(heldShaped)))
+	}
+	for _, row := range rows(heldShaped) {
+		d := after[row[0]]
+		if d == nil {
+			t.Fatalf("the chapter's second table has a step the first has not: %s", row[0])
+		}
+		for i, name := range shapedNames {
 			if got := shown(d.Values[name[1]]); got != row[1+i] {
 				t.Errorf("Ewa %s: %s is %s, and the chapter says %s", row[0], name[1], got, row[1+i])
 			}

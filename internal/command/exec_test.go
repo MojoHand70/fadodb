@@ -1285,11 +1285,13 @@ func TestTheListOfFunctionsIsACommand(t *testing.T) {
 	if today := byName["TODAY"]; today["kind"] != "context" || len(today["params"].([]any)) != 0 || today["signature"] != "TODAY()" {
 		t.Errorf("TODAY is told as %v", today)
 	}
-	if filter := byName["FILTER"]; filter["not_built"] != true {
-		t.Errorf("FILTER is not built yet, and is told as %v", filter)
-	}
-	if _, marked := byName["FIRST"]["not_built"]; marked {
-		t.Errorf("FIRST is built, and is told as %v", byName["FIRST"])
+	// Every function of the catalogue is built since FILTER, SORT, TOP
+	// and UNIQUE were (ADR-0081, step 3). The mark stays in the answer's
+	// shape for the day the catalogue names one the engine has not yet.
+	for name, fn := range byName {
+		if _, marked := fn["not_built"]; marked {
+			t.Errorf("%s is built, and is told as %v", name, fn)
+		}
 	}
 	if lookup := byName["LOOKUP"]; lookup["kind"] != "lookup" {
 		t.Errorf("LOOKUP is told as %v", lookup)

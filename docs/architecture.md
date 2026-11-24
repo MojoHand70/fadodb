@@ -1386,6 +1386,7 @@ fadodb/
   fado/httpdoor/         the HTTP door of a database; only a program that answers HTTP imports it
   internal/query/        LOOKUP/QUERY compilation, filter DSL, SQL endpoint, authorizer
   internal/server/       the HTTP door: requests to commands, the stream of changes
+  internal/starter/      the starters `fadodb init --starter` makes a database with, each the commands of an app
   api/                   openapi.json, json schemas for class and wire documents
   analytics/             duckdb module: projection, native tables, attach, mining views
   postgres/              postgres dialect and driver (separate module)

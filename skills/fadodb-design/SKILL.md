@@ -505,6 +505,11 @@ read the diagnostics, fix, preview against live data, define.
    `ACTINGFOR()` is safe to write. A step the approver or their
    substitute takes, and never the one who filed the document, is
    `(approver = USER() OR approver = ACTINGFOR()) AND CREATEDBY() <> USER()`.
+   Compare `ACTINGFOR()` only with a value that is never blank:
+   `ACTINGFOR()` is blank for a caller who acts for nobody, and a blank
+   equals a blank, so `manager = ACTINGFOR()` lets every caller through
+   while `manager` is still empty. Write
+   `NOT ISBLANK(manager) AND (manager = USER() OR manager = ACTINGFOR())`.
    A step that stays personal names `USER()` alone. A group does not
    pass to a substitute: `INGROUP("managers")` waits for a manager.
    The class `Substitution` is the engine's; a class of yours may read

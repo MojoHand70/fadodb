@@ -38,8 +38,12 @@ An agent's program is told to start it, with the server and the key:
              "FADODB_KEY": "fado_..."}}}}
 
   --read-only      offer only the tools that read
-  --tools NAMES    offer only these commands, as create,get,transition;
+  --tools NAMES    offer only these tools, as create,get,transition;
                    left out, every command the door offers
+  --files FOLDER   offer put_file and get_file, which read the files
+                   they put from FOLDER and write the files they get
+                   into it, and nowhere else; left out, the door offers
+                   no tool for files
 ` + serverUsage + `
 Three commands are no tool. subscribe is a stream, and a tool is one
 question and one answer. create_key answers the secret of a key, and
@@ -47,6 +51,13 @@ create_password_link the secret of a link that sets a password, which
 would stay in the conversation of the agent: a key is made at a
 terminal, with fadodb key new or fadodb exec create_key, and a link
 with fadodb exec create_password_link.
+
+The bytes of a file never travel in a tool's arguments or answer. With
+--files, put_file reads a file of the folder and answers its facts,
+which create or set then give a variable of the schema File, and
+get_file writes a file a document holds into the folder, by its hash,
+over no other file. A path that leads out of the folder is refused,
+through a link too.
 
 Nothing is written to standard output but the answers to the agent's
 program. What goes wrong with the door itself is said on standard
@@ -62,6 +73,7 @@ func runMCP(ctx context.Context, args []string, in io.Reader, stdout, stderr io.
 	to := serverFlags(fs)
 	readOnly := fs.Bool("read-only", false, "")
 	tools := fs.String("tools", "", "")
+	files := fs.String("files", "", "")
 	rest, err := parse(fs, args)
 	if err != nil {
 		return asked(name, mcpUsage, err, stderr)
@@ -80,12 +92,22 @@ func runMCP(ctx context.Context, args []string, in io.Reader, stdout, stderr io.
 		return exitUsage
 	}
 	defer c.close()
-	door, err := mcp.New(c.ask, mcp.Options{
+	o := mcp.Options{
 		Version:  version,
 		Database: strings.TrimSuffix(c.base, "/v1/"),
 		ReadOnly: *readOnly,
 		Only:     only,
-	})
+	}
+	if *files != "" {
+		f, err := openFolder(*files, c)
+		if err != nil {
+			fmt.Fprintf(stderr, "%s: --files %s: %v\n  the folder is there before the door starts\n", name, *files, unwrapped(err))
+			return exitUsage
+		}
+		defer f.close()
+		o.Files = f
+	}
+	door, err := mcp.New(c.ask, o)
 	if err != nil {
 		fmt.Fprintf(stderr, "%s: %v\n  the commands: fadodb exec help\n", name, err)
 		return exitUsage

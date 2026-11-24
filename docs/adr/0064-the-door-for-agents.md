@@ -1,6 +1,6 @@
 # ADR-0064: The door for agents
 
-- Status: Accepted; amended by ADR-0071 (an agent signs in at `/mcp` with a pass); amends ADR-0055 (`wait_for_changes` joins the table) and ADR-0058 (`after` takes `start`); the door at the server built on 2026-11-23, items 11 to 21; the tool that waits built on 2026-11-24, items 22 to 30
+- Status: Accepted; amended by ADR-0071 (an agent signs in at `/mcp` with a pass); amends ADR-0055 (`wait_for_changes` joins the table) and ADR-0058 (`after` takes `start`); the door at the server built on 2026-11-23, items 11 to 21; the tool that waits built on 2026-11-24, items 22 to 30; files from a folder built on 2026-11-24, items 31 to 38
 - Date: 2026-11-16
 
 ## Context
@@ -354,6 +354,54 @@ owner's to strike:
 30. **Nothing is kept between two calls**: no session, no subscription
     on the server. The place travels with the caller.
 
+## Settled while building files from a folder
+
+Built on 2026-11-24 as the owner's ruling 4 has it, after the fix of a
+test ("go, test fix first"). Settled by me while building, each the
+owner's to strike:
+
+31. **Two tools, each one transfer.** `put_file` reads a file of the
+    folder, puts its bytes and answers the facts of the file; the
+    document is then written with `create` or `set`, so that the rules,
+    the version and the answer are the command's, and the bytes and the
+    document stay [two steps](../manual/files.md#two-steps). The other
+    way: `put_file` names a document and sets its variable, as
+    `fadodb file put --class … --variable …` does, two calls in one
+    tool. The two tools are the door's and no commands, as the bytes
+    are no command (ADR-0055, item 9): the table does not list them,
+    and the list of a door given no folder is as it was.
+32. **`get_file` opens a file by its hash**, through the document that
+    holds it, with `version`, `for` and `reason`, as `GET /v1/file`
+    does. The agent reads the hash in the document with `get`. The
+    other way: by the variable, with a `get` inside the tool, as
+    `fadodb file get --variable` does.
+33. **The folder is held as a root of the operating system's files**
+    (Go's `os.Root`). A path in it is taken, and a whole path that lies
+    in it; `..`, a whole path elsewhere and a link in the folder that
+    points out of it are refused with `bad_value` at `/path`. The door
+    checks a path before the root is asked, and the root refuses what
+    gets past. The folder is there when the door starts, or the door
+    does not start.
+34. **No file is written over, and no folder is made.** `get_file`
+    refuses a path where a file is, before it asks the server, and
+    writes into a folder of the folder only when it is there.
+35. **The bytes are checked.** `get_file` hashes what it writes and
+    leaves the file only when it came whole with the hash asked for;
+    otherwise it takes it away, and answers `storage` when the bytes
+    differ, or that no answer came through when they broke off.
+36. **Left out, the path is the name the file was put under**, its last
+    part only, since a name is the words of whoever put the file.
+37. **`--read-only` offers `get_file`**, which reads the database, and
+    not `put_file`; `--tools` names either. Neither is marked as one
+    that only reads, since each changes the folder or the database, and
+    neither as one that destroys.
+38. **At `/mcp` there is no tool for files.** The server has no folder
+    of the caller's, and the bytes would pass through the conversation,
+    which ruling 4 set aside. A person puts a file there with
+    `fadodb file put`, a program with `POST /v1/blobs`. The other way:
+    a tool whose arguments carry the bytes as base64, which costs an
+    agent its context and puts the bytes in its transcript.
+
 ## Consequences
 
 - An agent is set up in two commands and a few lines of its program's
@@ -363,8 +411,9 @@ owner's to strike:
   apart from its command.
 - The whole list of the tools is about 47,000 characters, which an
   agent's program reads once. `--tools` shortens it.
-- An agent hears of no change by itself until question 3 is ruled and
-  built, and puts no file on a document until question 4 is.
+- An agent hears of a change with `wait_for_changes`, and puts files on
+  documents and reads them through a folder whoever starts its door
+  names.
 - An agent that cannot start a program, Claude on claude.ai among them,
   reaches a server at `/mcp`, with a pass a person gives it or a key.
 - The door listed in a catalogue for people to find, and the door with

@@ -30,15 +30,17 @@ All notable changes to FadoDB are recorded here. The format follows
   second step still sign a person in, under **Sign in with a
   password**, until they go (ADR-0088, step 4).
 
-### Changed
-
-- The server's pages are built to Rhea's sign-in, one centred column,
-  in FadoDB's colours, light and dark, with FadoDB's mark and the
-  typefaces Schibsted Grotesk and Martian Mono, which the program holds
-  with their licence (the SIL Open Font License). They load one script
-  and one style of the server's own, and nothing from elsewhere: their
-  policy has `script-src 'self'`, `style-src 'self'` (no longer
-  `'unsafe-inline'`), `font-src 'self'` and `img-src 'self'`.
+- Files through the door for agents, from a folder (ADR-0064, ruling 4,
+  items 31 to 38): `fadodb mcp --files FOLDER` offers `put_file`,
+  which reads a file of the folder, puts its bytes and answers its
+  facts, for `create` or `set` to give a variable of the schema File,
+  and `get_file`, which writes a file a document holds into the
+  folder, by its hash, under the rules of the document. Nothing
+  outside the folder is read or written: `..`, a whole path elsewhere
+  and a link that points out are refused. No file is written over, and
+  a file is left only when its bytes have the hash asked for. The bytes
+  never travel in a tool's arguments or answer, and the door at the
+  server, which has no folder of the caller's, offers neither tool.
 
 - The address of a sign-in behind a proxy (ADR-0088, item 8, the first
   of its five steps): the setting `proxies` names the proxies in front
@@ -599,6 +601,14 @@ All notable changes to FadoDB are recorded here. The format follows
   parameter `reason=` on the addresses of files.
 
 ### Changed
+
+- The server's pages are built to Rhea's sign-in, one centred column,
+  in FadoDB's colours, light and dark, with FadoDB's mark and the
+  typefaces Schibsted Grotesk and Martian Mono, which the program holds
+  with their licence (the SIL Open Font License). They load one script
+  and one style of the server's own, and nothing from elsewhere: their
+  policy has `script-src 'self'`, `style-src 'self'` (no longer
+  `'unsafe-inline'`), `font-src 'self'` and `img-src 'self'`.
 
 - **A content administrator reads past a rule only with a reason.**
   Without one they read as anybody in their groups: a document only

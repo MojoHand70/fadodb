@@ -38,6 +38,10 @@ type Options struct {
 	// each request proves who sends it, and not in a program that was
 	// given the key of one user.
 	AtServer bool
+	// Files is the folder the door's files come from and go to, when
+	// whoever starts it names one; with none the door offers no tool for
+	// files. The door at the server is given none.
+	Files Files
 }
 
 // Withheld answers why the door offers a command as no tool, and "" for
@@ -112,6 +116,9 @@ type hints struct {
 // Door offers the commands of a database as tools.
 type Door struct {
 	send Send
+	// files carries the bytes of the tools for files, when the door was
+	// given a folder.
+	files Files
 	// info is the door as it names itself to an agent's program.
 	info map[string]any
 	// says is what the door says of itself to an agent.
@@ -122,6 +129,9 @@ type Door struct {
 	listed json.RawMessage
 	// readOnly and narrowed say why a command is no tool of this door.
 	readOnly, narrowed bool
+	// atServer says the door stands at the server, where there is no
+	// folder for files.
+	atServer bool
 
 	// running are the calls of tools under way that came over HTTP, by
 	// who sent them and the id of their request, each with what stops
@@ -134,8 +144,21 @@ type Door struct {
 // asked only over HTTP, with Exchange, which is given the Send of each
 // request, is made with none.
 func New(send Send, o Options) (*Door, error) {
+	if o.AtServer && o.Files != nil {
+		return nil, fmt.Errorf("the door at the server is given no folder: files come through the door an agent's program starts")
+	}
 	only := map[string]bool{}
 	for _, name := range o.Only {
+		if _, ok := fileTool(name); ok {
+			switch {
+			case o.Files == nil:
+				return nil, fmt.Errorf("%s is offered only when the door is given a folder for files, with --files FOLDER", name)
+			case o.ReadOnly && name == ToolPutFile:
+				return nil, fmt.Errorf("%s does not only read, and the door was told to offer only the tools that read", name)
+			}
+			only[name] = true
+			continue
+		}
 		c, known := command.Lookup(name)
 		switch {
 		case !known:
@@ -149,9 +172,11 @@ func New(send Send, o Options) (*Door, error) {
 	}
 	d := &Door{
 		send:     send,
+		files:    o.Files,
 		running:  map[string]*underway{},
 		tools:    map[string]bool{},
 		readOnly: o.ReadOnly,
+		atServer: o.AtServer,
 		narrowed: len(only) > 0,
 		info:     map[string]any{"name": "fadodb", "title": "FadoDB", "version": o.Version},
 	}
@@ -168,15 +193,33 @@ func New(send Send, o Options) (*Door, error) {
 		d.tools[c.Name] = true
 		offered = append(offered, c)
 	}
+	// The tools for files come after the commands, when there is a
+	// folder. get_file reads the database, so a door that offers only
+	// the tools that read offers it.
+	if o.Files != nil {
+		for _, c := range []*command.Command{putFile, getFile} {
+			switch {
+			case o.ReadOnly && c.Mark != command.Reads:
+				continue
+			case len(only) > 0 && !only[c.Name]:
+				continue
+			}
+			d.tools[c.Name] = true
+			offered = append(offered, c)
+		}
+	}
 	var tools []tool
 	for _, c := range offered {
+		_, forFiles := fileTool(c.Name)
 		tools = append(tools, tool{
 			Name:        c.Name,
 			Title:       title(c.Name),
 			Description: describe(c, d.tools),
 			InputSchema: c.Schema(),
 			Annotations: hints{
-				ReadOnly:    c.Mark == command.Reads,
+				// A tool for files changes the folder or the database:
+				// neither leaves everything as it was.
+				ReadOnly:    c.Mark == command.Reads && !forFiles,
 				Destructive: c.Mark == command.Destroys,
 				OpenWorld:   reachesOut(c.Name),
 			},
@@ -296,6 +339,16 @@ func says(o Options, tools map[string]bool) string {
 	if tools["preview"] {
 		b.WriteString(" preview answers what a create, a set or a transition would do, and writes nothing.")
 	}
+	if o.Files != nil && (tools[ToolPutFile] || tools[ToolGetFile]) {
+		b.WriteString(" Files go through the folder " + o.Files.Folder() + ", and nothing outside it is read or written:")
+		if tools[ToolPutFile] {
+			b.WriteString(" put_file puts the bytes of a file of the folder and answers its facts, which create or set give a variable of the schema File;")
+		}
+		if tools[ToolGetFile] {
+			b.WriteString(" get_file writes a file a document holds into the folder, by the hash the document holds, and never over another file;")
+		}
+		b.WriteString(" the bytes never travel in a tool's arguments or answer.")
+	}
 	b.WriteString(" A command the database refuses is answered with the refusal under error: a code, a message, the place in the command and a hint.")
 	if keyed := keyed(tools); len(keyed) > 0 {
 		b.WriteString(" The tools that commit a document take a key, and one sent again with the same key makes no second commit: " + strings.Join(keyed, ", ") + ". No other tool takes one.")
@@ -321,6 +374,9 @@ func keyed(tools map[string]bool) []string {
 // call sends a command and answers the text of a tool's answer, and
 // whether it is an error.
 func (d *Door) call(ctx context.Context, send Send, name string, object []byte) (string, bool) {
+	if c, ok := fileTool(name); ok && d.files != nil {
+		return d.callFile(ctx, c, object)
+	}
 	answer, refused, err := send(ctx, name, object)
 	if err != nil {
 		return noAnswer(name, err), true
@@ -336,6 +392,12 @@ func (d *Door) call(ctx context.Context, send Send, name string, object []byte) 
 // with.
 func noAnswer(name string, err error) string {
 	hint := "the command may have been carried out, and it takes no key: read what it would have changed before sending it again"
+	switch name {
+	case ToolPutFile:
+		hint = "the bytes may have been kept: put the file again, and the same bytes are kept once"
+	case ToolGetFile:
+		hint = "the database was not changed, and no file was left in the folder: ask again"
+	}
 	if c, known := command.Lookup(name); known {
 		switch {
 		case c.Mark == command.Reads:
@@ -354,6 +416,18 @@ func noAnswer(name string, err error) string {
 
 // unknownTool says why a name is no tool of this door.
 func (d *Door) unknownTool(name string) string {
+	if c, ok := fileTool(name); ok {
+		switch {
+		case d.atServer:
+			return "Unknown tool: " + name + ". Files come through the door an agent's program starts, from a folder whoever starts it names with --files FOLDER: at the server there is no folder of the caller's, and the bytes of a file do not pass through a conversation"
+		case d.files == nil:
+			return "Unknown tool: " + name + ". This door was started with no folder for files: whoever starts it names one, fadodb mcp --files FOLDER"
+		case d.readOnly && c.Mark != command.Reads:
+			return "Unknown tool: " + name + ". This door was started to offer only the tools that read"
+		case d.narrowed:
+			return "Unknown tool: " + name + ". This door was started with a list of tools, and " + name + " is not in it"
+		}
+	}
 	c, known := command.Lookup(name)
 	switch {
 	case !known:

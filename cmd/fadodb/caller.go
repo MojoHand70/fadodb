@@ -141,28 +141,51 @@ func (c *caller) command(ctx context.Context, sent string, object []byte) ([]byt
 // through. It is how the door for agents sends a command (ADR-0064),
 // which answers an agent and writes to no terminal.
 func (c *caller) ask(ctx context.Context, sent string, object []byte) (answer []byte, refused bool, err error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.base+sent, bytes.NewReader(object))
+	resp, err := c.quietly(ctx, http.MethodPost, sent, bytes.NewReader(object), -1, "application/json")
 	if err != nil {
 		return nil, false, err
 	}
-	req.Header.Set("Content-Type", "application/json")
+	defer resp.Body.Close()
+	return heard(resp, "the answer of "+sent)
+}
+
+// quietly sends a request to an address of the server, with the key,
+// and prints nothing: the door for agents sends its requests so. size
+// is the length of the body, or -1 when it is not known.
+func (c *caller) quietly(ctx context.Context, method, address string, body io.Reader, size int64, kind string) (*http.Response, error) {
+	req, err := http.NewRequestWithContext(ctx, method, c.base+address, body)
+	if err != nil {
+		return nil, err
+	}
+	if size >= 0 {
+		req.ContentLength = size
+	}
+	if kind != "" {
+		req.Header.Set("Content-Type", kind)
+	}
 	req.Header.Set("Authorization", "Bearer "+c.key)
 	req.Header.Set("User-Agent", "fadodb/"+version)
 	resp, err := c.client.Do(req)
 	if err != nil {
-		return nil, false, fmt.Errorf("the server at %s was not reached: %v", req.URL.Redacted(), unwrapped(err))
+		return nil, fmt.Errorf("the server at %s was not reached: %v", req.URL.Redacted(), unwrapped(err))
 	}
-	defer resp.Body.Close()
+	return resp, nil
+}
+
+// heard reads a reply that is one JSON object, and prints nothing: the
+// answer, or, with refused set, the refusal as the server wrote it. An
+// error says that no answer came through. what names the answer.
+func heard(resp *http.Response, what string) (answer []byte, refused bool, err error) {
 	body, err := io.ReadAll(resp.Body)
 	switch {
 	case err != nil:
-		return nil, false, fmt.Errorf("the answer of %s broke off: %v", sent, err)
+		return nil, false, fmt.Errorf("%s broke off: %v", what, err)
 	case resp.StatusCode == http.StatusOK && isObject(body):
 		return body, false, nil
 	case resp.StatusCode != http.StatusOK && isRefusal(body):
 		return body, true, nil
 	}
-	return nil, false, fmt.Errorf("what answered at %s is not a FadoDB server: %s", req.URL.Redacted(), resp.Status)
+	return nil, false, fmt.Errorf("what answered at %s is not a FadoDB server: %s", resp.Request.URL.Redacted(), resp.Status)
 }
 
 // notFadoDB is how the tool ends when what answered is not a FadoDB

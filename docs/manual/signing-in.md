@@ -1,25 +1,140 @@
 # Signing in
 
-People sign in to `fadodb serve` on its own pages, with a password
-and, for the people who define and keep the database, a second step
-from an app on their phone (ADR-0071). The server gives them a
-session, which their browser keeps, so that the pages of the server
-send commands as them. A client a person allows, such as Claude, is
-given a pass by OAuth. A program goes on calling with a key, as
+People sign in to `fadodb serve` on its own pages with a passkey: their
+fingerprint, their face or their device's PIN, and nothing to type
+(ADR-0088). An administrator invites each person by a link, with which
+they add their first passkey. The server gives them a session, which
+their browser keeps, so that the pages of the server send commands as
+them. A client a person allows, such as Claude, is given a pass by
+OAuth. A program goes on calling with a key, as
 [Serving a database](serving-a-database.md) says.
 
 The story is Acme's. Olga is an administrator, and the first person
 who signs in. Ann is in finance.
 
-> **Status.** Passwords, the second step, sessions, a company's
-> sign-on, the passes of clients, and the door for agents at `/mcp`,
-> which takes Claude's pass, are built.
+> **Status.** Invitations, and passkeys on the device in use, are
+> built, as are sessions, a company's sign-on, the passes of clients,
+> and the door for agents at `/mcp`, which takes Claude's pass. The
+> code a phone scans to add its passkey is planned; passwords and the
+> second step, still built, go after it (ADR-0088, item 11).
 
-## The first password, on the machine
+## The first passkey, on the machine
 
-Olga makes the database and herself on the machine that holds it, as
-before, and asks for a link to set her password. A password is never
-typed at a terminal:
+Olga makes the database and herself on the machine that holds it, and
+asks for an invitation:
+
+<!-- olga invited on the machine -->
+```
+fadodb init acme.fado
+fadodb user add olga --kind person --system administrators --db acme.fado
+fadodb key new olga --label laptop --db acme.fado
+fadodb user invite olga --db acme.fado
+fadodb serve acme.fado
+```
+
+`fadodb user invite` prints the invitation, good once and for 7 days:
+
+```
+http://localhost:8080/auth/invite?t=fadoi_7GQ2M4XK0P_3ZD9…
+```
+
+`--url` gives the address the server is reached at, when it is not
+`http://localhost:8080`. A passkey works at the address it was made at
+and nowhere else, so the invitation names the address people use.
+`fadodb user invite` is also the way back in when every administrator
+has lost every passkey.
+
+## An invitation
+
+Olga opens the link. The page greets her, **Welcome, Olga**, and asks
+her to name the device, proposing a name from her browser, such as
+"Olga's Mac". She presses **Add a passkey and enter**; her browser asks
+for her fingerprint, her face or the device's PIN, and she is signed
+in. The device keeps the passkey, the server its public half.
+
+<!-- an invitation -->
+| What happens | Answer |
+|---|---|
+| Olga adds a passkey with her invitation | she is signed in, and her account page lists the passkey |
+| her invitation is opened again | the page says the invitation does not hold |
+| Olga makes Ann an invitation, then another | the first does not hold |
+| Olga withdraws Ann's invitation | its page says the invitation does not hold |
+
+An invitation also ends after its 7 days. Olga makes one for Ann with
+her key:
+
+```
+fadodb exec create_invitation '{"user": "ann"}'
+```
+
+The link is the server's address, `/auth/invite?t=` and the `token` of
+the answer. The door for agents does not offer `create_invitation`: a
+link that lets somebody in never stays in an agent's conversation.
+Ewa, who signs in with Microsoft, needs none.
+
+## Signing in with a passkey
+
+`/auth/signin` has one button, **Sign in with a passkey**. The browser
+offers the passkeys it holds for the address; Olga touches the sensor
+and is in. She types no name: the passkey says who she is. On a
+computer that holds none of hers, the browser's own window offers to
+use a phone, and the passkey on her phone lets her in. The buttons of
+a company's sign-on stand below, when it is set.
+
+The server asks for a passkey the device keeps with who it is for, and
+opens with the person's fingerprint, face or PIN every time; it does
+not ask who made the device. It checks the challenge it gave, good once
+and for 5 minutes, the address of its pages, the signature, and, on a
+device that keeps a counter, that the counter rose. A device knows Olga
+by 16 random bytes, never by her id.
+
+<!-- a passkey -->
+| What happens | Answer |
+|---|---|
+| Olga signs in with her passkey | she is signed in |
+| the browser's answer is sent a second time | refused, `sign_in_refused` |
+| a passkey whose counter went back, as a copy's does | refused, `sign_in_refused`, and recorded among Olga's changes |
+| a passkey made at another address | refused, `sign_in_refused` |
+| a passkey that was removed | refused, `sign_in_refused` |
+
+A browser makes passkeys for a name, not for numbers: on the machine
+itself, open the server at `http://localhost`, not at
+`http://127.0.0.1`.
+
+## A person's passkeys
+
+Olga's account page lists her passkeys, each with its device's name,
+when it was added and last used, and whether it is synced, following
+her to a new phone as Apple's and Google's do. She adds one on the
+device she is using, and removes any.
+
+<!-- passkeys -->
+| What happens | Answer |
+|---|---|
+| Ann adds a passkey on her computer, on her account page | her two passkeys are listed |
+| Ann removes her phone's passkey | the session her phone began ends |
+| Ann removes her last passkey | refused, `forbidden` |
+| Olga removes Ann's last passkey, for a lost phone | it is removed, and Ann's session with it ends |
+| Ann lists Olga's passkeys | refused, `forbidden` |
+| `create_invitation` for an agent | refused, `bad_value` |
+
+- **An administrator is asked to keep two**, on two devices: the
+  account page says so while Olga has one.
+- **Nobody removes their own last passkey**, unless they sign in with
+  the company's sign-on too: they would be locked out. An administrator
+  removes anybody's, and a new invitation lets the person back in.
+- **Removing a passkey ends the sessions it began.**
+
+## A password, until passwords go
+
+A password, set with a link, and a second step from an app on the
+phone for the people who define and keep the database, still sign a
+person in (ADR-0071). They go once the code for the phone is built
+(ADR-0088, item 11). The sign-in page offers them under **Sign in with
+a password**.
+
+Olga's first password is set with a link, made on the machine. A
+password is never typed at a terminal:
 
 <!-- olga on the machine -->
 ```
@@ -45,7 +160,7 @@ fadodb serve: people sign in at http://127.0.0.1:8080/auth/signin
 fadodb serve: agents connect at http://127.0.0.1:8080/mcp
 ```
 
-## Setting a password with a link
+### Setting a password with a link
 
 Olga opens the link. The page names whose password it sets, and takes
 it twice:
@@ -59,9 +174,10 @@ it twice:
 The database keeps a hash of the password, PBKDF2 with SHA-256 at
 600,000 rounds, and never the password.
 
-## Signing in, and the second step
+### Signing in with a password, and the second step
 
-Olga signs in at `/auth/signin` with her id and her password. She is
+Olga signs in at `/auth/signin?with=password` with her id and her
+password. She is
 an administrator, and the system groups `administrators` and
 `designers` ask for a second step. The first time, the page shows her a
 key to add to an authenticator app on her phone, as text and as an
@@ -84,10 +200,10 @@ phone and the codes, who then sets it up again at the next sign-in.
 
 ## The account page
 
-`/auth/account` is Ann's: she changes her password, giving the one she
-has; sets up or takes away her second step; sees her sessions, when
-each began, from where and when it was last used, and ends any; and
-signs out.
+`/auth/account` is Ann's: she adds and removes her passkeys; changes
+her password, giving the one she has; sets up or takes away her second
+step; sees her sessions, when each began, from where and when it was
+last used, and ends any; and signs out.
 
 **A session holds 8 hours unused, and 30 days at most.** The settings
 may make both shorter. It ends at once when Ann signs out, when an
@@ -121,6 +237,11 @@ answered `{"user": {"id": "ann", …}}`.
 <!-- the commands -->
 | Command | What it does | Who may |
 |---|---|---|
+| `create_invitation` | makes an invitation, good once and for 7 days, with which a person adds their first passkey, and answers its secret this once | an administrator |
+| `list_invitations` | lists the invitations that still hold | an administrator |
+| `withdraw_invitation` | ends a person's invitation | an administrator |
+| `list_passkeys` | lists the passkeys of a user | an administrator; a user, its own |
+| `remove_passkey` | removes a passkey: the sessions it began end | an administrator; a user, its own but not its last |
 | `create_password_link` | makes a link that lets a person set their password, and answers its secret this once | an administrator |
 | `list_sessions` | lists the sessions of a user that still hold | an administrator; a user, its own |
 | `end_session` | ends a session by its id | an administrator; a user, its own |
@@ -146,8 +267,11 @@ conversation. A password, a code and a session never travel in a
 command: the pages take them.
 
 **Every sign-in is kept**, refused ones too: when, the user it named,
-the way, `password`, `second_step`, `link` or `signon`, the address it
-came from and whether it was let through. `sign_ins` lists them.
+the way, `passkey`, `password`, `second_step`, `link` or `signon`, the
+address it came from and whether it was let through. `sign_ins` lists
+them. An invitation made or withdrawn, and a passkey added or removed,
+are kept among the user's changes, with who did it: `user_changes`
+lists them.
 
 ## A company's sign-on
 

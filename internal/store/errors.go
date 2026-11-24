@@ -233,6 +233,14 @@ const (
 	// administrator; or the request of a client that waits for the
 	// person ended (ADR-0071, item 6).
 	CodeUnknownGrant = "unknown_grant"
+	// CodeUnknownInvitation: the database has no invitation for that
+	// person that holds: none was made, or it was used, ended or
+	// withdrawn (ADR-0088, item 2).
+	CodeUnknownInvitation = "unknown_invitation"
+	// CodeUnknownPasskey: the database has no passkey of that id that
+	// opens anything, or it is another user's and the caller is no
+	// administrator (ADR-0088, item 6).
+	CodeUnknownPasskey = "unknown_passkey"
 )
 
 func errf(code, variable, format string, args ...any) *Error {

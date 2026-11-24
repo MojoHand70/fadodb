@@ -592,6 +592,8 @@ type reply struct {
 	w      http.ResponseWriter
 	status int
 	wrote  bool
+	// host is the address a page of the server names it by.
+	host string
 }
 
 // send writes an answer, one JSON object, and a line break after it.

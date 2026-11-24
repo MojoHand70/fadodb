@@ -238,8 +238,8 @@ before one that removes:
 <!-- the marks -->
 | The command | Tools | `readOnlyHint` | `destructiveHint` | `openWorldHint` |
 |---|---|---|---|---|
-| reads | 55 | true | false | false |
-| writes | 33 | false | false | false |
+| reads | 57 | true | false | false |
+| writes | 35 | false | false | false |
 | writes, and runs an action now: `try_action`, `drain` | 2 | false | false | true |
 | removes: `delete` | 1 | false | true | false |
 
@@ -536,6 +536,7 @@ It handles the invoice, and asks again from where it stopped:
 | `subscribe` | its answer is a stream, and a tool is one question and one answer: an agent waits with wait_for_changes |
 | `create_key` | its answer holds the secret of a key, which would stay in the conversation of an agent; a key is made at a terminal |
 | `create_password_link` | its answer holds the secret of a link that sets a password, which would stay in the conversation of an agent; a link is made at a terminal and given to the person |
+| `create_invitation` | its answer holds the secret of an invitation, which lets a person in and would stay in the conversation of an agent; an invitation is made at a terminal and given to the person |
 
 The files are not in the door either: the bytes of a file do not pass
 through an agent's conversation. From a terminal, `fadodb file` puts a

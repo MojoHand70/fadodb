@@ -247,6 +247,12 @@ type (
 	PasswordLink   = store.PasswordLink
 	SignInEntry    = store.SignInEntry
 	SignInFilter   = store.SignInFilter
+	// Passkeys (ADR-0088): Invitation is an invitation that lets a
+	// person add their first passkey, Invited whom one greets, and
+	// Passkey a passkey as the database lists it.
+	Invitation = store.Invitation
+	Invited    = store.Invited
+	Passkey    = store.Passkey
 	// SignedOn is who a company's provider says a person is, as the
 	// server checked it, and SignOnProvider a company's sign-on as the
 	// page of signing in offers it.
@@ -1222,6 +1228,73 @@ func (db *DB) PasswordLinkUser(ctx context.Context, token string) (string, error
 // link then holds no more, and the person's sessions end.
 func (db *DB) UsePasswordLink(ctx context.Context, token, password, address string) error {
 	return db.s.UsePasswordLink(ctx, token, password, address)
+}
+
+// CreateInvitation makes an invitation for a person, good once and for 7
+// days, with which they add their first passkey, and answers its secret,
+// this once. It is a database administrator's.
+func (db *DB) CreateInvitation(ctx context.Context, user string, opts ...Option) (*Invitation, error) {
+	return db.s.CreateInvitation(ctx, user, opts...)
+}
+
+// Invitations lists the invitations that still hold, of one person or
+// of everybody. It is a database administrator's.
+func (db *DB) Invitations(ctx context.Context, user string, opts ...Option) ([]*Invitation, error) {
+	return db.s.Invitations(ctx, user, opts...)
+}
+
+// WithdrawInvitation ends the invitation of a person that still holds.
+func (db *DB) WithdrawInvitation(ctx context.Context, user string, opts ...Option) error {
+	return db.s.WithdrawInvitation(ctx, user, opts...)
+}
+
+// Invited answers whom an invitation is for and who made it, while it
+// holds.
+func (db *DB) Invited(ctx context.Context, token string) (*Invited, error) {
+	return db.s.Invited(ctx, token)
+}
+
+// InvitationQuestion is the question the page of an invitation gives the
+// browser to make the person's passkey, in WebAuthn's JSON.
+func (db *DB) InvitationQuestion(ctx context.Context, token, origin string) (string, error) {
+	return db.s.InvitationQuestion(ctx, token, origin)
+}
+
+// UseInvitation takes the passkey a person made with their invitation,
+// on the device they named, and gives their session.
+func (db *DB) UseInvitation(ctx context.Context, token string, answer []byte, device, origin, address string, lengths SessionLengths) (*Session, error) {
+	return db.s.UseInvitation(ctx, token, answer, device, origin, address, lengths)
+}
+
+// SignInQuestion is the question the sign-in page gives the browser: to
+// use any passkey it holds for the server's host.
+func (db *DB) SignInQuestion(origin string) (string, error) { return db.s.SignInQuestion(origin) }
+
+// SignInWithPasskey takes a browser's answer to the sign-in page's
+// question and gives the person's session.
+func (db *DB) SignInWithPasskey(ctx context.Context, answer []byte, origin, address string, lengths SessionLengths) (*Session, error) {
+	return db.s.SignInWithPasskey(ctx, answer, origin, address, lengths)
+}
+
+// AddPasskeyQuestion is the question the account page gives the browser,
+// to make another passkey of the caller's.
+func (db *DB) AddPasskeyQuestion(ctx context.Context, origin string, opts ...Option) (string, error) {
+	return db.s.AddPasskeyQuestion(ctx, origin, opts...)
+}
+
+// AddPasskey takes the passkey the caller made on the device it named.
+func (db *DB) AddPasskey(ctx context.Context, answer []byte, device, origin string, opts ...Option) (*Passkey, error) {
+	return db.s.AddPasskey(ctx, answer, device, origin, opts...)
+}
+
+// Passkeys lists the passkeys of a user, never a key.
+func (db *DB) Passkeys(ctx context.Context, user string, opts ...Option) ([]*Passkey, error) {
+	return db.s.Passkeys(ctx, user, opts...)
+}
+
+// RemovePasskey removes a passkey by its id; the sessions it began end.
+func (db *DB) RemovePasskey(ctx context.Context, id string, opts ...Option) error {
+	return db.s.RemovePasskey(ctx, id, opts...)
 }
 
 // SetUpMySecondStep gives the caller a secret for a second step of its

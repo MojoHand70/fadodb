@@ -12,13 +12,15 @@ import (
 	"strings"
 	"time"
 
+	"github.com/MojoHand70/fadodb/internal/server/web"
 	"github.com/MojoHand70/fadodb/internal/store"
 )
 
-// The pages where a person signs in (ADR-0071, items 1 to 5 and 9): the
-// server's own, plain HTML with no script, in English. A password, a
-// code and a session's token are typed and kept here and never travel
-// in a command.
+// The pages where a person signs in (ADR-0071, items 1 to 5 and 9, and
+// ADR-0088): the server's own, in English, built to the sign-in of
+// Rhea, with one script of the server's own that asks the browser for a
+// passkey. A passkey's answer, a password, a code and a session's token
+// are taken and kept here and never travel in a command.
 
 // Accounts is what the pages ask of a database that keeps its users.
 type Accounts interface {
@@ -49,6 +51,17 @@ type Accounts interface {
 	PassCaller(ctx context.Context, token, address string) (store.Principal, error)
 	Grants(ctx context.Context, user string, opts ...store.Option) ([]*store.Grant, error)
 	EndGrant(ctx context.Context, id string, opts ...store.Option) error
+	// Passkeys and invitations (ADR-0088).
+	Invited(ctx context.Context, token string) (*store.Invited, error)
+	InvitationQuestion(ctx context.Context, token, origin string) (string, error)
+	UseInvitation(ctx context.Context, token string, answer []byte, device, origin, address string, lengths store.SessionLengths) (*store.Session, error)
+	SignInQuestion(origin string) (string, error)
+	SignInWithPasskey(ctx context.Context, answer []byte, origin, address string, lengths store.SessionLengths) (*store.Session, error)
+	AddPasskeyQuestion(ctx context.Context, origin string, opts ...store.Option) (string, error)
+	AddPasskey(ctx context.Context, answer []byte, device, origin string, opts ...store.Option) (*store.Passkey, error)
+	Passkeys(ctx context.Context, user string, opts ...store.Option) ([]*store.Passkey, error)
+	RemovePasskey(ctx context.Context, id string, opts ...store.Option) error
+	GetUser(ctx context.Context, id string, opts ...store.Option) (*store.User, error)
 }
 
 // SignOn is a company's sign-on as the pages ask it (ADR-0071, item 4):
@@ -108,6 +121,7 @@ const (
 	PagePassword = "/auth/password"
 	PageSignOn   = "/auth/signon"
 	PageCallback = "/auth/callback"
+	PageInvite   = "/auth/invite"
 )
 
 // signOnCookie keeps the state of a sign-on in the browser that began
@@ -308,10 +322,28 @@ type page struct {
 	Grants []*store.Grant
 	// Refresh is where the page sends the browser at once, by itself.
 	Refresh string
+	// Question is the question a form gives the browser to make or use
+	// a passkey, in WebAuthn's JSON; empty, the form is not drawn.
+	Question string
+	// Invited is whom the invitation of the page, Token, is for; Device
+	// the name of the device given; Name how the page names the person.
+	Invited *store.Invited
+	Token   string
+	Device  string
+	Name    string
+	// Passkeys are the person's, Passkey the one the session began with,
+	// and Admin says the person is an administrator, who is asked to
+	// keep two.
+	Passkeys []*store.Passkey
+	Passkey  string
+	Admin    bool
 }
 
-// ServeHTTP answers a page.
+// ServeHTTP answers a page, or a file the pages load.
 func (p *Pages) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if serveAsset(w, r) {
+		return
+	}
 	told := Request{At: time.Now(), Command: strings.TrimPrefix(r.URL.Path, "/")}
 	out := &reply{w: w}
 	defer func() {
@@ -329,10 +361,12 @@ func (p *Pages) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// With none at all, a browser sends the Origin of a form as null.
 	h.Set("Referrer-Policy", "same-origin")
 	h.Set("X-Content-Type-Options", "nosniff")
-	if _, ok := p.originOf(r); !ok {
+	origin, ok := p.originOf(r)
+	if !ok {
 		p.draw(out, &told, http.StatusNotFound, "notHere", &page{Title: "Not here"})
 		return
 	}
+	out.host = strings.TrimPrefix(strings.TrimPrefix(origin, "https://"), "http://")
 	// What a client calls, not a page: no cookie, from anywhere.
 	switch {
 	case strings.HasPrefix(r.URL.Path, "/.well-known/"):
@@ -364,6 +398,8 @@ func (p *Pages) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	switch r.URL.Path {
 	case PageSignIn:
 		p.signIn(out, r, &told)
+	case PageInvite:
+		p.invite(out, r, &told)
 	case PageCode:
 		p.code(out, r, &told)
 	case PageSignOut:
@@ -404,6 +440,38 @@ func said(err error) string {
 	return "the server could not do it; try again"
 }
 
+// passkeySaid is what a page says of a passkey that did not let the
+// person in: the same words whatever was wrong, as for a password.
+func passkeySaid(err error) string {
+	if codeOf(err) == store.CodeSignInRefused {
+		return "the passkey did not let you in: it is not one of this server's, it was removed, or the page waited too long; try again"
+	}
+	return said(err)
+}
+
+// setSession gives the browser the cookie of a session.
+func (p *Pages) setSession(out *reply, sess *store.Session) {
+	http.SetCookie(out.w, &http.Cookie{Name: SessionCookie, Value: sess.Token, Path: "/", HttpOnly: true, Secure: p.secure,
+		SameSite: http.SameSiteStrictMode, MaxAge: int(sess.Ends - time.Now().Unix())})
+}
+
+// endSession takes the cookie of a session away.
+func (p *Pages) endSession(out *reply) {
+	http.SetCookie(out.w, &http.Cookie{Name: SessionCookie, Value: "", Path: "/", HttpOnly: true, Secure: p.secure, SameSite: http.SameSiteStrictMode, MaxAge: -1})
+}
+
+// signInPage is the sign-in page with a passkey: its question for the
+// browser, the company's sign-ons, and what went wrong.
+func (p *Pages) signInPage(r *http.Request, wrong string) *page {
+	d := &page{Title: "Sign in", Error: wrong, Next: next(r), Providers: p.providers()}
+	if origin, ok := p.originOf(r); ok {
+		if q, err := p.accounts.SignInQuestion(origin); err == nil {
+			d.Question = q
+		}
+	}
+	return d
+}
+
 func (p *Pages) signIn(out *reply, r *http.Request, told *Request) {
 	if r.Method != http.MethodPost {
 		if c, err := r.Cookie(SessionCookie); err == nil {
@@ -412,7 +480,24 @@ func (p *Pages) signIn(out *reply, r *http.Request, told *Request) {
 				return
 			}
 		}
-		p.draw(out, told, http.StatusOK, "signIn", &page{Title: "Sign in", Next: next(r), Providers: p.providers()})
+		if r.FormValue("with") == "password" {
+			p.draw(out, told, http.StatusOK, "signInPassword", &page{Title: "Sign in", Next: next(r), Providers: p.providers()})
+			return
+		}
+		p.draw(out, told, http.StatusOK, "signIn", p.signInPage(r, ""))
+		return
+	}
+	if r.FormValue("do") == "passkey" {
+		origin, _ := p.originOf(r)
+		sess, err := p.accounts.SignInWithPasskey(r.Context(), []byte(r.FormValue("response")), origin, p.address(r), p.lengths)
+		if err != nil {
+			told.Code = codeOf(err)
+			p.draw(out, told, http.StatusUnauthorized, "signIn", p.signInPage(r, passkeySaid(err)))
+			return
+		}
+		told.User = sess.User
+		p.setSession(out, sess)
+		redirect(out, next(r))
 		return
 	}
 	user := strings.TrimSpace(r.FormValue("user"))
@@ -420,7 +505,7 @@ func (p *Pages) signIn(out *reply, r *http.Request, told *Request) {
 	in, err := p.accounts.BeginSignIn(r.Context(), user, r.FormValue("password"), p.address(r))
 	if err != nil {
 		told.Code = codeOf(err)
-		p.draw(out, told, http.StatusUnauthorized, "signIn", &page{Title: "Sign in", Error: said(err), Next: next(r), User: user, Providers: p.providers()})
+		p.draw(out, told, http.StatusUnauthorized, "signInPassword", &page{Title: "Sign in", Error: said(err), Next: next(r), User: user, Providers: p.providers()})
 		return
 	}
 	switch in.Next {
@@ -432,11 +517,56 @@ func (p *Pages) signIn(out *reply, r *http.Request, told *Request) {
 		step, err := p.accounts.SetUpSecondStep(r.Context(), in.ID)
 		if err != nil {
 			told.Code = codeOf(err)
-			p.draw(out, told, http.StatusUnauthorized, "signIn", &page{Title: "Sign in", Error: said(err), Next: next(r)})
+			p.draw(out, told, http.StatusUnauthorized, "signInPassword", &page{Title: "Sign in", Error: said(err), Next: next(r)})
 			return
 		}
 		p.draw(out, told, http.StatusOK, "setUp", &page{Title: "Set up a second step", SignIn: in.ID, Next: next(r), User: in.User, Step: step})
 	}
+}
+
+// invite is the page of an invitation (ADR-0088, item 2): the person is
+// greeted, names the device, and adds a passkey on it, which signs them
+// in.
+func (p *Pages) invite(out *reply, r *http.Request, told *Request) {
+	token := r.FormValue("t")
+	origin, _ := p.originOf(r)
+	gone := func(err error) {
+		told.Code = codeOf(err)
+		p.draw(out, told, http.StatusNotFound, "inviteGone", &page{Title: "This invitation does not hold"})
+	}
+	who, err := p.accounts.Invited(r.Context(), token)
+	if err != nil {
+		gone(err)
+		return
+	}
+	told.User = who.User
+	// The page greets the person by the first word of their name.
+	greet := who.Name
+	if words := strings.Fields(greet); len(words) > 0 {
+		greet = words[0]
+	}
+	shown := &page{Title: "Welcome, " + greet, Invited: who, Token: token, Next: next(r)}
+	status := http.StatusOK
+	if r.Method == http.MethodPost {
+		sess, err := p.accounts.UseInvitation(r.Context(), token, []byte(r.FormValue("response")), r.FormValue("device"), origin, p.address(r), p.lengths)
+		if err == nil {
+			p.setSession(out, sess)
+			redirect(out, next(r))
+			return
+		}
+		told.Code = codeOf(err)
+		shown.Error, shown.Device, status = passkeySaid(err), r.FormValue("device"), http.StatusUnprocessableEntity
+		if told.Code == store.CodeSignInRefused || told.Code == store.CodeTooManyAttempts {
+			status = http.StatusUnauthorized
+		}
+	}
+	q, err := p.accounts.InvitationQuestion(r.Context(), token, origin)
+	if err != nil {
+		gone(err)
+		return
+	}
+	shown.Question = q
+	p.draw(out, told, status, "invite", shown)
 }
 
 func (p *Pages) code(out *reply, r *http.Request, told *Request) {
@@ -447,18 +577,18 @@ func (p *Pages) code(out *reply, r *http.Request, told *Request) {
 	p.finish(out, r, told, r.FormValue("signin"), r.FormValue("code"))
 }
 
-// finish gives the session of a sign-in and sends the person on: to the
-// codes for a lost phone when the second step was just set up.
+// finish gives the session of a sign-in with a password and sends the
+// person on: to the codes for a lost phone when the second step was just
+// set up.
 func (p *Pages) finish(out *reply, r *http.Request, told *Request, signIn, code string) {
 	sess, err := p.accounts.FinishSignIn(r.Context(), signIn, code, p.address(r), p.lengths)
 	if err != nil {
 		told.Code = codeOf(err)
-		p.draw(out, told, http.StatusUnauthorized, "signIn", &page{Title: "Sign in", Error: said(err), Next: next(r)})
+		p.draw(out, told, http.StatusUnauthorized, "signInPassword", &page{Title: "Sign in", Error: said(err), Next: next(r)})
 		return
 	}
 	told.User = sess.User
-	http.SetCookie(out.w, &http.Cookie{Name: SessionCookie, Value: sess.Token, Path: "/", HttpOnly: true, Secure: p.secure,
-		SameSite: http.SameSiteStrictMode, MaxAge: int(sess.Ends - time.Now().Unix())})
+	p.setSession(out, sess)
 	if len(sess.Codes) > 0 {
 		p.draw(out, told, http.StatusOK, "codes", &page{Title: "Codes for a lost phone", Codes: sess.Codes, Next: next(r)})
 		return
@@ -474,7 +604,7 @@ func (p *Pages) signOut(out *reply, r *http.Request, told *Request) {
 			}
 			_ = p.accounts.SignOut(r.Context(), c.Value)
 		}
-		http.SetCookie(out.w, &http.Cookie{Name: SessionCookie, Value: "", Path: "/", HttpOnly: true, Secure: p.secure, SameSite: http.SameSiteStrictMode, MaxAge: -1})
+		p.endSession(out)
 	}
 	redirect(out, PageSignIn)
 }
@@ -503,11 +633,35 @@ func (p *Pages) account(out *reply, r *http.Request, told *Request) {
 		return
 	}
 	as := store.As(who)
-	shown := &page{Title: "Your account", User: who.ID, Current: sess.ID}
+	origin, _ := p.originOf(r)
+	shown := &page{Title: "Your account", User: who.ID, Name: who.ID, Current: sess.ID, Passkey: sess.Passkey}
+	for _, g := range who.System {
+		shown.Admin = shown.Admin || g == store.GroupAdministrators
+	}
+	if u, err := p.accounts.GetUser(r.Context(), who.ID, as); err == nil && u.Name != "" {
+		shown.Name = u.Name
+	}
 	status := http.StatusOK
 	if r.Method == http.MethodPost {
 		var err error
 		switch r.FormValue("do") {
+		case "add-passkey":
+			var k *store.Passkey
+			if k, err = p.accounts.AddPasskey(r.Context(), []byte(r.FormValue("response")), r.FormValue("device"), origin, as); err == nil {
+				shown.Note = "The passkey on " + k.Name + " is added."
+			} else {
+				shown.Device = r.FormValue("device")
+			}
+		case "remove-passkey":
+			id := r.FormValue("passkey")
+			if err = p.accounts.RemovePasskey(r.Context(), id, as); err == nil {
+				if id == sess.Passkey {
+					p.endSession(out)
+					redirect(out, PageSignIn)
+					return
+				}
+				shown.Note = "The passkey is removed, and the sessions it began are ended."
+			}
 		case "password":
 			if r.FormValue("password") != r.FormValue("again") {
 				err = &store.Error{Code: store.CodeBadValue, Message: "the two new passwords differ"}
@@ -547,7 +701,7 @@ func (p *Pages) account(out *reply, r *http.Request, told *Request) {
 		case "end":
 			if err = p.accounts.EndSession(r.Context(), r.FormValue("session"), as); err == nil {
 				if r.FormValue("session") == sess.ID {
-					http.SetCookie(out.w, &http.Cookie{Name: SessionCookie, Value: "", Path: "/", HttpOnly: true, Secure: p.secure, SameSite: http.SameSiteStrictMode, MaxAge: -1})
+					p.endSession(out)
 					redirect(out, PageSignIn)
 					return
 				}
@@ -563,15 +717,20 @@ func (p *Pages) account(out *reply, r *http.Request, told *Request) {
 		}
 	}
 	var err error
-	if shown.Has, shown.Needs, err = p.accounts.HasSecondStep(r.Context(), "", as); err == nil {
-		if shown.List, err = p.accounts.Sessions(r.Context(), "", as); err == nil {
-			shown.Grants, err = p.accounts.Grants(r.Context(), "", as)
+	if shown.Passkeys, err = p.accounts.Passkeys(r.Context(), "", as); err == nil {
+		if shown.Has, shown.Needs, err = p.accounts.HasSecondStep(r.Context(), "", as); err == nil {
+			if shown.List, err = p.accounts.Sessions(r.Context(), "", as); err == nil {
+				shown.Grants, err = p.accounts.Grants(r.Context(), "", as)
+			}
 		}
 	}
 	if err != nil {
 		told.Code = codeOf(err)
 		shown.Error = said(err)
 		status = http.StatusInternalServerError
+	}
+	if q, err := p.accounts.AddPasskeyQuestion(r.Context(), origin, as); err == nil {
+		shown.Question = q
 	}
 	p.draw(out, told, status, "account", shown)
 }
@@ -628,7 +787,7 @@ func (p *Pages) beginSignOn(out *reply, r *http.Request, told *Request) {
 	to, state, err := p.signOn.Begin(r.Context(), r.FormValue("provider"), p.callbackOf(r), next(r))
 	if err != nil {
 		told.Code, told.Err = store.CodeSignInRefused, err
-		p.draw(out, told, http.StatusBadGateway, "signIn", &page{Title: "Sign in", Error: "the sign-on did not start; try again, or sign in with your password", Next: next(r), Providers: p.providers()})
+		p.draw(out, told, http.StatusBadGateway, "signIn", p.signInPage(r, "the sign-on did not start; try again, or sign in with your passkey"))
 		return
 	}
 	http.SetCookie(out.w, &http.Cookie{Name: signOnCookie, Value: state, Path: PageCallback, HttpOnly: true, Secure: p.secure, SameSite: http.SameSiteLaxMode, MaxAge: 600})
@@ -652,7 +811,7 @@ func (p *Pages) callback(out *reply, r *http.Request, told *Request) {
 	q := r.URL.Query()
 	failed := func(err error) {
 		told.Code, told.Err = store.CodeSignInRefused, err
-		p.draw(out, told, http.StatusUnauthorized, "signIn", &page{Title: "Sign in", Error: "the sign-on was not completed; try again, or ask an administrator of the database", Providers: p.providers()})
+		p.draw(out, told, http.StatusUnauthorized, "signIn", p.signInPage(r, "the sign-on was not completed; try again, or ask an administrator of the database"))
 	}
 	if e := q.Get("error"); e != "" {
 		failed(errors.New("the provider answered " + e + ": " + q.Get("error_description")))
@@ -672,12 +831,11 @@ func (p *Pages) callback(out *reply, r *http.Request, told *Request) {
 	sess, err := p.accounts.SignOn(r.Context(), *who, p.address(r), p.lengths)
 	if err != nil {
 		told.Code = codeOf(err)
-		p.draw(out, told, http.StatusUnauthorized, "signIn", &page{Title: "Sign in", Error: said(err), Providers: p.providers()})
+		p.draw(out, told, http.StatusUnauthorized, "signIn", p.signInPage(r, said(err)))
 		return
 	}
 	told.User = sess.User
-	http.SetCookie(out.w, &http.Cookie{Name: SessionCookie, Value: sess.Token, Path: "/", HttpOnly: true, Secure: p.secure,
-		SameSite: http.SameSiteStrictMode, MaxAge: int(sess.Ends - time.Now().Unix())})
+	p.setSession(out, sess)
 	if to == "" || to[0] != '/' || strings.HasPrefix(to, "//") {
 		to = PageAccount
 	}
@@ -695,23 +853,24 @@ func (p *Pages) draw(out *reply, told *Request, status int, name string, data *p
 	out.w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	out.status, out.wrote = status, true
 	out.w.WriteHeader(status)
-	if _, err := io.WriteString(out.w, drawn(name, data)); err != nil && told.Err == nil {
+	if _, err := io.WriteString(out.w, drawn(name, out.host, data)); err != nil && told.Err == nil {
 		told.Err = err
 	}
+}
+
+// pagesPolicy is the Content-Security-Policy a page of the server is
+// sent with: it loads the server's own style, script, typefaces and
+// pictures (package web), nothing from elsewhere, and runs and styles
+// nothing written in the page; and its form goes where forms says, the
+// server itself and, for the one page that sends a person on to a
+// client, that client.
+func pagesPolicy(forms string) string {
+	return "default-src 'none'; script-src 'self'; style-src 'self'; font-src 'self'; img-src 'self'; form-action " + forms + "; frame-ancestors 'none'; base-uri 'none'"
 }
 
 // The pages are written by hand, each value escaped, and not with
 // html/template: a template calls methods by their names, which keeps
 // every method of the program in it, two megabytes more of the server.
-
-// style is the look of every page, light and dark.
-const style = `body{font:16px/1.5 system-ui,sans-serif;max-width:32rem;margin:2rem auto;padding:0 1rem;color:#1b1b1f;background:#fff}
-h1{font-size:1.4rem}label{display:block;margin:.8rem 0 .2rem}input{font:inherit;width:100%;box-sizing:border-box;padding:.45rem;border:1px solid #888;border-radius:4px}
-button{font:inherit;margin-top:1rem;padding:.45rem 1rem;border:0;border-radius:4px;background:#1f5fbf;color:#fff;cursor:pointer}
-.error{color:#a40000}.note{color:#1d6b2c}code,.codes{font-family:ui-monospace,monospace}.codes li{margin:.2rem 0}
-table{border-collapse:collapse;width:100%}td{padding:.3rem 0;border-bottom:1px solid #ddd;vertical-align:top}
-form.inline{display:inline}form.inline button{margin:0;padding:.2rem .6rem}
-@media (prefers-color-scheme:dark){body{color:#e8e8ec;background:#141418}input{background:#1f1f25;color:inherit}td{border-color:#333}.error{color:#ff8a80}.note{color:#8fd19e}}`
 
 // refresh is the line of a page that sends the browser on by itself.
 func refresh(to string) string {
@@ -733,40 +892,70 @@ func hidden(b *strings.Builder, name, value string) {
 
 // codeField is the field of a code of six digits.
 func codeField(b *strings.Builder) {
-	b.WriteString(`<label for="code">Code</label><input id="code" name="code" autocomplete="one-time-code" inputmode="numeric" required autofocus>`)
+	b.WriteString(`<label for="code">Code<input id="code" name="code" autocomplete="one-time-code" inputmode="numeric" required autofocus></label>`)
 }
 
 // stepShown is the key of a second step as a page shows it.
 func stepShown(b *strings.Builder, step *store.SecondStep) {
-	b.WriteString("<p><code>" + esc(step.Secret) + "</code></p>\n<p>Or open this link on the phone: <code>" + esc(step.Link) + "</code></p>\n")
+	b.WriteString("<p><code>" + esc(step.Secret) + "</code></p>\n<p class=\"small\">Or open this link on the phone: <code>" + esc(step.Link) + "</code></p>\n")
 }
 
-// pagesPolicy is the Content-Security-Policy a page of the server is
-// sent with: it loads nothing and runs nothing, its style is written in
-// it, and its form goes where forms says, the server itself and, for
-// the one page that sends a person on to a client, that client.
-//
-// A picture may be written in the page, and none is loaded: the page
-// names an empty icon that way (pageIcon). A browser asks for
-// /favicon.ico on a page that names no icon, the header refuses the
-// request, and the browser writes the refusal for whoever looks.
-func pagesPolicy(forms string) string {
-	return "default-src 'none'; style-src 'unsafe-inline'; img-src data:; form-action " + forms + "; frame-ancestors 'none'; base-uri 'none'"
+// passkeyForm is a form that makes a passkey (make) or uses one, with the
+// server's question for the browser; the script hands it on and sends
+// the answer back in response.
+func passkeyForm(b *strings.Builder, action, kind, question string) {
+	b.WriteString(`<form method="post" action="` + action + `" data-passkey="` + kind + `" data-question="` + esc(question) + `">`)
+	hidden(b, "response", "")
 }
 
-// pageIcon names an empty icon in a page of the server, so that a
-// browser asks for none.
-const pageIcon = `<link rel="icon" href="data:,">`
+// saidHere writes where the script says what went wrong, under a button.
+func saidHere(b *strings.Builder) {
+	b.WriteString(`<p class="said" data-said role="status" aria-live="polite"></p>`)
+}
 
-// drawn is a page of the server: the frame, and what the page holds.
-func drawn(name string, d *page) string {
+// deviceField is the field that names the device a passkey is made on,
+// which the script proposes from the browser.
+func deviceField(b *strings.Builder, person, given string) {
+	b.WriteString(`<label for="device">Name of this device<input id="device" name="device" maxlength="60" required autocomplete="off" data-device="` + esc(person) + `" value="` + esc(given) + `"></label>`)
+}
+
+// drawn is a page of the server: the frame, which names the server by
+// its address under FadoDB's mark, and what the page holds.
+func drawn(name, host string, d *page) string {
 	var b strings.Builder
+	class := ""
+	if name == "account" {
+		class = ` class="wide"`
+	}
 	b.WriteString(`<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
 <title>` + esc(d.Title) + ` · FadoDB</title>
-` + pageIcon + `
-` + refresh(d.Refresh) + `<style>` + style + `</style></head><body>
-<h1>` + esc(d.Title) + "</h1>\n")
+<link rel="icon" type="image/png" href="` + web.At("mark.png") + `">
+` + refresh(d.Refresh) + `<link rel="stylesheet" href="` + web.At("pages.css") + `">
+<script src="` + web.At("pages.js") + `" defer></script></head><body><main` + class + `>
+<p class="brand"><img src="` + web.At("mark.png") + `" alt="FadoDB" width="44" height="44"></p>
+`)
+	if host != "" {
+		b.WriteString(`<p class="kicker">` + esc(host) + "</p>\n")
+	}
+	b.WriteString("<h1>" + esc(d.Title) + "</h1>\n")
+	// What the page says of itself comes first; what went wrong, after.
+	switch name {
+	case "signIn":
+		b.WriteString("<p class=\"lead\">With a passkey on this device: your fingerprint, your face or its PIN. No password.</p>\n")
+	case "signInPassword":
+		b.WriteString("<p class=\"lead\">With your user and your password.</p>\n")
+	case "invite":
+		by := "You are invited."
+		if d.Invited.By != "" {
+			by = esc(d.Invited.ByName) + " invited you."
+		}
+		b.WriteString("<p class=\"lead\">" + by + " Add a passkey to sign in: your fingerprint, your face or this device's PIN. No password.</p>\n")
+	case "account":
+		b.WriteString("<p class=\"lead\">You are signed in as <strong>" + esc(d.User) + "</strong>.</p>\n")
+		b.WriteString(`<div class="pair"><form method="post" action="` + PageSignOut + `"><button class="btn ghost small" type="submit">Sign out</button></form></div>` + "\n")
+	}
 	if d.Error != "" {
 		b.WriteString(`<p class="error" role="alert">` + esc(d.Error) + "</p>\n")
 	}
@@ -775,166 +964,245 @@ func drawn(name string, d *page) string {
 	}
 	switch name {
 	case "signIn":
+		if d.Question != "" {
+			passkeyForm(&b, PageSignIn, "use", d.Question)
+			hidden(&b, "do", "passkey")
+			hidden(&b, "next", d.Next)
+			b.WriteString(`<button class="btn main" type="submit">Sign in with a passkey</button>`)
+			saidHere(&b)
+			b.WriteString("</form>\n")
+		}
+		providersOf(&b, d)
+		b.WriteString("<p class=\"small\">No passkey yet? Ask an administrator of this server for an invitation, and open it on this device.</p>\n")
+		b.WriteString(`<p class="small"><a class="lnk" href="` + PageSignIn + "?with=password&amp;next=" + esc(url.QueryEscape(d.Next)) + `">Sign in with a password</a></p>`)
+	case "signInPassword":
 		b.WriteString(`<form method="post" action="` + PageSignIn + `">`)
 		hidden(&b, "next", d.Next)
-		b.WriteString(`<label for="user">User</label><input id="user" name="user" autocomplete="username" value="` + esc(d.User) + `" required autofocus>
-<label for="password">Password</label><input id="password" name="password" type="password" autocomplete="current-password" required>
-<button type="submit">Sign in</button></form>`)
-		for _, pr := range d.Providers {
-			b.WriteString(`<form method="post" action="` + PageSignOn + `">`)
-			hidden(&b, "provider", pr.Name)
-			hidden(&b, "next", d.Next)
-			b.WriteString(`<button type="submit">` + esc(pr.Label) + `</button></form>`)
-		}
+		b.WriteString(`<label for="user">User<input id="user" name="user" autocomplete="username" value="` + esc(d.User) + `" required autofocus></label>
+<label for="password">Password<input id="password" name="password" type="password" autocomplete="current-password" required></label>
+<button class="btn main" type="submit">Sign in</button></form>
+`)
+		providersOf(&b, d)
+		b.WriteString(`<p class="small"><a class="lnk" href="` + PageSignIn + "?next=" + esc(url.QueryEscape(d.Next)) + `">Sign in with a passkey</a></p>`)
+	case "invite":
+		passkeyForm(&b, PageInvite, "make", d.Question)
+		hidden(&b, "t", d.Token)
+		hidden(&b, "next", d.Next)
+		deviceField(&b, d.Invited.Name, d.Device)
+		b.WriteString(`<button class="btn main" type="submit">Add a passkey and enter</button>`)
+		saidHere(&b)
+		b.WriteString("</form>\n<p class=\"small\">The passkey stays on this device, and opens this server alone.</p>")
+	case "inviteGone":
+		b.WriteString("<p class=\"lead\">It was used, it ended, or it is not one. Ask the person who invited you for a new one.</p>")
 	case "code":
-		b.WriteString("<p>Enter the six digits your authenticator app shows for " + esc(d.User) + ", or one of your codes for a lost phone.</p>\n")
+		b.WriteString("<p class=\"lead\">Enter the six digits your authenticator app shows for " + esc(d.User) + ", or one of your codes for a lost phone.</p>\n")
 		b.WriteString(`<form method="post" action="` + PageCode + `">`)
 		hidden(&b, "signin", d.SignIn)
 		hidden(&b, "next", d.Next)
 		codeField(&b)
-		b.WriteString(`<button type="submit">Go on</button></form>`)
+		b.WriteString(`<button class="btn main" type="submit">Go on</button></form>`)
 	case "setUp":
-		b.WriteString("<p>" + esc(d.User) + ", your groups ask for a second step. Add this key to an authenticator app on your phone, then enter the six digits it shows.</p>\n")
+		b.WriteString("<p class=\"lead\">" + esc(d.User) + ", your groups ask for a second step. Add this key to an authenticator app on your phone, then enter the six digits it shows.</p>\n")
 		stepShown(&b, d.Step)
 		b.WriteString(`<form method="post" action="` + PageCode + `">`)
 		hidden(&b, "signin", d.SignIn)
 		hidden(&b, "next", d.Next)
 		codeField(&b)
-		b.WriteString(`<button type="submit">Go on</button></form>`)
+		b.WriteString(`<button class="btn main" type="submit">Go on</button></form>`)
 	case "setUpMine":
-		b.WriteString("<p>Add this key to an authenticator app on your phone, then enter the six digits it shows.</p>\n")
+		b.WriteString("<p class=\"lead\">Add this key to an authenticator app on your phone, then enter the six digits it shows.</p>\n")
 		stepShown(&b, d.Step)
 		b.WriteString(`<form method="post" action="` + PageAccount + `">`)
 		hidden(&b, "do", "confirm")
 		codeField(&b)
-		b.WriteString(`<button type="submit">Keep it</button></form>`)
+		b.WriteString(`<button class="btn main" type="submit">Keep it</button></form>`)
 	case "codes":
-		b.WriteString("<p>Write these down and keep them away from your phone. Each lets you in once if the phone is lost. They are shown this once.</p>\n<ol class=\"codes\">")
+		b.WriteString("<p class=\"lead\">Write these down and keep them away from your phone. Each lets you in once if the phone is lost. They are shown this once.</p>\n<ol class=\"codes\">")
 		for _, c := range d.Codes {
 			b.WriteString("<li>" + esc(c) + "</li>")
 		}
-		b.WriteString("</ol>\n<p><a href=\"" + esc(d.Next) + "\">Go on</a></p>")
+		b.WriteString("</ol>\n<p><a class=\"btn main\" href=\"" + esc(d.Next) + "\">Go on</a></p>")
 	case "account":
-		b.WriteString("<p>You are signed in as <strong>" + esc(d.User) + "</strong>.</p>\n")
-		b.WriteString(`<form method="post" action="` + PageSignOut + `"><button type="submit">Sign out</button></form>
-<h2>Password</h2>
-<form method="post" action="` + PageAccount + `">`)
-		hidden(&b, "do", "password")
-		b.WriteString(`<input type="text" name="user" value="` + esc(d.User) + `" autocomplete="username" hidden>
-<label for="old">Your password</label><input id="old" name="old" type="password" autocomplete="current-password" required>
-<label for="password">A new password, at least 12 characters</label><input id="password" name="password" type="password" autocomplete="new-password" minlength="12" required>
-<label for="again">The new password again</label><input id="again" name="again" type="password" autocomplete="new-password" minlength="12" required>
-<button type="submit">Change it</button></form>
-<h2>Second step</h2>
-`)
-		switch {
-		case d.Has:
-			b.WriteString("<p>A code from your authenticator app is asked after your password.</p>\n")
-			if !d.Needs {
-				b.WriteString(`<form method="post" action="` + PageAccount + `">`)
-				hidden(&b, "do", "clear")
-				b.WriteString(`<button type="submit">Take it away</button></form>`)
-			}
-		case d.Needs:
-			b.WriteString("<p>Your groups ask for one, and you set it up at your next sign-in.</p>\n")
-		default:
-			b.WriteString("<p>You have none. A code from an app on your phone keeps your account yours even if your password leaks.</p>\n")
-		}
-		b.WriteString(`<form method="post" action="` + PageAccount + `">`)
-		hidden(&b, "do", "set-up")
-		if d.Has {
-			b.WriteString(`<button type="submit">Set up a new one</button></form>`)
-		} else {
-			b.WriteString(`<button type="submit">Set one up</button></form>`)
-		}
-		b.WriteString("\n<h2>Sessions</h2>\n<table>")
-		for _, s := range d.List {
-			b.WriteString("<tr><td>" + esc(moment(s.CreatedAt)))
-			if s.Address != "" {
-				b.WriteString(", from " + esc(s.Address))
-			}
-			if s.ID == d.Current {
-				b.WriteString(" <strong>(this one)</strong>")
-			}
-			b.WriteString("<br>last used " + esc(moment(s.UsedAt)) + `</td><td><form class="inline" method="post" action="` + PageAccount + `">`)
-			hidden(&b, "do", "end")
-			hidden(&b, "session", s.ID)
-			b.WriteString(`<button type="submit">End</button></form></td></tr>`)
-		}
-		b.WriteString("</table>\n<h2>Clients you allowed</h2>\n")
-		if len(d.Grants) == 0 {
-			b.WriteString("<p>None. A client you allow, such as Claude, is listed here, and you end it here.</p>")
-		} else {
-			b.WriteString("<table>")
-			for _, g := range d.Grants {
-				b.WriteString("<tr><td><strong>" + esc(g.ClientName) + "</strong>")
-				if g.Agent != "" {
-					b.WriteString(", acting for you as " + esc(g.Agent))
-				}
-				b.WriteString("<br>allowed " + esc(moment(g.CreatedAt)) + ", last renewed " + esc(moment(g.UsedAt)) + `</td><td><form class="inline" method="post" action="` + PageAccount + `">`)
-				hidden(&b, "do", "end-grant")
-				hidden(&b, "grant", g.ID)
-				b.WriteString(`<button type="submit">End</button></form></td></tr>`)
-			}
-			b.WriteString("</table>")
-		}
+		accountShown(&b, d)
 	case "setPassword":
-		b.WriteString("<p>Choose the password of <strong>" + esc(d.User) + "</strong>: at least 12 characters. A sentence of four or five words is long enough and easy to remember.</p>\n")
+		b.WriteString("<p class=\"lead\">Choose the password of <strong>" + esc(d.User) + "</strong>: at least 12 characters. A sentence of four or five words is long enough and easy to remember.</p>\n")
 		b.WriteString(`<form method="post" action="` + PagePassword + `">`)
 		hidden(&b, "link", d.Link)
 		b.WriteString(`<input type="text" name="user" value="` + esc(d.User) + `" autocomplete="username" hidden>
-<label for="password">Password</label><input id="password" name="password" type="password" autocomplete="new-password" minlength="12" required autofocus>
-<label for="again">The password again</label><input id="again" name="again" type="password" autocomplete="new-password" minlength="12" required>
-<button type="submit">Set it</button></form>`)
+<label for="password">Password<input id="password" name="password" type="password" autocomplete="new-password" minlength="12" required autofocus></label>
+<label for="again">The password again<input id="again" name="again" type="password" autocomplete="new-password" minlength="12" required></label>
+<button class="btn main" type="submit">Set it</button></form>`)
 	case "signedOn":
-		b.WriteString("<p>You are signed in as <strong>" + esc(d.User) + "</strong>.</p>\n<p><a href=\"" + esc(d.Next) + "\">Go on</a></p>")
+		b.WriteString("<p class=\"lead\">You are signed in as <strong>" + esc(d.User) + "</strong>.</p>\n<p><a class=\"btn main\" href=\"" + esc(d.Next) + "\">Go on</a></p>")
 	case "passwordSet":
-		b.WriteString(`<p class="note">The password of ` + esc(d.User) + ` is set.</p>` + "\n<p><a href=\"" + PageSignIn + "\">Sign in</a></p>")
+		b.WriteString(`<p class="note">The password of ` + esc(d.User) + ` is set.</p>` + "\n<p><a class=\"btn main\" href=\"" + PageSignIn + "?with=password\">Sign in</a></p>")
 	case "onward":
-		b.WriteString("<p><a href=\"" + esc(d.Next) + "\">Go on</a></p>")
+		b.WriteString("<p><a class=\"btn main\" href=\"" + esc(d.Next) + "\">Go on</a></p>")
 	case "consent":
-		a := d.Asked
-		host := a.Client.Host()
-		if a.Client.Address == store.AddressAgents {
-			b.WriteString("<p><strong>" + esc(a.Client.Name) + "</strong> (" + esc(host) + ") wants to act for you, <strong>" + esc(d.User) +
-				"</strong>, in this database, as the agent " + esc(d.Agent) + ".</p>\n<p>It may do what your groups let you do")
-		} else {
-			b.WriteString("<p><strong>" + esc(a.Client.Name) + "</strong> (" + esc(host) + ") wants to use this database as you, <strong>" + esc(d.User) +
-				"</strong>.</p>\n<p>It may do what your groups let you do")
-		}
-		if len(d.Groups) > 0 {
-			b.WriteString(", in " + esc(strings.Join(d.Groups, ", ")))
-		}
-		if len(d.System) > 0 {
-			b.WriteString(", and the work of " + esc(strings.Join(d.System, ", ")))
-		}
-		b.WriteString(", until you end it on your account page.")
-		if a.Client.Address == store.AddressAgents {
-			b.WriteString(" Where a class asks for a person, it is refused.")
-		}
-		b.WriteString("</p>\n")
-		to := originOfURI(a.RedirectURI)
-		if u, err := url.Parse(a.RedirectURI); err == nil && (u.Hostname() == "localhost" || strings.HasPrefix(u.Hostname(), "127.") || u.Hostname() == "::1") {
-			b.WriteString("<p>Its pass goes to a program on your own computer, at " + esc(to) + ". Allow it only if you started that program.</p>\n")
-		} else {
-			b.WriteString("<p>Its pass goes to " + esc(to) + ".</p>\n")
-		}
-		b.WriteString(`<form class="inline" method="post" action="` + PageAllow + `">`)
-		hidden(&b, "request", d.Request)
-		hidden(&b, "do", "allow")
-		b.WriteString(`<button type="submit">Allow</button></form> <form class="inline" method="post" action="` + PageAllow + `">`)
-		hidden(&b, "request", d.Request)
-		hidden(&b, "do", "deny")
-		b.WriteString(`<button type="submit">Deny</button></form>`)
+		consentShown(&b, d)
 	case "requestGone":
-		b.WriteString("<p>The request of the client ended, was answered, or is not one. Go back to the client and connect again.</p>")
+		b.WriteString("<p class=\"lead\">The request of the client ended, was answered, or is not one. Go back to the client and connect again.</p>")
 	case "notAllowed":
-		b.WriteString("<p>Nothing was sent to the client. If you followed a link to get here, the link may not be what it said.</p>")
+		b.WriteString("<p class=\"lead\">Nothing was sent to the client. If you followed a link to get here, the link may not be what it said.</p>")
 	case "linkGone":
-		b.WriteString("<p>This link does not hold: it was used, it ended, or it is not one. Ask an administrator of the database for a new one.</p>")
+		b.WriteString("<p class=\"lead\">This link does not hold: it was used, it ended, or it is not one. Ask an administrator of the database for a new one.</p>")
 	default:
-		b.WriteString("<p>There is no page here. A server that is reached from other machines signs people in only when its operator gives it its address, url, in its settings.</p>")
+		b.WriteString("<p class=\"lead\">There is no page here. A server that is reached from other machines signs people in only when its operator gives it its address, url, in its settings.</p>")
 	}
-	b.WriteString("\n</body></html>\n")
+	b.WriteString("\n</main></body></html>\n")
 	return b.String()
+}
+
+// providersOf writes the buttons of the company's sign-ons, below the
+// page's own way in.
+func providersOf(b *strings.Builder, d *page) {
+	if len(d.Providers) == 0 {
+		return
+	}
+	b.WriteString("<p class=\"or\">or</p>\n")
+	for _, pr := range d.Providers {
+		b.WriteString(`<form method="post" action="` + PageSignOn + `">`)
+		hidden(b, "provider", pr.Name)
+		hidden(b, "next", d.Next)
+		b.WriteString(`<button class="btn ghost" type="submit">` + esc(pr.Label) + "</button></form>\n")
+	}
+}
+
+// accountShown is what the account page holds: the person's passkeys,
+// and the way to add one on this device; the password and the second
+// step, while people have them; the sessions; and the clients allowed.
+func accountShown(b *strings.Builder, d *page) {
+	b.WriteString("<h2>Passkeys</h2>\n")
+	if d.Admin && len(d.Passkeys) < 2 {
+		b.WriteString("<p class=\"small warn left\">An administrator is asked to keep two passkeys, on two devices, so that losing one locks nobody out. Add one on another device.</p>\n")
+	}
+	if len(d.Passkeys) == 0 {
+		b.WriteString("<p class=\"small left\">None yet. A passkey is your fingerprint, your face or this device's PIN: nothing to type, and nothing a fake page can use.</p>\n")
+	} else {
+		b.WriteString(`<div class="rows">`)
+		for _, k := range d.Passkeys {
+			b.WriteString(`<div class="row"><div class="what"><span>` + esc(k.Name))
+			if k.ID == d.Passkey {
+				b.WriteString(" <strong>(this session)</strong>")
+			}
+			b.WriteString(`</span><span class="when">added ` + esc(moment(k.AddedAt)))
+			if k.UsedAt != 0 {
+				b.WriteString(", last used " + esc(moment(k.UsedAt)))
+			}
+			if k.Synced {
+				b.WriteString(", synced")
+			}
+			b.WriteString(`</span></div><form method="post" action="` + PageAccount + `">`)
+			hidden(b, "do", "remove-passkey")
+			hidden(b, "passkey", k.ID)
+			b.WriteString(`<button class="btn ghost small" type="submit">Remove</button></form></div>`)
+		}
+		b.WriteString("</div>\n")
+	}
+	if d.Question != "" {
+		passkeyForm(b, PageAccount, "make", d.Question)
+		hidden(b, "do", "add-passkey")
+		deviceField(b, d.Name, d.Device)
+		b.WriteString(`<button class="btn main" type="submit">Add a passkey on this device</button>`)
+		saidHere(b)
+		b.WriteString("</form>\n")
+	}
+	b.WriteString("<h2>Password</h2>\n" + `<form method="post" action="` + PageAccount + `">`)
+	hidden(b, "do", "password")
+	b.WriteString(`<input type="text" name="user" value="` + esc(d.User) + `" autocomplete="username" hidden>
+<label for="old">Your password<input id="old" name="old" type="password" autocomplete="current-password" required></label>
+<label for="password">A new password, at least 12 characters<input id="password" name="password" type="password" autocomplete="new-password" minlength="12" required></label>
+<label for="again">The new password again<input id="again" name="again" type="password" autocomplete="new-password" minlength="12" required></label>
+<button class="btn ghost" type="submit">Change it</button></form>
+<h2>Second step</h2>
+`)
+	switch {
+	case d.Has:
+		b.WriteString("<p class=\"small left\">A code from your authenticator app is asked after your password.</p>\n")
+		if !d.Needs {
+			b.WriteString(`<form method="post" action="` + PageAccount + `">`)
+			hidden(b, "do", "clear")
+			b.WriteString(`<button class="btn ghost" type="submit">Take it away</button></form>`)
+		}
+	case d.Needs:
+		b.WriteString("<p class=\"small left\">Your groups ask for one, and you set it up at your next sign-in with your password.</p>\n")
+	default:
+		b.WriteString("<p class=\"small left\">You have none. A code from an app on your phone is asked after your password, when you sign in with one.</p>\n")
+	}
+	b.WriteString(`<form method="post" action="` + PageAccount + `">`)
+	hidden(b, "do", "set-up")
+	if d.Has {
+		b.WriteString(`<button class="btn ghost" type="submit">Set up a new one</button></form>`)
+	} else {
+		b.WriteString(`<button class="btn ghost" type="submit">Set one up</button></form>`)
+	}
+	b.WriteString("\n<h2>Sessions</h2>\n<div class=\"rows\">")
+	for _, s := range d.List {
+		b.WriteString(`<div class="row"><div class="what"><span>` + esc(moment(s.CreatedAt)))
+		if s.Address != "" {
+			b.WriteString(", from " + esc(s.Address))
+		}
+		if s.ID == d.Current {
+			b.WriteString(" <strong>(this one)</strong>")
+		}
+		b.WriteString(`</span><span class="when">last used ` + esc(moment(s.UsedAt)) + `</span></div><form method="post" action="` + PageAccount + `">`)
+		hidden(b, "do", "end")
+		hidden(b, "session", s.ID)
+		b.WriteString(`<button class="btn ghost small" type="submit">End</button></form></div>`)
+	}
+	b.WriteString("</div>\n<h2>Clients you allowed</h2>\n")
+	if len(d.Grants) == 0 {
+		b.WriteString("<p class=\"small left\">None. A client you allow, such as Claude, is listed here, and you end it here.</p>")
+		return
+	}
+	b.WriteString(`<div class="rows">`)
+	for _, g := range d.Grants {
+		b.WriteString(`<div class="row"><div class="what"><span><strong>` + esc(g.ClientName) + "</strong>")
+		if g.Agent != "" {
+			b.WriteString(", acting for you as " + esc(g.Agent))
+		}
+		b.WriteString(`</span><span class="when">allowed ` + esc(moment(g.CreatedAt)) + ", last renewed " + esc(moment(g.UsedAt)) + `</span></div><form method="post" action="` + PageAccount + `">`)
+		hidden(b, "do", "end-grant")
+		hidden(b, "grant", g.ID)
+		b.WriteString(`<button class="btn ghost small" type="submit">End</button></form></div>`)
+	}
+	b.WriteString("</div>")
+}
+
+// consentShown is the page that asks a person to allow a client.
+func consentShown(b *strings.Builder, d *page) {
+	a := d.Asked
+	host := a.Client.Host()
+	b.WriteString(`<div class="lead">`)
+	if a.Client.Address == store.AddressAgents {
+		b.WriteString("<p><strong>" + esc(a.Client.Name) + "</strong> (" + esc(host) + ") wants to act for you, <strong>" + esc(d.User) +
+			"</strong>, in this database, as the agent " + esc(d.Agent) + ".</p>\n<p>It may do what your groups let you do")
+	} else {
+		b.WriteString("<p><strong>" + esc(a.Client.Name) + "</strong> (" + esc(host) + ") wants to use this database as you, <strong>" + esc(d.User) +
+			"</strong>.</p>\n<p>It may do what your groups let you do")
+	}
+	if len(d.Groups) > 0 {
+		b.WriteString(", in " + esc(strings.Join(d.Groups, ", ")))
+	}
+	if len(d.System) > 0 {
+		b.WriteString(", and the work of " + esc(strings.Join(d.System, ", ")))
+	}
+	b.WriteString(", until you end it on your account page.")
+	if a.Client.Address == store.AddressAgents {
+		b.WriteString(" Where a class asks for a person, it is refused.")
+	}
+	b.WriteString("</p>\n")
+	to := originOfURI(a.RedirectURI)
+	if u, err := url.Parse(a.RedirectURI); err == nil && (u.Hostname() == "localhost" || strings.HasPrefix(u.Hostname(), "127.") || u.Hostname() == "::1") {
+		b.WriteString("<p>Its pass goes to a program on your own computer, at " + esc(to) + ". Allow it only if you started that program.</p>\n")
+	} else {
+		b.WriteString("<p>Its pass goes to " + esc(to) + ".</p>\n")
+	}
+	b.WriteString(`</div><div class="pair"><form method="post" action="` + PageAllow + `">`)
+	hidden(b, "request", d.Request)
+	hidden(b, "do", "allow")
+	b.WriteString(`<button class="btn" type="submit">Allow</button></form><form method="post" action="` + PageAllow + `">`)
+	hidden(b, "request", d.Request)
+	hidden(b, "do", "deny")
+	b.WriteString(`<button class="btn ghost" type="submit">Deny</button></form></div>`)
 }

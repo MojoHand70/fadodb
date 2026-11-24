@@ -94,7 +94,9 @@ func TestTheServerHandsOutThePagesOfAFace(t *testing.T) {
 	if code != http.StatusOK || !strings.Contains(body, `action="/auth/signin"`) {
 		t.Errorf("the page where people sign in is answered %d:\n%s", code, body)
 	}
-	if policy := h.Get("Content-Security-Policy"); policy == server.FolderPolicy || strings.Contains(policy, "script-src") {
+	// The server's own page runs the server's one script and takes forms
+	// to the server alone; a face's policy is another.
+	if policy := h.Get("Content-Security-Policy"); policy == server.FolderPolicy || !strings.Contains(policy, "script-src 'self';") || !strings.Contains(policy, "form-action 'self';") {
 		t.Errorf("the server's own page carries the policy of a face: %q", policy)
 	}
 	if code, body, _ := fetch(t, http.MethodGet, at+"/auth/signin.html"); code == http.StatusOK || strings.Contains(body, "not the server's sign-in") {

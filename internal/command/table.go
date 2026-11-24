@@ -529,6 +529,19 @@ var commands = []*Command{
 	{Group: Users, Users: true, Name: "create_password_link", Mark: Writes, Call: "CreatePasswordLink", Does: "Makes a link that lets a person set their password, good once and for a day, and answers its secret, this once. Nobody sets another's password. It is a database administrator's.",
 		Fields: []Field{req("user", Text, "the id of the person the link is for")},
 		Answer: answer("link", "the link: its user, the moment it ends, who made it, and under token the secret the server's page /auth/password takes, shown this once"), takes: asWriter, run: runCreatePasswordLink},
+	{Group: Users, Users: true, Name: "create_invitation", Mark: Writes, Call: "CreateInvitation", Does: "Makes an invitation for a person, good once and for 7 days, with which they add their first passkey, and answers its secret, this once; an invitation of theirs that still holds ends. It is a database administrator's.",
+		Fields: []Field{req("user", Text, "the id of the person the invitation is for")},
+		Answer: answer("invitation", "the invitation: its user, when and by whom it was made, the moment it ends, and under token the secret the server's page /auth/invite takes, shown this once"), takes: asWriter, run: runCreateInvitation},
+	{Group: Users, Users: true, Name: "list_invitations", Mark: Reads, Call: "Invitations", Does: "Lists the invitations that still hold, never a secret. It is a database administrator's.",
+		Fields: []Field{opt("user", Text, "only the invitation of this person")},
+		Answer: answer("invitations", "the invitations, oldest first: their user, when and by whom they were made, and when they end"), takes: asCaller, run: runListInvitations},
+	{Group: Users, Users: true, Name: "withdraw_invitation", Mark: Writes, Call: "WithdrawInvitation", Does: "Ends the invitation of a person that still holds: its link lets nobody in. It is a database administrator's.",
+		Fields: []Field{req("user", Text, "the id of the person")}, takes: asWriter, run: runWithdrawInvitation},
+	{Group: Users, Users: true, Name: "list_passkeys", Mark: Reads, Call: "Passkeys", Does: "Lists the passkeys of a user, never a key. A database administrator may ask of any user, and a user of itself.",
+		Fields: []Field{opt("user", Text, "the id of the user; left out, the caller")},
+		Answer: answer("passkeys", "the passkeys, oldest first: their id, their user, the name of their device, whether they are synced, when and how they were added, and when they were last used"), takes: asCaller, run: runListPasskeys},
+	{Group: Users, Users: true, Name: "remove_passkey", Mark: Writes, Call: "RemovePasskey", Does: "Removes a passkey: it opens nothing more, and the sessions it began end. A database administrator removes any, for a lost phone; a user its own, but not its last unless it signs in with the company's sign-on too.",
+		Fields: []Field{req("passkey", Text, "the id of the passkey, as list_passkeys shows it")}, takes: asWriter, run: runRemovePasskey},
 	{Group: Users, Users: true, Name: "list_sessions", Mark: Reads, Call: "Sessions", Does: "Lists the sessions of a user that still hold, never a secret. A database administrator may ask of any user, and a user of itself.",
 		Fields: []Field{opt("user", Text, "the id of the user; left out, the caller")},
 		Answer: answer("sessions", "the sessions, oldest first: their id, the way the user signed in, where from, when they began and were last used, and when they end"), takes: asCaller, run: runListSessions},
@@ -595,6 +608,16 @@ var NotCommands = map[string]string{
 	"ConfirmMySecondStep": "its codes never travel in a command: the server's page /auth/account shows them",
 	"HasSecondStep":       "the server's page /auth/account shows it to the person",
 	"SignOn":              "it takes who a company's provider vouched for, which the server checked on its page /auth/callback; no command carries a provider's word",
+	// Passkeys (ADR-0088): a question to the browser and its answer
+	// belong to the page that asked, and an invitation's secret never
+	// travels in a command but the one that makes it.
+	"Invited":            "it belongs to the server's page /auth/invite, which an invitation opens",
+	"InvitationQuestion": "it is the question the server's page /auth/invite gives the browser, to make a passkey",
+	"UseInvitation":      "it takes the browser's answer on the server's page /auth/invite, and gives a session",
+	"SignInQuestion":     "it is the question the server's page /auth/signin gives the browser, to use a passkey",
+	"SignInWithPasskey":  "it takes the browser's answer on the server's page /auth/signin, and gives a session",
+	"AddPasskeyQuestion": "it is the question the server's page /auth/account gives the browser, to make another passkey",
+	"AddPasskey":         "a passkey is made by the person's device, on the server's page /auth/account; remove_passkey removes one",
 	// The passes the server gives clients (ADR-0071, item 6): a code and
 	// a pass never travel in a command. The server's addresses of OAuth
 	// take them.

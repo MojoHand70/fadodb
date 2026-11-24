@@ -306,3 +306,58 @@ to strike:
 4. **The address is read for the pages of signing in alone**: nothing
    else of the server records where a request came from. The server's
    help and both chapters of the manual show the setting.
+
+The second pull request built items 1 to 7, 9 and 10 for the device in
+use: the check, the tables, the commands, `fadodb user invite`, and the
+invitation, sign-in and account pages. Settled by me, each the owner's
+to strike:
+
+5. **A challenge holds what it needs, signed**: what it is for (a
+   sign-in, an invitation, or a passkey added on the account page),
+   when it ends, the 16 bytes the device will know the person by, and
+   random bytes, signed with a key the server makes when it opens the
+   database. A page that asks for one writes nothing; only a challenge
+   that was used is remembered, until it ends. A server that starts
+   again holds no question it asked before.
+6. **The statement of a device's maker is not read, whatever its
+   format.** Asked for none, some devices still send one (`packed`);
+   it is taken and not read, as if it said nothing.
+7. **A person's passkeys share the 16 bytes of their first**, so that
+   every device of theirs knows them alike; each passkey keeps the
+   bytes it was made with, and a use is checked against them.
+8. **A passkey removed is kept**, with when and by whom, and opens
+   nothing; a removed passkey is never listed.
+9. **Nobody removes their own last passkey, an administrator
+   included**, unless they sign in with the company's sign-on too. An
+   administrator removes anybody else's, the last too.
+10. **A counter that did not rise** is refused as every other wrong
+    passkey is, in the same words, and recorded among the person's
+    changes as `passkey_counter_fell`, with the passkey's id.
+11. **A device is named with 1 to 60 characters**, which the page
+    proposes from the browser: "Ann's iPhone", "Ann's Windows PC".
+12. **Until step 4, a password still signs a person in**: the sign-in
+    page offers it under its button, as a small link, **Sign in with a
+    password**, and the account page keeps the password and the second
+    step under the passkeys.
+13. **The server's name on its pages is its address**, the host of
+    `url` (or `localhost:8080` on the machine), under FadoDB's mark,
+    until a `Look` gives a name and a mark (step 5).
+14. **The pages load their style from a file of the server's too**, so
+    their policy is `style-src 'self'`, and no longer
+    `'unsafe-inline'`: nothing written in a page runs or styles it.
+15. **The files of the pages are in a package of their own**,
+    `internal/server/web`, since the server's package keeps no
+    variable (ADR-0056, item 4). Each is served at an address that
+    holds the start of its hash, and kept by a browser for a year.
+16. **Two refusals are new**, `unknown_invitation` and
+    `unknown_passkey`, both 404. `list_invitations` lists the
+    invitations that hold, and `withdraw_invitation` names the person,
+    who has one at most. A session lists the passkey it began with
+    (`passkey` in `list_sessions`).
+17. **After an invitation, the person goes to the account page**, where
+    their passkey is listed: the server knows no other home of theirs.
+18. **The tests play the pages with a device of their own**
+    (`internal/webauthn/webauthntest`), which makes and uses passkeys
+    as a phone or a computer does, in the browser's place. Chromium's
+    virtual authenticator played the pages before the pull request was
+    opened; it is not among the gates, which run no browser.

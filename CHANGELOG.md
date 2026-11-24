@@ -8,6 +8,38 @@ All notable changes to FadoDB are recorded here. The format follows
 
 ### Added
 
+- People sign in with a passkey, invited by a link (ADR-0088, its
+  second step): their fingerprint, their face or their device's PIN,
+  and nothing to type. An administrator makes an invitation, good once
+  and for 7 days, with `create_invitation`, or `fadodb user invite` on
+  the machine, the way back in when every administrator has lost every
+  passkey; at `/auth/invite` the person names the device and adds a
+  passkey on it, and is signed in. The sign-in page has one button,
+  **Sign in with a passkey**: the passkey says who the person is. The
+  account page lists a person's passkeys, adds one on the device in
+  use and removes any but the last; an administrator removes anybody's
+  with `remove_passkey`, and the sessions a passkey began end with it.
+  `list_invitations`, `withdraw_invitation` and `list_passkeys` join
+  them; `create_invitation` is no tool of the door for agents. The
+  server checks each passkey with code of its own, `internal/webauthn`,
+  Go's standard library alone: ES256, Ed25519 and RSA keys, the
+  challenge it gave, good once and for 5 minutes, its address, the
+  person verified, the signature, and a counter that must rise; a
+  counter that did not is refused and recorded. The new refusals are
+  `unknown_invitation` and `unknown_passkey` (404). Passwords and the
+  second step still sign a person in, under **Sign in with a
+  password**, until they go (ADR-0088, step 4).
+
+### Changed
+
+- The server's pages are built to Rhea's sign-in, one centred column,
+  in FadoDB's colours, light and dark, with FadoDB's mark and the
+  typefaces Schibsted Grotesk and Martian Mono, which the program holds
+  with their licence (the SIL Open Font License). They load one script
+  and one style of the server's own, and nothing from elsewhere: their
+  policy has `script-src 'self'`, `style-src 'self'` (no longer
+  `'unsafe-inline'`), `font-src 'self'` and `img-src 'self'`.
+
 - The address of a sign-in behind a proxy (ADR-0088, item 8, the first
   of its five steps): the setting `proxies` names the proxies in front
   of `fadodb serve`, each an address or a range such as `10.0.0.0/8`.

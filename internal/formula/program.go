@@ -161,6 +161,17 @@ type QuerySlot struct {
 	// the aggregate of a LOOKUP, so Extra is no part of an encoded
 	// program.
 	Extra *Program
+	// What the functions that give a list again made of the list before
+	// the aggregate runs over it (ADR-0081, step 3): FILTER adds to Cond;
+	// SORT puts its columns first in Order, Sorted of them, a leading "-"
+	// for descending, and the order of the list after them; TOP gives
+	// Limit, a program over the THIS arguments alone that says how many
+	// of the first rows are taken; UNIQUE sets Distinct, and the
+	// aggregate then runs over the different values, each where it first
+	// stands. None of it is part of an encoded program.
+	Sorted   int
+	Limit    *Program
+	Distinct bool
 	// List names the list of the document that the slot's rows are
 	// (ADR-0081): a live variable of the document whose formula is a
 	// QUERY. The slot is then a figure over that list, and Source the

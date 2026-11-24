@@ -158,7 +158,8 @@ var builtinByName = func() map[string]int {
 // calls.
 var specialForms = map[string]bool{"IF": true, "AND": true, "OR": true, "NOT": true, "IFERROR": true, "SECRET": true, "REF": true,
 	"COUNTIF": true, "SUMIF": true, "MINIF": true, "MAXIF": true, "AVERAGEIF": true, "MEDIAN": true, "COUNTUNIQUE": true, "ANY": true, "ALL": true,
-	"FIRST": true, "LAST": true, "INDEX": true, "JOIN": true, "CONTAINS": true}
+	"FIRST": true, "LAST": true, "INDEX": true, "JOIN": true, "CONTAINS": true,
+	"FILTER": true, "SORT": true, "TOP": true, "UNIQUE": true}
 
 // notYetImplemented lists the catalog functions the binder refuses for now:
 // the composite functions and the query functions of ADR-0020.

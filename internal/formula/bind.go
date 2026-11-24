@@ -538,6 +538,8 @@ func (b *binder) expr(n Node) (Type, error) {
 			return Type{}, b.errAt(n.P, "inside LOOKUP a bare name is a column of %s; the document's variables are THIS.name, and their fields are not reachable yet", b.source.Name)
 		}
 		return b.member(n)
+	case *CallMember:
+		return Type{}, b.errAt(n.P, "%s(...).%s is a column of a list, and a list stands only inside a function over a list, as SUM(%s(...).%s) (ADR-0081)", n.Call.Name, n.Name, n.Call.Name, n.Name)
 	case *ThisRef:
 		if b.source != nil {
 			return b.thisRef(n)
@@ -986,6 +988,11 @@ func (b *binder) call(n *Call) (Type, error) {
 	if n.Name == "QUERY" {
 		return Type{}, b.errAt(n.P, "QUERY is built as the whole formula of a live variable, and nowhere else yet (ADR-0076)")
 	}
+	if shapeRank[n.Name] > 0 || n.Name == "UNIQUE" {
+		// reached here it stands by itself, and not as what a function
+		// over a list works on
+		return Type{}, b.errAt(n.P, "%s gives a list, and a list stands only inside a function over a list, as COUNT(%s(...)) or JOIN(%s(...).column, \", \") (ADR-0081)", n.Name, n.Name, n.Name)
+	}
 	if t, handled, err := b.figure(n); handled {
 		return t, err
 	}
@@ -1378,6 +1385,11 @@ func (b *binder) aggregateOver(n *Call, src *Source, q *QuerySlot, argOf map[str
 		}
 		rt = Scalar(KindText)
 	case "EXISTS":
+		// what CONTAINS runs over is the comparison of the column with the
+		// value: a yes or no for each row
+		if !isCondition(vt) {
+			return b.errAt(n.Args[0].Pos(), "CONTAINS: the column and the value cannot be compared")
+		}
 		rt = Scalar(KindBool)
 	default:
 		spec := builtins[builtinByName[n.Name]]

@@ -37,10 +37,10 @@ type commitLists struct {
 }
 
 // foldPlaces is where the programs of a fold read their slots from in a
-// row of the list: the Places of its condition and of its expression.
+// row of the list, and the columns its SORT orders by.
 type foldPlaces struct {
-	ch        *child
-	cond, val []int
+	ch *child
+	at *formula.FoldPlaces
 }
 
 // beginLists says which document the commit in progress works on, so
@@ -120,14 +120,11 @@ func (e *evaluator) Fold(q *formula.QuerySlot, args []formula.Value, ctx *formul
 			i, ok := ch.leafIndex[strings.ToUpper(name)]
 			return i, ok
 		}
-		p = &foldPlaces{ch: ch}
-		var err *formula.EvalError
-		if p.cond, err = q.Places(q.Cond, colOf); err != nil {
+		at, err := q.FoldPlaces(colOf)
+		if err != nil {
 			return formula.Value{}, err
 		}
-		if p.val, err = q.Places(q.Value, colOf); err != nil {
-			return formula.Value{}, err
-		}
+		p = &foldPlaces{ch: ch, at: at}
 		if e.places == nil {
 			e.places = map[*formula.QuerySlot]*foldPlaces{}
 		}
@@ -140,7 +137,7 @@ func (e *evaluator) Fold(q *formula.QuerySlot, args []formula.Value, ctx *formul
 	if e.fold == nil {
 		e.fold = formula.NewRowFold(e.vm.Limits)
 	}
-	return e.fold.Run(q, rows, p.cond, p.val, -1, args, ctx)
+	return e.fold.Run(q, rows, p.at, -1, args, ctx)
 }
 
 // listRows are the elements of a list of the document a program runs

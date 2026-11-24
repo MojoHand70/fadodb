@@ -56,6 +56,15 @@ type Member struct {
 	P    int
 }
 
+// CallMember is a column of the list a function gives:
+// FILTER(lines, delivered).price (ADR-0081, step 3). It stands only as
+// the argument of a function over a list.
+type CallMember struct {
+	Call *Call
+	Name string
+	P    int
+}
+
 // ThisRef is THIS.name: the document's variable inside LOOKUP and QUERY.
 type ThisRef struct {
 	Name string
@@ -139,6 +148,9 @@ func (n *Ident) Pos() int { return n.P }
 // Pos implements Node.
 func (n *Member) Pos() int { return n.P }
 
+// Pos is where the call the column is taken from starts.
+func (n *CallMember) Pos() int { return n.P }
+
 // Pos implements Node.
 func (n *ThisRef) Pos() int { return n.P }
 
@@ -196,6 +208,12 @@ func writeSexpr(b *strings.Builder, n Node) {
 			b.WriteByte(' ')
 			b.WriteString(name)
 		}
+		b.WriteByte(')')
+	case *CallMember:
+		b.WriteString("(. ")
+		writeSexpr(b, n.Call)
+		b.WriteByte(' ')
+		b.WriteString(n.Name)
 		b.WriteByte(')')
 	case *ThisRef:
 		b.WriteString("THIS.")

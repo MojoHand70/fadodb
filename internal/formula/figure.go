@@ -102,7 +102,7 @@ func (b *binder) figure(n *Call) (t Type, handled bool, err error) {
 		if len(n.Args) != 1 {
 			return Type{}, false, nil
 		}
-		if name, _ := b.listOf(n.Args[0]); name == "" && b.listIn(n.Args[0]) == "" {
+		if name, _ := b.listOf(n.Args[0]); name == "" && b.listIn(n.Args[0]) == "" && !isShape(n.Args[0]) {
 			return Type{}, false, nil
 		}
 	}
@@ -148,6 +148,18 @@ func (b *binder) figureSlot(n *Call, form figureForm) (Type, error) {
 	}
 	if len(n.Args) != want {
 		return Type{}, b.errAt(n.P, "%s over a list is written %s", n.Name, shape)
+	}
+	// What the functions that give a list made of the list: the figure
+	// is then bound over the list itself, and the shape put on its slot.
+	sh, err := b.shapeOf(n.Args[0])
+	if err != nil {
+		return Type{}, err
+	}
+	if sh.any() {
+		shaped := *n
+		shaped.Args = append([]Node(nil), n.Args...)
+		shaped.Args[0] = sh.base
+		n = &shaped
 	}
 	also := ""
 	if form.rows && rowAggregates[form.agg] {
@@ -246,12 +258,11 @@ func (b *binder) figureSlot(n *Call, form figureForm) (Type, error) {
 	}
 	argOf := map[string]int{}
 	var condNode Node = &BoolLit{Value: true, P: n.P}
-	condLifted := false
 	if form.agg == "EXISTS" {
-		// CONTAINS asks whether some row has the value in the column: the
-		// rows on which the column equals it, compared as = compares, and
-		// whether any is left. The value is the document's, so the
-		// comparison is written in the words of the document.
+		// CONTAINS asks whether some row has the value in the column:
+		// whether the column equals it on any row, compared as = compares.
+		// The value is the document's, so the comparison is written in the
+		// words of the document, and it is what the aggregate runs over.
 		var left Node = n.Args[0]
 		if !lifted {
 			name := HeldValue
@@ -260,15 +271,17 @@ func (b *binder) figureSlot(n *Call, form figureForm) (Type, error) {
 			}
 			left = &Member{Base: list, Path: []string{name}, P: n.Args[0].Pos()}
 		}
-		condNode, condLifted = &Binary{Op: TokEq, L: left, R: n.Args[1], P: n.P}, true
-		val, lifted = &NumberLit{Value: 1, P: int32(n.P)}, false
+		val, lifted = &Binary{Op: TokEq, L: left, R: n.Args[1], P: n.P}, true
 	}
 	if lifted {
 		b.liftNext = list
 	}
-	err := b.aggregateOver(&Call{Name: form.agg, Args: []Node{val}, P: n.P}, src, q, argOf, true)
+	err = b.aggregateOver(&Call{Name: form.agg, Args: []Node{val}, P: n.P}, src, q, argOf, true)
 	b.liftNext = ""
 	if err != nil {
+		return Type{}, err
+	}
+	if err := b.shapeSlot(n, form, sh, list, src, q, argOf); err != nil {
 		return Type{}, err
 	}
 	if form.extra != "" && form.agg != "EXISTS" {
@@ -295,15 +308,22 @@ func (b *binder) figureSlot(n *Call, form figureForm) (Type, error) {
 	}
 	if form.cond {
 		condNode = n.Args[1]
+	}
+	// FILTER narrows the rows before the function's own condition: a row
+	// counts when it meets every one of them.
+	for i := len(sh.conds) - 1; i >= 0; i-- {
+		if _, plain := condNode.(*BoolLit); plain && !form.cond && i == len(sh.conds)-1 {
+			condNode = sh.conds[i]
+			continue
+		}
+		condNode = &Binary{Op: TokAnd, L: sh.conds[i], R: condNode, P: sh.conds[i].Pos()}
+	}
+	if form.cond || len(sh.conds) > 0 {
 		if at, fn := ofTheDocument(condNode); fn != "" {
 			return Type{}, b.errAt(at, "%s: the condition is asked of each row of %s; %s() is a function of the document the formula belongs to, and is not taken here yet. A column of the row is written by its name, as state and id are", n.Name, list, fn)
 		}
 	}
-	if condLifted {
-		b.liftNext = list
-	}
 	cond, ct, err := b.subProgram(condNode, src, q, argOf)
-	b.liftNext = ""
 	if err != nil {
 		return Type{}, err
 	}
@@ -498,4 +518,179 @@ func firstColumn(src *Source) string {
 		return src.Columns[0].Name
 	}
 	return "column"
+}
+
+// The functions that give a list again (ADR-0081, step 3): FILTER, SORT,
+// TOP and UNIQUE. Such a list stands only as what a function over a
+// list works on, and each of them becomes a part of that function's one
+// question: FILTER its condition, SORT its order, TOP its limit, UNIQUE
+// the different values of its column. They are written from the inside
+// out in that order, FILTER nearest the list.
+var shapeRank = map[string]int{"FILTER": 1, "SORT": 2, "TOP": 3}
+
+// listShape is what those functions made of a list.
+type listShape struct {
+	// base is the list itself, or list.column when a column was named
+	// after the shaping call or inside UNIQUE.
+	base   Node
+	conds  []Node // the conditions of FILTER, the outer first
+	sort   *List  // the columns of SORT
+	top    Node   // the count of TOP
+	unique bool
+	at     int // where the outermost shaping call stands
+}
+
+func (s *listShape) any() bool {
+	return len(s.conds) > 0 || s.sort != nil || s.top != nil || s.unique
+}
+
+// isShape reports whether a node is written as a list a function gives.
+func isShape(n Node) bool {
+	switch n := n.(type) {
+	case *CallMember:
+		return true
+	case *Call:
+		return shapeRank[n.Name] > 0 || n.Name == "UNIQUE"
+	}
+	return false
+}
+
+// shapeOf reads the first argument of a function over a list: the list,
+// or what FILTER, SORT, TOP and UNIQUE made of it.
+func (b *binder) shapeOf(n Node) (listShape, error) {
+	sh := listShape{base: n, at: n.Pos()}
+	col, colAt := "", 0
+	if u, ok := n.(*Call); ok && u.Name == "UNIQUE" {
+		if len(u.Args) != 1 {
+			return sh, b.errAt(u.P, "UNIQUE is written UNIQUE(list.column)")
+		}
+		if inner, again := u.Args[0].(*Call); again && inner.Name == "UNIQUE" {
+			return sh, b.errAt(inner.P, "UNIQUE of the different values is the different values; write it once")
+		}
+		sh.unique, n = true, u.Args[0]
+		sh.base = n
+	}
+	if cm, ok := n.(*CallMember); ok {
+		if shapeRank[cm.Call.Name] == 0 {
+			return sh, b.errAt(cm.P, "%s gives no list, and only a list has columns: a column is written after FILTER, SORT or TOP, as FILTER(list, condition).column", cm.Call.Name)
+		}
+		col, colAt, n = cm.Name, cm.P, cm.Call
+	}
+	rank := 4
+	for {
+		c, ok := n.(*Call)
+		if !ok || shapeRank[c.Name] == 0 {
+			break
+		}
+		r := shapeRank[c.Name]
+		if r > rank || (r == rank && r != 1) {
+			return sh, b.errAt(c.P, "%s stands in the wrong place: a list is narrowed, then ordered, then cut, each once but FILTER: TOP(SORT(FILTER(list, condition), {columns}), count)", c.Name)
+		}
+		rank = r
+		if len(c.Args) != 2 {
+			return sh, b.errAt(c.P, "%s takes a list and one more argument", c.Name)
+		}
+		switch c.Name {
+		case "FILTER":
+			sh.conds = append(sh.conds, c.Args[1])
+		case "SORT":
+			l, isList := c.Args[1].(*List)
+			if !isList {
+				return sh, b.errAt(c.Args[1].Pos(), "SORT: the columns stand in braces, a minus before one for descending: SORT(list, {-price, what})")
+			}
+			sh.sort = l
+		case "TOP":
+			sh.top = c.Args[1]
+		}
+		n = c.Args[0]
+	}
+	if c, ok := n.(*Call); ok && c.Name == "UNIQUE" {
+		return sh, b.errAt(c.P, "UNIQUE gives single values, which FILTER, SORT and TOP do not take; write UNIQUE outside them: UNIQUE(TOP(list, 3).column)")
+	}
+	if !sh.any() {
+		return sh, nil
+	}
+	switch base := n.(type) {
+	case *Ident:
+		if col != "" {
+			n = &Member{Base: base.Name, Path: []string{col}, P: colAt}
+		}
+	case *Member:
+		if col != "" {
+			return sh, b.errAt(colAt, "the column is named once: after the list, or after the function that shapes it")
+		}
+		if !sh.unique {
+			return sh, b.errAt(base.P, "FILTER, SORT and TOP take the list itself, %s; its column is written after them, as FILTER(%s, condition).%s", base.Base, base.Base, strings.Join(base.Path, "."))
+		}
+	default:
+		return sh, b.errAt(n.Pos(), "FILTER, SORT, TOP and UNIQUE work on a list of the document: its lines or its tags, or a live variable whose formula is a QUERY")
+	}
+	if name, _ := b.listOf(n); name == "" {
+		return sh, b.errAt(n.Pos(), "FILTER, SORT, TOP and UNIQUE work on a list of the document: its lines or its tags, or a live variable whose formula is a QUERY")
+	}
+	sh.base = n
+	return sh, nil
+}
+
+// shapeSlot puts the shape on the slot of the figure: the order of
+// SORT, the count of TOP and the different values of UNIQUE. FILTER's
+// conditions join the figure's own, where that is bound.
+func (b *binder) shapeSlot(n *Call, form figureForm, sh listShape, list string, src *Source, q *QuerySlot, argOf map[string]int) error {
+	if sh.unique {
+		switch q.Agg {
+		case "SUM", "AVERAGE", "MEDIAN":
+			return b.errAt(sh.at, "%s of the different values of a column is not built; UNIQUE stands inside COUNT, JOIN, FIRST, LAST, INDEX and CONTAINS", n.Name)
+		case "COUNT":
+			// how many different values: the aggregate that counts them
+			q.Agg = "COUNTUNIQUE"
+		case "FIRST", "LAST", "INDEX", "JOIN":
+			q.Distinct = true
+		}
+		if len(q.Value.Slots) == 0 {
+			// the figure counts rows and names no column: nothing to tell apart
+			return b.errAt(sh.at, "UNIQUE takes a column of the list: UNIQUE(%s.%s)", list, firstColumn(src))
+		}
+	}
+	if sh.sort != nil {
+		keys := make([]string, 0, len(sh.sort.Items)+len(q.Order))
+		for _, item := range sh.sort.Items {
+			desc := false
+			if u, ok := item.(*Unary); ok && u.Op == TokMinus {
+				desc, item = true, u.X
+			}
+			id, ok := item.(*Ident)
+			if !ok {
+				return b.errAt(item.Pos(), "SORT orders by columns of %s, each by its name, a minus before one for descending", list)
+			}
+			f, has := src.Column(id.Name)
+			if !has {
+				return b.errAt(id.P, "the list %s has no column %s; the columns of %s are %s", list, id.Name, src.Name, strings.Join(src.ColumnNames(), ", "))
+			}
+			if desc {
+				keys = append(keys, "-"+f.Name)
+			} else {
+				keys = append(keys, f.Name)
+			}
+		}
+		q.Sorted = len(keys)
+		q.Order = append(keys, q.Order...)
+	}
+	if sh.top != nil {
+		b.liftNext = list
+		top, tt, err := b.subProgram(sh.top, src, q, argOf)
+		b.liftNext = ""
+		if err != nil {
+			return err
+		}
+		for _, sl := range top.Slots {
+			if !strings.HasPrefix(sl.Name, "THIS.") {
+				return b.errAt(sh.top.Pos(), "TOP: the count is a value of the document, the same for every row; the column %s of %s cannot stand there", sl.Name, list)
+			}
+		}
+		if tt.Kind != KindNumber && tt.Kind != KindNull {
+			return b.errAt(sh.top.Pos(), "TOP: the count must be a number, got %s", tt)
+		}
+		q.Limit = top
+	}
+	return nil
 }

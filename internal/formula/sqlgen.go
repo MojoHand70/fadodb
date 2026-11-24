@@ -1099,7 +1099,10 @@ type rowsSQL struct {
 	// last is the order turned round: the rows from the last to the
 	// first, for the aggregate that takes the last of them.
 	last string
-	sub  func(p *Program) (SQLExpr, error)
+	// pre is an error that stands before any row is read: a count of TOP
+	// that is no count. It is a statement of its own, or "".
+	pre string
+	sub func(p *Program) (SQLExpr, error)
 }
 
 func lookupRows(q *QuerySlot, d Dialect, arg func(i int, currency bool) string, table func(string) string, params *Params) (*rowsSQL, error) {
@@ -1133,27 +1136,54 @@ func lookupRows(q *QuerySlot, d Dialect, arg func(i int, currency bool) string, 
 	if len(q.Order) > 0 {
 		// a column of the order may be written with a leading "-" for
 		// descending, as the order of a list is (ADR-0076)
+		// The first Sorted of them are columns a list is ordered by, which
+		// may be blank: a blank comes before every value, in every
+		// database, so its place is written out (ADR-0081, step 3).
 		keys := make([]string, len(q.Order))
-		for i, k := range q.Order {
+		key := func(i int, k string, turned bool) string {
 			name, desc := strings.CutPrefix(k, "-")
-			if keys[i] = lookupAlias + "." + quoteIdent(name); desc {
-				keys[i] += " DESC"
+			col := lookupAlias + "." + quoteIdent(name)
+			switch {
+			case desc != turned && i < q.Sorted:
+				return col + " DESC NULLS LAST"
+			case desc != turned:
+				return col + " DESC"
+			case i < q.Sorted:
+				return col + " NULLS FIRST"
 			}
+			return col
+		}
+		for i, k := range q.Order {
+			keys[i] = key(i, k, false)
 		}
 		r.order = " ORDER BY " + strings.Join(keys, ", ")
 		if q.Agg == "LAST" {
 			// the same order turned round, written only for the aggregate
 			// that reads it
 			for i, k := range q.Order {
-				name, desc := strings.CutPrefix(k, "-")
-				if keys[i] = lookupAlias + "." + quoteIdent(name); !desc {
-					keys[i] += " DESC"
-				}
+				keys[i] = key(i, k, true)
 			}
 			r.last = " ORDER BY " + strings.Join(keys, ", ")
 		}
 	}
 	r.from = " FROM " + table(q.Source) + " AS " + lookupAlias + " WHERE " + where
+	if q.Limit != nil {
+		// TOP: the rows are numbered in their order and the first ones
+		// kept, as many as the count says. The rows that follow are the
+		// kept ones, in the order of their numbers.
+		n, err := r.sub(q.Limit)
+		if err != nil {
+			return nil, fmt.Errorf("sqlgen: TOP: %w", err)
+		}
+		num := "(" + d.Num(n) + ")"
+		if n.Kind == KindNull {
+			num = "NULL"
+		}
+		r.pre = "(SELECT " + coalesceErr(n.Err, "CASE WHEN "+num+" IS NULL OR "+num+" < 0 OR "+num+" <> round("+num+") THEN 'out_of_range' END") + ")"
+		r.from = " FROM (SELECT " + lookupAlias + ".*, ROW_NUMBER() OVER (" + strings.TrimPrefix(r.order, " ") + ") AS fado_rn" + r.from + ") AS " + lookupAlias + " WHERE " + lookupAlias + ".fado_rn <= " + num
+		r.order = " ORDER BY " + lookupAlias + ".fado_rn"
+		r.last = r.order + " DESC"
+	}
 	return r, nil
 }
 
@@ -1180,6 +1210,26 @@ func (r *rowsSQL) aggregate() (aggregateSQL, error) {
 	a := aggregateSQL{from: r.from}
 	if x.Err != "" {
 		a.rowErr = "(SELECT " + x.Err + r.from + " AND (" + x.Err + ") IS NOT NULL" + r.order + " LIMIT 1)"
+	}
+	a.rowErr = coalesceErr(r.pre, a.rowErr)
+	if q.Distinct {
+		// UNIQUE: the different values of the expression, blanks left
+		// out, each with the place it first stands at. From here the rows
+		// are those values, in the order of their places, and the value
+		// is a column of them.
+		cols, group := x.Val+" AS fado_v", "fado_v"
+		if x.Kind == KindMoney {
+			cols, group = cols+", "+x.Cur+" AS fado_c", "fado_v, fado_c"
+		}
+		distinct := *r
+		distinct.from = " FROM (SELECT " + group + ", MIN(fado_at) AS fado_at FROM (SELECT " + cols + ", ROW_NUMBER() OVER (" + strings.TrimPrefix(r.order, " ") + ") AS fado_at" + r.from + ") AS u WHERE fado_v IS NOT NULL GROUP BY " + group + ") AS " + lookupAlias + " WHERE " + d.True()
+		distinct.order = " ORDER BY " + lookupAlias + ".fado_at"
+		distinct.last = distinct.order + " DESC"
+		r, a.from = &distinct, distinct.from
+		x = SQLExpr{Val: lookupAlias + ".fado_v", Kind: x.Kind, Scale: x.Scale}
+		if x.Kind == KindMoney {
+			x.Cur = lookupAlias + ".fado_c"
+		}
 	}
 	exact := x.Kind.IsExact()
 	// num is the value as a number and mant as a mantissa, each NULL for
@@ -1349,7 +1399,9 @@ func (r *rowsSQL) aggregate() (aggregateSQL, error) {
 		}
 		a.errs = append(a.errs, "CASE WHEN SUM(length("+t+")) + (COUNT("+t+") - 1) * length("+s+") > "+strconv.Itoa(max)+" THEN 'out_of_range' END")
 	case "EXISTS":
-		a.val = "(COUNT(*) > 0)"
+		// what CONTAINS runs over is the comparison of each row: whether
+		// it holds on any
+		a.val = "(COUNT(CASE WHEN " + d.Cond(x) + " THEN 1 END) > 0)"
 	default:
 		return aggregateSQL{}, fmt.Errorf("sqlgen: LOOKUP: unknown aggregate %s", q.Agg)
 	}

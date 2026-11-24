@@ -106,24 +106,10 @@ func (q *QuerySlot) Aggregate(vals []Value) (Value, *EvalError) {
 		}
 		return decUnaryValue(OpDecScale, exactResultOf(sum*5, int(in.Scale)+1, cur), decArg(q.Type))
 	case "COUNTUNIQUE":
-		type key struct {
-			num  float64
-			mant int64
-			str  string
-		}
-		seen := map[key]struct{}{}
+		seen := map[distinctKey]struct{}{}
 		for _, a := range vals {
-			switch a.kind {
-			case KindNull:
-				continue
-			case KindText, KindRef, KindJSON:
-				seen[key{str: a.str}] = struct{}{}
-			case KindDecimal:
-				seen[key{mant: a.Mant()}] = struct{}{}
-			case KindMoney:
-				seen[key{mant: a.Mant(), str: a.str}] = struct{}{}
-			default:
-				seen[key{num: a.num + 0}] = struct{}{} // -0 and 0 are one value
+			if a.kind != KindNull {
+				seen[keyOf(a)] = struct{}{}
 			}
 		}
 		return Number(float64(len(seen))), nil
@@ -188,9 +174,36 @@ func (q *QuerySlot) AggregateWith(vals []Value, extra Value, maxText int) (Value
 		}
 		return Text(b.String()), nil
 	case "EXISTS":
-		return Bool(len(vals) > 0), nil
+		// the values are the comparison of each row: whether any holds
+		for _, a := range vals {
+			if a.Truth() {
+				return Bool(true), nil
+			}
+		}
+		return Bool(false), nil
 	}
 	return q.Aggregate(vals)
+}
+
+// distinctKey is what makes two values of one column the same value, as
+// = compares them: a text by its text, an exact number by its mantissa,
+// money by its amount and its currency, and the others by their number.
+type distinctKey struct {
+	num  float64
+	mant int64
+	str  string
+}
+
+func keyOf(a Value) distinctKey {
+	switch a.kind {
+	case KindText, KindRef, KindJSON:
+		return distinctKey{str: a.str}
+	case KindDecimal:
+		return distinctKey{mant: a.Mant()}
+	case KindMoney:
+		return distinctKey{mant: a.Mant(), str: a.str}
+	}
+	return distinctKey{num: a.num + 0} // -0 and 0 are one value
 }
 
 // exactRows are the mantissas of the exact values at one scale, blanks

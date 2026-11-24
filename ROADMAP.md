@@ -366,9 +366,14 @@ does, or with a key, in both forms of the protocol, with no session;
 and the tool that waits for a change, `wait_for_changes`, which is
 built: an agent is answered the events after its place, or waits for
 the first up to a minute, and is told where to ask from next, and an
-agent that acts for its person, as Claude does, waits too.
-Left of the phase's steps, in this order: files through the door; then
-the measurements and the release. No starter is built into the program (the owner, 2026-11-24):
+agent that acts for its person, as Claude does, waits too. And files
+through the door, which are built: an agent's door started with
+`--files FOLDER` offers `put_file`, which puts a file of the folder and
+answers its facts for `create` or `set`, and `get_file`, which writes a
+file a document holds into the folder, by its hash, over no other
+file; nothing outside the folder is read or written, and the door at
+the server, which has no folder of the caller's, offers neither.
+Left of the phase's steps: the measurements and the release. No starter is built into the program (the owner, 2026-11-24):
 an app comes with a purchase of FadoDB, or is installed from the
 marketplace by exporting it from one database and importing it into
 another, which is built after v0.7.0. Its test, besides the plan's: an

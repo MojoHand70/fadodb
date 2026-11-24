@@ -250,6 +250,9 @@ commands: see [Files over HTTP](commands.md#files-over-http). From a
 terminal the tool sends them, with `fadodb file put` and
 `fadodb file get`: see
 [Commands from a terminal](commands-from-a-terminal.md#a-file-on-a-document).
+An agent puts and opens files through the door for agents, from a
+folder that whoever starts the door names: see
+[Files from a folder](the-door-for-agents.md#files-from-a-folder).
 
 ## What is refused
 

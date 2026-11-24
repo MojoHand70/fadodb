@@ -74,6 +74,7 @@ The door is told the server and the key as `fadodb exec` is:
 | that the key may travel in the clear | `--plain-http` | | it may not, beyond this machine |
 | only the tools that read | `--read-only` | | every tool |
 | only the tools named | `--tools`, as `get,query,transition` | | every tool |
+| a folder for files | `--files`, as `/home/bob/invoices` | | no tool for files ([files from a folder](#files-from-a-folder)) |
 
 - **The key is never an argument**, here as at a terminal. It is in
   the environment the agent's program gives the door, or in a file
@@ -528,6 +529,114 @@ It handles the invoice, and asks again from where it stopped:
   command waiting. When the server stops, a wait answers what it has,
   with its place.
 
+## Files from a folder
+
+Bob files the invoice FV/2026/11/0045 and its scan, and `ap-agent`
+reads the scan to check the amounts. The bytes of a file do not pass
+through an agent's conversation. The door reads them from a folder on
+the disk of whoever starts it and writes them into it, and nowhere
+else. Bob names the folder of his assistant's door with `--files`:
+
+<!-- files: bob's program is told -->
+```jsonc
+{
+  "mcpServers": {
+    "acme": {
+      "command": "fadodb",
+      "args": ["mcp", "--files", "/home/bob/invoices"],
+      "env": {
+        "FADODB_URL": "https://fado.acme.example",
+        "FADODB_KEY": "fado_…"
+      }
+    }
+  }
+}
+```
+
+The door then offers two more tools, `put_file` and `get_file`. The
+scan is `/home/bob/invoices/scan-0045.pdf`, and his assistant puts it:
+
+<!-- files: put -->
+```jsonc
+{"name": "put_file", "arguments": {"path": "scan-0045.pdf"}}
+```
+
+It is answered the facts of the file, as
+[files](files.md#the-facts) describes them:
+
+<!-- files: put, the answer -->
+```jsonc
+{
+  "file": {
+    "hash": "09ac2f156d98803f6a577eaef61f7d4c178d040c6a14967330564523bb95d3e5",
+    "name": "scan-0045.pdf",
+    "media_type": "application/pdf",
+    "size": 53
+  }
+}
+```
+
+The bytes do nothing until a document names them. The assistant gives
+the facts to the variable `scan` of the invoice, as it would any
+value, and `set` answers the invoice after the change:
+
+<!-- files: set -->
+```jsonc
+{"name": "set", "arguments": {"class": "Invoice", "id": "FV/2026/11/0045", "values": {"scan": {"hash": "09ac2f156d98803f6a577eaef61f7d4c178d040c6a14967330564523bb95d3e5", "name": "scan-0045.pdf", "media_type": "application/pdf", "size": 53}}}}
+```
+
+`ap-agent` runs with a folder of its own, `--files /srv/ap-agent/inbox`.
+It reads the invoice with `get`, finds the hash in `scan`, and writes
+the file into its folder:
+
+<!-- files: get -->
+```jsonc
+{"name": "get_file", "arguments": {"class": "Invoice", "id": "FV/2026/11/0045", "hash": "09ac2f156d98803f6a577eaef61f7d4c178d040c6a14967330564523bb95d3e5"}}
+```
+
+<!-- files: get, the answer -->
+```jsonc
+{
+  "path": "scan-0045.pdf",
+  "file": {
+    "hash": "09ac2f156d98803f6a577eaef61f7d4c178d040c6a14967330564523bb95d3e5",
+    "name": "scan-0045.pdf",
+    "media_type": "application/pdf",
+    "size": 53
+  }
+}
+```
+
+The scan is now `/srv/ap-agent/inbox/scan-0045.pdf`, where the agent's
+program reads it with its own tools.
+
+- **The folder, and nowhere else.** A path is a path in the folder, as
+  `scan-0045.pdf` or `2026/scan-0045.pdf`, and a whole path is taken
+  when it lies in the folder. A path that leads out of it, with `..`,
+  as a whole path elsewhere, or through a link in the folder that points
+  out of it, is refused with `bad_value` at `/path`. The door does not
+  start with a folder that is not there.
+- **No file is written over.** `get_file` refuses a path where a file
+  already is, and says so before it asks the server; the agent gives
+  another path. Left out, the path is the name the file was put under.
+  It writes into a folder of the folder that is there, and makes none.
+- **The bytes are checked.** `get_file` leaves the file in the folder
+  only when it came whole and its bytes have the hash it asked for, and
+  otherwise leaves nothing.
+- **The rules are the document's.** Attaching a file is a change of the
+  document, judged as any `set` or `create`. `get_file` opens a file
+  through the document that holds it, as `GET /v1/file` does: whoever
+  may read the variable that holds it may read it
+  ([who may](files.md#who-may)). It takes `version` for a file an
+  earlier version held, and `for` and `reason` as a command does.
+- **`--read-only` offers `get_file`**, which reads the database, and not
+  `put_file`. `--tools` names them as it names commands.
+- **At the server itself there are none.** At `/mcp` there is no folder
+  of the caller's, and Claude on claude.ai attaches no file. A person
+  attaches one at a terminal, with
+  [`fadodb file put`](commands-from-a-terminal.md#a-file-on-a-document),
+  or a program with `POST /v1/blobs`.
+
 ## What is no tool
 
 <!-- no tool -->
@@ -537,9 +646,8 @@ It handles the invoice, and asks again from where it stopped:
 | `create_key` | its answer holds the secret of a key, which would stay in the conversation of an agent; a key is made at a terminal |
 | `create_password_link` | its answer holds the secret of a link that sets a password, which would stay in the conversation of an agent; a link is made at a terminal and given to the person |
 
-The files are not in the door either: the bytes of a file do not pass
-through an agent's conversation. From a terminal, `fadodb file` puts a
-file on a document and reads one.
+The bytes of a file are in no tool's arguments or answer: they go
+through a folder ([files from a folder](#files-from-a-folder)).
 
 ## Trying the door at a terminal
 
@@ -596,10 +704,5 @@ answered what was asked before.
 | It ends with | When |
 |---|---|
 | 0 | the agent's program closed its input, or the door was told to stop |
-| 2 | it could not start: no key, an address it may not send a key to, or a tool that is none |
+| 2 | it could not start: no key, an address it may not send a key to, a tool that is none, or a folder for files that is not there |
 | 3 | an answer could not be written to the agent's program |
-
-## Not here yet
-
-- **Files.** They are wanted and are their own step, by the owner's
-  ruling of 2026-11-17 ([ADR-0064](../adr/0064-the-door-for-agents.md)).

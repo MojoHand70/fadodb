@@ -1196,9 +1196,10 @@ a command sent to `/v1/` does.
   function, and the nine commands are then not offered (ADR-0057).
 - **People sign in on the server's own pages** (ADR-0071, ADR-0088),
   under `/auth/`: a passkey, added with an invitation that is good
-  once, whose public half the server keeps and whose every use it
-  checks in `internal/webauthn`, Go's standard library and code of its
-  own; until passwords go, a password kept as a PBKDF2 hash, set
+  once, on the device in use or on a phone that reads the QR code the
+  page draws in `internal/qrcode`, whose public half the server keeps
+  and whose every use it checks in `internal/webauthn`, Go's standard
+  library and code of its own; until passwords go, a password kept as a PBKDF2 hash, set
   through a link that is good once, and a second step from an
   authenticator app for administrators and designers; or a company's
   sign-on, OpenID Connect

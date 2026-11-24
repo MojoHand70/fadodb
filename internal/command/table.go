@@ -618,6 +618,15 @@ var NotCommands = map[string]string{
 	"SignInWithPasskey":  "it takes the browser's answer on the server's page /auth/signin, and gives a session",
 	"AddPasskeyQuestion": "it is the question the server's page /auth/account gives the browser, to make another passkey",
 	"AddPasskey":         "a passkey is made by the person's device, on the server's page /auth/account; remove_passkey removes one",
+	// The code for the phone (ADR-0088, item 3): its secrets live in a
+	// page and a cookie, and never travel in a command.
+	"InvitationPhoneCode": "it is the code the server's page /auth/invite shows, for a phone's camera",
+	"AccountPhoneCode":    "it is the code the server's page /auth/account shows, for a phone's camera",
+	"PhoneLink":           "it belongs to the server's page /auth/phone, which the code's link opens",
+	"PhoneQuestion":       "it is the question the server's page /auth/phone gives the phone's browser, to make a passkey",
+	"UsePhoneLink":        "it takes the phone's answer on the server's page /auth/phone, and gives a session",
+	"PhoneCodeState":      "the page that shows the code asks it, at /auth/phone/state, with the secret of its cookie",
+	"EnterByPhone":        "it signs in the browser that showed the code, at /auth/phone/enter, with the secret of its cookie",
 	// The passes the server gives clients (ADR-0071, item 6): a code and
 	// a pass never travel in a command. The server's addresses of OAuth
 	// take them.

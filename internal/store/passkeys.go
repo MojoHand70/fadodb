@@ -501,6 +501,13 @@ func (s *Store) UseInvitation(ctx context.Context, token string, answer []byte, 
 	if !ok {
 		return nil, s.refuseSignIn(ctx, "", WayPasskey, address)
 	}
+	return s.useInvitation(ctx, id, u, answer, device, origin, address, lengths)
+}
+
+// useInvitation takes the passkey a person made with the invitation id,
+// from its page or from the link of its code for the phone.
+func (s *Store) useInvitation(ctx context.Context, id string, u *User, answer []byte, device, origin, address string, lengths SessionLengths) (*Session, error) {
+	g := s.signingIn()
 	name, e := deviceName(device)
 	if e != nil {
 		return nil, e
@@ -520,8 +527,8 @@ func (s *Store) UseInvitation(ctx context.Context, token string, answer []byte, 
 		return nil, s.refuseSignIn(ctx, u.ID, WayPasskey, address)
 	}
 	me := Principal{ID: u.ID, Kind: u.Kind}
-	return s.beginSession(ctx, u.ID, key.ID, address, lengths, func(w execer, now int64) error {
-		res, err := w.ExecContext(ctx, "UPDATE fado_invitations SET ended_at = ?, ended_by = ?, ended_how = 'used' WHERE id = ? AND ended_at = 0", now, u.ID, id)
+	return s.beginSession(ctx, u.ID, key.ID, WayPasskey, address, lengths, func(w execer, now int64) error {
+		res, err := w.ExecContext(ctx, "UPDATE fado_invitations SET ended_at = ?, ended_by = ?, ended_how = 'used' WHERE id = ? AND ended_at = 0 AND ends > ?", now, u.ID, id, now)
 		if err != nil {
 			return storageErr("use the invitation", err)
 		}
@@ -532,16 +539,16 @@ func (s *Store) UseInvitation(ctx context.Context, token string, answer []byte, 
 	})
 }
 
-// beginSession writes a session begun with a passkey, with what else the
-// sign-in writes, and records the sign-in.
-func (s *Store) beginSession(ctx context.Context, user, passkey, address string, lengths SessionLengths, also func(w execer, now int64) error) (*Session, error) {
+// beginSession writes a session begun with a passkey, the way given,
+// with what else the sign-in writes, and records the sign-in.
+func (s *Store) beginSession(ctx context.Context, user, passkey, way, address string, lengths SessionLengths, also func(w execer, now int64) error) (*Session, error) {
 	g := s.signingIn()
 	lengths = fitLengths(lengths)
 	id, secret, err := secretText()
 	if err != nil {
 		return nil, &Error{Code: CodeStorage, Message: "make the session: " + err.Error()}
 	}
-	held := &heldSession{Session: Session{ID: id, User: user, Way: WayPasskey, Address: address, Passkey: passkey, Idle: int64(lengths.Idle / time.Second)}, hash: hashSecret(secret)}
+	held := &heldSession{Session: Session{ID: id, User: user, Way: way, Address: address, Passkey: passkey, Idle: int64(lengths.Idle / time.Second)}, hash: hashSecret(secret)}
 	err = s.writeUsers(ctx, func(w execer, now int64) error {
 		if err := also(w, now); err != nil {
 			return err
@@ -555,7 +562,7 @@ func (s *Store) beginSession(ctx context.Context, user, passkey, address string,
 		if _, err := w.ExecContext(ctx, "INSERT INTO fado_session_passkeys (session, passkey) VALUES (?, ?)", held.ID, passkey); err != nil {
 			return storageErr("store the session's passkey", err)
 		}
-		return s.logSignIn(ctx, w, now, user, WayPasskey, address, true)
+		return s.logSignIn(ctx, w, now, user, way, address, true)
 	}, func() {})
 	if err != nil {
 		return nil, err
@@ -639,7 +646,7 @@ func (s *Store) SignInWithPasskey(ctx context.Context, answer []byte, origin, ad
 	if err != nil || !g.spend(challenge, now) {
 		return nil, s.refuseSignIn(ctx, user, WayPasskey, address)
 	}
-	return s.beginSession(ctx, user, id, address, lengths, func(w execer, now int64) error {
+	return s.beginSession(ctx, user, id, WayPasskey, address, lengths, func(w execer, now int64) error {
 		// In the writer's turn the counter only rises: of two uses at
 		// once checked against the same counter, the one that comes
 		// second with a lower counter is refused, and the counter is

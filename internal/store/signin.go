@@ -180,6 +180,11 @@ type signing struct {
 	fails    map[string]*failures
 	key      [32]byte
 	used     map[string]int64
+	// The codes for a phone that hold, each by what it is of (an
+	// invitation or a person), and by the hashes of its two secrets.
+	codes     map[string]*phoneCode
+	links     map[[sha256.Size]byte]*phoneCode
+	computers map[[sha256.Size]byte]*phoneCode
 }
 
 type heldSession struct {
@@ -220,6 +225,9 @@ func (s *Store) signingIn() *signing {
 		s.sign.setting = map[string]*settingUp{}
 		s.sign.fails = map[string]*failures{}
 		s.sign.used = map[string]int64{}
+		s.sign.codes = map[string]*phoneCode{}
+		s.sign.links = map[[sha256.Size]byte]*phoneCode{}
+		s.sign.computers = map[[sha256.Size]byte]*phoneCode{}
 		if _, err := rand.Read(s.sign.key[:]); err != nil {
 			// The system's source of random bytes does not fail; if it
 			// did, no challenge it signs would be let through.

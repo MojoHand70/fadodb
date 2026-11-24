@@ -346,12 +346,11 @@ winning; the class bundle, `get_bundle` and `GET /v1/bundle`, which is
 built: a class in the person's words and its formulas compiled, proved
 in the browser VM against the server's answers; signing in
 for people at `fadodb serve` itself (ADR-0071, ADR-0088), of which
-invitations and passkeys on the device in use, passwords, the second
-step for administrators and designers, sessions and a company's
-sign-on and the passes of clients by OAuth, Claude among them as an
-agent acting for the person, are built, and the code a phone scans to
-add its passkey, then the end of passwords and the second step, are
-planned; the pages of a
+invitations, passkeys on the device in use and the code a phone scans
+to add its passkey, passwords, the second step for administrators and
+designers, sessions and a company's sign-on and the passes of clients
+by OAuth, Claude among them as an agent acting for the person, are
+built, and the end of passwords and the second step is planned; the pages of a
 face, which the server hands out from a folder, `--pages` (ADR-0073),
 and which is built: the server has no pages of a face of its own, and
 the open face, FadoDB Workshop, is in a repository of its own, where a

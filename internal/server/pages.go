@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/MojoHand70/fadodb/internal/qrcode"
 	"github.com/MojoHand70/fadodb/internal/server/web"
 	"github.com/MojoHand70/fadodb/internal/store"
 )
@@ -62,6 +63,14 @@ type Accounts interface {
 	Passkeys(ctx context.Context, user string, opts ...store.Option) ([]*store.Passkey, error)
 	RemovePasskey(ctx context.Context, id string, opts ...store.Option) error
 	GetUser(ctx context.Context, id string, opts ...store.Option) (*store.User, error)
+	// The code for the phone (ADR-0088, item 3).
+	InvitationPhoneCode(ctx context.Context, token string) (*store.PhoneCode, error)
+	AccountPhoneCode(ctx context.Context, opts ...store.Option) (*store.PhoneCode, error)
+	PhoneLink(ctx context.Context, link string) (*store.PhoneFor, error)
+	PhoneQuestion(ctx context.Context, link, origin string) (string, error)
+	UsePhoneLink(ctx context.Context, link string, answer []byte, device, origin, address string, lengths store.SessionLengths) (*store.Session, error)
+	PhoneCodeState(computer string) string
+	EnterByPhone(ctx context.Context, computer, address string, lengths store.SessionLengths) (*store.Session, error)
 }
 
 // SignOn is a company's sign-on as the pages ask it (ADR-0071, item 4):
@@ -122,7 +131,18 @@ const (
 	PageSignOn   = "/auth/signon"
 	PageCallback = "/auth/callback"
 	PageInvite   = "/auth/invite"
+	// The code for the phone (ADR-0088, item 3): the page its link
+	// opens on the phone, what the page that shows the code asks of it,
+	// and where the browser that showed it enters.
+	PagePhone      = "/auth/phone"
+	PagePhoneState = "/auth/phone/state"
+	PagePhoneEnter = "/auth/phone/enter"
 )
+
+// phoneCookie keeps the secret of the code for the phone in the browser
+// that showed it, for its 10 minutes: with it, and only with it, that
+// browser enters once the phone has added its passkey.
+const phoneCookie = "fado_phone"
 
 // signOnCookie keeps the state of a sign-on in the browser that began
 // it, so that the provider's answer is taken only from that browser. It
@@ -341,6 +361,13 @@ type page struct {
 	// the account page show the password and the second step, which go
 	// with passwords (ADR-0088, step 4).
 	ByPassword bool
+	// Code is the picture of the code for the phone, and Wait what the
+	// page does once the phone has added its passkey: "enter" signs this
+	// browser in, "reload" shows the account again. Phone is whom the
+	// phone's page greets.
+	Code  string
+	Wait  string
+	Phone *store.PhoneFor
 }
 
 // ServeHTTP answers a page, or a file the pages load.
@@ -404,6 +431,12 @@ func (p *Pages) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		p.signIn(out, r, &told)
 	case PageInvite:
 		p.invite(out, r, &told)
+	case PagePhone:
+		p.phone(out, r, &told)
+	case PagePhoneState:
+		p.phoneState(out, r, &told)
+	case PagePhoneEnter:
+		p.phoneEnter(out, r, &told)
 	case PageCode:
 		p.code(out, r, &told)
 	case PageSignOut:
@@ -570,7 +603,121 @@ func (p *Pages) invite(out *reply, r *http.Request, told *Request) {
 		return
 	}
 	shown.Question = q
+	// On a computer the code for the phone comes first; a phone keeps
+	// the passkey itself.
+	if !onPhone(r) {
+		if code, err := p.accounts.InvitationPhoneCode(r.Context(), token); err == nil {
+			p.showCode(out, shown, origin, code, "enter")
+		}
+	}
 	p.draw(out, told, status, "invite", shown)
+}
+
+// onPhone reports whether the browser is a phone's, by what it says of
+// itself: a phone is shown no code for a phone.
+func onPhone(r *http.Request) bool {
+	ua := r.UserAgent()
+	return strings.Contains(ua, "iPhone") || strings.Contains(ua, "iPod") || (strings.Contains(ua, "Android") && strings.Contains(ua, "Mobile"))
+}
+
+// showCode puts the code for the phone on a page, and its secret in the
+// browser's cookie, for the code's 10 minutes.
+func (p *Pages) showCode(out *reply, shown *page, origin string, code *store.PhoneCode, wait string) {
+	c, err := qrcode.Encode(origin + PagePhone + "?t=" + code.Link)
+	if err != nil {
+		return
+	}
+	http.SetCookie(out.w, &http.Cookie{Name: phoneCookie, Value: code.Computer, Path: "/auth/", HttpOnly: true, Secure: p.secure,
+		SameSite: http.SameSiteStrictMode, MaxAge: int(code.Ends - time.Now().Unix())})
+	shown.Code, shown.Wait = c.SVG("A code for your phone's camera"), wait
+	// This page's script asks the server how the code stands: the server
+	// alone, and only a page that shows a code.
+	out.w.Header().Set("Content-Security-Policy", strings.Replace(pagesPolicy("'self'"), "; form-action", "; connect-src 'self'; form-action", 1))
+}
+
+// phone is the page the code's link opens on the phone: the person adds
+// a passkey there and the phone is signed in.
+func (p *Pages) phone(out *reply, r *http.Request, told *Request) {
+	link := r.FormValue("t")
+	origin, _ := p.originOf(r)
+	gone := func(err error) {
+		told.Code = codeOf(err)
+		p.draw(out, told, http.StatusNotFound, "phoneGone", &page{Title: "This code has ended"})
+	}
+	who, err := p.accounts.PhoneLink(r.Context(), link)
+	if err != nil {
+		gone(err)
+		return
+	}
+	told.User = who.User
+	title := "Add this phone"
+	if who.Invited {
+		title = "Welcome, " + who.Name
+		if words := strings.Fields(who.Name); len(words) > 0 {
+			title = "Welcome, " + words[0]
+		}
+	}
+	shown := &page{Title: title, Phone: who, Token: link}
+	status := http.StatusOK
+	if r.Method == http.MethodPost {
+		sess, err := p.accounts.UsePhoneLink(r.Context(), link, []byte(r.FormValue("response")), r.FormValue("device"), origin, p.address(r), p.lengths)
+		if err == nil {
+			p.setSession(out, sess)
+			redirect(out, PageAccount)
+			return
+		}
+		told.Code = codeOf(err)
+		shown.Error, shown.Device, status = passkeySaid(err), r.FormValue("device"), http.StatusUnprocessableEntity
+		if told.Code == store.CodeSignInRefused || told.Code == store.CodeTooManyAttempts {
+			status = http.StatusUnauthorized
+		}
+	}
+	q, err := p.accounts.PhoneQuestion(r.Context(), link, origin)
+	if err != nil {
+		gone(err)
+		return
+	}
+	shown.Question = q
+	p.draw(out, told, status, "phone", shown)
+}
+
+// phoneState answers the page that shows the code how the code stands,
+// in a word of JSON: waiting, done or ended.
+func (p *Pages) phoneState(out *reply, r *http.Request, told *Request) {
+	state := store.PhoneEnded
+	if c, err := r.Cookie(phoneCookie); err == nil {
+		state = p.accounts.PhoneCodeState(c.Value)
+	}
+	out.w.Header().Set("Content-Type", "application/json")
+	out.status, out.wrote = http.StatusOK, true
+	out.w.WriteHeader(http.StatusOK)
+	if _, err := io.WriteString(out.w, `{"state":"`+state+`"}`); err != nil && told.Err == nil {
+		told.Err = err
+	}
+}
+
+// phoneEnter signs in the browser that showed the code, once the phone
+// has added its passkey.
+func (p *Pages) phoneEnter(out *reply, r *http.Request, told *Request) {
+	if r.Method != http.MethodPost {
+		redirect(out, PageSignIn)
+		return
+	}
+	var computer string
+	if c, err := r.Cookie(phoneCookie); err == nil {
+		computer = c.Value
+	}
+	http.SetCookie(out.w, &http.Cookie{Name: phoneCookie, Value: "", Path: "/auth/", HttpOnly: true, Secure: p.secure, SameSite: http.SameSiteStrictMode, MaxAge: -1})
+	sess, err := p.accounts.EnterByPhone(r.Context(), computer, p.address(r), p.lengths)
+	if err != nil {
+		told.Code = codeOf(err)
+		d := p.signInPage(r, "this browser was not signed in by the phone: the code ended, or was used; sign in with your passkey")
+		p.draw(out, told, http.StatusUnauthorized, "signIn", d)
+		return
+	}
+	told.User = sess.User
+	p.setSession(out, sess)
+	redirect(out, PageAccount)
 }
 
 func (p *Pages) code(out *reply, r *http.Request, told *Request) {
@@ -639,7 +786,7 @@ func (p *Pages) account(out *reply, r *http.Request, told *Request) {
 	as := store.As(who)
 	origin, _ := p.originOf(r)
 	shown := &page{Title: "Your account", User: who.ID, Name: who.ID, Current: sess.ID, Passkey: sess.Passkey,
-		ByPassword: sess.Way != store.WayPasskey && sess.Way != store.WaySignOn}
+		ByPassword: sess.Way == store.WayPassword || sess.Way == store.WaySecondStep || sess.Way == store.WayLink}
 	for _, g := range who.System {
 		shown.Admin = shown.Admin || g == store.GroupAdministrators
 	}
@@ -736,6 +883,11 @@ func (p *Pages) account(out *reply, r *http.Request, told *Request) {
 	}
 	if q, err := p.accounts.AddPasskeyQuestion(r.Context(), origin, as); err == nil {
 		shown.Question = q
+		if !onPhone(r) {
+			if code, err := p.accounts.AccountPhoneCode(r.Context(), as); err == nil {
+				p.showCode(out, shown, origin, code, "reload")
+			}
+		}
 	}
 	p.draw(out, told, status, "account", shown)
 }
@@ -913,6 +1065,17 @@ func passkeyForm(b *strings.Builder, action, kind, question string) {
 	hidden(b, "response", "")
 }
 
+// codeShown is the code for the phone with what to do, where the script
+// says how the code stands, and the form that signs this browser in once
+// the phone has added its passkey.
+func codeShown(b *strings.Builder, d *page, say string) {
+	b.WriteString(`<figure class="code" data-phone="` + esc(d.Wait) + `">` + d.Code + `<figcaption>` + esc(say) + `</figcaption>`)
+	b.WriteString(`<p class="state" data-phone-said role="status" aria-live="polite"></p></figure>` + "\n")
+	if d.Wait == "enter" {
+		b.WriteString(`<form method="post" action="` + PagePhoneEnter + `" data-phone-enter hidden></form>` + "\n")
+	}
+}
+
 // saidHere writes where the script says what went wrong, under a button.
 func saidHere(b *strings.Builder) {
 	b.WriteString(`<p class="said" data-said role="status" aria-live="polite"></p>`)
@@ -957,6 +1120,12 @@ func drawn(name, host string, d *page) string {
 			by = esc(d.Invited.ByName) + " invited you."
 		}
 		b.WriteString("<p class=\"lead\">" + by + " Add a passkey to sign in: your fingerprint, your face or this device's PIN. No password.</p>\n")
+	case "phone":
+		if d.Phone.Invited {
+			b.WriteString("<p class=\"lead\">Add a passkey on this phone to sign in: your face, your fingerprint or its PIN. No password.</p>\n")
+		} else {
+			b.WriteString("<p class=\"lead\">Add a passkey of yours on this phone: your face, your fingerprint or its PIN.</p>\n")
+		}
 	case "account":
 		b.WriteString("<p class=\"lead\">You are signed in as <strong>" + esc(d.User) + "</strong>.</p>\n")
 		b.WriteString(`<div class="pair"><form method="post" action="` + PageSignOut + `"><button class="btn ghost small" type="submit">Sign out</button></form></div>` + "\n")
@@ -990,13 +1159,30 @@ func drawn(name, host string, d *page) string {
 		providersOf(&b, d)
 		b.WriteString(`<p class="small"><a class="lnk" href="` + PageSignIn + "?next=" + esc(url.QueryEscape(d.Next)) + `">Sign in with a passkey</a></p>`)
 	case "invite":
+		if d.Code != "" {
+			codeShown(&b, d, "Point your phone's camera at the code. Your phone keeps the key.")
+			b.WriteString("<p class=\"or\">or</p>\n")
+		}
 		passkeyForm(&b, PageInvite, "make", d.Question)
 		hidden(&b, "t", d.Token)
 		hidden(&b, "next", d.Next)
 		deviceField(&b, d.Invited.Name, d.Device)
+		if d.Code != "" {
+			b.WriteString(`<button class="btn ghost" type="submit">Use this computer instead</button>`)
+		} else {
+			b.WriteString(`<button class="btn main" type="submit">Add a passkey and enter</button>`)
+		}
+		saidHere(&b)
+		b.WriteString("</form>\n<p class=\"small\">The passkey stays on the device that makes it, and opens this server alone.</p>")
+	case "phone":
+		passkeyForm(&b, PagePhone, "make", d.Question)
+		hidden(&b, "t", d.Token)
+		deviceField(&b, d.Phone.Name, d.Device)
 		b.WriteString(`<button class="btn main" type="submit">Add a passkey and enter</button>`)
 		saidHere(&b)
-		b.WriteString("</form>\n<p class=\"small\">The passkey stays on this device, and opens this server alone.</p>")
+		b.WriteString("</form>\n<p class=\"small\">The passkey stays on this phone, and opens this server alone.</p>")
+	case "phoneGone":
+		b.WriteString("<p class=\"lead\">It was used, or its 10 minutes ended. Load the page on your computer again for a new code.</p>")
 	case "inviteGone":
 		b.WriteString("<p class=\"lead\">It was used, it ended, or it is not one. Ask the person who invited you for a new one.</p>")
 	case "code":
@@ -1107,6 +1293,10 @@ func accountShown(b *strings.Builder, d *page) {
 		b.WriteString("</div>\n")
 	}
 	if d.Question != "" {
+		if d.Code != "" {
+			codeShown(b, d, "To add a passkey on your phone, point its camera at the code.")
+			b.WriteString("<p class=\"or\">or</p>\n")
+		}
 		passkeyForm(b, PageAccount, "make", d.Question)
 		hidden(b, "do", "add-passkey")
 		deviceField(b, d.Name, d.Device)

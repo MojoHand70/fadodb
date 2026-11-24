@@ -4,8 +4,9 @@
 // fingerprint, their face or the device's PIN, and sends the answer
 // back in the form's field "response". It proposes the name of a device
 // from the browser, and says in words what went wrong. It reads no
-// cookie and calls nothing itself: the form goes to the server, as any
-// form of these pages does.
+// cookie, and calls nothing itself but the server, on a page that shows
+// the code for the phone, to ask how the code stands: the form goes to
+// the server, as any form of these pages does.
 (function () {
   'use strict';
 
@@ -103,5 +104,41 @@
         if (said) said.textContent = words(err, make);
       });
     });
+  });
+
+  // The code for the phone: the page asks the server every two seconds
+  // how the code stands. Once the phone has added its passkey, this
+  // browser enters, or the account page is shown again with it. After
+  // the code's 10 minutes, or when the server says it ended, the page
+  // says so and asks no more.
+  document.querySelectorAll('figure[data-phone]').forEach(function (fig) {
+    var said = fig.querySelector('[data-phone-said]');
+    var wait = fig.getAttribute('data-phone');
+    var until = Date.now() + 10 * 60 * 1000;
+    function ended() {
+      fig.classList.add('ended');
+      if (said) said.textContent = 'This code has ended. Load the page again for a new one.';
+    }
+    function ask() {
+      if (Date.now() > until) { ended(); return; }
+      fetch('/auth/phone/state', { credentials: 'same-origin', cache: 'no-store' })
+        .then(function (r) { return r.json(); })
+        .then(function (a) {
+          if (a.state === 'done') {
+            if (said) said.textContent = 'Your phone added its passkey.';
+            if (wait === 'enter') {
+              var enter = document.querySelector('form[data-phone-enter]');
+              if (enter) HTMLFormElement.prototype.submit.call(enter);
+            } else {
+              location.replace(location.pathname);
+            }
+          } else if (a.state === 'ended') {
+            ended();
+          } else {
+            setTimeout(ask, 2000);
+          }
+        }, function () { setTimeout(ask, 5000); });
+    }
+    setTimeout(ask, 2000);
   });
 })();

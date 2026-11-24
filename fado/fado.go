@@ -253,6 +253,10 @@ type (
 	Invitation = store.Invitation
 	Invited    = store.Invited
 	Passkey    = store.Passkey
+	// PhoneCode is the code for a phone a page shows (ADR-0088, item
+	// 3), and PhoneFor whom its link is for.
+	PhoneCode = store.PhoneCode
+	PhoneFor  = store.PhoneFor
 	// SignedOn is who a company's provider says a person is, as the
 	// server checked it, and SignOnProvider a company's sign-on as the
 	// page of signing in offers it.
@@ -1285,6 +1289,45 @@ func (db *DB) AddPasskeyQuestion(ctx context.Context, origin string, opts ...Opt
 // AddPasskey takes the passkey the caller made on the device it named.
 func (db *DB) AddPasskey(ctx context.Context, answer []byte, device, origin string, opts ...Option) (*Passkey, error) {
 	return db.s.AddPasskey(ctx, answer, device, origin, opts...)
+}
+
+// InvitationPhoneCode makes the code the page of an invitation shows:
+// its link adds the person's passkey on a phone.
+func (db *DB) InvitationPhoneCode(ctx context.Context, token string) (*PhoneCode, error) {
+	return db.s.InvitationPhoneCode(ctx, token)
+}
+
+// AccountPhoneCode makes the code the account page shows: its link adds
+// a passkey of the caller's on a phone.
+func (db *DB) AccountPhoneCode(ctx context.Context, opts ...Option) (*PhoneCode, error) {
+	return db.s.AccountPhoneCode(ctx, opts...)
+}
+
+// PhoneLink answers whom the link of a code is for, while it holds.
+func (db *DB) PhoneLink(ctx context.Context, link string) (*PhoneFor, error) {
+	return db.s.PhoneLink(ctx, link)
+}
+
+// PhoneQuestion is the question the phone's page gives the browser, to
+// make the person's passkey on the phone.
+func (db *DB) PhoneQuestion(ctx context.Context, link, origin string) (string, error) {
+	return db.s.PhoneQuestion(ctx, link, origin)
+}
+
+// UsePhoneLink takes the passkey the phone made and gives the phone's
+// session; the browser that showed the code may then enter.
+func (db *DB) UsePhoneLink(ctx context.Context, link string, answer []byte, device, origin, address string, lengths SessionLengths) (*Session, error) {
+	return db.s.UsePhoneLink(ctx, link, answer, device, origin, address, lengths)
+}
+
+// PhoneCodeState answers how the code a browser showed stands: waiting,
+// done or ended.
+func (db *DB) PhoneCodeState(computer string) string { return db.s.PhoneCodeState(computer) }
+
+// EnterByPhone gives the session of the browser that showed the code,
+// once the phone has added its passkey.
+func (db *DB) EnterByPhone(ctx context.Context, computer, address string, lengths SessionLengths) (*Session, error) {
+	return db.s.EnterByPhone(ctx, computer, address, lengths)
 }
 
 // Passkeys lists the passkeys of a user, never a key.

@@ -337,8 +337,10 @@ to strike:
     proposes from the browser: "Ann's iPhone", "Ann's Windows PC".
 12. **Until step 4, a password still signs a person in**: the sign-in
     page offers it under its button, as a small link, **Sign in with a
-    password**, and the account page keeps the password and the second
-    step under the passkeys.
+    password**, and the account page shows the password and the second
+    step under the passkeys to a session begun with a password alone.
+    A person signed in with a passkey or the company's sign-on is asked
+    for no password (the owner's first try, before the merge).
 13. **The server's name on its pages is its address**, the host of
     `url` (or `localhost:8080` on the machine), under FadoDB's mark,
     until a `Look` gives a name and a mark (step 5).
@@ -361,3 +363,38 @@ to strike:
     as a phone or a computer does, in the browser's place. Chromium's
     virtual authenticator played the pages before the pull request was
     opened; it is not among the gates, which run no browser.
+
+The third pull request built item 3, the code for the phone. Settled
+by me, each the owner's to strike:
+
+19. **A code is kept in the server's memory alone**, as a challenge
+    is: no table is added, a server that starts again holds none, and
+    the page shows a new one when it is loaded.
+20. **A new code of the same invitation, or of the same person, ends
+    the one before**, so that a page loaded again leaves one code that
+    holds.
+21. **A phone is shown no code.** The page of an invitation opened on
+    a phone, an iPhone or an Android phone by what its browser says of
+    itself, offers **Add a passkey and enter** at once, and the account
+    page opened on one shows no code either.
+22. **The computer's page asks the server every two seconds how its
+    code stands**, at `/auth/phone/state`, and the answer is one word:
+    waiting, done or ended. Only a page that shows a code may ask the
+    server anything, and the server alone (`connect-src 'self'` in its
+    policy). Once the phone is done, the page sends its form to
+    `/auth/phone/enter`, which signs that browser in by the secret of
+    its cookie; the account page shows itself again with the new
+    passkey.
+23. **The computer's session is the phone's passkey's**: removing the
+    passkey ends it, as it ends the phone's. It is recorded with the
+    way `phone`.
+24. **The phone's passkey is added as the invitation's, or as the
+    account's**, as on the computer, under the name the phone's page
+    proposes from the phone's browser ("Ann's iPhone").
+25. **The code is drawn at the level of error correction M**, which
+    restores about 15% of it, in the smallest version that holds the
+    link: 6 or 7 for a server's address. It is dark on white with its
+    quiet zone in either colour scheme, since a camera reads that best.
+    The tests read every code back with a reader written apart from the
+    encoder, `internal/qrcode/qrcodetest`, and hold two blocks and the
+    format and version words to the standard's published values.

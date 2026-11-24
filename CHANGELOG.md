@@ -8,6 +8,21 @@ All notable changes to FadoDB are recorded here. The format follows
 
 ### Added
 
+- A database made with a starter, an app ready to use (ADR-0087):
+  `fadodb init acme.fado --starter expenses` makes, on the machine and
+  by no user, the app `Expenses`, the groups `hr` and `finance`, the
+  table `Employees`, which says who each person's manager is and which
+  `hr` writes, and the class `Expense`: the employee files it, the
+  manager the table names when it is submitted approves it, nobody
+  approves their own, a substitute or an assistant acts for another,
+  and `finance` pays it back. A starter that the database refuses
+  leaves no file behind, and a name the program has no starter under is
+  refused with the names it has. The manual's chapter
+  `docs/manual/starters.md` shows the whole app and the first evening
+  with its people, and a test plays it against a real server. Not yet:
+  people and documents in a starter, a face to go with it, and more
+  starters.
+
 - A group is a record of its own (ADR-0086). A database that keeps
   its users keeps its groups: a name, which `INGROUP` and a user's
   `groups` name and which never changes, a `label` a screen shows, and

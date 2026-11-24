@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/MojoHand70/fadodb/fado"
+	"github.com/MojoHand70/fadodb/internal/starter"
 )
 
 // The commands that work on a database on the machine that holds it
@@ -26,7 +27,7 @@ const initUsage = `fadodb init - make a database
 Usage:
   fadodb init FILE [flags]
 
-Makes an empty database at FILE, which must not exist, closed to every
+Makes a database at FILE, which must not exist, closed to every
 user of the machine but the one who made it. What is fixed when a
 database is made is said here:
 
@@ -34,6 +35,11 @@ database is made is said here:
   --blobs WHERE    where the bytes of files are kept: sqlite, in the
                    database, or dir, in a directory beside it
   --max-blob N     the largest file, in bytes
+
+It may be made with a starter, an app ready to use:
+
+  --starter NAME   expenses: what employees paid for the company,
+                   approved by their manager and paid back by finance
 
 Then make the first administrator and serve the database:
 
@@ -158,6 +164,7 @@ func runInit(args []string, stdout, stderr io.Writer) int {
 	maxText := fs.Int("max-text", 0, "")
 	blobs := fs.String("blobs", "", "")
 	maxBlob := fs.Int64("max-blob", 0, "")
+	startWith := fs.String("starter", "", "")
 	rest, err := parse(fs, args)
 	if err != nil {
 		return asked(name, initUsage, err, stderr)
@@ -170,18 +177,92 @@ func runInit(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "%s: %s exists; a database is made where there is none\n", name, path)
 		return 1
 	}
+	var with *starter.Starter
+	if *startWith != "" {
+		if with, err = findStarter(*startWith); err != nil {
+			return asked(name, initUsage, err, stderr)
+		}
+	}
+	made := madeBy(path)
 	db, err := fado.Open(path, fado.Options{Users: true, Alone: name, Outbox: leavesTheQueue, MaxText: *maxText, BlobStore: *blobs, MaxBlob: *maxBlob})
 	if err != nil {
 		fmt.Fprintf(stderr, "%s: %v\n", name, err)
 		return 1
 	}
+	if with != nil {
+		if err := start(db, with); err != nil {
+			db.Close()
+			made.takeBack()
+			fmt.Fprintf(stderr, "%s: the starter %s was not made, and neither was the database: %v\n", name, with.Name, err)
+			return 1
+		}
+	}
 	if err := db.Close(); err != nil {
 		fmt.Fprintf(stderr, "%s: %v\n", name, err)
 		return 1
 	}
-	fmt.Fprintf(stdout, "made the database %s\n", path)
+	if with == nil {
+		fmt.Fprintf(stdout, "made the database %s\n", path)
+	} else {
+		var things []string
+		for _, c := range with.Commands {
+			things = append(things, c.Made())
+		}
+		fmt.Fprintf(stdout, "made the database %s with the starter %s: %s\n", path, with.Name, strings.Join(things, ", "))
+	}
 	fmt.Fprintf(stderr, "next, its first administrator and a key:\n  fadodb user add olga --kind person --system administrators --db %s\n  fadodb key new olga --label laptop --db %s\nthen serve it:\n  fadodb serve %s\n", path, path, path)
+	if with != nil && with.Next != "" {
+		fmt.Fprintf(stderr, "then, for the starter %s: %s\n", with.Name, with.Next)
+	}
 	return 0
+}
+
+// start sends the commands of a starter to the database init has just
+// made, in their order, as the machine with the work of a designer. The
+// database records what they make as made on the machine, by no user,
+// as it records the first user.
+func start(db *fado.DB, s *starter.Starter) error {
+	for i, c := range s.Commands {
+		if _, err := db.Exec(context.Background(), makesAStarter, c.Command, c.Object); err != nil {
+			return fmt.Errorf("command %d of %d, %s, which makes %s: %w", i+1, len(s.Commands), c.Command, c.Made(), err)
+		}
+	}
+	return nil
+}
+
+// findStarter finds the starter of a name among those the program
+// carries. A test gives one of its own.
+var findStarter = starter.Get
+
+// makesAStarter is who sends the commands of a starter: the machine, no
+// user, with the work of an administrator, who makes groups, and of a
+// designer, who defines apps, tables and classes.
+var makesAStarter = fado.Principal{System: []string{fado.GroupAdministrators, fado.GroupDesigners}}
+
+// fresh is the files of a database that were not there before init
+// made it, so that a database whose starter failed is taken back whole
+// and nothing else is touched.
+type fresh []string
+
+// madeBy names the files of a database at path that are not there yet:
+// the file itself, those SQLite keeps beside it, the lock that holds it
+// alone, and the directory of its attachments.
+func madeBy(path string) fresh {
+	var f fresh
+	for _, p := range []string{path, path + "-wal", path + "-shm", path + "-journal", path + ".lock", path + ".blobs"} {
+		if _, err := os.Lstat(p); os.IsNotExist(err) {
+			f = append(f, p)
+		}
+	}
+	return f
+}
+
+// takeBack removes the files of a database init made and could not
+// finish.
+func (f fresh) takeBack() {
+	for _, p := range f {
+		os.RemoveAll(p)
+	}
 }
 
 // openOnTheMachine opens a database that exists for a command of this

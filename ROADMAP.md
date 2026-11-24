@@ -362,9 +362,13 @@ ADR-0079, proposed), while an app's own
 groups, and exporting an app, are not built; the door for agents at
 the server itself, at `/mcp`, which is built: the same tools, for a
 caller that proves who it is with a pass a person gives, as Claude
-does, or with a key, in both forms of the protocol, with no session.
-Left of the phase's steps, in this order: one starter, the approval of an
-expense by the employee's manager; then the tool that waits for a
+does, or with a key, in both forms of the protocol, with no session;
+and the starter (ADR-0087, proposed), which is built:
+`fadodb init acme.fado --starter expenses` makes the database with an
+app ready to use, an employee's expenses approved by their manager
+and paid back by finance, while whether a starter brings people to
+try it with, and which face its people use, are the owner's to say.
+Left of the phase's steps, in this order: the tool that waits for a
 change and files through the door; then the measurements and the
 release. Its test, besides the plan's: an
 agent with only the skills and the door is told a business story in

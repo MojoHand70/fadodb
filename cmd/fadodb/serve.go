@@ -126,8 +126,9 @@ browser keeps a session (8 hours unused, 30 days at most; sessions
 makes both shorter). url is the address people reach the server at:
 without it they sign in on this machine only. Behind a proxy,
 proxies names its addresses, and a sign-in is recorded at the address
-the proxy read in X-Forwarded-For. A person's first
-password is set with a link, made on the machine with
+the proxy read in X-Forwarded-For. A person adds their first passkey
+with an invitation, made on the machine with fadodb user invite, and
+signs in with it; a first password is set with a link, made with
 fadodb user password. signon offers a company's sign-on (OpenID
 Connect: Microsoft, Google and others); its secret client_secret is
 found as a connection's is, as FADODB_SECRET_MICROSOFT__CLIENT_SECRET.
@@ -321,7 +322,7 @@ func runServe(ctx context.Context, args []string, stdout, stderr io.Writer, read
 	fmt.Fprintf(stderr, "%s: serving %s at %s://%s\n", name, path, scheme, ln.Addr())
 	if users, err := db.Users(ctx, fado.UserFilter{}, onTheMachine); err == nil && len(users) == 0 {
 		fmt.Fprintf(stderr, "%s: the database has no user yet, so nobody can call it. Stop the server and make the first:\n"+
-			"  fadodb user add olga --kind person --system administrators --db %s\n  fadodb user password olga --db %s\n", name, path, path)
+			"  fadodb user add olga --kind person --system administrators --db %s\n  fadodb user invite olga --db %s\n", name, path, path)
 	}
 	signIn := told.url
 	if signIn == "" {

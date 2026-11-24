@@ -6,6 +6,8 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+
+	"github.com/MojoHand70/fadodb/internal/server/web"
 )
 
 // Where a page sends a person when they are done: a path of the server,
@@ -28,12 +30,13 @@ func TestPagesSendOnlyToThemselves(t *testing.T) {
 	}
 }
 
-// A page of the server names an empty icon, written in the page, and its
-// header lets such a picture be: a browser then asks the server for no
-// /favicon.ico. Firefox asks for one on a page that names none, the
-// header refuses the request, and the refusal is written in the
-// browser's console on every page where a person signs in.
-func TestPagesNameAnEmptyIcon(t *testing.T) {
+// A page of the server loads the server's own and nothing else
+// (ADR-0088, item 7): its one script, Rhea's typefaces and FadoDB's
+// mark, which is also its icon, so that a browser asks for no
+// /favicon.ico. Its header lets nothing from elsewhere be, and nothing
+// written in the page run; each file is served with its kind, for a
+// year, at an address that holds its hash.
+func TestPagesLoadOnlyTheServersOwn(t *testing.T) {
 	p, err := NewPages(nil, PagesOptions{})
 	if err != nil {
 		t.Fatal(err)
@@ -42,21 +45,42 @@ func TestPagesNameAnEmptyIcon(t *testing.T) {
 	r := httptest.NewRequest(http.MethodGet, "/auth/nothing", nil)
 	r.Host = "127.0.0.1:8080"
 	p.ServeHTTP(w, r)
-	if body := w.Body.String(); !strings.Contains(body, `<link rel="icon" href="data:,">`) {
-		t.Errorf("the page names no empty icon:\n%s", body)
-	}
+	body := w.Body.String()
 	policy := w.Header().Get("Content-Security-Policy")
-	if !strings.Contains(policy, "; img-src data:;") {
-		t.Errorf("the header lets no picture written in the page be: %q", policy)
+	if policy != "default-src 'none'; script-src 'self'; style-src 'self'; font-src 'self'; img-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'" {
+		t.Errorf("the header of a page of the server is %q", policy)
 	}
-	// Nothing is loaded and nothing runs, as before.
-	for _, never := range []string{"script-src", "connect-src", "http:", "https:", "'self' data:"} {
+	for _, never := range []string{"http:", "https:", "'unsafe-", "connect-src", "data:"} {
 		if strings.Contains(policy, never) {
 			t.Errorf("the header of a page of the server holds %q: %q", never, policy)
 		}
 	}
-	if !strings.HasPrefix(policy, "default-src 'none';") || !strings.Contains(policy, "form-action 'self';") {
-		t.Errorf("the header of a page of the server is %q", policy)
+	if !strings.Contains(body, `<link rel="icon" type="image/png" href="`+web.At("mark.png")+`">`) || !strings.Contains(body, `<script src="`+web.At("pages.js")+`" defer></script>`) {
+		t.Errorf("the page names no icon or no script of the server's:\n%s", body)
+	}
+	if strings.Count(body, "<script") != 1 || strings.Contains(body, "<style") || strings.Contains(body, " style=") {
+		t.Errorf("the page holds a script or a style of its own:\n%s", body)
+	}
+	css := web.Served(web.At("pages.css"))
+	for name, kind := range map[string]string{"pages.css": "text/css; charset=utf-8", "pages.js": "text/javascript; charset=utf-8", "mark.png": "image/png", "fonts/schibsted-grotesk-latin.woff2": "font/woff2", "fonts/martian-mono-latin-ext.woff2": "font/woff2"} {
+		at := web.At(name)
+		if !strings.Contains(body, at) && !strings.Contains(string(css.Body), "url("+at+")") {
+			t.Errorf("neither the page nor its style loads %s", at)
+		}
+		w := httptest.NewRecorder()
+		r := httptest.NewRequest(http.MethodGet, at, nil)
+		r.Host = "fado.acme.example"
+		p.ServeHTTP(w, r)
+		if w.Code != http.StatusOK || w.Header().Get("Content-Type") != kind || w.Header().Get("Cache-Control") != "public, max-age=31536000, immutable" || w.Body.Len() < 100 {
+			t.Errorf("%s: %d %q %q %d bytes", at, w.Code, w.Header().Get("Content-Type"), w.Header().Get("Cache-Control"), w.Body.Len())
+		}
+	}
+	w = httptest.NewRecorder()
+	r = httptest.NewRequest(http.MethodGet, "/auth/pages.js", nil)
+	r.Host = "127.0.0.1:8080"
+	p.ServeHTTP(w, r)
+	if w.Code != http.StatusNotFound || strings.Contains(w.Header().Get("Cache-Control"), "immutable") {
+		t.Errorf("the script at an address without its hash: %d", w.Code)
 	}
 }
 

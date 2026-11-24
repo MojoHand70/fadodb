@@ -84,16 +84,20 @@ type UserKey struct {
 // they were, for whom they acted and when. By is empty for a change made
 // on the machine that holds the database, by no user.
 type UserChange struct {
-	// What is created, changed, key_created or key_revoked.
+	// What is created, changed, key_created, key_revoked, or a change
+	// of signing in (signin.go, passkeys.go).
 	What string `json:"what"`
 	At   int64  `json:"at"`
 	By   string `json:"by,omitempty"`
 	Kind string `json:"kind,omitempty"`
 	For  string `json:"for,omitempty"`
 	// User is the user as the change left it; Key is the key that was
-	// made or revoked, without its secret.
-	User *User    `json:"user,omitempty"`
-	Key  *UserKey `json:"key,omitempty"`
+	// made or revoked, without its secret; Invitation the invitation
+	// made, without its secret; Passkey the passkey added or removed.
+	User       *User       `json:"user,omitempty"`
+	Key        *UserKey    `json:"key,omitempty"`
+	Invitation *Invitation `json:"invitation,omitempty"`
+	Passkey    *Passkey    `json:"passkey,omitempty"`
 }
 
 // The kinds of change to a user.
@@ -679,6 +683,19 @@ func (s *Store) UserChanges(ctx context.Context, id string, opts ...Option) ([]U
 		case KeyCreated, KeyRevoked:
 			c.Key = &UserKey{}
 			err = json.Unmarshal([]byte(detail), c.Key)
+		case InvitationMade:
+			c.Invitation = &Invitation{}
+			err = json.Unmarshal([]byte(detail), c.Invitation)
+		case PasskeyAdded, PasskeyRemoved:
+			c.Passkey = &Passkey{}
+			err = json.Unmarshal([]byte(detail), c.Passkey)
+		case PasskeyCounterFell:
+			var fell struct {
+				ID string `json:"id"`
+			}
+			err = json.Unmarshal([]byte(detail), &fell)
+			c.Passkey = &Passkey{ID: fell.ID, User: id}
+		case InvitationWithdrawn:
 		default:
 			c.User = &User{}
 			err = json.Unmarshal([]byte(detail), c.User)

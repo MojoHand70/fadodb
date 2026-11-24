@@ -82,6 +82,8 @@ What a call is answered with when the engine does not carry it out: a create, a 
 | `unknown_session` | The database has no session of that id, or it is another user's and the caller is no administrator (ADR-0071). |
 | `unknown_client` | The database has no client of that id that an administrator added, or it was removed (ADR-0071, item 6). |
 | `unknown_grant` | The database has no grant of that id that stands, or it is another person's and the caller is no administrator; or the request of a client that waits for the person ended (ADR-0071, item 6). |
+| `unknown_invitation` | The database has no invitation for that person that holds: none was made, or it was used, ended or withdrawn (ADR-0088, item 2). |
+| `unknown_passkey` | The database has no passkey of that id that opens anything, or it is another user's and the caller is no administrator (ADR-0088, item 6). |
 
 ## Findings in a definition
 

@@ -15,6 +15,7 @@ import (
 
 	"github.com/MojoHand70/fadodb/internal/model"
 	"github.com/MojoHand70/fadodb/internal/store"
+	"github.com/MojoHand70/fadodb/internal/webauthn/webauthntest"
 )
 
 // The people of the tests. Olga runs the database and is in every system
@@ -1001,8 +1002,8 @@ func TestTheCommandsOfUsersAndKeys(t *testing.T) {
 			marked++
 		}
 	}
-	if marked != 25 {
-		t.Errorf("%d commands are of the users, want the nine of ADR-0057, the ten of ADR-0071 and the six of ADR-0086", marked)
+	if marked != 30 {
+		t.Errorf("%d commands are of the users, want the nine of ADR-0057, the ten of ADR-0071, the six of ADR-0086 and the five of ADR-0088", marked)
 	}
 }
 
@@ -1376,6 +1377,104 @@ func TestTheCommandsOfSigningIn(t *testing.T) {
 	}
 	if e := refused(t, s, ann, "sign_ins", `{}`); e.Code != store.CodeForbidden {
 		t.Errorf("Ann reads the log of sign-ins: %+v", e)
+	}
+}
+
+// The commands of invitations and passkeys (ADR-0088): Olga invites Ann,
+// lists and withdraws the invitation and invites her again; Ann adds a
+// passkey on her laptop and one on her phone, lists them and removes
+// one, but not her last; Olga removes the last, for a lost phone.
+func TestTheCommandsOfInvitationsAndPasskeys(t *testing.T) {
+	o := store.Options{Users: true, Now: func() time.Time { return clock }}
+	o.Outbox.Manual = true
+	s, err := store.Open(filepath.Join(t.TempDir(), "acme.fado"), o)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { s.Close() })
+	machine := store.Principal{System: []string{store.GroupAdministrators}}
+	olga := store.Principal{ID: "olga", Kind: store.ActorPerson, System: []string{store.GroupAdministrators}}
+	ann := store.Principal{ID: "ann", Kind: store.ActorPerson, Groups: []string{"finance"}}
+	run(t, s, machine, "create_user", `{"id": "olga", "kind": "person", "system_groups": ["administrators"]}`)
+	run(t, s, olga, "create_user", `{"id": "ann", "kind": "person", "name": "Ann Kowalska", "groups": ["finance"]}`)
+	ctx := context.Background()
+	const origin = "https://fado.acme.example"
+
+	first := run(t, s, olga, "create_invitation", `{"user": "ann"}`)["invitation"].(map[string]any)
+	if token, _ := first["token"].(string); first["user"] != "ann" || first["made_by"] != "olga" || !strings.HasPrefix(token, "fadoi_") ||
+		first["ends"] != float64(clock.Add(7*24*time.Hour).Unix()) {
+		t.Fatalf("create_invitation answers %v", first)
+	}
+	if e := refused(t, s, ann, "create_invitation", `{"user": "olga"}`); e.Code != store.CodeForbidden {
+		t.Errorf("Ann invites: %+v", e)
+	}
+	listed := run(t, s, olga, "list_invitations", `{}`)["invitations"].([]any)
+	if len(listed) != 1 || listed[0].(map[string]any)["user"] != "ann" || listed[0].(map[string]any)["token"] != nil {
+		t.Errorf("list_invitations answers %v", listed)
+	}
+	if e := refused(t, s, ann, "list_invitations", `{}`); e.Code != store.CodeForbidden {
+		t.Errorf("Ann lists the invitations: %+v", e)
+	}
+	run(t, s, olga, "withdraw_invitation", `{"user": "ann"}`)
+	if got := run(t, s, olga, "list_invitations", `{"user": "ann"}`)["invitations"].([]any); len(got) != 0 {
+		t.Errorf("the invitations after one was withdrawn: %v", got)
+	}
+	if e := refused(t, s, olga, "withdraw_invitation", `{"user": "ann"}`); e.Code != store.CodeUnknownInvitation || e.Path != "/user" {
+		t.Errorf("an invitation withdrawn twice: %+v", e)
+	}
+	if _, err := s.InvitationQuestion(ctx, first["token"].(string), origin); err == nil {
+		t.Error("a withdrawn invitation still asks its question")
+	}
+
+	// Ann's laptop takes the second invitation; her phone is added on the
+	// account page.
+	token := run(t, s, olga, "create_invitation", `{"user": "ann"}`)["invitation"].(map[string]any)["token"].(string)
+	laptop := webauthntest.New(webauthntest.ES256)
+	question, err := s.InvitationQuestion(ctx, token, origin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	answer, err := laptop.Make(origin, question)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.UseInvitation(ctx, token, []byte(answer), "Ann's laptop", origin, "10.0.0.8", store.SessionLengths{}); err != nil {
+		t.Fatal(err)
+	}
+	phone := webauthntest.New(webauthntest.EdDSA)
+	question, err = s.AddPasskeyQuestion(ctx, origin, store.As(ann))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if answer, err = phone.Make(origin, question); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.AddPasskey(ctx, []byte(answer), "Ann's phone", origin, store.As(ann)); err != nil {
+		t.Fatal(err)
+	}
+
+	keys := run(t, s, ann, "list_passkeys", `{}`)["passkeys"].([]any)
+	if len(keys) != 2 || keys[0].(map[string]any)["name"] != "Ann's laptop" || keys[0].(map[string]any)["added_with"] != store.AddedWithInvitation ||
+		keys[1].(map[string]any)["name"] != "Ann's phone" || keys[1].(map[string]any)["added_with"] != store.AddedOnTheAccount {
+		t.Fatalf("list_passkeys answers %v", keys)
+	}
+	if e := refused(t, s, ann, "list_passkeys", `{"user": "olga"}`); e.Code != store.CodeForbidden {
+		t.Errorf("Ann lists Olga's passkeys: %+v", e)
+	}
+	if got := run(t, s, olga, "list_passkeys", `{"user": "ann"}`)["passkeys"].([]any); len(got) != 2 {
+		t.Errorf("Olga lists Ann's passkeys: %v", got)
+	}
+	run(t, s, ann, "remove_passkey", `{"passkey": "`+keys[0].(map[string]any)["id"].(string)+`"}`)
+	last := keys[1].(map[string]any)["id"].(string)
+	if e := refused(t, s, ann, "remove_passkey", `{"passkey": "`+last+`"}`); e.Code != store.CodeForbidden || !strings.Contains(e.Message, "the last of") {
+		t.Errorf("Ann removes her last passkey: %+v", e)
+	}
+	run(t, s, olga, "remove_passkey", `{"passkey": "`+last+`"}`)
+	if got := run(t, s, olga, "list_passkeys", `{"user": "ann"}`)["passkeys"].([]any); len(got) != 0 {
+		t.Errorf("Ann's passkeys after both were removed: %v", got)
+	}
+	if e := refused(t, s, olga, "remove_passkey", `{"passkey": "NOSUCH0000"}`); e.Code != store.CodeUnknownPasskey || e.Path != "/passkey" {
+		t.Errorf("a passkey the database does not have: %+v", e)
 	}
 }
 

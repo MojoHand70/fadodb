@@ -1225,6 +1225,29 @@ func runCreatePasswordLink(c *call) error {
 	return c.answer("link", link, err)
 }
 
+func runCreateInvitation(c *call) error {
+	inv, err := c.s.CreateInvitation(c.ctx, c.text("user"), c.opts...)
+	return c.answer("invitation", inv, err)
+}
+
+func runListInvitations(c *call) error {
+	invitations, err := c.s.Invitations(c.ctx, c.text("user"), c.opts...)
+	return c.answer("invitations", list(invitations), err)
+}
+
+func runWithdrawInvitation(c *call) error {
+	return c.empty(c.s.WithdrawInvitation(c.ctx, c.text("user"), c.opts...))
+}
+
+func runListPasskeys(c *call) error {
+	passkeys, err := c.s.Passkeys(c.ctx, c.text("user"), c.opts...)
+	return c.answer("passkeys", list(passkeys), err)
+}
+
+func runRemovePasskey(c *call) error {
+	return c.empty(c.s.RemovePasskey(c.ctx, c.text("passkey"), c.opts...))
+}
+
 func runListSessions(c *call) error {
 	sessions, err := c.s.Sessions(c.ctx, c.text("user"), c.opts...)
 	return c.answer("sessions", list(sessions), err)

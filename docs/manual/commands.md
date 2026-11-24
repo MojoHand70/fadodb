@@ -1341,6 +1341,11 @@ database this way, and a Go program does with `Options.Users`.
 | [`list_keys`](#list_keys) | Lists the keys of a user, never a secret. A database administrator may ask of any user, and a user of itself. | reads |
 | [`revoke_key`](#revoke_key) | Ends a key: the next command sent with it is refused. A database administrator may revoke any key, and a user its own. | writes |
 | [`create_password_link`](#create_password_link) | Makes a link that lets a person set their password, good once and for a day, and answers its secret, this once. Nobody sets another's password. It is a database administrator's. | writes |
+| [`create_invitation`](#create_invitation) | Makes an invitation for a person, good once and for 7 days, with which they add their first passkey, and answers its secret, this once; an invitation of theirs that still holds ends. It is a database administrator's. | writes |
+| [`list_invitations`](#list_invitations) | Lists the invitations that still hold, never a secret. It is a database administrator's. | reads |
+| [`withdraw_invitation`](#withdraw_invitation) | Ends the invitation of a person that still holds: its link lets nobody in. It is a database administrator's. | writes |
+| [`list_passkeys`](#list_passkeys) | Lists the passkeys of a user, never a key. A database administrator may ask of any user, and a user of itself. | reads |
+| [`remove_passkey`](#remove_passkey) | Removes a passkey: it opens nothing more, and the sessions it began end. A database administrator removes any, for a lost phone; a user its own, but not its last unless it signs in with the company's sign-on too. | writes |
 | [`list_sessions`](#list_sessions) | Lists the sessions of a user that still hold, never a secret. A database administrator may ask of any user, and a user of itself. | reads |
 | [`end_session`](#end_session) | Ends a session: the next request with it is refused. A database administrator may end any, and a user its own. | writes |
 | [`clear_second_step`](#clear_second_step) | Takes away the second step of a user, for a person who lost the phone and its codes; it is set up again at the next sign-in when the user's system groups require one. A database administrator clears anybody's, and a user its own when its groups do not require one. | writes |
@@ -1597,6 +1602,78 @@ It answers:
 |---|---|
 | `link` | the link: its user, the moment it ends, who made it, and under token the secret the server's page /auth/password takes, shown this once |
 
+### create_invitation
+
+Makes an invitation for a person, good once and for 7 days, with which they add their first passkey, and answers its secret, this once; an invitation of theirs that still holds ends. It is a database administrator's. It writes; in Go it is the call `CreateInvitation`.
+
+| Member | Type | | What it is |
+|---|---|---|---|
+| `user` | text | needed | the id of the person the invitation is for |
+
+And, of the members that mean the same everywhere: `for`.
+
+It answers:
+
+| Member | What it holds |
+|---|---|
+| `invitation` | the invitation: its user, when and by whom it was made, the moment it ends, and under token the secret the server's page /auth/invite takes, shown this once |
+
+### list_invitations
+
+Lists the invitations that still hold, never a secret. It is a database administrator's. It reads; in Go it is the call `Invitations`.
+
+| Member | Type | | What it is |
+|---|---|---|---|
+| `user` | text |  | only the invitation of this person |
+
+And, of the members that mean the same everywhere: `for`.
+
+It answers:
+
+| Member | What it holds |
+|---|---|
+| `invitations` | the invitations, oldest first: their user, when and by whom they were made, and when they end |
+
+### withdraw_invitation
+
+Ends the invitation of a person that still holds: its link lets nobody in. It is a database administrator's. It writes; in Go it is the call `WithdrawInvitation`.
+
+| Member | Type | | What it is |
+|---|---|---|---|
+| `user` | text | needed | the id of the person |
+
+And, of the members that mean the same everywhere: `for`.
+
+It answers `{}`.
+
+### list_passkeys
+
+Lists the passkeys of a user, never a key. A database administrator may ask of any user, and a user of itself. It reads; in Go it is the call `Passkeys`.
+
+| Member | Type | | What it is |
+|---|---|---|---|
+| `user` | text |  | the id of the user; left out, the caller |
+
+And, of the members that mean the same everywhere: `for`.
+
+It answers:
+
+| Member | What it holds |
+|---|---|
+| `passkeys` | the passkeys, oldest first: their id, their user, the name of their device, whether they are synced, when and how they were added, and when they were last used |
+
+### remove_passkey
+
+Removes a passkey: it opens nothing more, and the sessions it began end. A database administrator removes any, for a lost phone; a user its own, but not its last unless it signs in with the company's sign-on too. It writes; in Go it is the call `RemovePasskey`.
+
+| Member | Type | | What it is |
+|---|---|---|---|
+| `passkey` | text | needed | the id of the passkey, as list_passkeys shows it |
+
+And, of the members that mean the same everywhere: `for`.
+
+It answers `{}`.
+
 ### list_sessions
 
 Lists the sessions of a user that still hold, never a secret. A database administrator may ask of any user, and a user of itself. It reads; in Go it is the call `Sessions`.
@@ -1799,7 +1876,7 @@ Authorization: Bearer …
   | 400 | `bad_json` |
   | 401 | `sign_in_refused`, `unauthenticated` |
   | 403 | `forbidden`, `reason_required` |
-  | 404 | `unknown_class`, `unknown_document`, `unknown_table`, `unknown_schema`, `unknown_app`, `unknown_blob`, `unknown_action`, `unknown_row`, `unknown_user`, `unknown_group`, `unknown_inlet`, `unknown_key`, `unknown_session`, `unknown_client`, `unknown_grant`, `unknown_command` |
+  | 404 | `unknown_class`, `unknown_document`, `unknown_table`, `unknown_schema`, `unknown_app`, `unknown_blob`, `unknown_action`, `unknown_row`, `unknown_user`, `unknown_group`, `unknown_inlet`, `unknown_key`, `unknown_session`, `unknown_client`, `unknown_grant`, `unknown_invitation`, `unknown_passkey`, `unknown_command` |
   | 409 | `key_reused`, `duplicate`, `terminal`, `wrong_state`, `guard_false` |
   | 413 | `blob_too_large`, `too_large` |
   | 422 | every other refusal |
@@ -1858,6 +1935,8 @@ A few calls of the Go package have no command.
 | Call | Why |
 |---|---|
 | `Action` | it answers one entry of the catalogue that list_actions answers whole |
+| `AddPasskey` | a passkey is made by the person's device, on the server's page /auth/account; remove_passkey removes one |
+| `AddPasskeyQuestion` | it is the question the server's page /auth/account gives the browser, to make another passkey |
 | `Allow` | a code never travels in a command: the server's page /auth/allow sends it to the client |
 | `App` | it answers the engine's parsed form to a Go program; get_app answers the definition |
 | `AskConsent` | it keeps a client's request, which the server's page /auth/authorize took |
@@ -1875,6 +1954,8 @@ A few calls of the Go package have no command.
 | `FinishSignIn` | it belongs to a sign-in under way on the server's page /auth/signin |
 | `HasSecondStep` | the server's page /auth/account shows it to the person |
 | `Inlet` | it answers one entry of the list that list_inlets answers whole |
+| `InvitationQuestion` | it is the question the server's page /auth/invite gives the browser, to make a passkey |
+| `Invited` | it belongs to the server's page /auth/invite, which an invitation opens |
 | `KnownClient` | it answers a client to the server's page /auth/authorize; list_clients lists them |
 | `LivePage` | it is live with the page of a list given, for a Go program: the command takes the page in the same call |
 | `OpenBlob` | the bytes of a file are not JSON: they travel beside the commands, with the server |
@@ -1891,8 +1972,11 @@ A few calls of the Go package have no command.
 | `SessionCaller` | it answers who a session belongs to, for the door that is given the session; a caller that wants to know who it is sends whoami |
 | `SetUpMySecondStep` | its secret never travels in a command: the server's page /auth/account shows it |
 | `SetUpSecondStep` | it belongs to a sign-in under way on the server's page /auth/signin |
+| `SignInQuestion` | it is the question the server's page /auth/signin gives the browser, to use a passkey |
+| `SignInWithPasskey` | it takes the browser's answer on the server's page /auth/signin, and gives a session |
 | `SignOn` | it takes who a company's provider vouched for, which the server checked on its page /auth/callback; no command carries a provider's word |
 | `SignOut` | it ends the session it is sent with, on the server's page /auth/signout; end_session ends one by its id |
 | `Table` | it answers the engine's compiled form to a Go program; get_table answers the definition |
 | `TablesOf` | it is list_tables with its app given, for a Go program |
+| `UseInvitation` | it takes the browser's answer on the server's page /auth/invite, and gives a session |
 | `UsePasswordLink` | a password never travels in a command: the server's page /auth/password takes it |

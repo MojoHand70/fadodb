@@ -271,6 +271,11 @@ An `event_id` is made by the engine and differs at every run.
    every command that changes something a `key` of its own.
 3. **One key for two commands.** A key names one command. A different
    command under a key that was used is refused with `key_reused`.
+   **And a change with no version.** You read version 2, somebody
+   corrects the amount, and your approval lands on version 3, on
+   numbers you never saw. Send `version` with every change to a
+   document you read first. `stale_version` is an answer: read again,
+   decide again.
 4. **Reading `enabled: false` as final.** `transitions` asks the
    guard of the document as it stands. A guard may hold once the
    command brings its values, as `reject` does above: preview with the
@@ -309,6 +314,7 @@ obstacle. The guards hold whoever is asking, the agent included.
 | the Go API: `Create`, `CreateMany`, `Set`, `Reset`, `Refresh`, `Transition`, `Transitions`, `Drain`, `Outbox`, `RetryAction`, `Get`, `Live`, `LivePage`, `Delete`, `Query`, `Count`, `SQL`, `History`, `Events`, `Preview` | shipped |
 | many documents moved by one call: `TransitionMany` takes up to 10,000 ids of one class and one transition, moves each that can move in one transaction, and answers for every id with the document or the refusal and its code. No error does not mean that all moved: read the outcomes. Send 1,000 a call. `Key` makes the call safe to send again | shipped in v0.4.1 (ADR-0048) |
 | the principal on every call, `As`; the idempotency key, `Key`; a moment for reads and previews, `At` | shipped |
+| the version a command saw (ADR-0078, item 2): `Saw`, the member `version`, on `set`, `reset`, `refresh`, `transition` and `delete` and on `preview` and `preview_delete`; `SawEach`, the member `versions`, on `transition_many` and `preview_many`, one for each id, `null` for none. A document at another version refuses the command with `stale_version`, status 409, and nothing is written; the event of a command that was taken keeps the version under `seen_version`. A command without it acts on the document as it is. `docs/manual/guides/act-on-what-you-read.md` | shipped after v0.7.0 |
 | who may operate: `Outbox`, `RetryAction`, `Drain`, `PreviewAction`, `TryAction` and `CheckBlobs` are for the system group `administrators`, which the host program gives a caller in `Principal.System`; anybody else, a call without a principal too, gets `forbidden` naming the group | shipped with Phase 5: pass `As` on these calls. A database administrator sees no document by being one |
 | the log of reads (ADR-0067): `Reads`, the command `reads`, lists oldest first what content administrators saw past a rule, with the documents, the rules and the reason, and every SQL statement an analyst ran, with its arguments and how many rows; narrow it by `by`, `class` and `id`, `table`, `command`, `since`, `until`, `after`, `limit`. It is for the system group `administrators` only, so whoever reads past the rules is not whoever checks the log. An entry is written before the read answers, and nothing deletes one | shipped with v0.7.0: `docs/manual/the-log-of-reads.md` |
 | substitutions (ADR-0053): who may act for whom is a document of the class `Substitution`, in every database. The person gives one, `Create` with `by` and optionally `from`, `until`, `classes` and `reason`, and withdraws it with the transition `withdraw`. A database administrator gives one for somebody who cannot, with `for` and a `reason`, never to themselves, and may withdraw any. Nothing changes one: withdraw it and give another. It is `planned`, `active`, `ended` or `withdrawn`; the check reads its dates, so a worker that is behind delays nothing. `Query` on the class lists them: the person sees those for them, the holder those they hold, a database administrator all. A content administrator acts past no rule of this class | shipped with Phase 5 |
@@ -359,9 +365,15 @@ can be sent again, and with a `key` sending twice is safe.
    transition runs the whole pipeline and writes nothing: the computed
    values, the path through eventless transitions, the moment its
    formulas saw.
-4. **Commit with a key.** `Key("order-42")` makes a retry the same
-   commit, so a loop that lost the answer can ask again. Give the
-   commit its business date when the event has one (ADR-0026).
+4. **Commit with a key, and with the version you read.**
+   `Key("order-42")` makes a retry the same commit, so a loop that
+   lost the answer can ask again. `Saw(doc.Version)`, the member
+   `version`, says which version of the document you decided on: when
+   the document has moved on since you read it, the command is refused
+   with `stale_version` and nothing is written (ADR-0078). Read the
+   document again and decide again; never send the new version without
+   reading what changed. Give the commit its business date when the
+   event has one (ADR-0026).
 5. **Read the refusal.** A rejection names a stable code, an exact
    location and often a fix. A guard that is false is an answer, not a
    transient error; do not retry it, report it.

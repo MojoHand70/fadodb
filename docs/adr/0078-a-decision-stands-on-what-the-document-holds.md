@@ -427,6 +427,73 @@ open to whoever may read; the name `before:`; that a value which
 cannot be brought before a condition refuses the transition; `brought`
 on the refusal; the three fixed points of item 6.
 
+## What is built
+
+Phase 8 builds the record first, in four steps, one pull request each.
+
+| Step | Item | State |
+|---|---|---|
+| 1 | the version a command saw (item 2) | built |
+| 2 | who may bring a value again (item 3) | not built |
+| 3 | `before:` a transition, and a guard that reads the document alone (item 4) | not built |
+| 4 | a list that is kept (item 5) | not built |
+
+Item 6, a kept value that follows its source, is built with the
+analytical engine, later in the phase.
+
+## Settled while building the version a command saw
+
+Built on 2026-11-25. Each of these is settled by me while building,
+working alone on the owner's word of that day, and is his to strike.
+
+1. **A database of v0.7.0 is brought forward, not made again.** The
+   Consequences below said that a file of the schema before is made
+   again, as at every change so far. With v0.7.0 released there are
+   databases that hold what people keep, the owner's own among them.
+   So the engine that reads schema 14 opens a database of schema 13
+   by adding the column and making the `_events` view of every class
+   again, in the transaction that opens it; the documents, the events
+   and the definitions are not touched. The engine of v0.7.0 no longer
+   opens the file afterwards. A database older than v0.7.0 is refused
+   as before. This promises nothing for later changes of the layout:
+   each is its own step, and one that cannot be made in place will say
+   so.
+2. **A version below 1 is no version.** `"version": 0` is refused with
+   `bad_value` at `/version`, as a member that cannot be right, before
+   the document is looked for. A version the document never had, 99
+   when it is at 3, is refused with `stale_version`, as item 2 says.
+3. **A create that names a version is refused**, with `not_allowed`:
+   a new document has no version anybody read. Only the Go option can
+   say it; the command `create` takes no such member.
+4. **A batch names each version or none.** `versions` shorter or
+   longer than `ids` is refused with `bad_value`, and so is the one
+   `version` of a single command given to a batch in Go. In Go the
+   list is `SawEach`, with 0 where JSON has `null`.
+5. **`preview_delete` takes the version** as `preview` does, and
+   `preview_many` takes `versions`: a preview answers what the command
+   would be answered. `preview_draft` and `migrate` take none: a draft
+   is tried on a document, not decided on, and a migration moves many
+   documents and read no one of them.
+6. **The status is 409**, with the other refusals that say the
+   document is not as the command expects: `wrong_state`, `terminal`,
+   `guard_false`.
+7. **The key is not part of the comparison, and the version is not
+   part of the key's command.** A command sent again with its key is
+   answered as the first was even when it names another version: the
+   key names the command (ADR-0026).
+8. **The event of an action a rule queued, of a timer and of a move
+   the document makes by itself carries no `seen_version`**, and
+   neither does an event of the caller's own (`emit`): only the event
+   of the command itself does.
+9. **No face ships with the engine**, so "the face that ships with the
+   engine sends it" has nothing to change here: the pages of a face
+   come from a folder (ADR-0073). The door for agents says it to every
+   agent that connects, each tool describes the member, and the
+   operator's skill teaches read, decide, send the version.
+10. **The options of a call are no larger for it.** The version stands
+    where a flag stood, which moved beside the two other flags; the
+    versions of a batch are held behind a pointer.
+
 ## Consequences
 
 - The loop of an agent is read, decide, send with the version; on
@@ -451,7 +518,10 @@ on the refusal; the three fixed points of item 6.
   guard are written again with the step that builds item 4, and the
   designer's skill teaches the new form in the same pull request.
 - The engine schema gains a version, for `seen_version`, and a file of
-  the schema before is made again, as at every change so far.
+  the schema before is made again, as at every change so far. (Changed
+  while building: a database of v0.7.0 is brought forward when it is
+  opened; see "Settled while building the version a command saw",
+  item 1.)
 
 ## What this record leaves out
 

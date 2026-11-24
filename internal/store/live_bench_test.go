@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
+	"runtime/debug"
 	"testing"
 	"time"
 )
@@ -162,12 +164,19 @@ func BenchmarkLiveListPage(b *testing.B) {
 	}
 }
 
-// warmLive reads ten orders before a benchmark of reads begins, so that
-// what the first reads do once, a reading connection opened and its
-// statements and the store's caches made, is not counted among the
-// reads. Counted, its few hundred allocations moved a short run's
-// allocations a read from 4,314 to 4,315, as a change that made it a
-// little more failed the gate, which allows no allocation more.
+// warmLive readies a benchmark of reads to be counted. It reads ten
+// orders first, so that what the first reads do once, a reading
+// connection opened and its statements and the store's caches made, is
+// not counted among the reads. Then it collects the garbage and holds
+// the collector off until the benchmark ends: each collection empties
+// pools that the next reads fill again, about ten allocations, so a read
+// counted 4,314.7 to 4,314.9 allocations as collections came, and a
+// change that grew the heap a little, and so made more collections,
+// crossed to 4,315 and failed the gate, which allows no allocation more.
+// Held off, a read counts its own: 4,314.0. The time of a read is then
+// without the collector's share, and the reads of a benchmark hold their
+// garbage until it ends: about 300 KB a read of the list, a gigabyte in
+// a run of a second.
 func warmLive(b *testing.B, read func(i int) error) {
 	b.Helper()
 	for i := range 10 {
@@ -175,6 +184,9 @@ func warmLive(b *testing.B, read func(i int) error) {
 			b.Fatal(err)
 		}
 	}
+	runtime.GC()
+	was := debug.SetGCPercent(-1)
+	b.Cleanup(func() { debug.SetGCPercent(was) })
 }
 
 // benchLiveFigure reads one figure over the list of one order: one

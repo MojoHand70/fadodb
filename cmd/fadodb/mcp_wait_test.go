@@ -79,7 +79,25 @@ func TestTheChapterOnWaiting(t *testing.T) {
 		text, _ := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": p})
 		return string(text)
 	}
-	first := line(blockOf(t, chapter, "waiting: the call"))
+	// The place the agent's wait takes. The server counts a wait among
+	// its streams before the wait takes its place in the log, so Bob's
+	// submit, made as soon as the count shows the wait, can commit first,
+	// and a wait that names no place would begin after it and never hear
+	// of it (seen once on a loaded runner). So the test gives the
+	// chapter's call the place the log is at now; the chapter's agent
+	// names none, and the server takes the place then.
+	var at struct {
+		After string `json:"after"`
+	}
+	if err := json.Unmarshal([]byte(send(keys["ap-agent"], "wait_for_changes", `{"classes": ["Invoice"]}`)), &at); err != nil || at.After == "" {
+		t.Fatalf("the place of the log: %v", err)
+	}
+	call := blockOf(t, chapter, "waiting: the call")
+	placed := strings.Replace(call, `"seconds": 30}`, `"seconds": 30, "after": "`+at.After+`"}`, 1)
+	if placed == call {
+		t.Fatalf("the chapter's call names no seconds to put the place beside: %s", call)
+	}
+	first := line(placed)
 	type ended struct {
 		code  int
 		wrote []string

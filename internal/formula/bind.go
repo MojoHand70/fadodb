@@ -1317,6 +1317,12 @@ func (b *binder) lookup(n *Call) (Type, error) {
 // every dialect, and the lookup suite holds them to one answer.
 var rowAggregates = map[string]bool{"COUNT": true, "SUM": true, "MIN": true, "MAX": true, "AVERAGE": true, "MEDIAN": true, "COUNTUNIQUE": true}
 
+// listAggregates are the aggregates a function over a list of the
+// document may be beside those (ADR-0081, step 3): one value picked by
+// the order of the list, the values joined as one text, and whether any
+// row is left, which is what CONTAINS asks. Their slot is never encoded.
+var listAggregates = map[string]bool{"FIRST": true, "LAST": true, "INDEX": true, "JOIN": true, "EXISTS": true}
+
 // aggregate binds COUNT, SUM, MIN, MAX or AVERAGE in the column position
 // of a LOOKUP: the expression it runs over is a program of its own, like
 // the condition, and its type is what the same function gives one value
@@ -1325,7 +1331,14 @@ var rowAggregates = map[string]bool{"COUNT": true, "SUM": true, "MIN": true, "MA
 // place more, which the mean of the two in the middle needs; the count
 // of the values that differ is a number.
 func (b *binder) aggregate(n *Call, src *Source, q *QuerySlot, argOf map[string]int) error {
-	if !rowAggregates[n.Name] {
+	return b.aggregateOver(n, src, q, argOf, false)
+}
+
+// aggregateOver is aggregate for the column position of a LOOKUP, and,
+// with list set, for a function over a list of the document, which may
+// be one of listAggregates as well.
+func (b *binder) aggregateOver(n *Call, src *Source, q *QuerySlot, argOf map[string]int, list bool) error {
+	if !rowAggregates[n.Name] && !(list && listAggregates[n.Name]) {
 		return b.errAt(n.P, "LOOKUP: %s cannot stand where the column stands; a column of %s can, and COUNT, SUM, MIN, MAX, AVERAGE, MEDIAN or COUNTUNIQUE over its columns", n.Name, src.Name)
 	}
 	if len(n.Args) != 1 {
@@ -1353,6 +1366,19 @@ func (b *binder) aggregate(n *Call, src *Source, q *QuerySlot, argOf map[string]
 			return b.errAt(n.Args[0].Pos(), "COUNTUNIQUE: argument 1 must be one value of each row, got %s", vt)
 		}
 		rt = Scalar(KindNumber)
+	case "FIRST", "LAST", "INDEX":
+		// one value of the column, as it is
+		if !vt.IsScalar() {
+			return b.errAt(n.Args[0].Pos(), "%s: argument 1 must be one value of each row, got %s", n.Name, vt)
+		}
+		rt = vt
+	case "JOIN":
+		if !vt.IsScalar() {
+			return b.errAt(n.Args[0].Pos(), "JOIN: argument 1 must be one value of each row, got %s", vt)
+		}
+		rt = Scalar(KindText)
+	case "EXISTS":
+		rt = Scalar(KindBool)
 	default:
 		spec := builtins[builtinByName[n.Name]]
 		if k := spec.args[0]; !k.accepts(vt) {

@@ -407,6 +407,224 @@
    "name": "ALL over an array: the blank element does not meet it",
    "formula": "ALL(tags, value <> \"green\")",
    "expected": false
+  },
+  {
+   "name": "FIRST is the value of the column in the first row",
+   "formula": "FIRST(lines.sku)",
+   "type": "text",
+   "expected": "A"
+  },
+  {
+   "name": "LAST is the value in the last row",
+   "formula": "LAST(lines.qty)",
+   "type": "number",
+   "expected": 3.5
+  },
+  {
+   "name": "FIRST of an exact column keeps its type",
+   "formula": "FIRST(lines.price)",
+   "type": "decimal(2)",
+   "expected": "10.50"
+  },
+  {
+   "name": "LAST of money keeps the currency",
+   "formula": "LAST(lines.cost)",
+   "type": "money(2)",
+   "expected": "349.97 PLN"
+  },
+  {
+   "name": "FIRST of a day",
+   "formula": "FIRST(lines.day)",
+   "type": "date",
+   "expected": "2026-01-05"
+  },
+  {
+   "name": "LAST of a yes or no",
+   "formula": "LAST(lines.done)",
+   "type": "bool",
+   "expected": true
+  },
+  {
+   "name": "FIRST of a list with no rows is blank",
+   "formula": "FIRST(none.qty)",
+   "expected": null
+  },
+  {
+   "name": "LAST of a list with no rows is blank",
+   "formula": "LAST(none.cost)",
+   "expected": null
+  },
+  {
+   "name": "FIRST of an expression of the columns",
+   "formula": "FIRST(lines.qty * lines.unit)",
+   "expected": 21
+  },
+  {
+   "name": "FIRST of an array",
+   "formula": "FIRST(tags)",
+   "expected": "red"
+  },
+  {
+   "name": "LAST of an array is its last element, a blank one too",
+   "formula": "LAST(tags)",
+   "expected": null
+  },
+  {
+   "name": "LAST of an array of numbers",
+   "formula": "LAST(amounts)",
+   "expected": 2.5
+  },
+  {
+   "name": "INDEX is the value at a place counted from 1",
+   "formula": "INDEX(lines.sku, 2)",
+   "type": "text",
+   "expected": "B"
+  },
+  {
+   "name": "INDEX of a row that has no value in the column is blank",
+   "formula": "INDEX(lines.qty, 3)",
+   "expected": null
+  },
+  {
+   "name": "INDEX with the place in a variable of the document",
+   "formula": "INDEX(lines.sku, limit)",
+   "inputs": {
+    "limit": 4
+   },
+   "expected": "A"
+  },
+  {
+   "name": "INDEX of an expression of the columns",
+   "formula": "INDEX(lines.qty * 2, 4)",
+   "expected": 7
+  },
+  {
+   "name": "INDEX of money",
+   "formula": "INDEX(lines.cost, 2)",
+   "expected": "0.25 PLN"
+  },
+  {
+   "name": "INDEX of an array",
+   "formula": "INDEX(amounts, 2)",
+   "expected": 1
+  },
+  {
+   "name": "INDEX past the last row is out of range",
+   "formula": "INDEX(lines.sku, 5)",
+   "error": "out_of_range"
+  },
+  {
+   "name": "INDEX at place 0 is out of range",
+   "formula": "INDEX(lines.sku, 0)",
+   "error": "out_of_range"
+  },
+  {
+   "name": "INDEX at a place that is no whole number is out of range",
+   "formula": "INDEX(lines.sku, 1.5)",
+   "error": "out_of_range"
+  },
+  {
+   "name": "INDEX at a blank place is out of range",
+   "formula": "INDEX(lines.sku, limit)",
+   "error": "out_of_range"
+  },
+  {
+   "name": "INDEX of a list with no rows is out of range",
+   "formula": "INDEX(none.qty, 1)",
+   "error": "out_of_range"
+  },
+  {
+   "name": "JOIN writes the values with the separator between them",
+   "formula": "JOIN(lines.sku, \", \")",
+   "type": "text",
+   "expected": "A, B, C, A"
+  },
+  {
+   "name": "JOIN writes numbers as TEXT does and skips the blank",
+   "formula": "JOIN(lines.qty, \"+\")",
+   "expected": "2+1+3.5"
+  },
+  {
+   "name": "JOIN of exact numbers",
+   "formula": "JOIN(lines.price, \" \")",
+   "expected": "10.50 0.25 99.99"
+  },
+  {
+   "name": "JOIN of money",
+   "formula": "JOIN(lines.cost, \"; \")",
+   "expected": "21.00 PLN; 0.25 PLN; 349.97 PLN"
+  },
+  {
+   "name": "JOIN with the separator in a variable of the document",
+   "formula": "JOIN(lines.sku, code)",
+   "inputs": {
+    "code": "-"
+   },
+   "expected": "A-B-C-A"
+  },
+  {
+   "name": "JOIN with a blank separator puts the values together",
+   "formula": "JOIN(lines.sku, code)",
+   "expected": "ABCA"
+  },
+  {
+   "name": "JOIN of an expression of the columns",
+   "formula": "JOIN(lines.sku & \"x\", \"\")",
+   "expected": "AxBxCxAx"
+  },
+  {
+   "name": "JOIN of an array skips the blank element",
+   "formula": "JOIN(tags, \"/\")",
+   "expected": "red/blue/red"
+  },
+  {
+   "name": "JOIN of a list with no rows is blank",
+   "formula": "JOIN(none.qty, \",\")",
+   "expected": null
+  },
+  {
+   "name": "CONTAINS: some element is the value",
+   "formula": "CONTAINS(tags, \"red\")",
+   "type": "bool",
+   "expected": true
+  },
+  {
+   "name": "CONTAINS: no element is the value",
+   "formula": "CONTAINS(tags, \"green\")",
+   "expected": false
+  },
+  {
+   "name": "CONTAINS over a column of the lines",
+   "formula": "CONTAINS(lines.sku, code)",
+   "inputs": {
+    "code": "B"
+   },
+   "expected": true
+  },
+  {
+   "name": "CONTAINS a number",
+   "formula": "CONTAINS(lines.qty, 3.5)",
+   "expected": true
+  },
+  {
+   "name": "CONTAINS an exact number written as a number",
+   "formula": "CONTAINS(lines.price, 0.25)",
+   "expected": true
+  },
+  {
+   "name": "CONTAINS over an expression of the columns",
+   "formula": "CONTAINS(lines.qty * 2, 7)",
+   "expected": true
+  },
+  {
+   "name": "CONTAINS in a list with no rows is FALSE",
+   "formula": "CONTAINS(none.qty, 1)",
+   "expected": false
+  },
+  {
+   "name": "CONTAINS beside another figure",
+   "formula": "IF(CONTAINS(tags, \"blue\"), COUNT(lines), 0)",
+   "expected": 4
   }
  ]
 }

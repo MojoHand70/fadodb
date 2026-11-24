@@ -25,6 +25,10 @@ type figureForm struct {
 	agg       string
 	cond, col bool
 	rows      bool
+	// extra names the one further argument of a function of step 3: the
+	// place of INDEX, the separator of JOIN, the value CONTAINS looks
+	// for. It is a value of the document, the same for every row.
+	extra string
 }
 
 var figureForms = map[string]figureForm{
@@ -34,6 +38,11 @@ var figureForms = map[string]figureForm{
 	"COUNTIF": {agg: "COUNT", cond: true}, "SUMIF": {agg: "SUM", cond: true, col: true},
 	"MINIF": {agg: "MIN", cond: true, col: true}, "MAXIF": {agg: "MAX", cond: true, col: true},
 	"AVERAGEIF": {agg: "AVERAGE", cond: true, col: true},
+	// One value out of a list (step 3). They work over a list alone.
+	"FIRST": {agg: "FIRST", col: true, rows: true}, "LAST": {agg: "LAST", col: true, rows: true},
+	"INDEX":    {agg: "INDEX", col: true, rows: true, extra: "position"},
+	"JOIN":     {agg: "JOIN", col: true, rows: true, extra: "separator"},
+	"CONTAINS": {agg: "EXISTS", col: true, rows: true, extra: "value"},
 }
 
 // IsFigureFunction reports whether name is a function that works over
@@ -101,6 +110,9 @@ func (b *binder) figure(n *Call) (t Type, handled bool, err error) {
 		// The column position of a LOOKUP is bound by the LOOKUP itself;
 		// what comes here stands among the arguments of a function over
 		// rows, where no other may stand.
+		if !rowAggregates[form.agg] {
+			return Type{}, true, b.errAt(n.P, "%s works over a list of the document, and may not be used inside the arguments of another function over rows (ADR-0020)", n.Name)
+		}
 		return Type{}, true, b.errAt(n.P, "%s works over rows, and may not be used inside the arguments of another function over rows (ADR-0020); over the rows of %s it stands in the column position of a LOOKUP alone: LOOKUP(%s, %s(column), condition)", n.Name, b.source.Name, b.source.Name, n.Name)
 	}
 	t, err = b.figureSlot(n, form)
@@ -130,11 +142,15 @@ func (b *binder) figureSlot(n *Call, form figureForm) (Type, error) {
 			want++
 		}
 	}
+	if form.extra != "" {
+		shape = n.Name + "(list.column, " + form.extra + ")"
+		want++
+	}
 	if len(n.Args) != want {
 		return Type{}, b.errAt(n.P, "%s over a list is written %s", n.Name, shape)
 	}
 	also := ""
-	if form.rows {
+	if form.rows && rowAggregates[form.agg] {
 		also = "; over the rows of another class it stands in the column position of a LOOKUP"
 	}
 	list, src := b.listOf(n.Args[0])
@@ -229,22 +245,65 @@ func (b *binder) figureSlot(n *Call, form figureForm) (Type, error) {
 		q.List = list
 	}
 	argOf := map[string]int{}
+	var condNode Node = &BoolLit{Value: true, P: n.P}
+	condLifted := false
+	if form.agg == "EXISTS" {
+		// CONTAINS asks whether some row has the value in the column: the
+		// rows on which the column equals it, compared as = compares, and
+		// whether any is left. The value is the document's, so the
+		// comparison is written in the words of the document.
+		var left Node = n.Args[0]
+		if !lifted {
+			name := HeldValue
+			if id, ok := val.(*Ident); ok {
+				name = id.Name
+			}
+			left = &Member{Base: list, Path: []string{name}, P: n.Args[0].Pos()}
+		}
+		condNode, condLifted = &Binary{Op: TokEq, L: left, R: n.Args[1], P: n.P}, true
+		val, lifted = &NumberLit{Value: 1, P: int32(n.P)}, false
+	}
 	if lifted {
 		b.liftNext = list
 	}
-	err := b.aggregate(&Call{Name: form.agg, Args: []Node{val}, P: n.P}, src, q, argOf)
+	err := b.aggregateOver(&Call{Name: form.agg, Args: []Node{val}, P: n.P}, src, q, argOf, true)
 	b.liftNext = ""
 	if err != nil {
 		return Type{}, err
 	}
-	var condNode Node = &BoolLit{Value: true, P: n.P}
+	if form.extra != "" && form.agg != "EXISTS" {
+		// The place, or the separator: a value of the document, the same
+		// for every row.
+		b.liftNext = list
+		extra, et, err := b.subProgram(n.Args[1], src, q, argOf)
+		b.liftNext = ""
+		if err != nil {
+			return Type{}, err
+		}
+		for _, sl := range extra.Slots {
+			if !strings.HasPrefix(sl.Name, "THIS.") {
+				return Type{}, b.errAt(n.Args[1].Pos(), "%s: the %s is a value of the document, the same for every row; the column %s of %s cannot stand there", n.Name, form.extra, sl.Name, list)
+			}
+		}
+		switch {
+		case form.agg == "INDEX" && et.Kind != KindNumber && et.Kind != KindNull:
+			return Type{}, b.errAt(n.Args[1].Pos(), "INDEX: the position must be a number, got %s", et)
+		case form.agg == "JOIN" && et.Kind != KindText && et.Kind != KindNull:
+			return Type{}, b.errAt(n.Args[1].Pos(), "JOIN: the separator must be a text, got %s", et)
+		}
+		q.Extra = extra
+	}
 	if form.cond {
 		condNode = n.Args[1]
 		if at, fn := ofTheDocument(condNode); fn != "" {
 			return Type{}, b.errAt(at, "%s: the condition is asked of each row of %s; %s() is a function of the document the formula belongs to, and is not taken here yet. A column of the row is written by its name, as state and id are", n.Name, list, fn)
 		}
 	}
+	if condLifted {
+		b.liftNext = list
+	}
 	cond, ct, err := b.subProgram(condNode, src, q, argOf)
+	b.liftNext = ""
 	if err != nil {
 		return Type{}, err
 	}

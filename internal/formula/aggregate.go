@@ -3,6 +3,8 @@ package formula
 import (
 	"math"
 	"sort"
+	"strings"
+	"unicode/utf8"
 )
 
 // Aggregate folds the values of the slot's expression over the matching
@@ -127,6 +129,68 @@ func (q *QuerySlot) Aggregate(vals []Value) (Value, *EvalError) {
 		return Number(float64(len(seen))), nil
 	}
 	return Value{}, &EvalError{Code: ErrQueryFailed, Pos: -1, Msg: "unknown aggregate " + q.Agg}
+}
+
+// AggregateWith is Aggregate for a slot that may be one of the
+// aggregates of a list alone (ADR-0081, step 3). The values are in the
+// order of the list. FIRST and LAST give the first and the last of them,
+// blank for none; INDEX the one at the place extra says, counted from 1,
+// and the error out_of_range for a place that is no whole number or that
+// the list does not have; JOIN the values written as TEXT writes them,
+// blanks skipped, with extra between them, blank for none, and
+// out_of_range when the text would pass maxText; EXISTS whether there is
+// a value at all, which answers CONTAINS.
+func (q *QuerySlot) AggregateWith(vals []Value, extra Value, maxText int) (Value, *EvalError) {
+	switch q.Agg {
+	case "FIRST":
+		if len(vals) == 0 {
+			return Blank(), nil
+		}
+		return vals[0], nil
+	case "LAST":
+		if len(vals) == 0 {
+			return Blank(), nil
+		}
+		return vals[len(vals)-1], nil
+	case "INDEX":
+		at := extra.num
+		if extra.kind != KindNumber || at != math.Trunc(at) || at < 1 || at > float64(len(vals)) {
+			return Value{}, outOfRange("the list has no such place")
+		}
+		return vals[int(at)-1], nil
+	case "JOIN":
+		sep := ""
+		if extra.kind != KindNull {
+			sep = render(extra)
+		}
+		var b strings.Builder
+		n, runes := 0, 0
+		for _, a := range vals {
+			if a.kind == KindNull {
+				continue
+			}
+			t := render(a)
+			if t == "" {
+				continue
+			}
+			if n > 0 {
+				b.WriteString(sep)
+				runes += utf8.RuneCountInString(sep)
+			}
+			if runes += utf8.RuneCountInString(t); runes > maxText {
+				return Value{}, tooLong()
+			}
+			b.WriteString(t)
+			n++
+		}
+		if n == 0 {
+			return Blank(), nil
+		}
+		return Text(b.String()), nil
+	case "EXISTS":
+		return Bool(len(vals) > 0), nil
+	}
+	return q.Aggregate(vals)
 }
 
 // exactRows are the mantissas of the exact values at one scale, blanks

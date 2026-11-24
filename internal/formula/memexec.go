@@ -218,10 +218,30 @@ func (f *RowFold) Run(q *QuerySlot, rows [][]Value, condFrom, valFrom []int, ci 
 		vals = append(vals, x)
 	}
 	f.vals = vals
-	if q.Agg != "" {
-		return q.Aggregate(vals)
+	if q.Agg == "" {
+		return Blank(), nil
 	}
-	return Blank(), nil
+	// the one argument that is the same for every row: the place of
+	// INDEX, the separator of JOIN. It reads the THIS arguments alone.
+	extra := Blank()
+	if q.Extra != nil {
+		from, perr := q.Places(q.Extra, func(string) (int, bool) { return 0, false })
+		if perr != nil {
+			return Value{}, perr
+		}
+		ex := make([]Value, len(from))
+		fill(ex, from, nil)
+		v, err := f.vm.Run(q.Extra, ex, ctx)
+		if err != nil {
+			var ee *EvalError
+			if !errors.As(err, &ee) {
+				ee = &EvalError{Code: ErrQueryFailed, Pos: -1, Msg: err.Error()}
+			}
+			return Value{}, ee
+		}
+		extra = v
+	}
+	return q.AggregateWith(vals, extra, f.vm.maxText())
 }
 
 // compareValues orders two values of one kind as the comparison

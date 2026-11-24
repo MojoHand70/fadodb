@@ -106,6 +106,16 @@ func (d DuckDB) NumberRowSum(num, order string) (string, string) {
 	return val, notFiniteErr(d, val)
 }
 
+// JoinRows implements Dialect. DuckDB's string_agg, and array_to_string
+// with it, take a constant for the separator and nothing else. So the
+// texts are gathered into a list, in their order and without the NULL
+// ones, and the list is folded into one text with the separator between
+// each two, which may then be any expression. No text left is no list,
+// and the answer is NULL.
+func (DuckDB) JoinRows(text, sep, order string) string {
+	return "list_reduce(list(" + text + order + ") FILTER (WHERE (" + text + ") IS NOT NULL), lambda fado_a, fado_b: fado_a || " + sep + " || fado_b)"
+}
+
 // Pow implements Dialect: DuckDB's pow is the C library's, which the VM's
 // double-double power matches.
 func (DuckDB) Pow(x, y string) string { return "pow(" + x + ", " + y + ")" }

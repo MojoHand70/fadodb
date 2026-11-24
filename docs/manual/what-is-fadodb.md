@@ -119,7 +119,7 @@ row what the main branch adds for v0.7.0:
 | who may: access, rights, system groups, substitutions | the engine called from other languages than Go |
 | versions, events, previews, filters, read-only SQL | Postgres as the store |
 | a server with its own users, groups and keys, and a door for agents (MCP) that an agent's program starts | |
-| formulas in the browser, people signing in, apps, lists of other documents, the door for agents at the server itself, a database made with an app ready to use | |
+| formulas in the browser, people signing in, apps, lists of other documents, the door for agents at the server itself | |
 
 The [roadmap](../../ROADMAP.md) has the phases, the
 [changelog](../../CHANGELOG.md) what each release changed, and

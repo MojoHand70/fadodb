@@ -64,7 +64,7 @@ line says so. Copy `0000-template.md` to start.
 | [0056](0056-one-database-for-each-customer.md) | One database for each customer, and a server that serves one database | Accepted |
 | [0057](0057-users-groups-and-keys.md) | Who is calling: users, groups and keys, kept in the database | Accepted, amended by 0071, 0086 |
 | [0058](0058-the-stream-of-changes.md) | The stream of changes: the log read forward, over plain HTTP | Accepted, amended by 0067 |
-| [0059](0059-fadodb-serve.md) | `fadodb serve`: one database, what it is told when it starts, and what it refuses | Accepted, amended by 0065, 0071, 0087 |
+| [0059](0059-fadodb-serve.md) | `fadodb serve`: one database, what it is told when it starts, and what it refuses | Accepted, amended by 0065, 0071 |
 | [0060](0060-the-organisations-rule-book.md) | The organisation's rule-book: the things it keeps and the look of its faces | Accepted |
 | [0061](0061-apache-license.md) | License: Apache 2.0 | Accepted |
 | [0062](0062-commands-from-a-terminal.md) | Commands from a terminal: `fadodb exec` | Accepted |
@@ -92,4 +92,4 @@ line says so. Copy `0000-template.md` to start.
 | [0084](0084-changing-a-table-that-holds-rows.md) | Changing a table that holds rows | Proposed |
 | [0085](0085-lists-in-and-out.md) | Lists in and out: the lines of a message, the lines of a request | Accepted |
 | [0086](0086-a-group-is-a-record-of-its-own.md) | A group is a record of its own | Proposed |
-| [0087](0087-a-database-made-with-a-starter.md) | A database made with a starter | Proposed |
+| [0087](0087-a-database-made-with-a-starter.md) | A database made with a starter | Withdrawn by the owner |

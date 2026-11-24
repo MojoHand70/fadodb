@@ -1,6 +1,6 @@
 # ADR-0087: A database made with a starter
 
-- Status: Proposed; amends ADR-0059 (item 1: `fadodb init` takes a starter). The owner chose the way of making it on 2026-11-24 ("Agreed with your proposal, --starter expenses"); every item below is for him to veto.
+- Status: Withdrawn by the owner on 2026-11-24 ("Nobody will use it"); it was Proposed and never accepted, and what it built was taken out again. No starter is built into the program: an app comes with a purchase of FadoDB, or is installed from the marketplace by exporting it from one database and importing it into another, which is built after v0.7.0. The record is kept for what building it found, the last of its consequences, which holds for every class.
 - Date: 2026-11-24
 
 ## Context

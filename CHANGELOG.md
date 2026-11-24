@@ -570,6 +570,13 @@ All notable changes to FadoDB are recorded here. The format follows
 
 ### Fixed
 
+- The designer's skill warns that `ACTINGFOR()` is blank for a caller
+  who acts for nobody, and a blank equals a blank: compared with a
+  value that is still empty, such as an approver filled in later, it
+  lets every caller through, so the skill says to ask for the value
+  first. The operator's skill no longer says that the door for agents
+  at the server, `/mcp`, is not built.
+
 - **The README, the roadmap, the manual and two skills said things of
   Phase 7 that were no longer true.** The README named nothing Phase 7
   built and still called the log of reads not built; the roadmap and

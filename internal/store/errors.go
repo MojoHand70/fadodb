@@ -195,6 +195,9 @@ const (
 	CodeInUse = "in_use"
 	// CodeUnknownUser: the database has no user of that id (ADR-0057).
 	CodeUnknownUser = "unknown_user"
+	// CodeUnknownGroup: the database has no group of that name
+	// (ADR-0086).
+	CodeUnknownGroup = "unknown_group"
 	// CodeUnknownInlet: the database has no inlet of that name, or the
 	// program that holds it takes no messages from outside (ADR-0065).
 	CodeUnknownInlet = "unknown_inlet"

@@ -56,7 +56,10 @@ This section is the whole of it.
    `get_app`, `get_class`, `get_table` and `get_schema` answer the definition,
    with its `label` and its `description`. Match by meaning, not by
    name: the story says "employee", and the table may be called
-   `People`.
+   `People`. A rule names groups: on a server, `list_groups` answers
+   each group with its `label` and its `description`, what it is for
+   (ADR-0086). Read them before a rule names a group with `INGROUP`,
+   and ask before you name one that is not there.
 3. **Ask the person, once for each thing, naming what you found.**
    Never choose in silence. Never make a second list because the first
    is awkward to use: when it lacks a column you need, ask its owner

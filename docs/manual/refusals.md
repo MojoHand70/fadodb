@@ -72,6 +72,7 @@ What a call is answered with when the engine does not carry it out: a create, a 
 | `unknown_row` | A table.update addresses a row the table does not have (ADR-0044). |
 | `in_use` | Another program holds the database alone, as a server does while it serves it (ADR-0059). The message says which. |
 | `unknown_user` | The database has no user of that id (ADR-0057). |
+| `unknown_group` | The database has no group of that name (ADR-0086). |
 | `unknown_inlet` | The database has no inlet of that name, or the program that holds it takes no messages from outside (ADR-0065). |
 | `unknown_words` | The database has no words of that class, table or schema in that language, or no such version of them (ADR-0068, item 6). |
 | `bad_message` | A message from outside is not what its inlet reads: it holds no JSON, lacks what a formula of the inlet looks for, or gives a value the formula cannot turn into what it fills (ADR-0065). |

@@ -223,6 +223,13 @@ type (
 	UserFilter = store.UserFilter
 	UserKey    = store.UserKey
 	UserChange = store.UserChange
+	// Group is a group of the database, a record of its own (ADR-0086):
+	// its name, its label, what it is for, and how many users are in it;
+	// GroupEdit is what SetGroup changes, GroupChange one change to a
+	// group.
+	Group       = store.Group
+	GroupEdit   = store.GroupEdit
+	GroupChange = store.GroupChange
 	// Signing in (ADR-0071): SignIn is a sign-in under way after its
 	// password, SecondStep the secret a person enters in an
 	// authenticator app, Session a session and SessionLengths how long
@@ -1039,6 +1046,46 @@ func (db *DB) GetUser(ctx context.Context, id string, opts ...Option) (*User, er
 // among them. Every user of the database may ask.
 func (db *DB) Users(ctx context.Context, f UserFilter, opts ...Option) ([]*User, error) {
 	return db.s.Users(ctx, f, opts...)
+}
+
+// CreateGroup makes a group, with nobody in it yet (ADR-0086): its name,
+// which never changes and which INGROUP names, its label and what it is
+// for. A group a user is put in gets a record by itself; this makes one
+// before. It is a database administrator's.
+func (db *DB) CreateGroup(ctx context.Context, g Group, opts ...Option) (*Group, error) {
+	return db.s.CreateGroup(ctx, g, opts...)
+}
+
+// SetGroup changes a group's label and what it is for: the members of the
+// edit that are set. Its name never changes. It is a database
+// administrator's.
+func (db *DB) SetGroup(ctx context.Context, name string, edit GroupEdit, opts ...Option) (*Group, error) {
+	return db.s.SetGroup(ctx, name, edit, opts...)
+}
+
+// GetGroup reads one group, with how many users are in it. Every user of
+// the database may ask.
+func (db *DB) GetGroup(ctx context.Context, name string, opts ...Option) (*Group, error) {
+	return db.s.GetGroup(ctx, name, opts...)
+}
+
+// Groups lists the groups in the order of their names, each with how
+// many users are in it; not the system groups, which are the engine's.
+// Every user of the database may ask.
+func (db *DB) Groups(ctx context.Context, opts ...Option) ([]*Group, error) {
+	return db.s.Groups(ctx, opts...)
+}
+
+// RemoveGroup takes a group away; it is refused while somebody is in it.
+// It is a database administrator's.
+func (db *DB) RemoveGroup(ctx context.Context, name string, opts ...Option) error {
+	return db.s.RemoveGroup(ctx, name, opts...)
+}
+
+// GroupChanges lists every change to a group, oldest first, a removed
+// group's too. It is a database administrator's.
+func (db *DB) GroupChanges(ctx context.Context, name string, opts ...Option) ([]GroupChange, error) {
+	return db.s.GroupChanges(ctx, name, opts...)
 }
 
 // Reads lists the log of reads, oldest first (ADR-0067): every document,

@@ -593,10 +593,13 @@ func (s *Store) init(ctx context.Context, wantSync string, wantMaxText int, want
 		_, _ = w.ExecContext(ctx, "ROLLBACK")
 		return err
 	}
-	for _, ddl := range append(append(append(append(append(append([]string(nil), engineDDL...), usersDDL...), signinDDL...), signonDDL...), oauthDDL...), readsDDL...) {
+	for _, ddl := range append(append(append(append(append(append(append([]string(nil), engineDDL...), usersDDL...), groupsDDL...), signinDDL...), signonDDL...), oauthDDL...), readsDDL...) {
 		if _, err := w.ExecContext(ctx, ddl); err != nil {
 			return rollback(storageErr("create the engine tables", err))
 		}
+	}
+	if err := recordGroupsOfUsers(ctx, w, s.now().Unix()); err != nil {
+		return rollback(err)
 	}
 	var version int64
 	err := w.QueryRowContext(ctx, "SELECT version FROM schema_version").Scan(&version)

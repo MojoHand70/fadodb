@@ -8,6 +8,22 @@ All notable changes to FadoDB are recorded here. The format follows
 
 ### Added
 
+- A group is a record of its own (ADR-0086). A database that keeps
+  its users keeps its groups: a name, which `INGROUP` and a user's
+  `groups` name and which never changes, a `label` a screen shows, and
+  a `description` of what the group is for. Who is in a group stays on
+  the user. Six commands, each a tool of the door for agents:
+  `create_group` makes a group before anybody is in it, `set_group`
+  changes its label and description, `get_group` and `list_groups`
+  answer groups with how many users are in each, `remove_group` takes
+  away a group nobody is in, and `group_changes` lists every change to
+  one. A group a user is put in gets its record in the same commit, and
+  a database made before gets a record for each group its users are in
+  when it is opened. A new code, `unknown_group`, answered with 404.
+  The Go calls are `CreateGroup`, `SetGroup`, `GetGroup`, `Groups`,
+  `RemoveGroup` and `GroupChanges`. Not yet: the System Table of
+  groups.
+
 - Figures over the lines and the tags a document holds (ADR-0081,
   step 2). The functions over a list work over a `rows` or an `array`
   variable of the document: on a bill, `SUM(lines.qty * lines.price)`

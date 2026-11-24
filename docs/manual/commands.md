@@ -1306,6 +1306,12 @@ database this way, and a Go program does with `Options.Users`.
 | [`set_user`](#set_user) | Changes a user: the members given, and no other. It is a database administrator's, who may change their own groups too. | writes |
 | [`get_user`](#get_user) | Reads one user. Every user may ask. | reads |
 | [`list_users`](#list_users) | Lists the users, in the order of their ids. Every user may ask. | reads |
+| [`create_group`](#create_group) | Makes a group, with nobody in it yet: its name, which INGROUP and a user's groups name and which never changes, its label and what it is for. It is a database administrator's. | writes |
+| [`set_group`](#set_group) | Changes a group's label and what it is for: the members given, and no other. Its name never changes. It is a database administrator's. | writes |
+| [`get_group`](#get_group) | Reads one group. Every user may ask. | reads |
+| [`list_groups`](#list_groups) | Lists the groups, in the order of their names; not the system groups, which are the engine's. Every user may ask. | reads |
+| [`remove_group`](#remove_group) | Takes a group away; refused while somebody is in it. A rule that names it is not changed. It is a database administrator's. | writes |
+| [`group_changes`](#group_changes) | Lists every change to a group, a removed one's too. It is a database administrator's. | reads |
 | [`user_changes`](#user_changes) | Lists every change to a user and to its keys. A database administrator may ask of any user, and a user of itself. | reads |
 | [`create_key`](#create_key) | Makes a key for a user and answers it with its secret, this once. It is a database administrator's. | writes |
 | [`list_keys`](#list_keys) | Lists the keys of a user, never a secret. A database administrator may ask of any user, and a user of itself. | reads |
@@ -1396,6 +1402,98 @@ It answers:
 | Member | What it holds |
 |---|---|
 | `users` | the users, the disabled ones among them |
+
+### create_group
+
+Makes a group, with nobody in it yet: its name, which INGROUP and a user's groups name and which never changes, its label and what it is for. It is a database administrator's. It writes; in Go it is the call `CreateGroup`.
+
+| Member | Type | | What it is |
+|---|---|---|---|
+| `name` | text | needed | the name of the group, which a rule names with INGROUP; it never changes |
+| `label` | text |  | how a screen shows the group |
+| `description` | text |  | what the group is for, for the person or the agent who puts somebody in it |
+
+And, of the members that mean the same everywhere: `for`.
+
+It answers:
+
+| Member | What it holds |
+|---|---|
+| `group` | the group: its name, its label, what it is for, when and by whom it was made, and how many users are in it |
+
+### set_group
+
+Changes a group's label and what it is for: the members given, and no other. Its name never changes. It is a database administrator's. It writes; in Go it is the call `SetGroup`.
+
+| Member | Type | | What it is |
+|---|---|---|---|
+| `name` | text | needed | the name of the group |
+| `label` | text |  | how a screen shows the group, in place of the one it has |
+| `description` | text |  | what the group is for, in place of what it says |
+
+And, of the members that mean the same everywhere: `for`.
+
+It answers:
+
+| Member | What it holds |
+|---|---|
+| `group` | the group: its name, its label, what it is for, when and by whom it was made, and how many users are in it, after the change |
+
+### get_group
+
+Reads one group. Every user may ask. It reads; in Go it is the call `GetGroup`.
+
+| Member | Type | | What it is |
+|---|---|---|---|
+| `name` | text | needed | the name of the group |
+
+And, of the members that mean the same everywhere: `for`.
+
+It answers:
+
+| Member | What it holds |
+|---|---|
+| `group` | the group: its name, its label, what it is for, when and by whom it was made, and how many users are in it |
+
+### list_groups
+
+Lists the groups, in the order of their names; not the system groups, which are the engine's. Every user may ask. It reads; in Go it is the call `Groups`.
+
+It takes nothing of its own; of the members that mean the same everywhere, `for`.
+
+It answers:
+
+| Member | What it holds |
+|---|---|
+| `groups` | the groups, each the group: its name, its label, what it is for, when and by whom it was made, and how many users are in it |
+
+### remove_group
+
+Takes a group away; refused while somebody is in it. A rule that names it is not changed. It is a database administrator's. It writes; in Go it is the call `RemoveGroup`.
+
+| Member | Type | | What it is |
+|---|---|---|---|
+| `name` | text | needed | the name of the group |
+
+And, of the members that mean the same everywhere: `for`.
+
+It answers `{}`.
+
+### group_changes
+
+Lists every change to a group, a removed one's too. It is a database administrator's. It reads; in Go it is the call `GroupChanges`.
+
+| Member | Type | | What it is |
+|---|---|---|---|
+| `name` | text | needed | the name of the group |
+
+And, of the members that mean the same everywhere: `for`.
+
+It answers:
+
+| Member | What it holds |
+|---|---|
+| `changes` | the changes, oldest first: what was done, by whom, of what kind, for whom and when, with the group as the change left it |
 
 ### user_changes
 
@@ -1677,7 +1775,7 @@ Authorization: Bearer …
   | 400 | `bad_json` |
   | 401 | `sign_in_refused`, `unauthenticated` |
   | 403 | `forbidden`, `reason_required` |
-  | 404 | `unknown_class`, `unknown_document`, `unknown_table`, `unknown_schema`, `unknown_app`, `unknown_blob`, `unknown_action`, `unknown_row`, `unknown_user`, `unknown_inlet`, `unknown_key`, `unknown_session`, `unknown_client`, `unknown_grant`, `unknown_command` |
+  | 404 | `unknown_class`, `unknown_document`, `unknown_table`, `unknown_schema`, `unknown_app`, `unknown_blob`, `unknown_action`, `unknown_row`, `unknown_user`, `unknown_group`, `unknown_inlet`, `unknown_key`, `unknown_session`, `unknown_client`, `unknown_grant`, `unknown_command` |
   | 409 | `key_reused`, `duplicate`, `terminal`, `wrong_state`, `guard_false` |
   | 413 | `blob_too_large`, `too_large` |
   | 422 | every other refusal |

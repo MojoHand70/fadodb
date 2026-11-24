@@ -9,7 +9,7 @@
             }
           }
         },
-        "description": "The command was not carried out. The body holds the refusal under `error`, with its code; a caller reads the code, and the status is worked out from it:\n\n| Status | Codes |\n|---|---|\n| 400 | `bad_json` |\n| 401 | `sign_in_refused`, `unauthenticated` |\n| 403 | `forbidden`, `reason_required` |\n| 404 | `unknown_class`, `unknown_document`, `unknown_table`, `unknown_schema`, `unknown_app`, `unknown_blob`, `unknown_action`, `unknown_row`, `unknown_user`, `unknown_inlet`, `unknown_key`, `unknown_session`, `unknown_client`, `unknown_grant`, `unknown_command` |\n| 409 | `key_reused`, `duplicate`, `terminal`, `wrong_state`, `guard_false` |\n| 413 | `blob_too_large`, `too_large` |\n| 429 | `too_many_attempts` |\n| 499 | `caller_left` |\n| 500 | `storage`, `internal` |\n| 503 | `closed`, `busy` |\n| 504 | `timeout` |\n| 422 | every other refusal |\n"
+        "description": "The command was not carried out. The body holds the refusal under `error`, with its code; a caller reads the code, and the status is worked out from it:\n\n| Status | Codes |\n|---|---|\n| 400 | `bad_json` |\n| 401 | `sign_in_refused`, `unauthenticated` |\n| 403 | `forbidden`, `reason_required` |\n| 404 | `unknown_class`, `unknown_document`, `unknown_table`, `unknown_schema`, `unknown_app`, `unknown_blob`, `unknown_action`, `unknown_row`, `unknown_user`, `unknown_group`, `unknown_inlet`, `unknown_key`, `unknown_session`, `unknown_client`, `unknown_grant`, `unknown_command` |\n| 409 | `key_reused`, `duplicate`, `terminal`, `wrong_state`, `guard_false` |\n| 413 | `blob_too_large`, `too_large` |\n| 429 | `too_many_attempts` |\n| 499 | `caller_left` |\n| 500 | `storage`, `internal` |\n| 503 | `closed`, `busy` |\n| 504 | `timeout` |\n| 422 | every other refusal |\n"
       }
     },
     "schemas": {
@@ -596,6 +596,73 @@
           "Documents"
         ],
         "x-fado-call": "Create",
+        "x-fado-mark": "writes"
+      }
+    },
+    "/v1/create_group": {
+      "post": {
+        "description": "It writes. In Go it is the call `CreateGroup`. It is offered only by a database that keeps its own users, groups and keys; any other answers `unknown_command`.",
+        "operationId": "create_group",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "description": {
+                    "description": "what the group is for, for the person or the agent who puts somebody in it",
+                    "type": "string"
+                  },
+                  "for": {
+                    "description": "the id of whoever the caller acts for; let through only while a substitution says so",
+                    "type": "string"
+                  },
+                  "label": {
+                    "description": "how a screen shows the group",
+                    "type": "string"
+                  },
+                  "name": {
+                    "description": "the name of the group, which a rule names with INGROUP; it never changes",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "name"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "group": {
+                      "description": "the group: its name, its label, what it is for, when and by whom it was made, and how many users are in it"
+                    }
+                  },
+                  "required": [
+                    "group"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "The command ran."
+          },
+          "default": {
+            "$ref": "#/components/responses/Refused"
+          }
+        },
+        "summary": "Makes a group, with nobody in it yet: its name, which INGROUP and a user's groups name and which never changes, its label and what it is for. It is a database administrator's.",
+        "tags": [
+          "Users, groups and keys"
+        ],
+        "x-fado-call": "CreateGroup",
         "x-fado-mark": "writes"
       }
     },
@@ -2383,6 +2450,65 @@
         "x-fado-mark": "reads"
       }
     },
+    "/v1/get_group": {
+      "post": {
+        "description": "It reads. In Go it is the call `GetGroup`. It is offered only by a database that keeps its own users, groups and keys; any other answers `unknown_command`.",
+        "operationId": "get_group",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "for": {
+                    "description": "the id of whoever the caller acts for; let through only while a substitution says so",
+                    "type": "string"
+                  },
+                  "name": {
+                    "description": "the name of the group",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "name"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "group": {
+                      "description": "the group: its name, its label, what it is for, when and by whom it was made, and how many users are in it"
+                    }
+                  },
+                  "required": [
+                    "group"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "The command ran."
+          },
+          "default": {
+            "$ref": "#/components/responses/Refused"
+          }
+        },
+        "summary": "Reads one group. Every user may ask.",
+        "tags": [
+          "Users, groups and keys"
+        ],
+        "x-fado-call": "GetGroup",
+        "x-fado-mark": "reads"
+      }
+    },
     "/v1/get_inlet": {
       "post": {
         "description": "It reads. In Go it is the call `Definition`.",
@@ -2679,6 +2805,65 @@
           "Definitions"
         ],
         "x-fado-call": "Definition",
+        "x-fado-mark": "reads"
+      }
+    },
+    "/v1/group_changes": {
+      "post": {
+        "description": "It reads. In Go it is the call `GroupChanges`. It is offered only by a database that keeps its own users, groups and keys; any other answers `unknown_command`.",
+        "operationId": "group_changes",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "for": {
+                    "description": "the id of whoever the caller acts for; let through only while a substitution says so",
+                    "type": "string"
+                  },
+                  "name": {
+                    "description": "the name of the group",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "name"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "changes": {
+                      "description": "the changes, oldest first: what was done, by whom, of what kind, for whom and when, with the group as the change left it"
+                    }
+                  },
+                  "required": [
+                    "changes"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "The command ran."
+          },
+          "default": {
+            "$ref": "#/components/responses/Refused"
+          }
+        },
+        "summary": "Lists every change to a group, a removed one's too. It is a database administrator's.",
+        "tags": [
+          "Users, groups and keys"
+        ],
+        "x-fado-call": "GroupChanges",
         "x-fado-mark": "reads"
       }
     },
@@ -3248,6 +3433,58 @@
           "Users, groups and keys"
         ],
         "x-fado-call": "Grants",
+        "x-fado-mark": "reads"
+      }
+    },
+    "/v1/list_groups": {
+      "post": {
+        "description": "It reads. In Go it is the call `Groups`. It is offered only by a database that keeps its own users, groups and keys; any other answers `unknown_command`.",
+        "operationId": "list_groups",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "for": {
+                    "description": "the id of whoever the caller acts for; let through only while a substitution says so",
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "groups": {
+                      "description": "the groups, each the group: its name, its label, what it is for, when and by whom it was made, and how many users are in it"
+                    }
+                  },
+                  "required": [
+                    "groups"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "The command ran."
+          },
+          "default": {
+            "$ref": "#/components/responses/Refused"
+          }
+        },
+        "summary": "Lists the groups, in the order of their names; not the system groups, which are the engine's. Every user may ask.",
+        "tags": [
+          "Users, groups and keys"
+        ],
+        "x-fado-call": "Groups",
         "x-fado-mark": "reads"
       }
     },
@@ -4613,6 +4850,58 @@
         "x-fado-mark": "writes"
       }
     },
+    "/v1/remove_group": {
+      "post": {
+        "description": "It writes. In Go it is the call `RemoveGroup`. It is offered only by a database that keeps its own users, groups and keys; any other answers `unknown_command`.",
+        "operationId": "remove_group",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "for": {
+                    "description": "the id of whoever the caller acts for; let through only while a substitution says so",
+                    "type": "string"
+                  },
+                  "name": {
+                    "description": "the name of the group",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "name"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {},
+                  "type": "object"
+                }
+              }
+            },
+            "description": "The command ran."
+          },
+          "default": {
+            "$ref": "#/components/responses/Refused"
+          }
+        },
+        "summary": "Takes a group away; refused while somebody is in it. A rule that names it is not changed. It is a database administrator's.",
+        "tags": [
+          "Users, groups and keys"
+        ],
+        "x-fado-call": "RemoveGroup",
+        "x-fado-mark": "writes"
+      }
+    },
     "/v1/remove_inlet": {
       "post": {
         "description": "It writes. In Go it is the call `RemoveInlet`.",
@@ -5045,6 +5334,73 @@
           "Documents"
         ],
         "x-fado-call": "Set",
+        "x-fado-mark": "writes"
+      }
+    },
+    "/v1/set_group": {
+      "post": {
+        "description": "It writes. In Go it is the call `SetGroup`. It is offered only by a database that keeps its own users, groups and keys; any other answers `unknown_command`.",
+        "operationId": "set_group",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "description": {
+                    "description": "what the group is for, in place of what it says",
+                    "type": "string"
+                  },
+                  "for": {
+                    "description": "the id of whoever the caller acts for; let through only while a substitution says so",
+                    "type": "string"
+                  },
+                  "label": {
+                    "description": "how a screen shows the group, in place of the one it has",
+                    "type": "string"
+                  },
+                  "name": {
+                    "description": "the name of the group",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "name"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "group": {
+                      "description": "the group: its name, its label, what it is for, when and by whom it was made, and how many users are in it, after the change"
+                    }
+                  },
+                  "required": [
+                    "group"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "The command ran."
+          },
+          "default": {
+            "$ref": "#/components/responses/Refused"
+          }
+        },
+        "summary": "Changes a group's label and what it is for: the members given, and no other. Its name never changes. It is a database administrator's.",
+        "tags": [
+          "Users, groups and keys"
+        ],
+        "x-fado-call": "SetGroup",
         "x-fado-mark": "writes"
       }
     },

@@ -19,10 +19,11 @@ import (
 //
 // A database that a server opens for callers of its own keeps who they
 // are: a user is a person, an agent or a service known by its id, a
-// group is a name on a user, and a key is how a user proves who it is.
-// They are kept in the database they belong to (ADR-0056), in three
-// tables of the engine's own that no formula and no SQL statement reads,
-// and in memory, so that a key is checked without a read.
+// group is a record a user is put in by its name (ADR-0086, groups.go),
+// and a key is how a user proves who it is. They are kept in the
+// database they belong to (ADR-0056), in tables of the engine's own that
+// no formula and no SQL statement reads, and in memory, so that a key is
+// checked without a read.
 //
 // A host program that says itself who is calling opens a database
 // without Options.Users. Such a database keeps none of this: the calls
@@ -122,10 +123,11 @@ var ErrUnknownKey = errors.New("the key is not one the database lets through")
 // never changed in place; a change puts a new one in the map, so that a
 // reader keeps what it read.
 type people struct {
-	on    bool
-	mu    sync.RWMutex
-	users map[string]*User
-	keys  map[string]*heldKey
+	on     bool
+	mu     sync.RWMutex
+	users  map[string]*User
+	keys   map[string]*heldKey
+	groups map[string]*Group
 }
 
 // heldKey is a key as the check of a key needs it.
@@ -212,8 +214,12 @@ func (s *Store) loadPeople(ctx context.Context) error {
 	if err := rows.Close(); err != nil {
 		return storageErr("read the keys", err)
 	}
+	groups, err := s.loadGroups(ctx)
+	if err != nil {
+		return err
+	}
 	s.people.mu.Lock()
-	s.people.users, s.people.keys = users, keys
+	s.people.users, s.people.keys, s.people.groups = users, keys, groups
 	s.people.mu.Unlock()
 	return nil
 }
@@ -457,6 +463,7 @@ func (s *Store) CreateUser(ctx context.Context, u User, opts ...Option) (*User, 
 	if exists {
 		return nil, &Error{Code: CodeDuplicate, Message: "a user " + strconv.Quote(u.ID) + " exists", Hint: "an id is never given to somebody else; change the user with set_user", Path: "/id"}
 	}
+	var groupsMade []*Group
 	err := s.writeUsers(ctx, func(w execer, now int64) error {
 		if _, err := w.ExecContext(ctx, "INSERT INTO fado_users (id, kind, name, groups, system_groups, disabled, created_at, updated_at) VALUES (?, ?, ?, ?, ?, 0, ?, ?)",
 			made.ID, made.Kind, made.Name, listJSON(made.Groups), listJSON(made.System), now, now); err != nil {
@@ -465,8 +472,12 @@ func (s *Store) CreateUser(ctx context.Context, u User, opts ...Option) (*User, 
 		if err := writeEmail(ctx, w, made.ID, made.Email); err != nil {
 			return err
 		}
+		var err error
+		if groupsMade, err = s.newGroups(ctx, w, made.Groups, o.principal, now); err != nil {
+			return err
+		}
 		return recordUserChange(ctx, w, made.ID, UserCreated, o.principal, now, made)
-	}, func() { s.people.users[made.ID] = made })
+	}, func() { s.people.users[made.ID] = made; s.publishGroups(groupsMade) })
 	if err != nil {
 		return nil, err
 	}
@@ -527,6 +538,7 @@ func (s *Store) SetUser(ctx context.Context, id string, edit UserEdit, opts ...O
 		e.Path = "/system_groups"
 		return nil, e
 	}
+	var groupsMade []*Group
 	err := s.writeUsers(ctx, func(w execer, now int64) error {
 		if _, err := w.ExecContext(ctx, "UPDATE fado_users SET name = ?, groups = ?, system_groups = ?, disabled = ?, updated_at = ? WHERE id = ?",
 			changed.Name, listJSON(changed.Groups), listJSON(changed.System), changed.Disabled, now, id); err != nil {
@@ -537,8 +549,12 @@ func (s *Store) SetUser(ctx context.Context, id string, edit UserEdit, opts ...O
 				return err
 			}
 		}
+		var err error
+		if groupsMade, err = s.newGroups(ctx, w, changed.Groups, o.principal, now); err != nil {
+			return err
+		}
 		return recordUserChange(ctx, w, id, UserChanged, o.principal, now, &changed)
-	}, func() { s.people.users[id] = &changed })
+	}, func() { s.people.users[id] = &changed; s.publishGroups(groupsMade) })
 	if err != nil {
 		return nil, err
 	}

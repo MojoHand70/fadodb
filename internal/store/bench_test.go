@@ -32,9 +32,9 @@ func BenchmarkRecalculate(b *testing.B) {
 	}
 	defer s.Close()
 	ctx := context.Background()
-	if _, err := s.defineOpen(ctx, []byte(invoice), asSetup); err != nil {
-		b.Fatal(err)
-	}
+	// The invoice's customer is there before an invoice names it, as a
+	// ref is checked when it is set (ADR-0076, item 11).
+	defineInvoice(b, s)
 	doc, err := s.Create(ctx, "Invoice", sampleValues(), As(alice))
 	if err != nil {
 		b.Fatal(err)
@@ -79,9 +79,9 @@ func BenchmarkCommit(b *testing.B) {
 	}
 	defer s.Close()
 	ctx := context.Background()
-	if _, err := s.defineOpen(ctx, []byte(invoice), asSetup); err != nil {
-		b.Fatal(err)
-	}
+	// The invoice's customer is there before an invoice names it, as a
+	// ref is checked when it is set (ADR-0076, item 11).
+	defineInvoice(b, s)
 	doc, err := s.Create(ctx, "Invoice", sampleValues(), As(alice))
 	if err != nil {
 		b.Fatal(err)

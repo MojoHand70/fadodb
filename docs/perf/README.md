@@ -13,6 +13,8 @@ Published per tagged release, with the budgets from
   to Phase 4.
 - [v0.5.0](v0.5.0.md): who may see and do what, and for whom, Phase 5.
 - [v0.6.0](v0.6.0.md): the server, Phase 6.
+- [v0.7.0](v0.7.0.md): the browser VM, people and agents at the server,
+  Phase 7.
 
 The end-to-end suite is the `bench` package: scenarios written against
 database/sql so that the same one runs on every storage engine. Each
@@ -78,6 +80,23 @@ one the flow of a class (ADR-0063):
 ```
 FADODB_BENCH_DIR=/path/on/disk FADODB_BENCH_COMMITS=200000 go test -count=1 -timeout 2h -v -run TestServeCampaign ./cmd/fadodb/
 FADODB_BENCH_DIR=/path/on/disk go test -count=1 -v -run 'TestOpenCampaign|TestStreamCampaign|TestFlowCampaign' ./internal/store/
+```
+
+The campaign of the door for agents runs beside them since v0.7.0: a
+read and a move as tools at the server itself, `/mcp`, beside the same
+commands at `/v1/`; one agent and a hundred waiting for a change with
+`wait_for_changes` while a writer moves a document every millisecond;
+and files of 1 MiB through a door started with `--files`, beside the
+server's own two addresses for the bytes (ADR-0064, items 11 to 38).
+Beside the key checked, `BenchmarkSessionCaller`, `BenchmarkPassCaller`
+and `BenchmarkPasswordChecked` measure signing in (ADR-0071); the lists
+and figures of ADR-0076 and ADR-0081 are measured among a million
+documents when `FADODB_BENCH_DOCS` says so:
+
+```
+FADODB_BENCH_DIR=/path/on/disk FADODB_BENCH_COMMITS=200000 go test -count=1 -timeout 1h -v -run TestAgentsCampaign ./cmd/fadodb/
+go test -run '^$' -bench '^Benchmark(WhoIsCalling|SessionCaller|PassCaller|PasswordChecked)$' -benchmem -count=3 ./internal/store/
+FADODB_BENCH_DIR=/path/on/disk FADODB_BENCH_DOCS=1000000 go test -run '^$' -bench '^Benchmark(LiveList|LiveFigure)' -benchmem -count=3 ./internal/store/
 ```
 
 A campaign of a million commits a row runs longer than the ten minutes

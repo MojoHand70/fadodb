@@ -337,7 +337,9 @@ Each is the aggregate a `LOOKUP` has, over the rows the list has for
 its reader, in one statement. Over a list the document itself holds,
 its lines or its tags, the same functions are a fold the engine works
 out where the document is, in the commit that changes the list:
-`SUM(lines.qty * lines.price)`. The functions that give a list again
+`SUM(lines.qty * lines.price)`. One value is picked out of either
+kind of list by its order, `FIRST`, `LAST`, `INDEX`, joined as one
+text, `JOIN`, or looked for, `CONTAINS`. The functions that give a list again
 are not built yet.
 
 A class as a source is its documents as they are now: the system columns

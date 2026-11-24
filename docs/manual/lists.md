@@ -231,6 +231,9 @@ variable too, and its formula names the list:
     "average":  {"label": "Mean", "mode": "live", "formula": "ROUND(AVERAGE(invoices.net), 2)"},
     "middle":   {"label": "Middle value", "mode": "live", "formula": "MEDIAN(invoices.net)"},
     "in_states": {"label": "Different states", "mode": "live", "formula": "COUNTUNIQUE(invoices.state)"},
+    "first":    {"label": "First invoice", "mode": "live", "formula": "FIRST(invoices.number)"},
+    "numbers":  {"label": "Invoices by number", "mode": "live", "formula": "JOIN(invoices.number, \", \")"},
+    "has_draft": {"label": "Has a draft", "mode": "live", "formula": "CONTAINS(invoices.state, \"draft\")"},
     "margins":  {"label": "Margins", "mode": "live", "formula": "SUM(invoices.margin)"},
     "by_owner": {"label": "Written by the owner", "mode": "live",
                  "formula": "COUNTIF(invoices, owner = THIS.owner)"},
@@ -280,6 +283,20 @@ Jan reads two invoices, so the middle value is the mean of the two.
 Ewa reads three, and the middle one of 70.00, 250.00 and 1000.00 is
 250.00.
 
+One value picked out of the list, the values of a column as one text,
+and whether a value is there:
+
+<!-- picked figures -->
+| Who reads | Of the order | `first` | `numbers` | `has_draft` |
+|---|---|---|---|---|
+| Jan | ORD-17 | FV-1 | FV-1, FV-2 | TRUE |
+| Piotr | ORD-17 | FV-3 | FV-3 | TRUE |
+| Ewa | ORD-17 | FV-1 | FV-1, FV-2, FV-3 | TRUE |
+| Piotr | ORD-18 | blank | blank | FALSE |
+
+"First" is by the order of the list: `invoices` is sorted by number,
+so the first is the lowest number its reader may read.
+
 | Written | Gives |
 |---|---|
 | `COUNT(invoices)` | how many rows the list has |
@@ -292,6 +309,10 @@ Ewa reads three, and the middle one of 70.00, 250.00 and 1000.00 is
 | `SUMIF(invoices, state = "draft", net)`, `MINIF`, `MAXIF`, `AVERAGEIF` | the same figure, of the rows that meet a condition |
 | `ANY(invoices, state = "draft")` | whether some row meets a condition |
 | `ALL(invoices, state = "paid")` | whether every row meets it |
+| `FIRST(invoices.number)`, `LAST(invoices.number)` | the value of a column in the first or the last row, by the order of the list |
+| `INDEX(invoices.number, 2)` | the value in the row at a place, counted from 1 |
+| `JOIN(invoices.number, ", ")` | the values of a column as one text, with the separator between them |
+| `CONTAINS(invoices.state, "draft")` | whether some row has the value in the column |
 
 - **A column** is written after a dot, and is any stored variable of
   the listed class, or its `state`, `title` or `id`, whether the list
@@ -312,9 +333,17 @@ Ewa reads three, and the middle one of 70.00, 250.00 and 1000.00 is
   values has. The middle value has three: one more than the column,
   which the mean of two needs. `ROUND` cuts either, as `average` does
   above.
+- **One value out of the list** follows the order of the list, the
+  one its `QUERY` gives it. `FIRST` and `LAST` of a list with no rows
+  are blank. `INDEX` at a place the list does not have, or at a place
+  that is no whole number, is the error `out_of_range`: `IFERROR`
+  catches it. `JOIN` writes each value as `TEXT` writes it and skips
+  the blanks. The place, the separator and the value `CONTAINS` looks
+  for are values of the document, the same for every row.
 - **A figure may stand inside a formula**, and two side by side:
   `MAX(invoices.net) - MIN(invoices.net)` is how far the invoices are
-  apart. One may not stand inside another's arguments.
+  apart. One may not stand inside another's arguments, so the place
+  of `INDEX` is no `COUNT` of the list: the last row is `LAST`.
 - **A figure stands only in a live variable.** Two readers get two
   figures, so a value that is kept, a guard and a rule may not hold
   one. For those, a `LOOKUP` in a triggered variable counts and sums:
@@ -364,7 +393,9 @@ with the document as any computed value is.
     "net":     {"label": "Net", "formula": "SUM(lines.qty * lines.price)"},
     "dearest": {"label": "Dearest", "formula": "MAX(lines.price)"},
     "waiting": {"label": "Not delivered", "formula": "COUNTIF(lines, NOT delivered)"},
-    "labels":  {"label": "Different tags", "formula": "COUNTUNIQUE(tags)"}
+    "labels":  {"label": "Different tags", "formula": "COUNTUNIQUE(tags)"},
+    "things":  {"label": "What it is for", "formula": "JOIN(lines.what, \", \")"},
+    "urgent":  {"label": "Urgent", "formula": "CONTAINS(tags, \"urgent\")"}
   },
   "states": {"initial": "draft", "list": ["draft", "sent"]},
   "transitions": [
@@ -385,12 +416,12 @@ pens at 0.25, both delivered, and 3 of ink at 100.00, not delivered
 yet. Its tags are red, urgent and red.
 
 <!-- held figures -->
-| What Ewa does | `count` | `net` | `dearest` | `waiting` | `labels` |
-|---|---|---|---|---|---|
-| writes B-1 with its three lines | 3 | 321.25 PLN | 100.00 PLN | 1 | 2 |
-| marks the ink as delivered | 3 | 321.25 PLN | 100.00 PLN | 0 | 2 |
-| takes the ink off the bill | 2 | 21.25 PLN | 10.50 PLN | 0 | 2 |
-| changes the number alone | 2 | 21.25 PLN | 10.50 PLN | 0 | 2 |
+| What Ewa does | `count` | `net` | `dearest` | `waiting` | `labels` | `things` | `urgent` |
+|---|---|---|---|---|---|---|---|
+| writes B-1 with its three lines | 3 | 321.25 PLN | 100.00 PLN | 1 | 2 | paper, pens, ink | TRUE |
+| marks the ink as delivered | 3 | 321.25 PLN | 100.00 PLN | 0 | 2 | paper, pens, ink | TRUE |
+| takes the ink off the bill | 2 | 21.25 PLN | 10.50 PLN | 0 | 2 | paper, pens | TRUE |
+| changes the number alone | 2 | 21.25 PLN | 10.50 PLN | 0 | 2 | paper, pens | TRUE |
 
 - **A figure is worked out again when its list changes**, in the same
   commit, as any computed value follows what it reads. A change of
@@ -410,8 +441,15 @@ yet. Its tags are red, urgent and red.
 - **Tags are a list of single values.** `COUNT(tags)` counts the ones
   that have a value, `COUNTUNIQUE(tags)` the different ones. In a
   condition an element is called `value`: `ANY(tags, value = "red")`.
+- **One value out of the lines** goes by the order they stand in on
+  the bill: `FIRST(lines.what)`, `LAST(lines.what)`,
+  `INDEX(lines.what, 2)`, and `JOIN(lines.what, ", ")` for all of them
+  as one text. Over tags no column is named: `FIRST(tags)`,
+  `CONTAINS(tags, "urgent")`. In a computed variable a place the bill
+  does not have would refuse the commit with `out_of_range`; write
+  `IFERROR(INDEX(lines.what, 2), "")` where a bill may be shorter.
 - **A list with no element** follows the rules above: it counts 0, its
-  sum of money is blank.
+  sum of money is blank, nothing is first and nothing is joined.
 - **The list itself is no value**: `lines` alone in a formula is
   refused, and so is `lines.qty` outside a function over the list.
 

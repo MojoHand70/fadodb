@@ -578,6 +578,7 @@ func CompileIn(def *Definition, env Env) (*Class, Diagnostics) {
 
 	// The dependency graphs: auto variables and the title; defaults.
 	compileOrder(c, cls)
+	orderFigures(cls)
 
 	// Storage layout.
 	compileColumns(c, cls)
@@ -1316,6 +1317,30 @@ func compileStates(c *collector, def *StatesDef) *States {
 		}
 	}
 	return s
+}
+
+// orderFigures gives a figure that picks a row of a list by its place, or
+// joins its rows, the order of that list (ADR-0081, item 10): the order
+// its QUERY writes, and after it the key of the listed class, so that
+// two rows the list orders alike stand the same way at every read. The
+// binder left the slot the order of the class, in which the other
+// figures add their numbers; a list may be compiled after the figure
+// over it, so the order is set here, once every variable is.
+func orderFigures(cls *Class) {
+	for _, v := range cls.Variables {
+		if v.Formula == nil {
+			continue
+		}
+		for i := range v.Formula.Queries {
+			q := &v.Formula.Queries[i]
+			if q.List == "" || (q.Agg != "FIRST" && q.Agg != "LAST" && q.Agg != "INDEX" && q.Agg != "JOIN") {
+				continue
+			}
+			if lv, ok := cls.Variable(q.List); ok && lv.Query != nil && len(lv.Query.Order) > 0 {
+				q.Order = append(append([]string(nil), lv.Query.Order...), q.Order...)
+			}
+		}
+	}
 }
 
 // compileOrder builds the evaluation orders and refuses cycles.

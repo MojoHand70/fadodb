@@ -1,6 +1,6 @@
 # ADR-0081: Functions over a list, each with its SQL from the start
 
-- Status: Proposed; amends ADR-0046 (item 4: `AVERAGE`, `MEDIAN` and `COUNTUNIQUE` stand in the column position of a `LOOKUP`). Items 1, 2 and 5 and the set of item 6 are the owner's word of 2026-11-23; the rest is settled by me for him to veto, and marked so. Step 1 and step 2 are built: see "What is built".
+- Status: Proposed; amends ADR-0046 (item 4: `AVERAGE`, `MEDIAN` and `COUNTUNIQUE` stand in the column position of a `LOOKUP`). Items 1, 2 and 5 and the set of item 6 are the owner's word of 2026-11-23; the rest is settled by me for him to veto, and marked so. Step 1, step 2 and the first group of step 3 are built: see "What is built".
 - Date: 2026-11-23
 
 ## Context
@@ -196,6 +196,34 @@ planned for a server, is from its documentation.
      filter and the condition of a `QUERY`, which run as a predicate
      over every row; in a title; in the page's own evaluator.
 
+10. **One value out of a list: `FIRST`, `LAST`, `INDEX`, `JOIN`,
+    `CONTAINS`.** *(Mine; the owner's word for step 3 is below.)*
+    - They are what ADR-0019 and the catalogue said of them over an
+      array, over a list of the document: `FIRST` and `LAST` the value
+      of a column in the first and the last row, blank for a list with
+      no rows; `INDEX` the one at a place counted from 1, and the error
+      `out_of_range` for a place that is no whole number or that the
+      list does not have; `JOIN` the values written as `TEXT` writes
+      them, blanks skipped, the separator between them, blank when
+      nothing is left; `CONTAINS` whether some row has the value,
+      compared as `=` compares.
+    - "First" is by the order of the list: for a list the document
+      holds, the order its elements stand in; for a list that is a
+      `QUERY`, the order its `QUERY` gives it, and the id after it, so
+      that two rows the list orders alike stand the same way at every
+      read.
+    - The place, the separator and the value looked for are values of
+      the document, the same for every row. No column may stand there,
+      and no figure: one function is one statement (ADR-0020).
+    - Each is an aggregate of the slot, as the figures are, with its
+      fold and its SQL. They are aggregates of a list alone: in the
+      column position of a `LOOKUP` they are refused, since the slot of
+      a `LOOKUP` is part of an encoded program, which the further
+      argument is not.
+    - `CONTAINS` is `ANY` with a condition the binder writes: the
+      column equals the value. So it needs nothing of its own in any
+      executor.
+
 ## The owner's words
 
 2026-11-23, in this order:
@@ -210,6 +238,10 @@ planned for a server, is from its documentation.
 - On the recommendation, the set and the rule of item 2: "The file
   looks good. Let's not wait, do it, the list is ok, SQL from the
   start."
+
+2026-11-24, shown step 3 as two groups, one value out of a list and a
+list out of a list, with the proposal to build the first and to bring
+one page on the second before building it: "go ahead with step 3".
 
 ## What is built
 
@@ -262,10 +294,31 @@ variable.
   SQLite and on DuckDB, where the list is a table with the place of
   each row.
 
+Step 3, its first group (item 10): `FIRST`, `LAST`, `INDEX`, `JOIN`
+and `CONTAINS` over both kinds of list.
+
+- How each is asked, the same text in both dialects but for one piece:
+  `FIRST` and `LAST` read one row, the rows ordered as the list and
+  cut to one (`ORDER BY ... LIMIT 1`, the order turned round for the
+  last). `INDEX` numbers the rows in that order and reads the one
+  whose number is the place; no row there is the error. `JOIN` is
+  `string_agg` with its `ORDER BY` in SQLite. DuckDB's `string_agg`
+  takes a constant for its separator and nothing else, so there the
+  texts are gathered into a list and folded with the separator
+  between each two (`list_reduce`). `CONTAINS` is a count of the rows
+  on which the column equals the value.
+- Forty more cases in `conformance/formula/held.json` prove one answer
+  on the Go fold, on SQLite and on DuckDB.
+- Over a list that is a `QUERY` the store gives the statement the
+  list's own order.
+
 Not built yet, each decided above:
 
 - A fold in the places item 9 leaves out, and in the browser VM.
-- The functions that give a list again (step 3).
+- The functions that give a list again, `FILTER`, `SORT`, `TOP` and
+  `UNIQUE` (step 3, its second group). Where such a list may stand is
+  not decided: only inside another function, or also as a variable of
+  its own.
 
 ## Consequences
 

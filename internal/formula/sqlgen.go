@@ -1133,17 +1133,25 @@ func lookupRows(q *QuerySlot, d Dialect, arg func(i int, currency bool) string, 
 	if len(q.Order) > 0 {
 		// a column of the order may be written with a leading "-" for
 		// descending, as the order of a list is (ADR-0076)
-		keys, back := make([]string, len(q.Order)), make([]string, len(q.Order))
+		keys := make([]string, len(q.Order))
 		for i, k := range q.Order {
 			name, desc := strings.CutPrefix(k, "-")
-			col := lookupAlias + "." + quoteIdent(name)
-			keys[i], back[i] = col, col+" DESC"
-			if desc {
-				keys[i], back[i] = back[i], keys[i]
+			if keys[i] = lookupAlias + "." + quoteIdent(name); desc {
+				keys[i] += " DESC"
 			}
 		}
 		r.order = " ORDER BY " + strings.Join(keys, ", ")
-		r.last = " ORDER BY " + strings.Join(back, ", ")
+		if q.Agg == "LAST" {
+			// the same order turned round, written only for the aggregate
+			// that reads it
+			for i, k := range q.Order {
+				name, desc := strings.CutPrefix(k, "-")
+				if keys[i] = lookupAlias + "." + quoteIdent(name); !desc {
+					keys[i] += " DESC"
+				}
+			}
+			r.last = " ORDER BY " + strings.Join(keys, ", ")
+		}
 	}
 	r.from = " FROM " + table(q.Source) + " AS " + lookupAlias + " WHERE " + where
 	return r, nil

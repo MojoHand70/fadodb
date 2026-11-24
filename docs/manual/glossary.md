@@ -15,7 +15,7 @@ exactly so in a class or a formula.
 | triggered variable | a computed variable that is worked out only at the moments its class names, such as the entry into a state, and keeps its value in between; see [Triggered variables](triggered-variables.md) |
 | live variable | a computed variable that is worked out when somebody reads it, for that reader, and kept nowhere; the command `live` reads it; see [Live variables](live-variables.md) |
 | list | a live variable whose formula is a `QUERY`: some documents of a class, with some of their variables as columns, read for the reader and kept nowhere; see [Lists of other documents](lists.md) |
-| figure | one value worked out of a list of the document, in a live variable: `COUNT(invoices)`, `SUM(invoices.net)`, `MEDIAN(invoices.net)`; it counts what its reader may read of the list; see [Lists of other documents](lists.md) |
+| figure | one value worked out of a list of the document, in a live variable: `COUNT(invoices)`, `SUM(invoices.net)`, `MEDIAN(invoices.net)`, `FIRST(invoices.number)`; it counts what its reader may read of the list; see [Lists of other documents](lists.md) |
 | refresh | a commit that works triggered variables out again |
 | formula | an expression in the style of a spreadsheet, such as `ROUND(net * (1 + vat_rate), 2)` |
 | state | where a document is in its process, such as `INAPPROVAL` |

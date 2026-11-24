@@ -1,6 +1,6 @@
 # Roadmap
 
-**Current status: Phase 7, the browser VM and the reference frontend, started on 2026-11-17. Phase 6, the server, was released as v0.6.0 the same day.**
+**Current status: Phase 7, the browser VM and the reference frontend, was released as v0.7.0 on 2026-11-24. The next phase opens on the owner's word.**
 The Go API (`fado`) opens a database file, defines schemas, classes and
 explicit tables, and creates, changes, reads and deletes documents as
 commits: assignments and defaults, the auto recalculation, typed history
@@ -373,17 +373,26 @@ answers its facts for `create` or `set`, and `get_file`, which writes a
 file a document holds into the folder, by its hash, over no other
 file; nothing outside the folder is read or written, and the door at
 the server, which has no folder of the caller's, offers neither.
-The measurements are done
-([docs/perf/v0.7.0.md](docs/perf/v0.7.0.md)): every budget holds, and
-beside v0.6.0 the same evening a commit is no slower in memory and 2 to
-3% slower on disk. Left of the phase: its test, below, and the release. No starter is built into the program (the owner, 2026-11-24):
-an app comes with a purchase of FadoDB, or is installed from the
-marketplace by exporting it from one database and importing it into
-another, which is built after v0.7.0. Its test, besides the plan's: an
-agent with only the skills and the door is told a business story in
-plain words and builds the table and the class, and the people of the
-story use them in a browser, through a face the owner names before
-that step. The rest is not built yet.
+The phase closed on 2026-11-24 with the measurements of
+[docs/perf/v0.7.0.md](docs/perf/v0.7.0.md): every budget of its
+records holds, and beside v0.6.0 the same evening a commit is no
+slower in memory and 2 to 3% slower on disk. No starter is built into
+the program (the owner, 2026-11-24): an app comes with a purchase of
+FadoDB, or is installed from the marketplace by exporting it from one
+database and importing it into another, which is built after v0.7.0.
+What the phase leaves for later, by the owner's word of the same day
+("Can we close v0.7.0 now without" his face, and "don't wait, close
+v0.7.0 now"): its test, in which an agent with only the skills and the
+door is told a business story in plain words and builds the table and
+the class, and the people of the story use them in a browser, runs
+when the owner's face is finished; signing in with a passkey
+(ADR-0088, proposed, its premises ruled the same day), of which the
+first of five steps is built, comes after the release, and until then
+a person signs in with a password, and an administrator or a designer
+with a code as well; and ADR-0085, a list sent by an action and taken
+from its answer, accepted, is built after the release. Built as they
+propose and still proposed, each the owner's to accept or strike:
+ADR-0079 to ADR-0084 and ADR-0086.
 Three records were accepted by the owner on 2026-11-22. Two are of
 2026-11-20. ADR-0075, the engine makes the
 index of every question a class declares and says which question it

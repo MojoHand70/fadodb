@@ -6,7 +6,23 @@ All notable changes to FadoDB are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-11-24
+
 ### Added
+
+- Phase 7, the browser VM and the reference frontend, is closed, with
+  its measurements in `docs/perf/v0.7.0.md`: every budget of its
+  records holds. Not in this release, by the owner's word of the same
+  day: the phase's test, in which an agent builds an application from a
+  story told in plain words and its people use it in a browser, which
+  runs when the owner's face is finished; signing in with a passkey
+  (ADR-0088), so that a person still signs in with a password, and an
+  administrator or a designer with a code from an authenticator app as
+  well; and lists sent by an action and taken from its answer
+  (ADR-0085). Built and still proposed: ADR-0079 to ADR-0084 and
+  ADR-0086. The engine schema is 13: a database made by v0.6.0 is
+  refused, as before 1.0 every database of an earlier schema is, and
+  there is no way to upgrade one yet.
 
 - Files through the door for agents, from a folder (ADR-0064, ruling 4,
   items 31 to 38): `fadodb mcp --files FOLDER` offers `put_file`,
@@ -2399,7 +2415,8 @@ Project scaffold. Nothing to run beyond `fadodb version`.
 - Contributing guide, code of conduct, security policy, issue and pull request
   templates, roadmap.
 
-[Unreleased]: https://github.com/MojoHand70/fadodb/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/MojoHand70/fadodb/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/MojoHand70/fadodb/releases/tag/v0.7.0
 [0.6.0]: https://github.com/MojoHand70/fadodb/releases/tag/v0.6.0
 [0.5.0]: https://github.com/MojoHand70/fadodb/releases/tag/v0.5.0
 [0.4.1]: https://github.com/MojoHand70/fadodb/releases/tag/v0.4.1

@@ -289,3 +289,20 @@ A sign-in checks one signature, well under a millisecond, where a
 password took 60 ms of PBKDF2. No hot path is touched: the VM,
 recalculation and the commit stay as they are. The size gate measures
 the program.
+
+## Settled while building
+
+The first pull request built item 8. Settled by me, each the owner's
+to strike:
+
+1. **A proxy is an address or a range**, such as `10.0.0.0/8`, since a
+   cloud's load balancers come from one; each is kept as a range.
+2. **An entry of `X-Forwarded-For` may carry its port, or an IPv6
+   address in brackets**, as some proxies write it; an IPv4 address
+   written as IPv6 is IPv4.
+3. **An entry that is no address stops the reading** at the proxy that
+   passed it on, and the sign-in is recorded at that proxy's address.
+   When every entry is a proxy, the first of them is the caller.
+4. **The address is read for the pages of signing in alone**: nothing
+   else of the server records where a request came from. The server's
+   help and both chapters of the manual show the setting.

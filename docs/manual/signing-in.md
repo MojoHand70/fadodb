@@ -316,6 +316,7 @@ refuses its passes.
 ```jsonc
 {
   "url": "https://fado.acme.example",
+  "proxies": ["127.0.0.1"],
   "sessions": {"idle_hours": 4, "days": 7},
   "grants": {"idle_days": 14}
 }
@@ -325,6 +326,14 @@ refuses its passes.
   the commands of a session take requests from it alone, and over
   HTTPS the cookie travels only encrypted. Behind a proxy that holds
   the certificate, it is the proxy's address.
+- **`proxies` names the proxies in front of the server**, such as
+  Caddy or nginx on the same machine: an address, or a range such as
+  `10.0.0.0/8`. From a request of one of them, a sign-in is recorded,
+  and failures are counted, at the address the proxy read in
+  `X-Forwarded-For`: the last one that is not a proxy, since a caller
+  may write the header too. From any other address the header is not
+  read. Without `proxies`, every person behind a proxy has the proxy's
+  address, and twenty failures of anybody make everybody wait.
 - **Without `url`, people sign in on the machine itself only**, at
   `http://localhost`. A server reached from other machines without one
   shows no page, and says so when it starts.

@@ -68,6 +68,17 @@ func TestTheSettings(t *testing.T) {
 		s.limits.CommandTime != 500*time.Millisecond || !s.calls() || !strings.Contains(s.mayCall(), "over the connection slack, no host") {
 		t.Errorf("half a second, and a connection without hosts: %v, %+v", err, s)
 	}
+	// The proxies in front of the server (ADR-0088, item 8): addresses
+	// and ranges, each kept as a range; an address written as IPv6 that
+	// is IPv4 is IPv4; a range is cut to its bits.
+	if s, err := parseSettings([]byte(`{"proxies": ["127.0.0.1", "::1", "10.1.2.3/8", "::ffff:192.0.2.1"]}`)); err != nil {
+		t.Errorf("the proxies: %v", err)
+	} else if got := fmt.Sprint(s.proxies); got != "[127.0.0.1/32 ::1/128 10.0.0.0/8 192.0.2.1/32]" {
+		t.Errorf("the proxies are kept as %s", got)
+	}
+	if s, err := parseSettings([]byte(`{"proxies": []}`)); err != nil || len(s.proxies) != 0 {
+		t.Errorf("no proxies: %v, %v", err, s.proxies)
+	}
 
 	for name, c := range map[string]struct{ file, words string }{
 		"what is not JSON":                        {"{\n  \"limits\": {\n    \"commands\": 64,\n  }\n}", "it is not JSON, at line 4"},
@@ -96,6 +107,12 @@ func TestTheSettings(t *testing.T) {
 		"a time beyond a day":                     {`{"limits": {"command_seconds": 86401}}`, "limits.command_seconds is a number of seconds above zero and at most 86400"},
 		"a time written as a text":                {`{"limits": {"command_seconds": "30s"}}`, "limits.command_seconds is a number of seconds"},
 		"a time too short to keep":                {`{"limits": {"command_seconds": 0.0000001}}`, "limits.command_seconds is at least a millisecond"},
+		"proxies that are no list":                {`{"proxies": "127.0.0.1"}`, `proxies is a list of the addresses of the proxies in front of the server, such as ["127.0.0.1"], and here it is "127.0.0.1"`},
+		"proxies that are null":                   {`{"proxies": null}`, "proxies is a list of the addresses"},
+		"a proxy that is a name":                  {`{"proxies": ["localhost"]}`, `proxies has "localhost", which is no address: write one such as 127.0.0.1 or ::1, or a range such as 10.0.0.0/8`},
+		"a range wider than there are bits":       {`{"proxies": ["10.0.0.0/33"]}`, `proxies has "10.0.0.0/33", which is no address`},
+		"a proxy with a zone":                     {`{"proxies": ["fe80::1%eth0"]}`, `proxies has "fe80::1%eth0", which is no address`},
+		"a proxy with a port":                     {`{"proxies": ["127.0.0.1:8080"]}`, `proxies has "127.0.0.1:8080", which is no address`},
 	} {
 		if _, err := parseSettings([]byte(c.file)); err == nil || !strings.Contains(err.Error(), c.words) {
 			t.Errorf("%s: want a refusal with %q, got %v", name, c.words, err)

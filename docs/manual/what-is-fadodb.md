@@ -107,9 +107,8 @@ class; the evidence is the log.
 
 ## Where it stands
 
-FadoDB is before version 1.0. This is what works today: release
-v0.6.0, through the Go package `fado` and the server, and in its last
-row what the main branch adds for v0.7.0:
+FadoDB is before version 1.0. This is what works today, release
+v0.7.0, through the Go package `fado` and the server:
 
 | Works today | Comes later |
 |---|---|

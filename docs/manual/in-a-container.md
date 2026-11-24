@@ -19,12 +19,12 @@ What is not here yet is listed at the end.
 A release publishes the image at `ghcr.io/mojohand70/fadodb`, for
 `linux/amd64` and `linux/arm64`, under its version and under no other
 name: there is no `latest`, so that a server never changes its engine
-by itself. The first is v0.6.0:
+by itself. The first was v0.6.0, and the last is v0.7.0:
 
 <!-- pulling it -->
 ```sh
-docker pull ghcr.io/mojohand70/fadodb:0.6.0
-docker tag ghcr.io/mojohand70/fadodb:0.6.0 fadodb
+docker pull ghcr.io/mojohand70/fadodb:0.7.0
+docker tag ghcr.io/mojohand70/fadodb:0.7.0 fadodb
 ```
 
 The second command gives the image the short name `fadodb`, which the

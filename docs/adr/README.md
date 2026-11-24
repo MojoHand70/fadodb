@@ -60,11 +60,11 @@ line says so. Copy `0000-template.md` to start.
 | [0052](0052-system-groups-and-the-content-administrator.md) | System groups: who runs the database, who designs, who reads everything and who may act on any document | Accepted, amended by 0057, 0059, 0067, 0083 |
 | [0053](0053-acting-for-somebody.md) | Acting for somebody: a recorded substitution for people and assistants | Accepted, amended by 0071 |
 | [0054](0054-the-screen-on-a-layout-component.md) | The screen on a layout component: `mobile` and `desktop` | Withdrawn by 0069 |
-| [0055](0055-the-command-set-on-the-wire.md) | The command set on the wire: every command, its JSON, and one address each | Accepted, amended by 0057, 0058, 0059, 0063, 0065, 0067, 0070, 0074, 0077, 0076, 0078, 0079, 0082, 0083, 0086, 0064 |
+| [0055](0055-the-command-set-on-the-wire.md) | The command set on the wire: every command, its JSON, and one address each | Accepted, amended by 0057, 0058, 0059, 0063, 0065, 0067, 0070, 0074, 0077, 0076, 0078, 0079, 0082, 0083, 0086, 0088, 0064 |
 | [0056](0056-one-database-for-each-customer.md) | One database for each customer, and a server that serves one database | Accepted |
-| [0057](0057-users-groups-and-keys.md) | Who is calling: users, groups and keys, kept in the database | Accepted, amended by 0071, 0086 |
+| [0057](0057-users-groups-and-keys.md) | Who is calling: users, groups and keys, kept in the database | Accepted, amended by 0071, 0086, 0088 |
 | [0058](0058-the-stream-of-changes.md) | The stream of changes: the log read forward, over plain HTTP | Accepted, amended by 0067, 0064 |
-| [0059](0059-fadodb-serve.md) | `fadodb serve`: one database, what it is told when it starts, and what it refuses | Accepted, amended by 0065, 0071 |
+| [0059](0059-fadodb-serve.md) | `fadodb serve`: one database, what it is told when it starts, and what it refuses | Accepted, amended by 0065, 0071, 0088 |
 | [0060](0060-the-organisations-rule-book.md) | The organisation's rule-book: the things it keeps and the look of its faces | Accepted |
 | [0061](0061-apache-license.md) | License: Apache 2.0 | Accepted |
 | [0062](0062-commands-from-a-terminal.md) | Commands from a terminal: `fadodb exec` | Accepted |
@@ -76,7 +76,7 @@ line says so. Copy `0000-template.md` to start.
 | [0068](0068-what-a-class-says-to-people.md) | What a class says to people: labels, The List, formats, descriptions and other languages | Accepted, amended by 0069, 0077, 0083 |
 | [0069](0069-the-screen-is-the-faces-and-a-class-has-sections.md) | The screen is the face's, and a class has sections | Accepted |
 | [0070](0070-the-bundle.md) | The bundle: a class, its words and its compiled formulas in one call | Accepted, amended by 0076 |
-| [0071](0071-signing-in.md) | Signing in: passwords, company sign-on, sessions and passes for agents | Accepted, amended by 0073 |
+| [0071](0071-signing-in.md) | Signing in: passwords, company sign-on, sessions and passes for agents | Accepted, amended by 0073, 0088 |
 | [0072](0072-the-size-budget-of-the-core-program.md) | The size budget of the core program: 20 MB | Accepted |
 | [0073](0073-the-server-hands-out-the-pages-of-a-face.md) | The server hands out the pages of a face from a folder, and has none of its own | Accepted |
 | [0074](0074-the-engine-hands-out-its-list-of-functions.md) | The engine hands out its list of functions | Accepted |
@@ -93,3 +93,4 @@ line says so. Copy `0000-template.md` to start.
 | [0085](0085-lists-in-and-out.md) | Lists in and out: the lines of a message, the lines of a request | Accepted |
 | [0086](0086-a-group-is-a-record-of-its-own.md) | A group is a record of its own | Proposed |
 | [0087](0087-a-database-made-with-a-starter.md) | A database made with a starter | Withdrawn by the owner |
+| [0088](0088-people-sign-in-with-a-passkey.md) | People sign in with a passkey, invited by a link | Proposed |

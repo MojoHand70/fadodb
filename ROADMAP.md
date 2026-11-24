@@ -401,9 +401,10 @@ statement asked for whoever reads the live variable that holds it;
 a `LOOKUP` as well. The same functions work over the lines and the
 tags a document holds, `SUM(lines.qty * lines.price)`, in a computed
 variable, a guard and a rule; not yet in a read rule, a filter, a
-title, nor in the page's own evaluator. Not built yet:
-`FILTER`, `SORT`, `TOP`, `UNIQUE`, `FIRST`, `LAST`, `INDEX`,
-`CONTAINS` and `JOIN`.
+title, nor in the page's own evaluator. One value out of a list is
+built over both kinds of list: `FIRST`, `LAST`, `INDEX`, `JOIN` and
+`CONTAINS`, by the order of the list. Not built yet: the functions
+that give a list again, `FILTER`, `SORT`, `TOP` and `UNIQUE`.
 The third is of 2026-11-21, and nothing of it is built yet:
 ADR-0078, a decision stands on what the document holds. A command
 says which version of a document its sender saw, the `write` right of

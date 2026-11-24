@@ -1285,8 +1285,11 @@ func TestTheListOfFunctionsIsACommand(t *testing.T) {
 	if today := byName["TODAY"]; today["kind"] != "context" || len(today["params"].([]any)) != 0 || today["signature"] != "TODAY()" {
 		t.Errorf("TODAY is told as %v", today)
 	}
-	if first := byName["FIRST"]; first["not_built"] != true {
-		t.Errorf("FIRST is not built yet, and is told as %v", first)
+	if filter := byName["FILTER"]; filter["not_built"] != true {
+		t.Errorf("FILTER is not built yet, and is told as %v", filter)
+	}
+	if _, marked := byName["FIRST"]["not_built"]; marked {
+		t.Errorf("FIRST is built, and is told as %v", byName["FIRST"])
 	}
 	if lookup := byName["LOOKUP"]; lookup["kind"] != "lookup" {
 		t.Errorf("LOOKUP is told as %v", lookup)

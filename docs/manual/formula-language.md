@@ -367,6 +367,10 @@ value of a formula.
 | `COUNT(tags)` | 2 | number |
 | `COUNTUNIQUE(tags)` | 2 | number |
 | `ANY(tags, value = "urgent")` | TRUE | bool |
+| `CONTAINS(tags, "urgent")` | TRUE | bool |
+| `FIRST(tags)` | "new" | text |
+| `JOIN(tags, " and ")` | "new and urgent" | text |
+| `INDEX(tags, 2)` | "urgent" | text |
 | `IF(COUNT(tags) > 1, "several", "one")` | "several" | text |
 | `tags` | refused: `bad_formula` | |
 

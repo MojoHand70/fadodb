@@ -153,6 +153,14 @@ type QuerySlot struct {
 	// (ADR-0046). Column is then empty and Type the aggregate's type.
 	Agg   string
 	Value *Program
+	// Extra is the one further argument of a function over a list that
+	// is no column of a row (ADR-0081, step 3): the place INDEX takes,
+	// the separator JOIN joins with. It is a program over the THIS
+	// arguments alone, the same for every row, and nil for the other
+	// aggregates. A slot that has one is a figure over a list and never
+	// the aggregate of a LOOKUP, so Extra is no part of an encoded
+	// program.
+	Extra *Program
 	// List names the list of the document that the slot's rows are
 	// (ADR-0081): a live variable of the document whose formula is a
 	// QUERY. The slot is then a figure over that list, and Source the

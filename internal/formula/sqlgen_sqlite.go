@@ -88,6 +88,12 @@ func (SQLite) NumberRowSum(num, order string) (string, string) {
 	return "fado_sum_rows(" + rows + ")", "fado_sum_rows_err(" + rows + ")"
 }
 
+// JoinRows implements Dialect: SQLite's own string_agg, which takes its
+// rows in an order.
+func (SQLite) JoinRows(text, sep, order string) string {
+	return "string_agg(" + text + ", " + sep + order + ")"
+}
+
 // Pow implements Dialect: the engine's own power function, not SQLite's.
 func (SQLite) Pow(x, y string) string { return "fado_power(" + x + ", " + y + ")" }
 

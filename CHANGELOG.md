@@ -8,6 +8,21 @@ All notable changes to FadoDB are recorded here. The format follows
 
 ### Added
 
+- One value out of a list (ADR-0081, step 3, its first group):
+  `FIRST`, `LAST`, `INDEX`, `JOIN` and `CONTAINS` work over a list of
+  the document. On a bill, `FIRST(lines.what)` is what its first line
+  is for, `INDEX(lines.what, 2)` the second, `JOIN(lines.what, ", ")`
+  all of them as one text, and `CONTAINS(tags, "urgent")` whether it
+  has the tag; over a list that is a `QUERY`, in a live variable,
+  `FIRST(invoices.number)` and `JOIN(invoices.number, ", ")` follow
+  the order the list has for its reader. `INDEX` at a place the list
+  does not have is the error `out_of_range`. The functions were in
+  the catalogue, written for arrays, and refused as not built; their
+  entries now say what they are over a list. Each has its SQL for
+  SQLite and for DuckDB, and forty cases prove one answer. They are
+  not taken in the column position of a `LOOKUP`. Not built yet: the
+  functions that give a list again, `FILTER`, `SORT`, `TOP` and
+  `UNIQUE`.
 - A group is a record of its own (ADR-0086). A database that keeps
   its users keeps its groups: a name, which `INGROUP` and a user's
   `groups` name and which never changes, a `label` a screen shows, and

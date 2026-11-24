@@ -103,7 +103,7 @@ func TestLists(t *testing.T) {
 		}
 		return fmt.Sprint(v)
 	}
-	for mark, many := range map[string]int{"figures": 6, "more figures": 3} {
+	for mark, many := range map[string]int{"figures": 6, "more figures": 3, "picked figures": 3} {
 		figures := marked(t, page, mark)
 		names := regexp.MustCompile("`([a-z_]+)`").FindAllStringSubmatch(strings.SplitN(figures, "\n", 2)[0], -1)
 		if len(names) != many {
@@ -247,7 +247,7 @@ func TestLists(t *testing.T) {
 	}
 	held := marked(t, page, "held figures")
 	heldNames := regexp.MustCompile("`([a-z_]+)`").FindAllStringSubmatch(strings.SplitN(held, "\n", 2)[0], -1)
-	if len(heldNames) != 5 || len(rows(held)) != len(steps) {
+	if len(heldNames) != 7 || len(rows(held)) != len(steps) {
 		t.Fatalf("the chapter's table of the bill names %d figures in %d steps", len(heldNames), len(rows(held)))
 	}
 	for _, row := range rows(held) {

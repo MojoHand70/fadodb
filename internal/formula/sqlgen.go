@@ -127,6 +127,12 @@ type Dialect interface {
 	// one by one in that order from zero, as the VM adds them.
 	ExactRowSum(mant string) (val, err string)
 	NumberRowSum(num, order string) (val, err string)
+	// JoinRows is the texts of the rows as one text, in the order given,
+	// with the separator between them, the NULL ones skipped, and NULL
+	// when none is left: the aggregate of JOIN (ADR-0081, step 3). The
+	// separator is any text expression that is the same for every row,
+	// and no constant only.
+	JoinRows(text, sep, order string) string
 	// Pow spells x to the power y as the VM computes it.
 	Pow(x, y string) string
 	// Render applies the TEXT rule of ADR-0019 to a scalar.
@@ -1090,7 +1096,10 @@ type rowsSQL struct {
 	q           *QuerySlot
 	d           Dialect
 	from, order string
-	sub         func(p *Program) (SQLExpr, error)
+	// last is the order turned round: the rows from the last to the
+	// first, for the aggregate that takes the last of them.
+	last string
+	sub  func(p *Program) (SQLExpr, error)
 }
 
 func lookupRows(q *QuerySlot, d Dialect, arg func(i int, currency bool) string, table func(string) string, params *Params) (*rowsSQL, error) {
@@ -1122,11 +1131,27 @@ func lookupRows(q *QuerySlot, d Dialect, arg func(i int, currency bool) string, 
 		where = "(" + cond.Err + ") IS NULL AND " + where
 	}
 	if len(q.Order) > 0 {
+		// a column of the order may be written with a leading "-" for
+		// descending, as the order of a list is (ADR-0076)
 		keys := make([]string, len(q.Order))
 		for i, k := range q.Order {
-			keys[i] = lookupAlias + "." + quoteIdent(k)
+			name, desc := strings.CutPrefix(k, "-")
+			if keys[i] = lookupAlias + "." + quoteIdent(name); desc {
+				keys[i] += " DESC"
+			}
 		}
 		r.order = " ORDER BY " + strings.Join(keys, ", ")
+		if q.Agg == "LAST" {
+			// the same order turned round, written only for the aggregate
+			// that reads it
+			for i, k := range q.Order {
+				name, desc := strings.CutPrefix(k, "-")
+				if keys[i] = lookupAlias + "." + quoteIdent(name); !desc {
+					keys[i] += " DESC"
+				}
+			}
+			r.last = " ORDER BY " + strings.Join(keys, ", ")
+		}
 	}
 	r.from = " FROM " + table(q.Source) + " AS " + lookupAlias + " WHERE " + where
 	return r, nil
@@ -1168,7 +1193,7 @@ func (r *rowsSQL) aggregate() (aggregateSQL, error) {
 	}
 	mant := d.RawMant(x)
 	money := exact && x.Kind == KindMoney
-	if money && q.Agg != "COUNT" && q.Agg != "COUNTUNIQUE" && q.Agg != "MEDIAN" {
+	if money && q.Agg != "COUNT" && q.Agg != "COUNTUNIQUE" && q.Agg != "MEDIAN" && !listAggregates[q.Agg] {
 		a.cur = "MIN(" + x.Cur + ")"
 		a.errs = append(a.errs, "CASE WHEN COUNT(DISTINCT "+x.Cur+") > 1 THEN 'currency_mismatch' END")
 	}
@@ -1255,6 +1280,76 @@ func (r *rowsSQL) aggregate() (aggregateSQL, error) {
 			key = mant
 		}
 		a.val = "CAST(COUNT(DISTINCT " + key + ") AS " + d.ColumnType(KindNumber) + ")"
+	case "FIRST", "LAST", "INDEX":
+		// One row of the matching ones, by the order of the list: the
+		// first, the last, or the one at a place. The statement reads that
+		// row alone, and the value is its value, whatever its type.
+		v := x.Val
+		switch {
+		case x.Kind == KindNull:
+			v = "NULL"
+		case exact:
+			v = mant
+		}
+		cols := v + " AS v"
+		if money {
+			cols += ", " + x.Cur + " AS c"
+			a.cur = "MIN(m.c)"
+		}
+		switch q.Agg {
+		case "FIRST":
+			a.from = " FROM (SELECT " + cols + r.from + r.order + " LIMIT 1) AS m"
+		case "LAST":
+			a.from = " FROM (SELECT " + cols + r.from + r.last + " LIMIT 1) AS m"
+		default:
+			at, err := r.sub(q.Extra)
+			if err != nil {
+				return aggregateSQL{}, fmt.Errorf("sqlgen: INDEX: %w", err)
+			}
+			// The rows are numbered in the order of the list, and the one
+			// at the place is read. A place that is blank, no whole
+			// number, below 1 or past the last row is the number of no
+			// row: nothing is read, which is the error out_of_range, as in
+			// the fold.
+			p := "(" + d.Num(at) + ")"
+			if at.Kind == KindNull {
+				p = "NULL"
+			}
+			a.from = " FROM (SELECT " + cols + ", ROW_NUMBER() OVER (" + strings.TrimPrefix(r.order, " ") + ") AS rn" + r.from + ") AS m WHERE m.rn = " + p
+			if at.Err != "" {
+				a.errs = append(a.errs, at.Err)
+			}
+			a.errs = append(a.errs, "CASE WHEN COUNT(*) = 0 THEN 'out_of_range' END")
+		}
+		if exact {
+			a.val = d.Narrow("MIN(m.v)")
+		} else {
+			a.val = "MIN(m.v)"
+		}
+	case "JOIN":
+		// The values written as TEXT writes them, in the order of the
+		// list, blanks skipped, the separator between them. The text may
+		// not pass the limit of a text (ADR-0021).
+		sep, err := r.sub(q.Extra)
+		if err != nil {
+			return aggregateSQL{}, fmt.Errorf("sqlgen: JOIN: %w", err)
+		}
+		s := "''"
+		if sep.Kind != KindNull {
+			s = d.Text(sep)
+		}
+		t := "NULLIF(" + d.Render(x) + ", '')"
+		if x.Kind == KindNull {
+			t = "NULL"
+		}
+		max := d.Limits().MaxText
+		a.val = "substr(" + d.JoinRows(t, s, r.order) + ", 1, " + strconv.Itoa(max+1) + ")"
+		if sep.Err != "" {
+			a.errs = append(a.errs, sep.Err)
+		}
+		a.errs = append(a.errs, "CASE WHEN SUM(length("+t+")) + (COUNT("+t+") - 1) * length("+s+") > "+strconv.Itoa(max)+" THEN 'out_of_range' END")
+	case "EXISTS":
+		a.val = "(COUNT(*) > 0)"
 	default:
 		return aggregateSQL{}, fmt.Errorf("sqlgen: LOOKUP: unknown aggregate %s", q.Agg)
 	}

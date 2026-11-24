@@ -40,7 +40,18 @@ const figureOrder = `{
    "amounts":  {"mode": "live", "formula": "COUNTUNIQUE(invoices.margin)"},
    "usual":    {"mode": "live", "formula": "AVERAGEIF(invoices, state = \"draft\", net)"},
    "midmargin": {"mode": "live", "formula": "MEDIAN(invoices.margin)"},
-   "spread":   {"mode": "live", "formula": "MAX(invoices.net) - MEDIAN(invoices.net)"}
+   "spread":   {"mode": "live", "formula": "MAX(invoices.net) - MEDIAN(invoices.net)"},
+   "bynet":    {"mode": "live", "formula": "QUERY(Invoice, {number, net}, order = REF(), {net})"},
+   "bydesc":   {"mode": "live", "formula": "QUERY(Invoice, {number}, order = REF(), {-number})"},
+   "first":    {"mode": "live", "formula": "FIRST(invoices.number)"},
+   "lastnet":  {"mode": "live", "formula": "LAST(invoices.net)"},
+   "second":   {"mode": "live", "formula": "INDEX(invoices.number, 2)"},
+   "numbers":  {"mode": "live", "formula": "JOIN(invoices.number, \", \")"},
+   "hasfv3":   {"mode": "live", "formula": "CONTAINS(invoices.number, \"FV-3\")"},
+   "cheapest": {"mode": "live", "formula": "FIRST(bynet.number)"},
+   "dearest":  {"mode": "live", "formula": "LAST(bynet.number)"},
+   "bydear":   {"mode": "live", "formula": "JOIN(bynet.number, \" > \")"},
+   "newest":   {"mode": "live", "formula": "FIRST(bydesc.number)"}
  },
  "states": {"initial": "open", "list": ["open", "closed"], "final": ["closed"]},
  "transitions": [{"name": "close", "from": "open", "to": "closed"}],
@@ -205,6 +216,14 @@ func TestLiveFigure_RefusedWhenDefined(t *testing.T) {
 		{"different values of what is no list", `"x": {"mode": "live", "formula": "COUNTUNIQUE(customer)"}`, "bad_formula", "in the column position of a LOOKUP"},
 		{"a middle value inside a figure", `"x": {"mode": "live", "formula": "COUNTIF(invoices, net > MEDIAN(invoices.net))"}`, "bad_formula", "inside the arguments of another function over rows"},
 		{"a mean inside a figure", `"x": {"mode": "live", "formula": "COUNTIF(invoices, net > AVERAGE(invoices.net))"}`, "bad_formula", "inside another's arguments"},
+		{"a figure as the place of INDEX", `"x": {"mode": "live", "formula": "INDEX(invoices.number, COUNT(invoices))"}`, "bad_formula", "inside another's arguments"},
+		{"a column as the place of INDEX", `"x": {"mode": "live", "formula": "INDEX(invoices.number, invoices.net)"}`, "bad_formula", "the position is a value of the document"},
+		{"a place that is a text", `"x": {"mode": "live", "formula": "INDEX(invoices.number, \"two\")"}`, "bad_formula", "the position must be a number"},
+		{"a separator that is a number", `"x": {"mode": "live", "formula": "JOIN(invoices.number, 1)"}`, "bad_formula", "the separator must be a text"},
+		{"the first of a list and no column", `"x": {"mode": "live", "formula": "FIRST(invoices)"}`, "bad_formula", "FIRST takes a column of the list"},
+		{"a value of another type looked for", `"x": {"mode": "live", "formula": "CONTAINS(invoices.number, 3)"}`, "bad_formula", "number"},
+		{"the first of a list that is kept", `"x": {"type": "text", "formula": "FIRST(invoices.number)"}`, "bad_formula", "stands only in a live variable"},
+		{"JOIN in a LOOKUP", `"x": {"type": "text", "mode": "triggered", "on": ["refresh"], "formula": "LOOKUP(Invoice, JOIN(number, \", \"), order = ID())"}`, "bad_formula", "cannot stand where the column stands"},
 		{"a figure with too little", `"x": {"mode": "live", "formula": "SUMIF(invoices, TRUE)"}`, "bad_formula", "SUMIF takes 3 arguments, got 2"},
 		{"a figure inside a figure", `"x": {"mode": "live", "formula": "COUNTIF(invoices, net > SUM(invoices.net))"}`, "bad_formula", "inside another's arguments"},
 		{"a lookup beside a figure", `"x": {"mode": "live", "formula": "COUNT(invoices) + LOOKUP(Invoice, COUNT(id), TRUE)"}`, "not_supported", "is not built yet (ADR-0076)"},
@@ -356,5 +375,41 @@ func TestLiveFigure_PastTheRules(t *testing.T) {
 		if r.Command != "live" || r.Reason != "audit of November" || r.Counted == nil || *r.Counted != 3 {
 			t.Errorf("the log of reads keeps %+v; want a live read that counted three invoices past the rules", r)
 		}
+	}
+}
+
+// One value out of a list (ADR-0081, step 3): the first and the last row
+// by the list's own order, the one at a place, the values joined, and
+// whether a value is there, each of the rows the reader may read.
+func TestLiveFigure_OneValueOutOfAList(t *testing.T) {
+	s, read := openFigures(t)
+	for _, tc := range []struct {
+		order string
+		who   Principal
+		want  map[string]any
+	}{
+		{"ORD-17", liveJan, map[string]any{"first": "FV-1", "lastnet": "250.00 PLN", "second": "FV-2", "numbers": "FV-1, FV-2", "hasfv3": false,
+			"cheapest": "FV-2", "dearest": "FV-1", "bydear": "FV-2 > FV-1", "newest": "FV-2"}},
+		{"ORD-17", livePiotr, map[string]any{"first": "FV-3", "lastnet": "70.00 PLN", "numbers": "FV-3", "hasfv3": true, "dearest": "FV-3", "cheapest": "FV-3", "newest": "FV-3"}},
+		// Finance reads all three. The list of the order is by number, one
+		// other by the net from the smallest, a third by number from the
+		// last: each figure follows the order of its own list, which is
+		// none of them the order the invoices were made in.
+		{"ORD-17", liveEwa, map[string]any{"first": "FV-1", "lastnet": "70.00 PLN", "second": "FV-2", "numbers": "FV-1, FV-2, FV-3", "hasfv3": true,
+			"cheapest": "FV-3", "dearest": "FV-1", "bydear": "FV-3 > FV-2 > FV-1", "newest": "FV-3"}},
+		// A list with no rows: nothing is first, nothing is joined.
+		{"ORD-18", livePiotr, map[string]any{"first": nil, "lastnet": nil, "numbers": nil, "hasfv3": false, "dearest": nil, "bydear": nil}},
+	} {
+		for name, want := range tc.want {
+			if got := read(tc.order, name, tc.who); got != want {
+				t.Errorf("%s of %s for %s = %v (%T); want %v", name, tc.order, tc.who.ID, got, got, want)
+			}
+		}
+	}
+	// A place the list does not have for its reader is an error, and no
+	// blank: Piotr reads one invoice of the order.
+	ctx := t.Context()
+	if _, err := s.Live(ctx, "Order", "ORD-17", "second", As(livePiotr)); err == nil || err.(*Error).Code != "out_of_range" {
+		t.Errorf("the second of one invoice: %v; want out_of_range", err)
 	}
 }

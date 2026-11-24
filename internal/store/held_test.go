@@ -18,7 +18,12 @@ const heldInvoice = `{
    "total":   {"formula": "SUM(lines.qty * lines.price)"},
    "largest": {"formula": "MAX(lines.price)"},
    "open":    {"formula": "COUNTIF(lines, NOT done)"},
-   "labels":  {"formula": "COUNTUNIQUE(tags)"}
+   "labels":  {"formula": "COUNTUNIQUE(tags)"},
+   "what":    {"formula": "JOIN(lines.sku, \", \")"},
+   "opener":  {"formula": "FIRST(lines.sku)"},
+   "closer":  {"formula": "LAST(lines.price)"},
+   "second":  {"formula": "IFERROR(INDEX(lines.sku, 2), \"none\")"},
+   "urgent":  {"formula": "CONTAINS(tags, \"red\")"}
  },
  "states": {"initial": "draft", "list": ["draft", "sent"]},
  "transitions": [{"name": "send", "from": "draft", "to": "sent", "guard": "COUNT(lines) > 0 AND ALL(lines, qty > 0)"}],
@@ -48,14 +53,15 @@ func TestHeld_FiguresOverLines(t *testing.T) {
 			}
 		}
 	}
-	want(d, map[string]any{"count": 2.0, "total": "21.25 PLN", "largest": "10.50 PLN", "open": 1.0, "labels": 2.0})
+	want(d, map[string]any{"count": 2.0, "total": "21.25 PLN", "largest": "10.50 PLN", "open": 1.0, "labels": 2.0,
+		"what": "A, B", "opener": "A", "closer": "0.25 PLN", "second": "B", "urgent": true})
 	// A change of the lines works the figures out again; a change of
 	// something else leaves them, with the lines the store has.
 	d, err = s.Set(ctx, "Invoice", d.ID, Values{"lines": []any{line("A", 2, "10.50 PLN", true), line("B", 1, "0.25 PLN", true), line("C", 3, "100.00 PLN", true)}}, who)
 	if err != nil {
 		t.Fatal(err)
 	}
-	want(d, map[string]any{"count": 3.0, "total": "321.25 PLN", "largest": "100.00 PLN", "open": 0.0})
+	want(d, map[string]any{"count": 3.0, "total": "321.25 PLN", "largest": "100.00 PLN", "open": 0.0, "what": "A, B, C", "closer": "100.00 PLN"})
 	d, err = s.Set(ctx, "Invoice", d.ID, Values{"number": "FV-1/A"}, who)
 	if err != nil {
 		t.Fatal(err)
@@ -71,7 +77,7 @@ func TestHeld_FiguresOverLines(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want(e, map[string]any{"count": 0.0, "total": nil, "labels": 0.0})
+	want(e, map[string]any{"count": 0.0, "total": nil, "labels": 0.0, "what": nil, "opener": nil, "closer": nil, "second": "none", "urgent": false})
 	if _, err := s.Transition(ctx, "Invoice", e.ID, "send", nil, who); err == nil || !strings.Contains(err.Error(), "guard") {
 		t.Errorf("an invoice with no lines was sent: %v", err)
 	}

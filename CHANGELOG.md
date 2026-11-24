@@ -8,21 +8,6 @@ All notable changes to FadoDB are recorded here. The format follows
 
 ### Added
 
-- A database made with a starter, an app ready to use (ADR-0087):
-  `fadodb init acme.fado --starter expenses` makes, on the machine and
-  by no user, the app `Expenses`, the groups `hr` and `finance`, the
-  table `Employees`, which says who each person's manager is and which
-  `hr` writes, and the class `Expense`: the employee files it, the
-  manager the table names when it is submitted approves it, nobody
-  approves their own, a substitute or an assistant acts for another,
-  and `finance` pays it back. A starter that the database refuses
-  leaves no file behind, and a name the program has no starter under is
-  refused with the names it has. The manual's chapter
-  `docs/manual/starters.md` shows the whole app and the first evening
-  with its people, and a test plays it against a real server. Not yet:
-  people and documents in a starter, a face to go with it, and more
-  starters.
-
 - A group is a record of its own (ADR-0086). A database that keeps
   its users keeps its groups: a name, which `INGROUP` and a user's
   `groups` name and which never changes, a `label` a screen shows, and
@@ -554,6 +539,13 @@ All notable changes to FadoDB are recorded here. The format follows
   `ghcr.io/mojohand70/fadodb:0.6.0`, now that v0.6.0 has published it.
 
 ### Fixed
+
+- The designer's skill warns that `ACTINGFOR()` is blank for a caller
+  who acts for nobody, and a blank equals a blank: compared with a
+  value that is still empty, such as an approver filled in later, it
+  lets every caller through, so the skill says to ask for the value
+  first. The operator's skill no longer says that the door for agents
+  at the server, `/mcp`, is not built.
 
 - **The README, the roadmap, the manual and two skills said things of
   Phase 7 that were no longer true.** The README named nothing Phase 7

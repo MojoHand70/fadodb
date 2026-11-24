@@ -87,7 +87,7 @@ const customerClass = `{"name": "Customer", "title": "name",
   "variables": {"name": {"type": "text"}},
   "states": {"initial": "known", "list": ["known"]}}`
 
-func defineInvoice(t *testing.T, s *Store) *model.Class {
+func defineInvoice(t testing.TB, s *Store) *model.Class {
 	t.Helper()
 	ctx := context.Background()
 	if _, err := s.defineOpen(ctx, []byte(customerClass), asSetup); err != nil {

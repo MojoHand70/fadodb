@@ -376,7 +376,10 @@ answers its facts for `create` or `set`, and `get_file`, which writes a
 file a document holds into the folder, by its hash, over no other
 file; nothing outside the folder is read or written, and the door at
 the server, which has no folder of the caller's, offers neither.
-Left of the phase's steps: the measurements and the release. No starter is built into the program (the owner, 2026-11-24):
+The measurements are done
+([docs/perf/v0.7.0.md](docs/perf/v0.7.0.md)): every budget holds, and
+beside v0.6.0 the same evening a commit is no slower in memory and 2 to
+3% slower on disk. Left of the phase: its test, below, and the release. No starter is built into the program (the owner, 2026-11-24):
 an app comes with a purchase of FadoDB, or is installed from the
 marketplace by exporting it from one database and importing it into
 another, which is built after v0.7.0. Its test, besides the plan's: an

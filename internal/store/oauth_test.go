@@ -33,7 +33,7 @@ func challengeOf(v string) string {
 
 // connect runs what a client and a person do: the client asks, the
 // person allows it, and the client exchanges its code for passes.
-func connect(t *testing.T, s *Store, c Client, person Option, unused time.Duration) *Passes {
+func connect(t testing.TB, s *Store, c Client, person Option, unused time.Duration) *Passes {
 	t.Helper()
 	ctx := context.Background()
 	asked := Asked{Client: c, RedirectURI: c.RedirectURIs[0], Challenge: challengeOf(verifier), State: "the client's state", Resource: acmeServer + c.Address}
@@ -70,7 +70,7 @@ func unknownPass(t *testing.T, s *Store, what, pass, address string) {
 	}
 }
 
-func oauthPeople(t *testing.T, s *Store) {
+func oauthPeople(t testing.TB, s *Store) {
 	t.Helper()
 	ctx := context.Background()
 	for _, u := range []User{

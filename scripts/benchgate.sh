@@ -273,15 +273,39 @@ git worktree add --quiet --detach "$work/base" "$BASE"
 # A warm-up round per tree compiles the test binaries and absorbs the
 # frequency and cache effects of that compile, and tells whether there is
 # anything to compare at all.
+# A benchmark that fails measures nothing, and benchstat leaves out what
+# one tree has and the other has not: the gate would say ok without it.
+# BenchmarkRecalculate, the compute step of a commit, failed so from
+# 2026-11-22 to the measuring of v0.7.0 while the gate said ok. So the
+# gate fails when a benchmark fails here, or ran at the base and not
+# here; one that fails only at the base is named and compared with
+# nothing, so that the change that mends it can pass.
+failures() { grep -E '^--- FAIL: Benchmark' "$@" | sed 's/^.*--- FAIL: //' | sort -u; }
+names() { grep -oE '^Benchmark[^[:space:]]+' "$1" | sed -E 's/-[0-9]+$//' | sort -u; }
 run_bench "$PWD" > "$work/warm-new.txt"
+if [ -n "$(failures "$work/warm-new.txt")" ]; then
+  echo "benchgate: these benchmarks fail in the working tree, and a benchmark that fails is compared with nothing:"
+  grep -E -A3 '^--- FAIL: Benchmark' "$work/warm-new.txt"
+  exit 1
+fi
 if ! grep -q '^Benchmark' "$work/warm-new.txt"; then
   echo "benchgate: no benchmarks in the working tree, nothing to compare"
   exit 0
 fi
 run_bench "$work/base" > "$work/warm-old.txt"
+if [ -n "$(failures "$work/warm-old.txt")" ]; then
+  echo "benchgate: these benchmarks fail at $BASE and are compared with nothing: $(failures "$work/warm-old.txt" | tr '\n' ' ')"
+fi
 if ! grep -q '^Benchmark' "$work/warm-old.txt"; then
   echo "benchgate: no benchmarks at $BASE, nothing to compare"
   exit 0
+fi
+gone="$(comm -23 <(names "$work/warm-old.txt") <(names "$work/warm-new.txt"))"
+if [ -n "$gone" ]; then
+  echo "benchgate: these benchmarks ran at $BASE and not in the working tree, so they would be compared with nothing:"
+  echo "$gone"
+  echo "  a benchmark taken away is taken out of BENCH_PATTERN in the same change"
+  exit 1
 fi
 
 # Every placement of both trees, the measured rounds alternating between
@@ -300,6 +324,14 @@ for k in $(seq 0 $((PLACEMENTS - 1))); do
 done
 layoutpad_remove "$PWD"
 layoutpad_remove "$work/base"
+# A benchmark that failed in a measured round, though not in the warm-up.
+for k in $(seq 0 $((PLACEMENTS - 1))); do
+  if [ -n "$(failures "$work/new-$k.txt")" ]; then
+    echo "benchgate: a benchmark failed in a measured round of the working tree, placement $k:"
+    grep -E -A3 '^--- FAIL: Benchmark' "$work/new-$k.txt"
+    exit 1
+  fi
+done
 
 old_files=()
 new_files=()

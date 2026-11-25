@@ -42,6 +42,17 @@ Phase 8 started on 2026-11-25.
   0.32 ms (`BenchmarkDraftsOfOneOrder`, the test the record sets).
   Not built: an index for the key of a `LOOKUP` that is no pointer,
   which still wants `"index": true`.
+- A list in a message becomes the lines of a document (ADR-0085, item
+  1, the first of its three steps). In the `values` of an inlet a
+  `rows` variable takes a repeat in place of a formula: `each`, the
+  path to the list in the body; `as`, the name of one element; `row`, a
+  formula for each column, typed against the column when the inlet is
+  defined. An order of a shop comes in with its lines in one message,
+  with `create`, `set` or `transition`. A message whose path leads to
+  something that is no list, or with an element a formula fails on, is
+  refused with `bad_message` at the place, and the words name the
+  element. A message of 24 KiB with a hundred lines takes 0.50 ms
+  before its command.
 - The engine makes the index a lookup or a list is keyed by (ADR-0075,
   items 2, 4 and 7), which completes the record. A `LOOKUP` or a list
   whose condition compares a variable of another class for equality
@@ -230,6 +241,10 @@ Phase 8 started on 2026-11-25.
 
 ### Changed
 
+- A message is read faster: the formulas of an inlet read one body,
+  and the engine now parses it once and not once for each formula. A
+  message of 2 KiB takes 73 µs with its command where it took 85
+  (`BenchmarkReceive`).
 - **The layout of a database changes: the engine's schema is 15.**
   Every class table gains the indexes the engine keeps by itself, and
   an index a designer asked for now goes on to the moment a document

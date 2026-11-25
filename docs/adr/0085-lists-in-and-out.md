@@ -355,6 +355,46 @@ wrote them.
 
 The owner accepted the record on 2026-11-23: "accepted".
 
+## What is built
+
+- **Item 1, a list in a message, on 2026-11-25**, in Phase 8: the
+  repeat in the `values` of an inlet, with `create`, `set` and
+  `transition`, its check when the inlet is defined, and its refusals
+  of a message. `try_inlet` and `fadodb inlet check` show the lines a
+  message makes, as they show every value.
+- Items 2 and 3, a list in a request and in an answer, are not built.
+
+## Settled while building a list in a message
+
+Each of these is settled by me while building, and is the owner's to
+strike.
+
+- **A repeat fills a `rows` variable that somebody enters.** A repeat
+  written for a text, a computed variable or an `array` is refused when
+  the inlet is defined, with `not_allowed`. A list of plain values into
+  an `array` is not built.
+- **The path of `each` is checked for its form** when the inlet is
+  defined: no empty step. What it leads to is known only when a message
+  comes.
+- **A path that leads to nothing, or to `null`, gives no lines**, as an
+  empty list does. Only something that is there and is no list refuses
+  the message.
+- **An element is handed to its formulas as it parses**: a number of
+  more than fifteen digits loses its last ones, as it does for
+  `JSONVALUE` over the whole body today.
+- **A rule has no repeat.** `each` in the values a rule gives is
+  refused as before: a rule reads its document, and the lines of a
+  document reach another through an action (item 2).
+- **The engine parses a body once.** The formulas of an inlet read the
+  same body, and until now each parsed it again. The VM remembers the
+  json text it parsed last and the element it was handed last. Measured
+  on 2026-11-25: a message of 24 KiB with a hundred lines takes 0.50 ms
+  before its command (`BenchmarkReceiveLines`, in the gate; the budget
+  of this record is 1 ms), where it took 2.2 ms with every formula
+  parsing for itself. A message of 2 KiB without a list, with its
+  command, takes 73 µs where it took 85, and allocates 262 times where
+  it allocated 298 (`BenchmarkReceive`).
+
 ## Consequences
 
 - An order with its lines comes in from a shop in one message, and goes

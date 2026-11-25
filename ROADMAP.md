@@ -476,7 +476,7 @@ the stop of a free question that no index serves, after five
 seconds, with the variable an index is needed on, and the index for
 the key of a lookup or a list that is no pointer, made when the class
 that asks is defined: with these ADR-0075 is built. Counts, sums and
-grouping in a `QUERY` are not; they come with the analytical engine. Then the lists in and out of messages and requests, ADR-0085.
+grouping in a `QUERY` are not; they come with the analytical engine. Then the lists in and out of messages and requests, ADR-0085: a list in a message, which becomes the lines of a document, is built; a list in a request and a list in an answer are not.
 After these comes the analytical engine itself: DuckDB beside the
 documents, fed from the commits, for the question that reads
 everything; the mining views; a value that follows its source or the

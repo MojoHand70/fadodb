@@ -132,6 +132,116 @@ They are read with [the functions](functions.md) the language has,
 - **The header that carries the proof is not among `HEADERS`**, so
   that no formula copies a secret into a document.
 
+## A list in a message
+
+An order comes with its lines. commercetools says that Globex's order
+1001 was placed, and the message holds a list, one element for each
+line. A `rows` variable takes a repeat in place of a formula, and the
+list becomes the lines of the document.
+
+The class. `ct-in` is the service user of commercetools, in the group
+`commerce`; Olga's team is the group `orders`:
+
+<!-- a list: the class -->
+```json
+{
+  "name": "Order",
+  "title": "number",
+  "variables": {
+    "number": {"type": "text", "required": true},
+    "email":  {"type": "text"},
+    "lines":  {"type": "rows", "schema": {"sku": "text", "qty": "int", "price": "money(2)"}}
+  },
+  "states": {"initial": "received", "list": ["received", "booking"]},
+  "transitions": [{"name": "book", "from": "received", "to": "booking"}],
+  "access": {
+    "read":   "INGROUP(\"orders\") OR INGROUP(\"commerce\")",
+    "create": "INGROUP(\"commerce\")",
+    "update": "FALSE",
+    "delete": "FALSE",
+    "transition": {"book": "INGROUP(\"orders\")"}
+  }
+}
+```
+
+The inlet, whole:
+
+<!-- a list: the inlet -->
+```jsonc
+{
+  "name": "ct.order",
+  "label": "commercetools says that an order was placed",
+  "as": "ct-in",
+  "connection": {"name": "ct", "secrets": ["api_key"]},
+  "proof": {"form": "shown", "header": "x-api-key", "secret": "api_key"},
+  "when": "JSONVALUE(BODY, \"type\") = \"OrderCreated\"",
+  "key": "JSONVALUE(BODY, \"id\")",
+  "command": "create",
+  "object": {
+    "class": "Order",
+    "id": "JSONVALUE(BODY, \"order.id\")",
+    "values": {
+      "number": "JSONVALUE(BODY, \"order.orderNumber\")",
+      "email":  "JSONVALUE(BODY, \"order.customerEmail\")",
+      "lines": {
+        "each": "order.lineItems",
+        "as": "item",
+        "row": {
+          "sku":   "JSONVALUE(item, \"variant.sku\")",
+          "qty":   "DECIMAL(VALUE(JSONVALUE(item, \"quantity\")), 0)",
+          "price": "MONEY(ROUND(DECIMALVALUE(JSONVALUE(item, \"price.value.centAmount\"), 0) / 100, 2), JSONVALUE(item, \"price.value.currencyCode\"))"
+        }
+      }
+    }
+  }
+}
+```
+
+The message:
+
+<!-- a list: the message -->
+```jsonc
+{"id": "evt-7781", "type": "OrderCreated",
+ "order": {"id": "ct-1001", "orderNumber": "1001", "customerEmail": "buyer@globex.example",
+  "lineItems": [
+   {"variant": {"sku": "SOFA-3"},  "quantity": 1, "price": {"value": {"centAmount": 240000, "currencyCode": "PLN"}}},
+   {"variant": {"sku": "CHAIR-1"}, "quantity": 4, "price": {"value": {"centAmount": 30000,  "currencyCode": "PLN"}}}
+  ]}}
+```
+
+It makes the order `ct-1001` with two lines:
+
+<!-- a list: the lines -->
+| sku | qty | price |
+|---|---|---|
+| SOFA-3 | 1 | 2400.00 PLN |
+| CHAIR-1 | 4 | 300.00 PLN |
+
+<!-- a list: the parts of a repeat -->
+| Part | What it says |
+|---|---|
+| `each` | where the list is in the body: a path, written as `JSONVALUE` takes one. It is a path and no formula, so it is checked when the inlet is defined |
+| `as` | the name of one element. Inside `row` the element is a `json` value, read with `JSONVALUE`. It may not be `BODY`, `HEADERS`, `PARAMS` or `RAW` |
+| `row` | a formula for each column it fills, typed against the column when the inlet is defined. A column it does not name is blank |
+
+- **`BODY`, `HEADERS`, `PARAMS` and `RAW` are still there inside
+  `row`**, so a line can take the currency of the whole order.
+- **A message without the list, or with an empty one,** makes a
+  document with no lines.
+- **A repeat stands wherever an inlet gives values**: with `create`,
+  `set` and `transition`. With `set` it gives the lines whole, as a
+  `set` of a `rows` variable always does.
+- **At most 10,000 elements**, as many as a document holds lines.
+
+<!-- a list: what is refused -->
+| The message | Is refused with | At |
+|---|---|---|
+| has something at the path that is no list | `bad_message` | `/object/values/lines/each` |
+| has an element a formula fails on, such as a quantity that is no number | `bad_message`, and the words name the element: "the element 2 of order.lineItems" | the column, `/object/values/lines/row/qty` |
+| has more than 10,000 elements | `bad_message` | `/object/values/lines/each` |
+
+A refused message makes nothing, as any refused message does.
+
 ## How a message proves who sent it
 
 The `proof` names a header of the message, a secret of the connection

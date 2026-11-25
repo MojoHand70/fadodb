@@ -119,6 +119,20 @@ type Assignment struct {
 	Variable *Variable
 	Formula  *formula.Program
 	Src      string
+	// Each fills a rows variable from a list in a message, in place of
+	// a formula (ADR-0085, item 1); nil otherwise.
+	Each *Repeat
+}
+
+// Repeat makes the lines of a document from a list in a message
+// (ADR-0085, item 1): Path leads to the list in the body, written as
+// JSONVALUE takes a path; As names one element of it, a json value, for
+// the formulas of Row, one for each column they fill, in the order
+// written. A column Row does not name is blank.
+type Repeat struct {
+	Path string
+	As   string
+	Row  []Assignment
 }
 
 // IntoValue is one variable an action's result is written to: an input
@@ -1213,6 +1227,15 @@ func documentID(c *collector, path, src string, scope *formula.Scope, what strin
 // false when the values do not read. target is nil when a stored
 // definition names a class the database does not have.
 func fillValues(c *collector, path string, raw json.RawMessage, target *Class, scope *formula.Scope, verb string) ([]Assignment, map[string]bool, bool) {
+	return fillValuesFrom(c, path, raw, target, scope, verb, nil)
+}
+
+// fillValuesFrom is fillValues for what reads a message: message is
+// then the variables a message gives its formulas, and a rows variable
+// may take a repeat over a list of the message in place of a formula
+// (ADR-0085, item 1). It is nil for a rule, which has no list to repeat
+// over.
+func fillValuesFrom(c *collector, path string, raw json.RawMessage, target *Class, scope *formula.Scope, verb string, message []formula.Variable) ([]Assignment, map[string]bool, bool) {
 	given := map[string]bool{}
 	if len(raw) == 0 {
 		return nil, given, true
@@ -1222,10 +1245,25 @@ func fillValues(c *collector, path string, raw json.RawMessage, target *Class, s
 		c.add(CodeBadValue, path, "the values of a "+verb+" are an object of formulas by variable")
 		return nil, given, false
 	}
-	var formulas map[string]string
-	if err := json.Unmarshal(raw, &formulas); err != nil {
-		c.hint(CodeBadValue, path, "every value of a "+verb+" is a formula, written as text", `a literal text is "\"new\"", a number "0"`)
+	var written map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &written); err != nil {
+		c.add(CodeBadValue, path, "the values of a "+verb+" are an object of formulas by variable")
 		return nil, given, false
+	}
+	// A value is a formula, written as text; for a rows variable of what
+	// reads a message it may be a repeat, an object.
+	formulas, repeats := map[string]string{}, map[string]json.RawMessage{}
+	for name, value := range written {
+		var text string
+		switch {
+		case json.Unmarshal(value, &text) == nil:
+			formulas[name] = text
+		case message != nil && len(value) > 0 && value[0] == '{':
+			repeats[name] = value
+		default:
+			c.hint(CodeBadValue, path, "every value of a "+verb+" is a formula, written as text", `a literal text is "\"new\"", a number "0"`)
+			return nil, given, false
+		}
 	}
 	lenient := c.env.Lenient
 	var sets []Assignment
@@ -1241,6 +1279,22 @@ func fillValues(c *collector, path string, raw json.RawMessage, target *Class, s
 			v, _ = target.Variable(name)
 		}
 		composite := v != nil && (v.Type.Kind == formula.KindRows || v.Type.Kind == formula.KindArray || v.Type.Kind == formula.KindObject)
+		if each, is := repeats[name]; is {
+			// A list of the message becomes the lines of the document.
+			switch {
+			case v == nil && target != nil:
+				c.addf(CodeUnknownVariable, vpath, "the class %s has no variable %s", target.Name, quote(name))
+			case v == nil:
+				// a stored definition that names a class the database no longer has
+			case v.Computed || v.Type.Kind != formula.KindRows:
+				c.hint(CodeNotAllowed, vpath, "a repeat gives the lines of a rows variable that somebody enters; "+v.Name+" of "+target.Name+" is "+article(v.Type.String()), "give it a formula, written as text")
+			default:
+				if rep := compileRepeat(c, vpath, each, v, message); rep != nil {
+					sets = append(sets, Assignment{Name: v.Name, Variable: v, Each: rep})
+				}
+			}
+			continue
+		}
 		if lenient && (v == nil || v.Computed || composite) {
 			// What a stored definition gives is taken as it is; the action
 			// is refused for it when it runs.
@@ -1265,6 +1319,85 @@ func fillValues(c *collector, path string, raw json.RawMessage, target *Class, s
 		}
 	}
 	return sets, given, true
+}
+
+// compileRepeat checks the repeat that fills a rows variable from a
+// list in a message (ADR-0085, item 1): each, the path to the list; as,
+// the name of one element; row, a formula for each column, typed
+// against the column.
+func compileRepeat(c *collector, path string, raw json.RawMessage, v *Variable, message []formula.Variable) *Repeat {
+	var def struct {
+		Each string          `json:"each"`
+		As   string          `json:"as"`
+		Row  json.RawMessage `json:"row"`
+	}
+	dec := json.NewDecoder(bytes.NewReader(raw))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&def); err != nil {
+		c.hint(CodeBadJSON, path, jsonMessage(err), `a repeat has each, as and row: {"each": "order.lineItems", "as": "item", "row": {"sku": "JSONVALUE(item, \"sku\")"}}`)
+		return nil
+	}
+	ok := true
+	switch {
+	case def.Each == "":
+		c.hint(CodeMissing, path+"/each", "a repeat names the list it repeats over: the path to it in the body, as JSONVALUE takes one", `"each": "order.lineItems"`)
+		ok = false
+	case strings.HasPrefix(def.Each, ".") || strings.HasSuffix(def.Each, ".") || strings.Contains(def.Each, ".."):
+		c.hint(CodeBadValue, path+"/each", "the path "+quote(def.Each)+" has an empty step", `a path is names with a point between them: "order.lineItems"`)
+		ok = false
+	}
+	switch reason := identReason(def.As); {
+	case def.As == "":
+		c.hint(CodeMissing, path+"/as", "a repeat names one element of its list, for the formulas of its row", `"as": "item"`)
+		ok = false
+	case reason != "":
+		c.add(CodeBadValue, path+"/as", reason)
+		ok = false
+	default:
+		for _, m := range message {
+			if upper(m.Name) == upper(def.As) {
+				c.hint(CodeNotAllowed, path+"/as", m.Name+" is what the message itself is read by", "give the element a name of its own, such as item")
+				ok = false
+			}
+		}
+	}
+	names, err := orderedKeys(def.Row)
+	var formulas map[string]string
+	if len(def.Row) == 0 {
+		c.hint(CodeMissing, path+"/row", "a repeat gives a formula for each column it fills", `"row": {"sku": "JSONVALUE(item, \"sku\")"}`)
+		return nil
+	}
+	if err != nil || json.Unmarshal(def.Row, &formulas) != nil {
+		c.hint(CodeBadValue, path+"/row", "the row of a repeat is an object of formulas by column, each written as text", `"row": {"sku": "JSONVALUE(item, \"sku\")"}`)
+		return nil
+	}
+	if !ok {
+		return nil
+	}
+	scope, serr := formula.NewScope(append(append([]formula.Variable{}, message...), formula.Variable{Name: def.As, Type: formula.Scalar(formula.KindJSON)})...)
+	if serr != nil {
+		c.add(CodeBadValue, path+"/as", serr.Error())
+		return nil
+	}
+	rep := &Repeat{Path: def.Each, As: def.As}
+	seen := map[string]bool{}
+	for _, name := range names {
+		cpath := path + "/row/" + name
+		if seen[upper(name)] {
+			c.addf(CodeDuplicate, cpath, "%s is given twice; names differ in case only", quote(name))
+			continue
+		}
+		seen[upper(name)] = true
+		col, has := v.Type.Field(name)
+		if !has {
+			c.hint(CodeUnknownVariable, cpath, v.Name+" has no column "+quote(name), "its columns are "+strings.Join(v.Type.FieldNames(), ", "))
+			continue
+		}
+		if prog := bindFill(c, cpath, formulas[name], scope, &col.Type); prog != nil {
+			rep.Row = append(rep.Row, Assignment{Name: col.Name, Formula: prog, Src: formulas[name]})
+		}
+	}
+	return rep
 }
 
 // bindFill binds a formula that fills something of another class or of

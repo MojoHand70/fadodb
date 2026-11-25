@@ -20,7 +20,10 @@ const lookupQuote = `{
    "invoiced": {"type": "money(2)", "mode": "live", "formula": "LOOKUP(Invoice, SUM(net), owner = THIS.customer)"},
    "first":    {"type": "text", "mode": "live", "formula": "LOOKUP(Invoice, number, owner = THIS.customer)"},
    "margins":  {"type": "money(2)", "mode": "live", "formula": "LOOKUP(Invoice, SUM(margin), owner = THIS.customer)"},
-   "both":     {"type": "text", "mode": "live", "formula": "TEXT(LOOKUP(Invoice, COUNT(id), owner = THIS.customer)) & \" of \" & TEXT(LOOKUP(Invoice, COUNT(id), TRUE))"}
+   "both":     {"type": "text", "mode": "live", "formula": "TEXT(LOOKUP(Invoice, COUNT(id), owner = THIS.customer)) & \" of \" & TEXT(LOOKUP(Invoice, COUNT(id), TRUE))"},
+   "whileopen": {"type": "number", "mode": "live", "formula": "LOOKUP(Invoice, COUNT(id), owner = THIS.customer AND STATE() = \"open\")"},
+   "notitself": {"type": "number", "mode": "live", "formula": "LOOKUP(Invoice, COUNT(id), number = \"FV-1\" AND ID() = \"O-1\")"},
+   "goldopen":  {"type": "number", "mode": "live", "formula": "LOOKUP(Prices, COUNT(sku), band = \"gold\" AND STATE() = \"open\" AND ID() = \"O-1\")"}
  },
  "states": {"initial": "open", "list": ["open"]},
  "access": {"read": "TRUE", "create": "TRUE", "update": "TRUE", "delete": "FALSE"}
@@ -121,5 +124,20 @@ func TestLiveLookup_AClass(t *testing.T) {
 	// The margin is finance's to read: for Jan the sum over it is blank.
 	if v, err := liveOf(t, s, "margins", As(liveJan)); err != nil || v != nil {
 		t.Errorf("Jan reads the sum of the margins: %v, %v; want blank", v, err)
+	}
+}
+
+// STATE() and ID() in the condition of a live lookup are the state and
+// the id of the document the value is read on, as they are for a lookup
+// whose value is kept (ADR-0040): the offer is open, and it is O-1.
+func TestLiveLookup_TheDocumentsStateAndID(t *testing.T) {
+	s, _ := openLookup(t)
+	for variable, want := range map[string]any{"whileopen": 3.0, "notitself": 1.0} {
+		if v, err := liveOf(t, s, variable, As(liveEwa)); err != nil || v != want {
+			t.Errorf("Ewa reads %s: %v, %v; want %v", variable, v, err, want)
+		}
+	}
+	if v, err := liveOf(t, s, "goldopen", As(liveJan)); err != nil || v != 2.0 {
+		t.Errorf("Jan reads goldopen: %v, %v; want 2", v, err)
 	}
 }

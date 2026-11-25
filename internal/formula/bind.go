@@ -170,6 +170,25 @@ type BindOptions struct {
 	// read, so nothing kept or decided may hold one.
 	Lists func(name string) (*Source, bool)
 	Live  bool
+	// Class is the name of the class the formula belongs to, for REF():
+	// the pointer to the document the formula runs over is the pointer
+	// to a document of that class (ADR-0076, item 10). "" is a formula
+	// that belongs to no class, which has no such pointer.
+	Class string
+	// Classes knows the classes a REF may name; nil checks nothing, and
+	// takes the name as it is written.
+	Classes ClassNames
+	// Loose lets a comparison of pointers to two classes through, which
+	// is otherwise refused: a definition that a database already holds
+	// runs as it was written.
+	Loose bool
+}
+
+// ClassNames says of a name whether it is a class, and how the
+// definition of the class writes it: names resolve whatever their case
+// (ADR-0013), and a pointer says its class as the definition does.
+type ClassNames interface {
+	ClassName(name string) (string, bool)
 }
 
 // ThisSlot starts the name of the slot through which the condition of a
@@ -433,6 +452,11 @@ func (b *binder) slot(v Variable) int32 {
 	if i, ok := b.slotOf[key]; ok {
 		return i
 	}
+	if v.Type.Kind == KindRef {
+		// What a pointer points at is the compiler's to know; a program
+		// holds the kind.
+		v.Type = Scalar(KindRef)
+	}
 	i := int32(len(b.prog.Slots))
 	b.prog.Slots = append(b.prog.Slots, Slot(v))
 	b.slotOf[key] = i
@@ -478,6 +502,10 @@ func join(a, b Type) (Type, bool) {
 		}
 		return a, true
 	case a.Equal(b):
+		if a.Kind == KindRef && !strings.EqualFold(a.Points(), b.Points()) {
+			// one of two pointers: of which class is known when it runs
+			return Scalar(KindRef), true
+		}
 		return a, true
 	}
 	return Type{}, false
@@ -733,6 +761,9 @@ func (b *binder) binary(n *Binary) (Type, error) {
 		if !comparable(lt, rt) {
 			return Type{}, b.errAt(n.P, "%s compares %s with %s; convert one side first%s", opText[n.Op], lt, rt, compareHint(lt, rt))
 		}
+		if l, r := lt.Points(), rt.Points(); l != "" && r != "" && !strings.EqualFold(l, r) && !b.opts.Loose {
+			return Type{}, b.twoClasses(n, l, r)
+		}
 		// Exact operands compare at the larger static scale, which the
 		// instruction carries so that a blank operand aligns like a value.
 		var arg int32
@@ -743,6 +774,50 @@ func (b *binder) binary(n *Binary) (Type, error) {
 		return Scalar(KindBool), nil
 	}
 	return Type{}, b.errAt(n.P, "unexpected operator")
+}
+
+// twoClasses refuses a comparison of pointers to two classes, which no
+// document makes true: order = REF() written in a class Customer lists
+// nothing, and is caught before a document exists (ADR-0076, item 10).
+func (b *binder) twoClasses(n *Binary, l, r string) error {
+	own := func(side Node) bool {
+		c, ok := side.(*Call)
+		return ok && c.Name == "REF" && len(c.Args) == 0
+	}
+	var e *Error
+	switch {
+	case own(n.R) && !own(n.L):
+		e = newError(b.src, n.P, "%s points at %s, and this document is %s", pointerText(n.L), l, aClass(r))
+	case own(n.L) && !own(n.R):
+		e = newError(b.src, n.P, "%s points at %s, and this document is %s", pointerText(n.R), r, aClass(l))
+	default:
+		e = newError(b.src, n.P, "%s points at %s and %s at %s: pointers to two classes are never the same document", pointerText(n.L), l, pointerText(n.R), r)
+	}
+	e.Mismatch = true
+	return e
+}
+
+// pointerText names a side of a comparison of pointers, for a message.
+func pointerText(n Node) string {
+	switch n := n.(type) {
+	case *Ident:
+		return n.Name
+	case *ThisRef:
+		return "THIS." + n.Name
+	case *Call:
+		if n.Name == "REF" {
+			return "the REF"
+		}
+	}
+	return "the value"
+}
+
+// aClass writes a class with its article: an Order, a Customer.
+func aClass(name string) string {
+	if name != "" && strings.ContainsRune("AEIOUaeiou", rune(name[0])) {
+		return "an " + name
+	}
+	return "a " + name
 }
 
 // exactArith types and emits an arithmetic operation with an exact
@@ -829,6 +904,8 @@ func compareHint(a, b Type) string {
 		return "; AMOUNT reads the amount of a money"
 	case a.Kind.IsExact() && b.Kind == KindNumber || a.Kind == KindNumber && b.Kind.IsExact():
 		return "; DECIMAL(x, places) makes a number exact"
+	case a.Kind == KindRef && b.Kind == KindText || a.Kind == KindText && b.Kind == KindRef:
+		return "; REF makes a pointer: REF(\"Order\", \"ORD-17\") is the pointer to that document"
 	}
 	return ""
 }
@@ -983,7 +1060,12 @@ func (b *binder) call(n *Call) (Type, error) {
 		return b.secret(n)
 	}
 	if n.Name == "REF" {
-		return b.ref(n)
+		to, t, done, err := b.ref(n)
+		if done || err != nil {
+			return t, err
+		}
+		// A pointer of a class and an id: an ordinary call from here.
+		n = to
 	}
 	if n.Name == "QUERY" {
 		return Type{}, b.errAt(n.P, "QUERY is built as the whole formula of a live variable, or of a triggered one, which keeps the list, and nowhere else yet (ADR-0076, ADR-0078)")
@@ -1078,6 +1160,10 @@ func (b *binder) call(n *Call) (Type, error) {
 		b.emit(OpDecScale, decArg(rt), n.P)
 	}
 	b.classes[spec.class] = true
+	if n.Name == "REF" {
+		// the class is written as a text, which ref saw to
+		rt = RefTo(n.Args[0].(*TextLit).Value)
+	}
 	return rt, nil
 }
 
@@ -1529,20 +1615,46 @@ func (b *binder) holderVar(n *ThisRef) (Type, error) {
 	return v.Type, nil
 }
 
-// ref binds REF(): the pointer to the document the formula belongs to
-// (ADR-0076, item 10). It is built for the condition of a live QUERY,
-// where it is one value handed to the statement; the rest of the
-// function is not built.
-func (b *binder) ref(n *Call) (Type, error) {
-	if len(n.Args) != 0 {
-		return Type{}, b.errAt(n.P, "REF with a class and an id is not built yet; REF() alone is the pointer to this document (ADR-0076, item 10)")
+// ref binds REF (ADR-0076, item 10). REF() is the pointer to the
+// document the formula belongs to. In the condition of a QUERY that is
+// the document the list belongs to, one value handed to the statement:
+// it is bound here, and done says so. Anywhere else it is the pointer of
+// the formula's class and ID(), and REF("Order", "ORD-17") is the
+// pointer of the class and the id written: for both it answers the call
+// to bind, of the function REF that takes a class and an id.
+func (b *binder) ref(n *Call) (to *Call, t Type, done bool, err error) {
+	switch len(n.Args) {
+	case 0:
+		if b.opts.This != nil && b.source == nil {
+			b.emit(OpLoad, b.slot(Variable{Name: RefSlot, Type: Scalar(KindRef)}), n.P)
+			b.push(1)
+			return nil, RefTo(b.opts.Class), true, nil
+		}
+		if b.opts.Class == "" {
+			return nil, Type{}, false, b.errAt(n.P, "REF() is the pointer to the document the formula belongs to, and this formula belongs to no class; write the pointer with its class and its id, REF(\"Order\", \"ORD-17\")")
+		}
+		if !b.opts.Mode.allows(ClassContext) {
+			return nil, Type{}, false, b.errAt(n.P, "REF() is a context function, the pointer to the document the formula runs over, and may not be used in %s", b.opts.Mode.where())
+		}
+		return &Call{Name: "REF", P: n.P, Args: []Node{&TextLit{Value: b.opts.Class, P: n.P}, &Call{Name: "ID", P: n.P}}}, Type{}, false, nil
+	case 2:
+		class, ok := n.Args[0].(*TextLit)
+		if !ok {
+			return nil, Type{}, false, b.errAt(n.Args[0].Pos(), "REF: the class is written as a text, as in REF(\"Order\", id); a pointer to a class worked out is not built")
+		}
+		if b.opts.Classes != nil {
+			name, known := b.opts.Classes.ClassName(class.Value)
+			if !known {
+				return nil, Type{}, false, b.errAt(class.P, "REF: unknown class %s", class.Value)
+			}
+			if name != class.Value {
+				// The pointer says the class as its definition writes it.
+				return &Call{Name: "REF", P: n.P, Args: []Node{&TextLit{Value: name, P: class.P}, n.Args[1]}}, Type{}, false, nil
+			}
+		}
+		return n, Type{}, false, nil
 	}
-	if b.opts.This == nil || b.source != nil {
-		return Type{}, b.errAt(n.P, "REF() is built for the condition of a QUERY in a live variable, and nowhere else yet (ADR-0076, item 10)")
-	}
-	b.emit(OpLoad, b.slot(Variable{Name: RefSlot, Type: Scalar(KindRef)}), n.P)
-	b.push(1)
-	return Scalar(KindRef), nil
+	return nil, Type{}, false, b.errAt(n.P, "REF takes no argument, for the pointer to this document, or a class and an id, as in REF(\"Order\", \"ORD-17\")")
 }
 
 // thisRef binds THIS.name inside a LOOKUP: a scalar variable of the

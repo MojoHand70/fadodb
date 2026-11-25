@@ -212,7 +212,16 @@ var errUnbound = errors.New("the formula reads a class and was not bound")
 // its explicit tables and the documents of its classes.
 func (c *collector) bind(src string, scope *formula.Scope, mode formula.Mode) (*formula.Program, error) {
 	r := &envSources{c: c}
-	opts := formula.BindOptions{Mode: mode, Sources: r, States: c.states()}
+	opts := formula.BindOptions{Mode: mode, Sources: r, States: c.states(), Loose: c.env.Lenient}
+	// REF() is the pointer to a document of the class being compiled,
+	// and a REF that names a class names one the database has, written
+	// as its definition writes it (ADR-0076, item 10). A definition
+	// compiled alone, before the classes it names are at hand, is taken
+	// at its word.
+	if c.self != nil {
+		opts.Class = c.self.Name
+	}
+	opts.Classes = classNames{c}
 	if c.listsOf != nil {
 		opts.Lists, opts.Live = listsOf(c.listsOf, c.listsFor, r), c.listsFor.Mode == ModeLive
 	}
@@ -232,6 +241,26 @@ func (c *collector) bind(src string, scope *formula.Scope, mode formula.Mode) (*
 		}
 	}
 	return prog, err
+}
+
+// classNames says of a name whether it is a class, and how its
+// definition writes it, for the class a REF names: the class being
+// compiled and the classes of the environment. A definition compiled
+// alone, before the classes it names are at hand, is taken at its word.
+type classNames struct{ c *collector }
+
+// ClassName implements formula.ClassNames.
+func (n classNames) ClassName(name string) (string, bool) {
+	c := n.c
+	if c.self != nil && upper(name) == upper(c.self.Name) {
+		return c.self.Name, true
+	}
+	if c.env.Classes != nil {
+		if cls, ok := c.env.Classes(name); ok {
+			return cls.Name, true
+		}
+	}
+	return name, c.env.Shallow
 }
 
 // states are the states of the class being compiled, which a function
@@ -331,6 +360,11 @@ func (c *collector) formulaErr(path string, err error) {
 	if errors.As(err, &fe) {
 		d.Pos = fe.Pos
 		d.Message = fe.Msg
+		if fe.Mismatch {
+			// a comparison of pointers to two classes (ADR-0076, item 10)
+			d.Code = CodeTypeMismatch
+			d.Hint = "a pointer compares with a pointer to the same class; REF() is the pointer to the document the formula belongs to"
+		}
 	}
 	c.list = append(c.list, d)
 }

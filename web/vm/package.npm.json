@@ -1,6 +1,6 @@
 {
   "name": "fadodb-vm",
-  "version": "4.0.0",
+  "version": "4.1.0",
   "description": "FadoDB's formula machine for a page: it runs the formulas the engine compiled, with the server's answers, and never parses a formula.",
   "license": "Apache-2.0",
   "type": "module",

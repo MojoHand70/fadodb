@@ -346,8 +346,6 @@ func TestLiveList_RefusedWhenDefined(t *testing.T) {
 		{"a list inside a formula", `"l": {"mode": "live", "formula": "IF(TRUE, QUERY(Invoice, number), BLANK)"}`, "bad_formula", "the whole formula of a live variable"},
 		{"a list inside the formula of a triggered variable", `"l": {"type": "number", "mode": "triggered", "on": ["refresh"], "formula": "LEN(n) + QUERY(Invoice, number)"}`, "bad_formula", "the whole formula of a live variable"},
 		{"braces where no list stands", `"l": {"mode": "live", "formula": "LEN({n, n})"}`, "bad_formula", "a list in braces stands only"},
-		{"the pointer outside a list", `"l": {"mode": "live", "formula": "TEXT(REF())"}`, "bad_formula", "REF() is built for the condition of a QUERY"},
-		{"the pointer to another document", `"l": {"mode": "live", "formula": "QUERY(Invoice, number, order = REF(\"Order\", \"ORD-17\"))"}`, "bad_formula", "REF with a class and an id is not built yet"},
 	} {
 		def := `{"name": "T", "variables": {"n": {"type": "text"}, ` + tc.variable + `}, "states": {"initial": "a", "list": ["a"]}}`
 		_, err := s.DefineClass(ctx, []byte(def), asSetup)

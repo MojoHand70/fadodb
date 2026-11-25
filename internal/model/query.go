@@ -424,7 +424,7 @@ func compileTableQuery(c *collector, cls *Class, v *Variable, q *Query, call *fo
 			c.at(CodeBadFormula, path, q.Cond, err.Error(), "")
 			return false
 		}
-		prog, err := formula.BindNode(q.Src, q.Cond, srcScope, formula.BindOptions{Sources: &envSources{c: c}, This: scope})
+		prog, err := formula.BindNode(q.Src, q.Cond, srcScope, formula.BindOptions{Sources: &envSources{c: c}, This: scope, Class: cls.Name, Classes: classNames{c}, Loose: c.env.Lenient})
 		if err != nil {
 			c.formulaErr(path, err)
 			return false
@@ -469,7 +469,7 @@ func checkQueryCond(c *collector, cls, src *Class, q *Query, path string, scope 
 		c.at(CodeBadFormula, path, q.Cond, err.Error(), "")
 		return false
 	}
-	prog, err := formula.BindNode(q.Src, q.Cond, srcScope, formula.BindOptions{Sources: &envSources{c: c}, This: scope})
+	prog, err := formula.BindNode(q.Src, q.Cond, srcScope, formula.BindOptions{Sources: &envSources{c: c}, This: scope, Class: cls.Name, Classes: classNames{c}, Loose: c.env.Lenient})
 	if err != nil {
 		c.formulaErr(path, err)
 		return false
@@ -507,27 +507,6 @@ func checkQueryCond(c *collector, cls, src *Class, q *Query, path string, scope 
 		c.at(CodeTypeMismatch, path, q.Cond, "the condition of a QUERY must be a condition, got "+prog.Result.String(), `compare it, for example <> 0 or <> ""`)
 		ok = false
 	}
-	// A pointer compares with the pointer to this document only when it
-	// points at this class: a list of the wrong documents is caught
-	// before a document exists (ADR-0076, item 10).
-	walkNodes(q.Cond, func(n formula.Node) {
-		b, isBinary := n.(*formula.Binary)
-		if !isBinary {
-			return
-		}
-		for _, side := range [][2]formula.Node{{b.L, b.R}, {b.R, b.L}} {
-			id, isName := side[0].(*formula.Ident)
-			ref, isCall := side[1].(*formula.Call)
-			if !isName || !isCall || ref.Name != "REF" {
-				continue
-			}
-			if sv, is := src.Variable(id.Name); is && sv.Type.Kind == formula.KindRef && upper(sv.RefClass) != upper(cls.Name) {
-				c.at(CodeTypeMismatch, path, b, sv.Name+" points at "+sv.RefClass+", and this document is "+aClass(cls.Name),
-					"REF() is the pointer to the document the list belongs to; a list of what points at it compares a ref whose class is "+cls.Name)
-				ok = false
-			}
-		}
-	})
 	return ok
 }
 
@@ -589,12 +568,4 @@ func walkNodes(n formula.Node, visit func(formula.Node)) {
 			walkNodes(item, visit)
 		}
 	}
-}
-
-// aClass puts "a" or "an" before the name of a class.
-func aClass(name string) string {
-	if name != "" && strings.ContainsRune("AEIOUaeiou", rune(name[0])) {
-		return "an " + name
-	}
-	return "a " + name
 }

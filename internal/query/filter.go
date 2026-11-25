@@ -196,7 +196,10 @@ func CompileOn(f Filter, on *On, cls *model.Class, sources formula.Sources, p Pr
 		return nil, &Error{Code: CodeBadValue, Element: "offset", Pos: -1, Message: fmt.Sprintf("the offset is not negative, got %d", f.Offset)}
 	}
 	quoted := quoter(cols)
-	src, opts, notBlank := f.Where, formula.BindOptions{Sources: sources}, p.named
+	// REF() in a filter is the pointer to the document of the row, as
+	// ID() is its id, and a REF that names a class writes it as the
+	// class of the filter does (ADR-0076, item 10).
+	src, opts, notBlank := f.Where, formula.BindOptions{Sources: sources, Class: cls.Name, Classes: cls}, p.named
 	// bound gives the SQL of a slot of the caller's condition: a column
 	// of the class, or a value of the document a list is read on.
 	bound := quoted
@@ -206,6 +209,10 @@ func CompileOn(f Filter, on *On, cls *model.Class, sources formula.Sources, p Pr
 	var given []any
 	if on != nil {
 		src, node, opts.This = on.Src, on.Cond, on.Scope
+		// The condition is a class's own, held to its rules when the
+		// class was defined: REF() in it is the document the list is
+		// read on, of whatever class that is.
+		opts.Class, opts.Loose = "", true
 		bound, notBlank = on.bound(quoted, d, &given), func(n formula.Node) bool { return isRef(n) || p.named(n) }
 	} else if strings.TrimSpace(f.Where) != "" {
 		if node, err = formula.Parse(f.Where); err != nil {
@@ -571,7 +578,7 @@ func readPlanFor(cls *model.Class, scope *formula.Scope, cols map[string]column,
 	if rp, ok := rr.plans[key]; ok {
 		return rp, nil
 	}
-	f := folder{rr: rr, mask: mask, scope: scope, sources: sources, d: d, quoted: quoted}
+	f := folder{rr: rr, mask: mask, scope: scope, sources: sources, class: cls.Name, d: d, quoted: quoted}
 	node := f.fold(rr.node)
 	rp := &readPlan{}
 	if lit, ok := node.(*formula.BoolLit); ok {
@@ -582,7 +589,11 @@ func readPlanFor(cls *model.Class, scope *formula.Scope, cols map[string]column,
 		refused := func(msg string) error {
 			return &Error{Code: CodeBadFormula, Element: "access/read", Pos: -1, Message: "the read rule of " + cls.Name + " does not translate to SQL: " + msg}
 		}
-		prog, err := formula.BindNode(rr.src, node, scope, formula.BindOptions{Sources: sources})
+		// A read rule is the class's own formula: REF() in it is the
+		// pointer to the document of the row, and what a database holds
+		// runs as it was written.
+		opts := formula.BindOptions{Sources: sources, Class: cls.Name, Loose: true}
+		prog, err := formula.BindNode(rr.src, node, scope, opts)
 		if err != nil {
 			return nil, refused(err.Error())
 		}
@@ -597,7 +608,7 @@ func readPlanFor(cls *model.Class, scope *formula.Scope, cols map[string]column,
 			where = "(" + stmt.Error + ") IS NULL AND " + where
 		}
 		rp.plain = "(" + where + ")"
-		pre, args, _ := prefilter(node, rr.src, cols, d, constantOf(rr.src, scope, formula.BindOptions{Sources: sources}, d, quoted), "r", p.named)
+		pre, args, _ := prefilter(node, rr.src, cols, d, constantOf(rr.src, scope, opts, d, quoted), "r", p.named)
 		if pre != "" {
 			where = pre + " AND (" + where + ")"
 		}
@@ -638,6 +649,7 @@ type folder struct {
 	mask    uint64
 	scope   *formula.Scope
 	sources formula.Sources
+	class   string
 	d       formula.Dialect
 	quoted  func(formula.Slot) string
 }
@@ -707,7 +719,7 @@ func (f *folder) probe(n formula.Node) (isBool, fails bool) {
 	if _, ok := n.(*formula.BoolLit); ok {
 		return true, false
 	}
-	prog, err := formula.BindNode(f.rr.src, n, f.scope, formula.BindOptions{Sources: f.sources})
+	prog, err := formula.BindNode(f.rr.src, n, f.scope, formula.BindOptions{Sources: f.sources, Class: f.class, Loose: true})
 	if err != nil {
 		return false, true
 	}
@@ -794,7 +806,7 @@ func Value(src string, cls *model.Class, sources formula.Sources) (string, formu
 	if err != nil {
 		return "", 0, err
 	}
-	prog, err := formula.Bind(src, scope, formula.BindOptions{Sources: sources})
+	prog, err := formula.Bind(src, scope, formula.BindOptions{Sources: sources, Class: cls.Name, Loose: true})
 	if err != nil {
 		return "", 0, formulaError(err)
 	}

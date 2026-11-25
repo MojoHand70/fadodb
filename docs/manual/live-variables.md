@@ -112,6 +112,12 @@ everything a live variable does:
 "invoices": {"type": "number", "mode": "live", "formula": "LOOKUP(Invoice, COUNT(id), customer = THIS.customer)"}
 ```
 
+In the condition of the lookup a bare name is a column of what is
+looked in. `THIS.` reaches the document the value is read on, `REF()`
+is the pointer to it, and `STATE()` and `ID()` are its state and its
+id: `LOOKUP(Invoice, COUNT(id), order = REF())` on an order counts its
+invoices.
+
 So two readers of one document may be answered two numbers: one who
 reads only the invoices they wrote counts fewer than one who reads
 every invoice. A number everybody is to see alike, and that a decision

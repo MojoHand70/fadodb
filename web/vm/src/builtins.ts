@@ -12,7 +12,7 @@ import { RoundMethod, addInt, decDiv, decFromFloat, decMod, decToFloat, errCurre
 import { log10, ln, pow, pow10, roundTo, scaledStep } from "./numbers.js";
 import { render, renderNumber } from "./render.js";
 import { compareText, longerThan, lower, proper, runeCount, runes, trimSpace, upper, utf8Bytes } from "./text.js";
-import { BLANK, Kind, Value, bool, date, datetime, decimal, isExact, money, number, text } from "./value.js";
+import { BLANK, Kind, Value, bool, date, datetime, decimal, isExact, money, number, ref, text } from "./value.js";
 import { DAY, addMonths, civilOf, dateOfText, dateTimeOfText, dateTimeValue, dateValue, dayNumber, makeDate } from "./dates.js";
 import type { Life, StateLife, VM } from "./vm.js";
 
@@ -738,6 +738,15 @@ export const builtins: readonly Builtin[] = [
   },
   stateText("FIRSTEDITOR", (st) => st.fed),
   stateText("LASTEDITOR", (st) => st.led),
+  // The pointer to a document, of a class and an id; blank for a blank
+  // id. It stands last, as in the engine's table.
+  {
+    name: "REF",
+    fn: (_vm, s, a) => {
+      const id = s[a + 1]!;
+      return id.kind === Kind.Blank || id.str === "" ? BLANK : ref(s[a]!.str + ":" + id.str);
+    },
+  },
 ];
 
 /** Compares two scalar values that are neither exact: -1, 0 or 1. */

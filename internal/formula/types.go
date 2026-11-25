@@ -71,6 +71,10 @@ type typeShape struct {
 	Cols   []Column
 	Schema string
 	Fields []Field
+	// Points is the class a ref points at, "" when it is not known
+	// (ADR-0076, item 10). It is the compiler's to know: two refs are
+	// one type whatever they point at.
+	Points string
 }
 
 // Column is one column of a rows type.
@@ -153,6 +157,26 @@ func DecimalType(scale int) Type { return Type{Kind: KindDecimal, Scale: int8(sc
 
 // MoneyType makes a money type at the scale.
 func MoneyType(scale int) Type { return Type{Kind: KindMoney, Scale: int8(scale)} }
+
+// RefTo makes the type of a pointer to a document of the class, which
+// lets the compiler refuse a comparison of pointers to two classes
+// (ADR-0076, item 10). With no class it is the ref whose class is not
+// known.
+func RefTo(class string) Type {
+	if class == "" {
+		return Scalar(KindRef)
+	}
+	return Type{Kind: KindRef, shape: &typeShape{Points: class}}
+}
+
+// Points is the class a ref points at, "" when it is not known or the
+// type is no ref.
+func (t Type) Points() string {
+	if t.Kind != KindRef || t.shape == nil {
+		return ""
+	}
+	return t.shape.Points
+}
 
 // ArrayOf makes the type of an array of a scalar kind.
 func ArrayOf(elem Kind) Type { return Type{Kind: KindArray, Elem: elem} }

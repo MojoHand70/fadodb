@@ -976,6 +976,10 @@ func (d SQLite) Call(name string, args []SQLExpr, params *Params) (SQLExpr, erro
 		e := reg(KindText, false, d.Text(args[0]))
 		e.Sure = true
 		return e, nil
+	case "REF":
+		// The pointer of a class and an id: Class:id, blank for a blank id.
+		id := d.Text(args[1])
+		return SQLExpr{Val: "CASE WHEN " + id + " = '' THEN NULL ELSE " + d.Text(args[0]) + " || ':' || " + id + " END", Kind: KindRef}, nil
 	case "REPLACE":
 		return reg(KindText, true, d.Text(args[0]), d.Num(args[1]), d.Num(args[2]), d.Text(args[3])), nil
 	case "SUBSTITUTE":

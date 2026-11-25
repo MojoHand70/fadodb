@@ -479,6 +479,10 @@ func (d DuckDB) Call(name string, args []SQLExpr, params *Params) (SQLExpr, erro
 		return SQLExpr{Val: "CAST(length(" + d.Text(args[0]) + ") AS DOUBLE)", Kind: KindNumber, Sure: true}, nil
 	case "UPPER", "LOWER":
 		return SQLExpr{Val: strings.ToLower(name) + "(" + d.Text(args[0]) + ")", Kind: KindText, Sure: true}, nil
+	case "REF":
+		// The pointer of a class and an id: Class:id, blank for a blank id.
+		id := d.Text(args[1])
+		return SQLExpr{Val: "CASE WHEN " + id + " = '' THEN NULL ELSE " + d.Text(args[0]) + " || ':' || " + id + " END", Kind: KindRef}, nil
 	case "TRIM", "PROPER":
 		e := macro(KindText, false, d.Text(args[0]))
 		e.Sure = true

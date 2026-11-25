@@ -69,7 +69,7 @@ func TestConformance_DuckDB(t *testing.T) {
 				failed++
 				t.Errorf("%s\n    %s", label, fmt.Sprintf(format, args...))
 			}
-			prog, err := formula.Bind(c.Formula, scope, formula.BindOptions{Sources: sources})
+			prog, err := formula.Bind(c.Formula, scope, s.BindOptions(sources))
 			if err != nil {
 				fail("bind: %v", err)
 				continue

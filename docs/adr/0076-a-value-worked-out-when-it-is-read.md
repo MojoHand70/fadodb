@@ -362,7 +362,8 @@ Settled by me when the list was built, on 2026-11-22, his to veto:
 - **`REF()` is that parameter.** It is built inside the condition of a
   `QUERY`, where it and `THIS.name` are values handed to the
   statement. The rest of item 10, `REF()` wherever `ID()` may stand
-  and `REF("Order", "ORD-17")`, is not built.
+  and `REF("Order", "ORD-17")`, was built on 2026-11-25: see "Settled
+  while building REF everywhere".
 - **The answer of `live` says the columns of a list**, beside `rows`
   and `more`: each with its name, its type and the label the source
   gives it, in the order of the formula. Item 9 gives a column those;
@@ -372,6 +373,125 @@ Settled by me when the list was built, on 2026-11-22, his to veto:
 - **Inside the condition `STATE()` and `ID()` are the listed
   document's**, as they are the row's in a filter (ADR-0040). The
   document the list belongs to is `REF()` and `THIS.name`.
+
+## Settled while building a table as the source
+
+Built on 2026-11-25, in Phase 8: item 9 says the source of a `QUERY`
+is a class or a table, and the table was not built with the list.
+Each of these is settled by me while building, and is the owner's to
+strike.
+
+- **A row of a table carries no id.** Item 8 gives a row the id of its
+  document; a row of a table is no document. It has its columns, in
+  the order of the formula, and nothing else.
+- **A live list over a table asks the table's `read` line of its
+  reader**, as the command `table_rows` does (ADR-0051, item 7), since
+  a live value is read with the reader's eyes (item 2). A reader the
+  line does not let through is refused with `forbidden`; a content
+  administrator passes it with a reason, and the log of reads keeps
+  the read under the command `live` (ADR-0067). A table has no rule
+  for each row and no right for each column, so the list is all or
+  nothing.
+- **Left to itself the list is sorted by the key of the table**, and
+  the key follows whatever order is asked, so that a page is the same
+  page each time.
+- **The class is a reader of the table**, as a class that looks a
+  value up is: the table is not removed, and does not lose a column
+  the list names, while the class lists it.
+- **A list that is kept may read a table** (ADR-0078, item 5), with
+  the engine's eyes, as a `LOOKUP` reads one.
+- **A figure over a live list of a table is not built**: `COUNT(prices)`
+  in a live variable is refused as a figure over what is no list of
+  the class. A figure over a kept list of a table works, as over any
+  list the document holds.
+
+## Settled while building a lookup in a live variable
+
+Built on 2026-11-25, in Phase 8: item 5 lets a live formula read what
+a triggered formula may, a lookup among it, and the lookup was refused
+with `not_supported` until now. Each of these is settled by me while
+building, and is the owner's to strike.
+
+- **A `LOOKUP` over the documents of a class is asked as a figure over
+  a list is** (ADR-0081): one statement, beside the writer, among the
+  documents the read rule of that class lets the reader see, with the
+  read rights of the values it reads. A value the reader may read in
+  no state is blank. A content administrator who passes the rules is
+  written down with how many documents only the override let them
+  count (ADR-0067).
+- **A `LOOKUP` in a table asks the table's `read` line of the reader**,
+  as a list over a table does: a reader it does not let through is
+  refused with `forbidden`, and the whole value with it; a content
+  administrator passes it with a reason.
+- **Whoever acts for somebody** needs the substitution for a class a
+  live lookup reads, as for a class a list lists (ADR-0053).
+- **A live value that looks something up is not worked out on the
+  page**: it was the server's already (item 13).
+
+## Settled while building REF everywhere
+
+Built on 2026-11-25, in Phase 8: the rest of item 10. `REF()` stands
+wherever `ID()` may, and `REF("Order", "ORD-17")` anywhere, on the
+three evaluators: the Go VM, the SQL of both dialects and the browser
+VM. Each of these is settled by me while building, and is the owner's
+to strike.
+
+- **One function was added: `REF(class, id)`.** It gives the pointer
+  `Class:id`, and a blank pointer for a blank id. `REF()` is not a
+  second function: the compiler writes it as `REF("<the class of the
+  formula>", ID())`. In the condition of a `QUERY` it stays the value
+  handed to the statement, as before.
+- **The function stands last in the table of functions**, which the
+  bytecode names a function by. The bytecode format stays 4. A program
+  that calls `REF` needs a VM that has it, so the browser VM's package
+  goes from 4.0.0 to 4.1.0, as its README asks of a change to the VM.
+  npm gets it with the next tag.
+- **"Where `ID()` may" leaves out an auto formula.** A computed
+  variable that the engine works out by itself takes no context
+  function (ADR-0015), so neither `ID()` nor `REF()`. `REF()` stands in
+  a default, a guard, a rule, an access rule, a filter, and in a
+  triggered or a live variable. `REF("Order", id)` is pure and stands
+  in an auto formula too.
+- **The class of a `REF` is a text written out**, not worked out, so
+  that the compiler knows what the pointer points at. It is a class
+  the database has, in any case of letters, and the pointer says it as
+  the definition of the class writes it. A class nobody defined is
+  refused with `bad_formula`.
+- **The compiler knows the class of a pointer** from three places: a
+  `ref` variable says it in its definition, `REF()` is the class of
+  the formula, and `REF("Order", ...)` says it. `IF` of pointers to two
+  classes gives a pointer whose class is not known, and that one
+  compares with any.
+- **A comparison of pointers to two classes is refused everywhere a
+  class holds a formula**, with `type_mismatch`: two `ref` variables
+  among them, `order = customer`, which no document made true except
+  two blank pointers. A class a database already holds with such a
+  comparison still runs as it was written; only a new definition is
+  refused.
+- **A filter is held to the same rule**, and answers `bad_formula`, as
+  it does for every formula it does not take. A filter has no
+  `type_mismatch` among its codes.
+- **`REF()` in the condition of a `LOOKUP` is the document the formula
+  belongs to**, as `THIS.name` is its variable:
+  `LOOKUP(Invoice, COUNT(id), order = REF())` counts the invoices of
+  the order.
+- **A pointer compared with a text is refused as before**, and the
+  refusal now says how to write it: `REF("Order", "ORD-17")`.
+- **In the condition of a figure over a list `REF()` stays refused**,
+  as `STATE()` and `ID()` are there (ADR-0081): which document they
+  mean inside a figure is not settled. `REF("Order", "ORD-17")` stands
+  there.
+
+Found and mended on the way, in what was merged the same day and not
+released: `STATE()` and `ID()` in the condition of a `LOOKUP` of a
+live variable read blank, where the same lookup in a triggered
+variable read the document's. A live lookup now reads the state and
+the id of the document the value is read on.
+
+Mended the same day, a fault of item 11 that is in v0.7.0: a pointer
+was kept in the case its caller wrote the class in, `"order:ORD-17"`,
+and `REF()` did not equal it. A pointer is kept with the class written
+as its definition writes it. The id stays to the letter.
 
 ## Consequences
 

@@ -278,7 +278,7 @@ result:
 | Pure | `IF IFERROR ROUND SUM LEFT DATE ADDMONTHS DECIMAL MONEY JSONVALUE` | everywhere |
 | Context | `USER() INGROUP() USERKIND() ACTINGFOR() NOW() TODAY() STATE() ID()` | defaults, triggered formulas, guards, rules, access rules; not in auto formulas |
 | Lookup | `LOOKUP(source, column, condition)` | everywhere; in auto formulas only against explicit tables |
-| Query | `QUERY(source, columns, condition, sort)` | the whole formula of a live variable (ADR-0076); grouping, the limit and a `QUERY` anywhere else are not built yet |
+| Query | `QUERY(source, columns, condition, sort)` | the whole formula of a live variable (ADR-0076), or of a triggered one, which keeps the list with the document (ADR-0078); grouping, the limit and a `QUERY` anywhere else are not built yet |
 | Secret | `SECRET("token")` | the request of an action definition, and nowhere else (ADR-0045) |
 
 The rule behind the table: the stored value of an auto variable must be a
@@ -358,8 +358,9 @@ that refreshes this document. A variable computed this way declares its
 `type`, so that its documents keep their layout when the other class
 changes, and a redefinition of a class may not break a formula of
 another class that reads it. The lookup is one statement on the writer,
-inside the commit, narrowed through the index of a variable declared
-with `"index": true` when the condition compares one for equality:
+inside the commit, narrowed through the index of a variable the class
+keeps one for, a pointer or one declared with `"index": true`, when
+the condition compares it for equality:
 10.7 µs to count one purchase's approvals among 100,000.
 
 Formulas within a class form a dependency graph. The binder rejects cycles at
@@ -382,9 +383,11 @@ Inside a commit the engine:
 1. applies the assignments, or evaluates defaults for a new document;
 2. recalculates **auto** variables whose dependencies changed, in topological
    order, only the dirty part of the graph;
-3. evaluates the requested transition's guard and moves the state;
-4. recalculates **triggered** variables whose trigger fired in this commit
-   (`enter`, `exit`, `transition`, `refresh`);
+3. for a requested transition, brings the **triggered** variables that
+   list `before:` it, then evaluates its guard, which reads the document
+   and nothing outside it (ADR-0078), and moves the state;
+4. recalculates the **triggered** variables whose trigger fired in this
+   commit (`enter`, `exit`, `transition`, `refresh`), each once;
 5. runs the rules whose triggers the commit raised, in a fixed order:
    synchronous actions change the document now, the rest go into the
    outbox;
@@ -445,12 +448,14 @@ on commit is authoritative; the conformance suite guarantees the two agree.
   at a moment given with `At`, each with its state and the state it
   would move to. A document becomes due when the guard of an eventless
   transition comes to hold with no commit of its own: the clock passed
-  a date, or a document or a table the guard looks up changed; and when
+  a date; and when
   the time of a timed transition comes, for which the list says since
   when. A guard
   that translates to SQL runs as one filter over the documents of its
-  state; a guard that looks another document up or calls a function of
-  a state is evaluated document by document. The list moves nothing: a
+  state; a guard that calls a function of
+  a state is evaluated document by document, and so is the guard of a
+  class stored before ADR-0078, which may still look another document
+  or a table up. The list moves nothing: a
   commit that touches the document does, and a refresh is one.
 - A transition may carry its time (ADR-0047): `"after": "30d"`, a
   length of time in the state as a whole number and `d`, `h`, `m` or
@@ -867,10 +872,14 @@ formula the Go VM runs for a read by id. The caller's part of the rule
 is decided first: an `INGROUP` of a group has one answer for the whole
 statement, so `owner = USER() OR INGROUP("finance")` adds nothing for a
 member of finance and is `owner = USER()` for anybody else, a comparison
-the index on `owner` answers; a statement is kept for each outcome. The
-rule offers its comparisons to an index only where the caller's own
-condition offers none, since SQLite has no statistics to choose between
-two. The SQL endpoint adds no rule
+the index on `owner` answers; a statement is kept for each outcome.
+Where the caller's condition and the rule compare more than one indexed
+column for equality, SQLite has no statistics to choose between the
+indexes. The engine looks into each for the value compared, for at
+most a thousand documents, and writes the statement so that SQLite is
+offered the index that ended first and no other (ADR-0075, item 10); a
+list read on a document is asked through the pointer it compares with
+that document, and nobody looks. The SQL endpoint adds no rule
 and reads every row and every variable. It is for the system group
 `analysts` (ADR-0051, ADR-0052), and for nobody else.
 
@@ -1021,8 +1030,13 @@ against their own VM port.
   the users and keys of a database that keeps its own (ADR-0057),
   `tables_registry`, `schema_version`, `blobs` when the blob store is the
   database file, plus explicit tables bound to `sqlite`.
-- Indexes declared per variable (`"index": true`), plus `(class, doc_id, ts)`
-  on events and `(id, valid_from)` on history.
+- Indexes the engine keeps on every class table by itself (ADR-0075):
+  on the state, on the moment a document was made and on the moment it
+  last changed, on every pointer, and on a text the read rule compares
+  with the caller; and the ones declared per variable (`"index": true`).
+  An index on the state or on a variable goes on to the moment the
+  document was made. Plus `(class, doc_id, ts)` on events and
+  `(id, valid_from)` on history.
 
 SQLite is the transactional store by measurement (ADR-0035): the Phase 2
 benchmark wrote 100,000 commits into SQLite and into DuckDB, and DuckDB's
@@ -1385,7 +1399,8 @@ in 13.7 ns with no allocation, and the core binary is 2.9 MB
 
 ```
 fadodb/
-  cmd/fadodb/            single binary: init, user, key, serve, exec (any command sent to a server, a query as an Excel file or as CSV), file put and file get, class check, action check, formula, check today; bench to come
+  cmd/fadodb/            the program fadodb, in pure Go: a main that runs internal/cli
+  internal/cli/          the command-line tool and server, built into both programs: init, user, key, serve, exec (any command sent to a server, a query as an Excel file or as CSV), file put and file get, class check, action check, formula, check today; bench to come
   fado/                  public Go API (small surface, see Go API)
   internal/formula/      lexer, parser, binder, bytecode, vm, sqlgen (dialects), catalog
   internal/model/        class definitions, sections, variables, defaults, validation, migrations

@@ -80,7 +80,7 @@ sorted by number.
 
 | Part | In the example | What it says |
 |---|---|---|
-| the source | `Invoice` | the class whose documents are listed |
+| the source | `Invoice` | the class whose documents are listed, or a table whose rows are; see [A table as the source](#a-table-as-the-source) |
 | the columns | `{number, net, state, margin}` | what each row shows: variables of the source, or its system columns, such as `state` and `title` |
 | the condition | `order = REF()` | which documents are listed. Left out, every document of the source is |
 | the sort | `{number}` | the order of the rows, a leading `-` for descending, as in `{-net, number}`. Left out, the rows are sorted by id |
@@ -108,7 +108,9 @@ own.
 
 A list need not point at its document. "The invoices that wait for
 approval" is `QUERY(Invoice, {number, net}, state = "review")`, and it
-is the same list on every order.
+is the same list on every order. "The invoices of order ORD-17" is
+`QUERY(Invoice, {number, net}, order = REF("Order", "ORD-17"))`: with
+a class and an id, `REF` is the pointer to a named document.
 
 ## The story
 
@@ -198,16 +200,146 @@ the order with `get` answers no `invoices`. Jan writes one more
 invoice on ORD-17, and the next reader of the list sees it; the order
 itself is still at the version it had.
 
+## A table as the source
+
+The source of a `QUERY` may be a table. A quote lists the prices of
+its band from Acme's price list:
+
+```jsonc
+"prices": {"mode": "live", "formula": "QUERY(Prices, {sku, price}, band = THIS.band, {-price})"}
+```
+
+| | A list of documents | A list of the rows of a table |
+|---|---|---|
+| the columns | variables of the class, and its system columns | columns of the table |
+| a row | says the `id` of its document | has its columns and no id: a row of a table is no document |
+| sorted, when nothing says | by id | by the key of the table |
+| who may read a live list | each document by the read rule of its class, each value by its rights | whoever the `read` line of the table lets through, as for `table_rows`; anybody else is refused with `forbidden` |
+| a content administrator | passes the rules with a reason | passes the `read` line with a reason, which the log of reads keeps |
+
+The class is noted as a reader of the table: the table is not removed,
+and does not lose a column the list names, while the class lists it.
+A [list that is kept](#a-list-that-is-kept) may read a table too; it
+is asked with the engine's eyes, as a `LOOKUP` is.
+
+**Not built yet:** a figure over a live list of a table, such as
+`COUNT(prices)` in a live variable. Keep the list, and work the
+figure out of the kept one.
+
+## A list that is kept
+
+A live list is for browsing: it is asked again for every reader, and
+shows the invoices as they are now. A decision needs the other kind.
+When an order is closed because every invoice of it was paid, the
+order should hold the invoices that decision stood on, as they were
+then.
+
+A `QUERY` that is the whole formula of a **triggered** variable is a
+list that is kept. The variable says its type, `rows`, and its
+columns, which are the columns of the `QUERY` with the types they
+have in the source:
+
+```jsonc
+"settled": {"type": "rows", "schema": {"number": "text", "net": "money(2)", "state": "text"},
+            "formula": "QUERY(Invoice, {number, net, state}, order = REF(), {number})",
+            "mode": "triggered", "on": ["before:close", "refresh"]}
+```
+
+| | A live list | A list that is kept |
+|---|---|---|
+| asked | whenever somebody reads it | at the triggers the variable lists |
+| for | its reader: the documents and the values they may read | everybody: one list, with the engine's eyes |
+| held by the document | no | yes, with every version, as lines somebody entered |
+| read with | the command `live` | the document, as any value |
+| in a guard, a rule, a computed variable | no | yes: `ALL(settled, state = "paid")`, `SUM(settled.net)` |
+| who sees it | who may read each document listed | the `read` right of the variable |
+| brought again by | nobody: it is never kept | a `refresh`, by whoever the `write` right of the variable lets |
+
+It holds at most 10,000 rows, as every list of a document does, and it
+is copied with each version of the document: it is for the lines a
+decision stood on. The guide
+[Keep the lines a decision stood on](guides/keep-the-lines-a-decision-stood-on.md)
+plays an order from its invoices to its closing.
+
 ## A large class
 
-"The invoices of this order" must not read every invoice. That is why
-`order` says `"index": true` in the class above: the list of one order
-is read through the index of the pointer, and finds its few invoices
-among a million as among a hundred.
+"The invoices of this order" must not read every invoice. The engine
+keeps an index on every pointer by itself, so the list of one order is
+read through the index of `order`, and finds its few invoices among a
+million as among a hundred. Nobody has to write `"index": true` on a
+pointer; the class above still says it, and that changes nothing.
 
-**Not built yet:** the engine keeping this index by itself for every
-pointer. It is decided (ADR-0075). Until then the designer writes
-`"index": true`.
+| The engine keeps an index on | For |
+|---|---|
+| every pointer, a `ref` | the documents that point at a document: its list |
+| the state of every class | the documents that wait in a state, and how many |
+| the moment a document was made, and the moment it last changed | the newest documents, and what changed last |
+| a text the read rule compares with the caller, `owner = USER()` | everything a caller asks who reads only their own |
+| the variable a `LOOKUP` or a list of any class is keyed by: the one its condition compares for equality with a value of its own document, as `number` in `LOOKUP(Purchase, COUNT(id), number = THIS.purchase)` | that lookup and that list. The index is made when the class that asks is defined, and dropped when no definition asks for it any more |
+| a variable that says `"index": true` | a search the class itself does not declare, such as invoices by customer |
+
+Each index on a variable or on the state goes on to the moment a
+document was made, so the newest fifty of an order, of a state or of a
+customer are read off its end and nothing is sorted.
+
+A list may compare more than its pointer, as in
+`order = REF() AND owner = "jan"`. The engine asks it through the
+pointer the list compares with its document, whatever else the
+condition compares.
+
+A question somebody writes by hand, the `where` of a `query`, may
+compare two variables that both have an index, say the order of an
+invoice and its customer. The store does not know which of the two
+finds fewer documents. So the engine looks into each
+index first, for at most a thousand documents, and asks through the
+one that ends first. The answer is the same either way; what changes
+is how long it takes.
+
+**A question somebody writes that no index serves is stopped.** The
+`where` of a `query` or a `count` may compare a variable nobody
+indexed, and then the store reads the documents of the class one by
+one: a moment among a thousand, minutes among a hundred million. Such
+a question runs for at most five seconds, and is then refused with
+`too_wide`; the hint names the variable an index is needed on:
+
+```text
+too_wide: the question was stopped after 5 seconds: no index serves it, so it reads the documents of Invoice one by one
+  fix: customer has no index: say "index": true on it in the class Invoice
+```
+
+A question an index serves is never stopped, and neither is a list of
+a document. The five seconds are the database's, set with
+`MaxQuestion` when it is opened; see
+[Opening a database](opening-a-database.md). A question over
+everything is the analyst's, asked with `sql`.
+
+**The engine says which question no index serves.** When a class is
+defined, each `LOOKUP` and each list of it over the documents of a
+class is checked: its condition has to compare a variable that has an
+index, for equality, with a value. One that does not reads every
+document of that class each time, and is noted, with the mend:
+
+```text
+  note: reads_all at /variables/from_fv/formula: this LOOKUP reads every document of Invoice each time it is worked out: its condition compares no variable of Invoice for equality with a value of this document
+    fix: begin the condition with such a comparison, as order = REF(): the engine keeps an index on every pointer; a total over a whole class has no index to be served by
+```
+
+A note refuses nothing, and the class is defined all the same: on a
+class of a thousand documents such a question is harmless. A total
+over a whole class, `LOOKUP(Invoice, SUM(net), TRUE)`, is noted too,
+for it reads everything by its nature.
+
+**A check says what a definition would build.** An index on a class
+that already holds many documents takes time to make, and the commits
+of the database wait meanwhile: seconds for ten million documents,
+minutes for a hundred million. `validate_class` and
+`fadodb class check --db` say it before anything is written, as a
+note, code `builds_index`, for a class of 100,000 documents or more:
+
+```text
+  note: builds_index at /variables/late/formula: taking this definition makes an index on note of Invoice, which holds about 100,000,000 documents: the commits of the database wait while it is built
+    fix: choose the hour: an index over ten million documents takes seconds, over a hundred million minutes
+```
 
 ## Figures over a list
 
@@ -535,10 +667,10 @@ place in the formula.
 <!-- refused -->
 | Written in a class | The class is refused with |
 |---|---|
-| a `QUERY` in a variable that is not live | `bad_formula` |
+| a `QUERY` in a variable that is neither live nor triggered | `bad_formula` |
+| a `QUERY` in a triggered variable that does not say its columns | `missing` |
 | a `QUERY` inside a larger formula | `bad_formula` |
 | a source nobody defined | `bad_formula` |
-| a table as the source | `not_supported` |
 | a column the source has not | `bad_formula` |
 | a count among the columns | `not_supported` |
 | a condition that is no condition | `type_mismatch` |
@@ -547,7 +679,7 @@ place in the formula.
 | a `LOOKUP` in the condition | `not_allowed` |
 | a live variable of the source as a column | `not_allowed` |
 | braces anywhere else | `bad_formula` |
-| `REF()` anywhere else | `bad_formula` |
+| a `REF` of a class nobody defined | `bad_formula` |
 
 And the source may not lose what a list names: a new definition of
 Invoice without `margin` is refused while the order lists it.
@@ -556,10 +688,5 @@ Invoice without `margin` is refused while the order lists it.
 
 Each of these is decided (ADR-0076) and waits its turn.
 
-- A table as the source of a `QUERY`. A `LOOKUP` reads a table today.
 - A count or a sum among the columns, and grouping: a table of
   totals. One figure of a list is built: see "Figures over a list".
-- A list that is kept: a `QUERY` in a triggered variable.
-- `REF()` outside the condition of a `QUERY`, and `REF("Order",
-  "ORD-17")`, the pointer to a named document.
-- A single value looked up in a live variable, with `LOOKUP`.

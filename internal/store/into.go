@@ -92,6 +92,11 @@ func (s *Store) applyInto(ctx context.Context, row *outboxRow, outcomeEvent stri
 	names := make([]string, 0, len(a.Returns)+2)
 	vals := make([]formula.Value, 0, len(a.Returns)+2)
 	for _, r := range a.Returns {
+		if r.Type.Kind == formula.KindRows {
+			// A returned list is no value a formula reads: a rows
+			// variable takes it whole (ADR-0085, item 3).
+			continue
+		}
 		val := formula.Blank()
 		if code == "" {
 			if v, err := toValue(did.result[r.Name], r.Type, "", r.Name, s.limits); err == nil {
@@ -110,6 +115,20 @@ func (s *Store) applyInto(ctx context.Context, row *outboxRow, outcomeEvent stri
 	e := s.reader()
 	values := make(Values, len(a.Into))
 	for _, iv := range a.Into {
+		if iv.Rows != "" {
+			// The lines the action returned, whole. An action that
+			// failed, or whose result could not be read, leaves the
+			// lines of the document as they are: a pull that did not
+			// come through must not empty them.
+			if code == "" {
+				lines, _ := did.result[iv.Rows].([]any)
+				if lines == nil {
+					lines = []any{}
+				}
+				values[iv.Name] = lines
+			}
+			continue
+		}
 		val, err := e.over(iv.Formula, names, vals)
 		if err != nil {
 			refused = evalErr(iv.Name, err)
@@ -120,7 +139,7 @@ func (s *Store) applyInto(ctx context.Context, row *outboxRow, outcomeEvent stri
 	}
 	s.release(e)
 	queued := false
-	if values != nil {
+	if len(values) > 0 {
 		var wrote *Error
 		var err error
 		if queued, wrote, err = s.writeBack(ctx, row, outcomeEvent, values, day, now); err != nil {

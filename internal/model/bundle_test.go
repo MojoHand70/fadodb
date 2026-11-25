@@ -116,3 +116,23 @@ func TestBundle_TheServersFormulas(t *testing.T) {
 		t.Errorf("the guard is written %s", text)
 	}
 }
+
+// The guard of a transition that a value is brought before is the
+// server's (ADR-0078, item 4): the page holds the value of an earlier
+// version, and the move decides on the one it brings. A guard beside it,
+// of a transition nothing is brought before, is the page's as ever.
+func TestBundle_AGuardOverABroughtValueIsTheServers(t *testing.T) {
+	cls := mustDefine(t, `{"name": "Bid", "variables": {
+	    "price": {"type": "number"},
+	    "floor": {"type": "number", "formula": "price / 2", "mode": "triggered", "on": ["before:take"]}},
+	  "states": {"initial": "open", "list": ["open", "taken", "dropped"]},
+	  "transitions": [{"name": "take", "from": "open", "to": "taken", "guard": "price >= floor"},
+	                  {"name": "drop", "from": "open", "to": "dropped", "guard": "price < 1"}]}`)
+	c := Compiled(cls)
+	if text, _ := json.Marshal(c.Guards["take"]); string(text) != `{"server":true,"reads":["price","floor"]}` {
+		t.Errorf("the guard of a transition a value is brought before is written %s", text)
+	}
+	if g := c.Guards["drop"]; g == nil || g.Server || g.Formula == "" {
+		t.Errorf("the guard of a transition nothing is brought before: %+v", g)
+	}
+}

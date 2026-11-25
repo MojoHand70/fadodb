@@ -6,7 +6,7 @@
 #   docker build -t fadodb .
 #
 # GO_VERSION is the Go of go.mod; a test holds the two together
-# (cmd/fadodb/container_test.go).
+# (internal/cli/container_test.go).
 ARG GO_VERSION=1.26.11
 
 # The tool is pure Go, so it is built on the machine that builds the

@@ -1952,10 +1952,12 @@ A few calls of the Go package have no command.
 | `Close` | closing a database is for the program that opened it |
 | `ConfirmMySecondStep` | its codes never travel in a command: the server's page /auth/account shows them |
 | `Consent` | it belongs to the server's page /auth/allow, which asks the person |
+| `CopyState` | the analytical engine is given by the program that opens the database, which asks how its copy stands; a caller of the server has nothing to do with it |
 | `Deny` | it belongs to the server's page /auth/allow, which asks the person |
 | `EnterByPhone` | it signs in the browser that showed the code, at /auth/phone/enter, with the secret of its cookie |
 | `Exchange` | a code and a pass never travel in a command: the server's address /auth/token takes them |
 | `Exec` | it is the door the commands come through |
+| `FeedCopy` | the copy in the analytical engine is fed by the database itself, and by the program that opened it when it will not wait; a caller of the server never sees the copy |
 | `FinishSignIn` | it belongs to a sign-in under way on the server's page /auth/signin |
 | `HasSecondStep` | the server's page /auth/account shows it to the person |
 | `Inlet` | it answers one entry of the list that list_inlets answers whole |
@@ -1964,6 +1966,7 @@ A few calls of the Go package have no command.
 | `Invited` | it belongs to the server's page /auth/invite, which an invitation opens |
 | `KnownClient` | it answers a client to the server's page /auth/authorize; list_clients lists them |
 | `LivePage` | it is live with the page of a list given, for a Go program: the command takes the page in the same call |
+| `MaxQuestion` | the limit is set by the program that opens the database, with the option of that name, and read by it |
 | `OpenBlob` | the bytes of a file are not JSON: they travel beside the commands, with the server |
 | `OpenFile` | the bytes of a file are not JSON: they travel beside the commands, with the server |
 | `OutboxCounts` | it counts what of the queue is still to do, for whoever watches a server, which answers it at GET /v1/metrics; outbox lists the actions themselves |

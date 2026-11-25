@@ -435,8 +435,8 @@ Phase 8 builds the record first, in four steps, one pull request each.
 |---|---|---|
 | 1 | the version a command saw (item 2) | built |
 | 2 | who may bring a value again (item 3) | built |
-| 3 | `before:` a transition, and a guard that reads the document alone (item 4) | not built |
-| 4 | a list that is kept (item 5) | not built |
+| 3 | `before:` a transition, and a guard that reads the document alone (item 4) | built |
+| 4 | a list that is kept (item 5) | built |
 
 Item 6, a kept value that follows its source, is built with the
 analytical engine, later in the phase.
@@ -525,6 +525,111 @@ and is the owner's to strike.
 15. **Nothing is said when a class is defined** about a `write` right
     on a triggered variable that does not list `refresh`: the cell
     then closes nothing, as it did before. Not planned.
+
+## Settled while building what a condition saw
+
+Built on 2026-11-25. Each of these is settled by me while building,
+and is the owner's to strike.
+
+16. **A class stored before this was so still runs as it was
+    written.** A guard that looks in a table or at other documents is
+    refused when a class is defined. A definition that a database
+    already holds is compiled as it was taken, as every stored
+    definition is, so a database of v0.7.0 opens, its documents move,
+    and `due` still lists what a change of a table made due. The next
+    version of such a class brings the value first. The other way,
+    refusing to open a database until its classes are rewritten, would
+    stop a server for a change of its engine.
+17. **The hint of the refusal says the mend**, with the transition's
+    own name in it: a triggered variable that lists `"before:approve"`.
+    For a transition without a name it says to bring the value at the
+    entry of the state, or by a refresh, since nothing is brought
+    before a transition nobody asks for.
+18. **`brought` is behind a pointer in Go**, `*Values` on `Error`, so
+    that two refusals still compare with `==`, which programs and this
+    repository's own tests do. On the wire it is the object of the
+    record.
+19. **`brought` names every variable that was brought for the
+    transition**, whether the guard reads it or not, in the wire shape
+    of its type, and leaves out one whose `read` right does not hold
+    for the caller in the state the document is in.
+20. **A value that cannot be brought is said in the words of the
+    failure**, "limit could not be brought before approve: …", with
+    the code of the failure, `div_by_zero`, `out_of_range` and the
+    like, and the variable. The listing of transitions shows that code
+    for the transition, in the place of `guard_false`.
+21. **A command of the outbox that asks for a transition brings too.**
+    A rule of another document that moves this one is somebody asking,
+    as a caller is. A timer and a transition that fires by its guard
+    are not: for a timed transition that has a name, the variables
+    that list `before:` it are brought when a caller takes it, and not
+    when its time makes the move.
+22. **The page does not work such a guard out.** In the bundle
+    (ADR-0070) the guard of a transition that anything is brought
+    before is marked as the server's, as a guard that looked in a
+    table was: the page holds the value of an earlier version. It asks
+    `transitions`, or a preview.
+23. **The benchmark of the gate** is `BenchmarkTransitionBefore`: a
+    transition with a count over 10,000 documents, through an index,
+    brought before its guard. Measured on the maintainer's machine:
+    62 to 65 µs and 176 allocations, beside 50 to 52 µs and 155 for
+    the transition alone, the same number of allocations at 2,000,
+    20,000, 25,000 and 60,000 iterations.
+
+## Settled while building a list that is kept
+
+Built on 2026-11-25. Each of these is settled by me while building,
+and is the owner's to strike.
+
+24. **A list that is kept says its columns.** The variable is written
+    `"type": "rows"` with a `schema`, the columns of its `QUERY` with
+    the types they have in the source, and the class is refused when
+    the two differ: a column the schema lacks, one of another type,
+    one the `QUERY` does not list. The reason is the one a triggered
+    variable that reads other documents says its type for (ADR-0046):
+    the tables of a class are laid out when a database opens, before
+    the class it lists is at hand. The other way, the engine taking
+    the columns from the source by itself, would make the layout of
+    one class depend on the definition of another.
+25. **Its columns are single values.** A column of the source that is
+    a list or an object is refused: a list of lists is not kept.
+26. **It is asked on the writer, inside the commit**, so it sees what
+    a `LOOKUP` of the same commit sees: the documents as stored, and
+    in a batch the moves made before this one. It is one statement,
+    prepared each time it is asked.
+27. **A list longer than a list may be is not kept.** The cap of a
+    composite is 10,000 (ADR-0013). An answer longer than that fails
+    with `too_many_elements`: a trigger leaves the list as it was and
+    records the code as its moment's error, and `before:` a
+    transition refuses the transition, as for any value that cannot
+    be brought.
+28. **`brought` shows the list** on a refusal `guard_false`, as its
+    rows, to a caller who may read the variable.
+29. **A system column may be listed**, `id`, `title`, `state`,
+    `class_version`, `created_at`, `updated_at`, `state_entered_at`,
+    with the type a filter gives it; not `version`, whose name the
+    table of a list uses for the version of the document that holds
+    the list. A row does not carry the id of its document unless the
+    `QUERY` lists `id`: a kept list is lines of the document that
+    holds it, not pointers.
+30. **A transition that fires by itself brings the list too**, when
+    the variable lists the entry or the exit of a state: the move's
+    own version keeps it.
+31. **The moment of a list** stands in the document's row, the columns
+    `<name>__asof` and `<name>__error`, as for every triggered value;
+    its rows stand in the child table.
+32. **What a kept list costs, measured** on the maintainer's machine,
+    three runs: a transition that brings a list of 100 rows before its
+    guard, found through an index among 10,000 documents, and keeps it,
+    takes 0.50 ms and 3,271 allocations
+    (`BenchmarkTransitionKeptList`, no benchmark of the gate), beside
+    0.06 ms and 176 for a transition that brings one count. The cost is
+    the reading of each listed document, whole, as a live list reads
+    it, and the writing of the 100 rows with the new version. It is
+    inside the 2 ms of a transition for a list of this size, and it
+    grows with the list: a list of thousands of rows is brought in
+    milliseconds and written again with every version of its document.
+    Reading only the columns the list keeps is not built.
 
 ## Consequences
 

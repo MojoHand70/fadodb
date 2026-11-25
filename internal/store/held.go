@@ -144,8 +144,16 @@ func (e *evaluator) Fold(q *formula.QuerySlot, args []formula.Value, ctx *formul
 // over: the commit's when the document is the one a commit works on,
 // the stored rows of the row's version otherwise.
 func (e *evaluator) listRows(c *class, ch *child, row *docRow) ([]childRow, error) {
+	if e.shownRow == row && row != nil {
+		if rows, ok := e.shown[ch]; ok {
+			return rows, nil
+		}
+	}
 	if cl := &e.commit; cl.c == c && cl.id == row.id && cl.c != nil {
 		return cl.rows(ch)
+	}
+	if ch.gone {
+		return nil, nil
 	}
 	st := ch.readRows
 	if e.writer {

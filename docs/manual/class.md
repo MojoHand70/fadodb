@@ -111,7 +111,7 @@ Each entry is one variable: its name, and what it is.
 | `min`, `max` | for a number: the range it must stay in. On a computed variable they hold only when it names its `type` |
 | `mode`, `on` | for a computed variable: `"mode": "triggered"` and the list of moments at which it is worked out, see [Triggered variables](triggered-variables.md); or `"mode": "live"`, worked out when it is read and kept nowhere, see [Live variables](live-variables.md) |
 | `scale` | for `decimal` and `money`: the number of decimal places, two when left out |
-| `index` | keeps an index on the variable, so that finding documents by it is fast |
+| `index` | keeps an index on the variable, so that finding documents by it is fast. A pointer has one without it, and so has a text the read rule compares with the caller; see [A large class](lists.md#a-large-class) |
 | `class` | for a `ref`: the class it points at |
 | `schema` | for `rows`: the columns of the table, each with its type, or the name of a schema. For `object`: the name of a schema, which is defined on its own before the class; see [Schemas and objects](schemas-and-objects.md) |
 | `label` | what a person reads in place of the name; see [what a class says to people](#what-a-class-says-to-people) |
@@ -144,7 +144,27 @@ the change is refused with `unknown_document`, in the same words for a
 document that is not there and for one the caller may not read. So
 documents are loaded in the order they point: the customers before the
 invoices that name them. A pointer a document holds already is not
-asked about again when its other values change.
+asked about again when its other values change. The engine keeps the
+pointer with the class written as its definition writes it:
+`"customer:C-17"` is kept as `"Customer:C-17"`. The id is kept to the
+letter.
+
+**A pointer compares with a pointer.** A formula makes one with
+`REF`:
+
+<!-- pointers -->
+| Written | Is | May stand |
+|---|---|---|
+| `REF()` | the pointer to the document the formula belongs to | where `ID()` may |
+| `REF("Customer", "C-17")` | the pointer to that document. The class is written as a text, and the id is any text; a blank id gives a blank pointer | anywhere |
+
+So `customer = REF("Customer", "C-17")` is a condition, in a formula
+and in a filter. `customer = "Customer:C-17"` is refused, because a
+pointer never compares with a text. The engine knows the class each
+pointer points at. A class that compares pointers to two classes is
+refused with `type_mismatch` when it is defined: `customer = REF()`
+written in an Invoice says "customer points at Customer, and this
+document is an Invoice".
 
 **A class says what points at it.** `get_class` answers, under
 `pointed_at_by`, the `ref` variables of the classes defined now that
@@ -228,6 +248,12 @@ account filled in. Who may take the transition is a different question
 and is answered under [`access`](#access). The engine tells the two
 apart in its refusals: `guard_false` for the first, `forbidden` for the
 second.
+
+A guard reads its document, the caller, the clock, the state and the
+life of the document. It does not look in a table or at other
+documents: what it needs from there is brought onto the document
+first, by a triggered variable that lists `before:` the transition;
+see [Before a transition](triggered-variables.md#before-a-transition).
 
 **Give every transition a name.** The history, the log and every
 refusal identify a move by it.

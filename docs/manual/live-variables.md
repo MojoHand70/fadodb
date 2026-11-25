@@ -97,9 +97,32 @@ figure out of such a list of its document, "how many invoices, and
 what they add up to": `COUNT(invoices)`, `SUM(invoices.net)`. Both
 have a chapter of their own, [Lists of other documents](lists.md).
 
-**Not built yet:** a live variable that looks one value up, with
-`LOOKUP`. It is decided (ADR-0076). Today the class is refused with
-`not_supported`.
+And it may look one value up, with `LOOKUP`, in a table or among the
+documents of a class: "the price of this article today", "how many
+invoices this customer has". The lookup is asked for the reader, like
+everything a live variable does:
+
+| The lookup reads | For its reader it sees |
+|---|---|
+| the documents of a class | the documents the read rule of that class lets the reader see; a value the reader may read in no state is blank |
+| a table | every row, when the `read` line of the table lets the reader through; a reader it does not let through is refused with `forbidden`, as by `table_rows` |
+
+```jsonc
+"price":    {"type": "money(2)", "mode": "live", "formula": "LOOKUP(Prices, price, sku = THIS.sku)"},
+"invoices": {"type": "number", "mode": "live", "formula": "LOOKUP(Invoice, COUNT(id), customer = THIS.customer)"}
+```
+
+In the condition of the lookup a bare name is a column of what is
+looked in. `THIS.` reaches the document the value is read on, `REF()`
+is the pointer to it, and `STATE()` and `ID()` are its state and its
+id: `LOOKUP(Invoice, COUNT(id), order = REF())` on an order counts its
+invoices.
+
+So two readers of one document may be answered two numbers: one who
+reads only the invoices they wrote counts fewer than one who reads
+every invoice. A number everybody is to see alike, and that a decision
+may stand on, is a triggered variable: kept, and brought with the
+engine's eyes.
 
 ## The story
 

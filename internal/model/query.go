@@ -28,6 +28,11 @@ type Query struct {
 	// pointer to that document.
 	Cond formula.Node
 	Src  string
+	// Table says the source is an explicit table and not a class
+	// (ADR-0076, item 9): its rows are rows of the table, which are no
+	// documents, so they carry no id, and who may read them is the one
+	// read line of the table.
+	Table bool
 	// Order is what the list is sorted by when its reader names no
 	// order, as a command writes it: a leading "-" for descending.
 	Order []string
@@ -184,13 +189,14 @@ func compileQuery(c *collector, cls *Class, v *Variable, call *formula.Call, sco
 	}
 	if src == nil {
 		if c.env.Sources != nil {
-			if _, table := c.env.Sources.Source(q.Source); table {
-				c.at(CodeNotSupported, path, srcName, "QUERY over a table is not built yet; "+q.Source+" is a table (ADR-0076, item 9)", "the source of a QUERY is a class today; LOOKUP reads a table")
-				v.Query = nil
+			if tsrc, table := c.env.Sources.Source(q.Source); table && !tsrc.Class {
+				if !compileTableQuery(c, cls, v, q, call, cols, tsrc, path, scope) {
+					v.Query = nil
+				}
 				return
 			}
 		}
-		c.at(CodeBadFormula, path, srcName, "unknown source "+q.Source+": QUERY lists the documents of a class", "define the class "+q.Source+" first")
+		c.at(CodeBadFormula, path, srcName, "unknown source "+q.Source+": QUERY lists the documents of a class or the rows of a table", "define the class or the table "+q.Source+" first")
 		v.Query = nil
 		return
 	}
@@ -245,7 +251,214 @@ func compileQuery(c *collector, cls *Class, v *Variable, call *formula.Call, sco
 	}
 	if bad {
 		v.Query = nil
+		return
 	}
+	c.asksList(path, src, q.Cond)
+}
+
+// compileKept holds the QUERY of a triggered variable to the list the
+// variable keeps (ADR-0078, item 5): every column of the QUERY is a
+// column of the variable's schema with the type it has in the source,
+// and the schema has no other. The store then writes each row of the
+// answer into the child table the schema laid out. The question moves
+// from Query, which is a live list's, to Kept.
+func compileKept(c *collector, cls *Class, v *Variable) {
+	q := v.Query
+	v.Query = nil
+	if q == nil {
+		return
+	}
+	path := "/variables/" + v.Name
+	fields := v.Type.Fields()
+	if c.env.Shallow {
+		// A stored definition compiled alone: the source is not at hand,
+		// and the columns were checked when the class was defined.
+		v.Kept = q
+		return
+	}
+	// The type of each column in the source: a class, or a table.
+	var typeOf func(name string) (formula.Type, bool)
+	srcName := q.Source
+	if q.Table {
+		tsrc, ok := c.env.Sources.Source(q.Source)
+		if !ok {
+			return // compileQuery has said so
+		}
+		typeOf = func(name string) (formula.Type, bool) {
+			for _, f := range tsrc.Columns {
+				if upper(f.Name) == upper(name) {
+					return f.Type, true
+				}
+			}
+			return formula.Type{}, false
+		}
+	} else {
+		var cs *Class
+		switch {
+		case upper(q.Source) == upper(cls.Name):
+			cs = cls
+		case c.env.Classes != nil:
+			cs, _ = c.env.Classes(q.Source)
+		}
+		if cs == nil {
+			return // compileQuery has said so
+		}
+		typeOf = func(name string) (formula.Type, bool) {
+			if sc, ok := FilterColumn(name); ok {
+				return sc.Type, true
+			}
+			if sv, ok := cs.Variable(name); ok {
+				return sv.Type, true
+			}
+			return formula.Type{}, false
+		}
+	}
+	src := struct{ Name string }{srcName}
+	bad := false
+	listed := map[string]bool{}
+	for _, name := range q.Columns {
+		listed[upper(name)] = true
+		want, known := typeOf(name)
+		if !known {
+			continue // compileQuery has said so
+		}
+		if !want.IsScalar() {
+			c.hint(CodeNotSupported, path+"/formula", "a list that is kept holds single values, and "+name+" of "+src.Name+" is "+want.String(),
+				"list the single values it needs; a list of lists is not kept")
+			bad = true
+			continue
+		}
+		if reservedFieldNames[strings.ToLower(name)] {
+			c.hint(CodeNotSupported, path+"/formula", "a list that is kept cannot hold the column "+name+" of "+src.Name+": the table of a list has a column of that name for its own use",
+				"leave "+name+" out of the QUERY")
+			bad = true
+			continue
+		}
+		var field *formula.Field
+		for i := range fields {
+			if upper(fields[i].Name) == upper(name) {
+				field = &fields[i]
+			}
+		}
+		switch {
+		case field == nil:
+			c.hint(CodeMissing, path+"/schema", "the QUERY lists the column "+name+", and the schema of "+v.Name+" has no such column",
+				`add "`+name+`": "`+want.String()+`" to the schema`)
+			bad = true
+		case field.Type.String() != want.String():
+			c.hint(CodeTypeMismatch, path+"/schema", "the column "+field.Name+" is "+field.Type.String()+" in the schema of "+v.Name+", and "+want.String()+" in "+src.Name,
+				`write "`+field.Name+`": "`+want.String()+`"`)
+			bad = true
+		}
+	}
+	for _, f := range fields {
+		if !listed[upper(f.Name)] {
+			c.hint(CodeNotAllowed, path+"/schema", "the schema of "+v.Name+" has the column "+f.Name+", which its QUERY does not list",
+				"a list that is kept has the columns of its QUERY and no other: list "+f.Name+" in the QUERY, or remove it from the schema")
+			bad = true
+		}
+	}
+	if !bad {
+		v.Kept = q
+	}
+}
+
+// compileTableQuery checks a QUERY whose source is an explicit table
+// (ADR-0076, item 9): its columns and what it sorts by are columns of
+// the table, and its condition reads the columns of the table, the
+// variables of the document as THIS.name and the pointer to it as
+// REF(). The class is noted as a reader of the table, as for a LOOKUP,
+// so that a table a list reads is not taken away under it.
+func compileTableQuery(c *collector, cls *Class, v *Variable, q *Query, call *formula.Call, cols []formula.Node, src *formula.Source, path string, scope *formula.Scope) bool {
+	q.Source, q.Table = src.Name, true
+	column := func(name string) (formula.Field, bool) {
+		for _, f := range src.Columns {
+			if upper(f.Name) == upper(name) {
+				return f, true
+			}
+		}
+		return formula.Field{}, false
+	}
+	var names []string
+	for _, f := range src.Columns {
+		names = append(names, f.Name)
+	}
+	ok := true
+	for i, name := range q.Columns {
+		n := cols[i]
+		if f, has := column(name); !has {
+			c.at(CodeBadFormula, path, n, "unknown column "+name+" of the table "+src.Name+"; its columns are "+strings.Join(names, ", "), "")
+			ok = false
+		} else {
+			q.Columns[i] = f.Name
+		}
+		for _, earlier := range q.Columns[:i] {
+			if upper(earlier) == upper(name) {
+				c.at(CodeDuplicate, path, n, "the column "+name+" is listed twice", "")
+				ok = false
+			}
+		}
+	}
+	for i, o := range q.Order {
+		name := strings.TrimPrefix(o, "-")
+		n := call.Args[3]
+		if list, isList := n.(*formula.List); isList {
+			n = list.Items[i]
+		}
+		if f, has := column(name); !has || !f.Type.IsScalar() {
+			c.at(CodeBadFormula, path, n, "QUERY cannot sort by "+name+": it is no column of the table "+src.Name, "")
+			ok = false
+		}
+		for _, earlier := range q.Order[:i] {
+			if upper(strings.TrimPrefix(earlier, "-")) == upper(name) {
+				c.at(CodeDuplicate, path, n, name+" is sorted by twice", "")
+				ok = false
+			}
+		}
+	}
+	if q.Cond != nil {
+		vars := make([]formula.Variable, 0, len(src.Columns))
+		for _, f := range src.Columns {
+			vars = append(vars, formula.Variable(f))
+		}
+		srcScope, err := formula.NewScope(vars...)
+		if err != nil {
+			c.at(CodeBadFormula, path, q.Cond, err.Error(), "")
+			return false
+		}
+		prog, err := formula.BindNode(q.Src, q.Cond, srcScope, formula.BindOptions{Sources: &envSources{c: c}, This: scope, Class: cls.Name, Classes: classNames{c}, Loose: c.env.Lenient})
+		if err != nil {
+			c.formulaErr(path, err)
+			return false
+		}
+		for _, class := range prog.Classes {
+			if class == formula.ClassLookup || class == formula.ClassQuery {
+				c.at(CodeNotAllowed, path, q.Cond, "the condition of a QUERY looks nothing up: it runs inside the one question the list is", "keep what is looked up in a variable of the document, and compare with THIS.<variable>")
+				ok = false
+			}
+		}
+		if len(prog.Folds) > 0 || prog.ReadsStates {
+			c.at(CodeNotAllowed, path, q.Cond, "the condition of a QUERY over a table reads the columns of the table and the values of the document, and nothing of a state's life or of a list", "")
+			ok = false
+		}
+		if prog.Result.Kind != formula.KindBool && prog.Result.Kind != formula.KindNull {
+			c.at(CodeTypeMismatch, path, q.Cond, "the condition of a QUERY must be a condition, got "+prog.Result.String(), `compare it, for example <> 0 or <> ""`)
+			ok = false
+		}
+	}
+	if ok {
+		// The class reads the table: it is one of its sources.
+		found := false
+		for _, s := range v.Sources {
+			if upper(s) == upper(src.Name) {
+				found = true
+			}
+		}
+		if !found {
+			v.Sources = append(v.Sources, src.Name)
+		}
+	}
+	return ok
 }
 
 // checkQueryCond binds the condition of a QUERY over the columns of its
@@ -258,7 +471,7 @@ func checkQueryCond(c *collector, cls, src *Class, q *Query, path string, scope 
 		c.at(CodeBadFormula, path, q.Cond, err.Error(), "")
 		return false
 	}
-	prog, err := formula.BindNode(q.Src, q.Cond, srcScope, formula.BindOptions{Sources: &envSources{c: c}, This: scope})
+	prog, err := formula.BindNode(q.Src, q.Cond, srcScope, formula.BindOptions{Sources: &envSources{c: c}, This: scope, Class: cls.Name, Classes: classNames{c}, Loose: c.env.Lenient})
 	if err != nil {
 		c.formulaErr(path, err)
 		return false
@@ -296,27 +509,6 @@ func checkQueryCond(c *collector, cls, src *Class, q *Query, path string, scope 
 		c.at(CodeTypeMismatch, path, q.Cond, "the condition of a QUERY must be a condition, got "+prog.Result.String(), `compare it, for example <> 0 or <> ""`)
 		ok = false
 	}
-	// A pointer compares with the pointer to this document only when it
-	// points at this class: a list of the wrong documents is caught
-	// before a document exists (ADR-0076, item 10).
-	walkNodes(q.Cond, func(n formula.Node) {
-		b, isBinary := n.(*formula.Binary)
-		if !isBinary {
-			return
-		}
-		for _, side := range [][2]formula.Node{{b.L, b.R}, {b.R, b.L}} {
-			id, isName := side[0].(*formula.Ident)
-			ref, isCall := side[1].(*formula.Call)
-			if !isName || !isCall || ref.Name != "REF" {
-				continue
-			}
-			if sv, is := src.Variable(id.Name); is && sv.Type.Kind == formula.KindRef && upper(sv.RefClass) != upper(cls.Name) {
-				c.at(CodeTypeMismatch, path, b, sv.Name+" points at "+sv.RefClass+", and this document is "+aClass(cls.Name),
-					"REF() is the pointer to the document the list belongs to; a list of what points at it compares a ref whose class is "+cls.Name)
-				ok = false
-			}
-		}
-	})
 	return ok
 }
 
@@ -378,12 +570,4 @@ func walkNodes(n formula.Node, visit func(formula.Node)) {
 			walkNodes(item, visit)
 		}
 	}
-}
-
-// aClass puts "a" or "an" before the name of a class.
-func aClass(name string) string {
-	if name != "" && strings.ContainsRune("AEIOUaeiou", rune(name[0])) {
-		return "an " + name
-	}
-	return "a " + name
 }

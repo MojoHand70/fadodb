@@ -131,6 +131,12 @@ var builtins = []*builtin{
 	{name: "DAYSIN", class: ClassContext, args: []argKind{akText}, result: KindNumber, fn: fnDaysIn},
 	{name: "FIRSTEDITOR", class: ClassContext, args: []argKind{akText}, result: KindText, fn: stateText(func(s *StateLife) string { return s.FirstEditor })},
 	{name: "LASTEDITOR", class: ClassContext, args: []argKind{akText}, result: KindText, fn: stateText(func(s *StateLife) string { return s.LastEditor })},
+	// The pointer to a document, of a class and an id (ADR-0076, item
+	// 10). It stands last: the table is the bytecode's, and a function
+	// that joins it joins it at the end. REF() with no argument is this
+	// one too, with the class of the formula and ID(), which the binder
+	// writes.
+	{name: "REF", class: ClassPure, args: []argKind{akText, akText}, result: KindRef, fn: fnRef},
 }
 
 // BuiltinNames lists the functions of the VM in the order of the table,
@@ -1143,6 +1149,16 @@ func fnState(vm *VM, _ []Value) (Value, *EvalError) {
 		return Blank(), nil
 	}
 	return Text(vm.ctx.State), nil
+}
+
+// fnRef is the pointer to the document of a class that has the id: a
+// ref in its Class:id form, blank when the id is blank.
+func fnRef(_ *VM, args []Value) (Value, *EvalError) {
+	id := args[1].Str()
+	if args[1].IsBlank() || id == "" {
+		return Blank(), nil
+	}
+	return Ref(args[0].Str() + ":" + id), nil
 }
 
 func fnID(vm *VM, _ []Value) (Value, *EvalError) {

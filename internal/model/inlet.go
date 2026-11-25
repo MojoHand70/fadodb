@@ -89,6 +89,14 @@ const (
 	MessageRaw     = "RAW"
 )
 
+// messageVariables are what a message gives the formulas of an inlet.
+var messageVariables = []formula.Variable{
+	{Name: MessageBody, Type: formula.Scalar(formula.KindJSON)},
+	{Name: MessageHeaders, Type: formula.Scalar(formula.KindJSON)},
+	{Name: MessageParams, Type: formula.Scalar(formula.KindJSON)},
+	{Name: MessageRaw, Type: formula.Scalar(formula.KindText)},
+}
+
 // MaxInletName is the longest name an inlet may have.
 const MaxInletName = 100
 
@@ -227,11 +235,7 @@ func CompileInlet(def *InletDef, env Env) (*InletSpec, Diagnostics) {
 	compileProof(c, in, def, secrets)
 
 	// The formulas of an inlet read the message and nothing else.
-	scope, _ := formula.NewScope(
-		formula.Variable{Name: MessageBody, Type: formula.Scalar(formula.KindJSON)},
-		formula.Variable{Name: MessageHeaders, Type: formula.Scalar(formula.KindJSON)},
-		formula.Variable{Name: MessageParams, Type: formula.Scalar(formula.KindJSON)},
-		formula.Variable{Name: MessageRaw, Type: formula.Scalar(formula.KindText)})
+	scope, _ := formula.NewScope(messageVariables...)
 	if def.When != "" {
 		prog, err := c.bind(def.When, scope, formula.ModePure)
 		switch {
@@ -396,7 +400,7 @@ func compileInletCommand(c *collector, in *InletSpec, def *InletDef, scope *form
 		c.hint(CodeMissing, "/object/id", "the object names the document, by a formula over the message", `"id": "JSONVALUE(BODY, \"payment.reference\")"`)
 	}
 
-	sets, given, read := fillValues(c, "/object/values", obj.Values, target, scope, in.Command)
+	sets, given, read := fillValuesFrom(c, "/object/values", obj.Values, target, scope, in.Command, messageVariables)
 	if !read {
 		return
 	}

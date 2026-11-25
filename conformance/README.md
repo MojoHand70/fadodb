@@ -91,6 +91,11 @@ One file per topic:
 - `limits` sets the size limits the suite evaluates under, `{"max_text":
   N}` code points (ADR-0021); absent, the defaults. The `limits` suite runs
   at a small limit so that short texts reach the boundary.
+- `class` names the class the formulas of the suite belong to
+  (ADR-0076, item 10): `REF()` is then the pointer to the document the
+  formula runs over, `class` and the `id` of the context. Absent, the
+  formulas belong to no class and `REF()` is refused; `REF("Order",
+  id)` stands either way.
 
 Numbers compare exactly on every target.
 
@@ -380,7 +385,13 @@ an auto formula may not read, and `indexed` names its columns that lead
 an index. A suite with `states`, a list of names, binds its formulas as
 those of a class with these states (ADR-0047): a function of a state
 that names a state as text must name one of them, and an empty list is
-a class without states. Without `states` no name is checked.
+a class without states. Without `states` no name is checked. A suite
+with `class` binds its formulas as those of that class (ADR-0076, item
+10), for `REF()`; `classes`, a list of names, are the classes a `REF`
+may name, and without it no name is checked; `points` says what a
+`ref` points at, by the name of a variable, or by `Source.column` for
+a column of a source, so that a comparison of pointers to two classes
+is refused.
 
 ## Syntax cases: `syntax/*.json`
 

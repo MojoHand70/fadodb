@@ -977,3 +977,221 @@ func TestGuide_WhoMayBringAValueAgain(t *testing.T) {
 	_, err = db.Refresh(ctx, "Purchase", "P-7", []string{"limit"}, tomek)
 	want(t, "Tomek refreshes limit of a draft", err, "forbidden, variable limit")
 }
+
+// The guide on what a condition needs (ADR-0078, item 4): the thirteen
+// steps of its table, the refusal it shows, and the purchase version by
+// version.
+func TestGuide_BringWhatAConditionNeeds(t *testing.T) {
+	const guide = "bring-what-a-condition-needs.md"
+	tables, _, classes := guideParts(t, guide)
+	if len(tables) != 1 || len(classes) != 1 {
+		t.Fatalf("the guide shows %d tables and %d classes; want one of each", len(tables), len(classes))
+	}
+	db, err := fado.Open(filepath.Join(t.TempDir(), "guide.fado"), fado.Options{Outbox: fado.OutboxOptions{Manual: true}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { db.Close() })
+	ctx := context.Background()
+	tess := person("tess", "treasury")
+	limit := func(step, amount string) {
+		t.Helper()
+		_, err := db.ImportRows(ctx, "Limits", []fado.Values{{"grade": "B", "limit": amount}}, tess)
+		want(t, step, err, "allowed")
+	}
+	if _, err := db.DefineTable(ctx, tables[0], setup); err != nil {
+		t.Fatal(err)
+	}
+	limit("the limit of grade B is 10,000.00", "10000.00")
+	if _, err := db.DefineClass(ctx, classes[0], setup); err != nil {
+		t.Fatal(err)
+	}
+	ola, tomek, piotr := person("ola"), person("tomek", "managers"), person("piotr")
+	at := func(step string, d *fado.Document, err error, version int64) {
+		t.Helper()
+		if err != nil || d.Version != version {
+			t.Fatalf("%s: %v, %v; the guide says version %d", step, d, err, version)
+		}
+	}
+	d, err := db.Create(ctx, "Purchase", fado.Values{"number": "P-7", "amount": "9000.00", "grade": "B"}, ola, fado.WithID("P-7"))
+	at("1, Ola writes purchase P-7", d, err, 1)
+	d, err = db.Transition(ctx, "Purchase", "P-7", "file", nil, ola)
+	at("2, Ola files it", d, err, 2)
+	d, err = db.Get(ctx, "Purchase", "P-7", tomek)
+	at("3, Tomek reads P-7", d, err, 2)
+	if d.Values["amount"] != "9000.00" || d.Values["limit"] != "10000.00" {
+		t.Errorf("3: %v against %v", d.Values["amount"], d.Values["limit"])
+	}
+	d, err = db.Set(ctx, "Purchase", "P-7", fado.Values{"amount": "9900.00"}, ola)
+	at("4, Ola corrects the amount", d, err, 3)
+	_, err = db.Transition(ctx, "Purchase", "P-7", "approve", nil, tomek, fado.Saw(2))
+	want(t, "5, Tomek approves, and says he read version 2", err, "stale_version")
+	_, err = db.Refresh(ctx, "Purchase", "P-7", []string{"limit"}, piotr)
+	want(t, "6, Piotr refreshes limit", err, "forbidden, variable limit")
+	limit("7, Tess lowers the limit", "5000.00")
+
+	got, err := db.Exec(ctx, fado.Principal{ID: "tomek", Kind: fado.ActorPerson, Groups: []string{"managers"}}, "transition",
+		[]byte(`{"class": "Purchase", "id": "P-7", "transition": "approve", "version": 3}`))
+	want(t, "8, Tomek reads version 3 and approves it", err, "guard_false")
+	data, rerr := os.ReadFile(filepath.Join("..", "docs", "manual", "guides", guide))
+	if rerr != nil {
+		t.Fatal(rerr)
+	}
+	var refusal []byte
+	for _, m := range regexp.MustCompile("(?s)```json\r?\n(.*?)\r?\n```").FindAllSubmatch(data, -1) {
+		if bytes.Contains(m[1], []byte(`"error"`)) {
+			refusal = m[1]
+		}
+	}
+	var shown, answered any
+	if refusal == nil || json.Unmarshal(refusal, &shown) != nil || json.Unmarshal(got, &answered) != nil || !reflect.DeepEqual(shown, answered) {
+		t.Errorf("the refusal of step 8 is\n%s\nand the guide shows\n%s", got, refusal)
+	}
+	// The listing brings the limit too: approve is closed, though the
+	// purchase still holds 10,000.00.
+	open, err := db.Transitions(ctx, "Purchase", "P-7", tomek)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tr := range open {
+		if tr.Name == "approve" && (tr.Enabled || tr.Code != "guard_false") {
+			t.Errorf("after step 7 the listing says of approve: %+v", tr)
+		}
+	}
+	d, err = db.Refresh(ctx, "Purchase", "P-7", []string{"limit"}, tomek)
+	at("9, Tomek refreshes limit", d, err, 4)
+	d, err = db.Set(ctx, "Purchase", "P-7", fado.Values{"amount": "4900.00"}, ola)
+	at("10, Ola corrects the amount", d, err, 5)
+	d, err = db.Transition(ctx, "Purchase", "P-7", "approve", nil, tomek, fado.Saw(5))
+	at("11, Tomek reads version 5 and approves it", d, err, 6)
+	if d.State != "approved" {
+		t.Errorf("11: the purchase is %s", d.State)
+	}
+	limit("12, Tess raises the limit", "20000.00")
+	d, err = db.Get(ctx, "Purchase", "P-7", piotr)
+	at("13, Piotr reads P-7", d, err, 6)
+	if d.State != "approved" || d.Values["amount"] != "4900.00" || d.Values["limit"] != "5000.00" {
+		t.Errorf("13: %s, %v against %v", d.State, d.Values["amount"], d.Values["limit"])
+	}
+
+	// The purchase, version by version, as the second table has it.
+	type held struct {
+		state, amount, limit string
+		worked               int64
+	}
+	for version, w := range map[int64]held{
+		1: {"draft", "9000.00", "", 0}, 2: {"review", "9000.00", "10000.00", 2}, 3: {"review", "9900.00", "10000.00", 2},
+		4: {"review", "9900.00", "5000.00", 4}, 5: {"review", "4900.00", "5000.00", 4}, 6: {"approved", "4900.00", "5000.00", 6},
+	} {
+		h, err := db.Version(ctx, "Purchase", "P-7", version, tomek)
+		if err != nil {
+			t.Fatal(err)
+		}
+		limit, _ := h.Values["limit"].(string)
+		if h.State != w.state || h.Values["amount"] != w.amount || limit != w.limit || h.Computed["limit"].Version != w.worked {
+			t.Errorf("version %d holds %s, %v, limit %q worked out at %d; the guide says %+v", version, h.State, h.Values["amount"], limit, h.Computed["limit"].Version, w)
+		}
+	}
+	events, err := db.Events(ctx, "Purchase", "P-7", tomek)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if last := events[len(events)-1]; last.Name != "approve" || last.SeenVersion != 5 {
+		t.Errorf("the event of version 6: %+v", last)
+	}
+	// The guard written with the lookup in it is refused.
+	looks := bytes.Replace(classes[0], []byte(`NOT ISBLANK(limit) AND amount <= limit`), []byte(`amount <= LOOKUP(Limits, limit, grade = THIS.grade)`), 1)
+	if _, err := db.DefineClass(ctx, looks, setup); fado.ErrorCode(err) != "bad_definition" || !strings.Contains(err.Error(), "not_allowed") || !strings.Contains(err.Error(), "/transitions/2/guard") {
+		t.Errorf("a guard that looks in the table is answered: %v", err)
+	}
+}
+
+// The guide on a list that is kept (ADR-0078, item 5): the seven steps
+// of its table.
+func TestGuide_KeepTheLinesADecisionStoodOn(t *testing.T) {
+	const guide = "keep-the-lines-a-decision-stood-on.md"
+	_, _, classes := guideParts(t, guide)
+	if len(classes) != 2 {
+		t.Fatalf("the guide shows %d classes; want the invoice and the order", len(classes))
+	}
+	db, err := fado.Open(filepath.Join(t.TempDir(), "guide.fado"), fado.Options{Outbox: fado.OutboxOptions{Manual: true}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { db.Close() })
+	ctx := context.Background()
+	// The two classes name each other, so they are defined in one call.
+	if _, err := db.DefineClasses(ctx, classes, setup); err != nil {
+		t.Fatal(err)
+	}
+	jan, piotr, ewa := person("jan", "sales"), person("piotr", "sales"), person("ewa", "finance")
+	if _, err := db.Create(ctx, "Order", fado.Values{"number": "ORD-17"}, jan, fado.WithID("ORD-17")); err != nil {
+		t.Fatal(err)
+	}
+	owners := map[string]fado.Option{"FV-1": jan, "FV-2": jan, "FV-3": piotr}
+	for id, net := range map[string]string{"FV-1": "1000.00 PLN", "FV-2": "250.00 PLN", "FV-3": "70.00 PLN"} {
+		if _, err := db.Create(ctx, "Invoice", fado.Values{"number": id, "order": "Order:ORD-17", "net": net}, owners[id], fado.WithID(id)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// lines says the list as number:state, in its order.
+	lines := func(v any) string {
+		rows, _ := v.([]any)
+		var out []string
+		for _, r := range rows {
+			row, _ := r.(map[string]any)
+			out = append(out, row["number"].(string)+":"+row["state"].(string))
+		}
+		return strings.Join(out, " ")
+	}
+	const drafts, paid = "FV-1:draft FV-2:draft FV-3:draft", "FV-1:paid FV-2:paid FV-3:paid"
+
+	d, err := db.Get(ctx, "Order", "ORD-17", jan)
+	if err != nil || d.Version != 1 || lines(d.Values["settled"]) != "" {
+		t.Fatalf("1, Jan reads ORD-17: %v, %v", d, err)
+	}
+	_, err = db.Transition(ctx, "Order", "ORD-17", "close", nil, jan)
+	want(t, "2, Jan closes ORD-17", err, "guard_false")
+	var refusal *fado.Error
+	if !errors.As(err, &refusal) || refusal.Brought == nil || lines((*refusal.Brought)["settled"]) != drafts {
+		t.Errorf("2: the refusal brought %v; the guide says the three invoices, in draft", refusal)
+	}
+	_, err = db.Refresh(ctx, "Order", "ORD-17", []string{"settled"}, jan)
+	want(t, "3, Jan refreshes settled", err, "forbidden, variable settled")
+	d, err = db.Refresh(ctx, "Order", "ORD-17", []string{"settled"}, ewa)
+	want(t, "4, Ewa refreshes settled", err, "allowed")
+	if err == nil && (d.Version != 2 || lines(d.Values["settled"]) != drafts || d.Values["unpaid"] != 3.0 || d.Values["billed"] != "1320.00 PLN") {
+		t.Errorf("4: version %d, %s, unpaid %v, billed %v", d.Version, lines(d.Values["settled"]), d.Values["unpaid"], d.Values["billed"])
+	}
+	for id, owner := range owners {
+		if _, err := db.Transition(ctx, "Invoice", id, "file", nil, owner); err != nil {
+			t.Fatalf("5, file %s: %v", id, err)
+		}
+		if _, err := db.Transition(ctx, "Invoice", id, "approve", nil, ewa); err != nil {
+			t.Fatalf("5, approve %s: %v", id, err)
+		}
+	}
+	d, err = db.Get(ctx, "Order", "ORD-17", jan)
+	if err != nil || d.Version != 2 || lines(d.Values["settled"]) != drafts || d.Values["unpaid"] != 3.0 || d.Computed["settled"].Version != 2 {
+		t.Errorf("6, Jan reads ORD-17: %v, %v; the guide says version 2 still, three lines in draft", d, err)
+	}
+	d, err = db.Transition(ctx, "Order", "ORD-17", "close", nil, jan)
+	want(t, "7, Jan closes ORD-17", err, "allowed")
+	if err == nil && (d.Version != 3 || d.State != "closed" || lines(d.Values["settled"]) != paid || d.Values["unpaid"] != 0.0) {
+		t.Errorf("7: version %d, %s, %s, unpaid %v", d.Version, d.State, lines(d.Values["settled"]), d.Values["unpaid"])
+	}
+	// The history has the list of each version.
+	for version, w := range map[int64]string{1: "", 2: drafts, 3: paid} {
+		h, err := db.Version(ctx, "Order", "ORD-17", version, jan)
+		if err != nil || lines(h.Values["settled"]) != w {
+			t.Errorf("version %d holds %q, %v; want %q", version, lines(h.Values["settled"]), err, w)
+		}
+	}
+	// Nobody sets it.
+	_, err = db.Set(ctx, "Order", "ORD-17", fado.Values{"settled": []any{}}, jan)
+	if fado.ErrorCode(err) != "terminal" {
+		// The order is closed, which is told first; an open order says
+		// read_only, which the store's own test holds.
+		t.Errorf("a set of the list of a closed order: %v", err)
+	}
+}

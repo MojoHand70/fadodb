@@ -5,7 +5,9 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
+	"time"
 
 	"modernc.org/sqlite"
 
@@ -50,6 +52,83 @@ func (s *Store) Query(ctx context.Context, f Filter, opts ...Option) ([]*Documen
 	return docs, err
 }
 
+// lookLimit is how far the engine looks into an index before it stops
+// counting (ADR-0075, item 10).
+const lookLimit = 1000
+
+// through answers the condition and the parameters to ask a plan with.
+// A question that two or more indexes fit is asked through the one that
+// ends first: the engine looks into each for the value the question
+// compares, for at most lookLimit documents, since the store has no
+// numbers on the data to choose by (ADR-0075, item 10). Of two looks
+// that end alike the earlier fit is taken, and a look that finds
+// nothing ends the looking: through that index the answer is empty.
+func (s *Store) through(ctx context.Context, c *class, plan *query.Plan, o options) (string, []any, error) {
+	named := s.contextArgs(o)
+	if len(plan.Fits) < 2 {
+		return plan.Where, append(plan.Args, named...), nil
+	}
+	best, least := 0, lookLimit+1
+	for i := range plan.Fits {
+		f := &plan.Fits[i]
+		text := "SELECT count(*) FROM (SELECT 1 FROM " + quote(c.table) + " WHERE " + f.Look + " LIMIT " + fmt.Sprint(lookLimit) + ")"
+		st, err := s.filters.acquire(ctx, s.db, text)
+		if err != nil {
+			return "", nil, storageErr("prepare a look into "+c.cls.Name, err)
+		}
+		var n int
+		err = st.stmt.QueryRowContext(ctx, append(f.Args[:len(f.Args):len(f.Args)], named...)...).Scan(&n)
+		s.filters.release(st)
+		if err != nil {
+			return "", nil, storageErr("look into "+c.cls.Name, err)
+		}
+		if n < least {
+			best, least = i, n
+		}
+		if n == 0 {
+			break
+		}
+	}
+	f := &plan.Fits[best]
+	return f.Where, append(f.Args[:len(f.Args):len(f.Args)], named...), nil
+}
+
+// bounded gives the context a free question is asked under (ADR-0075,
+// item 6). One that an index serves is asked as its caller asked it.
+// One that no index serves reads the documents of its class one by one,
+// which takes as long as the class is large: it runs for as long as the
+// database allows, and stop ends the count of its time.
+func (s *Store) bounded(ctx context.Context, plan *query.Plan) (asked context.Context, stop func()) {
+	if plan.Served || s.maxQuestion <= 0 {
+		return ctx, func() {}
+	}
+	return context.WithTimeout(ctx, s.maxQuestion)
+}
+
+// stopped answers what a free question failed with: the refusal
+// too_wide when the time the database allows it ran out and its caller
+// was still waiting, with the variable an index would be needed on, and
+// the failure itself otherwise.
+func (s *Store) stopped(ctx, asked context.Context, c *class, plan *query.Plan, failure error) error {
+	if asked == ctx || asked.Err() != context.DeadlineExceeded || ctx.Err() != nil {
+		return failure
+	}
+	message := "the question was stopped after " + shortTime(s.maxQuestion) + ": no index serves it, so it reads the documents of " + c.cls.Name + " one by one"
+	if plan.Lacks == "" {
+		return hintf(CodeTooWide, "where", message, "begin the where with a comparison of a variable that has an index with a value, as order = REF(\"Order\", \"ORD-17\"); a question over everything is asked with sql")
+	}
+	return hintf(CodeTooWide, plan.Lacks, message, plan.Lacks+` has no index: say "index": true on it in the class `+c.cls.Name)
+}
+
+// shortTime writes a length of time for a person: 5 seconds, 0.25
+// seconds.
+func shortTime(d time.Duration) string {
+	if d == time.Second {
+		return "1 second"
+	}
+	return strconv.FormatFloat(d.Seconds(), 'f', -1, 64) + " seconds"
+}
+
 // answer runs a compiled filter over the documents of a class and
 // projects each document found for the caller. command is the call the
 // log of reads names. With probe it reads one document past the limit,
@@ -63,32 +142,43 @@ func (s *Store) answer(ctx context.Context, c *class, o options, plan *query.Pla
 	cols := append(quoteAll(systemColumns), quoteAll(columnNames(c.cls.Columns))...)
 	cols = append(cols, quoteAll(c.atNames())...)
 	text := "SELECT " + strings.Join(cols, ", ") + " FROM " + quote(c.cls.Name)
-	if plan.Where != "" {
-		text += " WHERE " + plan.Where
+	where, args, err := s.through(ctx, c, plan, o)
+	if err != nil {
+		return nil, false, err
+	}
+	if where != "" {
+		text += " WHERE " + where
 	}
 	text += " ORDER BY " + plan.Order + " LIMIT " + fmt.Sprint(limit) + " OFFSET " + fmt.Sprint(plan.Offset)
-	args := append(plan.Args, s.contextArgs(o)...)
 	st, err := s.filters.acquire(ctx, s.db, text)
 	if err != nil {
 		return nil, false, storageErr("prepare the query of "+c.cls.Name, err)
 	}
 	defer s.filters.release(st)
-	rows, err := st.stmt.QueryContext(ctx, args...)
+	// A free question that no index serves runs for as long as the
+	// database allows, and no longer (ADR-0075, item 6). A list of a
+	// document is a declared question, and is not stopped.
+	asked, stop := ctx, func() {}
+	if command == "query" {
+		asked, stop = s.bounded(ctx, plan)
+	}
+	defer stop()
+	rows, err := st.stmt.QueryContext(asked, args...)
 	if err != nil {
-		return nil, false, storageErr("query "+c.cls.Name, err)
+		return nil, false, s.stopped(ctx, asked, c, plan, storageErr("query "+c.cls.Name, err))
 	}
 	var found []*docRow
 	for rows.Next() {
 		row, err := c.scanRow(rows, false)
 		if err != nil {
 			rows.Close()
-			return nil, false, storageErr("query "+c.cls.Name, err)
+			return nil, false, s.stopped(ctx, asked, c, plan, storageErr("query "+c.cls.Name, err))
 		}
 		found = append(found, row)
 	}
 	rows.Close()
 	if err := rows.Err(); err != nil {
-		return nil, false, storageErr("query "+c.cls.Name, err)
+		return nil, false, s.stopped(ctx, asked, c, plan, storageErr("query "+c.cls.Name, err))
 	}
 	more := false
 	if probe && len(found) > plan.Limit {
@@ -232,17 +322,23 @@ func (s *Store) Count(ctx context.Context, f Filter, opts ...Option) (int64, err
 		return 0, filterErr(err)
 	}
 	text := "SELECT count(*) FROM " + quote(c.cls.Name)
-	if plan.Where != "" {
-		text += " WHERE " + plan.Where
+	where, args, err := s.through(ctx, c, plan, o)
+	if err != nil {
+		return 0, err
+	}
+	if where != "" {
+		text += " WHERE " + where
 	}
 	st, err := s.filters.acquire(ctx, s.db, text)
 	if err != nil {
 		return 0, storageErr("prepare the count of "+c.cls.Name, err)
 	}
 	defer s.filters.release(st)
+	asked, stop := s.bounded(ctx, plan)
+	defer stop()
 	var n int64
-	if err := st.stmt.QueryRowContext(ctx, append(plan.Args, s.contextArgs(o)...)...).Scan(&n); err != nil {
-		return 0, storageErr("count "+c.cls.Name, err)
+	if err := st.stmt.QueryRowContext(asked, args...).Scan(&n); err != nil {
+		return 0, s.stopped(ctx, asked, c, plan, storageErr("count "+c.cls.Name, err))
 	}
 	if o.records(c) {
 		past, err := s.pastCount(ctx, c, o, n, func(p query.Principal) (string, []any, error) {

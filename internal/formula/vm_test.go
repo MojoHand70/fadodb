@@ -1,6 +1,7 @@
 package formula
 
 import (
+	"strings"
 	"testing"
 )
 
@@ -232,5 +233,65 @@ func BenchmarkBind(b *testing.B) {
 		if _, err := Bind(src, scope, BindOptions{}); err != nil {
 			b.Fatal(err)
 		}
+	}
+}
+
+// The VM remembers the json text it parsed last and the one it was told
+// last (ADR-0085): JSONVALUE reads either without parsing again, and
+// JSONList answers the elements of a list a path leads to.
+func TestVM_RemembersTheJSONItParsed(t *testing.T) {
+	scope, err := NewScope(Variable{Name: "BODY", Type: Scalar(KindJSON)}, Variable{Name: "item", Type: Scalar(KindJSON)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	prog, err := Bind(`JSONVALUE(item, "sku") & " of " & JSONVALUE(BODY, "order.number")`, scope, BindOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// given hands the program the body and one element, each in the
+	// slot the program reads it from.
+	given := func(body, item Value) []Value {
+		vars := make([]Value, len(prog.Slots))
+		for i, slot := range prog.Slots {
+			if slot.Name == "BODY" {
+				vars[i] = body
+			} else {
+				vars[i] = item
+			}
+		}
+		return vars
+	}
+	vm := NewVM()
+	body := `{"order": {"number": "1001", "lines": [{"sku": "SOFA-3"}, {"sku": "CHAIR-1"}], "none": null, "text": "x"}}`
+	elements, found, err := vm.JSONList(body, "order.lines")
+	if err != nil || !found || len(elements) != 2 {
+		t.Fatalf("the lines of the order: %v, %v, %v", elements, found, err)
+	}
+	for i, want := range []string{"SOFA-3 of 1001", "CHAIR-1 of 1001"} {
+		// The element is told to the VM under a text that is no json at
+		// all: a formula that read it by parsing would fail.
+		told := "element " + string(rune('a'+i))
+		vm.SeedJSON(told, elements[i])
+		got, err := vm.Run(prog, given(JSON(body), JSON(told)), nil)
+		if err != nil || got.Str() != want {
+			t.Errorf("element %d: %v, %v; want %s", i+1, got, err, want)
+		}
+	}
+	for path, want := range map[string]string{"order.none": "nothing", "order.nowhere": "nothing", "order.lines.5": "nothing", "order.text": "no list", "order": "no list", "": "no list"} {
+		_, found, err := vm.JSONList(body, path)
+		switch {
+		case want == "nothing" && (found || err != nil):
+			t.Errorf("%q: found %v, %v; want nothing there", path, found, err)
+		case want == "no list" && (err == nil || !strings.Contains(err.Error(), "no list")):
+			t.Errorf("%q: %v; want what is there to be no list", path, err)
+		}
+	}
+	if _, _, err := vm.JSONList(`{"order": `, "order"); err == nil {
+		t.Error("a text that is no json has a list")
+	}
+	// Once it has let go, a text that is no json is one again.
+	vm.ForgetJSON()
+	if _, err := vm.Run(prog, given(JSON(body), JSON("element a")), nil); err == nil {
+		t.Error("the VM still reads an element it was told to forget")
 	}
 }

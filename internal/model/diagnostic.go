@@ -162,6 +162,17 @@ const (
 	// state or a transition has no description, which a person reads as
 	// help and an agent as what the thing is for (ADR-0068, item 3).
 	CodeNoDescription = "no_description"
+	// CodeReadsAll: a note and no refusal. A question a class declares,
+	// a LOOKUP or a list over the documents of a class, compares no
+	// variable an index answers, so it reads every document of that
+	// class each time it is worked out (ADR-0075, item 5). On a small
+	// class that is harmless; the note says the mend.
+	CodeReadsAll = "reads_all"
+	// CodeBuildsIndex: a note and no refusal, of a check before anything
+	// is written. Taking the definition would make an index on a class
+	// that already holds many documents, and the commits of the
+	// database wait while it is built (ADR-0075, item 7).
+	CodeBuildsIndex = "builds_index"
 	// CodeUnknownApp: a class names an app the database does not have
 	// (ADR-0077).
 	CodeUnknownApp = "unknown_app"
@@ -192,6 +203,11 @@ type collector struct {
 	// figures out of (ADR-0081), and the variable itself.
 	listsOf  *Class
 	listsFor *Variable
+	// wide are the notes of the questions the class declares that no
+	// index serves (ADR-0075, item 5), and keys the indexes its
+	// questions ask of the classes they read (item 2).
+	wide Diagnostics
+	keys []Key
 }
 
 // liveRead says a formula reads a live variable. A live value is worked
@@ -212,7 +228,16 @@ var errUnbound = errors.New("the formula reads a class and was not bound")
 // its explicit tables and the documents of its classes.
 func (c *collector) bind(src string, scope *formula.Scope, mode formula.Mode) (*formula.Program, error) {
 	r := &envSources{c: c}
-	opts := formula.BindOptions{Mode: mode, Sources: r, States: c.states()}
+	opts := formula.BindOptions{Mode: mode, Sources: r, States: c.states(), Loose: c.env.Lenient}
+	// REF() is the pointer to a document of the class being compiled,
+	// and a REF that names a class names one the database has, written
+	// as its definition writes it (ADR-0076, item 10). A definition
+	// compiled alone, before the classes it names are at hand, is taken
+	// at its word.
+	if c.self != nil {
+		opts.Class = c.self.Name
+	}
+	opts.Classes = classNames{c}
 	if c.listsOf != nil {
 		opts.Lists, opts.Live = listsOf(c.listsOf, c.listsFor, r), c.listsFor.Mode == ModeLive
 	}
@@ -232,6 +257,191 @@ func (c *collector) bind(src string, scope *formula.Scope, mode formula.Mode) (*
 		}
 	}
 	return prog, err
+}
+
+// classNames says of a name whether it is a class, and how its
+// definition writes it, for the class a REF names: the class being
+// compiled and the classes of the environment. A definition compiled
+// alone, before the classes it names are at hand, is taken at its word.
+type classNames struct{ c *collector }
+
+// ClassName implements formula.ClassNames.
+func (n classNames) ClassName(name string) (string, bool) {
+	c := n.c
+	if c.self != nil && upper(name) == upper(c.self.Name) {
+		return c.self.Name, true
+	}
+	if c.env.Classes != nil {
+		if cls, ok := c.env.Classes(name); ok {
+			return cls.Name, true
+		}
+	}
+	return name, c.env.Shallow
+}
+
+// classOf finds a class a formula reads, the one being compiled among
+// them; nil for a table, and for a class that is not at hand.
+func (c *collector) classOf(name string) *Class {
+	if c.env.Sources != nil {
+		if _, table := c.env.Sources.Source(name); table {
+			return nil
+		}
+	}
+	if c.self != nil && upper(name) == upper(c.self.Name) {
+		return c.self
+	}
+	if c.env.Classes != nil {
+		if cls, ok := c.env.Classes(name); ok {
+			return cls
+		}
+	}
+	return nil
+}
+
+// indexedIn says a column of a class has an index: the id, the state
+// and the two moments, which every class has one on, and a variable the
+// class keeps one for (ADR-0075, item 2).
+func indexedIn(cls *Class, column string) bool {
+	switch upper(column) {
+	case "ID", "STATE", "CREATED_AT", "UPDATED_AT":
+		return true
+	}
+	v, ok := cls.Variable(column)
+	return ok && cls.Keyed(v)
+}
+
+// ask notes that a question of the class being compiled is keyed by a
+// variable of a class it reads, so that the engine keeps an index on it
+// (ADR-0075, item 2). It answers false for what no index can be kept on.
+func (c *collector) ask(src *Class, column, path string) bool {
+	v, ok := src.Variable(column)
+	if !ok || !keyable(v) {
+		return false
+	}
+	for _, k := range c.keys {
+		if k.Class == src.Name && k.Column == v.Name {
+			return true
+		}
+	}
+	c.keys = append(c.keys, Key{Class: src.Name, Column: v.Name, At: path})
+	return true
+}
+
+// asks notes each LOOKUP of a formula over the documents of a class
+// that no index of that class serves (ADR-0075, item 5): its condition
+// compares no indexed variable, for equality, with a value of the
+// document the formula belongs to. Such a lookup reads every document
+// of the class each time it is worked out. A total over a whole class
+// is one by its nature, until the analytical engine answers it.
+func (c *collector) asks(path string, prog *formula.Program) {
+	if prog == nil {
+		return
+	}
+	for i := range prog.Queries {
+		q := &prog.Queries[i]
+		src := c.classOf(q.Source)
+		if q.List != "" || src == nil {
+			continue
+		}
+		switch {
+		case q.Key != nil && indexedIn(src, q.IndexColumn):
+			continue
+		case q.Key != nil && c.ask(src, q.IndexColumn, path):
+			// the engine makes the index for it
+			continue
+		case q.Key != nil:
+			c.wide = append(c.wide, Diagnostic{Code: CodeReadsAll, Path: path, Pos: -1, Note: true,
+				Message: "this LOOKUP reads every document of " + src.Name + " each time it is worked out: " + q.IndexColumn + ", which its condition compares, is a value no index can be kept on",
+				Hint:    "compare a variable that is one plain value, a text, a number, a date or a pointer"})
+		default:
+			c.wide = append(c.wide, Diagnostic{Code: CodeReadsAll, Path: path, Pos: -1, Note: true,
+				Message: "this LOOKUP reads every document of " + src.Name + " each time it is worked out: its condition compares no variable of " + src.Name + " for equality with a value of this document",
+				Hint:    "begin the condition with such a comparison, as order = REF(): the engine keeps an index on every pointer; a total over a whole class has no index to be served by"})
+		}
+	}
+}
+
+// asksList is asks for a list of the documents of a class (ADR-0076):
+// its condition, when it has one, compares an indexed variable for
+// equality with a value that is no column of a listed document, or the
+// list reads every document until its page is full. A list without a
+// condition is read in the order of the ids, a page at a time, and is
+// served by that.
+func (c *collector) asksList(path string, src *Class, cond formula.Node) {
+	if cond == nil {
+		return
+	}
+	served := false
+	var walk func(formula.Node)
+	walk = func(n formula.Node) {
+		b, ok := n.(*formula.Binary)
+		if !ok {
+			return
+		}
+		switch b.Op {
+		case formula.TokAnd:
+			walk(b.L)
+			walk(b.R)
+		case formula.TokEq:
+			for _, side := range [][2]formula.Node{{b.L, b.R}, {b.R, b.L}} {
+				column := ""
+				switch col := side[0].(type) {
+				case *formula.Ident:
+					column = col.Name
+				case *formula.Call:
+					if len(col.Args) == 0 && (col.Name == "STATE" || col.Name == "ID") {
+						column = col.Name
+					}
+				}
+				switch {
+				case column == "" || namesColumn(side[1]):
+				case indexedIn(src, column):
+					served = true
+				case ofDocument(side[1]) && c.ask(src, column, path):
+					// A list keyed by a value of its document: the
+					// engine makes the index for it (item 2).
+					served = true
+				}
+			}
+		}
+	}
+	walk(cond)
+	if !served {
+		c.wide = append(c.wide, Diagnostic{Code: CodeReadsAll, Path: path, Pos: -1, Note: true,
+			Message: "this list reads every document of " + src.Name + " until its page is full: its condition compares no indexed variable of " + src.Name + " for equality with a value",
+			Hint:    "begin the condition with such a comparison, as order = REF(): the engine keeps an index on every pointer, and on a variable that says \"index\": true"})
+	}
+}
+
+// ofDocument says an operand of the condition of a list is a value of
+// the document the list belongs to: the pointer to it, REF(), or one of
+// its variables, THIS.name.
+func ofDocument(n formula.Node) bool {
+	switch n := n.(type) {
+	case *formula.ThisRef:
+		return true
+	case *formula.Call:
+		return n.Name == "REF" && len(n.Args) == 0
+	}
+	return false
+}
+
+// namesColumn says an operand of the condition of a list reads the
+// listed document: a bare name in it is a column, and so are STATE()
+// and ID().
+func namesColumn(n formula.Node) bool {
+	found := false
+	walkNodes(n, func(n formula.Node) {
+		switch n := n.(type) {
+		case *formula.Ident, *formula.Member:
+			found = true
+		case *formula.Call:
+			if len(n.Args) == 0 && (n.Name == "STATE" || n.Name == "ID") {
+				found = true
+			}
+		}
+	})
+	return found
 }
 
 // states are the states of the class being compiled, which a function
@@ -331,6 +541,11 @@ func (c *collector) formulaErr(path string, err error) {
 	if errors.As(err, &fe) {
 		d.Pos = fe.Pos
 		d.Message = fe.Msg
+		if fe.Mismatch {
+			// a comparison of pointers to two classes (ADR-0076, item 10)
+			d.Code = CodeTypeMismatch
+			d.Hint = "a pointer compares with a pointer to the same class; REF() is the pointer to the document the formula belongs to"
+		}
 	}
 	c.list = append(c.list, d)
 }

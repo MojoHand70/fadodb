@@ -22,10 +22,10 @@ line says so. Copy `0000-template.md` to start.
 | [0014](0014-document-tables.md) | Document tables: current, history, child tables and views | Accepted, amended by 0026, 0031, 0039, 0040, 0043, 0047, 0075 |
 | [0015](0015-commits-and-recalculation.md) | Commits, recalculation modes, defaults, reset and refresh | Accepted, amended by 0020, 0025, 0040, 0043, 0076, 0078 |
 | [0016](0016-explicit-tables-and-query-functions.md) | Explicit tables, storage bindings, LOOKUP and QUERY | Accepted, amended by 0020, 0036, 0037, 0046, 0068, 0076, 0079 |
-| [0017](0017-duckdb-as-the-analytical-engine.md) | DuckDB as the analytical engine, full and lite builds | Accepted, amended by 0035, 0072 |
+| [0017](0017-duckdb-as-the-analytical-engine.md) | DuckDB as the analytical engine, full and lite builds | Accepted, amended by 0035, 0072, 0089 |
 | [0018](0018-class-metadata-layouts-and-wire-format.md) | JSON for definitions and interchange: class metadata, layouts and the wire format | Accepted, amended by 0022, 0023, 0028, 0031, 0032, 0033, 0034, 0039, 0043, 0047, 0068, 0069, 0070, 0077 |
 | [0019](0019-formula-language-semantics.md) | Formula language semantics: grammar, types, coercion, comparison, dates, text, composites and errors | Accepted, amended by 0021, 0022, 0023, 0024, 0031, 0043, 0047, 0050, 0076 |
-| [0020](0020-query-function-execution.md) | LOOKUP and QUERY execution: one engine call per invocation | Accepted, amended by 0036, 0037, 0046, 0076 |
+| [0020](0020-query-function-execution.md) | LOOKUP and QUERY execution: one engine call per invocation | Accepted, amended by 0036, 0037, 0046, 0076, 0089 |
 | [0021](0021-size-limits.md) | Size limits: one text limit per database, enforced before building | Accepted, amended by 0033 |
 | [0022](0022-exact-decimal-int-and-money.md) | Exact numbers: decimal, int and money | Accepted |
 | [0023](0023-calendar-day-datetime-and-enum-values.md) | A date is a calendar day, a datetime an instant, an enum a text with a value set | Accepted |
@@ -94,3 +94,4 @@ line says so. Copy `0000-template.md` to start.
 | [0086](0086-a-group-is-a-record-of-its-own.md) | A group is a record of its own | Proposed |
 | [0087](0087-a-database-made-with-a-starter.md) | A database made with a starter | Withdrawn by the owner |
 | [0088](0088-people-sign-in-with-a-passkey.md) | People sign in with a passkey, invited by a link | Proposed |
+| [0089](0089-the-copy-beside-the-documents.md) | The copy beside the documents: how the analytical engine is fed and asked | Proposed |

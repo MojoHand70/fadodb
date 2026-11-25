@@ -23,6 +23,41 @@ Phase 8 started on 2026-11-25.
   `internal/qrcode`, Go's standard library and code of its own; a page
   that shows one lets its script ask the server alone how it stands
   (`connect-src 'self'`).
+- The flow of a class is answered from the copy in the analytical
+  engine (ADR-0089, step 2). A program that keeps the copy answers the
+  command `flow`, which a face draws its flowchart from, out of DuckDB:
+  among 3,400,000 invoices that visited ten million states the answer
+  takes 0.33 seconds where the store takes 18.6, and it is the same
+  answer for the same reader. The copy is brought up to the database
+  before it answers, so a move made a moment ago is in the flow. When
+  the copy does not answer, the store does. A program without the
+  engine, and the program `fadodb`, answer as before.
+- The server program can be built with the analytical engine (ADR-0089,
+  the first half of its step 6). `make full` builds `bin/fadodb-full`
+  in the module `analytics`: the program `fadodb`, from the same code,
+  with DuckDB linked in. A database it serves keeps a copy of its
+  documents beside its own file and answers the flow of a class from
+  it. The settings gain `analytics.memory`, the most memory the engine
+  may take, 2 GB when it is not given, and `analytics.threads`; the
+  program built without the engine refuses settings that name it.
+  `fadodb version` says which program it is. The code of the program
+  moved from `cmd/fadodb` to the package `internal/cli`, which both
+  programs are built from; `fadodb` itself is as it was, in pure Go.
+  Not built: the program with the engine for each operating system,
+  released, and an image for containers with it.
+- The first step of the analytical engine: the copy and its feed
+  (ADR-0089, proposed; ADR-0017). A program built with the module
+  `analytics` gives the database DuckDB as its analytical engine, with
+  the new option `Analytics`. The database then keeps a copy of its
+  documents in the file `<database>.duckdb` beside its own and feeds
+  it itself: for every class the documents as they are now and every
+  version of them, and the events. The copy is never the truth and
+  needs no backup: the engine makes it again when it is lost, does not
+  open or belongs to another database. A commit never waits for it.
+  The new calls `CopyState` and `FeedCopy` say how the copy stands and
+  feed it at once; the option `CopyEvery` sets how often it is fed
+  without being asked, five seconds when none is given. The core
+  stays pure Go.
 - A command says which version of a document its sender read
   (ADR-0078, item 2, the first step of the record). `set`, `reset`,
   `refresh`, `transition` and `delete` take the member `version`, in Go
@@ -41,6 +76,170 @@ Phase 8 started on 2026-11-25.
   door for agents tells an agent to send it, and each tool describes
   the member. The guide is
   [act only on the version you read](docs/manual/guides/act-on-what-you-read.md).
+- The engine keeps its own indexes (ADR-0075, item 2). Every class
+  has one on the state, on the moment a document was made and on the
+  moment it last changed, for what every face asks: the documents that
+  wait in a state, the newest, what changed last. Every pointer has
+  one, so the list of what points at a document needs no
+  `"index": true`, and so has a text the read rule compares with the
+  caller, `owner = USER()`. Each index on a variable or on the state
+  goes on to the moment a document was made, so the newest of an
+  order, of a state or of a customer are read off its end and nothing
+  is sorted. With every index in place, the drafts of one order among
+  1,000,000 invoices, which the pointer and the state both fit, take
+  0.32 ms (`BenchmarkDraftsOfOneOrder`, the test the record sets).
+  Not built: an index for the key of a `LOOKUP` that is no pointer,
+  which still wants `"index": true`.
+- A list in a message becomes the lines of a document (ADR-0085, item
+  1, the first of its three steps). In the `values` of an inlet a
+  `rows` variable takes a repeat in place of a formula: `each`, the
+  path to the list in the body; `as`, the name of one element; `row`, a
+  formula for each column, typed against the column when the inlet is
+  defined. An order of a shop comes in with its lines in one message,
+  with `create`, `set` or `transition`. A message whose path leads to
+  something that is no list, or with an element a formula fails on, is
+  refused with `bad_message` at the place, and the words name the
+  element. A message of 24 KiB with a hundred lines takes 0.50 ms
+  before its command.
+- A list goes out in a request (ADR-0085, item 2, the second of its
+  three steps). A parameter of an action may be of the type `rows`,
+  with a `schema` of its columns, and a rule gives it the name of a
+  `rows` variable of its class: `"lines": "lines"`. The body of the
+  request repeats a part once for each row: `{"each": "lines", "as":
+  "line", "item": {"sku": "line.sku"}}`. So an order goes to the
+  accounting system with its lines in one request. The lines are read
+  when the commit queues the action and kept with it: a line changed
+  afterwards changes nothing of what is sent. A repeat may also stand
+  in the JSON a rule gives a `json` parameter, over a `rows` variable
+  of its class, so a rule sends its lines with `http.call` and no
+  definition. When the class is defined the engine checks that the
+  variable has every column the parameter has, of the same type.
+  `preview_action` shows the whole body, every line, with the secrets
+  masked. Building the request for a hundred lines takes 0.14 ms. Not
+  built: a list in an answer (item 3), and a list that is worked out
+  when it is read given to an action.
+- A list in an answer becomes the lines of a document (ADR-0085, item
+  3, the last of its three steps). A value an action returns may be of
+  the type `rows`, with a `schema` of its columns, and its `result` is
+  a repeat over the reply: `{"each": "value", "as": "l", "row": {"sku":
+  "JSONVALUE(l, \"lineObjectNumber\")"}}`. A rule writes it to a `rows`
+  variable of its document, whole: `"into": {"lines": "lines"}`. So an
+  order follows what the warehouse changed in the accounting system.
+  When the class is defined the engine checks that the variable has
+  every column the list has, of the same type. A pull that did not come
+  through, a refusal or an answer that does not read, leaves the lines
+  as they are and `ERROR` says why. A function of the host program
+  returns such a list as a list of objects. Not built: a list spread
+  over several pages of answers.
+- The engine makes the index a lookup or a list is keyed by (ADR-0075,
+  items 2, 4 and 7), which completes the record. A `LOOKUP` or a list
+  whose condition compares a variable of another class for equality
+  with a value of its own document,
+  `LOOKUP(Purchase, COUNT(id), number = THIS.purchase)`, gets an index
+  on that variable when the class that asks is defined, and the index
+  is dropped when no definition asks for it any more. Nobody writes
+  `"index": true` for it, and such a question is no longer noted with
+  `reads_all`. A check, `validate_class` or `fadodb class check --db`,
+  says before anything is written what a definition would build on a
+  class of 100,000 documents or more: a note, code `builds_index`.
+- A free question that no index serves is stopped (ADR-0075, item 6).
+  The `where` of a `query` or a `count` that compares no indexed
+  variable reads the documents of its class one by one. It now runs
+  for at most five seconds and is then refused with the new code
+  `too_wide`, status 422, and the hint names the variable an index is
+  needed on: "customer has no index: say `"index": true` on it in the
+  class Invoice". A question an index serves is never stopped, and
+  neither is a list of a document. The five seconds are the
+  database's: the new option `MaxQuestion` sets them when it is
+  opened, and they are kept with it. The statement of an analyst,
+  `sql`, keeps its own limits.
+- The engine says, when a class is defined, which question of it no
+  index serves (ADR-0075, item 5): a note, code `reads_all`, at the
+  place of the formula, with the mend. A `LOOKUP` over the documents of
+  a class is noted when its condition compares no indexed variable,
+  for equality, with a value of the document; a list, when its
+  condition compares none with a value. A note refuses nothing and the
+  class is defined. `validate_class`, `fadodb class check` and the
+  designer's skill show it.
+- The engine chooses between two indexes that fit one question
+  (ADR-0075, item 10, the part the record left open). A `query` or a
+  `count` whose condition compares two indexed variables,
+  `customer = "Globex" AND stage = "waiting"`, was answered through
+  whichever index the store took, which has no numbers on the data: on
+  10,000,000 invoices a wrong choice took from 28 ms to 2.9 seconds
+  where the right one takes 0.03 ms. The engine now looks into each
+  index that fits, for at most a thousand documents, and asks through
+  the one that ends first; the looks take 0.05 to 0.08 ms and do not
+  grow with the class. The comparison of the read rule,
+  `owner = USER()`, is one of the indexes looked into. A list of a
+  document names its index and nobody looks: it is asked through the
+  pointer it compares with its document.
+- `REF` wherever a formula stands (ADR-0076, item 10, built until now
+  for the condition of a `QUERY` alone). `REF()` is the pointer to the
+  document the formula belongs to and stands where `ID()` may: in a
+  default, a guard, a rule, an access rule, a filter, and in a
+  triggered or a live variable. `REF("Order", "ORD-17")` is the pointer
+  to a named document and stands anywhere; its class is written as a
+  text and its id is any text, and a blank id gives a blank pointer.
+  So `LOOKUP(Invoice, COUNT(id), order = REF())` counts the invoices
+  of an order, and the filter `order = REF("Order", "ORD-17")` lists
+  them, through the index of the pointer. The engine knows the class
+  each pointer points at: a class that compares pointers to two
+  classes is refused with `type_mismatch` when it is defined, and a
+  class a database already holds with such a comparison still runs.
+  The Go VM, the SQL of both dialects and the browser VM agree on it,
+  by the new suite `conformance/formula/ref.json`. The browser VM's
+  package becomes `fadodb-vm` 4.1.0: a program that calls `REF` needs
+  it.
+- A `LOOKUP` in a live variable (ADR-0076, item 5, refused with
+  `not_supported` until now): "the price of this article today", "how
+  many invoices this customer has". It is asked for the reader of the
+  value: over the documents of a class, among those the reader may
+  read, with the rights of the values it reads; in a table, when the
+  `read` line of the table lets the reader through, and refused with
+  `forbidden` otherwise.
+- A table as the source of a `QUERY` (ADR-0076, item 9, which the
+  list of documents left unbuilt). A live variable, or a triggered one
+  that keeps the list, lists the rows of an explicit table:
+  `QUERY(Prices, {sku, price}, band = THIS.band, {-price})`. A row has
+  its columns and no id; left to itself the list is sorted by the key
+  of the table; the reader of a live list is asked the `read` line of
+  the table, as by `table_rows`; and the class is noted as a reader of
+  the table. Not built: a figure over a live list of a table.
+- A list that is kept (ADR-0078, item 5, the fourth step of the
+  record). A triggered variable whose whole formula is a `QUERY` keeps
+  the answer with the document and with each of its versions, as
+  lines somebody entered: `"type": "rows"` with a `schema` that has
+  the columns of the `QUERY` and their types. It is brought at the
+  triggers the variable lists, `before:` a transition among them, with
+  the engine's eyes, one list for everybody, and brought again by a
+  `refresh`, by whoever its `write` right lets. A guard, a rule and a
+  computed variable read it as they read entered lines:
+  `ALL(settled, state = "paid")`, `SUM(settled.net)`. Its `read` right
+  says who sees it; a refusal `guard_false` shows it under `brought`;
+  a list longer than 10,000 rows is not kept and says
+  `too_many_elements`. The guide is
+  [keep the lines a decision stood on](docs/manual/guides/keep-the-lines-a-decision-stood-on.md).
+- A guard reads its document, and what it needs from outside is
+  brought first (ADR-0078, item 4, the third step of the record). A
+  triggered variable takes a fifth trigger, `before:<transition>`: it
+  is worked out when somebody asks for the transition, after the
+  values the command sets and before the guard is asked, with
+  `STATE()` the state the transition leaves. When the guard holds, the
+  value is kept in the version the move makes, with that version as
+  its moment, and it is not worked out again by an `exit:`, a
+  `transition:` or an `enter:` of the same move. When the guard does
+  not hold, nothing is written, and the refusal `guard_false` says
+  under the new member `brought` what each such variable was, to a
+  caller who may read it (in Go, `Error.Brought`). A value that cannot
+  be brought refuses the transition with the code of the failure and
+  the variable. `transitions` and `preview` bring it too and write
+  nothing, and the bundle marks the guard of such a transition as the
+  server's. A transition that fires by itself, by its guard or by its
+  time, brings nothing. The guide is
+  [bring what a condition needs](docs/manual/guides/bring-what-a-condition-needs.md).
+  `BenchmarkTransitionBefore` joins the gate.
+
 - The `write` right of a triggered variable says who may bring its
   value again (ADR-0078, item 3, the second step of the record). A
   `refresh` that names a variable asks the variable's `write` right of
@@ -89,6 +288,43 @@ Phase 8 started on 2026-11-25.
 
 ### Fixed
 
+- **A database did not open again after a class without documents lost
+  a variable.** Olga defines Order, takes `note` out of it before
+  anybody made an order, and stops the server. The next start refused
+  the database: "prepare the statements of Order: table doc_Order has
+  no column named note". A class that has no document yet gets its
+  tables made again for the new version, and the engine still prepared
+  the earlier version against them when it opened. It happened for a
+  text, a list, an array or a column of a list taken out, and for a
+  list turned into a text. With documents in the class, giving a list
+  that held no value other columns failed the same way while the class
+  was being defined. An earlier version is now prepared only against
+  what the tables still hold, and a list they no longer hold reads as
+  no rows, which is what every document of that version has in it. A
+  database that was left this way opens again with this build, with
+  nothing lost: no document was ever written under such a version. The
+  fault is in every release from v0.3.0 to v0.7.0.
+
+- The first wait after failed sign-ins, of one second, could be none.
+  The server counts the failures' moments in whole seconds, so a try
+  made as the clock turned a second after the failure was taken: a
+  sixth password, or a passkey after twenty failures from one address.
+  The wait now holds through the second its length ends in, so it is
+  never shorter than its length. It is in v0.7.0. A slow Windows runner
+  of the chapter's test met it.
+
+- **A pointer was kept in the case its caller wrote the class in.** A
+  `ref` given as `"order:ORD-17"` was taken, since names resolve in
+  any case, and kept so, while the engine writes the pointer to that
+  document `"Order:ORD-17"`. So a list of what points at a document,
+  `order = REF()`, did not find it. A pointer is now kept with the
+  class written as its definition writes it, among the lines of a
+  document too, and the same pointer given again in another case is no
+  change. It is in v0.7.0. A pointer a database holds already stays as
+  it was written until it is set again; `SELECT id, "order" FROM
+  Invoice WHERE "order" NOT GLOB 'Order:*'` finds them, for each `ref`
+  of each class.
+
 - **A batch wrote the lists of its first document into the others.**
   `create_many` gave a document that set no lines, or no tags, the
   lines and the tags of the document before it in the batch, and
@@ -108,6 +344,29 @@ Phase 8 started on 2026-11-25.
 
 ### Changed
 
+- A message is read faster: the formulas of an inlet read one body,
+  and the engine now parses it once and not once for each formula. A
+  message of 2 KiB takes 73 µs with its command where it took 85
+  (`BenchmarkReceive`).
+- **The layout of a database changes: the engine's schema is 15.**
+  Every class table gains the indexes the engine keeps by itself, and
+  an index a designer asked for now goes on to the moment a document
+  was made. A database that v0.7.0 or a later build made is brought
+  over when it is opened, and its indexes are made then: 12
+  seconds for 10,000,000 invoices with one pointer, and the file is 8%
+  larger. An earlier engine no longer opens
+  the file afterwards. A commit writes three more indexes: a
+  transition takes 4.5 µs longer, 54.3 µs against 49.8
+  (`BenchmarkTransition`, +9%), and allocates the same.
+- **A `LOOKUP` or a `QUERY` written in a guard is refused when a class
+  is defined**, with `not_allowed` at the guard and the mend in the
+  hint (ADR-0078, item 4): a guard is not stored, so nothing kept what
+  it saw. Give the lookup a triggered variable that lists
+  `"before:<transition>"`, and let the guard read the variable. A
+  class that a database already holds with such a guard still runs as
+  it was written, and `due` still lists its documents; its next
+  version is written the new way. The conformance scripts, the tests
+  and the designer's skill that had such a guard are written again.
 - The server's pages are built to Rhea's sign-in, one centred column,
   in FadoDB's colours, light and dark, with FadoDB's mark and the
   typefaces Schibsted Grotesk and Martian Mono, which the program holds

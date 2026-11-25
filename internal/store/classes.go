@@ -19,6 +19,10 @@ type class struct {
 	cls            *model.Class
 	json           []byte
 	table, history string
+	// asked are the variables of the class that questions of the
+	// classes defined now ask an index for (ADR-0075, item 2), in the
+	// order of their names.
+	asked []string
 	// nameArg is the class's name boxed once, for the statements of the
 	// write step.
 	nameArg any
@@ -89,6 +93,12 @@ type class struct {
 	// triggered are the triggered variables in declaration order, the
 	// order they recompute in (ADR-0043); nil when the class has none.
 	triggered []*cvar
+	// before are, for each named transition, the triggered variables
+	// that list before: it, in declaration order (ADR-0078, item 4):
+	// what is brought when somebody asks for the transition, before its
+	// guard is asked. nil when the class has none, and a transition
+	// with none is not in it.
+	before map[*model.Transition][]*cvar
 	// timers says the class has a timed transition (ADR-0047), so that a
 	// commit of a class without one does not ask which wake-ups to queue.
 	timers bool
@@ -154,6 +164,12 @@ type child struct {
 
 	insert, copyRows, selectRows *sql.Stmt // on the writer
 	readRows                     *sql.Stmt // on the pool
+	// gone says the table no longer holds the columns of this version of
+	// the list: the list was taken out of the class, or given other
+	// columns, when it held no value anywhere. It has no statements, and
+	// reads as no rows, which is what every document of this version
+	// holds of it.
+	gone bool
 }
 
 type writeStmts struct {
@@ -291,6 +307,19 @@ func newClass(cls *model.Class, src []byte) (*class, error) {
 		if v.Triggered() {
 			cv.tidx = len(c.triggered)
 			c.triggered = append(c.triggered, cv)
+			for _, tr := range v.Triggers {
+				if tr.Kind != "before" {
+					continue
+				}
+				for _, t := range cls.Transitions {
+					if t.Name == tr.Arg {
+						if c.before == nil {
+							c.before = map[*model.Transition][]*cvar{}
+						}
+						c.before[t] = append(c.before[t], cv)
+					}
+				}
+			}
 		}
 	}
 	for i := range c.leaves {
@@ -596,6 +625,9 @@ func (c *class) prepare(ctx context.Context, writer *sql.Conn, db *sql.DB) error
 	prepR(&c.r.listHistory, "SELECT "+historySelect+" FROM "+quote(c.history)+` WHERE "id" = ? ORDER BY "version"`)
 	prepR(&c.r.getLast, "SELECT "+historySelect+" FROM "+quote(c.history)+` WHERE "id" = ? ORDER BY "version" DESC LIMIT 1`)
 	for _, ch := range c.children {
+		if ch.gone {
+			continue
+		}
 		ccols := quoteAll(columnNames(ch.def.Columns))
 		all := append(quoteAll(childKey), ccols...)
 		prepW(&ch.insert, "INSERT INTO "+quote(ch.table)+" ("+strings.Join(all, ", ")+") VALUES ("+marks(len(all))+")")
@@ -609,6 +641,70 @@ func (c *class) prepare(ctx context.Context, writer *sql.Conn, db *sql.DB) error
 		return storageErr("prepare the statements of "+c.cls.Name, err)
 	}
 	return nil
+}
+
+// catalog is what reads the tables' own description: the writer's
+// connection or the pool.
+type catalog interface {
+	QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error)
+}
+
+// holds reports whether a table has every column named. A table that is
+// not there has none.
+func holds(ctx context.Context, db catalog, table string, columns []string) (bool, error) {
+	rows, err := db.QueryContext(ctx, "SELECT name FROM pragma_table_info(?)", table)
+	if err != nil {
+		return false, storageErr("read the columns of "+table, err)
+	}
+	defer rows.Close()
+	has := map[string]bool{}
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			return false, storageErr("read the columns of "+table, err)
+		}
+		has[strings.ToUpper(name)] = true
+	}
+	if err := rows.Err(); err != nil {
+		return false, storageErr("read the columns of "+table, err)
+	}
+	for _, col := range columns {
+		if !has[strings.ToUpper(col)] {
+			return false, nil
+		}
+	}
+	return true, nil
+}
+
+// prepareEarlier prepares a version of a class that is no longer the
+// current one, which only reads the documents it computed (ADR-0039).
+// The tables may have moved on without it, in two ways, and neither is
+// a reason to refuse the database:
+//
+//   - A class that had no document yet was redefined, and its tables
+//     were made again for the new version. Nothing was ever written
+//     under the earlier one, so when its own table or its history
+//     lacks one of its columns it is not kept: the answer is false.
+//     Its definition stays readable in class_versions.
+//   - A list was taken out of the class, or given other columns, which
+//     the engine allows only while no document holds a value of it. The
+//     version is kept, and that list reads as no rows.
+func (c *class) prepareEarlier(ctx context.Context, writer *sql.Conn, db *sql.DB, read catalog) (bool, error) {
+	cols := columnNames(c.cls.Columns)
+	for _, table := range []string{c.table, c.history} {
+		whole, err := holds(ctx, read, table, cols)
+		if err != nil || !whole {
+			return false, err
+		}
+	}
+	for _, ch := range c.children {
+		whole, err := holds(ctx, read, ch.table, columnNames(ch.def.Columns))
+		if err != nil {
+			return false, err
+		}
+		ch.gone = !whole
+	}
+	return true, c.prepare(ctx, writer, db)
 }
 
 // atExprs are, for each triggered variable in order, the expression that
@@ -652,6 +748,7 @@ func (c *class) close() {
 				st.Close()
 			}
 		}
+		ch.insert, ch.copyRows, ch.selectRows, ch.readRows = nil, nil, nil, nil
 	}
 }
 
@@ -664,7 +761,7 @@ func (s *Store) Validate(data []byte) model.Diagnostics {
 	s.cmu.RLock()
 	defer s.cmu.RUnlock()
 	found, diags := s.compileClasses(context.Background(), [][]byte{data}, false)
-	return withNotes(found, diags, false)
+	return s.withBuilds(found, withNotes(found, diags, false), false)
 }
 
 // withNotes is the findings of a definition call: what refuses it, or,
@@ -695,7 +792,86 @@ func (s *Store) ValidateClasses(datas [][]byte) model.Diagnostics {
 	s.cmu.RLock()
 	defer s.cmu.RUnlock()
 	found, diags := s.compileClasses(context.Background(), datas, true)
-	return withNotes(found, diags, true)
+	return s.withBuilds(found, withNotes(found, diags, true), true)
+}
+
+// buildsFrom is how many documents a class holds before a check says
+// that a definition would build an index over them: below it the index
+// is made in a moment.
+var buildsFrom int64 = 100000
+
+// withBuilds adds, to the findings of a check that refuses nothing,
+// what taking the definitions would build (ADR-0075, item 7): each
+// index on a class that already holds many documents, on which the
+// commits of the database wait while it is made. A designer chooses the
+// hour. The caller holds cmu.
+func (s *Store) withBuilds(found []*pending, diags model.Diagnostics, set bool) model.Diagnostics {
+	if diags.Refuses() {
+		return diags
+	}
+	ctx := context.Background()
+	about := func(c *class) int64 {
+		var n sql.NullInt64
+		if err := s.db.QueryRowContext(ctx, "SELECT max(rowid) FROM "+quote(c.table)).Scan(&n); err != nil {
+			return 0
+		}
+		return n.Int64
+	}
+	said := map[string]bool{}
+	note := func(i int, path string, on *class, column string) {
+		n := about(on)
+		if n < buildsFrom || said[on.cls.Name+" "+column] {
+			return
+		}
+		said[on.cls.Name+" "+column] = true
+		if set {
+			path = "/" + itoa(i) + path
+		}
+		diags = append(diags, model.Diagnostic{Code: model.CodeBuildsIndex, Path: path, Pos: -1, Note: true,
+			Message: "taking this definition makes an index on " + column + " of " + on.cls.Name + ", which holds about " + grouped(n) + " documents: the commits of the database wait while it is built",
+			Hint:    "choose the hour: an index over ten million documents takes seconds, over a hundred million minutes"})
+	}
+	for i, p := range found {
+		if p == nil || p.cls == nil || p.same {
+			continue
+		}
+		// The indexes of the class itself, when it already has documents.
+		if p.old != nil {
+			have := map[string]bool{}
+			for _, ix := range p.old.indexes() {
+				have[ix.name] = true
+			}
+			for _, col := range p.cls.Columns {
+				if col.Index && !have[p.old.table+"_"+col.Name] {
+					note(i, "/variables/"+col.Variable, p.old, col.Name)
+				}
+			}
+		}
+		// The indexes its questions ask of the classes they read.
+		for _, k := range p.cls.Keys {
+			src, ok := s.classes[strings.ToUpper(k.Class)]
+			if !ok {
+				continue
+			}
+			have := false
+			for _, ix := range src.indexes() {
+				have = have || ix.name == src.table+"_"+k.Column
+			}
+			if !have {
+				note(i, k.At, src, k.Column)
+			}
+		}
+	}
+	return diags
+}
+
+// grouped writes a count with its thousands apart: 1,000,000.
+func grouped(n int64) string {
+	s := strconv.FormatInt(n, 10)
+	for i := len(s) - 3; i > 0; i -= 3 {
+		s = s[:i] + "," + s[i:]
+	}
+	return s
 }
 
 // pending is one class of a definition call: what was sent, what it
@@ -924,6 +1100,14 @@ func (s *Store) defineClasses(ctx context.Context, datas [][]byte, set bool, by 
 			return nil, err
 		}
 	}
+	// The indexes the questions of the classes ask of each other
+	// (ADR-0075, items 2 and 4): one a new question asks for is made
+	// now, and the commits of the database wait meanwhile (item 7); one
+	// no definition asks for any more is dropped.
+	s.reask()
+	if err := s.keepIndexes(ctx); err != nil {
+		return nil, err
+	}
 	return out, nil
 }
 
@@ -1028,12 +1212,20 @@ func (s *Store) adoptClass(ctx context.Context, p *pending, fresh bool) error {
 				delete(s.versions[strings.ToUpper(cls.Name)], v)
 			}
 		} else {
-			// The old version's statements may name columns a type change
-			// dropped; it is prepared again and stays as the reader of
-			// the documents it computed.
-			old.close()
-			if err := old.prepare(ctx, w, s.db); err != nil {
-				return err
+			// The statements of an earlier version may name columns a type
+			// change dropped, or the table of a list that was made again
+			// with other columns. Each is prepared again and stays as the
+			// reader of the documents it computed; a list the tables no
+			// longer hold reads as no rows.
+			for v, oc := range s.versions[strings.ToUpper(cls.Name)] {
+				oc.close()
+				kept, err := oc.prepareEarlier(ctx, w, s.db, w)
+				if err != nil {
+					return err
+				}
+				if !kept {
+					delete(s.versions[strings.ToUpper(cls.Name)], v)
+				}
 			}
 		}
 	}

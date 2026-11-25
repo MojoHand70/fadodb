@@ -132,13 +132,17 @@ func (c *class) layoutRules() error {
 				if err != nil {
 					return err
 				}
-				if out.each != nil {
-					listed := false
+				// The lists the action reads beside the document: the one a
+				// create goes over, the lines a rows parameter is given and
+				// the ones a repeat in a template goes over (ADR-0085, item
+				// 2).
+				for _, need := range append([]*child{out.each}, out.reads...) {
+					listed := need == nil
 					for _, ch := range rs.lists {
-						listed = listed || ch == out.each
+						listed = listed || ch == need
 					}
 					if !listed {
-						rs.lists = append(rs.lists, out.each)
+						rs.lists = append(rs.lists, need)
 					}
 				}
 				ca.out = out

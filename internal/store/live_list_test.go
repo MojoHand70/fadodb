@@ -326,7 +326,6 @@ func TestLiveList_RefusedWhenDefined(t *testing.T) {
 		name, variable, code, says string
 	}{
 		{"a class nobody defined", `"l": {"mode": "live", "formula": "QUERY(Nothing, number)"}`, "bad_formula", "unknown source Nothing"},
-		{"a table as the source", `"l": {"mode": "live", "formula": "QUERY(rates, code)"}`, "not_supported", "over a table is not built yet"},
 		{"a column the source has not", `"l": {"mode": "live", "formula": "QUERY(Invoice, {number, nothing})"}`, "bad_formula", "unknown column nothing of Invoice"},
 		{"a column listed twice", `"l": {"mode": "live", "formula": "QUERY(Invoice, {number, NUMBER})"}`, "duplicate", "listed twice"},
 		{"a count among the columns", `"l": {"mode": "live", "formula": "QUERY(Invoice, {number, COUNT(net)})"}`, "not_supported", "not built yet"},
@@ -343,11 +342,10 @@ func TestLiveList_RefusedWhenDefined(t *testing.T) {
 		{"a function of a state in the condition", `"l": {"mode": "live", "formula": "QUERY(Invoice, number, DAYSIN(\"draft\") > 0)"}`, "not_allowed", "a function of a state"},
 		{"a live variable of the document", `"m": {"type": "bool", "mode": "live", "formula": "n = USER()"}, "l": {"mode": "live", "formula": "QUERY(Invoice, number, owner = USER() AND THIS.m)"}`, "not_allowed", "m is a live variable"},
 		{"a declared type that is no rows", `"l": {"type": "text", "mode": "live", "formula": "QUERY(Invoice, number)"}`, "type_mismatch", "a QUERY answers rows"},
-		{"a list that is kept", `"l": {"mode": "triggered", "on": ["refresh"], "formula": "QUERY(Invoice, number)"}`, "bad_formula", "the whole formula of a live variable"},
+		{"a list that is kept and does not say its columns", `"l": {"mode": "triggered", "on": ["refresh"], "formula": "QUERY(Invoice, number)"}`, "missing", "says its columns"},
 		{"a list inside a formula", `"l": {"mode": "live", "formula": "IF(TRUE, QUERY(Invoice, number), BLANK)"}`, "bad_formula", "the whole formula of a live variable"},
+		{"a list inside the formula of a triggered variable", `"l": {"type": "number", "mode": "triggered", "on": ["refresh"], "formula": "LEN(n) + QUERY(Invoice, number)"}`, "bad_formula", "the whole formula of a live variable"},
 		{"braces where no list stands", `"l": {"mode": "live", "formula": "LEN({n, n})"}`, "bad_formula", "a list in braces stands only"},
-		{"the pointer outside a list", `"l": {"mode": "live", "formula": "TEXT(REF())"}`, "bad_formula", "REF() is built for the condition of a QUERY"},
-		{"the pointer to another document", `"l": {"mode": "live", "formula": "QUERY(Invoice, number, order = REF(\"Order\", \"ORD-17\"))"}`, "bad_formula", "REF with a class and an id is not built yet"},
 	} {
 		def := `{"name": "T", "variables": {"n": {"type": "text"}, ` + tc.variable + `}, "states": {"initial": "a", "list": ["a"]}}`
 		_, err := s.DefineClass(ctx, []byte(def), asSetup)

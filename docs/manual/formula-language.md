@@ -398,6 +398,13 @@ reaches the document. What a lookup gives when no row matches, when it
 is worked out again and where it may stand are in
 [Tables](tables.md#a-formula-that-reads-a-table).
 
+A `ref` variable points at another document, and compares with a
+pointer that `REF` makes: `REF()` is the pointer to the document the
+formula belongs to, and `REF("Customer", "C-17")` the pointer to a
+named one. So the invoices of an order are counted with
+`LOOKUP(Invoice, COUNT(id), order = REF())`. See
+[A class](class.md#variables).
+
 ## When a formula fails
 
 Some formulas cannot be worked out for some values.

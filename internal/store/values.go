@@ -325,6 +325,12 @@ func toValue(x any, t formula.Type, refClass, name string, limits formula.Limits
 		if refClass != "" && !strings.EqualFold(class, refClass) {
 			return formula.Value{}, errf(CodeBadValue, name, "the ref points at %s, not %s", class, refClass)
 		}
+		if refClass != "" && class != refClass {
+			// A pointer says its class as the definition does, in whatever
+			// case the caller wrote it: one document has one pointer, which
+			// REF() and a list of what points at it compare with.
+			return formula.Ref(refClass + ":" + id), nil
+		}
 		return formula.Ref(s), nil
 	case formula.KindJSON:
 		switch j := x.(type) {

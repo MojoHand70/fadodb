@@ -310,7 +310,8 @@ from every row that matches. With the three rows Tess imported:
 |---|---|
 | a computed variable | when the document is created, and again when a value the lookup reads changes; not when the table changes |
 | a default | once, when the document is created |
-| a guard, a line of `access`, a right to write, a rule | each time it is asked, over the table as it is then |
+| a triggered variable | at the moments it names, a state change, a `refresh`, or `before:` a transition, when somebody asks for that transition and before its guard is asked; not when the table changes |
+| a line of `access`, a right to write, a rule | each time it is asked, over the table as it is then |
 
 So a document keeps the value it looked up. Ann's first expense keeps
 4.2700 after Tess corrected the row, in step 7, and her filed expense
@@ -320,8 +321,9 @@ document does not change because the reference data moved.
 The price of it is step 14. An expense that looked before the row was
 there keeps its blank when the row arrives. It looks again only when
 `currency` or `spent_on` changes, as in step 15. Where a document must
-take a value at a moment of its own, let a rule set it at that moment:
-a `set` whose value is the lookup, on the transition that needs it.
+take a value at a moment of its own, name that moment: a
+[triggered variable](triggered-variables.md) whose formula is the
+lookup, or a rule that sets the value on the transition that needs it.
 
 ### Where a lookup may stand
 
@@ -329,7 +331,8 @@ a `set` whose value is the lookup, on the transition that needs it.
 | Place | A lookup of a table |
 |---|---|
 | a computed variable, a default | yes |
-| a guard | yes |
+| a triggered variable, which a guard may then read | yes |
+| a guard | no, `not_allowed` |
 | `create`, `update`, `delete` and the line of a transition under `access`; a right to write | yes |
 | the `if` of a rule, a value a rule sets | yes |
 | `access.read`, a right to read | no, `not_allowed` |
@@ -340,6 +343,28 @@ What decides who sees a document or a value is asked of many documents
 at once, in a filter and in a count, so it reads the document and the
 caller only. Look the value up in a computed variable, and test that
 variable there.
+
+**A guard reads its document and nothing outside it.** A decision
+stands on what the document holds: had a guard looked in the table
+itself, nothing would keep the number it saw. So what a guard needs
+from a table is brought onto the document first, by a triggered
+variable that lists `before:` the transition, and the guard reads the
+variable:
+
+```jsonc
+"known": {"type": "number", "formula": "LOOKUP(Rates, COUNT(day), currency = THIS.currency)",
+          "mode": "triggered", "on": ["before:go"]}
+```
+
+```jsonc
+{"name": "go", "from": "a", "to": "b", "guard": "known > 0"}
+```
+
+The value is worked out when somebody asks for `go`, before the guard
+is asked, and it is kept in the version the move makes. See
+[Triggered variables](triggered-variables.md#before-a-transition). A
+class that was defined with a lookup in a guard before this was so
+still runs as it was written; its next version is written this way.
 
 ### A formula reads with the engine's eyes
 

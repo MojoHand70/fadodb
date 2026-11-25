@@ -35,6 +35,10 @@ const DefaultCheckpointEvery = 100 * time.Millisecond
 // memory for the lookups of auto formulas (ADR-0036).
 const DefaultMaxIndexedRows = 100000
 
+// DefaultMaxQuestion is how long a free question that no index serves
+// may run before it is stopped (ADR-0075, item 6).
+const DefaultMaxQuestion = 5 * time.Second
+
 // The connections that read. readersKept is how many are kept ready
 // between two reads, and readerIdle how long one stays ready after its
 // last read. More callers than that may read at once: each beyond the
@@ -65,7 +69,7 @@ const lastOfCommandSQL = "SELECT max(after_version) FROM events WHERE class = ? 
 // one when it is opened, in the transaction that opens it, from
 // oldestUpgraded on; a database older than that is refused and made
 // again, as every pre-release file was before v0.7.0.
-const engineSchema = 14
+const engineSchema = 15
 
 // oldestUpgraded is the earliest engine schema Open brings to the
 // current one in place: 13, the schema of v0.7.0, the first release
@@ -99,6 +103,13 @@ type Options struct {
 	// speed and memory and never a result. 0 keeps what is stored, or
 	// DefaultMaxIndexedRows for a new database.
 	MaxIndexedRows int
+	// MaxQuestion is how long a free question that no index serves may
+	// run, the where and the order of a query or a count, before it is
+	// stopped and refused with too_wide (ADR-0075, item 6). It is kept
+	// in the metadata; a value given on open replaces the stored one,
+	// since it changes what is waited for and never a result. 0 keeps
+	// what is stored, or DefaultMaxQuestion for a new database.
+	MaxQuestion time.Duration
 	// BlobStore is the kind of blob store a new database records
 	// (ADR-0033): "sqlite", the default, a table in the database file;
 	// "dir", a directory beside it; or "external", the embedder's store
@@ -168,6 +179,14 @@ type Options struct {
 	// host program's, given at every Open, as whether it sends requests
 	// is; fadodb serve gives it when its settings have inbound.
 	Inbound bool
+	// Analytics is the analytical engine of the program (ADR-0017,
+	// ADR-0089): with one, the store keeps a copy of its documents in
+	// it and feeds the copy itself; without one, the default, every
+	// question is answered by the store. It is the host program's,
+	// given at every Open. CopyEvery is the period at which the copy is
+	// fed without being asked; 0 is DefaultCopyEvery.
+	Analytics Analytics
+	CopyEvery time.Duration
 	// Now is the clock of the database: it stamps every commit and is
 	// what NOW() and TODAY() read in every formula, unless a call that
 	// reads or previews chooses a moment with At (ADR-0042). nil is
@@ -185,6 +204,7 @@ type Store struct {
 	limits      formula.Limits
 	synchronous string
 	maxIndexed  int
+	maxQuestion time.Duration
 	maxBlob     int64
 	blobKind    string
 	blobs       BlobStore
@@ -229,6 +249,10 @@ type Store struct {
 	emptied []*child
 	// listEmptied says the reset that just ran emptied a list.
 	listEmptied bool
+	// keptNow are the lists that were brought in the step of the commit
+	// being computed (ADR-0078, item 5), until that step takes them for
+	// its write.
+	keptNow     []keptList
 	changed     []bool
 	changedKids []*child
 	// kids are the lists the command of the commit in progress assigns,
@@ -293,6 +317,11 @@ type Store struct {
 	stop   chan struct{}
 	done   chan struct{}
 	closed bool
+	// feeder keeps the copy of the documents in the analytical engine
+	// (ADR-0089), nil when the program gave none; copyErr is why a copy
+	// could not be opened.
+	feeder  *feeder
+	copyErr error
 	// turns counts the times the checkpointer took the writer's turn and
 	// emptied a log far past its limit, which nothing else does; the
 	// tests read it.
@@ -514,7 +543,7 @@ func open(path string, o Options) (*Store, error) {
 		db.Close()
 		return nil, err
 	}
-	if err := s.init(ctx, sync, o.MaxText, o.MaxIndexedRows, o.BlobStore, o.MaxBlob); err != nil {
+	if err := s.init(ctx, sync, o.MaxText, o.MaxIndexedRows, o.MaxQuestion, o.BlobStore, o.MaxBlob); err != nil {
 		return fail(err)
 	}
 	if s.people.on {
@@ -553,6 +582,12 @@ func open(path string, o Options) (*Store, error) {
 	if err := s.load(ctx); err != nil {
 		return fail(err)
 	}
+	// The indexes of the classes (ADR-0075, item 2): a database of an
+	// earlier schema gets them here, in the time its size asks for.
+	s.reask()
+	if err := s.keepIndexes(ctx); err != nil {
+		return fail(err)
+	}
 	// The classes the engine brings (ADR-0053, item 7), once what is
 	// stored is loaded: a new database gets them here.
 	if err := s.bring(ctx); err != nil {
@@ -578,6 +613,8 @@ func open(path string, o Options) (*Store, error) {
 		wctx, s.workCancel = context.WithCancel(context.Background())
 		go s.work(wctx)
 	}
+	// The copy in the analytical engine, when the program gave one.
+	s.startCopy(ctx, o.Analytics, o.CopyEvery)
 	return s, nil
 }
 
@@ -631,6 +668,9 @@ func upgradeSchema(ctx context.Context, w *sql.Conn, from int64) error {
 			}
 		}
 	}
+	// Schema 15 (ADR-0075, item 2): the engine keeps its own indexes on
+	// every class table. They are made once the classes are loaded
+	// (keepIndexes), since only a compiled class says which it has.
 	if _, err := w.ExecContext(ctx, "UPDATE schema_version SET version = ?", engineSchema); err != nil {
 		return storageErr("write the schema version", err)
 	}
@@ -639,7 +679,7 @@ func upgradeSchema(ctx context.Context, w *sql.Conn, from int64) error {
 
 // init creates the engine's tables when the database is new and reads
 // the metadata.
-func (s *Store) init(ctx context.Context, wantSync string, wantMaxText int, wantIndexed int, wantBlobs string, wantMaxBlob int64) error {
+func (s *Store) init(ctx context.Context, wantSync string, wantMaxText int, wantIndexed int, wantQuestion time.Duration, wantBlobs string, wantMaxBlob int64) error {
 	w := s.writer
 	if _, err := w.ExecContext(ctx, "BEGIN IMMEDIATE"); err != nil {
 		return storageErr("begin", err)
@@ -707,6 +747,12 @@ func (s *Store) init(ctx context.Context, wantSync string, wantMaxText int, want
 			return rollback(storageErr("write the metadata", err))
 		}
 	}
+	if wantQuestion > 0 {
+		// In microseconds: a test stops a question after very little.
+		if _, err := w.ExecContext(ctx, "INSERT INTO metadata (key, value) VALUES ('max_question_us', ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value", strconv.FormatInt(wantQuestion.Microseconds(), 10)); err != nil {
+			return rollback(storageErr("write the metadata", err))
+		}
+	}
 	if wantMaxBlob > 0 {
 		var current string
 		if err := w.QueryRowContext(ctx, "SELECT value FROM metadata WHERE key = 'max_blob'").Scan(&current); err == nil {
@@ -746,6 +792,11 @@ func (s *Store) init(ctx context.Context, wantSync string, wantMaxText int, want
 	s.limits = formula.Limits{MaxText: maxText}
 	if s.maxIndexed, _ = strconv.Atoi(meta["max_indexed_rows"]); s.maxIndexed <= 0 {
 		s.maxIndexed = DefaultMaxIndexedRows
+	}
+	if us, _ := strconv.ParseInt(meta["max_question_us"], 10, 64); us > 0 {
+		s.maxQuestion = time.Duration(us) * time.Microsecond
+	} else {
+		s.maxQuestion = DefaultMaxQuestion
 	}
 	if s.maxBlob, _ = strconv.ParseInt(meta["max_blob"], 10, 64); s.maxBlob <= 0 {
 		s.maxBlob = DefaultMaxBlob
@@ -962,7 +1013,7 @@ func (s *Store) load(ctx context.Context) error {
 	// no longer computes anything, and may read what has since gone.
 	env.Shallow = false
 	for _, st := range classes {
-		c, err := s.compileStored(ctx, st.name, st.version, st.json, env)
+		c, err := s.compileStored(ctx, st.name, st.version, st.json, env, false)
 		if err != nil {
 			return err
 		}
@@ -973,7 +1024,7 @@ func (s *Store) load(ctx context.Context) error {
 		if cur, ok := s.classes[strings.ToUpper(st.name)]; !ok || cur.cls.Version == st.version {
 			continue
 		}
-		if _, err := s.compileStored(ctx, st.name, st.version, st.json, env); err != nil {
+		if _, err := s.compileStored(ctx, st.name, st.version, st.json, env, true); err != nil {
 			return err
 		}
 	}
@@ -1012,8 +1063,10 @@ func (s *Store) env() model.Env {
 }
 
 // compileStored compiles one stored version of a class, prepares it and
-// keeps it among the class's versions.
-func (s *Store) compileStored(ctx context.Context, name string, version int, src []byte, env model.Env) (*class, error) {
+// keeps it among the class's versions. An earlier version that the
+// tables were made again without is not kept, and the answer is nil:
+// nothing was ever written under it.
+func (s *Store) compileStored(ctx context.Context, name string, version int, src []byte, env model.Env, earlier bool) (*class, error) {
 	cls, diags := model.DefineIn(src, env)
 	if len(diags) > 0 {
 		return nil, &Error{Code: CodeStorage, Message: "the stored class " + name + " version " + itoa(version) + " does not compile: " + diags.Error()}
@@ -1023,7 +1076,12 @@ func (s *Store) compileStored(ctx context.Context, name string, version int, src
 	if err != nil {
 		return nil, err
 	}
-	if err := c.prepare(ctx, s.writer, s.db); err != nil {
+	if earlier {
+		kept, err := c.prepareEarlier(ctx, s.writer, s.db, s.db)
+		if err != nil || !kept {
+			return nil, err
+		}
+	} else if err := c.prepare(ctx, s.writer, s.db); err != nil {
 		return nil, err
 	}
 	s.keepVersion(c)
@@ -1229,6 +1287,9 @@ func (s *Store) Close() error {
 		}
 	})
 	<-s.workDone
+	// The copy is brought up to the database a last time, while the
+	// database is open, and closed.
+	s.stopCopy()
 	s.mu.Lock()
 	if s.closed {
 		s.mu.Unlock()
@@ -1292,6 +1353,10 @@ func (s *Store) Synchronous() string { return s.synchronous }
 // MaxIndexedRows is the row count up to which a table is held in memory
 // for lookups (ADR-0036).
 func (s *Store) MaxIndexedRows() int { return s.maxIndexed }
+
+// MaxQuestion is how long a free question that no index serves may run
+// before it is stopped (ADR-0075, item 6).
+func (s *Store) MaxQuestion() time.Duration { return s.maxQuestion }
 
 // Classes lists the class names in the order they were defined.
 func (s *Store) Classes() []string {

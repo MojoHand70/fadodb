@@ -22,6 +22,14 @@ type Error struct {
 	// Path is the place in the class definition of the rule's action that
 	// failed, such as /rules/2/do/0 (ADR-0043); empty otherwise.
 	Path string `json:"path,omitempty"`
+	// Brought is, on guard_false, each value that was brought for the
+	// guard, by its variable, as the guard saw it (ADR-0078, item 4): a
+	// variable that lists before: the transition. The document the
+	// caller read may still show another value, so the refusal says what
+	// the condition decided on. A variable the caller may not read is
+	// left out; nil when nothing was brought. It is a pointer so that two
+	// refusals still compare with ==, as they always did.
+	Brought *Values `json:"brought,omitempty"`
 }
 
 func (e *Error) Error() string {
@@ -101,6 +109,11 @@ const (
 	CodeNotAllowed = "not_allowed"
 	// CodeTooManyRows: a SQL statement returns more than MaxSQLRows.
 	CodeTooManyRows = "too_many_rows"
+	// CodeTooWide: a free question, the where and the order of a query
+	// or a count, that no index serves ran for as long as the database
+	// allows, and was stopped (ADR-0075, item 6). The hint names the
+	// variable an index would be needed on.
+	CodeTooWide = "too_wide"
 	// CodeUnknownBlob: a File names a hash the blob store does not hold,
 	// or a size that differs from the stored one (ADR-0033).
 	CodeUnknownBlob = "unknown_blob"

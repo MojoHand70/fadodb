@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"sync/atomic"
 
 	"github.com/MojoHand70/fadodb/internal/formula"
 )
@@ -62,6 +63,58 @@ type Class struct {
 	// reads (ADR-0046), itself among them when it reads its own.
 	Reads []string
 	Def   *Definition
+	// byCaller are the variables the read rule compares with the
+	// caller, by upper-cased name; nil until they are asked for.
+	byCaller map[string]bool
+	// Keys are the indexes the questions of the class ask of the
+	// classes they read, itself among them (ADR-0075, item 2): for each
+	// LOOKUP and each list over the documents of a class, the variable
+	// its condition compares for equality with a value of the document
+	// the formula belongs to, when the class read keeps no index on it
+	// by itself. Whoever holds the classes makes those indexes, and
+	// drops one when no definition asks for it any more (item 4).
+	Keys []Key
+	// asked are the variables of this class that the questions of the
+	// classes defined now ask an index for, by their names as the class
+	// writes them. It is set by whoever holds the classes, and read
+	// without a lock.
+	asked atomic.Pointer[map[string]bool]
+}
+
+// Key is an index a question of one class asks of another: on a
+// variable of the documents it reads. At is the place of the first
+// formula that asks for it.
+type Key struct {
+	Class, Column string
+	At            string
+}
+
+// Ask sets the variables of the class that questions of the classes
+// defined now ask an index for, each named as the class writes it.
+func (c *Class) Ask(variables []string) {
+	if len(variables) == 0 {
+		c.asked.Store(nil)
+		return
+	}
+	asked := make(map[string]bool, len(variables))
+	for _, name := range variables {
+		asked[name] = true
+	}
+	c.asked.Store(&asked)
+}
+
+// Asked says a question of a class defined now asks an index for the
+// variable, named as the class writes it (ADR-0075, item 2). It is
+// asked for every column of every filter, so it allocates nothing.
+func (c *Class) Asked(variable string) bool {
+	asked := c.asked.Load()
+	return asked != nil && (*asked)[variable]
+}
+
+// keyable says an index can be kept on the variable: it is kept, and it
+// is one value, no object and no json.
+func keyable(v *Variable) bool {
+	return !v.Live() && v.Type.IsScalar() && v.Type.Kind != formula.KindNull && v.Type.Kind != formula.KindJSON && v.Type.Kind != formula.KindMoney
 }
 
 // systemFields are the system columns of a class as a source reads them.
@@ -92,11 +145,85 @@ func (c *Class) Source() *formula.Source {
 			continue // a live variable is kept nowhere, so no row has it (ADR-0076, item 3)
 		}
 		src.Columns = append(src.Columns, formula.Field{Name: v.Name, Type: v.Type})
-		if v.Index {
+		if c.Keyed(v) {
 			src.Indexed = append(src.Indexed, v.Name)
 		}
 	}
 	return src
+}
+
+// ClassName implements formula.ClassNames for a formula asked over the
+// documents of the class, a filter: the class a REF names is the class
+// itself or one a pointer of the class points at, written as the
+// definition of the class writes it (ADR-0076, item 10). Any other name
+// is taken at its word, since no pointer of the class compares with it.
+func (c *Class) ClassName(name string) (string, bool) {
+	if strings.EqualFold(name, c.Name) {
+		return c.Name, true
+	}
+	for _, v := range c.Variables {
+		if v.RefClass != "" && strings.EqualFold(v.RefClass, name) {
+			return v.RefClass, true
+		}
+	}
+	return name, true
+}
+
+// Keyed says the engine keeps an index on the variable (ADR-0075, item
+// 2). The designer asked for one with "index": true; or the variable is
+// a pointer, which is there to be followed back; or it is a text the
+// read rule compares with the caller, owner = USER(), which every
+// question of a caller who reads their own then carries. A live
+// variable is kept nowhere and has none.
+func (c *Class) Keyed(v *Variable) bool {
+	if v.Live() || !v.Type.IsScalar() {
+		return false
+	}
+	switch {
+	case v.Index, v.Type.Kind == formula.KindRef:
+		return true
+	case v.Type.Kind != formula.KindText:
+		return false
+	}
+	if c.byCaller == nil {
+		c.byCaller = callerCompared(c.Def)
+	}
+	return c.byCaller[upper(v.Name)]
+}
+
+// callerCompared names the variables the read rule compares with the
+// caller for equality, in its ANDs and ORs: owner = USER().
+func callerCompared(def *Definition) map[string]bool {
+	out := map[string]bool{}
+	if def == nil || def.Access == nil || def.Access.Read == "" {
+		return out
+	}
+	rule, err := formula.Parse(def.Access.Read)
+	if err != nil {
+		return out
+	}
+	var walk func(formula.Node)
+	walk = func(n formula.Node) {
+		b, ok := n.(*formula.Binary)
+		if !ok {
+			return
+		}
+		switch b.Op {
+		case formula.TokAnd, formula.TokOr:
+			walk(b.L)
+			walk(b.R)
+		case formula.TokEq:
+			for _, side := range [][2]formula.Node{{b.L, b.R}, {b.R, b.L}} {
+				name, isName := side[0].(*formula.Ident)
+				call, isCall := side[1].(*formula.Call)
+				if isName && isCall && call.Name == "USER" && len(call.Args) == 0 {
+					out[upper(name.Name)] = true
+				}
+			}
+		}
+	}
+	walk(rule)
+	return out
 }
 
 // Variable is one compiled variable.
@@ -132,7 +259,15 @@ type Variable struct {
 	// is a QUERY (ADR-0076, item 9); nil for every other variable. Such a
 	// variable has no Formula: the store asks the question itself.
 	Query *Query
-	Def   *VariableDef
+	// Kept is the list a triggered variable keeps when its whole formula
+	// is a QUERY (ADR-0078, item 5); nil for every other variable. The
+	// store asks the question at the variable's triggers, with the
+	// engine's eyes, and keeps the rows with the document and with each
+	// of its versions, as it keeps an entered list. The variable is of
+	// the type rows, with the columns of the QUERY as its schema, and has
+	// no Formula.
+	Kept *Query
+	Def  *VariableDef
 	// queryCall is the QUERY of such a variable as it was parsed, until
 	// the formulas are compiled.
 	queryCall *formula.Call
@@ -150,8 +285,10 @@ const (
 )
 
 // Trigger is one trigger of a triggered variable: refresh, enter:<state>,
-// exit:<state> or transition:<name>. table:<name> and schedule:<spec>
-// are refused until the phase that runs them (ADR-0043).
+// exit:<state>, transition:<name> or before:<name>, which brings the
+// value when somebody asks for the named transition, before its guard is
+// asked (ADR-0078, item 4). table:<name> and schedule:<spec> are refused
+// until the phase that runs them (ADR-0043).
 type Trigger struct {
 	Kind string
 	Arg  string
@@ -532,6 +669,9 @@ func CompileIn(def *Definition, env Env) (*Class, Diagnostics) {
 		if v.Computed {
 			if v.queryCall != nil {
 				compileQuery(c, cls, v, v.queryCall, scope)
+				if v.Mode == ModeTriggered {
+					compileKept(c, cls, v)
+				}
 				continue
 			}
 			if v.Formula == nil && v.Type.Kind != formula.KindNull {
@@ -542,7 +682,10 @@ func CompileIn(def *Definition, env Env) (*Class, Diagnostics) {
 				c.listsOf, c.listsFor = cls, v
 				prog := bindAs(c, path+"/formula", v.Def.Formula, scope, mode, v.Type)
 				c.listsOf, c.listsFor = nil, nil
-				if prog != nil && readsOnlyItsDocument(c, path, v, prog) {
+				// A live formula may look in a table or at the documents
+				// of a class (ADR-0076, item 5): the store asks the
+				// lookup for the reader of the value.
+				if prog != nil {
 					v.Formula = prog
 					v.Deps = depsOf(prog)
 					v.Sources = sourcesOf(prog)
@@ -605,7 +748,8 @@ func CompileIn(def *Definition, env Env) (*Class, Diagnostics) {
 		return nil, c.list
 	}
 	cls.Reads = c.reads
-	cls.Notes = append(leftOut(def), noDescription(def)...)
+	cls.Notes = append(append(leftOut(def), c.wide...), noDescription(def)...)
+	cls.Keys = c.keys
 	return cls, nil
 }
 
@@ -638,6 +782,9 @@ func compileVariable(c *collector, path, name string, vd *VariableDef, schemas *
 			if len(vd.On) == 0 {
 				c.hint(CodeMissing, path+"/on", "a triggered variable names its triggers", `"on": ["refresh"] recalculates on the refresh command`)
 			}
+			// A list that is kept (ADR-0078, item 5): a QUERY that is
+			// the whole formula.
+			v.queryCall = queryOf(vd.Formula)
 		case "live":
 			v.Mode = ModeLive
 			// What speaks of a kept value has no place on a value that is
@@ -668,7 +815,15 @@ func compileVariable(c *collector, path, name string, vd *VariableDef, schemas *
 	// The type. A computed variable without one takes its formula's type
 	// once the formula is bound; its properties are checked then.
 	var composite bool
-	if v.queryCall != nil {
+	if v.queryCall != nil && v.Mode == ModeTriggered && vd.Type != "rows" {
+		// A list that is kept says its columns, as every variable that
+		// reads other documents says its type (ADR-0046): the tables of
+		// the class are laid out before the class it lists is known.
+		c.hint(CodeMissing, path+"/type", "a triggered variable whose formula is a QUERY keeps the list, and says its columns",
+			`write "type": "rows" and a "schema" with the columns of the QUERY and their types, as {"number": "text", "net": "money(2)"}; a list to browse, kept nowhere, is "mode": "live"`)
+		return nil
+	}
+	if v.queryCall != nil && v.Mode != ModeTriggered {
 		// A list: its rows are the documents of another class and its
 		// columns the QUERY's, so it has no schema of its own.
 		if vd.Type != "" && vd.Type != "rows" {
@@ -727,6 +882,11 @@ func compileVariable(c *collector, path, name string, vd *VariableDef, schemas *
 	if v.Type.Kind == formula.KindRef && vd.Class == "" {
 		c.hint(CodeMissing, path+"/class", "a ref names the class it points at", `add "class": "<ClassName>"`)
 	}
+	if v.Type.Kind == formula.KindRef {
+		// The compiler knows what the pointer points at, and refuses a
+		// comparison with a pointer to another class (ADR-0076, item 10).
+		v.Type = formula.RefTo(vd.Class)
+	}
 	if vd.Class != "" && v.Type.Kind != formula.KindRef {
 		c.add(CodeNotAllowed, path+"/class", "only a ref has a class")
 	}
@@ -736,8 +896,10 @@ func compileVariable(c *collector, path, name string, vd *VariableDef, schemas *
 
 	// What a formula can produce.
 	if v.Computed {
-		if composite || v.Type.Kind == formula.KindObject {
-			c.add(CodeNotSupported, path+"/formula", "a computed "+v.Type.String()+" is not supported yet; a formula computes a scalar")
+		kept := v.queryCall != nil && v.Mode == ModeTriggered && v.Type.Kind == formula.KindRows
+		if (composite || v.Type.Kind == formula.KindObject) && !kept {
+			c.hint(CodeNotSupported, path+"/formula", "a computed "+v.Type.String()+" is not supported yet; a formula computes a scalar",
+				`the one list a formula gives is a QUERY, the whole formula of a variable that is "mode": "live", kept nowhere, or "mode": "triggered", kept`)
 		}
 		if v.Type.Kind == formula.KindJSON {
 			c.add(CodeNotAllowed, path+"/formula", "no formula produces a json value (ADR-0013)")
@@ -969,11 +1131,9 @@ func inferTypes(c *collector, cls *Class, schemas *SchemaSet) {
 			c.formulaErr(path+"/formula", err)
 			continue
 		}
+		c.asks(path+"/formula", prog)
 		if prog.Result.Kind == formula.KindNull {
 			c.hint(CodeMissing, path+"/type", "the formula is always blank, so its type cannot be inferred", `declare "type"`)
-			continue
-		}
-		if !readsOnlyItsDocument(c, path, v, prog) {
 			continue
 		}
 		if v.Mode != ModeLive && c.readsClass(prog) {
@@ -988,26 +1148,6 @@ func inferTypes(c *collector, cls *Class, schemas *SchemaSet) {
 		v.Sources = sourcesOf(prog)
 		checkInferred(c, path, v)
 	}
-}
-
-// readsOnlyItsDocument refuses a live variable whose formula looks in a
-// table or at the documents of a class with LOOKUP. The record lets it
-// (ADR-0076, item 5), with the reader's rights; until that is built a
-// live formula reads the values of its document, the caller, the clock,
-// the state and the life of the document, and figures over the lists of
-// its document (ADR-0081), which are asked with the reader's rights.
-func readsOnlyItsDocument(c *collector, path string, v *Variable, prog *formula.Program) bool {
-	if v.Mode != ModeLive {
-		return true
-	}
-	for _, q := range prog.Queries {
-		if q.List == "" {
-			c.hint(CodeNotSupported, path+"/formula", "a live variable that looks in a table or at the documents of a class is not built yet (ADR-0076)",
-				`until it is, a live formula reads its own document, the caller and the clock, and counts and sums the lists of its document; a triggered variable looks things up: "mode": "triggered"`)
-			return false
-		}
-	}
-	return true
 }
 
 // listsOf gives the binder the lists of the class a variable belongs to
@@ -1026,6 +1166,10 @@ func listsOf(cls *Class, v *Variable, r *envSources) func(name string) (*formula
 		}
 		source := ""
 		switch {
+		case !lv.Live():
+			// A list that is kept is a list the document holds
+			// (ADR-0078, item 5): its figures are worked out over its
+			// rows, as over entered lines.
 		case lv.Query != nil:
 			source = lv.Query.Source
 		case lv.queryCall != nil && len(lv.queryCall.Args) > 0:
@@ -1060,6 +1204,9 @@ func checkInferred(c *collector, path string, v *Variable) {
 	}
 	if vd.Class != "" && v.Type.Kind != formula.KindRef {
 		c.add(CodeNotAllowed, path+"/class", "only a ref has a class")
+	}
+	if v.Type.Kind == formula.KindRef {
+		v.Type = formula.RefTo(vd.Class)
 	}
 	if len(vd.Values) > 0 && v.Type.Kind != formula.KindText {
 		c.add(CodeNotAllowed, path+"/values", "only a text variable has values (ADR-0023)")
@@ -1123,6 +1270,7 @@ func bindAs(c *collector, path, src string, scope *formula.Scope, mode formula.M
 		c.hint(CodeTypeMismatch, path, msg, hint)
 		return nil
 	}
+	c.asks(path, prog)
 	return prog
 }
 
@@ -1142,6 +1290,7 @@ func bindCondition(c *collector, path, src string, scope *formula.Scope, what st
 		c.hint(CodeNotACondition, path, what+" must be a condition, got "+prog.Result.String(), "compare it, for instance <> 0 or <> \"\"")
 		return nil
 	}
+	c.asks(path, prog)
 	return prog
 }
 
@@ -1251,9 +1400,9 @@ func checkTrigger(c *collector, path, text string, cls *Class, v *Variable) {
 			c.addf(CodeUnknownState, path, "unknown state %s", quote(arg))
 			return
 		}
-	case "transition":
+	case "transition", "before":
 		if arg == "" {
-			c.add(CodeBadTrigger, path, "transition names a transition: transition:<name>")
+			c.addf(CodeBadTrigger, path, "%s names a transition: %s:<name>", kind, kind)
 			return
 		}
 		found := false
@@ -1272,12 +1421,17 @@ func checkTrigger(c *collector, path, text string, cls *Class, v *Variable) {
 		c.hint(CodeNotSupported, path, "this build does not recompute a variable on "+kind+":", "use refresh, and send the command when the "+map[string]string{"table": "table changes", "schedule": "time comes"}[kind]+"; "+kind+": arrives with the set-wise work of a later phase")
 		return
 	default:
-		c.hint(CodeBadTrigger, path, "unknown trigger "+quote(text), "one of refresh, enter:<state>, exit:<state>, transition:<name>")
+		c.hint(CodeBadTrigger, path, "unknown trigger "+quote(text), "one of refresh, enter:<state>, exit:<state>, transition:<name>, before:<name>")
 		return
 	}
 	// A frozen document computes nothing (ADR-0043, item 8): a trigger
-	// that can fire on a move out of a terminal state is refused.
-	if why := frozenTrigger(cls, RuleDef{On: kind, State: arg, Name: arg}); why != "" {
+	// that can fire on a move out of a terminal state is refused. A
+	// before: is frozen where the transition's own trigger is.
+	on := kind
+	if kind == "before" {
+		on = "transition"
+	}
+	if why := frozenTrigger(cls, RuleDef{On: on, State: arg, Name: arg}); why != "" {
 		c.hint(CodeNotAllowed, path, "a variable cannot recompute on "+text+": "+why+", and a frozen document computes nothing (ADR-0039)",
 			"name the transition that arrives from a live state, or the entry of a state only live states lead to")
 		return
@@ -1418,11 +1572,21 @@ func compileColumns(c *collector, cls *Class) {
 				c.addf(CodeTooManyColumns, "/variables/"+v.Name, "the child table would have %d columns; at most %d", len(child.Columns)+3, MaxColumns)
 			}
 			cls.Children = append(cls.Children, child)
+			if v.Triggered() {
+				// A list that is kept (ADR-0078, item 5) says when it was
+				// brought, as every triggered value does: its moment
+				// stands in the document's own row, its rows in the child
+				// table.
+				asof, errc := MomentColumn(v.Name, MomentAsOf), MomentColumn(v.Name, MomentError)
+				cls.Columns = append(cls.Columns,
+					Column{Name: asof, Type: formula.DecimalType(0), Variable: v.Name, Path: asof, Moment: MomentAsOf},
+					Column{Name: errc, Type: textType, Variable: v.Name, Path: errc, Moment: MomentError})
+			}
 		case formula.KindArray:
 			elem := formula.Type{Kind: v.Type.Elem, Scale: v.Type.Scale}
 			cls.Children = append(cls.Children, ChildTable{Variable: v.Name, Columns: columnsOf("value", elem, v.Name, false)})
 		default:
-			cls.Columns = append(cls.Columns, columnsOf(v.Name, v.Type, v.Name, v.Index)...)
+			cls.Columns = append(cls.Columns, columnsOf(v.Name, v.Type, v.Name, cls.Keyed(v))...)
 			if v.Triggered() {
 				// The moment of a triggered value, beside it (ADR-0043).
 				asof, errc := MomentColumn(v.Name, MomentAsOf), MomentColumn(v.Name, MomentError)
@@ -1490,6 +1654,19 @@ func compileTransitions(c *collector, cls *Class, defs []TransitionDef, scope *f
 		}
 		t.Guard = bindCondition(c, path+"/guard", d.Guard, scope, "a guard")
 		t.GuardSrc = d.Guard
+		// A guard reads the document, and what it needs from outside is
+		// brought onto the document first (ADR-0078, item 4): a guard
+		// that looks in a table or at other documents itself is refused,
+		// since nothing would keep what it saw. A definition stored
+		// before this was so still runs as it was written.
+		if t.Guard != nil && len(t.Guard.Queries) > 0 && !c.env.Lenient {
+			q := t.Guard.Queries[0]
+			hint := `give the lookup a triggered variable that lists "before:` + d.Name + `" among its triggers, and let the guard read the variable: the value is then brought when somebody asks for ` + d.Name + `, before the guard is asked, and kept in the version the move makes`
+			if d.Name == "" {
+				hint = `give the lookup a triggered variable, brought at the entry of the state with "enter:<state>" or by a refresh, and let the guard read the variable: a transition without a name has nobody asking for it, so nothing is brought before its guard`
+			}
+			c.hint(CodeNotAllowed, path+"/guard", "a guard reads its document and nothing outside it, and this one looks in "+q.Source+": what it saw there would be kept nowhere", hint)
+		}
 		compileTimer(c, cls, t, d, path, scope)
 		cls.Transitions = append(cls.Transitions, t)
 	}

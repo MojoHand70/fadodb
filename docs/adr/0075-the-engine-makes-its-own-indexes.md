@@ -305,6 +305,238 @@ serve is a note and no refusal (item 5); that an index is dropped when
 nothing needs it (item 4); that an index is built with the definition
 and the commits wait (item 7).
 
+## Settled while building the look
+
+Built on 2026-11-25, in Phase 8: the open part of item 10, how the
+engine chooses between two indexes that fit one question. It is built
+before any index of item 2, so that no index the engine adds can make
+a question slow. Each of these is settled by me while building, and is
+the owner's to strike.
+
+- **The engine looks.** Of the three ways item 10 names it is the
+  third: for each index that fits, the engine counts the documents
+  that have the value the question compares, and stops at a thousand.
+  It asks the question through the index whose look ended first. The
+  measurement below is why.
+- **The rule is the tie-break.** Two looks that both reach the
+  thousand end alike. The earlier comparison is then taken: the
+  caller's own before the read rule's, and the state last.
+- **How the store is left no choice.** The engine does not name an
+  index in the statement, because a question reads a view. It writes
+  the comparison of the chosen column on the bare column, which an
+  index answers, and leaves every other indexed column inside the
+  exact condition, which no index answers.
+- **A fit is an equality of an indexed column with a value that is not
+  blank**: a literal, the caller (`owner = USER()`), a pointer written
+  out. A comparison with `<` or `>` is none, and neither is one a
+  blank would satisfy. With one fit or none, nobody looks and the
+  question is asked as before.
+- **The comparison of the read rule is a fit like the caller's own.**
+  Jan, who wrote nearly every invoice, is led by the order he asks
+  for; Piotr, who wrote three, by what he wrote. Until now the rule's
+  comparison was withheld whenever the caller's condition had an index
+  (ADR-0049), which was right for Jan and wrong for Piotr.
+- **A declared question names its index and nobody looks** (item 2):
+  the list of a document is asked through the first comparison, for
+  equality, of an indexed column with something of that document, its
+  pointer or one of its variables. A list that compares nothing of its
+  document is left to a look.
+- **A look that finds nothing ends the looking.** The answer is empty
+  through that index.
+- **Where it is built.** For `query`, `count` and the page of a live
+  list. A figure over a list, a kept list, the list of what is due and
+  the counts of a flow are asked as before.
+
+Measured on 2026-11-25, on classes of 1,000,000 and of 10,000,000
+invoices that have every index item 2 would make, made by hand: on
+`order`, `customer`, `owner` and the state, each going on to the moment
+a document was made. A hundred invoices to an order; Globex has every
+second invoice; nine in ten are paid, one in ten is a draft, a hundred
+wait in review. Each question asks the newest fifty and was asked
+fifteen times; the whole was run three times, which agree within a few
+percent. The store was asked directly, with the conditions the engine
+writes.
+
+| In 10,000,000 invoices | The right index | The store, blind | The rule alone | The look | The store after a full count |
+|---|---|---|---|---|---|
+| the drafts of one order | 0.03 ms | 541 ms | 0.03 ms | 0.08 ms | 0.04 ms |
+| Globex's invoices in review | 0.04 ms | 0.04 ms | 808 ms | 0.08 ms | 0.04 ms |
+| the paid invoices of a small customer | 0.03 ms | 28 ms | 0.03 ms | 0.11 ms | 0.04 ms |
+| Globex's drafts | 0.04 ms | 0.05 ms | 0.15 ms | 0.22 ms | 0.05 ms |
+| Jan's invoices of one order | 0.03 ms | 2,860 ms | 2,870 ms | 0.08 ms | 0.04 ms |
+
+- **A wrong choice grows with the class**: at 1,000,000 the same
+  three wrong choices of the blind store took 48, 23 and 125 ms.
+- **The looks took 0.05 to 0.08 ms at both sizes.** A look reads at
+  most a thousand entries of one index, however large the class. A
+  look of at most a hundred took 0.02 ms and chose wrong in two of
+  five, where both indexes reached the hundred.
+- **A full count by the store chose right in all five**, and took 1.3
+  seconds at 1,000,000 and 14.4 seconds at 10,000,000. Its numbers are
+  of the day they were counted. A sampled count took 75 ms and chose
+  wrong for Globex's invoices in review.
+- Not measured: 100,000,000, and two values that each hold more than a
+  thousand documents and share few, which no single index serves.
+
+In the engine, `BenchmarkQueryLook` asks the invoices of one order for
+one customer, forty of them, with the whole call of the command
+`query`: 0.21 ms, beside 0.18 ms for the same documents asked through
+the one comparison of the pointer (`BenchmarkQueryOneIndex`). The two
+looks and the two ways the question is written cost 0.03 ms and 44
+allocations. `BenchmarkQueryLook` joins the gate.
+
+## Settled while building the engine's own indexes
+
+Built on 2026-11-25, in Phase 8, after the look: three of the four
+rows of item 2. Each of these is settled by me while building, and is
+the owner's to strike.
+
+- **What is built.** Every class table has an index on the state, on
+  the moment a document was made and on the moment it last changed.
+  Every `ref` variable has one, and so has a text variable the read
+  rule compares with the caller for equality, `owner = USER()`, in its
+  `AND`s and `OR`s. `"index": true` stays for the rest. Each index on a
+  variable or on the state goes on to the moment a document was made.
+- **What is not built: the key of a `LOOKUP` or a `QUERY` that is no
+  pointer** (the second row of item 2). It is an index on one class
+  because of a formula of another, so the engine has to keep which
+  definitions asked for it (item 4). Until then such a key wants
+  `"index": true`, as before.
+- **A database of an earlier schema is brought over, not refused.**
+  Item 8 said it would be refused, as every earlier schema had been.
+  Since v0.7.0 a database is brought forward when it is opened (ADR-0078,
+  settled while building), so this one is too: the schema is 15, and
+  the indexes a class has not are made when the database is opened,
+  after the transaction that raises the schema. The first opening
+  takes the time item 7 names. A program stopped meanwhile loses
+  nothing; the next opening makes what is missing.
+- **The engine checks the indexes at every opening**, against what the
+  classes say, with one read of the store's own list. A database that
+  has them all is not written to.
+- **The names.** An index is named after its table and its column:
+  `doc_Invoice_order`, `doc_Invoice_state`. The state and the two
+  moments are names no variable can have.
+- **A pointer and the read rule's text lead a lookup too.** A `LOOKUP`
+  over a class takes for its key a comparison of a variable the class
+  keeps an index on; a pointer is now one without a word of the
+  designer's.
+- **The list of what is due keeps its own index.** It compares the
+  state and, for a transition at a date, the date. Where the date has
+  an index it is asked through that one, as before; where it has none,
+  it is now asked through the index on the state, and no longer reads
+  the whole class.
+- **The test of item 10 is `BenchmarkDraftsOfOneOrder`**, in the gate:
+  with every index in place, the drafts of one order, which the index
+  on the pointer and the index on the state both fit.
+
+Measured on 2026-11-25, on this build:
+
+| What | Measured |
+|---|---|
+| the drafts of one order, ten of a hundred, the whole call of `query`, among 100,000 invoices on disk | 0.27 ms |
+| the same among 1,000,000 | 0.32 ms; the test of item 10 asks for under 1 ms |
+| the list of one order, a hundred invoices, among 100,000 on disk | 0.53 ms |
+| the same among 1,000,000 | 0.56 ms; the budget of this record is no more than twice |
+| a transition (`BenchmarkTransition`) | 54.3 µs against 49.8 before, +9%: three more indexes are written. Allocations are the same |
+| a thousand moves in one call (`BenchmarkTransitionMany`) | 40.0 ms against 36.8, +9% |
+| a message from outside that moves a document (`BenchmarkReceive`) | 83.9 µs against 79.4, +6% |
+| opening a database of schema 14 with 10,000,000 invoices that have one pointer, and 100,000 orders | 12.2 s once, for seven indexes; 4 ms the next time |
+| the file of that database | 10.0 GB against 9.3 GB, 8% larger |
+
+The commit costs less here than the 10 to 30 µs of item 9, which was
+measured with six indexes on 2,000,000 documents.
+
+## Settled while building the note
+
+Built on 2026-11-25, in Phase 8: item 5. Each of these is settled by
+me while building, and is the owner's to strike.
+
+- **What is noted.** A `LOOKUP` over the documents of a class, in the
+  formula or the default of a variable, in the condition of a rule and
+  in what a rule sets, when the equality its condition is keyed by is
+  on a variable without an index, or when it has no such equality. A
+  list, when its condition compares no indexed variable, for equality,
+  with a value that is no column of the listed document.
+- **What is not noted.** A lookup in a table, which keeps its own
+  indexes (ADR-0037). A figure over a list of the document. A list
+  without a condition, which is read in the order of the ids, a page
+  at a time. A comparison of the state, of the id or of one of the two
+  moments, which every class has an index on.
+- **The note names the variable** when the condition compares one that
+  has no index, and the mend is `"index": true` on it: the engine does
+  not yet make that index by itself (the second row of item 2).
+- **What `validate_class` says a definition would build** (item 7),
+  "an index on `customer` over 100,000,000 documents", is not built.
+
+## Settled while building the stop of a free question
+
+Built on 2026-11-25, in Phase 8: item 6. Each of these is settled by
+me while building, and is the owner's to strike.
+
+- **Which question is stopped.** The `where` and the `order` of a
+  `query` and of a `count`, when neither the caller's condition nor
+  the read rule offers the store a comparison of an indexed column. A
+  question with no `where` and no `order` is not one of them: it is
+  read in the order of the ids, a page at a time. A
+  question an index serves is not stopped, however long it runs, and
+  it pays nothing for the limit. A list of a document is a declared
+  question and is not stopped; item 5 notes it when the class is
+  defined.
+- **The limit is the database's**, as the text limit is: the option
+  `MaxQuestion` when it is opened, kept in its metadata, five seconds
+  when none was ever given. A value given later replaces it, since it
+  changes what is waited for and never an answer.
+- **The hint names the first variable the condition compares with a
+  value**, which is the one an index would be needed on. It is read
+  from the condition and not from the store's plan of the statement,
+  which says the same of a question no index serves: the class is
+  read whole. A condition that compares no variable with a value is
+  told to begin with such a comparison.
+- **A caller who left is not told the question was wide**: their own
+  time ran out first, and the call fails as it did before.
+- **What it does not cover**: a question an index serves that still
+  reads much, such as everything in a state that holds most of the
+  class, sorted by a variable. Not decided.
+
+## Settled while building the index a question asks for
+
+Built on 2026-11-25, in Phase 8: the second row of item 2, item 4 and
+the rest of item 7. With it every item of this record is built. Each
+of these is settled by me while building, and is the owner's to
+strike.
+
+- **Which key.** For a `LOOKUP` over the documents of a class, the
+  variable its condition is keyed by: an equality with an expression of
+  the reading document alone, as the binder finds it (ADR-0046, item
+  10). For a list, the first equality in the top-level `AND` of its
+  condition with `REF()` or `THIS.name`. A comparison with a text
+  written out makes no index: it is one question for every document,
+  and is noted with `reads_all` when nothing else serves it.
+- **Nothing is stored about who asked** (item 4). The definitions say
+  it: when the database is opened and after each definition the engine
+  reads from the classes defined now which variables their questions
+  ask an index for, makes the ones that are missing and drops the ones
+  nothing asks for. A question in an older version of a class asks for
+  nothing.
+- **The index is made after the transaction that takes the
+  definition**, in one of its own, while the commits wait (item 7). A
+  program stopped between the two has the definition and not yet the
+  index; the next opening makes it.
+- **A table gets no index this way.** A table says its own indexes
+  (ADR-0037), and a lookup in one is never noted.
+- **A list keyed by a variable of its document names that index only
+  when the document holds a value for it.** With a blank the list
+  compares with nothing, and is asked as before.
+- **A number or a date as the key of a list is not yet named** as its
+  index, as a text or a pointer is: the store is offered every
+  comparison of such a list. Not built.
+- **What a check says would be built** (item 7): a note, code
+  `builds_index`, for an index on a class that holds 100,000 documents
+  or more, counted from the last row the table gave a number to, so
+  "about". Below that an index is made in a moment and nothing is
+  said. The note is given by `validate_class` and by the check from a
+  terminal with `--db`; taking the definition says nothing more.
+
 ## Consequences
 
 - A designer and an agent write what a document needs to know, and
@@ -336,8 +568,12 @@ and the commits wait (item 7).
   that alone is a declared question is not decided: each index costs
   every commit, and `"index": true` says it today.
 - **How the engine chooses between two indexes that fit one free
-  question** (item 10). Not decided; a page of analysis first. Open
-  since ADR-0049, which found that the store chooses blind.
+  question** (item 10). It was open since ADR-0049, which found that
+  the store chooses blind. Settled while building, on 2026-11-25: the
+  engine looks. See "Settled while building the look".
+- **A question whose two values each hold many documents and share
+  few.** No single index serves it, whoever chooses. An index on two
+  variables together would; not decided.
 - **A count of very many documents.** A count reads what it counts:
   100,000,000 invoices took Ewa 0.2 s through the smallest index, and
   Jan's 99,900,000 took 2.5 s. It is a question that reads everything

@@ -274,7 +274,7 @@ func run(dir string) error {
 				label = fmt.Sprintf("%s[%d] %q: %s", s.Suite, i, c.Name, c.Formula)
 			}
 			e := exported{Label: label, MaxText: limit, Error: c.Error}
-			prog, err := formula.Bind(c.Formula, scope, formula.BindOptions{Sources: sources})
+			prog, err := formula.Bind(c.Formula, scope, s.BindOptions(sources))
 			if err != nil {
 				return fmt.Errorf("%s: bind: %w", label, err)
 			}

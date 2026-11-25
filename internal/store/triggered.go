@@ -26,6 +26,13 @@ func (s *Store) recomputeFor(c *class, row *docRow, kind commitKind, from, name 
 		if !ok {
 			continue
 		}
+		// A variable is worked out once in a commit: one that was brought
+		// before the guard of the command's transition is not worked out
+		// again by the exit, the transition or the entry of the same move
+		// (ADR-0078, item 4).
+		if kind == commitTransition && name != "" && cv.v.On("before", name) {
+			continue
+		}
 		evalCtx.State = state
 		// A variable of an exit or of a transition speaks of the state
 		// left, and of the stay there (ADR-0047, item 5).
@@ -72,6 +79,37 @@ func triggerState(v *model.Variable, kind commitKind, from, name, state string) 
 	return "", false, false
 }
 
+// bringBefore works out a variable that lists before: a transition, when
+// somebody asks for that transition and before its guard is asked
+// (ADR-0078, item 4). It is recompute with one difference: a value that
+// cannot be brought, because its formula fails or the value is not one
+// the variable accepts, refuses the transition with that code and the
+// variable, where another trigger leaves the old value and goes on. A
+// condition is not asked over a number that could not be brought.
+// STATE() in its formula is the state the transition leaves, which the
+// row is still in.
+func (s *Store) bringBefore(c *class, cv *cvar, t *model.Transition, row *docRow, evalCtx *formula.Context, secs int64, preview bool, errs *[]*Error) *Error {
+	var val formula.Value
+	var list []childRow
+	var err *Error
+	if cv.v.Kept != nil {
+		list, err = s.keptRows(c, cv, row, evalCtx)
+	} else if val, err = s.eval(c, cv.v.Formula, row, evalCtx); err == nil {
+		val, err = fit(cv.v, val)
+	}
+	if err != nil {
+		e := *err
+		e.Variable = cv.v.Name
+		e.Message = cv.v.Name + " could not be brought before " + t.Name + ": " + err.Message
+		e.Hint = cv.v.Name + " lists before:" + t.Name + ", and a condition is not asked over a value that could not be worked out: mend what its formula reads, or the formula"
+		return &e
+	}
+	if cv.v.Kept != nil {
+		return s.keepList(c, cv, row, list, evalCtx, secs, preview, errs)
+	}
+	return s.kept(c, cv, row, val, evalCtx, secs, preview, errs)
+}
+
 // recompute evaluates one triggered variable over the row and stores the
 // value with its moment: the row's version, and secs as its time. A
 // recomputation that errors, in the formula or in what the variable
@@ -80,6 +118,16 @@ func triggerState(v *model.Variable, kind commitKind, from, name, state string) 
 // variables that depend on a value that changed recalculate; one of them
 // failing is the commit's error, as after any change.
 func (s *Store) recompute(c *class, cv *cvar, row *docRow, evalCtx *formula.Context, secs int64, preview bool, errs *[]*Error) *Error {
+	if cv.v.Kept != nil {
+		// A list that is kept (ADR-0078, item 5): the answer of its
+		// QUERY, or the list as it was with the code of the failure.
+		list, err := s.keptRows(c, cv, row, evalCtx)
+		if err != nil {
+			row.vals[cv.errLeaf] = formula.Text(err.Code)
+			return nil
+		}
+		return s.keepList(c, cv, row, list, evalCtx, secs, preview, errs)
+	}
 	val, err := s.eval(c, cv.v.Formula, row, evalCtx)
 	if err == nil {
 		val, err = fit(cv.v, val)
@@ -88,6 +136,13 @@ func (s *Store) recompute(c *class, cv *cvar, row *docRow, evalCtx *formula.Cont
 		row.vals[cv.errLeaf] = formula.Text(err.Code)
 		return nil
 	}
+	return s.kept(c, cv, row, val, evalCtx, secs, preview, errs)
+}
+
+// kept stores the value a triggered variable was worked out to, with its
+// moment: the row's version and secs as its time. The auto variables
+// that depend on a value that changed recalculate.
+func (s *Store) kept(c *class, cv *cvar, row *docRow, val formula.Value, evalCtx *formula.Context, secs int64, preview bool, errs *[]*Error) *Error {
 	changed := !formula.Equal(row.vals[cv.leaf], val)
 	row.vals[cv.leaf] = val
 	row.vals[cv.asof] = formula.Decimal(row.version, 0)

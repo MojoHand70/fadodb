@@ -98,12 +98,18 @@ func TestOpeningADatabase(t *testing.T) {
 			if !exists("held.fado.lock") {
 				t.Error("a database that a program held alone has no lock file")
 			}
+		case strings.HasPrefix(when, "when the program gave an analytical engine"):
+			// The core has none: the module analytics has the engine
+			// and the test of the file it keeps.
+			if exists(name) {
+				t.Errorf("%s is there for a database whose program gave no analytical engine", name)
+			}
 		default:
 			t.Errorf("the test cannot read when %s is there: %q", name, when)
 		}
 	}
-	if len(there) != 5 {
-		t.Errorf("the chapter lists %d files, and the test knows five", len(there))
+	if len(there) != 6 {
+		t.Errorf("the chapter lists %d files, and the test knows six", len(there))
 	}
 
 	// One program holds a database: a second open is not refused unless
@@ -298,6 +304,23 @@ func TestOpeningADatabase(t *testing.T) {
 		"MaxIndexedRows": func(row []string) {
 			if got := reopened(fado.Options{}, fado.Options{MaxIndexedRows: 5}) + " and kept"; got != row[4] {
 				t.Errorf("MaxIndexedRows, opened again with another value: %s, and the chapter says %s", got, row[4])
+			}
+		},
+		"MaxQuestion": func(row []string) {
+			if got := reopened(fado.Options{}, fado.Options{MaxQuestion: time.Minute}) + " and kept"; got != row[4] {
+				t.Errorf("MaxQuestion, opened again with another value: %s, and the chapter says %s", got, row[4])
+			}
+			// None given: five seconds. One given is kept when none is
+			// given again.
+			fresh := must(open("question.fado", fado.Options{}))
+			if got := fresh.MaxQuestion(); got != 5*time.Second || row[3] != "5 seconds" {
+				t.Errorf("a new database allows a question %v, and the chapter says %s", got, row[3])
+			}
+			fresh.Close()
+			must(open("question.fado", fado.Options{MaxQuestion: time.Minute})).Close()
+			kept := must(open("question.fado", fado.Options{}))
+			if got := kept.MaxQuestion(); got != time.Minute {
+				t.Errorf("a limit given once is not kept: %v", got)
 			}
 		},
 	}

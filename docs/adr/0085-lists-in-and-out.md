@@ -355,6 +355,141 @@ wrote them.
 
 The owner accepted the record on 2026-11-23: "accepted".
 
+## What is built
+
+- **Item 1, a list in a message, on 2026-11-25**, in Phase 8: the
+  repeat in the `values` of an inlet, with `create`, `set` and
+  `transition`, its check when the inlet is defined, and its refusals
+  of a message. `try_inlet` and `fadodb inlet check` show the lines a
+  message makes, as they show every value.
+- **Item 2, a list in a request, on 2026-11-25**, in Phase 8: the
+  `rows` parameter of an action, the argument a rule gives it, the
+  repeat in the body of a request and in the JSON a rule gives a `json`
+  parameter, and their checks when the action and the class are
+  defined. `preview_action` and `try_action` take the lines and show
+  the whole body.
+- **Item 3, a list in an answer, on 2026-11-25**, in Phase 8: a
+  returned value of the type `rows`, the repeat that reads it out of
+  the reply, and `into`, which writes it to a `rows` variable of the
+  document, whole. A function of the host program returns such a list
+  too. With it the three items of this record are built.
+
+## Settled while building a list in a message
+
+Each of these is settled by me while building, and is the owner's to
+strike.
+
+- **A repeat fills a `rows` variable that somebody enters.** A repeat
+  written for a text, a computed variable or an `array` is refused when
+  the inlet is defined, with `not_allowed`. A list of plain values into
+  an `array` is not built.
+- **The path of `each` is checked for its form** when the inlet is
+  defined: no empty step. What it leads to is known only when a message
+  comes.
+- **A path that leads to nothing, or to `null`, gives no lines**, as an
+  empty list does. Only something that is there and is no list refuses
+  the message.
+- **An element is handed to its formulas as it parses**: a number of
+  more than fifteen digits loses its last ones, as it does for
+  `JSONVALUE` over the whole body today.
+- **A kept inlet opens with its database, whatever its class became.**
+  When a class changes under an inlet, so that the list is gone, is no
+  list any more or lacks a column, the inlet is taken as it was written
+  and the database opens. A message is then refused when it comes, with
+  the code of what no longer fits, and makes nothing, as for every
+  value an inlet gives (ADR-0065).
+- **A rule has no repeat.** `each` in the values a rule gives is
+  refused as before: a rule reads its document, and the lines of a
+  document reach another through an action (item 2).
+- **The engine parses a body once.** The formulas of an inlet read the
+  same body, and until now each parsed it again. The VM remembers the
+  json text it parsed last and the element it was handed last. Measured
+  on 2026-11-25: a message of 24 KiB with a hundred lines takes 0.50 ms
+  before its command (`BenchmarkReceiveLines`, in the gate; the budget
+  of this record is 1 ms), where it took 2.2 ms with every formula
+  parsing for itself. A message of 2 KiB without a list, with its
+  command, takes 73 µs where it took 85, and allocates 262 times where
+  it allocated 298 (`BenchmarkReceive`).
+
+## Settled while building a list in a request
+
+Each of these is settled by me while building, and is the owner's to
+strike.
+
+- **A column of a `rows` parameter is a scalar and never `json`**, as a
+  column of a list in a class is.
+- **The argument of a `rows` parameter is the name of a `rows` variable
+  and nothing else.** No formula stands there. A list that is worked
+  out when it is read, a `QUERY`, is not given to an action: it holds
+  the documents the reader may see, and an action runs for nobody in
+  particular. Lines that are documents of their own wait for item 4.
+- **A required `rows` parameter is given, and may be empty.** An order
+  with no lines sends `[]`.
+- **An object is a repeat when it has `each`, `as` and `item` and
+  nothing else.** With a fourth property it is an object like any
+  other. A body cannot send an object of exactly those three names.
+- **`as` is a name of its own**: not a parameter of the action, and not
+  the name of a repeat it stands in.
+- **In the JSON a rule gives a `json` parameter, a repeat goes over a
+  `rows` variable of the rule's class**, and one repeat does not stand
+  in another there. So a rule sends its lines with `http.call` and no
+  definition. In the body of a request repeats nest, each over a
+  parameter of its own.
+- **A call from outside gives the lines as a list of objects**, typed
+  column by column. A column a row leaves out is blank; a name that is
+  no column, or more than 10,000 rows, refuses the call.
+- **An action may not change so that a rule no longer fits**, as before
+  (ADR-0044): a `rows` parameter that gains a column the lines of a
+  class lack is refused, and the refusal names the rule.
+- **A class kept from before its action changed opens with its
+  database.** An earlier version of a class is taken as it was written;
+  what no longer fits is refused when the action runs.
+- **Measured on 2026-11-25**: building the request for a hundred lines
+  of four values, with its address and the header that reads the
+  secret, takes 0.14 ms (`BenchmarkRequestLines`, in the gate; the
+  budget of this record is 1 ms).
+
+## Settled while building a list in an answer
+
+Each of these is settled by me while building, and is the owner's to
+strike.
+
+- **A pull that did not come through leaves the lines as they are.**
+  A value that a formula gives is written blank when its action failed,
+  as before (ADR-0045). A list is not: when the receiver refuses, or
+  the answer does not read, the lines of the document stay, and `ERROR`
+  says why. An emptied order after a failed request would be a loss
+  nobody asked for.
+- **An answer without the list, or with `null` or an empty list there,
+  gives no lines**, and the document is left without lines. It is what
+  a message without the list does (item 1). A definition that must not
+  take such an answer says so with `ok`.
+- **An answer that does not read is `bad_result`**: a path that leads
+  to something that is no list, a formula that fails on one element,
+  more than 10,000 rows. The action counts as run, since the receiver
+  answered, and nothing of the list is written.
+- **The variable has every column of the returned list, of the same
+  type.** It may have more: they are blank in every line.
+- **A returned list is no value a formula reads.** `into` gives it to a
+  `rows` variable by its name, and a formula such as `COUNT(lines)`
+  over it is refused. A count the receiver gives is read with a formula
+  of its own.
+- **The formulas of `row` read `STATUS` and `BODY` beside the element**,
+  as those of an inlet read the whole message.
+- **A returned list is never `required`**, as no returned value is.
+- **An action may not change so that a rule no longer fits**, as before
+  (ADR-0044): a returned list that gains a column the lines of a class
+  lack is refused, and the refusal names the rule.
+- **A class kept from before its action changed opens with its
+  database**: an `into` that names a list the action no longer returns
+  is taken as it was written, and writes nothing.
+- **A function of the host program returns a list as a list of
+  objects**, typed column by column; a row of the wrong type is
+  `bad_result`.
+- **What an action returned is not kept in the log.** As before, the
+  event of an action that ran names the action and not its result: the
+  lines are in the version of the document the result wrote.
+
 ## Consequences
 
 - An order with its lines comes in from a shop in one message, and goes

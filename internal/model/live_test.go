@@ -89,7 +89,6 @@ func TestLive_Refusals(t *testing.T) {
 		{"read by the title", `{"name": "T", "title": "TEXT(l)", "variables": {` + live + `}}`, CodeNotAllowed, "/title"},
 		{"read by a guard", class(live, fmt.Sprintf(states, `, "guard": "l > 0"`)), CodeNotAllowed, "/transitions/0/guard"},
 		{"read by an access rule", class(live, fmt.Sprintf(states, ``)+`, "access": {"read": "l > 0", "create": "TRUE", "update": "TRUE", "delete": "FALSE"}`), CodeNotAllowed, "/access/read"},
-		{"a look into the documents of a class", variables(`"a": {"type": "int"}, "l": {"type": "int", "mode": "live", "formula": "LOOKUP(T, MAX(a), TRUE)"}`), CodeNotSupported, "/variables/l/formula"},
 	}
 	for _, tc := range cases {
 		expectDiag(t, tc.name, tc.src, tc.code, tc.path)

@@ -41,6 +41,8 @@ type LiveColumn struct {
 // LiveRow is one row of a live list: a document of the source, by its
 // id, with the columns of the list that the reader may read in it
 // (ADR-0076, items 2 and 8). A column the reader may not read is absent.
+// A row of a list over a table (item 9) is no document: its ID is
+// empty, and it is written with its columns alone.
 type LiveRow struct {
 	ID     string
 	Values Values
@@ -51,17 +53,22 @@ type LiveRow struct {
 // MarshalJSON writes the row as one object: the id, then the columns in
 // the order of the list.
 func (r LiveRow) MarshalJSON() ([]byte, error) {
-	out := []byte(`{"id":`)
+	out := []byte(`{`)
 	var err error
-	if out, err = appendPlain(out, r.ID); err != nil {
-		return nil, err
+	if r.ID != "" {
+		out = append(out, `"id":`...)
+		if out, err = appendPlain(out, r.ID); err != nil {
+			return nil, err
+		}
 	}
 	for _, name := range r.columns {
 		v, ok := r.Values[name]
 		if !ok {
 			continue
 		}
-		out = append(out, ',')
+		if len(out) > 1 {
+			out = append(out, ',')
+		}
 		if out, err = appendPlain(out, name); err != nil {
 			return nil, err
 		}
@@ -170,6 +177,9 @@ func (s *Store) LivePage(ctx context.Context, r LiveRead, opts ...Option) (*Live
 	}
 	q := cv.v.Query
 	var src *class
+	// tbl is the table a list reads, when its source is one (ADR-0076,
+	// item 9).
+	var tbl *table
 	// lists are the lists of the document that a single value works
 	// figures out of (ADR-0081).
 	var lists []*cvar
@@ -180,15 +190,16 @@ func (s *Store) LivePage(ctx context.Context, r LiveRead, opts ...Option) (*Live
 		if lists, e = s.figureLists(ctx, c, cv, opts); e != nil {
 			return nil, e
 		}
-	} else {
-		if src, e = s.class(q.Source); e != nil {
+	} else if src, e = s.class(q.Source); e != nil {
+		// No class of that name: the source is a table.
+		var te *Error
+		if tbl, te = s.table(q.Source); te != nil {
 			return nil, e
 		}
+	} else if _, e = s.asked(ctx, opts, src.cls.Name); e != nil {
 		// Whoever acts for somebody needs the substitution for the class
 		// whose documents they read, too (ADR-0053).
-		if _, e = s.asked(ctx, opts, src.cls.Name); e != nil {
-			return nil, e
-		}
+		return nil, e
 	}
 	val, on, held, err := s.liveOn(ctx, c, cv, id, o, lists)
 	if err != nil {
@@ -202,6 +213,9 @@ func (s *Store) LivePage(ctx context.Context, r LiveRead, opts ...Option) (*Live
 	}
 	if q == nil {
 		return &LiveValue{Value: val}, nil
+	}
+	if tbl != nil {
+		return s.liveTable(ctx, tbl, cv.v, on, r, o)
 	}
 	return s.liveList(ctx, src, cv.v, on, r, o)
 }
@@ -265,9 +279,11 @@ func (s *Store) liveOn(ctx context.Context, c *class, cv *cvar, id string, o opt
 		}
 		return nil, on, nil, nil
 	}
-	if len(lists) > 0 {
+	if len(lists) > 0 || cv.v.Formula != nil && len(cv.v.Formula.Queries) > 0 {
 		// A figure over a list is the list's to its reader: whoever may
 		// not read the list of this document may not count it either.
+		// A LOOKUP of the formula's own is asked for the reader too
+		// (ADR-0076, item 5), beside the writer as the figures are.
 		held := &liveHeld{row: row, ctx: ctxOf, on: make(map[string]*query.On, len(lists))}
 		for _, lv := range lists {
 			if err := s.mayReadLive(c, lv, row, evalCtx, o, id, past); err != nil {

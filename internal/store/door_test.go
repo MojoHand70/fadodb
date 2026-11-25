@@ -11,6 +11,18 @@ import (
 	"github.com/MojoHand70/fadodb/internal/model"
 )
 
+// sameRefusal says whether a refusal and the one read back from JSON say
+// the same: every member, and what was brought for a guard (ADR-0078,
+// item 4), which each holds behind a pointer of its own.
+func sameRefusal(a, b *Error) bool {
+	x, y := *a, *b
+	x.Brought, y.Brought = nil, nil
+	if x != y || (a.Brought == nil) != (b.Brought == nil) {
+		return false
+	}
+	return a.Brought == nil || flat(*a.Brought) == flat(*b.Brought)
+}
+
 // The suites of the script format run through every door and must answer
 // the same (ADR-0055, item 11). A door is how a step reaches the store:
 // the Go API, as the suites have always run, or the command set, where
@@ -429,7 +441,7 @@ func (d commandDoor) send(ctx context.Context, c stepCall, name string, object [
 			return fmt.Errorf("the command %s was refused with %v and its answer has no error: %s", name, err, answer)
 		}
 		if se, ok := err.(*Error); ok {
-			if *se != *got.Error {
+			if !sameRefusal(se, got.Error) {
 				return fmt.Errorf("the command %s was refused with %+v and its answer says %+v", name, se, got.Error)
 			}
 			return got.Error

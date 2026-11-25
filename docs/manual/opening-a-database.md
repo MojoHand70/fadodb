@@ -249,8 +249,9 @@ db, err := fado.Open("notes.fado", fado.Options{Analytics: analytics.Engine{}})
 - **The database feeds the copy itself**, every `CopyEvery` and when it
   closes. `FeedCopy` feeds it at once.
 - **The copy holds**, for every class, the documents as they are now
-  and every version of them, and the events. The lines of a document
-  are not in it.
+  and every version of them, the events, and the moves of the
+  documents that exist: each time one was made or moved along a
+  transition. The lines of a document are not in it.
 - **The copy is never the truth.** It is the file `notes.fado.duckdb`
   beside the database. It needs no backup: when it is lost, or does not
   open, or belongs to another database, the engine makes it again by
@@ -307,8 +308,8 @@ The first of such questions after the file was last read from the
 disk takes a program without the copy seconds, and a question that no
 index serves is stopped after five (see
 [A large class](lists.md#a-large-class)). The flow of that class, ten
-million visits of a state, takes the store 19 seconds and the copy
-about half a second.
+million moves, takes the store 18 seconds and the copy 19 ms: the copy
+keeps the moves ready, and the flow is one sum over them.
 
 **What stays with the store:** a page of a list, the command `query`
 and a live list, whatever its condition; and everything inside a

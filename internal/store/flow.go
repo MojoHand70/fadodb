@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/MojoHand70/fadodb/internal/formula"
@@ -379,10 +380,20 @@ func (s *Store) flowFromCopy(ctx context.Context, c *class, o options, flow *Flo
 	// DuckDB takes the values of a statement by name or by place and
 	// not both; the reader's rule names its own, so these are named.
 	var args []any
-	nowSQL, movesSQL := flowStatements(c, flow, where, c.cls.Name+copyVersions, func(name string, v any) string {
+	bind := func(name string, v any) string {
 		args = append(args, sql.Named(name, v))
 		return d.Param(name)
-	}, func(sum string) string { return "CAST(" + sum + " AS BIGINT)" })
+	}
+	wide := func(sum string) string { return "CAST(" + sum + " AS BIGINT)" }
+	nowSQL, _ := flowStatements(c, flow, where, c.cls.Name+copyVersions, func(string, any) string { return "NULL" }, wide)
+	// The moves are kept ready in the copy, each with the moment the
+	// state it left was entered, for the documents that exist: the
+	// second statement is one sum over them, and it names the reader's
+	// documents only for a reader whose rule leaves some out.
+	movesSQL := flowMovesKept(c, flow, where, bind, wide)
+	if where != "" {
+		args = append(args, rule...)
+	}
 	f, ready := s.copyReady(ctx)
 	if !ready {
 		return nil, nil, false
@@ -402,7 +413,7 @@ func (s *Store) flowFromCopy(ctx context.Context, c *class, o options, flow *Flo
 		}
 		now = append(now, flowNow{state: text(row[0]), documents: whole(row[1]), oldest: whole(row[2])})
 	}
-	_, rows, err = f.copy.Ask(ctx, movesSQL, append(args, rule...)...)
+	_, rows, err = f.copy.Ask(ctx, movesSQL, args...)
 	if err != nil {
 		return fail(err)
 	}
@@ -416,6 +427,31 @@ func (s *Store) flowFromCopy(ctx context.Context, c *class, o options, flow *Flo
 	}
 	f.answered()
 	return now, moves, true
+}
+
+// flowMovesKept is the second statement of a flow over the moves the
+// copy keeps ready (ADR-0089, item 2): the same eight columns as the
+// one flowStatements writes over the events and the versions. where is
+// the reader's rule over the documents as they are now, " WHERE ..." or
+// nothing; a deleted document has no moves in the copy, so a reader who
+// reads every document is asked no more than the sum.
+func flowMovesKept(c *class, flow *Flow, where string, bind func(name string, v any) string, whole func(string) string) string {
+	moves := `SELECT "kind", "name", "from_state", "to_state", count(*), count("left_since"), ` +
+		whole(`sum("ts" - "left_since")`) + `, max("ts" - "left_since") FROM ` + quote(c.cls.Name+copyMoves)
+	var only []string
+	if flow.Since != 0 {
+		only = append(only, `"ts" >= `+bind("flow_since", flow.Since))
+	}
+	if flow.Until != 0 {
+		only = append(only, `"ts" < `+bind("flow_until", flow.Until))
+	}
+	if where != "" {
+		only = append(only, `"id" IN (SELECT "id" FROM `+quote(c.cls.Name)+where+`)`)
+	}
+	if len(only) > 0 {
+		moves += " WHERE " + strings.Join(only, " AND ")
+	}
+	return moves + ` GROUP BY "kind", "name", "from_state", "to_state"`
 }
 
 // text and whole read a value the copy answered: a blank is the empty

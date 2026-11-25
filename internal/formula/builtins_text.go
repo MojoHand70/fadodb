@@ -405,35 +405,106 @@ func arrayIndex(seg string) (int, bool) {
 	return i, err == nil
 }
 
+// parsedJSON is a json text the VM parsed, with what it parsed to.
+type parsedJSON struct {
+	src string
+	doc any
+	ok  bool
+}
+
+// parsed answers a json text as the value it parses to. The VM
+// remembers the text it parsed last, and the one it was told last
+// (SeedJSON): a message is read by many formulas and each element of a
+// list in it by several, so the same text is not parsed for each
+// (ADR-0085, Performance). What it answers is read and never changed.
+func (vm *VM) parsed(src string) (any, error) {
+	if vm != nil {
+		for i := range vm.json {
+			if vm.json[i].ok && vm.json[i].src == src {
+				return vm.json[i].doc, nil
+			}
+		}
+	}
+	var doc any
+	if err := json.Unmarshal([]byte(src), &doc); err != nil {
+		return nil, err
+	}
+	if vm != nil {
+		vm.json[0] = parsedJSON{src: src, doc: doc, ok: true}
+	}
+	return doc, nil
+}
+
+// SeedJSON tells the VM what a json text parses to, so that the
+// formulas that read the text next do not parse it: whoever hands a
+// formula one element of a list has the element parsed already.
+func (vm *VM) SeedJSON(src string, doc any) { vm.json[1] = parsedJSON{src: src, doc: doc, ok: true} }
+
+// ForgetJSON lets go of the json texts the VM remembers.
+func (vm *VM) ForgetJSON() { vm.json = [2]parsedJSON{} }
+
+// jsonAt follows a dotted path into a parsed json value, as JSONVALUE
+// reads one: a name into an object, a whole number into a list. found
+// is false when the path leads nowhere.
+func jsonAt(doc any, path string) (at any, found bool) {
+	cur := doc
+	if path == "" {
+		return cur, true
+	}
+	for _, seg := range strings.Split(path, ".") {
+		switch c := cur.(type) {
+		case map[string]any:
+			v, ok := c[seg]
+			if !ok {
+				return nil, false
+			}
+			cur = v
+		case []any:
+			i, ok := arrayIndex(seg)
+			if !ok || i >= len(c) {
+				return nil, false
+			}
+			cur = c[i]
+		default:
+			return nil, false
+		}
+	}
+	return cur, true
+}
+
+// JSONList follows a dotted path into a json text, as JSONVALUE follows
+// one, and answers the elements of the list it leads to, parsed
+// (ADR-0085). found is false when the path leads to nothing or to null.
+// A path that leads to something that is no list, and a text that is no
+// json, are errors.
+func (vm *VM) JSONList(src, path string) (elements []any, found bool, err error) {
+	doc, err := vm.parsed(src)
+	if err != nil {
+		return nil, false, errors.New("invalid json")
+	}
+	at, ok := jsonAt(doc, path)
+	if !ok || at == nil {
+		return nil, false, nil
+	}
+	list, ok := at.([]any)
+	if !ok {
+		return nil, false, errors.New("the path leads to something that is no list")
+	}
+	return list, true, nil
+}
+
 // fnJSONValue reads one value at a dotted path and renders it as text.
-func fnJSONValue(_ *VM, args []Value) (Value, *EvalError) {
+func fnJSONValue(vm *VM, args []Value) (Value, *EvalError) {
 	if args[0].kind == KindNull {
 		return Blank(), nil
 	}
-	var doc any
-	if err := json.Unmarshal([]byte(args[0].str), &doc); err != nil {
+	doc, err := vm.parsed(args[0].str)
+	if err != nil {
 		return Value{}, &EvalError{Code: ErrBadText, Msg: "invalid json: " + err.Error()}
 	}
-	cur := doc
-	if p := args[1].str; p != "" {
-		for _, seg := range strings.Split(p, ".") {
-			switch c := cur.(type) {
-			case map[string]any:
-				v, ok := c[seg]
-				if !ok {
-					return Blank(), nil
-				}
-				cur = v
-			case []any:
-				i, ok := arrayIndex(seg)
-				if !ok || i >= len(c) {
-					return Blank(), nil
-				}
-				cur = c[i]
-			default:
-				return Blank(), nil
-			}
-		}
+	cur, found := jsonAt(doc, args[1].str)
+	if !found {
+		return Blank(), nil
 	}
 	switch v := cur.(type) {
 	case nil:

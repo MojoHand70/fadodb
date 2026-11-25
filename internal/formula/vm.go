@@ -227,6 +227,9 @@ type VM struct {
 	// error touch them.
 	tries [maxTries]tryFrame
 	nt    int
+	// json are the json texts the VM remembers parsed: the one it
+	// parsed last and the one it was told last (ADR-0085).
+	json [2]parsedJSON
 }
 
 // NewVM makes a VM with the default limits.

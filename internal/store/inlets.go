@@ -440,9 +440,13 @@ func (s *Store) storedInlet(ctx context.Context, name string, version int) (*Sto
 }
 
 // read is a message as the formulas of an inlet read it: the four
-// values of ADR-0065, item 4.
+// values of ADR-0065, item 4, and, while a repeat goes over a list of
+// the message, one element of it under the name the repeat gives it
+// (ADR-0085, item 1).
 type read struct {
 	body, headers, params, raw formula.Value
+	as                         string
+	item                       formula.Value
 }
 
 // reading makes the four values of a message. The header that carries
@@ -501,9 +505,60 @@ func (r *read) run(e *evaluator, prog *formula.Program) (formula.Value, error) {
 			vars[i] = r.raw
 		default:
 			vars[i] = formula.Blank()
+			// One element of the list a repeat goes over, by its name
+			// (ADR-0085, item 1).
+			if r.as != "" && strings.EqualFold(slot.Name, r.as) {
+				vars[i] = r.item
+			}
 		}
 	}
 	return e.vm.Run(prog, vars, &formula.Context{})
+}
+
+// lines makes the lines of a rows variable from a list in the message
+// (ADR-0085, item 1): one line for each element of the list the path
+// leads to, each column by its formula over the element. A message
+// without the list, or with an empty one, gives no lines.
+func (r *read) lines(e *evaluator, set model.Assignment) ([]any, *Error) {
+	each, at := set.Each, "/object/values/"+set.Name
+	lines := []any{}
+	if r.body.IsBlank() {
+		return lines, nil
+	}
+	elements, found, err := e.vm.JSONList(r.body.Str(), each.Path)
+	switch {
+	case err != nil:
+		return nil, &Error{Code: CodeBadMessage, Path: at + "/each", Message: "the message does not give the lines of " + set.Name + ": " + each.Path + " leads to something that is no list",
+			Hint: "the place names the path of the inlet that this message has no list at"}
+	case !found:
+		return lines, nil
+	case len(elements) > MaxElements:
+		return nil, &Error{Code: CodeBadMessage, Path: at + "/each", Message: "the message gives " + strconv.Itoa(len(elements)) + " lines of " + set.Name + " at " + each.Path + "; a document holds at most " + strconv.Itoa(MaxElements) + " (ADR-0013)",
+			Hint: "send the lines in several documents"}
+	}
+	r.as = each.As
+	defer func() { r.as, r.item = "", formula.Blank() }()
+	for i, element := range elements {
+		// One element, as a json value of its own: the formulas of the
+		// row read it and not the whole message again, and the VM is
+		// told what it parses to, so that none of them parses it.
+		text, err := json.Marshal(element)
+		if err != nil {
+			return nil, badMessage(at+"/each", "the element "+strconv.Itoa(i+1)+" of "+each.Path, err)
+		}
+		r.item = formula.JSON(string(text))
+		e.vm.SeedJSON(r.item.Str(), element)
+		line := make(map[string]any, len(each.Row))
+		for _, col := range each.Row {
+			val, err := r.run(e, col.Formula)
+			if err != nil {
+				return nil, badMessage(at+"/row/"+col.Name, col.Name+" of the element "+strconv.Itoa(i+1)+" of "+each.Path, err)
+			}
+			line[col.Name] = valueOut(val)
+		}
+		lines = append(lines, line)
+	}
+	return lines, nil
 }
 
 // badMessage is the refusal of a message the inlet cannot read: what it
@@ -529,6 +584,9 @@ type worked struct {
 func (s *Store) makeOf(spec *model.InletSpec, m *Message) (worked, *Error) {
 	e := s.reader()
 	defer s.release(e)
+	// The formulas of an inlet read one body, which the VM parses once
+	// and lets go of with the message.
+	defer e.vm.ForgetJSON()
 	r := reading(spec, m)
 	var out worked
 	if spec.When != nil {
@@ -574,6 +632,14 @@ func (s *Store) makeOf(spec *model.InletSpec, m *Message) (worked, *Error) {
 	}
 	out.values = make(Values, len(spec.Sets))
 	for _, set := range spec.Sets {
+		if set.Each != nil {
+			lines, refused := r.lines(e, set)
+			if refused != nil {
+				return out, refused
+			}
+			out.values[set.Name] = lines
+			continue
+		}
 		val, err := r.run(e, set.Formula)
 		if err != nil {
 			return out, badMessage("/object/values/"+set.Name, set.Name, err)

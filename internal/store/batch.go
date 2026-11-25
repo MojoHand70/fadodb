@@ -139,6 +139,19 @@ func (s *Store) moveMany(ctx context.Context, class, name string, ids []string, 
 	if len(ids) > MaxMany {
 		return nil, hintf(CodeTooManyElements, "", fmt.Sprintf("a batch of %d documents; one call takes at most %d", len(ids), MaxMany), "send them in several calls; 1,000 documents a call is a good size")
 	}
+	// The version of each document its sender read (ADR-0078, item 2):
+	// as many as the ids, in their order.
+	var saw []int64
+	if o.sawEach != nil {
+		saw = *o.sawEach
+		if len(saw) != len(ids) {
+			return nil, hintf(CodeBadValue, "", fmt.Sprintf("the batch names %d documents and %d versions", len(ids), len(saw)),
+				"give one version for each id, in the order of the ids, and none for a document whose version is not named")
+		}
+	}
+	if o.version != 0 {
+		return nil, hintf(CodeBadValue, "", "a batch of moves takes the version of each document, not one for all", "give the versions with SawEach, as many as the ids and in their order")
+	}
 	if len(ids) == 0 {
 		return []MoveOutcome{}, nil
 	}
@@ -183,6 +196,9 @@ func (s *Store) moveMany(ctx context.Context, class, name string, ids []string, 
 		cmd.id = id
 		if o.key != "" {
 			cmd.o.key = o.key + manyKeySep + id
+		}
+		if saw != nil {
+			cmd.o.version = saw[i]
 		}
 		res, err := s.run(ctx, cmd, now)
 		if err == nil && s.testMoved != nil {

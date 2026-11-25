@@ -892,5 +892,5 @@ func ExampleDB_Exec() {
 	// forbidden
 	// {"document":{"class":"Invoice","id":"FV/2026/11/0042","title":"FV/2026/11/0042","state":"approved","version":2,"class_version":1,"created_at":1794562200,"updated_at":1794562200,"state_entered_at":1794562200,"created_by":"bob","updated_by":"ap-agent","state_entered_by":"ap-agent","state_entered_from":"review","values":{"customer":"Customer:42","note":"matches order PO-118"}}}
 	// <nil>
-	// {"error":{"code":"bad_json","message":"set takes no \"valeus\"","hint":"set takes class, id, values, key, business_date, reason, for","path":"/valeus"}}
+	// {"error":{"code":"bad_json","message":"set takes no \"valeus\"","hint":"set takes class, id, values, key, business_date, reason, for, version","path":"/valeus"}}
 }

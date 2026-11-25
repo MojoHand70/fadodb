@@ -759,3 +759,147 @@ func TestGuide_ActOutside(t *testing.T) {
 		t.Errorf("the log: %s", got)
 	}
 }
+
+// The guide on the version a command saw (ADR-0078, item 2): the table
+// of the guide played step by step, the command and the refusal it
+// shows sent and compared, and the batch of its last section.
+func TestGuide_ActOnWhatYouRead(t *testing.T) {
+	const guide = "act-on-what-you-read.md"
+	tables, _, classes := guideParts(t, guide)
+	if len(tables) != 1 || len(classes) != 1 {
+		t.Fatalf("the guide shows %d tables and %d classes; want one of each", len(tables), len(classes))
+	}
+	db, err := fado.Open(filepath.Join(t.TempDir(), "guide.fado"), fado.Options{Outbox: fado.OutboxOptions{Manual: true}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { db.Close() })
+	ctx := context.Background()
+	if _, err := db.DefineTable(ctx, tables[0], setup); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.ImportRows(ctx, "Limits", []fado.Values{{"grade": "B", "limit": "10000.00"}}, person("tess", "treasury")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.DefineClass(ctx, classes[0], setup); err != nil {
+		t.Fatal(err)
+	}
+	ola, tomek := person("ola"), person("tomek", "managers")
+	file := func(id string) {
+		t.Helper()
+		if _, err := db.Create(ctx, "Purchase", fado.Values{"number": id, "amount": "9000.00", "grade": "B"}, ola, fado.WithID(id)); err != nil {
+			t.Fatal(err)
+		}
+		if d, err := db.Transition(ctx, "Purchase", id, "file", nil, ola); err != nil || d.Version != 2 {
+			t.Fatalf("Ola files %s: %v, %v", id, d, err)
+		}
+	}
+	file("P-7")
+	read := func(what string, version int64, amount string) {
+		t.Helper()
+		d, err := db.Get(ctx, "Purchase", "P-7", tomek)
+		if err != nil || d.Version != version || d.Values["amount"] != amount || d.Values["limit"] != "10000.00" {
+			t.Fatalf("%s: %v, %v; the guide says version %d, %s against 10000.00", what, d, err, version, amount)
+		}
+	}
+	read("Tomek reads P-7", 2, "9000.00")
+	if d, err := db.Set(ctx, "Purchase", "P-7", fado.Values{"amount": "9900.00"}, ola); err != nil || d.Version != 3 {
+		t.Fatalf("Ola corrects the amount: %v, %v", d, err)
+	}
+
+	// The command the guide shows, and the answer it shows.
+	data, err := os.ReadFile(filepath.Join("..", "docs", "manual", "guides", guide))
+	if err != nil {
+		t.Fatal(err)
+	}
+	blocks := regexp.MustCompile("(?s)```jsonc?\r?\n(.*?)\r?\n```").FindAllSubmatch(data, -1)
+	var command, refusal, batch []byte
+	for i, m := range blocks {
+		switch {
+		case bytes.Contains(m[1], []byte(`"version": 2`)) && i+1 < len(blocks):
+			command, refusal = m[1], blocks[i+1][1]
+		case bytes.Contains(m[1], []byte(`"versions"`)):
+			batch = m[1]
+		}
+	}
+	if command == nil || batch == nil {
+		t.Fatal("the guide shows no command with a version, or no batch with versions")
+	}
+	tomekIs := fado.Principal{ID: "tomek", Kind: fado.ActorPerson, Groups: []string{"managers"}}
+	got, err := db.Exec(ctx, tomekIs, "transition", command)
+	want(t, "Tomek approves, and says he read version 2", err, "stale_version")
+	var shown, answered any
+	if json.Unmarshal(refusal, &shown) != nil || json.Unmarshal(got, &answered) != nil || !reflect.DeepEqual(shown, answered) {
+		t.Errorf("the refusal is\n%s\nand the guide shows\n%s", got, refusal)
+	}
+	read("Tomek reads P-7 again", 3, "9900.00")
+	approve := func() (*fado.Document, error) {
+		return db.Transition(ctx, "Purchase", "P-7", "approve", nil, tomek, fado.Saw(3), fado.Key("approve-P-7"))
+	}
+	if d, err := approve(); err != nil || d.Version != 4 || d.State != "approved" {
+		t.Fatalf("Tomek approves, and says he read version 3: %v, %v", d, err)
+	}
+	if d, err := approve(); err != nil || d.Version != 4 {
+		t.Fatalf("the same approval sent again with its key: %v, %v", d, err)
+	}
+	events, err := db.Events(ctx, "Purchase", "P-7", tomek)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var log []string
+	for _, e := range events {
+		log = append(log, strings.TrimSpace(e.Kind+" "+e.Name)+" saw "+strconv.FormatInt(e.SeenVersion, 10))
+	}
+	if got := strings.Join(log, "; "); got != "created saw 0; transition file saw 0; set saw 0; transition approve saw 3" {
+		t.Errorf("the log: %s", got)
+	}
+	// A caller who may not read the document learns nothing from the
+	// version: the guide's class lets everyone read, so the proof of that
+	// line is the store's own test.
+
+	// Many documents at once: the batch the guide shows.
+	for _, id := range []string{"P-1", "P-2", "P-3"} {
+		file(id)
+	}
+	if _, err := db.Set(ctx, "Purchase", "P-2", fado.Values{"amount": "9100.00"}, ola); err != nil {
+		t.Fatal(err)
+	}
+	said := func(out []byte) string {
+		var answer struct {
+			Outcomes []struct {
+				ID       string `json:"id"`
+				Document *struct {
+					State string `json:"state"`
+				} `json:"document"`
+				Refusal *struct {
+					Code string `json:"code"`
+				} `json:"refusal"`
+			} `json:"outcomes"`
+		}
+		if err := json.Unmarshal(out, &answer); err != nil {
+			t.Fatal(err)
+		}
+		var parts []string
+		for _, o := range answer.Outcomes {
+			if o.Refusal != nil {
+				parts = append(parts, o.ID+" refused "+o.Refusal.Code)
+			} else {
+				parts = append(parts, o.ID+" "+o.Document.State)
+			}
+		}
+		return strings.Join(parts, "; ")
+	}
+	const outcome = "P-1 approved; P-2 refused stale_version; P-3 approved"
+	for _, name := range []string{"preview_many", "transition_many"} {
+		out, err := db.Exec(ctx, tomekIs, name, batch)
+		if err != nil || said(out) != outcome {
+			t.Errorf("%s: %s, %v; the guide says %s", name, said(out), err, outcome)
+		}
+	}
+	// In Go the same batch names 0 for none.
+	file("P-4")
+	moved, err := db.TransitionMany(ctx, "Purchase", "approve", []string{"P-2", "P-4"}, nil, tomek, fado.SawEach([]int64{3, 0}))
+	if err != nil || !moved[0].Moved() || !moved[1].Moved() {
+		t.Errorf("the batch in Go: %v, %v", moved, err)
+	}
+}

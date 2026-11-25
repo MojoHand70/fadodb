@@ -353,10 +353,27 @@ func says(o Options, tools map[string]bool) string {
 	if keyed := keyed(tools); len(keyed) > 0 {
 		b.WriteString(" The tools that commit a document take a key, and one sent again with the same key makes no second commit: " + strings.Join(keyed, ", ") + ". No other tool takes one.")
 	}
+	if changes := versioned(tools); len(changes) > 0 {
+		b.WriteString(" Decide on what you read: a document you read has a version, and a change to it says which version you read, as version (" + strings.Join(changes, ", ") +
+			"). When the document has moved on since, the command is refused with stale_version and nothing is written: read the document again and decide on what it holds now.")
+	}
 	if o.ReadOnly {
 		b.WriteString(" This door offers only the tools that read.")
 	}
 	return b.String()
+}
+
+// versioned lists the tools offered that change one stored document and
+// take the version its sender read (ADR-0078, item 2), in the order of
+// the table.
+func versioned(tools map[string]bool) []string {
+	var names []string
+	for _, c := range command.Commands() {
+		if tools[c.Name] && c.TakesVersion() && c.Mark != command.Reads {
+			names = append(names, c.Name)
+		}
+	}
+	return names
 }
 
 // keyed lists the tools offered that take the idempotency key, in the

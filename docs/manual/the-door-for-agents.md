@@ -181,7 +181,12 @@ the database refuses is answered with the refusal under error: a code,
 a message, the place in the command and a hint. The tools that commit
 a document take a key, and one sent again with the same key makes no
 second commit: create, set, reset, refresh, transition,
-transition_many, delete. No other tool takes one.
+transition_many, delete. No other tool takes one. Decide on what you
+read: a document you read has a version, and a change to it says which
+version you read, as version (set, reset, refresh, transition, delete).
+When the document has moved on since, the command is refused with
+stale_version and nothing is written: read the document again and
+decide on what it holds now.
 ```
 
 - **Look before you build** is on the sign because the door is the one
@@ -225,7 +230,8 @@ as the door lists it:
       "key": {"type": "string", "description": "the idempotency key: the same command sent again with the same key makes no second commit and is answered as the first was"},
       "business_date": {"type": "string", "description": "the business day of the commit, as \"2026-11-13\"; the server's day when left out"},
       "reason": {"type": "string", "description": "why a content administrator acts or reads past a rule; a change keeps it on its event, a read in the log of reads"},
-      "for": {"type": "string", "description": "the id of whoever the caller acts for; let through only while a substitution says so"}
+      "for": {"type": "string", "description": "the id of whoever the caller acts for; let through only while a substitution says so"},
+      "version": {"type": "integer", "description": "the version of the document its sender read before deciding; when the document is at another, the command is refused with stale_version and nothing is written"}
     }
   },
   "annotations": {"readOnlyHint": false, "destructiveHint": false, "openWorldHint": false}
@@ -438,7 +444,7 @@ not see them:
   cannot move an invoice.
 - `--tools get,query,transitions,transition` offers these tools and no
   other. A short list also costs an agent less to read: the whole list
-  is about 74,000 characters.
+  is about 79,000 characters.
 
 An agent that calls a tool the door does not offer is told why:
 

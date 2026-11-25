@@ -346,9 +346,10 @@ func TestTheChapterOnContainers(t *testing.T) {
 		if got := strings.Join(holds, " "); got != "etc/ssl/certs/ca-certificates.crt fadodb" {
 			t.Errorf("the image holds %s", got)
 		}
-		// "about 15 MB, nearly all of it the tool".
-		if total < 13<<20 || total > 16<<20 {
-			t.Errorf("the files of the image are %d bytes, and the chapter says about 15 MB", total)
+		// "about 17 MB, nearly all of it the tool": the tool has its own
+		// budget of 20 MiB, which the size gate holds (ADR-0072).
+		if total < 15<<20 || total > 19<<20 {
+			t.Errorf("the files of the image are %d bytes, and the chapter says about 17 MB", total)
 		}
 	})
 

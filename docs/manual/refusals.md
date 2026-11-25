@@ -47,6 +47,7 @@ What a call is answered with when the engine does not carry it out: a create, a 
 | `unknown_blob` | A File names a hash the blob store does not hold, or a size that differs from the stored one (ADR-0033). |
 | `blob_too_large` | A file exceeds the database's blob limit. |
 | `terminal` | The document is in a terminal state and cannot change (ADR-0039). |
+| `stale_version` | The command said which version of the document its sender read, with the member version (in Go, Saw), and the document is at another one (ADR-0078, item 2). Nothing was written; the message names the version the document is at. Read the document again and decide on what it holds now. |
 | `stateless` | Create or CreateMany on a class without states, a stateless application that stores no documents (ADR-0040). |
 | `unknown_transition` | The class has no named transition of that name (ADR-0040). |
 | `wrong_state` | The transition exists and does not leave the document's state. |

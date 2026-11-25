@@ -62,7 +62,7 @@ func Status(code string) int {
 		store.CodeUnknownClient, store.CodeUnknownGrant, store.CodeUnknownApp, store.CodeUnknownInvitation, store.CodeUnknownPasskey:
 		return http.StatusNotFound
 	case store.CodeKeyReused, store.CodeDuplicate, store.CodeWrongState,
-		store.CodeTerminal, store.CodeGuardFalse:
+		store.CodeTerminal, store.CodeGuardFalse, store.CodeStaleVersion:
 		return http.StatusConflict
 	case CodeTooLarge, store.CodeBlobTooLarge:
 		return http.StatusRequestEntityTooLarge

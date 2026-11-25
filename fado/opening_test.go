@@ -323,7 +323,15 @@ func TestOpeningADatabase(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if _, err := raw.Exec("UPDATE schema_version SET version = version + ?", by); err != nil {
+		// A newer engine's file has a schema one above this engine's. An
+		// earlier one's has schema 12, the one before v0.7.0: a database
+		// of v0.7.0 or later, schema 13 and up, is brought forward when
+		// it is opened and is not refused (ADR-0078).
+		set := "UPDATE schema_version SET version = version + 1"
+		if by < 0 {
+			set = "UPDATE schema_version SET version = 12"
+		}
+		if _, err := raw.Exec(set); err != nil {
 			t.Fatal(err)
 		}
 		raw.Close()
@@ -361,8 +369,8 @@ func TestOpeningADatabase(t *testing.T) {
 			defer held.Close()
 			return opened("alone.fado", fado.Options{})
 		}()},
-		"opens a file that a newer engine made":    {newer(1)},
-		"opens a file that an earlier engine made": {newer(-2)},
+		"opens a file that a newer engine made":          {newer(1)},
+		"opens a file that an engine before v0.7.0 made": {newer(-1)},
 	}
 	listedCases := map[string]bool{}
 	for _, row := range rows(marked(t, page, "what is refused")) {

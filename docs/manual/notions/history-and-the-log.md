@@ -73,6 +73,7 @@ refusal writes nothing**.
 | `from_state`, `to_state` | for a move, the state left and the state entered; for a create, the first state |
 | `actor_id`, `actor_kind`, `actor_for` | who did it, whether that was a person, an agent or a service, and for whom they acted |
 | `before_version`, `after_version` | the version of the document before the event and after it |
+| `seen_version` | the version the sender of the command said it had read, when it named one; see [Act only on the version you read](../guides/act-on-what-you-read.md) |
 | `ts` | when, in seconds since 1970, UTC |
 | `business_date` | the business day the event belongs to |
 | `command_key` | the key the call carried, when it carried one |

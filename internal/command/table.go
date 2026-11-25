@@ -45,6 +45,9 @@ const (
 	// Moment is a day, a day and a time in UTC, or seconds since the
 	// epoch.
 	Moment
+	// Versions is a list of versions of documents, each a whole number
+	// of 1 or more, or null where none is named.
+	Versions
 )
 
 // String names the kind as the descriptions of the commands write it.
@@ -70,6 +73,8 @@ func (k Kind) String() string {
 		return "list of definitions"
 	case Moment:
 		return "moment"
+	case Versions:
+		return "list of whole numbers"
 	}
 	return "?"
 }
@@ -81,8 +86,8 @@ type Field struct {
 	Required bool
 	// Does says what the member is, in a sentence.
 	Does string
-	// Option says the member is one of the five that mean the same in
-	// every command that takes them (ADR-0055, item 3).
+	// Option says the member is one of the six that mean the same in
+	// every command that takes them (ADR-0055, item 3; ADR-0078, item 2).
 	Option bool
 	// Refused says the command knows the member only so that the engine
 	// can refuse it in its own words: at on a command that writes, which
@@ -128,11 +133,11 @@ type Command struct {
 	Users bool
 
 	run func(*call) error
-	// takes says which of the five options the command takes.
+	// takes says which of the six options the command takes.
 	takes options
 }
 
-// options says which of the five options a command takes: the ones its
+// options says which of the six options a command takes: the ones its
 // call of the Go API acts on, and no other, so that a member that would
 // change nothing is refused and not passed over.
 type options int
@@ -151,12 +156,19 @@ const (
 	// refusesFor: the stream of changes is heard as oneself, which the
 	// engine says in its own words to a caller that names somebody.
 	refusesFor
+	// takesVersion: the command changes one stored document, or previews
+	// such a change, and may say which version of it its sender read
+	// (ADR-0078, item 2).
+	takesVersion
 
 	// asReader is a command that reads documents or rows. A content
 	// administrator reads past a rule with a reason (ADR-0067).
 	asReader = takesAt | takesReason | takesFor
 	// asCommitter is a command that commits a document.
 	asCommitter = takesKey | takesBusinessDate | takesReason | takesFor | refusesAt
+	// asChanger is a command that commits a change to one stored
+	// document, whose sender may have read it first.
+	asChanger = asCommitter | takesVersion
 	// asBatch is a batch of commits that takes no key.
 	asBatch = takesBusinessDate | takesReason | takesFor | refusesAt | refusesKey
 	// asPreviewer is a preview of a commit.
@@ -175,14 +187,23 @@ const (
 // 3). It is the commands that commit a document, and no other.
 func (c *Command) TakesKey() bool { return c.takes&takesKey != 0 }
 
-// The five members that mean the same in every command that takes them.
+// TakesVersion says the command takes the version of the document its
+// sender read (ADR-0078, item 2): the commands that change one stored
+// document, and the previews of them.
+func (c *Command) TakesVersion() bool { return c.takes&takesVersion != 0 }
+
+// The six members that mean the same in every command that takes them.
 var (
 	optionKey          = Field{Name: "key", Kind: Text, Option: true, Does: "the idempotency key: the same command sent again with the same key makes no second commit and is answered as the first was"}
 	optionBusinessDate = Field{Name: "business_date", Kind: Text, Option: true, Does: `the business day of the commit, as "2026-11-13"; the server's day when left out`}
 	optionReason       = Field{Name: "reason", Kind: Text, Option: true, Does: "why a content administrator acts or reads past a rule; a change keeps it on its event, a read in the log of reads"}
 	optionAt           = Field{Name: "at", Kind: Moment, Option: true, Does: `the moment the command reads at: "2026-11-13", "2026-11-13 09:30:00" in UTC, or seconds since the epoch; now when left out`}
 	optionFor          = Field{Name: "for", Kind: Text, Option: true, Does: "the id of whoever the caller acts for; let through only while a substitution says so"}
+	optionVersion      = Field{Name: "version", Kind: Integer, Option: true, Does: "the version of the document its sender read before deciding; when the document is at another, the command is refused with stale_version and nothing is written"}
 )
+
+// theVersions says what versions is, in the two commands of a batch.
+const theVersions = "the version of each document its sender read, in the order of ids, null where none is named; a document at another version is refused with stale_version, and the others move"
 
 func req(name string, kind Kind, does string) Field {
 	return Field{Name: name, Kind: kind, Required: true, Does: does}
@@ -235,23 +256,23 @@ var commands = []*Command{
 		Answer: answer("document", "the document"), takes: asReader, run: runGet},
 	{Group: Documents, Name: "set", Mark: Writes, Call: "Set", Does: "Assigns values to a document and recalculates what depends on them.",
 		Fields: []Field{req("class", Text, theClass), req("id", Text, theID), opt("values", Object, theValues)},
-		Answer: answer("document", theDocument), takes: asCommitter, run: runSet},
+		Answer: answer("document", theDocument), takes: asChanger, run: runSet},
 	{Group: Documents, Name: "reset", Mark: Writes, Call: "Reset", Does: "Puts input variables of a document back to their defaults.",
 		Fields: []Field{req("class", Text, theClass), req("id", Text, theID), opt("variables", Texts, "the variables to reset")},
-		Answer: answer("document", theDocument), takes: asCommitter, run: runReset},
+		Answer: answer("document", theDocument), takes: asChanger, run: runReset},
 	{Group: Documents, Name: "refresh", Mark: Writes, Call: "Refresh", Does: "Recomputes triggered variables of a document, and lets it move if a guard on time now holds.",
 		Fields: []Field{req("class", Text, theClass), req("id", Text, theID), opt("variables", Texts, "the variables to recompute; every one that lists refresh when left out")},
-		Answer: answer("document", theDocument), takes: asCommitter, run: runRefresh},
+		Answer: answer("document", theDocument), takes: asChanger, run: runRefresh},
 	{Group: Documents, Name: "transition", Mark: Writes, Call: "Transition", Does: "Moves a document along a named transition of its class.",
 		Fields: []Field{req("class", Text, theClass), req("id", Text, theID), req("transition", Text, "the name of the transition"),
 			opt("values", Object, "values to assign in the same commit, by variable")},
-		Answer: answer("document", theDocument), takes: asCommitter, run: runTransition},
+		Answer: answer("document", theDocument), takes: asChanger, run: runTransition},
 	{Group: Documents, Name: "transition_many", Mark: Writes, Call: "TransitionMany", Does: "Moves several documents of one class along one transition; a document that cannot move is reported and the others move.",
 		Fields: []Field{req("class", Text, theClass), req("transition", Text, "the name of the transition"), req("ids", Texts, "the ids of the documents, in order"),
-			opt("values", Object, "values to assign to each document in its commit, by variable")},
+			opt("values", Object, "values to assign to each document in its commit, by variable"), opt("versions", Versions, theVersions)},
 		Answer: answer("outcomes", "one for each id, in the order given: the id, and the document after its move or the refusal"), takes: asCommitter, run: runTransitionMany},
 	{Group: Documents, Name: "delete", Mark: Destroys, Call: "Delete", Does: "Removes a document; its history and its events stay.",
-		Fields: []Field{req("class", Text, theClass), req("id", Text, theID)}, takes: asCommitter, run: runDelete},
+		Fields: []Field{req("class", Text, theClass), req("id", Text, theID)}, takes: asChanger, run: runDelete},
 	{Group: Documents, Name: "transitions", Mark: Reads, Call: "Transitions", Does: "Lists the transitions leaving a document's state, each with whether the caller may take it now.",
 		Fields: []Field{req("class", Text, theClass), req("id", Text, theID)},
 		Answer: answer("transitions", "the transitions, in the order of the class"), takes: asReader, run: runTransitions},
@@ -298,13 +319,13 @@ var commands = []*Command{
 	{Group: Documents, Name: "preview", Mark: Reads, Call: "Preview", Does: "Runs a create, a set or a transition without writing anything.",
 		Fields: []Field{req("class", Text, theClass), opt("id", Text, "the id of the document; left out, the preview is of a create"),
 			opt("values", Object, theValues), opt("transition", Text, "the name of a transition to take")},
-		Answer: answer("preview", thePreview), takes: asPreviewer, run: runPreview},
+		Answer: answer("preview", thePreview), takes: asPreviewer | takesVersion, run: runPreview},
 	{Group: Documents, Name: "preview_delete", Mark: Reads, Call: "PreviewDelete", Does: "Answers what a delete of a document would do, without deleting it.",
 		Fields: []Field{req("class", Text, theClass), req("id", Text, theID)},
-		Answer: answer("preview", thePreview), takes: asPreviewer, run: runPreviewDelete},
+		Answer: answer("preview", thePreview), takes: asPreviewer | takesVersion, run: runPreviewDelete},
 	{Group: Documents, Name: "preview_many", Mark: Reads, Call: "PreviewMany", Does: "Runs the batch transition_many would run, without writing anything.",
 		Fields: []Field{req("class", Text, theClass), req("transition", Text, "the name of the transition"), req("ids", Texts, "the ids of the documents, in order"),
-			opt("values", Object, "values to assign to each document in its commit, by variable")},
+			opt("values", Object, "values to assign to each document in its commit, by variable"), opt("versions", Versions, theVersions)},
 		Answer: answer("outcomes", "one for each id, in the order given: the id, and the document as it would be or the refusal"), takes: asPreviewer, run: runPreviewMany},
 	{Group: Documents, Name: "query", Mark: Reads, Call: "Query", Does: "Reads the documents of a class that match a filter.",
 		Fields: []Field{req("class", Text, theClass), opt("where", Text, "a formula over the variables of the class; every document when left out"),
@@ -645,6 +666,7 @@ func init() {
 			{takesReason, 0, optionReason},
 			{takesAt, refusesAt, optionAt},
 			{takesFor, refusesFor, optionFor},
+			{takesVersion, 0, optionVersion},
 		} {
 			switch {
 			case c.takes&o.takes != 0:

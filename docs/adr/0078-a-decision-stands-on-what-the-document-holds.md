@@ -434,7 +434,7 @@ Phase 8 builds the record first, in four steps, one pull request each.
 | Step | Item | State |
 |---|---|---|
 | 1 | the version a command saw (item 2) | built |
-| 2 | who may bring a value again (item 3) | not built |
+| 2 | who may bring a value again (item 3) | built |
 | 3 | `before:` a transition, and a guard that reads the document alone (item 4) | not built |
 | 4 | a list that is kept (item 5) | not built |
 
@@ -498,6 +498,33 @@ working alone on the owner's word of that day, and is his to strike.
     stood, which moved beside the two other flags. With eight bytes
     more a commit took 16 bytes more and the listing of transitions was
     1.9% slower, measured; with none, nothing moves.
+
+## Settled while building who may bring a value again
+
+Built on 2026-11-25. Each of these is settled by me while building,
+and is the owner's to strike.
+
+11. **A refresh that names none and may bring none says which.** With
+    one such variable the refusal is the one a refresh that named it
+    would get, with the variable. With several it names them all in
+    its message, "piotr may bring none of buy, sell again while the
+    document is in kept", and no single variable; the hint is the cell
+    of the first.
+12. **The words of the refusal are of bringing, not of setting**: "may
+    not bring limit again", and the hint says of the write right that
+    it "says who may bring its value again", so that a designer who
+    reads it knows which meaning of the cell refused.
+13. **A content administrator's override is at the place of the
+    cell**, `/rights/<state>/<variable>/write`, the place an edit past
+    the same cell would name (ADR-0052).
+14. **A refresh a rule queued for another document that its
+    principal may not bring ends as any refused action does**: the row
+    of the outbox dies with `forbidden` and is there to be read. The
+    designer gives the right to the people whose commands set the rule
+    off, or leaves the variable without a cell.
+15. **Nothing is said when a class is defined** about a `write` right
+    on a triggered variable that does not list `refresh`: the cell
+    then closes nothing, as it did before. Not planned.
 
 ## Consequences
 

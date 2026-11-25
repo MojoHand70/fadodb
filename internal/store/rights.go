@@ -244,6 +244,83 @@ func (s *Store) checkWrites(c *class, cmd *command, row *docRow, evalCtx *formul
 	return nil
 }
 
+// checkBrings asks, for each triggered variable a refresh would bring
+// again, the write right of the variable in the state the document is in
+// (ADR-0078, item 3). Nobody types a triggered variable, so its write
+// right says the one thing it can: who may bring its value again. It
+// answers the variables the refresh brings.
+//
+// A variable with no cell is open to whoever may read the document. A
+// refresh that names a variable its caller may not bring is refused with
+// forbidden, the variable and the cell, as an edit is. One that names
+// none leaves such a variable as it is and brings the others, and is
+// refused when the caller may bring none of the variables that list
+// refresh. A content administrator gets past a cell as past any right,
+// which needs a reason (ADR-0052). The update rule of the class is not
+// asked: bringing a value again is no edit. A refresh a rule queued for
+// another document is asked of the principal whose command queued it,
+// which is the principal of its command (ADR-0044, item 11); a rule's
+// refresh of its own document is the engine's write and never comes
+// here.
+func (s *Store) checkBrings(c *class, cmd *command, row *docRow, targets []*cvar, evalCtx *formula.Context) ([]*cvar, *Error) {
+	if c.rights == nil || cmd.engine || len(targets) == 0 {
+		return targets, nil
+	}
+	cells := c.cells(row.state)
+	named := len(cmd.variables) > 0
+	// The targets are the command's own list: it is narrowed in place.
+	kept := targets[:0]
+	var closed []string
+	var first *Error
+	for _, cv := range targets {
+		rule := cells[cv.idx].write
+		if rule == nil {
+			kept = append(kept, cv)
+			continue
+		}
+		held, err := s.wev.allowed(c, rule, row, evalCtx)
+		if held {
+			kept = append(kept, cv)
+			continue
+		}
+		if cmd.lifts() {
+			cmd.lift("/rights/" + row.state + "/" + cv.v.Name + "/write")
+			kept = append(kept, cv)
+			continue
+		}
+		e := forbiddenBring(cmd.o.principal, cv.v.Name, row.state, rule, err)
+		if named {
+			return nil, e
+		}
+		closed = append(closed, cv.v.Name)
+		if first == nil {
+			first = e
+		}
+	}
+	if len(kept) > 0 {
+		return kept, nil
+	}
+	// Every variable that lists refresh is closed to the caller.
+	if len(closed) > 1 {
+		first.Variable = ""
+		first.Message = who(cmd.o.principal) + " may bring none of " + strings.Join(closed, ", ") + " again while the document is in " + row.state
+	}
+	return nil, first
+}
+
+// forbiddenBring refuses a refresh of a variable whose write right does
+// not let the caller bring its value again.
+func forbiddenBring(p Principal, variable, state string, rule *model.RightRule, err error) *Error {
+	msg := fmt.Sprintf("%s may not bring %s again", who(p), variable)
+	if state != "" {
+		msg += " while the document is in " + state
+	}
+	if err != nil {
+		msg += ": the write right failed, " + guardFailure(err)
+	}
+	return hintf(CodeForbidden, variable, msg, "the write right of "+variable+", which says who may bring its value again, from the cell "+rule.Cell()+": "+ruleText(rule))
+}
+
 // givenFor returns the store's flags of the variables a command sets, one
 // per variable of the class, all false. The slice is reused under the
 // writer's lock.

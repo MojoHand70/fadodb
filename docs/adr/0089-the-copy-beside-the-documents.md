@@ -116,7 +116,7 @@ Two findings decide what follows.
    | anything inside a commit | the store, always (ADR-0020, item 4) |
    | how documents moved: which state follows which, how long they wait | the copy |
    | a count or a total that no index narrows: the command `count`, and the total or the first row that a `LOOKUP` or a figure over a list asks for when it is read | the copy |
-   | a page of a list that no index serves | the copy; not built |
+   | a page of a list that the store does not find in a moment: the copy says which documents, in which order, and the store hands them over | the copy |
    | groups with their totals among the columns of a `QUERY` | the copy; not built |
 
    No formula is written differently for it. The compiler sends each
@@ -240,9 +240,17 @@ Two findings decide what follows.
   and 1.5. A count by the state, which has an index, stays with the
   store, in 4 ms, and so does the sum of the 170,000 invoices in
   review that a figure over a list asks for, in 36 ms.
-- **Still the store's:** a page of a list, the command `query` and a
-  live list, which the second part of step 3 sends to the copy when no
-  index serves it.
+- **Step 3, its second part: the pages of lists, on 2026-11-25.** A
+  page of the command `query` or of a live list is found in the copy
+  when the store would read and sort the class for it, or has not
+  found it in five milliseconds; its documents are then read from the
+  store. Measured through the engine among 3,400,000 invoices, three
+  runs that agree: the fifty dearest invoices take a program without
+  the copy 318 ms and one with it 8; a live list of the fifty dearest
+  417 ms and 14; the fifty dearest of one owner, whom an index narrows
+  to a million invoices, 278 ms and 11. Fifty invoices over an amount,
+  as they come, and the newest fifty, which the store hands over at
+  once, stay with the store, in under a millisecond.
 
 ## Settled while building the copy and its feed
 
@@ -390,6 +398,37 @@ strike.
   carries a mark of what it holds, and a copy with another mark has
   its events read again from the first, once. Its versions and its
   documents stay.
+
+## Settled while building the pages of lists from the copy
+
+Each of these is settled by me while building, and is the owner's to
+strike.
+
+- **The store is given a moment first: five milliseconds.** A first
+  build sent every page that no index serves to the copy. Measured, a
+  page the store fills at once, the first fifty invoices over an
+  amount, took the store 0.3 ms and the copy 4; and a list that an
+  index narrows to a million invoices and then sorts stayed with the
+  store, at 296 ms. So the rule looks at what the store does and not
+  at how the question is written: the store finds the page in the
+  moment, or the copy is asked. Whichever finds it, the page is the
+  same.
+- **A page that needs the class read and sorted is the copy's at
+  once**: no index serves its condition, and the first thing it is
+  sorted by has no index. The store has no way to hand that over in a
+  moment, and the moment would be lost.
+- **The copy says which documents, and the store hands them over.**
+  The copy is asked for the ids of the page alone. The documents are
+  read from the store by those ids, with their lists and under the
+  question's own condition still, so a document changed since the
+  copy looked is never shown where it no longer belongs, and what the
+  reader may see of each document is decided by the code that decides
+  it for every read.
+- **A blank sorts where it sorts in the store**: before every value.
+  DuckDB's own way is the other, so the order is written out for it.
+- **The moment is spent only in a program that keeps the copy.** A
+  program without one asks the store as before, and a question no
+  index serves is still stopped after five seconds there.
 
 ## Settled while building the counts and totals from the copy
 

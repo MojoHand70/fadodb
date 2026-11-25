@@ -3,8 +3,12 @@ package store
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
+	"strings"
+	"time"
 
 	"github.com/MojoHand70/fadodb/internal/formula"
 	"github.com/MojoHand70/fadodb/internal/query"
@@ -144,4 +148,163 @@ func (s *Store) figureFromCopy(ctx context.Context, src *class, q *formula.Query
 	}
 	fd.answered()
 	return copyCell(rows[0][0]), copyCell(rows[0][1]), code, true
+}
+
+// copyStoreFirst is how long the store is given to find a page, in a
+// program that keeps the copy, before the copy is asked for it. A page
+// the store can hand over at once, the invoices of one order or the
+// first fifty that meet a condition most documents meet, is found
+// there in less; a page it would read much of the class for is not,
+// and is then found in the copy in milliseconds.
+var copyStoreFirst = 5 * time.Millisecond
+
+// pageWithCopy answers a page of a list in a program that keeps the
+// copy (ADR-0089, item 6). A page the store cannot hand over without
+// reading and sorting every document it takes, one whose condition no
+// index serves and whose order no index holds, is found in the copy at
+// once. Any other page is the store's for a moment, copyStoreFirst,
+// and the copy's when the moment has passed. Whichever finds the page,
+// the answer is the same, and its documents are read from the store.
+func (s *Store) pageWithCopy(ctx context.Context, c *class, o options, plan *query.Plan, f Filter, on *query.On, command string, probe bool) ([]*Document, bool, error) {
+	sorts := false
+	if !plan.Served && len(f.Order) > 0 {
+		by := strings.TrimSpace(strings.TrimLeft(strings.TrimSpace(f.Order[0]), "-+"))
+		sorts = !query.Indexed(c.cls, by)
+	}
+	if !sorts && copyStoreFirst > 0 {
+		moment, done := context.WithTimeout(ctx, copyStoreFirst)
+		found, more, err := s.find(moment, c, o, plan, command, probe)
+		passed := err != nil && moment.Err() != nil && ctx.Err() == nil
+		done()
+		if !passed {
+			if err != nil {
+				return nil, false, err
+			}
+			return s.shown(ctx, c, o, plan, command, found, more)
+		}
+	}
+	if page := s.pageFromCopy(ctx, c, o, plan, f, on, probe); page != nil {
+		return s.shown(ctx, c, o, plan, command, page.found, page.more)
+	}
+	// The copy did not answer: the store does, for as long as it takes.
+	return s.answer(ctx, c, o, plan, command, probe)
+}
+
+// copyPage is a page of a list that the copy found: its documents, read
+// from the store in the order the copy gave, and whether documents
+// follow the last.
+type copyPage struct {
+	found []*docRow
+	more  bool
+}
+
+// pageFromCopy finds a page of a list in the copy (ADR-0089, item 6):
+// which documents the question takes, in its order, for the caller.
+// That is the part that reads the class when no index serves the
+// question, and the copy is asked for the ids alone. The documents
+// themselves are then read from the store by their ids, as many as the
+// page has, and still under the question's own condition, so that a
+// document changed since the copy looked is never shown where it no
+// longer belongs. It answers nil when the store has to answer the whole
+// question: CopyState keeps why.
+func (s *Store) pageFromCopy(ctx context.Context, c *class, o options, plan *query.Plan, f Filter, on *query.On, probe bool) *copyPage {
+	d := formula.NewDuckDB().WithLimits(s.limits)
+	asked, err := query.CompileFor(d, f, on, c.cls, s.sources(), caller(o, c))
+	if err != nil {
+		// The store says what is wrong with the question.
+		return nil
+	}
+	limit := plan.Limit
+	if probe {
+		limit++
+	}
+	text := `SELECT "id" FROM ` + quote(c.cls.Name)
+	if asked.Where != "" {
+		text += " WHERE " + asked.Where
+	}
+	text += " ORDER BY " + asked.Order + " LIMIT " + fmt.Sprint(limit) + " OFFSET " + fmt.Sprint(plan.Offset)
+	evalCtx := contextOf(o.principal, s.clock(o))
+	fd, ready := s.copyReady(ctx)
+	if !ready {
+		return nil
+	}
+	_, rows, err := fd.copy.Ask(ctx, text, append(asked.Args[:len(asked.Args):len(asked.Args)], d.ContextArgs(&evalCtx)...)...)
+	if err != nil {
+		fd.notAnswered(err)
+		return nil
+	}
+	page := &copyPage{}
+	ids := make([]string, 0, len(rows))
+	for _, row := range rows {
+		var id string
+		switch x := row[0].(type) {
+		case string:
+			id = x
+		case []byte:
+			id = string(x)
+		default:
+			fd.notAnswered(fmt.Errorf("the copy answered an id with %T", row[0]))
+			return nil
+		}
+		ids = append(ids, id)
+	}
+	if probe && len(ids) > plan.Limit {
+		ids, page.more = ids[:plan.Limit], true
+	}
+	if len(ids) == 0 {
+		fd.answered()
+		return page
+	}
+	// The documents, from the store.
+	listed, err := json.Marshal(ids)
+	if err != nil {
+		fd.notAnswered(err)
+		return nil
+	}
+	cols := append(quoteAll(systemColumns), quoteAll(columnNames(c.cls.Columns))...)
+	cols = append(cols, quoteAll(c.atNames())...)
+	// The ids lead: each is looked up by the key of the class, and the
+	// question's condition is asked of the document found. The join is
+	// written so that the store keeps to that order, whatever index the
+	// condition could be answered through: a list an index narrows to a
+	// million documents is not read again to hand over fifty.
+	read := "SELECT " + strings.Join(cols, ", ") + ` FROM (SELECT "value" AS "fado_page_id" FROM json_each(:page_ids)) AS p CROSS JOIN ` +
+		quote(c.cls.Name) + ` ON ` + quote(c.cls.Name) + `."id" = p."fado_page_id"`
+	if plan.Where != "" {
+		read += " WHERE " + plan.Where
+	}
+	args := append(plan.Args[:len(plan.Args):len(plan.Args)], s.contextArgs(o)...)
+	args = append(args, sql.Named("page_ids", string(listed)))
+	st, err := s.filters.acquire(ctx, s.db, read)
+	if err != nil {
+		fd.notAnswered(err)
+		return nil
+	}
+	defer s.filters.release(st)
+	docs, err := st.stmt.QueryContext(ctx, args...)
+	if err != nil {
+		fd.notAnswered(err)
+		return nil
+	}
+	defer docs.Close()
+	for docs.Next() {
+		row, err := c.scanRow(docs, false)
+		if err != nil {
+			fd.notAnswered(err)
+			return nil
+		}
+		page.found = append(page.found, row)
+	}
+	if err := docs.Err(); err != nil {
+		fd.notAnswered(err)
+		return nil
+	}
+	// In the order the copy gave.
+	place := make(map[string]int, len(ids))
+	for i, id := range ids {
+		place[id] = i
+	}
+	sort.Slice(page.found, func(i, j int) bool { return place[page.found[i].id] < place[page.found[j].id] })
+	fd.answered()
+	return page
 }

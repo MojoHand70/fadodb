@@ -149,7 +149,7 @@ func (s *Store) moveMany(ctx context.Context, class, name string, ids []string, 
 				"give one version for each id, in the order of the ids, and none for a document whose version is not named")
 		}
 	}
-	if o.saw != 0 {
+	if o.version != 0 {
 		return nil, hintf(CodeBadValue, "", "a batch of moves takes the version of each document, not one for all", "give the versions with SawEach, as many as the ids and in their order")
 	}
 	if len(ids) == 0 {
@@ -198,7 +198,7 @@ func (s *Store) moveMany(ctx context.Context, class, name string, ids []string, 
 			cmd.o.key = o.key + manyKeySep + id
 		}
 		if saw != nil {
-			cmd.o.saw = saw[i]
+			cmd.o.version = saw[i]
 		}
 		res, err := s.run(ctx, cmd, now)
 		if err == nil && s.testMoved != nil {

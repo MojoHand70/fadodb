@@ -368,11 +368,10 @@ type options struct {
 	received bool
 	replace  bool
 	id       string
-	// saw is the version of the document the sender of a command read,
-	// 0 when it names none (ADR-0078, item 2). It stands where replace
-	// stood, which moved beside the other flags, so that the options
-	// are no larger for it.
-	saw     int64
+	// version is the version of the document the call names, 0 when it
+	// names none: the one OpenFile reads, given with AtVersion, or the
+	// one the sender of a command that changes the document read, given
+	// with Saw (ADR-0078, item 2). No call takes both meanings.
 	version int64
 	at      time.Time
 	// reason is why a content administrator acts past a rule (ADR-0052,
@@ -380,8 +379,10 @@ type options struct {
 	reason string
 	// sawEach is, for a batch of moves, the version of each document its
 	// sender read, in the order of the ids, 0 for one it names none of
-	// (ADR-0078, item 2). It is nil for every other call, and a pointer
-	// so that their options carry eight bytes for it and no more.
+	// (ADR-0078, item 2). It is nil for every other call. It is a
+	// pointer, and stands where the flag replace stood, which moved
+	// beside the two other flags: the options are made for every call,
+	// and are no larger for it.
 	sawEach *[]int64
 }
 
@@ -427,7 +428,7 @@ func Replace() Option { return func(o *options) { o.replace = true } }
 // command without it acts on the document as it is. A command sent again
 // with its key is answered as the first was and is not compared again.
 // A version is 1 or more; 0 names none.
-func Saw(version int64) Option { return func(o *options) { o.saw = version } }
+func Saw(version int64) Option { return func(o *options) { o.version = version } }
 
 // SawEach is Saw for TransitionMany and PreviewMany: the version of each
 // document its sender read, as many as the ids and in their order, 0 for

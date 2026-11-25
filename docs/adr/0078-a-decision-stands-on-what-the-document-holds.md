@@ -490,9 +490,14 @@ working alone on the owner's word of that day, and is his to strike.
    come from a folder (ADR-0073). The door for agents says it to every
    agent that connects, each tool describes the member, and the
    operator's skill teaches read, decide, send the version.
-10. **The options of a call are no larger for it.** The version stands
-    where a flag stood, which moved beside the two other flags; the
-    versions of a batch are held behind a pointer.
+10. **The options of a call are no larger for it**, which the gate
+    shows as bytes on every path: they are made for every call. The
+    version a command saw is held where the version of a file's
+    document is held for `OpenFile` (`AtVersion`), since no call takes
+    both; the versions of a batch stand behind a pointer where a flag
+    stood, which moved beside the two other flags. With eight bytes
+    more a commit took 16 bytes more and the listing of transitions was
+    1.9% slower, measured; with none, nothing moves.
 
 ## Consequences
 

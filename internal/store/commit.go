@@ -344,8 +344,8 @@ func (s *Store) run(ctx context.Context, cmd command, now time.Time) (*result, e
 	}
 
 	// A new document has no version anybody read (ADR-0078, item 2).
-	if cmd.op == opCreate && cmd.o.saw != 0 {
-		return nil, hintf(CodeNotAllowed, "", "a create makes a document, and names the version "+strconv.FormatInt(cmd.o.saw, 10)+" its sender saw", "leave the version out: it is for a command on a document that is stored")
+	if cmd.op == opCreate && cmd.o.version != 0 {
+		return nil, hintf(CodeNotAllowed, "", "a create makes a document, and names the version "+strconv.FormatInt(cmd.o.version, 10)+" its sender saw", "leave the version out: it is for a command on a document that is stored")
 	}
 
 	// The idempotency key (ADR-0026). The keys of the worker's own commits
@@ -452,8 +452,8 @@ func (s *Store) run(ctx context.Context, cmd command, now time.Time) (*result, e
 		// is asked of it or brought: a document that moved on is not acted
 		// on, and nothing is written. A migration moves many documents
 		// and saw no one of them.
-		if cmd.o.saw != 0 && cmd.o.saw != before.version && cmd.op != opMigrate {
-			return nil, staleVersion(c, before, cmd.o.saw)
+		if cmd.o.version != 0 && cmd.o.version != before.version && cmd.op != opMigrate {
+			return nil, staleVersion(c, before, cmd.o.version)
 		}
 		if cmd.op == opTransition {
 			var e *Error
@@ -518,7 +518,7 @@ func (s *Store) run(ctx context.Context, cmd command, now time.Time) (*result, e
 			s.answerWhole(c, beforeClass, before, res, &cmd, clock, "preview_delete")
 			return res, nil
 		}
-		if err := s.writeDelete(ctx, c, before, secs, eventID, actor, cmd.o.key, hash, day, cmd.o.saw != 0); err != nil {
+		if err := s.writeDelete(ctx, c, before, secs, eventID, actor, cmd.o.key, hash, day, cmd.o.version != 0); err != nil {
 			return nil, err
 		}
 		if len(s.emits) > 0 {
@@ -956,7 +956,7 @@ func (s *Store) run(ctx context.Context, cmd command, now time.Time) (*result, e
 	} else {
 		// The command's own event says which version its sender read; the
 		// events of its chain are the engine's, and say none.
-		ev.seen = cmd.o.saw != 0 && before != nil
+		ev.seen = cmd.o.version != 0 && before != nil
 		if err := s.write(ctx, c, before, after, kids, secs, eventID, actor, ev, cmd.o.key, hash, day); err != nil {
 			return nil, err
 		}

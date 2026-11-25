@@ -71,6 +71,13 @@ type Plan struct {
 	// an index would be needed on, and "" when it compares none.
 	Served bool
 	Lacks  string
+	// Narrowed says an index narrows the question to the documents it
+	// names: the caller's condition, or the read rule, compares an
+	// indexed column. A count or a total that no index narrows reads
+	// every document of the class to be worked out, and is the
+	// analytical engine's to answer when the program keeps a copy
+	// (ADR-0089, item 6).
+	Narrowed bool
 }
 
 // Fit is one comparison of a question that an index of the class
@@ -475,10 +482,11 @@ func CompileFor(d formula.Dialect, f Filter, on *On, cls *model.Class, sources f
 	// column one would be needed on when none does. A question with no
 	// condition and no order of its own is read in the order of the
 	// ids, a page at a time, which the key of the table serves.
-	plan.Served = led || node == nil && len(f.Order) == 0
+	plan.Narrowed = led
 	for i := range rule.terms {
-		plan.Served = plan.Served || rule.terms[i].indexed
+		plan.Narrowed = plan.Narrowed || rule.terms[i].indexed
 	}
+	plan.Served = plan.Narrowed || node == nil && len(f.Order) == 0
 	if !plan.Served && len(own.terms) > 0 {
 		plan.Lacks = own.terms[0].col
 	}
@@ -995,6 +1003,30 @@ func noLive(cls *model.Class, prog *formula.Program, element string) *Error {
 	return nil
 }
 
+// indexedColumn says a column of the class has an index: one the class
+// keeps by itself, or one a question of another class asks for
+// (ADR-0075, item 2).
+func indexedColumn(cls *model.Class, index bool, path, variable string) bool {
+	return index || path == variable && cls.Asked(variable)
+}
+
+// Indexed says what a question compares, a variable of the class or a
+// system column, by its name in any case, has an index: the id, the
+// state and the two moments of every class, and the columns scopeOf
+// says so of.
+func Indexed(cls *model.Class, name string) bool {
+	switch strings.ToLower(name) {
+	case "id", "state", "created_at", "updated_at":
+		return true
+	}
+	for i := range cls.Columns {
+		if c := &cls.Columns[i]; strings.EqualFold(c.Path, name) {
+			return indexedColumn(cls, c.Index, c.Path, c.Variable)
+		}
+	}
+	return false
+}
+
 // scopeOf is what the formulas of a filter over a class bind against: the
 // system columns and the class's variables, and the stored column of
 // each name a formula may compare.
@@ -1019,7 +1051,7 @@ func scopeOf(cls *model.Class) (*formula.Scope, map[string]column, error) {
 		}
 		// An index the class keeps by itself, or one a question of
 		// another class asks for (ADR-0075, item 2).
-		cols[strings.ToUpper(c.Path)] = column{name: c.Name, typ: c.Type, indexed: c.Index || c.Path == c.Variable && cls.Asked(c.Variable)}
+		cols[strings.ToUpper(c.Path)] = column{name: c.Name, typ: c.Type, indexed: indexedColumn(cls, c.Index, c.Path, c.Variable)}
 	}
 	scope, err := formula.NewScope(vars...)
 	if err != nil {

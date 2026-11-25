@@ -10,6 +10,21 @@ Phase 8 started on 2026-11-25.
 
 ### Added
 
+- The counts and totals a class already asks are answered from the
+  copy in the analytical engine when no index narrows them (ADR-0089,
+  step 3, its first part). In a program that keeps the copy, the
+  command `count`, and the total or the first document that a `LOOKUP`
+  in a live variable or a figure over a list asks for, go to DuckDB by
+  themselves: nothing is written differently, and the answer is the
+  same for the same reader. Among 3,400,000 invoices, for a reader who
+  reads them all: the sum of every invoice in a `LOOKUP` takes 7 ms
+  where it took 460, a count over an amount 2 ms where it took 275,
+  and a count by a variable that has no index 1.5 ms where it took
+  240. A question that an index narrows, the invoices of one order,
+  stays with the store, as does a page of a list and everything inside
+  a commit. A question never waits for a copy that is being made or is
+  a long load behind: the store answers until the copy is near again,
+  and that holds for the flow too.
 - The flow of a class is answered from the copy in the analytical
   engine (ADR-0089, step 2). A program that keeps the copy answers the
   command `flow`, which a face draws its flowchart from, out of DuckDB:

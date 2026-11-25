@@ -180,14 +180,7 @@ func (s *Store) figure(ctx context.Context, q *formula.QuerySlot, args []formula
 			}
 		}
 	}
-	rows := func(p query.Principal) (string, []any, error) {
-		plan, err := query.CompileOn(Filter{Class: src.cls.Name}, &read, src.cls, s.sources(), p)
-		if err != nil {
-			return "", nil, err
-		}
-		return plan.Where, plan.Args, nil
-	}
-	where, given, err := rows(caller(o, src))
+	plan, err := query.CompileOn(Filter{Class: src.cls.Name}, &read, src.cls, s.sources(), caller(o, src))
 	if err != nil {
 		var qe *query.Error
 		if errors.As(err, &qe) && qe.Code == query.CodeForbidden && qe.Variable != "" {
@@ -195,68 +188,81 @@ func (s *Store) figure(ctx context.Context, q *formula.QuerySlot, args []formula
 		}
 		return formula.Value{}, filterErr(err)
 	}
-	d := formula.NewSQLite().WithLimits(s.limits)
-	params := formula.NewParams(d)
-	arg := func(i int, currency bool) string {
-		if currency {
-			return d.Param(fmt.Sprintf("fa%dc", i))
-		}
-		return d.Param(fmt.Sprintf("fa%d", i))
-	}
-	table := func(string) string {
-		if where == "" {
-			return quote(src.cls.Name)
-		}
-		return "(SELECT * FROM " + quote(src.cls.Name) + " WHERE " + where + ")"
-	}
-	// An aggregate is one statement over the matching rows, with its
-	// error beside it; a column is the first matching row's, in the
-	// order of the ids.
-	var text string
-	if q.Agg != "" {
-		text, err = formula.AggregateSQL(q, d, arg, table, params)
-	} else {
-		var e formula.SQLExpr
-		if e, err = formula.LookupSQL(q, d, arg, table, params); err == nil {
-			text = lookupSelect(e)
-		}
-	}
-	if err != nil {
-		return formula.Value{}, &formula.EvalError{Code: formula.ErrQueryFailed, Pos: -1, Msg: err.Error()}
-	}
-	// The values of the document the figure's own condition names as
-	// THIS.name, a money one with its currency beside it.
-	money := make([]bool, len(args))
-	for _, prog := range []*formula.Program{q.Value, q.Cond} {
-		if prog == nil {
-			continue
-		}
-		for _, sl := range prog.Slots {
-			if i := q.ArgIndex(sl.Name); i >= 0 && sl.Type.Kind == formula.KindMoney {
-				money[i] = true
-			}
-		}
-	}
-	named := append(given[:len(given):len(given)], s.liveArgs(o, of)...)
-	for i, a := range args {
-		named = append(named, sql.Named(fmt.Sprintf("fa%d", i), a.DriverValue()))
-		if money[i] {
-			var cur any
-			if a.Kind() == formula.KindMoney {
-				cur = a.Currency()
-			}
-			named = append(named, sql.Named(fmt.Sprintf("fa%dc", i), cur))
-		}
-	}
-	st, err := s.filters.acquire(ctx, s.db, text)
-	if err != nil {
-		return formula.Value{}, storageErr("prepare a figure over "+src.cls.Name, err)
-	}
-	defer s.filters.release(st)
+	where, given := plan.Where, plan.Args
+	// A figure that an index narrows to the documents it names, the
+	// invoices of one order, is the store's. One that no index narrows
+	// reads the class, and is the copy's to answer when the program
+	// keeps one (ADR-0089, item 6). The statement is the same in both,
+	// and so is its one row: the value, its currency and its error.
 	var v, c any
 	var code sql.NullString
-	if err := st.stmt.QueryRowContext(ctx, named...).Scan(&v, &c, &code); err != nil {
-		return formula.Value{}, storageErr("look in "+src.cls.Name, err)
+	answered := false
+	if s.feeder != nil && !plan.Narrowed && !(q.Key != nil && query.Indexed(src.cls, q.IndexColumn)) {
+		v, c, code, answered = s.figureFromCopy(ctx, src, q, args, &read, o, of)
+	}
+	if !answered {
+		d := formula.NewSQLite().WithLimits(s.limits)
+		params := formula.NewParams(d)
+		arg := func(i int, currency bool) string {
+			if currency {
+				return d.Param(fmt.Sprintf("fa%dc", i))
+			}
+			return d.Param(fmt.Sprintf("fa%d", i))
+		}
+		table := func(string) string {
+			if where == "" {
+				return quote(src.cls.Name)
+			}
+			return "(SELECT * FROM " + quote(src.cls.Name) + " WHERE " + where + ")"
+		}
+		// An aggregate is one statement over the matching rows, with its
+		// error beside it; a column is the first matching row's, in the
+		// order of the ids.
+		var text string
+		if q.Agg != "" {
+			text, err = formula.AggregateSQL(q, d, arg, table, params)
+		} else {
+			var e formula.SQLExpr
+			if e, err = formula.LookupSQL(q, d, arg, table, params); err == nil {
+				text = lookupSelect(e)
+			}
+		}
+		if err != nil {
+			return formula.Value{}, &formula.EvalError{Code: formula.ErrQueryFailed, Pos: -1, Msg: err.Error()}
+		}
+		// The values of the document the figure's own condition names as
+		// THIS.name, a money one with its currency beside it.
+		money := make([]bool, len(args))
+		for _, prog := range []*formula.Program{q.Value, q.Cond} {
+			if prog == nil {
+				continue
+			}
+			for _, sl := range prog.Slots {
+				if i := q.ArgIndex(sl.Name); i >= 0 && sl.Type.Kind == formula.KindMoney {
+					money[i] = true
+				}
+			}
+		}
+		named := append(given[:len(given):len(given)], s.liveArgs(o, of)...)
+		for i, a := range args {
+			named = append(named, sql.Named(fmt.Sprintf("fa%d", i), a.DriverValue()))
+			if money[i] {
+				var cur any
+				if a.Kind() == formula.KindMoney {
+					cur = a.Currency()
+				}
+				named = append(named, sql.Named(fmt.Sprintf("fa%dc", i), cur))
+			}
+		}
+		st, err := s.filters.acquire(ctx, s.db, text)
+		if err != nil {
+			return formula.Value{}, storageErr("prepare a figure over "+src.cls.Name, err)
+		}
+		err = st.stmt.QueryRowContext(ctx, named...).Scan(&v, &c, &code)
+		s.filters.release(st)
+		if err != nil {
+			return formula.Value{}, storageErr("look in "+src.cls.Name, err)
+		}
 	}
 	if code.Valid {
 		over := "the list " + q.List
@@ -269,6 +275,13 @@ func (s *Store) figure(ctx context.Context, q *formula.QuerySlot, args []formula
 	// how many of the documents only the override let them count
 	// (ADR-0067, item 3), as for a count.
 	if o.records(src) {
+		rows := func(p query.Principal) (string, []any, error) {
+			plan, err := query.CompileOn(Filter{Class: src.cls.Name}, &read, src.cls, s.sources(), p)
+			if err != nil {
+				return "", nil, err
+			}
+			return plan.Where, plan.Args, nil
+		}
 		text := "SELECT count(*) FROM " + quote(src.cls.Name)
 		if where != "" {
 			text += " WHERE " + where

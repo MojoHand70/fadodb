@@ -284,7 +284,7 @@ goes back to the designer as a redrafted class.
 | the event of a creation names the state the document was created in, under `to_state`, as the event of a transition names the one it entered; so the log alone tells every entry | shipped with Phase 4 |
 | the same facts for one document inside a formula, `FIRSTENTERED("approved")`, `ENTRIES("sent")`, `DAYSIN("review")` and the like | shipped with Phase 4: a formula of the class may ask them; a filter may not, so across documents read the `_states` view with `SQL` |
 | a picture as of a moment, `At(t)` on reads | shipped |
-| DuckDB projection and the mining views | the copy of the documents in DuckDB is kept and fed since after v0.7.0, by a program built with the module `analytics` (ADR-0089, step 1); nothing asks the copy yet and `fadodb` is built without it, so a server answers by the store as before; the mining views are designed, Phase 8 |
+| DuckDB projection and the mining views | the copy of the documents in DuckDB is kept and fed since after v0.7.0, by a program built with the module `analytics` (ADR-0089, step 1); `flow` is answered from the copy there (step 2), the same answer in under half a second among ten million visits where the store takes 19; `fadodb` is built without it, so a server answers by the store as before; the mining views are designed, Phase 8 |
 | a mining narrative over the views | designed, Phase 11 |
 
 ## Procedure, in outline

@@ -168,6 +168,8 @@ type feeder struct {
 	first, stop, done chan struct{}
 	fed, failed       int64
 	lastErr           error
+	answers           int64
+	askErr            error
 	lastErrMutex      sync.Mutex
 }
 
@@ -319,12 +321,16 @@ func (s *Store) stopCopy() {
 }
 
 // CopyState says how the copy of an open database stands: whether the
-// program gave an analytical engine, how many feeds wrote to the copy,
-// and why the last one failed, nil when it did not.
+// program gave an analytical engine and its copy is kept; how many
+// feeds wrote to the copy and why the last one failed, nil when it did
+// not; and how many questions the copy answered and why it last did
+// not answer one, which the store then answered.
 type CopyState struct {
-	Kept  bool
-	Feeds int64
-	Err   error
+	Kept    bool
+	Feeds   int64
+	Err     error
+	Answers int64
+	AskErr  error
 }
 
 // CopyState answers how the copy of the database stands.
@@ -335,7 +341,22 @@ func (s *Store) CopyState() CopyState {
 	}
 	f.lastErrMutex.Lock()
 	defer f.lastErrMutex.Unlock()
-	return CopyState{Kept: true, Feeds: f.fed, Err: f.lastErr}
+	return CopyState{Kept: true, Feeds: f.fed, Err: f.lastErr, Answers: f.answers, AskErr: f.askErr}
+}
+
+// answered counts a question the copy answered, and notAnswered keeps
+// why it did not answer one.
+func (f *feeder) answered() {
+	f.lastErrMutex.Lock()
+	f.answers++
+	f.askErr = nil
+	f.lastErrMutex.Unlock()
+}
+
+func (f *feeder) notAnswered(err error) {
+	f.lastErrMutex.Lock()
+	f.askErr = err
+	f.lastErrMutex.Unlock()
 }
 
 // FeedCopy brings the copy up to the database now, without waiting for

@@ -10,6 +10,15 @@ Phase 8 started on 2026-11-25.
 
 ### Added
 
+- The flow of a class is answered from the copy in the analytical
+  engine (ADR-0089, step 2). A program that keeps the copy answers the
+  command `flow`, which a face draws its flowchart from, out of DuckDB:
+  among 3,400,000 invoices that visited ten million states the answer
+  takes 0.33 seconds where the store takes 18.6, and it is the same
+  answer for the same reader. The copy is brought up to the database
+  before it answers, so a move made a moment ago is in the flow. When
+  the copy does not answer, the store does. A program without the
+  engine, and the program `fadodb`, answer as before.
 - The first step of the analytical engine: the copy and its feed
   (ADR-0089, proposed; ADR-0017). A program built with the module
   `analytics` gives the database DuckDB as its analytical engine, with
@@ -21,10 +30,9 @@ Phase 8 started on 2026-11-25.
   open or belongs to another database. A commit never waits for it.
   The new calls `CopyState` and `FeedCopy` say how the copy stands and
   feed it at once; the option `CopyEvery` sets how often it is fed
-  without being asked, five seconds when none is given. **Nothing asks
-  the copy yet**: the questions that are answered from it are the next
-  steps, and the program `fadodb` is built without the module, so a
-  server keeps no copy. The core stays pure Go.
+  without being asked, five seconds when none is given. The program
+  `fadodb` is built without the module, so a server keeps no copy. The
+  core stays pure Go.
 - A command says which version of a document its sender read
   (ADR-0078, item 2, the first step of the record). `set`, `reset`,
   `refresh`, `transition` and `delete` take the member `version`, in Go

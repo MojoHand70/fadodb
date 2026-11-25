@@ -213,11 +213,19 @@ type On struct {
 // CompileOn is Compile for a list read on a document; on is nil for a
 // filter that stands alone.
 func CompileOn(f Filter, on *On, cls *model.Class, sources formula.Sources, p Principal) (*Plan, error) {
+	return CompileFor(formula.NewSQLite(), f, on, cls, sources, p)
+}
+
+// CompileFor is CompileOn in the dialect of an engine: the store's, or
+// the analytical engine's, whose copy holds the documents of a class in
+// a table of the class's name with the columns of its view (ADR-0089,
+// item 7). The reader's rule and rights are written into the statement
+// for either.
+func CompileFor(d formula.Dialect, f Filter, on *On, cls *model.Class, sources formula.Sources, p Principal) (*Plan, error) {
 	scope, cols, err := scopeOf(cls)
 	if err != nil {
 		return nil, err
 	}
-	d := formula.NewSQLite()
 	plan := &Plan{Limit: f.Limit, Offset: f.Offset}
 	switch {
 	case plan.Limit == 0:

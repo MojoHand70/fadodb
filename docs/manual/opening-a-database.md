@@ -262,10 +262,17 @@ db, err := fado.Open("notes.fado", fado.Options{Analytics: analytics.Engine{}})
   opening of the database. A second opening works without a copy, and
   `CopyState` says so.
 
-**Nothing asks the copy yet.** This is the first step of the analytical
-engine: the copy is kept and fed. The questions that are answered from
-it come with the next steps of ADR-0089. The program `fadodb` is built
-without the module, so a server keeps no copy today.
+**What the copy answers today: the flow of a class**, the command
+[`flow`](commands.md#flow) and the call `Flow`. Before it answers, the
+copy is brought up to the database, so an answer is never older than
+its question. The answer is the store's, for the same reader: among
+3,400,000 invoices that visited ten million states, the store takes 19
+seconds and the copy under half a second. When the copy does not
+answer, the store does, and `CopyState` says why.
+
+Every other question is answered by the store, as in a program without
+the engine. The program `fadodb` is built without the module, so a
+server keeps no copy today.
 
 ## Closing
 

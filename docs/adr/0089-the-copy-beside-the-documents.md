@@ -190,9 +190,20 @@ Two findings decide what follows.
   it is lost, does not open, or names an event the database does not
   have. `CopyState` says how it stands, and `FeedCopy` feeds it at
   once.
-- **Nothing asks the copy yet.** Steps 2 and 3 do, and with them the
-  copy is brought up to date before an answer (item 5). The program
-  `fadodb` is built without the module, so a server keeps no copy.
+- **Step 2, how documents moved, on 2026-11-25.** The flow of a class,
+  the command `flow`, is answered from the copy when the program keeps
+  one: how many documents the reader may read are in each state, since
+  when the oldest, how many stays ended in the period and how long
+  they lasted, and the moves along each transition. The copy is
+  brought up to the database before it answers (item 5), and the
+  reader's rule is written into its statements by the compiler, in
+  DuckDB's dialect (item 7). Measured on the database of the Context,
+  3,400,000 invoices and ten million visits, three runs: 18.6 seconds
+  from the store, 0.33 from the copy, the same answer. The budget of
+  ADR-0017 is 2 seconds.
+- **Every other question is still the store's.** Step 3 sends the
+  totals of a `QUERY` to the copy. The program `fadodb` is built
+  without the module, so a server keeps no copy.
 
 ## Settled while building the copy and its feed
 
@@ -250,6 +261,35 @@ strike.
 - **Two calls for the program that opened the database, and no
   command**: `FeedCopy` and `CopyState`. A caller of a server never
   sees the copy.
+
+## Settled while building the flow from the copy
+
+Each of these is settled by me while building, and is the owner's to
+strike.
+
+- **No new command and no new view.** The record's step 2 spoke of
+  "the questions of how documents moved". The engine has that question
+  already: `flow`, which a face draws its flowchart from. It is the
+  first question the copy answers, and its answer does not change.
+- **When the copy does not answer, the store does.** The feed failed,
+  the copy cannot run the statement, or the program keeps none: the
+  caller gets the flow from the store, in the store's time, and
+  `CopyState` keeps why. A question is never refused for the copy.
+- **The copy is asked in DuckDB's dialect, by name.** The engine's own
+  statements are written for the copy by the compiler that writes them
+  for the store. DuckDB takes the values of a statement by name or by
+  place and not both, so the copy's statements name every value.
+- **The copy has the functions the compiler's statements call**: they
+  are made in it when it is opened.
+- **The whole copy takes longer to make than the Context says.** The
+  38 seconds and 0.38 GB there were of the versions and the documents
+  alone. With the events, the engine makes the copy of that database
+  in 84 seconds, in ten pieces, and it is 0.54 GB, a fourteenth of the
+  database. Found again at the next opening, it is checked in 21 ms.
+- **Not built:** the middle wait and the slow tenth, the paths
+  documents took and the documents made and finished in each period,
+  which the roadmap calls the mining views. Each is a question the
+  copy can answer when a face asks for it.
 
 ## Consequences
 

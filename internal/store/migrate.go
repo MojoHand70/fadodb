@@ -305,7 +305,7 @@ func alterDDL(old, c *class) []string {
 	}
 	for _, col := range c.cls.Columns {
 		if oc, had := oldCols[strings.ToUpper(col.Name)]; col.Index && (!had || !oc.Index || retyped[strings.ToUpper(col.Variable)]) {
-			ddl = append(ddl, "CREATE INDEX "+quote(c.table+"_"+col.Name)+" ON "+quote(c.table)+" ("+quote(col.Name)+")")
+			ddl = append(ddl, "CREATE INDEX "+quote(c.table+"_"+col.Name)+" ON "+quote(c.table)+" ("+quote(col.Name)+`, "created_at")`)
 		}
 	}
 	oldChildren := map[string]*child{}

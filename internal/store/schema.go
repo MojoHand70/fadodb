@@ -1,6 +1,7 @@
 package store
 
 import (
+	"context"
 	"strings"
 
 	"github.com/MojoHand70/fadodb/internal/formula"
@@ -185,15 +186,45 @@ func (c *class) tableDDL() []string {
 		"CREATE TABLE " + quote(c.history) + " (" + historySystemDDL + vars + whoDDL + `, PRIMARY KEY ("id", "version"))`,
 		"CREATE INDEX " + quote(c.history+"_valid") + " ON " + quote(c.history) + ` ("id", "valid_from")`,
 	}
-	for _, col := range cls.Columns {
-		if col.Index {
-			ddl = append(ddl, "CREATE INDEX "+quote(c.table+"_"+col.Name)+" ON "+quote(c.table)+" ("+quote(col.Name)+")")
-		}
+	for _, ix := range c.indexes() {
+		ddl = append(ddl, ix.ddl)
 	}
 	for _, ch := range c.children {
 		ddl = append(ddl, ch.tableDDL())
 	}
 	return ddl
+}
+
+// index is one index the engine keeps on the current table of a class.
+type index struct {
+	name, ddl string
+}
+
+// indexes are the indexes of a class (ADR-0075, item 2): on the state,
+// on the moment a document was made and on the moment it last changed,
+// which every class has for what every face asks of it, and on each
+// variable the class keeps one for. An index on the state or on a
+// variable goes on to the moment the document was made, so that the
+// newest of what it narrows to are read off its end and nothing is
+// sorted.
+func (c *class) indexes() []index {
+	made := func(col string) string {
+		return "CREATE INDEX " + quote(c.table+"_"+col) + " ON " + quote(c.table) + " (" + quote(col) + `, "created_at")`
+	}
+	alone := func(col string) string {
+		return "CREATE INDEX " + quote(c.table+"_"+col) + " ON " + quote(c.table) + " (" + quote(col) + ")"
+	}
+	out := []index{
+		{c.table + "_state", made("state")},
+		{c.table + "_created_at", alone("created_at")},
+		{c.table + "_updated_at", alone("updated_at")},
+	}
+	for _, col := range c.cls.Columns {
+		if col.Index {
+			out = append(out, index{c.table + "_" + col.Name, made(col.Name)})
+		}
+	}
+	return out
 }
 
 // tableDDL makes a child table.
@@ -306,4 +337,62 @@ func (c *class) viewNames() []string {
 		names = append(names, c.cls.Name+"_"+ch.v.Name, c.cls.Name+"_"+ch.v.Name+"_history")
 	}
 	return names
+}
+
+// keepIndexes brings the indexes of every class table to what its class
+// says (ADR-0075, item 2), when the database is opened: it makes the
+// ones that are missing, and makes again the ones an earlier engine laid
+// out another way. A database made by this engine has them all, and
+// nothing is written. One brought from an earlier schema gets them
+// here, and the opening takes the time its size asks for: seconds for
+// ten million documents, minutes for a hundred million (item 7).
+func (s *Store) keepIndexes(ctx context.Context) error {
+	rows, err := s.writer.QueryContext(ctx, "SELECT name, tbl_name, sql FROM sqlite_master WHERE type = 'index' AND sql IS NOT NULL")
+	if err != nil {
+		return storageErr("read the indexes", err)
+	}
+	have := map[string]map[string]string{}
+	for rows.Next() {
+		var name, table, ddl string
+		if err := rows.Scan(&name, &table, &ddl); err != nil {
+			rows.Close()
+			return storageErr("read the indexes", err)
+		}
+		if have[table] == nil {
+			have[table] = map[string]string{}
+		}
+		have[table][name] = ddl
+	}
+	if err := rows.Close(); err != nil {
+		return storageErr("read the indexes", err)
+	}
+	var ddl []string
+	for _, c := range s.classes {
+		for _, ix := range c.indexes() {
+			switch was, had := have[c.table][ix.name]; {
+			case !had:
+				ddl = append(ddl, ix.ddl)
+			case was != ix.ddl:
+				ddl = append(ddl, "DROP INDEX "+quote(ix.name), ix.ddl)
+			}
+		}
+	}
+	if len(ddl) == 0 {
+		return nil
+	}
+	if _, err := s.writer.ExecContext(ctx, "BEGIN IMMEDIATE"); err != nil {
+		return storageErr("begin making the indexes", err)
+	}
+	for _, stmt := range ddl {
+		if _, err := s.writer.ExecContext(ctx, stmt); err != nil {
+			s.writer.ExecContext(ctx, "ROLLBACK")
+			return storageErr("make an index of a class", err)
+		}
+	}
+	// Nothing of it is an event: no stream of changes is told.
+	if err := s.endQuietly(ctx); err != nil {
+		s.writer.ExecContext(ctx, "ROLLBACK")
+		return storageErr("keep the indexes", err)
+	}
+	return nil
 }

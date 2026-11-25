@@ -203,7 +203,8 @@ func TestDefineClass(t *testing.T) {
 		}
 	}
 	rows.Close()
-	want := "index:doc_Invoice_history_valid table:doc_Invoice table:doc_Invoice__lines table:doc_Invoice__tags table:doc_Invoice_history " +
+	want := "index:doc_Invoice_created_at index:doc_Invoice_customer index:doc_Invoice_history_valid index:doc_Invoice_state index:doc_Invoice_updated_at " +
+		"table:doc_Invoice table:doc_Invoice__lines table:doc_Invoice__tags table:doc_Invoice_history " +
 		"view:Invoice view:Invoice_actions view:Invoice_events view:Invoice_history view:Invoice_lines view:Invoice_lines_history view:Invoice_states view:Invoice_tags view:Invoice_tags_history"
 	if got := strings.Join(names, " "); got != want {
 		t.Errorf("objects:\n%s\nwant\n%s", got, want)

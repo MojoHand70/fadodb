@@ -385,6 +385,67 @@ the one comparison of the pointer (`BenchmarkQueryOneIndex`). The two
 looks and the two ways the question is written cost 0.03 ms and 44
 allocations. `BenchmarkQueryLook` joins the gate.
 
+## Settled while building the engine's own indexes
+
+Built on 2026-11-25, in Phase 8, after the look: three of the four
+rows of item 2. Each of these is settled by me while building, and is
+the owner's to strike.
+
+- **What is built.** Every class table has an index on the state, on
+  the moment a document was made and on the moment it last changed.
+  Every `ref` variable has one, and so has a text variable the read
+  rule compares with the caller for equality, `owner = USER()`, in its
+  `AND`s and `OR`s. `"index": true` stays for the rest. Each index on a
+  variable or on the state goes on to the moment a document was made.
+- **What is not built: the key of a `LOOKUP` or a `QUERY` that is no
+  pointer** (the second row of item 2). It is an index on one class
+  because of a formula of another, so the engine has to keep which
+  definitions asked for it (item 4). Until then such a key wants
+  `"index": true`, as before.
+- **A database of an earlier schema is brought over, not refused.**
+  Item 8 said it would be refused, as every earlier schema had been.
+  Since v0.7.0 a database is brought forward when it is opened (ADR-0078,
+  settled while building), so this one is too: the schema is 15, and
+  the indexes a class has not are made when the database is opened,
+  after the transaction that raises the schema. The first opening
+  takes the time item 7 names. A program stopped meanwhile loses
+  nothing; the next opening makes what is missing.
+- **The engine checks the indexes at every opening**, against what the
+  classes say, with one read of the store's own list. A database that
+  has them all is not written to.
+- **The names.** An index is named after its table and its column:
+  `doc_Invoice_order`, `doc_Invoice_state`. The state and the two
+  moments are names no variable can have.
+- **A pointer and the read rule's text lead a lookup too.** A `LOOKUP`
+  over a class takes for its key a comparison of a variable the class
+  keeps an index on; a pointer is now one without a word of the
+  designer's.
+- **The list of what is due keeps its own index.** It compares the
+  state and, for a transition at a date, the date. Where the date has
+  an index it is asked through that one, as before; where it has none,
+  it is now asked through the index on the state, and no longer reads
+  the whole class.
+- **The test of item 10 is `BenchmarkDraftsOfOneOrder`**, in the gate:
+  with every index in place, the drafts of one order, which the index
+  on the pointer and the index on the state both fit.
+
+Measured on 2026-11-25, on this build:
+
+| What | Measured |
+|---|---|
+| the drafts of one order, ten of a hundred, the whole call of `query`, among 100,000 invoices on disk | 0.27 ms |
+| the same among 1,000,000 | 0.32 ms; the test of item 10 asks for under 1 ms |
+| the list of one order, a hundred invoices, among 100,000 on disk | 0.53 ms |
+| the same among 1,000,000 | 0.56 ms; the budget of this record is no more than twice |
+| a transition (`BenchmarkTransition`) | 54.3 µs against 49.8 before, +9%: three more indexes are written. Allocations are the same |
+| a thousand moves in one call (`BenchmarkTransitionMany`) | 40.0 ms against 36.8, +9% |
+| a message from outside that moves a document (`BenchmarkReceive`) | 83.9 µs against 79.4, +6% |
+| opening a database of schema 14 with 10,000,000 invoices that have one pointer, and 100,000 orders | 12.2 s once, for seven indexes; 4 ms the next time |
+| the file of that database | 10.0 GB against 9.3 GB, 8% larger |
+
+The commit costs less here than the 10 to 30 µs of item 9, which was
+measured with six indexes on 2,000,000 documents.
+
 ## Consequences
 
 - A designer and an agent write what a document needs to know, and

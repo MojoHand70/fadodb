@@ -221,12 +221,22 @@ func dueFilterFor(c *class, t *model.Transition, sources formula.Sources) (dueFi
 		}
 	}
 	var args []any
+	// The state is compared on the bare column, which the index every
+	// class has on its state answers (ADR-0075, item 2), unless the
+	// condition leads to an index of its own, on the date it compares:
+	// that one finds the few documents that are due, and the store,
+	// which has no numbers on the data, is not left to choose between
+	// the two (item 10).
+	state := `"state"`
 	if where != "" {
 		plan, err := query.Compile(query.Filter{Class: c.cls.Name, Where: where}, c.cls, sources, query.Principal{Content: true})
 		if err != nil || plan.Where == "" {
 			return dueFilter{}, false
 		}
 		where, args = plan.Where, plan.Args
+		if plan.Led {
+			state = `+"state"`
+		}
 	}
 	switch {
 	case came != "" && where != "":
@@ -239,7 +249,7 @@ func dueFilterFor(c *class, t *model.Transition, sources formula.Sources) (dueFi
 	// The order is by id, written so that SQLite does not walk the whole
 	// class in the order of its ids to get it: few documents of many are
 	// due, and an index on what the condition compares finds them.
-	text := `SELECT "id"` + since + ` FROM ` + quote(c.table) + ` WHERE "state" = :due_state AND "class_version" = :due_version AND (` + where +
+	text := `SELECT "id"` + since + ` FROM ` + quote(c.table) + ` WHERE ` + state + ` = :due_state AND "class_version" = :due_version AND (` + where +
 		`) ORDER BY +"id" LIMIT :due_limit`
 	return dueFilter{text: text, args: args, timed: since != ""}, true
 }

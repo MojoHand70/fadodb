@@ -111,7 +111,7 @@ Each entry is one variable: its name, and what it is.
 | `min`, `max` | for a number: the range it must stay in. On a computed variable they hold only when it names its `type` |
 | `mode`, `on` | for a computed variable: `"mode": "triggered"` and the list of moments at which it is worked out, see [Triggered variables](triggered-variables.md); or `"mode": "live"`, worked out when it is read and kept nowhere, see [Live variables](live-variables.md) |
 | `scale` | for `decimal` and `money`: the number of decimal places, two when left out |
-| `index` | keeps an index on the variable, so that finding documents by it is fast |
+| `index` | keeps an index on the variable, so that finding documents by it is fast. A pointer has one without it, and so has a text the read rule compares with the caller; see [A large class](lists.md#a-large-class) |
 | `class` | for a `ref`: the class it points at |
 | `schema` | for `rows`: the columns of the table, each with its type, or the name of a schema. For `object`: the name of a schema, which is defined on its own before the class; see [Schemas and objects](schemas-and-objects.md) |
 | `label` | what a person reads in place of the name; see [what a class says to people](#what-a-class-says-to-people) |

@@ -179,6 +179,14 @@ type Options struct {
 	// host program's, given at every Open, as whether it sends requests
 	// is; fadodb serve gives it when its settings have inbound.
 	Inbound bool
+	// Analytics is the analytical engine of the program (ADR-0017,
+	// ADR-0089): with one, the store keeps a copy of its documents in
+	// it and feeds the copy itself; without one, the default, every
+	// question is answered by the store. It is the host program's,
+	// given at every Open. CopyEvery is the period at which the copy is
+	// fed without being asked; 0 is DefaultCopyEvery.
+	Analytics Analytics
+	CopyEvery time.Duration
 	// Now is the clock of the database: it stamps every commit and is
 	// what NOW() and TODAY() read in every formula, unless a call that
 	// reads or previews chooses a moment with At (ADR-0042). nil is
@@ -309,6 +317,11 @@ type Store struct {
 	stop   chan struct{}
 	done   chan struct{}
 	closed bool
+	// feeder keeps the copy of the documents in the analytical engine
+	// (ADR-0089), nil when the program gave none; copyErr is why a copy
+	// could not be opened.
+	feeder  *feeder
+	copyErr error
 	// turns counts the times the checkpointer took the writer's turn and
 	// emptied a log far past its limit, which nothing else does; the
 	// tests read it.
@@ -600,6 +613,8 @@ func open(path string, o Options) (*Store, error) {
 		wctx, s.workCancel = context.WithCancel(context.Background())
 		go s.work(wctx)
 	}
+	// The copy in the analytical engine, when the program gave one.
+	s.startCopy(ctx, o.Analytics, o.CopyEvery)
 	return s, nil
 }
 
@@ -1272,6 +1287,9 @@ func (s *Store) Close() error {
 		}
 	})
 	<-s.workDone
+	// The copy is brought up to the database a last time, while the
+	// database is open, and closed.
+	s.stopCopy()
 	s.mu.Lock()
 	if s.closed {
 		s.mu.Unlock()

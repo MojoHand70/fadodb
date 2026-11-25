@@ -47,7 +47,7 @@ check() {
   docker buildx build ${with[@]+"${with[@]}"} --platform "$PLATFORMS" "${args[@]}" .
   echo "image: playing the chapter against this machine's"
   docker buildx build ${with[@]+"${with[@]}"} --load --tag "$name" "${args[@]}" .
-  FADODB_IMAGE="$name" go test -count=1 -run 'Container' ./cmd/fadodb
+  FADODB_IMAGE="$name" go test -count=1 -run 'Container' ./internal/cli
 }
 
 case "${1:-}" in

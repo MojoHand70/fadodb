@@ -476,14 +476,23 @@ the stop of a free question that no index serves, after five
 seconds, with the variable an index is needed on, and the index for
 the key of a lookup or a list that is no pointer, made when the class
 that asks is defined: with these ADR-0075 is built. Counts, sums and
-grouping in a `QUERY` are not; they come with the analytical engine. Then the lists in and out of messages and requests, ADR-0085: a list in a message, which becomes the lines of a document, is built; a list in a request and a list in an answer are not.
+grouping in a `QUERY` are not; they come with the analytical engine. Then the lists in and out of messages and requests, ADR-0085: a list in a message, which becomes the lines of a document; a list in a request, the lines of a document sent out by an action; and a list in an answer, written back into the document. All three are built.
 After these comes the analytical engine itself: DuckDB beside the
 documents, fed from the commits, for the question that reads
 everything; the mining views; a value that follows its source or the
 clock, worked out for many documents in one statement; tables kept in
 DuckDB or in a database of the customer's own; and the program with
-DuckDB built for each operating system. Nothing of the analytical
-engine is built yet.
+DuckDB built for each operating system. How the copy beside the
+documents is fed and asked is ADR-0089, proposed on 2026-11-25 with
+its measurements: over ten million visits of a state, a question the
+store answers in 12 to 26 seconds takes the copy under half a second.
+Its first two steps are built: a program that is given DuckDB keeps
+the copy and feeds it, and answers the flow of a class from it, in
+under half a second among ten million visits of a state where the
+store takes 19. The server program is built with DuckDB too, as
+`fadodb-full`, on the machine that runs it; `fadodb` stays in pure Go.
+Every other question is still the store's, and the program with
+DuckDB is not yet built for each operating system and released.
 This page is updated when a phase starts and when it ends;
 it never describes a phase as done before its acceptance criteria pass.
 

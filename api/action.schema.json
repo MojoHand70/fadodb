@@ -28,14 +28,14 @@
       "type": "string"
     },
     "params": {
-      "description": "The parameters, by name. A rule gives each a formula of its type under args; a json parameter also takes a template, the JSON it becomes with a formula in the place of every string.",
+      "description": "The parameters, by name. A rule gives each a formula of its type under args; a json parameter also takes a template, the JSON it becomes with a formula in the place of every string; a rows parameter takes the name of a rows variable of the document, whose lines go with the call (ADR-0085, item 2).",
       "type": "object",
       "additionalProperties": {
         "$ref": "#/$defs/param"
       }
     },
     "returns": {
-      "description": "The values the action returns, by name.",
+      "description": "The values the action returns, by name. A list of rows goes into a rows variable of the document, whole, when a rule names it under into (ADR-0085, item 3).",
       "type": "object",
       "additionalProperties": {
         "$ref": "#/$defs/returned"
@@ -90,7 +90,7 @@
           }
         },
         "body": {
-          "description": "A template: the JSON to send, with a formula in the place of every string. A body that is one formula giving a text is sent as that text, for a receiver that does not read JSON. Without a body, a POST, a PUT and a PATCH send the call itself (call.schema.json); a GET and a DELETE send none and may not have one."
+          "description": "A template: the JSON to send, with a formula in the place of every string. An object with exactly each, as and item is a repeat (ADR-0085, item 2): each names a rows parameter, as names one row inside item, and the array sent has item once for every row. A body that is one formula giving a text is sent as that text, for a receiver that does not read JSON. Without a body, a POST, a PUT and a PATCH send the call itself (call.schema.json); a GET and a DELETE send none and may not have one."
         },
         "sign": {
           "description": "A secret of the connection. The request then carries FadoDB-Signature: t=<seconds since the epoch>,v1=<hex HMAC-SHA256 of the timestamp, a dot and the body, keyed with the secret>.",
@@ -103,10 +103,17 @@
       "type": "string"
     },
     "result": {
-      "description": "The returned values, each a formula over STATUS and BODY of the type returns declares.",
+      "description": "The returned values, each a formula over STATUS and BODY of the type returns declares. A returned list of rows takes a repeat in place of the formula (ADR-0085, item 3).",
       "type": "object",
       "additionalProperties": {
-        "type": "string"
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "$ref": "#/$defs/repeat"
+          }
+        ]
       }
     }
   },
@@ -116,8 +123,13 @@
       "type": "string",
       "pattern": "^(bool|number|int|text|date|datetime|ref|json|(decimal|money)(\\((0|[1-9]|1[0-8])\\))?)$"
     },
+    "column": {
+      "description": "The type of a column of a rows parameter: a scalar type, and never json.",
+      "type": "string",
+      "pattern": "^(bool|number|int|text|date|datetime|ref|(decimal|money)(\\((0|[1-9]|1[0-8])\\))?)$"
+    },
     "param": {
-      "description": "A parameter: its type alone, or its type with whether a call must give it and what it is for.",
+      "description": "A parameter: its type alone, or its type with whether a call must give it and what it is for; or a list of rows, with the type of each column.",
       "anyOf": [
         {
           "$ref": "#/$defs/type"
@@ -140,11 +152,43 @@
               "type": "string"
             }
           }
+        },
+        {
+          "description": "A list of rows: the lines of a document, sent with the call. A required one is given, though it may be empty.",
+          "type": "object",
+          "required": [
+            "type",
+            "schema"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "type": {
+              "type": "string",
+              "enum": [
+                "rows"
+              ]
+            },
+            "schema": {
+              "description": "The columns, by name, in the order they are sent.",
+              "type": "object",
+              "minProperties": 1,
+              "additionalProperties": {
+                "$ref": "#/$defs/column"
+              }
+            },
+            "required": {
+              "description": "A call that does not give the list is refused with required.",
+              "type": "boolean"
+            },
+            "description": {
+              "type": "string"
+            }
+          }
         }
       ]
     },
     "returned": {
-      "description": "A returned value: its type alone, or its type with what it is.",
+      "description": "A returned value: its type alone, or its type with what it is; or a list of rows, with the type of each column.",
       "anyOf": [
         {
           "$ref": "#/$defs/type"
@@ -163,8 +207,66 @@
               "type": "string"
             }
           }
+        },
+        {
+          "description": "A list of rows: lines the receiver answers with.",
+          "type": "object",
+          "required": [
+            "type",
+            "schema"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "type": {
+              "type": "string",
+              "enum": [
+                "rows"
+              ]
+            },
+            "schema": {
+              "description": "The columns, by name.",
+              "type": "object",
+              "minProperties": 1,
+              "additionalProperties": {
+                "$ref": "#/$defs/column"
+              }
+            },
+            "description": {
+              "type": "string"
+            }
+          }
         }
       ]
+    },
+    "repeat": {
+      "description": "The rows of a returned list, read out of the reply: one row for each element of a list in BODY.",
+      "type": "object",
+      "required": [
+        "each",
+        "as",
+        "row"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "each": {
+          "description": "Where the list is in BODY: a path, written as JSONVALUE takes one.",
+          "type": "string",
+          "minLength": 1
+        },
+        "as": {
+          "description": "The name of one element, a json value inside row.",
+          "type": "string",
+          "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+        },
+        "row": {
+          "description": "A formula for each column, over the element, STATUS and BODY.",
+          "type": "object",
+          "minProperties": 1,
+          "additionalProperties": {
+            "type": "string"
+          }
+        }
+      }
     }
   }
 }

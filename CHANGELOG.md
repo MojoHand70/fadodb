@@ -10,6 +10,41 @@ Phase 8 started on 2026-11-25.
 
 ### Added
 
+- The flow of a class is answered from the copy in the analytical
+  engine (ADR-0089, step 2). A program that keeps the copy answers the
+  command `flow`, which a face draws its flowchart from, out of DuckDB:
+  among 3,400,000 invoices that visited ten million states the answer
+  takes 0.33 seconds where the store takes 18.6, and it is the same
+  answer for the same reader. The copy is brought up to the database
+  before it answers, so a move made a moment ago is in the flow. When
+  the copy does not answer, the store does. A program without the
+  engine, and the program `fadodb`, answer as before.
+- The server program can be built with the analytical engine (ADR-0089,
+  the first half of its step 6). `make full` builds `bin/fadodb-full`
+  in the module `analytics`: the program `fadodb`, from the same code,
+  with DuckDB linked in. A database it serves keeps a copy of its
+  documents beside its own file and answers the flow of a class from
+  it. The settings gain `analytics.memory`, the most memory the engine
+  may take, 2 GB when it is not given, and `analytics.threads`; the
+  program built without the engine refuses settings that name it.
+  `fadodb version` says which program it is. The code of the program
+  moved from `cmd/fadodb` to the package `internal/cli`, which both
+  programs are built from; `fadodb` itself is as it was, in pure Go.
+  Not built: the program with the engine for each operating system,
+  released, and an image for containers with it.
+- The first step of the analytical engine: the copy and its feed
+  (ADR-0089, proposed; ADR-0017). A program built with the module
+  `analytics` gives the database DuckDB as its analytical engine, with
+  the new option `Analytics`. The database then keeps a copy of its
+  documents in the file `<database>.duckdb` beside its own and feeds
+  it itself: for every class the documents as they are now and every
+  version of them, and the events. The copy is never the truth and
+  needs no backup: the engine makes it again when it is lost, does not
+  open or belongs to another database. A commit never waits for it.
+  The new calls `CopyState` and `FeedCopy` say how the copy stands and
+  feed it at once; the option `CopyEvery` sets how often it is fed
+  without being asked, five seconds when none is given. The core
+  stays pure Go.
 - A command says which version of a document its sender read
   (ADR-0078, item 2, the first step of the record). `set`, `reset`,
   `refresh`, `transition` and `delete` take the member `version`, in Go
@@ -53,6 +88,36 @@ Phase 8 started on 2026-11-25.
   refused with `bad_message` at the place, and the words name the
   element. A message of 24 KiB with a hundred lines takes 0.50 ms
   before its command.
+- A list goes out in a request (ADR-0085, item 2, the second of its
+  three steps). A parameter of an action may be of the type `rows`,
+  with a `schema` of its columns, and a rule gives it the name of a
+  `rows` variable of its class: `"lines": "lines"`. The body of the
+  request repeats a part once for each row: `{"each": "lines", "as":
+  "line", "item": {"sku": "line.sku"}}`. So an order goes to the
+  accounting system with its lines in one request. The lines are read
+  when the commit queues the action and kept with it: a line changed
+  afterwards changes nothing of what is sent. A repeat may also stand
+  in the JSON a rule gives a `json` parameter, over a `rows` variable
+  of its class, so a rule sends its lines with `http.call` and no
+  definition. When the class is defined the engine checks that the
+  variable has every column the parameter has, of the same type.
+  `preview_action` shows the whole body, every line, with the secrets
+  masked. Building the request for a hundred lines takes 0.14 ms. Not
+  built: a list in an answer (item 3), and a list that is worked out
+  when it is read given to an action.
+- A list in an answer becomes the lines of a document (ADR-0085, item
+  3, the last of its three steps). A value an action returns may be of
+  the type `rows`, with a `schema` of its columns, and its `result` is
+  a repeat over the reply: `{"each": "value", "as": "l", "row": {"sku":
+  "JSONVALUE(l, \"lineObjectNumber\")"}}`. A rule writes it to a `rows`
+  variable of its document, whole: `"into": {"lines": "lines"}`. So an
+  order follows what the warehouse changed in the accounting system.
+  When the class is defined the engine checks that the variable has
+  every column the list has, of the same type. A pull that did not come
+  through, a refusal or an answer that does not read, leaves the lines
+  as they are and `ERROR` says why. A function of the host program
+  returns such a list as a list of objects. Not built: a list spread
+  over several pages of answers.
 - The engine makes the index a lookup or a list is keyed by (ADR-0075,
   items 2, 4 and 7), which completes the record. A `LOOKUP` or a list
   whose condition compares a variable of another class for equality

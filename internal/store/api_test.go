@@ -23,7 +23,7 @@ import (
 
 // schema is a JSON Schema read for the keywords the published schemas
 // use: type, required, properties, additionalProperties, items, enum,
-// pattern, minimum, minLength, maxLength, anyOf and $ref, to a definition
+// pattern, minimum, minLength, maxLength, minProperties, anyOf and $ref, to a definition
 // of the same file or to another file of api/.
 type schema map[string]any
 
@@ -119,6 +119,9 @@ func (s schema) check(t testing.TB, root schema, path string, v any) []string {
 		}
 	case map[string]any:
 		props, _ := s["properties"].(map[string]any)
+		if n, ok := s["minProperties"].(float64); ok && len(x) < int(n) {
+			bad("has fewer than %v properties", n)
+		}
 		if req, ok := s["required"].([]any); ok {
 			for _, name := range req {
 				if _, has := x[name.(string)]; !has {
@@ -199,6 +202,12 @@ func TestAPISchemas(t *testing.T) {
  "request": {"method": "patch", "url": "\"https://example.test/\" & URLENCODE(x)", "headers": {"X-K": "SECRET(\"k\")"}, "body": [{"x": "x"}, 1, null], "sign": "s"},
  "ok": "STATUS < 300", "result": {"r": "STATUS"}}`,
 		"a body that is one text": `{"name": "a.c", "params": {"x": "text"}, "request": {"url": "\"https://example.test\"", "body": "\"x=\" & URLENCODE(x)"}}`,
+		"a list of rows": `{"name": "a.d", "params": {"no": "text", "lines": {"type": "rows", "required": true, "description": "the lines", "schema": {"sku": "text", "qty": "int", "price": "money(2)"}}},
+ "request": {"url": "\"https://example.test\"", "body": {"no": "no", "lines": {"each": "lines", "as": "line", "item": {"sku": "line.sku", "n": "line.qty", "price": "line.price"}}}}}`,
+		"a list in the answer": `{"name": "a.e", "params": {"id": "text"}, "returns": {"lines": {"type": "rows", "description": "the lines", "schema": {"sku": "text", "qty": "int"}}, "n": "number"},
+ "request": {"method": "GET", "url": "\"https://example.test/\" & URLENCODE(id)"},
+ "result": {"lines": {"each": "value", "as": "l", "row": {"sku": "JSONVALUE(l, \"sku\")", "qty": "DECIMAL(VALUE(JSONVALUE(l, \"n\")), 0)"}}, "n": "STATUS"}}`,
+		"a list a function returns": `{"name": "a.f", "returns": {"lines": {"type": "rows", "schema": {"sku": "text"}}}}`,
 		"every type": `{"name": "a.b_c.d9", "version": 2, "label": "l", "description": "d",
  "params": {"a": "bool", "b": "number", "c": "int", "d": "text", "e": "date", "f": "datetime", "g": "ref", "h": "json", "i": "decimal", "j": "decimal(0)", "k": "money(18)", "l": {"type": "money", "required": true, "description": "x"}},
  "returns": {"r": {"type": "decimal(4)", "description": "y"}}}`}
@@ -235,6 +244,15 @@ func TestAPISchemas(t *testing.T) {
 		"a composite type":                 `{"name": "a.b", "params": {"x": "array<text>"}}`,
 		"a scale too large":                `{"name": "a.b", "params": {"x": "decimal(19)"}}`,
 		"a parameter without a type":       `{"name": "a.b", "params": {"x": {"required": true}}}`,
+		"a list without its columns":       `{"name": "a.b", "params": {"x": {"type": "rows"}}}`,
+		"a list with no column":            `{"name": "a.b", "params": {"x": {"type": "rows", "schema": {}}}}`,
+		"a column that is json":            `{"name": "a.b", "params": {"x": {"type": "rows", "schema": {"raw": "json"}}}}`,
+		"a column that is a list":          `{"name": "a.b", "params": {"x": {"type": "rows", "schema": {"more": "rows"}}}}`,
+		"columns on a text":                `{"name": "a.b", "params": {"x": {"type": "text", "schema": {"sku": "text"}}}}`,
+		"a returned list without columns":  `{"name": "a.b", "returns": {"x": {"type": "rows"}}}`,
+		"a returned list that is required": `{"name": "a.b", "returns": {"x": {"type": "rows", "required": true, "schema": {"sku": "text"}}}}`,
+		"a repeat without its row":         `{"name": "a.b", "returns": {"x": {"type": "rows", "schema": {"sku": "text"}}}, "request": {"url": "\"https://example.test\""}, "result": {"x": {"each": "value", "as": "l"}}}`,
+		"a repeat with a property more":    `{"name": "a.b", "returns": {"x": {"type": "rows", "schema": {"sku": "text"}}}, "request": {"url": "\"https://example.test\""}, "result": {"x": {"each": "value", "as": "l", "row": {"sku": "JSONVALUE(l, \"sku\")"}, "item": "l"}}}`,
 		"an unknown property of a param":   `{"name": "a.b", "params": {"x": {"type": "text", "default": "1"}}}`,
 		"a required returned value":        `{"name": "a.b", "returns": {"x": {"type": "text", "required": true}}}`,
 		"a request without an address":     `{"name": "a.b", "request": {"method": "POST"}}`,

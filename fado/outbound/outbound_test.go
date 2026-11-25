@@ -563,7 +563,7 @@ func TestActionsGuide(t *testing.T) {
 	}
 	out, err := Allow(Options{
 		Hosts:       []string{"hooks.partner.example"},
-		Connections: map[string][]string{"tickets": {"api.example.com"}, "rates": {"rates.example.com"}, "sms": {"sms.example.com"}},
+		Connections: map[string][]string{"tickets": {"api.example.com"}, "rates": {"rates.example.com"}, "sms": {"sms.example.com"}, "bc": {"bc.example.com"}},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -608,8 +608,51 @@ func TestActionsGuide(t *testing.T) {
 			}
 		}
 	}
-	if definitions != 3 || classes != 1 || fragments != 1 {
-		t.Errorf("the guide has %d definitions, %d classes and %d actions; the test expects 3, 1 and 1", definitions, classes, fragments)
+	if definitions != 5 || classes != 4 || fragments != 1 {
+		t.Errorf("the guide has %d definitions, %d classes and %d actions; the test expects 5, 4 and 1", definitions, classes, fragments)
+	}
+	// A list in a request (ADR-0085, item 2): the body the guide shows
+	// for the order of a sofa and four chairs is the body the engine
+	// makes.
+	listed, err := db.PreviewAction(ctx, "bc.sales_order", fado.Values{"customer": "WEB-PL", "lines": []any{
+		map[string]any{"sku": "SOFA-3", "qty": 1, "price": "2400.00 PLN"},
+		map[string]any{"sku": "CHAIR-1", "qty": 4, "price": "300.00 PLN"},
+	}}, setup)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, shown, found := strings.Cut(strings.ReplaceAll(string(guide), "\r\n", "\n"), "<!-- a list: the body -->\n```jsonc\n")
+	shown, _, _ = strings.Cut(shown, "\n```")
+	var want, made any
+	if !found || json.Unmarshal([]byte(shown), &want) != nil || json.Unmarshal([]byte(listed.Request.Body), &made) != nil {
+		t.Fatalf("the body the guide shows, or the one the engine makes, does not read:\n%s\n%s", shown, listed.Request.Body)
+	}
+	if w, m := fmt.Sprint(want), fmt.Sprint(made); w != m {
+		t.Errorf("the guide shows the body\n%s\nand the engine makes\n%s", w, m)
+	}
+	olga := fado.As(fado.Principal{ID: "olga", Kind: fado.ActorPerson, Groups: []string{"orders"}})
+	// A rule that sends its lines itself: the body the guide shows for
+	// the order to Kalisz is what the rule would send.
+	if _, err := db.Create(ctx, "FactoryOrder", fado.Values{"number": "F-1", "factory": "Kalisz", "lines": []any{
+		map[string]any{"sku": "CHAIR-1", "qty": 4},
+		map[string]any{"sku": "TABLE-2", "qty": 2},
+	}}, fado.WithID("f-1"), olga); err != nil {
+		t.Fatal(err)
+	}
+	sending, err := db.Preview(ctx, "FactoryOrder", "f-1", nil, "send", olga)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, shown, found = strings.Cut(strings.ReplaceAll(string(guide), "\r\n", "\n"), "<!-- a list: the body of the rule -->\n```jsonc\n")
+	shown, _, _ = strings.Cut(shown, "\n```")
+	if !found || json.Unmarshal([]byte(shown), &want) != nil {
+		t.Fatalf("the body the guide shows for the rule does not read:\n%s", shown)
+	}
+	if len(sending.Rules) != 1 || len(sending.Rules[0].Actions) != 1 {
+		t.Fatalf("the preview of the rule: %+v", sending.Rules)
+	}
+	if w, m := fmt.Sprint(want), fmt.Sprint(sending.Rules[0].Actions[0].Args["body"]); w != m {
+		t.Errorf("the guide shows the body\n%s\nand the rule would send\n%s", w, m)
 	}
 	// The request of the guide's first definition is the one it describes.
 	pv, err := db.PreviewAction(ctx, "tickets.create", fado.Values{"subject": "printer"}, setup)

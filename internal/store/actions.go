@@ -563,6 +563,20 @@ func (s *Store) readArgs(spec *model.ActionSpec, given map[string]any) (Values, 
 	out := make(Values, len(spec.Params))
 	for i := range spec.Params {
 		p := &spec.Params[i]
+		if p.Type.Kind == formula.KindRows {
+			// A list of rows (ADR-0085, item 2): each row typed column
+			// by column, and answered as the lines of a document are. A
+			// required one is given, though it may be empty.
+			lines, err := linesOf(by[p.Name], p, s.limits)
+			if err != nil {
+				return nil, err
+			}
+			if p.Required && by[p.Name] == nil {
+				return nil, errf(CodeRequired, p.Name, "%s requires %s, and it is not given", spec.Name, p.Name)
+			}
+			out[p.Name] = rowsOut(lines, p)
+			continue
+		}
 		val, err := toValue(by[p.Name], p.Type, "", p.Name, s.limits)
 		if err != nil {
 			return nil, err
@@ -622,6 +636,21 @@ func (s *Store) readResult(spec *model.ActionSpec, result Values) (Values, *Erro
 	out := make(Values, len(spec.Returns))
 	for i := range spec.Returns {
 		r := &spec.Returns[i]
+		if r.Type.Kind == formula.KindRows {
+			// A returned list of rows (ADR-0085, item 3): each row typed
+			// column by column. A function that returns none gives no
+			// rows.
+			lines, err := linesOf(by[r.Name], r, s.limits)
+			if err != nil {
+				where := ""
+				if err.Variable != "" && err.Variable != r.Name {
+					where = err.Variable + ": "
+				}
+				return nil, &Error{Code: CodeBadResult, Variable: r.Name, Message: "what the action returned as " + r.Name + " is no list of its rows: " + where + err.Message}
+			}
+			out[r.Name] = rowsOut(lines, r)
+			continue
+		}
 		val, err := toValue(by[r.Name], r.Type, "", r.Name, s.limits)
 		if err != nil {
 			return nil, &Error{Code: CodeBadResult, Variable: r.Name, Message: "what the action returned as " + r.Name + " is no " + r.Type.String() + ": " + err.Message}
@@ -629,6 +658,21 @@ func (s *Store) readResult(spec *model.ActionSpec, result Values) (Values, *Erro
 		out[r.Name] = valueOut(val)
 	}
 	return out, nil
+}
+
+// rowsOut are the rows of a rows parameter or of a returned list in the
+// wire shape: a list of objects, each column of the declaration by its
+// name.
+func rowsOut(lines [][]formula.Value, p *model.Param) []any {
+	rows := make([]any, len(lines))
+	for r, line := range lines {
+		row := make(map[string]any, len(line))
+		for k, f := range p.Type.Fields() {
+			row[f.Name] = valueOut(line[k])
+		}
+		rows[r] = row
+	}
+	return rows
 }
 
 // trial finds the action of a preview or a trial and reads its

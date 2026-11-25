@@ -135,6 +135,8 @@ fadodb serve acme.fado --settings settings.json --secrets-dir /run/secrets/fadod
 | `signon.NAME.client_id` | the id the provider gave the server | none |
 | `signon.NAME.label` | the words of its button | Sign in with NAME |
 | `signon.NAME.company_emails` | the provider's e-mails are the company's own | false |
+| `analytics.memory` | the most memory the analytical engine may take, as text such as `"4GB"` or `"512MB"`; only [a server built with the engine](#a-server-with-the-analytical-engine) takes it | 2GB |
+| `analytics.threads` | how many threads the analytical engine uses | one for each core |
 
 - **The settings are the operator's.** Where the server listens, what
   it may call and how much it takes on are decided by whoever runs the
@@ -496,6 +498,43 @@ its own, which the server [does not answer yet](#not-here-yet).
 A file that people attach to a document is not a page, wherever it
 came from: the server hands it out so that a browser runs nothing in
 it ([files](files.md)).
+
+## A server with the analytical engine
+
+`fadodb` is built in pure Go and answers every question by the store.
+The same program can be built with DuckDB, the analytical engine
+(ADR-0017, ADR-0089). A database it serves then keeps a copy of its
+documents beside its own file, and the questions that read everything
+are answered from the copy.
+
+It is built in the module `analytics`, which needs a C compiler:
+
+```
+make full        # bin/fadodb-full
+bin/fadodb-full serve acme.fado
+```
+
+- **It is the same program.** Every command, flag and setting of
+  `fadodb` is there; `fadodb-full version` ends with "with the
+  analytical engine".
+- **The copy is the file `acme.fado.duckdb`**, beside the database. The
+  server feeds it itself and makes it again when it is lost; it needs
+  no backup. [Opening a database](opening-a-database.md#an-analytical-engine)
+  says what it holds.
+- **What it answers today is the flow of a class**, the command
+  [`flow`](commands.md#flow), which a flowchart is drawn from: among
+  3,400,000 invoices that visited ten million states, in a third of a
+  second where the store takes 18.6. Every other question is the
+  store's.
+- **It takes at most 2 GB of memory** for the engine, unless the
+  settings say otherwise with `analytics.memory`.
+- **When it starts it says** that it keeps a copy of the documents, or
+  that it keeps none and why; without the copy it answers by the
+  store.
+
+Not here yet: the program built for each system and released, and an
+image for containers with the engine. Today it is built on the machine
+that runs it.
 
 ## What it says when it starts
 

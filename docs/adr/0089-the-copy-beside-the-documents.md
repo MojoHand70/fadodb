@@ -201,9 +201,18 @@ Two findings decide what follows.
   3,400,000 invoices and ten million visits, three runs: 18.6 seconds
   from the store, 0.33 from the copy, the same answer. The budget of
   ADR-0017 is 2 seconds.
+- **The first half of step 6, the program with the engine, on
+  2026-11-25**, ahead of steps 3 to 5: the copy answers nothing for a
+  person until a server has it. The code of the program `fadodb` is
+  the package `internal/cli`; `cmd/fadodb` builds it in pure Go, as
+  before, and `analytics/cmd/fadodb` builds the same program with
+  DuckDB. `make full` makes it, as `bin/fadodb-full`. A database it
+  serves keeps its copy, and the settings of the server say how much
+  memory the engine may take. Not built: the program for each
+  operating system, released; an image for containers with the engine;
+  the page for analysts.
 - **Every other question is still the store's.** Step 3 sends the
-  totals of a `QUERY` to the copy. The program `fadodb` is built
-  without the module, so a server keeps no copy.
+  totals of a `QUERY` to the copy.
 
 ## Settled while building the copy and its feed
 
@@ -290,6 +299,30 @@ strike.
   documents took and the documents made and finished in each period,
   which the roadmap calls the mining views. Each is a question the
   copy can answer when a face asks for it.
+
+## Settled while building the program with the engine
+
+Each of these is settled by me while building, and is the owner's to
+strike.
+
+- **One program, built twice.** The program with the engine has every
+  command, flag and setting of the other, because it is the same
+  code. Only what opens a served database differs: it is given the
+  engine.
+- **The names.** ADR-0017 calls the program with DuckDB `fadodb` and
+  the one in pure Go `fadodb-lite`. Today `fadodb` is the program in
+  pure Go everywhere: the releases, the image, the manual. So the new
+  one is built as `fadodb-full`, and nothing that exists is renamed.
+  Which program keeps the name `fadodb` is the owner's to say.
+- **The engine of a server takes at most 2 GB of memory** unless its
+  settings say otherwise, `analytics.memory`. DuckDB's own limit is
+  four fifths of the machine, which a server shares with its database
+  and with everything else on it.
+- **Settings that name the engine are refused by the program built
+  without it**, when it starts: it could not do what they ask.
+- **Only a served database gets the engine.** The commands of the
+  program that open a database for a moment, such as `fadodb user
+  add`, keep no copy.
 
 ## Consequences
 

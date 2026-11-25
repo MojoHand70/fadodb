@@ -489,8 +489,10 @@ store answers in 12 to 26 seconds takes the copy under half a second.
 Its first two steps are built: a program that is given DuckDB keeps
 the copy and feeds it, and answers the flow of a class from it, in
 under half a second among ten million visits of a state where the
-store takes 19. Every other question is still the store's, and the
-program `fadodb` is built without DuckDB.
+store takes 19. The server program is built with DuckDB too, as
+`fadodb-full`, on the machine that runs it; `fadodb` stays in pure Go.
+Every other question is still the store's, and the program with
+DuckDB is not yet built for each operating system and released.
 This page is updated when a phase starts and when it ends;
 it never describes a phase as done before its acceptance criteria pass.
 

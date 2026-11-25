@@ -288,14 +288,16 @@ Go 1.26 or newer.
 
 ```
 make tools    # staticcheck, govulncheck, benchstat
-make build    # bin/fadodb
+make build    # bin/fadodb, in pure Go
+make full     # bin/fadodb-full: the same program with the analytical engine, DuckDB (needs a C compiler)
 make gates    # what CI runs
 ```
 
 ## Layout
 
 ```
-cmd/fadodb/        command-line tool and server: init, user add, key new, serve; exec, file put, file get; class check, action check, formula eval, check
+cmd/fadodb/        the program fadodb, in pure Go: a main that runs internal/cli
+internal/cli/      command-line tool and server: init, user add, key new, serve; exec, file put, file get; class check, action check, formula eval, check
 fado/              public Go API
 internal/formula/  lexer, parser, binder, bytecode, VM, SQL generator
 internal/model/    document classes, schemas, tables, rules, validation, the diff between class versions

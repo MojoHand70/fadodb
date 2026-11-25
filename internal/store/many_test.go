@@ -261,13 +261,15 @@ func TestTransitionMany_Key(t *testing.T) {
 	}
 }
 
-// seats has a guard that counts the documents of its own class: at most
-// two seats are taken.
+// seats counts the documents of its own class before a seat is taken,
+// and its guard reads the count: at most two seats are taken. The count
+// is brought before the guard is asked (ADR-0078, item 4), so it is the
+// count of that moment: the commits come one after another.
 const seats = `{"name": "Seat",
- "variables": {"who": {"type": "text"}},
+ "variables": {"who": {"type": "text"},
+               "taken": {"type": "number", "formula": "LOOKUP(Seat, COUNT(id), state = \"taken\")", "mode": "triggered", "on": ["before:take"]}},
  "states": {"initial": "asked", "list": ["asked", "taken"]},
- "transitions": [{"name": "take", "from": "asked", "to": "taken",
-                  "guard": "LOOKUP(Seat, COUNT(id), state = \"taken\") < 2"}]}`
+ "transitions": [{"name": "take", "from": "asked", "to": "taken", "guard": "taken < 2"}]}`
 
 // A document sees the ones moved before it in the batch (ADR-0048, item
 // 8), in a preview as in the call.

@@ -225,13 +225,14 @@ func TestLookup_ClassDefinition(t *testing.T) {
 	if v, _ := visit.Variable("kind"); v.Formula.Queries[0].IndexColumn != "id" || len(visit.Reads) != 1 || visit.Reads[0] != "Site" {
 		t.Errorf("the key of a lookup by id is %q, and the class reads %v", v.Formula.Queries[0].IndexColumn, visit.Reads)
 	}
-	// A class may read itself, in a guard too: a number may not be used
-	// twice.
+	// A class may read itself, and what a guard needs of that is brought
+	// before the guard is asked (ADR-0078, item 4): a number may not be
+	// used twice.
 	const invoice = `{"name": "Invoice",
- "variables": {"number": {"type": "text", "index": true}},
+ "variables": {"number": {"type": "text", "index": true},
+               "sent_already": {"type": "number", "formula": "LOOKUP(Invoice, COUNT(id), number = THIS.number AND id <> ID() AND state = \"sent\")", "mode": "triggered", "on": ["before:send"]}},
  "states": {"initial": "draft", "list": ["draft", "sent"]},
- "transitions": [{"name": "send", "from": "draft", "to": "sent",
-                  "guard": "LOOKUP(Invoice, COUNT(id), number = THIS.number AND id <> ID() AND state = \"sent\") = 0"}]}`
+ "transitions": [{"name": "send", "from": "draft", "to": "sent", "guard": "sent_already = 0"}]}`
 	if _, err := s.defineOpen(ctx, []byte(invoice), asSetup); err != nil {
 		t.Fatal(err)
 	}
@@ -244,8 +245,14 @@ func TestLookup_ClassDefinition(t *testing.T) {
 		t.Errorf("the first invoice of its number: %v", err)
 	}
 	_, err = s.Transition(ctx, "Invoice", "I-2", "send", nil)
-	if se, _ := err.(*Error); se == nil || se.Code != CodeGuardFalse {
+	if se, _ := err.(*Error); se == nil || se.Code != CodeGuardFalse || se.Brought == nil || (*se.Brought)["sent_already"] != 1.0 {
 		t.Errorf("the second invoice of the same number: %v", err)
+	}
+	// The same guard written with the lookup in it is refused: nothing
+	// would keep what it saw.
+	_, err = s.defineOpen(ctx, []byte(strings.Replace(invoice, `"guard": "sent_already = 0"`, `"guard": "LOOKUP(Invoice, COUNT(id), number = THIS.number AND state = \"sent\") = 0"`, 1)), asSetup)
+	if diags, _ := err.(model.Diagnostics); len(diags) != 1 || diags[0].Code != model.CodeNotAllowed || diags[0].Path != "/transitions/0/guard" {
+		t.Errorf("a guard that looks at other documents itself: %v", err)
 	}
 }
 
@@ -268,9 +275,10 @@ func TestLookup_EarlierVersionsAndReopen(t *testing.T) {
 	}
 	define(s, `{"name": "Part", "variables": {"z": {"type": "decimal(2)"}, "w": {"type": "number"}}, `+states)
 	define(s, `{"name": "Kit", "variables": {"top": {"type": "decimal(2)", "formula": "LOOKUP(Part, MAX(z), TRUE)", "mode": "triggered", "on": ["refresh"]},
-  "note": {"type": "text"}, "first": {"type": "decimal(2)", "default": "LOOKUP(Part, MIN(z), TRUE)"}},
+  "note": {"type": "text"}, "first": {"type": "decimal(2)", "default": "LOOKUP(Part, MIN(z), TRUE)"},
+  "parts": {"type": "number", "formula": "LOOKUP(Part, COUNT(z), TRUE)", "mode": "triggered", "on": ["before:sell"]}},
  "states": {"initial": "open", "list": ["open", "sold"]},
- "transitions": [{"name": "sell", "from": "open", "to": "sold", "guard": "LOOKUP(Part, COUNT(z), TRUE) > 0"}],
+ "transitions": [{"name": "sell", "from": "open", "to": "sold", "guard": "parts > 0"}],
  "access": {"transition": {"sell": "LOOKUP(Part, COUNT(z), TRUE) < 100"}},
  "rules": [{"on": "exit", "state": "open", "if": "LOOKUP(Part, COUNT(z), TRUE) > 1",
             "do": [{"action": "set", "values": {"note": "\"dearest \" & TEXT(LOOKUP(Part, MAX(z), TRUE))"}},

@@ -382,9 +382,11 @@ Inside a commit the engine:
 1. applies the assignments, or evaluates defaults for a new document;
 2. recalculates **auto** variables whose dependencies changed, in topological
    order, only the dirty part of the graph;
-3. evaluates the requested transition's guard and moves the state;
-4. recalculates **triggered** variables whose trigger fired in this commit
-   (`enter`, `exit`, `transition`, `refresh`);
+3. for a requested transition, brings the **triggered** variables that
+   list `before:` it, then evaluates its guard, which reads the document
+   and nothing outside it (ADR-0078), and moves the state;
+4. recalculates the **triggered** variables whose trigger fired in this
+   commit (`enter`, `exit`, `transition`, `refresh`), each once;
 5. runs the rules whose triggers the commit raised, in a fixed order:
    synchronous actions change the document now, the rest go into the
    outbox;
@@ -445,12 +447,14 @@ on commit is authoritative; the conformance suite guarantees the two agree.
   at a moment given with `At`, each with its state and the state it
   would move to. A document becomes due when the guard of an eventless
   transition comes to hold with no commit of its own: the clock passed
-  a date, or a document or a table the guard looks up changed; and when
+  a date; and when
   the time of a timed transition comes, for which the list says since
   when. A guard
   that translates to SQL runs as one filter over the documents of its
-  state; a guard that looks another document up or calls a function of
-  a state is evaluated document by document. The list moves nothing: a
+  state; a guard that calls a function of
+  a state is evaluated document by document, and so is the guard of a
+  class stored before ADR-0078, which may still look another document
+  or a table up. The list moves nothing: a
   commit that touches the document does, and a refresh is one.
 - A transition may carry its time (ADR-0047): `"after": "30d"`, a
   length of time in the state as a whole number and `d`, `h`, `m` or

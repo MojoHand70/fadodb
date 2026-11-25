@@ -490,9 +490,11 @@ func TestAccess_Files(t *testing.T) {
 	}
 }
 
-// Due lists a document only for a caller who may see it.
+// Due lists a document only for a caller who may see it. The class is
+// one stored by an earlier engine, whose guard looks in a table: a row of
+// the table makes its documents due with no commit of theirs.
 func TestAccess_Due(t *testing.T) {
-	s, _ := openStore(t, Options{})
+	s, path := openStore(t, Options{})
 	ctx := context.Background()
 	const task = `{"name": "Task",
  "variables": {"owner": {"type": "text", "default": "USER()"}, "ready": {"type": "bool"}},
@@ -502,9 +504,7 @@ func TestAccess_Due(t *testing.T) {
 	if _, err := s.defineOpenTable(ctx, []byte(`{"name": "Flags", "columns": {"name": "text", "on": "bool"}, "key": ["name"]}`), asSetup); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.defineOpen(ctx, []byte(task), asSetup); err != nil {
-		t.Fatal(err)
-	}
+	s = storedBefore(t, s, path, Options{}, task, `"guard": "LOOKUP(Flags, on, name = \"go\")"`, `"guard": "FALSE"`)
 	mine, _ := s.Create(ctx, "Task", nil, As(clerkAnn))
 	if _, err := s.Create(ctx, "Task", nil, As(clerkBob)); err != nil {
 		t.Fatal(err)

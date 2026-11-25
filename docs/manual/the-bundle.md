@@ -277,7 +277,11 @@ The page shows the rate the server last gave. When Ann changes the
 currency, which the rate reads, the page asks `preview` once and shows
 its answer; `in_pln`, which reads the rate, it works out again itself.
 A guard or a rule that is the server's is marked the same way, with
-what it reads, and the page asks `transitions` for the buttons.
+what it reads, and the page asks `transitions` for the buttons. The
+guard of a transition that a value is brought before, by a variable
+that lists `before:` it, is the server's too: the page holds the
+value of an earlier version, and the move decides on the one it
+brings.
 
 ## What it never carries
 

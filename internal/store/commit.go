@@ -777,7 +777,18 @@ func (s *Store) run(ctx context.Context, cmd command, now time.Time) (*result, e
 	from := after.state
 	if trans != nil {
 		evalCtx.State = from
-		if err := s.guard(c, trans, after, evalCtx); err != nil {
+		// What the guard needs from outside the document is brought onto
+		// it first (ADR-0078, item 4): the variables that list before:
+		// this transition, in the order of the class, each followed by
+		// the recalculation of what reads it. One that cannot be brought
+		// refuses the transition.
+		brought := c.before[trans]
+		for _, cv := range brought {
+			if err := s.bringBefore(c, cv, trans, after, evalCtx, secs, cmd.preview, &res.errs); err != nil {
+				return nil, err
+			}
+		}
+		if err := s.guard(c, trans, after, evalCtx, brought); err != nil {
 			return nil, err
 		}
 		ev = eventInfo{kind: EventTransition, name: trans.Name, from: from, to: trans.To, cause: cmd.cause}

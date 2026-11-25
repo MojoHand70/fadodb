@@ -56,6 +56,7 @@ the engine on each push.
 | [Move many documents at once](manual/guides/move-many-documents.md) | **written** |
 | [Act only on the version you read](manual/guides/act-on-what-you-read.md) | **written** |
 | [Say who may bring a value again](manual/guides/who-may-bring-a-value-again.md) | **written** |
+| [Bring what a condition needs](manual/guides/bring-what-a-condition-needs.md) | **written** |
 | [See where documents wait](manual/guides/see-where-documents-wait.md) | **written** |
 | [Change a class that already has documents](manual/guides/change-a-class.md) | **written** |
 

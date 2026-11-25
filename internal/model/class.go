@@ -150,8 +150,10 @@ const (
 )
 
 // Trigger is one trigger of a triggered variable: refresh, enter:<state>,
-// exit:<state> or transition:<name>. table:<name> and schedule:<spec>
-// are refused until the phase that runs them (ADR-0043).
+// exit:<state>, transition:<name> or before:<name>, which brings the
+// value when somebody asks for the named transition, before its guard is
+// asked (ADR-0078, item 4). table:<name> and schedule:<spec> are refused
+// until the phase that runs them (ADR-0043).
 type Trigger struct {
 	Kind string
 	Arg  string
@@ -1251,9 +1253,9 @@ func checkTrigger(c *collector, path, text string, cls *Class, v *Variable) {
 			c.addf(CodeUnknownState, path, "unknown state %s", quote(arg))
 			return
 		}
-	case "transition":
+	case "transition", "before":
 		if arg == "" {
-			c.add(CodeBadTrigger, path, "transition names a transition: transition:<name>")
+			c.addf(CodeBadTrigger, path, "%s names a transition: %s:<name>", kind, kind)
 			return
 		}
 		found := false
@@ -1272,12 +1274,17 @@ func checkTrigger(c *collector, path, text string, cls *Class, v *Variable) {
 		c.hint(CodeNotSupported, path, "this build does not recompute a variable on "+kind+":", "use refresh, and send the command when the "+map[string]string{"table": "table changes", "schedule": "time comes"}[kind]+"; "+kind+": arrives with the set-wise work of a later phase")
 		return
 	default:
-		c.hint(CodeBadTrigger, path, "unknown trigger "+quote(text), "one of refresh, enter:<state>, exit:<state>, transition:<name>")
+		c.hint(CodeBadTrigger, path, "unknown trigger "+quote(text), "one of refresh, enter:<state>, exit:<state>, transition:<name>, before:<name>")
 		return
 	}
 	// A frozen document computes nothing (ADR-0043, item 8): a trigger
-	// that can fire on a move out of a terminal state is refused.
-	if why := frozenTrigger(cls, RuleDef{On: kind, State: arg, Name: arg}); why != "" {
+	// that can fire on a move out of a terminal state is refused. A
+	// before: is frozen where the transition's own trigger is.
+	on := kind
+	if kind == "before" {
+		on = "transition"
+	}
+	if why := frozenTrigger(cls, RuleDef{On: on, State: arg, Name: arg}); why != "" {
 		c.hint(CodeNotAllowed, path, "a variable cannot recompute on "+text+": "+why+", and a frozen document computes nothing (ADR-0039)",
 			"name the transition that arrives from a live state, or the entry of a state only live states lead to")
 		return
@@ -1490,6 +1497,19 @@ func compileTransitions(c *collector, cls *Class, defs []TransitionDef, scope *f
 		}
 		t.Guard = bindCondition(c, path+"/guard", d.Guard, scope, "a guard")
 		t.GuardSrc = d.Guard
+		// A guard reads the document, and what it needs from outside is
+		// brought onto the document first (ADR-0078, item 4): a guard
+		// that looks in a table or at other documents itself is refused,
+		// since nothing would keep what it saw. A definition stored
+		// before this was so still runs as it was written.
+		if t.Guard != nil && len(t.Guard.Queries) > 0 && !c.env.Lenient {
+			q := t.Guard.Queries[0]
+			hint := `give the lookup a triggered variable that lists "before:` + d.Name + `" among its triggers, and let the guard read the variable: the value is then brought when somebody asks for ` + d.Name + `, before the guard is asked, and kept in the version the move makes`
+			if d.Name == "" {
+				hint = `give the lookup a triggered variable, brought at the entry of the state with "enter:<state>" or by a refresh, and let the guard read the variable: a transition without a name has nobody asking for it, so nothing is brought before its guard`
+			}
+			c.hint(CodeNotAllowed, path+"/guard", "a guard reads its document and nothing outside it, and this one looks in "+q.Source+": what it saw there would be kept nowhere", hint)
+		}
 		compileTimer(c, cls, t, d, path, scope)
 		cls.Transitions = append(cls.Transitions, t)
 	}

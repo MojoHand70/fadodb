@@ -134,6 +134,7 @@ func Refusals(root string) (string, error) {
 	b.WriteString("| the place | the variable, or the place in the class definition, that the refusal is about, such as `/access/update` |\n")
 	b.WriteString("| the message | what happened, in words, for a person |\n")
 	b.WriteString("| the hint | often, what to do about it |\n\n")
+	b.WriteString("One refusal has a fifth. `guard_false` says under `brought` each value that was\nbrought for the guard when the transition was asked for, by its variable,\nas the guard saw it; see [Before a transition](triggered-variables.md#before-a-transition).\n\n")
 	b.WriteString("The same word can appear in more than one list: `forbidden` is always\nabout who may, wherever it comes from.\n\n")
 	for _, src := range sources {
 		codes, err := codesOf(filepath.Join(root, filepath.FromSlash(src.file)), src.prefix)

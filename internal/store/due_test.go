@@ -54,7 +54,10 @@ const dueHolds = `{"name": "Holds", "columns": {"customer": "text", "stop": "boo
 
 // dueInvoice has a guard of each kind: two on the clock, which
 // translate to SQL and leave one state in a set order; one on the days
-// in a state and one that looks a table up, which do not.
+// in a state and one that looks a table up, which do not. A guard that
+// looks in a table is refused since ADR-0078, item 4, and a class that
+// was stored with one still runs: openDue stores this one as an earlier
+// engine took it.
 const dueInvoice = `{"name": "Invoice", "variables": {
   "due": {"type": "date", "index": true}, "amount": {"type": "number"}, "owner": {"type": "text"}, "customer": {"type": "text"}},
  "states": {"initial": "sent", "list": ["sent", "overdue", "chased", "lost", "held", "paid"], "final": ["paid"]},
@@ -69,15 +72,13 @@ const dueInvoice = `{"name": "Invoice", "variables": {
 func openDue(t *testing.T) (*Store, *still) {
 	t.Helper()
 	cl := &still{now: dueDay}
-	s, _ := openStore(t, Options{Now: cl.Now})
+	o := Options{Now: cl.Now}
+	s, path := openStore(t, o)
 	ctx := context.Background()
 	if _, err := s.defineOpenTable(ctx, []byte(dueHolds), asSetup); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.defineOpen(ctx, []byte(dueInvoice), asSetup); err != nil {
-		t.Fatal(err)
-	}
-	return s, cl
+	return storedBefore(t, s, path, o, dueInvoice, `"guard": "LOOKUP(Holds, stop, customer = THIS.customer)"`, `"guard": "FALSE"`), cl
 }
 
 // previewed is what Due must list: for every document of the class, in

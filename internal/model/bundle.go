@@ -521,7 +521,15 @@ func Compiled(cls *Class) *BundleCompiled {
 	}
 	for _, t := range cls.Transitions {
 		if t.Name != "" && t.Guard != nil {
-			out.Guards[t.Name] = bundleRule(t.Guard)
+			r := bundleRule(t.Guard)
+			// A guard of a transition that something is brought before
+			// is the server's (ADR-0078, item 4): the page holds the
+			// value of an earlier version, and the move decides on the
+			// one it brings. The page asks transitions, or a preview.
+			if !r.Server && bringsBefore(cls, t.Name) {
+				r = &BundleRule{Server: true, Reads: depsOf(t.Guard)}
+			}
+			out.Guards[t.Name] = r
 		}
 	}
 	if cls.Rights != nil && cls.States != nil {
@@ -544,6 +552,17 @@ func Compiled(cls *Class) *BundleCompiled {
 		}
 	}
 	return out
+}
+
+// bringsBefore reports whether the class has a variable that is brought
+// before the named transition, when somebody asks for it.
+func bringsBefore(cls *Class, transition string) bool {
+	for _, v := range cls.Variables {
+		if v.On("before", transition) {
+			return true
+		}
+	}
+	return false
 }
 
 // ByServer reports whether a page cannot work a program out itself: it

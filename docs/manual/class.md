@@ -229,6 +229,12 @@ and is answered under [`access`](#access). The engine tells the two
 apart in its refusals: `guard_false` for the first, `forbidden` for the
 second.
 
+A guard reads its document, the caller, the clock, the state and the
+life of the document. It does not look in a table or at other
+documents: what it needs from there is brought onto the document
+first, by a triggered variable that lists `before:` the transition;
+see [Before a transition](triggered-variables.md#before-a-transition).
+
 **Give every transition a name.** The history, the log and every
 refusal identify a move by it.
 

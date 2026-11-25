@@ -482,8 +482,11 @@ documents, fed from the commits, for the question that reads
 everything; the mining views; a value that follows its source or the
 clock, worked out for many documents in one statement; tables kept in
 DuckDB or in a database of the customer's own; and the program with
-DuckDB built for each operating system. Nothing of the analytical
-engine is built yet.
+DuckDB built for each operating system. How the copy beside the
+documents is fed and asked is ADR-0089, proposed on 2026-11-25 with
+its measurements: over ten million visits of a state, a question the
+store answers in 12 to 26 seconds takes the copy under half a second.
+Nothing of the analytical engine is built yet.
 This page is updated when a phase starts and when it ends;
 it never describes a phase as done before its acceptance criteria pass.
 

@@ -1,6 +1,6 @@
 # ADR-0020: LOOKUP and QUERY execution: one engine call per invocation
 
-- Status: Accepted; amends ADR-0015 and ADR-0016; amended by ADR-0036 (the index threshold), ADR-0037 (the condition as a program of its own, LOOKUP in this build), ADR-0046 (a class is answered by the transactional store; an aggregate has the type of its function), ADR-0076 (`QUERY` is built for a live variable, and how its lists are written)
+- Status: Accepted; amends ADR-0015 and ADR-0016; amended by ADR-0036 (the index threshold), ADR-0037 (the condition as a program of its own, LOOKUP in this build), ADR-0046 (a class is answered by the transactional store; an aggregate has the type of its function), ADR-0076 (`QUERY` is built for a live variable, and how its lists are written); and by ADR-0089 (Proposed: item 3, which question the copy answers)
 - Date: 2026-11-06
 
 ## Context

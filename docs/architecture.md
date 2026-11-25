@@ -278,7 +278,7 @@ result:
 | Pure | `IF IFERROR ROUND SUM LEFT DATE ADDMONTHS DECIMAL MONEY JSONVALUE` | everywhere |
 | Context | `USER() INGROUP() USERKIND() ACTINGFOR() NOW() TODAY() STATE() ID()` | defaults, triggered formulas, guards, rules, access rules; not in auto formulas |
 | Lookup | `LOOKUP(source, column, condition)` | everywhere; in auto formulas only against explicit tables |
-| Query | `QUERY(source, columns, condition, sort)` | the whole formula of a live variable (ADR-0076); grouping, the limit and a `QUERY` anywhere else are not built yet |
+| Query | `QUERY(source, columns, condition, sort)` | the whole formula of a live variable (ADR-0076), or of a triggered one, which keeps the list with the document (ADR-0078); grouping, the limit and a `QUERY` anywhere else are not built yet |
 | Secret | `SECRET("token")` | the request of an action definition, and nowhere else (ADR-0045) |
 
 The rule behind the table: the stored value of an auto variable must be a

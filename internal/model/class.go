@@ -132,7 +132,15 @@ type Variable struct {
 	// is a QUERY (ADR-0076, item 9); nil for every other variable. Such a
 	// variable has no Formula: the store asks the question itself.
 	Query *Query
-	Def   *VariableDef
+	// Kept is the list a triggered variable keeps when its whole formula
+	// is a QUERY (ADR-0078, item 5); nil for every other variable. The
+	// store asks the question at the variable's triggers, with the
+	// engine's eyes, and keeps the rows with the document and with each
+	// of its versions, as it keeps an entered list. The variable is of
+	// the type rows, with the columns of the QUERY as its schema, and has
+	// no Formula.
+	Kept *Query
+	Def  *VariableDef
 	// queryCall is the QUERY of such a variable as it was parsed, until
 	// the formulas are compiled.
 	queryCall *formula.Call
@@ -534,6 +542,9 @@ func CompileIn(def *Definition, env Env) (*Class, Diagnostics) {
 		if v.Computed {
 			if v.queryCall != nil {
 				compileQuery(c, cls, v, v.queryCall, scope)
+				if v.Mode == ModeTriggered {
+					compileKept(c, cls, v)
+				}
 				continue
 			}
 			if v.Formula == nil && v.Type.Kind != formula.KindNull {
@@ -640,6 +651,9 @@ func compileVariable(c *collector, path, name string, vd *VariableDef, schemas *
 			if len(vd.On) == 0 {
 				c.hint(CodeMissing, path+"/on", "a triggered variable names its triggers", `"on": ["refresh"] recalculates on the refresh command`)
 			}
+			// A list that is kept (ADR-0078, item 5): a QUERY that is
+			// the whole formula.
+			v.queryCall = queryOf(vd.Formula)
 		case "live":
 			v.Mode = ModeLive
 			// What speaks of a kept value has no place on a value that is
@@ -670,7 +684,15 @@ func compileVariable(c *collector, path, name string, vd *VariableDef, schemas *
 	// The type. A computed variable without one takes its formula's type
 	// once the formula is bound; its properties are checked then.
 	var composite bool
-	if v.queryCall != nil {
+	if v.queryCall != nil && v.Mode == ModeTriggered && vd.Type != "rows" {
+		// A list that is kept says its columns, as every variable that
+		// reads other documents says its type (ADR-0046): the tables of
+		// the class are laid out before the class it lists is known.
+		c.hint(CodeMissing, path+"/type", "a triggered variable whose formula is a QUERY keeps the list, and says its columns",
+			`write "type": "rows" and a "schema" with the columns of the QUERY and their types, as {"number": "text", "net": "money(2)"}; a list to browse, kept nowhere, is "mode": "live"`)
+		return nil
+	}
+	if v.queryCall != nil && v.Mode != ModeTriggered {
 		// A list: its rows are the documents of another class and its
 		// columns the QUERY's, so it has no schema of its own.
 		if vd.Type != "" && vd.Type != "rows" {
@@ -738,8 +760,10 @@ func compileVariable(c *collector, path, name string, vd *VariableDef, schemas *
 
 	// What a formula can produce.
 	if v.Computed {
-		if composite || v.Type.Kind == formula.KindObject {
-			c.add(CodeNotSupported, path+"/formula", "a computed "+v.Type.String()+" is not supported yet; a formula computes a scalar")
+		kept := v.queryCall != nil && v.Mode == ModeTriggered && v.Type.Kind == formula.KindRows
+		if (composite || v.Type.Kind == formula.KindObject) && !kept {
+			c.hint(CodeNotSupported, path+"/formula", "a computed "+v.Type.String()+" is not supported yet; a formula computes a scalar",
+				`the one list a formula gives is a QUERY, the whole formula of a variable that is "mode": "live", kept nowhere, or "mode": "triggered", kept`)
 		}
 		if v.Type.Kind == formula.KindJSON {
 			c.add(CodeNotAllowed, path+"/formula", "no formula produces a json value (ADR-0013)")
@@ -1028,6 +1052,10 @@ func listsOf(cls *Class, v *Variable, r *envSources) func(name string) (*formula
 		}
 		source := ""
 		switch {
+		case !lv.Live():
+			// A list that is kept is a list the document holds
+			// (ADR-0078, item 5): its figures are worked out over its
+			// rows, as over entered lines.
 		case lv.Query != nil:
 			source = lv.Query.Source
 		case lv.queryCall != nil && len(lv.queryCall.Args) > 0:
@@ -1425,6 +1453,16 @@ func compileColumns(c *collector, cls *Class) {
 				c.addf(CodeTooManyColumns, "/variables/"+v.Name, "the child table would have %d columns; at most %d", len(child.Columns)+3, MaxColumns)
 			}
 			cls.Children = append(cls.Children, child)
+			if v.Triggered() {
+				// A list that is kept (ADR-0078, item 5) says when it was
+				// brought, as every triggered value does: its moment
+				// stands in the document's own row, its rows in the child
+				// table.
+				asof, errc := MomentColumn(v.Name, MomentAsOf), MomentColumn(v.Name, MomentError)
+				cls.Columns = append(cls.Columns,
+					Column{Name: asof, Type: formula.DecimalType(0), Variable: v.Name, Path: asof, Moment: MomentAsOf},
+					Column{Name: errc, Type: textType, Variable: v.Name, Path: errc, Moment: MomentError})
+			}
 		case formula.KindArray:
 			elem := formula.Type{Kind: v.Type.Elem, Scale: v.Type.Scale}
 			cls.Children = append(cls.Children, ChildTable{Variable: v.Name, Columns: columnsOf("value", elem, v.Name, false)})

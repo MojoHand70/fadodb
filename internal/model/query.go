@@ -248,6 +248,89 @@ func compileQuery(c *collector, cls *Class, v *Variable, call *formula.Call, sco
 	}
 }
 
+// compileKept holds the QUERY of a triggered variable to the list the
+// variable keeps (ADR-0078, item 5): every column of the QUERY is a
+// column of the variable's schema with the type it has in the source,
+// and the schema has no other. The store then writes each row of the
+// answer into the child table the schema laid out. The question moves
+// from Query, which is a live list's, to Kept.
+func compileKept(c *collector, cls *Class, v *Variable) {
+	q := v.Query
+	v.Query = nil
+	if q == nil {
+		return
+	}
+	path := "/variables/" + v.Name
+	fields := v.Type.Fields()
+	if c.env.Shallow {
+		// A stored definition compiled alone: the source is not at hand,
+		// and the columns were checked when the class was defined.
+		v.Kept = q
+		return
+	}
+	var src *Class
+	switch {
+	case upper(q.Source) == upper(cls.Name):
+		src = cls
+	case c.env.Classes != nil:
+		src, _ = c.env.Classes(q.Source)
+	}
+	if src == nil {
+		return // compileQuery has said so
+	}
+	bad := false
+	listed := map[string]bool{}
+	for _, name := range q.Columns {
+		listed[upper(name)] = true
+		var want formula.Type
+		if sc, ok := FilterColumn(name); ok {
+			want = sc.Type
+		} else if sv, ok := src.Variable(name); ok {
+			want = sv.Type
+		} else {
+			continue // compileQuery has said so
+		}
+		if !want.IsScalar() {
+			c.hint(CodeNotSupported, path+"/formula", "a list that is kept holds single values, and "+name+" of "+src.Name+" is "+want.String(),
+				"list the single values it needs; a list of lists is not kept")
+			bad = true
+			continue
+		}
+		if reservedFieldNames[strings.ToLower(name)] {
+			c.hint(CodeNotSupported, path+"/formula", "a list that is kept cannot hold the column "+name+" of "+src.Name+": the table of a list has a column of that name for its own use",
+				"leave "+name+" out of the QUERY")
+			bad = true
+			continue
+		}
+		var field *formula.Field
+		for i := range fields {
+			if upper(fields[i].Name) == upper(name) {
+				field = &fields[i]
+			}
+		}
+		switch {
+		case field == nil:
+			c.hint(CodeMissing, path+"/schema", "the QUERY lists the column "+name+", and the schema of "+v.Name+" has no such column",
+				`add "`+name+`": "`+want.String()+`" to the schema`)
+			bad = true
+		case field.Type.String() != want.String():
+			c.hint(CodeTypeMismatch, path+"/schema", "the column "+field.Name+" is "+field.Type.String()+" in the schema of "+v.Name+", and "+want.String()+" in "+src.Name,
+				`write "`+field.Name+`": "`+want.String()+`"`)
+			bad = true
+		}
+	}
+	for _, f := range fields {
+		if !listed[upper(f.Name)] {
+			c.hint(CodeNotAllowed, path+"/schema", "the schema of "+v.Name+" has the column "+f.Name+", which its QUERY does not list",
+				"a list that is kept has the columns of its QUERY and no other: list "+f.Name+" in the QUERY, or remove it from the schema")
+			bad = true
+		}
+	}
+	if !bad {
+		v.Kept = q
+	}
+}
+
 // checkQueryCond binds the condition of a QUERY over the columns of its
 // source, with the variables of the document the list belongs to as
 // THIS.name, and holds it to what a filter may be (ADR-0038): a

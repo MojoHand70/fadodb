@@ -149,12 +149,20 @@ func (s *Store) listTransitions(c *class, row *docRow, evalCtx *formula.Context,
 				}
 			}
 			if failed != nil {
+				if s.wev.shownRow != nil {
+					clear(s.wev.shown)
+					s.wev.shownRow = nil
+				}
 				info.Code, info.Message = failed.Code, failed.Message
 				out = append(out, info)
 				continue
 			}
 		}
 		held, err := s.holds(c, t, over, evalCtx)
+		if s.wev.shownRow != nil {
+			clear(s.wev.shown)
+			s.wev.shownRow = nil
+		}
 		switch {
 		case held:
 			info.Enabled = true
@@ -247,7 +255,7 @@ func (s *Store) guard(c *class, t *model.Transition, row *docRow, evalCtx *formu
 	if len(brought) > 0 {
 		cells := c.cells(row.state)
 		for _, cv := range brought {
-			if cv.leaf < 0 {
+			if cv.leaf < 0 && cv.child == nil {
 				continue
 			}
 			if c.rights != nil && cells[cv.idx].read != nil {
@@ -257,6 +265,12 @@ func (s *Store) guard(c *class, t *model.Transition, row *docRow, evalCtx *formu
 			}
 			if e.Brought == nil {
 				e.Brought = &Values{}
+			}
+			if cv.child != nil {
+				// A list that is kept (item 5): the rows the guard saw.
+				rows, _ := s.wev.listRows(c, cv.child, row)
+				(*e.Brought)[cv.v.Name] = cv.child.out(rows)
+				continue
 			}
 			(*e.Brought)[cv.v.Name] = valueOut(row.vals[cv.leaf])
 		}

@@ -179,19 +179,20 @@ func TestLists(t *testing.T) {
 	}
 	live := func(formula string) string { return list(`"mode": "live", "formula": "` + formula + `"`) }
 	heldBy(t, page, "refused", map[string][]string{
-		"a QUERY in a variable that is not live":         {list(`"formula": "QUERY(Invoice, number)"`), list(`"mode": "triggered", "on": ["refresh"], "formula": "QUERY(Invoice, number)"`)},
-		"a QUERY inside a larger formula":                {live(`IF(TRUE, QUERY(Invoice, number), BLANK)`)},
-		"a source nobody defined":                        {live(`QUERY(Nothing, number)`)},
-		"a table as the source":                          {live(`QUERY(rates, code)`)},
-		"a column the source has not":                    {live(`QUERY(Invoice, {number, nothing})`)},
-		"a count among the columns":                      {live(`QUERY(Invoice, {number, COUNT(net)})`)},
-		"a condition that is no condition":               {live(`QUERY(Invoice, number, net)`)},
-		"a pointer compared with a text":                 {live(`QUERY(Invoice, number, order = \"Order:ORD-17\")`)},
-		"REF() compared with a pointer to another class": {live(`QUERY(Invoice, number, order = REF())`)},
-		"a LOOKUP in the condition":                      {live(`QUERY(Invoice, number, LEN(number) > LOOKUP(rates, rate, code = \"PLN\"))`)},
-		"a live variable of the source as a column":      {live(`QUERY(Order, {number, invoices})`)},
-		"braces anywhere else":                           {live(`LEN({n, n})`)},
-		"REF() anywhere else":                            {live(`TEXT(REF())`), list(`"formula": "TEXT(REF())"`)},
+		"a QUERY in a variable that is neither live nor triggered":      {list(`"formula": "QUERY(Invoice, number)"`)},
+		"a QUERY in a triggered variable that does not say its columns": {list(`"mode": "triggered", "on": ["refresh"], "formula": "QUERY(Invoice, number)"`)},
+		"a QUERY inside a larger formula":                               {live(`IF(TRUE, QUERY(Invoice, number), BLANK)`)},
+		"a source nobody defined":                                       {live(`QUERY(Nothing, number)`)},
+		"a table as the source":                                         {live(`QUERY(rates, code)`)},
+		"a column the source has not":                                   {live(`QUERY(Invoice, {number, nothing})`)},
+		"a count among the columns":                                     {live(`QUERY(Invoice, {number, COUNT(net)})`)},
+		"a condition that is no condition":                              {live(`QUERY(Invoice, number, net)`)},
+		"a pointer compared with a text":                                {live(`QUERY(Invoice, number, order = \"Order:ORD-17\")`)},
+		"REF() compared with a pointer to another class":                {live(`QUERY(Invoice, number, order = REF())`)},
+		"a LOOKUP in the condition":                                     {live(`QUERY(Invoice, number, LEN(number) > LOOKUP(rates, rate, code = \"PLN\"))`)},
+		"a live variable of the source as a column":                     {live(`QUERY(Order, {number, invoices})`)},
+		"braces anywhere else":                                          {live(`LEN({n, n})`)},
+		"REF() anywhere else":                                           {live(`TEXT(REF())`), list(`"formula": "TEXT(REF())"`)},
 	}, func(definition string) string { return finding(db, definition) })
 
 	// What is refused of a figure when the class is defined.

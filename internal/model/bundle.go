@@ -509,6 +509,12 @@ func Compiled(cls *Class) *BundleCompiled {
 		if v.Live() && (v.Formula != nil || v.Query != nil) {
 			out.Computed = append(out.Computed, BundleFormula{Variable: v.Name, Type: v.Type.String(), Reads: nonNil(v.Deps), Server: true})
 		}
+		// A list that is kept (ADR-0078, item 5) is the server's too: the
+		// page shows the rows the document holds, and the server brings
+		// them again.
+		if v.Kept != nil {
+			out.Computed = append(out.Computed, BundleFormula{Variable: v.Name, Type: v.Type.String(), Reads: nonNil(v.Deps), Server: true})
+		}
 	}
 	if a := cls.Access; a != nil {
 		out.Access = &BundleAccess{Create: bundleRule(a.Create), Update: bundleRule(a.Update), Delete: bundleRule(a.Delete)}

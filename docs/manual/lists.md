@@ -198,6 +198,41 @@ the order with `get` answers no `invoices`. Jan writes one more
 invoice on ORD-17, and the next reader of the list sees it; the order
 itself is still at the version it had.
 
+## A list that is kept
+
+A live list is for browsing: it is asked again for every reader, and
+shows the invoices as they are now. A decision needs the other kind.
+When an order is closed because every invoice of it was paid, the
+order should hold the invoices that decision stood on, as they were
+then.
+
+A `QUERY` that is the whole formula of a **triggered** variable is a
+list that is kept. The variable says its type, `rows`, and its
+columns, which are the columns of the `QUERY` with the types they
+have in the source:
+
+```jsonc
+"settled": {"type": "rows", "schema": {"number": "text", "net": "money(2)", "state": "text"},
+            "formula": "QUERY(Invoice, {number, net, state}, order = REF(), {number})",
+            "mode": "triggered", "on": ["before:close", "refresh"]}
+```
+
+| | A live list | A list that is kept |
+|---|---|---|
+| asked | whenever somebody reads it | at the triggers the variable lists |
+| for | its reader: the documents and the values they may read | everybody: one list, with the engine's eyes |
+| held by the document | no | yes, with every version, as lines somebody entered |
+| read with | the command `live` | the document, as any value |
+| in a guard, a rule, a computed variable | no | yes: `ALL(settled, state = "paid")`, `SUM(settled.net)` |
+| who sees it | who may read each document listed | the `read` right of the variable |
+| brought again by | nobody: it is never kept | a `refresh`, by whoever the `write` right of the variable lets |
+
+It holds at most 10,000 rows, as every list of a document does, and it
+is copied with each version of the document: it is for the lines a
+decision stood on. The guide
+[Keep the lines a decision stood on](guides/keep-the-lines-a-decision-stood-on.md)
+plays an order from its invoices to its closing.
+
 ## A large class
 
 "The invoices of this order" must not read every invoice. That is why
@@ -535,7 +570,8 @@ place in the formula.
 <!-- refused -->
 | Written in a class | The class is refused with |
 |---|---|
-| a `QUERY` in a variable that is not live | `bad_formula` |
+| a `QUERY` in a variable that is neither live nor triggered | `bad_formula` |
+| a `QUERY` in a triggered variable that does not say its columns | `missing` |
 | a `QUERY` inside a larger formula | `bad_formula` |
 | a source nobody defined | `bad_formula` |
 | a table as the source | `not_supported` |
@@ -559,7 +595,6 @@ Each of these is decided (ADR-0076) and waits its turn.
 - A table as the source of a `QUERY`. A `LOOKUP` reads a table today.
 - A count or a sum among the columns, and grouping: a table of
   totals. One figure of a list is built: see "Figures over a list".
-- A list that is kept: a `QUERY` in a triggered variable.
 - `REF()` outside the condition of a `QUERY`, and `REF("Order",
   "ORD-17")`, the pointer to a named document.
 - A single value looked up in a live variable, with `LOOKUP`.

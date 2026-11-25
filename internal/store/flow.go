@@ -358,8 +358,7 @@ func (s *Store) flowFromStore(ctx context.Context, c *class, o options, flow *Fl
 // statement. The store then answers, and what the copy said is kept
 // for CopyState.
 func (s *Store) flowFromCopy(ctx context.Context, c *class, o options, flow *Flow) ([]flowNow, []flowMove, bool) {
-	f := s.feeder
-	if f == nil {
+	if s.feeder == nil {
 		return nil, nil, false
 	}
 	// The reader's rule, written for the analytical engine. The copy
@@ -384,7 +383,8 @@ func (s *Store) flowFromCopy(ctx context.Context, c *class, o options, flow *Flo
 		args = append(args, sql.Named(name, v))
 		return d.Param(name)
 	}, func(sum string) string { return "CAST(" + sum + " AS BIGINT)" })
-	if err := s.feed(ctx); err != nil {
+	f, ready := s.copyReady(ctx)
+	if !ready {
 		return nil, nil, false
 	}
 	fail := func(err error) ([]flowNow, []flowMove, bool) {

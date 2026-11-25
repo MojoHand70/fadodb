@@ -10,19 +10,21 @@ Phase 8 started on 2026-11-25.
 
 ### Added
 
-- The code for the phone (ADR-0088, its third step). On a computer,
-  the page of an invitation shows a QR code first: "Point your phone's
-  camera at the code. Your phone keeps the key." The phone opens its
-  link at `/auth/phone`, the person adds a passkey there with their
-  face or fingerprint, and the phone is signed in; the computer that
-  showed the code is signed in too, that browser alone, recorded with
-  the way `phone`. **Use this computer instead** makes the passkey on
-  the computer. The account page shows a code of the same kind, to add
-  a passkey on another phone. A code holds once and for 10 minutes, and
-  a new one ends the one before. The server draws the code itself, in
-  `internal/qrcode`, Go's standard library and code of its own; a page
-  that shows one lets its script ask the server alone how it stands
-  (`connect-src 'self'`).
+- The counts and totals a class already asks are answered from the
+  copy in the analytical engine when no index narrows them (ADR-0089,
+  step 3, its first part). In a program that keeps the copy, the
+  command `count`, and the total or the first document that a `LOOKUP`
+  in a live variable or a figure over a list asks for, go to DuckDB by
+  themselves: nothing is written differently, and the answer is the
+  same for the same reader. Among 3,400,000 invoices, for a reader who
+  reads them all: the sum of every invoice in a `LOOKUP` takes 7 ms
+  where it took 460, a count over an amount 2 ms where it took 275,
+  and a count by a variable that has no index 1.5 ms where it took
+  240. A question that an index narrows, the invoices of one order,
+  stays with the store, as does a page of a list and everything inside
+  a commit. A question never waits for a copy that is being made or is
+  a long load behind: the store answers until the copy is near again,
+  and that holds for the flow too.
 - The flow of a class is answered from the copy in the analytical
   engine (ADR-0089, step 2). A program that keeps the copy answers the
   command `flow`, which a face draws its flowchart from, out of DuckDB:
@@ -263,6 +265,20 @@ Phase 8 started on 2026-11-25.
   forward and not made again. v0.7.0 no longer opens the file
   afterwards: keep a copy if you may go back. A database of a release
   before v0.7.0 is refused as before.
+
+- The code for the phone (ADR-0088, its third step). On a computer,
+  the page of an invitation shows a QR code first: "Point your phone's
+  camera at the code. Your phone keeps the key." The phone opens its
+  link at `/auth/phone`, the person adds a passkey there with their
+  face or fingerprint, and the phone is signed in; the computer that
+  showed the code is signed in too, that browser alone, recorded with
+  the way `phone`. **Use this computer instead** makes the passkey on
+  the computer. The account page shows a code of the same kind, to add
+  a passkey on another phone. A code holds once and for 10 minutes, and
+  a new one ends the one before. The server draws the code itself, in
+  `internal/qrcode`, Go's standard library and code of its own; a page
+  that shows one lets its script ask the server alone how it stands
+  (`connect-src 'self'`).
 
 - People sign in with a passkey, invited by a link (ADR-0088, its
   second step): their fingerprint, their face or their device's PIN,

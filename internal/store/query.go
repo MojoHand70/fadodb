@@ -306,21 +306,8 @@ func (s *Store) pastCount(ctx context.Context, c *class, o options, all int64, b
 	return all - n, nil
 }
 
-// Count counts the documents of a class that match a filter's where.
-func (s *Store) Count(ctx context.Context, f Filter, opts ...Option) (int64, error) {
-	c, e := s.class(f.Class)
-	if e != nil {
-		return 0, e
-	}
-	o, e := s.asked(ctx, opts, c.cls.Name)
-	if e != nil {
-		return 0, e
-	}
-	f.Order, f.Fields, f.Limit, f.Offset = nil, nil, 0, 0
-	plan, err := query.Compile(f, c.cls, s.sources(), caller(o, c))
-	if err != nil {
-		return 0, filterErr(err)
-	}
+// countInStore runs the count of a compiled filter in the store.
+func (s *Store) countInStore(ctx context.Context, c *class, plan *query.Plan, o options) (int64, error) {
 	text := "SELECT count(*) FROM " + quote(c.cls.Name)
 	where, args, err := s.through(ctx, c, plan, o)
 	if err != nil {
@@ -339,6 +326,35 @@ func (s *Store) Count(ctx context.Context, f Filter, opts ...Option) (int64, err
 	var n int64
 	if err := st.stmt.QueryRowContext(asked, args...).Scan(&n); err != nil {
 		return 0, s.stopped(ctx, asked, c, plan, storageErr("count "+c.cls.Name, err))
+	}
+	return n, nil
+}
+
+// Count counts the documents of a class that match a filter's where.
+func (s *Store) Count(ctx context.Context, f Filter, opts ...Option) (int64, error) {
+	c, e := s.class(f.Class)
+	if e != nil {
+		return 0, e
+	}
+	o, e := s.asked(ctx, opts, c.cls.Name)
+	if e != nil {
+		return 0, e
+	}
+	f.Order, f.Fields, f.Limit, f.Offset = nil, nil, 0, 0
+	plan, err := query.Compile(f, c.cls, s.sources(), caller(o, c))
+	if err != nil {
+		return 0, filterErr(err)
+	}
+	// A count that no index narrows reads the class, and is the copy's
+	// to answer when the program keeps one (ADR-0089, item 6).
+	n, counted := int64(0), false
+	if !plan.Narrowed {
+		n, counted = s.countFromCopy(ctx, c, f, o)
+	}
+	if !counted {
+		if n, err = s.countInStore(ctx, c, plan, o); err != nil {
+			return 0, err
+		}
 	}
 	if o.records(c) {
 		past, err := s.pastCount(ctx, c, o, n, func(p query.Principal) (string, []any, error) {

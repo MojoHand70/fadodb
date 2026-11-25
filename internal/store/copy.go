@@ -4,9 +4,11 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"math/big"
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/MojoHand70/fadodb/internal/formula"
@@ -151,7 +153,7 @@ var (
 // it was fed, and what was laid in it for each class.
 type feeder struct {
 	copy Copy
-	// mu lets one feed run at a time.
+	// mu lets one piece of a feed run at a time.
 	mu sync.Mutex
 	// marks are the marks as the copy holds them: read when the store
 	// opened, and kept with every feed.
@@ -166,11 +168,20 @@ type feeder struct {
 	// stop asks the feed that runs by itself to end, and done says it
 	// has.
 	first, stop, done chan struct{}
-	fed, failed       int64
-	lastErr           error
-	answers           int64
-	askErr            error
-	lastErrMutex      sync.Mutex
+	// stands says where the copy stands to the database: near, a
+	// moment's writing behind at most, so that a question that brings
+	// it up to date, or waits for a feed that is doing so, waits for
+	// little; behind, being made or a long load behind, when the store
+	// answers and no question waits (ADR-0089, item 5); or not known,
+	// before the first feed has looked and after one that failed, when
+	// a question looks for itself. A feed says which before it copies
+	// anything, and again when it ends.
+	stands       atomic.Int32
+	fed, failed  int64
+	lastErr      error
+	answers      int64
+	askErr       error
+	lastErrMutex sync.Mutex
 }
 
 // copyColumnType is what a column of a class holds in the copy.
@@ -368,30 +379,137 @@ func (s *Store) FeedCopy(ctx context.Context) error { return s.feed(ctx) }
 // of the database, which sees one moment of it, and one transaction of
 // the copy, which takes the rows and the new marks together or nothing.
 // A feed that finds nothing new writes nothing.
-func (s *Store) feed(ctx context.Context) error {
+func (s *Store) feed(ctx context.Context) error { return s.feedAtMost(ctx, 0) }
+
+// copyCatchUp is how many events a question brings the copy up by
+// itself before it is answered. A copy that is further behind, after a
+// long load or while it is being made, is brought up by the feed that
+// runs by itself, and the store answers meanwhile: a question waits for
+// a moment's writing and never for a load.
+var copyCatchUp = int64(10000)
+
+// feedAtMost is feed for a question: with most set, a copy that is
+// more than most events behind is left as it is, and errCopyBehind
+// says so. One piece is fed at a time, and a question that finds a feed
+// running waits for it only while the copy is near the database: a
+// feed that has much to bring says at once that it is not.
+func (s *Store) feedAtMost(ctx context.Context, most int64) error {
 	f := s.feeder
 	if f == nil {
 		return nil
 	}
-	f.mu.Lock()
-	defer f.mu.Unlock()
 	for {
-		more, err := s.feedOnce(ctx, f)
+		if most == 0 {
+			f.mu.Lock()
+		} else {
+			for !f.mu.TryLock() {
+				if f.stands.Load() == copyBehind {
+					return errCopyBehind
+				}
+				time.Sleep(200 * time.Microsecond)
+			}
+		}
+		more, err := s.feedOnce(ctx, f, most)
+		if err == errCopyBehind {
+			// No failure of the feed: the question does not wait.
+			f.mu.Unlock()
+			return err
+		}
 		f.lastErrMutex.Lock()
 		f.lastErr = err
 		if err != nil {
 			f.failed++
 		}
 		f.lastErrMutex.Unlock()
+		switch {
+		case err != nil:
+			f.stands.Store(copyUnknown)
+		case more:
+			f.stands.Store(copyBehind)
+		default:
+			f.stands.Store(copyNear)
+		}
+		f.mu.Unlock()
 		if err != nil || !more {
 			return err
+		}
+		if most > 0 {
+			// More than one piece: a load, which the feed that runs by
+			// itself goes on with.
+			return errCopyBehind
 		}
 	}
 }
 
+// Where a copy stands to its database.
+const (
+	copyUnknown int32 = iota
+	copyNear
+	copyBehind
+)
+
+// errCopyBehind is why the store answered a question the copy could
+// have: the copy was still being made, or a long load behind.
+var errCopyBehind = errors.New("the copy is still being brought up to the database")
+
+// copyReady brings the copy up to the database for one question
+// (ADR-0089, item 5) and answers the feeder to ask. It answers false
+// when the store has to answer instead: the program keeps no copy, the
+// copy is being made or is more than copyCatchUp events behind, so
+// that the question would wait for it, or it cannot be fed. CopyState
+// keeps why.
+func (s *Store) copyReady(ctx context.Context) (*feeder, bool) {
+	f := s.feeder
+	if f == nil {
+		return nil, false
+	}
+	if f.stands.Load() == copyBehind {
+		f.notAnswered(errCopyBehind)
+		return nil, false
+	}
+	if err := s.feedAtMost(ctx, copyCatchUp); err != nil {
+		if err == errCopyBehind {
+			f.notAnswered(err)
+		}
+		return nil, false
+	}
+	return f, true
+}
+
+// copyCell is a value the copy answered as the store's driver would
+// have given it: a whole number of any width as an int64, since a value
+// is read from either engine by the same code.
+func copyCell(v any) any {
+	switch x := v.(type) {
+	case int:
+		return int64(x)
+	case int8:
+		return int64(x)
+	case int16:
+		return int64(x)
+	case int32:
+		return int64(x)
+	case uint8:
+		return int64(x)
+	case uint16:
+		return int64(x)
+	case uint32:
+		return int64(x)
+	case uint64:
+		return int64(x)
+	case float32:
+		return float64(x)
+	case *big.Int:
+		if x != nil && x.IsInt64() {
+			return x.Int64()
+		}
+	}
+	return v
+}
+
 // feedOnce is one piece of a feed: it reports whether the database
 // holds more than it handed over.
-func (s *Store) feedOnce(ctx context.Context, f *feeder) (bool, error) {
+func (s *Store) feedOnce(ctx context.Context, f *feeder, most int64) (bool, error) {
 	conn, err := s.db.Conn(ctx)
 	if err != nil {
 		return false, storageErr("open a connection for the copy", err)
@@ -424,26 +542,6 @@ func (s *Store) feedOnce(ctx context.Context, f *feeder) (bool, error) {
 		return false, storageErr("read the database for the copy", err)
 	}
 
-	// What the copy has to be given tables for.
-	var lay []CopyTable
-	for _, l := range layouts {
-		if f.laid[l.name] != l.version {
-			lay = append(lay, l.now, l.versions)
-		}
-	}
-	if _, ok := f.laid[copyEvents]; !ok {
-		lay = append(lay, CopyTable{Name: copyEvents, Columns: copyEventColumns})
-	}
-	if len(lay) > 0 {
-		if err := f.copy.Lay(ctx, lay); err != nil {
-			return false, err
-		}
-		for _, l := range layouts {
-			f.laid[l.name] = l.version
-		}
-		f.laid[copyEvents] = 1
-	}
-
 	// A copy fed from another database, or from a later moment of this
 	// one than a backup brought back, names an event the database does
 	// not have: it is made again whole.
@@ -468,6 +566,44 @@ func (s *Store) feedOnce(ctx context.Context, f *feeder) (bool, error) {
 			return false, storageErr("read the database for the copy", err)
 		}
 	}
+	// Where the copy stands is known from here, before a table is laid
+	// or a row copied: it is behind when it is made again whole, when
+	// it is more than copyCatchUp events behind, and when a class is in
+	// the middle of a long load. The questions that come while it is
+	// brought up go to the store, and so does the one that found it so;
+	// a copy that is near is waited for, since that is a moment.
+	behind := whole || last.Int64-from > copyCatchUp
+	for _, mark := range next {
+		behind = behind || strings.HasSuffix(mark, " "+copyPartial)
+	}
+	if behind {
+		f.stands.Store(copyBehind)
+		if most > 0 {
+			return false, errCopyBehind
+		}
+	} else {
+		f.stands.Store(copyNear)
+	}
+	// What the copy has to be given tables for.
+	var lay []CopyTable
+	for _, l := range layouts {
+		if f.laid[l.name] != l.version {
+			lay = append(lay, l.now, l.versions)
+		}
+	}
+	if _, ok := f.laid[copyEvents]; !ok {
+		lay = append(lay, CopyTable{Name: copyEvents, Columns: copyEventColumns})
+	}
+	if len(lay) > 0 {
+		if err := f.copy.Lay(ctx, lay); err != nil {
+			return false, err
+		}
+		for _, l := range layouts {
+			f.laid[l.name] = l.version
+		}
+		f.laid[copyEvents] = 1
+	}
+
 	if whole {
 		for name := range next {
 			next[name] = ""

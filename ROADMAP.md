@@ -490,8 +490,19 @@ the copy and feeds it, and answers the flow of a class from it, in
 under half a second among ten million visits of a state where the
 store takes 19. The server program is built with DuckDB too, as
 `fadodb-full`, on the machine that runs it; `fadodb` stays in pure Go.
-Every other question is still the store's, and the program with
-DuckDB is not yet built for each operating system and released.
+The counts and totals a class already asks, the command `count` and
+what a `LOOKUP` or a figure over a list works out when it is read, go
+to the copy by themselves when no index narrows them. A page of a list
+is still the store's, and the program with DuckDB is not yet built for
+each operating system and released.
+
+Two things of the engine come first, by the owner's word of
+2026-11-25: what a class already asks, its lookups and its lists,
+takes milliseconds over a large class; and so does the question of how
+documents moved. The rest of the engine follows them: totals by group
+among the columns of a `QUERY`, a value that follows its source or the
+clock, tables kept in DuckDB or in a database of the customer's own,
+and a page for analysts.
 This page is updated when a phase starts and when it ends;
 it never describes a phase as done before its acceptance criteria pass.
 

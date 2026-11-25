@@ -164,6 +164,12 @@ type child struct {
 
 	insert, copyRows, selectRows *sql.Stmt // on the writer
 	readRows                     *sql.Stmt // on the pool
+	// gone says the table no longer holds the columns of this version of
+	// the list: the list was taken out of the class, or given other
+	// columns, when it held no value anywhere. It has no statements, and
+	// reads as no rows, which is what every document of this version
+	// holds of it.
+	gone bool
 }
 
 type writeStmts struct {
@@ -619,6 +625,9 @@ func (c *class) prepare(ctx context.Context, writer *sql.Conn, db *sql.DB) error
 	prepR(&c.r.listHistory, "SELECT "+historySelect+" FROM "+quote(c.history)+` WHERE "id" = ? ORDER BY "version"`)
 	prepR(&c.r.getLast, "SELECT "+historySelect+" FROM "+quote(c.history)+` WHERE "id" = ? ORDER BY "version" DESC LIMIT 1`)
 	for _, ch := range c.children {
+		if ch.gone {
+			continue
+		}
 		ccols := quoteAll(columnNames(ch.def.Columns))
 		all := append(quoteAll(childKey), ccols...)
 		prepW(&ch.insert, "INSERT INTO "+quote(ch.table)+" ("+strings.Join(all, ", ")+") VALUES ("+marks(len(all))+")")
@@ -632,6 +641,70 @@ func (c *class) prepare(ctx context.Context, writer *sql.Conn, db *sql.DB) error
 		return storageErr("prepare the statements of "+c.cls.Name, err)
 	}
 	return nil
+}
+
+// catalog is what reads the tables' own description: the writer's
+// connection or the pool.
+type catalog interface {
+	QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error)
+}
+
+// holds reports whether a table has every column named. A table that is
+// not there has none.
+func holds(ctx context.Context, db catalog, table string, columns []string) (bool, error) {
+	rows, err := db.QueryContext(ctx, "SELECT name FROM pragma_table_info(?)", table)
+	if err != nil {
+		return false, storageErr("read the columns of "+table, err)
+	}
+	defer rows.Close()
+	has := map[string]bool{}
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			return false, storageErr("read the columns of "+table, err)
+		}
+		has[strings.ToUpper(name)] = true
+	}
+	if err := rows.Err(); err != nil {
+		return false, storageErr("read the columns of "+table, err)
+	}
+	for _, col := range columns {
+		if !has[strings.ToUpper(col)] {
+			return false, nil
+		}
+	}
+	return true, nil
+}
+
+// prepareEarlier prepares a version of a class that is no longer the
+// current one, which only reads the documents it computed (ADR-0039).
+// The tables may have moved on without it, in two ways, and neither is
+// a reason to refuse the database:
+//
+//   - A class that had no document yet was redefined, and its tables
+//     were made again for the new version. Nothing was ever written
+//     under the earlier one, so when its own table or its history
+//     lacks one of its columns it is not kept: the answer is false.
+//     Its definition stays readable in class_versions.
+//   - A list was taken out of the class, or given other columns, which
+//     the engine allows only while no document holds a value of it. The
+//     version is kept, and that list reads as no rows.
+func (c *class) prepareEarlier(ctx context.Context, writer *sql.Conn, db *sql.DB, read catalog) (bool, error) {
+	cols := columnNames(c.cls.Columns)
+	for _, table := range []string{c.table, c.history} {
+		whole, err := holds(ctx, read, table, cols)
+		if err != nil || !whole {
+			return false, err
+		}
+	}
+	for _, ch := range c.children {
+		whole, err := holds(ctx, read, ch.table, columnNames(ch.def.Columns))
+		if err != nil {
+			return false, err
+		}
+		ch.gone = !whole
+	}
+	return true, c.prepare(ctx, writer, db)
 }
 
 // atExprs are, for each triggered variable in order, the expression that
@@ -675,6 +748,7 @@ func (c *class) close() {
 				st.Close()
 			}
 		}
+		ch.insert, ch.copyRows, ch.selectRows, ch.readRows = nil, nil, nil, nil
 	}
 }
 
@@ -1138,12 +1212,20 @@ func (s *Store) adoptClass(ctx context.Context, p *pending, fresh bool) error {
 				delete(s.versions[strings.ToUpper(cls.Name)], v)
 			}
 		} else {
-			// The old version's statements may name columns a type change
-			// dropped; it is prepared again and stays as the reader of
-			// the documents it computed.
-			old.close()
-			if err := old.prepare(ctx, w, s.db); err != nil {
-				return err
+			// The statements of an earlier version may name columns a type
+			// change dropped, or the table of a list that was made again
+			// with other columns. Each is prepared again and stays as the
+			// reader of the documents it computed; a list the tables no
+			// longer hold reads as no rows.
+			for v, oc := range s.versions[strings.ToUpper(cls.Name)] {
+				oc.close()
+				kept, err := oc.prepareEarlier(ctx, w, s.db, w)
+				if err != nil {
+					return err
+				}
+				if !kept {
+					delete(s.versions[strings.ToUpper(cls.Name)], v)
+				}
 			}
 		}
 	}

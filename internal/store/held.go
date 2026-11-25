@@ -152,6 +152,9 @@ func (e *evaluator) listRows(c *class, ch *child, row *docRow) ([]childRow, erro
 	if cl := &e.commit; cl.c == c && cl.id == row.id && cl.c != nil {
 		return cl.rows(ch)
 	}
+	if ch.gone {
+		return nil, nil
+	}
 	st := ch.readRows
 	if e.writer {
 		st = ch.selectRows

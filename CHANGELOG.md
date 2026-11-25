@@ -210,6 +210,23 @@ Phase 8 started on 2026-11-25.
 
 ### Fixed
 
+- **A database did not open again after a class without documents lost
+  a variable.** Olga defines Order, takes `note` out of it before
+  anybody made an order, and stops the server. The next start refused
+  the database: "prepare the statements of Order: table doc_Order has
+  no column named note". A class that has no document yet gets its
+  tables made again for the new version, and the engine still prepared
+  the earlier version against them when it opened. It happened for a
+  text, a list, an array or a column of a list taken out, and for a
+  list turned into a text. With documents in the class, giving a list
+  that held no value other columns failed the same way while the class
+  was being defined. An earlier version is now prepared only against
+  what the tables still hold, and a list they no longer hold reads as
+  no rows, which is what every document of that version has in it. A
+  database that was left this way opens again with this build, with
+  nothing lost: no document was ever written under such a version. The
+  fault is in every release from v0.3.0 to v0.7.0.
+
 - The first wait after failed sign-ins, of one second, could be none.
   The server counts the failures' moments in whole seconds, so a try
   made as the clock turned a second after the failure was taken: a

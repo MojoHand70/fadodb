@@ -26,6 +26,11 @@ func TestInletLines_AfterTheDatabaseIsOpenedAgain(t *testing.T) {
 		{name: "the class as it was"},
 		{name: "the class as it was, with a document", first: true},
 		{name: "lines that are gone, with a document", old: lines, first: true, code: CodeUnknownVariable},
+		{name: "lines that are gone", old: lines, code: CodeUnknownVariable},
+		{name: "lines that became a text", old: lines, with: `"lines":  {"type": "text"},`, code: CodeBadValue},
+		{name: "lines that are worked out", old: lines, with: `"lines":  {"formula": "LEN(number)"},`, code: CodeReadOnly},
+		{name: "a column that is gone", old: `"qty": "int", `, code: CodeUnknownVariable},
+		{name: "a column that is gone, with a document", old: `"qty": "int", `, first: true, code: CodeUnknownVariable},
 		{name: "a column of another type", old: `"qty": "int"`, with: `"qty": "date"`, code: CodeBadValue},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

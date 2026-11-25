@@ -1,6 +1,7 @@
 package fado_test
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"os"
@@ -20,6 +21,8 @@ func TestClass_APointerComparesWithAPointer(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// the line endings of a checkout on Windows, made plain
+	page = bytes.ReplaceAll(page, []byte("\r\n"), []byte("\n"))
 	written := rows(marked(t, page, "pointers"))
 	if len(written) != 2 || written[0][0] != "REF()" || written[1][0] != `REF("Customer", "C-17")` ||
 		written[0][2] != "where ID() may" || written[1][2] != "anywhere" {

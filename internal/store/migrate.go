@@ -286,7 +286,10 @@ func alterDDL(old, c *class) []string {
 		// them still reads them, so a retype leaves them in place.
 		for _, col := range old.cls.Columns {
 			if retyped[strings.ToUpper(col.Variable)] && col.Moment == "" {
-				if col.Index && table == old.table {
+				// An index on the column goes first, the class's own or one
+				// a question of another class asked for (ADR-0075, item 2);
+				// the indexes are brought to what is asked for afterwards.
+				if table == old.table {
 					ddl = append(ddl, "DROP INDEX IF EXISTS "+quote(old.table+"_"+col.Name))
 				}
 				ddl = append(ddl, "ALTER TABLE "+quote(table)+" DROP COLUMN "+quote(col.Name))

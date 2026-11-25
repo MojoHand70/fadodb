@@ -571,6 +571,7 @@ func open(path string, o Options) (*Store, error) {
 	}
 	// The indexes of the classes (ADR-0075, item 2): a database of an
 	// earlier schema gets them here, in the time its size asks for.
+	s.reask()
 	if err := s.keepIndexes(ctx); err != nil {
 		return fail(err)
 	}

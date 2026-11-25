@@ -275,6 +275,7 @@ pointer; the class above still says it, and that changes nothing.
 | the state of every class | the documents that wait in a state, and how many |
 | the moment a document was made, and the moment it last changed | the newest documents, and what changed last |
 | a text the read rule compares with the caller, `owner = USER()` | everything a caller asks who reads only their own |
+| the variable a `LOOKUP` or a list of any class is keyed by: the one its condition compares for equality with a value of its own document, as `number` in `LOOKUP(Purchase, COUNT(id), number = THIS.purchase)` | that lookup and that list. The index is made when the class that asks is defined, and dropped when no definition asks for it any more |
 | a variable that says `"index": true` | a search the class itself does not declare, such as invoices by customer |
 
 Each index on a variable or on the state goes on to the moment a
@@ -319,8 +320,8 @@ index, for equality, with a value. One that does not reads every
 document of that class each time, and is noted, with the mend:
 
 ```text
-  note: reads_all at /variables/same_number/formula: this LOOKUP reads every document of Invoice each time it is worked out: number, which its condition compares, has no index
-    fix: say "index": true on number of Invoice, or compare a pointer: the engine keeps an index on every one
+  note: reads_all at /variables/from_fv/formula: this LOOKUP reads every document of Invoice each time it is worked out: its condition compares no variable of Invoice for equality with a value of this document
+    fix: begin the condition with such a comparison, as order = REF(): the engine keeps an index on every pointer; a total over a whole class has no index to be served by
 ```
 
 A note refuses nothing, and the class is defined all the same: on a
@@ -328,10 +329,17 @@ class of a thousand documents such a question is harmless. A total
 over a whole class, `LOOKUP(Invoice, SUM(net), TRUE)`, is noted too,
 for it reads everything by its nature.
 
-**Not built yet** (ADR-0075): an index for the key of a `LOOKUP` or of
-a list that is no pointer, such as the `number` in
-`LOOKUP(Purchase, COUNT(id), number = THIS.purchase)`; the designer
-writes `"index": true` on that variable, and the note above says so.
+**A check says what a definition would build.** An index on a class
+that already holds many documents takes time to make, and the commits
+of the database wait meanwhile: seconds for ten million documents,
+minutes for a hundred million. `validate_class` and
+`fadodb class check --db` say it before anything is written, as a
+note, code `builds_index`, for a class of 100,000 documents or more:
+
+```text
+  note: builds_index at /variables/late/formula: taking this definition makes an index on note of Invoice, which holds about 100,000,000 documents: the commits of the database wait while it is built
+    fix: choose the hour: an index over ten million documents takes seconds, over a hundred million minutes
+```
 
 ## Figures over a list
 

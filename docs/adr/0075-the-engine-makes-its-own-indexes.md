@@ -498,6 +498,45 @@ me while building, and is the owner's to strike.
   reads much, such as everything in a state that holds most of the
   class, sorted by a variable. Not decided.
 
+## Settled while building the index a question asks for
+
+Built on 2026-11-25, in Phase 8: the second row of item 2, item 4 and
+the rest of item 7. With it every item of this record is built. Each
+of these is settled by me while building, and is the owner's to
+strike.
+
+- **Which key.** For a `LOOKUP` over the documents of a class, the
+  variable its condition is keyed by: an equality with an expression of
+  the reading document alone, as the binder finds it (ADR-0046, item
+  10). For a list, the first equality in the top-level `AND` of its
+  condition with `REF()` or `THIS.name`. A comparison with a text
+  written out makes no index: it is one question for every document,
+  and is noted with `reads_all` when nothing else serves it.
+- **Nothing is stored about who asked** (item 4). The definitions say
+  it: when the database is opened and after each definition the engine
+  reads from the classes defined now which variables their questions
+  ask an index for, makes the ones that are missing and drops the ones
+  nothing asks for. A question in an older version of a class asks for
+  nothing.
+- **The index is made after the transaction that takes the
+  definition**, in one of its own, while the commits wait (item 7). A
+  program stopped between the two has the definition and not yet the
+  index; the next opening makes it.
+- **A table gets no index this way.** A table says its own indexes
+  (ADR-0037), and a lookup in one is never noted.
+- **A list keyed by a variable of its document names that index only
+  when the document holds a value for it.** With a blank the list
+  compares with nothing, and is asked as before.
+- **A number or a date as the key of a list is not yet named** as its
+  index, as a text or a pointer is: the store is offered every
+  comparison of such a list. Not built.
+- **What a check says would be built** (item 7): a note, code
+  `builds_index`, for an index on a class that holds 100,000 documents
+  or more, counted from the last row the table gave a number to, so
+  "about". Below that an index is made in a moment and nothing is
+  said. The note is given by `validate_class` and by the check from a
+  terminal with `--db`; taking the definition says nothing more.
+
 ## Consequences
 
 - A designer and an agent write what a document needs to know, and

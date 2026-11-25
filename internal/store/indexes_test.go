@@ -8,6 +8,8 @@ import (
 	"sort"
 	"strings"
 	"testing"
+
+	"github.com/MojoHand70/fadodb/internal/query"
 )
 
 // The engine keeps its own indexes (ADR-0075, item 2). Acme's invoices
@@ -327,19 +329,21 @@ func TestIndexes_AQuestionNoIndexServesIsNoted(t *testing.T) {
 		{"a lookup by the state", lookup(`state = \"review\"`), "", "", ""},
 		{"a lookup by the id", lookup(`id = THIS.text`), "", "", ""},
 		{"a lookup by a pointer, among other comparisons", lookup(`note = THIS.text AND order = THIS.about`), "", "", ""},
-		{"a lookup by a variable that has no index", lookup(`note = THIS.text`), "/variables/n/formula",
-			"this LOOKUP reads every document of Invoice each time it is worked out: note, which its condition compares, has no index", `say "index": true on note of Invoice`},
+		{"a lookup by a variable nobody indexed: the engine makes the index", lookup(`note = THIS.text`), "", "", ""},
 		{"a lookup that compares nothing with a value", lookup(`LEFT(number, 2) = \"FV\"`), "/variables/n/formula",
 			"its condition compares no variable of Invoice for equality with a value of this document", "begin the condition with such a comparison, as order = REF()"},
 		{"a total over the whole class", lookup(`TRUE`), "/variables/n/formula", "this LOOKUP reads every document of Invoice", "a total over a whole class has no index to be served by"},
 		{"a lookup in a table", report(`"n": {"type": "money(2)", "description": "d", "mode": "triggered", "on": ["refresh"], "formula": "LOOKUP(Prices, price, band = THIS.text)"}`, ""), "", "", ""},
-		{"a lookup in the condition of a rule", report(`"n": {"type": "number", "description": "d"}`,
-			`, "rules": [{"on": "create", "if": "LOOKUP(Invoice, COUNT(id), note = THIS.text) > 0", "do": [{"action": "set", "values": {"n": "1"}}]}]`),
-			"/rules/0/if", "note, which its condition compares, has no index", `say "index": true on note of Invoice`},
+		{"a lookup in the condition of a rule, by a variable nobody indexed", report(`"n": {"type": "number", "description": "d"}`,
+			`, "rules": [{"on": "create", "if": "LOOKUP(Invoice, COUNT(id), note = THIS.text) > 0", "do": [{"action": "set", "values": {"n": "1"}}]}]`), "", "", ""},
+		{"a lookup in the condition of a rule that compares nothing with a value", report(`"n": {"type": "number", "description": "d"}`,
+			`, "rules": [{"on": "create", "if": "LOOKUP(Invoice, COUNT(id), LEN(note) > 3) > 0", "do": [{"action": "set", "values": {"n": "1"}}]}]`),
+			"/rules/0/if", "this LOOKUP reads every document of Invoice", "begin the condition with such a comparison"},
 		{"a list by a variable a designer indexed", list(`{number}, customer = THIS.text`), "", "", ""},
 		{"a list of a state", list(`{number}, STATE() = \"review\" AND LEN(number) > 3`), "", "", ""},
 		{"a list of everything, a page at a time", list(`{number}`), "", "", ""},
-		{"a list by a variable that has no index", list(`{number}, note = THIS.text`), "/variables/l/formula",
+		{"a list by a variable nobody indexed, compared with a value of the document: the engine makes the index", list(`{number}, note = THIS.text`), "", "", ""},
+		{"a list by a variable nobody indexed, compared with a text written out", list(`{number}, note = \"late\"`), "/variables/l/formula",
 			"this list reads every document of Invoice until its page is full", "begin the condition with such a comparison, as order = REF()"},
 		{"a list by what is no comparison with a value", list(`{number}, LEN(number) > 3 AND customer = note`), "/variables/l/formula",
 			"its condition compares no indexed variable of Invoice for equality with a value", ""},
@@ -363,5 +367,165 @@ func TestIndexes_AQuestionNoIndexServesIsNoted(t *testing.T) {
 	// A note refuses nothing: the class is defined, and reads as it says.
 	if _, err := s.DefineClass(ctx, []byte(lookup(`note = THIS.text`)), asSetup); err != nil {
 		t.Errorf("a class with a question no index serves: %v", err)
+	}
+}
+
+// The engine makes the index a question of another definition is keyed
+// by, and drops it when no definition asks for it any more (ADR-0075,
+// items 2 and 4). Nothing of it is stored: a database opened again has
+// the same indexes, from its definitions.
+func TestIndexes_WhatAnotherDefinitionAsksFor(t *testing.T) {
+	s, path := openStore(t, Options{})
+	ctx := context.Background()
+	if _, err := s.DefineClasses(ctx, [][]byte{[]byte(ownOrder), []byte(ownInvoice)}, asSetup); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Create(ctx, "Order", Values{"number": "ORD-1"}, As(liveJan), WithID("ORD-1")); err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 12; i++ {
+		note := "on time"
+		if i%4 == 0 {
+			note = "late"
+		}
+		if _, err := s.Create(ctx, "Invoice", Values{"number": fmt.Sprintf("FV-%d", i), "order": "Order:ORD-1", "customer": "Globex", "note": note}, As(liveJan)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	const open = `"states": {"initial": "a", "list": ["a"]}, "access": {"read": "TRUE", "create": "TRUE", "update": "TRUE", "delete": "TRUE"}`
+	report := func(variables string) string {
+		return `{"name": "Report", "variables": {"text": {"type": "text"}` + variables + `}, ` + open + `}`
+	}
+	remarks := func(variables string) string {
+		return `{"name": "Remarks", "variables": {"text": {"type": "text"}` + variables + `}, ` + open + `}`
+	}
+	const counts = `, "n": {"type": "number", "mode": "triggered", "on": ["refresh"], "formula": "LOOKUP(Invoice, COUNT(id), note = THIS.text)"}`
+	const lists = `, "l": {"mode": "live", "formula": "QUERY(Invoice, {number}, note = THIS.text AND customer = \"Globex\", {number})"}`
+	withNote := strings.Replace(ownIndexes, "; order (", "; note (note, created_at); order (", 1)
+	step := func(what, def, want string) {
+		t.Helper()
+		if _, err := s.DefineClass(ctx, []byte(def), asSetup); err != nil {
+			t.Fatalf("%s: %v", what, err)
+		}
+		if got := indexesOf(t, s.db, "doc_Invoice"); got != want {
+			t.Errorf("%s: the indexes of Invoice are\n %s\nwant\n %s", what, got, want)
+		}
+	}
+	step("a report that counts invoices by their note", report(counts), withNote)
+	step("a second class that lists them by their note", remarks(lists), withNote)
+	// The count is right, and the list is asked through the index made
+	// for it, whatever else its condition compares.
+	if _, err := s.Create(ctx, "Report", Values{"text": "late"}, As(liveJan), WithID("R-1")); err != nil {
+		t.Fatal(err)
+	}
+	if d, err := s.Refresh(ctx, "Report", "R-1", nil, As(liveJan)); err != nil || d.Values["n"] != 3.0 {
+		t.Errorf("the late invoices: %v, %v; want 3", d, err)
+	}
+	if _, err := s.Create(ctx, "Remarks", Values{"text": "late"}, As(liveJan), WithID("M-1")); err != nil {
+		t.Fatal(err)
+	}
+	if v, err := s.Live(ctx, "Remarks", "M-1", "l", As(liveEwa)); err != nil || len(v.Rows) != 3 {
+		t.Errorf("the list of the late invoices: %v, %v; want 3", v, err)
+	}
+	c, _ := s.class("Remarks")
+	src, _ := s.class("Invoice")
+	o := options{principal: liveEwa}
+	_, on, _, err := s.liveOn(ctx, c, c.byName["L"], "M-1", o, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan, err := query.CompileOn(Filter{Class: "Invoice"}, on, src.cls, s.sources(), caller(o, src))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(plan.Fits) != 0 || !strings.Contains(plan.Where, `"note" = `) || strings.Contains(plan.Where, `"customer" = :`) {
+		t.Errorf("the list does not name the index made for it: %d fits, %s", len(plan.Fits), plan.Where)
+	}
+	// A database opened again has the same indexes, from its definitions.
+	if err := s.Close(); err != nil {
+		t.Fatal(err)
+	}
+	s, err = Open(path, Options{Outbox: OutboxOptions{Manual: true}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { s.Close() })
+	if got := indexesOf(t, s.db, "doc_Invoice"); got != withNote {
+		t.Errorf("opened again, the indexes of Invoice are\n %s\nwant\n %s", got, withNote)
+	}
+	// The index stays while one definition asks for it, and goes with
+	// the last.
+	step("the report no longer counts", report(`, "n": {"type": "number", "mode": "triggered", "on": ["refresh"], "formula": "LEN(text)"}`), withNote)
+	step("the second class no longer lists", remarks(""), ownIndexes)
+}
+
+// A check says, before anything is written, what taking a definition
+// would build (ADR-0075, item 7): an index on a class that already
+// holds many documents, on which the commits wait while it is made.
+// Here "many" is ten.
+func TestIndexes_ACheckSaysWhatWouldBeBuilt(t *testing.T) {
+	was := buildsFrom
+	buildsFrom = 10
+	t.Cleanup(func() { buildsFrom = was })
+	s, _ := openStore(t, Options{})
+	ctx := context.Background()
+	if _, err := s.DefineClasses(ctx, [][]byte{[]byte(ownOrder), []byte(ownInvoice)}, asSetup); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Create(ctx, "Order", Values{"number": "ORD-1"}, As(liveJan), WithID("ORD-1")); err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 12; i++ {
+		if _, err := s.Create(ctx, "Invoice", Values{"number": fmt.Sprintf("FV-%d", i), "order": "Order:ORD-1"}, As(liveJan)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	builds := func(defs ...string) string {
+		t.Helper()
+		datas := make([][]byte, len(defs))
+		for i, d := range defs {
+			datas[i] = []byte(d)
+		}
+		var out []string
+		for _, d := range s.ValidateClasses(datas) {
+			if !d.Note {
+				t.Fatalf("refused: %s at %s: %s", d.Code, d.Path, d.Message)
+			}
+			if d.Code == "builds_index" {
+				out = append(out, d.Path+": "+d.Message)
+			}
+		}
+		return strings.Join(out, "\n")
+	}
+	const open = `"states": {"initial": "a", "list": ["a"]}, "access": {"read": "TRUE", "create": "TRUE", "update": "TRUE", "delete": "TRUE"}`
+	report := `{"name": "Report", "variables": {"text": {"type": "text"},
+	  "n": {"type": "number", "mode": "triggered", "on": ["refresh"], "formula": "LOOKUP(Invoice, COUNT(id), note = THIS.text)"},
+	  "m": {"type": "number", "mode": "triggered", "on": ["refresh"], "formula": "LOOKUP(Invoice, COUNT(id), note = THIS.text AND customer = \"Globex\")"},
+	  "o": {"type": "number", "mode": "triggered", "on": ["refresh"], "formula": "LOOKUP(Order, COUNT(id), number = THIS.text)"}}, ` + open + `}`
+	// The report asks an index on the note of Invoice, which holds
+	// twelve documents; it says so once, at the first formula that asks.
+	// The orders are one, and an index over one document is no news.
+	want := "/0/variables/n/formula: taking this definition makes an index on note of Invoice, which holds about 12 documents: the commits of the database wait while it is built"
+	if got := builds(report); got != want {
+		t.Errorf("the check of the report says\n%s\nwant\n%s", got, want)
+	}
+	// A new version of Invoice that indexes its number says so too, and
+	// one that changes nothing of its indexes says nothing.
+	indexed := strings.Replace(ownInvoice, `"number":   {"type": "text", "required": true}`, `"number":   {"type": "text", "required": true, "index": true}`, 1)
+	want = "/0/variables/number: taking this definition makes an index on number of Invoice, which holds about 12 documents: the commits of the database wait while it is built"
+	if got := builds(indexed); got != want {
+		t.Errorf("the check of the invoice says\n%s\nwant\n%s", got, want)
+	}
+	labelled := strings.Replace(ownInvoice, `"note":     {"type": "text"}`, `"note":     {"type": "text", "label": "Note"}`, 1)
+	if got := builds(labelled); got != "" {
+		t.Errorf("a version that changes no index says\n%s", got)
+	}
+	// Once the report is defined the index is there, and nothing more
+	// is to be built for a second class that asks the same.
+	if _, err := s.DefineClass(ctx, []byte(report), asSetup); err != nil {
+		t.Fatal(err)
+	}
+	if got := builds(strings.Replace(report, `"name": "Report"`, `"name": "Second"`, 1)); got != "" {
+		t.Errorf("a second class that asks an index that is there says\n%s", got)
 	}
 }

@@ -140,15 +140,14 @@ func TestFigure_CompiledAsASlot(t *testing.T) {
 	if !strings.Contains(string(text), `{"variable":"total","type":"money(2)","reads":[],"server":true}`) {
 		t.Errorf("the bundle says of the figure: %s", text)
 	}
-	// Outside a live variable a figure is refused, and a LOOKUP in a live
-	// variable still is.
+	// Outside a live variable a figure is refused. A LOOKUP beside a
+	// figure in a live variable is taken (ADR-0076, item 5).
 	for formula, says := range map[string]string{
-		`"type": "number", "formula": "COUNT(invoices)"`:                                              "stands only in a live variable",
-		`"type": "number", "mode": "triggered", "on": ["refresh"], "formula": "COUNT(invoices)"`:      "stands only in a live variable",
-		`"mode": "live", "formula": "COUNT(invoices) + LOOKUP(Invoice, COUNT(id), state = \"paid\")"`: "is not built yet (ADR-0076)",
-		`"mode": "live", "formula": "MEDIAN(number)"`:                                                 "MEDIAN: the argument is a list of the document",
-		`"type": "number", "formula": "COUNTUNIQUE(invoices.state)"`:                                  "stands only in a live variable",
-		`"mode": "live", "formula": "COUNTIF(invoices, ID() = \"x\")"`:                                "ID() is a function of the document the formula belongs to",
+		`"type": "number", "formula": "COUNT(invoices)"`:                                         "stands only in a live variable",
+		`"type": "number", "mode": "triggered", "on": ["refresh"], "formula": "COUNT(invoices)"`: "stands only in a live variable",
+		`"mode": "live", "formula": "MEDIAN(number)"`:                                            "MEDIAN: the argument is a list of the document",
+		`"type": "number", "formula": "COUNTUNIQUE(invoices.state)"`:                             "stands only in a live variable",
+		`"mode": "live", "formula": "COUNTIF(invoices, ID() = \"x\")"`:                           "ID() is a function of the document the formula belongs to",
 	} {
 		_, diags := DefineIn([]byte(order(`, "x": {`+formula+`}`)), env)
 		if len(diags) == 0 || !strings.Contains(diags.Error(), says) {

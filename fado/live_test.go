@@ -174,9 +174,10 @@ func TestLiveVariables(t *testing.T) {
 		return finding(db, definition)
 	})
 
-	// Not built yet: a live variable that looks in a table or at other
-	// documents.
-	if got := finding(db, scratch("T", `"a": {"type": "int"}, "l": {"type": "int", "mode": "live", "formula": "LOOKUP(T, MAX(a), TRUE)"}`, oneState)); got != "not_supported" {
-		t.Errorf("a live variable that looks at other documents: the engine finds %s, and the chapter says not_supported", got)
+	// A live variable may look one value up, in a table or among the
+	// documents of a class (ADR-0076, item 5); the store's own tests hold
+	// what each reader is answered.
+	if got := finding(db, scratch("T", `"a": {"type": "int"}, "l": {"type": "int", "mode": "live", "formula": "LOOKUP(T, MAX(a), TRUE)"}`, oneState)); got != "accepted" {
+		t.Errorf("a live variable that looks at other documents: the engine finds %s, and the chapter says it is taken", got)
 	}
 }

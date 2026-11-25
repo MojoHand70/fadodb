@@ -412,7 +412,7 @@ of a `ref` when it is set, what points at a class in the answer of
 the whole formula of a live variable, with `THIS.name` and `REF()` in
 its condition, read a page at a time for its reader. Not built yet: a
 `QUERY` over a table, or with counts or sums (a `QUERY` kept in a
-triggered variable is built in Phase 8); a `LOOKUP` in a live variable; `REF` outside the condition
+triggered variable is built in Phase 8, and so is a `LOOKUP` in a live variable); `REF` outside the condition
 of a `QUERY` and with a class and an id; the engine's own index on
 every `ref`, which is ADR-0075's, so a list at scale wants
 `"index": true` on its pointer today. ADR-0081, proposed, functions over a
@@ -465,8 +465,8 @@ kept, which is built: a `QUERY` as the whole formula of a triggered
 variable, held with every version of the document. With it the four
 steps of ADR-0078 are built; a kept value that follows its source,
 its item 6, comes with the analytical engine. Then what ADR-0076 and ADR-0075 leave:
-a table as the source of a list, which is built; `REF()` wherever
-`ID()` may stand and a `LOOKUP` in a live variable, which are not;
+a table as the source of a list and a `LOOKUP` in a live variable,
+which are built; `REF()` wherever `ID()` may stand, which is not;
 counts, sums and grouping in a
 `QUERY`, the engine's own indexes and its notes on a question no index
 serves. Then the lists in and out of messages and requests, ADR-0085.

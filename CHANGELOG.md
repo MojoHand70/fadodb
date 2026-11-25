@@ -28,6 +28,13 @@ Phase 8 started on 2026-11-25.
   door for agents tells an agent to send it, and each tool describes
   the member. The guide is
   [act only on the version you read](docs/manual/guides/act-on-what-you-read.md).
+- A `LOOKUP` in a live variable (ADR-0076, item 5, refused with
+  `not_supported` until now): "the price of this article today", "how
+  many invoices this customer has". It is asked for the reader of the
+  value: over the documents of a class, among those the reader may
+  read, with the rights of the values it reads; in a table, when the
+  `read` line of the table lets the reader through, and refused with
+  `forbidden` otherwise.
 - A table as the source of a `QUERY` (ADR-0076, item 9, which the
   list of documents left unbuilt). A live variable, or a triggered one
   that keeps the list, lists the rows of an explicit table:

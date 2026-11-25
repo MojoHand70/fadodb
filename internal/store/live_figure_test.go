@@ -246,7 +246,6 @@ func TestLiveFigure_RefusedWhenDefined(t *testing.T) {
 		{"JOIN in a LOOKUP", `"x": {"type": "text", "mode": "triggered", "on": ["refresh"], "formula": "LOOKUP(Invoice, JOIN(number, \", \"), order = ID())"}`, "bad_formula", "cannot stand where the column stands"},
 		{"a figure with too little", `"x": {"mode": "live", "formula": "SUMIF(invoices, TRUE)"}`, "bad_formula", "SUMIF takes 3 arguments, got 2"},
 		{"a figure inside a figure", `"x": {"mode": "live", "formula": "COUNTIF(invoices, net > SUM(invoices.net))"}`, "bad_formula", "inside another's arguments"},
-		{"a lookup beside a figure", `"x": {"mode": "live", "formula": "COUNT(invoices) + LOOKUP(Invoice, COUNT(id), TRUE)"}`, "not_supported", "is not built yet (ADR-0076)"},
 		{"another live value", `"y": {"mode": "live", "formula": "COUNT(invoices)"}, "x": {"mode": "live", "formula": "y + 1"}`, "not_allowed", "y is a live variable"},
 	} {
 		def := `{"name": "Order", "title": "number", "variables": {"number": {"type": "text", "required": true}, "customer": {"type": "text"}, "owner": {"type": "text", "default": "USER()"},

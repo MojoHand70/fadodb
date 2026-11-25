@@ -468,6 +468,36 @@ me while building, and is the owner's to strike.
 - **What `validate_class` says a definition would build** (item 7),
   "an index on `customer` over 100,000,000 documents", is not built.
 
+## Settled while building the stop of a free question
+
+Built on 2026-11-25, in Phase 8: item 6. Each of these is settled by
+me while building, and is the owner's to strike.
+
+- **Which question is stopped.** The `where` and the `order` of a
+  `query` and of a `count`, when neither the caller's condition nor
+  the read rule offers the store a comparison of an indexed column. A
+  question with no `where` and no `order` is not one of them: it is
+  read in the order of the ids, a page at a time. A
+  question an index serves is not stopped, however long it runs, and
+  it pays nothing for the limit. A list of a document is a declared
+  question and is not stopped; item 5 notes it when the class is
+  defined.
+- **The limit is the database's**, as the text limit is: the option
+  `MaxQuestion` when it is opened, kept in its metadata, five seconds
+  when none was ever given. A value given later replaces it, since it
+  changes what is waited for and never an answer.
+- **The hint names the first variable the condition compares with a
+  value**, which is the one an index would be needed on. It is read
+  from the condition and not from the store's plan of the statement,
+  which says the same of a question no index serves: the class is
+  read whole. A condition that compares no variable with a value is
+  told to begin with such a comparison.
+- **A caller who left is not told the question was wide**: their own
+  time ran out first, and the call fails as it did before.
+- **What it does not cover**: a question an index serves that still
+  reads much, such as everything in a state that holds most of the
+  class, sorted by a variable. Not decided.
+
 ## Consequences
 
 - A designer and an agent write what a document needs to know, and

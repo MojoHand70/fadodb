@@ -300,6 +300,23 @@ func TestOpeningADatabase(t *testing.T) {
 				t.Errorf("MaxIndexedRows, opened again with another value: %s, and the chapter says %s", got, row[4])
 			}
 		},
+		"MaxQuestion": func(row []string) {
+			if got := reopened(fado.Options{}, fado.Options{MaxQuestion: time.Minute}) + " and kept"; got != row[4] {
+				t.Errorf("MaxQuestion, opened again with another value: %s, and the chapter says %s", got, row[4])
+			}
+			// None given: five seconds. One given is kept when none is
+			// given again.
+			fresh := must(open("question.fado", fado.Options{}))
+			if got := fresh.MaxQuestion(); got != 5*time.Second || row[3] != "5 seconds" {
+				t.Errorf("a new database allows a question %v, and the chapter says %s", got, row[3])
+			}
+			fresh.Close()
+			must(open("question.fado", fado.Options{MaxQuestion: time.Minute})).Close()
+			kept := must(open("question.fado", fado.Options{}))
+			if got := kept.MaxQuestion(); got != time.Minute {
+				t.Errorf("a limit given once is not kept: %v", got)
+			}
+		},
 	}
 	for name, row := range whose {
 		check, database := ofDatabase[name]

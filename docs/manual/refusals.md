@@ -48,6 +48,7 @@ What a call is answered with when the engine does not carry it out: a create, a 
 | `bad_formula` | A filter's where does not parse or bind; Pos says where. |
 | `not_allowed` | A function class a filter may not use, a SQL statement the endpoint refuses, or At on a command that writes (ADR-0042). |
 | `too_many_rows` | A SQL statement returns more than MaxSQLRows. |
+| `too_wide` | A free question, the where and the order of a query or a count, that no index serves ran for as long as the database allows, and was stopped (ADR-0075, item 6). The hint names the variable an index would be needed on. |
 | `unknown_blob` | A File names a hash the blob store does not hold, or a size that differs from the stored one (ADR-0033). |
 | `blob_too_large` | A file exceeds the database's blob limit. |
 | `terminal` | The document is in a terminal state and cannot change (ADR-0039). |

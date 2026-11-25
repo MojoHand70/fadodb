@@ -109,6 +109,11 @@ const (
 	CodeNotAllowed = "not_allowed"
 	// CodeTooManyRows: a SQL statement returns more than MaxSQLRows.
 	CodeTooManyRows = "too_many_rows"
+	// CodeTooWide: a free question, the where and the order of a query
+	// or a count, that no index serves ran for as long as the database
+	// allows, and was stopped (ADR-0075, item 6). The hint names the
+	// variable an index would be needed on.
+	CodeTooWide = "too_wide"
 	// CodeUnknownBlob: a File names a hash the blob store does not hold,
 	// or a size that differs from the stored one (ADR-0033).
 	CodeUnknownBlob = "unknown_blob"

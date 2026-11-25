@@ -167,6 +167,7 @@ An option is one of two kinds.
 | `BlobStore` | where the bytes of files are kept: `sqlite`, `dir` or `external` | the database's | `sqlite` | refused, `bad_value` |
 | `MaxBlob` | the largest file, in bytes | the database's | 32 MiB | a higher one is taken and kept; a lower one is refused, `bad_value` |
 | `MaxIndexedRows` | up to how many rows a table is kept in memory for lookups | the database's | 100,000 | taken and kept |
+| `MaxQuestion` | how long a `query` or a `count` that no index serves may run before it is stopped | the database's | 5 seconds | taken and kept |
 | `Blobs` | the program's own store for the bytes of files | the program's | none | |
 | `Outbox` | the worker: whether it runs, how many actions at once, how often one is tried again; see [The outbox and the worker](the-outbox-and-the-worker.md#the-options-of-the-worker) | the program's | it runs, 4 at once, 10 attempts | |
 | `Actions` | the Go functions that carry out actions | the program's | none | |
@@ -180,7 +181,8 @@ An option is one of two kinds.
 | `WALLimit`, `CheckpointEvery` | when the latest commits are folded into the database | the program's | at 64 MiB, and every 100 ms | |
 
 Where each is explained: `MaxIndexedRows` in
-[Tables](tables.md#how-fast-a-lookup-is), `BlobStore`, `Blobs` and
+[Tables](tables.md#how-fast-a-lookup-is), `MaxQuestion` in
+[Lists of other documents](lists.md#a-large-class), `BlobStore`, `Blobs` and
 `MaxBlob` in [Files](files.md), `Actions`, `Outbound` and `Secrets` in
 [Actions](../actions.md), `HostAnswersFor` in [Let somebody act for a
 person](guides/acting-for-somebody.md), `Users` in

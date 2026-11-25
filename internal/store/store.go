@@ -35,6 +35,10 @@ const DefaultCheckpointEvery = 100 * time.Millisecond
 // memory for the lookups of auto formulas (ADR-0036).
 const DefaultMaxIndexedRows = 100000
 
+// DefaultMaxQuestion is how long a free question that no index serves
+// may run before it is stopped (ADR-0075, item 6).
+const DefaultMaxQuestion = 5 * time.Second
+
 // The connections that read. readersKept is how many are kept ready
 // between two reads, and readerIdle how long one stays ready after its
 // last read. More callers than that may read at once: each beyond the
@@ -99,6 +103,13 @@ type Options struct {
 	// speed and memory and never a result. 0 keeps what is stored, or
 	// DefaultMaxIndexedRows for a new database.
 	MaxIndexedRows int
+	// MaxQuestion is how long a free question that no index serves may
+	// run, the where and the order of a query or a count, before it is
+	// stopped and refused with too_wide (ADR-0075, item 6). It is kept
+	// in the metadata; a value given on open replaces the stored one,
+	// since it changes what is waited for and never a result. 0 keeps
+	// what is stored, or DefaultMaxQuestion for a new database.
+	MaxQuestion time.Duration
 	// BlobStore is the kind of blob store a new database records
 	// (ADR-0033): "sqlite", the default, a table in the database file;
 	// "dir", a directory beside it; or "external", the embedder's store
@@ -185,6 +196,7 @@ type Store struct {
 	limits      formula.Limits
 	synchronous string
 	maxIndexed  int
+	maxQuestion time.Duration
 	maxBlob     int64
 	blobKind    string
 	blobs       BlobStore
@@ -518,7 +530,7 @@ func open(path string, o Options) (*Store, error) {
 		db.Close()
 		return nil, err
 	}
-	if err := s.init(ctx, sync, o.MaxText, o.MaxIndexedRows, o.BlobStore, o.MaxBlob); err != nil {
+	if err := s.init(ctx, sync, o.MaxText, o.MaxIndexedRows, o.MaxQuestion, o.BlobStore, o.MaxBlob); err != nil {
 		return fail(err)
 	}
 	if s.people.on {
@@ -651,7 +663,7 @@ func upgradeSchema(ctx context.Context, w *sql.Conn, from int64) error {
 
 // init creates the engine's tables when the database is new and reads
 // the metadata.
-func (s *Store) init(ctx context.Context, wantSync string, wantMaxText int, wantIndexed int, wantBlobs string, wantMaxBlob int64) error {
+func (s *Store) init(ctx context.Context, wantSync string, wantMaxText int, wantIndexed int, wantQuestion time.Duration, wantBlobs string, wantMaxBlob int64) error {
 	w := s.writer
 	if _, err := w.ExecContext(ctx, "BEGIN IMMEDIATE"); err != nil {
 		return storageErr("begin", err)
@@ -719,6 +731,12 @@ func (s *Store) init(ctx context.Context, wantSync string, wantMaxText int, want
 			return rollback(storageErr("write the metadata", err))
 		}
 	}
+	if wantQuestion > 0 {
+		// In microseconds: a test stops a question after very little.
+		if _, err := w.ExecContext(ctx, "INSERT INTO metadata (key, value) VALUES ('max_question_us', ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value", strconv.FormatInt(wantQuestion.Microseconds(), 10)); err != nil {
+			return rollback(storageErr("write the metadata", err))
+		}
+	}
 	if wantMaxBlob > 0 {
 		var current string
 		if err := w.QueryRowContext(ctx, "SELECT value FROM metadata WHERE key = 'max_blob'").Scan(&current); err == nil {
@@ -758,6 +776,11 @@ func (s *Store) init(ctx context.Context, wantSync string, wantMaxText int, want
 	s.limits = formula.Limits{MaxText: maxText}
 	if s.maxIndexed, _ = strconv.Atoi(meta["max_indexed_rows"]); s.maxIndexed <= 0 {
 		s.maxIndexed = DefaultMaxIndexedRows
+	}
+	if us, _ := strconv.ParseInt(meta["max_question_us"], 10, 64); us > 0 {
+		s.maxQuestion = time.Duration(us) * time.Microsecond
+	} else {
+		s.maxQuestion = DefaultMaxQuestion
 	}
 	if s.maxBlob, _ = strconv.ParseInt(meta["max_blob"], 10, 64); s.maxBlob <= 0 {
 		s.maxBlob = DefaultMaxBlob
@@ -1304,6 +1327,10 @@ func (s *Store) Synchronous() string { return s.synchronous }
 // MaxIndexedRows is the row count up to which a table is held in memory
 // for lookups (ADR-0036).
 func (s *Store) MaxIndexedRows() int { return s.maxIndexed }
+
+// MaxQuestion is how long a free question that no index serves may run
+// before it is stopped (ADR-0075, item 6).
+func (s *Store) MaxQuestion() time.Duration { return s.maxQuestion }
 
 // Classes lists the class names in the order they were defined.
 func (s *Store) Classes() []string {

@@ -42,6 +42,17 @@ Phase 8 started on 2026-11-25.
   0.32 ms (`BenchmarkDraftsOfOneOrder`, the test the record sets).
   Not built: an index for the key of a `LOOKUP` that is no pointer,
   which still wants `"index": true`.
+- A free question that no index serves is stopped (ADR-0075, item 6).
+  The `where` of a `query` or a `count` that compares no indexed
+  variable reads the documents of its class one by one. It now runs
+  for at most five seconds and is then refused with the new code
+  `too_wide`, status 422, and the hint names the variable an index is
+  needed on: "customer has no index: say `"index": true` on it in the
+  class Invoice". A question an index serves is never stopped, and
+  neither is a list of a document. The five seconds are the
+  database's: the new option `MaxQuestion` sets them when it is
+  opened, and they are kept with it. The statement of an analyst,
+  `sql`, keeps its own limits.
 - The engine says, when a class is defined, which question of it no
   index serves (ADR-0075, item 5): a note, code `reads_all`, at the
   place of the formula, with the mend. A `LOOKUP` over the documents of

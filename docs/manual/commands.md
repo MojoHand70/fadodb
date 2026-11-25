@@ -1961,6 +1961,7 @@ A few calls of the Go package have no command.
 | `Invited` | it belongs to the server's page /auth/invite, which an invitation opens |
 | `KnownClient` | it answers a client to the server's page /auth/authorize; list_clients lists them |
 | `LivePage` | it is live with the page of a list given, for a Go program: the command takes the page in the same call |
+| `MaxQuestion` | the limit is set by the program that opens the database, with the option of that name, and read by it |
 | `OpenBlob` | the bytes of a file are not JSON: they travel beside the commands, with the server |
 | `OpenFile` | the bytes of a file are not JSON: they travel beside the commands, with the server |
 | `OutboxCounts` | it counts what of the queue is still to do, for whoever watches a server, which answers it at GET /v1/metrics; outbox lists the actions themselves |

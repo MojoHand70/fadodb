@@ -597,6 +597,7 @@ var commands = []*Command{
 // with why (ADR-0055, item 2).
 var NotCommands = map[string]string{
 	"Close":        "closing a database is for the program that opened it",
+	"MaxQuestion":  "the limit is set by the program that opens the database, with the option of that name, and read by it",
 	"Exec":         "it is the door the commands come through",
 	"PutBlob":      "the bytes of a file are not JSON: they travel beside the commands, with the server",
 	"OpenFile":     "the bytes of a file are not JSON: they travel beside the commands, with the server",

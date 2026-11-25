@@ -62,6 +62,15 @@ type Plan struct {
 	// Led says the condition compares an indexed column on the bare
 	// column, so that it leads the store to an index by itself.
 	Led bool
+	// Served says an index serves the question: the caller's condition,
+	// or the read rule, offers the store a comparison of an indexed
+	// column, or the question has no condition and no order of its own
+	// and is read in the order of the ids. Lacks is then "". When no
+	// index serves it, Lacks is the
+	// first column the caller's condition compares with a value, which
+	// an index would be needed on, and "" when it compares none.
+	Served bool
+	Lacks  string
 }
 
 // Fit is one comparison of a question that an index of the class
@@ -454,6 +463,17 @@ func CompileOn(f Filter, on *On, cls *model.Class, sources formula.Sources, p Pr
 	}
 	plan.Args = append(plan.Args[:len(plan.Args):len(plan.Args)], given...)
 	through(plan, on != nil, &own, &rule, readable, given)
+	// Whether an index serves the question (ADR-0075, item 6), and the
+	// column one would be needed on when none does. A question with no
+	// condition and no order of its own is read in the order of the
+	// ids, a page at a time, which the key of the table serves.
+	plan.Served = led || node == nil && len(f.Order) == 0
+	for i := range rule.terms {
+		plan.Served = plan.Served || rule.terms[i].indexed
+	}
+	if !plan.Served && len(own.terms) > 0 {
+		plan.Lacks = own.terms[0].col
+	}
 	return plan, nil
 }
 

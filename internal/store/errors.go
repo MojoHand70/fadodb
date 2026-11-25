@@ -22,6 +22,14 @@ type Error struct {
 	// Path is the place in the class definition of the rule's action that
 	// failed, such as /rules/2/do/0 (ADR-0043); empty otherwise.
 	Path string `json:"path,omitempty"`
+	// Brought is, on guard_false, each value that was brought for the
+	// guard, by its variable, as the guard saw it (ADR-0078, item 4): a
+	// variable that lists before: the transition. The document the
+	// caller read may still show another value, so the refusal says what
+	// the condition decided on. A variable the caller may not read is
+	// left out; nil when nothing was brought. It is a pointer so that two
+	// refusals still compare with ==, as they always did.
+	Brought *Values `json:"brought,omitempty"`
 }
 
 func (e *Error) Error() string {

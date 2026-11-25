@@ -112,6 +112,7 @@ func TestDefine_TimerDiagnostics(t *testing.T) {
 		{"at reads the user", `{"from": "waiting", "to": "late", "at": "IF(USER() = owner, due, ADDDAYS(due, 1))"}`, CodeNotAllowed, "/transitions/0/at"},
 		{"at reads the user's groups", `{"from": "waiting", "to": "late", "at": "IF(INGROUP(\"vip\"), due, ADDDAYS(due, 1))"}`, CodeNotAllowed, "/transitions/0/at"},
 		{"at looks a table up", `{"from": "waiting", "to": "late", "at": "LOOKUP(Rates, since, code = THIS.owner)"}`, CodeNotAllowed, "/transitions/0/at"},
+		{"a guard beside an after looks a table up", `{"from": "waiting", "to": "late", "after": "3d", "guard": "LOOKUP(Rates, rate, code = THIS.owner) > 0"}`, CodeNotAllowed, "/transitions/0/guard"},
 		{"neither a name, a guard nor a timer", `{"from": "waiting", "to": "late"}`, CodeMissing, "/transitions/0/guard"},
 		{"the second transition", `{"name": "close", "from": "waiting", "to": "closed"}, {"from": "waiting", "to": "late", "after": "1"}`, CodeBadValue, "/transitions/1/after"},
 	} {
@@ -120,8 +121,10 @@ func TestDefine_TimerDiagnostics(t *testing.T) {
 			t.Errorf("%s: want %s at %s alone, got:\n%s", tc.name, tc.code, tc.path, fmt.Sprint(diags))
 		}
 	}
-	// A guard may read all of that: only the moment may not.
-	if _, diags := DefineIn([]byte(timed(`{"from": "waiting", "to": "late", "after": "3d", "guard": "TODAY() > due AND USER() = owner AND LOOKUP(Rates, rate, code = THIS.owner) > 0"}`)), env); len(diags) > 0 {
+	// A guard may read the clock and the caller, which the moment may
+	// not; what is outside the document it may not read either
+	// (ADR-0078, item 4).
+	if _, diags := DefineIn([]byte(timed(`{"from": "waiting", "to": "late", "after": "3d", "guard": "TODAY() > due AND USER() = owner"}`)), env); len(diags) > 0 {
 		t.Errorf("a guard beside an after: %v", diags)
 	}
 }

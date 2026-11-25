@@ -134,7 +134,27 @@ func (s *Store) listTransitions(c *class, row *docRow, evalCtx *formula.Context,
 			// (ADR-0052, item 4).
 			info.Override = transitionRulePath(c, t)
 		}
-		held, err := s.holds(c, t, row, evalCtx)
+		// What the guard needs from outside is brought first, as the move
+		// would bring it (ADR-0078, item 4), over a copy of the row that
+		// is thrown away: the listing writes nothing. A transition is
+		// offered, or not, by the number the move would see.
+		over := row
+		if brought := c.before[t]; len(brought) > 0 {
+			over = row.clone()
+			var failed *Error
+			var errs []*Error
+			for _, cv := range brought {
+				if failed = s.bringBefore(c, cv, t, over, evalCtx, evalCtx.Now, true, &errs); failed != nil {
+					break
+				}
+			}
+			if failed != nil {
+				info.Code, info.Message = failed.Code, failed.Message
+				out = append(out, info)
+				continue
+			}
+		}
+		held, err := s.holds(c, t, over, evalCtx)
 		switch {
 		case held:
 			info.Enabled = true
@@ -210,8 +230,11 @@ func (s *Store) fires(c *class, t *model.Transition, row *docRow, evalCtx *formu
 
 // guard refuses the command when the named transition's guard does not
 // hold over the recalculated document; evalCtx.State is the state the
-// transition leaves.
-func (s *Store) guard(c *class, t *model.Transition, row *docRow, evalCtx *formula.Context) *Error {
+// transition leaves. brought are the variables that were brought for
+// the guard (ADR-0078, item 4): the refusal says what each was, for a
+// caller who may read it, since the document on the caller's screen may
+// still show the value of an earlier version.
+func (s *Store) guard(c *class, t *model.Transition, row *docRow, evalCtx *formula.Context, brought []*cvar) *Error {
 	held, err := s.holds(c, t, row, evalCtx)
 	if held {
 		return nil
@@ -220,7 +243,25 @@ func (s *Store) guard(c *class, t *model.Transition, row *docRow, evalCtx *formu
 	if err != nil {
 		msg = fmt.Sprintf("the guard of %s failed for the document in %s: %s", t.Name, evalCtx.State, guardFailure(err))
 	}
-	return hintf(CodeGuardFalse, "", msg, "the guard: "+t.GuardSrc)
+	e := hintf(CodeGuardFalse, "", msg, "the guard: "+t.GuardSrc)
+	if len(brought) > 0 {
+		cells := c.cells(row.state)
+		for _, cv := range brought {
+			if cv.leaf < 0 {
+				continue
+			}
+			if c.rights != nil && cells[cv.idx].read != nil {
+				if may, _ := s.wev.allowed(c, cells[cv.idx].read, row, evalCtx); !may {
+					continue
+				}
+			}
+			if e.Brought == nil {
+				e.Brought = &Values{}
+			}
+			(*e.Brought)[cv.v.Name] = valueOut(row.vals[cv.leaf])
+		}
+	}
+	return e
 }
 
 // guardFailure words a guard's evaluation error: its code and offset.

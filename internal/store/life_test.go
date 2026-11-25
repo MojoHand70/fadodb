@@ -570,13 +570,16 @@ func TestLifeStates_Defined(t *testing.T) {
 // TestLife_AskedInsideALookup: a formula that asks who created the
 // document from inside the condition of a LOOKUP asks it all the same,
 // so the listing of open transitions reads who did, and answers what the
-// commit answers.
+// commit answers. The lookup is in a variable brought before the
+// transition, which the listing brings as the commit does (ADR-0078,
+// item 4).
 func TestLife_AskedInsideALookup(t *testing.T) {
 	s, _ := openStore(t, Options{})
 	ctx := context.Background()
-	def := `{"name": "Thing", "variables": {"note": {"type": "text"}},
+	def := `{"name": "Thing", "variables": {"note": {"type": "text"},
+   "same_maker": {"type": "number", "formula": "LOOKUP(Thing, COUNT(id), created_by = CREATEDBY())", "mode": "triggered", "on": ["before:go"]}},
  "states": {"initial": "a", "list": ["a", "b"]},
- "transitions": [{"name": "go", "from": "a", "to": "b", "guard": "LOOKUP(Thing, COUNT(id), created_by = CREATEDBY()) >= 1"}]}`
+ "transitions": [{"name": "go", "from": "a", "to": "b", "guard": "same_maker >= 1"}]}`
 	if _, err := s.defineOpen(ctx, []byte(def), asSetup); err != nil {
 		t.Fatal(err)
 	}

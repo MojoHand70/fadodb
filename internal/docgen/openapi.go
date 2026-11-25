@@ -287,6 +287,7 @@ func OpenAPI(root string) (string, error) {
 						"path":     object{"type": "string", "description": "the place: in the object of the command, or in the class whose rule refused"},
 						"variable": object{"type": "string", "description": "the variable the refusal is about"},
 						"pos":      object{"type": "integer", "description": "the place inside a formula, where the refusal is about one"},
+						"brought":  object{"type": "object", "description": "on `guard_false`: each value that was brought for the guard when the transition was asked for, by its variable, as the guard saw it; a variable the caller may not read is left out"},
 					},
 				},
 				"Health": object{

@@ -823,10 +823,45 @@ func TestTables(t *testing.T) {
 				t.Errorf("a default is worked out once: %v, %v", after, err)
 			}
 		},
-		"a guard, a line of access, a right to write, a rule": func([]string) {
+		"a triggered variable": func([]string) {
+			// Brought before a transition, for its guard: when somebody
+			// asks for the transition, and not when the table changes.
+			class := `{"name":"Brought","variables":{"currency":{"type":"text"},
+			    "known":{"type":"number","formula":"LOOKUP(Rates, COUNT(day), currency = THIS.currency)","mode":"triggered","on":["before:go"]}},
+			  "states":{"initial":"a","list":["a","b"]},
+			  "transitions":[{"name":"go","from":"a","to":"b","guard":"known > 0"}],
+			  "access":{"read":"TRUE","create":"TRUE","update":"TRUE","delete":"TRUE"}}`
+			if _, err := db2.DefineClass(ctx, []byte(class), setup); err != nil {
+				t.Fatal(err)
+			}
+			doc, err := db2.Create(ctx, "Brought", fado.Values{"currency": "SEK"}, ann)
+			if err != nil || doc.Values["known"] != nil {
+				t.Fatalf("a variable brought before a transition is blank until then: %v, %v", doc, err)
+			}
+			_, err = db2.Transition(ctx, "Brought", doc.ID, "go", nil, ann)
+			want(t, "a guard over a brought value, before the row", err, "guard_false")
+			var refusal *fado.Error
+			if !errors.As(err, &refusal) || refusal.Brought == nil || shown((*refusal.Brought)["known"]) != "0" {
+				t.Errorf("the refusal does not say what was brought: %v", err)
+			}
+			if _, err := db2.ImportRows(ctx, "Rates", []fado.Values{{"currency": "SEK", "day": "2026-11-17", "rate": "0.3800"}}, tess); err != nil {
+				t.Fatal(err)
+			}
+			// The table changed and the document did not: nothing is
+			// brought until somebody asks.
+			if still, err := db2.Get(ctx, "Brought", doc.ID, ann); err != nil || still.Version != 1 || still.Values["known"] != nil {
+				t.Errorf("after the row the document is %v, %v", still, err)
+			}
+			moved, err := db2.Transition(ctx, "Brought", doc.ID, "go", nil, ann)
+			want(t, "a guard over a brought value, after the row", err, "allowed")
+			if moved == nil || shown(moved.Values["known"]) != "1" || moved.Computed["known"].Version != moved.Version {
+				t.Errorf("the value the guard saw is kept in the version the move made: %v", moved)
+			}
+		},
+		"a line of access, a right to write, a rule": func([]string) {
 			class := `{"name":"Late","variables":{"currency":{"type":"text"},"day":{"type":"date"},"taken":{"type":"decimal","scale":4}},
 			  "states":{"initial":"a","list":["a","b"]},
-			  "transitions":[{"name":"go","from":"a","to":"b","guard":"LOOKUP(Rates, COUNT(day), currency = THIS.currency AND day = THIS.day) > 0"}],
+			  "transitions":[{"name":"go","from":"a","to":"b"}],
 			  "rules":[{"on":"transition","name":"go","do":[{"action":"set","values":{"taken":"LOOKUP(Rates, rate, currency = THIS.currency AND day = THIS.day)"}}]}],
 			  "access":{"read":"TRUE","create":"TRUE","update":"LOOKUP(Rates, COUNT(day), currency = \"NOK\") > 0","delete":"TRUE"},
 			  "rights":{"b":{"day":{"write":"LOOKUP(Rates, COUNT(day), currency = \"DKK\") > 0"}}}}`
@@ -844,13 +879,11 @@ func TestTables(t *testing.T) {
 			}
 			_, err = db2.Set(ctx, "Late", doc.ID, fado.Values{"day": "2026-11-17"}, ann)
 			want(t, "a line of access, after the row", err, "allowed")
-			_, err = db2.Transition(ctx, "Late", doc.ID, "go", nil, ann)
-			want(t, "a guard, before the row", err, "guard_false")
 			if _, err := db2.ImportRows(ctx, "Rates", []fado.Values{{"currency": "NOK", "day": "2026-11-17", "rate": "0.4000"}}, tess); err != nil {
 				t.Fatal(err)
 			}
 			moved, err := db2.Transition(ctx, "Late", doc.ID, "go", nil, ann)
-			want(t, "a guard, after the row", err, "allowed")
+			want(t, "a transition whose rule looks the rate up", err, "allowed")
 			if moved == nil || shown(moved.Values["taken"]) != "0.4000" {
 				t.Errorf("a rule sets the rate of that moment: %v", moved)
 			}
@@ -871,6 +904,10 @@ func TestTables(t *testing.T) {
 	heldBy(t, page, "where a lookup may stand", map[string][]string{
 		"a computed variable, a default": {
 			scratch("Place", `"c":{"type":"text"},"r":{"formula":"LOOKUP(Rates, rate, currency = THIS.c)"},"n":{"type":"number","default":"LOOKUP(Rates, COUNT(day), currency = THIS.c)"}`, oneState),
+		},
+		"a triggered variable, which a guard may then read": {
+			`{"name":"Place","variables":{"c":{"type":"text"},"n":{"type":"number","formula":"LOOKUP(Rates, COUNT(day), currency = THIS.c)","mode":"triggered","on":["before:go"]}},` +
+				`"states":{"initial":"a","list":["a","b"]},"transitions":[{"name":"go","from":"a","to":"b","guard":"n > 0"}],` + open + `}`,
 		},
 		"a guard": {
 			`{"name":"Place","variables":{"c":{"type":"text"}},"states":{"initial":"a","list":["a","b"]},"transitions":[{"name":"go","from":"a","to":"b","guard":"` + count2 + `"}],` + open + `}`,

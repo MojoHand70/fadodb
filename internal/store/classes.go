@@ -89,6 +89,12 @@ type class struct {
 	// triggered are the triggered variables in declaration order, the
 	// order they recompute in (ADR-0043); nil when the class has none.
 	triggered []*cvar
+	// before are, for each named transition, the triggered variables
+	// that list before: it, in declaration order (ADR-0078, item 4):
+	// what is brought when somebody asks for the transition, before its
+	// guard is asked. nil when the class has none, and a transition
+	// with none is not in it.
+	before map[*model.Transition][]*cvar
 	// timers says the class has a timed transition (ADR-0047), so that a
 	// commit of a class without one does not ask which wake-ups to queue.
 	timers bool
@@ -291,6 +297,19 @@ func newClass(cls *model.Class, src []byte) (*class, error) {
 		if v.Triggered() {
 			cv.tidx = len(c.triggered)
 			c.triggered = append(c.triggered, cv)
+			for _, tr := range v.Triggers {
+				if tr.Kind != "before" {
+					continue
+				}
+				for _, t := range cls.Transitions {
+					if t.Name == tr.Arg {
+						if c.before == nil {
+							c.before = map[*model.Transition][]*cvar{}
+						}
+						c.before[t] = append(c.before[t], cv)
+					}
+				}
+			}
 		}
 	}
 	for i := range c.leaves {

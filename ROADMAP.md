@@ -458,7 +458,10 @@ v0.7.0 is brought when it is opened); who may bring a value again,
 which is built too (the `write` right of a triggered variable is asked
 of whoever sends the `refresh`); a
 trigger `before:` a transition, with a guard that reads the document
-alone; and a list that is kept. Then what ADR-0076 and ADR-0075 leave:
+alone, which is built as well (a guard that looks in a table is
+refused when a class is defined, and the value is brought by a
+triggered variable before the guard is asked); and a list that is
+kept, which is not built yet. Then what ADR-0076 and ADR-0075 leave:
 a table as the source of a list, counts, sums and grouping in a
 `QUERY`, the engine's own indexes and its notes on a question no index
 serves. Then the lists in and out of messages and requests, ADR-0085.

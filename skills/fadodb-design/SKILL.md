@@ -213,8 +213,10 @@ cost centre is born from now on.
 ```
 
 The request reads each thing from where it is kept: the employee's
-department from `People`, the head from `Departments`, and asks before
-it goes to the head that its cost centre is active.
+department from `People`, the head from `Departments`, and brings,
+when somebody asks for `ask`, how many active cost centres have its
+number. The guard of `ask` reads that count: a guard reads its
+document and never looks outside it.
 
 ```json
 {
@@ -230,12 +232,14 @@ it goes to the head that its cost centre is active.
     "department":  {"formula": "IF(for_whom = \"employee\", LOOKUP(People, department, login = THIS.employee), chosen)"},
     "head":        {"formula": "LOOKUP(Departments, head, code = THIS.department)"},
     "cost_centre": {"type": "text", "required": true},
+    "centre_active": {"type": "number", "mode": "triggered", "on": ["before:ask"],
+                    "formula": "LOOKUP(CostCentre, COUNT(id), id = THIS.cost_centre AND state = \"active\")"},
     "cost":        {"type": "money", "scale": 2, "required": true}
   },
   "states": {"initial": "draft", "list": ["draft", "asked", "approved", "booked", "refused"], "final": ["booked", "refused"]},
   "transitions": [
     {"name": "ask",     "from": "draft",    "to": "asked",
-     "guard": "NOT ISBLANK(head) AND LOOKUP(CostCentre, COUNT(id), id = THIS.cost_centre AND state = \"active\") = 1"},
+     "guard": "NOT ISBLANK(head) AND centre_active = 1"},
     {"name": "approve", "from": "asked",    "to": "approved"},
     {"name": "refuse",  "from": "asked",    "to": "refused"},
     {"name": "book",    "from": "approved", "to": "booked"}
@@ -387,7 +391,7 @@ read the diagnostics, fix, preview against live data, define.
 |---|---|
 | variables, types, defaults, ranges, named schemas, objects, attachments, tables and `LOOKUP` | shipped; a table that holds rows, or that a class reads, gains columns by its next version, none of them in its key (ADR-0080, proposed), and changes or removes a column when every value converts and no formula or rule of a class uses it (ADR-0084, proposed); its key stays. `delete_rows` removes rows by their keys, as the write line lets; `remove_table` takes a table away, for a designer, once no class reads or writes it (ADR-0082, proposed), and `definitions` says on the version it had who removed it and when, to administrators and designers and to an agent working for an administrator (ADR-0083, proposed) |
 | `COUNT`, `SUM`, `MIN` and `MAX` in a `LOOKUP` of a table, as in `LOOKUP(Stock, SUM(qty), sku = THIS.sku)` | shipped with Phase 4. `AVERAGE`, `MEDIAN` and `COUNTUNIQUE` stand there too (ADR-0081, proposed): the mean of exact values is exact with four places more than the column, the middle value with one more; `ROUND` cuts either |
-| a formula that reads the documents of another class, `LOOKUP(Approval, COUNT(id), purchase = ID() AND state = "granted")` | shipped with Phase 4: in a triggered variable, a default, a guard or a rule, not in an auto formula; the variable declares its `type`; it sees every document and is computed at its trigger, so the other class's rule refreshes this document; put `"index": true` on the variable the condition compares. Two classes that name each other, a purchase and its approvals, are defined in one call with `DefineClasses`; `examples/classes/purchase.json` and `approval.json` are the worked pair |
+| a formula that reads the documents of another class, `LOOKUP(Approval, COUNT(id), purchase = ID() AND state = "granted")` | shipped with Phase 4: in a triggered variable, a default or a rule, not in an auto formula and, since ADR-0078, not in a guard, which reads its document alone: bring what a guard needs with a triggered variable that lists `before:` the transition, as `centre_active` above; the variable declares its `type`; it sees every document and is computed at its trigger, so the other class's rule refreshes this document; put `"index": true` on the variable the condition compares. Two classes that name each other, a purchase and its approvals, are defined in one call with `DefineClasses`; `examples/classes/purchase.json` and `approval.json` are the worked pair |
 | formulas, exact money, calendar days, `IFERROR` | shipped |
 | states, transitions, guards, eventless chains, `STATE()` and `ID()` | shipped |
 | a pointer to another document, `"type": "ref"` with `"class"` | shipped. A `ref` is checked when it is set: the document must be there and the caller must be able to read it, or the change is refused with `unknown_document`. Make the documents pointed at before the ones that point at them. `get_class` lists under `pointed_at_by` what points at a class. Comparing a `ref` in a formula, `order = REF()`, is decided, not built (ADR-0076) |
@@ -399,7 +403,7 @@ read the diagnostics, fix, preview against live data, define.
 | a list narrowed, ordered and cut inside a function over it: `SUM(FILTER(lines, delivered).price)`, `FIRST(SORT(lines, {-price}).what)`, `SUM(TOP(SORT(lines, {-price}), 3).price)`, `JOIN(UNIQUE(lines.what), ", ")`, `JOIN(FILTER(invoices, state = "draft").number, ", ")` | shipped (ADR-0081, step 3, its second group): where the figures stand. Written from the inside out in one order, `FILTER` nearest the list: `TOP(SORT(FILTER(list, condition), {columns}), count)`; a column after the call; `UNIQUE` round a column. Each is a part of the one question. A blank comes before every value in a `SORT`; a blank count of `TOP` is 0. `UNIQUE` stands inside `COUNT`, `JOIN`, `FIRST`, `LAST`, `INDEX`, `CONTAINS`. Decided not now (the owner, 2026-11-24): such a list as a variable of its own; for a `QUERY` list, write a second `QUERY` |
 | the life of the document in a formula: `CREATEDAT()`, `CREATEDBY()`, `UPDATEDAT()`, `UPDATEDBY()`, `ENTEREDAT()`, `ENTEREDBY()`, `ENTEREDFROM()`, `VERSION()` | shipped with Phase 4: in a default, a triggered variable, a guard, a rule, an access rule and a right, not in an auto formula. "Seven days in this state" is `NOW() >= ADDDAYS(ENTEREDAT(), 7)`; four eyes is `CREATEDBY() <> USER()` as the access rule of the transition. A transition back into the same state is an entry and restarts `ENTEREDAT()` |
 | the life of the document by state: `FIRSTENTERED("approved")`, `LASTENTERED`, `FIRSTLEFT`, `LASTLEFT`, each with a `...BY` for who; `ENTRIES("sent")`; `DAYSIN("review")`; `FIRSTEDITOR("draft")`, `LASTEDITOR("draft")` | shipped with Phase 4: where the functions above may stand, and not in a read rule, a read right or a filter, which run for every row (keep the answer in a triggered variable, or query the `_states` view). The state is written as text and checked when the class is defined, or computed, as in `DAYSIN(STATE())`. A transition back into the same state is an entry. An editor created the document in the state or changed it there; who moved it in or out is `LASTENTEREDBY` and `LASTLEFTBY`. "Back to whoever wrote the draft" is `LASTEDITOR("draft")`; "who first sent it to review may not approve it" is `FIRSTENTEREDBY("review") <> USER()`; "after three rounds" is `ENTRIES("review") >= 3` |
-| the list of documents that are due, `Due` | shipped with Phase 4: the documents of a class that a commit would move now, or at a moment, each with its state and the state it would move to. A document becomes due when a guard of an eventless transition comes to hold with no commit of its own: the clock passed a date, or a document or a table the guard looks up changed. The engine does not move it by itself yet: the host program touches it, with a refresh. Index the variable a guard compares with the clock, as in `"due": {"type": "date", "index": true}` for `TODAY() > due` |
+| the list of documents that are due, `Due` | shipped with Phase 4: the documents of a class that a commit would move now, or at a moment, each with its state and the state it would move to. A document becomes due when a guard of an eventless transition comes to hold with no commit of its own: the clock passed a date. (A class defined before a guard was held to its document may look a table up in a guard, and a change of the table then makes its documents due too.) The engine does not move it by itself yet: the host program touches it, with a refresh. Index the variable a guard compares with the clock, as in `"due": {"type": "date", "index": true}` for `TODAY() > due` |
 | a transition that carries its time: `"after": "30d"`, a time in the state as a whole number and `d`, `h`, `m` or `s`, or `"at": "ADDDAYS(due, 1)"`, a date or a datetime the document holds | shipped with Phase 4: it needs neither a name nor a guard, and a guard beside it is still asked. It fires in the first commit that touches the document once its time has come, in the order of the class with the eventless transitions; its event has the origin `timer`. A reminder is a named transition back into its own state with an `after` and a rule on its name; an escalation that reminders must not push back is `"at": "ADDDAYS(FIRSTENTERED(\"waiting\"), 14)"`. With a name a person may take it before its time; give it the access rule `FALSE` to leave it to time alone. An `at` may not read `NOW()`, `TODAY()`, `USER()`, another document or a table, and a blank `at` never comes. Put `"index": true` on the date an `at` names |
 | the engine moving a document by itself when its timer comes | shipped with Phase 4: the move is made as the person whose commit set the timer, who moved the document into the state or who last changed the date, so `USER()` in its rules is theirs and its actions run with their rights. A reminder missed while the engine was stopped is made once, not once for every period missed. A guard beside a timer is asked when the time comes; if it does not hold then, the document waits for a commit to touch it, and `Due` lists it once the guard holds |
 | what the database keeps: `list_classes`, `list_tables` and `list_schemas` answer the names; `get_class`, `get_table` and `get_schema` the definition with its `label` and `description` | shipped |
@@ -468,6 +472,19 @@ read the diagnostics, fix, preview against live data, define.
    closes one of them. The order is the variable's own line, its
    section's, each section around that one, then `*`. A refusal's hint
    names the line that decided, `review / amounts`: mend that line.
+   **What a guard needs from outside the document is brought first**
+   (ADR-0078). A guard reads the document, the caller, the clock, the
+   state and the life of the document; `LOOKUP` and `QUERY` in a guard
+   are refused with `not_allowed`. Give the lookup a triggered variable
+   that lists `"before:<transition>"`: it is worked out when somebody
+   asks for the transition, before the guard is asked, and kept in the
+   version the move makes, so the log holds the number the condition
+   decided on. `"on": ["enter:review"]` keeps the number of the day
+   the document was filed; `"on": ["enter:review", "before:approve"]`
+   takes the number of the moment of approval. A refusal says what
+   was brought, under `brought`. A transition without a name has
+   nobody asking, so nothing is brought before its guard: bring its
+   number at the entry of the state, or by a refresh.
    **For a triggered variable `write` says who may bring its value
    again** with `refresh` (ADR-0078): a value a decision stands on,
    such as a limit brought from a table, gets

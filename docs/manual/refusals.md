@@ -15,6 +15,10 @@ A refusal has four parts.
 | the message | what happened, in words, for a person |
 | the hint | often, what to do about it |
 
+One refusal has a fifth. `guard_false` says under `brought` each value that was
+brought for the guard when the transition was asked for, by its variable,
+as the guard saw it; see [Before a transition](triggered-variables.md#before-a-transition).
+
 The same word can appear in more than one list: `forbidden` is always
 about who may, wherever it comes from.
 

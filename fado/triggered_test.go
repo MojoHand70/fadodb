@@ -344,6 +344,7 @@ func TestTriggeredVariables(t *testing.T) {
 		"at_enter":{"formula":"STATE()","mode":"triggered","on":["enter:on"]},
 		"at_exit":{"formula":"STATE()","mode":"triggered","on":["exit:off"]},
 		"at_move":{"formula":"STATE()","mode":"triggered","on":["transition:light"]},
+		"at_before":{"formula":"STATE()","mode":"triggered","on":["before:light"]},
 		"at_refresh":{"formula":"STATE()","mode":"triggered","on":["refresh"]},
 		"times":{"type":"int","formula":"times + 1","mode":"triggered","on":["exit:off","transition:light","enter:on","enter:off"]}`,
 		`"states":{"initial":"off","list":["off","on"]},"transitions":[{"name":"light","from":"off","to":"on"},{"name":"blink","from":"off","to":"off"}]`)
@@ -373,6 +374,11 @@ func TestTriggeredVariables(t *testing.T) {
 		"transition:<name>": func(row []string) {
 			if lit.Values["at_move"] != state[row[2]] || blinked.Values["at_move"] != nil {
 				t.Errorf("on %s STATE() is %v, and the chapter says %s", row[0], lit.Values["at_move"], row[2])
+			}
+		},
+		"before:<name>": func(row []string) {
+			if lit.Values["at_before"] != state[row[2]] || blinked.Values["at_before"] != nil || moment(lit, "at_before") != "at version 3" {
+				t.Errorf("on %s STATE() is %v, worked out %s, and the chapter says %s", row[0], lit.Values["at_before"], moment(lit, "at_before"), row[2])
 			}
 		},
 		"refresh": func(row []string) {
@@ -624,13 +630,13 @@ func TestTriggeredVariables(t *testing.T) {
 			one(`"a":{"type":"int"},"b":{"formula":"a + 1","mode":"triggered","on":[]}`),
 		},
 		"the mode is neither auto nor triggered": {one(`"a":{"type":"int"},"b":{"formula":"a + 1","mode":"sometimes","on":["refresh"]}`)},
-		"a trigger is none of the four, or is written wrongly, as enter with no state": {
-			on("values_change"), on("create"), on("enter"), on("exit"), on("transition"), on("refresh:now"),
+		"a trigger is none of the five, or is written wrongly, as enter with no state": {
+			on("values_change"), on("create"), on("enter"), on("exit"), on("transition"), on("before"), on("refresh:now"),
 		},
 		"a trigger names a state the class does not have":      {on("enter:nowhere"), on("exit:nowhere")},
-		"a trigger names a transition the class does not have": {on("transition:fly")},
+		"a trigger names a transition the class does not have": {on("transition:fly"), on("before:fly")},
 		"a trigger is table:<name> or schedule:<when>":         {on("table:Rates"), on("schedule:daily")},
-		"a trigger could fire only on a frozen document":       {on("exit:z"), on("transition:undo"), on("enter:y")},
+		"a trigger could fire only on a frozen document":       {on("exit:z"), on("transition:undo"), on("before:undo"), on("enter:y")},
 		"a triggered variable has a default or is required": {
 			one(`"a":{"type":"int"},"b":{"formula":"a + 1","default":"1","mode":"triggered","on":["refresh"]}`),
 			one(`"a":{"type":"int"},"b":{"formula":"a + 1","required":true,"mode":"triggered","on":["refresh"]}`),

@@ -28,6 +28,26 @@ Phase 8 started on 2026-11-25.
   door for agents tells an agent to send it, and each tool describes
   the member. The guide is
   [act only on the version you read](docs/manual/guides/act-on-what-you-read.md).
+- A guard reads its document, and what it needs from outside is
+  brought first (ADR-0078, item 4, the third step of the record). A
+  triggered variable takes a fifth trigger, `before:<transition>`: it
+  is worked out when somebody asks for the transition, after the
+  values the command sets and before the guard is asked, with
+  `STATE()` the state the transition leaves. When the guard holds, the
+  value is kept in the version the move makes, with that version as
+  its moment, and it is not worked out again by an `exit:`, a
+  `transition:` or an `enter:` of the same move. When the guard does
+  not hold, nothing is written, and the refusal `guard_false` says
+  under the new member `brought` what each such variable was, to a
+  caller who may read it (in Go, `Error.Brought`). A value that cannot
+  be brought refuses the transition with the code of the failure and
+  the variable. `transitions` and `preview` bring it too and write
+  nothing, and the bundle marks the guard of such a transition as the
+  server's. A transition that fires by itself, by its guard or by its
+  time, brings nothing. The guide is
+  [bring what a condition needs](docs/manual/guides/bring-what-a-condition-needs.md).
+  `BenchmarkTransitionBefore` joins the gate.
+
 - The `write` right of a triggered variable says who may bring its
   value again (ADR-0078, item 3, the second step of the record). A
   `refresh` that names a variable asks the variable's `write` right of
@@ -95,6 +115,15 @@ Phase 8 started on 2026-11-25.
 
 ### Changed
 
+- **A `LOOKUP` or a `QUERY` written in a guard is refused when a class
+  is defined**, with `not_allowed` at the guard and the mend in the
+  hint (ADR-0078, item 4): a guard is not stored, so nothing kept what
+  it saw. Give the lookup a triggered variable that lists
+  `"before:<transition>"`, and let the guard read the variable. A
+  class that a database already holds with such a guard still runs as
+  it was written, and `due` still lists its documents; its next
+  version is written the new way. The conformance scripts, the tests
+  and the designer's skill that had such a guard are written again.
 - The server's pages are built to Rhea's sign-in, one centred column,
   in FadoDB's colours, light and dark, with FadoDB's mark and the
   typefaces Schibsted Grotesk and Martian Mono, which the program holds

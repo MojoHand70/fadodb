@@ -51,6 +51,7 @@ The triggers:
 | `enter:<state>` | a commit that brings the document into the state; for the first state that is the create | the state entered |
 | `exit:<state>` | a commit that takes the document out of the state | the state left |
 | `transition:<name>` | a commit that makes the transition | the state left |
+| `before:<name>` | a command that asks for the transition, before its guard is asked; see [Before a transition](#before-a-transition) | the state left |
 | `refresh` | a refresh of the document; see [Refreshing](#refreshing) | the state the document is in |
 
 - **A variable is worked out once in a commit**, however many of its
@@ -200,7 +201,10 @@ What the invoice holds after each step that made a version:
 > guard is asked before the document moves. Had `check` the guard
 > `NOT ISBLANK(rate)`, it would see the blank from before and refuse
 > every invoice. So the guard stands on the next move, `book`. A rule
-> of the move does see the new value.
+> of the move does see the new value. One kind of variable a guard of
+> the move does see: one that lists `before:` the move, which is
+> worked out before the guard is asked; see
+> [Before a transition](#before-a-transition).
 
 ## The moment
 
@@ -300,6 +304,74 @@ the commit.
 > **A range needs the type.** On a computed variable that names no
 > `type`, triggered or not, `min` and `max` are accepted and not
 > applied. `rate` names its type for that reason.
+
+## Before a transition
+
+A guard reads its document and nothing outside it: a `LOOKUP` or a
+`QUERY` written in a guard is refused when the class is defined, with
+`not_allowed`. A decision stands on what the document holds, and what
+a guard needs from a table or from other documents is brought onto
+the document first. The trigger `before:<name>` does that: the
+variable is worked out when somebody asks for the transition, and the
+guard then reads it.
+
+```jsonc
+"limit": {"type": "decimal", "scale": 2,
+          "formula": "LOOKUP(Limits, limit, grade = THIS.grade)",
+          "mode": "triggered", "on": ["enter:review", "before:approve"]}
+```
+
+```jsonc
+{"name": "approve", "from": "review", "to": "approved", "guard": "NOT ISBLANK(limit) AND amount <= limit"}
+```
+
+What a command that asks for a transition does, in order:
+
+| | Step |
+|---|---|
+| 1 | the version the command saw is compared, when it names one |
+| 2 | who may: the line of `access` for the transition, and the rights of the values the command sets |
+| 3 | the values the command sets, and what is worked out from them |
+| 4 | the variables that list `before:` this transition, in the order of the class, and what is worked out from each |
+| 5 | the guard |
+| 6 | the move; the variables that list `exit:`, `transition:` and `enter:`; the rules; the writes |
+
+- **When the guard holds**, the value is kept in the version the move
+  makes, and its moment names that version. So the log holds the
+  number the guard decided on. It is not worked out again by an
+  `enter:`, an `exit:` or a `transition:` of the same move.
+- **When the guard does not hold**, nothing is written, and the
+  refusal says under `brought` what each such variable was, to a
+  caller who may read it. The document on the caller's screen may
+  still show the value of an earlier version.
+- **When the value cannot be brought**, because its formula fails or
+  the value is not one the variable accepts, the transition is
+  refused with that code and the variable. Another trigger would keep
+  the old value and go on; a guard is not asked over a number that
+  could not be worked out.
+- **The listing of transitions and a preview bring it too**, and
+  write nothing. A transition is offered, or not, by the number the
+  move would see.
+- **`STATE()` in its formula is the state the transition leaves.**
+- **It names a transition that has a name.** A transition that fires
+  by itself, by its guard or by its time, has nobody asking for it:
+  nothing is brought before it, and its guard reads the document as it
+  is stored. Bring what such a guard needs at the entry of the state,
+  or by a refresh.
+
+Two ways of using it, both right:
+
+| The designer wants | Writes | The guard decides on |
+|---|---|---|
+| the limit of the day the purchase was filed | `"on": ["enter:review"]` | the number the approver saw |
+| the limit of the moment of approval | `"on": ["enter:review", "before:approve"]` | a number brought in the same commit, and kept by it |
+| that an invoice number is free | `"on": ["before:send"]`, a count over the class | a count nobody can have changed since: the commits come one after another |
+
+The guide
+[Bring what a condition needs](guides/bring-what-a-condition-needs.md)
+plays the purchase from its first draft to its approval. A class that
+was defined with a lookup in a guard before this was so still runs as
+it was written; its next version brings the value first.
 
 ## Refreshing
 
@@ -463,7 +535,7 @@ What each takes and what it answers is in
 | a computed variable has an `on` and is not triggered | `not_allowed` |
 | a triggered variable has no `on`, or an empty one | `missing` |
 | the `mode` is neither `auto` nor `triggered` | `bad_value` |
-| a trigger is none of the four, or is written wrongly, as `enter` with no state | `bad_trigger` |
+| a trigger is none of the five, or is written wrongly, as `enter` with no state | `bad_trigger` |
 | a trigger names a state the class does not have | `unknown_state` |
 | a trigger names a transition the class does not have | `unknown_transition` |
 | a trigger is `table:<name>` or `schedule:<when>` | `not_supported` |

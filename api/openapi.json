@@ -15,6 +15,10 @@
     "schemas": {
       "Error": {
         "properties": {
+          "brought": {
+            "description": "on `guard_false`: each value that was brought for the guard when the transition was asked for, by its variable, as the guard saw it; a variable the caller may not read is left out",
+            "type": "object"
+          },
           "code": {
             "description": "what a caller branches on",
             "type": "string"

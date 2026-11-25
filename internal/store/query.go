@@ -50,6 +50,47 @@ func (s *Store) Query(ctx context.Context, f Filter, opts ...Option) ([]*Documen
 	return docs, err
 }
 
+// lookLimit is how far the engine looks into an index before it stops
+// counting (ADR-0075, item 10).
+const lookLimit = 1000
+
+// through answers the condition and the parameters to ask a plan with.
+// A question that two or more indexes fit is asked through the one that
+// ends first: the engine looks into each for the value the question
+// compares, for at most lookLimit documents, since the store has no
+// numbers on the data to choose by (ADR-0075, item 10). Of two looks
+// that end alike the earlier fit is taken, and a look that finds
+// nothing ends the looking: through that index the answer is empty.
+func (s *Store) through(ctx context.Context, c *class, plan *query.Plan, o options) (string, []any, error) {
+	named := s.contextArgs(o)
+	if len(plan.Fits) < 2 {
+		return plan.Where, append(plan.Args, named...), nil
+	}
+	best, least := 0, lookLimit+1
+	for i := range plan.Fits {
+		f := &plan.Fits[i]
+		text := "SELECT count(*) FROM (SELECT 1 FROM " + quote(c.table) + " WHERE " + f.Look + " LIMIT " + fmt.Sprint(lookLimit) + ")"
+		st, err := s.filters.acquire(ctx, s.db, text)
+		if err != nil {
+			return "", nil, storageErr("prepare a look into "+c.cls.Name, err)
+		}
+		var n int
+		err = st.stmt.QueryRowContext(ctx, append(f.Args[:len(f.Args):len(f.Args)], named...)...).Scan(&n)
+		s.filters.release(st)
+		if err != nil {
+			return "", nil, storageErr("look into "+c.cls.Name, err)
+		}
+		if n < least {
+			best, least = i, n
+		}
+		if n == 0 {
+			break
+		}
+	}
+	f := &plan.Fits[best]
+	return f.Where, append(f.Args[:len(f.Args):len(f.Args)], named...), nil
+}
+
 // answer runs a compiled filter over the documents of a class and
 // projects each document found for the caller. command is the call the
 // log of reads names. With probe it reads one document past the limit,
@@ -63,11 +104,14 @@ func (s *Store) answer(ctx context.Context, c *class, o options, plan *query.Pla
 	cols := append(quoteAll(systemColumns), quoteAll(columnNames(c.cls.Columns))...)
 	cols = append(cols, quoteAll(c.atNames())...)
 	text := "SELECT " + strings.Join(cols, ", ") + " FROM " + quote(c.cls.Name)
-	if plan.Where != "" {
-		text += " WHERE " + plan.Where
+	where, args, err := s.through(ctx, c, plan, o)
+	if err != nil {
+		return nil, false, err
+	}
+	if where != "" {
+		text += " WHERE " + where
 	}
 	text += " ORDER BY " + plan.Order + " LIMIT " + fmt.Sprint(limit) + " OFFSET " + fmt.Sprint(plan.Offset)
-	args := append(plan.Args, s.contextArgs(o)...)
 	st, err := s.filters.acquire(ctx, s.db, text)
 	if err != nil {
 		return nil, false, storageErr("prepare the query of "+c.cls.Name, err)
@@ -232,8 +276,12 @@ func (s *Store) Count(ctx context.Context, f Filter, opts ...Option) (int64, err
 		return 0, filterErr(err)
 	}
 	text := "SELECT count(*) FROM " + quote(c.cls.Name)
-	if plan.Where != "" {
-		text += " WHERE " + plan.Where
+	where, args, err := s.through(ctx, c, plan, o)
+	if err != nil {
+		return 0, err
+	}
+	if where != "" {
+		text += " WHERE " + where
 	}
 	st, err := s.filters.acquire(ctx, s.db, text)
 	if err != nil {
@@ -241,7 +289,7 @@ func (s *Store) Count(ctx context.Context, f Filter, opts ...Option) (int64, err
 	}
 	defer s.filters.release(st)
 	var n int64
-	if err := st.stmt.QueryRowContext(ctx, append(plan.Args, s.contextArgs(o)...)...).Scan(&n); err != nil {
+	if err := st.stmt.QueryRowContext(ctx, args...).Scan(&n); err != nil {
 		return 0, storageErr("count "+c.cls.Name, err)
 	}
 	if o.records(c) {

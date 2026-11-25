@@ -50,6 +50,27 @@ type Plan struct {
 	Fields []string
 	// Prog is the bound where formula, nil when there is none.
 	Prog *formula.Program
+	// Fits are the comparisons of the question that an index of the
+	// class answers by itself, when there are two or more of them. The
+	// store has no numbers on the data to choose between two indexes
+	// (ADR-0075, item 10), so whoever runs the plan looks into each and
+	// asks the question through the one that ends first: its Where and
+	// its Args, in place of the plan's. Where two looks end alike the
+	// earlier fit is taken: the state stands last among them. A question
+	// that one index fits, or none, has no Fits.
+	Fits []Fit
+}
+
+// Fit is one comparison of a question that an index of the class
+// answers by itself.
+type Fit struct {
+	// Column is the column the index is on. Look is the comparison, on
+	// the bare column, which Args bind beside the context of the caller.
+	Column, Look string
+	// Where and Args ask the question so that the store is offered this
+	// index and no other.
+	Where string
+	Args  []any
 }
 
 // Principal is who a filter runs for (ADR-0041): the id and the groups
@@ -199,7 +220,7 @@ func CompileOn(f Filter, on *On, cls *model.Class, sources formula.Sources, p Pr
 	// REF() in a filter is the pointer to the document of the row, as
 	// ID() is its id, and a REF that names a class writes it as the
 	// class of the filter does (ADR-0076, item 10).
-	src, opts, notBlank := f.Where, formula.BindOptions{Sources: sources, Class: cls.Name, Classes: cls}, p.named
+	src, opts, notBlank := f.Where, formula.BindOptions{Sources: sources, Class: cls.Name, Classes: cls}, func(n formula.Node) bool { return isNamed(n) || p.named(n) }
 	// bound gives the SQL of a slot of the caller's condition: a column
 	// of the class, or a value of the document a list is read on.
 	bound := quoted
@@ -213,7 +234,7 @@ func CompileOn(f Filter, on *On, cls *model.Class, sources formula.Sources, p Pr
 		// class was defined: REF() in it is the document the list is
 		// read on, of whatever class that is.
 		opts.Class, opts.Loose = "", true
-		bound, notBlank = on.bound(quoted, d, &given), func(n formula.Node) bool { return isRef(n) || p.named(n) }
+		bound, notBlank = on.bound(quoted, d, &given), func(n formula.Node) bool { return isRef(n) || isNamed(n) || p.named(n) }
 	} else if strings.TrimSpace(f.Where) != "" {
 		if node, err = formula.Parse(f.Where); err != nil {
 			return nil, formulaError(err)
@@ -222,6 +243,13 @@ func CompileOn(f Filter, on *On, cls *model.Class, sources formula.Sources, p Pr
 	// led says the caller's own condition compares an indexed column, so
 	// that it leads the statement to an index by itself.
 	led := false
+	// own is what the caller's condition offers the store, rule what
+	// the read rule does, and readable the predicate of the read
+	// rights: the three parts of the condition, kept apart for a
+	// question that is asked through one index of several (ADR-0075,
+	// item 10).
+	var own, rule offer
+	var readable string
 	if node != nil {
 		prog, err := formula.BindNode(src, node, scope, opts)
 		if err != nil {
@@ -263,11 +291,14 @@ func CompileOn(f Filter, on *On, cls *model.Class, sources formula.Sources, p Pr
 		if stmt.Error != "" {
 			where = "(" + stmt.Error + ") IS NULL AND " + where
 		}
-		pre, args, indexed := prefilter(node, src, cols, d, constantOf(src, scope, opts, d, bound), "f", notBlank)
-		if pre != "" {
+		terms, args := prefilter(node, src, cols, d, constantOf(src, scope, opts, d, bound), "f", notBlank)
+		own = offer{terms: terms, args: args, exact: where}
+		if pre := own.bare(everyTerm); pre != "" {
 			where = pre + " AND (" + where + ")"
 		}
-		led = indexed
+		for i := range terms {
+			led = led || terms[i].indexed
+		}
 		plan.Where = where
 		plan.Args = args
 		plan.Prog = prog
@@ -285,6 +316,7 @@ func CompileOn(f Filter, on *On, cls *model.Class, sources formula.Sources, p Pr
 		// nothing of how many rows each finds, may take the rule's index
 		// and read every document of the caller to find one by its
 		// number.
+		rule = offer{terms: rp.terms, args: rp.args, exact: rp.plain, whole: true}
 		where, args := rp.where, rp.args
 		if led {
 			where, args = rp.plain, nil
@@ -389,6 +421,7 @@ func CompileOn(f Filter, on *On, cls *model.Class, sources formula.Sources, p Pr
 		}
 		if len(preds) > 0 {
 			conj := strings.Join(preds, " AND ")
+			readable = conj
 			if plan.Where == "" {
 				plan.Where = conj
 			} else {
@@ -416,7 +449,151 @@ func CompileOn(f Filter, on *On, cls *model.Class, sources formula.Sources, p Pr
 		}
 	}
 	plan.Args = append(plan.Args[:len(plan.Args):len(plan.Args)], given...)
+	through(plan, on != nil, &own, &rule, readable, given)
 	return plan, nil
+}
+
+// offer is one part of a condition as the store is given it: the
+// comparisons on bare columns, which an index may answer, beside the
+// exact predicate they were read from. whole says the exact predicate
+// stands in its own brackets already, as the read rule's does.
+type offer struct {
+	terms []bare
+	args  []any
+	exact string
+	whole bool
+}
+
+// everyTerm keeps every comparison of an offer.
+func everyTerm(*bare) bool { return true }
+
+// bare joins the comparisons of the offer that keep lets through.
+func (o *offer) bare(keep func(*bare) bool) string {
+	n, size := 0, 0
+	var one *bare
+	for i := range o.terms {
+		if t := &o.terms[i]; keep(t) {
+			one = t
+			n++
+			size += len(t.sql) + len(" AND ")
+		}
+	}
+	switch n {
+	case 0:
+		return ""
+	case 1:
+		return one.sql
+	}
+	var b strings.Builder
+	b.Grow(size)
+	for i := range o.terms {
+		if t := &o.terms[i]; keep(t) {
+			if b.Len() > 0 {
+				b.WriteString(" AND ")
+			}
+			b.WriteString(t.sql)
+		}
+	}
+	return b.String()
+}
+
+// with is the offer with the comparisons keep lets through, and their
+// parameters added to args.
+func (o *offer) with(keep func(*bare) bool, args *[]any) string {
+	pre := o.bare(keep)
+	for i := range o.terms {
+		if t := &o.terms[i]; keep(t) {
+			*args = append(*args, o.args[t.lo:t.hi]...)
+		}
+	}
+	switch {
+	case o.exact == "" || o.exact == "0":
+		return o.exact
+	case pre == "":
+		return o.exact
+	case o.whole:
+		return "(" + pre + " AND " + o.exact + ")"
+	}
+	return pre + " AND (" + o.exact + ")"
+}
+
+// through settles which index a question is asked through when its
+// condition and the read rule compare more than one indexed column
+// (ADR-0075, item 10).
+//
+// A declared question, the condition of a list read on a document,
+// names its index: the first comparison, for equality, of an indexed
+// column with something of that document, its pointer or one of its
+// variables (item 2). The store is offered that comparison and no other
+// on an indexed column, so it has no choice to make.
+//
+// Any other question that two or more indexes fit is left to whoever
+// runs the plan, who looks into each: the plan gains its Fits, the
+// state last among them, which is the rule for two looks that end
+// alike.
+func through(plan *Plan, declared bool, own, rule *offer, rights string, given []any) {
+	indexed := 0
+	for _, o := range []*offer{own, rule} {
+		for i := range o.terms {
+			if o.terms[i].indexed {
+				indexed++
+			}
+		}
+	}
+	if indexed < 2 {
+		return
+	}
+	// asked writes the question so that only one indexed comparison is
+	// offered, with every comparison no index answers beside it.
+	asked := func(one *bare) (string, []any) {
+		keep := func(t *bare) bool { return !t.indexed || t == one }
+		var args []any
+		where := own.with(keep, &args)
+		if r := rule.with(keep, &args); r != "" {
+			if where == "" {
+				where = r
+			} else {
+				where = "(" + where + ") AND " + r
+			}
+		}
+		if rights != "" {
+			if where == "" {
+				where = rights
+			} else {
+				where += " AND " + rights
+			}
+		}
+		return where, append(args, given...)
+	}
+	if declared {
+		for i := range own.terms {
+			if t := &own.terms[i]; t.fits && t.ofDoc {
+				plan.Where, plan.Args = asked(t)
+				return
+			}
+		}
+	}
+	var fits, state []*bare
+	for _, o := range []*offer{own, rule} {
+		for i := range o.terms {
+			switch t := &o.terms[i]; {
+			case !t.fits:
+			case t.col == "state":
+				state = append(state, t)
+			default:
+				fits = append(fits, t)
+			}
+		}
+	}
+	fits = append(fits, state...)
+	if len(fits) < 2 {
+		return
+	}
+	plan.Fits = make([]Fit, len(fits))
+	for i, t := range fits {
+		where, args := asked(t)
+		plan.Fits[i] = Fit{Column: t.col, Look: t.sql, Where: where, Args: args}
+	}
 }
 
 // bound gives the SQL of a slot of a condition read on a document: a
@@ -458,6 +635,18 @@ func (on *On) bound(column func(formula.Slot) string, d formula.Dialect, given *
 func isRef(n formula.Node) bool {
 	call, ok := n.(*formula.Call)
 	return ok && call.Name == "REF" && len(call.Args) == 0
+}
+
+// isNamed says a node is the pointer to a named document, as
+// REF("Order", "ORD-17"): its id is written out and is not empty, so
+// the pointer is never blank.
+func isNamed(n formula.Node) bool {
+	call, ok := n.(*formula.Call)
+	if !ok || call.Name != "REF" || len(call.Args) != 2 {
+		return false
+	}
+	id, ok := call.Args[1].(*formula.TextLit)
+	return ok && id.Value != ""
 }
 
 // constantOf answers, for an operand of a condition that reads no
@@ -535,6 +724,9 @@ type readPlan struct {
 	// plain is the rule without them, for a filter whose own condition
 	// leads to an index.
 	plain string
+	// terms are those comparisons one by one, for a question asked
+	// through one index of several (ADR-0075, item 10).
+	terms []bare
 }
 
 // maxReadPlans bounds the predicates kept for one class.
@@ -608,8 +800,9 @@ func readPlanFor(cls *model.Class, scope *formula.Scope, cols map[string]column,
 			where = "(" + stmt.Error + ") IS NULL AND " + where
 		}
 		rp.plain = "(" + where + ")"
-		pre, args, _ := prefilter(node, rr.src, cols, d, constantOf(rr.src, scope, opts, d, quoted), "r", p.named)
-		if pre != "" {
+		terms, args := prefilter(node, rr.src, cols, d, constantOf(rr.src, scope, opts, d, quoted), "r", p.named)
+		rp.terms = terms
+		if pre := (&offer{terms: terms}).bare(everyTerm); pre != "" {
 			where = pre + " AND (" + where + ")"
 		}
 		rp.where, rp.args = "("+where+")", args
@@ -970,13 +1163,38 @@ func formulaError(err error) *Error {
 	return &Error{Code: CodeBadFormula, Element: "where", Pos: -1, Message: err.Error()}
 }
 
+// bare is one comparison of a column with a value, which the prefilter
+// offers the store beside the exact condition.
+type bare struct {
+	sql string
+	// col is the column compared, as the table names it.
+	col string
+	// indexed says the column has an index; fits, that the comparison is
+	// an equality the index answers by itself, with no blank beside it.
+	indexed, fits bool
+	// ofDoc says the value is of the document a list is read on: the
+	// pointer to it or one of its variables (ADR-0075, item 2).
+	ofDoc bool
+	// lo and hi bound the parameters of the comparison among the args
+	// the prefilter answers.
+	lo, hi int
+}
+
+// ofDocument says an operand is of the document a list is read on: the
+// pointer to it, REF(), or one of its variables, THIS.name.
+func ofDocument(n formula.Node) bool {
+	if _, this := n.(*formula.ThisRef); this {
+		return true
+	}
+	return isRef(n)
+}
+
 // prefilter adds, for each comparison of a column with a literal in the
 // top-level AND of the formula, the comparison on the bare column, which
 // an index answers. When a blank would satisfy the comparison, the blank
 // rows are kept with "OR column IS NULL". Money columns, and literals that
 // do not fit the column's scale, are left to the exact predicate.
-func prefilter(n formula.Node, src string, cols map[string]column, d formula.Dialect, constant func(formula.Node) (string, formula.Kind, bool), prefix string, notBlank func(formula.Node) bool) (pre string, args []any, indexed bool) {
-	var terms []string
+func prefilter(n formula.Node, src string, cols map[string]column, d formula.Dialect, constant func(formula.Node) (string, formula.Kind, bool), prefix string, notBlank func(formula.Node) bool) (terms []bare, args []any) {
 	var walk func(formula.Node)
 	walk = func(n formula.Node) {
 		b, ok := n.(*formula.Binary)
@@ -1026,16 +1244,16 @@ func prefilter(n formula.Node, src string, cols map[string]column, d formula.Dia
 			if fl {
 				op = flip[op]
 			}
-			indexed = indexed || c.indexed
 			if (c.typ.Kind == formula.KindText || c.typ.Kind == formula.KindRef) && notBlank(expr) {
 				// The value is not blank, so no blank column equals it:
 				// the bare comparison is exact, and seeks the index as
 				// one with a literal does.
-				terms = append(terms, quoteIdent(c.name)+" = "+val)
+				terms = append(terms, bare{sql: quoteIdent(c.name) + " = " + val, col: c.name, indexed: c.indexed, fits: c.indexed, ofDoc: ofDocument(expr), lo: len(args), hi: len(args)})
 				return
 			}
 			val = "COALESCE(" + val + ", " + zero + ")"
-			terms = append(terms, "("+quoteIdent(c.name)+" "+op+" "+val+" OR ("+quoteIdent(c.name)+" IS NULL AND "+zero+" "+op+" "+val+"))")
+			terms = append(terms, bare{sql: "(" + quoteIdent(c.name) + " " + op + " " + val + " OR (" + quoteIdent(c.name) + " IS NULL AND " + zero + " " + op + " " + val + "))",
+				col: c.name, indexed: c.indexed, lo: len(args), hi: len(args)})
 			return
 		}
 		if flipped {
@@ -1047,15 +1265,15 @@ func prefilter(n formula.Node, src string, cols map[string]column, d formula.Dia
 		}
 		name := fmt.Sprintf("%s%d", prefix, len(args))
 		term := quoteIdent(col.name) + " " + op + " " + d.Param(name)
-		if zeroSatisfies(op, c) {
+		blank := zeroSatisfies(op, c)
+		if blank {
 			term = "(" + term + " OR " + quoteIdent(col.name) + " IS NULL)"
 		}
-		terms = append(terms, term)
+		terms = append(terms, bare{sql: term, col: col.name, indexed: col.indexed, fits: col.indexed && op == "=" && !blank, lo: len(args), hi: len(args) + 1})
 		args = append(args, sql.Named(name, val))
-		indexed = indexed || col.indexed
 	}
 	walk(n)
-	return strings.Join(terms, " AND "), args, indexed
+	return terms, args
 }
 
 var sargable = map[formula.TokenKind]string{

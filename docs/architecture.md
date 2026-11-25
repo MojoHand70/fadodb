@@ -871,10 +871,14 @@ formula the Go VM runs for a read by id. The caller's part of the rule
 is decided first: an `INGROUP` of a group has one answer for the whole
 statement, so `owner = USER() OR INGROUP("finance")` adds nothing for a
 member of finance and is `owner = USER()` for anybody else, a comparison
-the index on `owner` answers; a statement is kept for each outcome. The
-rule offers its comparisons to an index only where the caller's own
-condition offers none, since SQLite has no statistics to choose between
-two. The SQL endpoint adds no rule
+the index on `owner` answers; a statement is kept for each outcome.
+Where the caller's condition and the rule compare more than one indexed
+column for equality, SQLite has no statistics to choose between the
+indexes. The engine looks into each for the value compared, for at
+most a thousand documents, and writes the statement so that SQLite is
+offered the index that ended first and no other (ADR-0075, item 10); a
+list read on a document is asked through the pointer it compares with
+that document, and nobody looks. The SQL endpoint adds no rule
 and reads every row and every variable. It is for the system group
 `analysts` (ADR-0051, ADR-0052), and for nobody else.
 

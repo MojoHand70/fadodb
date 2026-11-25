@@ -28,6 +28,14 @@ Phase 8 started on 2026-11-25.
   door for agents tells an agent to send it, and each tool describes
   the member. The guide is
   [act only on the version you read](docs/manual/guides/act-on-what-you-read.md).
+- A table as the source of a `QUERY` (ADR-0076, item 9, which the
+  list of documents left unbuilt). A live variable, or a triggered one
+  that keeps the list, lists the rows of an explicit table:
+  `QUERY(Prices, {sku, price}, band = THIS.band, {-price})`. A row has
+  its columns and no id; left to itself the list is sorted by the key
+  of the table; the reader of a live list is asked the `read` line of
+  the table, as by `table_rows`; and the class is noted as a reader of
+  the table. Not built: a figure over a live list of a table.
 - A list that is kept (ADR-0078, item 5, the fourth step of the
   record). A triggered variable whose whole formula is a `QUERY` keeps
   the answer with the document and with each of its versions, as

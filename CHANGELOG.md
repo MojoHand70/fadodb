@@ -28,6 +28,19 @@ Phase 8 started on 2026-11-25.
   door for agents tells an agent to send it, and each tool describes
   the member. The guide is
   [act only on the version you read](docs/manual/guides/act-on-what-you-read.md).
+- The engine chooses between two indexes that fit one question
+  (ADR-0075, item 10, the part the record left open). A `query` or a
+  `count` whose condition compares two indexed variables,
+  `customer = "Globex" AND stage = "waiting"`, was answered through
+  whichever index the store took, which has no numbers on the data: on
+  10,000,000 invoices a wrong choice took from 28 ms to 2.9 seconds
+  where the right one takes 0.03 ms. The engine now looks into each
+  index that fits, for at most a thousand documents, and asks through
+  the one that ends first; the looks take 0.05 to 0.08 ms and do not
+  grow with the class. The comparison of the read rule,
+  `owner = USER()`, is one of the indexes looked into. A list of a
+  document names its index and nobody looks: it is asked through the
+  pointer it compares with its document.
 - `REF` wherever a formula stands (ADR-0076, item 10, built until now
   for the condition of a `QUERY` alone). `REF()` is the pointer to the
   document the formula belongs to and stands where `ID()` may: in a

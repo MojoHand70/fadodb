@@ -268,6 +268,19 @@ plays an order from its invoices to its closing.
 is read through the index of the pointer, and finds its few invoices
 among a million as among a hundred.
 
+A list may compare more than its pointer, as in
+`order = REF() AND owner = "jan"`. The engine asks it through the
+pointer the list compares with its document, whatever else the
+condition compares.
+
+A question somebody writes by hand, the `where` of a `query`, may
+compare two variables that both have an index, say the order of an
+invoice and its customer. The store does not know which of the two
+finds fewer documents. So the engine looks into each
+index first, for at most a thousand documents, and asks through the
+one that ends first. The answer is the same either way; what changes
+is how long it takes.
+
 **Not built yet:** the engine keeping this index by itself for every
 pointer. It is decided (ADR-0075). Until then the designer writes
 `"index": true`.

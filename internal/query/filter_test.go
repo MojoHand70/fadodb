@@ -1,6 +1,7 @@
 package query
 
 import (
+	"database/sql"
 	"errors"
 	"fmt"
 	"strings"
@@ -439,5 +440,61 @@ func TestCompile_ReadRuleFolded(t *testing.T) {
 			}
 		}
 		Forget(cls)
+	}
+}
+
+// A question that two or more indexes fit is left to whoever runs the
+// plan (ADR-0075, item 10): each fit says the comparison to look into
+// and the question written so that the store is offered that index
+// alone, with every comparison no index answers beside it.
+func TestCompile_Fits(t *testing.T) {
+	cls, diags := model.Define(testdef.Open([]byte(`{"name": "Invoice", "variables": {
+	  "number": {"type": "text", "index": true}, "customer": {"type": "text", "index": true},
+	  "note": {"type": "text"}, "priority": {"type": "number", "index": true}}}`)), nil)
+	if len(diags) > 0 {
+		t.Fatal(diags)
+	}
+	names := func(args []any) string {
+		var out []string
+		for _, a := range args {
+			out = append(out, a.(sql.NamedArg).Name)
+		}
+		return strings.Join(out, " ")
+	}
+	for _, tc := range []struct {
+		where, plain string
+		fits         [][4]string // the column, the look, how the question starts, its parameters
+	}{
+		{`number = "A" AND customer = "G" AND note = "x"`, `"number" = :f0 AND "customer" = :f1 AND "note" = :f2 AND (`, [][4]string{
+			{"number", `"number" = :f0`, `"number" = :f0 AND "note" = :f2 AND (`, "f0 f2"},
+			{"customer", `"customer" = :f1`, `"customer" = :f1 AND "note" = :f2 AND (`, "f1 f2"}}},
+		{`customer = "G" AND priority = 2 AND number = "A"`, `"customer" = :f0 AND "priority" = :f1 AND "number" = :f2 AND (`, [][4]string{
+			{"customer", `"customer" = :f0`, `"customer" = :f0 AND (`, "f0"},
+			{"priority", `"priority" = :f1`, `"priority" = :f1 AND (`, "f1"},
+			{"number", `"number" = :f2`, `"number" = :f2 AND (`, "f2"}}},
+		// A comparison with > is no fit, and neither is one a blank
+		// satisfies: one index fits, and nobody looks.
+		{`number = "A" AND priority > 2`, `"number" = :f0 AND "priority" > :f1 AND (`, nil},
+		{`number = "A" AND priority = 0`, `"number" = :f0 AND ("priority" = :f1 OR "priority" IS NULL) AND (`, nil},
+		{`number = "A" AND note = "x"`, `"number" = :f0 AND "note" = :f1 AND (`, nil},
+		{`number = "A" OR customer = "G"`, `COALESCE(`, nil},
+	} {
+		plan, err := Compile(Filter{Class: "Invoice", Where: tc.where}, cls, nil, Principal{})
+		if err != nil {
+			t.Fatalf("%s: %v", tc.where, err)
+		}
+		if !strings.HasPrefix(plan.Where, tc.plain) {
+			t.Errorf("%s: the question as it always was starts %q; want %q", tc.where, plan.Where, tc.plain)
+		}
+		if len(plan.Fits) != len(tc.fits) {
+			t.Errorf("%s: %d fits; want %d", tc.where, len(plan.Fits), len(tc.fits))
+			continue
+		}
+		for i, want := range tc.fits {
+			f := plan.Fits[i]
+			if f.Column != want[0] || f.Look != want[1] || !strings.HasPrefix(f.Where, want[2]) || names(f.Args) != want[3] {
+				t.Errorf("%s, fit %d: %s, %q, %q, %s; want %v", tc.where, i, f.Column, f.Look, f.Where, names(f.Args), want)
+			}
+		}
 	}
 }

@@ -62,6 +62,9 @@ type Class struct {
 	// reads (ADR-0046), itself among them when it reads its own.
 	Reads []string
 	Def   *Definition
+	// byCaller are the variables the read rule compares with the
+	// caller, by upper-cased name; nil until they are asked for.
+	byCaller map[string]bool
 }
 
 // systemFields are the system columns of a class as a source reads them.
@@ -92,7 +95,7 @@ func (c *Class) Source() *formula.Source {
 			continue // a live variable is kept nowhere, so no row has it (ADR-0076, item 3)
 		}
 		src.Columns = append(src.Columns, formula.Field{Name: v.Name, Type: v.Type})
-		if v.Index {
+		if c.Keyed(v) {
 			src.Indexed = append(src.Indexed, v.Name)
 		}
 	}
@@ -114,6 +117,63 @@ func (c *Class) ClassName(name string) (string, bool) {
 		}
 	}
 	return name, true
+}
+
+// Keyed says the engine keeps an index on the variable (ADR-0075, item
+// 2). The designer asked for one with "index": true; or the variable is
+// a pointer, which is there to be followed back; or it is a text the
+// read rule compares with the caller, owner = USER(), which every
+// question of a caller who reads their own then carries. A live
+// variable is kept nowhere and has none.
+func (c *Class) Keyed(v *Variable) bool {
+	if v.Live() || !v.Type.IsScalar() {
+		return false
+	}
+	switch {
+	case v.Index, v.Type.Kind == formula.KindRef:
+		return true
+	case v.Type.Kind != formula.KindText:
+		return false
+	}
+	if c.byCaller == nil {
+		c.byCaller = callerCompared(c.Def)
+	}
+	return c.byCaller[upper(v.Name)]
+}
+
+// callerCompared names the variables the read rule compares with the
+// caller for equality, in its ANDs and ORs: owner = USER().
+func callerCompared(def *Definition) map[string]bool {
+	out := map[string]bool{}
+	if def == nil || def.Access == nil || def.Access.Read == "" {
+		return out
+	}
+	rule, err := formula.Parse(def.Access.Read)
+	if err != nil {
+		return out
+	}
+	var walk func(formula.Node)
+	walk = func(n formula.Node) {
+		b, ok := n.(*formula.Binary)
+		if !ok {
+			return
+		}
+		switch b.Op {
+		case formula.TokAnd, formula.TokOr:
+			walk(b.L)
+			walk(b.R)
+		case formula.TokEq:
+			for _, side := range [][2]formula.Node{{b.L, b.R}, {b.R, b.L}} {
+				name, isName := side[0].(*formula.Ident)
+				call, isCall := side[1].(*formula.Call)
+				if isName && isCall && call.Name == "USER" && len(call.Args) == 0 {
+					out[upper(name.Name)] = true
+				}
+			}
+		}
+	}
+	walk(rule)
+	return out
 }
 
 // Variable is one compiled variable.
@@ -1472,7 +1532,7 @@ func compileColumns(c *collector, cls *Class) {
 			elem := formula.Type{Kind: v.Type.Elem, Scale: v.Type.Scale}
 			cls.Children = append(cls.Children, ChildTable{Variable: v.Name, Columns: columnsOf("value", elem, v.Name, false)})
 		default:
-			cls.Columns = append(cls.Columns, columnsOf(v.Name, v.Type, v.Name, v.Index)...)
+			cls.Columns = append(cls.Columns, columnsOf(v.Name, v.Type, v.Name, cls.Keyed(v))...)
 			if v.Triggered() {
 				// The moment of a triggered value, beside it (ADR-0043).
 				asof, errc := MomentColumn(v.Name, MomentAsOf), MomentColumn(v.Name, MomentError)

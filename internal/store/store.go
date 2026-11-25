@@ -65,7 +65,7 @@ const lastOfCommandSQL = "SELECT max(after_version) FROM events WHERE class = ? 
 // one when it is opened, in the transaction that opens it, from
 // oldestUpgraded on; a database older than that is refused and made
 // again, as every pre-release file was before v0.7.0.
-const engineSchema = 14
+const engineSchema = 15
 
 // oldestUpgraded is the earliest engine schema Open brings to the
 // current one in place: 13, the schema of v0.7.0, the first release
@@ -557,6 +557,11 @@ func open(path string, o Options) (*Store, error) {
 	if err := s.load(ctx); err != nil {
 		return fail(err)
 	}
+	// The indexes of the classes (ADR-0075, item 2): a database of an
+	// earlier schema gets them here, in the time its size asks for.
+	if err := s.keepIndexes(ctx); err != nil {
+		return fail(err)
+	}
 	// The classes the engine brings (ADR-0053, item 7), once what is
 	// stored is loaded: a new database gets them here.
 	if err := s.bring(ctx); err != nil {
@@ -635,6 +640,9 @@ func upgradeSchema(ctx context.Context, w *sql.Conn, from int64) error {
 			}
 		}
 	}
+	// Schema 15 (ADR-0075, item 2): the engine keeps its own indexes on
+	// every class table. They are made once the classes are loaded
+	// (keepIndexes), since only a compiled class says which it has.
 	if _, err := w.ExecContext(ctx, "UPDATE schema_version SET version = ?", engineSchema); err != nil {
 		return storageErr("write the schema version", err)
 	}

@@ -28,6 +28,20 @@ Phase 8 started on 2026-11-25.
   door for agents tells an agent to send it, and each tool describes
   the member. The guide is
   [act only on the version you read](docs/manual/guides/act-on-what-you-read.md).
+- The engine keeps its own indexes (ADR-0075, item 2). Every class
+  has one on the state, on the moment a document was made and on the
+  moment it last changed, for what every face asks: the documents that
+  wait in a state, the newest, what changed last. Every pointer has
+  one, so the list of what points at a document needs no
+  `"index": true`, and so has a text the read rule compares with the
+  caller, `owner = USER()`. Each index on a variable or on the state
+  goes on to the moment a document was made, so the newest of an
+  order, of a state or of a customer are read off its end and nothing
+  is sorted. With every index in place, the drafts of one order among
+  1,000,000 invoices, which the pointer and the state both fit, take
+  0.32 ms (`BenchmarkDraftsOfOneOrder`, the test the record sets).
+  Not built: an index for the key of a `LOOKUP` that is no pointer,
+  which still wants `"index": true`.
 - The engine chooses between two indexes that fit one question
   (ADR-0075, item 10, the part the record left open). A `query` or a
   `count` whose condition compares two indexed variables,
@@ -186,6 +200,16 @@ Phase 8 started on 2026-11-25.
 
 ### Changed
 
+- **The layout of a database changes: the engine's schema is 15.**
+  Every class table gains the indexes the engine keeps by itself, and
+  an index a designer asked for now goes on to the moment a document
+  was made. A database that v0.7.0 or a later build made is brought
+  over when it is opened, and its indexes are made then: 12
+  seconds for 10,000,000 invoices with one pointer, and the file is 8%
+  larger. An earlier engine no longer opens
+  the file afterwards. A commit writes three more indexes: a
+  transition takes about 5 µs longer, 55 µs against 50
+  (`BenchmarkTransition`), and allocates the same.
 - **A `LOOKUP` or a `QUERY` written in a guard is refused when a class
   is defined**, with `not_allowed` at the guard and the mend in the
   hint (ADR-0078, item 4): a guard is not stored, so nothing kept what

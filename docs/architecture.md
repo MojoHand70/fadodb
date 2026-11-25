@@ -358,8 +358,9 @@ that refreshes this document. A variable computed this way declares its
 `type`, so that its documents keep their layout when the other class
 changes, and a redefinition of a class may not break a formula of
 another class that reads it. The lookup is one statement on the writer,
-inside the commit, narrowed through the index of a variable declared
-with `"index": true` when the condition compares one for equality:
+inside the commit, narrowed through the index of a variable the class
+keeps one for, a pointer or one declared with `"index": true`, when
+the condition compares it for equality:
 10.7 µs to count one purchase's approvals among 100,000.
 
 Formulas within a class form a dependency graph. The binder rejects cycles at
@@ -1029,8 +1030,13 @@ against their own VM port.
   the users and keys of a database that keeps its own (ADR-0057),
   `tables_registry`, `schema_version`, `blobs` when the blob store is the
   database file, plus explicit tables bound to `sqlite`.
-- Indexes declared per variable (`"index": true`), plus `(class, doc_id, ts)`
-  on events and `(id, valid_from)` on history.
+- Indexes the engine keeps on every class table by itself (ADR-0075):
+  on the state, on the moment a document was made and on the moment it
+  last changed, on every pointer, and on a text the read rule compares
+  with the caller; and the ones declared per variable (`"index": true`).
+  An index on the state or on a variable goes on to the moment the
+  document was made. Plus `(class, doc_id, ts)` on events and
+  `(id, valid_from)` on history.
 
 SQLite is the transactional store by measurement (ADR-0035): the Phase 2
 benchmark wrote 100,000 commits into SQLite and into DuckDB, and DuckDB's

@@ -269,6 +269,12 @@ what it holds stays as it was. The engine that made it no longer opens
 it afterwards, so keep a copy of the file if you may go back. A file of
 a release before v0.7.0 cannot be brought forward: it is made again.
 
+A newer engine may keep indexes the earlier one did not. They are made
+right after that transaction, before the database answers anything, so
+the first opening of a large database takes longer than the others. A
+program that is stopped meanwhile loses nothing: the next opening
+makes what is missing.
+
 ## Not here yet
 
 - A hold for every program. One that opens a database without `Alone`

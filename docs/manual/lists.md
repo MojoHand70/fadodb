@@ -263,10 +263,23 @@ plays an order from its invoices to its closing.
 
 ## A large class
 
-"The invoices of this order" must not read every invoice. That is why
-`order` says `"index": true` in the class above: the list of one order
-is read through the index of the pointer, and finds its few invoices
-among a million as among a hundred.
+"The invoices of this order" must not read every invoice. The engine
+keeps an index on every pointer by itself, so the list of one order is
+read through the index of `order`, and finds its few invoices among a
+million as among a hundred. Nobody has to write `"index": true` on a
+pointer; the class above still says it, and that changes nothing.
+
+| The engine keeps an index on | For |
+|---|---|
+| every pointer, a `ref` | the documents that point at a document: its list |
+| the state of every class | the documents that wait in a state, and how many |
+| the moment a document was made, and the moment it last changed | the newest documents, and what changed last |
+| a text the read rule compares with the caller, `owner = USER()` | everything a caller asks who reads only their own |
+| a variable that says `"index": true` | a search the class itself does not declare, such as invoices by customer |
+
+Each index on a variable or on the state goes on to the moment a
+document was made, so the newest fifty of an order, of a state or of a
+customer are read off its end and nothing is sorted.
 
 A list may compare more than its pointer, as in
 `order = REF() AND owner = "jan"`. The engine asks it through the
@@ -281,9 +294,11 @@ index first, for at most a thousand documents, and asks through the
 one that ends first. The answer is the same either way; what changes
 is how long it takes.
 
-**Not built yet:** the engine keeping this index by itself for every
-pointer. It is decided (ADR-0075). Until then the designer writes
-`"index": true`.
+**Not built yet** (ADR-0075): an index for the key of a `LOOKUP` or of
+a list that is no pointer, such as the `number` in
+`LOOKUP(Purchase, COUNT(id), number = THIS.purchase)`; the designer
+writes `"index": true` on that variable. And the engine does not yet say when
+a class is defined that a question of it reads every document.
 
 ## Figures over a list
 

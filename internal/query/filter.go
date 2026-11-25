@@ -59,6 +59,9 @@ type Plan struct {
 	// earlier fit is taken: the state stands last among them. A question
 	// that one index fits, or none, has no Fits.
 	Fits []Fit
+	// Led says the condition compares an indexed column on the bare
+	// column, so that it leads the store to an index by itself.
+	Led bool
 }
 
 // Fit is one comparison of a question that an index of the class
@@ -158,8 +161,8 @@ var systemColumns = model.FilterColumns
 type column struct {
 	name string // the SQL column
 	typ  formula.Type
-	// indexed says the column has an index: the id, and a variable
-	// declared with one.
+	// indexed says the column has an index: the id, the state, the two
+	// moments, and a variable the class keeps one for.
 	indexed bool
 }
 
@@ -299,6 +302,7 @@ func CompileOn(f Filter, on *On, cls *model.Class, sources formula.Sources, p Pr
 		for i := range terms {
 			led = led || terms[i].indexed
 		}
+		plan.Led = led
 		plan.Where = where
 		plan.Args = args
 		plan.Prog = prog
@@ -954,7 +958,10 @@ func scopeOf(cls *model.Class) (*formula.Scope, map[string]column, error) {
 	vars := make([]formula.Variable, 0, len(systemColumns)+len(cls.Variables))
 	for _, sc := range systemColumns {
 		vars = append(vars, sc)
-		cols[strings.ToUpper(sc.Name)] = column{name: sc.Name, typ: sc.Type, indexed: sc.Name == "id"}
+		// The id, and what every class has an index on (ADR-0075, item
+		// 2): the state and the two moments.
+		cols[strings.ToUpper(sc.Name)] = column{name: sc.Name, typ: sc.Type,
+			indexed: sc.Name == "id" || sc.Name == "state" || sc.Name == "created_at" || sc.Name == "updated_at"}
 	}
 	for _, v := range cls.Variables {
 		vars = append(vars, formula.Variable{Name: v.Name, Type: v.Type})

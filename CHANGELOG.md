@@ -292,6 +292,14 @@ Phase 8 started on 2026-11-25.
   nothing lost: no document was ever written under such a version. The
   fault is in every release from v0.3.0 to v0.7.0.
 
+- The first wait after failed sign-ins, of one second, could be none.
+  The server counts the failures' moments in whole seconds, so a try
+  made as the clock turned a second after the failure was taken: a
+  sixth password, or a passkey after twenty failures from one address.
+  The wait now holds through the second its length ends in, so it is
+  never shorter than its length. It is in v0.7.0. A slow Windows runner
+  of the chapter's test met it.
+
 - **A pointer was kept in the case its caller wrote the class in.** A
   `ref` given as `"order:ORD-17"` was taken, since names resolve in
   any case, and kept so, while the engine writes the pointer to that

@@ -250,3 +250,29 @@ func TestSignInsThatKeepFailingWait(t *testing.T) {
 		t.Errorf("Ann from her own address: %v", err)
 	}
 }
+
+// The wait after the fifth failure is a second, though the clock turns a
+// second between that failure and the next try: five guesses at the
+// end of one second, and the right password two milliseconds later, at
+// the start of the next, waits. A slow runner of the chapter's test met
+// it.
+func TestTheWaitHoldsAcrossTheTurnOfASecond(t *testing.T) {
+	ctx := context.Background()
+	end := time.Date(2026, 11, 25, 9, 0, 0, 999_000_000, time.UTC)
+	clock := &still{now: end}
+	s := openUsers(t, filepath.Join(t.TempDir(), "acme.fado"), clock)
+	s.CreateUser(ctx, User{ID: "ann", Kind: ActorPerson}, machine)
+	link, _ := s.CreatePasswordLink(ctx, "ann", machine)
+	s.UsePasswordLink(ctx, link.Token, "ann's long password", "10.0.0.8")
+	for i := 0; i < 5; i++ {
+		_, err := s.BeginSignIn(ctx, "ann", "a guess at it", "10.0.0.9")
+		refusedWith(t, "a guess", err, CodeSignInRefused)
+	}
+	clock.set(end.Add(2 * time.Millisecond))
+	_, err := s.BeginSignIn(ctx, "ann", "ann's long password", "10.0.0.8")
+	refusedWith(t, "the right password 2 ms after the fifth guess", err, CodeTooManyAttempts)
+	clock.set(end.Add(1001 * time.Millisecond))
+	if _, err := s.BeginSignIn(ctx, "ann", "ann's long password", "10.0.0.8"); err != nil {
+		t.Errorf("a second after the fifth guess: %v", err)
+	}
+}

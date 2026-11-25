@@ -303,8 +303,13 @@ func (g *signing) waitFor(now int64, keys ...string) int64 {
 			if d > 15*60 {
 				d = 15 * 60
 			}
-			if left := f.last + d - now; left > wait {
-				wait = left
+			// The moments are whole seconds, and a failure at second L
+			// happened anywhere within it: the wait holds through the
+			// second L+d, so that it is never shorter than d, nor
+			// nothing when the clock turns a second between a failure
+			// and the next try.
+			if now <= f.last+d {
+				wait = max(wait, f.last+d-now, 1)
 			}
 		}
 	}

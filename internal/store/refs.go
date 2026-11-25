@@ -37,8 +37,12 @@ func (s *Store) checkRefs(ctx context.Context, c *class, cmd *command, before, a
 		if v.IsBlank() || before != nil && beforeHeld(before, after, rl.leaf, v) {
 			continue
 		}
-		if e := tell(s.pointsAtOne(ctx, cmd, c.leaves[rl.leaf].path, v.Str(), evalCtx)); e != nil {
+		as, e := s.pointsAtOne(ctx, cmd, c.leaves[rl.leaf].path, v.Str(), evalCtx)
+		if e := tell(e); e != nil {
 			return e
+		}
+		if as != "" {
+			after.vals[rl.leaf] = formula.Ref(as)
 		}
 	}
 	for ch, rows := range kids {
@@ -54,8 +58,12 @@ func (s *Store) checkRefs(ctx context.Context, c *class, cmd *command, before, a
 				if p := ch.leaves[li].path; p != "" && p != "value" {
 					path += "." + p
 				}
-				if e := tell(s.pointsAtOne(ctx, cmd, path, r[li].Str(), evalCtx)); e != nil {
+				as, e := s.pointsAtOne(ctx, cmd, path, r[li].Str(), evalCtx)
+				if e := tell(e); e != nil {
 					return e
+				}
+				if as != "" {
+					r[li] = formula.Ref(as)
 				}
 			}
 		}
@@ -85,13 +93,21 @@ func beforeHeld(before, after *docRow, leaf int, v formula.Value) bool {
 }
 
 // pointsAtOne answers whether the pointer names a document that is there
-// and that the caller of the command may read.
-func (s *Store) pointsAtOne(ctx context.Context, cmd *command, variable, ref string, evalCtx *formula.Context) *Error {
+// and that the caller of the command may read. as is how the pointer is
+// kept when the caller wrote the class in another case than its
+// definition does, and "" when it is kept as written: one document has
+// one pointer, which REF() and a list of what points at it compare with.
+func (s *Store) pointsAtOne(ctx context.Context, cmd *command, variable, ref string, evalCtx *formula.Context) (as string, refused *Error) {
 	name, id, _ := strings.Cut(ref, ":")
-	gone := func() *Error { return errf(CodeUnknownDocument, variable, "no document %s of class %s", id, name) }
+	gone := func() (string, *Error) {
+		return "", errf(CodeUnknownDocument, variable, "no document %s of class %s", id, name)
+	}
 	t, e := s.class(name)
 	if e != nil || t.w.selectCurrent == nil {
 		return gone()
+	}
+	if name != t.cls.Name {
+		as = t.cls.Name + ":" + id
 	}
 	// The row is read without who made it unless a formula of the class
 	// pointed at asks for that, as a listing of transitions reads it.
@@ -104,10 +120,10 @@ func (s *Store) pointsAtOne(ctx context.Context, cmd *command, variable, ref str
 		if err == sql.ErrNoRows {
 			return gone()
 		}
-		return &Error{Code: CodeStorage, Variable: variable, Message: "read the document the ref points at: " + err.Error()}
+		return "", &Error{Code: CodeStorage, Variable: variable, Message: "read the document the ref points at: " + err.Error()}
 	}
 	if cmd.engine || t.brought && cmd.o.principal.content() {
-		return nil
+		return as, nil
 	}
 	// The read rule of the class pointed at, over that document, for this
 	// caller: a document they may not read is not there for them.
@@ -116,5 +132,5 @@ func (s *Store) pointsAtOne(ctx context.Context, cmd *command, variable, ref str
 	if ok, _ := s.wev.may(t, ruleRead, row, &seen); !ok {
 		return gone()
 	}
-	return nil
+	return as, nil
 }

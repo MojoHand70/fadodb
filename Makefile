@@ -11,12 +11,18 @@ STATICCHECK_VERSION ?= latest
 GOVULNCHECK_VERSION ?= latest
 BENCHSTAT_VERSION   ?= latest
 
-.PHONY: all build run test analytics bench fmt vet lint vuln tools depgate sizegate filegate benchgate gates clean docs image imagecheck vm vmtest
+.PHONY: all build full run test analytics bench fmt vet lint vuln tools depgate sizegate filegate benchgate gates clean docs image imagecheck vm vmtest
 
 all: build
 
 build:
 	CGO_ENABLED=0 go build -trimpath -ldflags '$(LDFLAGS)' -o $(BIN) ./cmd/fadodb
+
+# The same program with the analytical engine, DuckDB, linked in
+# (ADR-0017, ADR-0089). It is built in the DuckDB module, with cgo and a
+# C compiler, and is no part of the gates of the core.
+full:
+	cd analytics && CGO_ENABLED=1 go build -trimpath -ldflags '$(LDFLAGS)' -o ../$(BIN)-full ./cmd/fadodb
 
 run: build
 	$(BIN) version

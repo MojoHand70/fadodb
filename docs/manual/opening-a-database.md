@@ -271,8 +271,9 @@ seconds and the copy under half a second. When the copy does not
 answer, the store does, and `CopyState` says why.
 
 Every other question is answered by the store, as in a program without
-the engine. The program `fadodb` is built without the module, so a
-server keeps no copy today.
+the engine. The program `fadodb` is built without the module; the same
+program built with it, `fadodb-full`, serves a database with its copy
+([A server with the analytical engine](serving-a-database.md#a-server-with-the-analytical-engine)).
 
 ## Closing
 

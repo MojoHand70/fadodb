@@ -101,5 +101,5 @@
 // own substitutions opens with Options.HostAnswersFor.
 //
 // The server is not in this package: the door is internal/server, and
-// fadodb serve is in cmd/fadodb.
+// fadodb serve is in internal/cli.
 package store

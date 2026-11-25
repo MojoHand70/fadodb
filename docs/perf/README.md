@@ -78,7 +78,7 @@ open (ADR-0056), one the stream of changes on the wire (ADR-0058), and
 one the flow of a class (ADR-0063):
 
 ```
-FADODB_BENCH_DIR=/path/on/disk FADODB_BENCH_COMMITS=200000 go test -count=1 -timeout 2h -v -run TestServeCampaign ./cmd/fadodb/
+FADODB_BENCH_DIR=/path/on/disk FADODB_BENCH_COMMITS=200000 go test -count=1 -timeout 2h -v -run TestServeCampaign ./internal/cli/
 FADODB_BENCH_DIR=/path/on/disk go test -count=1 -v -run 'TestOpenCampaign|TestStreamCampaign|TestFlowCampaign' ./internal/store/
 ```
 
@@ -94,7 +94,7 @@ and figures of ADR-0076 and ADR-0081 are measured among a million
 documents when `FADODB_BENCH_DOCS` says so:
 
 ```
-FADODB_BENCH_DIR=/path/on/disk FADODB_BENCH_COMMITS=200000 go test -count=1 -timeout 1h -v -run TestAgentsCampaign ./cmd/fadodb/
+FADODB_BENCH_DIR=/path/on/disk FADODB_BENCH_COMMITS=200000 go test -count=1 -timeout 1h -v -run TestAgentsCampaign ./internal/cli/
 go test -run '^$' -bench '^Benchmark(WhoIsCalling|SessionCaller|PassCaller|PasswordChecked)$' -benchmem -count=3 ./internal/store/
 FADODB_BENCH_DIR=/path/on/disk FADODB_BENCH_DOCS=1000000 go test -run '^$' -bench '^Benchmark(LiveList|LiveFigure)' -benchmem -count=3 ./internal/store/
 ```

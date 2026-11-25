@@ -19,6 +19,19 @@ Phase 8 started on 2026-11-25.
   before it answers, so a move made a moment ago is in the flow. When
   the copy does not answer, the store does. A program without the
   engine, and the program `fadodb`, answer as before.
+- The server program can be built with the analytical engine (ADR-0089,
+  the first half of its step 6). `make full` builds `bin/fadodb-full`
+  in the module `analytics`: the program `fadodb`, from the same code,
+  with DuckDB linked in. A database it serves keeps a copy of its
+  documents beside its own file and answers the flow of a class from
+  it. The settings gain `analytics.memory`, the most memory the engine
+  may take, 2 GB when it is not given, and `analytics.threads`; the
+  program built without the engine refuses settings that name it.
+  `fadodb version` says which program it is. The code of the program
+  moved from `cmd/fadodb` to the package `internal/cli`, which both
+  programs are built from; `fadodb` itself is as it was, in pure Go.
+  Not built: the program with the engine for each operating system,
+  released, and an image for containers with it.
 - The first step of the analytical engine: the copy and its feed
   (ADR-0089, proposed; ADR-0017). A program built with the module
   `analytics` gives the database DuckDB as its analytical engine, with
@@ -30,9 +43,8 @@ Phase 8 started on 2026-11-25.
   open or belongs to another database. A commit never waits for it.
   The new calls `CopyState` and `FeedCopy` say how the copy stands and
   feed it at once; the option `CopyEvery` sets how often it is fed
-  without being asked, five seconds when none is given. The program
-  `fadodb` is built without the module, so a server keeps no copy. The
-  core stays pure Go.
+  without being asked, five seconds when none is given. The core
+  stays pure Go.
 - A command says which version of a document its sender read
   (ADR-0078, item 2, the first step of the record). `set`, `reset`,
   `refresh`, `transition` and `delete` take the member `version`, in Go

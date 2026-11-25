@@ -315,11 +315,18 @@ strike.
 - **Lines.** The measured invoices have no lines. Whether the copy
   holds the lines of every version or the lines documents hold now is
   decided with the step that sends a total over lines to the copy.
-- **A hundred million documents.** The times over the copy grow with
-  the class. Three hundred million visits would take the last question
-  of the table about 15 seconds, past the 2 seconds ADR-0017 sets for
-  ten million. It is not measured, and it is measured before step 2 is
-  called done.
+- **A flow under 2 seconds over a hundred million visits.** Measured
+  with step 2, on 2026-11-25, in a database of 34,000,000 invoices
+  that visited a hundred million states, 75.4 GB. The copy is made in
+  29 minutes, in a hundred pieces, and is 5.4 GB. The flow takes 7.2
+  seconds from the copy, the middle of five askings between 7.0 and
+  8.2, and 7 minutes 40 seconds from the store; the two answers are
+  the same. The copy was made once and the store asked once, on a
+  machine that ran tests beside them, so the numbers say seconds
+  against minutes and no more. Ten times the visits took the copy 22
+  times as long: its time grows faster than the class, and at this
+  size it is past the 2 seconds ADR-0017 sets for ten million. Three
+  hundred million visits are not measured.
 - **The statement of an analyst**, the command `sql`. It stays with the
   store, in the store's dialect.
 - **A copy on another machine.**

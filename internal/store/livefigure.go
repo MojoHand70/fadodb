@@ -163,10 +163,12 @@ func (s *Store) figure(ctx context.Context, q *formula.QuerySlot, args []formula
 	}
 	// A LOOKUP of a live formula has no list: its rows are every
 	// document the reader may read, and its own condition picks among
-	// them.
+	// them. A figure over a list takes no function of the document in
+	// its condition (ADR-0081), so its statement is handed the reader
+	// and the clock alone.
 	var read query.On
 	if on != nil {
-		read = *on
+		read, of = *on, nil
 	}
 	for _, prog := range []*formula.Program{q.Value, q.Cond} {
 		if prog == nil {

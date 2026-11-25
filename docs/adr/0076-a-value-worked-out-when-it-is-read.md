@@ -477,6 +477,10 @@ to strike.
   the order.
 - **A pointer compared with a text is refused as before**, and the
   refusal now says how to write it: `REF("Order", "ORD-17")`.
+- **In the condition of a figure over a list `REF()` stays refused**,
+  as `STATE()` and `ID()` are there (ADR-0081): which document they
+  mean inside a figure is not settled. `REF("Order", "ORD-17")` stands
+  there.
 
 Found and mended on the way, in what was merged the same day and not
 released: `STATE()` and `ID()` in the condition of a `LOOKUP` of a

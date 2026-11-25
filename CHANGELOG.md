@@ -53,6 +53,23 @@ Phase 8 started on 2026-11-25.
   refused with `bad_message` at the place, and the words name the
   element. A message of 24 KiB with a hundred lines takes 0.50 ms
   before its command.
+- A list goes out in a request (ADR-0085, item 2, the second of its
+  three steps). A parameter of an action may be of the type `rows`,
+  with a `schema` of its columns, and a rule gives it the name of a
+  `rows` variable of its class: `"lines": "lines"`. The body of the
+  request repeats a part once for each row: `{"each": "lines", "as":
+  "line", "item": {"sku": "line.sku"}}`. So an order goes to the
+  accounting system with its lines in one request. The lines are read
+  when the commit queues the action and kept with it: a line changed
+  afterwards changes nothing of what is sent. A repeat may also stand
+  in the JSON a rule gives a `json` parameter, over a `rows` variable
+  of its class, so a rule sends its lines with `http.call` and no
+  definition. When the class is defined the engine checks that the
+  variable has every column the parameter has, of the same type.
+  `preview_action` shows the whole body, every line, with the secrets
+  masked. Building the request for a hundred lines takes 0.14 ms. Not
+  built: a list in an answer (item 3), and a list that is worked out
+  when it is read given to an action.
 - The engine makes the index a lookup or a list is keyed by (ADR-0075,
   items 2, 4 and 7), which completes the record. A `LOOKUP` or a list
   whose condition compares a variable of another class for equality

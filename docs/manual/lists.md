@@ -294,6 +294,24 @@ index first, for at most a thousand documents, and asks through the
 one that ends first. The answer is the same either way; what changes
 is how long it takes.
 
+**A question somebody writes that no index serves is stopped.** The
+`where` of a `query` or a `count` may compare a variable nobody
+indexed, and then the store reads the documents of the class one by
+one: a moment among a thousand, minutes among a hundred million. Such
+a question runs for at most five seconds, and is then refused with
+`too_wide`; the hint names the variable an index is needed on:
+
+```text
+too_wide: the question was stopped after 5 seconds: no index serves it, so it reads the documents of Invoice one by one
+  fix: customer has no index: say "index": true on it in the class Invoice
+```
+
+A question an index serves is never stopped, and neither is a list of
+a document. The five seconds are the database's, set with
+`MaxQuestion` when it is opened; see
+[Opening a database](opening-a-database.md). A question over
+everything is the analyst's, asked with `sql`.
+
 **The engine says which question no index serves.** When a class is
 defined, each `LOOKUP` and each list of it over the documents of a
 class is checked: its condition has to compare a variable that has an

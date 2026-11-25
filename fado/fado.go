@@ -449,6 +449,11 @@ func Open(path string, o Options) (*DB, error) {
 	return &DB{s: s}, nil
 }
 
+// MaxQuestion is how long a query or a count that no index serves may
+// run before it is stopped and refused with too_wide (ADR-0075, item
+// 6): the database's limit, five seconds when none was given.
+func (db *DB) MaxQuestion() time.Duration { return db.s.MaxQuestion() }
+
 // Close closes the database.
 func (db *DB) Close() error { return db.s.Close() }
 

@@ -5,7 +5,9 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
+	"time"
 
 	"modernc.org/sqlite"
 
@@ -91,6 +93,42 @@ func (s *Store) through(ctx context.Context, c *class, plan *query.Plan, o optio
 	return f.Where, append(f.Args[:len(f.Args):len(f.Args)], named...), nil
 }
 
+// bounded gives the context a free question is asked under (ADR-0075,
+// item 6). One that an index serves is asked as its caller asked it.
+// One that no index serves reads the documents of its class one by one,
+// which takes as long as the class is large: it runs for as long as the
+// database allows, and stop ends the count of its time.
+func (s *Store) bounded(ctx context.Context, plan *query.Plan) (asked context.Context, stop func()) {
+	if plan.Served || s.maxQuestion <= 0 {
+		return ctx, func() {}
+	}
+	return context.WithTimeout(ctx, s.maxQuestion)
+}
+
+// stopped answers what a free question failed with: the refusal
+// too_wide when the time the database allows it ran out and its caller
+// was still waiting, with the variable an index would be needed on, and
+// the failure itself otherwise.
+func (s *Store) stopped(ctx, asked context.Context, c *class, plan *query.Plan, failure error) error {
+	if asked == ctx || asked.Err() != context.DeadlineExceeded || ctx.Err() != nil {
+		return failure
+	}
+	message := "the question was stopped after " + shortTime(s.maxQuestion) + ": no index serves it, so it reads the documents of " + c.cls.Name + " one by one"
+	if plan.Lacks == "" {
+		return hintf(CodeTooWide, "where", message, "begin the where with a comparison of a variable that has an index with a value, as order = REF(\"Order\", \"ORD-17\"); a question over everything is asked with sql")
+	}
+	return hintf(CodeTooWide, plan.Lacks, message, plan.Lacks+` has no index: say "index": true on it in the class `+c.cls.Name)
+}
+
+// shortTime writes a length of time for a person: 5 seconds, 0.25
+// seconds.
+func shortTime(d time.Duration) string {
+	if d == time.Second {
+		return "1 second"
+	}
+	return strconv.FormatFloat(d.Seconds(), 'f', -1, 64) + " seconds"
+}
+
 // answer runs a compiled filter over the documents of a class and
 // projects each document found for the caller. command is the call the
 // log of reads names. With probe it reads one document past the limit,
@@ -117,22 +155,30 @@ func (s *Store) answer(ctx context.Context, c *class, o options, plan *query.Pla
 		return nil, false, storageErr("prepare the query of "+c.cls.Name, err)
 	}
 	defer s.filters.release(st)
-	rows, err := st.stmt.QueryContext(ctx, args...)
+	// A free question that no index serves runs for as long as the
+	// database allows, and no longer (ADR-0075, item 6). A list of a
+	// document is a declared question, and is not stopped.
+	asked, stop := ctx, func() {}
+	if command == "query" {
+		asked, stop = s.bounded(ctx, plan)
+	}
+	defer stop()
+	rows, err := st.stmt.QueryContext(asked, args...)
 	if err != nil {
-		return nil, false, storageErr("query "+c.cls.Name, err)
+		return nil, false, s.stopped(ctx, asked, c, plan, storageErr("query "+c.cls.Name, err))
 	}
 	var found []*docRow
 	for rows.Next() {
 		row, err := c.scanRow(rows, false)
 		if err != nil {
 			rows.Close()
-			return nil, false, storageErr("query "+c.cls.Name, err)
+			return nil, false, s.stopped(ctx, asked, c, plan, storageErr("query "+c.cls.Name, err))
 		}
 		found = append(found, row)
 	}
 	rows.Close()
 	if err := rows.Err(); err != nil {
-		return nil, false, storageErr("query "+c.cls.Name, err)
+		return nil, false, s.stopped(ctx, asked, c, plan, storageErr("query "+c.cls.Name, err))
 	}
 	more := false
 	if probe && len(found) > plan.Limit {
@@ -288,9 +334,11 @@ func (s *Store) Count(ctx context.Context, f Filter, opts ...Option) (int64, err
 		return 0, storageErr("prepare the count of "+c.cls.Name, err)
 	}
 	defer s.filters.release(st)
+	asked, stop := s.bounded(ctx, plan)
+	defer stop()
 	var n int64
-	if err := st.stmt.QueryRowContext(ctx, args...).Scan(&n); err != nil {
-		return 0, storageErr("count "+c.cls.Name, err)
+	if err := st.stmt.QueryRowContext(asked, args...).Scan(&n); err != nil {
+		return 0, s.stopped(ctx, asked, c, plan, storageErr("count "+c.cls.Name, err))
 	}
 	if o.records(c) {
 		past, err := s.pastCount(ctx, c, o, n, func(p query.Principal) (string, []any, error) {

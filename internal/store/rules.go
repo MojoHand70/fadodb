@@ -419,10 +419,14 @@ func (s *Store) runSet(run *ruleRun, row *docRow, act *caction) (Values, *Error)
 // names, then the recalculation of what depends on what changed.
 func (s *Store) runReset(run *ruleRun, row *docRow, act *caction) (Values, *Error) {
 	dirty := s.dirtyFor(run.c)
+	s.listEmptied = false
 	touched, err := s.resetVars(run.c, row, act.resets, act.defaults, run.evalCtx, dirty, run, act)
 	if err != nil {
 		return nil, err
 	}
+	// A list the reset emptied changes no scalar of the row, and what is
+	// worked out from the list is worked out again.
+	touched = touched || s.listEmptied
 	var args Values
 	if run.preview {
 		names := make([]any, len(act.resets))
@@ -447,6 +451,14 @@ func (s *Store) runReset(run *ruleRun, row *docRow, act *caction) (Values, *Erro
 // a default that errors: the command's own when the reset is a command,
 // with run and act nil; the action's when a rule runs it (ADR-0043).
 func (s *Store) resetVars(c *class, row *docRow, resets, defaults []*cvar, evalCtx *formula.Context, dirty []bool, run *ruleRun, act *caction) (touched bool, _ *Error) {
+	// emptied says a list was emptied: no stored scalar changed by that,
+	// and what reads the list is to be worked out again all the same.
+	emptied := false
+	defer func() {
+		if emptied {
+			s.listEmptied = true
+		}
+	}()
 	for _, cv := range resets {
 		if cv.v.Default != nil {
 			continue
@@ -459,6 +471,12 @@ func (s *Store) resetVars(c *class, row *docRow, resets, defaults []*cvar, evalC
 					s.lists[i].rows = nil
 				}
 			}
+			// So does a function over the list (ADR-0081, step 2), and
+			// what is worked out from the list is worked out again: a
+			// count of the lines is 0 once the lines are gone.
+			s.wev.commit.emptyList(cv.child)
+			dirty[cv.idx] = true
+			emptied = true
 			continue
 		}
 		for _, li := range cv.leaves {

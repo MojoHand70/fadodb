@@ -10,6 +10,15 @@ Phase 8 started on 2026-11-25.
 
 ### Added
 
+- A count or a total that an index narrows goes to the copy when the
+  store has not answered in a moment (ADR-0089, step 3). An index
+  narrows a question to the invoices of one order or to the documents
+  of one state, which may be most of a class. In a program that keeps
+  the copy the store is given five milliseconds for such a count, for
+  the total of such a `LOOKUP` and for such a figure over a list, and
+  the copy is asked when they have passed. Among 3,400,000 invoices
+  the count of the paid ones, most of the class, takes 8 ms where it
+  took 82; a count of a few documents stays with the store.
 - A page of a list is found in the copy when the store does not find
   it in a moment (ADR-0089, step 3, its second part). In a program
   that keeps the copy, the command `query` and a live list give the

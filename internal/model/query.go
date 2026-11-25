@@ -417,7 +417,7 @@ func compileTableQuery(c *collector, cls *Class, v *Variable, q *Query, call *fo
 	if q.Cond != nil {
 		vars := make([]formula.Variable, 0, len(src.Columns))
 		for _, f := range src.Columns {
-			vars = append(vars, formula.Variable{Name: f.Name, Type: f.Type})
+			vars = append(vars, formula.Variable(f))
 		}
 		srcScope, err := formula.NewScope(vars...)
 		if err != nil {

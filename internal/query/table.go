@@ -41,7 +41,7 @@ func CompileTable(f TableFilter, on *On, src *formula.Source, sources formula.So
 	vars := make([]formula.Variable, 0, len(src.Columns))
 	cols := map[string]column{}
 	for _, c := range src.Columns {
-		vars = append(vars, formula.Variable{Name: c.Name, Type: c.Type})
+		vars = append(vars, formula.Variable(c))
 		cols[strings.ToUpper(c.Name)] = column{name: c.Name, typ: c.Type}
 	}
 	scope, err := formula.NewScope(vars...)

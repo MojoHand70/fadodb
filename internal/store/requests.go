@@ -212,6 +212,16 @@ func (s *Store) send(ctx context.Context, a *action, call *ActionCall) outcome {
 		}
 	}
 	for _, rv := range a.spec.Result {
+		if rv.Each != nil {
+			// A list in the answer (ADR-0085, item 3).
+			lines, bad := x.replyLines(rv, over)
+			if bad != nil {
+				out.badResult = bad
+				continue
+			}
+			out.result[rv.Name] = lines
+			continue
+		}
 		val, err := x.run(rv.Formula, over, replySlots)
 		if err != nil {
 			out.badResult = &Error{Code: CodeBadResult, Variable: rv.Name, Message: "the formula of " + rv.Name + " failed on the reply: " + err.Message}
@@ -220,6 +230,56 @@ func (s *Store) send(ctx context.Context, a *action, call *ActionCall) outcome {
 		out.result[rv.Name] = valueOut(val)
 	}
 	return out
+}
+
+// replyLines makes the rows of a returned list from a list in the body
+// of the reply (ADR-0085, item 3), as an inlet makes the lines of a
+// document from a list in a message: one row for each element the path
+// leads to, each column by its formula over the element. A reply
+// without the list, or with an empty one, gives no rows. over holds the
+// status and the body.
+func (x *sending) replyLines(rv model.ResultValue, over []formula.Value) ([]any, *Error) {
+	each, body := rv.Each, over[1]
+	bad := func(message string) *Error {
+		return &Error{Code: CodeBadResult, Variable: rv.Name, Message: message}
+	}
+	lines := []any{}
+	if body.IsBlank() {
+		return lines, nil
+	}
+	elements, found, err := x.e.vm.JSONList(body.Str(), each.Path)
+	switch {
+	case err != nil:
+		return nil, bad("the reply does not give the rows of " + rv.Name + ": " + each.Path + " leads to something that is no list")
+	case !found:
+		return lines, nil
+	case len(elements) > MaxElements:
+		return nil, bad("the reply gives " + strconv.Itoa(len(elements)) + " rows of " + rv.Name + " at " + each.Path + "; a list holds at most " + strconv.Itoa(MaxElements) + " (ADR-0013)")
+	}
+	defer x.e.vm.ForgetJSON()
+	names := []string{model.ReplyStatus, model.ReplyBody, each.As}
+	vals := []formula.Value{over[0], body, formula.Blank()}
+	for i, element := range elements {
+		// One element, as a json value of its own: the formulas of the
+		// row read it and not the whole reply again, and the VM is told
+		// what it parses to, so that none of them parses it.
+		text, err := json.Marshal(element)
+		if err != nil {
+			return nil, bad("the element " + strconv.Itoa(i+1) + " of " + each.Path + " does not read: " + err.Error())
+		}
+		vals[2] = formula.JSON(string(text))
+		x.e.vm.SeedJSON(vals[2].Str(), element)
+		line := make(map[string]any, len(each.Row))
+		for _, col := range each.Row {
+			val, err := x.run(col.Formula, vals, names)
+			if err != nil {
+				return nil, bad("the formula of " + col.Name + " failed on the element " + strconv.Itoa(i+1) + " of " + each.Path + ": " + err.Message)
+			}
+			line[col.Name] = valueOut(val)
+		}
+		lines = append(lines, line)
+	}
+	return lines, nil
 }
 
 // replySlots names the values the formulas over a reply read, in the

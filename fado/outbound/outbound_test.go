@@ -608,8 +608,8 @@ func TestActionsGuide(t *testing.T) {
 			}
 		}
 	}
-	if definitions != 4 || classes != 3 || fragments != 1 {
-		t.Errorf("the guide has %d definitions, %d classes and %d actions; the test expects 4, 3 and 1", definitions, classes, fragments)
+	if definitions != 5 || classes != 4 || fragments != 1 {
+		t.Errorf("the guide has %d definitions, %d classes and %d actions; the test expects 5, 4 and 1", definitions, classes, fragments)
 	}
 	// A list in a request (ADR-0085, item 2): the body the guide shows
 	// for the order of a sofa and four chairs is the body the engine

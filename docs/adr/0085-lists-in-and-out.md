@@ -368,7 +368,11 @@ The owner accepted the record on 2026-11-23: "accepted".
   parameter, and their checks when the action and the class are
   defined. `preview_action` and `try_action` take the lines and show
   the whole body.
-- Item 3, a list in an answer, is not built.
+- **Item 3, a list in an answer, on 2026-11-25**, in Phase 8: a
+  returned value of the type `rows`, the repeat that reads it out of
+  the reply, and `into`, which writes it to a `rows` variable of the
+  document, whole. A function of the host program returns such a list
+  too. With it the three items of this record are built.
 
 ## Settled while building a list in a message
 
@@ -444,6 +448,47 @@ strike.
   of four values, with its address and the header that reads the
   secret, takes 0.14 ms (`BenchmarkRequestLines`, in the gate; the
   budget of this record is 1 ms).
+
+## Settled while building a list in an answer
+
+Each of these is settled by me while building, and is the owner's to
+strike.
+
+- **A pull that did not come through leaves the lines as they are.**
+  A value that a formula gives is written blank when its action failed,
+  as before (ADR-0045). A list is not: when the receiver refuses, or
+  the answer does not read, the lines of the document stay, and `ERROR`
+  says why. An emptied order after a failed request would be a loss
+  nobody asked for.
+- **An answer without the list, or with `null` or an empty list there,
+  gives no lines**, and the document is left without lines. It is what
+  a message without the list does (item 1). A definition that must not
+  take such an answer says so with `ok`.
+- **An answer that does not read is `bad_result`**: a path that leads
+  to something that is no list, a formula that fails on one element,
+  more than 10,000 rows. The action counts as run, since the receiver
+  answered, and nothing of the list is written.
+- **The variable has every column of the returned list, of the same
+  type.** It may have more: they are blank in every line.
+- **A returned list is no value a formula reads.** `into` gives it to a
+  `rows` variable by its name, and a formula such as `COUNT(lines)`
+  over it is refused. A count the receiver gives is read with a formula
+  of its own.
+- **The formulas of `row` read `STATUS` and `BODY` beside the element**,
+  as those of an inlet read the whole message.
+- **A returned list is never `required`**, as no returned value is.
+- **An action may not change so that a rule no longer fits**, as before
+  (ADR-0044): a returned list that gains a column the lines of a class
+  lack is refused, and the refusal names the rule.
+- **A class kept from before its action changed opens with its
+  database**: an `into` that names a list the action no longer returns
+  is taken as it was written, and writes nothing.
+- **A function of the host program returns a list as a list of
+  objects**, typed column by column; a row of the wrong type is
+  `bad_result`.
+- **What an action returned is not kept in the log.** As before, the
+  event of an action that ran names the action and not its result: the
+  lines are in the version of the document the result wrote.
 
 ## Consequences
 

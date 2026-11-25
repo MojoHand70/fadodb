@@ -645,7 +645,7 @@ The table has three levels: a state, then a variable, then `write` or
 |---|---|---|
 | the state | the name of a state | every state |
 | the variable | the name of a variable, or of a [section](#sections) | every variable |
-| the right | `write`, who may set it; `read`, who may see it | |
+| the right | `write`, who may set it, or, for a [triggered variable](triggered-variables.md), who may bring its value again with `refresh`; `read`, who may see it | |
 
 A right is a formula, or a list of groups, which is the short way to
 write "anybody in one of these groups".

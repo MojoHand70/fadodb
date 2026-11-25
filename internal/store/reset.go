@@ -33,8 +33,12 @@ func (s *Store) Reset(ctx context.Context, class, id string, variables []string,
 // formula errors keeps its value and records the code. A refresh always
 // commits, since the moment is what it changes, and the eventless
 // transitions are evaluated after it: it is how a caller makes a document
-// look at the clock, or at what its formulas read outside it. It asks no
-// write right. The event is of kind refresh.
+// look at the clock, or at what its formulas read outside it. Who may
+// bring a value again is the write right of its variable in the state
+// the document is in (ADR-0078, item 3): a variable with no such right is
+// open to whoever may read the document, a named one its caller may not
+// bring refuses the refresh with forbidden, and a refresh that names none
+// leaves such a variable as it is. The event is of kind refresh.
 func (s *Store) Refresh(ctx context.Context, class, id string, variables []string, opts ...Option) (*Document, error) {
 	c, e := s.class(class)
 	if e != nil {

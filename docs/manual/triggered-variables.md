@@ -309,10 +309,13 @@ makes a version, and an event of the kind `refresh`.
 - **It names variables, or none.** Each one named must list `refresh`
   among its triggers; step 6 is refused because `checked_by` does not.
   With none named, every variable that lists `refresh` is worked out.
-- **Whoever may see a document may refresh it.** A refresh asks
-  `access.read` and nothing else, so Piotr, who may not change the
-  invoice, refreshes it in step 5. A refresh sets no value: it brings
-  the variables to what their formulas say now.
+- **Whoever may see a document may refresh it, unless the class says
+  who may.** A refresh asks `access.read`, so Piotr, who may not
+  change the invoice, refreshes it in step 5. A refresh sets no value:
+  it brings the variables to what their formulas say now. A class
+  that wants to say who may bring a value again, and in which state,
+  gives the variable a `write` right; see
+  [Say who may bring a value again](guides/who-may-bring-a-value-again.md).
 - **Do not list `refresh` on a variable that says who did
   something.** Its `USER()` would be whoever refreshed. `checked_by`
   lists the transition alone.

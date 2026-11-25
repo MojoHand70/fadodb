@@ -468,6 +468,13 @@ read the diagnostics, fix, preview against live data, define.
    closes one of them. The order is the variable's own line, its
    section's, each section around that one, then `*`. A refusal's hint
    names the line that decided, `review / amounts`: mend that line.
+   **For a triggered variable `write` says who may bring its value
+   again** with `refresh` (ADR-0078): a value a decision stands on,
+   such as a limit brought from a table, gets
+   `"*": {"limit": {"write": "FALSE"}}, "review": {"limit": {"write": ["managers"]}}`,
+   so that nobody without a part in the document changes the number
+   somebody is deciding on. With no line, whoever may read the
+   document may refresh it.
    Rights narrow what `access` allows and never widen it.
 7. **Write the rules.** They run. Read `Actions` first: a rule names an
    engine action or one the catalogue lists, and gives a defined action

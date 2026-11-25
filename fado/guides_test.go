@@ -903,3 +903,77 @@ func TestGuide_ActOnWhatYouRead(t *testing.T) {
 		t.Errorf("the batch in Go: %v, %v", moved, err)
 	}
 }
+
+// The guide on who may bring a value again (ADR-0078, item 3): the
+// table of the guide played, and the refusal it shows compared.
+func TestGuide_WhoMayBringAValueAgain(t *testing.T) {
+	const guide = "who-may-bring-a-value-again.md"
+	tables, _, classes := guideParts(t, guide)
+	if len(tables) != 1 || len(classes) != 1 {
+		t.Fatalf("the guide shows %d tables and %d classes; want one of each", len(tables), len(classes))
+	}
+	db, err := fado.Open(filepath.Join(t.TempDir(), "guide.fado"), fado.Options{Outbox: fado.OutboxOptions{Manual: true}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { db.Close() })
+	ctx := context.Background()
+	tess := person("tess", "treasury")
+	limit := func(amount string) {
+		t.Helper()
+		if _, err := db.ImportRows(ctx, "Limits", []fado.Values{{"grade": "B", "limit": amount}}, tess); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := db.DefineTable(ctx, tables[0], setup); err != nil {
+		t.Fatal(err)
+	}
+	limit("10000.00")
+	if _, err := db.DefineClass(ctx, classes[0], setup); err != nil {
+		t.Fatal(err)
+	}
+	ola, tomek := person("ola"), person("tomek", "managers")
+	if _, err := db.Create(ctx, "Purchase", fado.Values{"number": "P-7", "amount": "9000.00", "grade": "B"}, ola, fado.WithID("P-7")); err != nil {
+		t.Fatal(err)
+	}
+	// Ola is no manager, and the move brings the limit all the same.
+	if d, err := db.Transition(ctx, "Purchase", "P-7", "file", nil, ola); err != nil || d.Values["limit"] != "10000.00" {
+		t.Fatalf("Ola files the purchase: %v, %v", d, err)
+	}
+	limit("5000.00")
+
+	piotrIs := fado.Principal{ID: "piotr", Kind: fado.ActorPerson}
+	got, err := db.Exec(ctx, piotrIs, "refresh", []byte(`{"class": "Purchase", "id": "P-7", "variables": ["limit"]}`))
+	want(t, "Piotr refreshes limit", err, "forbidden, variable limit")
+	data, err2 := os.ReadFile(filepath.Join("..", "docs", "manual", "guides", guide))
+	if err2 != nil {
+		t.Fatal(err2)
+	}
+	var refusal []byte
+	for _, m := range regexp.MustCompile("(?s)```json\r?\n(.*?)\r?\n```").FindAllSubmatch(data, -1) {
+		if bytes.Contains(m[1], []byte(`"error"`)) {
+			refusal = m[1]
+		}
+	}
+	var shown, answered any
+	if refusal == nil || json.Unmarshal(refusal, &shown) != nil || json.Unmarshal(got, &answered) != nil || !reflect.DeepEqual(shown, answered) {
+		t.Errorf("the refusal is\n%s\nand the guide shows\n%s", got, refusal)
+	}
+
+	piotr := fado.As(piotrIs)
+	d, err := db.Refresh(ctx, "Purchase", "P-7", nil, piotr)
+	want(t, "Piotr refreshes the purchase, naming no variable", err, "allowed")
+	if err == nil && (d.Values["limit"] != "10000.00" || d.Computed["checked"].Version != d.Version || d.Computed["limit"].Version == d.Version) {
+		t.Errorf("after Piotr's refresh the limit is %v, worked out at version %d of %d; the guide says checked is brought and the limit stays", d.Values["limit"], d.Computed["limit"].Version, d.Version)
+	}
+	d, err = db.Refresh(ctx, "Purchase", "P-7", []string{"limit"}, tomek)
+	want(t, "Tomek refreshes limit", err, "allowed")
+	if err == nil && d.Values["limit"] != "5000.00" {
+		t.Errorf("after Tomek's refresh the limit is %v; the guide says 5000.00", d.Values["limit"])
+	}
+	if _, err := db.Transition(ctx, "Purchase", "P-7", "return", nil, tomek); err != nil {
+		t.Fatal(err)
+	}
+	_, err = db.Refresh(ctx, "Purchase", "P-7", []string{"limit"}, tomek)
+	want(t, "Tomek refreshes limit of a draft", err, "forbidden, variable limit")
+}

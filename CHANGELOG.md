@@ -28,6 +28,21 @@ Phase 8 started on 2026-11-25.
   door for agents tells an agent to send it, and each tool describes
   the member. The guide is
   [act only on the version you read](docs/manual/guides/act-on-what-you-read.md).
+- The `write` right of a triggered variable says who may bring its
+  value again (ADR-0078, item 3, the second step of the record). A
+  `refresh` that names a variable asks the variable's `write` right of
+  its caller, in the state the document is in, and is refused with
+  `forbidden`, the variable and the cell when it does not hold; one
+  that names none brings what its caller may bring, leaves the rest as
+  it is, and is refused when the caller may bring none. A variable
+  with no cell is open to whoever may read the document, as before,
+  and `access.update` is not asked. What a move of the document brings
+  and a rule's refresh of its own document ask nothing; a rule's
+  refresh of another document asks the right of the principal whose
+  command queued it. **A class that has a `write` right on a triggered
+  variable, which asked nothing until now, closes its refresh to the
+  callers the right does not let through.** The guide is
+  [say who may bring a value again](docs/manual/guides/who-may-bring-a-value-again.md).
 - The engine schema is 14, for `seen_version` on the events. **A
   database that v0.7.0 made, of schema 13, is brought to it when it is
   opened**, in the transaction that opens it: the column is added, the

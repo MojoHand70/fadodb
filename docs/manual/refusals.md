@@ -125,6 +125,7 @@ What the engine reports when it checks a class, a table, a schema or an action b
 | `too_many_columns` | A generated table would exceed MaxColumns. |
 | `not_supported` | A construct the format allows that the engine does not implement yet. |
 | `no_description` | A note and no refusal. A variable, a section, a state or a transition has no description, which a person reads as help and an agent as what the thing is for (ADR-0068, item 3). |
+| `reads_all` | A note and no refusal. A question a class declares, a LOOKUP or a list over the documents of a class, compares no variable an index answers, so it reads every document of that class each time it is worked out (ADR-0075, item 5). On a small class that is harmless; the note says the mend. |
 | `unknown_app` | A class names an app the database does not have (ADR-0077). |
 | `unused_words` | A note and no refusal. The words in another language name something the current version of the class, the table or the schema no longer has (ADR-0068, item 6). |
 

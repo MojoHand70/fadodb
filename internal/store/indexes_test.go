@@ -292,3 +292,76 @@ func TestIndexes_NoneMakesAnotherQuestionSlow(t *testing.T) {
 		t.Errorf("the newest drafts are not read off the index on the state:\n%s", how)
 	}
 }
+
+// When a class is defined the engine notes each question of it that no
+// index serves (ADR-0075, item 5): a lookup or a list over the documents
+// of a class whose condition compares no indexed variable, for
+// equality, with a value. The class is taken all the same.
+func TestIndexes_AQuestionNoIndexServesIsNoted(t *testing.T) {
+	s, _ := openStore(t, Options{})
+	ctx := context.Background()
+	if _, err := s.DefineClasses(ctx, [][]byte{[]byte(ownOrder), []byte(ownInvoice)}, asSetup); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.DefineTable(ctx, []byte(tablePrices), asSetup); err != nil {
+		t.Fatal(err)
+	}
+	report := func(variables, more string) string {
+		return `{"name": "Report", "description": "d", "variables": {
+		  "about": {"type": "ref", "class": "Order", "description": "d"}, "text": {"type": "text", "description": "d"}, ` + variables + `},
+		  "states": {"initial": "a", "list": ["a"], "descriptions": {"a": "d"}}` + more + `,
+		  "access": {"read": "TRUE", "create": "TRUE", "update": "TRUE", "delete": "TRUE"}}`
+	}
+	lookup := func(cond string) string {
+		return report(`"n": {"type": "number", "description": "d", "mode": "triggered", "on": ["refresh"], "formula": "LOOKUP(Invoice, COUNT(id), `+cond+`)"}`, "")
+	}
+	list := func(args string) string {
+		return report(`"l": {"description": "d", "mode": "live", "formula": "QUERY(Invoice, `+args+`)"}`, "")
+	}
+	for _, tc := range []struct {
+		name, def, at, says, fix string
+	}{
+		{"a lookup by a pointer", lookup(`order = THIS.about`), "", "", ""},
+		{"a lookup by a variable a designer indexed", lookup(`customer = THIS.text`), "", "", ""},
+		{"a lookup by the text the read rule compares", lookup(`owner = THIS.text`), "", "", ""},
+		{"a lookup by the state", lookup(`state = \"review\"`), "", "", ""},
+		{"a lookup by the id", lookup(`id = THIS.text`), "", "", ""},
+		{"a lookup by a pointer, among other comparisons", lookup(`note = THIS.text AND order = THIS.about`), "", "", ""},
+		{"a lookup by a variable that has no index", lookup(`note = THIS.text`), "/variables/n/formula",
+			"this LOOKUP reads every document of Invoice each time it is worked out: note, which its condition compares, has no index", `say "index": true on note of Invoice`},
+		{"a lookup that compares nothing with a value", lookup(`LEFT(number, 2) = \"FV\"`), "/variables/n/formula",
+			"its condition compares no variable of Invoice for equality with a value of this document", "begin the condition with such a comparison, as order = REF()"},
+		{"a total over the whole class", lookup(`TRUE`), "/variables/n/formula", "this LOOKUP reads every document of Invoice", "a total over a whole class has no index to be served by"},
+		{"a lookup in a table", report(`"n": {"type": "money(2)", "description": "d", "mode": "triggered", "on": ["refresh"], "formula": "LOOKUP(Prices, price, band = THIS.text)"}`, ""), "", "", ""},
+		{"a lookup in the condition of a rule", report(`"n": {"type": "number", "description": "d"}`,
+			`, "rules": [{"on": "create", "if": "LOOKUP(Invoice, COUNT(id), note = THIS.text) > 0", "do": [{"action": "set", "values": {"n": "1"}}]}]`),
+			"/rules/0/if", "note, which its condition compares, has no index", `say "index": true on note of Invoice`},
+		{"a list by a variable a designer indexed", list(`{number}, customer = THIS.text`), "", "", ""},
+		{"a list of a state", list(`{number}, STATE() = \"review\" AND LEN(number) > 3`), "", "", ""},
+		{"a list of everything, a page at a time", list(`{number}`), "", "", ""},
+		{"a list by a variable that has no index", list(`{number}, note = THIS.text`), "/variables/l/formula",
+			"this list reads every document of Invoice until its page is full", "begin the condition with such a comparison, as order = REF()"},
+		{"a list by what is no comparison with a value", list(`{number}, LEN(number) > 3 AND customer = note`), "/variables/l/formula",
+			"its condition compares no indexed variable of Invoice for equality with a value", ""},
+	} {
+		var noted []string
+		for _, d := range s.Validate([]byte(tc.def)) {
+			if !d.Note {
+				t.Fatalf("%s: the class is refused: %s at %s: %s", tc.name, d.Code, d.Path, d.Message)
+			}
+			if d.Code == "reads_all" {
+				noted = append(noted, d.Path+": "+d.Message+" | "+d.Hint)
+			}
+		}
+		switch {
+		case tc.at == "" && len(noted) > 0:
+			t.Errorf("%s: noted %v; want no note", tc.name, noted)
+		case tc.at != "" && (len(noted) != 1 || !strings.HasPrefix(noted[0], tc.at+": ") || !strings.Contains(noted[0], tc.says) || !strings.Contains(noted[0], tc.fix)):
+			t.Errorf("%s: noted %v; want one note at %s that says %q and %q", tc.name, noted, tc.at, tc.says, tc.fix)
+		}
+	}
+	// A note refuses nothing: the class is defined, and reads as it says.
+	if _, err := s.DefineClass(ctx, []byte(lookup(`note = THIS.text`)), asSetup); err != nil {
+		t.Errorf("a class with a question no index serves: %v", err)
+	}
+}

@@ -162,6 +162,12 @@ const (
 	// state or a transition has no description, which a person reads as
 	// help and an agent as what the thing is for (ADR-0068, item 3).
 	CodeNoDescription = "no_description"
+	// CodeReadsAll: a note and no refusal. A question a class declares,
+	// a LOOKUP or a list over the documents of a class, compares no
+	// variable an index answers, so it reads every document of that
+	// class each time it is worked out (ADR-0075, item 5). On a small
+	// class that is harmless; the note says the mend.
+	CodeReadsAll = "reads_all"
 	// CodeUnknownApp: a class names an app the database does not have
 	// (ADR-0077).
 	CodeUnknownApp = "unknown_app"
@@ -192,6 +198,9 @@ type collector struct {
 	// figures out of (ADR-0081), and the variable itself.
 	listsOf  *Class
 	listsFor *Variable
+	// wide are the notes of the questions the class declares that no
+	// index serves (ADR-0075, item 5).
+	wide Diagnostics
 }
 
 // liveRead says a formula reads a live variable. A live value is worked
@@ -261,6 +270,132 @@ func (n classNames) ClassName(name string) (string, bool) {
 		}
 	}
 	return name, c.env.Shallow
+}
+
+// classOf finds a class a formula reads, the one being compiled among
+// them; nil for a table, and for a class that is not at hand.
+func (c *collector) classOf(name string) *Class {
+	if c.env.Sources != nil {
+		if _, table := c.env.Sources.Source(name); table {
+			return nil
+		}
+	}
+	if c.self != nil && upper(name) == upper(c.self.Name) {
+		return c.self
+	}
+	if c.env.Classes != nil {
+		if cls, ok := c.env.Classes(name); ok {
+			return cls
+		}
+	}
+	return nil
+}
+
+// indexedIn says a column of a class has an index: the id, the state
+// and the two moments, which every class has one on, and a variable the
+// class keeps one for (ADR-0075, item 2).
+func indexedIn(cls *Class, column string) bool {
+	switch upper(column) {
+	case "ID", "STATE", "CREATED_AT", "UPDATED_AT":
+		return true
+	}
+	v, ok := cls.Variable(column)
+	return ok && cls.Keyed(v)
+}
+
+// asks notes each LOOKUP of a formula over the documents of a class
+// that no index of that class serves (ADR-0075, item 5): its condition
+// compares no indexed variable, for equality, with a value of the
+// document the formula belongs to. Such a lookup reads every document
+// of the class each time it is worked out. A total over a whole class
+// is one by its nature, until the analytical engine answers it.
+func (c *collector) asks(path string, prog *formula.Program) {
+	if prog == nil {
+		return
+	}
+	for i := range prog.Queries {
+		q := &prog.Queries[i]
+		src := c.classOf(q.Source)
+		if q.List != "" || src == nil {
+			continue
+		}
+		switch {
+		case q.Key != nil && indexedIn(src, q.IndexColumn):
+			continue
+		case q.Key != nil:
+			c.wide = append(c.wide, Diagnostic{Code: CodeReadsAll, Path: path, Pos: -1, Note: true,
+				Message: "this LOOKUP reads every document of " + src.Name + " each time it is worked out: " + q.IndexColumn + ", which its condition compares, has no index",
+				Hint:    `say "index": true on ` + q.IndexColumn + " of " + src.Name + ", or compare a pointer: the engine keeps an index on every one"})
+		default:
+			c.wide = append(c.wide, Diagnostic{Code: CodeReadsAll, Path: path, Pos: -1, Note: true,
+				Message: "this LOOKUP reads every document of " + src.Name + " each time it is worked out: its condition compares no variable of " + src.Name + " for equality with a value of this document",
+				Hint:    "begin the condition with such a comparison, as order = REF(): the engine keeps an index on every pointer; a total over a whole class has no index to be served by"})
+		}
+	}
+}
+
+// asksList is asks for a list of the documents of a class (ADR-0076):
+// its condition, when it has one, compares an indexed variable for
+// equality with a value that is no column of a listed document, or the
+// list reads every document until its page is full. A list without a
+// condition is read in the order of the ids, a page at a time, and is
+// served by that.
+func (c *collector) asksList(path string, src *Class, cond formula.Node) {
+	if cond == nil {
+		return
+	}
+	served := false
+	var walk func(formula.Node)
+	walk = func(n formula.Node) {
+		b, ok := n.(*formula.Binary)
+		if !ok {
+			return
+		}
+		switch b.Op {
+		case formula.TokAnd:
+			walk(b.L)
+			walk(b.R)
+		case formula.TokEq:
+			for _, side := range [][2]formula.Node{{b.L, b.R}, {b.R, b.L}} {
+				column := ""
+				switch col := side[0].(type) {
+				case *formula.Ident:
+					column = col.Name
+				case *formula.Call:
+					if len(col.Args) == 0 && (col.Name == "STATE" || col.Name == "ID") {
+						column = col.Name
+					}
+				}
+				if column != "" && indexedIn(src, column) && !namesColumn(side[1]) {
+					served = true
+				}
+			}
+		}
+	}
+	walk(cond)
+	if !served {
+		c.wide = append(c.wide, Diagnostic{Code: CodeReadsAll, Path: path, Pos: -1, Note: true,
+			Message: "this list reads every document of " + src.Name + " until its page is full: its condition compares no indexed variable of " + src.Name + " for equality with a value",
+			Hint:    "begin the condition with such a comparison, as order = REF(): the engine keeps an index on every pointer, and on a variable that says \"index\": true"})
+	}
+}
+
+// namesColumn says an operand of the condition of a list reads the
+// listed document: a bare name in it is a column, and so are STATE()
+// and ID().
+func namesColumn(n formula.Node) bool {
+	found := false
+	walkNodes(n, func(n formula.Node) {
+		switch n := n.(type) {
+		case *formula.Ident, *formula.Member:
+			found = true
+		case *formula.Call:
+			if len(n.Args) == 0 && (n.Name == "STATE" || n.Name == "ID") {
+				found = true
+			}
+		}
+	})
+	return found
 }
 
 // states are the states of the class being compiled, which a function

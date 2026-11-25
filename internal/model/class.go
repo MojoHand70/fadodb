@@ -698,7 +698,7 @@ func CompileIn(def *Definition, env Env) (*Class, Diagnostics) {
 		return nil, c.list
 	}
 	cls.Reads = c.reads
-	cls.Notes = append(leftOut(def), noDescription(def)...)
+	cls.Notes = append(append(leftOut(def), c.wide...), noDescription(def)...)
 	return cls, nil
 }
 
@@ -1080,6 +1080,7 @@ func inferTypes(c *collector, cls *Class, schemas *SchemaSet) {
 			c.formulaErr(path+"/formula", err)
 			continue
 		}
+		c.asks(path+"/formula", prog)
 		if prog.Result.Kind == formula.KindNull {
 			c.hint(CodeMissing, path+"/type", "the formula is always blank, so its type cannot be inferred", `declare "type"`)
 			continue
@@ -1218,6 +1219,7 @@ func bindAs(c *collector, path, src string, scope *formula.Scope, mode formula.M
 		c.hint(CodeTypeMismatch, path, msg, hint)
 		return nil
 	}
+	c.asks(path, prog)
 	return prog
 }
 
@@ -1237,6 +1239,7 @@ func bindCondition(c *collector, path, src string, scope *formula.Scope, what st
 		c.hint(CodeNotACondition, path, what+" must be a condition, got "+prog.Result.String(), "compare it, for instance <> 0 or <> \"\"")
 		return nil
 	}
+	c.asks(path, prog)
 	return prog
 }
 

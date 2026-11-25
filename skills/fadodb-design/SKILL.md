@@ -560,7 +560,11 @@ read the diagnostics, fix, preview against live data, define.
    receipt.json invoice.json`, and `--db FILE` checks against the
    database the class is meant for, writing nothing. Loop: check, mend
    the place the finding names, check again, until it ends with 0 and
-   no `no_description` note is left. The
+   no `no_description` note is left. A `reads_all` note says that a
+   `LOOKUP` or a list of the class reads every document of the class it
+   looks in: mend it with the comparison its hint names, a pointer or a
+   variable with `"index": true`, or leave it when that class stays
+   small or the question is a total over all of it. The
    same check is the command `validate_class` on a server, and
    `ValidateClass` and `ValidateClasses` on the Go API, whose findings
    for several classes start with the position of the definition,

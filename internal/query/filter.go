@@ -757,6 +757,10 @@ type readRule struct {
 type readOutcome struct {
 	groups uint64
 	named  bool
+	// dialect names the engine the predicate is written for: the store
+	// and the analytical engine ask one class in one program, each in
+	// its own dialect (ADR-0089, item 7).
+	dialect string
 }
 
 type readPlan struct {
@@ -809,7 +813,7 @@ func readPlanFor(cls *model.Class, scope *formula.Scope, cols map[string]column,
 			mask |= 1 << i
 		}
 	}
-	key := readOutcome{groups: mask, named: p.ID != ""}
+	key := readOutcome{groups: mask, named: p.ID != "", dialect: d.Name()}
 	rr.mu.Lock()
 	defer rr.mu.Unlock()
 	if rp, ok := rr.plans[key]; ok {
@@ -1079,12 +1083,19 @@ func Value(src string, cls *model.Class, sources formula.Sources) (string, formu
 // them (ADR-0041): for every variable with a read rule in some state, per
 // state the group list or the SQL of the formula, and the predicate text
 // ready when every rule is a formula, since it then depends on the
-// principal through parameters alone. A class is compiled once and lives
-// as long as the store holds it; Forget drops a class the store let go.
-var rightsPlans sync.Map // *model.Class → *rightsPlan
+// principal through parameters alone. A class is compiled once for each
+// dialect that asks it, the store's and the analytical engine's
+// (ADR-0089, item 7), and lives as long as the store holds it; Forget
+// drops a class the store let go.
+var rightsPlans sync.Map // *model.Class → *rightsPlan, the first of its dialects
 
 type rightsPlan struct {
 	vars []*varRights // the variables with a read rule, in declaration order
+	// dialect names the engine the predicates are written for, and next
+	// is the plan of the same class for another. Neither changes once
+	// the plan is kept.
+	dialect string
+	next    *rightsPlan
 }
 
 // varRights is the read right of one variable over the class's states.
@@ -1107,10 +1118,18 @@ type stateRight struct {
 }
 
 func rightsPlanFor(cls *model.Class, d formula.Dialect, column func(formula.Slot) string) *rightsPlan {
-	if p, ok := rightsPlans.Load(cls); ok {
-		return p.(*rightsPlan)
+	name := d.Name()
+	kept, _ := rightsPlans.Load(cls)
+	first, _ := kept.(*rightsPlan)
+	for p := first; p != nil; p = p.next {
+		if p.dialect == name {
+			return p
+		}
 	}
-	plan := &rightsPlan{}
+	// Two that compile a class for two dialects at one moment each keep
+	// their own, and the later one is kept: the other is made again when
+	// it is next asked for.
+	plan := &rightsPlan{dialect: name, next: first}
 	for _, v := range cls.Variables {
 		vr := &varRights{v: v}
 		any, formulas := false, true

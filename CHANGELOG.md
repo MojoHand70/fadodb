@@ -208,8 +208,8 @@ Phase 8 started on 2026-11-25.
   seconds for 10,000,000 invoices with one pointer, and the file is 8%
   larger. An earlier engine no longer opens
   the file afterwards. A commit writes three more indexes: a
-  transition takes about 5 µs longer, 55 µs against 50
-  (`BenchmarkTransition`), and allocates the same.
+  transition takes 4.5 µs longer, 54.3 µs against 49.8
+  (`BenchmarkTransition`, +9%), and allocates the same.
 - **A `LOOKUP` or a `QUERY` written in a guard is refused when a class
   is defined**, with `not_allowed` at the guard and the mend in the
   hint (ADR-0078, item 4): a guard is not stored, so nothing kept what

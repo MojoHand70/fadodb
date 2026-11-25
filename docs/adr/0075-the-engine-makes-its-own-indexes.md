@@ -437,8 +437,9 @@ Measured on 2026-11-25, on this build:
 | the same among 1,000,000 | 0.32 ms; the test of item 10 asks for under 1 ms |
 | the list of one order, a hundred invoices, among 100,000 on disk | 0.53 ms |
 | the same among 1,000,000 | 0.56 ms; the budget of this record is no more than twice |
-| a transition (`BenchmarkTransition`) | 55 µs against 50 before: three more indexes are written. Allocations are the same |
-| a thousand moves in one call (`BenchmarkTransitionMany`) | 40 ms against 37 |
+| a transition (`BenchmarkTransition`) | 54.3 µs against 49.8 before, +9%: three more indexes are written. Allocations are the same |
+| a thousand moves in one call (`BenchmarkTransitionMany`) | 40.0 ms against 36.8, +9% |
+| a message from outside that moves a document (`BenchmarkReceive`) | 83.9 µs against 79.4, +6% |
 | opening a database of schema 14 with 10,000,000 invoices that have one pointer, and 100,000 orders | 12.2 s once, for seven indexes; 4 ms the next time |
 | the file of that database | 10.0 GB against 9.3 GB, 8% larger |
 

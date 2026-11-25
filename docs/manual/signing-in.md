@@ -96,6 +96,18 @@ have added a passkey itself, so this gives it nothing more.
 | the computer that showed the code | is signed in too, and no other browser is |
 | the code's link is opened again | the page says the code has ended |
 | Ann's account page, on her computer | shows a code of the same kind, to add a passkey on another phone |
+| her phone, which holds her synced passkey, reads the code of a new invitation | the phone makes no other, and its page offers **Sign in with it** in the place of its button |
+| Ann signs in with it on her phone | the phone and the computer are signed in, and the invitation is used |
+| a computer that holds her synced passkey opens a new invitation of hers | the page offers **Sign in with it** too, and she is signed in with the invitation |
+
+A synced passkey, which a password manager keeps on each device of the
+person's, is on the phone already when the person added it on their
+computer, and a device makes no second passkey of the same person for
+the same server: it says it holds one. The page then offers **Sign in
+with it**, and the device signs in with the passkey it holds, which
+must be the person's. The invitation is used, as when a passkey is
+added, and the computer that showed the code enters with the same
+passkey.
 
 The server draws the code itself, in Go, as a picture in the page. A
 new code, of the same invitation or the same person, ends the one

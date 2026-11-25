@@ -635,13 +635,15 @@ var NotCommands = map[string]string{
 	// Passkeys (ADR-0088): a question to the browser and its answer
 	// belong to the page that asked, and an invitation's secret never
 	// travels in a command but the one that makes it.
-	"Invited":            "it belongs to the server's page /auth/invite, which an invitation opens",
-	"InvitationQuestion": "it is the question the server's page /auth/invite gives the browser, to make a passkey",
-	"UseInvitation":      "it takes the browser's answer on the server's page /auth/invite, and gives a session",
-	"SignInQuestion":     "it is the question the server's page /auth/signin gives the browser, to use a passkey",
-	"SignInWithPasskey":  "it takes the browser's answer on the server's page /auth/signin, and gives a session",
-	"AddPasskeyQuestion": "it is the question the server's page /auth/account gives the browser, to make another passkey",
-	"AddPasskey":         "a passkey is made by the person's device, on the server's page /auth/account; remove_passkey removes one",
+	"Invited":                  "it belongs to the server's page /auth/invite, which an invitation opens",
+	"InvitationQuestion":       "it is the question the server's page /auth/invite gives the browser, to make a passkey",
+	"UseInvitation":            "it takes the browser's answer on the server's page /auth/invite, and gives a session",
+	"InvitationSignInQuestion": "it is the question the server's page /auth/invite gives a device that holds a passkey already, to use it",
+	"SignInWithInvitation":     "it takes the answer of a device that used its passkey on the server's page /auth/invite, and gives a session",
+	"SignInQuestion":           "it is the question the server's page /auth/signin gives the browser, to use a passkey",
+	"SignInWithPasskey":        "it takes the browser's answer on the server's page /auth/signin, and gives a session",
+	"AddPasskeyQuestion":       "it is the question the server's page /auth/account gives the browser, to make another passkey",
+	"AddPasskey":               "a passkey is made by the person's device, on the server's page /auth/account; remove_passkey removes one",
 	// The code for the phone (ADR-0088, item 3): its secrets live in a
 	// page and a cookie, and never travel in a command.
 	"InvitationPhoneCode": "it is the code the server's page /auth/invite shows, for a phone's camera",
@@ -649,6 +651,8 @@ var NotCommands = map[string]string{
 	"PhoneLink":           "it belongs to the server's page /auth/phone, which the code's link opens",
 	"PhoneQuestion":       "it is the question the server's page /auth/phone gives the phone's browser, to make a passkey",
 	"UsePhoneLink":        "it takes the phone's answer on the server's page /auth/phone, and gives a session",
+	"PhoneSignInQuestion": "it is the question the server's page /auth/phone gives a phone that holds a passkey already, to use it",
+	"SignInByPhoneLink":   "it takes the answer of a phone that used its passkey on the server's page /auth/phone, and gives a session",
 	"PhoneCodeState":      "the page that shows the code asks it, at /auth/phone/state, with the secret of its cookie",
 	"EnterByPhone":        "it signs in the browser that showed the code, at /auth/phone/enter, with the secret of its cookie",
 	// The passes the server gives clients (ADR-0071, item 6): a code and

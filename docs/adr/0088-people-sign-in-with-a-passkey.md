@@ -398,3 +398,19 @@ by me, each the owner's to strike:
     The tests read every code back with a reader written apart from the
     encoder, `internal/qrcode/qrcodetest`, and hold two blocks and the
     format and version words to the standard's published values.
+26. **A device that holds the person's passkey already signs in with
+    it.** A synced passkey, which a password manager keeps on each of
+    the person's devices, is on their phone once they added it on their
+    computer, and a device makes no second passkey of one person for one
+    server: it refuses with `InvalidStateError`. The owner met it on the
+    test server on 2026-11-25, as a page that said so in red and offered
+    nothing more. His ruling that day: "let the phone page offer sign in
+    with it". When the device refuses, the phone's page and the page of
+    an invitation give way to **Sign in with it**, a form drawn hidden
+    for a person who holds a passkey. It uses the passkey the device
+    holds, which must be the person's, with a challenge bound to the
+    code or the invitation. The computer that showed the code enters
+    with that passkey, as when the phone adds one.
+27. **The invitation ends when the person signs in with it** (the
+    owner's ruling, 2026-11-25, in his words): signing in with a passkey
+    the device holds uses the invitation, as adding a passkey does.

@@ -278,7 +278,11 @@ Phase 8 started on 2026-11-25.
   a new one ends the one before. The server draws the code itself, in
   `internal/qrcode`, Go's standard library and code of its own; a page
   that shows one lets its script ask the server alone how it stands
-  (`connect-src 'self'`).
+  (`connect-src 'self'`). A phone that holds the person's passkey
+  already, as a password manager keeps one on each device, makes no
+  other: the page then offers **Sign in with it**, the phone signs in
+  with that passkey and the computer enters too. The page of an
+  invitation does the same on any device, and the invitation is used.
 
 - People sign in with a passkey, invited by a link (ADR-0088, its
   second step): their fingerprint, their face or their device's PIN,

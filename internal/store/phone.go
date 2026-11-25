@@ -41,11 +41,13 @@ type PhoneCode struct {
 }
 
 // PhoneFor is whom the link of a code is for, as the phone's page greets
-// them: of their invitation, or of their account.
+// them: of their invitation, or of their account; and whether they hold
+// a passkey already, which the phone may hold too.
 type PhoneFor struct {
-	User    string
-	Name    string
-	Invited bool
+	User     string
+	Name     string
+	Invited  bool
+	Passkeys bool
 }
 
 // The states of a code, as the page that shows it asks.
@@ -193,7 +195,11 @@ func (s *Store) PhoneLink(ctx context.Context, link string) (*PhoneFor, error) {
 	if !ok {
 		return nil, refused()
 	}
-	return &PhoneFor{User: u.ID, Name: screenName(u), Invited: c.invitation != ""}, nil
+	held, err := s.credentials(ctx, u.ID)
+	if err != nil {
+		return nil, err
+	}
+	return &PhoneFor{User: u.ID, Name: screenName(u), Invited: c.invitation != "", Passkeys: len(held) > 0}, nil
 }
 
 // PhoneQuestion is the question the phone's page gives the browser, to
@@ -214,11 +220,48 @@ func (s *Store) PhoneQuestion(ctx context.Context, link, origin string) (string,
 	return s.makeQuestion(ctx, u, origin, askAdd, u.ID)
 }
 
+// PhoneSignInQuestion is the question the phone's page gives a phone
+// that holds a passkey of the person's already, which a synced passkey
+// may be: to use it, for this code. A phone asked to make another
+// passkey there is refused by the phone itself.
+func (s *Store) PhoneSignInQuestion(ctx context.Context, link, origin string) (string, error) {
+	c, ok := s.linkCode(link)
+	if !ok {
+		return "", refused()
+	}
+	if _, ok := s.phonePerson(ctx, c); !ok {
+		return "", refused()
+	}
+	return s.useQuestion(origin, askPhone, string(c.link[:]))
+}
+
 // UsePhoneLink takes the passkey the phone made, on the device it named,
 // and gives the phone's session. The link holds no more, and the browser
 // that showed the code may enter (EnterByPhone). A link that does not
 // hold and a passkey that does not are refused in the same words.
 func (s *Store) UsePhoneLink(ctx context.Context, link string, answer []byte, device, origin, address string, lengths SessionLengths) (*Session, error) {
+	return s.takePhoneLink(ctx, link, address, func(c phoneCode) (*Session, error) {
+		return s.usePhoneCode(ctx, c, answer, device, origin, address, lengths)
+	})
+}
+
+// SignInByPhoneLink takes the passkey of the person's that the phone
+// holds already, the answer to PhoneSignInQuestion, and gives the
+// phone's session, as UsePhoneLink does with a new one: the browser
+// that showed the code may enter with the same passkey. A code of an
+// invitation uses the invitation, which holds no more. A passkey of
+// another person is refused as any that does not hold.
+func (s *Store) SignInByPhoneLink(ctx context.Context, link string, answer []byte, origin, address string, lengths SessionLengths) (*Session, error) {
+	return s.takePhoneLink(ctx, link, address, func(c phoneCode) (*Session, error) {
+		return s.signInOnPhone(ctx, c, answer, origin, address, lengths)
+	})
+}
+
+// takePhoneLink holds the code of a link while the phone's answer is
+// checked, so that two phones that read one code use it once between
+// them, and marks it done with the passkey of the session the answer
+// gives.
+func (s *Store) takePhoneLink(ctx context.Context, link, address string, take func(c phoneCode) (*Session, error)) (*Session, error) {
 	if !s.people.on {
 		return nil, notKept()
 	}
@@ -239,7 +282,7 @@ func (s *Store) UsePhoneLink(ctx context.Context, link string, answer []byte, de
 	if !free {
 		return nil, s.refuseSignIn(ctx, "", WayPasskey, address)
 	}
-	sess, err := s.usePhoneCode(ctx, held, answer, device, origin, address, lengths)
+	sess, err := take(held)
 	g.mu.Lock()
 	c.using = false
 	if err == nil {
@@ -280,6 +323,16 @@ func (s *Store) usePhoneCode(ctx context.Context, c phoneCode, answer []byte, de
 	return s.beginSession(ctx, u.ID, key.ID, WayPasskey, address, lengths, func(w execer, now int64) error {
 		return insertPasskey(ctx, w, key, m, handle, me, now)
 	})
+}
+
+// signInOnPhone checks the use of a passkey the phone holds for the code,
+// and begins the phone's session with it.
+func (s *Store) signInOnPhone(ctx context.Context, c phoneCode, answer []byte, origin, address string, lengths SessionLengths) (*Session, error) {
+	u, ok := s.phonePerson(ctx, c)
+	if !ok {
+		return nil, s.refuseSignIn(ctx, c.user, WayPasskey, address)
+	}
+	return s.signInHeld(ctx, u, c.invitation, askPhone, string(c.link[:]), answer, origin, address, lengths)
 }
 
 // PhoneCodeState answers how the code a browser showed stands, by the

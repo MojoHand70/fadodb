@@ -239,3 +239,140 @@ func TestTwoPhonesReadOneCode(t *testing.T) {
 		t.Errorf("%d phones added a passkey, and Ann has %d", ok, len(keys))
 	}
 }
+
+// Ann's passkey is synced: her password manager keeps it on her laptop
+// and her phone alike, so her phone makes no other. Her computer shows
+// the code of a new invitation, her phone signs in with the passkey it
+// holds, and the computer enters with the same passkey. The invitation
+// is used (the owner's ruling, 2026-11-25). A passkey of another person,
+// and a question asked for another thing, are refused.
+func TestAPhoneThatHoldsThePasskeyAlready(t *testing.T) {
+	ctx := context.Background()
+	clock := &still{now: time.Date(2026, 11, 25, 9, 0, 0, 0, time.UTC)}
+	s := openUsers(t, filepath.Join(t.TempDir(), "acme.fado"), clock)
+	for _, id := range []string{"ann", "bob"} {
+		if _, err := s.CreateUser(ctx, User{ID: id, Kind: ActorPerson, Name: map[string]string{"ann": "Ann Nowak", "bob": "Bob Lis"}[id]}, machine); err != nil {
+			t.Fatal(err)
+		}
+	}
+	synced := webauthntest.New(webauthntest.ES256)
+	first, _ := s.CreateInvitation(ctx, "ann", machine)
+	held := invited(t, s, first.Token, synced, "Ann's laptop")
+	bobs := webauthntest.New(webauthntest.ES256)
+	bobInv, _ := s.CreateInvitation(ctx, "bob", machine)
+	invited(t, s, bobInv.Token, bobs, "Bob's laptop")
+
+	inv, _ := s.CreateInvitation(ctx, "ann", machine)
+	if who, err := s.Invited(ctx, inv.Token); err != nil || !who.Passkeys {
+		t.Errorf("the invitation of a person with a passkey: %v %+v", err, who)
+	}
+	code, err := s.InvitationPhoneCode(ctx, inv.Token)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if who, err := s.PhoneLink(ctx, code.Link); err != nil || !who.Passkeys {
+		t.Errorf("whom the link is for: %v %+v", err, who)
+	}
+	use := func(d *webauthntest.Device) (*Session, error) {
+		q, err := s.PhoneSignInQuestion(ctx, code.Link, acmeOrigin)
+		if err != nil {
+			return nil, err
+		}
+		answer, err := d.Use(acmeOrigin, q)
+		if err != nil {
+			return nil, err
+		}
+		return s.SignInByPhoneLink(ctx, code.Link, []byte(answer), acmeOrigin, "10.0.0.9", SessionLengths{})
+	}
+	if _, err := use(bobs); err == nil {
+		t.Error("Bob's passkey signed in with Ann's code")
+	}
+	// The sign-in page's question is no question of the code.
+	q, _ := s.SignInQuestion(acmeOrigin)
+	answer, _ := synced.Use(acmeOrigin, q)
+	if _, err := s.SignInByPhoneLink(ctx, code.Link, []byte(answer), acmeOrigin, "10.0.0.9", SessionLengths{}); err == nil {
+		t.Error("the sign-in page's question signed in with the code")
+	}
+	if got := s.PhoneCodeState(code.Computer); got != PhoneWaiting {
+		t.Fatalf("after the refusals, the code is %s", got)
+	}
+
+	onPhone, err := use(synced)
+	if err != nil || onPhone.User != "ann" || onPhone.Way != WayPasskey || onPhone.Passkey != held.Passkey {
+		t.Fatalf("the phone's session: %v %+v", err, onPhone)
+	}
+	if _, err := s.Invited(ctx, inv.Token); err == nil {
+		t.Error("the invitation holds after the phone signed in with it")
+	}
+	if _, err := use(synced); err == nil {
+		t.Error("the link was used twice")
+	}
+	onComputer, err := s.EnterByPhone(ctx, code.Computer, officeAt, SessionLengths{})
+	if err != nil || onComputer.Way != WayPhone || onComputer.Passkey != held.Passkey {
+		t.Fatalf("the computer's session: %v %+v", err, onComputer)
+	}
+	if keys, _ := s.Passkeys(ctx, "ann", machine); len(keys) != 1 {
+		t.Errorf("Ann has %d passkeys, want the one", len(keys))
+	}
+
+	// The account page's code: the phone signs in, and nothing is added.
+	ann := As(Principal{ID: "ann", Kind: ActorPerson})
+	code, _ = s.AccountPhoneCode(ctx, ann)
+	if _, err := use(synced); err != nil {
+		t.Fatalf("the account's code: %v", err)
+	}
+	if got := s.PhoneCodeState(code.Computer); got != PhoneDone {
+		t.Errorf("after the phone, the account's code is %s", got)
+	}
+	if keys, _ := s.Passkeys(ctx, "ann", machine); len(keys) != 1 {
+		t.Errorf("Ann has %d passkeys, want the one", len(keys))
+	}
+}
+
+// The page of an invitation, opened on a device that holds Ann's synced
+// passkey already: the device signs in with it, and the invitation is
+// used. Bob's passkey is refused, and leaves the invitation as it was.
+func TestAnInvitationOnADeviceThatHoldsThePasskey(t *testing.T) {
+	ctx := context.Background()
+	clock := &still{now: time.Date(2026, 11, 25, 9, 0, 0, 0, time.UTC)}
+	s := openUsers(t, filepath.Join(t.TempDir(), "acme.fado"), clock)
+	for _, id := range []string{"ann", "bob"} {
+		if _, err := s.CreateUser(ctx, User{ID: id, Kind: ActorPerson}, machine); err != nil {
+			t.Fatal(err)
+		}
+	}
+	synced, bobs := webauthntest.New(webauthntest.ES256), webauthntest.New(webauthntest.EdDSA)
+	first, _ := s.CreateInvitation(ctx, "ann", machine)
+	held := invited(t, s, first.Token, synced, "Ann's laptop")
+	bobInv, _ := s.CreateInvitation(ctx, "bob", machine)
+	invited(t, s, bobInv.Token, bobs, "Bob's laptop")
+
+	inv, _ := s.CreateInvitation(ctx, "ann", machine)
+	use := func(d *webauthntest.Device) (*Session, error) {
+		q, err := s.InvitationSignInQuestion(ctx, inv.Token, acmeOrigin)
+		if err != nil {
+			return nil, err
+		}
+		answer, err := d.Use(acmeOrigin, q)
+		if err != nil {
+			return nil, err
+		}
+		return s.SignInWithInvitation(ctx, inv.Token, []byte(answer), acmeOrigin, officeAt, SessionLengths{})
+	}
+	if _, err := use(bobs); err == nil {
+		t.Error("Bob's passkey signed in with Ann's invitation")
+	}
+	if _, err := s.Invited(ctx, inv.Token); err != nil {
+		t.Fatalf("the invitation after Bob's passkey: %v", err)
+	}
+	sess, err := use(synced)
+	if err != nil || sess.User != "ann" || sess.Way != WayPasskey || sess.Passkey != held.Passkey {
+		t.Fatalf("the session: %v %+v", err, sess)
+	}
+	if _, err := s.Invited(ctx, inv.Token); err == nil {
+		t.Error("the invitation holds after it was used")
+	}
+	if _, err := use(synced); err == nil {
+		t.Error("the invitation was used twice")
+	}
+}

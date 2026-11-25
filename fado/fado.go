@@ -1371,6 +1371,31 @@ func (db *DB) PhoneQuestion(ctx context.Context, link, origin string) (string, e
 	return db.s.PhoneQuestion(ctx, link, origin)
 }
 
+// InvitationSignInQuestion is the question the page of an invitation
+// gives a device that holds a passkey of the person's already: to use
+// it, with the invitation.
+func (db *DB) InvitationSignInQuestion(ctx context.Context, token, origin string) (string, error) {
+	return db.s.InvitationSignInQuestion(ctx, token, origin)
+}
+
+// SignInWithInvitation takes the passkey the device holds already and
+// gives the person's session; the invitation is used.
+func (db *DB) SignInWithInvitation(ctx context.Context, token string, answer []byte, origin, address string, lengths SessionLengths) (*Session, error) {
+	return db.s.SignInWithInvitation(ctx, token, answer, origin, address, lengths)
+}
+
+// PhoneSignInQuestion is the question the phone's page gives a phone that
+// holds a passkey of the person's already: to use it, for this code.
+func (db *DB) PhoneSignInQuestion(ctx context.Context, link, origin string) (string, error) {
+	return db.s.PhoneSignInQuestion(ctx, link, origin)
+}
+
+// SignInByPhoneLink takes the passkey the phone holds already and gives
+// the phone's session; the browser that showed the code may enter.
+func (db *DB) SignInByPhoneLink(ctx context.Context, link string, answer []byte, origin, address string, lengths SessionLengths) (*Session, error) {
+	return db.s.SignInByPhoneLink(ctx, link, answer, origin, address, lengths)
+}
+
 // UsePhoneLink takes the passkey the phone made and gives the phone's
 // session; the browser that showed the code may then enter.
 func (db *DB) UsePhoneLink(ctx context.Context, link string, answer []byte, device, origin, address string, lengths SessionLengths) (*Session, error) {

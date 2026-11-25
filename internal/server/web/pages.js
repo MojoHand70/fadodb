@@ -101,6 +101,19 @@
         HTMLFormElement.prototype.submit.call(form);
       }, function (err) {
         if (button) button.disabled = false;
+        // A device that holds a passkey of the person's already, which a
+        // password manager may have brought there, makes no other: the
+        // form that signs in with that one takes this one's place.
+        var held = err && err.name === 'InvalidStateError' && form.getAttribute('data-held');
+        var other = held && document.getElementById(held);
+        if (other) {
+          form.hidden = true;
+          other.hidden = false;
+          document.querySelectorAll('[data-make-lead]').forEach(function (p) { p.hidden = true; });
+          var go = other.querySelector('button[type="submit"]');
+          if (go) go.focus();
+          return;
+        }
         if (said) said.textContent = words(err, make);
       });
     });

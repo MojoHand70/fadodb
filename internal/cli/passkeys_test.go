@@ -19,6 +19,7 @@ import (
 var (
 	questionShown  = regexp.MustCompile(`data-question="([^"]*)"`)
 	phoneCodeShown = regexp.MustCompile(`<figure class="code"[^>]*>(<svg.*?</svg>)`)
+	heldShownRe    = regexp.MustCompile(`<form id="held"[^>]*data-question="([^"]*)"`)
 )
 
 // phoneLinkOf reads the code for the phone a page shows, as a phone's
@@ -181,7 +182,18 @@ func TestTheChapterOnPasskeys(t *testing.T) {
 	onPhone := newBrowser(t, base)
 	phone := webauthntest.New(webauthntest.EdDSA)
 	phone.Counts, phone.Synced = false, true
-	var phoneLink, phonePage string
+	var phoneLink, phonePage, heldPC string
+	// heldQuestion is the question of the form that signs in with a
+	// passkey the device holds, which the page hides until the device
+	// says it holds one.
+	heldQuestion := func(page string) string {
+		t.Helper()
+		m := heldShownRe.FindStringSubmatch(page)
+		if m == nil {
+			t.Fatalf("the page offers no sign-in with a passkey held:\n%s", page)
+		}
+		return html.UnescapeString(m[1])
+	}
 	for _, row := range tableAfter(t, text, "<!-- the code for the phone -->") {
 		var got string
 		switch row[0] {
@@ -235,6 +247,47 @@ func TestTheChapterOnPasskeys(t *testing.T) {
 			phoneLinkOf(t, base, page)
 			if strings.Contains(page, "To add a passkey on your phone, point its camera at the code.") {
 				got = "shows a code of the same kind, to add a passkey on another phone"
+			}
+		case "her phone, which holds her synced passkey, reads the code of a new invitation":
+			pc := newBrowser(t, base)
+			heldPC = invitationOf("ann")
+			_, page := pc.get(heldPC)
+			phoneLink = phoneLinkOf(t, base, page)
+			annPC = pc
+			code, page := onPhone.get(phoneLink)
+			phonePage = page
+			// The phone's own refusal is the browser's: the page holds the
+			// form that takes the button's place, hidden until then.
+			if code == 200 && strings.Contains(page, `data-held="held"`) && strings.Contains(page, `<form id="held"`) &&
+				strings.Contains(page, "This phone holds a passkey of yours for this server already.") && strings.Contains(page, ">Sign in with it</button>") {
+				heldQuestion(page)
+				got = "the phone makes no other, and its page offers **Sign in with it** in the place of its button"
+			}
+		case "Ann signs in with it on her phone":
+			answer, err := phone.Use(base, heldQuestion(phonePage))
+			if err != nil {
+				t.Fatal(err)
+			}
+			token := strings.TrimPrefix(phoneLink, "/auth/phone?t=")
+			code, page := onPhone.post("/auth/phone", url.Values{"t": {token}, "do": {"held"}, "response": {answer}})
+			entered, pcPage := annPC.post("/auth/phone/enter", url.Values{})
+			if code == 200 && strings.Contains(page, "signed in as <strong>ann</strong>") && entered == 200 && strings.Contains(pcPage, "signed in as <strong>ann</strong>") &&
+				doesNotHold(newBrowser(t, base), heldPC) {
+				got = "the phone and the computer are signed in, and the invitation is used"
+			}
+		case "a computer that holds her synced passkey opens a new invitation of hers":
+			pc := newBrowser(t, base)
+			link := invitationOf("ann")
+			_, page := pc.get(link)
+			offered := strings.Contains(page, `data-held="held"`) && strings.Contains(page, "This device holds a passkey of yours for this server already.")
+			answer, err := phone.Use(base, heldQuestion(page))
+			if err != nil {
+				t.Fatal(err)
+			}
+			token := strings.TrimPrefix(link, "/auth/invite?t=")
+			code, page := pc.post("/auth/invite", url.Values{"t": {token}, "do": {"held"}, "response": {answer}})
+			if offered && code == 200 && strings.Contains(page, "signed in as <strong>ann</strong>") && doesNotHold(newBrowser(t, base), link) {
+				got = "the page offers **Sign in with it** too, and she is signed in with the invitation"
 			}
 		default:
 			t.Fatalf("the test does not know the row %q", row[0])

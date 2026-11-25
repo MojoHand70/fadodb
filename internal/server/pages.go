@@ -69,6 +69,10 @@ type Accounts interface {
 	PhoneLink(ctx context.Context, link string) (*store.PhoneFor, error)
 	PhoneQuestion(ctx context.Context, link, origin string) (string, error)
 	UsePhoneLink(ctx context.Context, link string, answer []byte, device, origin, address string, lengths store.SessionLengths) (*store.Session, error)
+	PhoneSignInQuestion(ctx context.Context, link, origin string) (string, error)
+	InvitationSignInQuestion(ctx context.Context, token, origin string) (string, error)
+	SignInWithInvitation(ctx context.Context, token string, answer []byte, origin, address string, lengths store.SessionLengths) (*store.Session, error)
+	SignInByPhoneLink(ctx context.Context, link string, answer []byte, origin, address string, lengths store.SessionLengths) (*store.Session, error)
 	PhoneCodeState(computer string) string
 	EnterByPhone(ctx context.Context, computer, address string, lengths store.SessionLengths) (*store.Session, error)
 }
@@ -368,6 +372,12 @@ type page struct {
 	Code  string
 	Wait  string
 	Phone *store.PhoneFor
+	// Held is the question of the phone's page, and of an invitation's,
+	// to use a passkey of the person's that the device holds already,
+	// which a synced passkey may be; empty when the person has none.
+	// HeldOpen shows its form at once, after it was refused.
+	Held     string
+	HeldOpen bool
 }
 
 // ServeHTTP answers a page, or a file the pages load.
@@ -585,7 +595,14 @@ func (p *Pages) invite(out *reply, r *http.Request, told *Request) {
 	shown := &page{Title: "Welcome, " + greet, Invited: who, Token: token, Next: next(r)}
 	status := http.StatusOK
 	if r.Method == http.MethodPost {
-		sess, err := p.accounts.UseInvitation(r.Context(), token, []byte(r.FormValue("response")), r.FormValue("device"), origin, p.address(r), p.lengths)
+		var sess *store.Session
+		var err error
+		if r.FormValue("do") == "held" {
+			sess, err = p.accounts.SignInWithInvitation(r.Context(), token, []byte(r.FormValue("response")), origin, p.address(r), p.lengths)
+			shown.HeldOpen = true
+		} else {
+			sess, err = p.accounts.UseInvitation(r.Context(), token, []byte(r.FormValue("response")), r.FormValue("device"), origin, p.address(r), p.lengths)
+		}
 		if err == nil {
 			p.setSession(out, sess)
 			redirect(out, next(r))
@@ -603,6 +620,11 @@ func (p *Pages) invite(out *reply, r *http.Request, told *Request) {
 		return
 	}
 	shown.Question = q
+	if who.Passkeys {
+		if q, err := p.accounts.InvitationSignInQuestion(r.Context(), token, origin); err == nil {
+			shown.Held = q
+		}
+	}
 	// On a computer the code for the phone comes first; a phone keeps
 	// the passkey itself.
 	if !onPhone(r) {
@@ -660,7 +682,14 @@ func (p *Pages) phone(out *reply, r *http.Request, told *Request) {
 	shown := &page{Title: title, Phone: who, Token: link}
 	status := http.StatusOK
 	if r.Method == http.MethodPost {
-		sess, err := p.accounts.UsePhoneLink(r.Context(), link, []byte(r.FormValue("response")), r.FormValue("device"), origin, p.address(r), p.lengths)
+		var sess *store.Session
+		var err error
+		if r.FormValue("do") == "held" {
+			sess, err = p.accounts.SignInByPhoneLink(r.Context(), link, []byte(r.FormValue("response")), origin, p.address(r), p.lengths)
+			shown.HeldOpen = true
+		} else {
+			sess, err = p.accounts.UsePhoneLink(r.Context(), link, []byte(r.FormValue("response")), r.FormValue("device"), origin, p.address(r), p.lengths)
+		}
 		if err == nil {
 			p.setSession(out, sess)
 			redirect(out, PageAccount)
@@ -678,6 +707,11 @@ func (p *Pages) phone(out *reply, r *http.Request, told *Request) {
 		return
 	}
 	shown.Question = q
+	if who.Passkeys {
+		if q, err := p.accounts.PhoneSignInQuestion(r.Context(), link, origin); err == nil {
+			shown.Held = q
+		}
+	}
 	p.draw(out, told, status, "phone", shown)
 }
 
@@ -1061,8 +1095,50 @@ func stepShown(b *strings.Builder, step *store.SecondStep) {
 // server's question for the browser; the script hands it on and sends
 // the answer back in response.
 func passkeyForm(b *strings.Builder, action, kind, question string) {
-	b.WriteString(`<form method="post" action="` + action + `" data-passkey="` + kind + `" data-question="` + esc(question) + `">`)
+	heldForm(b, action, kind, question, "")
+}
+
+// heldForm is a form that makes a passkey and, when the device holds a
+// passkey of the person's already and so makes no other, gives way to
+// the form of id held, which signs in with that one.
+func heldForm(b *strings.Builder, action, kind, question, held string) {
+	b.WriteString(`<form method="post" action="` + action + `" data-passkey="` + kind + `" data-question="` + esc(question) + `"`)
+	if held != "" {
+		b.WriteString(` data-held="` + esc(held) + `"`)
+	}
+	b.WriteString(`>`)
 	hidden(b, "response", "")
+}
+
+// makeLead marks the lead of a page that makes a passkey, which goes
+// once the device says it holds one already: hidden at once when the
+// form that signs in with that one is open.
+func makeLead(d *page) string {
+	if d.Held == "" {
+		return ""
+	}
+	if d.HeldOpen {
+		return " data-make-lead hidden"
+	}
+	return " data-make-lead"
+}
+
+// heldShown is the form, hidden until the device says it holds a passkey
+// of the person's already, that signs in with that passkey.
+func heldShown(b *strings.Builder, d *page, action, device string) {
+	b.WriteString(`<form id="held" method="post" action="` + action + `" data-passkey="use" data-question="` + esc(d.Held) + `"`)
+	if !d.HeldOpen {
+		b.WriteString(` hidden`)
+	}
+	b.WriteString(`>`)
+	hidden(b, "response", "")
+	hidden(b, "t", d.Token)
+	hidden(b, "next", d.Next)
+	hidden(b, "do", "held")
+	b.WriteString(`<p class="note">This ` + device + ` holds a passkey of yours for this server already.</p>`)
+	b.WriteString(`<button class="btn main" type="submit">Sign in with it</button>`)
+	saidHere(b)
+	b.WriteString("</form>\n")
 }
 
 // codeShown is the code for the phone with what to do, where the script
@@ -1119,12 +1195,12 @@ func drawn(name, host string, d *page) string {
 		if d.Invited.By != "" {
 			by = esc(d.Invited.ByName) + " invited you."
 		}
-		b.WriteString("<p class=\"lead\">" + by + " Add a passkey to sign in: your fingerprint, your face or this device's PIN. No password.</p>\n")
+		b.WriteString("<p class=\"lead\"" + makeLead(d) + ">" + by + " Add a passkey to sign in: your fingerprint, your face or this device's PIN. No password.</p>\n")
 	case "phone":
 		if d.Phone.Invited {
-			b.WriteString("<p class=\"lead\">Add a passkey on this phone to sign in: your face, your fingerprint or its PIN. No password.</p>\n")
+			b.WriteString("<p class=\"lead\"" + makeLead(d) + ">Add a passkey on this phone to sign in: your face, your fingerprint or its PIN. No password.</p>\n")
 		} else {
-			b.WriteString("<p class=\"lead\">Add a passkey of yours on this phone: your face, your fingerprint or its PIN.</p>\n")
+			b.WriteString("<p class=\"lead\"" + makeLead(d) + ">Add a passkey of yours on this phone: your face, your fingerprint or its PIN.</p>\n")
 		}
 	case "account":
 		b.WriteString("<p class=\"lead\">You are signed in as <strong>" + esc(d.User) + "</strong>.</p>\n")
@@ -1163,7 +1239,11 @@ func drawn(name, host string, d *page) string {
 			codeShown(&b, d, "Point your phone's camera at the code. Your phone keeps the key.")
 			b.WriteString("<p class=\"or\">or</p>\n")
 		}
-		passkeyForm(&b, PageInvite, "make", d.Question)
+		held := ""
+		if d.Held != "" {
+			held = "held"
+		}
+		heldForm(&b, PageInvite, "make", d.Question, held)
 		hidden(&b, "t", d.Token)
 		hidden(&b, "next", d.Next)
 		deviceField(&b, d.Invited.Name, d.Device)
@@ -1173,14 +1253,29 @@ func drawn(name, host string, d *page) string {
 			b.WriteString(`<button class="btn main" type="submit">Add a passkey and enter</button>`)
 		}
 		saidHere(&b)
-		b.WriteString("</form>\n<p class=\"small\">The passkey stays on the device that makes it, and opens this server alone.</p>")
+		b.WriteString("</form>\n")
+		if d.Held != "" {
+			heldShown(&b, d, PageInvite, "device")
+		}
+		b.WriteString("<p class=\"small\">The passkey stays on the device that makes it, and opens this server alone.</p>")
 	case "phone":
-		passkeyForm(&b, PagePhone, "make", d.Question)
+		held := ""
+		if d.Held != "" {
+			held = "held"
+		}
+		heldForm(&b, PagePhone, "make", d.Question, held)
 		hidden(&b, "t", d.Token)
 		deviceField(&b, d.Phone.Name, d.Device)
 		b.WriteString(`<button class="btn main" type="submit">Add a passkey and enter</button>`)
 		saidHere(&b)
-		b.WriteString("</form>\n<p class=\"small\">The passkey stays on this phone, and opens this server alone.</p>")
+		b.WriteString("</form>\n")
+		// A phone that holds a passkey of the person's already, which a
+		// password manager may have brought there, makes no other: it
+		// signs in with that one, and the computer enters too.
+		if d.Held != "" {
+			heldShown(&b, d, PagePhone, "phone")
+		}
+		b.WriteString("<p class=\"small\">The passkey stays on this phone, and opens this server alone.</p>")
 	case "phoneGone":
 		b.WriteString("<p class=\"lead\">It was used, or its 10 minutes ended. Load the page on your computer again for a new code.</p>")
 	case "inviteGone":

@@ -1963,6 +1963,7 @@ A few calls of the Go package have no command.
 | `Inlet` | it answers one entry of the list that list_inlets answers whole |
 | `InvitationPhoneCode` | it is the code the server's page /auth/invite shows, for a phone's camera |
 | `InvitationQuestion` | it is the question the server's page /auth/invite gives the browser, to make a passkey |
+| `InvitationSignInQuestion` | it is the question the server's page /auth/invite gives a device that holds a passkey already, to use it |
 | `Invited` | it belongs to the server's page /auth/invite, which an invitation opens |
 | `KnownClient` | it answers a client to the server's page /auth/authorize; list_clients lists them |
 | `LivePage` | it is live with the page of a list given, for a Go program: the command takes the page in the same call |
@@ -1975,6 +1976,7 @@ A few calls of the Go package have no command.
 | `PhoneCodeState` | the page that shows the code asks it, at /auth/phone/state, with the secret of its cookie |
 | `PhoneLink` | it belongs to the server's page /auth/phone, which the code's link opens |
 | `PhoneQuestion` | it is the question the server's page /auth/phone gives the phone's browser, to make a passkey |
+| `PhoneSignInQuestion` | it is the question the server's page /auth/phone gives a phone that holds a passkey already, to use it |
 | `Ping` | it asks whether the database answers; a server answers it at GET /v1/health, for anybody |
 | `PutBlob` | the bytes of a file are not JSON: they travel beside the commands, with the server |
 | `Receive` | it takes a message from outside, which proves itself and carries no key of a user: a server answers it at POST /v1/in/<inlet> |
@@ -1984,7 +1986,9 @@ A few calls of the Go package have no command.
 | `SessionCaller` | it answers who a session belongs to, for the door that is given the session; a caller that wants to know who it is sends whoami |
 | `SetUpMySecondStep` | its secret never travels in a command: the server's page /auth/account shows it |
 | `SetUpSecondStep` | it belongs to a sign-in under way on the server's page /auth/signin |
+| `SignInByPhoneLink` | it takes the answer of a phone that used its passkey on the server's page /auth/phone, and gives a session |
 | `SignInQuestion` | it is the question the server's page /auth/signin gives the browser, to use a passkey |
+| `SignInWithInvitation` | it takes the answer of a device that used its passkey on the server's page /auth/invite, and gives a session |
 | `SignInWithPasskey` | it takes the browser's answer on the server's page /auth/signin, and gives a session |
 | `SignOn` | it takes who a company's provider vouched for, which the server checked on its page /auth/callback; no command carries a provider's word |
 | `SignOut` | it ends the session it is sent with, on the server's page /auth/signout; end_session ends one by its id |

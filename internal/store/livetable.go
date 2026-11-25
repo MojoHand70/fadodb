@@ -129,7 +129,7 @@ func (s *Store) liveTable(ctx context.Context, t *table, v *model.Variable, on *
 	}
 	out.Rows = make([]LiveRow, len(rows))
 	for i, row := range rows {
-		lr := LiveRow{Values: make(Values, len(cols)), columns: cols, row: true}
+		lr := LiveRow{Values: make(Values, len(cols)), columns: cols}
 		for j, li := range leaves {
 			lr.Values[cols[j]] = valueOut(row[li])
 		}

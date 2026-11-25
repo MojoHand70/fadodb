@@ -41,14 +41,13 @@ type LiveColumn struct {
 // LiveRow is one row of a live list: a document of the source, by its
 // id, with the columns of the list that the reader may read in it
 // (ADR-0076, items 2 and 8). A column the reader may not read is absent.
+// A row of a list over a table (item 9) is no document: its ID is
+// empty, and it is written with its columns alone.
 type LiveRow struct {
 	ID     string
 	Values Values
 	// columns are the columns in the order of the list, for the wire.
 	columns []string
-	// row says the row is a row of a table, which is no document and
-	// has no id (ADR-0076, item 9): it is written with its columns alone.
-	row bool
 }
 
 // MarshalJSON writes the row as one object: the id, then the columns in
@@ -56,7 +55,7 @@ type LiveRow struct {
 func (r LiveRow) MarshalJSON() ([]byte, error) {
 	out := []byte(`{`)
 	var err error
-	if !r.row {
+	if r.ID != "" {
 		out = append(out, `"id":`...)
 		if out, err = appendPlain(out, r.ID); err != nil {
 			return nil, err

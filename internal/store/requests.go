@@ -130,12 +130,26 @@ type sending struct {
 	spec   *model.ActionSpec
 	call   *ActionCall
 	params []formula.Value
+	// lists are the lines of the rows parameters, by parameter as
+	// declared, each row its columns in the order of the schema; in are
+	// the repeats the template being made stands in, innermost last
+	// (ADR-0085, item 2).
+	lists map[string][][]formula.Value
+	in    []repeated
 	// secrets are the values of the connection's secrets by upper-cased
 	// name, and tainted every text built from one, which no message may
 	// repeat.
 	secrets map[string]string
 	tainted []string
 	e       *evaluator
+}
+
+// repeated is one row of a repeat a template is being made for: the name
+// the repeat gives a row, the columns of the row and their values.
+type repeated struct {
+	as     string
+	fields []formula.Field
+	row    []formula.Value
 }
 
 // send sends the request of a declared action for a call and reads the
@@ -265,6 +279,20 @@ slots:
 		if over != nil {
 			continue
 		}
+		// A column of one row of a repeat, read as line.sku.
+		if as, column, of := strings.Cut(slot.Name, "."); of {
+			for j := len(x.in) - 1; j >= 0; j-- {
+				if !strings.EqualFold(x.in[j].as, as) {
+					continue
+				}
+				for k, f := range x.in[j].fields {
+					if strings.EqualFold(f.Name, column) {
+						vars[i] = x.in[j].row[k]
+					}
+				}
+				continue slots
+			}
+		}
 		for j := range x.spec.Params {
 			if strings.EqualFold(x.spec.Params[j].Name, slot.Name) {
 				vars[i] = x.params[j]
@@ -300,6 +328,23 @@ func (x *sending) secretAddress() bool {
 // template makes the JSON value of a body template over the parameters.
 func (x *sending) template(t *model.Template) (any, *Error) {
 	switch {
+	case t.Item != nil:
+		// A repeat: one element for each row of the parameter, in the
+		// order of the rows; no rows give an empty list.
+		p, _ := x.spec.Param(t.Each)
+		rows := x.lists[t.Each]
+		out := make([]any, 0, len(rows))
+		x.in = append(x.in, repeated{as: t.As, fields: p.Type.Fields()})
+		defer func() { x.in = x.in[:len(x.in)-1] }()
+		for _, row := range rows {
+			x.in[len(x.in)-1].row = row
+			val, err := x.template(t.Item)
+			if err != nil {
+				return nil, err
+			}
+			out = append(out, val)
+		}
+		return out, nil
 	case t.Formula != nil:
 		val, err := x.run(t.Formula, nil, nil)
 		if err != nil {
@@ -330,6 +375,51 @@ func (x *sending) template(t *model.Template) (any, *Error) {
 	return t.Literal, nil
 }
 
+// linesOf reads the lines given for a rows parameter: a list of objects,
+// each column of the parameter's schema by its name, typed. Nothing
+// given is no lines.
+func linesOf(given any, p *model.Param, limits formula.Limits) ([][]formula.Value, *Error) {
+	if given == nil {
+		return nil, nil
+	}
+	list, ok := given.([]any)
+	if !ok {
+		return nil, errf(CodeBadValue, p.Name, "%s takes a list of rows, each an object of its columns", p.Name)
+	}
+	if len(list) > MaxElements {
+		return nil, errf(CodeTooManyElements, p.Name, "%d rows; a list holds at most %d (ADR-0013)", len(list), MaxElements)
+	}
+	fields := p.Type.Fields()
+	out := make([][]formula.Value, len(list))
+	for i, element := range list {
+		line, ok := element.(map[string]any)
+		if !ok {
+			return nil, errf(CodeBadValue, p.Name, "%s[%d] is no row: a row is an object of its columns", p.Name, i)
+		}
+		for name := range line {
+			if _, has := p.Type.Field(name); !has {
+				return nil, hintf(CodeBadValue, p.Name, p.Name+"["+strconv.Itoa(i)+"] has "+strconv.Quote(name)+", which is no column of "+p.Name, "its columns are "+strings.Join(p.Type.FieldNames(), ", "))
+			}
+		}
+		row := make([]formula.Value, len(fields))
+		for k, f := range fields {
+			var cell any
+			for name, value := range line {
+				if strings.EqualFold(name, f.Name) {
+					cell = value
+				}
+			}
+			val, err := toValue(cell, f.Type, "", p.Name+"["+strconv.Itoa(i)+"]."+f.Name, limits)
+			if err != nil {
+				return nil, err
+			}
+			row[k] = val
+		}
+		out[i] = row
+	}
+	return out, nil
+}
+
 // request builds the request of the call (ADR-0045, items 3 and 4): the
 // address, the headers and the body from the definition's formulas, or
 // for http.call from the arguments themselves; the call itself as the
@@ -342,6 +432,19 @@ func (x *sending) request(preview bool) (*OutboundRequest, *Error) {
 	x.params = make([]formula.Value, len(spec.Params))
 	for i := range spec.Params {
 		p := &spec.Params[i]
+		if p.Type.Kind == formula.KindRows {
+			// The lines of a rows parameter, typed column by column
+			// (ADR-0085, item 2).
+			lines, err := linesOf(x.call.Args[p.Name], p, x.s.limits)
+			if err != nil {
+				return nil, err
+			}
+			if x.lists == nil {
+				x.lists = map[string][][]formula.Value{}
+			}
+			x.lists[p.Name], x.params[i] = lines, formula.Blank()
+			continue
+		}
 		val, err := toValue(x.call.Args[p.Name], p.Type, "", p.Name, x.s.limits)
 		if err != nil {
 			return nil, err
@@ -624,6 +727,7 @@ func secretsRead(spec *model.ActionSpec) []string {
 		for _, item := range t.Items {
 			walk(item)
 		}
+		walk(t.Item)
 	}
 	rd := spec.Request
 	note(rd.URL)

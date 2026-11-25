@@ -75,7 +75,7 @@ PLACEMENTS="${BENCH_PLACEMENTS:-5}"
 # How long one benchmark runs in a round; the go tool's own second when
 # it is not given.
 BENCHTIME="${BENCH_BENCHTIME:-}"
-PATTERN="${BENCH_PATTERN:-^Benchmark(VM_Arithmetic5|VM_Exact5|Recalculate|Recalculate50|LookupIndexed|LookupKeyedStatement|LookupClass|Transition|ExecTransition|DoorTransition|WhoIsCalling|TransitionAccess|TransitionMany|Transitions10|GuardLoop|Project|WriteCheck|Rules|Outbox|Timer|LifeEditors|TransitionKeyed|Receive|LiveList|LiveFigure|TransitionBefore|QueryLook|DraftsOfOneOrder|ReceiveLines)$}"
+PATTERN="${BENCH_PATTERN:-^Benchmark(VM_Arithmetic5|VM_Exact5|Recalculate|Recalculate50|LookupIndexed|LookupKeyedStatement|LookupClass|Transition|ExecTransition|DoorTransition|WhoIsCalling|TransitionAccess|TransitionMany|Transitions10|GuardLoop|Project|WriteCheck|Rules|Outbox|Timer|LifeEditors|TransitionKeyed|Receive|LiveList|LiveFigure|TransitionBefore|QueryLook|DraftsOfOneOrder|ReceiveLines|RequestLines)$}"
 PACKAGES="${BENCH_PACKAGES:-./internal/formula/ ./internal/store/}"
 
 # evaluate_csv prints every regression found in a benchstat CSV and returns 1

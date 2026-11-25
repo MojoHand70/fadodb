@@ -362,7 +362,13 @@ The owner accepted the record on 2026-11-23: "accepted".
   `transition`, its check when the inlet is defined, and its refusals
   of a message. `try_inlet` and `fadodb inlet check` show the lines a
   message makes, as they show every value.
-- Items 2 and 3, a list in a request and in an answer, are not built.
+- **Item 2, a list in a request, on 2026-11-25**, in Phase 8: the
+  `rows` parameter of an action, the argument a rule gives it, the
+  repeat in the body of a request and in the JSON a rule gives a `json`
+  parameter, and their checks when the action and the class are
+  defined. `preview_action` and `try_action` take the lines and show
+  the whole body.
+- Item 3, a list in an answer, is not built.
 
 ## Settled while building a list in a message
 
@@ -400,6 +406,44 @@ strike.
   parsing for itself. A message of 2 KiB without a list, with its
   command, takes 73 µs where it took 85, and allocates 262 times where
   it allocated 298 (`BenchmarkReceive`).
+
+## Settled while building a list in a request
+
+Each of these is settled by me while building, and is the owner's to
+strike.
+
+- **A column of a `rows` parameter is a scalar and never `json`**, as a
+  column of a list in a class is.
+- **The argument of a `rows` parameter is the name of a `rows` variable
+  and nothing else.** No formula stands there. A list that is worked
+  out when it is read, a `QUERY`, is not given to an action: it holds
+  the documents the reader may see, and an action runs for nobody in
+  particular. Lines that are documents of their own wait for item 4.
+- **A required `rows` parameter is given, and may be empty.** An order
+  with no lines sends `[]`.
+- **An object is a repeat when it has `each`, `as` and `item` and
+  nothing else.** With a fourth property it is an object like any
+  other. A body cannot send an object of exactly those three names.
+- **`as` is a name of its own**: not a parameter of the action, and not
+  the name of a repeat it stands in.
+- **In the JSON a rule gives a `json` parameter, a repeat goes over a
+  `rows` variable of the rule's class**, and one repeat does not stand
+  in another there. So a rule sends its lines with `http.call` and no
+  definition. In the body of a request repeats nest, each over a
+  parameter of its own.
+- **A call from outside gives the lines as a list of objects**, typed
+  column by column. A column a row leaves out is blank; a name that is
+  no column, or more than 10,000 rows, refuses the call.
+- **An action may not change so that a rule no longer fits**, as before
+  (ADR-0044): a `rows` parameter that gains a column the lines of a
+  class lack is refused, and the refusal names the rule.
+- **A class kept from before its action changed opens with its
+  database.** An earlier version of a class is taken as it was written;
+  what no longer fits is refused when the action runs.
+- **Measured on 2026-11-25**: building the request for a hundred lines
+  of four values, with its address and the header that reads the
+  secret, takes 0.14 ms (`BenchmarkRequestLines`, in the gate; the
+  budget of this record is 1 ms).
 
 ## Consequences
 

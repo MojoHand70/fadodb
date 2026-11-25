@@ -66,6 +66,10 @@ type ParamDef struct {
 	Type        string `json:"type"`
 	Required    bool   `json:"required,omitempty"`
 	Description string `json:"description,omitempty"`
+	// Schema gives the columns of a rows parameter, each with its type,
+	// written as the schema of a rows variable of a class is (ADR-0085,
+	// item 2).
+	Schema json.RawMessage `json:"schema,omitempty"`
 }
 
 // ActionSpec is a compiled action definition.
@@ -394,7 +398,36 @@ func compileRequest(c *collector, a *ActionSpec, def *ActionDef) {
 		if !takesBody && ok {
 			c.hint(CodeNotAllowed, "/request/body", "a "+method+" request carries no body", "put what it says into the url, with URLENCODE, or use POST")
 		} else {
-			req.Body = compileTemplate(c, "/request/body", rd.Body, bind, 1)
+			// A repeat in the body goes over a rows parameter (ADR-0085,
+			// item 2); the formulas of its item read the parameters and
+			// one row, as line.sku.
+			rep := &repeater{
+				list: func(name string) (string, []formula.Field, bool) {
+					p, ok := a.Param(name)
+					if !ok || p.Type.Kind != formula.KindRows {
+						return "", nil, false
+					}
+					return p.Name, p.Type.Fields(), true
+				},
+				named: func(name string) bool {
+					_, ok := a.Param(name)
+					return ok
+				},
+				over: func(rows []formula.Variable) func(src string) (*formula.Program, error) {
+					inner, err := formula.NewScope(append(append([]formula.Variable{}, vars...), rows...)...)
+					return func(src string) (*formula.Program, error) {
+						if err != nil {
+							return nil, err
+						}
+						return formula.Bind(src, inner, formula.BindOptions{Mode: formula.ModePure, Secrets: secrets})
+					}
+				},
+				code:  CodeUnknownParameter,
+				none:  "the action has no rows parameter",
+				hint:  `a repeat goes over a parameter of the type rows: "lines": {"type": "rows", "schema": {...}}`,
+				taken: "a parameter of the action",
+			}
+			req.Body = compileTemplate(c, "/request/body", rd.Body, bind, rep, 1)
 		}
 	}
 	if rd.Sign != "" {
@@ -568,8 +601,20 @@ func compileParams(c *collector, path string, defs map[string]json.RawMessage, o
 		case t.Kind == formula.KindNull:
 			c.add(CodeUnknownType, ppath, what+" is never blank by type")
 			continue
+		case t.Kind == formula.KindRows && params:
+			// A list that goes out in a request (ADR-0085, item 2): its
+			// columns, each of a scalar type.
+			fields, ok := rowsSchema(c, ppath, pd.Schema)
+			if !ok {
+				continue
+			}
+			t = formula.RowsType("", fields)
 		case !t.IsScalar():
 			c.hint(CodeNotAllowed, ppath, what+" is a scalar; "+pd.Type+" is a composite", "a json parameter carries a structure")
+			continue
+		}
+		if len(pd.Schema) > 0 && t.Kind != formula.KindRows {
+			c.hint(CodeNotAllowed, ppath+"/schema", "only a rows parameter has a schema", "drop it, or make the type rows")
 			continue
 		}
 		if pd.Required && !params {
@@ -579,6 +624,49 @@ func compileParams(c *collector, path string, defs map[string]json.RawMessage, o
 		out = append(out, Param{Name: name, Type: t, Required: pd.Required, Description: pd.Description})
 	}
 	return out
+}
+
+// rowsSchema reads the columns of a rows parameter (ADR-0085, item 2):
+// an object of scalar types by column, in the order written.
+func rowsSchema(c *collector, path string, raw json.RawMessage) ([]formula.Field, bool) {
+	const hint = `"schema": {"sku": "text", "qty": "int", "price": "money(2)"}`
+	if len(bytes.TrimSpace(raw)) == 0 {
+		c.hint(CodeMissing, path+"/schema", "a rows parameter says its columns", hint)
+		return nil, false
+	}
+	names, err := orderedKeys(raw)
+	var types map[string]string
+	if err == nil {
+		err = json.Unmarshal(raw, &types)
+	}
+	if err != nil || len(names) == 0 {
+		c.hint(CodeBadValue, path+"/schema", "the schema of a rows parameter is an object of types by column", hint)
+		return nil, false
+	}
+	var fields []formula.Field
+	seen, ok := map[string]bool{}, true
+	for _, name := range names {
+		cpath := path + "/schema/" + name
+		t, err := formula.ParseType(types[name])
+		switch {
+		case !c.checkName(cpath, name, reservedFieldNames):
+			ok = false
+		case seen[upper(name)]:
+			c.addf(CodeDuplicate, cpath, "the column %s is declared twice; names differ in case only", quote(name))
+			ok = false
+		case err != nil:
+			c.add(CodeUnknownType, cpath, err.Error())
+			ok = false
+		case !t.IsScalar() || t.Kind == formula.KindNull || t.Kind == formula.KindJSON:
+			// As a column of a list in a class: a scalar, and never json.
+			c.hint(CodeNotAllowed, cpath, "a column of a rows parameter is a scalar and no json; "+types[name]+" is not", "one of bool, number, int, decimal(s), money(s), text, date, datetime, ref")
+			ok = false
+		default:
+			seen[upper(name)] = true
+			fields = append(fields, formula.Field{Name: name, Type: t})
+		}
+	}
+	return fields, ok
 }
 
 // actionNameReason says why a text is not the name of a defined action,

@@ -53,6 +53,8 @@ takes a bearer token, and answers `{"id": "T-17", "status": "open"}`.
 
 - **`name`** is a namespace and a verb. **`params`** are what a rule gives
   the action and **`returns`** what it answers, each with a scalar type.
+  A parameter may also be a list, of the type `rows`; see
+  [A list in a request](#a-list-in-a-request).
 - **`request`** is what the engine sends. `url`, every header and every
   string of `body` is a formula over the parameters. Only pure functions
   are allowed there, so every attempt sends the same request.
@@ -217,6 +219,106 @@ The engine's own actions return something too: a `create` the `id` of
 the document it made, a `transition` the `state` and the `version` it
 left the other document in.
 
+## A list in a request
+
+An order goes to the accounting system with its lines. A parameter of
+the type `rows` takes them, and the body of the request repeats a part
+once for each line.
+
+<!-- a list: the action -->
+```json
+{
+  "name": "bc.sales_order",
+  "label": "Create a sales order in Business Central",
+  "params": {
+    "customer": {"type": "text", "required": true},
+    "lines":    {"type": "rows", "schema": {"sku": "text", "qty": "int", "price": "money(2)"}, "required": true}
+  },
+  "returns": {"bc_id": "text"},
+  "connection": {"name": "bc", "secrets": ["token"]},
+  "request": {
+    "method": "POST",
+    "url": "\"https://bc.example.com/api/v2.0/salesOrders\"",
+    "headers": {"Authorization": "\"Bearer \" & SECRET(\"token\")"},
+    "body": {
+      "customerNumber": "customer",
+      "salesOrderLines": {
+        "each": "lines",
+        "as": "line",
+        "item": {
+          "lineType": "\"Item\"",
+          "lineObjectNumber": "line.sku",
+          "quantity": "VALUE(TEXT(line.qty))",
+          "unitPrice": "VALUE(TEXT(AMOUNT(line.price)))"
+        }
+      }
+    }
+  },
+  "ok": "STATUS = 201",
+  "result": {"bc_id": "JSONVALUE(BODY, \"id\")"}
+}
+```
+
+The class gives the parameter the name of its `rows` variable:
+
+<!-- a list: the class -->
+```json
+{
+  "name": "Order",
+  "title": "number",
+  "variables": {
+    "number":   {"type": "text", "required": true},
+    "lines":    {"type": "rows", "schema": {"sku": "text", "qty": "int", "price": "money(2)"}},
+    "bc_id":    {"type": "text"},
+    "bc_error": {"type": "text"}
+  },
+  "states": {"initial": "received", "list": ["received", "booking"]},
+  "access": {"read": "INGROUP(\"orders\")", "create": "INGROUP(\"orders\")", "update": "INGROUP(\"orders\")", "delete": "FALSE"},
+  "transitions": [{"name": "book", "from": "received", "to": "booking"}],
+  "rules": [
+    {"on": "enter", "state": "booking",
+     "do": [{"action": "bc.sales_order",
+             "args": {"customer": "\"WEB-PL\"", "lines": "lines"},
+             "into": {"bc_id": "bc_id", "bc_error": "ERROR"}}]}
+  ]
+}
+```
+
+When Olga books order 1001, which has a sofa and four chairs, the
+engine sends:
+
+<!-- a list: the body -->
+```jsonc
+{"customerNumber": "WEB-PL",
+ "salesOrderLines": [
+  {"lineType": "Item", "lineObjectNumber": "SOFA-3", "quantity": 1, "unitPrice": 2400},
+  {"lineType": "Item", "lineObjectNumber": "CHAIR-1", "quantity": 4, "unitPrice": 300}
+ ]}
+```
+
+<!-- a list: the parts of a repeat -->
+| Part | What it says |
+|---|---|
+| `each` | the `rows` parameter the repeat goes over |
+| `as` | the name of one row. Inside `item` a column is read as `line.sku` |
+| `item` | what one row becomes: an object, a list, a formula or a value, written as any part of a body is. It may itself hold a repeat |
+
+- **A `rows` parameter says its columns** under `schema`, each of a
+  scalar type, as a `rows` variable of a class does.
+- **A rule gives it the name of a `rows` variable** of its class. The
+  variable has every column the parameter has, of the same type, or
+  the class is refused with `type_mismatch` at the argument. Columns
+  the parameter does not name are not sent.
+- **The repeat becomes a list**, one element for each row, in the
+  order of the rows. No rows give an empty list.
+- **The lines are read when the commit queues the action**, and kept
+  with it, like every argument. A line changed afterwards changes
+  nothing of what is sent, at the first attempt or the tenth.
+- **An exact value is its text in JSON**, `"2400.00"`, as everywhere;
+  `VALUE(TEXT(...))` makes a number of it, as the example does.
+- **`preview_action` shows the whole body**, every line, with the
+  secrets masked.
+
 ## Try it before a document depends on it
 
 | Call | What it does |
@@ -304,6 +406,58 @@ connection, so it reads no secret and goes only to `Hosts`.
           "body": {"subject": "subject"}},
  "into": {"ticket_error": "ERROR"}}
 ```
+
+### A rule that sends its lines itself
+
+A repeat may also stand in the JSON a rule gives a `json` parameter,
+such as the `body` of `http.call`. There `each` names a `rows` variable
+of the rule's class, and the formulas of `item` read the document and
+one line. No action is defined:
+
+<!-- a list: the rule -->
+```json
+{
+  "name": "FactoryOrder",
+  "title": "number",
+  "variables": {
+    "number":  {"type": "text", "required": true},
+    "factory": {"type": "text"},
+    "lines":   {"type": "rows", "schema": {"sku": "text", "qty": "int"}}
+  },
+  "states": {"initial": "received", "list": ["received", "sent"]},
+  "access": {"read": "INGROUP(\"orders\")", "create": "INGROUP(\"orders\")", "update": "INGROUP(\"orders\")", "delete": "FALSE"},
+  "transitions": [{"name": "send", "from": "received", "to": "sent"}],
+  "rules": [
+    {"on": "enter", "state": "sent",
+     "do": [{"action": "http.call",
+             "args": {"url": "\"https://hooks.partner.example/factory\"",
+                      "body": {"order": "number",
+                               "factory": "factory",
+                               "items": {"each": "lines", "as": "line",
+                                         "item": {"sku": "line.sku", "pieces": "VALUE(TEXT(line.qty))"}}}}}]}
+  ]
+}
+```
+
+When Olga sends order F-1 to the factory in Kalisz, with four chairs
+and two tables, the engine sends:
+
+<!-- a list: the body of the rule -->
+```jsonc
+{"order": "F-1",
+ "factory": "Kalisz",
+ "items": [
+  {"sku": "CHAIR-1", "pieces": 4},
+  {"sku": "TABLE-2", "pieces": 2}
+ ]}
+```
+
+- **`each` names a `rows` variable the document holds.** A list that is
+  worked out when it is read is not one.
+- **The lines are read when the commit queues the action**, as for a
+  `rows` parameter.
+- **One repeat does not stand in another here.** An action whose
+  request holds the repeats can nest them.
 
 ## A Go function
 

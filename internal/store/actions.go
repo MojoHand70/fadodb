@@ -563,6 +563,28 @@ func (s *Store) readArgs(spec *model.ActionSpec, given map[string]any) (Values, 
 	out := make(Values, len(spec.Params))
 	for i := range spec.Params {
 		p := &spec.Params[i]
+		if p.Type.Kind == formula.KindRows {
+			// A list of rows (ADR-0085, item 2): each row typed column
+			// by column, and answered as the lines of a document are. A
+			// required one is given, though it may be empty.
+			lines, err := linesOf(by[p.Name], p, s.limits)
+			if err != nil {
+				return nil, err
+			}
+			if p.Required && by[p.Name] == nil {
+				return nil, errf(CodeRequired, p.Name, "%s requires %s, and it is not given", spec.Name, p.Name)
+			}
+			rows := make([]any, len(lines))
+			for r, line := range lines {
+				row := make(map[string]any, len(line))
+				for k, f := range p.Type.Fields() {
+					row[f.Name] = valueOut(line[k])
+				}
+				rows[r] = row
+			}
+			out[p.Name] = rows
+			continue
+		}
 		val, err := toValue(by[p.Name], p.Type, "", p.Name, s.limits)
 		if err != nil {
 			return nil, err

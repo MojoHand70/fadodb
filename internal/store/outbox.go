@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"strconv"
 	"strings"
 	"sync"
@@ -158,6 +159,12 @@ type cqueued struct {
 	// args are the arguments of an action that names a definition
 	// (ADR-0045), in the order written.
 	args []carg
+	// reads are the lists the arguments read beside the document
+	// (ADR-0085, item 2): the lines a rows parameter is given, and the
+	// ones a repeat in a template goes over, which repeats finds by the
+	// template. Both are empty for an action without a list.
+	reads   []*child
+	repeats map[*model.Template]*child
 }
 
 // carg is one argument of a defined action: the parameter it gives and
@@ -167,6 +174,18 @@ type carg struct {
 	name string
 	prog *formula.Program
 	tmpl *model.Template
+	// rows is the composite whose lines a rows parameter is given
+	// (ADR-0085, item 2), nil for every other argument, and cols the
+	// columns the parameter takes of it: each by its name and its place
+	// in a row.
+	rows *child
+	cols []rowCol
+}
+
+// rowCol is one column of the lines a rows parameter is given.
+type rowCol struct {
+	name string
+	leaf int
 }
 
 // cvalue is one argument of a queued action: the variable or the column
@@ -219,11 +238,39 @@ func (c *class) layoutQueued(a *model.Action) (*cqueued, error) {
 		return c.bindSlots(prog, owner)
 	}
 	for _, arg := range a.Args {
+		if arg.Rows != "" {
+			// The lines of a rows variable, read when the commit queues
+			// the action (ADR-0085, item 2).
+			cv, ok := c.byName[strings.ToUpper(arg.Rows)]
+			if !ok || cv.child == nil {
+				return nil, errors.New(a.Path() + "/args/" + arg.Name + ": the class has no rows variable " + arg.Rows)
+			}
+			sent := carg{name: arg.Name, rows: cv.child}
+			out.reads = append(out.reads, cv.child)
+			// The columns the parameter takes. A class kept from before
+			// the action changed is laid out all the same: a column its
+			// lines lack goes blank, and where the action no longer has
+			// the rows parameter the lines go whole. What does not fit
+			// is refused when the action runs, as for every argument.
+			cols := cv.child.fields
+			if arg.Param != nil && arg.Param.Type.Kind == formula.KindRows {
+				cols = arg.Param.Type.Fields()
+			}
+			for _, col := range cols {
+				leaf, has := cv.child.leafIndex[strings.ToUpper(col.Name)]
+				if !has {
+					leaf = -1
+				}
+				sent.cols = append(sent.cols, rowCol{name: col.Name, leaf: leaf})
+			}
+			out.args = append(out.args, sent)
+			continue
+		}
 		if arg.Formula != nil {
 			if err := bind(arg.Formula, "args", arg.Name); err != nil {
 				return nil, err
 			}
-		} else if err := c.bindTemplate(arg.Template, a.Path()+"/args/"+arg.Name); err != nil {
+		} else if err := c.bindTemplate(out, arg.Template, a.Path()+"/args/"+arg.Name, "", nil); err != nil {
 			return nil, err
 		}
 		out.args = append(out.args, carg{name: arg.Name, prog: arg.Formula, tmpl: arg.Template})
@@ -256,18 +303,35 @@ func (c *class) layoutQueued(a *model.Action) (*cqueued, error) {
 	return out, nil
 }
 
-// bindTemplate binds the slots of every formula of a template.
-func (c *class) bindTemplate(t *model.Template, owner string) error {
-	if t.Formula != nil {
+// bindTemplate binds the slots of every formula of a template. The
+// formulas of the item of a repeat read one row of its list beside the
+// document, under the name as gives it (ADR-0085, item 2); ch is that
+// list inside an item, and nil outside one.
+func (c *class) bindTemplate(out *cqueued, t *model.Template, owner, as string, ch *child) error {
+	switch {
+	case t.Item != nil:
+		cv, ok := c.byName[strings.ToUpper(t.Each)]
+		if !ok || cv.child == nil {
+			return errors.New(owner + "/each: the class has no rows variable " + t.Each)
+		}
+		if out.repeats == nil {
+			out.repeats = map[*model.Template]*child{}
+		}
+		out.repeats[t] = cv.child
+		out.reads = append(out.reads, cv.child)
+		return c.bindTemplate(out, t.Item, owner+"/item", t.As, cv.child)
+	case t.Formula != nil && ch != nil:
+		return c.bindElemSlots(t.Formula, owner, as, ch)
+	case t.Formula != nil:
 		return c.bindSlots(t.Formula, owner)
 	}
 	for _, f := range t.Fields {
-		if err := c.bindTemplate(f.Value, owner+"/"+f.Name); err != nil {
+		if err := c.bindTemplate(out, f.Value, owner+"/"+f.Name, as, ch); err != nil {
 			return err
 		}
 	}
 	for i, item := range t.Items {
-		if err := c.bindTemplate(item, owner+"/"+strconv.Itoa(i)); err != nil {
+		if err := c.bindTemplate(out, item, owner+"/"+strconv.Itoa(i), as, ch); err != nil {
 			return err
 		}
 	}
@@ -405,13 +469,35 @@ func (s *Store) actionArgs(run *ruleRun, row *docRow, act *caction, elem childRo
 		args := make(Values, len(out.args))
 		for _, arg := range out.args {
 			var err *Error
+			if arg.rows != nil {
+				// The lines as the document holds them at this commit,
+				// with the columns the parameter takes: a line changed
+				// afterwards changes nothing of what is sent.
+				lines := []any{}
+				for i := range s.lists {
+					if s.lists[i].ch != arg.rows {
+						continue
+					}
+					for _, row := range s.lists[i].rows {
+						line := make(map[string]any, len(arg.cols))
+						for _, col := range arg.cols {
+							if line[col.name] = nil; col.leaf >= 0 {
+								line[col.name] = valueOut(row[col.leaf])
+							}
+						}
+						lines = append(lines, line)
+					}
+				}
+				args[arg.name] = lines
+				continue
+			}
 			if arg.prog != nil {
 				var val formula.Value
 				if val, err = s.evalArg(run, row, arg.prog, nil); err == nil {
 					args[arg.name] = valueOut(val)
 				}
 			} else {
-				args[arg.name], err = s.evalTemplate(run, row, arg.tmpl)
+				args[arg.name], err = s.evalTemplate(run, row, out, arg.tmpl, nil)
 			}
 			if err != nil {
 				err.Variable = arg.name
@@ -501,11 +587,28 @@ func (s *Store) evalArg(run *ruleRun, row *docRow, prog *formula.Program, elem c
 
 // evalTemplate makes the JSON value of a template over the row: every
 // formula evaluated and rendered in the wire shape, in the place its
-// string had.
-func (s *Store) evalTemplate(run *ruleRun, row *docRow, t *model.Template) (any, *Error) {
+// string had. A repeat becomes a list with one element for each line
+// the document holds at this commit (ADR-0085, item 2); elem is the
+// line the formulas of its item read, and nil outside one.
+func (s *Store) evalTemplate(run *ruleRun, row *docRow, q *cqueued, t *model.Template, elem childRow) (any, *Error) {
 	switch {
+	case t.Item != nil:
+		ch, out := q.repeats[t], []any{}
+		for i := range s.lists {
+			if s.lists[i].ch != ch {
+				continue
+			}
+			for _, line := range s.lists[i].rows {
+				val, err := s.evalTemplate(run, row, q, t.Item, line)
+				if err != nil {
+					return nil, err
+				}
+				out = append(out, val)
+			}
+		}
+		return out, nil
 	case t.Formula != nil:
-		val, err := s.evalArg(run, row, t.Formula, nil)
+		val, err := s.evalArg(run, row, t.Formula, elem)
 		if err != nil {
 			return nil, err
 		}
@@ -513,7 +616,7 @@ func (s *Store) evalTemplate(run *ruleRun, row *docRow, t *model.Template) (any,
 	case t.Object:
 		out := make(map[string]any, len(t.Fields))
 		for _, f := range t.Fields {
-			val, err := s.evalTemplate(run, row, f.Value)
+			val, err := s.evalTemplate(run, row, q, f.Value, elem)
 			if err != nil {
 				return nil, err
 			}
@@ -523,7 +626,7 @@ func (s *Store) evalTemplate(run *ruleRun, row *docRow, t *model.Template) (any,
 	case t.Array:
 		out := make([]any, len(t.Items))
 		for i, item := range t.Items {
-			val, err := s.evalTemplate(run, row, item)
+			val, err := s.evalTemplate(run, row, q, item, elem)
 			if err != nil {
 				return nil, err
 			}

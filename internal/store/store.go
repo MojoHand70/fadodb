@@ -229,6 +229,10 @@ type Store struct {
 	emptied []*child
 	// listEmptied says the reset that just ran emptied a list.
 	listEmptied bool
+	// keptNow are the lists that were brought in the step of the commit
+	// being computed (ADR-0078, item 5), until that step takes them for
+	// its write.
+	keptNow     []keptList
 	changed     []bool
 	changedKids []*child
 	// kids are the lists the command of the commit in progress assigns,

@@ -986,7 +986,7 @@ func (b *binder) call(n *Call) (Type, error) {
 		return b.ref(n)
 	}
 	if n.Name == "QUERY" {
-		return Type{}, b.errAt(n.P, "QUERY is built as the whole formula of a live variable, and nowhere else yet (ADR-0076)")
+		return Type{}, b.errAt(n.P, "QUERY is built as the whole formula of a live variable, or of a triggered one, which keeps the list, and nowhere else yet (ADR-0076, ADR-0078)")
 	}
 	if shapeRank[n.Name] > 0 || n.Name == "UNIQUE" {
 		// reached here it stands by itself, and not as what a function

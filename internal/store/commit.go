@@ -481,6 +481,7 @@ func (s *Store) run(ctx context.Context, cmd command, now time.Time) (*result, e
 	}
 	s.emits = s.emits[:0]
 	s.queued = s.queued[:0]
+	s.keptNow = s.keptNow[:0]
 	rules := ruleRun{c: c, preview: cmd.preview, res: res, evalCtx: evalCtx, secs: secs}
 	if cmd.op == opDelete {
 		// The delete rule of the class, over the stored document under the
@@ -767,6 +768,7 @@ func (s *Store) run(ctx context.Context, cmd command, now time.Time) (*result, e
 				return nil, err
 			}
 		}
+		s.takeKept(kids)
 	}
 
 	// The statechart (ADR-0040): the named transition's guard over the
@@ -792,6 +794,7 @@ func (s *Store) run(ctx context.Context, cmd command, now time.Time) (*result, e
 				return nil, err
 			}
 		}
+		s.takeKept(kids)
 		if err := s.guard(c, trans, after, evalCtx, brought); err != nil {
 			return nil, err
 		}
@@ -817,6 +820,8 @@ func (s *Store) run(ctx context.Context, cmd command, now time.Time) (*result, e
 		if err := s.recomputeFor(c, after, kind, from, name, evalCtx, secs, cmd.preview, &res.errs); err != nil {
 			return nil, err
 		}
+		// The lists the triggers brought are the command's own to write.
+		s.takeKept(kids)
 	}
 
 	// The lists the class's creates with each go over (ADR-0044), as the
@@ -846,6 +851,8 @@ func (s *Store) run(ctx context.Context, cmd command, now time.Time) (*result, e
 		for _, ch := range s.emptied {
 			kids[ch] = nil
 		}
+		// A rule that refreshed a list that is kept brought it.
+		s.takeKept(kids)
 	}
 
 	// The eventless chain, from the state the commit leaves the document
@@ -903,6 +910,13 @@ func (s *Store) run(ctx context.Context, cmd command, now time.Time) (*result, e
 					}
 				}
 			}
+			// The lists this move brought are its own to write.
+			if len(s.keptNow) > 0 {
+				if h.kids == nil {
+					h.kids = make(map[*child][]childRow, len(s.keptNow))
+				}
+				s.takeKept(h.kids)
+			}
 			hops = append(hops, h)
 			cur = next
 		}
@@ -931,8 +945,8 @@ func (s *Store) run(ctx context.Context, cmd command, now time.Time) (*result, e
 		final := after
 		for _, h := range hops {
 			final = h.row
-			for ch := range h.kids {
-				all[ch] = nil
+			for ch, rows := range h.kids {
+				all[ch] = rows
 			}
 		}
 		res.doc = c.document(final, all)
@@ -1026,8 +1040,8 @@ func (s *Store) run(ctx context.Context, cmd command, now time.Time) (*result, e
 			res.queued += n
 			lastQueued = n
 		}
-		for ch := range h.kids {
-			all[ch] = nil
+		for ch, rows := range h.kids {
+			all[ch] = rows
 		}
 		prev = h.row
 	}

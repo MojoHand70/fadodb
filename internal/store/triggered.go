@@ -89,8 +89,12 @@ func triggerState(v *model.Variable, kind commitKind, from, name, state string) 
 // STATE() in its formula is the state the transition leaves, which the
 // row is still in.
 func (s *Store) bringBefore(c *class, cv *cvar, t *model.Transition, row *docRow, evalCtx *formula.Context, secs int64, preview bool, errs *[]*Error) *Error {
-	val, err := s.eval(c, cv.v.Formula, row, evalCtx)
-	if err == nil {
+	var val formula.Value
+	var list []childRow
+	var err *Error
+	if cv.v.Kept != nil {
+		list, err = s.keptRows(c, cv, row, evalCtx)
+	} else if val, err = s.eval(c, cv.v.Formula, row, evalCtx); err == nil {
 		val, err = fit(cv.v, val)
 	}
 	if err != nil {
@@ -99,6 +103,9 @@ func (s *Store) bringBefore(c *class, cv *cvar, t *model.Transition, row *docRow
 		e.Message = cv.v.Name + " could not be brought before " + t.Name + ": " + err.Message
 		e.Hint = cv.v.Name + " lists before:" + t.Name + ", and a condition is not asked over a value that could not be worked out: mend what its formula reads, or the formula"
 		return &e
+	}
+	if cv.v.Kept != nil {
+		return s.keepList(c, cv, row, list, evalCtx, secs, preview, errs)
 	}
 	return s.kept(c, cv, row, val, evalCtx, secs, preview, errs)
 }
@@ -111,6 +118,16 @@ func (s *Store) bringBefore(c *class, cv *cvar, t *model.Transition, row *docRow
 // variables that depend on a value that changed recalculate; one of them
 // failing is the commit's error, as after any change.
 func (s *Store) recompute(c *class, cv *cvar, row *docRow, evalCtx *formula.Context, secs int64, preview bool, errs *[]*Error) *Error {
+	if cv.v.Kept != nil {
+		// A list that is kept (ADR-0078, item 5): the answer of its
+		// QUERY, or the list as it was with the code of the failure.
+		list, err := s.keptRows(c, cv, row, evalCtx)
+		if err != nil {
+			row.vals[cv.errLeaf] = formula.Text(err.Code)
+			return nil
+		}
+		return s.keepList(c, cv, row, list, evalCtx, secs, preview, errs)
+	}
 	val, err := s.eval(c, cv.v.Formula, row, evalCtx)
 	if err == nil {
 		val, err = fit(cv.v, val)

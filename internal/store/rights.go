@@ -44,8 +44,13 @@ type evaluator struct {
 	foldC   *class
 	foldRow *docRow
 	commit  commitLists
-	fold    *formula.RowFold
-	places  map[*formula.QuerySlot]*foldPlaces
+	// shown are the lists brought for the listing of transitions, over
+	// the copy of the row the listing works on, shownRow: no commit is in
+	// progress there, and the guard asked next reads them from here.
+	shown    map[*child][]childRow
+	shownRow *docRow
+	fold     *formula.RowFold
+	places   map[*formula.QuerySlot]*foldPlaces
 }
 
 // run evaluates a program over the row's values in the class's layout.

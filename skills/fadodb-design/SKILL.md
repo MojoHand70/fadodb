@@ -485,6 +485,15 @@ read the diagnostics, fix, preview against live data, define.
    was brought, under `brought`. A transition without a name has
    nobody asking, so nothing is brought before its guard: bring its
    number at the entry of the state, or by a refresh.
+   **A decision over other documents keeps the lines it stood on**
+   (ADR-0078). "Close the order when every invoice is paid" reads the
+   invoices; make them a list the order keeps, a triggered variable
+   whose whole formula is a `QUERY`, with `"type": "rows"` and a
+   `schema` of the QUERY's columns:
+   `"settled": {"type": "rows", "schema": {"number": "text", "state": "text"}, "formula": "QUERY(Invoice, {number, state}, order = REF())", "mode": "triggered", "on": ["before:close"]}`,
+   and the guard `COUNT(settled) > 0 AND ALL(settled, state = "paid")`.
+   The version the closing makes holds those lines. A list to browse
+   is `"mode": "live"` instead: asked at every read, kept nowhere.
    **For a triggered variable `write` says who may bring its value
    again** with `refresh` (ADR-0078): a value a decision stands on,
    such as a limit brought from a table, gets

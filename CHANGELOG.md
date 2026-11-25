@@ -28,6 +28,20 @@ Phase 8 started on 2026-11-25.
   door for agents tells an agent to send it, and each tool describes
   the member. The guide is
   [act only on the version you read](docs/manual/guides/act-on-what-you-read.md).
+- A list that is kept (ADR-0078, item 5, the fourth step of the
+  record). A triggered variable whose whole formula is a `QUERY` keeps
+  the answer with the document and with each of its versions, as
+  lines somebody entered: `"type": "rows"` with a `schema` that has
+  the columns of the `QUERY` and their types. It is brought at the
+  triggers the variable lists, `before:` a transition among them, with
+  the engine's eyes, one list for everybody, and brought again by a
+  `refresh`, by whoever its `write` right lets. A guard, a rule and a
+  computed variable read it as they read entered lines:
+  `ALL(settled, state = "paid")`, `SUM(settled.net)`. Its `read` right
+  says who sees it; a refusal `guard_false` shows it under `brought`;
+  a list longer than 10,000 rows is not kept and says
+  `too_many_elements`. The guide is
+  [keep the lines a decision stood on](docs/manual/guides/keep-the-lines-a-decision-stood-on.md).
 - A guard reads its document, and what it needs from outside is
   brought first (ADR-0078, item 4, the third step of the record). A
   triggered variable takes a fifth trigger, `before:<transition>`: it

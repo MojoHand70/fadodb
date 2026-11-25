@@ -132,10 +132,21 @@ type Header struct {
 }
 
 // ResultValue is one value a declared action returns: the returned value
-// it gives, as declared, and its formula over the reply.
+// it gives, as declared, and its formula over the reply. A returned list
+// of rows has a repeat in place of the formula (ADR-0085, item 3): Each
+// says where the list is in the body of the reply, and gives a formula
+// for each column over one element of it.
 type ResultValue struct {
 	Name    string
 	Formula *formula.Program
+	Each    *Repeat
+}
+
+// replyVariables are what the formulas over a reply read: its status
+// and its body.
+var replyVariables = []formula.Variable{
+	{Name: ReplyStatus, Type: formula.Scalar(formula.KindNumber)},
+	{Name: ReplyBody, Type: formula.Scalar(formula.KindJSON)},
 }
 
 // Declared reports whether the engine sends the action as a request.
@@ -444,8 +455,7 @@ func compileRequest(c *collector, a *ActionSpec, def *ActionDef) {
 	a.Request = req
 
 	// The reply: a status and a body, read by pure formulas.
-	reply, _ := formula.NewScope(formula.Variable{Name: ReplyStatus, Type: formula.Scalar(formula.KindNumber)},
-		formula.Variable{Name: ReplyBody, Type: formula.Scalar(formula.KindJSON)})
+	reply, _ := formula.NewScope(replyVariables...)
 	over := func(src string) (*formula.Program, error) {
 		return formula.Bind(src, reply, formula.BindOptions{Mode: formula.ModePure})
 	}
@@ -462,12 +472,27 @@ func compileRequest(c *collector, a *ActionSpec, def *ActionDef) {
 	}
 	if len(def.Result) > 0 {
 		names, err := orderedKeys(def.Result)
-		var formulas map[string]string
+		var values map[string]json.RawMessage
 		if err == nil {
-			err = json.Unmarshal(def.Result, &formulas)
+			err = json.Unmarshal(def.Result, &values)
+		}
+		formulas := map[string]string{}
+		repeats := map[string]json.RawMessage{}
+		for _, name := range names {
+			raw := bytes.TrimSpace(values[name])
+			switch {
+			case err != nil:
+			case len(raw) > 0 && raw[0] == '{':
+				repeats[name] = raw
+			default:
+				var text string
+				if err = json.Unmarshal(raw, &text); err == nil {
+					formulas[name] = text
+				}
+			}
 		}
 		if err != nil {
-			c.hint(CodeBadValue, "/result", "result is an object of formulas by returned value", `"result": {"ts": "JSONVALUE(BODY, \"ts\")"}`)
+			c.hint(CodeBadValue, "/result", "result is an object of formulas by returned value; a returned list of rows takes a repeat", `"result": {"ts": "JSONVALUE(BODY, \"ts\")"}`)
 			return
 		}
 		given := map[string]bool{}
@@ -483,6 +508,28 @@ func compileRequest(c *collector, a *ActionSpec, def *ActionDef) {
 				continue
 			}
 			given[upper(name)] = true
+			each, repeated := repeats[name]
+			switch {
+			case repeated && r.Type.Kind != formula.KindRows:
+				c.hint(CodeNotAllowed, path, "a repeat gives the rows of a returned list; "+r.Name+" is "+article(r.Type.String()), "give it a formula, written as text")
+				continue
+			case !repeated && r.Type.Kind == formula.KindRows:
+				c.hint(CodeBadValue, path, "the returned list "+r.Name+" takes a repeat over the reply, and no formula",
+					`"`+r.Name+`": {"each": "value", "as": "item", "row": {"sku": "JSONVALUE(item, \"sku\")"}}`)
+				continue
+			case repeated:
+				// A list in the answer (ADR-0085, item 3), written as the
+				// repeat of an inlet is: the path to the list in BODY, a
+				// name for one element, a formula for each column.
+				pure := c.pure
+				c.pure = true
+				rep := compileRepeat(c, path, each, &Variable{Name: r.Name, Type: r.Type}, replyVariables)
+				c.pure = pure
+				if rep != nil {
+					a.Result = append(a.Result, ResultValue{Name: r.Name, Each: rep})
+				}
+				continue
+			}
 			prog, err := over(formulas[name])
 			if err != nil {
 				c.formulaErr(path, err)
@@ -554,7 +601,8 @@ func DefineAction(data []byte) (*ActionSpec, Diagnostics) {
 }
 
 // compileParams reads the parameters of an action, or with params false
-// what it returns: each a name and a scalar type.
+// what it returns: each a name and a scalar type, or a list of rows with
+// the type of each column (ADR-0085, items 2 and 3).
 func compileParams(c *collector, path string, defs map[string]json.RawMessage, order []string, params bool) []Param {
 	what := "a parameter"
 	if !params {
@@ -601,9 +649,10 @@ func compileParams(c *collector, path string, defs map[string]json.RawMessage, o
 		case t.Kind == formula.KindNull:
 			c.add(CodeUnknownType, ppath, what+" is never blank by type")
 			continue
-		case t.Kind == formula.KindRows && params:
-			// A list that goes out in a request (ADR-0085, item 2): its
-			// columns, each of a scalar type.
+		case t.Kind == formula.KindRows:
+			// A list that goes out in a request, or comes back in an
+			// answer (ADR-0085, items 2 and 3): its columns, each of a
+			// scalar type.
 			fields, ok := rowsSchema(c, ppath, pd.Schema)
 			if !ok {
 				continue

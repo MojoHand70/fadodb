@@ -143,6 +143,10 @@ type IntoValue struct {
 	Variable *Variable
 	Formula  *formula.Program
 	Src      string
+	// Rows is the returned list of rows the variable takes, whole
+	// (ADR-0085, item 3), as the action declares it; "" for a value a
+	// formula gives. Formula is nil then.
+	Rows string
 }
 
 // The names an into formula reads beside the returned values (ADR-0045,
@@ -336,9 +340,21 @@ func compileInto(c *collector, path string, raw json.RawMessage, cls *Class, d R
 	if a.Spec != nil {
 		a.Returns = a.Spec.Returns
 	}
+	// A returned list of rows is no value a formula reads: a rows variable
+	// takes it whole, by its name (ADR-0085, item 3).
+	listed := func(src string) *Param {
+		for i := range a.Returns {
+			if r := &a.Returns[i]; r.Type.Kind == formula.KindRows && upper(r.Name) == upper(strings.TrimSpace(src)) {
+				return r
+			}
+		}
+		return nil
+	}
 	vars := make([]formula.Variable, 0, len(a.Returns)+2)
 	for _, r := range a.Returns {
-		vars = append(vars, formula.Variable{Name: r.Name, Type: r.Type})
+		if r.Type.Kind != formula.KindRows {
+			vars = append(vars, formula.Variable{Name: r.Name, Type: r.Type})
+		}
 	}
 	vars = append(vars, formula.Variable{Name: ResultOK, Type: formula.Scalar(formula.KindBool)}, formula.Variable{Name: ResultError, Type: formula.Scalar(formula.KindText)})
 	scope, err := formula.NewScope(vars...)
@@ -364,9 +380,15 @@ func compileInto(c *collector, path string, raw json.RawMessage, cls *Class, d R
 		vpath := path + "/" + name
 		v, ok := cls.Variable(name)
 		composite := ok && !v.Type.IsScalar()
+		list := listed(formulas[name])
 		if lenient {
 			// A stored class is taken as it is: what no longer fits is found
 			// when the result arrives.
+			if list != nil && ok && v.Type.Kind == formula.KindRows && !v.Computed && !seen[upper(name)] {
+				seen[upper(name)] = true
+				a.Into = append(a.Into, IntoValue{Name: v.Name, Variable: v, Rows: list.Name, Src: formulas[name]})
+				continue
+			}
 			if prog, err := formula.Bind(formulas[name], scope, formula.BindOptions{Mode: formula.ModePure}); err == nil && ok && !composite && !seen[upper(name)] {
 				seen[upper(name)] = true
 				a.Into = append(a.Into, IntoValue{Name: v.Name, Variable: v, Formula: prog, Src: formulas[name]})
@@ -382,6 +404,17 @@ func compileInto(c *collector, path string, raw json.RawMessage, cls *Class, d R
 			continue
 		case v.Computed:
 			c.hint(CodeNotAllowed, vpath, "a result is written to input variables; "+v.Name+" is computed", "its formula gives its value; write the result to an input and let the formula read it")
+			continue
+		case list != nil:
+			// The lines an action returns go into a rows variable that
+			// has every column of the returned list, of the same type.
+			if rowsInto(c, vpath, v, list) {
+				seen[upper(name)] = true
+				a.Into = append(a.Into, IntoValue{Name: v.Name, Variable: v, Rows: list.Name, Src: formulas[name]})
+			}
+			continue
+		case v.Type.Kind == formula.KindRows:
+			c.hint(CodeNotSupported, vpath, "a rows variable takes a list the action returns, by its name, and no formula", `declare the list under the action's returns, "lines": {"type": "rows", "schema": {...}}, and write "`+v.Name+`": "lines"`)
 			continue
 		case composite:
 			c.hint(CodeNotSupported, vpath, "a result cannot be written to "+v.Name+": no formula gives "+article(v.Type.String())+" in this build", "write to scalar variables")
@@ -400,6 +433,29 @@ func compileInto(c *collector, path string, raw json.RawMessage, cls *Class, d R
 		}
 		a.Into = append(a.Into, IntoValue{Name: v.Name, Variable: v, Formula: prog, Src: formulas[name]})
 	}
+}
+
+// rowsInto checks that a variable takes a returned list of rows whole
+// (ADR-0085, item 3): it is a rows variable, with every column the list
+// has, of the same type. A column of the variable the list lacks stays
+// blank in every line.
+func rowsInto(c *collector, path string, v *Variable, list *Param) bool {
+	if v.Type.Kind != formula.KindRows {
+		c.hint(CodeTypeMismatch, path, "the returned list "+list.Name+" goes into a rows variable, and "+v.Name+" is "+article(v.Type.String()), "name a rows variable of the class with the columns of the list")
+		return false
+	}
+	for _, col := range list.Type.Fields() {
+		have, ok := v.Type.Field(col.Name)
+		switch {
+		case !ok:
+			c.hint(CodeTypeMismatch, path, "the returned list "+list.Name+" has the column "+col.Name+", and "+v.Name+" has none of that name", "its columns are "+strings.Join(v.Type.FieldNames(), ", "))
+			return false
+		case !have.Type.Equal(col.Type):
+			c.hint(CodeTypeMismatch, path, "the column "+col.Name+" of the returned list "+list.Name+" is "+article(col.Type.String())+", and in "+v.Name+" it is "+article(have.Type.String()), "the two are of one type")
+			return false
+		}
+	}
+	return true
 }
 
 // neverStored says why the result of an action of the rule could never

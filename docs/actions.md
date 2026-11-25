@@ -319,6 +319,108 @@ engine sends:
 - **`preview_action` shows the whole body**, every line, with the
   secrets masked.
 
+## A list in an answer
+
+The warehouse changes a line of the sales order in Business Central,
+and the order in FadoDB has to follow. An action may return a list of
+rows, read out of the reply, and a rule writes it into a `rows`
+variable of its document, whole.
+
+<!-- a list back: the action -->
+```json
+{
+  "name": "bc.sales_order_lines",
+  "label": "Read the lines of a sales order in Business Central",
+  "params": {"bc_id": {"type": "text", "required": true}},
+  "returns": {"lines": {"type": "rows", "schema": {"sku": "text", "qty": "int"}}},
+  "connection": {"name": "bc", "secrets": ["token"]},
+  "request": {
+    "method": "GET",
+    "url": "\"https://bc.example.com/api/v2.0/salesOrders(\" & bc_id & \")/salesOrderLines\"",
+    "headers": {"Authorization": "\"Bearer \" & SECRET(\"token\")"}
+  },
+  "result": {
+    "lines": {
+      "each": "value",
+      "as": "l",
+      "row": {
+        "sku": "JSONVALUE(l, \"lineObjectNumber\")",
+        "qty": "DECIMAL(VALUE(JSONVALUE(l, \"quantity\")), 0)"
+      }
+    }
+  }
+}
+```
+
+The class names the returned list under `into`:
+
+<!-- a list back: the class -->
+```json
+{
+  "name": "BookedOrder",
+  "title": "number",
+  "variables": {
+    "number":   {"type": "text", "required": true},
+    "bc_id":    {"type": "text"},
+    "lines":    {"type": "rows", "schema": {"sku": "text", "qty": "int"}},
+    "bc_error": {"type": "text"}
+  },
+  "states": {"initial": "booked", "list": ["booked", "checking"]},
+  "access": {"read": "INGROUP(\"orders\")", "create": "INGROUP(\"orders\")", "update": "INGROUP(\"orders\")", "delete": "FALSE"},
+  "transitions": [{"name": "check", "from": "booked", "to": "checking"},
+                  {"name": "checked", "from": "checking", "to": "booked"}],
+  "rules": [
+    {"on": "enter", "state": "checking",
+     "do": [{"action": "bc.sales_order_lines",
+             "args": {"bc_id": "bc_id"},
+             "into": {"lines": "lines", "bc_error": "ERROR"}}]}
+  ]
+}
+```
+
+Olga booked order 1001 with a sofa and four chairs; the warehouse had
+three chairs. When she moves the order along `check`, Business Central
+answers:
+
+<!-- a list back: the reply -->
+```jsonc
+{"value": [
+  {"lineObjectNumber": "SOFA-3", "quantity": 1},
+  {"lineObjectNumber": "CHAIR-1", "quantity": 3}
+]}
+```
+
+and the order has a sofa and three chairs.
+
+<!-- a list back: the parts of a repeat -->
+| Part | What it says |
+|---|---|
+| `each` | where the list is in `BODY`: a path, written as `JSONVALUE` takes one |
+| `as` | the name of one element, a `json` value inside `row` |
+| `row` | a formula for each column of the returned list, typed against the column when the action is defined. It reads the element, and `STATUS` and `BODY` too |
+
+- **A returned list says its columns** under `schema`, as a `rows`
+  parameter does.
+- **`into` gives a `rows` variable the name of the returned list.** The
+  variable has every column the list has, of the same type, or the
+  class is refused with `type_mismatch`. A column of the variable the
+  list lacks is blank in every line.
+- **The lines are written whole**: the lines the order had are
+  replaced.
+- **An answer without the list, or with an empty one, leaves the order
+  without lines.** Ask with `ok` for what an answer must hold when
+  that would be wrong.
+- **A pull that did not come through leaves the lines as they are.**
+  When the receiver refuses, or the answer does not read, `ERROR` says
+  so and the lines of the order stay. An answer does not read when the
+  path leads to something that is no list, when a formula fails on one
+  element, or when it holds more than 10,000 rows; the code is
+  `bad_result`, and the words name the element.
+- **One request, one answer.** A list spread over several pages of
+  answers is not read.
+- **A Go function returns a list** as a list of objects, each column by
+  its name.
+
 ## Try it before a document depends on it
 
 | Call | What it does |

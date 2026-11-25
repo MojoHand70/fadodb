@@ -70,6 +70,19 @@ Phase 8 started on 2026-11-25.
   masked. Building the request for a hundred lines takes 0.14 ms. Not
   built: a list in an answer (item 3), and a list that is worked out
   when it is read given to an action.
+- A list in an answer becomes the lines of a document (ADR-0085, item
+  3, the last of its three steps). A value an action returns may be of
+  the type `rows`, with a `schema` of its columns, and its `result` is
+  a repeat over the reply: `{"each": "value", "as": "l", "row": {"sku":
+  "JSONVALUE(l, \"lineObjectNumber\")"}}`. A rule writes it to a `rows`
+  variable of its document, whole: `"into": {"lines": "lines"}`. So an
+  order follows what the warehouse changed in the accounting system.
+  When the class is defined the engine checks that the variable has
+  every column the list has, of the same type. A pull that did not come
+  through, a refusal or an answer that does not read, leaves the lines
+  as they are and `ERROR` says why. A function of the host program
+  returns such a list as a list of objects. Not built: a list spread
+  over several pages of answers.
 - The engine makes the index a lookup or a list is keyed by (ADR-0075,
   items 2, 4 and 7), which completes the record. A `LOOKUP` or a list
   whose condition compares a variable of another class for equality

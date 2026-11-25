@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"sync/atomic"
 
 	"github.com/MojoHand70/fadodb/internal/formula"
 )
@@ -65,6 +66,55 @@ type Class struct {
 	// byCaller are the variables the read rule compares with the
 	// caller, by upper-cased name; nil until they are asked for.
 	byCaller map[string]bool
+	// Keys are the indexes the questions of the class ask of the
+	// classes they read, itself among them (ADR-0075, item 2): for each
+	// LOOKUP and each list over the documents of a class, the variable
+	// its condition compares for equality with a value of the document
+	// the formula belongs to, when the class read keeps no index on it
+	// by itself. Whoever holds the classes makes those indexes, and
+	// drops one when no definition asks for it any more (item 4).
+	Keys []Key
+	// asked are the variables of this class that the questions of the
+	// classes defined now ask an index for, by their names as the class
+	// writes them. It is set by whoever holds the classes, and read
+	// without a lock.
+	asked atomic.Pointer[map[string]bool]
+}
+
+// Key is an index a question of one class asks of another: on a
+// variable of the documents it reads. At is the place of the first
+// formula that asks for it.
+type Key struct {
+	Class, Column string
+	At            string
+}
+
+// Ask sets the variables of the class that questions of the classes
+// defined now ask an index for, each named as the class writes it.
+func (c *Class) Ask(variables []string) {
+	if len(variables) == 0 {
+		c.asked.Store(nil)
+		return
+	}
+	asked := make(map[string]bool, len(variables))
+	for _, name := range variables {
+		asked[name] = true
+	}
+	c.asked.Store(&asked)
+}
+
+// Asked says a question of a class defined now asks an index for the
+// variable, named as the class writes it (ADR-0075, item 2). It is
+// asked for every column of every filter, so it allocates nothing.
+func (c *Class) Asked(variable string) bool {
+	asked := c.asked.Load()
+	return asked != nil && (*asked)[variable]
+}
+
+// keyable says an index can be kept on the variable: it is kept, and it
+// is one value, no object and no json.
+func keyable(v *Variable) bool {
+	return !v.Live() && v.Type.IsScalar() && v.Type.Kind != formula.KindNull && v.Type.Kind != formula.KindJSON && v.Type.Kind != formula.KindMoney
 }
 
 // systemFields are the system columns of a class as a source reads them.
@@ -699,6 +749,7 @@ func CompileIn(def *Definition, env Env) (*Class, Diagnostics) {
 	}
 	cls.Reads = c.reads
 	cls.Notes = append(append(leftOut(def), c.wide...), noDescription(def)...)
+	cls.Keys = c.keys
 	return cls, nil
 }
 

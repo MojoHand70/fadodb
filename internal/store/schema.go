@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"sort"
 	"strings"
 
 	"github.com/MojoHand70/fadodb/internal/formula"
@@ -219,12 +220,46 @@ func (c *class) indexes() []index {
 		{c.table + "_created_at", alone("created_at")},
 		{c.table + "_updated_at", alone("updated_at")},
 	}
+	kept := map[string]bool{}
 	for _, col := range c.cls.Columns {
 		if col.Index {
+			kept[col.Name] = true
 			out = append(out, index{c.table + "_" + col.Name, made(col.Name)})
 		}
 	}
+	// What a question of another definition is keyed by (item 2): the
+	// variable still has to be one of the class, kept as one value.
+	for _, name := range c.asked {
+		if v, ok := c.cls.Variable(name); ok && !kept[v.Name] && !v.Live() && v.Type.IsScalar() {
+			out = append(out, index{c.table + "_" + v.Name, made(v.Name)})
+		}
+	}
 	return out
+}
+
+// reask works out, from the classes defined now, which variables of
+// each the questions of the others ask an index for, and tells each
+// class (ADR-0075, items 2 and 4). Nothing of it is stored: the
+// definitions say it, whenever they are read. The caller holds cmu.
+func (s *Store) reask() {
+	asked := map[string]map[string]bool{}
+	for _, c := range s.classes {
+		for _, k := range c.cls.Keys {
+			key := strings.ToUpper(k.Class)
+			if asked[key] == nil {
+				asked[key] = map[string]bool{}
+			}
+			asked[key][k.Column] = true
+		}
+	}
+	for key, c := range s.classes {
+		c.asked = c.asked[:0]
+		for col := range asked[key] {
+			c.asked = append(c.asked, col)
+		}
+		sort.Strings(c.asked)
+		c.cls.Ask(c.asked)
+	}
 }
 
 // tableDDL makes a child table.
@@ -340,10 +375,11 @@ func (c *class) viewNames() []string {
 }
 
 // keepIndexes brings the indexes of every class table to what its class
-// says (ADR-0075, item 2), when the database is opened: it makes the
-// ones that are missing, and makes again the ones an earlier engine laid
-// out another way. A database made by this engine has them all, and
-// nothing is written. One brought from an earlier schema gets them
+// and the questions of the other classes say (ADR-0075, items 2 and 4),
+// when the database is opened and after a definition is taken: it makes
+// the ones that are missing, makes again the ones an earlier engine laid
+// out another way, and drops the ones nothing asks for any more. A
+// database that has them as they should be is not written to. One brought from an earlier schema gets them
 // here, and the opening takes the time its size asks for: seconds for
 // ten million documents, minutes for a hundred million (item 7).
 func (s *Store) keepIndexes(ctx context.Context) error {
@@ -368,12 +404,21 @@ func (s *Store) keepIndexes(ctx context.Context) error {
 	}
 	var ddl []string
 	for _, c := range s.classes {
+		wanted := map[string]bool{}
 		for _, ix := range c.indexes() {
+			wanted[ix.name] = true
 			switch was, had := have[c.table][ix.name]; {
 			case !had:
 				ddl = append(ddl, ix.ddl)
 			case was != ix.ddl:
 				ddl = append(ddl, "DROP INDEX "+quote(ix.name), ix.ddl)
+			}
+		}
+		// An index of the engine's own that nothing asks for any more
+		// (item 4): it is named after the table, as every one it makes.
+		for name := range have[c.table] {
+			if !wanted[name] && strings.HasPrefix(name, c.table+"_") {
+				ddl = append(ddl, "DROP INDEX "+quote(name))
 			}
 		}
 	}

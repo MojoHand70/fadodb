@@ -168,6 +168,11 @@ const (
 	// class each time it is worked out (ADR-0075, item 5). On a small
 	// class that is harmless; the note says the mend.
 	CodeReadsAll = "reads_all"
+	// CodeBuildsIndex: a note and no refusal, of a check before anything
+	// is written. Taking the definition would make an index on a class
+	// that already holds many documents, and the commits of the
+	// database wait while it is built (ADR-0075, item 7).
+	CodeBuildsIndex = "builds_index"
 	// CodeUnknownApp: a class names an app the database does not have
 	// (ADR-0077).
 	CodeUnknownApp = "unknown_app"
@@ -199,8 +204,10 @@ type collector struct {
 	listsOf  *Class
 	listsFor *Variable
 	// wide are the notes of the questions the class declares that no
-	// index serves (ADR-0075, item 5).
+	// index serves (ADR-0075, item 5), and keys the indexes its
+	// questions ask of the classes they read (item 2).
 	wide Diagnostics
+	keys []Key
 }
 
 // liveRead says a formula reads a live variable. A live value is worked
@@ -303,6 +310,23 @@ func indexedIn(cls *Class, column string) bool {
 	return ok && cls.Keyed(v)
 }
 
+// ask notes that a question of the class being compiled is keyed by a
+// variable of a class it reads, so that the engine keeps an index on it
+// (ADR-0075, item 2). It answers false for what no index can be kept on.
+func (c *collector) ask(src *Class, column, path string) bool {
+	v, ok := src.Variable(column)
+	if !ok || !keyable(v) {
+		return false
+	}
+	for _, k := range c.keys {
+		if k.Class == src.Name && k.Column == v.Name {
+			return true
+		}
+	}
+	c.keys = append(c.keys, Key{Class: src.Name, Column: v.Name, At: path})
+	return true
+}
+
 // asks notes each LOOKUP of a formula over the documents of a class
 // that no index of that class serves (ADR-0075, item 5): its condition
 // compares no indexed variable, for equality, with a value of the
@@ -322,10 +346,13 @@ func (c *collector) asks(path string, prog *formula.Program) {
 		switch {
 		case q.Key != nil && indexedIn(src, q.IndexColumn):
 			continue
+		case q.Key != nil && c.ask(src, q.IndexColumn, path):
+			// the engine makes the index for it
+			continue
 		case q.Key != nil:
 			c.wide = append(c.wide, Diagnostic{Code: CodeReadsAll, Path: path, Pos: -1, Note: true,
-				Message: "this LOOKUP reads every document of " + src.Name + " each time it is worked out: " + q.IndexColumn + ", which its condition compares, has no index",
-				Hint:    `say "index": true on ` + q.IndexColumn + " of " + src.Name + ", or compare a pointer: the engine keeps an index on every one"})
+				Message: "this LOOKUP reads every document of " + src.Name + " each time it is worked out: " + q.IndexColumn + ", which its condition compares, is a value no index can be kept on",
+				Hint:    "compare a variable that is one plain value, a text, a number, a date or a pointer"})
 		default:
 			c.wide = append(c.wide, Diagnostic{Code: CodeReadsAll, Path: path, Pos: -1, Note: true,
 				Message: "this LOOKUP reads every document of " + src.Name + " each time it is worked out: its condition compares no variable of " + src.Name + " for equality with a value of this document",
@@ -366,7 +393,13 @@ func (c *collector) asksList(path string, src *Class, cond formula.Node) {
 						column = col.Name
 					}
 				}
-				if column != "" && indexedIn(src, column) && !namesColumn(side[1]) {
+				switch {
+				case column == "" || namesColumn(side[1]):
+				case indexedIn(src, column):
+					served = true
+				case ofDocument(side[1]) && c.ask(src, column, path):
+					// A list keyed by a value of its document: the
+					// engine makes the index for it (item 2).
 					served = true
 				}
 			}
@@ -378,6 +411,19 @@ func (c *collector) asksList(path string, src *Class, cond formula.Node) {
 			Message: "this list reads every document of " + src.Name + " until its page is full: its condition compares no indexed variable of " + src.Name + " for equality with a value",
 			Hint:    "begin the condition with such a comparison, as order = REF(): the engine keeps an index on every pointer, and on a variable that says \"index\": true"})
 	}
+}
+
+// ofDocument says an operand of the condition of a list is a value of
+// the document the list belongs to: the pointer to it, REF(), or one of
+// its variables, THIS.name.
+func ofDocument(n formula.Node) bool {
+	switch n := n.(type) {
+	case *formula.ThisRef:
+		return true
+	case *formula.Call:
+		return n.Name == "REF" && len(n.Args) == 0
+	}
+	return false
 }
 
 // namesColumn says an operand of the condition of a list reads the

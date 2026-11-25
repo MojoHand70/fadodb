@@ -246,7 +246,7 @@ func CompileOn(f Filter, on *On, cls *model.Class, sources formula.Sources, p Pr
 		// class was defined: REF() in it is the document the list is
 		// read on, of whatever class that is.
 		opts.Class, opts.Loose = "", true
-		bound, notBlank = on.bound(quoted, d, &given), func(n formula.Node) bool { return isRef(n) || isNamed(n) || p.named(n) }
+		bound, notBlank = on.bound(quoted, d, &given), func(n formula.Node) bool { return isRef(n) || isNamed(n) || p.named(n) || on.holds(n) }
 	} else if strings.TrimSpace(f.Where) != "" {
 		if node, err = formula.Parse(f.Where); err != nil {
 			return nil, formulaError(err)
@@ -654,6 +654,19 @@ func (on *On) bound(column func(formula.Slot) string, d formula.Dialect, given *
 	}
 }
 
+// holds says a node is THIS.name, a variable of the document a list is
+// read on, and that the document holds a value for it: the value is
+// handed to the statement, so whether it is blank is known when the
+// list is read.
+func (on *On) holds(n formula.Node) bool {
+	this, ok := n.(*formula.ThisRef)
+	if !ok || on.Value == nil {
+		return false
+	}
+	v, ok := on.Value(this.Name)
+	return ok && !v.IsBlank() && v.Str() != ""
+}
+
 // isRef says a node is REF(), the pointer to the document a list is read
 // on, which is never blank.
 func isRef(n formula.Node) bool {
@@ -992,7 +1005,9 @@ func scopeOf(cls *model.Class) (*formula.Scope, map[string]column, error) {
 				continue
 			}
 		}
-		cols[strings.ToUpper(c.Path)] = column{name: c.Name, typ: c.Type, indexed: c.Index}
+		// An index the class keeps by itself, or one a question of
+		// another class asks for (ADR-0075, item 2).
+		cols[strings.ToUpper(c.Path)] = column{name: c.Name, typ: c.Type, indexed: c.Index || c.Path == c.Variable && cls.Asked(c.Variable)}
 	}
 	scope, err := formula.NewScope(vars...)
 	if err != nil {

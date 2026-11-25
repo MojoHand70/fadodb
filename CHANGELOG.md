@@ -42,6 +42,17 @@ Phase 8 started on 2026-11-25.
   0.32 ms (`BenchmarkDraftsOfOneOrder`, the test the record sets).
   Not built: an index for the key of a `LOOKUP` that is no pointer,
   which still wants `"index": true`.
+- The engine makes the index a lookup or a list is keyed by (ADR-0075,
+  items 2, 4 and 7), which completes the record. A `LOOKUP` or a list
+  whose condition compares a variable of another class for equality
+  with a value of its own document,
+  `LOOKUP(Purchase, COUNT(id), number = THIS.purchase)`, gets an index
+  on that variable when the class that asks is defined, and the index
+  is dropped when no definition asks for it any more. Nobody writes
+  `"index": true` for it, and such a question is no longer noted with
+  `reads_all`. A check, `validate_class` or `fadodb class check --db`,
+  says before anything is written what a definition would build on a
+  class of 100,000 documents or more: a note, code `builds_index`.
 - A free question that no index serves is stopped (ADR-0075, item 6).
   The `where` of a `query` or a `count` that compares no indexed
   variable reads the documents of its class one by one. It now runs

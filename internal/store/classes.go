@@ -19,6 +19,10 @@ type class struct {
 	cls            *model.Class
 	json           []byte
 	table, history string
+	// asked are the variables of the class that questions of the
+	// classes defined now ask an index for (ADR-0075, item 2), in the
+	// order of their names.
+	asked []string
 	// nameArg is the class's name boxed once, for the statements of the
 	// write step.
 	nameArg any
@@ -683,7 +687,7 @@ func (s *Store) Validate(data []byte) model.Diagnostics {
 	s.cmu.RLock()
 	defer s.cmu.RUnlock()
 	found, diags := s.compileClasses(context.Background(), [][]byte{data}, false)
-	return withNotes(found, diags, false)
+	return s.withBuilds(found, withNotes(found, diags, false), false)
 }
 
 // withNotes is the findings of a definition call: what refuses it, or,
@@ -714,7 +718,86 @@ func (s *Store) ValidateClasses(datas [][]byte) model.Diagnostics {
 	s.cmu.RLock()
 	defer s.cmu.RUnlock()
 	found, diags := s.compileClasses(context.Background(), datas, true)
-	return withNotes(found, diags, true)
+	return s.withBuilds(found, withNotes(found, diags, true), true)
+}
+
+// buildsFrom is how many documents a class holds before a check says
+// that a definition would build an index over them: below it the index
+// is made in a moment.
+var buildsFrom int64 = 100000
+
+// withBuilds adds, to the findings of a check that refuses nothing,
+// what taking the definitions would build (ADR-0075, item 7): each
+// index on a class that already holds many documents, on which the
+// commits of the database wait while it is made. A designer chooses the
+// hour. The caller holds cmu.
+func (s *Store) withBuilds(found []*pending, diags model.Diagnostics, set bool) model.Diagnostics {
+	if diags.Refuses() {
+		return diags
+	}
+	ctx := context.Background()
+	about := func(c *class) int64 {
+		var n sql.NullInt64
+		if err := s.db.QueryRowContext(ctx, "SELECT max(rowid) FROM "+quote(c.table)).Scan(&n); err != nil {
+			return 0
+		}
+		return n.Int64
+	}
+	said := map[string]bool{}
+	note := func(i int, path string, on *class, column string) {
+		n := about(on)
+		if n < buildsFrom || said[on.cls.Name+" "+column] {
+			return
+		}
+		said[on.cls.Name+" "+column] = true
+		if set {
+			path = "/" + itoa(i) + path
+		}
+		diags = append(diags, model.Diagnostic{Code: model.CodeBuildsIndex, Path: path, Pos: -1, Note: true,
+			Message: "taking this definition makes an index on " + column + " of " + on.cls.Name + ", which holds about " + grouped(n) + " documents: the commits of the database wait while it is built",
+			Hint:    "choose the hour: an index over ten million documents takes seconds, over a hundred million minutes"})
+	}
+	for i, p := range found {
+		if p == nil || p.cls == nil || p.same {
+			continue
+		}
+		// The indexes of the class itself, when it already has documents.
+		if p.old != nil {
+			have := map[string]bool{}
+			for _, ix := range p.old.indexes() {
+				have[ix.name] = true
+			}
+			for _, col := range p.cls.Columns {
+				if col.Index && !have[p.old.table+"_"+col.Name] {
+					note(i, "/variables/"+col.Variable, p.old, col.Name)
+				}
+			}
+		}
+		// The indexes its questions ask of the classes they read.
+		for _, k := range p.cls.Keys {
+			src, ok := s.classes[strings.ToUpper(k.Class)]
+			if !ok {
+				continue
+			}
+			have := false
+			for _, ix := range src.indexes() {
+				have = have || ix.name == src.table+"_"+k.Column
+			}
+			if !have {
+				note(i, k.At, src, k.Column)
+			}
+		}
+	}
+	return diags
+}
+
+// grouped writes a count with its thousands apart: 1,000,000.
+func grouped(n int64) string {
+	s := strconv.FormatInt(n, 10)
+	for i := len(s) - 3; i > 0; i -= 3 {
+		s = s[:i] + "," + s[i:]
+	}
+	return s
 }
 
 // pending is one class of a definition call: what was sent, what it
@@ -942,6 +1025,14 @@ func (s *Store) defineClasses(ctx context.Context, datas [][]byte, set bool, by 
 		if err := s.adoptClass(ctx, p, fresh[i]); err != nil {
 			return nil, err
 		}
+	}
+	// The indexes the questions of the classes ask of each other
+	// (ADR-0075, items 2 and 4): one a new question asks for is made
+	// now, and the commits of the database wait meanwhile (item 7); one
+	// no definition asks for any more is dropped.
+	s.reask()
+	if err := s.keepIndexes(ctx); err != nil {
+		return nil, err
 	}
 	return out, nil
 }

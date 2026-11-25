@@ -473,9 +473,10 @@ the indexes the engine keeps by itself on every pointer, on the state
 and on the two moments of a document, the note the engine gives when
 a class is defined, on each question of it that no index serves, and
 the stop of a free question that no index serves, after five
-seconds, with the variable an index is needed on; counts, sums and
-grouping in a `QUERY`, and an index for the key of a lookup that is
-no pointer, which are not. Then the lists in and out of messages and requests, ADR-0085.
+seconds, with the variable an index is needed on, and the index for
+the key of a lookup or a list that is no pointer, made when the class
+that asks is defined: with these ADR-0075 is built. Counts, sums and
+grouping in a `QUERY` are not; they come with the analytical engine. Then the lists in and out of messages and requests, ADR-0085.
 After these comes the analytical engine itself: DuckDB beside the
 documents, fed from the commits, for the question that reads
 everything; the mining views; a value that follows its source or the

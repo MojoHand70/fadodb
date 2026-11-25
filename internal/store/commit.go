@@ -671,6 +671,11 @@ func (s *Store) run(ctx context.Context, cmd command, now time.Time) (*result, e
 			if refreshes, e = c.refreshTargets(cmd.variables); e != nil {
 				return nil, e
 			}
+			// Who may bring each of them again is its write right, in the
+			// state the document is in (ADR-0078, item 3).
+			if refreshes, e = s.checkBrings(c, &cmd, after, refreshes, evalCtx); e != nil {
+				return nil, e
+			}
 		}
 		if err := s.checkWrites(c, &cmd, after, evalCtx, res); err != nil {
 			return nil, err

@@ -453,7 +453,9 @@ comes in four steps: the version a command saw, which is built
 (`version` on `set`, `reset`, `refresh`, `transition` and `delete`,
 `versions` on `transition_many`, the refusal `stale_version`, and
 `seen_version` on the event; engine schema 14, to which a database of
-v0.7.0 is brought when it is opened); who may bring a value again; a
+v0.7.0 is brought when it is opened); who may bring a value again,
+which is built too (the `write` right of a triggered variable is asked
+of whoever sends the `refresh`); a
 trigger `before:` a transition, with a guard that reads the document
 alone; and a list that is kept. Then what ADR-0076 and ADR-0075 leave:
 a table as the source of a list, counts, sums and grouping in a

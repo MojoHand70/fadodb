@@ -157,6 +157,14 @@ right it is asking for:
 `write` and `read` are looked up separately. A place that gives only
 `write` says nothing about `read`, and the search for `read` goes on.
 
+**For a triggered variable, `write` says who may bring its value
+again.** Nobody types such a value: it is brought at the moments the
+class names, and again by a `refresh`. The `write` right of the
+variable is asked of whoever sends the refresh, in the state the
+document is in. With no line for it, whoever may read the document may
+refresh it. See
+[Say who may bring a value again](../guides/who-may-bring-a-value-again.md).
+
 **A line for a state wins over the line for `*`, even for a variable
 that `*` names.** The class above has to say twice who writes
 `audit_note`. Under `*` alone, place 4, the line of `INAPPROVAL` for

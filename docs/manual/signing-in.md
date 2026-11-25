@@ -152,6 +152,15 @@ her to a new phone as Apple's and Google's do. She adds one on the
 device she is using, or on her phone with the code the page shows, and
 removes any.
 
+A synced passkey lives in a password manager, on each of her devices,
+and is named after it: "Google Password Manager", "1Password",
+"Bitwarden", not "Olga's Windows PC". The browser says which manager
+made it, by the passkey's AAGUID, and the server looks the AAGUID up in
+a table of its own, of the 67 makers the community list of passkey
+providers held in November 2026. A browser that does not say, as
+Safari does not, leaves the name of the device, and so does a passkey
+that stays on its device, such as Windows Hello's.
+
 <!-- passkeys -->
 | What happens | Answer |
 |---|---|

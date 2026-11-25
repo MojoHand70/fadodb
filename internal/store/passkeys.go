@@ -496,6 +496,13 @@ func newPasskey(user, name, with string, m *webauthn.Made) (*Passkey, error) {
 	if err != nil {
 		return nil, &Error{Code: CodeStorage, Message: "name the passkey: " + err.Error()}
 	}
+	// A synced passkey lives in a password manager, on each device of
+	// the person's: it is named after the manager, when its AAGUID says
+	// which (the owner's ruling, 2026-11-25), and not after the device
+	// it was made on.
+	if m.Synced && m.Maker != "" {
+		name = m.Maker
+	}
 	return &Passkey{ID: id, User: user, Name: name, Synced: m.Synced, AddedWith: with}, nil
 }
 

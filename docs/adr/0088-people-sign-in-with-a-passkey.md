@@ -414,3 +414,17 @@ by me, each the owner's to strike:
 27. **The invitation ends when the person signs in with it** (the
     owner's ruling, 2026-11-25, in his words): signing in with a passkey
     the device holds uses the invitation, as adding a passkey does.
+28. **A synced passkey is named after its password manager** (the
+    owner's ruling, 2026-11-25: "name it after the password manager").
+    His synced passkey was listed as "Krzysztof's Windows PC", the
+    computer he made it on, though his password manager kept it on his
+    phone too. When a passkey is made, the browser says its maker's
+    AAGUID, which Chrome does under attestation `none`. A synced passkey
+    whose AAGUID the table of makers holds is named after the maker,
+    whatever name was given. The table is the engine's own copy of the
+    community list `passkeydeveloper/passkey-authenticator-aaguids`, as
+    it stood on 2026-11-25, 67 makers: the list takes nothing new since
+    2026-11-01 and answers nothing from 2027-01-06. The AAGUID itself is
+    not kept. Safari says sixteen zeros, and such a passkey keeps the
+    name given. Not ruled: the name when the maker is unknown, and the
+    passkeys made before, which are named as they were.

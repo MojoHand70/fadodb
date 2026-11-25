@@ -295,9 +295,11 @@ func TestTriggered_EngineSchema(t *testing.T) {
 	// reads made it 12 (ADR-0067); the table of the apps, whose name no
 	// class may take, made it 13 (ADR-0077). Who removed a table or words
 	// is a row of the log of definitions, which every database of schema
-	// 13 has, and left it 13 (ADR-0083).
-	if engineSchema != 13 {
-		t.Fatalf("the engine schema is %d, want 13", engineSchema)
+	// 13 has, and left it 13 (ADR-0083). The version a command saw, on
+	// its event, made it 14 (ADR-0078, item 2), and a database of schema
+	// 13 is brought to it when it is opened.
+	if engineSchema != 14 {
+		t.Fatalf("the engine schema is %d, want 14", engineSchema)
 	}
 	if _, err := s.writer.ExecContext(context.Background(), "UPDATE schema_version SET version = 3"); err != nil {
 		t.Fatal(err)

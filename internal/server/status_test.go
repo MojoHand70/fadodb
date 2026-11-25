@@ -20,7 +20,7 @@ var statuses = map[int][]string{
 	401: {"unauthenticated", "sign_in_refused"},
 	403: {"forbidden", "reason_required"},
 	404: {"unknown_command", "unknown_class", "unknown_document", "unknown_table", "unknown_schema", "unknown_action", "unknown_blob", "unknown_row", "unknown_user", "unknown_group", "unknown_key", "unknown_inlet", "unknown_session", "unknown_client", "unknown_grant", "unknown_app", "unknown_invitation", "unknown_passkey"},
-	409: {"key_reused", "duplicate", "wrong_state", "terminal", "guard_false"},
+	409: {"key_reused", "duplicate", "wrong_state", "terminal", "guard_false", "stale_version"},
 	413: {"too_large", "blob_too_large"},
 	499: {"caller_left"},
 	429: {"too_many_attempts"},

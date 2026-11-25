@@ -440,7 +440,7 @@ func (s *Store) logSince(ctx context.Context, place int64) ([]*logEntry, error) 
 func (s *Store) readLog(ctx context.Context, place int64) ([]*logEntry, error) {
 	s.tail.reads.Add(1)
 	rows, err := s.db.QueryContext(ctx, "SELECT e.rowid, e.event_id, e.class, e.doc_id, e.kind, e.name, e.from_state, e.to_state, e.actor_id, e.before_version, e.after_version, e.cause_event_id, e.command_key, e.business_date, e.ts,"+
-		" (SELECT o.error_code FROM outbox o WHERE o.outcome_event = e.event_id), e.origin, e.actor_kind, e.actor_for, e.override, e.reason"+
+		" (SELECT o.error_code FROM outbox o WHERE o.outcome_event = e.event_id), e.origin, e.actor_kind, e.actor_for, e.override, e.reason, e.seen_version"+
 		" FROM events e WHERE e.rowid > ? ORDER BY e.rowid LIMIT ?", place, logBatch)
 	if err != nil {
 		return nil, storageErr("read the log", err)
@@ -451,11 +451,12 @@ func (s *Store) readLog(ctx context.Context, place int64) ([]*logEntry, error) {
 		e := &logEntry{}
 		ev := &e.ev
 		var name, from, to, actor, cause, key, code, kind, acts, override, reason sql.NullString
-		var before, after, origin sql.NullInt64
+		var before, after, origin, seen sql.NullInt64
 		var day int64
-		if err := rows.Scan(&e.rowid, &ev.ID, &ev.Class, &ev.DocID, &ev.Kind, &name, &from, &to, &actor, &before, &after, &cause, &key, &day, &ev.TS, &code, &origin, &kind, &acts, &override, &reason); err != nil {
+		if err := rows.Scan(&e.rowid, &ev.ID, &ev.Class, &ev.DocID, &ev.Kind, &name, &from, &to, &actor, &before, &after, &cause, &key, &day, &ev.TS, &code, &origin, &kind, &acts, &override, &reason, &seen); err != nil {
 			return nil, storageErr("read the log", err)
 		}
+		ev.SeenVersion = seen.Int64
 		ev.ActorKind, ev.ActorFor = kind.String, acts.String
 		ev.Override, ev.Reason = override.String, reason.String
 		ev.Name, ev.FromState, ev.ToState, ev.ActorID, ev.CauseEventID, ev.CommandKey = name.String, from.String, to.String, actor.String, cause.String, key.String

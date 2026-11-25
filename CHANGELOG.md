@@ -6,6 +6,8 @@ All notable changes to FadoDB are recorded here. The format follows
 
 ## [Unreleased]
 
+Phase 8 started on 2026-11-25.
+
 ### Added
 
 - The code for the phone (ADR-0088, its third step). On a computer,
@@ -21,6 +23,32 @@ All notable changes to FadoDB are recorded here. The format follows
   `internal/qrcode`, Go's standard library and code of its own; a page
   that shows one lets its script ask the server alone how it stands
   (`connect-src 'self'`).
+- A command says which version of a document its sender read
+  (ADR-0078, item 2, the first step of the record). `set`, `reset`,
+  `refresh`, `transition` and `delete` take the member `version`, in Go
+  the option `Saw`; when the document is at another version the command
+  is refused with the new code `stale_version`, status 409, which names
+  the version the document is at, and nothing is written. `preview` and
+  `preview_delete` take it and answer the refusal the command would
+  get. `transition_many` and `preview_many` take `versions`, one for
+  each id and `null` for none, in Go `SawEach`: a document that moved
+  on is refused among the outcomes, and the others move. The event of a
+  command that was taken keeps the version as `seen_version`, in the
+  answer of `events`, on the stream of changes and in the view
+  `<Class>_events`; what the engine does by itself names none. A
+  command without the member acts on the document as it is, and a
+  command sent again with its key is answered as the first was. The
+  door for agents tells an agent to send it, and each tool describes
+  the member. The guide is
+  [act only on the version you read](docs/manual/guides/act-on-what-you-read.md).
+- The engine schema is 14, for `seen_version` on the events. **A
+  database that v0.7.0 made, of schema 13, is brought to it when it is
+  opened**, in the transaction that opens it: the column is added, the
+  view of the events of every class is made again, and nothing the
+  database holds changes. It is the first time a database is brought
+  forward and not made again. v0.7.0 no longer opens the file
+  afterwards: keep a copy if you may go back. A database of a release
+  before v0.7.0 is refused as before.
 
 - People sign in with a passkey, invited by a link (ADR-0088, its
   second step): their fingerprint, their face or their device's PIN,

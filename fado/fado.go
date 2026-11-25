@@ -388,6 +388,23 @@ func WithID(id string) Option { return store.WithID(id) }
 // Replace makes ImportRows empty the table before writing the rows.
 func Replace() Option { return store.Replace() }
 
+// Saw says which version of the document the sender of the command read
+// before it decided (ADR-0078, item 2). Set, Reset, Refresh, Transition
+// and Delete take it, and the previews of them. When the document is at
+// another version the command is refused with stale_version, which names
+// the version the document is at, and nothing is written: read the
+// document again and decide on what it holds now. The event of a command
+// that was taken keeps the version, as Event.SeenVersion. A command
+// without it acts on the document as it is; a command sent again with
+// its Key is answered as the first was.
+func Saw(version int64) Option { return store.Saw(version) }
+
+// SawEach is Saw for TransitionMany and PreviewMany: the version of each
+// document, as many as the ids and in their order, 0 for a document
+// whose version is not named. A document at another version is refused
+// with stale_version among the outcomes, and the others move.
+func SawEach(versions []int64) Option { return store.SawEach(versions) }
+
 // AtVersion makes OpenFile read a committed version instead of the
 // current one.
 func AtVersion(version int64) Option { return store.AtVersion(version) }

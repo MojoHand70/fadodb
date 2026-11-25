@@ -260,11 +260,14 @@ program that rehearses next month in a copy of the file; see
 | opens a database with a lower `MaxBlob` than it has | `bad_value` |
 | opens a database that another program holds alone | `in_use` |
 | opens a file that a newer engine made | `not_supported` |
-| opens a file that an earlier engine made | `not_supported` |
+| opens a file that an engine before v0.7.0 made | `not_supported` |
 
-Before version 1.0 a release may change how the file is laid out, and
-there is no way to bring a file of an earlier release forward: it is
-made again.
+Before version 1.0 a release may change how the file is laid out. A
+database that v0.7.0 or a later release made is brought to the layout
+of the engine that opens it, in the one transaction that opens it:
+what it holds stays as it was. The engine that made it no longer opens
+it afterwards, so keep a copy of the file if you may go back. A file of
+a release before v0.7.0 cannot be brought forward: it is made again.
 
 ## Not here yet
 

@@ -559,7 +559,7 @@ func TestWhatIsNotACommandIsRefused(t *testing.T) {
 	}
 	// The hint of an unknown member lists what the command takes, and of
 	// a name that is nearly a command says which.
-	if e := refused(t, s, bob, "set", `{"class": "Invoice", "id": "7", "valeus": {}}`); e.Hint != "set takes class, id, values, key, business_date, reason, for" {
+	if e := refused(t, s, bob, "set", `{"class": "Invoice", "id": "7", "valeus": {}}`); e.Hint != "set takes class, id, values, key, business_date, reason, for, version" {
 		t.Errorf("the hint of an unknown member is %q", e.Hint)
 	}
 	if e := refused(t, s, bob, "TransitionMany", `{}`); e.Hint != "the command is transition_many" {

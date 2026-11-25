@@ -233,8 +233,13 @@ type Event struct {
 	Reason        string `json:"reason,omitempty"`
 	BeforeVersion int64  `json:"before_version,omitempty"`
 	AfterVersion  int64  `json:"after_version,omitempty"`
-	CauseEventID  string `json:"cause_event_id,omitempty"`
-	CommandKey    string `json:"command_key,omitempty"`
+	// SeenVersion is the version of the document the sender of the
+	// command said it had read, with Saw (ADR-0078, item 2); 0 when the
+	// command named none. The command was taken, so it is the version
+	// before the event's own.
+	SeenVersion  int64  `json:"seen_version,omitempty"`
+	CauseEventID string `json:"cause_event_id,omitempty"`
+	CommandKey   string `json:"command_key,omitempty"`
 	// BusinessDate is the calendar day as YYYY-MM-DD.
 	BusinessDate string `json:"business_date"`
 	TS           int64  `json:"ts"`
@@ -361,13 +366,24 @@ type options struct {
 	// the other flag so that the options are no larger for it: they
 	// are made for every call.
 	received bool
-	id       string
 	replace  bool
-	version  int64
-	at       time.Time
+	id       string
+	// version is the version of the document the call names, 0 when it
+	// names none: the one OpenFile reads, given with AtVersion, or the
+	// one the sender of a command that changes the document read, given
+	// with Saw (ADR-0078, item 2). No call takes both meanings.
+	version int64
+	at      time.Time
 	// reason is why a content administrator acts past a rule (ADR-0052,
 	// item 4): the event of the commit keeps it.
 	reason string
+	// sawEach is, for a batch of moves, the version of each document its
+	// sender read, in the order of the ids, 0 for one it names none of
+	// (ADR-0078, item 2). It is nil for every other call. It is a
+	// pointer, and stands where the flag replace stood, which moved
+	// beside the two other flags: the options are made for every call,
+	// and are no larger for it.
+	sawEach *[]int64
 }
 
 // As runs the call as the principal.
@@ -401,6 +417,25 @@ func WithID(id string) Option { return func(o *options) { o.id = id } }
 // Replace makes an import empty the table first, so that the rows given
 // are all the rows.
 func Replace() Option { return func(o *options) { o.replace = true } }
+
+// Saw says which version of the document the sender of the command read
+// before it decided (ADR-0078, item 2). Set, Reset, Refresh, Transition
+// and Delete take it, and the previews of them. When the document is at
+// another version the command is refused with stale_version, which names
+// the version the document is at, and nothing is written; the sender
+// reads the document again and decides on what it holds now. The event
+// of a command that was taken keeps the version under seen_version. A
+// command without it acts on the document as it is. A command sent again
+// with its key is answered as the first was and is not compared again.
+// A version is 1 or more; 0 names none.
+func Saw(version int64) Option { return func(o *options) { o.version = version } }
+
+// SawEach is Saw for TransitionMany and PreviewMany: the version of each
+// document its sender read, as many as the ids and in their order, 0 for
+// a document whose version it does not name. A document at another
+// version is refused with stale_version among the outcomes, and the
+// others move (ADR-0048).
+func SawEach(versions []int64) Option { return func(o *options) { o.sawEach = &versions } }
 
 // AtVersion makes OpenFile read the document at a committed version
 // instead of the current one.

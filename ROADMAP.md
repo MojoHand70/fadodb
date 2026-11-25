@@ -1,6 +1,6 @@
 # Roadmap
 
-**Current status: Phase 7, the browser VM and the reference frontend, was released as v0.7.0 on 2026-11-24. The next phase opens on the owner's word.**
+**Current status: Phase 8, the analytical engine, started on 2026-11-25. Phase 7, the browser VM and the reference frontend, was released as v0.7.0 on 2026-11-24.**
 The Go API (`fado`) opens a database file, defines schemas, classes and
 explicit tables, and creates, changes, reads and deletes documents as
 commits: assignments and defaults, the auto recalculation, typed history
@@ -431,12 +431,13 @@ cut inside such a function: `FILTER`, `SORT`, `TOP` and `UNIQUE`, each
 a part of the function's one question. With them every function of
 the catalogue is built. Decided not now: a list one of them gives as
 a variable of its own.
-The third is of 2026-11-21, and nothing of it is built yet:
-ADR-0078, a decision stands on what the document holds. A command
-says which version of a document its sender saw, the `write` right of
-a triggered variable
+The third is of 2026-11-21: ADR-0078, a decision stands on what the
+document holds. A command says which version of a document its sender
+saw, the `write` right of a triggered variable
 says who may bring its value again, and what a condition needs from
 outside the document is brought onto it before the condition is asked.
+Nothing of it was built in Phase 7; Phase 8 builds it first, and its
+first step is built: the version a command saw.
 Five more records proposed while the phase ran are built and wait for
 the owner's acceptance, all of them on the tables: ADR-0079, a table
 belongs to an app; ADR-0080, a column added to a table in use;
@@ -446,6 +447,25 @@ rows. The owner ruled on 2026-11-23 that what ADR-0075, ADR-0076,
 ADR-0078 and ADR-0081 leave unbuilt does not hold back v0.7.0: what of
 it is not built when the phase's own steps are done is built first
 after the release, as the log of reads was after v0.6.0.
+Phase 8 started on 2026-11-25. It builds first what the records
+accepted during Phase 7 leave unbuilt, as the owner ruled. ADR-0078
+comes in four steps: the version a command saw, which is built
+(`version` on `set`, `reset`, `refresh`, `transition` and `delete`,
+`versions` on `transition_many`, the refusal `stale_version`, and
+`seen_version` on the event; engine schema 14, to which a database of
+v0.7.0 is brought when it is opened); who may bring a value again; a
+trigger `before:` a transition, with a guard that reads the document
+alone; and a list that is kept. Then what ADR-0076 and ADR-0075 leave:
+a table as the source of a list, counts, sums and grouping in a
+`QUERY`, the engine's own indexes and its notes on a question no index
+serves. Then the lists in and out of messages and requests, ADR-0085.
+After these comes the analytical engine itself: DuckDB beside the
+documents, fed from the commits, for the question that reads
+everything; the mining views; a value that follows its source or the
+clock, worked out for many documents in one statement; tables kept in
+DuckDB or in a database of the customer's own; and the program with
+DuckDB built for each operating system. Nothing of the analytical
+engine is built yet.
 This page is updated when a phase starts and when it ends;
 it never describes a phase as done before its acceptance criteria pass.
 
@@ -461,7 +481,7 @@ Legend: ✅ done · 🚧 in progress · ⬜ not started
 | 5 | Security: the class-level access rules enforced on every path, who may see, create, change and delete a document, with the read rule compiled to a SQL predicate; the kind of actor, a person, an agent or a service, and whom it acts for, on every event, checked against a substitution the database keeps; who may define, operate and query, by four system groups; a content administrator who acts past a rule with a reason; the rules of a table | ✅ |
 | 6 | Server and CLI: the JSON command set over HTTP, one address for each command; users, groups and API keys kept in the database, and the authenticator for a host program that has its own; the stream of changes filtered by the read rule; documents on the wire; the door for agents (MCP); the command-line tool with a check of a class and of an action; the flow of a class in one call; a way in for messages from outside; OpenAPI; `fadodb serve` | ✅ |
 | 7 | Browser VM and reference frontend: the log of reads first; TypeScript VM on the same bytecode shipped as one plain JavaScript file, what a class says to people and its sections, the class bundle, `QUERY` when the first page needs a list of rows (otherwise with the reports of Phase 8), signing in with a password or a company's sign-on, the pages of a face handed out by `fadodb serve` from a folder (a face, which draws a document from its class, lives apart from the engine; chip, card, coins and rating are the face's), the door for agents at the server itself, a small client file beside the VM | ✅ |
-| 8 | Analytical engine: DuckDB projection of document tables, native and attached bindings, set-wise recompute, mining views, full build per OS | ⬜ |
+| 8 | Analytical engine: first what ADR-0078, ADR-0076, ADR-0075 and ADR-0085 leave unbuilt after v0.7.0; then the DuckDB projection of document tables, native and attached bindings, set-wise recompute, mining views, full build per OS | 🚧 |
 | 9 | Embedding: C ABI, Python client, embedding guides | ⬜ |
 | 10 | Postgres backend | ⬜ |
 | 11 | Optional AI layer: authoring assistant (the MCP server moved to Phase 6) | ⬜ |

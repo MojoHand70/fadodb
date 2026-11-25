@@ -51,7 +51,7 @@ docker build -t fadodb .
   to listen beyond its container, and a server that does so is told so
   (below). So the image has no server it starts when it is told
   nothing.
-- **It is small**: about 15 MB, nearly all of it the tool.
+- **It is small**: about 17 MB, nearly all of it the tool.
 
 ## From nothing to a server
 

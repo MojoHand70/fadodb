@@ -280,6 +280,8 @@ Every commit has a business day beside its time. It is, in this order:
 | `WithID` | the id of a new document, when the caller gives one | a create |
 | `At` | the moment a read or a preview is worked out for; see [Time](notions/time.md#looking-at-another-day) | a read or a preview |
 | `AtVersion` | the version of the document a file is opened from; see [Files](files.md#opening) | opening a file |
+| `Saw` | the version of the document the sender read before it decided; see [Act only on the version you read](guides/act-on-what-you-read.md) | a set, a reset, a refresh, a transition, a delete, and a preview of one |
+| `SawEach` | the same for a batch: the version of each document, in the order of the ids, 0 for none | a batch of moves, and its preview |
 | `Replace` | that a table is emptied before the rows are written; see [Tables](tables.md#rows) | an import |
 
 ## What is refused

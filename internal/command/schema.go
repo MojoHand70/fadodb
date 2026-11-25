@@ -24,6 +24,8 @@ func (k Kind) Schema() map[string]any {
 		return map[string]any{"type": "array", "items": map[string]any{"type": []string{"string", "number", "boolean", "null"}}}
 	case Moment:
 		return map[string]any{"type": []string{"string", "integer"}}
+	case Versions:
+		return map[string]any{"type": "array", "items": map[string]any{"type": []string{"integer", "null"}, "minimum": 1}}
 	}
 	panic("command: a kind of member with no schema: " + k.String())
 }

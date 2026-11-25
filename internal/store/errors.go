@@ -109,6 +109,12 @@ const (
 	// CodeTerminal: the document is in a terminal state and cannot change
 	// (ADR-0039).
 	CodeTerminal = "terminal"
+	// CodeStaleVersion: the command said which version of the document
+	// its sender read, with the member version (in Go, Saw), and the
+	// document is at another one (ADR-0078, item 2). Nothing was written;
+	// the message names the version the document is at. Read the
+	// document again and decide on what it holds now.
+	CodeStaleVersion = "stale_version"
 	// CodeStateless: Create or CreateMany on a class without states, a
 	// stateless application that stores no documents (ADR-0040).
 	CodeStateless = "stateless"

@@ -90,6 +90,7 @@ A command takes the ones its list below shows, and no other.
 | `reason` | text | why a content administrator acts or reads past a rule; a change keeps it on its event, a read in the log of reads |
 | `for` | text | the id of whoever the caller acts for; let through only while a substitution says so |
 | `at` | moment | the moment the command reads at: "2026-11-13", "2026-11-13 09:30:00" in UTC, or seconds since the epoch; now when left out |
+| `version` | whole number | the version of the document its sender read before deciding; when the document is at another, the command is refused with stale_version and nothing is written |
 
 ## Documents
 
@@ -182,7 +183,7 @@ Assigns values to a document and recalculates what depends on them. It writes; i
 | `id` | text | needed | the id of the document |
 | `values` | object |  | the values to assign, by variable |
 
-And, of the members that mean the same everywhere: `key`, `business_date`, `reason`, `for`.
+And, of the members that mean the same everywhere: `key`, `business_date`, `reason`, `for`, `version`.
 
 It answers:
 
@@ -200,7 +201,7 @@ Puts input variables of a document back to their defaults. It writes; in Go it i
 | `id` | text | needed | the id of the document |
 | `variables` | list of texts |  | the variables to reset |
 
-And, of the members that mean the same everywhere: `key`, `business_date`, `reason`, `for`.
+And, of the members that mean the same everywhere: `key`, `business_date`, `reason`, `for`, `version`.
 
 It answers:
 
@@ -218,7 +219,7 @@ Recomputes triggered variables of a document, and lets it move if a guard on tim
 | `id` | text | needed | the id of the document |
 | `variables` | list of texts |  | the variables to recompute; every one that lists refresh when left out |
 
-And, of the members that mean the same everywhere: `key`, `business_date`, `reason`, `for`.
+And, of the members that mean the same everywhere: `key`, `business_date`, `reason`, `for`, `version`.
 
 It answers:
 
@@ -237,7 +238,7 @@ Moves a document along a named transition of its class. It writes; in Go it is t
 | `transition` | text | needed | the name of the transition |
 | `values` | object |  | values to assign in the same commit, by variable |
 
-And, of the members that mean the same everywhere: `key`, `business_date`, `reason`, `for`.
+And, of the members that mean the same everywhere: `key`, `business_date`, `reason`, `for`, `version`.
 
 It answers:
 
@@ -255,6 +256,7 @@ Moves several documents of one class along one transition; a document that canno
 | `transition` | text | needed | the name of the transition |
 | `ids` | list of texts | needed | the ids of the documents, in order |
 | `values` | object |  | values to assign to each document in its commit, by variable |
+| `versions` | list of whole numbers |  | the version of each document its sender read, in the order of ids, null where none is named; a document at another version is refused with stale_version, and the others move |
 
 And, of the members that mean the same everywhere: `key`, `business_date`, `reason`, `for`.
 
@@ -273,7 +275,7 @@ Removes a document; its history and its events stay. It destroys; in Go it is th
 | `class` | text | needed | the name of the class |
 | `id` | text | needed | the id of the document |
 
-And, of the members that mean the same everywhere: `key`, `business_date`, `reason`, `for`.
+And, of the members that mean the same everywhere: `key`, `business_date`, `reason`, `for`, `version`.
 
 It answers `{}`.
 
@@ -441,7 +443,7 @@ Runs a create, a set or a transition without writing anything. It reads; in Go i
 | `values` | object |  | the values to assign, by variable |
 | `transition` | text |  | the name of a transition to take |
 
-And, of the members that mean the same everywhere: `reason`, `at`, `for`.
+And, of the members that mean the same everywhere: `reason`, `at`, `for`, `version`.
 
 It answers:
 
@@ -458,7 +460,7 @@ Answers what a delete of a document would do, without deleting it. It reads; in 
 | `class` | text | needed | the name of the class |
 | `id` | text | needed | the id of the document |
 
-And, of the members that mean the same everywhere: `reason`, `at`, `for`.
+And, of the members that mean the same everywhere: `reason`, `at`, `for`, `version`.
 
 It answers:
 
@@ -476,6 +478,7 @@ Runs the batch transition_many would run, without writing anything. It reads; in
 | `transition` | text | needed | the name of the transition |
 | `ids` | list of texts | needed | the ids of the documents, in order |
 | `values` | object |  | values to assign to each document in its commit, by variable |
+| `versions` | list of whole numbers |  | the version of each document its sender read, in the order of ids, null where none is named; a document at another version is refused with stale_version, and the others move |
 
 And, of the members that mean the same everywhere: `reason`, `at`, `for`.
 
@@ -1877,7 +1880,7 @@ Authorization: Bearer …
   | 401 | `sign_in_refused`, `unauthenticated` |
   | 403 | `forbidden`, `reason_required` |
   | 404 | `unknown_class`, `unknown_document`, `unknown_table`, `unknown_schema`, `unknown_app`, `unknown_blob`, `unknown_action`, `unknown_row`, `unknown_user`, `unknown_group`, `unknown_inlet`, `unknown_key`, `unknown_session`, `unknown_client`, `unknown_grant`, `unknown_invitation`, `unknown_passkey`, `unknown_command` |
-  | 409 | `key_reused`, `duplicate`, `terminal`, `wrong_state`, `guard_false` |
+  | 409 | `key_reused`, `duplicate`, `terminal`, `stale_version`, `wrong_state`, `guard_false` |
   | 413 | `blob_too_large`, `too_large` |
   | 422 | every other refusal |
   | 429 | `too_many_attempts` |

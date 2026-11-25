@@ -306,7 +306,7 @@ fado/outbound/     what a host program imports to let a database send the HTTP r
 fado/httpdoor/     what a host program imports to let a database answer the command set over HTTP
 api/               JSON schemas of an action definition, of the call an action receives and of the delivered event
 internal/server/   the HTTP door: a request to a command, its limits and its statuses, the files, the stream and the messages from outside
-analytics/         the DuckDB module: conformance and store benchmarks today, the projection in Phase 8
+analytics/         the DuckDB module: the analytical engine's copy of the documents and its feed (ADR-0089), conformance and store benchmarks
 bench/             end-to-end performance scenarios behind the budgets
 docs/              architecture, ADRs, dependency budget, benchmarks
 scripts/           the gates CI runs

@@ -98,12 +98,18 @@ func TestOpeningADatabase(t *testing.T) {
 			if !exists("held.fado.lock") {
 				t.Error("a database that a program held alone has no lock file")
 			}
+		case strings.HasPrefix(when, "when the program gave an analytical engine"):
+			// The core has none: the module analytics has the engine
+			// and the test of the file it keeps.
+			if exists(name) {
+				t.Errorf("%s is there for a database whose program gave no analytical engine", name)
+			}
 		default:
 			t.Errorf("the test cannot read when %s is there: %q", name, when)
 		}
 	}
-	if len(there) != 5 {
-		t.Errorf("the chapter lists %d files, and the test knows five", len(there))
+	if len(there) != 6 {
+		t.Errorf("the chapter lists %d files, and the test knows six", len(there))
 	}
 
 	// One program holds a database: a second open is not refused unless

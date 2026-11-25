@@ -653,3 +653,58 @@ func TestCopy_AFlowTheCopyCannotAnswer(t *testing.T) {
 		}
 	}
 }
+
+// A question brings the copy up to the database itself when little was
+// written since, and never waits for a load: a copy that is far behind
+// is left to the feed that runs by itself, and the store answers until
+// that has brought it up (ADR-0089, item 5).
+func TestCopy_AQuestionDoesNotWaitForALoad(t *testing.T) {
+	c := newMemCopy()
+	s, _, ctx := copied(t, c)
+	near := copyCatchUp
+	copyCatchUp = 5
+	t.Cleanup(func() { copyCatchUp = near })
+	write := func(from, to int) {
+		t.Helper()
+		for i := from; i <= to; i++ {
+			if _, err := s.Create(ctx, "Invoice", Values{"number": fmt.Sprintf("FV-%d", i)}, WithID(fmt.Sprintf("i-%d", i))); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	ask := func() error {
+		t.Helper()
+		flow, err := s.Flow(ctx, "Invoice", FlowPeriod{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if flow.Created == 0 {
+			t.Fatalf("the flow the store answered: %s", dump(flow))
+		}
+		return s.CopyState().AskErr
+	}
+	// Two invoices since the last feed: the question feeds them, and
+	// the copy is asked. The stand-in answers no statement.
+	write(1, 2)
+	if err := ask(); c.count("Invoice_versions") != 2 || err == nil || !strings.Contains(err.Error(), "answers no statement") {
+		t.Fatalf("after two invoices the copy holds %d versions and was asked with %v", c.count("Invoice_versions"), err)
+	}
+	// A load: more than a question brings up. It is not fed by the
+	// question, and the copy is not asked.
+	write(3, 10)
+	if err := ask(); c.count("Invoice_versions") != 2 || !errors.Is(err, errCopyBehind) {
+		t.Fatalf("after a load the copy holds %d versions and the question ended with %v; want 2 and the copy behind", c.count("Invoice_versions"), err)
+	}
+	// Nor does the next question look again: the copy is not near
+	// until a feed has brought it up.
+	write(11, 11)
+	if err := ask(); c.count("Invoice_versions") != 2 || !errors.Is(err, errCopyBehind) {
+		t.Fatalf("the next question: %d versions, %v", c.count("Invoice_versions"), err)
+	}
+	// The feed that runs by itself brings it up, and questions ask the
+	// copy again.
+	mustFeed(t, s)
+	if err := ask(); c.count("Invoice_versions") != 11 || err == nil || !strings.Contains(err.Error(), "answers no statement") {
+		t.Fatalf("after the feed the copy holds %d versions and was asked with %v", c.count("Invoice_versions"), err)
+	}
+}

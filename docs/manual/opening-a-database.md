@@ -262,17 +262,61 @@ db, err := fado.Open("notes.fado", fado.Options{Analytics: analytics.Engine{}})
   opening of the database. A second opening works without a copy, and
   `CopyState` says so.
 
-**What the copy answers today: the flow of a class**, the command
-[`flow`](commands.md#flow) and the call `Flow`. Before it answers, the
-copy is brought up to the database, so an answer is never older than
-its question. The answer is the store's, for the same reader: among
-3,400,000 invoices that visited ten million states, the store takes 19
-seconds and the copy under half a second. When the copy does not
-answer, the store does, and `CopyState` says why.
+**What the copy answers.** Nothing is written differently for it: the
+engine sends a question to the copy by itself, and neither a designer
+nor a caller chooses.
 
-Every other question is answered by the store, as in a program without
-the engine. The program `fadodb` is built without the module; the same
-program built with it, `fadodb-full`, serves a database with its copy
+| The question | The copy answers it |
+|---|---|
+| the flow of a class, the command [`flow`](commands.md#flow) and the call `Flow` | always |
+| how many documents a condition takes, the command [`count`](commands.md#count) and the call `Count` | when no index narrows it |
+| a total, or the first document, that a `LOOKUP` in a live variable asks for: `LOOKUP(Invoice, SUM(net), urgent)` | when no index narrows it |
+| a figure over a list, `SUM(invoices.net)`, `COUNT(invoices)` | when no index narrows the list |
+
+**An index narrows a question** when its condition compares an indexed
+variable with a value: the invoices of one order, the documents in one
+state, the lookup keyed by a customer. So does the read rule of a
+reader who reads their own, `owner = USER()`. Such a question names
+what it wants, and the store answers it in a moment, as ever. A
+question that no index narrows reads the class, and that is what the
+copy is for.
+
+- **An answer is never older than its question.** Before it answers,
+  the copy is brought up to the database. When nothing was written
+  since the last look, the look costs nothing to speak of; after a
+  write the new rows are copied first, some twenty milliseconds, once.
+- **The answer is the store's**, for the same reader. The statement is
+  the same one, written by the same compiler in the copy's dialect,
+  with the read rule and the read rights in it.
+- **When the copy does not answer, the store does**, and `CopyState`
+  says why: the copy cannot run the statement, or it is still being
+  made, or it is a long load behind. A question never waits for a copy
+  that is being made.
+
+Measured among 3,400,000 invoices, with a reader who reads them all:
+
+| The question | A program without the copy | With the copy |
+|---|---|---|
+| the sum of every invoice, in a `LOOKUP` of a live variable | 460 ms | 7 ms |
+| how many invoices are over an amount, the command `count` | 275 ms | 2 ms |
+| how many invoices one customer has, where `customer` has no index | 240 ms | 1.5 ms |
+| how many different owners the invoices have | 285 ms | 1.5 ms |
+| how many invoices are in review: the state has an index | 4 ms | 4 ms, from the store |
+
+The first of such questions after the file was last read from the
+disk takes a program without the copy seconds, and a question that no
+index serves is stopped after five (see
+[A large class](lists.md#a-large-class)). The flow of that class, ten
+million visits of a state, takes the store 19 seconds and the copy
+about half a second.
+
+**What stays with the store:** a page of a list, the command `query`
+and a live list, whatever its condition; and everything inside a
+commit, so a value that a triggered variable keeps is worked out by
+the store.
+
+The program `fadodb` is built without the module; the same program
+built with it, `fadodb-full`, serves a database with its copy
 ([A server with the analytical engine](serving-a-database.md#a-server-with-the-analytical-engine)).
 
 ## Closing

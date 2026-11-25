@@ -114,7 +114,9 @@ Two findings decide what follows.
    | names what it wants: a document, the lines of a document, the invoices of an order, a `LOOKUP` by its key | the store, by an index, as today |
    | anything inside a commit | the store, always (ADR-0020, item 4) |
    | how documents moved: which state follows which, how long they wait | the copy |
-   | a total over a whole class: counts, sums and groups among the columns of a `QUERY`, with no key the store has an index for | the copy |
+   | a count or a total that no index narrows: the command `count`, and the total or the first row that a `LOOKUP` or a figure over a list asks for when it is read | the copy |
+   | a page of a list that no index serves | the copy; not built |
+   | groups with their totals among the columns of a `QUERY` | the copy; not built |
 
    No formula is written differently for it. The compiler sends each
    question where it belongs, as ADR-0075 says.
@@ -155,12 +157,21 @@ Two findings decide what follows.
        made again when it is lost;
     2. the questions of how documents moved, with the test of ADR-0017:
        under 2 seconds over ten million visits;
-    3. counts, sums and groups among the columns of a `QUERY`, sent to
-       the copy;
+    3. what a class asks, sent to the copy when no index narrows it:
+       first what it already asks, its counts and totals and then the
+       pages of its lists; then counts, sums and groups among the
+       columns of a `QUERY`;
     4. a value that follows a table or a schedule, for many documents
        in one statement (ADR-0078, item 6);
     5. tables that DuckDB holds or attaches;
     6. the full build for each system, and the page for analysts.
+
+    Step 3 gained its first two parts on 2026-11-25, when the owner
+    said what comes first: what a class already asks, its lookups and
+    its lists, takes milliseconds over a large class, and so does the
+    question of how documents moved. The first writing of this record
+    went from the flow straight to a new way of writing totals, and
+    nothing a class already asked was any faster for it.
 
 ## Questions for the owner
 
@@ -211,8 +222,21 @@ Two findings decide what follows.
   memory the engine may take. Not built: the program for each
   operating system, released; an image for containers with the engine;
   the page for analysts.
-- **Every other question is still the store's.** Step 3 sends the
-  totals of a `QUERY` to the copy.
+- **Step 3, its first part: the counts and totals a class already
+  asks, on 2026-11-25.** The command `count`, and the total or the
+  first row that a `LOOKUP` in a live variable or a figure over a list
+  asks for, are answered from the copy when no index narrows them.
+  Measured through the engine among 3,400,000 invoices, for a reader
+  who reads them all, three runs that agree: the sum of every invoice
+  in a `LOOKUP` takes a program without the copy 460 ms and one with
+  it 7; a count over an amount 275 ms and 2; a count by a variable
+  with no index 240 ms and 1.5; the number of different owners 285 ms
+  and 1.5. A count by the state, which has an index, stays with the
+  store, in 4 ms, and so does the sum of the 170,000 invoices in
+  review that a figure over a list asks for, in 36 ms.
+- **Still the store's:** a page of a list, the command `query` and a
+  live list, which the second part of step 3 sends to the copy when no
+  index serves it.
 
 ## Settled while building the copy and its feed
 
@@ -323,6 +347,35 @@ strike.
 - **Only a served database gets the engine.** The commands of the
   program that open a database for a moment, such as `fadodb user
   add`, keep no copy.
+
+## Settled while building the counts and totals from the copy
+
+Each of these is settled by me while building, and is the owner's to
+strike.
+
+- **Which question goes to the copy: one that no index narrows.** The
+  filter compiler knows it already: the condition, or the read rule
+  for that reader, compares an indexed variable with a value, or it
+  does not. A `LOOKUP` goes by its key. Nothing looks at how many
+  documents there are.
+- **So a count that an index narrows stays with the store even when
+  it counts millions**: the documents of one state, the documents of
+  one owner. The store counts them through the index, which is faster
+  than reading the class and slower than the copy. Sending such a
+  count to the copy when the index finds many is not built.
+- **A question never waits for a copy that is being made.** While the
+  copy is being made, or is more than one piece of a long load behind,
+  the store answers, and `CopyState` says so. This holds for the flow
+  too, which waited before.
+- **One statement, two dialects.** The copy is asked the statement the
+  store is asked, written by the same compiler for DuckDB, and its one
+  row is read by the same code. Nothing is written twice by hand.
+- **A value that is kept is the store's.** A triggered variable is
+  worked out inside the commit that changes it (item 6), and the copy
+  does not hold that commit yet.
+- **What a content administrator is written down with**, how many
+  documents only the override let them count (ADR-0067), is counted
+  by the store, whichever engine answered.
 
 ## Consequences
 

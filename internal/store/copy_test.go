@@ -602,3 +602,54 @@ func TestCopy_ALongLoadInPieces(t *testing.T) {
 		})
 	}
 }
+
+// A flow is asked of the copy first, after the copy was brought up to
+// the database, and of the store when the copy does not answer: the
+// stand-in answers no statement. The caller gets the flow either way,
+// and the state of the copy says why the store answered.
+func TestCopy_AFlowTheCopyCannotAnswer(t *testing.T) {
+	c := newMemCopy()
+	s, _, ctx := copied(t, c)
+	for i := 1; i <= 3; i++ {
+		if _, err := s.Create(ctx, "Invoice", Values{"number": fmt.Sprintf("FV-%d", i)}, WithID(fmt.Sprintf("i-%d", i))); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := s.Transition(ctx, "Invoice", "i-1", "file", nil); err != nil {
+		t.Fatal(err)
+	}
+	flow, err := s.Flow(ctx, "Invoice", FlowPeriod{})
+	if err != nil {
+		t.Fatalf("the flow of a database whose copy does not answer: %v", err)
+	}
+	in := map[string]int64{}
+	for _, st := range flow.States {
+		in[st.Name] = st.Documents
+	}
+	if in["draft"] != 2 || in["review"] != 1 || flow.Created != 3 {
+		t.Errorf("the flow the store answered: %s", dump(flow))
+	}
+	// The copy was brought up to the database before it was asked.
+	if n := c.count("Invoice_versions"); n != 4 {
+		t.Errorf("%d versions in the copy when the flow was asked, want 4", n)
+	}
+	if st := s.CopyState(); st.Answers != 0 || st.AskErr == nil || !strings.Contains(st.AskErr.Error(), "answers no statement") {
+		t.Errorf("the state of the copy after it did not answer: %+v", st)
+	}
+	// A feed that fails leaves the question to the store as well.
+	c.mu.Lock()
+	c.failFeed = errors.New("the disk of the copy is full")
+	c.mu.Unlock()
+	if _, err := s.Transition(ctx, "Invoice", "i-2", "file", nil); err != nil {
+		t.Fatal(err)
+	}
+	flow, err = s.Flow(ctx, "Invoice", FlowPeriod{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, st := range flow.States {
+		if st.Name == "review" && st.Documents != 2 {
+			t.Errorf("after a feed failed the flow has %d in review, want 2", st.Documents)
+		}
+	}
+}

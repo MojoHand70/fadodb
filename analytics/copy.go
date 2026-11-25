@@ -14,6 +14,7 @@ import (
 	duckdb "github.com/duckdb/duckdb-go/v2"
 
 	"github.com/MojoHand70/fadodb/fado"
+	"github.com/MojoHand70/fadodb/internal/formula"
 )
 
 // Engine is FadoDB's analytical engine, made with DuckDB (ADR-0017,
@@ -110,6 +111,14 @@ func (e Engine) open(ctx context.Context, path string) (*duckCopy, error) {
 	}
 	db := sql.OpenDB(connector)
 	c := &duckCopy{path: path, db: db}
+	// What the formula compiler's statements call in DuckDB's dialect
+	// (ADR-0016): the reader's rule is written with them.
+	for _, stmt := range formula.NewDuckDB().Setup() {
+		if _, err := db.ExecContext(ctx, stmt); err != nil {
+			db.Close()
+			return nil, fmt.Errorf("open the copy at %s: %w", path, err)
+		}
+	}
 	if _, err := db.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS `+quote(marksTable)+` ("name" VARCHAR PRIMARY KEY, "value" VARCHAR NOT NULL)`); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("open the copy at %s: %w", path, err)

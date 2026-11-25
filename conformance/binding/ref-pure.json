@@ -1,0 +1,15 @@
+{
+  "suite": "ref-pure",
+  "description": "REF where the formula belongs to no document: the request of an action is a pure formula (ADR-0018). REF with a class and an id is a pure function and stands there; REF() reads the document the formula runs over, as ID() does, and does not.",
+  "mode": "pure",
+  "variables": {"name": "text", "order": "ref"},
+  "accept": [
+    "REF(\"Order\", name)",
+    "order = REF(\"Order\", name)",
+    "TEXT(REF(\"Order\", \"ORD-17\"))"
+  ],
+  "reject": [
+    {"formula": "REF()", "reason": "the formula belongs to no class, so there is no document to point at"},
+    {"formula": "order = REF()", "reason": "the same inside a comparison"}
+  ]
+}

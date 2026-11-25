@@ -146,6 +146,23 @@ documents are loaded in the order they point: the customers before the
 invoices that name them. A pointer a document holds already is not
 asked about again when its other values change.
 
+**A pointer compares with a pointer.** A formula makes one with
+`REF`:
+
+<!-- pointers -->
+| Written | Is | May stand |
+|---|---|---|
+| `REF()` | the pointer to the document the formula belongs to | where `ID()` may |
+| `REF("Customer", "C-17")` | the pointer to that document. The class is written as a text, and the id is any text; a blank id gives a blank pointer | anywhere |
+
+So `customer = REF("Customer", "C-17")` is a condition, in a formula
+and in a filter. `customer = "Customer:C-17"` is refused, because a
+pointer never compares with a text. The engine knows the class each
+pointer points at. A class that compares pointers to two classes is
+refused with `type_mismatch` when it is defined: `customer = REF()`
+written in an Invoice says "customer points at Customer, and this
+document is an Invoice".
+
 **A class says what points at it.** `get_class` answers, under
 `pointed_at_by`, the `ref` variables of the classes defined now that
 point at the class, each as its class and its name there:

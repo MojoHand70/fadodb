@@ -43,7 +43,7 @@ func TestConformance_VM(t *testing.T) {
 				failed++
 				t.Errorf("%s\n    %s", label, fmt.Sprintf(format, args...))
 			}
-			prog, err := Bind(c.Formula, scope, BindOptions{Sources: sources})
+			prog, err := Bind(c.Formula, scope, s.BindOptions(sources))
 			if err != nil {
 				fail("bind: %v", err)
 				continue
@@ -122,7 +122,7 @@ func TestConformance_Binding(t *testing.T) {
 		if err != nil {
 			t.Fatalf("%s: %v", s.File, err)
 		}
-		opts := BindOptions{Mode: s.BindMode(), Sources: sources, Secrets: s.Secrets, States: s.States}
+		opts := s.BindOptions(sources)
 		for _, f := range s.Accept {
 			accepted++
 			if _, err := Bind(f, scope, opts); err != nil {

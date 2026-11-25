@@ -108,7 +108,9 @@ own.
 
 A list need not point at its document. "The invoices that wait for
 approval" is `QUERY(Invoice, {number, net}, state = "review")`, and it
-is the same list on every order.
+is the same list on every order. "The invoices of order ORD-17" is
+`QUERY(Invoice, {number, net}, order = REF("Order", "ORD-17"))`: with
+a class and an id, `REF` is the pointer to a named document.
 
 ## The story
 
@@ -608,7 +610,7 @@ place in the formula.
 | a `LOOKUP` in the condition | `not_allowed` |
 | a live variable of the source as a column | `not_allowed` |
 | braces anywhere else | `bad_formula` |
-| `REF()` anywhere else | `bad_formula` |
+| a `REF` of a class nobody defined | `bad_formula` |
 
 And the source may not lose what a list names: a new definition of
 Invoice without `margin` is refused while the order lists it.
@@ -619,5 +621,3 @@ Each of these is decided (ADR-0076) and waits its turn.
 
 - A count or a sum among the columns, and grouping: a table of
   totals. One figure of a list is built: see "Figures over a list".
-- `REF()` outside the condition of a `QUERY`, and `REF("Order",
-  "ORD-17")`, the pointer to a named document.

@@ -1,6 +1,7 @@
 package formula
 
 import (
+	"errors"
 	"strings"
 	"testing"
 )
@@ -169,7 +170,11 @@ func TestBuiltins_MatchTheCatalog(t *testing.T) {
 		if fn.Name != b.name {
 			t.Errorf("builtin %s is the alias of %s; builtins use canonical names", b.name, fn.Name)
 		}
-		if fn.Class != b.class {
+		// REF with a class and an id is pure; the catalogue says of the
+		// name what its form with no argument is, the document's own
+		// pointer, which the binder writes with ID() and holds to where a
+		// context function may stand (ADR-0076, item 10).
+		if fn.Class != b.class && b.name != "REF" {
 			t.Errorf("builtin %s has class %s, the catalog says %s", b.name, b.class, fn.Class)
 		}
 		if fn.MaxArgs() != 0 && len(b.args) == 0 {
@@ -246,5 +251,44 @@ func TestBind_SecretIsASlot(t *testing.T) {
 	// An empty list allows the form and knows no name.
 	if _, err := Bind(`SECRET("token")`, scope, BindOptions{Mode: ModePure, Secrets: []string{}}); err == nil || !strings.Contains(err.Error(), "names no connection") {
 		t.Errorf("a definition without a connection: %v", err)
+	}
+}
+
+// A ref is one type whatever it points at: the class is the compiler's
+// to know, for the comparison of two pointers (ADR-0076, item 10), and
+// a program holds the kind alone.
+func TestRefTo_IsOneTypeWhateverItPointsAt(t *testing.T) {
+	order, customer, plain := RefTo("Order"), RefTo("Customer"), Scalar(KindRef)
+	if !order.Equal(customer) || !order.Equal(plain) || order.String() != "ref" {
+		t.Errorf("a ref to an Order is %s, equal to a ref to a Customer %v, to a plain ref %v", order, order.Equal(customer), order.Equal(plain))
+	}
+	if order.Points() != "Order" || plain.Points() != "" || RefTo("").Points() != "" || Scalar(KindText).Points() != "" {
+		t.Errorf("points: %q, %q", order.Points(), plain.Points())
+	}
+	scope, err := NewScope(Variable{Name: "order", Type: order}, Variable{Name: "customer", Type: customer}, Variable{Name: "paid", Type: Scalar(KindBool)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// One of two pointers is a pointer whose class nobody knows.
+	prog, err := Bind(`IF(paid, order, customer)`, scope, BindOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if prog.Result.Points() != "" {
+		t.Errorf("IF of two pointers points at %q; want no class", prog.Result.Points())
+	}
+	for _, s := range prog.Slots {
+		if s.Type.Points() != "" {
+			t.Errorf("the slot %s of the program holds the class %q; a program holds the kind", s.Name, s.Type.Points())
+		}
+	}
+	_, err = Bind(`order = customer`, scope, BindOptions{})
+	var fe *Error
+	if !errors.As(err, &fe) || !fe.Mismatch || !strings.Contains(fe.Msg, "order points at Order and customer at Customer") {
+		t.Errorf("order = customer: %v; want the mismatch of two classes", err)
+	}
+	// What a database already holds runs as it was written.
+	if _, err := Bind(`order = customer`, scope, BindOptions{Loose: true}); err != nil {
+		t.Errorf("order = customer, bound loosely: %v", err)
 	}
 }

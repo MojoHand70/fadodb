@@ -169,7 +169,7 @@ Who is calling, what time it is, and what the engine keeps about the document: i
 | `ACTINGFOR()` | context | The id of whoever the current user acts for. Blank when it acts for itself. |
 | `STATE()` | context | The state of the document the formula runs over. Blank for a class without states. |
 | `ID()` | context | The id of the document the formula runs over. Blank when there is no document. |
-| `REF([class[, id]])` | context | The pointer to the document the formula belongs to, which a ref compares with: order = REF(). Built for the condition of a QUERY in a live variable; not built yet anywhere else, nor with a class and an id, which name another document. |
+| `REF([class[, id]])` | context | A pointer to a document, which a ref compares with. With no argument it is the pointer to the document the formula belongs to, order = REF(), and stands where ID() may; in the condition of a QUERY it is the document the list belongs to. With a class, written as a text, and an id it is the pointer to that document, REF("Order", "ORD-17"), and stands anywhere; blank when the id is blank. |
 | `CREATEDAT()` | context | The instant the document the formula runs over was created. Blank when there is no document. |
 | `CREATEDBY()` | context | The id of the user whose command created the document. Blank when the command named nobody. |
 | `UPDATEDAT()` | context | The instant the current version of the document was made. |

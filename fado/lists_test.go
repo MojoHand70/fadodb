@@ -191,7 +191,7 @@ func TestLists(t *testing.T) {
 		"a LOOKUP in the condition":                                     {live(`QUERY(Invoice, number, LEN(number) > LOOKUP(rates, rate, code = \"PLN\"))`)},
 		"a live variable of the source as a column":                     {live(`QUERY(Order, {number, invoices})`)},
 		"braces anywhere else":                                          {live(`LEN({n, n})`)},
-		"REF() anywhere else":                                           {live(`TEXT(REF())`), list(`"formula": "TEXT(REF())"`)},
+		"a REF of a class nobody defined":                               {live(`QUERY(Invoice, number, order = REF(\"Nothing\", \"x\"))`), live(`TEXT(REF(\"Nothing\", n))`)},
 	}, func(definition string) string { return finding(db, definition) })
 
 	// What is refused of a figure when the class is defined.

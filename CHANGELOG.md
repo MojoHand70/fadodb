@@ -28,6 +28,23 @@ Phase 8 started on 2026-11-25.
   door for agents tells an agent to send it, and each tool describes
   the member. The guide is
   [act only on the version you read](docs/manual/guides/act-on-what-you-read.md).
+- `REF` wherever a formula stands (ADR-0076, item 10, built until now
+  for the condition of a `QUERY` alone). `REF()` is the pointer to the
+  document the formula belongs to and stands where `ID()` may: in a
+  default, a guard, a rule, an access rule, a filter, and in a
+  triggered or a live variable. `REF("Order", "ORD-17")` is the pointer
+  to a named document and stands anywhere; its class is written as a
+  text and its id is any text, and a blank id gives a blank pointer.
+  So `LOOKUP(Invoice, COUNT(id), order = REF())` counts the invoices
+  of an order, and the filter `order = REF("Order", "ORD-17")` lists
+  them, through the index of the pointer. The engine knows the class
+  each pointer points at: a class that compares pointers to two
+  classes is refused with `type_mismatch` when it is defined, and a
+  class a database already holds with such a comparison still runs.
+  The Go VM, the SQL of both dialects and the browser VM agree on it,
+  by the new suite `conformance/formula/ref.json`. The browser VM's
+  package becomes `fadodb-vm` 4.1.0: a program that calls `REF` needs
+  it.
 - A `LOOKUP` in a live variable (ADR-0076, item 5, refused with
   `not_supported` until now): "the price of this article today", "how
   many invoices this customer has". It is asked for the reader of the

@@ -117,9 +117,9 @@ func (x *figures) Lookup(q *formula.QuerySlot, args []formula.Value, fctx *formu
 	if q.List == "" {
 		// A LOOKUP of the formula's own (ADR-0076, item 5): a table, or
 		// the documents of a class, for the reader of the value.
-		v, err = x.s.liveLookup(x.ctx, q, args, x.o)
+		v, err = x.s.liveLookup(x.ctx, q, args, x.o, fctx)
 	} else if on := x.held.on[strings.ToUpper(q.List)]; on != nil {
-		v, err = x.s.figure(x.ctx, q, args, on, x.o)
+		v, err = x.s.figure(x.ctx, q, args, on, x.o, fctx)
 	} else {
 		return formula.Value{}, &formula.EvalError{Code: formula.ErrQueryFailed, Pos: -1, Msg: "the list " + q.List + " is none of the document's"}
 	}
@@ -136,6 +136,19 @@ func (x *figures) Lookup(q *formula.QuerySlot, args []formula.Value, fctx *formu
 	return v, nil
 }
 
+// liveArgs are the context parameters of a statement asked for a live
+// value: the reader and the clock, and, from the context the formula
+// runs under, the state and the id of the document the value is read
+// on. STATE() and ID() in the condition of a LOOKUP or of a figure are
+// that document's, as they are for a value that is kept (ADR-0040), and
+// REF() is the pointer to it (ADR-0076, item 10).
+func (s *Store) liveArgs(o options, of *formula.Context) []any {
+	if of == nil {
+		return s.contextArgs(o)
+	}
+	return formula.NewSQLite().ContextArgs(of)
+}
+
 // figure asks one figure: the aggregate of the slot over the rows its
 // list has for the caller, on the document the list was read on. The
 // rows are those of the list's own condition, of the read rule of the
@@ -143,17 +156,19 @@ func (x *figures) Lookup(q *formula.QuerySlot, args []formula.Value, fctx *formu
 // the filter compiler writes as it does for the list (ADR-0041,
 // ADR-0049); the aggregate is the one a LOOKUP has (ADR-0046), over
 // those rows. A column the caller may read in no state gives a blank.
-func (s *Store) figure(ctx context.Context, q *formula.QuerySlot, args []formula.Value, on *query.On, o options) (formula.Value, error) {
+func (s *Store) figure(ctx context.Context, q *formula.QuerySlot, args []formula.Value, on *query.On, o options, of *formula.Context) (formula.Value, error) {
 	src, e := s.class(q.Source)
 	if e != nil {
 		return formula.Value{}, e
 	}
 	// A LOOKUP of a live formula has no list: its rows are every
 	// document the reader may read, and its own condition picks among
-	// them.
+	// them. A figure over a list takes no function of the document in
+	// its condition (ADR-0081), so its statement is handed the reader
+	// and the clock alone.
 	var read query.On
 	if on != nil {
-		read = *on
+		read, of = *on, nil
 	}
 	for _, prog := range []*formula.Program{q.Value, q.Cond} {
 		if prog == nil {
@@ -222,7 +237,7 @@ func (s *Store) figure(ctx context.Context, q *formula.QuerySlot, args []formula
 			}
 		}
 	}
-	named := append(given[:len(given):len(given)], s.contextArgs(o)...)
+	named := append(given[:len(given):len(given)], s.liveArgs(o, of)...)
 	for i, a := range args {
 		named = append(named, sql.Named(fmt.Sprintf("fa%d", i), a.DriverValue()))
 		if money[i] {
@@ -263,7 +278,7 @@ func (s *Store) figure(ctx context.Context, q *formula.QuerySlot, args []formula
 			return formula.Value{}, storageErr("prepare the count of "+src.cls.Name, err)
 		}
 		var all int64
-		err = cst.stmt.QueryRowContext(ctx, append(given[:len(given):len(given)], s.contextArgs(o)...)...).Scan(&all)
+		err = cst.stmt.QueryRowContext(ctx, append(given[:len(given):len(given)], s.liveArgs(o, of)...)...).Scan(&all)
 		s.filters.release(cst)
 		if err != nil {
 			return formula.Value{}, storageErr("count "+src.cls.Name, err)
@@ -311,9 +326,9 @@ func lookupSelect(e formula.SQLExpr) string {
 // command table_rows asks it: a table has no rule for each row, so a
 // reader it does not let through is refused, and a content
 // administrator passes it with a reason, which the log of reads keeps.
-func (s *Store) liveLookup(ctx context.Context, q *formula.QuerySlot, args []formula.Value, o options) (formula.Value, error) {
+func (s *Store) liveLookup(ctx context.Context, q *formula.QuerySlot, args []formula.Value, o options, of *formula.Context) (formula.Value, error) {
 	if _, e := s.class(q.Source); e == nil {
-		return s.figure(ctx, q, args, nil, o)
+		return s.figure(ctx, q, args, nil, o, of)
 	}
 	t, e := s.table(q.Source)
 	if e != nil {
@@ -356,7 +371,7 @@ func (s *Store) liveLookup(ctx context.Context, q *formula.QuerySlot, args []for
 			}
 		}
 	}
-	named := s.contextArgs(o)
+	named := s.liveArgs(o, of)
 	for i, a := range args {
 		named = append(named, sql.Named(fmt.Sprintf("fa%d", i), a.DriverValue()))
 		if money[i] {

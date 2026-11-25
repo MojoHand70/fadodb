@@ -113,6 +113,10 @@ type Error struct {
 	// Col is the 1-based column in characters, for people.
 	Col int
 	Msg string
+	// Mismatch says the formula is refused for what its values are, a
+	// comparison of pointers to two classes (ADR-0076, item 10), and not
+	// for how it is written.
+	Mismatch bool
 }
 
 func (e *Error) Error() string {

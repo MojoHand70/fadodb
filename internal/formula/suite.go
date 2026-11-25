@@ -42,9 +42,18 @@ type Suite struct {
 	// absent, the defaults. A suite at a small limit reaches the boundary
 	// with short texts.
 	Limits *SuiteLimits `json:"limits,omitempty"`
-	Cases  []Case       `json:"cases"`
+	// Class is the class the formulas of the suite belong to, for REF()
+	// (ADR-0076, item 10); absent, they belong to none.
+	Class string `json:"class,omitempty"`
+	Cases []Case `json:"cases"`
 	// File is where the suite was loaded from, for messages.
 	File string `json:"-"`
+}
+
+// BindOptions are the options the formulas of the suite bind under,
+// over the sources given.
+func (s *Suite) BindOptions(sources Sources) BindOptions {
+	return BindOptions{Sources: sources, Class: s.Class}
 }
 
 // SuiteSource declares one table a suite's LOOKUP cases read: its columns
@@ -371,14 +380,71 @@ type BindingSuite struct {
 	// function of a state may name as text (ADR-0047): present, even
 	// empty, where the class is known, and absent where no name is
 	// checked.
-	States []string     `json:"states,omitempty"`
-	Accept []string     `json:"accept"`
-	Reject []RejectCase `json:"reject"`
-	File   string       `json:"-"`
+	States []string `json:"states,omitempty"`
+	// Class is the class the formulas belong to, for REF(), and Points
+	// says of a ref variable the class it points at, and of a source,
+	// written Source.column, the class a ref column of it points at
+	// (ADR-0076, item 10). Classes are the classes a REF may name:
+	// present, even empty, where they are known.
+	Class   string            `json:"class,omitempty"`
+	Points  map[string]string `json:"points,omitempty"`
+	Classes []string          `json:"classes,omitempty"`
+	Accept  []string          `json:"accept"`
+	Reject  []RejectCase      `json:"reject"`
+	File    string            `json:"-"`
 }
 
-// SourceSet resolves the suite's sources.
-func (s *BindingSuite) SourceSet() (*SourceSet, error) { return sourcesOf(s.Sources) }
+// BindOptions are the options the formulas of the suite bind under,
+// over the sources given.
+func (s *BindingSuite) BindOptions(sources Sources) BindOptions {
+	opts := BindOptions{Mode: s.BindMode(), Sources: sources, Secrets: s.Secrets, States: s.States, Class: s.Class}
+	if s.Classes != nil {
+		opts.Classes = suiteClasses(s.Classes)
+	}
+	return opts
+}
+
+// suiteClasses are the classes a binding suite says a REF may name.
+type suiteClasses []string
+
+// ClassName implements ClassNames.
+func (cs suiteClasses) ClassName(name string) (string, bool) {
+	for _, c := range cs {
+		if strings.EqualFold(c, name) {
+			return c, true
+		}
+	}
+	return "", false
+}
+
+// SourceSet resolves the suite's sources, a ref column pointing at the
+// class Points says.
+func (s *BindingSuite) SourceSet() (*SourceSet, error) {
+	set, err := sourcesOf(s.Sources)
+	if err != nil {
+		return nil, err
+	}
+	for at, class := range s.Points {
+		name, column, of := strings.Cut(at, ".")
+		if !of {
+			continue
+		}
+		src, ok := set.Source(name)
+		if !ok {
+			return nil, fmt.Errorf("points: no source %s", name)
+		}
+		found := false
+		for i, c := range src.Columns {
+			if strings.EqualFold(c.Name, column) && c.Type.Kind == KindRef {
+				src.Columns[i].Type, found = RefTo(class), true
+			}
+		}
+		if !found {
+			return nil, fmt.Errorf("points: %s is no ref column of %s", column, name)
+		}
+	}
+	return set, nil
+}
 
 // ErrorCodes is the closed list of evaluation error codes (ADR-0019,
 // ADR-0020, ADR-0022, ADR-0024). A case may only expect one of these.
@@ -389,8 +455,29 @@ var ErrorCodes = map[string]bool{
 	"overflow": true, "inexact": true, "currency_mismatch": true,
 }
 
-// Scope builds the scope of the suite's variables, in name order.
-func (s *BindingSuite) Scope() (*Scope, error) { return ScopeOf(s.Variables, s.Schemas) }
+// Scope builds the scope of the suite's variables, in name order, a ref
+// pointing at the class Points says.
+func (s *BindingSuite) Scope() (*Scope, error) {
+	vs, err := variablesOf(s.Variables, s.Schemas)
+	if err != nil {
+		return nil, err
+	}
+	for name, class := range s.Points {
+		if strings.Contains(name, ".") {
+			continue
+		}
+		found := false
+		for i, v := range vs {
+			if v.Name == name && v.Type.Kind == KindRef {
+				vs[i].Type, found = RefTo(class), true
+			}
+		}
+		if !found {
+			return nil, fmt.Errorf("points: %s is no ref variable", name)
+		}
+	}
+	return NewScope(vs...)
+}
 
 // BindMode is the binding mode the suite names.
 func (s *BindingSuite) BindMode() Mode {

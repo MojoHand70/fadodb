@@ -99,6 +99,23 @@ func (c *Class) Source() *formula.Source {
 	return src
 }
 
+// ClassName implements formula.ClassNames for a formula asked over the
+// documents of the class, a filter: the class a REF names is the class
+// itself or one a pointer of the class points at, written as the
+// definition of the class writes it (ADR-0076, item 10). Any other name
+// is taken at its word, since no pointer of the class compares with it.
+func (c *Class) ClassName(name string) (string, bool) {
+	if strings.EqualFold(name, c.Name) {
+		return c.Name, true
+	}
+	for _, v := range c.Variables {
+		if v.RefClass != "" && strings.EqualFold(v.RefClass, name) {
+			return v.RefClass, true
+		}
+	}
+	return name, true
+}
+
 // Variable is one compiled variable.
 type Variable struct {
 	Name string
@@ -754,6 +771,11 @@ func compileVariable(c *collector, path, name string, vd *VariableDef, schemas *
 	if v.Type.Kind == formula.KindRef && vd.Class == "" {
 		c.hint(CodeMissing, path+"/class", "a ref names the class it points at", `add "class": "<ClassName>"`)
 	}
+	if v.Type.Kind == formula.KindRef {
+		// The compiler knows what the pointer points at, and refuses a
+		// comparison with a pointer to another class (ADR-0076, item 10).
+		v.Type = formula.RefTo(vd.Class)
+	}
 	if vd.Class != "" && v.Type.Kind != formula.KindRef {
 		c.add(CodeNotAllowed, path+"/class", "only a ref has a class")
 	}
@@ -1070,6 +1092,9 @@ func checkInferred(c *collector, path string, v *Variable) {
 	}
 	if vd.Class != "" && v.Type.Kind != formula.KindRef {
 		c.add(CodeNotAllowed, path+"/class", "only a ref has a class")
+	}
+	if v.Type.Kind == formula.KindRef {
+		v.Type = formula.RefTo(vd.Class)
 	}
 	if len(vd.Values) > 0 && v.Type.Kind != formula.KindText {
 		c.add(CodeNotAllowed, path+"/values", "only a text variable has values (ADR-0023)")

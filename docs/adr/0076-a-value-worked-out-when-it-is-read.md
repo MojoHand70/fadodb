@@ -404,6 +404,29 @@ strike.
   the class. A figure over a kept list of a table works, as over any
   list the document holds.
 
+## Settled while building a lookup in a live variable
+
+Built on 2026-11-25, in Phase 8: item 5 lets a live formula read what
+a triggered formula may, a lookup among it, and the lookup was refused
+with `not_supported` until now. Each of these is settled by me while
+building, and is the owner's to strike.
+
+- **A `LOOKUP` over the documents of a class is asked as a figure over
+  a list is** (ADR-0081): one statement, beside the writer, among the
+  documents the read rule of that class lets the reader see, with the
+  read rights of the values it reads. A value the reader may read in
+  no state is blank. A content administrator who passes the rules is
+  written down with how many documents only the override let them
+  count (ADR-0067).
+- **A `LOOKUP` in a table asks the table's `read` line of the reader**,
+  as a list over a table does: a reader it does not let through is
+  refused with `forbidden`, and the whole value with it; a content
+  administrator passes it with a reason.
+- **Whoever acts for somebody** needs the substitution for a class a
+  live lookup reads, as for a class a list lists (ADR-0053).
+- **A live value that looks something up is not worked out on the
+  page**: it was the server's already (item 13).
+
 ## Consequences
 
 - A list on a document is written once, in the class, and every face

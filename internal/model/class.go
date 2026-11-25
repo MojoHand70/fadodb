@@ -555,7 +555,10 @@ func CompileIn(def *Definition, env Env) (*Class, Diagnostics) {
 				c.listsOf, c.listsFor = cls, v
 				prog := bindAs(c, path+"/formula", v.Def.Formula, scope, mode, v.Type)
 				c.listsOf, c.listsFor = nil, nil
-				if prog != nil && readsOnlyItsDocument(c, path, v, prog) {
+				// A live formula may look in a table or at the documents
+				// of a class (ADR-0076, item 5): the store asks the
+				// lookup for the reader of the value.
+				if prog != nil {
 					v.Formula = prog
 					v.Deps = depsOf(prog)
 					v.Sources = sourcesOf(prog)
@@ -999,9 +1002,6 @@ func inferTypes(c *collector, cls *Class, schemas *SchemaSet) {
 			c.hint(CodeMissing, path+"/type", "the formula is always blank, so its type cannot be inferred", `declare "type"`)
 			continue
 		}
-		if !readsOnlyItsDocument(c, path, v, prog) {
-			continue
-		}
 		if v.Mode != ModeLive && c.readsClass(prog) {
 			// The type of a stored value may not follow another class: it
 			// is the layout of this class's documents and of their history.
@@ -1014,26 +1014,6 @@ func inferTypes(c *collector, cls *Class, schemas *SchemaSet) {
 		v.Sources = sourcesOf(prog)
 		checkInferred(c, path, v)
 	}
-}
-
-// readsOnlyItsDocument refuses a live variable whose formula looks in a
-// table or at the documents of a class with LOOKUP. The record lets it
-// (ADR-0076, item 5), with the reader's rights; until that is built a
-// live formula reads the values of its document, the caller, the clock,
-// the state and the life of the document, and figures over the lists of
-// its document (ADR-0081), which are asked with the reader's rights.
-func readsOnlyItsDocument(c *collector, path string, v *Variable, prog *formula.Program) bool {
-	if v.Mode != ModeLive {
-		return true
-	}
-	for _, q := range prog.Queries {
-		if q.List == "" {
-			c.hint(CodeNotSupported, path+"/formula", "a live variable that looks in a table or at the documents of a class is not built yet (ADR-0076)",
-				`until it is, a live formula reads its own document, the caller and the clock, and counts and sums the lists of its document; a triggered variable looks things up: "mode": "triggered"`)
-			return false
-		}
-	}
-	return true
 }
 
 // listsOf gives the binder the lists of the class a variable belongs to

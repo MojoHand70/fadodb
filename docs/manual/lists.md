@@ -621,4 +621,3 @@ Each of these is decided (ADR-0076) and waits its turn.
   totals. One figure of a list is built: see "Figures over a list".
 - `REF()` outside the condition of a `QUERY`, and `REF("Order",
   "ORD-17")`, the pointer to a named document.
-- A single value looked up in a live variable, with `LOOKUP`.

@@ -279,9 +279,11 @@ func (s *Store) liveOn(ctx context.Context, c *class, cv *cvar, id string, o opt
 		}
 		return nil, on, nil, nil
 	}
-	if len(lists) > 0 {
+	if len(lists) > 0 || cv.v.Formula != nil && len(cv.v.Formula.Queries) > 0 {
 		// A figure over a list is the list's to its reader: whoever may
 		// not read the list of this document may not count it either.
+		// A LOOKUP of the formula's own is asked for the reader too
+		// (ADR-0076, item 5), beside the writer as the figures are.
 		held := &liveHeld{row: row, ctx: ctxOf, on: make(map[string]*query.On, len(lists))}
 		for _, lv := range lists {
 			if err := s.mayReadLive(c, lv, row, evalCtx, o, id, past); err != nil {

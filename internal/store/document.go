@@ -90,6 +90,9 @@ func (c *class) scanInto(sc scanner, history, lean bool, sys int, raw, dest []an
 // load reads the rows of one version of a composite with the statement,
 // the writer's or the pool's.
 func (ch *child) load(ctx context.Context, st *sql.Stmt, id string, version int64) ([]childRow, error) {
+	if ch.gone {
+		return nil, nil
+	}
 	rows, err := st.QueryContext(ctx, id, version)
 	if err != nil {
 		return nil, storageErr("read "+ch.v.Name, err)

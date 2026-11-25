@@ -998,7 +998,7 @@ func (s *Store) load(ctx context.Context) error {
 	// no longer computes anything, and may read what has since gone.
 	env.Shallow = false
 	for _, st := range classes {
-		c, err := s.compileStored(ctx, st.name, st.version, st.json, env)
+		c, err := s.compileStored(ctx, st.name, st.version, st.json, env, false)
 		if err != nil {
 			return err
 		}
@@ -1009,7 +1009,7 @@ func (s *Store) load(ctx context.Context) error {
 		if cur, ok := s.classes[strings.ToUpper(st.name)]; !ok || cur.cls.Version == st.version {
 			continue
 		}
-		if _, err := s.compileStored(ctx, st.name, st.version, st.json, env); err != nil {
+		if _, err := s.compileStored(ctx, st.name, st.version, st.json, env, true); err != nil {
 			return err
 		}
 	}
@@ -1048,8 +1048,10 @@ func (s *Store) env() model.Env {
 }
 
 // compileStored compiles one stored version of a class, prepares it and
-// keeps it among the class's versions.
-func (s *Store) compileStored(ctx context.Context, name string, version int, src []byte, env model.Env) (*class, error) {
+// keeps it among the class's versions. An earlier version that the
+// tables were made again without is not kept, and the answer is nil:
+// nothing was ever written under it.
+func (s *Store) compileStored(ctx context.Context, name string, version int, src []byte, env model.Env, earlier bool) (*class, error) {
 	cls, diags := model.DefineIn(src, env)
 	if len(diags) > 0 {
 		return nil, &Error{Code: CodeStorage, Message: "the stored class " + name + " version " + itoa(version) + " does not compile: " + diags.Error()}
@@ -1059,7 +1061,12 @@ func (s *Store) compileStored(ctx context.Context, name string, version int, src
 	if err != nil {
 		return nil, err
 	}
-	if err := c.prepare(ctx, s.writer, s.db); err != nil {
+	if earlier {
+		kept, err := c.prepareEarlier(ctx, s.writer, s.db, s.db)
+		if err != nil || !kept {
+			return nil, err
+		}
+	} else if err := c.prepare(ctx, s.writer, s.db); err != nil {
 		return nil, err
 	}
 	s.keepVersion(c)

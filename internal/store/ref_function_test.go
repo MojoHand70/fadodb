@@ -23,7 +23,11 @@ const pointOrder = `{
    "written": {"type": "text", "formula": "\"this is \" & REF()", "mode": "triggered", "on": ["enter:open"]},
    "billed":  {"type": "number", "formula": "LOOKUP(Invoice, COUNT(id), order = REF())", "mode": "triggered", "on": ["refresh"]},
    "waiting": {"type": "number", "mode": "live", "formula": "LOOKUP(Invoice, COUNT(id), order = REF() AND state <> \"paid\")"},
-   "of17":    {"mode": "live", "formula": "QUERY(Invoice, {number}, order = REF(\"Order\", \"ORD-17\"), {number})"}
+   "of17":    {"mode": "live", "formula": "QUERY(Invoice, {number}, order = REF(\"Order\", \"ORD-17\"), {number})"},
+   "every":   {"mode": "live", "formula": "QUERY(Invoice, {number, order}, TRUE, {number})"},
+   "among":   {"type": "number", "mode": "live", "formula": "COUNTIF(every, order = REF(\"Order\", \"ORD-17\"))"},
+   "lines":   {"type": "rows", "schema": {"what": "text", "about": "ref"}},
+   "about17": {"formula": "COUNTIF(lines, about = REF(\"Order\", \"ORD-17\"))"}
  },
  "states": {"initial": "open", "list": ["open", "closed"], "final": ["closed"]},
  "transitions": [{"name": "close", "from": "open", "to": "closed"}],
@@ -136,6 +140,23 @@ func TestRef_TheKeyOfALookup(t *testing.T) {
 		if err != nil || v.Value != tc.want {
 			t.Errorf("%s reads the invoices that wait on ORD-17: %v, %v; want %v", tc.who.ID, v, err, tc.want)
 		}
+	}
+	// A figure over a list takes a pointer written out in its condition:
+	// over a list of other documents, for its reader, and over the lines
+	// the document holds.
+	for _, tc := range []struct {
+		who  Principal
+		want float64
+	}{{liveJan, 2}, {liveEwa, 3}} {
+		v, err := s.Live(ctx, "Order", "ORD-18", "among", As(tc.who))
+		if err != nil || v.Value != tc.want {
+			t.Errorf("%s counts the invoices of ORD-17 among all: %v, %v; want %v", tc.who.ID, v, err, tc.want)
+		}
+	}
+	d, err := s.Set(ctx, "Order", "ORD-18", Values{"lines": []any{
+		map[string]any{"what": "a", "about": "Order:ORD-17"}, map[string]any{"what": "b", "about": "Order:ORD-18"}, map[string]any{"what": "c", "about": "Order:ORD-17"}}}, As(liveJan))
+	if err != nil || d.Values["about17"] != 2.0 {
+		t.Errorf("the lines about ORD-17: %v, %v; want 2", d, err)
 	}
 	// A pointer written out names the same document on every order.
 	v, err := s.Live(ctx, "Order", "ORD-18", "of17", As(liveEwa))
@@ -278,6 +299,7 @@ func TestRef_RefusedWhenDefined(t *testing.T) {
 		{"an id that is no text", `"x": {"formula": "REF(\"Order\", 17)"}`, "bad_formula", "argument 2 must be"},
 		{"a pointer compared with a text", `"x": {"formula": "order = \"Order:ORD-17\""}`, "bad_formula", "REF(\"Order\", \"ORD-17\") is the pointer"},
 		{"REF() in an auto formula, as ID()", `"x": {"formula": "TEXT(REF())"}`, "bad_formula", "may not be used in an auto formula"},
+		{"REF() in the condition of a figure", `"l": {"mode": "live", "formula": "QUERY(Invoice, {number, order})"}, "x": {"type": "number", "mode": "live", "formula": "COUNTIF(l, order = REF())"}`, "bad_formula", "REF() is a function of the document the formula belongs to, and is not taken here yet"},
 	} {
 		def := `{"name": "T", "variables": {"n": {"type": "text"}, "order": {"type": "ref", "class": "Order"}, "invoice": {"type": "ref", "class": "Invoice"}, ` + tc.variable + `}, "states": {"initial": "a", "list": ["a"]}}`
 		_, err := s.DefineClass(ctx, []byte(def), asSetup)

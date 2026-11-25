@@ -10,6 +10,15 @@ Phase 8 started on 2026-11-25.
 
 ### Added
 
+- The flow of a class is answered from the copy in milliseconds: the
+  copy keeps the moves of the documents ready (ADR-0089, step 2). For
+  each class it holds one row for each time a document that exists
+  was made or moved along a transition, with the moment the state it
+  left was entered, and the command `flow` is one sum over those rows.
+  Among 3,400,000 invoices that made ten million moves the flow takes
+  19 ms, where it took half a second from the copy before and takes 18
+  seconds from the store; the answer is the same. A copy made before
+  is given its moves by itself, once.
 - The counts and totals a class already asks are answered from the
   copy in the analytical engine when no index narrows them (ADR-0089,
   step 3, its first part). In a program that keeps the copy, the

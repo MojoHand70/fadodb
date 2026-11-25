@@ -488,8 +488,8 @@ its measurements: over ten million visits of a state, a question the
 store answers in 12 to 26 seconds takes the copy under half a second.
 Its first two steps are built: a program that is given DuckDB keeps
 the copy and feeds it, and answers the flow of a class from it, in
-under half a second among ten million visits of a state where the
-store takes 19. The server program is built with DuckDB too, as
+19 ms among ten million moves where the store takes 18 seconds: the
+copy keeps the moves of the documents ready. The server program is built with DuckDB too, as
 `fadodb-full`, on the machine that runs it; `fadodb` stays in pure Go.
 The counts and totals a class already asks, the command `count` and
 what a `LOOKUP` or a figure over a list works out when it is read, go

@@ -708,3 +708,90 @@ func TestCopy_AQuestionDoesNotWaitForALoad(t *testing.T) {
 		t.Fatalf("after the feed the copy holds %d versions and was asked with %v", c.count("Invoice_versions"), err)
 	}
 }
+
+// The copy keeps the moves of the documents that exist (ADR-0089, item
+// 2): one row for each time a document was made or moved along a
+// transition, and for a move the moment the state it left was entered.
+// A document that is deleted has no moves any more, and a copy that
+// was fed before it kept them is given them.
+func TestCopy_KeepsTheMoves(t *testing.T) {
+	c := newMemCopy()
+	now := start
+	tick := func() time.Time { now = now.Add(time.Minute); return now }
+	s, path := openStore(t, Options{Analytics: memEngine{c}, CopyEvery: time.Hour, Now: tick})
+	ctx := context.Background()
+	<-s.feeder.first
+	if _, err := s.defineOpen(ctx, []byte(copyInvoice), asSetup); err != nil {
+		t.Fatal(err)
+	}
+	at := map[string]int64{}
+	for i := 1; i <= 3; i++ {
+		d, err := s.Create(ctx, "Invoice", Values{"number": fmt.Sprintf("FV-%d", i)}, WithID(fmt.Sprintf("i-%d", i)))
+		if err != nil {
+			t.Fatal(err)
+		}
+		at[d.ID] = d.CreatedAt
+	}
+	filed, err := s.Transition(ctx, "Invoice", "i-1", "file", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// A change that moves nothing is no move.
+	if _, err := s.Set(ctx, "Invoice", "i-1", Values{"customer": "Globex"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Transition(ctx, "Invoice", "i-1", "approve", nil); err != nil {
+		t.Fatal(err)
+	}
+	mustFeed(t, s)
+	// moves are the rows of the moves as one text each, sorted: the
+	// document, what happened, between which states, and since when the
+	// state it left was held.
+	moves := func() string {
+		c.mu.Lock()
+		defer c.mu.Unlock()
+		var out []string
+		for _, row := range c.rows["Invoice_moves"] {
+			out = append(out, fmt.Sprintf("%v %v %v %v>%v left since %v", row[0], row[1], row[2], row[3], row[4], row[6]))
+		}
+		sort.Strings(out)
+		return strings.Join(out, "\n")
+	}
+	want := fmt.Sprintf(`i-1 created <nil> <nil>>draft left since <nil>
+i-1 transition approve review>paid left since %d
+i-1 transition file draft>review left since %d
+i-2 created <nil> <nil>>draft left since <nil>
+i-3 created <nil> <nil>>draft left since <nil>`, filed.StateEnteredAt, at["i-1"])
+	if got := moves(); got != want {
+		t.Fatalf("the moves in the copy:\n%s\nwant\n%s", got, want)
+	}
+	// A deleted document has no moves; its events stay in the copy.
+	events := c.count("events")
+	if err := s.Delete(ctx, "Invoice", "i-3"); err != nil {
+		t.Fatal(err)
+	}
+	mustFeed(t, s)
+	if got := moves(); strings.Contains(got, "i-3") || c.count("Invoice_moves") != 4 || c.count("events") != events+1 {
+		t.Errorf("after i-3 was deleted the copy holds %d events (%d before) and the moves\n%s", c.count("events"), events, got)
+	}
+	// A copy that was fed before it kept the moves: its events are read
+	// again, once, and the moves are made with them.
+	kept := moves()
+	if err := s.Close(); err != nil {
+		t.Fatal(err)
+	}
+	c.mu.Lock()
+	delete(c.marks, copyMarkFormat)
+	c.rows["Invoice_moves"] = nil
+	c.mu.Unlock()
+	s, err = Open(path, Options{Analytics: memEngine{c}, CopyEvery: time.Hour, Now: tick, Outbox: OutboxOptions{Manual: true}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { s.Close() })
+	<-s.feeder.first
+	mustFeed(t, s)
+	if got := moves(); got != kept || c.count("events") != events+1 {
+		t.Errorf("a copy without its moves, after a feed: %d events (want %d) and the moves\n%s\nwant\n%s", c.count("events"), events+1, got, kept)
+	}
+}

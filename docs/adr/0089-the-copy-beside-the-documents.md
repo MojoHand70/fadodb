@@ -78,6 +78,7 @@ Two findings decide what follows.
    | every version of every document, with the columns of its class, who made it and when | how documents moved, and what they held at a past moment |
    | the documents as they are now | totals over a whole class |
    | the events | what happened, by whom and how |
+   | the moves of the documents that exist: each time one was made or moved along a transition, with the moment, and for a move the moment the state it left was entered | how documents moved, as one sum over one table |
 
    Not in the copy: reference tables, until the step that gives DuckDB
    tables of its own; users, groups, keys and sessions; definitions;
@@ -212,6 +213,11 @@ Two findings decide what follows.
   3,400,000 invoices and ten million visits, three runs: 18.6 seconds
   from the store, 0.33 from the copy, the same answer. The budget of
   ADR-0017 is 2 seconds.
+- **Step 2, again: the moves kept ready, on 2026-11-25.** The copy
+  keeps the moves of the documents that exist, and the flow is one sum
+  over them: 19 ms over the same ten million moves, for a reader who
+  reads every document. An existing copy is given its moves in 47
+  seconds, once, and is 0.62 GB where it was 0.54.
 - **The first half of step 6, the program with the engine, on
   2026-11-25**, ahead of steps 3 to 5: the copy answers nothing for a
   person until a server has it. The code of the program `fadodb` is
@@ -338,6 +344,13 @@ strike.
   pure Go everywhere: the releases, the image, the manual. So the new
   one is built as `fadodb-full`, and nothing that exists is renamed.
   Which program keeps the name `fadodb` is the owner's to say.
+
+  The owner said it on 2026-11-25: the program with DuckDB is
+  `fadodb`, and the one in pure Go is `fadodb-core`. The names move
+  with step 6, when the program with DuckDB is built and released for
+  each system: on the day `fadodb` means the program with the engine,
+  every release has one. Until then the two are built as
+  `fadodb-full` and `fadodb`.
 - **The engine of a server takes at most 2 GB of memory** unless its
   settings say otherwise, `analytics.memory`. DuckDB's own limit is
   four fifths of the machine, which a server shares with its database
@@ -347,6 +360,36 @@ strike.
 - **Only a served database gets the engine.** The commands of the
   program that open a database for a moment, such as `fadodb user
   add`, keep no copy.
+
+## Settled while building the moves the copy keeps ready
+
+Each of these is settled by me while building, and is the owner's to
+strike.
+
+- **The flow was not in milliseconds, and the copy now keeps what
+  makes it so.** As first built, the flow joined the events with the
+  versions each time it was asked, ten million rows with ten million:
+  a third of a second on the day it was built, and half a second when
+  it was measured again beside this. The copy now keeps the moves
+  ready, in a table `<Class>_moves` for each class, and the flow is
+  one sum over it: 19 ms over the same ten million moves, measured
+  through the engine in three runs that agree, where the store takes
+  18.2 seconds. The answer is the same.
+- **When the state a move left was entered is read while the copy is
+  fed**, from the version the event left, which the store finds by its
+  key inside the one statement that reads the new events. Nothing is
+  read row by row from outside the store.
+- **A deleted document has no moves in the copy.** The flow is of the
+  documents that exist, as the store answers it, and the id of a
+  deleted document is never given again. So a reader who reads every
+  document is asked for no more than the sum; the reader's documents
+  are named only for a reader whose rule leaves some out. Naming them
+  costs about a tenth of a second when the rule picks millions of
+  documents, measured on the statement alone.
+- **A copy that was fed before it kept the moves is given them**: it
+  carries a mark of what it holds, and a copy with another mark has
+  its events read again from the first, once. Its versions and its
+  documents stay.
 
 ## Settled while building the counts and totals from the copy
 
@@ -423,7 +466,7 @@ strike.
 
 | Budget | The benchmark that proves it |
 |---|---|
-| which state follows which, with the middle wait and the slow tenth, over 10,000,000 visits: under 2 s (ADR-0017) | with step 2, in the module `analytics/` |
-| bringing the copy up to date after up to 1,000 new versions: under 50 ms | `BenchmarkFeed` in the module `analytics/`: 31.7 ms, measured with step 1 on 2026-11-25, in a class of 20,000 documents |
+| which state follows which, with the middle wait and the slow tenth, over 10,000,000 visits: under 2 s (ADR-0017) | with step 2, in the module `analytics/`; the flow, which has neither the middle wait nor the slow tenth, takes 19 ms over 10,000,000 moves, measured by hand on 2026-11-25 |
+| bringing the copy up to date after up to 1,000 new versions: under 50 ms | `BenchmarkFeed` in the module `analytics/`: 31.7 ms, measured with step 1 on 2026-11-25, in a class of 20,000 documents; 28.5 ms with the moves kept, where it took 24.7 the same hour without them |
 | a commit is no slower for the copy, and allocates nothing more: the feed is not on the path of a commit | the benchmark gate, with step 1 |
 | the small build is no larger (ADR-0072) | the size gate |

@@ -177,6 +177,74 @@ Two findings decide what follows.
      says as of which moment it is. FV-2041 may be missing when she
      looks. This is the "feed delay" ADR-0017 speaks of.
 
+## What is built
+
+- **Step 1, the copy and its feed, on 2026-11-25.** A program gives
+  the database an analytical engine when it opens it, in the option
+  `Analytics`; the module `analytics/` has the one made with DuckDB,
+  `analytics.Engine`. The database then keeps the copy in the file
+  `<database>.duckdb` and feeds it itself: for every class the
+  documents as they are now, in a table of the class's name, and every
+  version of them, in `<Class>_versions`; and the events. The copy is
+  found again when the database is opened again, and made again when
+  it is lost, does not open, or names an event the database does not
+  have. `CopyState` says how it stands, and `FeedCopy` feeds it at
+  once.
+- **Nothing asks the copy yet.** Steps 2 and 3 do, and with them the
+  copy is brought up to date before an answer (item 5). The program
+  `fadodb` is built without the module, so a server keeps no copy.
+
+## Settled while building the copy and its feed
+
+Each of these is settled by me while building, and is the owner's to
+strike.
+
+- **The feed goes by the place of a row in the store's table, and not
+  by the id of an event.** The id of an event begins with its moment.
+  After a clock was set back, a new event sorts before an older one,
+  and a feed that asked for the events after the last id would never
+  see it. A test found this before anything read the copy.
+- **A mark is the place of the last row the copy holds and the id of
+  its event.** The place says where the next feed begins. The id tells
+  a database that was put back from a backup, and a class that was
+  made again, from the one the copy was fed: the copy of that class,
+  or the whole copy, is then made again.
+- **A long load is copied in pieces**, of at most 1,000,000 versions
+  of a class and as many events, each kept when it is done. No reading
+  of the database is held for the whole of a long load, which would
+  keep the store from folding its latest commits into the database
+  meanwhile. The documents as they are now are given with the last
+  piece.
+- **After more than 100,000 new versions of a class, its documents as
+  they are now are read whole**, which is cheaper than taking each
+  changed one out and putting it back.
+- **Opening a database does not wait for its copy.** The first feed
+  runs beside the program, and so does the one every `CopyEvery`, five
+  seconds unless the program says otherwise.
+- **Closing feeds the copy once more, for at most five seconds.** What
+  is left is fed at the next opening.
+- **A copy that cannot be opened or fed stops nothing.** The database
+  works without it, and `CopyState` says why. A commit never waits
+  for the copy and never fails for it.
+- **One opening feeds a copy.** DuckDB lets one program write a file;
+  inside one program the engine gives the copy to the first opening,
+  and a second works without one.
+- **A column of the copy has the type the formula compiler writes its
+  statements for** in DuckDB's dialect (ADR-0016): a text, a whole
+  number for an exact value's mantissa and for a moment's seconds, a
+  number with a fraction, a true or a false, and a day for a date. So
+  the reader's rule, written by the compiler, runs on the copy as it
+  is.
+- **When a version ended is not copied.** The store writes that into
+  the row of a version later, and the copy only ever takes rows; the
+  next version of the document says it.
+- **The lines of a document and its arrays are not in the copy**, as
+  this record leaves out. The fields of an object are columns, as in
+  the store.
+- **Two calls for the program that opened the database, and no
+  command**: `FeedCopy` and `CopyState`. A caller of a server never
+  sees the copy.
+
 ## Consequences
 
 - A question that reads everything is answered in the time of an
@@ -186,8 +254,13 @@ Two findings decide what follows.
 - The first question after a long load waits for the copy to catch up:
   0.73 seconds for 100,000 versions, 38 seconds when the copy is made
   from nothing for ten million.
-- The feed reads the database as any reader does. A reader slows the
-  writer; by how much here is measured with the first step.
+- The feed reads the database as any reader does, and a reader slows
+  the writer. Measured with the first step, on 2026-11-25: a thousand
+  moves in one call take 39.8 ms in a database that keeps no copy and
+  41.9 ms beside a copy that is fed ten times a second, 5% more
+  (`BenchmarkCommitsBesideTheFeed`, three runs of each, within 1%).
+  It is not measured at the period of five seconds a copy is fed at
+  unless the program says otherwise.
 - Two programs are built and released, as ADR-0017 says. The one with
   DuckDB is about 100 MB; the one of today is 16 MB.
 
@@ -212,6 +285,6 @@ Two findings decide what follows.
 | Budget | The benchmark that proves it |
 |---|---|
 | which state follows which, with the middle wait and the slow tenth, over 10,000,000 visits: under 2 s (ADR-0017) | with step 2, in the module `analytics/` |
-| bringing the copy up to date after up to 1,000 new versions: under 50 ms | with step 1 |
+| bringing the copy up to date after up to 1,000 new versions: under 50 ms | `BenchmarkFeed` in the module `analytics/`: 31.7 ms, measured with step 1 on 2026-11-25, in a class of 20,000 documents |
 | a commit is no slower for the copy, and allocates nothing more: the feed is not on the path of a commit | the benchmark gate, with step 1 |
 | the small build is no larger (ADR-0072) | the size gate |

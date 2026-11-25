@@ -10,6 +10,21 @@ Phase 8 started on 2026-11-25.
 
 ### Added
 
+- The first step of the analytical engine: the copy and its feed
+  (ADR-0089, proposed; ADR-0017). A program built with the module
+  `analytics` gives the database DuckDB as its analytical engine, with
+  the new option `Analytics`. The database then keeps a copy of its
+  documents in the file `<database>.duckdb` beside its own and feeds
+  it itself: for every class the documents as they are now and every
+  version of them, and the events. The copy is never the truth and
+  needs no backup: the engine makes it again when it is lost, does not
+  open or belongs to another database. A commit never waits for it.
+  The new calls `CopyState` and `FeedCopy` say how the copy stands and
+  feed it at once; the option `CopyEvery` sets how often it is fed
+  without being asked, five seconds when none is given. **Nothing asks
+  the copy yet**: the questions that are answered from it are the next
+  steps, and the program `fadodb` is built without the module, so a
+  server keeps no copy. The core stays pure Go.
 - A command says which version of a document its sender read
   (ADR-0078, item 2, the first step of the record). `set`, `reset`,
   `refresh`, `transition` and `delete` take the member `version`, in Go

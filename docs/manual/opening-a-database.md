@@ -144,6 +144,7 @@ ola reads "buy milk", version 1
 | `notes.fado-shm` | an index of the file above | while a program has the database open |
 | `notes.fado.blobs` | a directory with the bytes of attached files | when the database was created with the store `dir`; see [Files](files.md) |
 | `notes.fado.lock` | says which program holds the database alone, and is empty when none does | once a program has held the database alone |
+| `notes.fado.duckdb` | a copy of the documents, kept for the questions that read everything | when the program gave an analytical engine; see [An analytical engine](#an-analytical-engine) |
 
 The database is a SQLite file, and the two files beside it are
 SQLite's. When the database is closed they are folded in and gone, and
@@ -177,6 +178,8 @@ An option is one of two kinds.
 | `Users` | the database keeps its own users, groups and keys, and answers who a key belongs to | the program's | the program says itself who is calling, and the database keeps no users | |
 | `Inbound` | the program takes messages from outside at the inlets of the database (ADR-0065) | the program's | it takes none: an inlet cannot be defined, and a message is answered as one for a name that is no inlet | |
 | `Alone` | the program holds the database alone until it closes it, under the name it gives here | the program's | the program holds nothing | |
+| `Analytics` | the analytical engine of the program, which keeps a copy of the documents; see [An analytical engine](#an-analytical-engine) | the program's | none: the database keeps no copy | |
+| `CopyEvery` | how often that copy is fed without being asked | the program's | every 5 seconds | |
 | `Now` | the clock of the database | the program's | the clock of the machine | |
 | `WALLimit`, `CheckpointEvery` | when the latest commits are folded into the database | the program's | at 64 MiB, and every 100 ms | |
 
@@ -226,6 +229,43 @@ the database alone after it does not see it.
 
 That one program for many callers is the server:
 [Serving a database](serving-a-database.md).
+
+## An analytical engine
+
+A question that names what it wants, the invoices of one order, is
+answered by an index. A question that reads everything, how much is
+invoiced by customer, is slow in a database built for the first kind.
+For that the engine can keep a copy of the documents in DuckDB, an
+engine built for counting (ADR-0017, ADR-0089).
+
+The core is pure Go and has no DuckDB. A program that wants the copy is
+built with the module `analytics`, which needs a C compiler, and gives
+its engine when it opens the database:
+
+```go
+db, err := fado.Open("notes.fado", fado.Options{Analytics: analytics.Engine{}})
+```
+
+- **The database feeds the copy itself**, every `CopyEvery` and when it
+  closes. `FeedCopy` feeds it at once.
+- **The copy holds**, for every class, the documents as they are now
+  and every version of them, and the events. The lines of a document
+  are not in it.
+- **The copy is never the truth.** It is the file `notes.fado.duckdb`
+  beside the database. It needs no backup: when it is lost, or does not
+  open, or belongs to another database, the engine makes it again by
+  itself.
+- **A copy that cannot be kept stops nothing.** The database works
+  without it, and `CopyState` says why the last feed failed.
+- **One opening feeds a copy.** DuckDB lets one program write a file,
+  and inside one program the engine gives the copy to the first
+  opening of the database. A second opening works without a copy, and
+  `CopyState` says so.
+
+**Nothing asks the copy yet.** This is the first step of the analytical
+engine: the copy is kept and fed. The questions that are answered from
+it come with the next steps of ADR-0089. The program `fadodb` is built
+without the module, so a server keeps no copy today.
 
 ## Closing
 

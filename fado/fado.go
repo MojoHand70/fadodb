@@ -89,6 +89,18 @@ type (
 	OutboxOptions = store.OutboxOptions
 	QueuedAction  = store.QueuedAction
 	OutboxFilter  = store.OutboxFilter
+	// Analytics is the analytical engine a program gives the database
+	// it opens, in Options.Analytics (ADR-0017, ADR-0089); the module
+	// analytics has one, made with DuckDB. Copy is the copy of the
+	// documents such an engine holds, which the database feeds itself;
+	// CopyTable, CopyColumn and CopyWriter are what a feed speaks in,
+	// and CopyState says how the copy of an open database stands.
+	Analytics  = store.Analytics
+	Copy       = store.Copy
+	CopyTable  = store.CopyTable
+	CopyColumn = store.CopyColumn
+	CopyWriter = store.CopyWriter
+	CopyState  = store.CopyState
 	// OutboxCounts is how much of the outbox is still to do: due,
 	// waiting for its moment, and dead.
 	OutboxCounts = store.OutboxCounts
@@ -295,6 +307,17 @@ type (
 // sent the command, an agent that decided to send it, or a service, a
 // program that decides nothing, such as an import or a schedule. A host
 // program that does not know leaves the kind empty.
+// What a column of the copy in an analytical engine holds (ADR-0089): a
+// text, a whole number, a number with a fraction, a true or a false,
+// and a day, the whole number of the days of a date.
+const (
+	CopyText   = store.CopyText
+	CopyWhole  = store.CopyWhole
+	CopyNumber = store.CopyNumber
+	CopyBool   = store.CopyBool
+	CopyDay    = store.CopyDay
+)
+
 const (
 	ActorPerson  = store.ActorPerson
 	ActorAgent   = store.ActorAgent
@@ -453,6 +476,18 @@ func Open(path string, o Options) (*DB, error) {
 // run before it is stopped and refused with too_wide (ADR-0075, item
 // 6): the database's limit, five seconds when none was given.
 func (db *DB) MaxQuestion() time.Duration { return db.s.MaxQuestion() }
+
+// CopyState says how the copy of the database in the analytical engine
+// stands (ADR-0089): whether the program gave an engine, how many feeds
+// wrote to the copy, and why the last one failed. Without an engine the
+// database keeps no copy and answers every question by the store.
+func (db *DB) CopyState() CopyState { return db.s.CopyState() }
+
+// FeedCopy brings the copy in the analytical engine up to the database
+// now, without waiting for the feed that runs by itself every
+// Options.CopyEvery (ADR-0089). It answers nil for a database that
+// keeps no copy.
+func (db *DB) FeedCopy(ctx context.Context) error { return db.s.FeedCopy(ctx) }
 
 // Close closes the database.
 func (db *DB) Close() error { return db.s.Close() }

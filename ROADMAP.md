@@ -486,7 +486,9 @@ DuckDB built for each operating system. How the copy beside the
 documents is fed and asked is ADR-0089, proposed on 2026-11-25 with
 its measurements: over ten million visits of a state, a question the
 store answers in 12 to 26 seconds takes the copy under half a second.
-Nothing of the analytical engine is built yet.
+Its first step is built: a program that is given DuckDB keeps the copy
+and feeds it. Nothing asks the copy yet, and the program `fadodb` is
+built without DuckDB.
 This page is updated when a phase starts and when it ends;
 it never describes a phase as done before its acceptance criteria pass.
 

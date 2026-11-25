@@ -46,22 +46,30 @@ type LiveRow struct {
 	Values Values
 	// columns are the columns in the order of the list, for the wire.
 	columns []string
+	// row says the row is a row of a table, which is no document and
+	// has no id (ADR-0076, item 9): it is written with its columns alone.
+	row bool
 }
 
 // MarshalJSON writes the row as one object: the id, then the columns in
 // the order of the list.
 func (r LiveRow) MarshalJSON() ([]byte, error) {
-	out := []byte(`{"id":`)
+	out := []byte(`{`)
 	var err error
-	if out, err = appendPlain(out, r.ID); err != nil {
-		return nil, err
+	if !r.row {
+		out = append(out, `"id":`...)
+		if out, err = appendPlain(out, r.ID); err != nil {
+			return nil, err
+		}
 	}
 	for _, name := range r.columns {
 		v, ok := r.Values[name]
 		if !ok {
 			continue
 		}
-		out = append(out, ',')
+		if len(out) > 1 {
+			out = append(out, ',')
+		}
 		if out, err = appendPlain(out, name); err != nil {
 			return nil, err
 		}
@@ -170,6 +178,9 @@ func (s *Store) LivePage(ctx context.Context, r LiveRead, opts ...Option) (*Live
 	}
 	q := cv.v.Query
 	var src *class
+	// tbl is the table a list reads, when its source is one (ADR-0076,
+	// item 9).
+	var tbl *table
 	// lists are the lists of the document that a single value works
 	// figures out of (ADR-0081).
 	var lists []*cvar
@@ -180,15 +191,16 @@ func (s *Store) LivePage(ctx context.Context, r LiveRead, opts ...Option) (*Live
 		if lists, e = s.figureLists(ctx, c, cv, opts); e != nil {
 			return nil, e
 		}
-	} else {
-		if src, e = s.class(q.Source); e != nil {
+	} else if src, e = s.class(q.Source); e != nil {
+		// No class of that name: the source is a table.
+		var te *Error
+		if tbl, te = s.table(q.Source); te != nil {
 			return nil, e
 		}
+	} else if _, e = s.asked(ctx, opts, src.cls.Name); e != nil {
 		// Whoever acts for somebody needs the substitution for the class
 		// whose documents they read, too (ADR-0053).
-		if _, e = s.asked(ctx, opts, src.cls.Name); e != nil {
-			return nil, e
-		}
+		return nil, e
 	}
 	val, on, held, err := s.liveOn(ctx, c, cv, id, o, lists)
 	if err != nil {
@@ -202,6 +214,9 @@ func (s *Store) LivePage(ctx context.Context, r LiveRead, opts ...Option) (*Live
 	}
 	if q == nil {
 		return &LiveValue{Value: val}, nil
+	}
+	if tbl != nil {
+		return s.liveTable(ctx, tbl, cv.v, on, r, o)
 	}
 	return s.liveList(ctx, src, cv.v, on, r, o)
 }

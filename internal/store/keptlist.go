@@ -43,9 +43,17 @@ func (s *Store) keptRows(c *class, cv *cvar, row *docRow, evalCtx *formula.Conte
 	fail := func(code, msg string) ([]childRow, *Error) {
 		return nil, &Error{Code: code, Variable: cv.v.Name, Message: msg}
 	}
+	ctx := s.wev.commit.ctx
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	src, e := s.class(q.Source)
 	if e != nil {
-		return fail(formula.ErrQueryFailed, "the list "+cv.v.Name+" reads the class "+q.Source+", which the database no longer has")
+		// No class of that name: the source is a table (ADR-0076, item 9).
+		if t, te := s.table(q.Source); te == nil {
+			return s.keptTableRows(ctx, c, cv, t, row, evalCtx)
+		}
+		return fail(formula.ErrQueryFailed, "the list "+cv.v.Name+" reads "+q.Source+", which the database no longer has")
 	}
 	on, err := listOn(c, q, row)
 	if err != nil {
@@ -69,10 +77,6 @@ func (s *Store) keptRows(c *class, cv *cvar, row *docRow, evalCtx *formula.Conte
 	}
 	text += " ORDER BY " + plan.Order + " LIMIT " + fmt.Sprint(MaxElements+1)
 	args := append(plan.Args, formula.NewSQLite().ContextArgs(evalCtx)...)
-	ctx := s.wev.commit.ctx
-	if ctx == nil {
-		ctx = context.Background()
-	}
 	found, qerr := s.writer.QueryContext(ctx, text, args...)
 	if qerr != nil {
 		return fail(formula.ErrQueryFailed, "the list "+cv.v.Name+": "+qerr.Error())

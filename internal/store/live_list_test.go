@@ -326,7 +326,6 @@ func TestLiveList_RefusedWhenDefined(t *testing.T) {
 		name, variable, code, says string
 	}{
 		{"a class nobody defined", `"l": {"mode": "live", "formula": "QUERY(Nothing, number)"}`, "bad_formula", "unknown source Nothing"},
-		{"a table as the source", `"l": {"mode": "live", "formula": "QUERY(rates, code)"}`, "not_supported", "over a table is not built yet"},
 		{"a column the source has not", `"l": {"mode": "live", "formula": "QUERY(Invoice, {number, nothing})"}`, "bad_formula", "unknown column nothing of Invoice"},
 		{"a column listed twice", `"l": {"mode": "live", "formula": "QUERY(Invoice, {number, NUMBER})"}`, "duplicate", "listed twice"},
 		{"a count among the columns", `"l": {"mode": "live", "formula": "QUERY(Invoice, {number, COUNT(net)})"}`, "not_supported", "not built yet"},

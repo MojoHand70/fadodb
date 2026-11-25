@@ -80,7 +80,7 @@ sorted by number.
 
 | Part | In the example | What it says |
 |---|---|---|
-| the source | `Invoice` | the class whose documents are listed |
+| the source | `Invoice` | the class whose documents are listed, or a table whose rows are; see [A table as the source](#a-table-as-the-source) |
 | the columns | `{number, net, state, margin}` | what each row shows: variables of the source, or its system columns, such as `state` and `title` |
 | the condition | `order = REF()` | which documents are listed. Left out, every document of the source is |
 | the sort | `{number}` | the order of the rows, a leading `-` for descending, as in `{-net, number}`. Left out, the rows are sorted by id |
@@ -197,6 +197,32 @@ A list has no column and no history, and no commit writes it. Reading
 the order with `get` answers no `invoices`. Jan writes one more
 invoice on ORD-17, and the next reader of the list sees it; the order
 itself is still at the version it had.
+
+## A table as the source
+
+The source of a `QUERY` may be a table. A quote lists the prices of
+its band from Acme's price list:
+
+```jsonc
+"prices": {"mode": "live", "formula": "QUERY(Prices, {sku, price}, band = THIS.band, {-price})"}
+```
+
+| | A list of documents | A list of the rows of a table |
+|---|---|---|
+| the columns | variables of the class, and its system columns | columns of the table |
+| a row | says the `id` of its document | has its columns and no id: a row of a table is no document |
+| sorted, when nothing says | by id | by the key of the table |
+| who may read a live list | each document by the read rule of its class, each value by its rights | whoever the `read` line of the table lets through, as for `table_rows`; anybody else is refused with `forbidden` |
+| a content administrator | passes the rules with a reason | passes the `read` line with a reason, which the log of reads keeps |
+
+The class is noted as a reader of the table: the table is not removed,
+and does not lose a column the list names, while the class lists it.
+A [list that is kept](#a-list-that-is-kept) may read a table too; it
+is asked with the engine's eyes, as a `LOOKUP` is.
+
+**Not built yet:** a figure over a live list of a table, such as
+`COUNT(prices)` in a live variable. Keep the list, and work the
+figure out of the kept one.
 
 ## A list that is kept
 
@@ -574,7 +600,6 @@ place in the formula.
 | a `QUERY` in a triggered variable that does not say its columns | `missing` |
 | a `QUERY` inside a larger formula | `bad_formula` |
 | a source nobody defined | `bad_formula` |
-| a table as the source | `not_supported` |
 | a column the source has not | `bad_formula` |
 | a count among the columns | `not_supported` |
 | a condition that is no condition | `type_mismatch` |
@@ -592,7 +617,6 @@ Invoice without `margin` is refused while the order lists it.
 
 Each of these is decided (ADR-0076) and waits its turn.
 
-- A table as the source of a `QUERY`. A `LOOKUP` reads a table today.
 - A count or a sum among the columns, and grouping: a table of
   totals. One figure of a list is built: see "Figures over a list".
 - `REF()` outside the condition of a `QUERY`, and `REF("Order",

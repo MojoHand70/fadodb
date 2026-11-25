@@ -465,7 +465,9 @@ kept, which is built: a `QUERY` as the whole formula of a triggered
 variable, held with every version of the document. With it the four
 steps of ADR-0078 are built; a kept value that follows its source,
 its item 6, comes with the analytical engine. Then what ADR-0076 and ADR-0075 leave:
-a table as the source of a list, counts, sums and grouping in a
+a table as the source of a list, which is built; `REF()` wherever
+`ID()` may stand and a `LOOKUP` in a live variable, which are not;
+counts, sums and grouping in a
 `QUERY`, the engine's own indexes and its notes on a question no index
 serves. Then the lists in and out of messages and requests, ADR-0085.
 After these comes the analytical engine itself: DuckDB beside the

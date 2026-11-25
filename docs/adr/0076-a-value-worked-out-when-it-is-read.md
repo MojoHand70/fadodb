@@ -373,6 +373,37 @@ Settled by me when the list was built, on 2026-11-22, his to veto:
   document's**, as they are the row's in a filter (ADR-0040). The
   document the list belongs to is `REF()` and `THIS.name`.
 
+## Settled while building a table as the source
+
+Built on 2026-11-25, in Phase 8: item 9 says the source of a `QUERY`
+is a class or a table, and the table was not built with the list.
+Each of these is settled by me while building, and is the owner's to
+strike.
+
+- **A row of a table carries no id.** Item 8 gives a row the id of its
+  document; a row of a table is no document. It has its columns, in
+  the order of the formula, and nothing else.
+- **A live list over a table asks the table's `read` line of its
+  reader**, as the command `table_rows` does (ADR-0051, item 7), since
+  a live value is read with the reader's eyes (item 2). A reader the
+  line does not let through is refused with `forbidden`; a content
+  administrator passes it with a reason, and the log of reads keeps
+  the read under the command `live` (ADR-0067). A table has no rule
+  for each row and no right for each column, so the list is all or
+  nothing.
+- **Left to itself the list is sorted by the key of the table**, and
+  the key follows whatever order is asked, so that a page is the same
+  page each time.
+- **The class is a reader of the table**, as a class that looks a
+  value up is: the table is not removed, and does not lose a column
+  the list names, while the class lists it.
+- **A list that is kept may read a table** (ADR-0078, item 5), with
+  the engine's eyes, as a `LOOKUP` reads one.
+- **A figure over a live list of a table is not built**: `COUNT(prices)`
+  in a live variable is refused as a figure over what is no list of
+  the class. A figure over a kept list of a table works, as over any
+  list the document holds.
+
 ## Consequences
 
 - A list on a document is written once, in the class, and every face

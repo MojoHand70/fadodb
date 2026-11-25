@@ -183,7 +183,6 @@ func TestLists(t *testing.T) {
 		"a QUERY in a triggered variable that does not say its columns": {list(`"mode": "triggered", "on": ["refresh"], "formula": "QUERY(Invoice, number)"`)},
 		"a QUERY inside a larger formula":                               {live(`IF(TRUE, QUERY(Invoice, number), BLANK)`)},
 		"a source nobody defined":                                       {live(`QUERY(Nothing, number)`)},
-		"a table as the source":                                         {live(`QUERY(rates, code)`)},
 		"a column the source has not":                                   {live(`QUERY(Invoice, {number, nothing})`)},
 		"a count among the columns":                                     {live(`QUERY(Invoice, {number, COUNT(net)})`)},
 		"a condition that is no condition":                              {live(`QUERY(Invoice, number, net)`)},

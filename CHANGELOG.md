@@ -94,6 +94,25 @@ Phase 8 started on 2026-11-25.
   second step still sign a person in, under **Sign in with a
   password**, until they go (ADR-0088, step 4).
 
+### Fixed
+
+- **A batch wrote the lists of its first document into the others.**
+  `create_many` gave a document that set no lines, or no tags, the
+  lines and the tags of the document before it in the batch, and
+  `transition_many` wrote the rows and the array values of the first
+  document it moved over those of every document after it, a list a
+  rule had emptied among them. One map of a commit was not emptied
+  between the documents of a batch. It came with the functions over
+  the lines a document holds (ADR-0081, step 2), and is in v0.7.0. A
+  single create or move was never affected. A database that was
+  loaded or moved in batches by v0.7.0, with classes that hold rows or
+  arrays, may hold wrong lists: the history has each document's lists
+  at the version before the batch.
+- A count, a sum or another function over the lines of a document was
+  not worked out again when a `reset`, by a command or by a rule,
+  emptied the lines: the document kept the old figure beside no lines.
+  It is worked out again now. In v0.7.0 too.
+
 ### Changed
 
 - **A `LOOKUP` or a `QUERY` written in a guard is refused when a class

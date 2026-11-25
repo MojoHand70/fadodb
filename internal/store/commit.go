@@ -540,6 +540,10 @@ func (s *Store) run(ctx context.Context, cmd command, now time.Time) (*result, e
 	if s.kids == nil {
 		s.kids = map[*child][]childRow{}
 	}
+	// The map is one for every commit, and a batch runs many commits
+	// under one lock: each document starts with no lists, or it would be
+	// written with the lists of the document before it in the batch.
+	clear(s.kids)
 	kids := s.kids
 	s.beginLists(ctx, c, cmd.stored, before, kids)
 	dirty := s.dirtyFor(c)

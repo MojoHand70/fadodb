@@ -318,6 +318,25 @@ func TestCopy_AFeedIsWholeOrNothing(t *testing.T) {
 	if marks, err := c.Marks(ctx); err != nil || len(marks) != 1 || marks["class:Invoice"] != "3 g" {
 		t.Errorf("the marks: %v, %v", marks, err)
 	}
+	// Many rows are taken out in one statement, and what was appended
+	// before in the same feed goes with them when it is named.
+	var many []string
+	err = c.Feed(ctx, func(w fado.CopyWriter) error {
+		for i := 0; i < 1500; i++ {
+			id := fmt.Sprintf("m-%d", i)
+			many = append(many, id)
+			if err := w.Append("Invoice", []any{id, int64(1), nil}); err != nil {
+				return err
+			}
+		}
+		return w.Remove("Invoice", many[:1200])
+	}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := count(); got != "3299 300007" {
+		t.Errorf("after 1,200 of 1,500 rows were taken out again the copy holds %s", got)
+	}
 	// A table is emptied and filled in one feed.
 	err = c.Feed(ctx, func(w fado.CopyWriter) error {
 		if err := w.Append("Invoice", []any{"i-late", int64(1), nil}); err != nil {

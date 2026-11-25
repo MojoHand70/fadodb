@@ -213,11 +213,17 @@ strike.
   of a class and as many events, each kept when it is done. No reading
   of the database is held for the whole of a long load, which would
   keep the store from folding its latest commits into the database
-  meanwhile. The documents as they are now are given with the last
-  piece.
-- **After more than 100,000 new versions of a class, its documents as
-  they are now are read whole**, which is cheaper than taking each
-  changed one out and putting it back.
+  meanwhile.
+- **The documents as they are now follow piece by piece**: the ones a
+  piece changed are taken out of the copy and put back as they are.
+  They are read whole, with the last piece, when the copy holds none
+  of the class yet, and when most of them changed: more than 100,000
+  new versions, and more than a quarter of the documents the class
+  holds.
+- **The feed never counts what is left to copy.** A version is never
+  taken out of a history, so the place of the last row says how many
+  are new. A first run on a hundred million versions showed that
+  counting them read the table again at every piece.
 - **Opening a database does not wait for its copy.** The first feed
   runs beside the program, and so does the one every `CopyEvery`, five
   seconds unless the program says otherwise.

@@ -529,62 +529,76 @@ func TestCopy_NoneWithoutAnEngine(t *testing.T) {
 
 // A long load is copied in pieces, each kept when it is done. When a
 // piece fails, the pieces before it stay, and the next feed goes on
-// from them; the documents as they are now are given with the last.
+// from them. The documents as they are now follow piece by piece; when
+// most of them changed they are read whole, with the last piece.
 func TestCopy_ALongLoadInPieces(t *testing.T) {
-	c := newMemCopy()
-	s, _, ctx := copied(t, c)
-	old := copySlice
-	copySlice = 3
-	defer func() { copySlice = old }()
-	for i := 1; i <= 8; i++ {
-		if _, err := s.Create(ctx, "Invoice", Values{"number": fmt.Sprintf("FV-%d", i)}, WithID(fmt.Sprintf("i-%d", i))); err != nil {
-			t.Fatal(err)
-		}
-	}
-	if _, err := s.Transition(ctx, "Invoice", "i-8", "file", nil); err != nil {
-		t.Fatal(err)
-	}
-	// Nine versions in pieces of three: the second piece fails.
-	c.mu.Lock()
-	c.failAt = c.feeds + 2
-	c.mu.Unlock()
-	if err := s.feed(ctx); err == nil || !strings.Contains(err.Error(), "could not keep the piece") {
-		t.Fatalf("a feed whose second piece failed answered %v", err)
-	}
-	if n := c.count("Invoice_versions"); n != 3 {
-		t.Errorf("after the second piece failed the copy has %d versions, want the three of the first", n)
-	}
-	if mark := c.marks[copyMarkClass+"Invoice"]; !strings.HasSuffix(mark, " "+copyPartial) {
-		t.Errorf("the mark of a class in the middle of its load: %q", mark)
-	}
-	if n := c.count("Invoice"); n != 0 {
-		t.Errorf("the documents as they are now were given before the last piece: %d", n)
-	}
-	mustFeed(t, s)
-	if n, now := c.count("Invoice_versions"), c.count("Invoice"); n != 9 || now != 8 {
-		t.Errorf("after the load the copy has %d versions and %d invoices, want 9 and 8", n, now)
-	}
-	if mark := c.marks[copyMarkClass+"Invoice"]; strings.HasSuffix(mark, copyPartial) || mark == "" {
-		t.Errorf("the mark of the class after its load: %q", mark)
-	}
-	if got := strings.Join(c.column(t, "Invoice", "state"), " "); got != "draft draft draft draft draft draft draft review" {
-		t.Errorf("the states after the load: %s", got)
-	}
-	var events int
-	if err := s.db.QueryRowContext(ctx, `SELECT count(*) FROM "events"`).Scan(&events); err != nil {
-		t.Fatal(err)
-	}
-	if n := c.count("events"); n != events {
-		t.Errorf("%d events in the copy and %d in the database", n, events)
-	}
-	// One more invoice after the load is fed as a few versions are: by
-	// its id, with nothing emptied.
-	empties := len(c.empties)
-	if _, err := s.Create(ctx, "Invoice", Values{"number": "FV-9"}, WithID("i-9")); err != nil {
-		t.Fatal(err)
-	}
-	mustFeed(t, s)
-	if n, now := c.count("Invoice_versions"), c.count("Invoice"); n != 10 || now != 9 || len(c.empties) != empties {
-		t.Errorf("after one more invoice the copy has %d versions and %d invoices, and emptied %v", n, now, c.empties[empties:])
+	for name, whole := range map[string]bool{"the documents follow piece by piece": false, "the documents are read whole with the last piece": true} {
+		t.Run(name, func(t *testing.T) {
+			c := newMemCopy()
+			s, _, ctx := copied(t, c)
+			// The copy knows the class, and holds none of its documents
+			// because there are none: what follows is no first making.
+			mustFeed(t, s)
+			oldSlice, oldRemake := copySlice, copyRemakeNow
+			copySlice = 3
+			if whole {
+				copyRemakeNow = 2
+			}
+			defer func() { copySlice, copyRemakeNow = oldSlice, oldRemake }()
+			for i := 1; i <= 8; i++ {
+				if _, err := s.Create(ctx, "Invoice", Values{"number": fmt.Sprintf("FV-%d", i)}, WithID(fmt.Sprintf("i-%d", i))); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if _, err := s.Transition(ctx, "Invoice", "i-8", "file", nil); err != nil {
+				t.Fatal(err)
+			}
+			// Nine versions in pieces of three: the second piece fails.
+			c.mu.Lock()
+			c.failAt = c.feeds + 2
+			c.mu.Unlock()
+			if err := s.feed(ctx); err == nil || !strings.Contains(err.Error(), "could not keep the piece") {
+				t.Fatalf("a feed whose second piece failed answered %v", err)
+			}
+			if n := c.count("Invoice_versions"); n != 3 {
+				t.Errorf("after the second piece failed the copy has %d versions, want the three of the first", n)
+			}
+			mark, now := c.marks[copyMarkClass+"Invoice"], c.count("Invoice")
+			if whole {
+				if !strings.HasSuffix(mark, " "+copyPartial) || now != 0 {
+					t.Errorf("in the middle of a load that reads the documents whole: the mark %q, %d documents", mark, now)
+				}
+			} else if strings.HasSuffix(mark, copyPartial) || now != 3 {
+				t.Errorf("in the middle of a load that follows piece by piece: the mark %q, %d documents, want the three of the first piece", mark, now)
+			}
+			mustFeed(t, s)
+			if n, now := c.count("Invoice_versions"), c.count("Invoice"); n != 9 || now != 8 {
+				t.Errorf("after the load the copy has %d versions and %d invoices, want 9 and 8", n, now)
+			}
+			if mark := c.marks[copyMarkClass+"Invoice"]; strings.HasSuffix(mark, copyPartial) || mark == "" {
+				t.Errorf("the mark of the class after its load: %q", mark)
+			}
+			if got := strings.Join(c.column(t, "Invoice", "state"), " "); got != "draft draft draft draft draft draft draft review" {
+				t.Errorf("the states after the load: %s", got)
+			}
+			var events int
+			if err := s.db.QueryRowContext(ctx, `SELECT count(*) FROM "events"`).Scan(&events); err != nil {
+				t.Fatal(err)
+			}
+			if n := c.count("events"); n != events {
+				t.Errorf("%d events in the copy and %d in the database", n, events)
+			}
+			// One more invoice after the load is fed as a few versions
+			// are: by its id, with nothing emptied.
+			copyRemakeNow = oldRemake
+			empties := len(c.empties)
+			if _, err := s.Create(ctx, "Invoice", Values{"number": "FV-9"}, WithID("i-9")); err != nil {
+				t.Fatal(err)
+			}
+			mustFeed(t, s)
+			if n, now := c.count("Invoice_versions"), c.count("Invoice"); n != 10 || now != 9 || len(c.empties) != empties {
+				t.Errorf("after one more invoice the copy has %d versions and %d invoices, and emptied %v", n, now, c.empties[empties:])
+			}
+		})
 	}
 }

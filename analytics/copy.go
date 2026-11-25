@@ -34,8 +34,13 @@ var _ fado.Analytics = Engine{}
 // CopyPath is the file of the copy that stands beside a database.
 func CopyPath(database string) string { return database + ".duckdb" }
 
-// The table of the copy that keeps how far it was fed.
-const marksTable = "fado_copy_marks"
+// The table of the copy that keeps how far it was fed, and the table of
+// a feed's own, which lives no longer than the connection, for the ids
+// of many rows that are taken out at once.
+const (
+	marksTable = "fado_copy_marks"
+	goneTable  = "fado_copy_gone"
+)
 
 // OpenCopy opens the copy beside the database, and makes an empty one
 // when none is there or the one there does not open: a file DuckDB
@@ -291,21 +296,51 @@ func (w *duckWriter) flush(table string) error {
 	return nil
 }
 
+// Remove takes the rows of the ids out of a table. A few are named in
+// the statement. Many are put into a table of their own first and taken
+// out in one statement, which reads the table once: a statement for
+// every few hundred would read it once each.
 func (w *duckWriter) Remove(table string, ids []string) error {
+	if len(ids) == 0 {
+		return nil
+	}
 	if err := w.flush(table); err != nil {
 		return err
 	}
-	const chunk = 500
-	for start := 0; start < len(ids); start += chunk {
-		part := ids[start:min(start+chunk, len(ids))]
-		args := make([]any, len(part))
-		for i, id := range part {
+	fail := func(err error) error { return fmt.Errorf("take rows out of %s in the copy: %w", table, err) }
+	const few = 500
+	if len(ids) <= few {
+		args := make([]any, len(ids))
+		for i, id := range ids {
 			args[i] = id
 		}
-		marks := strings.TrimSuffix(strings.Repeat("?, ", len(part)), ", ")
+		marks := strings.TrimSuffix(strings.Repeat("?, ", len(ids)), ", ")
 		if err := w.exec(`DELETE FROM `+quote(table)+` WHERE "id" IN (`+marks+`)`, args...); err != nil {
-			return fmt.Errorf("take rows out of %s in the copy: %w", table, err)
+			return fail(err)
 		}
+		return nil
+	}
+	if err := w.exec(`CREATE TEMP TABLE IF NOT EXISTS ` + quote(goneTable) + ` ("id" VARCHAR)`); err != nil {
+		return fail(err)
+	}
+	if err := w.exec(`DELETE FROM ` + quote(goneTable)); err != nil {
+		return fail(err)
+	}
+	app, err := duckdb.NewAppender(w.conn, "temp", "", goneTable)
+	if err != nil {
+		return fail(err)
+	}
+	for _, id := range ids {
+		if err := app.AppendRow(id); err != nil {
+			app.Close()
+			return fail(err)
+		}
+	}
+	if err := app.Close(); err != nil {
+		return fail(err)
+	}
+	if err := w.exec(`DELETE FROM ` + quote(table) + ` USING ` + quote(goneTable) + ` g WHERE ` + quote(table) + `."id" = g."id"`); err != nil {
+		return fail(err)
 	}
 	return nil
 }

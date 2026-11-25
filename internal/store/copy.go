@@ -545,11 +545,11 @@ func scanInto(n int) ([]any, []any) {
 // over and whether the class holds more versions than it handed over,
 // and leaves the new mark of the class in next.
 //
-// The documents as they are now are given when the versions are all
-// handed over. A class in the middle of a long load has a mark that
-// ends in copyPartial: its versions are in the copy up to the mark, and
-// its documents as they are now are read whole when the last piece
-// goes.
+// A class whose documents as they are now are read whole, because the
+// copy holds none of them yet or most of them changed, gets them with
+// the last piece. Until then its mark ends in copyPartial: its versions
+// are in the copy up to the mark, and its documents as they are now are
+// not to be asked.
 func feedClass(ctx context.Context, conn *sql.Conn, w CopyWriter, l *copyLayout, next map[string]string, removed []string) (bool, bool, error) {
 	fail := func(err error) (bool, bool, error) {
 		return false, false, storageErr("read "+l.name+" for the copy", err)
@@ -577,10 +577,16 @@ func feedClass(ctx context.Context, conn *sql.Conn, w CopyWriter, l *copyLayout,
 			midway = len(mark) > 2 && mark[2] == copyPartial
 		}
 	}
-	var news int64
-	if err := conn.QueryRowContext(ctx, `SELECT count(*) FROM `+quote(l.history)+` WHERE rowid > ?`, from).Scan(&news); err != nil {
+	// How many versions were written since the mark. A version is never
+	// taken out of a history, so the places after the mark are those
+	// versions, and the last place says how many there are: asking the
+	// store to count them would read every one, at every piece of a
+	// long load.
+	var last sql.NullInt64
+	if err := conn.QueryRowContext(ctx, `SELECT max(rowid) FROM `+quote(l.history)).Scan(&last); err != nil {
 		return fail(err)
 	}
+	news := max(last.Int64-from, 0)
 	if !whole && !midway && news == 0 && len(removed) == 0 {
 		return false, false, nil
 	}
@@ -590,12 +596,20 @@ func feedClass(ctx context.Context, conn *sql.Conn, w CopyWriter, l *copyLayout,
 		}
 	}
 
-	// The versions since the mark, in the order they were written. The
-	// documents they changed are kept by their ids unless there are too
-	// many to be worth it, or more versions are left for the next
-	// piece.
+	// The versions since the mark, in the order they were written, and
+	// how the documents as they are now follow them. Usually the
+	// documents these versions changed are taken out of the copy and
+	// put back as they are, piece by piece. They are read whole, with
+	// the last piece, when the copy holds none of the class yet, and
+	// when the versions are so many that most documents changed: more
+	// than copyRemakeNow, and more than a quarter of the documents the
+	// class holds.
 	left := news > copySlice
-	nowWhole := whole || midway || news > copyRemakeNow
+	var docs sql.NullInt64
+	if err := conn.QueryRowContext(ctx, `SELECT max(rowid) FROM `+quote(l.table)).Scan(&docs); err != nil {
+		return fail(err)
+	}
+	nowWhole := whole || midway || news > max(copyRemakeNow, docs.Int64/4)
 	changed := map[string]bool{}
 	for _, id := range removed {
 		changed[id] = true
@@ -631,7 +645,10 @@ func feedClass(ctx context.Context, conn *sql.Conn, w CopyWriter, l *copyLayout,
 	}
 	rows.Close()
 	switch {
-	case lastEvent != "" && left:
+	case lastEvent != "" && left && nowWhole:
+		// More versions follow, and the documents as they are now are
+		// read whole with the last piece: until then the mark says the
+		// class is in the middle of its load.
 		next[copyMarkClass+l.name] = strconv.FormatInt(lastPlace, 10) + " " + lastEvent + " " + copyPartial
 		return true, true, nil
 	case lastEvent != "":
@@ -673,6 +690,8 @@ func feedClass(ctx context.Context, conn *sql.Conn, w CopyWriter, l *copyLayout,
 		}
 		return true, false, appendNow(`SELECT ` + l.nowSQL + ` FROM ` + quote(l.table))
 	}
+	// The documents this piece changed, as they are at the moment the
+	// feed reads: a later piece changes them again if they moved on.
 	ids := make([]string, 0, len(changed))
 	for id := range changed {
 		ids = append(ids, id)
@@ -690,5 +709,5 @@ func feedClass(ctx context.Context, conn *sql.Conn, w CopyWriter, l *copyLayout,
 			return false, false, err
 		}
 	}
-	return true, false, nil
+	return true, left, nil
 }

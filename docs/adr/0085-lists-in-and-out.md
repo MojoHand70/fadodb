@@ -382,6 +382,12 @@ strike.
 - **An element is handed to its formulas as it parses**: a number of
   more than fifteen digits loses its last ones, as it does for
   `JSONVALUE` over the whole body today.
+- **A kept inlet opens with its database, whatever its class became.**
+  When a class changes under an inlet, so that the list is gone, is no
+  list any more or lacks a column, the inlet is taken as it was written
+  and the database opens. A message is then refused when it comes, with
+  the code of what no longer fits, and makes nothing, as for every
+  value an inlet gives (ADR-0065).
 - **A rule has no repeat.** `each` in the values a rule gives is
   refused as before: a rule reads its document, and the lines of a
   document reach another through an action (item 2).

@@ -1282,10 +1282,17 @@ func fillValuesFrom(c *collector, path string, raw json.RawMessage, target *Clas
 		if each, is := repeats[name]; is {
 			// A list of the message becomes the lines of the document.
 			switch {
+			case lenient && (v == nil || v.Computed || v.Type.Kind != formula.KindRows):
+				// What a stored definition gives is taken as it is: the
+				// class changed under it, and the command is refused for
+				// it when a message comes.
+				if rep := compileRepeat(c, vpath, each, nil, message); rep != nil {
+					sets = append(sets, Assignment{Name: name, Each: rep})
+				}
 			case v == nil && target != nil:
 				c.addf(CodeUnknownVariable, vpath, "the class %s has no variable %s", target.Name, quote(name))
 			case v == nil:
-				// a stored definition that names a class the database no longer has
+				// a definition that names a class the database does not have
 			case v.Computed || v.Type.Kind != formula.KindRows:
 				c.hint(CodeNotAllowed, vpath, "a repeat gives the lines of a rows variable that somebody enters; "+v.Name+" of "+target.Name+" is "+article(v.Type.String()), "give it a formula, written as text")
 			default:
@@ -1324,7 +1331,9 @@ func fillValuesFrom(c *collector, path string, raw json.RawMessage, target *Clas
 // compileRepeat checks the repeat that fills a rows variable from a
 // list in a message (ADR-0085, item 1): each, the path to the list; as,
 // the name of one element; row, a formula for each column, typed
-// against the column.
+// against the column. v is nil for a stored definition whose class no
+// longer has the variable as a list somebody enters: its formulas are
+// taken untyped, by the names written.
 func compileRepeat(c *collector, path string, raw json.RawMessage, v *Variable, message []formula.Variable) *Repeat {
 	var def struct {
 		Each string          `json:"each"`
@@ -1388,13 +1397,24 @@ func compileRepeat(c *collector, path string, raw json.RawMessage, v *Variable, 
 			continue
 		}
 		seen[upper(name)] = true
-		col, has := v.Type.Field(name)
-		if !has {
-			c.hint(CodeUnknownVariable, cpath, v.Name+" has no column "+quote(name), "its columns are "+strings.Join(v.Type.FieldNames(), ", "))
-			continue
+		var col formula.Field
+		has := false
+		if v != nil {
+			col, has = v.Type.Field(name)
 		}
-		if prog := bindFill(c, cpath, formulas[name], scope, &col.Type); prog != nil {
-			rep.Row = append(rep.Row, Assignment{Name: col.Name, Formula: prog, Src: formulas[name]})
+		switch {
+		case has:
+			if prog := bindFill(c, cpath, formulas[name], scope, &col.Type); prog != nil {
+				rep.Row = append(rep.Row, Assignment{Name: col.Name, Formula: prog, Src: formulas[name]})
+			}
+		case v == nil || c.env.Lenient:
+			// A stored definition whose class no longer has the column:
+			// taken as it is, and refused when a message comes.
+			if prog := bindFill(c, cpath, formulas[name], scope, nil); prog != nil {
+				rep.Row = append(rep.Row, Assignment{Name: name, Formula: prog, Src: formulas[name]})
+			}
+		default:
+			c.hint(CodeUnknownVariable, cpath, v.Name+" has no column "+quote(name), "its columns are "+strings.Join(v.Type.FieldNames(), ", "))
 		}
 	}
 	return rep

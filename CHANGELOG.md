@@ -42,6 +42,14 @@ Phase 8 started on 2026-11-25.
   0.32 ms (`BenchmarkDraftsOfOneOrder`, the test the record sets).
   Not built: an index for the key of a `LOOKUP` that is no pointer,
   which still wants `"index": true`.
+- The engine says, when a class is defined, which question of it no
+  index serves (ADR-0075, item 5): a note, code `reads_all`, at the
+  place of the formula, with the mend. A `LOOKUP` over the documents of
+  a class is noted when its condition compares no indexed variable,
+  for equality, with a value of the document; a list, when its
+  condition compares none with a value. A note refuses nothing and the
+  class is defined. `validate_class`, `fadodb class check` and the
+  designer's skill show it.
 - The engine chooses between two indexes that fit one question
   (ADR-0075, item 10, the part the record left open). A `query` or a
   `count` whose condition compares two indexed variables,

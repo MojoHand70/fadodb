@@ -294,11 +294,26 @@ index first, for at most a thousand documents, and asks through the
 one that ends first. The answer is the same either way; what changes
 is how long it takes.
 
+**The engine says which question no index serves.** When a class is
+defined, each `LOOKUP` and each list of it over the documents of a
+class is checked: its condition has to compare a variable that has an
+index, for equality, with a value. One that does not reads every
+document of that class each time, and is noted, with the mend:
+
+```text
+  note: reads_all at /variables/same_number/formula: this LOOKUP reads every document of Invoice each time it is worked out: number, which its condition compares, has no index
+    fix: say "index": true on number of Invoice, or compare a pointer: the engine keeps an index on every one
+```
+
+A note refuses nothing, and the class is defined all the same: on a
+class of a thousand documents such a question is harmless. A total
+over a whole class, `LOOKUP(Invoice, SUM(net), TRUE)`, is noted too,
+for it reads everything by its nature.
+
 **Not built yet** (ADR-0075): an index for the key of a `LOOKUP` or of
 a list that is no pointer, such as the `number` in
 `LOOKUP(Purchase, COUNT(id), number = THIS.purchase)`; the designer
-writes `"index": true` on that variable. And the engine does not yet say when
-a class is defined that a question of it reads every document.
+writes `"index": true` on that variable, and the note above says so.
 
 ## Figures over a list
 

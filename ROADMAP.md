@@ -470,9 +470,10 @@ a table as the source of a list, a `LOOKUP` in a live variable, and
 named document, which are built, as are the way the engine chooses
 between two indexes that fit one question, by looking into each, and
 the indexes the engine keeps by itself on every pointer, on the state
-and on the two moments of a document; counts, sums and grouping in a
+and on the two moments of a document; and the note the engine gives when a class is defined, on each
+question of it that no index serves; counts, sums and grouping in a
 `QUERY`, an index for the key of a lookup that is no pointer, and the
-engine's notes on a question no index serves, which are not. Then the lists in and out of messages and requests, ADR-0085.
+stop of a free question that runs too long, which are not. Then the lists in and out of messages and requests, ADR-0085.
 After these comes the analytical engine itself: DuckDB beside the
 documents, fed from the commits, for the question that reads
 everything; the mining views; a value that follows its source or the

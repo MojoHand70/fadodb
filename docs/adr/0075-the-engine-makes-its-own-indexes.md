@@ -446,6 +446,28 @@ Measured on 2026-11-25, on this build:
 The commit costs less here than the 10 to 30 µs of item 9, which was
 measured with six indexes on 2,000,000 documents.
 
+## Settled while building the note
+
+Built on 2026-11-25, in Phase 8: item 5. Each of these is settled by
+me while building, and is the owner's to strike.
+
+- **What is noted.** A `LOOKUP` over the documents of a class, in the
+  formula or the default of a variable, in the condition of a rule and
+  in what a rule sets, when the equality its condition is keyed by is
+  on a variable without an index, or when it has no such equality. A
+  list, when its condition compares no indexed variable, for equality,
+  with a value that is no column of the listed document.
+- **What is not noted.** A lookup in a table, which keeps its own
+  indexes (ADR-0037). A figure over a list of the document. A list
+  without a condition, which is read in the order of the ids, a page
+  at a time. A comparison of the state, of the id or of one of the two
+  moments, which every class has an index on.
+- **The note names the variable** when the condition compares one that
+  has no index, and the mend is `"index": true` on it: the engine does
+  not yet make that index by itself (the second row of item 2).
+- **What `validate_class` says a definition would build** (item 7),
+  "an index on `customer` over 100,000,000 documents", is not built.
+
 ## Consequences
 
 - A designer and an agent write what a document needs to know, and

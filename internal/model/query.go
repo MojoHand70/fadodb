@@ -251,7 +251,9 @@ func compileQuery(c *collector, cls *Class, v *Variable, call *formula.Call, sco
 	}
 	if bad {
 		v.Query = nil
+		return
 	}
+	c.asksList(path, src, q.Cond)
 }
 
 // compileKept holds the QUERY of a triggered variable to the list the

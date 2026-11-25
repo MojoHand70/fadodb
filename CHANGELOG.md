@@ -142,6 +142,18 @@ Phase 8 started on 2026-11-25.
 
 ### Fixed
 
+- **A pointer was kept in the case its caller wrote the class in.** A
+  `ref` given as `"order:ORD-17"` was taken, since names resolve in
+  any case, and kept so, while the engine writes the pointer to that
+  document `"Order:ORD-17"`. So a list of what points at a document,
+  `order = REF()`, did not find it. A pointer is now kept with the
+  class written as its definition writes it, among the lines of a
+  document too, and the same pointer given again in another case is no
+  change. It is in v0.7.0. A pointer a database holds already stays as
+  it was written until it is set again; `SELECT id, "order" FROM
+  Invoice WHERE "order" NOT GLOB 'Order:*'` finds them, for each `ref`
+  of each class.
+
 - **A batch wrote the lists of its first document into the others.**
   `create_many` gave a document that set no lines, or no tags, the
   lines and the tags of the document before it in the batch, and

@@ -188,3 +188,66 @@ func TestRef_WhatPointsAtAClass(t *testing.T) {
 		t.Errorf("what points at Invoice, asked of its first version = %+v, %v", first, err)
 	}
 }
+
+// A pointer is kept with its class written as the definition of the
+// class writes it, in whatever case the caller wrote it: one document
+// has one pointer, which REF() and a list of what points at it compare
+// with.
+func TestRef_KeptAsItsClassIsWritten(t *testing.T) {
+	s, ctx := openRefs(t)
+	for id, written := range map[string]string{"FV-1": "Order:ORD-17", "FV-2": "order:ORD-17", "FV-3": "ORDER:ORD-17"} {
+		d, err := s.Create(ctx, "Invoice", Values{"number": id, "order": written}, As(liveJan), WithID(id))
+		if err != nil {
+			t.Fatalf("%s: %v", id, err)
+		}
+		if d.Values["order"] != "Order:ORD-17" {
+			t.Errorf("%s was given %s and holds %v; want Order:ORD-17", id, written, d.Values["order"])
+		}
+	}
+	found, err := s.Query(ctx, Filter{Class: "Invoice", Where: `order = REF("Order", "ORD-17")`}, As(liveJan))
+	if err != nil || len(found) != 3 {
+		t.Errorf("the invoices that point at ORD-17: %d, %v; want all three", len(found), err)
+	}
+	// The same pointer given again in another case is no change.
+	d, err := s.Set(ctx, "Invoice", "FV-1", Values{"order": "order:ORD-17"}, As(liveJan))
+	if err != nil || d.Version != 1 || d.Values["order"] != "Order:ORD-17" {
+		t.Errorf("the same pointer in another case: version %d, %v, %v; want version 1 still", d.Version, d.Values["order"], err)
+	}
+	// The statement the changelog gives finds a pointer an earlier
+	// engine kept in another case, here one put there by hand.
+	inv, _ := s.class("Invoice")
+	if _, err := s.writer.ExecContext(ctx, `UPDATE `+quote(inv.table)+` SET "order" = 'order:ORD-17' WHERE id = 'FV-3'`); err != nil {
+		t.Fatal(err)
+	}
+	odd, err := s.SQL(ctx, `SELECT id, "order" FROM Invoice WHERE "order" NOT GLOB 'Order:*'`, nil, asSetup)
+	if err != nil || len(odd.Rows) != 1 || odd.Rows[0][0] != "FV-3" {
+		t.Errorf("the pointers kept in another case: %v, %v; want FV-3 alone", odd, err)
+	}
+	// Set again, it is kept as the others are.
+	if d, err := s.Set(ctx, "Invoice", "FV-3", Values{"order": "Order:ORD-17"}, As(liveJan)); err != nil || d.Values["order"] != "Order:ORD-17" || d.Version != 2 {
+		t.Errorf("the odd pointer set again: %v, %v", d, err)
+	}
+	// The id is the document's, to the letter.
+	if _, err := s.Set(ctx, "Invoice", "FV-1", Values{"order": "Order:ord-17"}, As(liveJan)); code(err) != CodeUnknownDocument {
+		t.Errorf("a pointer with the id in another case: %v; want unknown_document", err)
+	}
+	// A definition that writes the class of its pointer in another case,
+	// and a pointer among the lines of a document, which names no class.
+	claim := `{"name": "Claim", "variables": {
+	   "about": {"type": "ref", "class": "order"},
+	   "lines": {"type": "rows", "schema": {"what": "text", "order": "ref"}}},
+	 "states": {"initial": "a", "list": ["a"]},
+	 "access": {"read": "TRUE", "create": "TRUE", "update": "TRUE", "delete": "TRUE"}}`
+	if _, err := s.DefineClass(ctx, []byte(claim), asSetup); err != nil {
+		t.Fatal(err)
+	}
+	for _, written := range []string{"Order:ORD-17", "order:ORD-17", "oRDER:ORD-17"} {
+		c, err := s.Create(ctx, "Claim", Values{"about": written, "lines": []any{map[string]any{"what": "late", "order": written}}}, As(liveJan))
+		if err != nil {
+			t.Fatalf("%s: %v", written, err)
+		}
+		if lines := flat(c.Values["lines"]); c.Values["about"] != "Order:ORD-17" || lines != `[{"order":"Order:ORD-17","what":"late"}]` {
+			t.Errorf("a claim given %s holds about %v and lines %s; want Order:ORD-17 in both", written, c.Values["about"], lines)
+		}
+	}
+}

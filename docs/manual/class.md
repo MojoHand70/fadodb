@@ -144,7 +144,10 @@ the change is refused with `unknown_document`, in the same words for a
 document that is not there and for one the caller may not read. So
 documents are loaded in the order they point: the customers before the
 invoices that name them. A pointer a document holds already is not
-asked about again when its other values change.
+asked about again when its other values change. The engine keeps the
+pointer with the class written as its definition writes it:
+`"customer:C-17"` is kept as `"Customer:C-17"`. The id is kept to the
+letter.
 
 **A pointer compares with a pointer.** A formula makes one with
 `REF`:

@@ -72,7 +72,16 @@ func TestClass_APointerComparesWithAPointer(t *testing.T) {
 	if err != nil || len(found) != 1 || found[0].ID != "INV-1" {
 		t.Errorf("the filter by a pointer finds %v, %v; the chapter says INV-1", found, err)
 	}
+	// A pointer is kept with the class written as its definition writes
+	// it, and the id to the letter.
+	three, err := db.Create(ctx, "Invoice", fado.Values{"customer": "customer:C-17"}, jan, fado.WithID("INV-3"))
+	if err != nil || three.Values["customer"] != "Customer:C-17" {
+		t.Errorf("a pointer given as customer:C-17 is kept as %v, %v; the chapter says Customer:C-17", three, err)
+	}
 	var refused *fado.Error
+	if _, err := db.Create(ctx, "Invoice", fado.Values{"customer": "Customer:c-17"}, jan); !errors.As(err, &refused) || refused.Code != "unknown_document" {
+		t.Errorf("a pointer with the id in another case: %v; the chapter says the id is kept to the letter", err)
+	}
 	if _, err := db.Query(ctx, fado.Filter{Class: "Invoice", Where: `customer = "Customer:C-17"`}, jan); !errors.As(err, &refused) || refused.Code != "bad_formula" {
 		t.Errorf("a pointer compared with a text: %v; the chapter says it is refused", err)
 	}

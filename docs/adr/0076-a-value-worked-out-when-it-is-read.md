@@ -488,6 +488,11 @@ live variable read blank, where the same lookup in a triggered
 variable read the document's. A live lookup now reads the state and
 the id of the document the value is read on.
 
+Mended the same day, a fault of item 11 that is in v0.7.0: a pointer
+was kept in the case its caller wrote the class in, `"order:ORD-17"`,
+and `REF()` did not equal it. A pointer is kept with the class written
+as its definition writes it. The id stays to the letter.
+
 ## Consequences
 
 - A list on a document is written once, in the class, and every face

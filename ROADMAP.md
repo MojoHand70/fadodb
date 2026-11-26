@@ -512,9 +512,12 @@ whoever has the file reads all of it.
 The flow of a class says how the stays of each state spread, for a
 caller who asks (ADR-0095, proposed on 2026-11-26): the middle stay
 and the slow tenth beside the average, in 80 to 87 ms among ten
-million moves. It is the first of the plan's mining views; the paths
-documents took and the documents made and finished in each period are
-not built.
+million moves. It is the first of the plan's mining views. The second is built
+too (ADR-0096, proposed on 2026-11-26): the command `throughput` says
+how many documents were made and how many finished in each day, week
+or month of the database's time zone, in 6 to 7 ms among ten million
+moves. The owner said on 2026-11-26 that all three are for this
+phase; the paths documents took are not built yet.
 
 The rows of the tables are in the copy too (ADR-0094, proposed on
 2026-11-26): a total a live `LOOKUP` asks of a large table, and a

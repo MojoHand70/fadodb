@@ -119,6 +119,7 @@ A command takes the ones its list below shows, and no other.
 | [`query`](#query) | Reads the documents of a class that match a filter. | reads |
 | [`count`](#count) | Counts the documents of a class that match a filter. | reads |
 | [`flow`](#flow) | Answers the flow of a class: the documents the caller may read in each state now, and their moves along each transition. | reads |
+| [`throughput`](#throughput) | Answers how many documents of a class the caller may read were made and how many finished in each day, week or month: whether the pile grows. | reads |
 | [`sql`](#sql) | Runs one read-only SELECT over the views, for an analyst. | reads |
 
 ### create
@@ -544,6 +545,25 @@ It answers:
 | Member | What it holds |
 |---|---|
 | `flow` | the states of the class, each with its documents now, since when the oldest is there, and how many stays ended in the period and how long they lasted, with their middle and their slow tenth when spread asks for them; and its transitions, each with its moves in the period |
+
+### throughput
+
+Answers how many documents of a class the caller may read were made and how many finished in each day, week or month: whether the pile grows. It reads; in Go it is the call `Throughput`.
+
+| Member | Type | | What it is |
+|---|---|---|---|
+| `class` | text | needed | the name of the class |
+| `by` | text |  | the length of a period: day, week or month, by the clock of the database's time zone; day when left out |
+| `since` | moment |  | the first moment that is counted; since the class began when left out |
+| `until` | moment |  | the moment the counting ends before; now when left out |
+
+And, of the members that mean the same everywhere: `reason`, `for`.
+
+It answers:
+
+| Member | What it holds |
+|---|---|
+| `throughput` | the periods from the first in which a document was made or finished to the last, each with its first day and how many documents were made and how many finished in it; and the two sums |
 
 ### sql
 

@@ -6045,6 +6045,87 @@
         "x-fado-mark": "reads"
       }
     },
+    "/v1/throughput": {
+      "post": {
+        "description": "It reads. In Go it is the call `Throughput`.",
+        "operationId": "throughput",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "by": {
+                    "description": "the length of a period: day, week or month, by the clock of the database's time zone; day when left out",
+                    "type": "string"
+                  },
+                  "class": {
+                    "description": "the name of the class",
+                    "type": "string"
+                  },
+                  "for": {
+                    "description": "the id of whoever the caller acts for; let through only while a substitution says so",
+                    "type": "string"
+                  },
+                  "reason": {
+                    "description": "why a content administrator acts or reads past a rule; a change keeps it on its event, a read in the log of reads",
+                    "type": "string"
+                  },
+                  "since": {
+                    "description": "the first moment that is counted; since the class began when left out",
+                    "type": [
+                      "string",
+                      "integer"
+                    ]
+                  },
+                  "until": {
+                    "description": "the moment the counting ends before; now when left out",
+                    "type": [
+                      "string",
+                      "integer"
+                    ]
+                  }
+                },
+                "required": [
+                  "class"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "throughput": {
+                      "description": "the periods from the first in which a document was made or finished to the last, each with its first day and how many documents were made and how many finished in it; and the two sums"
+                    }
+                  },
+                  "required": [
+                    "throughput"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "The command ran."
+          },
+          "default": {
+            "$ref": "#/components/responses/Refused"
+          }
+        },
+        "summary": "Answers how many documents of a class the caller may read were made and how many finished in each day, week or month: whether the pile grows.",
+        "tags": [
+          "Documents"
+        ],
+        "x-fado-call": "Throughput",
+        "x-fado-mark": "reads"
+      }
+    },
     "/v1/transition": {
       "post": {
         "description": "It writes. In Go it is the call `Transition`.",

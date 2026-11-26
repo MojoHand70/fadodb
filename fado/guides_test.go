@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -632,6 +633,71 @@ func TestGuide_SeeWhereDocumentsWait(t *testing.T) {
 		}
 		if !found {
 			t.Errorf("the flow %s reads has no state %s", row[0], row[1])
+		}
+	}
+	// Whether the pile grows: the answer the guide shows, each line of
+	// its table, and every member of the answer explained.
+	through := func(as fado.Principal, object string) (*fado.Throughput, string) {
+		t.Helper()
+		answer, err := db.Exec(ctx, as, "throughput", []byte(object))
+		if err != nil {
+			t.Fatalf("throughput %s: %v", object, err)
+		}
+		var got struct{ Throughput *fado.Throughput }
+		if err := json.Unmarshal(answer, &got); err != nil {
+			t.Fatal(err)
+		}
+		var shown bytes.Buffer
+		if err := json.Indent(&shown, answer, "", "  "); err != nil {
+			t.Fatal(err)
+		}
+		return got.Throughput, shown.String()
+	}
+	byDay, shownDays := through(who["Ann"], `{"class": "Invoice", "by": "day"}`)
+	if want := strings.TrimSuffix(strings.TrimPrefix(block("the throughput Ann sees"), "```jsonc\n"), "\n```"); shownDays != want {
+		t.Errorf("the throughput Ann sees is\n%s\nand the guide shows\n%s", shownDays, want)
+	}
+	if viaCall, err := db.Throughput(ctx, "Invoice", fado.ThroughputAsk{By: fado.ThroughputDay}, ann); err != nil || !reflect.DeepEqual(viaCall, byDay) {
+		t.Errorf("the Go call answers %+v (%v), and the command %+v", viaCall, err, byDay)
+	}
+	made := rows("made and finished")
+	if len(made) != 5 {
+		t.Fatalf("the guide asks for the throughput %d times, want 5", len(made))
+	}
+	for _, row := range made {
+		th, _ := through(who[row[0]], row[1])
+		periods := make([]string, len(th.Periods))
+		for i, p := range th.Periods {
+			periods[i] = fmt.Sprintf("%s %d/%d", p.From, p.Created, p.Finished)
+		}
+		if got := strings.Join(periods, ", "); got != row[2] {
+			t.Errorf("%s sends %s and reads %s; the guide says %s", row[0], row[1], got, row[2])
+		}
+	}
+	explained := map[string]bool{}
+	for _, row := range rows("what a throughput says") {
+		for _, member := range strings.Split(row[0], ", ") {
+			explained[strings.Trim(member, "`")] = true
+		}
+	}
+	told := map[string]bool{}
+	for _, of := range []any{fado.Throughput{}, fado.ThroughputPeriod{}} {
+		kind := reflect.TypeOf(of)
+		for i := 0; i < kind.NumField(); i++ {
+			member, _, _ := strings.Cut(kind.Field(i).Tag.Get("json"), ",")
+			switch member {
+			case "class", "class_version", "since", "until":
+				continue // what the throughput is of
+			}
+			if !explained[member] {
+				t.Errorf("the guide does not say what %s of a throughput says", member)
+			}
+			told[member] = true
+		}
+	}
+	for member := range explained {
+		if !told[member] {
+			t.Errorf("the guide explains %s, which a throughput has not", member)
 		}
 	}
 	// Each caller sees their own.

@@ -77,8 +77,7 @@ takes seconds for the flow alone.
 
 ## Questions for the owner
 
-One, asked on 2026-11-26 on a page of its own, and not answered when
-this was written:
+One, asked on 2026-11-26 on a page of its own.
 
 1. **Which of the questions about how documents moved the engine
    answers in this phase.** The plan names three that the flow does
@@ -86,7 +85,9 @@ this was written:
    the documents made and finished in each period. Proposed: all
    three, this one first. The other way: this one only, and the other
    two when a screen asks for them. This record builds what both
-   answers hold.
+   answers hold. **Answered on 2026-11-26: "yes - all three."** The
+   documents made and finished in each period are ADR-0096; the paths
+   have a record of their own.
 
 ## Decisions of mine, each the owner's to strike
 
@@ -124,7 +125,8 @@ Settled while building, on 2026-11-26.
 ## What this record leaves out
 
 - **The paths documents took**, and **the documents made and finished
-  in each period**: the other two of question 1.
+  in each period**: the other two of question 1. The second is built
+  since, by ADR-0096.
 - **The states ranked by their slow tenth.** The flow lists the states
   in the order of the class; whoever draws it ranks them.
 - **A share of the caller's own choosing**, such as the slowest

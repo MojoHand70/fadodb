@@ -127,6 +127,12 @@ type (
 	FlowTransition = store.FlowTransition
 	FlowPeriod     = store.FlowPeriod
 	FlowSpread     = store.FlowSpread
+	// Throughput is how many documents of a class were made and how
+	// many finished in each period, ThroughputPeriod one of the
+	// periods, and ThroughputAsk what it is asked over (ADR-0096).
+	Throughput       = store.Throughput
+	ThroughputPeriod = store.ThroughputPeriod
+	ThroughputAsk    = store.ThroughputAsk
 	// ActionFunc is a Go function that implements an action, given to Open
 	// in Options.Actions under the action's name (ADR-0027, ADR-0045);
 	// ActionCall is what it is called with, and DeliveredEvent the event
@@ -346,6 +352,13 @@ const (
 	GroupContentAdministrators = store.GroupContentAdministrators
 	GroupAnalysts              = store.GroupAnalysts
 	GroupEveryone              = store.GroupEveryone
+)
+
+// The lengths of a period of a throughput (ADR-0096): ThroughputAsk.By.
+const (
+	ThroughputDay   = store.ThroughputDay
+	ThroughputWeek  = store.ThroughputWeek
+	ThroughputMonth = store.ThroughputMonth
 )
 
 // LogStart is the place before the first event of the log, for
@@ -1079,6 +1092,18 @@ func (db *DB) Count(ctx context.Context, f Filter, opts ...Option) (int64, error
 //	flow, err := db.Flow(ctx, "Invoice", fado.FlowPeriod{Since: firstOfNovember}, fado.As(ann))
 func (db *DB) Flow(ctx context.Context, class string, period FlowPeriod, opts ...Option) (*Flow, error) {
 	return db.s.Flow(ctx, class, period, opts...)
+}
+
+// Throughput answers how many documents of a class were made and how
+// many finished in each day, week or month, for its caller (ADR-0096):
+// whether the pile grows. A document is made when it is created and
+// finished when it comes into a final state; a day begins at midnight
+// by the clock of the database's time zone. It counts the documents
+// the caller may read, and no other.
+//
+//	weeks, err := db.Throughput(ctx, "Invoice", fado.ThroughputAsk{By: fado.ThroughputWeek}, fado.As(ann))
+func (db *DB) Throughput(ctx context.Context, class string, ask ThroughputAsk, opts ...Option) (*Throughput, error) {
+	return db.s.Throughput(ctx, class, ask, opts...)
 }
 
 // SQL runs one read-only SELECT over the views with positional

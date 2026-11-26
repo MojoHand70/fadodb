@@ -791,6 +791,43 @@ func TestTheFlowIsACommand(t *testing.T) {
 	if e := refused(t, s, ann, "flow", `{"class": "Invoice", "since": "soon"}`); !strings.HasPrefix(e.Message, "since is a day") {
 		t.Errorf("a moment that is none is refused with: %s", e.Message)
 	}
+
+	// The command throughput answers what the Go call answers (ADR-0096):
+	// how many documents were made and how many finished in each period.
+	for object, ask := range map[string]store.ThroughputAsk{
+		`{"class": "Invoice"}`:                 {},
+		`{"class": "Invoice", "by": "week"}`:   {By: store.ThroughputWeek},
+		`{"class": "Invoice", "by": "month"}`:  {By: store.ThroughputMonth},
+		`{"class": "Invoice", "since": 86400}`: {Since: time.Unix(86400, 0)},
+	} {
+		direct, err := s.Throughput(context.Background(), "Invoice", ask, store.As(ann))
+		if err != nil {
+			t.Fatal(err)
+		}
+		var want any
+		if err := json.Unmarshal(mustJSON(direct), &want); err != nil {
+			t.Fatal(err)
+		}
+		if got := run(t, s, ann, "throughput", object); !reflect.DeepEqual(got["throughput"], want) {
+			t.Errorf("throughput %s answered %v, and the Go call %v", object, got["throughput"], want)
+		}
+	}
+	if got := run(t, s, ann, "throughput", `{"class": "Invoice"}`); at(t, got, "throughput.by") != "day" || at(t, got, "throughput.created") != float64(2) {
+		t.Errorf("throughput answered %v", got)
+	}
+	for object, want := range map[string][2]string{
+		`{}`:                                     {CodeBadJSON, "/class"},
+		`{"class": "Receipt"}`:                   {store.CodeUnknownClass, ""},
+		`{"class": "Invoice", "by": "year"}`:     {store.CodeBadValue, "/by"},
+		`{"class": "Invoice", "since": "soon"}`:  {store.CodeBadValue, "/since"},
+		`{"class": "Invoice", "until": "never"}`: {store.CodeBadValue, "/until"},
+		`{"class": "Invoice", "since": "2026-11-14", "until": "2026-11-13"}`: {store.CodeBadValue, ""},
+		`{"class": "Invoice", "spread": true}`:                               {CodeBadJSON, "/spread"},
+	} {
+		if e := refused(t, s, ann, "throughput", object); e.Code != want[0] || e.Path != want[1] {
+			t.Errorf("throughput %s: %s at %q (%s), want %s at %q", object, e.Code, e.Path, e.Message, want[0], want[1])
+		}
+	}
 }
 
 func TestWhoCallsIsNeverInTheCommand(t *testing.T) {

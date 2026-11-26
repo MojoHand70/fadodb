@@ -675,6 +675,22 @@ func runFlow(c *call) error {
 	return c.answer("flow", flow, err)
 }
 
+// runThroughput answers how many documents of a class were made and how
+// many finished in each period (ADR-0096).
+func runThroughput(c *call) error {
+	var ask store.ThroughputAsk
+	var e *store.Error
+	if ask.Since, e = c.moment("since"); e != nil {
+		return e
+	}
+	if ask.Until, e = c.moment("until"); e != nil {
+		return e
+	}
+	ask.By = c.text("by")
+	throughput, err := c.s.Throughput(c.ctx, c.text("class"), ask, c.opts...)
+	return c.answer("throughput", throughput, err)
+}
+
 func runSQL(c *call) error {
 	args, e := c.scalars("args")
 	if e != nil {

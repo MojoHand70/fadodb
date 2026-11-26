@@ -221,20 +221,70 @@ touches no existing document. `fadodb check FILE` verifies the files of
 a database: that their bytes are unchanged and that none is missing. The full walk-through is `fado/example_test.go`, and
 `fado/readme_test.go` runs the class and the calls above.
 
+## Which program
+
+FadoDB is two programs from the same code. Every command, flag and
+setting is the same in both, and so is every answer.
+
+| | `fadodb` | `fadodb-core` |
+|---|---|---|
+| What it is | FadoDB with the analytical engine, DuckDB | the same program in pure Go, without the engine |
+| A question that reads a whole class: a sum, a count, a sorted page, totals by group, the flowchart | milliseconds, at any size | grows with the class; see below |
+| Reading a document, a commit, a list or a count an index narrows | the same | the same |
+| Needs from the system | its C and C++ libraries | nothing |
+| Size | 89 MB | 16 MB |
+
+Up to what size `fadodb-core` is enough, measured through the engine,
+on disk, on invoices that were each made, filed and paid:
+
+| The question, in `fadodb-core` | 10,000 documents | 100,000 | 1,000,000 | 3,400,000 |
+|---|---|---|---|---|
+| a sum in a live `LOOKUP` | 1 ms | 13 ms | 132 ms | 460 ms |
+| a count by a variable with no index | 0.4 ms | 7 ms | 69 ms | 240 ms |
+| a page of a list sorted by an amount | 4 ms | 13 ms | 93 ms | 318 ms |
+| totals by group | 2 ms | 19 ms | 194 ms | 675 ms |
+| the flowchart of the class | 37 ms | 0.4 s | 4.8 s | 18 s |
+
+In `fadodb` each of these takes 1 to 11 ms at every size of the table.
+
+- **Up to about 100,000 documents in the largest class, `fadodb-core`
+  is enough.**
+- **Between 100,000 and a million it works and slows down**, the
+  flowchart first.
+- **Beyond a million, take `fadodb`.**
+- **Below about 10,000 documents `fadodb` gives nothing**: both answer
+  in a few milliseconds.
+
+`fadodb` keeps a copy of the documents in a second file beside the
+database, about a tenth of its size, and feeds it itself.
+
 ## Install
 
-Each release has archives for Linux, macOS and Windows on amd64 and arm64,
-with a `checksums.txt`, on the
-[releases page](https://github.com/MojoHand70/fadodb/releases). Unpack the
-one for your platform and put `fadodb` on your path. With Go 1.26 or newer
-you can build it instead:
+A release has archives of both programs, with one `checksums.txt`, on the
+[releases page](https://github.com/MojoHand70/fadodb/releases):
 
-```
-go install github.com/MojoHand70/fadodb/cmd/fadodb@latest
-```
+| Program | Archives | For |
+|---|---|---|
+| `fadodb` | `fadodb_<version>_<system>` | Linux on amd64 and arm64, macOS on amd64 and arm64, Windows on amd64 |
+| `fadodb-core` | `fadodb-core_<version>_<system>` | the same, and Windows on arm64 |
+
+Unpack the one for your system and put the program on your path.
+
+- **This holds from the next release on.** The releases up to v0.7.0
+  have one program, named `fadodb`: it is the one without the engine,
+  which is `fadodb-core` now.
+- **`fadodb` for Linux needs Debian 12, Ubuntu 22.04 or a Linux as
+  new.** On an older one, on the Red Hat 9 family and on Alpine, take
+  `fadodb-core`, which needs nothing from the system.
+- **With Go 1.26 or newer `fadodb-core` is built instead**, from the
+  next release on with
+  `go install github.com/MojoHand70/fadodb/cmd/fadodb-core@latest`.
+  `fadodb` is not installed that way: it is built in a clone of the
+  repository, with `make full` and a C compiler.
 
 Every release before 1.0 is a pre-release. `fadodb version` prints the
-version, the commit and the build date.
+version, the commit and the build date, and says "with the analytical
+engine"; `fadodb-core version` begins with its own name.
 
 ## Try the formula engine
 
@@ -288,15 +338,16 @@ Go 1.26 or newer.
 
 ```
 make tools    # staticcheck, govulncheck, benchstat
-make build    # bin/fadodb, in pure Go
-make full     # bin/fadodb-full: the same program with the analytical engine, DuckDB (needs a C compiler)
+make build    # bin/fadodb-core, in pure Go
+make full     # bin/fadodb: the same program with the analytical engine, DuckDB (needs a C compiler)
 make gates    # what CI runs
 ```
 
 ## Layout
 
 ```
-cmd/fadodb/        the program fadodb, in pure Go: a main that runs internal/cli
+cmd/fadodb-core/   the program fadodb-core, in pure Go: a main that runs internal/cli
+analytics/         the module with DuckDB; analytics/cmd/fadodb is the program fadodb, the same with the analytical engine
 internal/cli/      command-line tool and server: init, user add, key new, serve; exec, file put, file get; class check, action check, formula eval, check
 fado/              public Go API
 internal/formula/  lexer, parser, binder, bytecode, VM, SQL generator

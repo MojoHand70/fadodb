@@ -30,6 +30,12 @@ docker tag ghcr.io/mojohand70/fadodb:0.7.0 fadodb
 The second command gives the image the short name `fadodb`, which the
 commands of this chapter use.
 
+The program in the image is the one without the analytical engine,
+which is named `fadodb-core` since the release after v0.7.0
+([the two programs](serving-a-database.md#a-server-with-the-analytical-engine)).
+In the image it is still started as `fadodb`. An image with the
+engine is [not built yet](#not-here-yet).
+
 The image is also built from a checkout of the repository, and that
 one is what the test of this chapter plays:
 
@@ -352,6 +358,9 @@ what to keep with each backup.
 
 ## Not here yet
 
+- **An image with the analytical engine.** The image holds
+  `fadodb-core`; the program with the engine needs the C and C++
+  libraries of a system, which this image does not have.
 - **Several databases in one container.** A container serves one, as
   [`fadodb serve` does](serving-a-database.md#not-here-yet).
 - **A backup of a database that is served**, without stopping the

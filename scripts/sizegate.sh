@@ -8,7 +8,7 @@ LIMIT_MB="${SIZE_LIMIT_MB:-20}"
 out="$(mktemp -d)"
 trap 'rm -rf "$out"' EXIT
 
-CGO_ENABLED=0 go build -trimpath -ldflags '-s -w' -o "$out/fadodb" ./cmd/fadodb
+CGO_ENABLED=0 go build -trimpath -ldflags '-s -w' -o "$out/fadodb" ./cmd/fadodb-core
 bytes="$(stat -c %s "$out/fadodb" 2>/dev/null || stat -f %z "$out/fadodb")"
 limit=$((LIMIT_MB * 1024 * 1024))
 

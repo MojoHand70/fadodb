@@ -1,6 +1,6 @@
-// Command fadodb, built here, is the FadoDB command-line tool and its
-// server with the analytical engine (ADR-0017, ADR-0089): the program of
-// cmd/fadodb, from the same code, and DuckDB linked in. A database it
+// Command fadodb is the FadoDB command-line tool and its server with
+// the analytical engine (ADR-0017, ADR-0089): the program of
+// cmd/fadodb-core, from the same code, and DuckDB linked in. A database it
 // serves keeps a copy of its documents in a DuckDB file beside its own,
 // and the questions that read everything are answered from the copy.
 //

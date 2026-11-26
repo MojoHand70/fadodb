@@ -12,6 +12,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -20,13 +21,24 @@ import (
 // The program with the analytical engine, built and run as an operator
 // runs it (ADR-0089): a database it serves keeps a copy of its
 // documents beside its own file, and the flow of a class is answered
-// from the copy. The test builds the program once.
+// from the copy. The test builds the program once; or it is given one,
+// in FADODB_PROGRAM, and tries that: the very file a release publishes
+// (scripts/program.sh try).
 
 var served = regexp.MustCompile(`serving \S+ at (http://\S+)`)
 
 func built(t *testing.T) string {
 	t.Helper()
+	if given := os.Getenv("FADODB_PROGRAM"); given != "" {
+		if _, err := os.Stat(given); err != nil {
+			t.Fatalf("the program to try, FADODB_PROGRAM: %v", err)
+		}
+		return given
+	}
 	bin := filepath.Join(t.TempDir(), "fadodb")
+	if runtime.GOOS == "windows" {
+		bin += ".exe"
+	}
 	if out, err := exec.Command("go", "build", "-o", bin, ".").CombinedOutput(); err != nil {
 		t.Fatalf("the program does not build: %v\n%s", err, out)
 	}
@@ -69,7 +81,14 @@ func TestTheProgramWithTheEngine(t *testing.T) {
 	ctx, stop := context.WithCancel(context.Background())
 	defer stop()
 	server := exec.CommandContext(ctx, bin, "serve", db, "--listen", "127.0.0.1:0", "--settings", settings)
-	server.Cancel = func() error { return server.Process.Signal(os.Interrupt) }
+	server.Cancel = func() error {
+		// Windows has no interrupt to send to another process: the
+		// server is ended there, and the database is the file it left.
+		if runtime.GOOS == "windows" {
+			return server.Process.Kill()
+		}
+		return server.Process.Signal(os.Interrupt)
+	}
 	server.WaitDelay = 10 * time.Second
 	said, err := server.StderrPipe()
 	if err != nil {

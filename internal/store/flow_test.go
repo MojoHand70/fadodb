@@ -302,3 +302,157 @@ func secondsText(n int64) string {
 	text, _ := json.Marshal(n)
 	return string(text)
 }
+
+// The throughput of a class (ADR-0096): how many documents were made
+// and how many finished in each day, week or month, for the caller, by
+// the clock of the database's time zone. The story is that of the flow.
+func TestTheThroughputOfAClass(t *testing.T) {
+	cl := &still{now: time.Date(2026, 11, 2, 9, 0, 0, 0, time.UTC)}
+	s, _ := openStore(t, Options{Now: cl.Now})
+	ctx := context.Background()
+	if _, err := s.DefineClass(ctx, []byte(flowInvoice), asSetup); err != nil {
+		t.Fatal(err)
+	}
+	must := func(_ *Document, err error) {
+		t.Helper()
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	// Monday 2 November: four invoices made; D-1 is cancelled at 10:00
+	// and B-1 approved at 13:00. Tuesday: B-3 cancelled. Friday 6: one
+	// more made. Monday 9: it is approved. Tuesday 1 December: one made.
+	for _, id := range []string{"B-1", "B-2", "B-3"} {
+		must(s.Create(ctx, "Invoice", Values{"total": "100.00"}, flowBob, WithID(id)))
+	}
+	must(s.Create(ctx, "Invoice", Values{"total": "0.00"}, flowDan, WithID("D-1")))
+	cl.add(time.Hour)
+	must(s.Transition(ctx, "Invoice", "B-1", "submit", nil, flowBob))
+	must(s.Transition(ctx, "Invoice", "B-2", "submit", nil, flowBob))
+	must(s.Transition(ctx, "Invoice", "D-1", "submit", nil, flowDan))
+	cl.add(3 * time.Hour)
+	must(s.Transition(ctx, "Invoice", "B-1", "approve", nil, flowAnn))
+	cl.add(24 * time.Hour)
+	must(s.Transition(ctx, "Invoice", "B-3", "cancel", nil, flowBob))
+	cl.now = time.Date(2026, 11, 6, 15, 0, 0, 0, time.UTC)
+	must(s.Create(ctx, "Invoice", Values{"total": "5.00"}, flowBob, WithID("B-4")))
+	must(s.Transition(ctx, "Invoice", "B-4", "submit", nil, flowBob))
+	cl.now = time.Date(2026, 11, 9, 8, 0, 0, 0, time.UTC)
+	must(s.Transition(ctx, "Invoice", "B-4", "approve", nil, flowAnn))
+	cl.now = time.Date(2026, 12, 1, 8, 0, 0, 0, time.UTC)
+	must(s.Create(ctx, "Invoice", Values{"total": "7.00"}, flowBob, WithID("B-5")))
+
+	told := func(as Option, ask ThroughputAsk) string {
+		t.Helper()
+		th, err := s.Throughput(ctx, "Invoice", ask, as)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var sumC, sumF int64
+		out := make([]string, len(th.Periods))
+		for i, p := range th.Periods {
+			out[i] = fmt.Sprintf("%s %d/%d", p.From, p.Created, p.Finished)
+			sumC, sumF = sumC+p.Created, sumF+p.Finished
+		}
+		if sumC != th.Created || sumF != th.Finished || th.TimeZone != "UTC" || th.Class != "Invoice" {
+			t.Errorf("the sums of a throughput: %+v", th)
+		}
+		return fmt.Sprintf("%s: %s", th.By, strings.Join(out, ", "))
+	}
+	// Ann reads every invoice. By week: a week begins on a Monday, and
+	// the weeks in which nothing was made or finished are there too.
+	if got := told(flowAnn, ThroughputAsk{By: ThroughputWeek}); got != "week: 2026-11-02 5/3, 2026-11-09 0/1, 2026-11-16 0/0, 2026-11-23 0/0, 2026-11-30 1/0" {
+		t.Errorf("Ann's weeks: %s", got)
+	}
+	if got := told(flowAnn, ThroughputAsk{By: ThroughputMonth}); got != "month: 2026-11-01 5/4, 2026-12-01 1/0" {
+		t.Errorf("Ann's months: %s", got)
+	}
+	// By day when nothing is said, and within a period.
+	first := ThroughputAsk{Until: time.Date(2026, 11, 7, 0, 0, 0, 0, time.UTC)}
+	if got := told(flowAnn, first); got != "day: 2026-11-02 4/2, 2026-11-03 0/1, 2026-11-04 0/0, 2026-11-05 0/0, 2026-11-06 1/0" {
+		t.Errorf("Ann's days of the first week: %s", got)
+	}
+	// Bob reads his own: Dan's invoice is in no number of his.
+	if got := told(flowBob, first); got != "day: 2026-11-02 3/1, 2026-11-03 0/1, 2026-11-04 0/0, 2026-11-05 0/0, 2026-11-06 1/0" {
+		t.Errorf("Bob's days of the first week: %s", got)
+	}
+	// Eve reads none, and a period in which nothing happened is empty.
+	if got := told(flowEve, ThroughputAsk{}); got != "day: " {
+		t.Errorf("Eve's days: %s", got)
+	}
+	if got := told(flowAnn, ThroughputAsk{Since: time.Date(2026, 11, 10, 0, 0, 0, 0, time.UTC), Until: time.Date(2026, 11, 20, 0, 0, 0, 0, time.UTC)}); got != "day: " {
+		t.Errorf("days in which nothing happened: %s", got)
+	}
+	// A deleted document is in no number.
+	if err := s.Delete(ctx, "Invoice", "B-5", flowBob); err != nil {
+		t.Fatal(err)
+	}
+	if got := told(flowAnn, ThroughputAsk{By: ThroughputMonth}); got != "month: 2026-11-01 5/4" {
+		t.Errorf("Ann's months after a delete: %s", got)
+	}
+	// What is refused.
+	tuesday := time.Date(2026, 11, 3, 0, 0, 0, 0, time.UTC)
+	for what, c := range map[string]struct {
+		class string
+		ask   ThroughputAsk
+		code  string
+	}{
+		"a class there is none of":            {"Receipt", ThroughputAsk{}, CodeUnknownClass},
+		"a period that ends before it begins": {"Invoice", ThroughputAsk{Since: tuesday, Until: tuesday.Add(-time.Hour)}, CodeBadValue},
+		"a length of a period there is none":  {"Invoice", ThroughputAsk{By: "year"}, CodeBadValue},
+	} {
+		var refused *Error
+		if _, err := s.Throughput(ctx, c.class, c.ask, flowAnn); !errors.As(err, &refused) || refused.Code != c.code {
+			t.Errorf("%s: %v, want %s", what, err, c.code)
+		}
+	}
+}
+
+// A day begins at midnight by the clock of the database's time zone,
+// and a week on its Monday there: an invoice made on Sunday at 23:30 in
+// UTC is Monday's in Warsaw, and one finished on the night the clocks
+// go back is the day's it was finished on there.
+func TestTheThroughputGoesByTheDatabasesZone(t *testing.T) {
+	cl := &still{now: time.Date(2026, 11, 1, 23, 30, 0, 0, time.UTC)}
+	s, _ := openStore(t, Options{Now: cl.Now, TimeZone: "Europe/Warsaw"})
+	ctx := context.Background()
+	if _, err := s.DefineClass(ctx, []byte(flowInvoice), asSetup); err != nil {
+		t.Fatal(err)
+	}
+	// Sunday 1 November 23:30 UTC is Monday 2 November 00:30 in Warsaw.
+	if _, err := s.Create(ctx, "Invoice", Values{"total": "1.00"}, flowBob, WithID("B-1")); err != nil {
+		t.Fatal(err)
+	}
+	// Saturday 24 October 2026, 21:59 UTC, is 23:59 in Warsaw, in summer
+	// time; the clocks go back that night.
+	cl.now = time.Date(2026, 10, 24, 21, 59, 0, 0, time.UTC)
+	if _, err := s.Create(ctx, "Invoice", Values{"total": "1.00"}, flowBob, WithID("B-0")); err != nil {
+		t.Fatal(err)
+	}
+	// Sunday 25 October, 23:30 in Warsaw, now in winter time: 22:30 UTC.
+	cl.now = time.Date(2026, 10, 25, 22, 30, 0, 0, time.UTC)
+	if _, err := s.Transition(ctx, "Invoice", "B-0", "cancel", nil, flowBob); err != nil {
+		t.Fatal(err)
+	}
+	th, err := s.Throughput(ctx, "Invoice", ThroughputAsk{}, flowAnn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var days []string
+	for _, p := range th.Periods {
+		if p.Created != 0 || p.Finished != 0 {
+			days = append(days, fmt.Sprintf("%s %d/%d", p.From, p.Created, p.Finished))
+		}
+	}
+	if got := strings.Join(days, ", "); got != "2026-10-24 1/0, 2026-10-25 0/1, 2026-11-02 1/0" || th.TimeZone != "Europe/Warsaw" || len(th.Periods) != 10 {
+		t.Errorf("the days in Warsaw: %s, in %s, %d periods", got, th.TimeZone, len(th.Periods))
+	}
+	weeks, err := s.Throughput(ctx, "Invoice", ThroughputAsk{By: ThroughputWeek}, flowAnn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(weeks.Periods) != 3 || weeks.Periods[0].From != "2026-10-19" || weeks.Periods[0].Created != 1 || weeks.Periods[0].Finished != 1 ||
+		weeks.Periods[2].From != "2026-11-02" || weeks.Periods[2].Created != 1 {
+		t.Errorf("the weeks in Warsaw: %+v", weeks.Periods)
+	}
+}

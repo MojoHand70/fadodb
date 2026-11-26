@@ -1377,8 +1377,12 @@ longest; from the copy when the program keeps one (ADR-0089). Asked
 with `"spread": true` it says of each state the middle stay and the
 slow tenth as well (ADR-0095, proposed): the length of the stay at the
 middle place and at nine tenths, counted with whole numbers, so that
-the store and the copy answer the same. The paths documents took and
-the documents made and finished in each period are not answered yet.
+the store and the copy answer the same. The command `throughput`
+(ADR-0096, proposed) says how many documents were made and how many
+finished in each day, week or month, by the clock of the database's
+time zone: both engines count by the quarter of an hour, and the
+engine puts the quarters into the periods of the zone. The paths
+documents took are not answered yet.
 
 ---
 

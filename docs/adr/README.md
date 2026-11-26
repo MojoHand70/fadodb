@@ -101,3 +101,4 @@ line says so. Copy `0000-template.md` to start.
 | [0093](0093-a-kept-value-that-follows-the-clock.md) | A kept value that follows the clock, and the time zone of a database | Proposed |
 | [0094](0094-the-rows-of-a-table-stay-in-the-store.md) | The rows of a table stay in the store, and the copy holds them too | Proposed |
 | [0095](0095-how-the-stays-of-a-state-spread.md) | How the stays of a state spread: the middle stay and the slow tenth | Proposed |
+| [0096](0096-made-and-finished-in-each-period.md) | How many documents were made and finished in each period | Proposed |

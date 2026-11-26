@@ -10,6 +10,16 @@ Phase 8 started on 2026-11-25.
 
 ### Added
 
+- How many documents were made and finished in each period (ADR-0096,
+  proposed). A new command, `throughput`, in Go `Throughput`, answers
+  for a class how many documents the caller may read were made and how
+  many came into a final state in each day, week or month, said by
+  `by`: whether the pile grows. A day begins at midnight by the clock
+  of the database's time zone, a week on its Monday and a month on its
+  first; every period from the first to the last is in the answer,
+  the empty ones too. `since` and `until` say what is counted, as for
+  the flow. Among ten million moves `fadodb` answers it in 6 to 7 ms
+  and `fadodb-core` in 9 seconds.
 - A chapter of the manual for an analyst with tools of their own,
   "Reading a database with DuckDB" (ADR-0089, item 10): how DuckDB,
   and through it Python and R, open the file of a database from a

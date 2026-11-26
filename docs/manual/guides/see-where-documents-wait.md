@@ -250,6 +250,86 @@ well:
   the flow with its spread in 80 to 87 ms; a program without it takes
   18 seconds and 40.
 
+## Whether the pile grows
+
+The flow says where documents are and how they moved in a period as a
+whole. Another command, `throughput`, says how many were made and how
+many finished in each day, week or month of it:
+
+```jsonc
+{"class": "Invoice", "by": "day"}
+```
+
+<!-- the throughput Ann sees -->
+```jsonc
+{
+  "throughput": {
+    "class": "Invoice",
+    "class_version": 1,
+    "by": "day",
+    "time_zone": "UTC",
+    "created": 4,
+    "finished": 3,
+    "periods": [
+      {
+        "from": "2026-11-02",
+        "created": 4,
+        "finished": 2
+      },
+      {
+        "from": "2026-11-03",
+        "created": 0,
+        "finished": 1
+      }
+    ]
+  }
+}
+```
+
+On Monday four invoices were made and two finished: D-1, which the
+engine cancelled, and B-1, which Ann approved. On Tuesday Bob
+cancelled B-3. One is still open, B-2.
+
+<!-- what a throughput says -->
+| Member | Of | Says |
+|---|---|---|
+| `by` | the throughput | the length of a period: `day`, `week` or `month` |
+| `time_zone` | the throughput | the time zone by whose clock a day begins |
+| `created`, `finished` | the throughput | the sums over the periods |
+| `periods` | the throughput | the periods, in their order |
+| `from` | a period | its first day |
+| `created` | a period | how many documents were made in it |
+| `finished` | a period | how many documents came into a final state in it |
+
+<!-- made and finished -->
+| Who asks | The object | The periods: first day, made / finished |
+|---|---|---|
+| Ann | `{"class": "Invoice"}` | 2026-11-02 4/2, 2026-11-03 0/1 |
+| Bob | `{"class": "Invoice"}` | 2026-11-02 3/1, 2026-11-03 0/1 |
+| Ann | `{"class": "Invoice", "by": "week"}` | 2026-11-02 4/3 |
+| Ann | `{"class": "Invoice", "by": "month"}` | 2026-11-01 4/3 |
+| Ann | `{"class": "Invoice", "since": "2026-11-03"}` | 2026-11-03 0/1 |
+
+- **A document is made when it is created, and finished when it comes
+  into a final state**: `approved` or `cancelled` here.
+- **A day begins at midnight by the clock of the database's time
+  zone**, which the server's settings give as `timezone`, and which is
+  UTC when none was given. A week begins on its Monday and a month on
+  its first. `by` is `day` when left out.
+- **Every period from the first to the last is there**, also one in
+  which nothing was made and nothing finished: a chart of them has no
+  gaps. Before the first and after the last there is none.
+- **`since` and `until` say what is counted**, as for the flow.
+- **Each caller sees their own**, as in the flow, and a deleted
+  document is in no number.
+- **Made more than finished, period after period, is a pile that
+  grows.** What was made less what finished, added up from the first
+  period, is how many are open.
+- **More than 10,000 periods are refused**, with `too_many_rows`: ask
+  by week or by month, or over a shorter time.
+- **Among ten million moves** a program with the analytical engine
+  answers it in 6 to 7 ms, and a program without it in 9 seconds.
+
 ## Asking
 
 In a Go program:
@@ -260,11 +340,16 @@ flow, err := db.Flow(ctx, "Invoice", fado.FlowPeriod{}, fado.As(ann))
 
 `fado.FlowPeriod{Spread: true}` asks for how the stays spread.
 
-As a command, over HTTP or through `Exec`, it is `flow`
-([the commands](../commands.md#flow)). From a terminal:
+```go
+weeks, err := db.Throughput(ctx, "Invoice", fado.ThroughputAsk{By: fado.ThroughputWeek}, fado.As(ann))
+```
+
+As commands, over HTTP or through `Exec`, they are `flow` and
+`throughput` ([the commands](../commands.md#flow)). From a terminal:
 
 ```sh
 fadodb exec flow '{"class": "Invoice", "since": "2026-11-03"}'
+fadodb exec throughput '{"class": "Invoice", "by": "week"}'
 ```
 
 ## What it does not count
@@ -280,5 +365,4 @@ fadodb exec flow '{"class": "Invoice", "since": "2026-11-03"}'
 
 - **The picture at a moment in the past.** The documents in each state
   are counted now.
-- **The paths documents took**, and **the documents made and
-  finished in each day**.
+- **The paths documents took.**

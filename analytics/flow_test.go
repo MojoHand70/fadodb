@@ -131,6 +131,29 @@ func TestFlow_FromTheCopyIsTheStores(t *testing.T) {
 				if string(a) != string(b) {
 					t.Errorf("%s, %s, %s:\nthe copy  %s\nthe store %s", when, name, label, a, b)
 				}
+				// How many were made and how many finished in each
+				// period (ADR-0096), over the same time: the copy
+				// counts its moves, the store its events.
+				for _, by := range []string{"", fado.ThroughputDay, fado.ThroughputWeek, fado.ThroughputMonth} {
+					ask := fado.ThroughputAsk{Since: period.Since, Until: period.Until, By: by}
+					before := withCopy.CopyState().Answers
+					fromCopy, err := withCopy.Throughput(ctx, "Invoice", ask, who)
+					if err != nil {
+						t.Fatalf("%s, %s, %s by %q: the throughput from the copy: %v", when, name, label, by, err)
+					}
+					if st := withCopy.CopyState(); st.Answers != before+1 || st.AskErr != nil {
+						t.Fatalf("%s, %s, %s by %q: the copy did not answer: %+v", when, name, label, by, st)
+					}
+					fromStore, err := plain.Throughput(ctx, "Invoice", ask, who)
+					if err != nil {
+						t.Fatalf("%s, %s, %s by %q: the throughput from the store: %v", when, name, label, by, err)
+					}
+					a, _ := json.Marshal(fromCopy)
+					b, _ := json.Marshal(fromStore)
+					if string(a) != string(b) {
+						t.Errorf("%s, %s, %s by %q:\nthe copy  %s\nthe store %s", when, name, label, by, a, b)
+					}
+				}
 			}
 		}
 	}
@@ -147,6 +170,15 @@ func TestFlow_FromTheCopyIsTheStores(t *testing.T) {
 	}
 	if in["draft"] != 12 || in["review"] != 15 || in["paid"] != 12 || all.Created != 39 {
 		t.Errorf("the flow: %d drafts, %d in review, %d paid, %d created; want 12, 15, 12 and 39", in["draft"], in["review"], in["paid"], all.Created)
+	}
+	// And how many were made and finished: 39 invoices that exist, 12
+	// of them paid, in the days the clock of the test went through.
+	made, err := withCopy.Throughput(ctx, "Invoice", fado.ThroughputAsk{}, ewa)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if made.Created != 39 || made.Finished != 12 || made.By != fado.ThroughputDay || len(made.Periods) < 2 {
+		t.Errorf("the throughput: %d made and %d finished in %d days by %s; want 39 and 12 in several days", made.Created, made.Finished, len(made.Periods), made.By)
 	}
 	mine, err := withCopy.Flow(ctx, "Invoice", fado.FlowPeriod{}, nobody)
 	if err != nil {

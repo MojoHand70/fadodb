@@ -338,6 +338,11 @@ Measured among the same 3,400,000 invoices:
 | `query`: fifty invoices over an amount, as they come | 0.2 ms | 0.2 ms, from the store |
 | `query`: the newest fifty invoices; an index holds the order | 0.9 ms | 0.9 ms, from the store |
 
+At ten times that size, 34,000,000 invoices that made a hundred
+million moves, the copy answers each of these questions in under a
+tenth of a second, and the flow of the class in 158 ms, where the
+store takes seconds to minutes.
+
 **What stays with the store:** everything inside a commit, so a value
 that a triggered variable keeps is worked out by the store.
 

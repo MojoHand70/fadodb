@@ -60,7 +60,7 @@ func TestDefineTable(t *testing.T) {
 	s, _ := openStore(t, Options{})
 	ctx := context.Background()
 	setupTables(t, s)
-	if got := strings.Join(s.Tables(), ","); got != "Rates,Prices" {
+	if got := strings.Join(s.Tables(), ","); got != "Rates,Prices,"+systemTables {
 		t.Errorf("tables %s", got)
 	}
 	tbl, ok := s.Table("rates")
@@ -263,7 +263,7 @@ func TestLookup(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer s2.Close()
-	if got := strings.Join(s2.Tables(), ","); got != "Rates,Prices" {
+	if got := strings.Join(s2.Tables(), ","); got != "Rates,Prices,"+systemTables {
 		t.Errorf("tables after reopen: %s", got)
 	}
 	doc5, err := s2.Set(ctx, "Order", doc.ID, Values{"currency": "USD"})
@@ -527,3 +527,7 @@ func mustExact(t *testing.T, s string) formula.Value {
 	}
 	return v
 }
+
+// systemTables are the tables every database has (ADR-0092), listed after
+// its own.
+const systemTables = "SystemApps,SystemClasses,SystemUsers,SystemGroups"

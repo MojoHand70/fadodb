@@ -865,7 +865,7 @@ func TestDesignerSkill(t *testing.T) {
 	}
 	// Nothing the story names was made twice: the tables are the two
 	// the agent found, and the one new class is the list nobody kept.
-	if tables := db.Tables(); !reflect.DeepEqual(tables, []string{"People", "Departments"}) {
+	if tables := db.Tables(); !reflect.DeepEqual(tables, append([]string{"People", "Departments"}, systemTables...)) {
 		t.Errorf("the tables after the story: %v", tables)
 	}
 }

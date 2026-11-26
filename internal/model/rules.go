@@ -1290,6 +1290,10 @@ func compileTableAction(c *collector, path string, raw json.RawMessage, scope *f
 	}
 	a.Target = def.Table
 	switch {
+	case src != nil && IsSystemTable(src.Name) && !c.env.Lenient:
+		// The engine keeps the rows of a system table (ADR-0092).
+		c.hint(CodeNotAllowed, path+"/table", src.Name+" is a system table, and only the engine writes its rows", "a rule writes a table of the database's own")
+		return nil
 	case src != nil:
 		a.Target = src.Name
 		if src.Binding != "" && src.Binding != "sqlite" && !c.env.Lenient {

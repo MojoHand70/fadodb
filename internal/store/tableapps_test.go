@@ -26,7 +26,7 @@ func TestTableApps_ATableNamesItsApp(t *testing.T) {
 	if _, err := s.DefineTable(ctx, []byte(rates), asSetup); !errors.As(err, &diags) || len(diags) != 1 || diags[0].Code != model.CodeUnknownApp || diags[0].Path != "/app" || diags[0].Hint == "" {
 		t.Fatalf("a table of an app that does not exist: %v", err)
 	}
-	if got := s.Tables(); len(got) != 0 {
+	if got := strings.Join(s.Tables(), ","); got != systemTables {
 		t.Fatalf("a refused table was stored: %v", got)
 	}
 	for _, app := range []string{`{"name": "Expenses"}`, `{"name": "Helpdesk"}`} {
@@ -55,7 +55,7 @@ func TestTableApps_ATableNamesItsApp(t *testing.T) {
 		if _, err := s.TablesOf("Travel"); !errors.As(err, &refusal) || refusal.Code != CodeUnknownApp {
 			t.Fatalf("%s: the tables of an app that does not exist: %v", when, err)
 		}
-		if got := s.Tables(); !reflect.DeepEqual(got, []string{"Rates", "Codes"}) {
+		if got := strings.Join(s.Tables(), ","); got != "Rates,Codes,"+systemTables {
 			t.Fatalf("%s: every table: %v", when, got)
 		}
 		if stored, err := s.Definition(ctx, DefinitionTable, "Rates", 0); err != nil || !strings.Contains(string(stored.Definition), `"app":"expenses"`) {

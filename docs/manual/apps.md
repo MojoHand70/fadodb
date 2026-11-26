@@ -117,12 +117,21 @@ They are open to everybody, as reading any definition is. A name that
 is no app is refused with `unknown_app`, and the hint names the apps
 there are.
 
+## The app System
+
+Every database has the app `System`, the engine's own. It holds the
+[system tables](system-tables.md), which say what the database holds:
+its apps, its classes, its users and its groups. The engine defines it
+when it opens a database that has none, so `list_apps` names it in
+every database, first in a new one. A designer may give it other words
+with `define_app`, as any app; a database where a designer made an
+app `System` before keeps it with its words. No class of a designer's
+needs to belong to it.
+
 ## What an app does not do yet
 
 - An app cannot be removed or renamed.
 - An app has no groups, schemas or actions of its own: a class and a
   table name their app, nothing else does today.
-- Every database is to have an app of the engine's own, System, for
-  the system tables: planned, not built yet.
 - An app is not exported from one database and brought into another.
 - An app has no words in other languages.

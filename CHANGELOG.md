@@ -10,6 +10,23 @@ Phase 8 started on 2026-11-25.
 
 ### Added
 
+- The app System and its tables (ADR-0092, proposed). Every database
+  has the app `System`, the engine's own, and four tables in it:
+  `SystemApps`, `SystemClasses`, `SystemUsers` and `SystemGroups`,
+  the apps, classes, users and groups the database holds at the
+  moment they are read. A formula reads them as any table:
+  `LOOKUP(SystemUsers, name, id = THIS.approver)` names a person,
+  `QUERY(SystemApps, {name, label, icon}, name <> "System", {label})`
+  lists the apps for a start page. Everybody may read them, as
+  `list_users` and `list_groups` answer everybody; nobody writes them,
+  a content administrator neither: `import_rows`, `delete_rows` and
+  `remove_table` are refused with `read_only`, a rule's table action
+  with `not_allowed`, `table:` on one with `not_supported`, and a
+  table or a class under one of the four names with `reserved_name`.
+  A database made before gets them when it is opened; one where a
+  designer made an app `System` keeps it with its words. `list_apps`
+  now names `System`, and `list_tables` lists the four after the
+  database's own tables. Chapter: `docs/manual/system-tables.md`.
 - A kept value that follows the clock (ADR-0093, proposed). A
   triggered variable may list `schedule:<when>`, with when in words:
   `hourly`, `daily at 03:00`, `weekly on friday at 18:00`,

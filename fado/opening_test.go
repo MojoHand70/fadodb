@@ -53,7 +53,7 @@ func TestOpeningADatabase(t *testing.T) {
 
 	// What opening does, and what is on disk.
 	db := must(open("notes.fado", fado.Options{}))
-	if got := db.Classes(); !reflect.DeepEqual(got, []string{"Substitution"}) || len(db.Schemas()) != 9 || len(db.Tables()) != 0 {
+	if got := db.Classes(); !reflect.DeepEqual(got, []string{"Substitution"}) || len(db.Schemas()) != 9 || !reflect.DeepEqual(db.Tables(), systemTables) {
 		t.Errorf("a new database has the classes %v, %d schemas and the tables %v", got, len(db.Schemas()), db.Tables())
 	}
 	if info, err := os.Stat(filepath.Join(dir, "notes.fado")); err != nil {

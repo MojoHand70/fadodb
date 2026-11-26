@@ -308,8 +308,10 @@ func TestTheChapterOnContainers(t *testing.T) {
 				t.Errorf("the chapter's table of the image has no row: %s", row)
 			}
 		}
-		// Told nothing, it prints its help.
-		if code, out, _ := docker(t, "", nil, "run", "--rm", image); code != 0 || out != usage {
+		// Told nothing, it prints its help. The program in the image is
+		// the one without the analytical engine, and its help ends by
+		// saying so.
+		if code, out, _ := docker(t, "", nil, "run", "--rm", image); code != 0 || out != usage+coreNote {
 			t.Errorf("the image, told nothing: exit %d\n%s", code, out)
 		}
 		// It holds the tool and the certificates, and no other file:

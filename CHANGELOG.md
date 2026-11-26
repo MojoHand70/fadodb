@@ -10,6 +10,17 @@ Phase 8 started on 2026-11-25.
 
 ### Added
 
+- A page of a list is found in the copy when the store does not find
+  it in a moment (ADR-0089, step 3, its second part). In a program
+  that keeps the copy, the command `query` and a live list give the
+  store five milliseconds to find the page; a page it has not found
+  by then, and a page it would read and sort the class for, is found
+  in DuckDB, which says which documents and in which order, and the
+  store hands those documents over. The page is the same either way.
+  Among 3,400,000 invoices the fifty dearest take 8 ms where they
+  took 318, and the fifty dearest of one owner, whom an index narrows
+  to a million invoices, 11 ms where they took 278; a page the store
+  fills at once stays with the store.
 - The flow of a class is answered from the copy in milliseconds: the
   copy keeps the moves of the documents ready (ADR-0089, step 2). For
   each class it holds one row for each time a document that exists

@@ -795,3 +795,64 @@ i-3 created <nil> <nil>>draft left since <nil>`, filed.StateEnteredAt, at["i-1"]
 		t.Errorf("a copy without its moves, after a feed: %d events (want %d) and the moves\n%s\nwant\n%s", c.count("events"), events+1, got, kept)
 	}
 }
+
+// In a program that keeps the copy, a page of a list is the store's
+// for a moment and the copy's when the moment has passed; a page the
+// store would read and sort the class for is the copy's at once
+// (ADR-0089, item 6). Whichever is asked, the page is the same. The
+// stand-in answers no statement, so a page it is asked for comes from
+// the store after all, and the state of the copy says it was asked.
+func TestCopy_APageIsTheStoresForAMoment(t *testing.T) {
+	c := newMemCopy()
+	s, _, ctx := copied(t, c)
+	moment := copyStoreFirst
+	t.Cleanup(func() { copyStoreFirst = moment })
+	for i := 1; i <= 6; i++ {
+		if _, err := s.Create(ctx, "Invoice", Values{"number": fmt.Sprintf("FV-%d", i), "customer": []string{"Globex", "Acme"}[i%2]}, WithID(fmt.Sprintf("i-%d", i))); err != nil {
+			t.Fatal(err)
+		}
+	}
+	mustFeed(t, s)
+	asked := func(f Filter) (string, bool) {
+		t.Helper()
+		s.feeder.notAnswered(nil)
+		docs, err := s.Query(ctx, f)
+		if err != nil {
+			t.Fatalf("the query %+v: %v", f, err)
+		}
+		var ids []string
+		for _, d := range docs {
+			ids = append(ids, d.ID)
+		}
+		st := s.CopyState()
+		return strings.Join(ids, " "), st.AskErr != nil && strings.Contains(st.AskErr.Error(), "answers no statement")
+	}
+	ofOne := Filter{Class: "Invoice", Where: `customer = "Acme"`}
+	sorted := Filter{Class: "Invoice", Where: `customer = "Acme"`, Order: []string{"-number"}}
+	// The store has all the time it wants: it finds the page, and the
+	// copy is not asked.
+	copyStoreFirst = time.Hour
+	if got, copy := asked(ofOne); got != "i-1 i-3 i-5" || copy {
+		t.Errorf("with a moment that never passes: %q, the copy asked %v", got, copy)
+	}
+	// A page sorted by what no index holds is the copy's at once.
+	if got, copy := asked(sorted); got != "i-5 i-3 i-1" || !copy {
+		t.Errorf("a page sorted by what no index holds: %q, the copy asked %v", got, copy)
+	}
+	// A page whose order an index holds is the store's for the moment.
+	if got, copy := asked(Filter{Class: "Invoice", Order: []string{"-created_at"}, Limit: 2}); got == "" || copy {
+		t.Errorf("a page in an order an index holds: %q, the copy asked %v", got, copy)
+	}
+	// The moment has passed before the store began: the copy is asked.
+	// A moment that lies behind is one that has passed on every
+	// machine, where the shortest one ahead may outlast a small read.
+	copyStoreFirst = -time.Second
+	if got, copy := asked(ofOne); got != "i-1 i-3 i-5" || !copy {
+		t.Errorf("with a moment that has passed: %q, the copy asked %v", got, copy)
+	}
+	// With no moment at all the copy is asked at once.
+	copyStoreFirst = 0
+	if got, copy := asked(ofOne); got != "i-1 i-3 i-5" || !copy {
+		t.Errorf("with no moment for the store: %q, the copy asked %v", got, copy)
+	}
+}

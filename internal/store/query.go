@@ -48,6 +48,10 @@ func (s *Store) Query(ctx context.Context, f Filter, opts ...Option) ([]*Documen
 	if err != nil {
 		return nil, filterErr(err)
 	}
+	if s.feeder != nil {
+		docs, _, err := s.pageWithCopy(ctx, c, o, plan, f, nil, "query", false)
+		return docs, err
+	}
 	docs, _, err := s.answer(ctx, c, o, plan, "query", false)
 	return docs, err
 }
@@ -135,6 +139,17 @@ func shortTime(d time.Duration) string {
 // leaves it out, and says whether there was one: the caller of a page
 // then knows that rows follow, and nothing else was fetched to learn it.
 func (s *Store) answer(ctx context.Context, c *class, o options, plan *query.Plan, command string, probe bool) ([]*Document, bool, error) {
+	found, more, err := s.find(ctx, c, o, plan, command, probe)
+	if err != nil {
+		return nil, false, err
+	}
+	return s.shown(ctx, c, o, plan, command, found, more)
+}
+
+// find runs a compiled filter in the store and answers the documents
+// it takes, as rows: the page asked for, and with probe whether
+// documents follow it.
+func (s *Store) find(ctx context.Context, c *class, o options, plan *query.Plan, command string, probe bool) ([]*docRow, bool, error) {
 	limit := plan.Limit
 	if probe {
 		limit++
@@ -184,6 +199,13 @@ func (s *Store) answer(ctx context.Context, c *class, o options, plan *query.Pla
 	if probe && len(found) > plan.Limit {
 		found, more = found[:plan.Limit], true
 	}
+	return found, more, nil
+}
+
+// shown projects the documents found for a question for its caller:
+// their lists, for the fields asked for, and of each document what the
+// caller may read. more is handed through.
+func (s *Store) shown(ctx context.Context, c *class, o options, plan *query.Plan, command string, found []*docRow, more bool) ([]*Document, bool, error) {
 	// The composites of every document in one statement per child table,
 	// for the fields asked for.
 	wanted := map[*child]bool{}

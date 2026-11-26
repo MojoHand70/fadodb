@@ -509,8 +509,13 @@ table change. Nobody's right is asked for it, and a class stops the
 value in a state with a `write` right of `FALSE`. The store does it
 by itself, a thousand documents in a transaction: 100,000 invoices
 are brought in under five seconds, and a commit of somebody else
-waits 45 ms meanwhile. A value that follows the clock,
-`schedule:<when>`, is designed in the same record and not built.
+waits 45 ms meanwhile. A kept value follows the clock too (ADR-0093,
+proposed on 2026-11-26): a variable that lists `schedule:<when>` is
+worked out again at the moments its words name, `daily at 03:00`,
+`monthly on 3rd monday`, `every 4h`, by the clock of the database's
+own time zone, which the server's settings give and the database
+keeps. The engine itself brings the value. `NOW()` and `TODAY()` in a
+formula stay in UTC.
 
 Two things of the engine come first, by the owner's word of
 2026-11-25: what a class already asks, its lookups and its lists,

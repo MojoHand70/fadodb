@@ -169,6 +169,7 @@ An option is one of two kinds.
 | `MaxBlob` | the largest file, in bytes | the database's | 32 MiB | a higher one is taken and kept; a lower one is refused, `bad_value` |
 | `MaxIndexedRows` | up to how many rows a table is kept in memory for lookups | the database's | 100,000 | taken and kept |
 | `MaxQuestion` | how long a `query` or a `count` that no index serves may run before it is stopped | the database's | 5 seconds | taken and kept |
+| `TimeZone` | the time zone the schedules of the classes go by, as `Europe/Warsaw`; see [Following the clock](triggered-variables.md#following-the-clock) | the database's | UTC | taken and kept |
 | `Blobs` | the program's own store for the bytes of files | the program's | none | |
 | `Outbox` | the worker: whether it runs, how many actions at once, how often one is tried again; see [The outbox and the worker](the-outbox-and-the-worker.md#the-options-of-the-worker) | the program's | it runs, 4 at once, 10 attempts | |
 | `Actions` | the Go functions that carry out actions | the program's | none | |

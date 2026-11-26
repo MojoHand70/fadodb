@@ -35,6 +35,16 @@ import (
 // What follows in the documents is what the class says, and is the
 // engine's write, as a rule's set is. A class stops a value in a state
 // with a write right of FALSE there (item 4).
+//
+// A kept value that follows the clock (ADR-0093) is the same machine
+// with a clock in front: a variable that lists schedule:<when> has a
+// row of the outbox waiting for its next moment, by the clock of the
+// database's time zone, and the row that ran queues the one after it.
+// Nobody changed anything, so its commits have no actor: the engine
+// itself brings the value, and the event says the schedule.
+//
+// What a row follows is its trigger, as the class writes it:
+// table:Rates, or schedule:daily at 03:00.
 
 // ActionFollow is the action of a row the change of a table queues for a
 // class whose variables follow that table (ADR-0091, item 6). Like a
@@ -64,25 +74,39 @@ func (s *Store) followSize() int {
 // transaction.
 const followPause = time.Millisecond
 
-// followArgs are the arguments of a follow row: the table that changed.
+// followArgs are the arguments of a follow row: the table that changed,
+// or the schedule whose moment it waits for.
 type followArgs struct {
-	Table string `json:"table"`
+	Table    string `json:"table,omitempty"`
+	Schedule string `json:"schedule,omitempty"`
 }
 
-// follower is one variable of a class that follows a table, with the
-// states it follows it in: every state that is not final and in which
-// the class does not close the variable to everybody.
+// trigger is what the row follows, as a class writes it.
+func (a followArgs) trigger() string {
+	switch {
+	case a.Table != "":
+		return "table:" + a.Table
+	case a.Schedule != "":
+		return "schedule:" + a.Schedule
+	}
+	return ""
+}
+
+// follower is one variable of a class that follows a table or a
+// schedule, with the states it follows it in: every state that is not
+// final and in which the class does not close the variable to everybody.
 type follower struct {
 	cv     *cvar
 	states map[string]bool
 }
 
 // layFollows notes, when a class is laid out, which of its variables
-// follow which table and in which states.
+// follow which table or schedule and in which states, under the trigger
+// in upper case, and the schedules of the class, as it writes them.
 func (c *class) layFollows() {
 	for _, cv := range c.triggered {
 		for _, tr := range cv.v.Triggers {
-			if tr.Kind != "table" || cv.leaf < 0 || c.cls.States == nil {
+			if (tr.Kind != "table" && tr.Kind != "schedule") || cv.leaf < 0 || c.cls.States == nil {
 				continue
 			}
 			f := follower{cv: cv, states: map[string]bool{}}
@@ -95,17 +119,21 @@ func (c *class) layFollows() {
 			if c.follows == nil {
 				c.follows = map[string][]follower{}
 			}
-			key := strings.ToUpper(tr.Arg)
+			key := strings.ToUpper(tr.Kind + ":" + tr.Arg)
+			if tr.Kind == "schedule" && len(c.follows[key]) == 0 {
+				c.schedules = append(c.schedules, tr.Arg)
+			}
 			c.follows[key] = append(c.follows[key], f)
 		}
 	}
 }
 
-// following are the variables a change of the table brings again in a
-// document in the state, in the order of the class.
-func (c *class) following(table, state string) []*cvar {
+// following are the variables a trigger, table:<name> or
+// schedule:<when>, brings again in a document in the state, in the order
+// of the class.
+func (c *class) following(trigger, state string) []*cvar {
 	var out []*cvar
-	for _, f := range c.follows[strings.ToUpper(table)] {
+	for _, f := range c.follows[strings.ToUpper(trigger)] {
 		if f.states[state] {
 			out = append(out, f.cv)
 		}
@@ -133,7 +161,7 @@ func (s *Store) queueFollows(ctx context.Context, t *table, p Principal, reason 
 // followersOf lists the classes that have a variable following the
 // table. The caller holds the lock of the definitions.
 func (s *Store) followersOf(table string) []*class {
-	key := strings.ToUpper(table)
+	key := strings.ToUpper("table:" + table)
 	var classes []*class
 	for _, c := range s.classes {
 		if len(c.follows[key]) > 0 {
@@ -170,7 +198,8 @@ func (s *Store) queueFollowsOf(ctx context.Context, t *table, classes []*class, 
 }
 
 // followSQL is the statement that finds the documents of the class a
-// change of the table brings again, after a place in the class's table
+// trigger brings again, a change of a table or the moment of a
+// schedule, after a place in the class's table
 // and at most followMany of them, in the order of that table, with the
 // context parameters it reads. A document is found when it is in a state
 // in which one of the following variables follows, and that variable's
@@ -179,7 +208,7 @@ func (s *Store) queueFollowsOf(ctx context.Context, t *table, classes []*class, 
 // type the variable keeps; a variable for which it is not takes every
 // document in its states, and the commit of each decides, by working
 // the value out, whether anything is written.
-func (s *Store) followSQL(c *class, table string) (string, []string) {
+func (s *Store) followSQL(c *class, trigger string) (string, []string) {
 	const doc = "d"
 	sources := s.sources()
 	tableOf := func(source string) string {
@@ -191,7 +220,7 @@ func (s *Store) followSQL(c *class, table string) (string, []string) {
 	d := formula.NewSQLite()
 	var terms, params []string
 	seen := map[string]bool{}
-	for _, f := range c.follows[strings.ToUpper(table)] {
+	for _, f := range c.follows[strings.ToUpper(trigger)] {
 		if len(f.states) == 0 {
 			continue
 		}
@@ -258,14 +287,14 @@ type followRun struct {
 // hand, which runs one row after another, runs the row to its end.
 func (s *Store) runFollow(ctx context.Context, row *outboxRow, own bool) (bool, error) {
 	var args followArgs
-	if err := json.Unmarshal(row.args, &args); err != nil || args.Table == "" {
+	if err := json.Unmarshal(row.args, &args); err != nil || args.trigger() == "" {
 		return s.followEnd(ctx, row, hintf(CodeBadValue, "", "the arguments of the follow do not read", "the row was queued by another build"))
 	}
 	for {
 		if err := ctx.Err(); err != nil {
 			return false, err
 		}
-		more, attempted, err := s.followBatch(ctx, row, args.Table, own)
+		more, attempted, err := s.followBatch(ctx, row, args, own)
 		if err != nil || !attempted {
 			return false, err
 		}
@@ -290,7 +319,7 @@ func (s *Store) runFollow(ctx context.Context, row *outboxRow, own bool) (bool, 
 // between two transactions is kept in memory, under the row's key: a
 // process that stops loses it, and the row, still pending, is then run
 // from the start of the class, which finds what is left.
-func (s *Store) followBatch(ctx context.Context, row *outboxRow, table string, own bool) (more, attempted bool, err error) {
+func (s *Store) followBatch(ctx context.Context, row *outboxRow, args followArgs, own bool) (more, attempted bool, err error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.closed {
@@ -330,7 +359,7 @@ func (s *Store) followBatch(ctx context.Context, row *outboxRow, table string, o
 	failure := s.at("perform", row)
 	found, queued := 0, 0
 	if failure == nil {
-		found, queued, failure = s.bringMany(ctx, row, table, run, now)
+		found, queued, failure = s.bringMany(ctx, row, args.trigger(), run, now)
 	}
 	if failure == nil {
 		failure = s.at("performed", row)
@@ -338,6 +367,13 @@ func (s *Store) followBatch(ctx context.Context, row *outboxRow, table string, o
 	more = found == s.followSize()
 	if failure == nil && !more {
 		if err := s.followed(ctx, row, attempts+1, run, now); err != nil {
+			failure = asError(err)
+		}
+	}
+	if failure == nil && !more && args.Schedule != "" {
+		// The row of the next moment, in the transaction that ends this
+		// one: a schedule is never without a row while its class has it.
+		if err := s.queueSchedule(ctx, row.class, args.Schedule, now); err != nil {
 			failure = asError(err)
 		}
 	}
@@ -388,14 +424,14 @@ func (s *Store) followBatch(ctx context.Context, row *outboxRow, table string, o
 // returns how many documents the statement found and how many rows of
 // the outbox their commits queued. Only a failure of the store is a
 // failure of the follow.
-func (s *Store) bringMany(ctx context.Context, row *outboxRow, table string, run *followRun, now time.Time) (found, queued int, failure *Error) {
+func (s *Store) bringMany(ctx context.Context, row *outboxRow, trigger string, run *followRun, now time.Time) (found, queued int, failure *Error) {
 	c, e := s.class(row.class)
-	if e != nil || len(c.follows[strings.ToUpper(table)]) == 0 {
-		// The class is gone, or no longer follows the table: nothing is
-		// left to bring.
+	if e != nil || len(c.follows[strings.ToUpper(trigger)]) == 0 {
+		// The class is gone, or no longer follows the table or the
+		// schedule: nothing is left to bring.
 		return 0, 0, nil
 	}
-	text, params := s.followSQL(c, table)
+	text, params := s.followSQL(c, trigger)
 	if text == "" {
 		return 0, 0, nil
 	}
@@ -404,7 +440,7 @@ func (s *Store) bringMany(ctx context.Context, row *outboxRow, table string, run
 	named = formula.NewSQLite().ContextArgsFor(&evalCtx, params, named)
 	rows, err := s.writer.QueryContext(ctx, text, named...)
 	if err != nil {
-		return 0, 0, asError(storageErr("find the documents that follow "+table, err))
+		return 0, 0, asError(storageErr("find the documents that follow "+trigger, err))
 	}
 	type place struct {
 		rowid int64
@@ -415,15 +451,15 @@ func (s *Store) bringMany(ctx context.Context, row *outboxRow, table string, run
 		var p place
 		if err := rows.Scan(&p.rowid, &p.id); err != nil {
 			rows.Close()
-			return 0, 0, asError(storageErr("find the documents that follow "+table, err))
+			return 0, 0, asError(storageErr("find the documents that follow "+trigger, err))
 		}
 		places = append(places, p)
 	}
 	if err := rows.Close(); err != nil {
-		return 0, 0, asError(storageErr("find the documents that follow "+table, err))
+		return 0, 0, asError(storageErr("find the documents that follow "+trigger, err))
 	}
 	cmd := command{op: opRefresh, c: c, o: options{principal: row.principal, reason: row.reason}, internal: true, engine: true,
-		depth: row.depth + 1, follow: table, day: businessDay(options{}, now), hasDay: true}
+		depth: row.depth + 1, follow: trigger, day: businessDay(options{}, now), hasDay: true}
 	marked := false
 	for _, p := range places {
 		if !marked {

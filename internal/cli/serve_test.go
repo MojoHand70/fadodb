@@ -413,6 +413,7 @@ func TestTheChapterOnServing(t *testing.T) {
 		"signon.NAME.company_emails": "false",
 		"analytics.memory":           defaultEngineMemory,
 		"analytics.threads":          "one for each core",
+		"timezone":                   "the database keeps the one it has, UTC when it was never given one",
 	}
 	var all []string
 	for _, m := range outboundMembers {
@@ -437,6 +438,7 @@ func TestTheChapterOnServing(t *testing.T) {
 	for _, m := range engineMembers {
 		all = append(all, "analytics."+m)
 	}
+	all = append(all, "timezone")
 	if len(all) != len(usual) {
 		t.Errorf("the test knows what is usual for %d members, and a file of settings may have %d", len(usual), len(all))
 	}

@@ -267,7 +267,7 @@ row is the record of what was asked, with its arguments.
 | `key` | the name of the row: the event of the commit that queued it, and its place among the actions of that commit. It is the same at every attempt |
 | `class`, `doc_id`, `version` | the document whose commit queued the action, and the version that commit made |
 | `rule` | where the action stands in the class, such as `/rules/0/do/1` |
-| `action` | the action: `create`, `table.insert`, `mail.send`, `timer` for a transition with a time, or `follow` for the values that follow a table |
+| `action` | the action: `create`, `table.insert`, `mail.send`, `timer` for a transition with a time, or `follow` for the values that follow a table or a schedule |
 | `args` | the arguments, as the commit worked them out |
 | `principal_id`, `principal_kind`, `principal_for` | whom the action runs as: the caller of the commit that queued it |
 | `depth` | how far the action is from a caller: 0 when a caller's commit queued it, one more for each action in between |
@@ -379,6 +379,14 @@ could not take the value, `into_code` and `into_message` say how many
 and why the first could not. A row that could not run is dead with
 its code, and is sent again as any; see
 [Following a table](triggered-variables.md#following-a-table).
+
+A value may follow the clock too: a triggered variable that lists
+`schedule:<when>`. Each schedule of a class has one such row, whose
+`rule` is the schedule, as `schedule:daily at 03:00`, and whose
+`due_at` is its next moment: so the queue shows when each schedule
+runs next. It names no principal, since the engine itself brings the
+value, and the row that ran queues the next; see
+[Following the clock](triggered-variables.md#following-the-clock).
 
 ## Looking at the queue
 

@@ -31,6 +31,9 @@ type table struct {
 
 	upsert, insert, deleteAll, selectAll *sql.Stmt // on the writer
 	readAll                              *sql.Stmt // on the pool
+	// noteRows writes the token of the table's rows anew (ADR-0094), on
+	// the writer.
+	noteRows *sql.Stmt
 
 	// cache holds the rows while the table is small enough (ADR-0036);
 	// nil until a lookup needs it, dropped by an import and by a rule's
@@ -157,6 +160,7 @@ func (t *table) prepare(ctx context.Context, writer *sql.Conn, db *sql.DB) error
 	prep(&t.deleteAll, writer, "DELETE FROM "+quote(t.name))
 	prep(&t.selectAll, writer, selectAll)
 	prep(&t.readAll, db, selectAll)
+	prep(&t.noteRows, writer, noteRowsSQL(t.def.Name))
 	if err != nil {
 		t.close()
 		return storageErr("prepare the statements of "+t.def.Name, err)
@@ -165,7 +169,7 @@ func (t *table) prepare(ctx context.Context, writer *sql.Conn, db *sql.DB) error
 }
 
 func (t *table) close() {
-	for _, st := range []*sql.Stmt{t.upsert, t.insert, t.deleteAll, t.selectAll, t.readAll} {
+	for _, st := range []*sql.Stmt{t.upsert, t.insert, t.deleteAll, t.selectAll, t.readAll, t.noteRows} {
 		if st != nil {
 			st.Close()
 		}
@@ -515,6 +519,10 @@ func (s *Store) DefineTable(ctx context.Context, data []byte, opts ...Option) (*
 		if followed, ferr = s.queueFollowsOf(ctx, t, s.followersOf(def.Name), o.principal, o.reason, 0, s.now()); ferr != nil {
 			return rollback(ferr)
 		}
+		// And the copy of the table is made again (ADR-0094).
+		if rerr := s.rowsChanged(ctx, t, s.now()); rerr != nil {
+			return rollback(rerr)
+		}
 	}
 	if err := s.endTransaction(ctx); err != nil {
 		return nil, storageErr("commit", err)
@@ -629,10 +637,14 @@ func (s *Store) ImportRows(ctx context.Context, name string, rows []Values, opts
 	if err != nil {
 		return rollback(err)
 	}
+	// The rows changed: a copy of the table is made again (ADR-0094).
+	if err := s.rowsChanged(ctx, t, s.now()); err != nil {
+		return rollback(err)
+	}
 	if err := s.endTransaction(ctx); err != nil {
 		return rollback(storageErr("commit", err))
 	}
-	t.cache, t.tooBig = nil, false
+	t.rowsWritten(o.replace)
 	if followed > 0 {
 		s.wakeWorker()
 	}
@@ -953,6 +965,20 @@ func (s *Store) lookupStatement(p *lookupPlan, q *formula.QuerySlot, args []form
 		return formula.Value{}, &formula.EvalError{Code: formula.ErrQueryFailed, Pos: -1, Msg: err.Error()}
 	}
 	return formula.ValueOfType(v, q.Type, c), nil
+}
+
+// rowsWritten drops what the store keeps in memory of a table whose rows
+// were written (ADR-0036). fewer says rows may have gone: a removal, or
+// an import that empties the table first. A table that was found to
+// hold more rows than the limit is still over it when none can have
+// gone, after an import that adds or replaces rows and after a rule's
+// insert or update: the next lookup then does not read the table up to
+// the limit again to find that out (ADR-0094).
+func (t *table) rowsWritten(fewer bool) {
+	t.cache = nil
+	if fewer {
+		t.tooBig = false
+	}
 }
 
 // cacheFor returns the table's rows in memory, building them when the

@@ -144,7 +144,7 @@ ola reads "buy milk", version 1
 | `notes.fado-shm` | an index of the file above | while a program has the database open |
 | `notes.fado.blobs` | a directory with the bytes of attached files | when the database was created with the store `dir`; see [Files](files.md) |
 | `notes.fado.lock` | says which program holds the database alone, and is empty when none does | once a program has held the database alone |
-| `notes.fado.duckdb` | a copy of the documents, kept for the questions that read everything | when the program gave an analytical engine; see [An analytical engine](#an-analytical-engine) |
+| `notes.fado.duckdb` | a copy of the documents and of the rows of the tables, kept for the questions that read everything | when the program gave an analytical engine; see [An analytical engine](#an-analytical-engine) |
 
 The database is a SQLite file, and the two files beside it are
 SQLite's. When the database is closed they are folded in and gone, and
@@ -252,7 +252,9 @@ db, err := fado.Open("notes.fado", fado.Options{Analytics: analytics.Engine{}})
 - **The copy holds**, for every class, the documents as they are now
   and every version of them, the events, and the moves of the
   documents that exist: each time one was made or moved along a
-  transition. The lines of a document are not in it.
+  transition. The lines of a document are not in it. It holds the
+  rows of every table too, but for the
+  [system tables](system-tables.md); see [A table](#a-table) below.
 - **The copy is never the truth.** It is the file `notes.fado.duckdb`
   beside the database. It needs no backup: when it is lost, or does not
   open, or belongs to another database, the engine makes it again by
@@ -275,6 +277,8 @@ nor a caller chooses.
 | a total, or the first document, that a `LOOKUP` in a live variable asks for: `LOOKUP(Invoice, SUM(net), urgent)` | the same |
 | a figure over a list, `SUM(invoices.net)`, `COUNT(invoices)` | the same |
 | a page of a list, the command [`query`](commands.md#query) and a live list | at once when the store would read and sort the class for it; otherwise when the store has not found the page in a moment |
+| a total, or the first row, that a `LOOKUP` in a live variable asks of a table: `LOOKUP(Stock, SUM(price), bin = THIS.bin)` | at once when the table is a large one and no index of it finds the rows; otherwise when the store has not answered in a moment |
+| a page of a live list over a table: `QUERY(Stock, {sku, price}, qty > 0, {-price})` | at once when the table is a large one and no index of it holds the order; otherwise when the store has not found the page in a moment |
 
 **An index narrows a question** when its condition compares an indexed
 variable with a value: the invoices of one order, the documents in one
@@ -344,8 +348,60 @@ million moves, the copy answers each of these questions in under a
 tenth of a second, and the flow of the class in 158 ms, where the
 store takes seconds to minutes.
 
+### A table
+
+The rows of a table live in the database, where a commit finds one of
+them by its key in a few millionths of a second. A question that reads
+a large table whole is another matter, and the copy holds the rows of
+every table for it (ADR-0094). Nothing is written for it in the table.
+
+- **A large table** is one with more rows than the store keeps in
+  memory: `MaxIndexedRows`, 100,000 unless the database says otherwise.
+  A question over a smaller table is the store's for a moment, as
+  above.
+- **The copy of a table is made again when its rows change**, whole: a
+  table has no log of its changes. A table of up to 10,000 rows is
+  copied by the very question that finds it changed, which is a
+  moment. A larger one takes seconds, and no question waits for that:
+  the store answers until the copy is made.
+- **A large table rests after it was copied**, for ten times as long
+  as the copy took, so that a table which changes all the time does
+  not keep the engine copying. `FeedCopy` copies it at once. While a
+  large table is copied, the store answers every question.
+- **The rows of a page are read from the store**, by their keys, as
+  the documents of a page are.
+- **Who may read the table is asked as ever**, before either is
+  asked: the read line of the table.
+
+Measured on a table of 5,000,000 rows with a key `sku`, a `bin` with
+no index, a quantity and a price, three runs of each program:
+
+| The question | `fadodb-core` | `fadodb` |
+|---|---|---|
+| a sum of prices over the whole table, in a `LOOKUP` of a live variable | 320 to 345 ms | 2.5 ms |
+| how many rows are over a quantity | 220 to 250 ms | 2 to 3 ms |
+| the dearest price of one bin | 200 to 235 ms | 2 to 3 ms |
+| how many different bins | 345 to 380 ms | 3 ms |
+| a live list: the fifty dearest rows | 395 to 435 ms | 7 to 10 ms |
+| a live list: the fifty largest of one bin | 245 to 265 ms | 6 to 7 ms |
+| a sum of plain numbers over the whole table | 2.7 to 2.9 s | the same |
+| one row by its key, in a `LOOKUP` of a live variable | 0.02 ms | 0.02 ms, from the store |
+| a commit that looks one row up by its key | 0.06 ms | 0.06 ms |
+
+- **A sum of plain numbers is no faster.** Numbers that are not exact,
+  the type `number`, are added in the order of the key, so that the
+  last digit is the same wherever the formula is worked out, and
+  DuckDB sorts the rows for it. Amounts that are exact, `decimal` and
+  `money`, a count, the smallest and the largest are what the copy is
+  quick at. Keep an amount that is summed as a `decimal`.
+- **The copy of that table is made in four to five seconds**, and
+  takes a tenth of a gigabyte beside the 0.27 of the database.
+  Bringing the rows in takes thirteen seconds with the copy or
+  without.
+
 **What stays with the store:** everything inside a commit, so a value
-that a triggered variable keeps is worked out by the store.
+that a triggered variable keeps is worked out by the store; a row of
+a table found by its key; and the command `table_rows`.
 
 The program `fadodb-core` is built without the module; the same
 program built with it, `fadodb`, serves a database with its copy

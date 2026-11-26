@@ -10,6 +10,28 @@ Phase 8 started on 2026-11-25.
 
 ### Added
 
+- The rows of the tables in the copy (ADR-0094, proposed). The program
+  with the analytical engine, `fadodb`, keeps a copy of the rows of
+  every table beside its copy of the documents, and asks it the
+  questions a class has for a large table: a total, a count, a
+  smallest, a largest or the first row that a `LOOKUP` in a live
+  variable asks where no index finds the rows, and a page of a live
+  list over a table in an order no index holds. Nothing is written
+  for it. The answer is the store's, and never older than its
+  question: every change of a table's rows writes a token in the same
+  transaction, and the copy answers only when it was made under the
+  token the database has. A table of up to 10,000 rows is copied again
+  by the question that finds it changed; a larger one by the feed that
+  runs by itself, and the store answers meanwhile. Measured among
+  5,000,000 rows: a sum of prices over the table 320 to 345 ms from
+  the store and 2.5 ms from the copy; the fifty dearest rows 395 to
+  435 ms and 7 to 10 ms; the copy of the table is made in four to five
+  seconds. A sum of plain numbers, the type `number`, is added in the
+  order of the key in every program and is no faster. The rows of
+  every table stay in the database: the bindings `duckdb` and
+  `external` are not built, and a table of another database is brought
+  in with `import_rows`. Not built: one line for each group of rows of
+  a table, with its totals.
 - The app System and its tables (ADR-0092, proposed). Every database
   has the app `System`, the engine's own, and four tables in it:
   `SystemApps`, `SystemClasses`, `SystemUsers` and `SystemGroups`,
@@ -428,6 +450,20 @@ Phase 8 started on 2026-11-25.
 
 ### Fixed
 
+- A `LOOKUP` in a live variable that is keyed by the key of a table,
+  or by a column that leads an index of it, read the table up to its
+  row each time the value was read: 67 to 70 ms for a row a third of
+  the way into 5,000,000. Inside a commit the same lookup used the
+  index. It uses it in both now, and takes 0.02 ms (ADR-0094, item
+  11). No release had it: a lookup in a live variable was built in
+  this phase.
+- After any change of a table that holds more rows than the store
+  keeps in memory, 100,000 unless the database says otherwise, the
+  next lookup of a commit read the table up to that limit to find
+  again that it is over it: about 70 ms, once after each change, so in
+  every commit that followed a rule's `table.update` on a large
+  table. The store now keeps what it knew when rows were only added
+  or changed (ADR-0094, item 12). Since v0.2.0.
 - **A database did not open again after a class without documents lost
   a variable.** Olga defines Order, takes `note` out of it before
   anybody made an order, and stops the server. The next start refused

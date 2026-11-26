@@ -104,11 +104,14 @@ func (s *Store) DeleteRows(ctx context.Context, name string, keys []Values, opts
 		if followed, err = s.queueFollows(ctx, t, o.principal, o.reason, 0, s.now()); err != nil {
 			return rollback(err)
 		}
+		if err := s.rowsChanged(ctx, t, s.now()); err != nil {
+			return rollback(err)
+		}
 	}
 	if err := s.endTransaction(ctx); err != nil {
 		return rollback(storageErr("commit", err))
 	}
-	t.cache, t.tooBig = nil, false
+	t.rowsWritten(true)
 	if followed > 0 {
 		s.wakeWorker()
 	}
@@ -166,6 +169,10 @@ func (s *Store) RemoveTable(ctx context.Context, name string, opts ...Option) er
 		}
 	}
 	if _, err := w.ExecContext(ctx, "DELETE FROM tables_registry WHERE name = ? COLLATE NOCASE", t.def.Name); err != nil {
+		return rollback(storageErr("remove the table "+t.def.Name, err))
+	}
+	// The token of its rows goes with them (ADR-0094).
+	if _, err := w.ExecContext(ctx, "DELETE FROM metadata WHERE key = ?", rowsKey+strings.ToUpper(t.def.Name)); err != nil {
 		return rollback(storageErr("remove the table "+t.def.Name, err))
 	}
 	now := s.now().Unix()

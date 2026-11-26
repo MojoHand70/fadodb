@@ -1,6 +1,6 @@
 # ADR-0089: The copy beside the documents: how the analytical engine is fed and asked
 
-- Status: Proposed; amends ADR-0017 (who feeds the copy, what it holds, how fresh an answer is, how it is made again), ADR-0020 (item 3: which question the copy answers)
+- Status: Proposed; amends ADR-0017 (who feeds the copy, what it holds, how fresh an answer is, how it is made again), ADR-0020 (item 3: which question the copy answers); amended by ADR-0094 (Proposed: the copy holds the rows of the tables too)
 - Date: 2026-11-25
 
 ## Context

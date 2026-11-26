@@ -751,6 +751,16 @@ document stack with analytical data in one engine. Joins across bindings are
 only available there; the lite build answers `LOOKUP` and `QUERY` from
 SQLite with a documented subset of capabilities.
 
+ADR-0094 (proposed on 2026-11-26) changes this where it was not built.
+The rows of every table live in the store, where a commit finds one of
+them by its key in a few millionths of a second; the bindings `duckdb`
+and `external` are not built. The program with the analytical engine
+keeps a copy of every table's rows beside its copy of the documents,
+made again whole when a table changes, and sends it the questions that
+read a large table: a total a live `LOOKUP` asks, and a page of a live
+list in an order no index holds. A table of another database is
+brought in from outside with `import_rows`.
+
 Today a table is defined in JSON, `{"name": "Rates", "columns": {"code":
 "text", "rate": "decimal(6)"}, "key": ["code"]}`, stored as `tbl_Rates`
 with the view `Rates`, filled by the Go API's `ImportRows`, and read by
@@ -760,8 +770,7 @@ may carry `"access": {"read": ..., "write": ...}`, two conditions over
 the caller and the clock that say who may read its rows with
 `TableRows` and who may write them, by `ImportRows` or by a rule's
 action (ADR-0051); only the
-`sqlite` binding exists; the other bindings come with the analytical
-engine; `QUERY` lists the documents of a class in a live variable
+`sqlite` binding exists, and ADR-0094 keeps it so; `QUERY` lists the documents of a class in a live variable
 (ADR-0076) and does not read a table yet. A lookup
 whose condition is one equality of a column with an expression of the
 document is answered from an in-memory index while the table has at most

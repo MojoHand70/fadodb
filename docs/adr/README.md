@@ -99,3 +99,4 @@ line says so. Copy `0000-template.md` to start.
 | [0091](0091-a-kept-value-that-follows-its-table.md) | A kept value that follows its table | Proposed |
 | [0092](0092-the-app-system-and-its-tables.md) | The app System and its tables: what the database holds, read as any table | Proposed |
 | [0093](0093-a-kept-value-that-follows-the-clock.md) | A kept value that follows the clock, and the time zone of a database | Proposed |
+| [0094](0094-the-rows-of-a-table-stay-in-the-store.md) | The rows of a table stay in the store, and the copy holds them too | Proposed |

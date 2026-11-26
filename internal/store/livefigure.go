@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/MojoHand70/fadodb/internal/formula"
@@ -370,7 +371,18 @@ func (s *Store) liveLookup(ctx context.Context, q *formula.QuerySlot, args []for
 		}
 		return d.Param(fmt.Sprintf("fa%d", i))
 	}
+	// A lookup keyed by a column that leads the key of the table or an
+	// index of it is first narrowed to the rows of that key, as the
+	// lookup of a commit is (ADR-0036): the store then finds the row by
+	// the index, whatever the size of the table. The condition itself
+	// still decides.
+	keyArg, keyed := s.liveKey(t, q, args, o, of)
 	table := func(string) string { return quote(t.name) }
+	if keyed {
+		table = func(string) string {
+			return "(SELECT * FROM " + quote(t.name) + " WHERE " + quote(q.IndexColumn) + " = " + d.Param("fak") + ")"
+		}
+	}
 	var text string
 	var err error
 	if q.Agg != "" {
@@ -406,6 +418,9 @@ func (s *Store) liveLookup(ctx context.Context, q *formula.QuerySlot, args []for
 			named = append(named, sql.Named(fmt.Sprintf("fa%dc", i), cur))
 		}
 	}
+	if keyed {
+		named = append(named, sql.Named("fak", keyArg))
+	}
 	st, err := s.filters.acquire(ctx, s.db, text)
 	if err != nil {
 		return formula.Value{}, storageErr("prepare a lookup in "+t.def.Name, err)
@@ -413,8 +428,43 @@ func (s *Store) liveLookup(ctx context.Context, q *formula.QuerySlot, args []for
 	defer s.filters.release(st)
 	var v, c any
 	var code sql.NullString
-	if err := st.stmt.QueryRowContext(ctx, named...).Scan(&v, &c, &code); err != nil {
-		return formula.Value{}, storageErr("look in "+t.def.Name, err)
+	// In a program that keeps the copy (ADR-0094, item 6), a lookup
+	// that reads a large table whole, a sum over it or a row that no
+	// index finds, is the copy's to answer. Any other is the store's
+	// for a moment, and the copy's when the moment has passed: a row
+	// found by its key is there in less. When the copy does not answer,
+	// the store does, for as long as it takes.
+	// tried says the copy was asked already and did not answer.
+	answered, tried := false, false
+	if s.feeder != nil && !t.system && !keyed && s.largeInCopy(t) {
+		v, c, code, answered = s.tableFigureFromCopy(ctx, t, q, args, o, of)
+		tried = true
+	}
+	if !answered {
+		asked, done := ctx, context.CancelFunc(nil)
+		if s.feeder != nil && !t.system && !tried {
+			// With no moment at all, zero, the copy is asked at once.
+			moment := copyStoreFirst
+			if moment == 0 {
+				moment = -time.Second
+			}
+			asked, done = context.WithTimeout(ctx, moment)
+		}
+		err = st.stmt.QueryRowContext(asked, named...).Scan(&v, &c, &code)
+		if done != nil {
+			passed := err != nil && asked.Err() != nil && ctx.Err() == nil
+			done()
+			if passed {
+				if v, c, code, answered = s.tableFigureFromCopy(ctx, t, q, args, o, of); answered {
+					err = nil
+				} else {
+					err = st.stmt.QueryRowContext(ctx, named...).Scan(&v, &c, &code)
+				}
+			}
+		}
+		if err != nil {
+			return formula.Value{}, storageErr("look in "+t.def.Name, err)
+		}
 	}
 	if code.Valid {
 		return formula.Value{}, &formula.EvalError{Code: code.String, Pos: -1, Msg: q.Agg + " over " + t.def.Name + ": " + code.String}
@@ -426,4 +476,60 @@ func (s *Store) liveLookup(ctx context.Context, q *formula.QuerySlot, args []for
 		}
 	}
 	return formula.ValueOfType(v, q.Type, c), nil
+}
+
+// liveVMs are the machines that work out the key of a live lookup: a
+// live value is read beside the writer, whose own machines it may not
+// use.
+var liveVMs = sync.Pool{New: func() any { return formula.NewVM() }}
+
+// liveKey works out the key of a LOOKUP of a live formula over a table,
+// and reports whether the lookup can be narrowed to the rows of that
+// key: the key column leads the key of the table or an index of it, and
+// the key is neither blank nor the zero of its kind, which a blank row
+// would equal too. It answers the value as the store compares it with
+// the column.
+func (s *Store) liveKey(t *table, q *formula.QuerySlot, args []formula.Value, o options, of *formula.Context) (any, bool) {
+	if q.Key == nil || !t.leads(q.IndexColumn) {
+		return nil, false
+	}
+	li, ok := t.leafIndex[strings.ToUpper(q.IndexColumn)]
+	if !ok {
+		return nil, false
+	}
+	vars := make([]formula.Value, len(q.Key.Slots))
+	for i, sl := range q.Key.Slots {
+		a := q.ArgIndex(sl.Name)
+		if a < 0 || a >= len(args) {
+			return nil, false
+		}
+		vars[i] = args[a]
+	}
+	evalCtx := contextOf(o.principal, s.clock(o))
+	if of != nil {
+		evalCtx = *of
+	}
+	vm := liveVMs.Get().(*formula.VM)
+	vm.Limits = s.limits
+	key, err := vm.Run(q.Key, vars, &evalCtx)
+	liveVMs.Put(vm)
+	if err != nil || key.IsBlank() {
+		return nil, false
+	}
+	switch typ := t.leaves[li].typ; typ.Kind {
+	case formula.KindDecimal:
+		k, err := formula.Rescale(key, int(typ.Scale))
+		if err != nil || k.Mant() == 0 {
+			return nil, false
+		}
+		return k.Mant(), true
+	case formula.KindText, formula.KindRef, formula.KindJSON:
+		return key.Str(), key.Str() != ""
+	case formula.KindMoney:
+		// A money compares by its amount and its currency: not by one
+		// column.
+		return nil, false
+	default:
+		return key.DriverValue(), key.Num() != 0
+	}
 }

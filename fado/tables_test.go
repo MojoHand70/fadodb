@@ -1334,7 +1334,7 @@ func TestTables(t *testing.T) {
 		"has a json column in its key":                                   {col("T", `"k":"json"`, key)},
 		"has an index that names no column":                              {col("T", `"k":"text"`, key+`,"indexes":[[]]`)},
 		"has an index that names a column it does not have":              {col("T", `"k":"text"`, key+`,"indexes":[["z"]]`)},
-		"has a binding that is not built yet, duckdb or external": {
+		"has a binding that is not built, duckdb or external": {
 			col("T", `"k":"text"`, key+`,"binding":"duckdb"`),
 			col("T", `"k":"text"`, key+`,"binding":"external"`),
 		},

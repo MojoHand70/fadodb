@@ -671,6 +671,14 @@ func runFlow(c *call) error {
 		return e
 	}
 	period.Spread = c.flag("spread")
+	ask, given, e := c.documentsAsk()
+	if e != nil {
+		return e
+	}
+	if given {
+		documents, err := c.s.FlowDocuments(c.ctx, c.text("class"), period, ask, c.opts...)
+		return c.answer("documents", documents, err)
+	}
 	flow, err := c.s.Flow(c.ctx, c.text("class"), period, c.opts...)
 	return c.answer("flow", flow, err)
 }
@@ -687,6 +695,14 @@ func runThroughput(c *call) error {
 		return e
 	}
 	ask.By = c.text("by")
+	documents, given, e := c.documentsAsk()
+	if e != nil {
+		return e
+	}
+	if given {
+		page, err := c.s.ThroughputDocuments(c.ctx, c.text("class"), ask, documents, c.opts...)
+		return c.answer("documents", page, err)
+	}
 	throughput, err := c.s.Throughput(c.ctx, c.text("class"), ask, c.opts...)
 	return c.answer("throughput", throughput, err)
 }
@@ -706,6 +722,14 @@ func runPaths(c *call) error {
 		return e
 	}
 	ask.Limit = int(limit)
+	documents, given, e := c.documentsAsk()
+	if e != nil {
+		return e
+	}
+	if given {
+		page, err := c.s.PathsDocuments(c.ctx, c.text("class"), ask, documents, c.opts...)
+		return c.answer("documents", page, err)
+	}
 	paths, err := c.s.Paths(c.ctx, c.text("class"), ask, c.opts...)
 	return c.answer("paths", paths, err)
 }

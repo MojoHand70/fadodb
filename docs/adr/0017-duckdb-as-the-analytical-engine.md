@@ -1,6 +1,6 @@
 # ADR-0017: DuckDB as the analytical engine, full and lite builds
 
-- Status: Accepted; amends ADR-0002; amended by ADR-0072 (the size budget of the lite build is 20 MB); and by ADR-0089 (Proposed: the engine feeds the copy itself, what the copy holds, an answer is never older than its question, and the copy is made again when it is lost)
+- Status: Accepted; amends ADR-0002; amended by ADR-0072 (the size budget of the lite build is 20 MB); and by ADR-0089 (Proposed: the engine feeds the copy itself, what the copy holds, an answer is never older than its question, and the copy is made again when it is lost); and by ADR-0094 (Proposed: tables are not bound to DuckDB and no other database is attached; the copy holds the rows of the tables)
 - Date: 2026-11-05
 
 ## Context

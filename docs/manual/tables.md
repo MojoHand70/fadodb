@@ -61,7 +61,7 @@ A table is written once, as one JSON document, like a class.
 | `key` | the columns that identify a row. No two rows have the same values in them, none of them is ever blank, and the table is ordered by them |
 | `indexes` | further sets of columns to keep an index on, for lookups that do not begin with the first column of the key |
 | `access` | who may read the rows and who may write them; see [Who may](#who-may) |
-| `binding` | where the rows are kept. `sqlite`, the database file itself, is the only binding that is built, and the one taken when the word is left out |
+| `binding` | where the rows are kept: `sqlite`, the database file itself, which is also what is taken when the word is left out. No other place is built. A program with the analytical engine keeps a copy of the rows by itself, with nothing written here; see [A large table](#a-large-table) |
 | `version` | may be left out: the engine counts the versions itself |
 
 ## The types of a column
@@ -619,9 +619,39 @@ What a lookup costs follows from its condition.
   The limit changes the speed of a lookup and never its answer.
 - **Help the statement.** Let the column a lookup compares with the
   document be the first column of the key, or the first of an index.
+- **A lookup of a live variable** is worked out when the value is
+  read, by the same statements: over the rows that have the value when
+  the column leads the key or an index, over every row otherwise.
 - **The measurements** are those of the release 0.2.0, in
   [Performance](../perf/v0.2.0.md): one lookup inside a recalculation,
   over a table of 1,000 rows.
+
+## A large table
+
+A table may hold millions of rows. What that costs follows from what
+is asked of it.
+
+| What is asked | It takes |
+|---|---|
+| one row by its key, or the rows that have one value of a column that leads an index | a few millionths of a second, whatever the size of the table |
+| a total, a count, the smallest or the largest over rows no index finds; a page of the rows in an order no index holds | time in proportion to the table: 0.2 to 0.4 seconds among 5,000,000 rows |
+
+The second kind is what the analytical engine is for. The program
+`fadodb` keeps a copy of the rows of every table beside its copy of
+the documents, makes it again when the rows change, and asks it such
+a question by itself: 2 to 10 ms among the same 5,000,000 rows.
+Nothing is written for it in the table or in the class. The program
+`fadodb-core` answers the same, from the database; see
+[An analytical engine](opening-a-database.md#a-table).
+
+- **Up to 100,000 rows** the store keeps a table in memory for the
+  lookups of a commit, and answers a total over it in milliseconds. A
+  table of that size needs nothing.
+- **Sum exact amounts.** A sum of a `decimal` or a `money` column is
+  quick in the copy. A sum of a `number` column is added in the order
+  of the key in every program, and takes 2.7 seconds among 5,000,000
+  rows in either.
+- **Bringing rows in** takes about 400,000 a second.
 
 ## The commands
 
@@ -663,7 +693,7 @@ What each takes and what it answers is in
 | has a `json` column in its key | `not_allowed` |
 | has an index that names no column | `missing` |
 | has an index that names a column it does not have | `unknown_variable` |
-| has a binding that is not built yet, `duckdb` or `external` | `not_supported` |
+| has a binding that is not built, `duckdb` or `external` | `not_supported` |
 | has a binding the engine does not know | `bad_value` |
 | has a line of `access` that reads a column, another table or a document | `bad_formula` |
 | has a line of `access` that is not a condition | `not_a_condition` |
@@ -699,8 +729,14 @@ import.
   So "the newest rate on or before a day" has no short form today: a
   table of rates needs a row for every day that is asked for.
 - A column that holds an object or a list.
-- Rows kept outside the database file: the bindings `duckdb` and
-  `external`.
+- Rows kept outside the database file. The binding `duckdb` is not
+  to be built: a program with the analytical engine keeps a copy of
+  every table by itself ([A large table](#a-large-table)). Nor does
+  the engine read a table in another database, the binding
+  `external`: a program outside brings its rows in with `import_rows`
+  (ADR-0094, proposed).
+- One line for each group of rows, with its totals: a total among the
+  columns of a `QUERY` is built over a class alone.
 - An import from a file through the command line.
 - A rule that a change of a table sets off.
 - Rights for single rows or single columns.

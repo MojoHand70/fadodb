@@ -479,9 +479,10 @@ grouping in a `QUERY` came with the analytical engine: a total among the columns
 After these comes the analytical engine itself: DuckDB beside the
 documents, fed from the commits, for the question that reads
 everything; the mining views; a value that follows its source or the
-clock, worked out for many documents in one statement; tables kept in
-DuckDB or in a database of the customer's own; and the program with
-DuckDB built for each operating system. How the copy beside the
+clock, worked out for many documents in one statement; the rows of
+the tables in the copy, which took the place of tables kept in DuckDB
+or in a database of the customer's own (ADR-0094); and the program
+with DuckDB built for each operating system. How the copy beside the
 documents is fed and asked is ADR-0089, proposed on 2026-11-25 with
 its measurements: over ten million visits of a state, a question the
 store answers in 12 to 26 seconds takes the copy under half a second.
@@ -502,6 +503,14 @@ what a `LOOKUP` or a figure over a list works out when it is read, go
 to the copy by themselves when no index narrows them, and so does a
 page of a list the store does not find in a moment, and a list of
 totals by group.
+
+The rows of the tables are in the copy too (ADR-0094, proposed on
+2026-11-26): a total a live `LOOKUP` asks of a large table, and a
+page of a live list over it, are answered by the copy, in 2 to 10 ms
+among five million rows where the store takes 0.2 to 0.4 seconds. The
+rows of every table stay in the database; the bindings `duckdb` and
+`external` of the first records are not built, and a table of another
+database is brought in from outside with `import_rows`.
 
 A kept value follows its table (ADR-0091, proposed on 2026-11-26): a
 triggered variable that lists `table:<name>` is worked out again in
@@ -525,8 +534,7 @@ Two things of the engine come first, by the owner's word of
 takes milliseconds over a large class; and so does the question of how
 documents moved. The rest of the engine follows them: totals by group
 among the columns of a `QUERY`, a value that follows its source or the
-clock, tables kept in DuckDB or in a database of the customer's own,
-and a page for analysts.
+clock, the rows of the tables in the copy, and a page for analysts.
 This page is updated when a phase starts and when it ends;
 it never describes a phase as done before its acceptance criteria pass.
 
@@ -542,7 +550,7 @@ Legend: ✅ done · 🚧 in progress · ⬜ not started
 | 5 | Security: the class-level access rules enforced on every path, who may see, create, change and delete a document, with the read rule compiled to a SQL predicate; the kind of actor, a person, an agent or a service, and whom it acts for, on every event, checked against a substitution the database keeps; who may define, operate and query, by four system groups; a content administrator who acts past a rule with a reason; the rules of a table | ✅ |
 | 6 | Server and CLI: the JSON command set over HTTP, one address for each command; users, groups and API keys kept in the database, and the authenticator for a host program that has its own; the stream of changes filtered by the read rule; documents on the wire; the door for agents (MCP); the command-line tool with a check of a class and of an action; the flow of a class in one call; a way in for messages from outside; OpenAPI; `fadodb serve` | ✅ |
 | 7 | Browser VM and reference frontend: the log of reads first; TypeScript VM on the same bytecode shipped as one plain JavaScript file, what a class says to people and its sections, the class bundle, `QUERY` when the first page needs a list of rows (otherwise with the reports of Phase 8), signing in with a password or a company's sign-on, the pages of a face handed out by `fadodb serve` from a folder (a face, which draws a document from its class, lives apart from the engine; chip, card, coins and rating are the face's), the door for agents at the server itself, a small client file beside the VM | ✅ |
-| 8 | Analytical engine: first what ADR-0078, ADR-0076, ADR-0075 and ADR-0085 leave unbuilt after v0.7.0; then the DuckDB projection of document tables, native and attached bindings, set-wise recompute, mining views, full build per OS | 🚧 |
+| 8 | Analytical engine: first what ADR-0078, ADR-0076, ADR-0075 and ADR-0085 leave unbuilt after v0.7.0; then the DuckDB projection of document tables and of the tables' rows (in place of the native and attached bindings, ADR-0094), set-wise recompute, mining views, full build per OS | 🚧 |
 | 9 | Embedding: C ABI, Python client, embedding guides | ⬜ |
 | 10 | Postgres backend | ⬜ |
 | 11 | Optional AI layer: authoring assistant (the MCP server moved to Phase 6) | ⬜ |

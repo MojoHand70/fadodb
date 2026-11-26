@@ -1,6 +1,6 @@
 # ADR-0036: An in-memory index serves LOOKUP inside commits, by measurement
 
-- Status: Accepted; amends ADR-0016 and ADR-0020
+- Status: Accepted; amends ADR-0016 and ADR-0020; amended by ADR-0094 (Proposed: a lookup of a live formula keyed by an indexed column is narrowed to its key too)
 - Date: 2026-11-07
 
 ## Context

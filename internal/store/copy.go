@@ -195,8 +195,20 @@ type feeder struct {
 	// marks are the marks as the copy holds them: read when the store
 	// opened, and kept with every feed.
 	marks map[string]string
-	// laid is the version of each class whose tables the copy has.
-	laid map[string]int
+	// laid is the version of each class whose tables the copy has, and
+	// laidTables the version of each table of the database whose table
+	// the copy has, by its name in the copy (ADR-0094).
+	laid, laidTables map[string]int
+	// tables is what the last feed found of each table of the database,
+	// by its name in upper case: a feed puts a new map there, and a
+	// question reads the one it finds. tableAt and tableTook say when a
+	// table was last copied and how long that took.
+	tables    atomic.Pointer[map[string]copiedTable]
+	tableAt   map[string]time.Time
+	tableTook map[string]time.Duration
+	// wake asks the feed that runs by itself to run now: a question
+	// found a large table changed, and does not copy it itself.
+	wake chan struct{}
 	// every is the period of the feed that runs by itself.
 	every   time.Duration
 	cancel  context.CancelFunc
@@ -329,7 +341,8 @@ func (s *Store) startCopy(ctx context.Context, engine Analytics, every time.Dura
 	if every <= 0 {
 		every = DefaultCopyEvery
 	}
-	f := &feeder{copy: c, marks: marks, laid: map[string]int{}, every: every, first: make(chan struct{}), stop: make(chan struct{}), done: make(chan struct{})}
+	f := &feeder{copy: c, marks: marks, laid: map[string]int{}, laidTables: map[string]int{}, tableAt: map[string]time.Time{}, tableTook: map[string]time.Duration{},
+		wake: make(chan struct{}, 1), every: every, first: make(chan struct{}), stop: make(chan struct{}), done: make(chan struct{})}
 	var fctx context.Context
 	fctx, f.cancel = context.WithCancel(context.Background())
 	s.feeder = f
@@ -337,7 +350,7 @@ func (s *Store) startCopy(ctx context.Context, engine Analytics, every time.Dura
 		defer close(f.done)
 		// At once: the copy is laid, checked against the database and
 		// brought up to it.
-		_ = s.feed(fctx)
+		_ = s.feedAs(fctx, 0, feedSelf)
 		close(f.first)
 		t := time.NewTicker(f.every)
 		defer t.Stop()
@@ -346,7 +359,9 @@ func (s *Store) startCopy(ctx context.Context, engine Analytics, every time.Dura
 			case <-f.stop:
 				return
 			case <-t.C:
-				_ = s.feed(fctx)
+				_ = s.feedAs(fctx, 0, feedSelf)
+			case <-f.wake:
+				_ = s.feedAs(fctx, 0, feedSelf)
 			}
 		}
 	}()
@@ -365,7 +380,7 @@ func (s *Store) stopCopy() {
 		f.cancel()
 		<-f.done
 		ctx, cancel := context.WithTimeout(context.Background(), copyCloseFeed)
-		_ = s.feed(ctx)
+		_ = s.feedAs(ctx, 0, feedClosing)
 		cancel()
 		_ = f.copy.Close()
 	})
@@ -419,7 +434,7 @@ func (s *Store) FeedCopy(ctx context.Context) error { return s.feed(ctx) }
 // of the database, which sees one moment of it, and one transaction of
 // the copy, which takes the rows and the new marks together or nothing.
 // A feed that finds nothing new writes nothing.
-func (s *Store) feed(ctx context.Context) error { return s.feedAtMost(ctx, 0) }
+func (s *Store) feed(ctx context.Context) error { return s.feedAs(ctx, 0, feedAsked) }
 
 // copyCatchUp is how many events a question brings the copy up by
 // itself before it is answered. A copy that is further behind, after a
@@ -434,6 +449,12 @@ var copyCatchUp = int64(10000)
 // running waits for it only while the copy is near the database: a
 // feed that has much to bring says at once that it is not.
 func (s *Store) feedAtMost(ctx context.Context, most int64) error {
+	return s.feedAs(ctx, most, feedAsked)
+}
+
+// feedAs is the feed of whoever runs it: kind says what it does with a
+// large table that changed (ADR-0094, item 4).
+func (s *Store) feedAs(ctx context.Context, most int64, kind feedKind) error {
 	f := s.feeder
 	if f == nil {
 		return nil
@@ -449,7 +470,7 @@ func (s *Store) feedAtMost(ctx context.Context, most int64) error {
 				time.Sleep(200 * time.Microsecond)
 			}
 		}
-		more, err := s.feedOnce(ctx, f, most)
+		more, err := s.feedOnce(ctx, f, most, kind)
 		if err == errCopyBehind {
 			// No failure of the feed: the question does not wait.
 			f.mu.Unlock()
@@ -549,7 +570,7 @@ func copyCell(v any) any {
 
 // feedOnce is one piece of a feed: it reports whether the database
 // holds more than it handed over.
-func (s *Store) feedOnce(ctx context.Context, f *feeder, most int64) (bool, error) {
+func (s *Store) feedOnce(ctx context.Context, f *feeder, most int64, kind feedKind) (bool, error) {
 	conn, err := s.db.Conn(ctx)
 	if err != nil {
 		return false, storageErr("open a connection for the copy", err)
@@ -565,6 +586,14 @@ func (s *Store) feedOnce(ctx context.Context, f *feeder, most int64) (bool, erro
 	for _, name := range s.order {
 		if c := s.classes[strings.ToUpper(name)]; c != nil {
 			layouts = append(layouts, layoutOf(c))
+		}
+	}
+	// The tables of the database, but the system tables, whose rows are
+	// the engine's own records and are read where they are.
+	tabs := make([]*tableLayout, 0, len(s.tableOrder))
+	for _, name := range s.tableOrder {
+		if t := s.tables[strings.ToUpper(name)]; t != nil && !t.system {
+			tabs = append(tabs, tableLayoutOf(t))
 		}
 	}
 	// How far the database has got: the place of its last event. The
@@ -631,11 +660,29 @@ func (s *Store) feedOnce(ctx context.Context, f *feeder, most int64) (bool, erro
 	} else {
 		f.stands.Store(copyNear)
 	}
+	// The tables of the database (ADR-0094): which of them changed
+	// since the copy was made of them, and which of those this feed
+	// copies.
+	copyNow, gone, tablesAre, kick, err := f.tablesToCopy(ctx, conn, tabs, next, whole, most, kind)
+	if err != nil {
+		return false, err
+	}
+	if kick {
+		select {
+		case f.wake <- struct{}{}:
+		default:
+		}
+	}
 	// What the copy has to be given tables for.
 	var lay []CopyTable
 	for _, l := range layouts {
 		if f.laid[l.name] != l.version {
 			lay = append(lay, l.now, l.versions, l.moves)
+		}
+	}
+	for _, l := range copyNow {
+		if f.laidTables[l.copy] != l.version {
+			lay = append(lay, l.laid)
 		}
 	}
 	if _, ok := f.laid[copyEvents]; !ok {
@@ -648,6 +695,9 @@ func (s *Store) feedOnce(ctx context.Context, f *feeder, most int64) (bool, erro
 		for _, l := range layouts {
 			f.laid[l.name] = l.version
 		}
+		for _, l := range copyNow {
+			f.laidTables[l.copy] = l.version
+		}
 		f.laid[copyEvents] = 1
 	}
 
@@ -658,7 +708,8 @@ func (s *Store) feedOnce(ctx context.Context, f *feeder, most int64) (bool, erro
 	}
 	// Nothing new, and nothing to make again: the copy is as the
 	// database is.
-	if !whole && !again && last.Int64 == from && len(lay) == 0 {
+	if !whole && !again && last.Int64 == from && len(lay) == 0 && len(copyNow) == 0 && len(gone) == 0 {
+		f.tables.Store(&tablesAre)
 		return false, nil
 	}
 	byClass := make(map[string]*copyLayout, len(layouts))
@@ -667,6 +718,7 @@ func (s *Store) feedOnce(ctx context.Context, f *feeder, most int64) (bool, erro
 	}
 
 	wrote, more := false, false
+	copiedNow, took := map[string]copiedTable{}, map[string]time.Duration{}
 	give := func(w CopyWriter) error {
 		if whole || again {
 			if err := w.Empty(copyEvents); err != nil {
@@ -745,11 +797,40 @@ func (s *Store) feedOnce(ctx context.Context, f *feeder, most int64) (bool, erro
 			}
 			wrote, more = wrote || did, more || left
 		}
+		// The tables that changed, each whole: a table has no log of
+		// its changes. The mark is the token the rows were read under.
+		for _, l := range copyNow {
+			began := time.Now()
+			if err := w.Empty(l.copy); err != nil {
+				return err
+			}
+			n, err := feedTable(ctx, conn, w, l)
+			if err != nil {
+				return err
+			}
+			next[copyMarkTable+l.upper] = l.want
+			copiedNow[l.upper] = copiedTable{current: true, rows: n}
+			took[l.upper] = time.Since(began)
+			wrote = true
+		}
+		// A table the database no longer has: its rows go, and its mark.
+		for _, name := range gone {
+			if err := w.Empty("tbl_" + strings.ToLower(strings.TrimPrefix(name, copyMarkTable))); err != nil {
+				return err
+			}
+			next[name] = ""
+			wrote = true
+		}
 		return nil
 	}
 	if err := f.copy.Feed(ctx, give, next); err != nil {
 		return false, err
 	}
+	for name, is := range copiedNow {
+		tablesAre[name] = is
+		f.tableAt[name], f.tableTook[name] = time.Now(), took[name]
+	}
+	f.tables.Store(&tablesAre)
 	for name, value := range next {
 		if value == "" {
 			delete(next, name)

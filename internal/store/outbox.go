@@ -1061,6 +1061,10 @@ func (s *Store) perform(ctx context.Context, row *outboxRow, day int64, now time
 		if err != nil {
 			return nil, false, asError(err)
 		}
+		// The rows changed: a copy of the table is made again (ADR-0094).
+		if err := s.rowsChanged(ctx, t, now); err != nil {
+			return nil, false, asError(err)
+		}
 		return nil, followed > 0, nil
 	default:
 		return nil, false, hintf(CodeUnknownAction, "", "the engine does not run the action "+row.action, "the actions it runs are in the class's rules as the definition accepted them; this row was queued by another build")
@@ -1182,7 +1186,7 @@ func (s *Store) tableAction(ctx context.Context, t *table, action string, row, k
 	if err != nil {
 		return asError(storageErr("write "+t.def.Name, err))
 	}
-	t.cache, t.tooBig = nil, false
+	t.rowsWritten(action == model.ActionTableDelete)
 	return nil
 }
 

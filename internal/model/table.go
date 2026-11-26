@@ -119,7 +119,10 @@ func ParseTable(data []byte) (*TableDef, Diagnostics) {
 	return &def, c.list
 }
 
-// The bindings this build knows, and the ones it stores rows in.
+// The bindings the engine knows by name, and the one it stores rows in.
+// The rows of every table live in the store (ADR-0094): a program with
+// the analytical engine keeps a copy of them by itself, and a table of
+// another database is brought in from outside.
 var (
 	knownBindings     = map[string]bool{"sqlite": true, "duckdb": true, "external": true}
 	supportedBindings = map[string]bool{"sqlite": true}
@@ -145,8 +148,10 @@ func CompileTable(def *TableDef) (*Table, Diagnostics) {
 	default:
 		if !knownBindings[t.Binding] {
 			c.hint(CodeBadValue, "/binding", "unknown binding "+quote(t.Binding), "one of sqlite, duckdb, external")
+		} else if t.Binding == "duckdb" {
+			c.hint(CodeNotSupported, "/binding", "the duckdb binding is not built: the rows of a table are kept in the database itself", "leave binding out; a program with the analytical engine keeps a copy of the rows by itself")
 		} else if !supportedBindings[t.Binding] {
-			c.hint(CodeNotSupported, "/binding", "the "+t.Binding+" binding is not implemented yet", "sqlite is the binding of this build")
+			c.hint(CodeNotSupported, "/binding", "the "+t.Binding+" binding is not built: the engine reads no table of another database", "leave binding out, and bring the rows in with import_rows")
 		}
 	}
 	checkWords(c, "", def.Label, def.Description)

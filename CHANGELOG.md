@@ -10,6 +10,23 @@ Phase 8 started on 2026-11-25.
 
 ### Added
 
+- One line for each group, with its totals: a column of a `QUERY` may
+  be a total (ADR-0090, proposed). In a live variable,
+  `QUERY(Invoice, {customer, COUNT(id), SUM(net)})` answers one line
+  for each customer, with how many invoices and their sum: when a
+  column is a total, the plain columns say what the lines are grouped
+  by, as in a pivot table, and with none the list is one line. The
+  totals are `COUNT`, `SUM`, `MIN`, `MAX`, `AVERAGE` and
+  `COUNTUNIQUE`, each over one variable of the source, as in a
+  `LOOKUP`; the list is sorted by a group or a total, `{-SUM(net)}`,
+  and each reader gets the totals of the documents they may read. A
+  line is no document and has no `id`; a total stands under its
+  function and its variable, `count_id`, `sum_net`. A program that
+  keeps the copy answers such a list from DuckDB when no index narrows
+  what it counts: among 3,400,000 invoices one line for each customer
+  takes 12 ms where the store takes 675. Not built: `MEDIAN` among the
+  columns, such a list kept by a triggered variable, a figure over
+  one, and a table as its source.
 - A count or a total that an index narrows goes to the copy when the
   store has not answered in a moment (ADR-0089, step 3). An index
   narrows a question to the invoices of one order or to the documents

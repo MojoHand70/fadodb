@@ -312,21 +312,7 @@ func (s *Store) figure(ctx context.Context, q *formula.QuerySlot, args []formula
 			}
 			return plan.Where, plan.Args, nil
 		}
-		text := "SELECT count(*) FROM " + quote(src.cls.Name)
-		if where != "" {
-			text += " WHERE " + where
-		}
-		cst, err := s.filters.acquire(ctx, s.db, text)
-		if err != nil {
-			return formula.Value{}, storageErr("prepare the count of "+src.cls.Name, err)
-		}
-		var all int64
-		err = cst.stmt.QueryRowContext(ctx, append(given[:len(given):len(given)], s.liveArgs(o, of)...)...).Scan(&all)
-		s.filters.release(cst)
-		if err != nil {
-			return formula.Value{}, storageErr("count "+src.cls.Name, err)
-		}
-		past, err := s.pastCount(ctx, src, o, all, func(p query.Principal) (string, []any, error) {
+		err := s.logCounted(ctx, src, o, where, append(given[:len(given):len(given)], s.liveArgs(o, of)...), func(p query.Principal) (string, []any, error) {
 			where, given, err := rows(p)
 			var qe *query.Error
 			if errors.As(err, &qe) && qe.Code == query.CodeForbidden && qe.Variable != "" {
@@ -338,11 +324,6 @@ func (s *Store) figure(ctx context.Context, q *formula.QuerySlot, args []formula
 			return where, given, nil
 		})
 		if err != nil {
-			return formula.Value{}, err
-		}
-		r := newRead("live", src)
-		r.counted, r.hasCounted, r.past = past, true, past > 0
-		if err := s.logRead(ctx, o, r); err != nil {
 			return formula.Value{}, err
 		}
 	}

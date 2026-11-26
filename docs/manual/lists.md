@@ -545,6 +545,138 @@ What is refused when the class is defined:
 | a middle value of a text | `bad_formula` |
 | `MEDIAN` of single values | `bad_formula` |
 
+## Totals by group
+
+Ewa wants one line for each person in sales: how many invoices they
+wrote, and what the invoices add up to. That is a list too. Its
+`QUERY` has a **total** among its columns:
+
+```
+QUERY(Invoice, {owner, COUNT(id), SUM(net)})
+```
+
+When a column is a total, the plain columns say what the lines are
+grouped by: here one line for each owner, as in a pivot table. With no
+plain column the list has one line, the totals over every invoice.
+
+Acme keeps such lists in a class of their own, Books, of which there
+is one document, `acme`:
+
+```json
+{
+  "name": "Books",
+  "title": "name",
+  "variables": {
+    "name":     {"type": "text", "required": true, "label": "Name"},
+    "by_owner": {"label": "Invoiced by person", "mode": "live",
+                 "formula": "QUERY(Invoice, {owner, COUNT(id), SUM(net)})"},
+    "by_order": {"label": "Drafts by order", "mode": "live",
+                 "formula": "QUERY(Invoice, {order, COUNT(id), SUM(net)}, state = \"draft\", {-SUM(net)})"},
+    "whole":    {"label": "All invoices", "mode": "live",
+                 "formula": "QUERY(Invoice, {COUNT(id), SUM(net), MAX(net)})"}
+  },
+  "states": {"initial": "open", "list": ["open"]},
+  "access": {
+    "read": "INGROUP(\"sales\") OR INGROUP(\"finance\")",
+    "create": "INGROUP(\"finance\")",
+    "update": "FALSE",
+    "delete": "FALSE"
+  }
+}
+```
+
+The rest of the `QUERY` is as for any list. The condition says which
+invoices are counted: `by_order` counts the drafts. What the list is
+sorted by is a group or a total, written as among the columns:
+`by_order` has the largest sum first. Without a sort the lines come in
+the order of their groups.
+
+| A total | What it is, over the documents of a group |
+|---|---|
+| `COUNT(id)` | how many there are; `COUNT(net)` counts those that have a net amount |
+| `SUM(net)` | their sum |
+| `MIN(net)`, `MAX(net)` | the least and the greatest |
+| `AVERAGE(net)` | their mean |
+| `COUNTUNIQUE(owner)` | how many different values there are |
+
+A total runs over one variable of the source, or one of its system
+columns, and has the type the same function has in a `LOOKUP`: a count
+is a number, a sum of money is money.
+
+A total counts what its reader may read, as every list does. In the
+story Jan wrote FV-1, FV-2 and FV-4, and Piotr FV-3:
+
+<!-- totals -->
+| Who reads | The list | Its lines |
+|---|---|---|
+| Ewa | `by_owner` | jan, 3, 1255.00 PLN; piotr, 1, 70.00 PLN |
+| Jan | `by_owner` | jan, 3, 1255.00 PLN |
+| Piotr | `by_owner` | piotr, 1, 70.00 PLN |
+| Ewa | `by_order` | Order:ORD-17, 3, 1320.00 PLN; Order:ORD-18, 1, 5.00 PLN |
+| Jan | `by_order` | Order:ORD-17, 2, 1250.00 PLN; Order:ORD-18, 1, 5.00 PLN |
+| Ewa | `whole` | 4, 1325.00 PLN, 1000.00 PLN |
+| Piotr | `whole` | 1, 70.00 PLN, 70.00 PLN |
+
+It is read with the command `live`, as any list. Ewa asks:
+
+<!-- the totals command -->
+```jsonc
+{"class": "Books", "id": "acme", "variable": "by_owner"}
+```
+
+<!-- the totals answer -->
+```jsonc
+{
+  "columns": [
+    {"name": "owner", "type": "text"},
+    {"name": "count_id", "type": "number"},
+    {"name": "sum_net", "type": "money(2)"}
+  ],
+  "rows": [
+    {"owner": "jan", "count_id": 3, "sum_net": "1255.00 PLN"},
+    {"owner": "piotr", "count_id": 1, "sum_net": "70.00 PLN"}
+  ],
+  "more": false
+}
+```
+
+- **A line is no document.** It has no `id`. A page that wants the
+  invoices behind a line asks a list of documents, with the group in
+  its condition.
+- **A total stands under the name of its function and its variable**,
+  in lower case with `_` between: `count_id`, `sum_net`.
+- **The reader's page is of the lines.** `order` names a group or a
+  total, as `"order": ["-sum_net"]`; `limit` and `offset` are of the
+  lines, and `more` says that lines follow. `fields` is refused: the
+  columns say what the lines are grouped by, so a reader cannot take
+  some of them.
+
+<!-- the totals page -->
+| Ewa asks `by_owner` with | The lines | More follow |
+|---|---|---|
+| nothing more | jan, 3, 1255.00 PLN; piotr, 1, 70.00 PLN | no |
+| `"order": ["sum_net"]` | piotr, 1, 70.00 PLN; jan, 3, 1255.00 PLN | no |
+| `"order": ["-owner"], "limit": 1` | piotr, 1, 70.00 PLN | yes |
+| `"limit": 1, "offset": 1` | piotr, 1, 70.00 PLN | no |
+
+What a list of totals names, a group or what a total runs over, is
+read in a document only where the state of the document lets the
+reader read it; a document where it does not is left out of every
+total. A reader who may read one of them in no state is refused, with
+`forbidden`: `SUM(margin)` is for finance.
+
+A sum of money in two currencies within one group stops the list with
+`currency_mismatch`, as it stops a `LOOKUP`.
+
+Such a list reads every invoice its condition takes, each time it is
+read. Where the condition compares no indexed variable, as in
+`by_owner` and `whole`, which have none, the engine says so when the
+class is defined, with the note `reads_all`. That is harmless on a
+small class. On a large one, a program that keeps a copy of the
+documents in the analytical engine answers such a list from the copy,
+in milliseconds, with the same lines for the same reader
+([An analytical engine](opening-a-database.md#an-analytical-engine)).
+
 ## Figures over the lines a document holds
 
 A document has lists of its own as well: its lines, a variable of type
@@ -672,7 +804,14 @@ place in the formula.
 | a `QUERY` inside a larger formula | `bad_formula` |
 | a source nobody defined | `bad_formula` |
 | a column the source has not | `bad_formula` |
-| a count among the columns | `not_supported` |
+| the middle value of each group, `MEDIAN` among the columns | `not_supported` |
+| a function that is no total among the columns | `not_allowed` |
+| a total over what is worked out, as `SUM(net * 2)` | `not_supported` |
+| a total over a column the source has not | `bad_formula` |
+| a sum over a text | `bad_formula` |
+| the same total twice | `duplicate` |
+| a list of totals sorted by what is none of its columns | `not_allowed` |
+| a list of totals in a triggered variable, which would keep it | `not_supported` |
 | a condition that is no condition | `type_mismatch` |
 | a pointer compared with a text | `bad_formula` |
 | `REF()` compared with a pointer to another class | `type_mismatch` |
@@ -686,7 +825,10 @@ Invoice without `margin` is refused while the order lists it.
 
 ## Not built yet
 
-Each of these is decided (ADR-0076) and waits its turn.
+Of the totals by group, which ADR-0090 proposes, each of these is
+planned and waits its turn:
 
-- A count or a sum among the columns, and grouping: a table of
-  totals. One figure of a list is built: see "Figures over a list".
+- the middle value of each group, `MEDIAN` among the columns;
+- a list of totals that a triggered variable keeps;
+- a figure over a list of totals, as `COUNT(by_owner)`;
+- totals over the rows of a table.

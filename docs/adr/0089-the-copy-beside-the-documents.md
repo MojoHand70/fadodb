@@ -117,7 +117,7 @@ Two findings decide what follows.
    | how documents moved: which state follows which, how long they wait | the copy |
    | a count or a total that no index narrows: the command `count`, and the total or the first row that a `LOOKUP` or a figure over a list asks for when it is read | the copy |
    | a page of a list that the store does not find in a moment: the copy says which documents, in which order, and the store hands them over | the copy |
-   | groups with their totals among the columns of a `QUERY` | the copy; not built |
+   | groups with their totals among the columns of a `QUERY` (ADR-0090), when no index narrows what they count | the copy |
 
    No formula is written differently for it. The compiler sends each
    question where it belongs, as ADR-0075 says.
@@ -251,6 +251,16 @@ Two findings decide what follows.
   to a million invoices, 278 ms and 11. Fifty invoices over an amount,
   as they come, and the newest fifty, which the store hands over at
   once, stay with the store, in under a millisecond.
+- **Step 3, its third part: groups with their totals, on 2026-11-26.**
+  A live variable whose `QUERY` has a total among its columns gives
+  one line for each group (ADR-0090, proposed). It is answered by the
+  copy when no index narrows what it counts, and by the store
+  otherwise, with the same lines. Measured through the engine among 3,400,000 invoices, three
+  runs that agree: one line for each customer takes a program without
+  the copy 675 ms and one with it 12; a list by owner and state, the
+  largest sum first, 3.4 seconds and 15 ms; one line of the whole
+  class 980 ms and 10; the invoices in review by customer, which the
+  index of the state narrows to 170,000, 72 ms and 13.
 
 ## Settled while building the copy and its feed
 

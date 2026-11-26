@@ -246,3 +246,33 @@ func BenchmarkLiveFigureMedian(b *testing.B) {
 }
 
 func BenchmarkLiveFigureUnique(b *testing.B) { benchLiveFigureOf(b, liveFiguresMore, "kinds", 1.0) }
+
+// totalsByOrder is a list of totals on the order (ADR-0090): of every
+// invoice of the class, one line for each order with how many it has
+// and what they add up to.
+const totalsByOrder = `,
+  "by_order": {"mode": "live", "formula": "QUERY(Invoice, {order, COUNT(id), SUM(net)})"}`
+
+// BenchmarkLiveTotals reads a list of totals by group: every invoice of
+// the class is counted, 10,000 by default, in the one statement the
+// engine groups, and the first thousand lines are answered. It is the
+// whole call of the command `live`, as BenchmarkLiveList is. The store
+// answers it; with FADODB_BENCH_DOCS it says what a larger class costs
+// a program without the analytical engine.
+func BenchmarkLiveTotals(b *testing.B) {
+	s, ids := liveListStoreWith(b, totalsByOrder)
+	ctx := context.Background()
+	who := As(benchReader)
+	want := len(ids)
+	if want > 1000 {
+		want = 1000
+	}
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		v, err := s.Live(ctx, "Order", ids[i%len(ids)], "by_order", who)
+		if err != nil || len(v.Rows) != want {
+			b.Fatalf("the totals by order: %v, %d lines; want %d", err, len(v.Rows), want)
+		}
+	}
+}

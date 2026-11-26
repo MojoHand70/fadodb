@@ -328,7 +328,7 @@ func TestLiveList_RefusedWhenDefined(t *testing.T) {
 		{"a class nobody defined", `"l": {"mode": "live", "formula": "QUERY(Nothing, number)"}`, "bad_formula", "unknown source Nothing"},
 		{"a column the source has not", `"l": {"mode": "live", "formula": "QUERY(Invoice, {number, nothing})"}`, "bad_formula", "unknown column nothing of Invoice"},
 		{"a column listed twice", `"l": {"mode": "live", "formula": "QUERY(Invoice, {number, NUMBER})"}`, "duplicate", "listed twice"},
-		{"a count among the columns", `"l": {"mode": "live", "formula": "QUERY(Invoice, {number, COUNT(net)})"}`, "not_supported", "not built yet"},
+		{"the middle of each group", `"l": {"mode": "live", "formula": "QUERY(Invoice, {number, MEDIAN(net)})"}`, "not_supported", "MEDIAN among the columns"},
 		{"a column that is no name", `"l": {"mode": "live", "formula": "QUERY(Invoice, {number, 1 + 2})"}`, "bad_formula", "a column is the name"},
 		{"a sort by what the source has not", `"l": {"mode": "live", "formula": "QUERY(Invoice, number, TRUE, {-nothing})"}`, "bad_formula", "cannot sort by nothing"},
 		{"a sort by the same twice", `"l": {"mode": "live", "formula": "QUERY(Invoice, number, TRUE, {net, -net})"}`, "duplicate", "sorted by twice"},

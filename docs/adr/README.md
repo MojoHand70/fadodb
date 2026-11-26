@@ -95,3 +95,4 @@ line says so. Copy `0000-template.md` to start.
 | [0087](0087-a-database-made-with-a-starter.md) | A database made with a starter | Withdrawn by the owner |
 | [0088](0088-people-sign-in-with-a-passkey.md) | People sign in with a passkey, invited by a link | Proposed |
 | [0089](0089-the-copy-beside-the-documents.md) | The copy beside the documents: how the analytical engine is fed and asked | Proposed |
+| [0090](0090-totals-by-group-in-a-query.md) | A total among the columns of a QUERY: one line for each group | Proposed |

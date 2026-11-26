@@ -217,6 +217,9 @@ func (s *Store) LivePage(ctx context.Context, r LiveRead, opts ...Option) (*Live
 	if tbl != nil {
 		return s.liveTable(ctx, tbl, cv.v, on, r, o)
 	}
+	if q.Totals != nil {
+		return s.liveTotals(ctx, src, cv.v, on, r, o)
+	}
 	return s.liveList(ctx, src, cv.v, on, r, o)
 }
 

@@ -39,6 +39,71 @@ type Query struct {
 	// This are the variables of the document the condition reads as
 	// THIS.name, by declared name.
 	This []string
+	// Totals says the list is one of totals by group (ADR-0090): for
+	// each of Columns the total it is, and nil for a plain column, which
+	// is then what the lines are grouped by. A line of such a list is no
+	// document. It is nil for a list of documents.
+	Totals []*Total
+}
+
+// Total is a column of a QUERY that is a total over the documents of a
+// group (ADR-0090): a function of formula.GroupTotals over one variable
+// of the source, or one of its system columns.
+type Total struct {
+	// Name is what the total stands under in a line: its function and
+	// its variable, in lower case with _ between, as sum_net.
+	Name string
+	// Agg is the function, and Column what it runs over, by the name
+	// the source declares.
+	Agg, Column string
+	// Type is the type of the total, which is the one the function has
+	// in a LOOKUP. It is the zero type in a stored definition compiled
+	// alone, whose source is not at hand.
+	Type formula.Type
+}
+
+// totalsIn says whether a QUERY, as it is written, has a function among
+// its columns, which makes it a list of totals.
+func totalsIn(call *formula.Call) bool {
+	if call == nil || len(call.Args) < 2 {
+		return false
+	}
+	cols := []formula.Node{call.Args[1]}
+	if list, ok := call.Args[1].(*formula.List); ok {
+		cols = list.Items
+	}
+	for _, n := range cols {
+		if _, ok := n.(*formula.Call); ok {
+			return true
+		}
+	}
+	return false
+}
+
+// totalOf reads a column of a QUERY that is written as a function: a
+// total over one variable of the source (ADR-0090, items 1 and 7). It
+// answers nil when it has said why the column is none.
+func totalOf(c *collector, path string, call *formula.Call, source string) *Total {
+	name := strings.ToUpper(call.Name)
+	switch {
+	case name == "MEDIAN":
+		c.at(CodeNotSupported, path, call, "MEDIAN among the columns of a QUERY, the middle value of each group, is not built (ADR-0090)",
+			"the middle of all the documents, one number, is a LOOKUP with MEDIAN where its column stands")
+		return nil
+	case !formula.IsGroupTotal(name):
+		c.at(CodeNotAllowed, path, call, call.Name+" cannot stand among the columns of a QUERY: a column is a variable of "+source+", or a total over one, which is "+strings.Join(formula.GroupTotals, ", ")+" (ADR-0090)", "")
+		return nil
+	case len(call.Args) != 1:
+		c.at(CodeBadFormula, path, call, name+" among the columns of a QUERY takes one variable of "+source+", as "+name+"(id)", "")
+		return nil
+	}
+	id, ok := call.Args[0].(*formula.Ident)
+	if !ok {
+		c.at(CodeNotSupported, path, call.Args[0], "a total among the columns of a QUERY runs over one variable of "+source+", and this is worked out (ADR-0090)",
+			"keep the value in a computed variable of "+source+", and total that variable")
+		return nil
+	}
+	return &Total{Name: strings.ToLower(name + "_" + id.Name), Agg: name, Column: id.Name}
 }
 
 // FilterColumns are the system columns a filter over a class may name
@@ -109,8 +174,8 @@ func compileQuery(c *collector, cls *Class, v *Variable, call *formula.Call, sco
 	path := "/variables/" + v.Name + "/formula"
 	q := &Query{Src: v.Def.Formula}
 	if len(call.Args) > 4 {
-		c.at(CodeNotSupported, path, call.Args[4], "grouping and the limit of a QUERY are not built yet (ADR-0076, item 9)",
-			"leave them out: whoever reads the list says how many rows they want")
+		c.at(CodeNotSupported, path, call.Args[4], "grouping and the limit of a QUERY are not written as arguments of their own (ADR-0076, item 9; ADR-0090)",
+			"leave them out: a total among the columns, as SUM(net), groups the lines by the plain columns, and whoever reads the list says how many rows they want")
 		return
 	}
 	srcName, ok := call.Args[0].(*formula.Ident)
@@ -124,18 +189,27 @@ func compileQuery(c *collector, cls *Class, v *Variable, call *formula.Call, sco
 	if list, ok := call.Args[1].(*formula.List); ok {
 		cols = list.Items
 	}
+	// A column that is a total makes the list one of totals by group
+	// (ADR-0090): the plain columns then say what its lines are grouped
+	// by.
+	totals, grouped := make([]*Total, 0, len(cols)), false
 	for _, n := range cols {
-		id, ok := n.(*formula.Ident)
-		if !ok {
-			if _, isCall := n.(*formula.Call); isCall {
-				c.at(CodeNotSupported, path, n, "a count or a sum among the columns of a QUERY is not built yet (ADR-0076, item 9)",
-					"a single count or sum is a LOOKUP in a triggered variable")
-			} else {
-				c.at(CodeBadFormula, path, n, "QUERY: a column is the name of a variable of "+q.Source+" or of a system column", "write several in braces: {number, net}")
+		switch col := n.(type) {
+		case *formula.Ident:
+			q.Columns, totals = append(q.Columns, col.Name), append(totals, nil)
+		case *formula.Call:
+			t := totalOf(c, path, col, q.Source)
+			if t == nil {
+				return
 			}
+			q.Columns, totals, grouped = append(q.Columns, t.Name), append(totals, t), true
+		default:
+			c.at(CodeBadFormula, path, n, "QUERY: a column is the name of a variable of "+q.Source+" or of a system column, or a total over one", "write several in braces: {number, net}")
 			return
 		}
-		q.Columns = append(q.Columns, id.Name)
+	}
+	if grouped {
+		q.Totals = totals
 	}
 	if len(call.Args) > 2 {
 		q.Cond = call.Args[2]
@@ -152,12 +226,29 @@ func compileQuery(c *collector, cls *Class, v *Variable, call *formula.Call, sco
 			if u, ok := n.(*formula.Unary); ok && u.Op == formula.TokMinus {
 				desc, n = "-", u.X
 			}
-			id, ok := n.(*formula.Ident)
-			if !ok {
+			switch by := n.(type) {
+			case *formula.Ident:
+				q.Order = append(q.Order, desc+by.Name)
+			case *formula.Call:
+				// A total, written as among the columns, where it must
+				// stand too (ADR-0090, item 2).
+				t := totalOf(c, path, by, q.Source)
+				if t == nil {
+					return
+				}
+				listed := false
+				for _, have := range q.Totals {
+					listed = listed || have != nil && have.Name == t.Name
+				}
+				if !listed {
+					c.at(CodeNotAllowed, path, by, "the list is sorted by "+t.Agg+"("+t.Column+"), which is none of its columns", "list the total among the columns too")
+					return
+				}
+				q.Order = append(q.Order, desc+t.Name)
+			default:
 				c.at(CodeBadFormula, path, n, "QUERY: what it sorts by is the name of a column, with a leading - for descending", "write several in braces: {-net, number}")
 				return
 			}
-			q.Order = append(q.Order, desc+id.Name)
 		}
 	}
 	for _, name := range thisNames(q.Cond) {
@@ -190,6 +281,11 @@ func compileQuery(c *collector, cls *Class, v *Variable, call *formula.Call, sco
 	if src == nil {
 		if c.env.Sources != nil {
 			if tsrc, table := c.env.Sources.Source(q.Source); table && !tsrc.Class {
+				if q.Totals != nil {
+					c.at(CodeNotSupported, path, srcName, "a total over the rows of a table is not built (ADR-0090): "+q.Source+" is a table", "a single total over a table is a LOOKUP")
+					v.Query = nil
+					return
+				}
 				if !compileTableQuery(c, cls, v, q, call, cols, tsrc, path, scope) {
 					v.Query = nil
 				}
@@ -203,8 +299,49 @@ func compileQuery(c *collector, cls *Class, v *Variable, call *formula.Call, sco
 	q.Source = src.Name
 	c.read(src.Name)
 	bad := false
+	// rows is the source as a total reads it, for a list of totals.
+	var rows *formula.Source
+	if q.Totals != nil {
+		rows = src.Source()
+	}
 	for i, name := range q.Columns {
 		n := cols[i]
+		if q.Totals != nil && q.Totals[i] != nil {
+			// A total (ADR-0090): what it runs over is a single value
+			// the source keeps, and its type is the one the function has
+			// in a LOOKUP.
+			t, over := q.Totals[i], n.(*formula.Call).Args[0]
+			column := ""
+			if sc, ok := FilterColumn(t.Column); ok {
+				column = sc.Name
+			} else if sv, ok := src.Variable(t.Column); !ok {
+				c.at(CodeBadFormula, path, over, "unknown column "+t.Column+" of "+src.Name+"; its columns are "+strings.Join(queryColumns(src), ", "), "")
+				bad = true
+			} else if sv.Live() {
+				c.at(CodeNotAllowed, path, over, sv.Name+" is a live variable of "+src.Name+": it is worked out when it is read and kept nowhere, so a list cannot total it", "")
+				bad = true
+			} else if !sv.Type.IsScalar() {
+				c.at(CodeNotAllowed, path, over, "a total runs over single values, and "+sv.Name+" of "+src.Name+" is "+sv.Type.String(), "")
+				bad = true
+			} else {
+				column = sv.Name
+			}
+			if column != "" {
+				if slot, err := formula.BindTotal(t.Agg, column, rows); err != nil {
+					c.at(CodeBadFormula, path, n, err.Error(), "")
+					bad = true
+				} else {
+					t.Column, t.Type = column, slot.Type
+				}
+			}
+			for _, earlier := range q.Columns[:i] {
+				if upper(earlier) == upper(name) {
+					c.at(CodeDuplicate, path, n, "the total "+t.Agg+"("+t.Column+") stands under "+name+", which is listed twice", "")
+					bad = true
+				}
+			}
+			continue
+		}
 		if sc, ok := FilterColumn(name); ok {
 			q.Columns[i] = sc.Name
 		} else if sv, ok := src.Variable(name); !ok {
@@ -212,6 +349,9 @@ func compileQuery(c *collector, cls *Class, v *Variable, call *formula.Call, sco
 			bad = true
 		} else if sv.Live() {
 			c.at(CodeNotAllowed, path, n, sv.Name+" is a live variable of "+src.Name+": it is worked out when it is read and kept nowhere, so a list cannot show it", "")
+			bad = true
+		} else if q.Totals != nil && !sv.Type.IsScalar() {
+			c.at(CodeNotAllowed, path, n, "a list of totals is grouped by single values, and "+sv.Name+" of "+src.Name+" is "+sv.Type.String(), "")
 			bad = true
 		} else {
 			q.Columns[i] = sv.Name
@@ -228,6 +368,27 @@ func compileQuery(c *collector, cls *Class, v *Variable, call *formula.Call, sco
 		n := call.Args[3]
 		if list, ok := n.(*formula.List); ok {
 			n = list.Items[i]
+		}
+		if q.Totals != nil {
+			// A list of totals is sorted by what its lines hold: a group
+			// or a total (ADR-0090, item 2).
+			held := false
+			for _, col := range q.Columns {
+				if upper(col) == upper(name) {
+					held, q.Order[i] = true, o[:len(o)-len(name)]+col
+				}
+			}
+			if !held {
+				c.at(CodeNotAllowed, path, n, "a list of totals is sorted by a group or a total of its own, and "+name+" is neither", "list "+name+" among the columns, or sort by one of "+strings.Join(q.Columns, ", "))
+				bad = true
+			}
+			for _, earlier := range q.Order[:i] {
+				if upper(strings.TrimPrefix(earlier, "-")) == upper(name) {
+					c.at(CodeDuplicate, path, n, name+" is sorted by twice", "")
+					bad = true
+				}
+			}
+			continue
 		}
 		sv, isVar := src.Variable(name)
 		_, isSys := FilterColumn(name)
@@ -253,7 +414,7 @@ func compileQuery(c *collector, cls *Class, v *Variable, call *formula.Call, sco
 		v.Query = nil
 		return
 	}
-	c.asksList(path, src, q.Cond)
+	c.asksList(path, src, q.Cond, q.Totals != nil)
 }
 
 // compileKept holds the QUERY of a triggered variable to the list the
@@ -269,6 +430,11 @@ func compileKept(c *collector, cls *Class, v *Variable) {
 		return
 	}
 	path := "/variables/" + v.Name
+	if q.Totals != nil {
+		c.hint(CodeNotSupported, path+"/formula", "a list of totals that a triggered variable keeps is not built yet (ADR-0090)",
+			`make the variable live, with "mode": "live": the totals are then worked out when they are read`)
+		return
+	}
 	fields := v.Type.Fields()
 	if c.env.Shallow {
 		// A stored definition compiled alone: the source is not at hand,

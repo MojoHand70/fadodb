@@ -16,7 +16,7 @@ import (
 func TestApps_KeptAcrossAnOpen(t *testing.T) {
 	s, path := openStore(t, Options{})
 	ctx := context.Background()
-	if got := s.Apps(); len(got) != 0 {
+	if got := s.Apps(); !reflect.DeepEqual(got, []string{model.SystemApp}) {
 		t.Fatalf("a new database has the apps %v", got)
 	}
 	first, err := s.DefineApp(ctx, []byte(`{"name": "Expenses", "label": "Expenses", "description": "What employees paid for the company."}`), asSetup)
@@ -48,7 +48,7 @@ func TestApps_KeptAcrossAnOpen(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer again.Close()
-	if got := again.Apps(); !reflect.DeepEqual(got, []string{"Expenses", "Helpdesk"}) {
+	if got := again.Apps(); !reflect.DeepEqual(got, []string{"System", "Expenses", "Helpdesk"}) {
 		t.Fatalf("the apps after an open: %v", got)
 	}
 	app, ok := again.App("EXPENSES")
@@ -124,7 +124,7 @@ func TestApps_ADesignerMakesThem(t *testing.T) {
 	if _, err := s.DefineApp(ctx, []byte(`{"name": "Expenses"}`), As(Principal{ID: "dan", Kind: ActorPerson, System: []string{GroupDesigners}})); err != nil {
 		t.Fatalf("a designer: %v", err)
 	}
-	if got := s.Apps(); !reflect.DeepEqual(got, []string{"Expenses"}) {
+	if got := s.Apps(); !reflect.DeepEqual(got, []string{"System", "Expenses"}) {
 		t.Fatalf("the apps: %v", got)
 	}
 }

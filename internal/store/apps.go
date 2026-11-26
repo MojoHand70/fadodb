@@ -128,7 +128,10 @@ func (s *Store) noSuchApp(name string) *Error {
 	if len(s.appOrder) == 0 {
 		return hintf(CodeUnknownApp, "", "unknown app "+strconv.Quote(name), "the database has no app yet; define_app makes one")
 	}
-	return hintf(CodeUnknownApp, "", "unknown app "+strconv.Quote(name), "the apps are "+strings.Join(s.appOrder, ", "))
+	if len(s.appOrder) == 1 && strings.EqualFold(s.appOrder[0], model.SystemApp) {
+		return hintf(CodeUnknownApp, "", "unknown app "+strconv.Quote(name), "the database has no app of its own yet, only System, the engine's; define_app makes one")
+	}
+	return hintf(CodeUnknownApp, "", "unknown app "+strconv.Quote(name), "the apps are "+strings.Join(s.appOrder, ", ")+"; define_app makes another")
 }
 
 // storedApp answers an app as it was given. The caller holds cmu.

@@ -648,7 +648,7 @@ func TestTables(t *testing.T) {
 			if def, ok := db.Table("rates"); !ok || def.Label != "Exchange rates" || def.Defined.By != "dan" {
 				t.Errorf("the definition of Rates, read with no caller: %v", def)
 			}
-			if !reflect.DeepEqual(db.Tables(), []string{"Rates", "Mine"}) {
+			if !reflect.DeepEqual(db.Tables(), append([]string{"Rates", "Mine"}, systemTables...)) {
 				t.Errorf("the tables are %v", db.Tables())
 			}
 			versions, err := db.Definitions(ctx, fado.DefinitionTable, "Rates")
@@ -682,7 +682,7 @@ func TestTables(t *testing.T) {
 		"remove a table": func(row []string) {
 			err := db.RemoveTable(ctx, "Mine", tess)
 			needs(row, err)
-			if err := db.RemoveTable(ctx, "Mine", dan); err != nil || len(db.Tables()) != 1 {
+			if err := db.RemoveTable(ctx, "Mine", dan); err != nil || len(db.Tables()) != 1+len(systemTables) {
 				t.Errorf("Dan removes a table: %v, %v", err, db.Tables())
 			}
 		},
@@ -1108,7 +1108,7 @@ func TestTables(t *testing.T) {
 			return strings.Contains(string(exec(reader, "get_table", `{"name":"Rates"}`)["table"]), `"Exchange rates"`)
 		}},
 		{"list the tables, or those of one app", "list_tables", func() bool {
-			return string(exec(reader, "list_tables", `{}`)["tables"]) == `["Rates"]`
+			return string(exec(reader, "list_tables", `{}`)["tables"]) == `["Rates",`+systemTablesJSON+`]`
 		}},
 		{"remove rows", "delete_rows", func() bool {
 			return string(exec(treasurer, "delete_rows", `{"table":"Rates","keys":[{"currency":"XXX","day":"2026-11-13"}]}`)["deleted"]) == "0"
@@ -1116,7 +1116,7 @@ func TestTables(t *testing.T) {
 		{"remove a table", "remove_table", func() bool {
 			exec(designer, "define_table", `{"definition":{"name":"Gone","columns":{"k":"text"},"key":["k"]}}`)
 			exec(designer, "remove_table", `{"name":"Gone"}`)
-			return string(exec(reader, "list_tables", `{}`)["tables"]) == `["Rates"]`
+			return string(exec(reader, "list_tables", `{}`)["tables"]) == `["Rates",`+systemTablesJSON+`]`
 		}},
 	}
 	listed := map[string]string{}
@@ -1440,3 +1440,10 @@ func TestTables_WhoRemovedATable(t *testing.T) {
 		}
 	}
 }
+
+// systemTables are the tables every database has (ADR-0092), listed after
+// its own, as Tables and list_tables answer them.
+var (
+	systemTables     = []string{"SystemApps", "SystemClasses", "SystemUsers", "SystemGroups"}
+	systemTablesJSON = `"SystemApps","SystemClasses","SystemUsers","SystemGroups"`
+)

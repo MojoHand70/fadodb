@@ -32,6 +32,9 @@ func (s *Store) DeleteRows(ctx context.Context, name string, keys []Values, opts
 	if err := refuseAt(o, "row delete"); err != nil {
 		return 0, err
 	}
+	if t.system {
+		return 0, systemWrite(t, "deletes its rows")
+	}
 	past, e := s.tableRefusal(t, true, o, s.clock(o))
 	if e != nil {
 		return 0, e
@@ -136,6 +139,9 @@ func (s *Store) RemoveTable(ctx context.Context, name string, opts ...Option) er
 	t, ok := s.tables[key]
 	if !ok {
 		return errf(CodeUnknownTable, "", "unknown table %q", name)
+	}
+	if t.system {
+		return systemWrite(t, "removes it")
 	}
 	for _, cname := range s.order {
 		c := s.classes[strings.ToUpper(cname)]

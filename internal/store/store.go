@@ -957,6 +957,11 @@ func (s *Store) load(ctx context.Context) error {
 		}
 		s.registerTable(t)
 	}
+	// The app System and its tables (ADR-0092), before the classes,
+	// which may read them.
+	if err := s.keepSystem(ctx); err != nil {
+		return err
+	}
 	if rows, err = s.db.QueryContext(ctx, "SELECT name, version, json FROM classes ORDER BY rowid"); err != nil {
 		return storageErr("read the classes", err)
 	}

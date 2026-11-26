@@ -148,6 +148,8 @@ On Tuesday afternoon Ann asks for the flow of the class. The command is
 | `oldest_since` | a state | the moment the document that is there longest entered it, in seconds; left out when the state is empty |
 | `stays` | a state | how many stays in the state ended in the period: a document that left it and came back is counted twice |
 | `average_seconds`, `longest_seconds` | a state | how long those stays lasted |
+| `spread` | a state | how those stays spread, when the command asks for it; see [How the stays spread](#how-the-stays-spread) |
+| `middle_seconds`, `slow_tenth_seconds` | the spread of a state | the middle stay: half of the stays lasted no longer. The slow tenth: nine stays in ten lasted no longer |
 | `moves` | a transition | how many times a document moved along it in the period |
 | `initial`, `final` | a state | the state a document begins in; a state it does not leave |
 | `automatic` | a transition | it has no name: the engine takes it when its guard holds |
@@ -196,6 +198,58 @@ began. Where the documents are is always now.
 | `{"class": "Invoice", "since": "2026-11-03"}` | 0 | 0 | 1 | 1 |
 | `{"class": "Invoice", "since": "2026-11-02 10:00:00", "until": "2026-11-02 13:00:00"}` | 0 | 3 | 0 | 1 |
 
+## How the stays spread
+
+An average is moved by one document that lay forgotten. Three invoices
+left `draft` after an hour and B-3 after 28: the average, 7 hours and
+45 minutes, is a time no invoice took. Asked with `"spread": true`,
+the flow says of each state the middle stay and the slow tenth as
+well:
+
+```jsonc
+{"class": "Invoice", "spread": true}
+```
+
+<!-- the draft state with its spread -->
+```jsonc
+{
+  "name": "draft",
+  "initial": true,
+  "documents": 0,
+  "stays": 4,
+  "average_seconds": 27900,
+  "longest_seconds": 100800,
+  "spread": {
+    "middle_seconds": 3600,
+    "slow_tenth_seconds": 100800
+  }
+}
+```
+
+<!-- how the stays spread -->
+| Who asks | State | Stays | The average | The middle stay | The slow tenth |
+|---|---|---|---|---|---|
+| Ann | `draft` | 4 | 27900 | 3600 | 100800 |
+| Ann | `review` | 2 | 5400 | 0 | 10800 |
+| Bob | `draft` | 3 | 36000 | 3600 | 100800 |
+| Bob | `review` | 1 | 10800 | 10800 | 10800 |
+
+- **The middle stay says what usually happens**: half of the stays
+  lasted no longer. An invoice usually leaves `draft` within the hour.
+- **The slow tenth says how long the slowest wait**: nine stays in ten
+  lasted no longer. It is where a delay shows that the middle hides.
+- **Each is the length of one of the stays.** The stays that ended in
+  the period are put in the order of their lengths. Of `n` stays the
+  middle one stands at place `(n+1)/2` and the slow tenth at place
+  `(9n+9)/10`, both rounded down: of Ann's four stays in `draft`, the
+  second and the fourth.
+- **A state no stay ended in** says zero for both.
+- **It is asked for, and not given unasked**, since it reads every
+  stay of the period and puts them in order. Among ten million moves,
+  a program with the analytical engine answers the flow in 12 ms and
+  the flow with its spread in 80 to 87 ms; a program without it takes
+  18 seconds and 40.
+
 ## Asking
 
 In a Go program:
@@ -203,6 +257,8 @@ In a Go program:
 ```go
 flow, err := db.Flow(ctx, "Invoice", fado.FlowPeriod{}, fado.As(ann))
 ```
+
+`fado.FlowPeriod{Spread: true}` asks for how the stays spread.
 
 As a command, over HTTP or through `Exec`, it is `flow`
 ([the commands](../commands.md#flow)). From a terminal:
@@ -224,5 +280,5 @@ fadodb exec flow '{"class": "Invoice", "since": "2026-11-03"}'
 
 - **The picture at a moment in the past.** The documents in each state
   are counted now.
-- **The median of the stays.** One invoice that waited a year moves an
-  average far; the longest stay is there to show it.
+- **The paths documents took**, and **the documents made and
+  finished in each day**.

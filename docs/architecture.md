@@ -1369,6 +1369,17 @@ The lite build runs the same views on SQLite, computing percentiles in Go.
 An OCEL 2.0 export command may be added after 1.0 for users of PM4Py or
 Celonis. It is an export, not a dependency.
 
+Today these views are not built as views. The command `flow`
+(ADR-0063) answers what a chart of a process draws, for its caller and
+by the read rule: the documents in each state, the moves along each
+transition, and the stays that ended with their average and their
+longest; from the copy when the program keeps one (ADR-0089). Asked
+with `"spread": true` it says of each state the middle stay and the
+slow tenth as well (ADR-0095, proposed): the length of the stay at the
+middle place and at nine tenths, counted with whole numbers, so that
+the store and the copy answer the same. The paths documents took and
+the documents made and finished in each period are not answered yet.
+
 ---
 
 ## Performance program

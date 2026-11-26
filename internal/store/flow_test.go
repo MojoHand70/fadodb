@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"strings"
 	"testing"
 	"time"
 )
@@ -119,6 +121,54 @@ func TestTheFlowOfAClass(t *testing.T) {
 	if got := flowOf(t, s, "Invoice", FlowPeriod{}, flowBob); got != want {
 		t.Errorf("the flow Bob sees is\n%s\nwant\n%s", got, want)
 	}
+	// How the stays spread, for a caller who asks (ADR-0095). Three
+	// invoices left draft after an hour and one after 28: the average,
+	// 7 hours 45 minutes, is a time none took; the middle stay is an
+	// hour, and the slow tenth the 28. Of the two stays in review one
+	// ended at once and one after three hours.
+	spread := func(as Option, period FlowPeriod) string {
+		t.Helper()
+		period.Spread = true
+		f, err := s.Flow(ctx, "Invoice", period, as)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var out []string
+		for _, st := range f.States {
+			if st.Spread == nil {
+				t.Fatalf("the state %s says nothing of how its stays spread", st.Name)
+			}
+			out = append(out, fmt.Sprintf("%s %d/%d", st.Name, st.Spread.MiddleSeconds, st.Spread.SlowTenthSeconds))
+		}
+		return strings.Join(out, ", ")
+	}
+	if got := spread(flowAnn, FlowPeriod{}); got != "draft 3600/100800, review 0/10800, approved 0/0, cancelled 0/0" {
+		t.Errorf("how the stays spread for Ann: %s", got)
+	}
+	// Bob's own: three stays in draft, one in review.
+	if got := spread(flowBob, FlowPeriod{}); got != "draft 3600/100800, review 10800/10800, approved 0/0, cancelled 0/0" {
+		t.Errorf("how the stays spread for Bob: %s", got)
+	}
+	// Eve reads none, and a period takes the stays that ended in it.
+	if got := spread(flowEve, FlowPeriod{}); got != "draft 0/0, review 0/0, approved 0/0, cancelled 0/0" {
+		t.Errorf("how the stays spread for Eve: %s", got)
+	}
+	if got := spread(flowAnn, FlowPeriod{Until: time.Date(2026, 11, 3, 0, 0, 0, 0, time.UTC)}); got != "draft 3600/3600, review 0/10800, approved 0/0, cancelled 0/0" {
+		t.Errorf("how the stays spread before Tuesday: %s", got)
+	}
+	// A caller who does not ask is told nothing of it, and the answer
+	// is the one above, with the same numbers beside the spread.
+	asked, err := s.Flow(ctx, "Invoice", FlowPeriod{Spread: true}, flowAnn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := range asked.States {
+		asked.States[i].Spread = nil
+	}
+	if got := shown(t, asked, nil); got != flowOf(t, s, "Invoice", FlowPeriod{}, flowAnn) {
+		t.Errorf("the flow that was asked how the stays spread differs in the rest: %s", got)
+	}
+
 	// Eve reads no invoice: her flow has the chart and no document.
 	eve, err := s.Flow(ctx, "Invoice", FlowPeriod{}, flowEve)
 	if err != nil {

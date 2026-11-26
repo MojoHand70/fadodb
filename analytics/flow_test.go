@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"path/filepath"
+	"sort"
 	"testing"
 	"time"
 
@@ -104,6 +105,14 @@ func TestFlow_FromTheCopyIsTheStores(t *testing.T) {
 				"since the middle":      {Since: middle},
 				"until the middle":      {Until: middle},
 				"an hour of the middle": {Since: middle.Add(-30 * time.Minute), Until: middle.Add(30 * time.Minute)},
+				// How the stays spread, the middle one and the slow tenth
+				// (ADR-0095): the store orders the stays and takes the one
+				// at each place, the copy asks DuckDB's quantile, and the
+				// two are the same.
+				"since the class began, with the spread": {Spread: true},
+				"since the middle, with the spread":      {Since: middle, Spread: true},
+				"until the middle, with the spread":      {Until: middle, Spread: true},
+				"an hour of the middle, with the spread": {Since: middle.Add(-30 * time.Minute), Until: middle.Add(30 * time.Minute), Spread: true},
 			} {
 				before := withCopy.CopyState().Answers
 				fromCopy, err := withCopy.Flow(ctx, "Invoice", period, who)
@@ -238,5 +247,71 @@ func BenchmarkFlow(b *testing.B) {
 				b.Fatalf("the copy did not answer: %+v", st)
 			}
 		})
+	}
+}
+
+// The middle stay and the slow tenth are the lengths of the stays at
+// two places among the stays in the order of their lengths (ADR-0095):
+// of n stays, at place (n+1)/2 and at place (9n+9)/10, rounded down.
+// The store takes them by a count, DuckDB by its quantile, and the test
+// by sorting: at every number of stays from one to forty-five, tens and
+// odd numbers among them, the three agree.
+func TestFlow_TheSpreadAtEveryNumberOfStays(t *testing.T) {
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "acme.fado")
+	now := time.Date(2026, 3, 2, 8, 0, 0, 0, time.UTC)
+	clock := func() time.Time { return now }
+	withCopy, err := fado.Open(path, fado.Options{Analytics: Engine{Threads: 2}, CopyEvery: time.Hour, Outbox: fado.OutboxOptions{Manual: true}, Now: clock})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer withCopy.Close()
+	if _, err := withCopy.DefineClass(ctx, []byte(flowInvoice), olga); err != nil {
+		t.Fatal(err)
+	}
+	plain, err := fado.Open(path, fado.Options{Outbox: fado.OutboxOptions{Manual: true}, Now: clock})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer plain.Close()
+	ewa := person("ewa", "finance")
+	var lengths []int64
+	seed := uint32(7)
+	for n := 1; n <= 45; n++ {
+		// A stay in draft of a length that repeats now and then, so
+		// that equal lengths stand side by side too.
+		seed = seed*1664525 + 1013904223
+		length := int64(seed>>8) % 50 * 60
+		d, err := withCopy.Create(ctx, "Invoice", fado.Values{"number": fmt.Sprintf("FV-%d", n), "owner": "ewa", "customer": "Globex", "net": "1.00 PLN"}, ewa)
+		if err != nil {
+			t.Fatal(err)
+		}
+		now = now.Add(time.Duration(length) * time.Second)
+		if _, err := withCopy.Transition(ctx, "Invoice", d.ID, "file", nil, ewa); err != nil {
+			t.Fatal(err)
+		}
+		lengths = append(lengths, length)
+		sorted := append([]int64(nil), lengths...)
+		sort.Slice(sorted, func(i, j int) bool { return sorted[i] < sorted[j] })
+		want := fmt.Sprintf("%d/%d", sorted[(n+1)/2-1], sorted[(9*n+9)/10-1])
+		for program, db := range map[string]*fado.DB{"the program with the copy": withCopy, "the program without it": plain} {
+			before := withCopy.CopyState().Answers
+			f, err := db.Flow(ctx, "Invoice", fado.FlowPeriod{Spread: true}, ewa)
+			if err != nil {
+				t.Fatalf("%d stays, %s: %v", n, program, err)
+			}
+			if db == withCopy && withCopy.CopyState().Answers != before+1 {
+				t.Fatalf("%d stays: the copy did not answer: %+v", n, withCopy.CopyState())
+			}
+			got := ""
+			for _, st := range f.States {
+				if st.Name == "draft" && st.Spread != nil {
+					got = fmt.Sprintf("%d/%d", st.Spread.MiddleSeconds, st.Spread.SlowTenthSeconds)
+				}
+			}
+			if got != want {
+				t.Errorf("%d stays, %s: the middle stay and the slow tenth are %s, want %s", n, program, got, want)
+			}
+		}
 	}
 }

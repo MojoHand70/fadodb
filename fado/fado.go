@@ -119,11 +119,14 @@ type (
 	Waited = store.Waited
 	// Flow is the flow of a class as one caller sees it, FlowState and
 	// FlowTransition a state and a transition in it, and FlowPeriod the
-	// period its moves are counted in (ADR-0063).
+	// period its moves are counted in (ADR-0063). FlowSpread is how the
+	// stays in a state spread, the middle stay and the slow tenth, for
+	// a caller whose FlowPeriod asks for it (ADR-0095).
 	Flow           = store.Flow
 	FlowState      = store.FlowState
 	FlowTransition = store.FlowTransition
 	FlowPeriod     = store.FlowPeriod
+	FlowSpread     = store.FlowSpread
 	// ActionFunc is a Go function that implements an action, given to Open
 	// in Options.Actions under the action's name (ADR-0027, ADR-0045);
 	// ActionCall is what it is called with, and DeliveredEvent the event

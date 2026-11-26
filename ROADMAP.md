@@ -504,6 +504,13 @@ to the copy by themselves when no index narrows them, and so does a
 page of a list the store does not find in a moment, and a list of
 totals by group.
 
+The flow of a class says how the stays of each state spread, for a
+caller who asks (ADR-0095, proposed on 2026-11-26): the middle stay
+and the slow tenth beside the average, in 80 to 87 ms among ten
+million moves. It is the first of the plan's mining views; the paths
+documents took and the documents made and finished in each period are
+not built.
+
 The rows of the tables are in the copy too (ADR-0094, proposed on
 2026-11-26): a total a live `LOOKUP` asks of a large table, and a
 page of a live list over it, are answered by the copy, in 2 to 10 ms

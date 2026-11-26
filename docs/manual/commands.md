@@ -535,6 +535,7 @@ Answers the flow of a class: the documents the caller may read in each state now
 | `class` | text | needed | the name of the class |
 | `since` | moment |  | the first moment of the period the moves and the stays are counted in; since the class began when left out |
 | `until` | moment |  | the moment the period ends before; now when left out |
+| `spread` | true or false |  | true to be told how the stays of each state spread as well: the middle stay and the slow tenth. It reads every stay of the period, so it is asked for only when it is wanted |
 
 And, of the members that mean the same everywhere: `reason`, `for`.
 
@@ -542,7 +543,7 @@ It answers:
 
 | Member | What it holds |
 |---|---|
-| `flow` | the states of the class, each with its documents now, since when the oldest is there, and how many stays ended in the period and how long they lasted; and its transitions, each with its moves in the period |
+| `flow` | the states of the class, each with its documents now, since when the oldest is there, and how many stays ended in the period and how long they lasted, with their middle and their slow tenth when spread asks for them; and its transitions, each with its moves in the period |
 
 ### sql
 

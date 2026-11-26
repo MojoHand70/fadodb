@@ -670,6 +670,7 @@ func runFlow(c *call) error {
 	if period.Until, e = c.moment("until"); e != nil {
 		return e
 	}
+	period.Spread = c.flag("spread")
 	flow, err := c.s.Flow(c.ctx, c.text("class"), period, c.opts...)
 	return c.answer("flow", flow, err)
 }

@@ -1,6 +1,6 @@
 # ADR-0063: The flow of a class in one call
 
-- Status: Accepted; amends ADR-0055 (one command, `flow`, joins the table)
+- Status: Accepted; amends ADR-0055 (one command, `flow`, joins the table); amended by ADR-0095 (Proposed: a flow says how the stays of each state spread, the middle stay and the slow tenth, for a caller who asks)
 - Date: 2026-11-16
 
 ## Context

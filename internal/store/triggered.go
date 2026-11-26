@@ -22,7 +22,7 @@ import (
 // leaves the context's state at the document's.
 func (s *Store) recomputeFor(c *class, row *docRow, kind commitKind, from, name string, evalCtx *formula.Context, secs int64, preview bool, errs *[]*Error) *Error {
 	for _, cv := range c.triggered {
-		state, leaving, ok := triggerState(cv.v, kind, from, name, row.state)
+		state, leaving, ok := triggerState(cv, kind, from, name, row.state)
 		if !ok {
 			continue
 		}
@@ -59,10 +59,18 @@ func (s *Store) recomputeFor(c *class, row *docRow, kind commitKind, from, name 
 // transition, enter, decides, and STATE() is the state left for an exit
 // and a transition and the state the document is in for an enter, as for
 // a rule (ADR-0043, item 3). leaving says it is the state left.
-func triggerState(v *model.Variable, kind commitKind, from, name, state string) (st string, leaving, ok bool) {
+//
+// A variable that follows a table or a schedule is brought, as on an
+// enter, by a commit that brings its document into a state in which it
+// follows (ADR-0091, item 9): when the document is made, and when it
+// comes back from a state in which the value stood. So the value is
+// what its formula gives from the first moment of such a stay, and the
+// class need not list the entry beside the table.
+func triggerState(cv *cvar, kind commitKind, from, name, state string) (st string, leaving, ok bool) {
+	v := cv.v
 	switch kind {
 	case commitCreate:
-		if v.On("enter", state) {
+		if v.On("enter", state) || cv.followIn[state] {
 			return state, false, true
 		}
 	case commitTransition, commitHop:
@@ -72,7 +80,7 @@ func triggerState(v *model.Variable, kind commitKind, from, name, state string) 
 		if name != "" && v.On("transition", name) {
 			return from, true, true
 		}
-		if v.On("enter", state) {
+		if v.On("enter", state) || cv.followIn[state] {
 			return state, false, true
 		}
 	}

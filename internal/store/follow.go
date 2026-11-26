@@ -116,6 +116,10 @@ func (c *class) layFollows() {
 				}
 				f.states[st] = true
 			}
+			// The states are the variable's, whichever table or schedule
+			// it follows: a commit that brings a document into one of
+			// them brings the value (triggered.go).
+			cv.followIn = f.states
 			if c.follows == nil {
 				c.follows = map[string][]follower{}
 			}

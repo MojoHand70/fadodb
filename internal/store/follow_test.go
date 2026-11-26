@@ -791,3 +791,114 @@ func TestFollow_TheWorkerLooksAtTheRestBetweenTwoThousands(t *testing.T) {
 		t.Errorf("the place of a follow that is done is kept: %v", s.followRuns)
 	}
 }
+
+// A value that follows its table is brought when its document comes
+// into a state in which it follows (ADR-0091, item 9): when the document
+// is made, and when it comes back from a state in which the value
+// stood. The class lists the table alone.
+func TestFollow_ItIsBroughtOnComingIntoAStateWhereItFollows(t *testing.T) {
+	back := strings.NewReplacer(
+		`"on": ["enter:entered", "table:Rates"]`, `"on": ["table:Rates"]`,
+		`["entered", "checked", "booked"]`, `["entered", "checked", "fast", "booked"]`,
+		`{"name": "book",  "from": "checked", "to": "booked"}`, `{"name": "book",  "from": ["checked", "fast"], "to": "booked"},
+   {"name": "return", "from": "checked", "to": "entered"},
+   {"name": "skip", "from": "entered", "to": "fast"}`,
+		`"check": "INGROUP(\"ACCOUNTING\")",`, `"check": "INGROUP(\"ACCOUNTING\")", "return": "INGROUP(\"ACCOUNTING\")", "skip": "INGROUP(\"ACCOUNTING\")",`,
+	).Replace(followInvoice)
+	s, ctx := openFollow(t, back)
+	rate := func(code, value string) {
+		t.Helper()
+		if _, err := s.ImportRows(ctx, "Rates", []Values{{"code": code, "rate": value}}, As(followTess)); err != nil {
+			t.Fatal(err)
+		}
+		drained(t, s, ctx)
+	}
+	move := func(id, name string) *Document {
+		t.Helper()
+		doc, err := s.Transition(ctx, "Invoice", id, name, nil, As(followAnna))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return doc
+	}
+	// A new invoice has its rate from the first moment, and says when it
+	// was brought.
+	doc, err := s.Create(ctx, "Invoice", Values{"number": "FV-17", "amount": "100.00", "currency": "EUR"}, As(followOla))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if doc.Values["rate"] != "4.2500" || doc.Values["in_pln"] != "425.00" || doc.Computed["rate"].Version != 1 {
+		t.Fatalf("the new invoice: %v, %+v", doc.Values, doc.Computed)
+	}
+	// Checked, it stands, whatever the table does.
+	doc = move(doc.ID, "check")
+	rate("EUR", "4.3100")
+	if got, _ := s.Get(ctx, "Invoice", doc.ID, As(followAnna)); got.Values["rate"] != "4.2500" || got.Version != doc.Version {
+		t.Fatalf("the checked invoice after the table changed: %v, version %d", got.Values, got.Version)
+	}
+	// Returned, it has the rate of the table at once, in the commit of
+	// the return, and follows again.
+	doc = move(doc.ID, "return")
+	if doc.State != "entered" || doc.Values["rate"] != "4.3100" || doc.Values["in_pln"] != "431.00" || doc.Computed["rate"].Version != doc.Version {
+		t.Fatalf("the returned invoice: in %s, %v, %+v", doc.State, doc.Values, doc.Computed)
+	}
+	rate("EUR", "4.4000")
+	if got, _ := s.Get(ctx, "Invoice", doc.ID, As(followAnna)); got.Values["rate"] != "4.4000" {
+		t.Errorf("the returned invoice after the table changed again: %v", got.Values)
+	}
+	// Checked again, it stands again, with the rate it was checked with.
+	doc = move(doc.ID, "check")
+	rate("EUR", "4.5000")
+	if got, _ := s.Get(ctx, "Invoice", doc.ID, As(followAnna)); got.Values["rate"] != "4.4000" || got.Version != doc.Version {
+		t.Errorf("the invoice checked again: %v, version %d", got.Values, got.Version)
+	}
+	// A way round the state that makes the value stand: the class closes
+	// the rate in checked alone, so on the other path it follows on.
+	round, err := s.Create(ctx, "Invoice", Values{"number": "FV-18", "amount": "100.00", "currency": "EUR"}, As(followOla))
+	if err != nil {
+		t.Fatal(err)
+	}
+	round = move(round.ID, "skip")
+	rate("EUR", "4.6000")
+	if got, _ := s.Get(ctx, "Invoice", round.ID, As(followAnna)); got.State != "fast" || got.Values["rate"] != "4.6000" {
+		t.Errorf("the invoice that went round the check: in %s, %v", got.State, got.Values)
+	}
+	s.Close()
+
+	// The class that names where the value follows, and closes it
+	// everywhere else: on every path out of entered it stands.
+	only := strings.Replace(back, `"rights": {
+   "entered": {"rate": {"write": ["ACCOUNTING"]}},
+   "checked": {"rate": {"write": "FALSE"}}
+ }`, `"rights": {
+   "*":       {"rate": {"write": "FALSE"}},
+   "entered": {"rate": {"write": ["ACCOUNTING"]}}
+ }`, 1)
+	if only == back {
+		t.Fatal("the rights of the class were not replaced")
+	}
+	s, ctx = openFollow(t, only)
+	for _, path := range []string{"check", "skip"} {
+		doc, err := s.Create(ctx, "Invoice", Values{"number": "FV-" + path, "amount": "100.00", "currency": "EUR"}, As(followOla))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if doc.Values["rate"] != "4.2500" {
+			t.Fatalf("a new invoice of the class that names where the rate follows: %v", doc.Values)
+		}
+		if doc, err = s.Transition(ctx, "Invoice", doc.ID, path, nil, As(followAnna)); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := s.ImportRows(ctx, "Rates", []Values{{"code": "EUR", "rate": "4.3100"}}, As(followTess)); err != nil {
+			t.Fatal(err)
+		}
+		drained(t, s, ctx)
+		if got, _ := s.Get(ctx, "Invoice", doc.ID, As(followAnna)); got.Values["rate"] != "4.2500" || got.Version != doc.Version {
+			t.Errorf("the invoice that left entered by %s: in %s, %v, version %d", path, got.State, got.Values, got.Version)
+		}
+		if _, err := s.ImportRows(ctx, "Rates", []Values{{"code": "EUR", "rate": "4.2500"}}, As(followTess)); err != nil {
+			t.Fatal(err)
+		}
+		drained(t, s, ctx)
+	}
+}

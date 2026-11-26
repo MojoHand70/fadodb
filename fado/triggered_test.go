@@ -1,6 +1,7 @@
 package fado_test
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -370,7 +371,12 @@ func TestTriggeredVariables(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if gauge, err = follows.Transition(ctx, "Gauge", gauge.ID, "light", nil, ola); err != nil || gauge.Values["at_table"] != nil {
+	// It follows from the first moment of a stay: made in off, it kept
+	// off, and coming into on it keeps on.
+	if gauge.Values["at_table"] != "off" {
+		t.Fatalf("the gauge as it was made: %v", gauge)
+	}
+	if gauge, err = follows.Transition(ctx, "Gauge", gauge.ID, "light", nil, ola); err != nil || gauge.Values["at_table"] != "on" {
 		t.Fatalf("the gauge before the table changed: %v, %v", gauge, err)
 	}
 	estimates := map[string]*fado.Document{}
@@ -445,6 +451,112 @@ func TestTriggeredVariables(t *testing.T) {
 	if _, err := follows.Transition(ctx, "Estimate", "E-1", "send", nil, ola, fado.Saw(1)); codeOf(err) != "stale_version" {
 		t.Errorf("a command that saw the version before the table brought the rate is answered %s", codeOf(err))
 	}
+	// An estimate that goes out and comes back, in a database of its
+	// own, with the euro at 4.3100: each step of the chapter, in its
+	// order.
+	back := notionDB(t, fado.Options{Now: func() time.Time { return clock }})
+	if _, err := back.DefineTable(ctx, table, setup); err != nil {
+		t.Fatal(err)
+	}
+	euro := func(db *fado.DB, rate string) (*fado.Document, error) {
+		if _, err := db.ImportRows(ctx, "Rates", []fado.Values{{"code": "EUR", "rate": rate}}, tess); err != nil {
+			return nil, err
+		}
+		if _, err := db.Drain(ctx, setup); err != nil {
+			return nil, err
+		}
+		return nil, nil
+	}
+	if _, err := euro(back, "4.3100"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := back.DefineClass(ctx, estimate, setup); err != nil {
+		t.Fatal(err)
+	}
+	comesBack := []func() (*fado.Document, error){
+		func() (*fado.Document, error) {
+			return back.Create(ctx, "Estimate", fado.Values{"number": "E-5", "amount": "100.00", "currency": "EUR"}, ola, fado.WithID("E-5"))
+		},
+		func() (*fado.Document, error) { return back.Transition(ctx, "Estimate", "E-5", "send", nil, ola) },
+		func() (*fado.Document, error) { return euro(back, "4.3500") },
+		func() (*fado.Document, error) { return back.Transition(ctx, "Estimate", "E-5", "revise", nil, ola) },
+		func() (*fado.Document, error) { return euro(back, "4.4000") },
+		func() (*fado.Document, error) { return back.Transition(ctx, "Estimate", "E-5", "send", nil, ola) },
+	}
+	told := rows(marked(t, page, "an estimate that comes back"))
+	if len(told) != len(comesBack) {
+		t.Fatalf("the chapter tells %d steps of the estimate that comes back, and the test plays %d", len(told), len(comesBack))
+	}
+	for i, row := range told {
+		if _, err := comesBack[i](); err != nil {
+			t.Fatalf("step %s of the estimate that comes back: %v", row[0], err)
+		}
+		doc, err := back.Get(ctx, "Estimate", "E-5", ola)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if row[0] != fmt.Sprint(i+1) || doc.State != row[2] || shown(doc.Values["rate"]) != row[3] || moment(doc, "rate") != row[4] {
+			t.Errorf("after step %s the estimate is in %s with the rate %s, brought %s; the chapter says %s, %s and %s",
+				row[0], doc.State, shown(doc.Values["rate"]), moment(doc, "rate"), row[2], row[3], row[4])
+		}
+	}
+	// Where the rate follows, under each way of writing the rights: the
+	// class of the chapter with the rights of the row, an estimate in
+	// each state, and a change of the table.
+	var whole map[string]json.RawMessage
+	if err := json.Unmarshal(estimate, &whole); err != nil {
+		t.Fatal(err)
+	}
+	places := rows(marked(t, page, "where the rate follows"))
+	if len(places) != 2 {
+		t.Fatalf("the chapter writes the rights in %d ways, and the test plays 2", len(places))
+	}
+	for i, row := range places {
+		written := json.RawMessage("{" + row[0] + "}")
+		if i == 0 {
+			var own, first bytes.Buffer
+			if json.Compact(&own, whole["rights"]) != nil || json.Compact(&first, written) != nil || own.String() != first.String() {
+				t.Errorf("the first way of writing the rights is the class's own, %s, and the chapter writes %s", whole["rights"], row[0])
+			}
+		}
+		whole["rights"] = written
+		class, err := json.Marshal(whole)
+		if err != nil {
+			t.Fatal(err)
+		}
+		each := notionDB(t, fado.Options{Now: func() time.Time { return clock }})
+		if _, err := each.DefineTable(ctx, table, setup); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := euro(each, "4.2500"); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := each.DefineClass(ctx, class, setup); err != nil {
+			t.Fatalf("the class Estimate with the rights %s: %v", row[0], err)
+		}
+		for _, to := range []string{"", "discuss", "send"} {
+			doc, err := each.Create(ctx, "Estimate", fado.Values{"number": "E-" + to, "amount": "100.00", "currency": "EUR"}, ola, fado.WithID("E-"+to))
+			if err == nil && to != "" {
+				doc, err = each.Transition(ctx, "Estimate", doc.ID, to, nil, ola)
+			}
+			if err != nil || doc.Values["rate"] != "4.2500" {
+				t.Fatalf("an estimate after %q, with the rights %s: %v, %v", to, row[0], doc, err)
+			}
+		}
+		if _, err := euro(each, "4.3100"); err != nil {
+			t.Fatal(err)
+		}
+		for col, to := range []string{"", "discuss", "send"} {
+			doc, err := each.Get(ctx, "Estimate", "E-"+to, ola)
+			if err != nil {
+				t.Fatal(err)
+			}
+			does := map[any]string{"4.3100": "follows", "4.2500": "stands"}[doc.Values["rate"]]
+			if does != row[col+1] {
+				t.Errorf("with the rights %s the rate in %s is %v, so it %s; the chapter says it %s", row[0], doc.State, doc.Values["rate"], does, row[col+1])
+			}
+		}
+	}
 	// A removed row is a change of the table too: the drafts in euro
 	// have no rate, and the estimate that was sent keeps its own.
 	if _, err := follows.DeleteRows(ctx, "Rates", []fado.Values{{"code": "EUR"}}, tess); err != nil {
@@ -486,7 +598,10 @@ func TestTriggeredVariables(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if dial, err = nightly.Transition(ctx, "Dial", dial.ID, "light", nil, ola); err != nil || dial.Values["at_schedule"] != nil {
+	if dial.Values["at_schedule"] != "off" {
+		t.Fatalf("the dial as it was made: %v", dial)
+	}
+	if dial, err = nightly.Transition(ctx, "Dial", dial.ID, "light", nil, ola); err != nil || dial.Values["at_schedule"] != "on" {
 		t.Fatalf("the dial before its schedule: %v, %v", dial, err)
 	}
 	bills := map[string]*fado.Document{}

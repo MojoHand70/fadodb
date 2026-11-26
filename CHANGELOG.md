@@ -38,6 +38,9 @@ Phase 8 started on 2026-11-25.
   the rules of the class, and a `write` right of `FALSE` in a state
   makes the value stand there. The engine itself brings it: the event
   is of the kind `refresh`, named after the schedule, with no actor.
+  A commit that brings a document into a state where the variable
+  follows works it out too, so a new document has the value in its
+  first version.
   Each schedule of a class has a row of the outbox that waits for its
   next moment, so the queue shows when it runs next; a server that
   was down at the moment works the values out once when it starts.
@@ -56,7 +59,7 @@ Phase 8 started on 2026-11-25.
   seconds, where `fadodb` takes milliseconds.
 - A kept value that follows its table (ADR-0091, proposed). A
   triggered variable may list `table:<name>`, the name of a table its
-  own formula looks into: `"on": ["enter:draft", "table:Rates"]`.
+  own formula looks into: `"on": ["table:Rates"]`.
   When the rows of that table change, the variable is worked out
   again in every document of the class that is not in a final state,
   and kept where it comes out different; a document whose value
@@ -64,16 +67,20 @@ Phase 8 started on 2026-11-25.
   right is asked of whoever changes the table, by the table's own
   `write` rule, and what follows is the class's. A class stops the
   value in a state with a `write` right of `FALSE` on the variable
-  there. Each document brought gets a commit of its own, with an
+  there. A commit that brings a document into a state where the
+  variable follows brings the value too: a new document has it in its
+  first version, a document that comes back from a state where the
+  value stood has the table's value in the commit that brings it
+  back, and on a path round such a state the value follows on. Each
+  document brought gets a commit of its own, with an
   event of the kind `refresh` named `table:<Name>` by whoever changed
   the table; the rules of the class fire, and a command that saw the
   version before is refused with `stale_version`. The change queues
   the work as a row of the outbox whose action is `follow`, and the
   worker brings the documents a thousand in a transaction: 100,000
   invoices in under five seconds, with a commit of somebody else
-  waiting 45 ms meanwhile. Not built: `schedule:<when>`, a value
-  that follows the documents of a class, and a kept list that
-  follows a table.
+  waiting 45 ms meanwhile. Not built: a value that follows the
+  documents of a class, and a kept list that follows a table.
 - One line for each group, with its totals: a column of a `QUERY` may
   be a total (ADR-0090, proposed). In a live variable,
   `QUERY(Invoice, {customer, COUNT(id), SUM(net)})` answers one line

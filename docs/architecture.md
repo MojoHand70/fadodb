@@ -422,7 +422,10 @@ with the kept value, and brings them a thousand in a transaction,
 each with a version and an event of its own, never one query per
 document. Nobody's right is asked for it: the right is asked of
 whoever changes the table, and a class stops the value in a state
-with a `write` right of `FALSE`.
+with a `write` right of `FALSE`. A commit that brings a document into
+a state where the variable follows works it out too, as `enter:` of
+that state would, so a document is never in such a state with a value
+the table no longer has.
 
 A triggered variable that lists `schedule:<when>` follows the clock
 (ADR-0093): the words say when, `daily at 03:00`, `monthly on 3rd

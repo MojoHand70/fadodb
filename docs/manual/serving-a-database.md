@@ -137,6 +137,7 @@ fadodb serve acme.fado --settings settings.json --secrets-dir /run/secrets/fadod
 | `signon.NAME.company_emails` | the provider's e-mails are the company's own | false |
 | `analytics.memory` | the most memory the analytical engine may take, as text such as `"4GB"` or `"512MB"`; only [a server built with the engine](#a-server-with-the-analytical-engine) takes it | 2GB |
 | `analytics.threads` | how many threads the analytical engine uses | one for each core |
+| `timezone` | the time zone of the database, by which the schedules of its classes go, as `"Europe/Warsaw"`; the database keeps it ([Following the clock](triggered-variables.md#following-the-clock)) | the database keeps the one it has, UTC when it was never given one |
 
 - **The settings are the operator's.** Where the server listens, what
   it may call and how much it takes on are decided by whoever runs the

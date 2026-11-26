@@ -287,9 +287,11 @@ const (
 // Trigger is one trigger of a triggered variable: refresh, enter:<state>,
 // exit:<state>, transition:<name>, before:<name>, which brings the value
 // when somebody asks for the named transition, before its guard is asked
-// (ADR-0078, item 4), or table:<name>, which brings it when the rows of
-// a table its formula looks into change (ADR-0091). schedule:<spec> is
-// refused until the build that runs it.
+// (ADR-0078, item 4), table:<name>, which brings it when the rows of a
+// table its formula looks into change (ADR-0091), or schedule:<when>,
+// which brings it at the moments its words name (ADR-0093). The argument
+// of a table is the table's name as the table writes it, and of a
+// schedule its words in lower case.
 type Trigger struct {
 	Kind string
 	Arg  string
@@ -1489,12 +1491,23 @@ func checkTrigger(c *collector, path, text string, cls *Class, v *Variable) {
 		v.Triggers = append(v.Triggers, t)
 		return
 	case "schedule":
-		// Accepted by ADR-0015 and never fired; refused until the build
-		// that runs it (ADR-0091), as a binding a build lacks is.
-		c.hint(CodeNotSupported, path, "this build does not recompute a variable on schedule:", "use refresh, and send the command when the time comes; schedule: is the next step of the record that built table: (ADR-0091)")
+		// A kept value that follows the clock (ADR-0093): the words say
+		// when, by the clock of the database's own time zone, and the
+		// engine works the variable out again at each of those moments.
+		if v.queryCall != nil {
+			c.hint(CodeNotSupported, path, "this build does not bring a list that is kept again on a schedule", "list refresh, and send the command; a value that is no list follows a schedule")
+			return
+		}
+		sch, err := ParseSchedule(arg)
+		if err != nil {
+			c.hint(CodeBadTrigger, path, "the schedule "+quote(arg)+": "+err.Error(), scheduleHint)
+			return
+		}
+		t.Arg = sch.Text
+		v.Triggers = append(v.Triggers, t)
 		return
 	default:
-		c.hint(CodeBadTrigger, path, "unknown trigger "+quote(text), "one of refresh, enter:<state>, exit:<state>, transition:<name>, before:<name>, table:<name>")
+		c.hint(CodeBadTrigger, path, "unknown trigger "+quote(text), "one of refresh, enter:<state>, exit:<state>, transition:<name>, before:<name>, table:<name>, schedule:<when>")
 		return
 	}
 	// A frozen document computes nothing (ADR-0043, item 8): a trigger

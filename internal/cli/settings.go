@@ -65,7 +65,8 @@ import (
 //	  "analytics": {
 //	    "memory": "2GB",
 //	    "threads": 8
-//	  }
+//	  },
+//	  "timezone": "Europe/Warsaw"
 //	}
 type settings struct {
 	// hosts and connections are the lists of package fado/outbound: the
@@ -108,6 +109,11 @@ type settings struct {
 	analytics     bool
 	engineMemory  string
 	engineThreads int
+	// timezone is the time zone of the database, by which the schedules
+	// of its classes go (ADR-0093), as the database of time zones names
+	// it; empty when the file does not say, and the database then keeps
+	// the one it has.
+	timezone string
 }
 
 // defaultEngineMemory is the most memory the analytical engine of a
@@ -120,7 +126,7 @@ var engineMemoryForm = regexp.MustCompile(`^[1-9][0-9]{0,5}(MB|GB)$`)
 
 // The names a settings file may hold, at each place.
 var (
-	settingsMembers = []string{"outbound", "limits", "inbound", "url", "proxies", "sessions", "grants", "signon", "analytics"}
+	settingsMembers = []string{"outbound", "limits", "inbound", "url", "proxies", "sessions", "grants", "signon", "analytics", "timezone"}
 	engineMembers   = []string{"memory", "threads"}
 	sessionMembers  = []string{"idle_hours", "days"}
 	grantMembers    = []string{"idle_days"}
@@ -282,6 +288,17 @@ func parseSettings(data []byte) (*settings, error) {
 	if raw, given := top["signon"]; given {
 		if s.signon, err = signOns(raw, s.connections); err != nil {
 			return nil, err
+		}
+	}
+	if raw, given := top["timezone"]; given {
+		// A zone this machine knows, by its name: the database is given
+		// it when it is opened. "Local" is the zone of whatever machine
+		// the server stands on, and no zone of a database.
+		if err := json.Unmarshal(raw, &s.timezone); err != nil || s.timezone == "" || s.timezone == "Local" {
+			return nil, fmt.Errorf("timezone is the time zone of the database, as text such as \"Europe/Warsaw\", and here it is %s", shown(raw))
+		}
+		if _, err := time.LoadLocation(s.timezone); err != nil {
+			return nil, fmt.Errorf("timezone is the time zone of the database, as the database of time zones names it, such as \"Europe/Warsaw\", and %s is not known", shown(raw))
 		}
 	}
 	if raw, given := top["analytics"]; given {

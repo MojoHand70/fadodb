@@ -14,6 +14,10 @@ import (
 	"testing"
 	"time"
 
+	// The time zones, for a machine that has no database of them: the
+	// chapter's database is in Warsaw.
+	_ "time/tzdata"
+
 	"github.com/MojoHand70/fadodb/fado"
 )
 
@@ -45,7 +49,7 @@ func TestTriggeredVariables(t *testing.T) {
 		t.Fatal(err)
 	}
 	ctx := context.Background()
-	var table, invoice, offer, estimate []byte
+	var table, invoice, offer, estimate, bill []byte
 	for _, m := range regexp.MustCompile("(?s)```json\r?\n(.*?)\r?\n```").FindAllSubmatch(page, -1) {
 		switch kindOf(m[1]) {
 		case "table":
@@ -58,11 +62,13 @@ func TestTriggeredVariables(t *testing.T) {
 				offer = m[1]
 			case "Estimate":
 				estimate = m[1]
+			case "Bill":
+				bill = m[1]
 			}
 		}
 	}
-	if table == nil || invoice == nil || offer == nil || estimate == nil {
-		t.Fatal("the chapter shows the table Rates and the classes Invoice, Offer and Estimate")
+	if table == nil || invoice == nil || offer == nil || estimate == nil || bill == nil {
+		t.Fatal("the chapter shows the table Rates and the classes Invoice, Offer, Estimate and Bill")
 	}
 
 	start := time.Date(2026, 12, 1, 9, 0, 0, 0, time.UTC)
@@ -454,6 +460,132 @@ func TestTriggeredVariables(t *testing.T) {
 		t.Errorf("E-2 after the row of its currency was removed: %v, %v", doc, err)
 	}
 
+	// Following the clock: Acme's bills, in a database in the time zone
+	// of Warsaw, on Thursday 26 November 2026 at eleven in the morning
+	// there. dial is a class of the test's own, which keeps the state it
+	// was in when its schedule brought it.
+	warsaw, err := time.LoadLocation("Europe/Warsaw")
+	if err != nil {
+		t.Fatal(err)
+	}
+	thursday := time.Date(2026, 11, 26, 11, 0, 0, 0, warsaw)
+	night := thursday
+	nightly := notionDB(t, fado.Options{Now: func() time.Time { return night }, TimeZone: "Europe/Warsaw"})
+	if got := nightly.TimeZone(); got != "Europe/Warsaw" {
+		t.Errorf("the time zone of the database: %s", got)
+	}
+	if _, err := nightly.DefineClass(ctx, bill, setup); err != nil {
+		t.Fatalf("the class Bill of the chapter: %v", err)
+	}
+	if _, err := nightly.DefineClass(ctx, []byte(scratch("Dial",
+		`"at_schedule":{"formula":"STATE()","mode":"triggered","on":["schedule:hourly"]}`,
+		`"states":{"initial":"off","list":["off","on"]},"transitions":[{"name":"light","from":"off","to":"on"}]`)), setup); err != nil {
+		t.Fatal(err)
+	}
+	dial, err := nightly.Create(ctx, "Dial", nil, ola)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if dial, err = nightly.Transition(ctx, "Dial", dial.ID, "light", nil, ola); err != nil || dial.Values["at_schedule"] != nil {
+		t.Fatalf("the dial before its schedule: %v, %v", dial, err)
+	}
+	bills := map[string]*fado.Document{}
+	for _, b := range []struct{ id, due, words, state string }{
+		{"B-1", "2026-11-20", "20 November", "sent"}, {"B-2", "2026-12-10", "10 December", "sent"},
+		{"B-3", "2026-11-20", "20 November", "disputed"}, {"B-4", "2026-11-20", "20 November", "paid"},
+	} {
+		doc, err := nightly.Create(ctx, "Bill", fado.Values{"number": b.id, "due": b.due}, ola, fado.WithID(b.id))
+		if err == nil && b.state != "sent" {
+			doc, err = nightly.Transition(ctx, "Bill", b.id, map[string]string{"disputed": "dispute", "paid": "pay"}[b.state], nil, anna)
+		}
+		if err != nil || doc.State != b.state {
+			t.Fatalf("the bill %s in %s: %v, %v", b.id, b.state, doc, err)
+		}
+		bills[b.id+", due "+b.words] = doc
+	}
+	lateBy := func(doc *fado.Document) string {
+		return fmt.Sprintf("version %d, %s days late", doc.Version, shown(doc.Values["days_late"]))
+	}
+	// Before three in the night nothing runs; at three it does.
+	night = time.Date(2026, 11, 27, 2, 59, 0, 0, warsaw)
+	if _, err := nightly.Drain(ctx, setup); err != nil {
+		t.Fatal(err)
+	}
+	if doc, err := nightly.Get(ctx, "Bill", "B-1", anna); err != nil || doc.Version != 1 {
+		t.Errorf("B-1 a minute before its schedule: %v, %v", doc, err)
+	}
+	night = time.Date(2026, 11, 27, 3, 0, 0, 0, warsaw)
+	if _, err := nightly.Drain(ctx, setup); err != nil {
+		t.Fatal(err)
+	}
+	checks(t, page, "what follows the clock", func() map[string]func(row []string) {
+		by := map[string]func(row []string){}
+		for label, before := range bills {
+			after, err := nightly.Get(ctx, "Bill", before.ID, anna)
+			if err != nil {
+				t.Fatal(err)
+			}
+			by[label] = func(row []string) {
+				want := row[3]
+				if want == "the same" {
+					want = row[2]
+				}
+				if row[1] != before.State || lateBy(before) != row[2] || lateBy(after) != want {
+					t.Errorf("%s in %s held %q and holds %q; the chapter says %s, %q and %q", row[0], before.State, lateBy(before), lateBy(after), row[1], row[2], row[3])
+				}
+			}
+		}
+		return by
+	}())
+	// The engine itself brought it: the event names the schedule, and
+	// nobody.
+	events, err = nightly.Events(ctx, "Bill", "B-1", anna)
+	if err != nil || len(events) != 2 {
+		t.Fatalf("the events of B-1: %v, %v", events, err)
+	}
+	if e := events[1]; e.Kind != "refresh" || e.Name != "schedule:daily at 03:00" || e.ActorID != "" || e.AfterVersion != 2 {
+		t.Errorf("the event of the version the schedule brought: %+v", e)
+	}
+	if doc, err := nightly.Get(ctx, "Bill", "B-1", anna); err != nil || doc.Values["remind"] != false {
+		t.Errorf("B-1 after the night: %v, %v", doc, err)
+	}
+	// The row of the next night waits in the queue.
+	queued, err = nightly.Outbox(ctx, fado.OutboxFilter{Class: "Bill", Status: "pending"}, setup)
+	if err != nil || len(queued) != 1 || queued[0].Action != "follow" || queued[0].Rule != "schedule:daily at 03:00" ||
+		queued[0].DueAt != time.Date(2026, 11, 28, 3, 0, 0, 0, warsaw).Unix() || queued[0].PrincipalID != "" {
+		t.Errorf("the row that waits for the next night: %+v, %v", queued, err)
+	}
+	dialled, err := nightly.Get(ctx, "Dial", dial.ID, ola)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The words of a schedule, each on a class of the test's own: the
+	// next three moments, from that Thursday at eleven on.
+	for i, row := range rows(marked(t, page, "the words of a schedule")) {
+		at := thursday
+		each := notionDB(t, fado.Options{Now: func() time.Time { return at }, TimeZone: "Europe/Warsaw"})
+		name := fmt.Sprintf("Word%d", i)
+		if _, err := each.DefineClass(ctx, []byte(scratch(name, `"a":{"type":"int"},"b":{"formula":"a + 1","mode":"triggered","on":["schedule:`+row[0]+`"]}`, oneState)), setup); err != nil {
+			t.Errorf("a class on the schedule %q: %v", row[0], err)
+			continue
+		}
+		var next []string
+		for n := 0; n < 3; n++ {
+			waits, err := each.Outbox(ctx, fado.OutboxFilter{Class: name, Status: "pending"}, setup)
+			if err != nil || len(waits) != 1 {
+				t.Fatalf("the row that waits for %q: %v, %v", row[0], waits, err)
+			}
+			at = time.Unix(waits[0].DueAt, 0)
+			next = append(next, at.In(warsaw).Format("2 Jan 15:04"))
+			if _, err := each.Drain(ctx, setup); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if got := strings.Join(next, ", "); got != row[2] {
+			t.Errorf("the schedule %q fires next at %s, and the chapter says %s", row[0], got, row[2])
+		}
+	}
+
 	// The triggers, and what STATE() is in each.
 	define("Lamp", `"at_first":{"formula":"STATE()","mode":"triggered","on":["enter:off"]},
 		"at_enter":{"formula":"STATE()","mode":"triggered","on":["enter:on"]},
@@ -504,6 +636,11 @@ func TestTriggeredVariables(t *testing.T) {
 		"table:<name>": func(row []string) {
 			if lit2.Values["at_table"] != state[row[2]] {
 				t.Errorf("on %s STATE() is %v, and the chapter says %s", row[0], lit2.Values["at_table"], row[2])
+			}
+		},
+		"schedule:<when>": func(row []string) {
+			if dialled.Values["at_schedule"] != state[row[2]] {
+				t.Errorf("on %s STATE() is %v, and the chapter says %s", row[0], dialled.Values["at_schedule"], row[2])
 			}
 		},
 	})
@@ -750,17 +887,20 @@ func TestTriggeredVariables(t *testing.T) {
 			one(`"a":{"type":"int"},"b":{"formula":"a + 1","mode":"triggered","on":[]}`),
 		},
 		"the mode is neither auto nor triggered": {one(`"a":{"type":"int"},"b":{"formula":"a + 1","mode":"sometimes","on":["refresh"]}`)},
-		"a trigger is none of the six, or is written wrongly, as enter with no state": {
+		"a trigger is none of the seven, or is written wrongly, as enter with no state": {
 			on("values_change"), on("create"), on("enter"), on("exit"), on("transition"), on("before"), on("refresh:now"), on("table"),
 		},
 		"a trigger names a state the class does not have":      {on("enter:nowhere"), on("exit:nowhere")},
 		"a trigger names a transition the class does not have": {on("transition:fly"), on("before:fly")},
-		"a trigger is schedule:<when>":                         {on("schedule:daily")},
+		"schedule:<when> is written in words the engine does not read": {
+			on("schedule:"), on("schedule:nightly"), on("schedule:daily at 25:00"), on("schedule:every 7h"), on("schedule:every 1m"), on("schedule:monthly on 31"),
+		},
 		"table:<name> names a table the variable's formula does not look into": {
 			on("table:Rates"),
 			one(`"c":{"type":"text"},"b":{"formula":"LOOKUP(Rates, rate, code = THIS.c)","mode":"triggered","on":["table:Limits"]}`),
 		},
-		"table:<name> names a class, or stands on a list that is kept": {
+		"table:<name> names a class, or it or schedule:<when> stands on a list that is kept": {
+			one(`"b":{"type":"rows","schema":{"code":"text","rate":"decimal(4)"},"formula":"QUERY(Rates, {code, rate})","mode":"triggered","on":["schedule:daily"]}`),
 			one(`"a":{"type":"int"},"b":{"type":"number","formula":"LOOKUP(Invoice, COUNT(id), currency = \"EUR\")","mode":"triggered","on":["table:Invoice"]}`),
 			one(`"b":{"type":"rows","schema":{"code":"text","rate":"decimal(4)"},"formula":"QUERY(Rates, {code, rate})","mode":"triggered","on":["table:Rates"]}`),
 		},

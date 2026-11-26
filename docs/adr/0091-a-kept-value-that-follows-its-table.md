@@ -218,6 +218,9 @@ Settled while building, on 2026-11-26.
     between two thousands is kept in memory: a process that stops
     loses it, and runs the row from the start of the class, which
     finds what is left.
+    Replaced by ADR-0093, decision 9: a follow waits behind no other
+    row, so that a schedule which waits a month holds back no table;
+    two follows of one class may take turns.
 11. **The business date of such a commit** is the day the worker
     makes it.
 12. **Refused when a class is defined**: `table:` naming a table the
@@ -261,8 +264,10 @@ Settled while building, on 2026-11-26.
 
 ## What this record leaves out
 
-- **`schedule:<when>`**, the same machine with a clock in front.
-  Decided for it, and not built: the engine itself brings the value
+- **`schedule:<when>`**, the same machine with a clock in front. It
+  is built since, by ADR-0093, with the database's own time zone for
+  the question that stood here. As this record left it: the engine
+  itself brings the value
   (question 2), and a schedule is written in words (question 3).
   Proposed for the words, and open: `schedule:hourly`,
   `schedule:daily at 03:00`, `schedule:weekly on friday at 18:00`,

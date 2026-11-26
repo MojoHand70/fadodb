@@ -25,6 +25,11 @@ import (
 	"strings"
 
 	"github.com/MojoHand70/fadodb/fado"
+
+	// The time zones, so that a database has its zone (ADR-0093) on a
+	// machine that has no database of them, as the image for containers
+	// has none.
+	_ "time/tzdata"
 )
 
 // What the program says of itself: its release, set by the release

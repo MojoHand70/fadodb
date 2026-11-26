@@ -113,7 +113,8 @@ list the hosts they may call:
     "analytics": {
       "memory": "2GB",
       "threads": 8
-    }
+    },
+    "timezone": "Europe/Warsaw"
   }
 
 Told nothing, the server takes no message from outside. With inbound
@@ -131,6 +132,11 @@ the questions that read everything: the most memory the engine may
 take, 2GB when it is not given, and its threads, one for each core.
 The program without the engine, fadodb-core, refuses settings that
 have it.
+
+The member timezone is the time zone of the database, by which the
+schedules of its classes go: "daily at 03:00" is three in the night
+there. The database keeps it, so it is given once; a database that was
+never given one is in UTC.
 
 People sign in on the server's own pages, at /auth/signin, and their
 browser keeps a session (8 hours unused, 30 days at most; sessions
@@ -248,7 +254,7 @@ func runServe(ctx context.Context, args []string, stdout, stderr io.Writer, read
 	// The database is opened with no Go function: the server runs none
 	// (item 6). It sends requests only when the settings list a host,
 	// and only to the hosts they list (items 2 and 4).
-	opened := fado.Options{Users: true, Alone: name, Inbound: told.inbound}
+	opened := fado.Options{Users: true, Alone: name, Inbound: told.inbound, TimeZone: told.timezone}
 	kept := &secrets{dir: *secretsDir, env: os.LookupEnv}
 	if told.calls() {
 		if opened.Outbound, err = outbound.Allow(outbound.Options{Hosts: told.hosts, Connections: told.connections}); err != nil {

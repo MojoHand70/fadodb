@@ -490,14 +490,14 @@ func TestFollow_OneOfTwoVariablesStands(t *testing.T) {
 func TestFollow_AFormulaTheStoreCannotCompare(t *testing.T) {
 	s, _ := openFollow(t, followInvoice)
 	c, _ := s.class("Invoice")
-	if text, _ := s.followSQL(c, "Rates"); !strings.Contains(text, "IS NOT") || !strings.Contains(text, `"state" IN ('entered')`) {
+	if text, _ := s.followSQL(c, "table:Rates"); !strings.Contains(text, "IS NOT") || !strings.Contains(text, `"state" IN ('entered')`) {
 		t.Fatalf("the statement that finds the invoices to bring: %s", text)
 	}
 	s.Close()
 
 	s, ctx := openFollow(t, strings.Replace(followInvoice, `code = THIS.currency`, `code = THIS.currency & LEFT(CREATEDBY(), 0)`, 1))
 	c, _ = s.class("Invoice")
-	if text, _ := s.followSQL(c, "Rates"); strings.Contains(text, "IS NOT") || !strings.Contains(text, `"state" IN ('entered')`) {
+	if text, _ := s.followSQL(c, "table:Rates"); strings.Contains(text, "IS NOT") || !strings.Contains(text, `"state" IN ('entered')`) {
 		t.Fatalf("the statement for a formula that reads the life: %s", text)
 	}
 	euro := invoiced(t, s, ctx, "FV-1", "100.00", "EUR", "entered")

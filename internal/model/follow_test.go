@@ -80,7 +80,9 @@ func TestDefine_AVariableFollowsATable(t *testing.T) {
 			followInvoice(`{"formula": "LOOKUP(Order, SUM(total), TRUE)", "mode": "triggered", "on": ["table:Order"]}`, ""), CodeNotSupported, "refresh"},
 		{"a list that is kept",
 			followInvoice(`{"type": "rows", "schema": {"code": "text", "rate": "decimal(4)"}, "formula": "QUERY(Rates, {code, rate})", "mode": "triggered", "on": ["table:Rates"]}`, ""), CodeNotSupported, "refresh"},
-		{"a schedule", followInvoice(lookup+`["schedule:daily"]}`, ""), CodeNotSupported, "refresh"},
+		{"a schedule on a list that is kept",
+			followInvoice(`{"type": "rows", "schema": {"code": "text", "rate": "decimal(4)"}, "formula": "QUERY(Rates, {code, rate})", "mode": "triggered", "on": ["schedule:daily"]}`, ""), CodeNotSupported, "refresh"},
+		{"a schedule in words the engine does not read", followInvoice(lookup+`["schedule:every night"]}`, ""), CodeBadTrigger, "daily at 03:00"},
 	} {
 		_, diags := DefineIn([]byte(tc.def), env)
 		found := false
@@ -92,5 +94,26 @@ func TestDefine_AVariableFollowsATable(t *testing.T) {
 		if !found {
 			t.Errorf("%s: want %s at /variables/rate/on/0 with %q in its hint, got: %v", tc.name, tc.code, tc.hint, diags)
 		}
+	}
+}
+
+// A schedule is kept in lower case with single spaces, beside the other
+// triggers of its variable (ADR-0093).
+func TestDefine_AVariableFollowsTheClock(t *testing.T) {
+	tbl, diags := DefineTable([]byte(followRatesTable))
+	if len(diags) > 0 {
+		t.Fatal(diags)
+	}
+	env := Env{Sources: formula.NewSourceSet(tbl.Source())}
+	cls, diags := DefineIn([]byte(followInvoice(
+		`{"type": "decimal", "scale": 4, "formula": "LOOKUP(Rates, rate, code = THIS.currency)", "mode": "triggered", "on": ["table:Rates", "schedule:Daily  at 03:00"]}`,
+		`, "age": {"type": "number", "formula": "DAYS(TODAY(), TODAY())", "mode": "triggered", "on": ["schedule:monthly on 3rd Monday"]}`)), env)
+	if len(diags) > 0 {
+		t.Fatalf("variables that follow the clock: %v", diags)
+	}
+	rate, _ := cls.Variable("rate")
+	age, _ := cls.Variable("age")
+	if !rate.On("schedule", "daily at 03:00") || !rate.On("table", "Rates") || !age.On("schedule", "monthly on 3rd monday") {
+		t.Errorf("the triggers: %+v and %+v", rate.Triggers, age.Triggers)
 	}
 }

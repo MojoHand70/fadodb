@@ -30,7 +30,7 @@ and five in summer.
    ```json
    "days_late": {"type": "number",
                  "formula": "MAX(DAYS(TODAY(), due), 0)",
-                 "mode": "triggered", "on": ["enter:sent", "schedule:daily at 03:00"]}
+                 "mode": "triggered", "on": ["schedule:daily at 03:00"]}
    ```
 
    | Written | Fires |
@@ -58,6 +58,14 @@ and five in summer.
    makes the value stand there; each document brought gets a commit
    of its own, with the rules of the class, and a command that saw
    the version before is refused with `stale_version`.
+
+   **A commit that brings a document into a state where the variable
+   follows works it out too**, as for a table (ADR-0091, item 9,
+   added the same day on the owner's yes): a new bill says how many
+   days it is late in its first version, and one that comes back
+   from a state where the number stood has the number of that day in
+   the commit that brings it back. The variable lists the schedule
+   alone.
 
 3. **The engine itself brings the value.** Nobody changed anything,
    so the commit has no actor: its event is of the kind `refresh`,
@@ -162,6 +170,8 @@ Settled while building, on 2026-11-26.
 - The time zone of a database: `Options.TimeZone`, `DB.TimeZone()`,
   the member `timezone` of the server's settings.
 - The rows of the schedules in the outbox, and their run.
+- The value worked out by a commit that brings its document into a
+  state where it follows.
 
 The stored shape of a database does not change: the zone is a line of
 its metadata, and the engine schema stays 15.
@@ -197,5 +207,9 @@ its metadata, and the engine schema stays 15.
 A schedule runs the worker of ADR-0091, and costs what a table that
 brings a value costs: 48 millionths of a second for each document
 brought, 250 ms for a look over 500,000 documents that brings none.
-The commit of a document takes no new step: no benchmark of the gate
-moves.
+The commit of a document took no new step as this was first built.
+Since the addition to item 2, a create and a transition ask each
+triggered variable of the class one thing more, whether it follows in
+the state entered. The full gate of that change, on 2026-11-26, moved
+no benchmark: a transition takes 56 millionths of a second before and
+after, with the same bytes and the same allocations.

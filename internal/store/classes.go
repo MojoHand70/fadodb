@@ -138,6 +138,11 @@ type cvar struct {
 	// (ADR-0043) and tidx its place among the triggered ones; -1 for any
 	// other variable.
 	asof, errLeaf, tidx int
+	// followIn are the states in which a variable that follows a table
+	// or a schedule follows it (ADR-0091, ADR-0093): every state that is
+	// not final and in which the class does not close the variable to
+	// everybody. nil for a variable that follows nothing.
+	followIn map[string]bool
 }
 
 // leaf is one stored scalar of a row.

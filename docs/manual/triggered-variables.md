@@ -53,8 +53,8 @@ The triggers:
 | `transition:<name>` | a commit that makes the transition | the state left |
 | `before:<name>` | a command that asks for the transition, before its guard is asked; see [Before a transition](#before-a-transition) | the state left |
 | `refresh` | a refresh of the document; see [Refreshing](#refreshing) | the state the document is in |
-| `table:<name>` | a change of the rows of the table, for every document of the class that is not finished; see [Following a table](#following-a-table) | the state the document is in |
-| `schedule:<when>` | the moments its words name, for every document of the class that is not finished; see [Following the clock](#following-the-clock) | the state the document is in |
+| `table:<name>` | a change of the rows of the table, for every document of the class that is not finished, and a commit that brings the document into a state where the variable follows; see [Following a table](#following-a-table) | the state the document is in |
+| `schedule:<when>` | the moments its words name, for every document of the class that is not finished, and a commit that brings the document into a state where the variable follows; see [Following the clock](#following-the-clock) | the state the document is in |
 
 - **A variable is worked out once in a commit**, however many of its
   triggers the commit fires. A move from a state into the same state
@@ -424,7 +424,8 @@ the new value where it came out different.
 
 Acme's estimates in a foreign currency follow the table of rates
 while they are drafts. Once an estimate is sent its rate stands: the
-customer has it in hand.
+customer has it in hand. An estimate may also be talked through with
+the customer at a meeting, and accepted there, without being sent.
 
 ```json
 {
@@ -436,13 +437,15 @@ customer has it in hand.
     "currency": {"type": "text", "required": true},
     "rate":     {"type": "decimal", "scale": 4,
                  "formula": "LOOKUP(Rates, rate, code = THIS.currency)",
-                 "mode": "triggered", "on": ["enter:draft", "table:Rates"]},
+                 "mode": "triggered", "on": ["table:Rates"]},
     "in_pln":   {"formula": "ROUND(amount * rate, 2)"}
   },
-  "states": {"initial": "draft", "list": ["draft", "sent", "accepted"], "final": ["accepted"]},
+  "states": {"initial": "draft", "list": ["draft", "discussed", "sent", "accepted"], "final": ["accepted"]},
   "transitions": [
-    {"name": "send",   "from": "draft", "to": "sent"},
-    {"name": "accept", "from": "sent",  "to": "accepted"}
+    {"name": "discuss", "from": "draft", "to": "discussed"},
+    {"name": "send",    "from": "draft", "to": "sent"},
+    {"name": "revise",  "from": "sent",  "to": "draft"},
+    {"name": "accept",  "from": ["discussed", "sent"], "to": "accepted"}
   ],
   "rights": {
     "sent": {"rate": {"write": "FALSE"}}
@@ -453,8 +456,10 @@ customer has it in hand.
     "update": "CREATEDBY() = USER()",
     "delete": "FALSE",
     "transition": {
-      "send":   "CREATEDBY() = USER()",
-      "accept": "INGROUP(\"sales-lead\")"
+      "discuss": "CREATEDBY() = USER()",
+      "send":    "CREATEDBY() = USER()",
+      "revise":  "CREATEDBY() = USER()",
+      "accept":  "INGROUP(\"sales-lead\")"
     }
   }
 }
@@ -512,6 +517,65 @@ What holds for it:
 - **The table is one the variable's own formula looks into.** A
   variable whose formula reads two tables may list both.
 
+### Where it follows, and where it stands
+
+The variable follows its table in every state that is not final and
+in which its `write` right is not `FALSE`. In the other states it
+stands.
+
+A commit that brings a document into a state where the variable
+follows brings the value too, as `enter:` of that state would: the
+create, for the first state, and every move into such a state. So a
+document is never in a state where its value follows with a value the
+table no longer has, and `"on": ["table:Rates"]` is all the variable
+lists.
+
+An estimate that goes out and comes back, with EUR at 4.3100 in the
+table:
+
+<!-- an estimate that comes back -->
+| Step | What happens | E-5 is in | Its rate | The rate was brought |
+|---|---|---|---|---|
+| 1 | Ola writes E-5, 100.00 in EUR | `draft` | 4.3100 | at version 1 |
+| 2 | Ola sends it | `sent` | 4.3100 | at version 1 |
+| 3 | Tess changes the EUR rate to 4.3500 | `sent` | 4.3100 | at version 1 |
+| 4 | The customer asks for a change, and Ola takes the estimate back with `revise` | `draft` | 4.3500 | at version 3 |
+| 5 | Tess changes the EUR rate to 4.4000 | `draft` | 4.4000 | at version 4 |
+| 6 | Ola sends it again | `sent` | 4.4000 | at version 4 |
+
+- **Step 1: the rate is there from the first moment**, in the version
+  that made the estimate.
+- **Steps 2 and 3: it goes out with the rate it had**, and that rate
+  stands, whatever the table does.
+- **Step 4: it comes back with the rate of the day**, in the commit
+  of the move itself, and not at the next change of the table. From
+  there on it follows again, as step 5 shows.
+- **Step 6: it goes out again with the rate of that moment.**
+
+Where the value stands is the class's to say, and there are two ways
+to say it. The class above closes the rate in `sent` and nowhere
+else. So an estimate that Ola talks through with the customer, with
+`discuss`, keeps following in `discussed`: a path round the state
+that stops the value is a path on which it follows. A class that
+wants the rate to follow in `draft` and nowhere else says that
+instead:
+
+<!-- where the rate follows -->
+| Written in `rights` | In `draft` | In `discussed` | In `sent` |
+|---|---|---|---|
+| `"sent": {"rate": {"write": "FALSE"}}` | follows | follows | stands |
+| `"*": {"rate": {"write": "FALSE"}}, "draft": {"rate": {"write": "CREATEDBY() = USER()"}}` | follows | stands | stands |
+
+- **The first names where it stands.** A state the class gets later
+  is one more state where the rate follows.
+- **The second names where it follows.** The `*` row closes the rate
+  in every state, and the cell of `draft`, which is the nearer one,
+  opens it there: it says who may bring the rate by hand, and any
+  right but `FALSE` lets the table bring it. A state the class gets
+  later is one more state where the rate stands.
+- **In `accepted` it stands under both**: a finished document is
+  frozen.
+
 ## Following the clock
 
 Some values move with the day and with nothing else: how many days an
@@ -532,7 +596,7 @@ with.
     "due":       {"type": "date", "required": true},
     "days_late": {"type": "number",
                   "formula": "MAX(DAYS(TODAY(), due), 0)",
-                  "mode": "triggered", "on": ["enter:sent", "schedule:daily at 03:00"]},
+                  "mode": "triggered", "on": ["schedule:daily at 03:00"]},
     "remind":    {"formula": "days_late >= 14"}
   },
   "states": {"initial": "sent", "list": ["sent", "disputed", "paid"], "final": ["paid"]},
@@ -620,6 +684,13 @@ What holds for it:
   brought as [a table brings one](#following-a-table): in a commit of
   its own, with the rules of the class, and a command that says it
   saw the version before is refused with `stale_version`.
+- **It is there from the first moment.** A commit that brings a bill
+  into a state where `days_late` follows works it out too, as for
+  [a table](#where-it-follows-and-where-it-stands): B-1 had its 6
+  days in the version that made it, and the variable lists the
+  schedule alone. A class in which a disputed bill may come back to
+  `sent` has the number of that day in the commit that brings it
+  back.
 - **The next moment is in the queue.** Each schedule of a class has a
   row of the [outbox](the-outbox-and-the-worker.md) that waits for
   it: its action is `follow`, its `rule` the schedule, and its

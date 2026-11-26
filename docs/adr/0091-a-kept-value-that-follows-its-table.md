@@ -50,11 +50,12 @@ each.
    ```json
    "rate": {"type": "decimal", "scale": 4,
             "formula": "LOOKUP(Rates, rate, code = THIS.currency)",
-            "mode": "triggered", "on": ["enter:draft", "table:Rates"]}
+            "mode": "triggered", "on": ["table:Rates"]}
    ```
 
    The name is written in any case of letters. A variable whose
-   formula reads two tables may list both.
+   formula reads two tables may list both. It needs no `enter:`
+   beside the table: see item 9.
 
 2. **When the rows of the table change, the variable is worked out
    again in every document of the class that is not in a final
@@ -139,9 +140,31 @@ each.
    a `max` of 10 leaves 4.2500 and `out_of_range`, in a version of
    its own, and the same failure a second time writes nothing.
 
+9. **A commit that brings a document into a state where the variable
+   follows brings the value too.** That is the create, for the first
+   state, and every transition into such a state, one that time
+   makes among them. The value is worked out in that commit, as
+   `enter:` of the state would have it (ADR-0043), and gets no
+   version of its own. A state where the variable follows is one
+   that is not final and in which its `write` right is not `FALSE`
+   (item 4).
+
+   So a document is never in a state where its value follows with a
+   value the table no longer has. A new estimate has its rate in its
+   first version. One that comes back from `sent` to `draft` has the
+   rate of the day in the commit that brings it back, and follows
+   from there. Where the value stands nothing is brought: an estimate
+   comes into `sent` with the rate it had.
+
+   Added on 2026-11-26, the day the trigger was built, on the
+   owner's question 4 below. As first built, a variable that listed
+   the table alone kept the old rate after such a return until the
+   table next changed, and a new document had no rate until then: a
+   class had to list `enter:` of each such state beside the table.
+
 ## Questions for the owner
 
-All three are answered. They are kept here as they were asked, with
+All four are answered. They are kept here as they were asked, with
 the other way, so that he can turn one round later.
 
 1. **Whose right is asked when a table changes** (item 3).
@@ -166,6 +189,28 @@ the other way, so that he can turn one round later.
    "every 3rd Monday of a month", "daily at 3.00 am" and "repeat
    every X hours". The other way: the five fields of a Unix
    timetable.
+
+4. **What the value does when the flow circles back** (item 9). His
+   question of 2026-11-26: "how would it behave if flow circles
+   back?" **Answered the same day with yes** to item 9. The other
+   way: it is the class's to say, with `enter:<state>` listed for
+   each state where the value follows, and a class that forgets it
+   holds a stale value with nothing to say so.
+
+   With it he asked about a path round the state that stops the
+   value. The value follows wherever the class has not closed it, so
+   on such a path it follows on. His words: "this option to bypass
+   the blocking state is a positive thing." A class that wants the
+   value to follow in one state and nowhere else closes it in the
+   `*` state and opens it in that one. Nothing was built for it; the
+   manual shows both ways.
+
+   His sentence under question 1 was that the distinction between a
+   calculated value and one that is not "should be definable by
+   state". Items 4 and 9 are that for a value nobody types: it is
+   worked out where it follows, and stands elsewhere. A value that
+   is worked out in one state and typed by a person in another is
+   not built, and not asked for.
 
 Questions 2 and 3 are for `schedule:`, which this record does not
 build; see "What this record leaves out".
@@ -241,6 +286,8 @@ Settled while building, on 2026-11-26.
 - The row of the outbox, queued by every change of a table's rows and
   by a new definition of a table that holds rows.
 - The worker's run of such a row, and `Drain`'s.
+- The value brought by a commit that brings its document into a state
+  where it follows (item 9).
 - `RetryAction` sends a dead row again, as any.
 
 `BenchmarkFollow` is in the benchmark gate.
@@ -257,6 +304,11 @@ Settled while building, on 2026-11-26.
   thousand rows of history.
 - The outbox shows the work: a row for each class, pending while it
   runs, done after, dead with its code when it could not run.
+- A create and a transition into a state where a variable follows
+  work that variable out: a lookup of the table more in such a
+  commit, as `enter:` of the state costs.
+- A path round the state where the class closes the variable is a
+  path on which the value follows on.
 - Documents in a state where the class closes the variable are never
   brought, whoever changes the table. A class that closes it in every
   state has a trigger that does nothing; nothing says so when the

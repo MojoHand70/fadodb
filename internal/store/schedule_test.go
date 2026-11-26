@@ -241,7 +241,7 @@ func TestSchedule_AClassIsDefinedAgain(t *testing.T) {
 	ctx := context.Background()
 	c := &stillClock{now: utc("2026-11-26 10:00")}
 	s := openLate(t, filepath.Join(t.TempDir(), "test.fado"), c, "")
-	both := strings.Replace(lateInvoice, `"reminder":`, `"month": {"type": "number", "formula": "MONTH(TODAY())", "mode": "triggered", "on": ["schedule:daily at 03:00", "schedule:weekly"]},
+	both := strings.Replace(lateInvoice, `"reminder":`, `"day": {"type": "number", "formula": "DAY(TODAY())", "mode": "triggered", "on": ["schedule:daily at 03:00", "schedule:weekly"]},
    "reminder":`, 1)
 	if _, err := s.DefineClass(ctx, []byte(both), asSetup); err != nil {
 		t.Fatal(err)
@@ -254,6 +254,11 @@ func TestSchedule_AClassIsDefinedAgain(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// A value that follows the clock is there from the first moment: the
+	// day of the month lists no entry, and the new invoice has it.
+	if doc.Values["day"] != 26.0 || doc.Computed["day"].Version != 1 {
+		t.Fatalf("the new invoice: %v, %+v", doc.Values, doc.Computed)
+	}
 	// Both variables of the nightly schedule are brought in one version.
 	c.now = utc("2026-11-27 03:00")
 	drained(t, s, ctx)
@@ -261,7 +266,7 @@ func TestSchedule_AClassIsDefinedAgain(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.Version != doc.Version+1 || got.Values["days_late"] != 7.0 || got.Values["month"] != 11.0 || got.Computed["month"].Version != got.Version || got.Computed["days_late"].Version != got.Version {
+	if got.Version != doc.Version+1 || got.Values["days_late"] != 7.0 || got.Values["day"] != 27.0 || got.Computed["day"].Version != got.Version || got.Computed["days_late"].Version != got.Version {
 		t.Errorf("the invoice after the night: %v, version %d, %+v", got.Values, got.Version, got.Computed)
 	}
 

@@ -506,8 +506,10 @@ totals by group.
 A kept value follows its table (ADR-0091, proposed on 2026-11-26): a
 triggered variable that lists `table:<name>` is worked out again in
 every document of its class that is not finished when the rows of the
-table change. Nobody's right is asked for it, and a class stops the
-value in a state with a `write` right of `FALSE`. The store does it
+table change, and in a document that comes into a state where the
+variable follows, a new one among them. Nobody's right is asked for
+it, and a class stops the value in a state with a `write` right of
+`FALSE`. The store does it
 by itself, a thousand documents in a transaction: 100,000 invoices
 are brought in under five seconds, and a commit of somebody else
 waits 45 ms meanwhile. A kept value follows the clock too (ADR-0093,

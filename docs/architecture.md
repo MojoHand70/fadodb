@@ -1197,8 +1197,10 @@ a command sent to `/v1/` does.
 > environment. It answers its counts to an administrator at
 > `GET /v1/metrics`. The stream of changes is built: the Go call
 > `Subscribe`, and its address on the server, `POST /v1/subscribe`.
-> The server runs in a container as on a machine: the image the
-> repository builds holds the tool and nothing else
+> The server runs in a container as on a machine: the repository
+> builds an image of `fadodb`, which holds the tool and the libraries
+> the analytical engine needs, and one of `fadodb-core`, which holds
+> the tool and nothing else
 > ([in a container](manual/in-a-container.md)). A system that
 > speaks only its own language has a way in (ADR-0065): an
 > inlet, a definition that says how its message proves who sent it

@@ -15,6 +15,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"testing"
@@ -30,11 +31,14 @@ import (
 // the Go of the module, and nothing but the module reaches the builder.
 //
 // The chapter itself is played against an image when FADODB_IMAGE
-// names one. scripts/image.sh does that, and GitHub with it on every
-// push:
+// names one, the image of fadodb, with the analytical engine; and what
+// the chapter says of the small image is held when FADODB_IMAGE_CORE
+// names that of fadodb-core. scripts/image.sh does both, and GitHub
+// with it on every push:
 //
 //	docker build -t fadodb:check .
-//	FADODB_IMAGE=fadodb:check go test -count=1 -run Container ./internal/cli
+//	docker build -t fadodb:check-core --target core .
+//	FADODB_IMAGE=fadodb:check FADODB_IMAGE_CORE=fadodb:check-core go test -count=1 -run Container ./internal/cli
 
 // fromTheRepository reads a file of the repository, by its path from
 // the root.
@@ -107,6 +111,43 @@ func TestTheContainerFiles(t *testing.T) {
 	if first != "*" || strings.Join(let, " ") != strings.Join(copied, " ") || len(copied) == 0 {
 		t.Errorf(".dockerignore begins with %q and lets in %v; the Dockerfile copies %v", first, let, copied)
 	}
+}
+
+// filesOf lists the files an image holds, in the order of their names,
+// with what they weigh together: the files of a container made from
+// it, but those Docker puts into every container, which are empty.
+func filesOf(p *played, image string) (holds []string, total int64) {
+	p.t.Helper()
+	random := make([]byte, 4)
+	if _, err := rand.Read(random); err != nil {
+		p.t.Fatal(err)
+	}
+	holder := p.name + "-files-" + hex.EncodeToString(random)
+	if code, _, said := docker(p.t, "", nil, "create", "--name", holder, image); code != 0 {
+		p.t.Fatalf("a container of the image %s: %s", image, said)
+	}
+	defer p.remove(holder)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+	files, err := exec.CommandContext(ctx, "docker", "export", holder).Output()
+	if err != nil {
+		p.t.Fatalf("docker export: %v", err)
+	}
+	for archive := tar.NewReader(bytes.NewReader(files)); ; {
+		file, err := archive.Next()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			p.t.Fatal(err)
+		}
+		if file.Typeflag == tar.TypeReg && file.Size > 0 {
+			holds = append(holds, file.Name)
+			total += file.Size
+		}
+	}
+	sort.Strings(holds)
+	return holds, total
 }
 
 // docker runs a command of Docker and answers how it ended and what it
@@ -298,7 +339,7 @@ func TestTheChapterOnContainers(t *testing.T) {
 			t.Errorf("the image is set up as %+v", config)
 		}
 		for _, row := range []string{
-			"| What it holds | the tool, `/fadodb`, and the certificates",
+			"| What it holds | the tool, `/fadodb`, the C and C++ libraries the analytical engine needs, and the certificates",
 			"| What it runs | the tool:",
 			"| Who it runs as | the user `65532`, who is not root |",
 			"| Where a database is kept | `/data`.",
@@ -308,50 +349,95 @@ func TestTheChapterOnContainers(t *testing.T) {
 				t.Errorf("the chapter's table of the image has no row: %s", row)
 			}
 		}
-		// Told nothing, it prints its help. The program in the image is
-		// the one without the analytical engine, and its help ends by
-		// saying so.
-		if code, out, _ := docker(t, "", nil, "run", "--rm", image); code != 0 || out != usage+coreNote {
+		// Told nothing, it prints its help: that of the program with the
+		// analytical engine, which ends with no word on which program it
+		// is.
+		if code, out, _ := docker(t, "", nil, "run", "--rm", image); code != 0 || out != usage {
 			t.Errorf("the image, told nothing: exit %d\n%s", code, out)
 		}
-		// It holds the tool and the certificates, and no other file:
-		// the files of a container made from it, but those Docker puts
-		// into every container, which are empty.
-		p := p.in(t)
-		holder := p.name + "-files"
-		if code, _, said := docker(t, "", nil, "create", "--name", holder, image); code != 0 {
-			t.Fatalf("a container of the image: %s", said)
+		if code, out, _ := docker(t, "", nil, "run", "--rm", image, "version"); code != 0 || !strings.HasPrefix(out, "fadodb ") || !strings.HasSuffix(strings.TrimSpace(out), ", with the analytical engine") {
+			t.Errorf("the program in the image says of itself: exit %d %s", code, out)
 		}
-		defer p.remove(holder)
-		ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
-		defer cancel()
-		export := exec.CommandContext(ctx, "docker", "export", holder)
-		files, err := export.Output()
-		if err != nil {
-			t.Fatalf("docker export: %v", err)
+		// It holds the tool, the libraries it needs and the certificates,
+		// and no shell or other program: the files of a container made
+		// from it.
+		holds, total := filesOf(p.in(t), image)
+		has := func(part string) bool {
+			for _, name := range holds {
+				if strings.Contains(name, part) {
+					return true
+				}
+			}
+			return false
 		}
-		var holds []string
-		total := int64(0)
-		for archive := tar.NewReader(bytes.NewReader(files)); ; {
-			file, err := archive.Next()
-			if err == io.EOF {
-				break
-			}
-			if err != nil {
-				t.Fatal(err)
-			}
-			if file.Typeflag == tar.TypeReg && file.Size > 0 {
-				holds = append(holds, file.Name)
-				total += file.Size
+		for _, part := range []string{"fadodb", "etc/ssl/certs/ca-certificates.crt", "libstdc++.so", "libc.so"} {
+			if !has(part) {
+				t.Errorf("the image holds no %s", part)
 			}
 		}
-		if got := strings.Join(holds, " "); got != "etc/ssl/certs/ca-certificates.crt fadodb" {
-			t.Errorf("the image holds %s", got)
+		for _, name := range holds {
+			for _, programs := range []string{"bin/", "sbin/", "usr/bin/", "usr/sbin/", "usr/local/bin/"} {
+				if strings.HasPrefix(name, programs) {
+					t.Errorf("the image holds a program beside the tool: %s", name)
+				}
+			}
 		}
-		// "about 17 MB, nearly all of it the tool": the tool has its own
-		// budget of 20 MiB, which the size gate holds (ADR-0072).
-		if total < 15<<20 || total > 19<<20 {
-			t.Errorf("the files of the image are %d bytes, and the chapter says about 17 MB", total)
+		// "about 118 MB: the tool is 90 of them".
+		if total < 100e6 || total > 135e6 {
+			t.Errorf("the files of the image are %d bytes, and the chapter says about 118 MB", total)
+		}
+	})
+
+	// The small image, of the program without the analytical engine:
+	// what the chapter says it holds and runs.
+	t.Run("the small image", func(t *testing.T) {
+		small := os.Getenv("FADODB_IMAGE_CORE")
+		if small == "" {
+			t.Skip("FADODB_IMAGE_CORE names no image of fadodb-core: scripts/image.sh check")
+		}
+		rows := between(fromTheRepository(t, "docs", "manual", "in-a-container.md"), "<!-- the small image -->\n", "\n\n")
+		if !strings.Contains(rows, "| What it holds | the tool, `/fadodb-core`, and the certificates. No shell and no other program |") {
+			t.Errorf("the chapter's table of the small image:\n%s", rows)
+		}
+		_, out, said := docker(t, "", nil, "image", "inspect", "--format", "{{json .Config}}", small)
+		var config struct {
+			User, WorkingDir string
+			Entrypoint, Cmd  []string
+			ExposedPorts     map[string]any
+			Volumes          map[string]any
+		}
+		if err := json.Unmarshal([]byte(out), &config); err != nil {
+			t.Fatalf("the image %s: %v\n%s%s", small, err, out, said)
+		}
+		_, port := config.ExposedPorts["8080/tcp"]
+		_, volume := config.Volumes["/data"]
+		if config.User != "65532:65532" || config.WorkingDir != "/data" || !volume || !port || len(config.ExposedPorts) != 1 ||
+			strings.Join(config.Entrypoint, " ") != "/fadodb-core" || strings.Join(config.Cmd, " ") != "help" {
+			t.Errorf("the small image is set up as %+v", config)
+		}
+		// Told nothing, it prints its help, which ends by saying which
+		// program it is.
+		if code, out, _ := docker(t, "", nil, "run", "--rm", small); code != 0 || out != usage+coreNote {
+			t.Errorf("the small image, told nothing: exit %d\n%s", code, out)
+		}
+		if code, out, _ := docker(t, "", nil, "run", "--rm", small, "version"); code != 0 || !strings.HasPrefix(out, "fadodb-core ") || strings.Contains(out, "analytical engine") {
+			t.Errorf("the program in the small image says of itself: exit %d %s", code, out)
+		}
+		// It holds the tool and the certificates, and no other file.
+		holds, total := filesOf(p.in(t), small)
+		if got := strings.Join(holds, " "); got != "etc/ssl/certs/ca-certificates.crt fadodb-core" {
+			t.Errorf("the small image holds %s", got)
+		}
+		// "about 17 MB": the tool has its own budget of 20 MiB, which the
+		// size gate holds (ADR-0072).
+		if total < 15<<20 || total > 20<<20 {
+			t.Errorf("the files of the small image are %d bytes, and the chapter says about 17 MB", total)
+		}
+		// It makes a database, as the other does.
+		volume2 := p.name + "-core"
+		defer docker(t, "", nil, "volume", "rm", "--force", volume2)
+		if code, out, said := docker(t, "", nil, "run", "--rm", "-v", volume2+":/data", small, "init", "acme.fado"); code != 0 || !strings.Contains(out, "made the database acme.fado") {
+			t.Errorf("the small image makes a database: exit %d\n%s%s", code, out, said)
 		}
 	})
 

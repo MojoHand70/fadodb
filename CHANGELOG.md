@@ -477,6 +477,19 @@ Phase 8 started on 2026-11-25.
 
 ### Changed
 
+- The image for containers holds `fadodb`, the program with the
+  analytical engine, and a second image holds `fadodb-core` (ADR-0089).
+  From the next release on `ghcr.io/mojohand70/fadodb:<version>` is
+  the first and `ghcr.io/mojohand70/fadodb:<version>-core` the second;
+  the images up to v0.7.0 hold the program without the engine under
+  the plain name. The image of `fadodb` stands on a base with the C
+  and C++ libraries DuckDB needs and has no shell; it is about 118 MB
+  where the small one is 17. A database it serves keeps its copy in
+  the volume, beside the database. `docker build -t fadodb .` builds
+  the first and `docker build -t fadodb-core --target core .` the
+  second. Each image is built for Intel and ARM, and the chapter of
+  the manual is played against it on a machine of each kind before it
+  is published.
 - The two programs have the names the owner gave them (ADR-0089).
   `fadodb` is FadoDB with the analytical engine, DuckDB, and
   `fadodb-core` is the same program in pure Go, without it: what was

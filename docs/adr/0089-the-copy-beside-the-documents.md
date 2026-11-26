@@ -401,9 +401,21 @@ strike.
   Alpine, where `fadodb-core` runs; `fadodb-core` writes `fadodb` in
   its help, as the manual does, and says at its end which program it
   is; `go install` gives `fadodb-core`, since Go does not install a
-  module that names the repository beside it. Not built: the image
-  for containers with the engine, which still holds the program
-  without it, started as `fadodb`.
+  module that names the repository beside it.
+
+  **The image followed the same day.** By the owner's words, "the
+  full one is just FadoDB" and "we will make both available", the
+  image under the plain name, `fadodb:<version>`, holds the program
+  with the engine, and `fadodb:<version>-core` holds the other. The
+  image of `fadodb` stands on Google's distroless base of Debian 12,
+  which has the C and C++ libraries DuckDB needs and no shell; it is
+  about 118 MB where the small one is 17. Settled by me while
+  building, the owner's to strike: one Dockerfile builds both, on the
+  machine that builds and with a compiler for the other kind of
+  machine, so nothing is emulated; the chapter of the manual is played
+  against the image with the engine, and the small one is held to
+  what the chapter says of it; before a release publishes them, the
+  chapter is played on an Intel machine and on an ARM one.
 - **The engine of a server takes at most 2 GB of memory** unless its
   settings say otherwise, `analytics.memory`. DuckDB's own limit is
   four fifths of the machine, which a server shares with its database

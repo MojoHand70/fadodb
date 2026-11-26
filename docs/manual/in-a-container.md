@@ -30,11 +30,17 @@ docker tag ghcr.io/mojohand70/fadodb:0.7.0 fadodb
 The second command gives the image the short name `fadodb`, which the
 commands of this chapter use.
 
-The program in the image is the one without the analytical engine,
-which is named `fadodb-core` since the release after v0.7.0
-([the two programs](serving-a-database.md#a-server-with-the-analytical-engine)).
-In the image it is still started as `fadodb`. An image with the
-engine is [not built yet](#not-here-yet).
+FadoDB is two programs from one code
+([the two programs](serving-a-database.md#a-server-with-the-analytical-engine)),
+and from the release after v0.7.0 on there is an image of each:
+
+| The image | The program in it |
+|---|---|
+| `ghcr.io/mojohand70/fadodb:<version>` | `fadodb`, with the analytical engine. This chapter is about it |
+| `ghcr.io/mojohand70/fadodb:<version>-core` | `fadodb-core`, the same program in pure Go, without the engine; see [The small image](#the-small-image) |
+
+The images up to v0.7.0 hold the program without the engine, under
+the plain name.
 
 The image is also built from a checkout of the repository, and that
 one is what the test of this chapter plays:
@@ -47,7 +53,7 @@ docker build -t fadodb .
 <!-- the image -->
 | | |
 |---|---|
-| What it holds | the tool, `/fadodb`, and the certificates by which a request of an action knows another service. No shell and no other program |
+| What it holds | the tool, `/fadodb`, the C and C++ libraries the analytical engine needs, and the certificates by which a request of an action knows another service. No shell and no other program |
 | What it runs | the tool: what follows the name of the image is what follows `fadodb` at a terminal. Told nothing, it prints its help |
 | Who it runs as | the user `65532`, who is not root |
 | Where a database is kept | `/data`. A command starts there, so `acme.fado` is `/data/acme.fado` |
@@ -57,7 +63,8 @@ docker build -t fadodb .
   to listen beyond its container, and a server that does so is told so
   (below). So the image has no server it starts when it is told
   nothing.
-- **It is small**: about 17 MB, nearly all of it the tool.
+- **It is about 118 MB**: the tool is 90 of them, and the rest the
+  libraries of its base. The small image is about 17 MB.
 
 ## From nothing to a server
 
@@ -90,11 +97,16 @@ The server says where it serves, as on a machine. Tomek reads it with
 <!-- what the server says -->
 ```
 fadodb serve: serving acme.fado at http://[::]:8080
+fadodb serve: it keeps a copy of the documents for the questions that read everything, beside the database
 fadodb serve: nobody signs in on a page: give the settings the address people reach the server at, url
 fadodb serve: its actions may call no host; the settings list the hosts they may call (--settings)
 ```
 
-The second line is about people. A server that listens beyond its
+The second line is the analytical engine's: the copy is the file
+`acme.fado.duckdb`, in the volume beside the database. The server
+makes it again when it is lost, so it needs no backup.
+
+The third line is about people. A server that listens beyond its
 machine, as one in a container does, shows its pages for
 [signing in](signing-in.md) only at the address its settings give,
 `url`: `"url": "http://127.0.0.1:8080"` here, the address Tomek's
@@ -356,11 +368,33 @@ change how a database is laid out, and there is no way yet to bring a
 database forward: [Running it](running-it.md#another-release) says
 what to keep with each backup.
 
+## The small image
+
+`fadodb-core` is the same program without the analytical engine. Its
+image holds the program and the certificates, and no other file: no
+library, since the program needs none.
+
+<!-- building the small image -->
+```sh
+docker build -t fadodb-core --target core .
+```
+
+<!-- the small image -->
+| | |
+|---|---|
+| What it holds | the tool, `/fadodb-core`, and the certificates. No shell and no other program |
+| What it runs | the tool, as the other image does: `docker run --rm fadodb-core version` |
+| Who it runs as, where a database is kept, the port it names | as the other image: the user `65532`, `/data`, `8080` |
+
+Everything in this chapter holds for it, with `fadodb-core` where a
+line says `fadodb` before a command. It keeps no copy of the
+documents, so its server does not say the line about one, and it
+answers the questions that read a whole class by the store:
+[up to what size that is enough](serving-a-database.md#a-server-with-the-analytical-engine).
+It is about 17 MB.
+
 ## Not here yet
 
-- **An image with the analytical engine.** The image holds
-  `fadodb-core`; the program with the engine needs the C and C++
-  libraries of a system, which this image does not have.
 - **Several databases in one container.** A container serves one, as
   [`fadodb serve` does](serving-a-database.md#not-here-yet).
 - **A backup of a database that is served**, without stopping the

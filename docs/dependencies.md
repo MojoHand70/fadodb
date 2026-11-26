@@ -32,16 +32,19 @@ These live in their own Go modules so their weight and cgo never reach the core.
 | `github.com/duckdb/duckdb-go/v2` with `go.duckdb.org/libduckdb/<os>-<arch>` | `analytics/` | MIT | Needs cgo and a C compiler; a minimal binary linking DuckDB 2.0.0 is 75 MB. Prebuilt libraries for five platforms; `duckdb_use_lib` links a system library instead. In use since Phase 1 for the DuckDB conformance runner (ADR-0020) and since Phase 2 for the DuckDB target of the store benchmarks (ADR-0017). |
 | `github.com/jackc/pgx/v5` | `postgres/` | MIT | Driver and its tree are only needed by the enterprise backend. |
 
-## The image for containers
+## The images for containers
 
-The image (the `Dockerfile` at the root) holds the tool and one file
-that is not the project's. Nothing here is a Go module, so the
-dependency gate does not see it.
+There are two images (the `Dockerfile` at the root): that of `fadodb`,
+with the analytical engine, and that of `fadodb-core`. Nothing here is
+a Go module, so the dependency gate does not see it.
 
 | What | Where it comes from | License | Why |
 |---|---|---|---|
-| The list of certificate authorities, `/etc/ssl/certs/ca-certificates.crt` | the `ca-certificates` package of the image the tool is built in, which is Mozilla's list | MPL-2.0 | An action's request to another service is checked against it. The image holds no other file but the tool. |
-| `golang:<the Go of go.mod>-alpine`, Docker's official image of Go | Docker Hub | BSD-3 (Go); nothing of Alpine is passed on | Builds the tool. Nothing of it reaches the image but the list above. A test holds its version to the `go` line of `go.mod`. |
+| `golang:<the Go of go.mod>-bookworm`, Docker's official image of Go on Debian 12 | Docker Hub | BSD-3 (Go) | Builds both programs. Nothing of it reaches the image of `fadodb`; of it, the image of `fadodb-core` has the list of certificate authorities and no other file. A test holds its version to the `go` line of `go.mod`. |
+| Debian 12's compiler for the other kind of machine, `gcc` and `g++` for `aarch64` or `x86-64` | Debian's packages, fetched while the image is built | GPL-3.0 with the GCC runtime exception | DuckDB is C++, so `fadodb` for ARM is built on an Intel machine by a compiler for ARM, and the other way round. Nothing of the compiler reaches an image. |
+| `gcr.io/distroless/cc-debian12:nonroot` | Google's "distroless" images, built from Debian 12 | each package under its own: glibc LGPL-2.1, libstdc++ and libgcc GPL-3.0 with the GCC runtime exception, OpenSSL Apache-2.0, the time zones public domain, the list of certificate authorities MPL-2.0 | The base of the image of `fadodb`: the C and C++ libraries DuckDB needs, the certificates, and a user who is not root. It has no shell and no program. |
+| DuckDB, linked into `fadodb` | the module `analytics/` above | MIT | The analytical engine. |
+| The list of certificate authorities, `/etc/ssl/certs/ca-certificates.crt` | in the image of `fadodb`, the base's; in the image of `fadodb-core`, the `ca-certificates` package of the image the tool is built in. Both are Mozilla's list | MPL-2.0 | An action's request to another service is checked against it. The image of `fadodb-core` holds no other file but the tool. |
 
 ## The browser VM's build tools
 

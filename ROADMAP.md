@@ -493,9 +493,10 @@ Since 2026-11-26 the two programs have the names the owner gave them:
 `fadodb` is the one with DuckDB, and `fadodb-core` the one in pure Go.
 `fadodb` is built and tried on GitHub for Linux and macOS on amd64 and
 arm64 and for Windows on amd64, on every pull request, and a release
-attaches it for each of them beside `fadodb-core`; no release has been
-made with it yet, and the image for containers still holds the program
-without the engine.
+attaches it for each of them beside `fadodb-core`. The image for
+containers holds `fadodb` too, with a second image for `fadodb-core`,
+each played on Intel and on ARM before it is published. No release has
+been made with any of it yet.
 The counts and totals a class already asks, the command `count` and
 what a `LOOKUP` or a figure over a list works out when it is read, go
 to the copy by themselves when no index narrows them, and so does a

@@ -80,11 +80,16 @@ PATTERN="${BENCH_PATTERN:-^Benchmark(VM_Arithmetic5|VM_Exact5|Recalculate|Recalc
 PACKAGES="${BENCH_PACKAGES:-./internal/formula/ ./internal/store/}"
 
 # evaluate_csv prints every regression found in a benchstat CSV and returns 1
-# when there is at least one.
+# when there is at least one. It judges time, bytes and allocations for
+# each operation. A benchmark that says how many bytes it handles has a
+# table of bytes a second too, B/s, where more is better and which the
+# time already holds: its rows are read past, and not taken for rows of
+# the table before them.
 evaluate_csv() {
   awk -F, -v time_pct="$TIME_PCT" -v bytes_pct="$BYTES_PCT" '
-    $1 == "" && ($2 == "sec/op" || $2 == "B/op" || $2 == "allocs/op") { unit = $2; next }
+    $1 == "" && $3 == "CI" { unit = $2; next }
     $1 == "" || $1 == "geomean" { next }
+    unit != "sec/op" && unit != "B/op" && unit != "allocs/op" { next }
     {
       delta = $6
       # benchstat cannot express a change from zero as a percentage. Treat a

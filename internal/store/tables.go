@@ -31,9 +31,6 @@ type table struct {
 
 	upsert, insert, deleteAll, selectAll *sql.Stmt // on the writer
 	readAll                              *sql.Stmt // on the pool
-	// noteRows writes the token of the table's rows anew (ADR-0094), on
-	// the writer.
-	noteRows *sql.Stmt
 
 	// cache holds the rows while the table is small enough (ADR-0036);
 	// nil until a lookup needs it, dropped by an import and by a rule's
@@ -45,6 +42,9 @@ type table struct {
 	// view, which nobody writes, and its rows change with the engine's
 	// records, so they are never kept in memory.
 	system bool
+	// noteRows writes the token of the table's rows anew (ADR-0094), on
+	// the writer. It stands last: a lookup reads the fields above it.
+	noteRows *sql.Stmt
 }
 
 type tableCache struct {

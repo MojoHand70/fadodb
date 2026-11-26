@@ -9,8 +9,11 @@
 # (internal/cli/container_test.go).
 ARG GO_VERSION=1.26.11
 
-# The tool is pure Go, so it is built on the machine that builds the
-# image, for the machine the image is for: nothing is emulated.
+# The tool in the image is fadodb-core, the program in pure Go, so it is
+# built on the machine that builds the image, for the machine the image
+# is for: nothing is emulated. It is started as fadodb, as in every
+# image before; an image with the analytical engine is not built yet
+# (docs/manual/in-a-container.md).
 FROM --platform=$BUILDPLATFORM golang:${GO_VERSION}-alpine AS build
 ARG TARGETOS
 ARG TARGETARCH
@@ -26,7 +29,7 @@ COPY internal internal
 RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache/go-build \
     CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath \
       -ldflags "-s -w -X main.version=$VERSION -X main.commit=$COMMIT -X main.date=$DATE" \
-      -o /image/fadodb ./cmd/fadodb
+      -o /image/fadodb ./cmd/fadodb-core
 # What the tool needs around it:
 #   /etc/ssl/certs  the authorities an action's request to another
 #                   service is checked against

@@ -10,6 +10,13 @@ Phase 8 started on 2026-11-25.
 
 ### Added
 
+- Up to what size `fadodb-core` is enough, measured and printed in the
+  README and in the manual: a sum, a count, a sorted page and totals
+  by group over a whole class, and its flowchart, at 10,000, 100,000,
+  1,000,000 and 3,400,000 documents. Up to about 100,000 documents in
+  the largest class everything a class asks is answered in under
+  30 ms; at a million a sum takes 132 ms and the flowchart 4.8
+  seconds, where `fadodb` takes milliseconds.
 - A kept value that follows its table (ADR-0091, proposed). A
   triggered variable may list `table:<name>`, the name of a table its
   own formula looks into: `"on": ["enter:draft", "table:Rates"]`.
@@ -432,6 +439,28 @@ Phase 8 started on 2026-11-25.
   It is worked out again now. In v0.7.0 too.
 
 ### Changed
+
+- The two programs have the names the owner gave them (ADR-0089).
+  `fadodb` is FadoDB with the analytical engine, DuckDB, and
+  `fadodb-core` is the same program in pure Go, without it: what was
+  `fadodb-full` and `fadodb`. Every command, flag, setting and answer
+  is the same in both; `fadodb version` ends with "with the analytical
+  engine" and `fadodb-core version` begins with its own name. In the
+  repository `make build` makes `bin/fadodb-core` and `make full`
+  makes `bin/fadodb`; the program in pure Go is `cmd/fadodb-core`, so
+  from the next release on it is installed with
+  `go install github.com/MojoHand70/fadodb/cmd/fadodb-core@latest`.
+  The releases up to v0.7.0 have one program, named `fadodb`: it is
+  the one without the engine.
+- A release has both programs. `fadodb` is built on a machine of each
+  system DuckDB is built for, Linux and macOS on amd64 and arm64 and
+  Windows on amd64, tried there as an operator runs it, and attached
+  beside `fadodb-core`, which is built for those and for Windows on
+  arm64, under one `checksums.txt`. A release is made only when every
+  `fadodb` is there. The Linux `fadodb` runs on Debian 12, Ubuntu
+  22.04 and what is as new. Every pull request builds and tries
+  `fadodb` on the five systems. The image for containers still holds
+  the program without the engine.
 
 - A message is read faster: the formulas of an inlet read one body,
   and the engine now parses it once and not once for each formula. A

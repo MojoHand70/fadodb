@@ -346,8 +346,8 @@ store takes seconds to minutes.
 **What stays with the store:** everything inside a commit, so a value
 that a triggered variable keeps is worked out by the store.
 
-The program `fadodb` is built without the module; the same program
-built with it, `fadodb-full`, serves a database with its copy
+The program `fadodb-core` is built without the module; the same
+program built with it, `fadodb`, serves a database with its copy
 ([A server with the analytical engine](serving-a-database.md#a-server-with-the-analytical-engine)).
 
 ## Closing

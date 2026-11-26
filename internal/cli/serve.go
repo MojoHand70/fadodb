@@ -125,11 +125,11 @@ file is not there, the secret token of the connection slack is read
 from the environment, as FADODB_SECRET_SLACK__TOKEN. A secret is read
 again for every request, so it is changed without a restart.
 
-The member analytics is for the program built with the analytical
-engine (make full), which keeps a copy of the documents beside the
-database for the questions that read everything: the most memory the
-engine may take, 2GB when it is not given, and its threads, one for
-each core. The program built without the engine refuses settings that
+The member analytics is for the program with the analytical engine,
+fadodb, which keeps a copy of the documents beside the database for
+the questions that read everything: the most memory the engine may
+take, 2GB when it is not given, and its threads, one for each core.
+The program without the engine, fadodb-core, refuses settings that
 have it.
 
 People sign in on the server's own pages, at /auth/signin, and their

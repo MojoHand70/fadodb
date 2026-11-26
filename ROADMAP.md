@@ -488,13 +488,19 @@ store answers in 12 to 26 seconds takes the copy under half a second.
 Its first two steps are built: a program that is given DuckDB keeps
 the copy and feeds it, and answers the flow of a class from it, in
 19 ms among ten million moves where the store takes 18 seconds: the
-copy keeps the moves of the documents ready. The server program is built with DuckDB too, as
-`fadodb-full`, on the machine that runs it; `fadodb` stays in pure Go.
+copy keeps the moves of the documents ready. The server program is built with DuckDB too.
+Since 2026-11-26 the two programs have the names the owner gave them:
+`fadodb` is the one with DuckDB, and `fadodb-core` the one in pure Go.
+`fadodb` is built and tried on GitHub for Linux and macOS on amd64 and
+arm64 and for Windows on amd64, on every pull request, and a release
+attaches it for each of them beside `fadodb-core`; no release has been
+made with it yet, and the image for containers still holds the program
+without the engine.
 The counts and totals a class already asks, the command `count` and
 what a `LOOKUP` or a figure over a list works out when it is read, go
-to the copy by themselves when no index narrows them. A page of a list
-is still the store's, and the program with DuckDB is not yet built for
-each operating system and released.
+to the copy by themselves when no index narrows them, and so does a
+page of a list the store does not find in a moment, and a list of
+totals by group.
 
 A kept value follows its table (ADR-0091, proposed on 2026-11-26): a
 triggered variable that lists `table:<name>` is worked out again in

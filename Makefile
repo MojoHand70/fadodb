@@ -1,6 +1,9 @@
 # FadoDB build and quality gates. Every target here also runs in CI.
 
-BIN     := bin/fadodb
+# The two programs (ADR-0089): fadodb-core in pure Go, and fadodb, the
+# same program with the analytical engine.
+CORE    := bin/fadodb-core
+FULL    := bin/fadodb
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 COMMIT  ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo "")
 DATE    ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
@@ -16,16 +19,16 @@ BENCHSTAT_VERSION   ?= latest
 all: build
 
 build:
-	CGO_ENABLED=0 go build -trimpath -ldflags '$(LDFLAGS)' -o $(BIN) ./cmd/fadodb
+	CGO_ENABLED=0 go build -trimpath -ldflags '$(LDFLAGS)' -o $(CORE) ./cmd/fadodb-core
 
 # The same program with the analytical engine, DuckDB, linked in
-# (ADR-0017, ADR-0089). It is built in the DuckDB module, with cgo and a
-# C compiler, and is no part of the gates of the core.
+# (ADR-0017, ADR-0089): fadodb. It is built in the DuckDB module, with
+# cgo and a C compiler, and is no part of the gates of the core.
 full:
-	cd analytics && CGO_ENABLED=1 go build -trimpath -ldflags '$(LDFLAGS)' -o ../$(BIN)-full ./cmd/fadodb
+	cd analytics && CGO_ENABLED=1 go build -trimpath -ldflags '$(LDFLAGS)' -o ../$(FULL) ./cmd/fadodb
 
 run: build
-	$(BIN) version
+	$(CORE) version
 
 test:
 	go test -race -count=1 ./...

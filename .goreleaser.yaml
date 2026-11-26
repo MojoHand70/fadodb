@@ -1,5 +1,11 @@
 # GoReleaser v2 configuration. Runs on every v* tag through
 # .github/workflows/release.yml and publishes binaries with checksums.
+#
+# A release has two programs (ADR-0089). fadodb-core, in pure Go, is
+# built here, for every system from one machine. fadodb, the same
+# program with the analytical engine, is built before this runs, on a
+# machine of each system DuckDB is built for, and its archives stand in
+# bin/programs: they are attached and checksummed with the rest.
 version: 2
 
 project_name: fadodb
@@ -9,9 +15,9 @@ before:
     - go mod tidy
 
 builds:
-  - id: fadodb
-    main: ./cmd/fadodb
-    binary: fadodb
+  - id: fadodb-core
+    main: ./cmd/fadodb-core
+    binary: fadodb-core
     env:
       - CGO_ENABLED=0
     goos: [linux, darwin, windows]
@@ -24,7 +30,7 @@ builds:
 archives:
   - id: default
     formats: [tar.gz]
-    name_template: '{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}'
+    name_template: 'fadodb-core_{{ .Version }}_{{ .Os }}_{{ .Arch }}'
     format_overrides:
       - goos: windows
         formats: [zip]
@@ -34,8 +40,11 @@ archives:
 
 checksum:
   name_template: checksums.txt
-  # The browser VM's three files are checksummed with the binaries.
+  # The archives of fadodb and the browser VM's three files are
+  # checksummed with the binaries.
   extra_files:
+    - glob: ./bin/programs/fadodb_*.tar.gz
+    - glob: ./bin/programs/fadodb_*.zip
     - glob: ./web/vm/dist/fadodb-vm.js
     - glob: ./web/vm/dist/fadodb-vm.iife.js
     - glob: ./web/vm/dist/fadodb-vm.d.ts
@@ -54,8 +63,11 @@ release:
   prerelease: true
   # The browser VM, attached to every release as ADR-0029 says: the ES
   # module, the classic script and the declarations, which the release
-  # workflow builds and checks before goreleaser runs.
+  # workflow builds and checks before goreleaser runs; and fadodb, the
+  # program with the analytical engine, for each system it is built for.
   extra_files:
+    - glob: ./bin/programs/fadodb_*.tar.gz
+    - glob: ./bin/programs/fadodb_*.zip
     - glob: ./web/vm/dist/fadodb-vm.js
     - glob: ./web/vm/dist/fadodb-vm.iife.js
     - glob: ./web/vm/dist/fadodb-vm.d.ts

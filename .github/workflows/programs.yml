@@ -1,0 +1,81 @@
+name: programs
+
+# The program with the analytical engine, fadodb, for each system DuckDB
+# is built for (ADR-0089, step 6). It is built on a machine of the
+# system it is for, since it needs that system's C compiler, and tried
+# there as an operator runs it: a database made, served and asked for
+# the flow of a class, which the copy answers. ci.yml calls this on
+# every pull request, so that the program is known to build and to run
+# everywhere before a version is tagged; release.yml calls it with keep,
+# and attaches the archives to the release.
+#
+# Windows on ARM has no build of DuckDB, and so no fadodb: fadodb-core
+# is built for it, as for every system, by GoReleaser.
+on:
+  workflow_call:
+    inputs:
+      version:
+        description: the version the programs say they are, a tag or dev
+        type: string
+        default: dev
+      keep:
+        description: keep each archive, for the caller to publish
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  fadodb:
+    name: fadodb / ${{ matrix.system }}
+    runs-on: ${{ matrix.machine }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Linux is built on the oldest Linux there is a machine for: a
+          # program built there runs on every Linux as new, which is
+          # Debian 12, Ubuntu 22.04 and what came after them.
+          - {system: linux-amd64, machine: ubuntu-22.04}
+          - {system: linux-arm64, machine: ubuntu-22.04-arm}
+          - {system: darwin-arm64, machine: macos-latest}
+          - {system: darwin-amd64, machine: macos-15-intel}
+          - {system: windows-amd64, machine: windows-latest}
+    defaults:
+      run:
+        shell: bash
+    env:
+      PROGRAM_GLIBC_MAX: "2.35"
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          check-latest: true
+      - name: Build fadodb
+        run: scripts/program.sh build "${{ inputs.version }}"
+      - name: Try it as an operator runs it
+        run: scripts/program.sh try
+      - name: Test the DuckDB module
+        # The whole module once, on one system; the others try the
+        # program they built.
+        if: matrix.system == 'linux-amd64'
+        working-directory: analytics
+        env:
+          CGO_ENABLED: "1"
+        run: |
+          go vet ./...
+          go test -count=1 ./...
+      - name: Pack it
+        if: inputs.keep
+        run: scripts/program.sh pack "${{ inputs.version }}"
+      - uses: actions/upload-artifact@v7
+        if: inputs.keep
+        with:
+          name: fadodb-${{ matrix.system }}
+          path: |
+            bin/programs/fadodb_*.tar.gz
+            bin/programs/fadodb_*.zip
+          if-no-files-found: error
+          retention-days: 3

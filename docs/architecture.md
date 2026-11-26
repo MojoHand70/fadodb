@@ -1406,7 +1406,7 @@ in 13.7 ns with no allocation, and the core binary is 2.9 MB
 
 ```
 fadodb/
-  cmd/fadodb/            the program fadodb, in pure Go: a main that runs internal/cli
+  cmd/fadodb-core/       the program fadodb-core, in pure Go: a main that runs internal/cli
   internal/cli/          the command-line tool and server, built into both programs: init, user, key, serve, exec (any command sent to a server, a query as an Excel file or as CSV), file put and file get, class check, action check, formula, check today; bench to come
   fado/                  public Go API (small surface, see Go API)
   internal/formula/      lexer, parser, binder, bytecode, vm, sqlgen (dialects), catalog

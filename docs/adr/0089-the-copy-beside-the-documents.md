@@ -225,8 +225,9 @@ Two findings decide what follows.
   before, and `analytics/cmd/fadodb` builds the same program with
   DuckDB. `make full` makes it, as `bin/fadodb-full`. A database it
   serves keeps its copy, and the settings of the server say how much
-  memory the engine may take. Not built: the program for each
-  operating system, released; an image for containers with the engine;
+  memory the engine may take. Not built then: the program for each
+  operating system, released, which came on 2026-11-26 with the names
+  (see "The names" below); an image for containers with the engine;
   the page for analysts.
 - **Step 3, its first part: the counts and totals a class already
   asks, on 2026-11-25.** The command `count`, and the total or the
@@ -381,6 +382,28 @@ strike.
   each system: on the day `fadodb` means the program with the engine,
   every release has one. Until then the two are built as
   `fadodb-full` and `fadodb`.
+
+  **The names moved on 2026-11-26**, with the builds: `cmd/fadodb-core`
+  is the program in pure Go, `make build` makes it as
+  `bin/fadodb-core`, and `version` begins with that name;
+  `analytics/cmd/fadodb` is the program with the engine, which
+  `make full` makes as `bin/fadodb`. `fadodb` is built and tried, as
+  an operator runs it, on a machine of each of the five systems DuckDB
+  is built for, on every pull request, and a release is made only when
+  every one of them is there, attached beside `fadodb-core` under one
+  list of checksums. Windows on ARM has `fadodb-core` alone. The
+  owner's word of that day: both programs are offered for every
+  system, with advice on up to what size `fadodb-core` is enough,
+  which the README and the manual carry with its measurements.
+  Settled by me while building, the owner's to strike: the Linux
+  programs are built on Ubuntu 22.04, so that they run on Debian 12,
+  Ubuntu 22.04 and what is as new, and not on the Red Hat 9 family or
+  Alpine, where `fadodb-core` runs; `fadodb-core` writes `fadodb` in
+  its help, as the manual does, and says at its end which program it
+  is; `go install` gives `fadodb-core`, since Go does not install a
+  module that names the repository beside it. Not built: the image
+  for containers with the engine, which still holds the program
+  without it, started as `fadodb`.
 - **The engine of a server takes at most 2 GB of memory** unless its
   settings say otherwise, `analytics.memory`. DuckDB's own limit is
   four fifths of the machine, which a server shares with its database

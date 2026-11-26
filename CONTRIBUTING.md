@@ -10,7 +10,8 @@ Go 1.26 or newer.
 
 ```
 make tools     # installs staticcheck, govulncheck and benchstat with go install
-make build     # bin/fadodb
+make build     # bin/fadodb-core, in pure Go
+make full      # bin/fadodb, the same with the analytical engine (needs a C compiler)
 make test      # race detector on
 make gates     # everything CI runs: lint, vuln, depgate, sizegate, filegate, test
 make benchgate BASE=origin/main   # the full benchmark comparison against a git ref: run it before you push a change to a hot path

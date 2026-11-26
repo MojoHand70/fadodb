@@ -345,6 +345,9 @@ type Store struct {
 	// followRuns is where each follow that is under way stands between
 	// two of its transactions (ADR-0091), by the key of its row; under mu.
 	followRuns map[string]*followRun
+	// followEach is how many documents one transaction of a follow
+	// brings when a test sets it; 0 is followMany.
+	followEach int
 	wake       chan struct{}
 	// sleepUntil is the second of the database's clock at which the worker
 	// looks at the outbox again when nothing wakes it, 0 while it is

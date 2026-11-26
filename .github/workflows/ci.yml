@@ -45,9 +45,12 @@ jobs:
         with:
           go-version-file: go.mod
           check-latest: true
+      # The store's tests take up to nine minutes on the macOS runner
+      # under the race detector, and Go stops a package after ten: the
+      # limit is said here, so that a slow runner fails no pull request.
       - name: Test with the race detector
         if: runner.os != 'Windows'
-        run: go test -race -count=1 ./...
+        run: go test -race -count=1 -timeout 20m ./...
       - name: Test
         if: runner.os == 'Windows'
         run: go test -count=1 ./...

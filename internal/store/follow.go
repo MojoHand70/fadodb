@@ -47,6 +47,16 @@ const ActionFollow = "follow"
 // forty milliseconds of the writer, between which other commits go.
 const followMany = 1000
 
+// followSize is followMany, or what a test set for its store, so that a
+// test of what happens between two transactions needs a hundred
+// documents and not thousands.
+func (s *Store) followSize() int {
+	if s.followEach > 0 {
+		return s.followEach
+	}
+	return followMany
+}
+
 // followPause is how long a follow leaves the writer alone between two
 // of its transactions. A commit that waited for the transaction takes
 // the writer in that moment; without it the follow, which asks again at
@@ -219,7 +229,7 @@ func (s *Store) followSQL(c *class, table string) (string, []string) {
 	// each thousand, so none is used.
 	return "SELECT " + doc + ".rowid, " + doc + `."id" FROM ` + quote(c.table) + " AS " + doc + " NOT INDEXED" +
 		" WHERE " + doc + ".rowid > :fado_after AND (" + strings.Join(terms, " OR ") + ")" +
-		" ORDER BY " + doc + ".rowid LIMIT " + strconv.Itoa(followMany), params
+		" ORDER BY " + doc + ".rowid LIMIT " + strconv.Itoa(s.followSize()), params
 }
 
 // followRun is what a follow did so far, over the transactions it took.
@@ -325,7 +335,7 @@ func (s *Store) followBatch(ctx context.Context, row *outboxRow, table string, o
 	if failure == nil {
 		failure = s.at("performed", row)
 	}
-	more = found == followMany
+	more = found == s.followSize()
 	if failure == nil && !more {
 		if err := s.followed(ctx, row, attempts+1, run, now); err != nil {
 			failure = asError(err)

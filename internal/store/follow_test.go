@@ -256,11 +256,14 @@ func TestFollow_ARemovedRowAndAValueTheVariableRefuses(t *testing.T) {
 	}
 }
 
-// More documents than one transaction takes: each thousand is a
-// transaction of its own, and the row is done with the last.
+// More documents than one transaction takes: each transaction is one of
+// its own, and the row is done with the last. A transaction takes a
+// thousand; the test's store takes fifty.
 func TestFollow_AThousandAtATime(t *testing.T) {
 	s, ctx := openFollow(t, followInvoice)
-	const n = 2*followMany + 300
+	const many = 50
+	s.followEach = many
+	const n = 2*many + 30
 	docs := make([]Values, n)
 	for i := range docs {
 		cur := "EUR"
@@ -287,10 +290,10 @@ func TestFollow_AThousandAtATime(t *testing.T) {
 		t.Fatalf("the outbox ran %d rows", got)
 	}
 	s.testStep = nil
-	// 1,840 invoices are in euro: two transactions of a thousand found,
-	// of which the second is the last.
-	if len(steps) != 2 {
-		t.Errorf("the follow took %d transactions, want 2", len(steps))
+	// 104 invoices are in euro: two transactions of fifty and one of the
+	// four that are left.
+	if len(steps) != 3 {
+		t.Errorf("the follow took %d transactions, want 3", len(steps))
 	}
 	var euro, moved int
 	for i, d := range made {
@@ -320,7 +323,9 @@ func TestFollow_AThousandAtATime(t *testing.T) {
 // what is left.
 func TestFollow_AFailureIsTriedAgain(t *testing.T) {
 	s, ctx := openFollow(t, followInvoice)
-	docs := make([]Values, followMany+10)
+	const many = 50
+	s.followEach = many
+	docs := make([]Values, many+10)
 	for i := range docs {
 		docs[i] = Values{"number": fmt.Sprintf("FV-%d", i), "amount": "10.00", "currency": "EUR"}
 	}
@@ -349,7 +354,7 @@ func TestFollow_AFailureIsTriedAgain(t *testing.T) {
 	// before the second attempt passes inside the drain.
 	drained(t, s, ctx)
 	s.testStep = nil
-	want := "perform performed marked committed" + // the first thousand
+	want := "perform performed marked committed" + // the first fifty
 		" perform performed" + // the ten, which fail
 		" perform performed marked committed" // the ten again
 	if got := strings.Join(steps, " "); got != want {
@@ -742,12 +747,15 @@ func TestFollow_ADocumentThatCannotTakeTheValue(t *testing.T) {
 	}
 }
 
-// The worker brings a thousand documents and looks at what else is due
-// before the next thousand: the row stays pending in between, and the
-// run goes on from where it stood.
+// The worker brings one transaction of documents and looks at what else
+// is due before the next: the row stays pending in between, and the run
+// goes on from where it stood. A transaction takes a thousand; the
+// test's store takes fifty.
 func TestFollow_TheWorkerLooksAtTheRestBetweenTwoThousands(t *testing.T) {
 	s, ctx := openFollow(t, followInvoice)
-	docs := make([]Values, 2*followMany+300)
+	const many = 50
+	s.followEach = many
+	docs := make([]Values, 2*many+30)
 	for i := range docs {
 		docs[i] = Values{"number": fmt.Sprintf("FV-%d", i), "amount": "10.00", "currency": "EUR"}
 	}
@@ -767,7 +775,7 @@ func TestFollow_TheWorkerLooksAtTheRestBetweenTwoThousands(t *testing.T) {
 	for i, want := range []struct {
 		brought int
 		status  string
-	}{{followMany, ActionPending}, {2 * followMany, ActionPending}, {len(docs), ActionDone}} {
+	}{{many, ActionPending}, {2 * many, ActionPending}, {len(docs), ActionDone}} {
 		due, err := s.dueRows(ctx, s.stmts.dueEngine, s.now().Unix())
 		if err != nil || len(due) != 1 || due[0].action != ActionFollow {
 			t.Fatalf("look %d: what is due for the worker: %+v, %v", i+1, due, err)

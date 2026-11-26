@@ -111,10 +111,11 @@ const (
 	copyMarkEvent = "event"
 	copyMarkClass = "class:"
 	// copyMarkFormat marks what a copy holds beside the rows of the
-	// store: a copy fed before it kept the moves of the documents has
-	// another mark, or none, and is given them.
+	// store: a copy fed before it kept the moves of the documents, or
+	// before a move said which version it made (ADR-0097), has another
+	// mark, or none, and is given them.
 	copyMarkFormat = "format"
-	copyFormat     = "moves"
+	copyFormat     = "moves, each with its version"
 	copyEventsSQL  = `"event_id", "class", "doc_id", "kind", "name", "from_state", "to_state", "actor_id", "actor_kind", "actor_for", "before_version", "after_version", "cause_event_id", "command_key", "command_hash", "business_date", "ts", "origin", "override", "reason", "seen_version"`
 )
 
@@ -138,8 +139,10 @@ var copyEventColumns = func() []CopyColumn {
 // made or moved along a transition, with the moment it happened and,
 // for a move, the moment the state it left was entered. The question of
 // how documents moved is one sum over these rows, and reads neither the
-// events nor the versions.
-var copyMoveColumns = []CopyColumn{{"id", CopyText}, {"kind", CopyText}, {"name", CopyText}, {"from_state", CopyText}, {"to_state", CopyText}, {"ts", CopyWhole}, {"left_since", CopyWhole}}
+// events nor the versions. The last column is the version of the
+// document the move made: the moves of one document are told in their
+// order by it, also those a chain made within one second (ADR-0097).
+var copyMoveColumns = []CopyColumn{{"id", CopyText}, {"kind", CopyText}, {"name", CopyText}, {"from_state", CopyText}, {"to_state", CopyText}, {"ts", CopyWhole}, {"left_since", CopyWhole}, {"version", CopyWhole}}
 
 // The places of what a move takes among the columns copyEventsSQL
 // reads, and leftSinceSQL is what the feed reads after them: for a
@@ -147,7 +150,7 @@ var copyMoveColumns = []CopyColumn{{"id", CopyText}, {"kind", CopyText}, {"name"
 // version the event left holds. The store finds that version by its
 // key, inside the one statement that reads the events.
 const (
-	eventClass, eventDoc, eventKind, eventName, eventFrom, eventTo, eventTS = 1, 2, 3, 4, 5, 6, 16
+	eventClass, eventDoc, eventKind, eventName, eventFrom, eventTo, eventAfter, eventTS = 1, 2, 3, 4, 5, 6, 11, 16
 )
 
 func leftSinceSQL(layouts []*copyLayout) string {
@@ -765,6 +768,7 @@ func (s *Store) feedOnce(ctx context.Context, f *feeder, most int64, kind feedKi
 				// A move of a document of a class the database has.
 				if l := byClass[strings.ToUpper(class)]; l != nil {
 					move[0], move[1], move[2], move[3], move[4], move[5], move[6] = event[eventDoc], kind, event[eventName], event[eventFrom], event[eventTo], event[eventTS], row[leftAt]
+					move[7] = event[eventAfter]
 					if err := w.Append(l.moves.Name, move); err != nil {
 						rows.Close()
 						return err

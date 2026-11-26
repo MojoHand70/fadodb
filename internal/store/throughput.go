@@ -148,35 +148,41 @@ func (s *Store) Throughput(ctx context.Context, class string, ask ThroughputAsk,
 			}
 		}
 	}
-	// A content administrator past the rules: the entry holds how many
-	// of the documents only the override counted (ADR-0067, item 3).
-	if o.records(c) {
-		build := func(p query.Principal) (string, []any, error) {
-			plan, err := query.Compile(Filter{Class: c.cls.Name}, c.cls, s.sources(), p)
-			if err != nil {
-				return "", nil, filterErr(err)
-			}
-			return plan.Where, plan.Args, nil
-		}
-		plan, err := query.Compile(Filter{Class: c.cls.Name}, c.cls, s.sources(), caller(o, c))
-		if err != nil {
-			return nil, filterErr(err)
-		}
-		all, err := s.countInStore(ctx, c, plan, o)
-		if err != nil {
-			return nil, err
-		}
-		past, err := s.pastCount(ctx, c, o, all, build)
-		if err != nil {
-			return nil, err
-		}
-		r := newRead("throughput", c)
-		r.counted, r.hasCounted, r.past = past, true, past > 0
-		if err := s.logRead(ctx, o, r); err != nil {
-			return nil, err
-		}
+	if err := s.readPast(ctx, c, o, "throughput"); err != nil {
+		return nil, err
 	}
 	return out, nil
+}
+
+// readPast writes into the log of reads that a content administrator
+// asked a question over the documents of a class past its rules, with
+// how many of the documents only the override let them count (ADR-0067,
+// item 3). For any other caller it does nothing.
+func (s *Store) readPast(ctx context.Context, c *class, o options, command string) error {
+	if !o.records(c) {
+		return nil
+	}
+	plan, err := query.Compile(Filter{Class: c.cls.Name}, c.cls, s.sources(), caller(o, c))
+	if err != nil {
+		return filterErr(err)
+	}
+	all, err := s.countInStore(ctx, c, plan, o)
+	if err != nil {
+		return err
+	}
+	past, err := s.pastCount(ctx, c, o, all, func(p query.Principal) (string, []any, error) {
+		plan, err := query.Compile(Filter{Class: c.cls.Name}, c.cls, s.sources(), p)
+		if err != nil {
+			return "", nil, filterErr(err)
+		}
+		return plan.Where, plan.Args, nil
+	})
+	if err != nil {
+		return err
+	}
+	r := newRead(command, c)
+	r.counted, r.hasCounted, r.past = past, true, past > 0
+	return s.logRead(ctx, o, r)
 }
 
 // periodOf is the first midnight of the day, the week or the month a

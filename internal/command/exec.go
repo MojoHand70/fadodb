@@ -691,6 +691,25 @@ func runThroughput(c *call) error {
 	return c.answer("throughput", throughput, err)
 }
 
+// runPaths answers the paths the documents of a class took (ADR-0097).
+func runPaths(c *call) error {
+	var ask store.PathsAsk
+	var e *store.Error
+	if ask.Since, e = c.moment("since"); e != nil {
+		return e
+	}
+	if ask.Until, e = c.moment("until"); e != nil {
+		return e
+	}
+	limit, e := c.integer("limit")
+	if e != nil {
+		return e
+	}
+	ask.Limit = int(limit)
+	paths, err := c.s.Paths(c.ctx, c.text("class"), ask, c.opts...)
+	return c.answer("paths", paths, err)
+}
+
 func runSQL(c *call) error {
 	args, e := c.scalars("args")
 	if e != nil {

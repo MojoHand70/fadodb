@@ -1381,8 +1381,12 @@ the store and the copy answer the same. The command `throughput`
 (ADR-0096, proposed) says how many documents were made and how many
 finished in each day, week or month, by the clock of the database's
 time zone: both engines count by the quarter of an hour, and the
-engine puts the quarters into the periods of the zone. The paths
-documents took are not answered yet.
+engine puts the quarters into the periods of the zone. The command
+`paths` (ADR-0097, proposed) says which ways the documents went
+through the states, the most taken first: the states of each
+document's moves are joined in the order of the versions the moves
+made, which the copy keeps with each move, and the documents are
+counted by what comes out.
 
 ---
 

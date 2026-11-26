@@ -516,8 +516,10 @@ million moves. It is the first of the plan's mining views. The second is built
 too (ADR-0096, proposed on 2026-11-26): the command `throughput` says
 how many documents were made and how many finished in each day, week
 or month of the database's time zone, in 6 to 7 ms among ten million
-moves. The owner said on 2026-11-26 that all three are for this
-phase; the paths documents took are not built yet.
+moves. The third is the command `paths` (ADR-0097, proposed on
+2026-11-26): which ways the documents went through the states, the
+most taken first. The owner said on 2026-11-26 that all three are for
+this phase, and with it all three are built.
 
 The rows of the tables are in the copy too (ADR-0094, proposed on
 2026-11-26): a total a live `LOOKUP` asks of a large table, and a

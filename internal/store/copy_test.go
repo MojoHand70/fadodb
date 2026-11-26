@@ -752,16 +752,16 @@ func TestCopy_KeepsTheMoves(t *testing.T) {
 		defer c.mu.Unlock()
 		var out []string
 		for _, row := range c.rows["Invoice_moves"] {
-			out = append(out, fmt.Sprintf("%v %v %v %v>%v left since %v", row[0], row[1], row[2], row[3], row[4], row[6]))
+			out = append(out, fmt.Sprintf("%v %v %v %v>%v left since %v, version %v", row[0], row[1], row[2], row[3], row[4], row[6], row[7]))
 		}
 		sort.Strings(out)
 		return strings.Join(out, "\n")
 	}
-	want := fmt.Sprintf(`i-1 created <nil> <nil>>draft left since <nil>
-i-1 transition approve review>paid left since %d
-i-1 transition file draft>review left since %d
-i-2 created <nil> <nil>>draft left since <nil>
-i-3 created <nil> <nil>>draft left since <nil>`, filed.StateEnteredAt, at["i-1"])
+	want := fmt.Sprintf(`i-1 created <nil> <nil>>draft left since <nil>, version 1
+i-1 transition approve review>paid left since %d, version 4
+i-1 transition file draft>review left since %d, version 2
+i-2 created <nil> <nil>>draft left since <nil>, version 1
+i-3 created <nil> <nil>>draft left since <nil>, version 1`, filed.StateEnteredAt, at["i-1"])
 	if got := moves(); got != want {
 		t.Fatalf("the moves in the copy:\n%s\nwant\n%s", got, want)
 	}
@@ -793,6 +793,31 @@ i-3 created <nil> <nil>>draft left since <nil>`, filed.StateEnteredAt, at["i-1"]
 	mustFeed(t, s)
 	if got := moves(); got != kept || c.count("events") != events+1 {
 		t.Errorf("a copy without its moves, after a feed: %d events (want %d) and the moves\n%s\nwant\n%s", c.count("events"), events+1, got, kept)
+	}
+	// A copy that kept the moves before a move said which version it
+	// made (ADR-0097): its mark is the earlier one, and the moves are
+	// made again with their versions, once.
+	if err := s.Close(); err != nil {
+		t.Fatal(err)
+	}
+	c.mu.Lock()
+	c.marks[copyMarkFormat] = "moves"
+	for _, row := range c.rows["Invoice_moves"] {
+		row[7] = nil
+	}
+	c.mu.Unlock()
+	if got := moves(); got == kept {
+		t.Fatal("the test did not take the versions out of the moves")
+	}
+	s, err = Open(path, Options{Analytics: memEngine{c}, CopyEvery: time.Hour, Now: tick, Outbox: OutboxOptions{Manual: true}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { s.Close() })
+	<-s.feeder.first
+	mustFeed(t, s)
+	if got := moves(); got != kept || c.count("events") != events+1 || c.mark(copyMarkFormat) != copyFormat {
+		t.Errorf("a copy of before the versions, after a feed: %d events (want %d), the mark %q and the moves\n%s\nwant\n%s", c.count("events"), events+1, c.mark(copyMarkFormat), got, kept)
 	}
 }
 

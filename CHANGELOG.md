@@ -10,6 +10,19 @@ Phase 8 started on 2026-11-25.
 
 ### Added
 
+- The paths documents took (ADR-0097, proposed). A new command,
+  `paths`, in Go `Paths`, answers for a class which ways its documents
+  went through the states, the most taken first: each path with its
+  states in the order a document came into them, how many documents
+  took it, and whether it ends in a final state. It counts the
+  documents the caller may read that were made in the period, each
+  with its whole path up to now; `limit` says how many paths are
+  listed, and `others` how many documents took another. The moves of
+  one moment, a chain that one commit makes, are told apart by the
+  versions they made; in the copy a move says its version for that,
+  and a copy of an earlier build is given its moves again, once.
+  Among 3,400,000 invoices that made ten million moves `fadodb`
+  answers it in 0.22 to 0.27 seconds and `fadodb-core` in 9.
 - How many documents were made and finished in each period (ADR-0096,
   proposed). A new command, `throughput`, in Go `Throughput`, answers
   for a class how many documents the caller may read were made and how

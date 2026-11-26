@@ -133,6 +133,12 @@ type (
 	Throughput       = store.Throughput
 	ThroughputPeriod = store.ThroughputPeriod
 	ThroughputAsk    = store.ThroughputAsk
+	// Paths are the paths the documents of a class took through its
+	// states, Path one of them, and PathsAsk which are asked for
+	// (ADR-0097).
+	Paths    = store.Paths
+	Path     = store.Path
+	PathsAsk = store.PathsAsk
 	// ActionFunc is a Go function that implements an action, given to Open
 	// in Options.Actions under the action's name (ADR-0027, ADR-0045);
 	// ActionCall is what it is called with, and DeliveredEvent the event
@@ -1104,6 +1110,18 @@ func (db *DB) Flow(ctx context.Context, class string, period FlowPeriod, opts ..
 //	weeks, err := db.Throughput(ctx, "Invoice", fado.ThroughputAsk{By: fado.ThroughputWeek}, fado.As(ann))
 func (db *DB) Throughput(ctx context.Context, class string, ask ThroughputAsk, opts ...Option) (*Throughput, error) {
 	return db.s.Throughput(ctx, class, ask, opts...)
+}
+
+// Paths answers the paths the documents of a class took through its
+// states, for its caller (ADR-0097): the most taken first, each with
+// its states in the order a document came into them and how many
+// documents took it. It counts the documents the caller may read that
+// were made in the period, each with its path up to now: a document
+// that is still open is counted with its path so far.
+//
+//	paths, err := db.Paths(ctx, "Invoice", fado.PathsAsk{Limit: 10}, fado.As(ann))
+func (db *DB) Paths(ctx context.Context, class string, ask PathsAsk, opts ...Option) (*Paths, error) {
+	return db.s.Paths(ctx, class, ask, opts...)
 }
 
 // SQL runs one read-only SELECT over the views with positional

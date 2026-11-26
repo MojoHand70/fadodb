@@ -844,8 +844,15 @@ func TestCopy_APageIsTheStoresForAMoment(t *testing.T) {
 		t.Errorf("a page in an order an index holds: %q, the copy asked %v", got, copy)
 	}
 	// The moment has passed before the store began: the copy is asked.
-	copyStoreFirst = time.Nanosecond
+	// A moment that lies behind is one that has passed on every
+	// machine, where the shortest one ahead may outlast a small read.
+	copyStoreFirst = -time.Second
 	if got, copy := asked(ofOne); got != "i-1 i-3 i-5" || !copy {
 		t.Errorf("with a moment that has passed: %q, the copy asked %v", got, copy)
+	}
+	// With no moment at all the copy is asked at once.
+	copyStoreFirst = 0
+	if got, copy := asked(ofOne); got != "i-1 i-3 i-5" || !copy {
+		t.Errorf("with no moment for the store: %q, the copy asked %v", got, copy)
 	}
 }

@@ -155,7 +155,8 @@ func (s *Store) figureFromCopy(ctx context.Context, src *class, q *formula.Query
 // the store can hand over at once, the invoices of one order or the
 // first fifty that meet a condition most documents meet, is found
 // there in less; a page it would read much of the class for is not,
-// and is then found in the copy in milliseconds.
+// and is then found in the copy in milliseconds. With none, zero, the
+// copy is asked at once.
 var copyStoreFirst = 5 * time.Millisecond
 
 // pageWithCopy answers a page of a list in a program that keeps the
@@ -171,7 +172,7 @@ func (s *Store) pageWithCopy(ctx context.Context, c *class, o options, plan *que
 		by := strings.TrimSpace(strings.TrimLeft(strings.TrimSpace(f.Order[0]), "-+"))
 		sorts = !query.Indexed(c.cls, by)
 	}
-	if !sorts && copyStoreFirst > 0 {
+	if !sorts && copyStoreFirst != 0 {
 		moment, done := context.WithTimeout(ctx, copyStoreFirst)
 		found, more, err := s.find(moment, c, o, plan, command, probe)
 		passed := err != nil && moment.Err() != nil && ctx.Err() == nil

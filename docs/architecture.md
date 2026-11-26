@@ -422,9 +422,17 @@ with the kept value, and brings them a thousand in a transaction,
 each with a version and an event of its own, never one query per
 document. Nobody's right is asked for it: the right is asked of
 whoever changes the table, and a class stops the value in a state
-with a `write` right of `FALSE`. A trigger for a time,
-`schedule:<spec>`, is designed in the same record and not built: a
-class that names it is refused.
+with a `write` right of `FALSE`.
+
+A triggered variable that lists `schedule:<when>` follows the clock
+(ADR-0093): the words say when, `daily at 03:00`, `monthly on 3rd
+monday`, `every 4h`, by the clock of the database's own time zone,
+which the program that opens the database gives and the database
+keeps; UTC when none was given. It is the same machine: each schedule
+of a class has a row of the outbox that waits for its next moment, the
+worker runs it as it runs the row of a table, and the row that ran
+queues the next. The engine itself brings the value, so its commits
+have no actor. `NOW()` and `TODAY()` in a formula stay in UTC.
 
 The browser evaluates auto formulas live while a user edits, from the same
 bytecode, so the user sees totals change before saving. The server's result

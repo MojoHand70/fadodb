@@ -10,6 +10,26 @@ Phase 8 started on 2026-11-25.
 
 ### Added
 
+- A kept value that follows the clock (ADR-0093, proposed). A
+  triggered variable may list `schedule:<when>`, with when in words:
+  `hourly`, `daily at 03:00`, `weekly on friday at 18:00`,
+  `monthly on 15`, `monthly on last day`,
+  `monthly on 3rd monday at 06:00`, `every 15m`, `every 4h`. At each
+  of those moments the variable is worked out again in every document
+  of the class that is not in a final state, and kept where it comes
+  out different, as when a table changes: a commit for each document,
+  the rules of the class, and a `write` right of `FALSE` in a state
+  makes the value stand there. The engine itself brings it: the event
+  is of the kind `refresh`, named after the schedule, with no actor.
+  Each schedule of a class has a row of the outbox that waits for its
+  next moment, so the queue shows when it runs next; a server that
+  was down at the moment works the values out once when it starts.
+- A database has a time zone, by which its schedules go (ADR-0093):
+  `Options.TimeZone` for a Go program, the member `timezone` of the
+  server's settings, as `"Europe/Warsaw"`. The database keeps it; one
+  that was never given a zone is in UTC, as before. `NOW()` and
+  `TODAY()` in a formula stay in UTC. Both programs carry the
+  database of time zones, so the image for containers knows them.
 - Up to what size `fadodb-core` is enough, measured and printed in the
   README and in the manual: a sum, a count, a sorted page and totals
   by group over a whole class, and its flowchart, at 10,000, 100,000,

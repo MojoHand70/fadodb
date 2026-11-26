@@ -153,3 +153,46 @@ func TestAServerWithTheAnalyticalEngine(t *testing.T) {
 		t.Errorf("settings that name the engine and say nothing of it: %v, %+v", err, s)
 	}
 }
+
+// The time zone of the database in the settings (ADR-0093): the server
+// gives it to the database it opens, which keeps it.
+func TestSettings_TheTimeZone(t *testing.T) {
+	s, err := parseSettings([]byte(`{"timezone": "Europe/Warsaw"}`))
+	if err != nil || s.timezone != "Europe/Warsaw" {
+		t.Fatalf("the time zone of the settings: %v, %+v", err, s)
+	}
+	if s, err := parseSettings([]byte(`{}`)); err != nil || s.timezone != "" {
+		t.Errorf("settings that name no zone: %v, %q", err, s.timezone)
+	}
+	for name, text := range map[string]string{
+		"a zone nobody knows":       `{"timezone": "Europe/Atlantis"}`,
+		"the zone of the machine":   `{"timezone": "Local"}`,
+		"an offset in place of one": `{"timezone": 2}`,
+		"no zone":                   `{"timezone": ""}`,
+	} {
+		if _, err := parseSettings([]byte(text)); err == nil || !strings.Contains(err.Error(), "timezone") {
+			t.Errorf("%s: %v", name, err)
+		}
+	}
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "acme.fado")
+	if code, _, said := tool("init", path); code != 0 {
+		t.Fatal(said)
+	}
+	settings := filepath.Join(dir, "settings.json")
+	if err := os.WriteFile(settings, []byte(`{"timezone": "Europe/Warsaw"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, _, stop := serving(t, "--listen", "127.0.0.1:0", "--settings", settings, path)
+	stop()
+	// Served again with no settings, the database is where it was put.
+	db, err := fado.Open(path, fado.Options{Users: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if got := db.TimeZone(); got != "Europe/Warsaw" {
+		t.Errorf("the zone the database kept: %s", got)
+	}
+}

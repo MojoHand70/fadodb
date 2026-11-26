@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/MojoHand70/fadodb/internal/formula"
 	"github.com/MojoHand70/fadodb/internal/model"
@@ -76,6 +77,9 @@ type class struct {
 	// table's upper-cased name, each with the states it follows it in;
 	// nil when the class has none.
 	follows map[string][]follower
+	// schedules are the schedules its variables follow (ADR-0093), each
+	// as the class writes it, once.
+	schedules []string
 	// files are the File objects among the leaves (ADR-0033).
 	files []filePair
 	// refs are the leaves that point at a document, each with the variable
@@ -1095,10 +1099,20 @@ func (s *Store) defineClasses(ctx context.Context, datas [][]byte, set bool, by 
 			_, _ = w.ExecContext(ctx, "ROLLBACK")
 			return nil, err
 		}
+		// A schedule of the class gets the row that waits for its next
+		// moment, unless one waits already (ADR-0093).
+		if err := s.scheduleRows(ctx, []*class{p.c}, time.Unix(now, 0)); err != nil {
+			_, _ = w.ExecContext(ctx, "ROLLBACK")
+			s.wakeAt = 0
+			return nil, err
+		}
 	}
 	if err := s.endTransaction(ctx); err != nil {
+		s.wakeAt = 0
 		return nil, storageErr("commit", err)
 	}
+	// The worker is told of a moment that comes before it next looks.
+	s.wakeQueued(false, false)
 	for i, p := range ps {
 		if p.same {
 			continue

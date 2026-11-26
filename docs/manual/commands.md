@@ -1994,6 +1994,7 @@ A few calls of the Go package have no command.
 | `SignOut` | it ends the session it is sent with, on the server's page /auth/signout; end_session ends one by its id |
 | `Table` | it answers the engine's compiled form to a Go program; get_table answers the definition |
 | `TablesOf` | it is list_tables with its app given, for a Go program |
+| `TimeZone` | the time zone of the database is set by the program that opens it, with the option of that name, and read by it |
 | `UseInvitation` | it takes the browser's answer on the server's page /auth/invite, and gives a session |
 | `UsePasswordLink` | a password never travels in a command: the server's page /auth/password takes it |
 | `UsePhoneLink` | it takes the phone's answer on the server's page /auth/phone, and gives a session |

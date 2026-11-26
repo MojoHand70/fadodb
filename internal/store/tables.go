@@ -224,6 +224,19 @@ func (s *Store) registerTable(t *table) {
 		s.tableOrder = append(s.tableOrder, t.def.Name)
 	}
 	s.tables[key] = t
+	s.keepSources()
+}
+
+// keepSources makes the set of sources again from the tables as they are
+// now. The caller holds cmu for writing, or is Open.
+func (s *Store) keepSources() {
+	set := formula.NewSourceSet()
+	for _, name := range s.tableOrder {
+		if t, ok := s.tables[strings.ToUpper(name)]; ok {
+			set.Add(t.src)
+		}
+	}
+	s.sourceSet = set
 }
 
 func (s *Store) table(name string) (*table, *Error) {
@@ -530,6 +543,7 @@ func (s *Store) DefineTable(ctx context.Context, data []byte, opts ...Option) (*
 	}
 	if err := t.prepare(ctx, w, s.db); err != nil {
 		delete(s.tables, strings.ToUpper(def.Name))
+		s.keepSources()
 		return nil, err
 	}
 	s.registerTable(t)

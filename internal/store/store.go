@@ -277,6 +277,13 @@ type Store struct {
 	order      []string
 	tables     map[string]*table
 	tableOrder []string
+	// sourceSet is the tables as the binder sees them, made again whole
+	// whenever a table is registered or removed, and never changed once
+	// made: a formula compiled while another table is defined reads the
+	// set it was given. Every database has the four system tables
+	// (ADR-0092), so a set made for each compilation would cost their
+	// allocations every time.
+	sourceSet *formula.SourceSet
 	// actions are the action definitions by upper-cased name (ADR-0045),
 	// and funcs the functions Open was given, which never change.
 	actions     map[string]*action
@@ -1053,9 +1060,9 @@ func (s *Store) load(ctx context.Context) error {
 // may name (ADR-0045) and the apps a class may belong to (ADR-0077). The
 // caller holds cmu.
 func (s *Store) env() model.Env {
-	set := formula.NewSourceSet()
-	for _, name := range s.tableOrder {
-		set.Add(s.tables[strings.ToUpper(name)].src)
+	set := s.sourceSet
+	if set == nil {
+		set = formula.NewSourceSet()
 	}
 	return model.Env{Schemas: s.schemas, Sources: set, Engine: s.bringing, Classes: func(name string) (*model.Class, bool) {
 		if c, ok := s.classes[strings.ToUpper(name)]; ok {

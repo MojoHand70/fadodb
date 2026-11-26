@@ -205,5 +205,6 @@ func (s *Store) RemoveTable(ctx context.Context, name string, opts ...Option) er
 			break
 		}
 	}
+	s.keepSources()
 	return nil
 }

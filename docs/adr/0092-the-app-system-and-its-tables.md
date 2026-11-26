@@ -232,6 +232,15 @@ Settled while building, on 2026-11-26.
 
 No hot path changes for a class that reads no system table: a lookup
 asks one more field of the table before it builds its rows in memory.
+
+The bench gate of the first push of this record found twelve more
+allocations for each list, figure, draft and look a formula is
+compiled for (`DraftsOfOneOrder`, `LiveList`, `LiveFigure`,
+`QueryLook`, and `Follow` by a hundredth of a percent): the store made
+the set of the tables a formula may read anew at each compilation, and
+every database now has four tables more. The store now keeps one set,
+made again whole when a table is defined or removed and never changed
+once made, so a compilation reads it and allocates nothing for it.
 A lookup of a system table is a statement every time, as a lookup of a
 large table is (ADR-0036); `SystemUsers` by `id` and the others by
 `name` are found by the primary key of the engine's own table. Opening

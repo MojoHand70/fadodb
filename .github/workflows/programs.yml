@@ -64,6 +64,12 @@ jobs:
         working-directory: analytics
         env:
           CGO_ENABLED: "1"
+          # The manual's chapter on reading a database with DuckDB is
+          # played with DuckDB's own extension for SQLite files, which
+          # is fetched here from DuckDB's site. "must": the chapter is
+          # played, or this step fails and says the extension could
+          # not be had. A skipped test would not show in this log.
+          FADODB_DUCKDB_SQLITE: must
         run: |
           go vet ./...
           go test -count=1 ./...

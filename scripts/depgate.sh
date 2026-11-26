@@ -43,7 +43,7 @@ if go list -deps ./fado ./fado/httpdoor ./examples/server | grep -q '/fado/outbo
 fi
 # And the tool does link it: a gate that looked for the wrong symbol
 # would pass for ever.
-CGO_ENABLED=0 go build -o "$out/fadodb" ./cmd/fadodb
+CGO_ENABLED=0 go build -o "$out/fadodb" ./cmd/fadodb-core
 go tool nm "$out/fadodb" > "$out/fadodb.symbols"
 if ! grep -q "$round_trip" "$out/fadodb.symbols"; then
   echo "depgate: the fadodb tool links no HTTP client, so this gate no longer sees one where there is one"
@@ -52,7 +52,7 @@ fi
 
 # No package that calls methods by their names (ADR-0072, item 3): a
 # template keeps every method of the program, which made it 2 MB larger.
-if go list -deps ./cmd/fadodb | grep -qE '^(text|html)/template$'; then
+if go list -deps ./cmd/fadodb-core | grep -qE '^(text|html)/template$'; then
   echo "depgate: the core program imports text/template or html/template, which keep every method of the program (ADR-0072)"
   missing=1
 fi

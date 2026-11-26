@@ -16,7 +16,8 @@ pure Go. Read
 
 ```
 make tools      # install staticcheck, govulncheck, benchstat
-make build      # bin/fadodb
+make build      # bin/fadodb-core, the program in pure Go
+make full       # bin/fadodb, the same program with the analytical engine (cgo, a C compiler)
 make test       # go test -race ./...
 make gates      # lint, vuln, depgate, sizegate, filegate, test  (what CI runs on the core)
 make analytics  # the DuckDB module: separate go.mod, needs cgo and a C compiler

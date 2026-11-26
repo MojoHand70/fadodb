@@ -1,6 +1,8 @@
-// Command fadodb is the FadoDB command-line tool and its server, in
-// pure Go. Its code is the package internal/cli; the module analytics
-// builds the same program with the analytical engine (ADR-0017).
+// Command fadodb-core is the FadoDB command-line tool and its server,
+// in pure Go and without the analytical engine. Its code is the package
+// internal/cli; the module analytics builds the same program with the
+// engine, DuckDB, as fadodb (ADR-0017, ADR-0089). The commands and their
+// answers are the same in both.
 package main
 
 import (

@@ -110,6 +110,13 @@ type Options struct {
 	// since it changes what is waited for and never a result. 0 keeps
 	// what is stored, or DefaultMaxQuestion for a new database.
 	MaxQuestion time.Duration
+	// TimeZone is the time zone of the database, by which its schedules
+	// go (ADR-0093): the name the database of time zones gives it, as
+	// Europe/Warsaw. It is kept in the metadata; a value given on open
+	// replaces the stored one, and the schedules that wait are then
+	// timed again. "" keeps what is stored, or UTC for a new database.
+	// NOW() and TODAY() in a formula stay as they are, in UTC.
+	TimeZone string
 	// BlobStore is the kind of blob store a new database records
 	// (ADR-0033): "sqlite", the default, a table in the database file;
 	// "dir", a directory beside it; or "external", the embedder's store
@@ -205,13 +212,17 @@ type Store struct {
 	synchronous string
 	maxIndexed  int
 	maxQuestion time.Duration
-	maxBlob     int64
-	blobKind    string
-	blobs       BlobStore
-	now         func() time.Time
-	vm          *formula.VM
-	qvm         *formula.VM // runs the key expressions of indexed lookups while vm runs the formula
-	wev         evaluator   // the writer's evaluator over vm, with its scratch
+	// zone is the database's time zone (ADR-0093), and rezoned says the
+	// program that opened the database gave it another than it had.
+	zone     *time.Location
+	rezoned  bool
+	maxBlob  int64
+	blobKind string
+	blobs    BlobStore
+	now      func() time.Time
+	vm       *formula.VM
+	qvm      *formula.VM // runs the key expressions of indexed lookups while vm runs the formula
+	wev      evaluator   // the writer's evaluator over vm, with its scratch
 	// curArgs, histArgs and eventArgs are the write step's argument
 	// lists, kept between commits; dayArg is the business day of dayOf,
 	// boxed.
@@ -277,6 +288,13 @@ type Store struct {
 	order      []string
 	tables     map[string]*table
 	tableOrder []string
+	// sourceSet is the tables as the binder sees them, made again whole
+	// whenever a table is registered or removed, and never changed once
+	// made: a formula compiled while another table is defined reads the
+	// set it was given. Every database has the four system tables
+	// (ADR-0092), so a set made for each compilation would cost their
+	// allocations every time.
+	sourceSet *formula.SourceSet
 	// actions are the action definitions by upper-cased name (ADR-0045),
 	// and funcs the functions Open was given, which never change.
 	actions     map[string]*action
@@ -342,7 +360,13 @@ type Store struct {
 	drainMu  sync.Mutex
 	flightMu sync.Mutex
 	inFlight map[flight]struct{}
-	wake     chan struct{}
+	// followRuns is where each follow that is under way stands between
+	// two of its transactions (ADR-0091), by the key of its row; under mu.
+	followRuns map[string]*followRun
+	// followEach is how many documents one transaction of a follow
+	// brings when a test sets it; 0 is followMany.
+	followEach int
+	wake       chan struct{}
 	// sleepUntil is the second of the database's clock at which the worker
 	// looks at the outbox again when nothing wakes it, 0 while it is
 	// awake; wakeAt, under the writer's lock, the earliest moment of the
@@ -543,7 +567,7 @@ func open(path string, o Options) (*Store, error) {
 		db.Close()
 		return nil, err
 	}
-	if err := s.init(ctx, sync, o.MaxText, o.MaxIndexedRows, o.MaxQuestion, o.BlobStore, o.MaxBlob); err != nil {
+	if err := s.init(ctx, sync, o.MaxText, o.MaxIndexedRows, o.MaxQuestion, o.BlobStore, o.MaxBlob, o.TimeZone); err != nil {
 		return fail(err)
 	}
 	if s.people.on {
@@ -591,6 +615,11 @@ func open(path string, o Options) (*Store, error) {
 	// The classes the engine brings (ADR-0053, item 7), once what is
 	// stored is loaded: a new database gets them here.
 	if err := s.bring(ctx); err != nil {
+		return fail(err)
+	}
+	// The schedules of the classes (ADR-0093): each has a row that waits
+	// for its next moment, by the clock of the database's time zone.
+	if err := s.openSchedules(ctx, s.rezoned); err != nil {
 		return fail(err)
 	}
 	ckpt, err := db.Conn(ctx)
@@ -679,7 +708,7 @@ func upgradeSchema(ctx context.Context, w *sql.Conn, from int64) error {
 
 // init creates the engine's tables when the database is new and reads
 // the metadata.
-func (s *Store) init(ctx context.Context, wantSync string, wantMaxText int, wantIndexed int, wantQuestion time.Duration, wantBlobs string, wantMaxBlob int64) error {
+func (s *Store) init(ctx context.Context, wantSync string, wantMaxText int, wantIndexed int, wantQuestion time.Duration, wantBlobs string, wantMaxBlob int64, wantZone string) error {
 	w := s.writer
 	if _, err := w.ExecContext(ctx, "BEGIN IMMEDIATE"); err != nil {
 		return storageErr("begin", err)
@@ -747,6 +776,21 @@ func (s *Store) init(ctx context.Context, wantSync string, wantMaxText int, want
 			return rollback(storageErr("write the metadata", err))
 		}
 	}
+	if wantZone != "" {
+		// The time zone the program gives (ADR-0093): one this machine
+		// knows, kept in place of the one the database had.
+		if _, e := zoneOf(wantZone); e != nil {
+			return rollback(e)
+		}
+		had := DefaultTimeZone
+		if err := w.QueryRowContext(ctx, "SELECT value FROM metadata WHERE key = 'timezone'").Scan(&had); err != nil && err != sql.ErrNoRows {
+			return rollback(storageErr("read the metadata", err))
+		}
+		s.rezoned = had != wantZone
+		if _, err := w.ExecContext(ctx, "INSERT INTO metadata (key, value) VALUES ('timezone', ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value", wantZone); err != nil {
+			return rollback(storageErr("write the metadata", err))
+		}
+	}
 	if wantQuestion > 0 {
 		// In microseconds: a test stops a question after very little.
 		if _, err := w.ExecContext(ctx, "INSERT INTO metadata (key, value) VALUES ('max_question_us', ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value", strconv.FormatInt(wantQuestion.Microseconds(), 10)); err != nil {
@@ -801,6 +845,16 @@ func (s *Store) init(ctx context.Context, wantSync string, wantMaxText int, want
 	if s.maxBlob, _ = strconv.ParseInt(meta["max_blob"], 10, 64); s.maxBlob <= 0 {
 		s.maxBlob = DefaultMaxBlob
 	}
+	zoneName := meta["timezone"]
+	if zoneName == "" {
+		zoneName = DefaultTimeZone
+	}
+	zone, zerr := zoneOf(zoneName)
+	if zerr != nil {
+		zerr.Message = "the database's time zone: " + zerr.Message
+		return zerr
+	}
+	s.zone = zone
 	s.blobKind = meta["blob_store"]
 	if s.blobKind == "" {
 		s.blobKind = "sqlite"
@@ -862,15 +916,17 @@ func (s *Store) prepareEngine(ctx context.Context) error {
 	// way of the first. A wake-up stands outside that order (ADR-0047):
 	// it waits for its moment, which may be far off, and holds back no
 	// action of its document meanwhile; and it is the document's own
-	// move, which no action of the document holds back.
-	engine := "'" + strings.Join([]string{model.ActionCreate, model.ActionTransition, model.ActionRefresh, model.ActionTableInsert, model.ActionTableUpdate, model.ActionTableDelete, ActionTimer}, "', '") + "'"
+	// move, which no action of the document holds back. A follow stands
+	// outside it too (ADR-0091, ADR-0093): it names no document, and the
+	// one of a schedule waits for a moment that may be a month off.
+	engine := "'" + strings.Join([]string{model.ActionCreate, model.ActionTransition, model.ActionRefresh, model.ActionTableInsert, model.ActionTableUpdate, model.ActionTableDelete, ActionTimer, ActionFollow}, "', '") + "'"
 	for _, due := range []struct {
 		dst  **sql.Stmt
 		only string
 	}{{&s.stmts.dueOutbox, ""}, {&s.stmts.dueEngine, " AND o.action IN (" + engine + ")"}, {&s.stmts.dueCalls, " AND o.action NOT IN (" + engine + ")"}} {
 		*due.dst, err = s.db.PrepareContext(ctx, "SELECT o.event_id, o.idx, o.class, o.doc_id, o.action, o.args, o.principal_id, o.principal_groups, o.depth FROM outbox o"+
 			" WHERE o.status = 'pending' AND o.due_at <= ?"+due.only+
-			" AND (o.action = '"+ActionTimer+"' OR NOT EXISTS (SELECT 1 FROM outbox p WHERE p.class = o.class AND p.doc_id = o.doc_id AND p.status = 'pending' AND p.action <> '"+ActionTimer+"'"+
+			" AND (o.action IN ('"+ActionTimer+"', '"+ActionFollow+"') OR NOT EXISTS (SELECT 1 FROM outbox p WHERE p.class = o.class AND p.doc_id = o.doc_id AND p.status = 'pending' AND p.action NOT IN ('"+ActionTimer+"', '"+ActionFollow+"')"+
 			" AND (p.event_id < o.event_id OR (p.event_id = o.event_id AND p.idx < o.idx))))"+
 			" ORDER BY o.due_at, o.event_id, o.idx LIMIT 64")
 		if err != nil {
@@ -950,6 +1006,11 @@ func (s *Store) load(ctx context.Context) error {
 			return err
 		}
 		s.registerTable(t)
+	}
+	// The app System and its tables (ADR-0092), before the classes,
+	// which may read them.
+	if err := s.keepSystem(ctx); err != nil {
+		return err
 	}
 	if rows, err = s.db.QueryContext(ctx, "SELECT name, version, json FROM classes ORDER BY rowid"); err != nil {
 		return storageErr("read the classes", err)
@@ -1042,9 +1103,9 @@ func (s *Store) load(ctx context.Context) error {
 // may name (ADR-0045) and the apps a class may belong to (ADR-0077). The
 // caller holds cmu.
 func (s *Store) env() model.Env {
-	set := formula.NewSourceSet()
-	for _, name := range s.tableOrder {
-		set.Add(s.tables[strings.ToUpper(name)].src)
+	set := s.sourceSet
+	if set == nil {
+		set = formula.NewSourceSet()
 	}
 	return model.Env{Schemas: s.schemas, Sources: set, Engine: s.bringing, Classes: func(name string) (*model.Class, bool) {
 		if c, ok := s.classes[strings.ToUpper(name)]; ok {

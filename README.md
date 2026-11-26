@@ -51,7 +51,7 @@ Website: [fadodb.org](https://fadodb.org). The manual starts at
 > reason of a change, and the log of reads that of a read, with every
 > SQL statement, for database administrators to read. A caller
 > may act for somebody only while a substitution says so, a document
-> the person gives and withdraws. The server is built. Every call of the Go API is also a command, a name and one JSON object answered by one JSON object, which `Exec` runs ([the commands](docs/manual/commands.md)); and a program that has opened a database can let it answer the commands over HTTP, as `POST /v1/<command>`, through the package `fado/httpdoor`, with the files beside them. A database can keep its own users, groups and keys, so that a request proves who sends it with a key. And `fadodb serve` puts these together: `fadodb init` makes a database, `fadodb user add` and `fadodb key new` its first administrator, and `fadodb serve` serves it, on this machine only unless it is given a certificate ([serving a database](docs/manual/serving-a-database.md)). The operator's settings say which hosts the actions of a served database may call and how much the server takes on, and the secrets of its connections are kept beside it, never in the database. An administrator reads the counts of the server, in the form Prometheus reads, at `GET /v1/metrics`. The stream of changes tells a caller of every event it may read of, in the order of the commits, without polling: in a Go program with `Subscribe`, and on the server at `POST /v1/subscribe`, a reply that stays open ([the stream of changes](docs/manual/the-stream-of-changes.md)). The commands are described for other languages in [api/openapi.json](api/openapi.json), written from the engine's own table. A class or an action in a file is checked before it reaches a database, with `fadodb class check` and `fadodb action check`. And the tool is a caller of a server from a terminal, with the key of a user: `fadodb exec` sends any command and prints the answer, or writes a query as an Excel file, in which a number is a number so that the reader's program shows it the reader's way, or as CSV for a program; `fadodb file put` and `fadodb file get` put a file on a document and read one ([commands from a terminal](docs/manual/commands-from-a-terminal.md)). The flow of a class is one command, `flow`: the documents in each state now, how long they stay there and how many moved along each transition, for the documents the caller may read ([see where documents wait](docs/manual/guides/see-where-documents-wait.md)). The door for agents is `fadodb mcp`: an agent's program starts it and finds each command as a tool, in the Model Context Protocol, sent to a server with the key of a user, so an agent works under the rules of the classes and the log says what it did ([the door for agents](docs/manual/the-door-for-agents.md)). The server runs in a container: the repository builds an image that holds the tool and nothing else, and a compose file keeps a served database running ([in a container](docs/manual/in-a-container.md)); a release publishes the image at `ghcr.io/mojohand70/fadodb`, under its version. And a system that speaks only its own language, such as a bank that tells of a payment, has a way in (ADR-0065): an inlet, a definition like an action's, says how its message proves who sent it and which one command it becomes; the server takes the message at `POST /v1/in/<inlet>`, with no key, once the operator turned that on, and carries the command out as a service user, once however often the message comes ([a way in for messages](docs/manual/a-way-in-for-messages.md)). Phase 7 has built what a page needs to show a document and work it out as the server does. The browser VM runs the same compiled formulas in a browser, from one plain JavaScript file published on npm as `fadodb-vm` ([the browser VM](web/vm/README.md)). A class says what it is to people: labels, descriptions, the columns of its list, formats, words in other languages, and sections, an outline whose rights stand for every variable in it ([a class](docs/manual/class.md)); and the bundle gives a page a class in the person's words with its formulas compiled, in one call ([the bundle](docs/manual/the-bundle.md)). `fadodb serve` signs people in itself, with a password and a second step or with a company's sign-on, and gives a client such as Claude a pass by OAuth, as an agent acting for the person ([signing in](docs/manual/signing-in.md)); it hands out the pages of a face from a folder and has none of its own ([the pages of a face](docs/manual/serving-a-database.md#the-pages-of-a-face)). The door for agents stands at the server itself too, at `/mcp`: Claude connects there with the pass a person gives it, and an agent's program that sets a header sends a key ([the door at the server](docs/manual/the-door-for-agents.md#at-the-server-itself)). An agent waits for a change with the tool `wait_for_changes`: it is answered the events after its place, or waits for the first, and is told where to ask from next ([waiting for a change](docs/manual/the-door-for-agents.md#waiting-for-a-change)). An app names the classes and tables that belong together ([apps](docs/manual/apps.md)). A live variable is worked out when it is read, for its reader, and kept nowhere ([live variables](docs/manual/live-variables.md)); one whose formula is a `QUERY` is a list of other documents, the invoices of an order, read a page at a time and filtered by the read rule, and a count, a sum, an average and the other functions over a list are worked out over it in one SQL statement ([lists of other documents](docs/manual/lists.md)). A table that holds rows takes a new column, has its columns changed and its rows removed by their keys, and a removed table says who removed it ([tables](docs/manual/tables.md)). An agent puts a file from a folder that whoever starts its door names, and writes one into it, with `put_file` and `get_file`, and nothing outside the folder is read or written ([files from a folder](docs/manual/the-door-for-agents.md#files-from-a-folder)). A command that changes a document may say which version of it its sender read, and is refused with `stale_version` when the document has moved on, so that nobody, a person or an agent, acts on numbers they did not see ([act only on the version you read](docs/manual/guides/act-on-what-you-read.md)); a database that v0.7.0 made is brought to the new layout when it is opened. Not built yet: the engine's own indexes (ADR-0075), the rest of a decision that stands on what the document holds (ADR-0078), and the analytical engine of Phase 8. The numbers are in
+> the person gives and withdraws. The server is built. Every call of the Go API is also a command, a name and one JSON object answered by one JSON object, which `Exec` runs ([the commands](docs/manual/commands.md)); and a program that has opened a database can let it answer the commands over HTTP, as `POST /v1/<command>`, through the package `fado/httpdoor`, with the files beside them. A database can keep its own users, groups and keys, so that a request proves who sends it with a key. And `fadodb serve` puts these together: `fadodb init` makes a database, `fadodb user add` and `fadodb key new` its first administrator, and `fadodb serve` serves it, on this machine only unless it is given a certificate ([serving a database](docs/manual/serving-a-database.md)). The operator's settings say which hosts the actions of a served database may call and how much the server takes on, and the secrets of its connections are kept beside it, never in the database. An administrator reads the counts of the server, in the form Prometheus reads, at `GET /v1/metrics`. The stream of changes tells a caller of every event it may read of, in the order of the commits, without polling: in a Go program with `Subscribe`, and on the server at `POST /v1/subscribe`, a reply that stays open ([the stream of changes](docs/manual/the-stream-of-changes.md)). The commands are described for other languages in [api/openapi.json](api/openapi.json), written from the engine's own table. A class or an action in a file is checked before it reaches a database, with `fadodb class check` and `fadodb action check`. And the tool is a caller of a server from a terminal, with the key of a user: `fadodb exec` sends any command and prints the answer, or writes a query as an Excel file, in which a number is a number so that the reader's program shows it the reader's way, or as CSV for a program; `fadodb file put` and `fadodb file get` put a file on a document and read one ([commands from a terminal](docs/manual/commands-from-a-terminal.md)). The flow of a class is one command, `flow`: the documents in each state now, how long they stay there and how many moved along each transition, for the documents the caller may read ([see where documents wait](docs/manual/guides/see-where-documents-wait.md)). The door for agents is `fadodb mcp`: an agent's program starts it and finds each command as a tool, in the Model Context Protocol, sent to a server with the key of a user, so an agent works under the rules of the classes and the log says what it did ([the door for agents](docs/manual/the-door-for-agents.md)). The server runs in a container: the repository builds an image of `fadodb`, with the libraries the analytical engine needs and no shell, and a small one of `fadodb-core`, which holds the tool and nothing else, and a compose file keeps a served database running ([in a container](docs/manual/in-a-container.md)); a release publishes the image at `ghcr.io/mojohand70/fadodb`, under its version. And a system that speaks only its own language, such as a bank that tells of a payment, has a way in (ADR-0065): an inlet, a definition like an action's, says how its message proves who sent it and which one command it becomes; the server takes the message at `POST /v1/in/<inlet>`, with no key, once the operator turned that on, and carries the command out as a service user, once however often the message comes ([a way in for messages](docs/manual/a-way-in-for-messages.md)). Phase 7 has built what a page needs to show a document and work it out as the server does. The browser VM runs the same compiled formulas in a browser, from one plain JavaScript file published on npm as `fadodb-vm` ([the browser VM](web/vm/README.md)). A class says what it is to people: labels, descriptions, the columns of its list, formats, words in other languages, and sections, an outline whose rights stand for every variable in it ([a class](docs/manual/class.md)); and the bundle gives a page a class in the person's words with its formulas compiled, in one call ([the bundle](docs/manual/the-bundle.md)). `fadodb serve` signs people in itself, with a password and a second step or with a company's sign-on, and gives a client such as Claude a pass by OAuth, as an agent acting for the person ([signing in](docs/manual/signing-in.md)); it hands out the pages of a face from a folder and has none of its own ([the pages of a face](docs/manual/serving-a-database.md#the-pages-of-a-face)). The door for agents stands at the server itself too, at `/mcp`: Claude connects there with the pass a person gives it, and an agent's program that sets a header sends a key ([the door at the server](docs/manual/the-door-for-agents.md#at-the-server-itself)). An agent waits for a change with the tool `wait_for_changes`: it is answered the events after its place, or waits for the first, and is told where to ask from next ([waiting for a change](docs/manual/the-door-for-agents.md#waiting-for-a-change)). An app names the classes and tables that belong together ([apps](docs/manual/apps.md)). A live variable is worked out when it is read, for its reader, and kept nowhere ([live variables](docs/manual/live-variables.md)); one whose formula is a `QUERY` is a list of other documents, the invoices of an order, read a page at a time and filtered by the read rule, and a count, a sum, an average and the other functions over a list are worked out over it in one SQL statement ([lists of other documents](docs/manual/lists.md)). A table that holds rows takes a new column, has its columns changed and its rows removed by their keys, and a removed table says who removed it ([tables](docs/manual/tables.md)). An agent puts a file from a folder that whoever starts its door names, and writes one into it, with `put_file` and `get_file`, and nothing outside the folder is read or written ([files from a folder](docs/manual/the-door-for-agents.md#files-from-a-folder)). A command that changes a document may say which version of it its sender read, and is refused with `stale_version` when the document has moved on, so that nobody, a person or an agent, acts on numbers they did not see ([act only on the version you read](docs/manual/guides/act-on-what-you-read.md)); a database that v0.7.0 made is brought to the new layout when it is opened. Not built yet: the engine's own indexes (ADR-0075), the rest of a decision that stands on what the document holds (ADR-0078), and the analytical engine of Phase 8. The numbers are in
 > [docs/perf/](docs/perf/), the plan in [ROADMAP.md](ROADMAP.md).
 
 ## What it is
@@ -221,20 +221,77 @@ touches no existing document. `fadodb check FILE` verifies the files of
 a database: that their bytes are unchanged and that none is missing. The full walk-through is `fado/example_test.go`, and
 `fado/readme_test.go` runs the class and the calls above.
 
+## Which program
+
+FadoDB is two programs from the same code. Every command, flag and
+setting is the same in both, and so is every answer.
+
+| | `fadodb` | `fadodb-core` |
+|---|---|---|
+| What it is | FadoDB with the analytical engine, DuckDB | the same program in pure Go, without the engine |
+| A question that reads a whole class: a sum, a count, a sorted page, totals by group, the flowchart | milliseconds, at any size | grows with the class; see below |
+| Reading a document, a commit, a list or a count an index narrows | the same | the same |
+| Needs from the system | its C and C++ libraries | nothing |
+| Size | 89 MB | 16 MB |
+
+Up to what size `fadodb-core` is enough, measured through the engine,
+on disk, on invoices that were each made, filed and paid:
+
+| The question, in `fadodb-core` | 10,000 documents | 100,000 | 1,000,000 | 3,400,000 |
+|---|---|---|---|---|
+| a sum in a live `LOOKUP` | 1 ms | 13 ms | 132 ms | 460 ms |
+| a count by a variable with no index | 0.4 ms | 7 ms | 69 ms | 240 ms |
+| a page of a list sorted by an amount | 4 ms | 13 ms | 93 ms | 318 ms |
+| totals by group | 2 ms | 19 ms | 194 ms | 675 ms |
+| the flowchart of the class | 37 ms | 0.4 s | 4.8 s | 18 s |
+
+In `fadodb` each of these takes 1 to 11 ms at every size of the table.
+
+- **Up to about 100,000 documents in the largest class, `fadodb-core`
+  is enough.**
+- **Between 100,000 and a million it works and slows down**, the
+  flowchart first.
+- **Beyond a million, take `fadodb`.**
+- **Below about 10,000 documents `fadodb` gives nothing**: both answer
+  in a few milliseconds.
+
+`fadodb` keeps a copy of the documents in a second file beside the
+database, about a tenth of its size, and feeds it itself.
+
 ## Install
 
-Each release has archives for Linux, macOS and Windows on amd64 and arm64,
-with a `checksums.txt`, on the
-[releases page](https://github.com/MojoHand70/fadodb/releases). Unpack the
-one for your platform and put `fadodb` on your path. With Go 1.26 or newer
-you can build it instead:
+A release has archives of both programs, with one `checksums.txt`, on the
+[releases page](https://github.com/MojoHand70/fadodb/releases):
 
-```
-go install github.com/MojoHand70/fadodb/cmd/fadodb@latest
-```
+| Program | Archives | For |
+|---|---|---|
+| `fadodb` | `fadodb_<version>_<system>` | Linux on amd64 and arm64, macOS on amd64 and arm64, Windows on amd64 |
+| `fadodb-core` | `fadodb-core_<version>_<system>` | the same, and Windows on arm64 |
+
+Unpack the one for your system and put the program on your path.
+
+- **This holds from the next release on.** The releases up to v0.7.0
+  have one program, named `fadodb`: it is the one without the engine,
+  which is `fadodb-core` now.
+- **`fadodb` for Linux needs Debian 12, Ubuntu 22.04 or a Linux as
+  new.** On an older one, on the Red Hat 9 family and on Alpine, take
+  `fadodb-core`, which needs nothing from the system.
+- **With Go 1.26 or newer `fadodb-core` is built instead**, from the
+  next release on with
+  `go install github.com/MojoHand70/fadodb/cmd/fadodb-core@latest`.
+  `fadodb` is not installed that way: it is built in a clone of the
+  repository, with `make full` and a C compiler.
+
+- **For containers there is an image of each**, from the next
+  release on: `ghcr.io/mojohand70/fadodb:<version>` holds `fadodb`,
+  and `ghcr.io/mojohand70/fadodb:<version>-core` holds `fadodb-core`
+  ([in a container](docs/manual/in-a-container.md)). The image of
+  `fadodb` carries the libraries it needs, so it runs on any Linux
+  that runs containers.
 
 Every release before 1.0 is a pre-release. `fadodb version` prints the
-version, the commit and the build date.
+version, the commit and the build date, and says "with the analytical
+engine"; `fadodb-core version` begins with its own name.
 
 ## Try the formula engine
 
@@ -288,15 +345,16 @@ Go 1.26 or newer.
 
 ```
 make tools    # staticcheck, govulncheck, benchstat
-make build    # bin/fadodb, in pure Go
-make full     # bin/fadodb-full: the same program with the analytical engine, DuckDB (needs a C compiler)
+make build    # bin/fadodb-core, in pure Go
+make full     # bin/fadodb: the same program with the analytical engine, DuckDB (needs a C compiler)
 make gates    # what CI runs
 ```
 
 ## Layout
 
 ```
-cmd/fadodb/        the program fadodb, in pure Go: a main that runs internal/cli
+cmd/fadodb-core/   the program fadodb-core, in pure Go: a main that runs internal/cli
+analytics/         the module with DuckDB; analytics/cmd/fadodb is the program fadodb, the same with the analytical engine
 internal/cli/      command-line tool and server: init, user add, key new, serve; exec, file put, file get; class check, action check, formula eval, check
 fado/              public Go API
 internal/formula/  lexer, parser, binder, bytecode, VM, SQL generator

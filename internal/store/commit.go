@@ -97,6 +97,12 @@ type command struct {
 	// whose command caused the action, for the record and for the actions
 	// the write queues in its turn.
 	engine bool
+	// follow is the trigger the command follows, table:<name> or
+	// schedule:<when> (ADR-0091, ADR-0093): a refresh of the engine's own
+	// that brings the variables listing it which follow it in the
+	// document's state, and writes nothing when no value comes out
+	// different.
+	follow string
 	// takenBack marks a commit that is made and then taken back, one of
 	// the moves of a preview of many (ADR-0048): no event of it stays,
 	// so what its answer shows past a rule goes to the log of reads as a
@@ -672,6 +678,14 @@ func (s *Store) run(ctx context.Context, cmd command, now time.Time) (*result, e
 				return nil, e
 			}
 		case opRefresh:
+			if cmd.follow != "" {
+				// The variables that follow the table or the schedule in
+				// the state the document is in (ADR-0091, ADR-0093):
+				// nobody's right is asked, and a write right of FALSE
+				// there has taken one out.
+				refreshes = c.following(cmd.follow, after.state)
+				break
+			}
 			var e *Error
 			if refreshes, e = c.refreshTargets(cmd.variables); e != nil {
 				return nil, e
@@ -763,10 +777,25 @@ func (s *Store) run(ctx context.Context, cmd command, now time.Time) (*result, e
 		}
 		// The triggered variables a Refresh names, in declaration order,
 		// each with the moment of this commit.
+		moved := false
 		for _, cv := range refreshes {
+			if cmd.follow != "" {
+				changed, err := s.followVar(c, cv, after, evalCtx, secs, cmd.preview, &res.errs)
+				if err != nil {
+					return nil, err
+				}
+				moved = moved || changed
+				continue
+			}
 			if err := s.recompute(c, cv, after, evalCtx, secs, cmd.preview, &res.errs); err != nil {
 				return nil, err
 			}
+		}
+		if cmd.follow != "" && !moved {
+			// Every value came out as it was: the document is left alone,
+			// with no version and no event (ADR-0091, item 2).
+			res.noop = true
+			return res, nil
 		}
 		s.takeKept(kids)
 	}
@@ -780,6 +809,11 @@ func (s *Store) run(ctx context.Context, cmd command, now time.Time) (*result, e
 	}
 	ev := eventFor(cmd.op)
 	ev.cause = cmd.cause
+	if cmd.follow != "" {
+		// The event of a document a table or a schedule brought says
+		// which (ADR-0091, item 5; ADR-0093).
+		ev.name = cmd.follow
+	}
 	from := after.state
 	if trans != nil {
 		evalCtx.State = from

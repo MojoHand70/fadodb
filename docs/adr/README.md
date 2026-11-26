@@ -96,3 +96,6 @@ line says so. Copy `0000-template.md` to start.
 | [0088](0088-people-sign-in-with-a-passkey.md) | People sign in with a passkey, invited by a link | Proposed |
 | [0089](0089-the-copy-beside-the-documents.md) | The copy beside the documents: how the analytical engine is fed and asked | Proposed |
 | [0090](0090-totals-by-group-in-a-query.md) | A total among the columns of a QUERY: one line for each group | Proposed |
+| [0091](0091-a-kept-value-that-follows-its-table.md) | A kept value that follows its table | Proposed |
+| [0092](0092-the-app-system-and-its-tables.md) | The app System and its tables: what the database holds, read as any table | Proposed |
+| [0093](0093-a-kept-value-that-follows-the-clock.md) | A kept value that follows the clock, and the time zone of a database | Proposed |

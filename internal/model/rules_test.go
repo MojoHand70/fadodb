@@ -176,10 +176,11 @@ func TestEventNameReason(t *testing.T) {
 	}
 }
 
-// The triggers of a triggered variable (ADR-0043, items 8 and 9): table:
-// and schedule: wait for the phase that runs them, and a trigger that can
-// fire on a move out of a terminal state is refused, since a frozen
-// document computes nothing.
+// The triggers of a triggered variable (ADR-0043, items 8 and 9):
+// schedule: says when in words (ADR-0093), table: names a table the
+// formula looks into (ADR-0091), and a trigger that can fire on a move
+// out of a terminal state is refused, since a frozen document computes
+// nothing.
 func TestTriggers_Diagnostics(t *testing.T) {
 	on := func(triggers string) string {
 		return `{"name": "T", "variables": {"a": {"type": "int"}, "b": {"formula": "a", "mode": "triggered", "on": [` + triggers + `]}},
@@ -192,8 +193,10 @@ func TestTriggers_Diagnostics(t *testing.T) {
  ]}`
 	}
 	for _, tc := range []struct{ name, triggers, code string }{
-		{"a schedule", `"schedule:daily"`, CodeNotSupported},
-		{"a table", `"table:Rates"`, CodeNotSupported},
+		{"a schedule that says nothing", `"schedule:"`, CodeBadTrigger},
+		{"a schedule in words the engine does not read", `"schedule:nightly"`, CodeBadTrigger},
+		{"a table the formula does not look into", `"table:Rates"`, CodeNotAllowed},
+		{"a table without a name", `"table"`, CodeBadTrigger},
 		{"the exit of a terminal state", `"exit:done"`, CodeNotAllowed},
 		{"a transition that leaves a terminal state", `"transition:file"`, CodeNotAllowed},
 		{"a transition one of whose sources is terminal", `"transition:park"`, CodeNotAllowed},
@@ -203,7 +206,7 @@ func TestTriggers_Diagnostics(t *testing.T) {
 	} {
 		expectDiag(t, tc.name, on(tc.triggers), tc.code, "/variables/b/on/0")
 	}
-	for _, triggers := range []string{`"refresh"`, `"enter:held"`, `"exit:open"`, `"transition:hold"`, `"transition:close"`, `"enter:done"`, `"enter:open", "exit:held", "refresh"`} {
+	for _, triggers := range []string{`"refresh"`, `"enter:held"`, `"exit:open"`, `"transition:hold"`, `"transition:close"`, `"enter:done"`, `"enter:open", "exit:held", "refresh"`, `"schedule:daily"`, `"schedule:monthly on 3rd monday at 06:00"`, `"enter:open", "schedule:every 4h"`} {
 		cls, diags := Define([]byte(on(triggers)), nil)
 		if len(diags) > 0 {
 			t.Errorf("%s: %s", triggers, diags.Error())
@@ -215,7 +218,7 @@ func TestTriggers_Diagnostics(t *testing.T) {
 		}
 	}
 	// A second finding on one variable does not hide the first.
-	if diags := expectDiag(t, "two triggers", on(`"schedule:daily", "exit:done"`), CodeNotAllowed, "/variables/b/on/1"); len(diags) != 2 {
+	if diags := expectDiag(t, "two triggers", on(`"schedule:nightly", "exit:done"`), CodeNotAllowed, "/variables/b/on/1"); len(diags) != 2 {
 		t.Errorf("want two findings, got: %s", diags.Error())
 	}
 }

@@ -137,6 +137,7 @@ fadodb serve acme.fado --settings settings.json --secrets-dir /run/secrets/fadod
 | `signon.NAME.company_emails` | the provider's e-mails are the company's own | false |
 | `analytics.memory` | the most memory the analytical engine may take, as text such as `"4GB"` or `"512MB"`; only [a server built with the engine](#a-server-with-the-analytical-engine) takes it | 2GB |
 | `analytics.threads` | how many threads the analytical engine uses | one for each core |
+| `timezone` | the time zone of the database, by which the schedules of its classes go, as `"Europe/Warsaw"`; the database keeps it ([Following the clock](triggered-variables.md#following-the-clock)) | the database keeps the one it has, UTC when it was never given one |
 
 - **The settings are the operator's.** Where the server listens, what
   it may call and how much it takes on are decided by whoever runs the
@@ -501,40 +502,81 @@ it ([files](files.md)).
 
 ## A server with the analytical engine
 
-`fadodb` is built in pure Go and answers every question by the store.
-The same program can be built with DuckDB, the analytical engine
-(ADR-0017, ADR-0089). A database it serves then keeps a copy of its
-documents beside its own file, and the questions that read everything
-are answered from the copy.
+FadoDB is two programs from the same code (ADR-0017, ADR-0089).
 
-It is built in the module `analytics`, which needs a C compiler:
+- **`fadodb` has the analytical engine, DuckDB.** A database it serves
+  keeps a copy of its documents beside its own file, and the questions
+  that read a whole class are answered from the copy, in milliseconds.
+- **`fadodb-core` is the same program in pure Go, without the
+  engine.** It answers every question by the store.
+
+Every command, flag and setting is the same in both, and so is every
+answer. `fadodb version` ends with "with the analytical engine";
+`fadodb-core version` begins with its own name. This manual writes
+`fadodb` for both.
+
+Up to what size `fadodb-core` is enough, measured through the engine,
+on disk, on invoices that were each made, filed and paid:
+
+| The question, in `fadodb-core` | 10,000 documents | 100,000 | 1,000,000 | 3,400,000 |
+|---|---|---|---|---|
+| a sum in a live `LOOKUP` | 1 ms | 13 ms | 132 ms | 460 ms |
+| a count by a variable with no index | 0.4 ms | 7 ms | 69 ms | 240 ms |
+| a page of a list sorted by an amount | 4 ms | 13 ms | 93 ms | 318 ms |
+| totals by group, one line for each customer | 2 ms | 19 ms | 194 ms | 675 ms |
+| the flowchart of the class | 37 ms | 0.4 s | 4.8 s | 18 s |
+| a list or a count an index narrows to a few documents | 1 ms | 1 ms | 1 ms | 1 ms |
+
+In `fadodb` each of these takes 1 to 11 ms at every size of the
+table.
+
+- **Up to about 100,000 documents in the largest class, `fadodb-core`
+  is enough**: everything a class asks is answered in under 30 ms, and
+  the flowchart in under half a second.
+- **Between 100,000 and a million it works and slows down.** A sum, a
+  sorted page or totals take a tenth to a third of a second at a
+  million, and the flowchart five seconds.
+- **Beyond a million, take `fadodb`.**
+- **Below about 10,000 documents `fadodb` gives nothing**: both answer
+  in a few milliseconds.
+- **The same in both at any size**: reading a document, a commit, and
+  a list or a count that an index narrows.
+
+Both are in a release, from the one after v0.7.0 on; the
+[README](../../README.md#install) says for which systems. From the
+repository they are built with:
 
 ```
-make full        # bin/fadodb-full
-bin/fadodb-full serve acme.fado
+make build       # bin/fadodb-core, in pure Go
+make full        # bin/fadodb, with the engine: needs a C compiler
+bin/fadodb serve acme.fado
 ```
 
-- **It is the same program.** Every command, flag and setting of
-  `fadodb` is there; `fadodb-full version` ends with "with the
-  analytical engine".
-- **The copy is the file `acme.fado.duckdb`**, beside the database. The
-  server feeds it itself and makes it again when it is lost; it needs
-  no backup. [Opening a database](opening-a-database.md#an-analytical-engine)
-  says what it holds.
-- **What it answers today is the flow of a class**, the command
-  [`flow`](commands.md#flow), which a flowchart is drawn from: among
-  3,400,000 invoices that visited ten million states, in a third of a
-  second where the store takes 18.6. Every other question is the
-  store's.
+- **`fadodb` needs the C and C++ libraries of its system.** The one of
+  a release for Linux runs on Debian 12, Ubuntu 22.04 and what is as
+  new; one built with `make full` runs where it was built.
+  `fadodb-core` needs nothing from the system and runs on any Linux.
+- **The copy is the file `acme.fado.duckdb`**, beside the database,
+  about a tenth of its size. The server feeds it itself and makes it
+  again when it is lost; it needs no backup.
+  [Opening a database](opening-a-database.md#an-analytical-engine)
+  says what it holds, what is answered from it and how fresh it is.
+- **What is answered from the copy**: the flow of a class, the
+  command [`flow`](commands.md#flow), which a flowchart is drawn from;
+  a count, and the total of a live `LOOKUP` or of a figure over a
+  list, that no index narrows; a page of a list the store does not
+  find in a moment; and a list of totals by group. Everything inside a
+  commit is the store's.
 - **It takes at most 2 GB of memory** for the engine, unless the
   settings say otherwise with `analytics.memory`.
 - **When it starts it says** that it keeps a copy of the documents, or
   that it keeps none and why; without the copy it answers by the
   store.
 
-Not here yet: the program built for each system and released, and an
-image for containers with the engine. Today it is built on the machine
-that runs it.
+The image for containers holds `fadodb`, and a second one
+`fadodb-core` ([In a container](in-a-container.md#the-image)). No
+release has been made with either name yet: until the one after
+v0.7.0 the programs and the images are built from the repository.
 
 ## What it says when it starts
 

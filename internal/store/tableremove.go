@@ -32,6 +32,9 @@ func (s *Store) DeleteRows(ctx context.Context, name string, keys []Values, opts
 	if err := refuseAt(o, "row delete"); err != nil {
 		return 0, err
 	}
+	if t.system {
+		return 0, systemWrite(t, "deletes its rows")
+	}
 	past, e := s.tableRefusal(t, true, o, s.clock(o))
 	if e != nil {
 		return 0, e
@@ -93,10 +96,22 @@ func (s *Store) DeleteRows(ctx context.Context, name string, keys []Values, opts
 			return rollback(err)
 		}
 	}
+	// The values that follow the table (ADR-0091), queued with the
+	// removal.
+	followed := 0
+	if removed > 0 {
+		var err error
+		if followed, err = s.queueFollows(ctx, t, o.principal, o.reason, 0, s.now()); err != nil {
+			return rollback(err)
+		}
+	}
 	if err := s.endTransaction(ctx); err != nil {
 		return rollback(storageErr("commit", err))
 	}
 	t.cache, t.tooBig = nil, false
+	if followed > 0 {
+		s.wakeWorker()
+	}
 	return removed, nil
 }
 
@@ -124,6 +139,9 @@ func (s *Store) RemoveTable(ctx context.Context, name string, opts ...Option) er
 	t, ok := s.tables[key]
 	if !ok {
 		return errf(CodeUnknownTable, "", "unknown table %q", name)
+	}
+	if t.system {
+		return systemWrite(t, "removes it")
 	}
 	for _, cname := range s.order {
 		c := s.classes[strings.ToUpper(cname)]
@@ -187,5 +205,6 @@ func (s *Store) RemoveTable(ctx context.Context, name string, opts ...Option) er
 			break
 		}
 	}
+	s.keepSources()
 	return nil
 }

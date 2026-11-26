@@ -38,6 +38,10 @@ type table struct {
 	// limit.
 	cache  *tableCache
 	tooBig bool
+	// system says the table is a system table (ADR-0092): name is its
+	// view, which nobody writes, and its rows change with the engine's
+	// records, so they are never kept in memory.
+	system bool
 }
 
 type tableCache struct {
@@ -137,6 +141,16 @@ func (t *table) prepare(ctx context.Context, writer *sql.Conn, db *sql.DB) error
 			*dst, err = on.PrepareContext(ctx, text)
 		}
 	}
+	// A system table is read only (ADR-0092): its view takes no write.
+	if t.system {
+		prep(&t.selectAll, writer, selectAll)
+		prep(&t.readAll, db, selectAll)
+		if err != nil {
+			t.close()
+			return storageErr("prepare the statements of "+t.def.Name, err)
+		}
+		return nil
+	}
 	prep(&t.upsert, writer, "INSERT INTO "+quote(t.name)+" ("+strings.Join(cols, ", ")+") VALUES ("+marks(len(cols))+") ON CONFLICT ("+strings.Join(quoteAll(t.def.Key), ", ")+")"+conflict)
 	// The insert of a rule's table.insert, which an existing key refuses.
 	prep(&t.insert, writer, "INSERT INTO "+quote(t.name)+" ("+strings.Join(cols, ", ")+") VALUES ("+marks(len(cols))+") ON CONFLICT ("+strings.Join(quoteAll(t.def.Key), ", ")+") DO NOTHING")
@@ -210,6 +224,19 @@ func (s *Store) registerTable(t *table) {
 		s.tableOrder = append(s.tableOrder, t.def.Name)
 	}
 	s.tables[key] = t
+	s.keepSources()
+}
+
+// keepSources makes the set of sources again from the tables as they are
+// now. The caller holds cmu for writing, or is Open.
+func (s *Store) keepSources() {
+	set := formula.NewSourceSet()
+	for _, name := range s.tableOrder {
+		if t, ok := s.tables[strings.ToUpper(name)]; ok {
+			set.Add(t.src)
+		}
+	}
+	s.sourceSet = set
 }
 
 func (s *Store) table(name string) (*table, *Error) {
@@ -222,11 +249,37 @@ func (s *Store) table(name string) (*table, *Error) {
 	return t, nil
 }
 
-// Tables lists the explicit tables in definition order.
+// Tables lists the explicit tables: the database's own in definition
+// order, then the system tables in the engine's (ADR-0092), so that the
+// list is the same after the database is opened again.
 func (s *Store) Tables() []string {
 	s.cmu.RLock()
 	defer s.cmu.RUnlock()
-	return append([]string(nil), s.tableOrder...)
+	return s.listed(func(*table) bool { return true })
+}
+
+// listed lists the tables that pass keep, the database's own first.
+func (s *Store) listed(keep func(*table) bool) []string {
+	out := []string{}
+	var system []string
+	for _, n := range s.tableOrder {
+		t, ok := s.tables[strings.ToUpper(n)]
+		switch {
+		case !ok || !keep(t):
+		case t.system:
+			system = append(system, n)
+		default:
+			out = append(out, n)
+		}
+	}
+	for _, n := range model.SystemTableNames() {
+		for _, have := range system {
+			if have == n {
+				out = append(out, n)
+			}
+		}
+	}
+	return out
 }
 
 // TablesOf lists the tables that belong to an app, in the order they
@@ -239,13 +292,7 @@ func (s *Store) TablesOf(name string) ([]string, error) {
 	if _, ok := s.apps[strings.ToUpper(name)]; !ok {
 		return nil, s.noSuchApp(name)
 	}
-	out := []string{}
-	for _, n := range s.tableOrder {
-		if t, ok := s.tables[strings.ToUpper(n)]; ok && strings.EqualFold(t.def.App, name) {
-			out = append(out, n)
-		}
-	}
-	return out, nil
+	return s.listed(func(t *table) bool { return strings.EqualFold(t.def.App, name) }), nil
 }
 
 // Table returns a compiled table definition by name.
@@ -284,6 +331,13 @@ func (s *Store) DefineTable(ctx context.Context, data []byte, opts ...Option) (*
 	def, diags := model.DefineTable(data)
 	if def == nil {
 		return nil, diags
+	}
+	// The name of a system table is the engine's (ADR-0092). A table of
+	// the database's own that has it from before this engine keeps it.
+	if model.IsSystemTable(def.Name) && (old == nil || old.system) {
+		return nil, model.Diagnostics{{Code: model.CodeReservedName, Path: "/name", Pos: -1,
+			Message: strconv.Quote(def.Name) + " is a system table, which the engine keeps in every database (ADR-0092)",
+			Hint:    "give the table another name; a class reads " + def.Name + " as it reads any table"}}
 	}
 	version := def.Version
 	// The app the table belongs to is one the database has (ADR-0079,
@@ -452,8 +506,21 @@ func (s *Store) DefineTable(ctx context.Context, data []byte, opts ...Option) (*
 		return rollback(derr)
 	}
 	def.Defined = defined
+	// A table that held rows may hold them otherwise under its new
+	// definition (ADR-0084): the values that follow it are looked at
+	// again (ADR-0091), as the designer who changed it.
+	followed := 0
+	if old != nil && !moving {
+		var ferr error
+		if followed, ferr = s.queueFollowsOf(ctx, t, s.followersOf(def.Name), o.principal, o.reason, 0, s.now()); ferr != nil {
+			return rollback(ferr)
+		}
+	}
 	if err := s.endTransaction(ctx); err != nil {
 		return nil, storageErr("commit", err)
+	}
+	if followed > 0 {
+		s.wakeWorker()
 	}
 	if moving {
 		// The same storage, the same statements and the same rows in
@@ -476,6 +543,7 @@ func (s *Store) DefineTable(ctx context.Context, data []byte, opts ...Option) (*
 	}
 	if err := t.prepare(ctx, w, s.db); err != nil {
 		delete(s.tables, strings.ToUpper(def.Name))
+		s.keepSources()
 		return nil, err
 	}
 	s.registerTable(t)
@@ -498,6 +566,9 @@ func (s *Store) ImportRows(ctx context.Context, name string, rows []Values, opts
 	}
 	if err := refuseAt(o, "row import"); err != nil {
 		return 0, err
+	}
+	if t.system {
+		return 0, systemWrite(t, "imports rows into it")
 	}
 	// The write rule of the table (ADR-0051, item 7). A content
 	// administrator's import past it is written down with the rows, in
@@ -553,10 +624,18 @@ func (s *Store) ImportRows(ctx context.Context, name string, rows []Values, opts
 			return rollback(err)
 		}
 	}
+	// The values that follow the table (ADR-0091), queued with the rows.
+	followed, err := s.queueFollows(ctx, t, o.principal, o.reason, 0, s.now())
+	if err != nil {
+		return rollback(err)
+	}
 	if err := s.endTransaction(ctx); err != nil {
 		return rollback(storageErr("commit", err))
 	}
 	t.cache, t.tooBig = nil, false
+	if followed > 0 {
+		s.wakeWorker()
+	}
 	return len(rows), nil
 }
 
@@ -882,7 +961,7 @@ func (t *table) cacheFor(s *Store) (*tableCache, bool) {
 	if t.cache != nil {
 		return t.cache, true
 	}
-	if t.tooBig {
+	if t.tooBig || t.system {
 		return nil, false
 	}
 	rows, over, err := t.scanRows(context.Background(), t.selectAll, s.maxIndexed)

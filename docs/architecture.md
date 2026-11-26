@@ -412,12 +412,30 @@ views add the time as `<name>__at`, and a document carries all three
 under `computed`. Such a value is consistent as of that moment, and the
 document says which.
 
-Triggered variables are also to recalculate on `table:<name>` when the
-named table or stack changes, and on `schedule:<spec>`. Those recomputes
-are **set-wise**: one query per class computes the new value for every
-affected document, and the results are applied as system commits, never
-one query per document. They arrive with the set-wise work of Phase 8;
-until then a class that names either trigger is refused.
+A triggered variable that lists `table:<name>` follows that table
+(ADR-0091): when its rows change, the variable is worked out again in
+every document of the class that is not finished, and kept where it
+comes out different. The change of the table queues a row of the
+outbox in its own transaction; the worker finds the documents with
+one statement of the store, the formula written as SQL and compared
+with the kept value, and brings them a thousand in a transaction,
+each with a version and an event of its own, never one query per
+document. Nobody's right is asked for it: the right is asked of
+whoever changes the table, and a class stops the value in a state
+with a `write` right of `FALSE`. A commit that brings a document into
+a state where the variable follows works it out too, as `enter:` of
+that state would, so a document is never in such a state with a value
+the table no longer has.
+
+A triggered variable that lists `schedule:<when>` follows the clock
+(ADR-0093): the words say when, `daily at 03:00`, `monthly on 3rd
+monday`, `every 4h`, by the clock of the database's own time zone,
+which the program that opens the database gives and the database
+keeps; UTC when none was given. It is the same machine: each schedule
+of a class has a row of the outbox that waits for its next moment, the
+worker runs it as it runs the row of a table, and the row that ran
+queues the next. The engine itself brings the value, so its commits
+have no actor. `NOW()` and `TODAY()` in a formula stay in UTC.
 
 The browser evaluates auto formulas live while a user edits, from the same
 bytecode, so the user sees totals change before saving. The server's result
@@ -1182,8 +1200,10 @@ a command sent to `/v1/` does.
 > environment. It answers its counts to an administrator at
 > `GET /v1/metrics`. The stream of changes is built: the Go call
 > `Subscribe`, and its address on the server, `POST /v1/subscribe`.
-> The server runs in a container as on a machine: the image the
-> repository builds holds the tool and nothing else
+> The server runs in a container as on a machine: the repository
+> builds an image of `fadodb`, which holds the tool and the libraries
+> the analytical engine needs, and one of `fadodb-core`, which holds
+> the tool and nothing else
 > ([in a container](manual/in-a-container.md)). A system that
 > speaks only its own language has a way in (ADR-0065): an
 > inlet, a definition that says how its message proves who sent it
@@ -1399,7 +1419,7 @@ in 13.7 ns with no allocation, and the core binary is 2.9 MB
 
 ```
 fadodb/
-  cmd/fadodb/            the program fadodb, in pure Go: a main that runs internal/cli
+  cmd/fadodb-core/       the program fadodb-core, in pure Go: a main that runs internal/cli
   internal/cli/          the command-line tool and server, built into both programs: init, user, key, serve, exec (any command sent to a server, a query as an Excel file or as CSV), file put and file get, class check, action check, formula, check today; bench to come
   fado/                  public Go API (small surface, see Go API)
   internal/formula/      lexer, parser, binder, bytecode, vm, sqlgen (dialects), catalog

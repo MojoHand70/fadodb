@@ -481,6 +481,11 @@ func Open(path string, o Options) (*DB, error) {
 // 6): the database's limit, five seconds when none was given.
 func (db *DB) MaxQuestion() time.Duration { return db.s.MaxQuestion() }
 
+// TimeZone is the database's time zone, by which the schedules of its
+// classes go (ADR-0093): the one Options.TimeZone last gave it, UTC
+// when none ever did.
+func (db *DB) TimeZone() string { return db.s.TimeZone() }
+
 // CopyState says how the copy of the database in the analytical engine
 // stands (ADR-0089): whether the program gave an engine, how many feeds
 // wrote to the copy, and why the last one failed. Without an engine the

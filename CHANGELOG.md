@@ -10,6 +10,77 @@ Phase 8 started on 2026-11-25.
 
 ### Added
 
+- The app System and its tables (ADR-0092, proposed). Every database
+  has the app `System`, the engine's own, and four tables in it:
+  `SystemApps`, `SystemClasses`, `SystemUsers` and `SystemGroups`,
+  the apps, classes, users and groups the database holds at the
+  moment they are read. A formula reads them as any table:
+  `LOOKUP(SystemUsers, name, id = THIS.approver)` names a person,
+  `QUERY(SystemApps, {name, label, icon}, name <> "System", {label})`
+  lists the apps for a start page. Everybody may read them, as
+  `list_users` and `list_groups` answer everybody; nobody writes them,
+  a content administrator neither: `import_rows`, `delete_rows` and
+  `remove_table` are refused with `read_only`, a rule's table action
+  with `not_allowed`, `table:` on one with `not_supported`, and a
+  table or a class under one of the four names with `reserved_name`.
+  A database made before gets them when it is opened; one where a
+  designer made an app `System` keeps it with its words. `list_apps`
+  now names `System`, and `list_tables` lists the four after the
+  database's own tables. Chapter: `docs/manual/system-tables.md`.
+- A kept value that follows the clock (ADR-0093, proposed). A
+  triggered variable may list `schedule:<when>`, with when in words:
+  `hourly`, `daily at 03:00`, `weekly on friday at 18:00`,
+  `monthly on 15`, `monthly on last day`,
+  `monthly on 3rd monday at 06:00`, `every 15m`, `every 4h`. At each
+  of those moments the variable is worked out again in every document
+  of the class that is not in a final state, and kept where it comes
+  out different, as when a table changes: a commit for each document,
+  the rules of the class, and a `write` right of `FALSE` in a state
+  makes the value stand there. The engine itself brings it: the event
+  is of the kind `refresh`, named after the schedule, with no actor.
+  A commit that brings a document into a state where the variable
+  follows works it out too, so a new document has the value in its
+  first version.
+  Each schedule of a class has a row of the outbox that waits for its
+  next moment, so the queue shows when it runs next; a server that
+  was down at the moment works the values out once when it starts.
+- A database has a time zone, by which its schedules go (ADR-0093):
+  `Options.TimeZone` for a Go program, the member `timezone` of the
+  server's settings, as `"Europe/Warsaw"`. The database keeps it; one
+  that was never given a zone is in UTC, as before. `NOW()` and
+  `TODAY()` in a formula stay in UTC. Both programs carry the
+  database of time zones, so the image for containers knows them.
+- Up to what size `fadodb-core` is enough, measured and printed in the
+  README and in the manual: a sum, a count, a sorted page and totals
+  by group over a whole class, and its flowchart, at 10,000, 100,000,
+  1,000,000 and 3,400,000 documents. Up to about 100,000 documents in
+  the largest class everything a class asks is answered in under
+  30 ms; at a million a sum takes 132 ms and the flowchart 4.8
+  seconds, where `fadodb` takes milliseconds.
+- A kept value that follows its table (ADR-0091, proposed). A
+  triggered variable may list `table:<name>`, the name of a table its
+  own formula looks into: `"on": ["table:Rates"]`.
+  When the rows of that table change, the variable is worked out
+  again in every document of the class that is not in a final state,
+  and kept where it comes out different; a document whose value
+  comes out the same gets no version. Nobody's right is asked: the
+  right is asked of whoever changes the table, by the table's own
+  `write` rule, and what follows is the class's. A class stops the
+  value in a state with a `write` right of `FALSE` on the variable
+  there. A commit that brings a document into a state where the
+  variable follows brings the value too: a new document has it in its
+  first version, a document that comes back from a state where the
+  value stood has the table's value in the commit that brings it
+  back, and on a path round such a state the value follows on. Each
+  document brought gets a commit of its own, with an
+  event of the kind `refresh` named `table:<Name>` by whoever changed
+  the table; the rules of the class fire, and a command that saw the
+  version before is refused with `stale_version`. The change queues
+  the work as a row of the outbox whose action is `follow`, and the
+  worker brings the documents a thousand in a transaction: 100,000
+  invoices in under five seconds, with a commit of somebody else
+  waiting 45 ms meanwhile. Not built: a value that follows the
+  documents of a class, and a kept list that follows a table.
 - One line for each group, with its totals: a column of a `QUERY` may
   be a total (ADR-0090, proposed). In a live variable,
   `QUERY(Invoice, {customer, COUNT(id), SUM(net)})` answers one line
@@ -414,6 +485,41 @@ Phase 8 started on 2026-11-25.
   It is worked out again now. In v0.7.0 too.
 
 ### Changed
+
+- The image for containers holds `fadodb`, the program with the
+  analytical engine, and a second image holds `fadodb-core` (ADR-0089).
+  From the next release on `ghcr.io/mojohand70/fadodb:<version>` is
+  the first and `ghcr.io/mojohand70/fadodb:<version>-core` the second;
+  the images up to v0.7.0 hold the program without the engine under
+  the plain name. The image of `fadodb` stands on a base with the C
+  and C++ libraries DuckDB needs and has no shell; it is about 118 MB
+  where the small one is 17. A database it serves keeps its copy in
+  the volume, beside the database. `docker build -t fadodb .` builds
+  the first and `docker build -t fadodb-core --target core .` the
+  second. Each image is built for Intel and ARM, and the chapter of
+  the manual is played against it on a machine of each kind before it
+  is published.
+- The two programs have the names the owner gave them (ADR-0089).
+  `fadodb` is FadoDB with the analytical engine, DuckDB, and
+  `fadodb-core` is the same program in pure Go, without it: what was
+  `fadodb-full` and `fadodb`. Every command, flag, setting and answer
+  is the same in both; `fadodb version` ends with "with the analytical
+  engine" and `fadodb-core version` begins with its own name. In the
+  repository `make build` makes `bin/fadodb-core` and `make full`
+  makes `bin/fadodb`; the program in pure Go is `cmd/fadodb-core`, so
+  from the next release on it is installed with
+  `go install github.com/MojoHand70/fadodb/cmd/fadodb-core@latest`.
+  The releases up to v0.7.0 have one program, named `fadodb`: it is
+  the one without the engine.
+- A release has both programs. `fadodb` is built on a machine of each
+  system DuckDB is built for, Linux and macOS on amd64 and arm64 and
+  Windows on amd64, tried there as an operator runs it, and attached
+  beside `fadodb-core`, which is built for those and for Windows on
+  arm64, under one `checksums.txt`. A release is made only when every
+  `fadodb` is there. The Linux `fadodb` runs on Debian 12, Ubuntu
+  22.04 and what is as new. Every pull request builds and tries
+  `fadodb` on the five systems. The image for containers still holds
+  the program without the engine.
 
 - A message is read faster: the formulas of an inlet read one body,
   and the engine now parses it once and not once for each formula. A

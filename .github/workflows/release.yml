@@ -8,7 +8,18 @@ permissions:
   contents: write
 
 jobs:
+  # fadodb, the program with the analytical engine, is built first, on a
+  # machine of each system, tried there, and kept: a release is made
+  # only when every one of them is there, so that no release is without
+  # the program its name stands for (ADR-0089, step 6).
+  programs:
+    uses: ./.github/workflows/programs.yml
+    with:
+      version: ${{ github.ref_name }}
+      keep: true
+
   goreleaser:
+    needs: programs
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -27,6 +38,20 @@ jobs:
           cache: npm
           cache-dependency-path: web/package-lock.json
       - run: make vmtest
+      # The archives of fadodb, for GoReleaser to attach beside the ones
+      # of fadodb-core it builds itself, and to checksum with them. The
+      # folder is one git does not look at, as GoReleaser asks.
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: fadodb-*
+          path: bin/programs
+          merge-multiple: true
+      - name: Every system has its fadodb
+        run: |
+          ls -l bin/programs
+          for system in linux_amd64 linux_arm64 darwin_arm64 darwin_amd64 windows_amd64; do
+            ls bin/programs/fadodb_*_"$system".* >/dev/null
+          done
       - uses: goreleaser/goreleaser-action@v7
         with:
           distribution: goreleaser
@@ -35,12 +60,31 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+  image-on-arm:
+    # The images are published for two kinds of machine, and this job
+    # plays their chapter on the one the publishing job is not: so each
+    # image has run, on a machine of its own kind, before it is
+    # published.
+    runs-on: ubuntu-24.04-arm
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          check-latest: true
+      - name: Check the images on ARM
+        run: scripts/image.sh check
+
   image:
-    # The image for containers, published under the version of the tag
-    # and under no other name (docs/manual/in-a-container.md). A job of
-    # its own: the binaries of a release neither wait for it nor fail
-    # with it. It is published only after its chapter of the manual was
-    # played against it.
+    # The images for containers, published under the version of the tag
+    # and under no other name (docs/manual/in-a-container.md): fadodb,
+    # with the analytical engine, and fadodb-core beside it as
+    # <version>-core. A job of its own: the binaries of a release
+    # neither wait for it nor fail with it. They are published only
+    # after their chapter of the manual was played against them.
+    needs: image-on-arm
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -53,7 +97,7 @@ jobs:
           check-latest: true
       - name: Sign in to the registry
         run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io --username "${{ github.actor }}" --password-stdin
-      - name: Check the image and publish it
+      - name: Check the images and publish them
         run: scripts/image.sh push "${GITHUB_REF_NAME#v}"
 
   npm:

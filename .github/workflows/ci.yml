@@ -45,44 +45,45 @@ jobs:
         with:
           go-version-file: go.mod
           check-latest: true
+      # The store's tests take up to nine minutes on the macOS runner
+      # under the race detector, and Go stops a package after ten: the
+      # limit is said here, so that a slow runner fails no pull request.
       - name: Test with the race detector
         if: runner.os != 'Windows'
-        run: go test -race -count=1 ./...
+        run: go test -race -count=1 -timeout 20m ./...
       - name: Test
         if: runner.os == 'Windows'
         run: go test -count=1 ./...
       - name: Build
         run: go build ./...
 
-  analytics:
-    name: analytics / ubuntu-latest
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-go@v7
-        with:
-          go-version-file: go.mod
-          check-latest: true
-      - name: Test the DuckDB module with cgo
-        working-directory: analytics
-        env:
-          CGO_ENABLED: "1"
-        run: |
-          go vet ./...
-          go test -count=1 ./...
+  # fadodb, the program with the analytical engine, built and tried on
+  # each system it is released for; the DuckDB module is tested whole on
+  # one of them (.github/workflows/programs.yml).
+  programs:
+    name: programs
+    uses: ./.github/workflows/programs.yml
 
   image:
-    name: image
-    runs-on: ubuntu-latest
+    name: image / ${{ matrix.machine }}
+    runs-on: ${{ matrix.machine }}
+    strategy:
+      fail-fast: false
+      matrix:
+        # A machine of each kind a release publishes the images for: the
+        # chapter is played against an image that runs there, and the
+        # image for the other kind is built by this one's compiler.
+        machine: [ubuntu-latest, ubuntu-24.04-arm]
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
           check-latest: true
-      - name: Build the image for containers and play its chapter of the manual against it
-        # For the machines a release publishes it for; nothing is
-        # published here (docs/manual/in-a-container.md).
+      - name: Build the images for containers and play their chapter of the manual against them
+        # fadodb and fadodb-core, for the machines a release publishes
+        # them for; nothing is published here
+        # (docs/manual/in-a-container.md).
         run: scripts/image.sh check
 
   changes:

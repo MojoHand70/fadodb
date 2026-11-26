@@ -1,9 +1,11 @@
-# The image is built from the Go module and the three trees of the
-# tool, and from nothing else in the folder: no personal file, no
-# database and no build output reaches the builder.
+# The images are built from the Go module, the module with DuckDB, the
+# benchmark harness it uses and the three trees of the tool, and from nothing else in the folder: no
+# personal file, no database and no build output reaches the builder.
 *
 !go.mod
 !go.sum
+!analytics
+!bench
 !cmd
 !fado
 !internal
@@ -18,3 +20,5 @@
 **/*.fado-wal
 **/*.fado-shm
 **/*.lock
+**/*.duckdb
+**/*.duckdb.wal

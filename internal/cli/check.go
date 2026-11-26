@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 
+	"github.com/MojoHand70/fadodb/internal/model"
 	"github.com/MojoHand70/fadodb/internal/store"
 )
 
@@ -53,7 +54,15 @@ func runCheck(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "fadodb check: %v\n", err)
 		return 1
 	}
-	fmt.Fprintf(stdout, "%s: %d classes, %d tables, %d blobs checked", args[0], len(s.Classes()), len(s.Tables()), check.Checked)
+	// The system tables are views over the engine's records (ADR-0092),
+	// and hold no rows of their own to count.
+	tables := 0
+	for _, name := range s.Tables() {
+		if !model.IsSystemTable(name) {
+			tables++
+		}
+	}
+	fmt.Fprintf(stdout, "%s: %d classes, %d tables, %d blobs checked", args[0], len(s.Classes()), tables, check.Checked)
 	if len(check.Mismatched) == 0 {
 		fmt.Fprint(stdout, ", all match")
 	} else {

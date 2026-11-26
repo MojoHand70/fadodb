@@ -25,6 +25,11 @@ import (
 	"strings"
 
 	"github.com/MojoHand70/fadodb/fado"
+
+	// The time zones, so that a database has its zone (ADR-0093) on a
+	// machine that has no database of them, as the image for containers
+	// has none.
+	_ "time/tzdata"
 )
 
 // What the program says of itself: its release, set by the release
@@ -50,6 +55,15 @@ type Build struct {
 	Version, Commit, Date string
 	Engine                func(memory string, threads int) fado.Analytics
 }
+
+// coreNote ends the help of the program without the analytical engine:
+// its commands are written as fadodb's, which they are.
+const coreNote = `
+This program is fadodb-core: FadoDB without the analytical engine. Its
+commands and their answers are those of fadodb, as written above. The
+program fadodb answers the questions that read a whole class in
+milliseconds on a large database; see the README, "Which program".
+`
 
 const usage = `fadodb - an embeddable active document database (pre-release)
 
@@ -137,6 +151,9 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return 0
 	case "help", "--help", "-h":
 		fmt.Fprint(stdout, usage)
+		if makeEngine == nil {
+			fmt.Fprint(stdout, coreNote)
+		}
 		return 0
 	}
 	fmt.Fprintf(stderr, "fadodb: unknown command %q\n\n%s", args[0], usage)
@@ -169,7 +186,12 @@ func versionStringFrom(ver, rev, built string, info *debug.BuildInfo) string {
 			}
 		}
 	}
-	s := "fadodb " + v
+	// The program says which of the two it is (ADR-0089): fadodb has
+	// the analytical engine, fadodb-core is the same program without.
+	s := "fadodb-core " + v
+	if makeEngine != nil {
+		s = "fadodb " + v
+	}
 	if c != "" {
 		s += " (" + c
 		if built != "" {

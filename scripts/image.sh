@@ -1,15 +1,21 @@
 #!/usr/bin/env bash
-# The image of FadoDB for containers (the Dockerfile at the root).
+# The images of FadoDB for containers (the Dockerfile at the root): that
+# of fadodb, with the analytical engine, and that of fadodb-core, the
+# same program in pure Go (ADR-0089).
 #
-#   scripts/image.sh build [NAME]   build it for this machine, as NAME (fadodb)
-#   scripts/image.sh check          build it for every machine a release
-#                                   publishes it for, and play its chapter
-#                                   of the manual against this machine's
-#   scripts/image.sh push VERSION   check, then publish it under VERSION
+#   scripts/image.sh build [NAME]   build both for this machine, as NAME
+#                                   (fadodb) and NAME-core
+#   scripts/image.sh check          build both for every machine a release
+#                                   publishes them for, and play their
+#                                   chapter of the manual against this
+#                                   machine's
+#   scripts/image.sh push VERSION   check, then publish them under VERSION
+#                                   and VERSION-core
 #
-# check is what GitHub runs on every push; push is what a release runs,
-# signed in to the registry. An image is published only after its
-# chapter, docs/manual/in-a-container.md, was played against it.
+# check is what GitHub runs on every push, on a machine of each kind a
+# release publishes for; push is what a release runs, signed in to the
+# registry. An image is published only after its chapter,
+# docs/manual/in-a-container.md, was played against it.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -43,17 +49,20 @@ check() {
   local version="$1" name="$2"
   mapfile -t args < <(stamp "$version")
   mapfile -t with < <(builder)
-  echo "image: building for $PLATFORMS"
+  echo "image: building both for $PLATFORMS"
   docker buildx build ${with[@]+"${with[@]}"} --platform "$PLATFORMS" "${args[@]}" .
+  docker buildx build ${with[@]+"${with[@]}"} --platform "$PLATFORMS" --target core "${args[@]}" .
   echo "image: playing the chapter against this machine's"
   docker buildx build ${with[@]+"${with[@]}"} --load --tag "$name" "${args[@]}" .
-  FADODB_IMAGE="$name" go test -count=1 -run 'Container' ./internal/cli
+  docker buildx build ${with[@]+"${with[@]}"} --load --tag "$name-core" --target core "${args[@]}" .
+  FADODB_IMAGE="$name" FADODB_IMAGE_CORE="$name-core" go test -count=1 -run 'Container' ./internal/cli
 }
 
 case "${1:-}" in
   build)
     mapfile -t args < <(stamp "$(git describe --tags --always --dirty 2>/dev/null || echo dev)")
     docker build --tag "${2:-fadodb}" "${args[@]}" .
+    docker build --tag "${2:-fadodb}-core" --target core "${args[@]}" .
     ;;
   check)
     check dev fadodb:check
@@ -67,11 +76,14 @@ case "${1:-}" in
     check "$version" "fadodb:$version"
     mapfile -t args < <(stamp "$version")
     mapfile -t with < <(builder)
-    echo "image: publishing $REGISTRY:$version for $PLATFORMS"
+    # The plain name is the program with the analytical engine, as
+    # with the programs of a release; the small one stands beside it.
+    echo "image: publishing $REGISTRY:$version and $REGISTRY:$version-core for $PLATFORMS"
     docker buildx build ${with[@]+"${with[@]}"} --platform "$PLATFORMS" --tag "$REGISTRY:$version" --push "${args[@]}" .
+    docker buildx build ${with[@]+"${with[@]}"} --platform "$PLATFORMS" --target core --tag "$REGISTRY:$version-core" --push "${args[@]}" .
     ;;
   *)
-    sed -n '2,12p' "$0" | sed 's/^# \{0,1\}//'
+    sed -n '2,17p' "$0" | sed 's/^# \{0,1\}//'
     exit 2
     ;;
 esac

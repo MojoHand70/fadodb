@@ -425,7 +425,7 @@ func TestTablesActionsAndTheQueue(t *testing.T) {
 	if got := run(t, s, ann, "get_table", `{"name": "Rates"}`); !reflect.DeepEqual(got, rates) {
 		t.Fatalf("get_table answered %v", got)
 	}
-	if got := run(t, s, ann, "list_tables", `{}`)["tables"].([]any); len(got) != 1 || got[0] != "Rates" {
+	if got := run(t, s, ann, "list_tables", `{}`)["tables"].([]any); !reflect.DeepEqual(got, append([]any{"Rates"}, systemTables...)) {
 		t.Fatalf("list_tables answered %v", got)
 	}
 	if n := run(t, s, ann, "import_rows", `{"table": "Rates", "rows": [{"currency": "EUR", "rate": 4.25}, {"currency": "USD", "rate": 3.9}]}`); n["imported"] != float64(2) {
@@ -1562,8 +1562,9 @@ func TestTheCommandsOfClientsAndGrants(t *testing.T) {
 func TestTheCommandsOfTheApps(t *testing.T) {
 	s := open(t)
 
-	// A database has no app until somebody makes one.
-	if got := run(t, s, ann, "list_apps", `{}`)["apps"].([]any); len(got) != 0 {
+	// A database has no app of its own until somebody makes one: only
+	// System, the engine's (ADR-0092).
+	if got := run(t, s, ann, "list_apps", `{}`)["apps"].([]any); !reflect.DeepEqual(got, []any{"System"}) {
 		t.Fatalf("list_apps of a new database answered %v", got)
 	}
 	if e := refused(t, s, ann, "get_app", `{"name": "Expenses"}`); e.Code != store.CodeUnknownApp || !strings.Contains(e.Hint, "define_app") {
@@ -1594,7 +1595,7 @@ func TestTheCommandsOfTheApps(t *testing.T) {
 		t.Fatalf("get_app answered %v", got)
 	}
 	run(t, s, dan, "define_app", `{"definition": {"name": "Helpdesk", "label": "Help desk"}}`)
-	if got := run(t, s, ann, "list_apps", `{}`)["apps"]; !reflect.DeepEqual(got, []any{"Expenses", "Helpdesk"}) {
+	if got := run(t, s, ann, "list_apps", `{}`)["apps"]; !reflect.DeepEqual(got, []any{"System", "Expenses", "Helpdesk"}) {
 		t.Fatalf("list_apps answered %v", got)
 	}
 
@@ -1687,7 +1688,7 @@ func TestTheCommandsOfTheApps(t *testing.T) {
 	if got := run(t, s, ann, "list_tables", `{"app": "Helpdesk"}`)["tables"].([]any); len(got) != 0 {
 		t.Fatalf("the tables of an app that has none: %v", got)
 	}
-	if got := run(t, s, ann, "list_tables", `{}`)["tables"]; !reflect.DeepEqual(got, []any{"Rates"}) {
+	if got := run(t, s, ann, "list_tables", `{}`)["tables"]; !reflect.DeepEqual(got, append([]any{"Rates"}, systemTables...)) {
 		t.Fatalf("every table: %v", got)
 	}
 	if e := refused(t, s, ann, "list_tables", `{"app": "Travel"}`); e.Code != store.CodeUnknownApp {
@@ -1712,7 +1713,7 @@ func TestTheCommandsOfTheApps(t *testing.T) {
 		t.Fatalf("somebody who is no designer removed a table: %+v", e)
 	}
 	run(t, s, dan, "remove_table", `{"name": "Rates"}`)
-	if got := run(t, s, ann, "list_tables", `{}`)["tables"].([]any); len(got) != 0 {
+	if got := run(t, s, ann, "list_tables", `{}`)["tables"].([]any); !reflect.DeepEqual(got, systemTables) {
 		t.Fatalf("the tables after the removal: %v", got)
 	}
 	// Who removed it, and when, is on the version it had (ADR-0083), for
@@ -1797,3 +1798,7 @@ func TestTheCommandDefinitionsKnowsItsCaller(t *testing.T) {
 		}
 	}
 }
+
+// systemTables are the tables every database has (ADR-0092), listed after
+// its own.
+var systemTables = []any{"SystemApps", "SystemClasses", "SystemUsers", "SystemGroups"}

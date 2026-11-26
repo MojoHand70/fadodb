@@ -53,6 +53,8 @@ The triggers:
 | `transition:<name>` | a commit that makes the transition | the state left |
 | `before:<name>` | a command that asks for the transition, before its guard is asked; see [Before a transition](#before-a-transition) | the state left |
 | `refresh` | a refresh of the document; see [Refreshing](#refreshing) | the state the document is in |
+| `table:<name>` | a change of the rows of the table, for every document of the class that is not finished, and a commit that brings the document into a state where the variable follows; see [Following a table](#following-a-table) | the state the document is in |
+| `schedule:<when>` | the moments its words name, for every document of the class that is not finished, and a commit that brings the document into a state where the variable follows; see [Following the clock](#following-the-clock) | the state the document is in |
 
 - **A variable is worked out once in a commit**, however many of its
   triggers the commit fires. A move from a state into the same state
@@ -410,6 +412,295 @@ In Go it is the call `Refresh`. As a command, the refresh of step 11:
 {"class": "Invoice", "id": "I-1", "variables": ["rate"]}
 ```
 
+## Following a table
+
+A triggered variable keeps its value between its triggers. Sometimes
+the wish is the other one: a value that is kept, so that it has a
+history and costs nothing to read, and that still does not go stale
+while its document is open. The trigger `table:<name>` does that.
+When the rows of the table change, the engine works the variable out
+again in every document of the class that is not finished, and keeps
+the new value where it came out different.
+
+Acme's estimates in a foreign currency follow the table of rates
+while they are drafts. Once an estimate is sent its rate stands: the
+customer has it in hand. An estimate may also be talked through with
+the customer at a meeting, and accepted there, without being sent.
+
+```json
+{
+  "name": "Estimate",
+  "title": "\"Estimate \" & number",
+  "variables": {
+    "number":   {"type": "text", "required": true},
+    "amount":   {"type": "decimal", "scale": 2, "required": true},
+    "currency": {"type": "text", "required": true},
+    "rate":     {"type": "decimal", "scale": 4,
+                 "formula": "LOOKUP(Rates, rate, code = THIS.currency)",
+                 "mode": "triggered", "on": ["table:Rates"]},
+    "in_pln":   {"formula": "ROUND(amount * rate, 2)"}
+  },
+  "states": {"initial": "draft", "list": ["draft", "discussed", "sent", "accepted"], "final": ["accepted"]},
+  "transitions": [
+    {"name": "discuss", "from": "draft", "to": "discussed"},
+    {"name": "send",    "from": "draft", "to": "sent"},
+    {"name": "revise",  "from": "sent",  "to": "draft"},
+    {"name": "accept",  "from": ["discussed", "sent"], "to": "accepted"}
+  ],
+  "rights": {
+    "sent": {"rate": {"write": "FALSE"}}
+  },
+  "access": {
+    "read":   "CREATEDBY() = USER() OR INGROUP(\"sales-lead\")",
+    "create": "INGROUP(\"everyone\")",
+    "update": "CREATEDBY() = USER()",
+    "delete": "FALSE",
+    "transition": {
+      "discuss": "CREATEDBY() = USER()",
+      "send":    "CREATEDBY() = USER()",
+      "revise":  "CREATEDBY() = USER()",
+      "accept":  "INGROUP(\"sales-lead\")"
+    }
+  }
+}
+```
+
+Ola writes estimates. Marek is in the group `sales-lead`. Tess, in
+the treasury, keeps the table, and may not see an estimate. The table
+has EUR at 4.2500 and USD at 3.9000. Ola has four estimates of 100.00
+each. Then Tess changes the EUR rate to 4.3100.
+
+<!-- what follows the table -->
+| Estimate | In | Before Tess's change | After it |
+|---|---|---|---|
+| E-1, in EUR | `draft` | version 1, rate 4.2500, 425.00 in PLN | version 2, rate 4.3100, 431.00 in PLN |
+| E-2, in EUR | `sent` | version 2, rate 4.2500, 425.00 in PLN | the same |
+| E-3, in USD | `draft` | version 1, rate 3.9000, 390.00 in PLN | the same |
+| E-4, in EUR | `accepted` | version 3, rate 4.2500, 425.00 in PLN | the same |
+
+- **E-1 follows.** It gets a version of its own, and `in_pln` follows
+  `rate` as after any change. The event of that version is of the
+  kind `refresh`, its name is `table:Rates` and its actor is Tess: the
+  history says which table moved the rate, and whose change it was.
+- **E-2 stands, because the class says so.** A `write` right of
+  `FALSE` on the variable in a state means nobody brings it again
+  there, and a table is nobody too. Any other `write` right is about
+  the people who refresh by hand, and does not stop a table.
+- **E-3 is left alone.** Its rate came out the same, so it gets no
+  version and no event.
+- **E-4 is finished**, and a finished document is frozen.
+
+What holds for it:
+
+- **Nobody's right is asked.** Tess needs the right to change the
+  table, which is the table's own `write` rule, and nothing more.
+  What follows in the documents is what the class says, and the
+  engine writes it, as it writes `in_pln`. Tess may not so much as
+  read an estimate.
+- **It is a commit like any other.** The rules of the class fire, a
+  transition whose guard now holds fires, and a command that says it
+  saw the version before is refused with `stale_version`: nobody acts
+  on a number that changed under their eyes.
+- **It is not instant.** The change of the table queues the work in
+  its own transaction, as a row of the
+  [outbox](the-outbox-and-the-worker.md) whose action is `follow`,
+  and the worker does it afterwards: a thousand documents in a
+  transaction, so that other people's commits go in between. A
+  reader who looks in that moment may still see the old value. The
+  moment of the value says which version brought it.
+- **What changes a table**: `import_rows`, `delete_rows`, the actions
+  `table.insert`, `table.update` and `table.delete` of a rule, and a
+  new definition of a table that holds rows.
+- **A value that cannot be worked out, or that the variable does not
+  accept**, leaves the value as it was and says what failed, as on
+  any trigger; see [When working it out fails](#when-working-it-out-fails).
+- **The table is one the variable's own formula looks into.** A
+  variable whose formula reads two tables may list both.
+
+### Where it follows, and where it stands
+
+The variable follows its table in every state that is not final and
+in which its `write` right is not `FALSE`. In the other states it
+stands.
+
+A commit that brings a document into a state where the variable
+follows brings the value too, as `enter:` of that state would: the
+create, for the first state, and every move into such a state. So a
+document is never in a state where its value follows with a value the
+table no longer has, and `"on": ["table:Rates"]` is all the variable
+lists.
+
+An estimate that goes out and comes back, with EUR at 4.3100 in the
+table:
+
+<!-- an estimate that comes back -->
+| Step | What happens | E-5 is in | Its rate | The rate was brought |
+|---|---|---|---|---|
+| 1 | Ola writes E-5, 100.00 in EUR | `draft` | 4.3100 | at version 1 |
+| 2 | Ola sends it | `sent` | 4.3100 | at version 1 |
+| 3 | Tess changes the EUR rate to 4.3500 | `sent` | 4.3100 | at version 1 |
+| 4 | The customer asks for a change, and Ola takes the estimate back with `revise` | `draft` | 4.3500 | at version 3 |
+| 5 | Tess changes the EUR rate to 4.4000 | `draft` | 4.4000 | at version 4 |
+| 6 | Ola sends it again | `sent` | 4.4000 | at version 4 |
+
+- **Step 1: the rate is there from the first moment**, in the version
+  that made the estimate.
+- **Steps 2 and 3: it goes out with the rate it had**, and that rate
+  stands, whatever the table does.
+- **Step 4: it comes back with the rate of the day**, in the commit
+  of the move itself, and not at the next change of the table. From
+  there on it follows again, as step 5 shows.
+- **Step 6: it goes out again with the rate of that moment.**
+
+Where the value stands is the class's to say, and there are two ways
+to say it. The class above closes the rate in `sent` and nowhere
+else. So an estimate that Ola talks through with the customer, with
+`discuss`, keeps following in `discussed`: a path round the state
+that stops the value is a path on which it follows. A class that
+wants the rate to follow in `draft` and nowhere else says that
+instead:
+
+<!-- where the rate follows -->
+| Written in `rights` | In `draft` | In `discussed` | In `sent` |
+|---|---|---|---|
+| `"sent": {"rate": {"write": "FALSE"}}` | follows | follows | stands |
+| `"*": {"rate": {"write": "FALSE"}}, "draft": {"rate": {"write": "CREATEDBY() = USER()"}}` | follows | stands | stands |
+
+- **The first names where it stands.** A state the class gets later
+  is one more state where the rate follows.
+- **The second names where it follows.** The `*` row closes the rate
+  in every state, and the cell of `draft`, which is the nearer one,
+  opens it there: it says who may bring the rate by hand, and any
+  right but `FALSE` lets the table bring it. A state the class gets
+  later is one more state where the rate stands.
+- **In `accepted` it stands under both**: a finished document is
+  frozen.
+
+## Following the clock
+
+Some values move with the day and with nothing else: how many days an
+invoice is late. The trigger `schedule:<when>` works such a variable
+out again at the moments its words name, in every document of the
+class that is not finished.
+
+Acme's bills say how many days they are late, worked out every night
+at three. A bill that is disputed keeps the number it was disputed
+with.
+
+```json
+{
+  "name": "Bill",
+  "title": "\"Bill \" & number",
+  "variables": {
+    "number":    {"type": "text", "required": true},
+    "due":       {"type": "date", "required": true},
+    "days_late": {"type": "number",
+                  "formula": "MAX(DAYS(TODAY(), due), 0)",
+                  "mode": "triggered", "on": ["schedule:daily at 03:00"]},
+    "remind":    {"formula": "days_late >= 14"}
+  },
+  "states": {"initial": "sent", "list": ["sent", "disputed", "paid"], "final": ["paid"]},
+  "transitions": [
+    {"name": "dispute", "from": "sent", "to": "disputed"},
+    {"name": "pay",     "from": ["sent", "disputed"], "to": "paid"}
+  ],
+  "rights": {
+    "disputed": {"days_late": {"write": "FALSE"}}
+  },
+  "access": {
+    "read":   "CREATEDBY() = USER() OR INGROUP(\"ACCOUNTING\")",
+    "create": "INGROUP(\"everyone\")",
+    "update": "CREATEDBY() = USER() OR INGROUP(\"ACCOUNTING\")",
+    "delete": "FALSE",
+    "transition": {
+      "dispute": "INGROUP(\"ACCOUNTING\")",
+      "pay":     "INGROUP(\"ACCOUNTING\")"
+    }
+  }
+}
+```
+
+Acme's database is in the time zone `Europe/Warsaw`. On Thursday,
+26 November 2026, at eleven in the morning there, Ola has four bills.
+At three in the night the engine works `days_late` out:
+
+<!-- what follows the clock -->
+| Bill | In | On 26 November | After the night |
+|---|---|---|---|
+| B-1, due 20 November | `sent` | version 1, 6 days late | version 2, 7 days late |
+| B-2, due 10 December | `sent` | version 1, 0 days late | the same |
+| B-3, due 20 November | `disputed` | version 2, 6 days late | the same |
+| B-4, due 20 November | `paid` | version 2, 6 days late | the same |
+
+- **B-1 follows.** It gets a version of its own, and `remind` follows
+  `days_late` as after any change. The event of that version is of
+  the kind `refresh`, its name is `schedule:daily at 03:00`, and it
+  has no actor: the engine itself brought the value.
+- **B-2 is left alone.** It is not late yet, its value came out the
+  same, and it gets no version and no event.
+- **B-3 stands, because the class says so**, with a `write` right of
+  `FALSE` on the variable in `disputed`, as for
+  [a table](#following-a-table).
+- **B-4 is finished**, and a finished document is frozen.
+
+How a schedule is written, and when it fires, from that Thursday at
+eleven on:
+
+<!-- the words of a schedule -->
+| Written | Fires | The next three |
+|---|---|---|
+| `hourly` | at every full hour | 26 Nov 12:00, 26 Nov 13:00, 26 Nov 14:00 |
+| `daily` | at midnight | 27 Nov 00:00, 28 Nov 00:00, 29 Nov 00:00 |
+| `daily at 03:00` | every night at three | 27 Nov 03:00, 28 Nov 03:00, 29 Nov 03:00 |
+| `weekly` | on Monday at midnight | 30 Nov 00:00, 7 Dec 00:00, 14 Dec 00:00 |
+| `weekly on friday at 18:00` | on Friday at six in the evening | 27 Nov 18:00, 4 Dec 18:00, 11 Dec 18:00 |
+| `monthly` | on the first, at midnight | 1 Dec 00:00, 1 Jan 00:00, 1 Feb 00:00 |
+| `monthly on 15` | on the 15th, at midnight; a day from 1 to 28 | 15 Dec 00:00, 15 Jan 00:00, 15 Feb 00:00 |
+| `monthly on last day at 23:00` | on the last day of the month, at eleven in the evening | 30 Nov 23:00, 31 Dec 23:00, 31 Jan 23:00 |
+| `monthly on 3rd monday at 06:00` | on the third Monday, at six; `1st`, `2nd`, `3rd`, `4th` or `last`, and any day of the week | 21 Dec 06:00, 18 Jan 06:00, 15 Feb 06:00 |
+| `every 4h` | every four hours, counted from midnight | 26 Nov 12:00, 26 Nov 16:00, 26 Nov 20:00 |
+| `every 15m` | every quarter of an hour | 26 Nov 11:15, 26 Nov 11:30, 26 Nov 11:45 |
+
+A time is written as hours and minutes of a day of 24 hours. The
+length after `every` is written as a transition's `after` is, in
+minutes or hours; it divides a day, so that the schedule fires at the
+same times every day, and it is five minutes at the least. A variable
+may list several schedules: twice a day is
+`"on": ["schedule:daily at 08:00", "schedule:daily at 16:00"]`.
+
+What holds for it:
+
+- **The times are those of the database's time zone.** A server is
+  given it in its settings, as `"timezone": "Europe/Warsaw"`, and a Go
+  program in `Options.TimeZone`; the database keeps it. A database
+  that was never given one is in UTC. Three in the night in Warsaw is
+  two by the engine's clock in winter and one in summer, and the
+  schedule goes by Warsaw.
+- **`TODAY()` and `NOW()` are in UTC, as everywhere.** A schedule that
+  fires between midnight and two in the morning in Warsaw still sees
+  the day before in `TODAY()`. So a value that counts days is worked
+  out at three, as here, and not at midnight.
+- **Nobody's right is asked, and nobody did it.** The value is
+  brought as [a table brings one](#following-a-table): in a commit of
+  its own, with the rules of the class, and a command that says it
+  saw the version before is refused with `stale_version`.
+- **It is there from the first moment.** A commit that brings a bill
+  into a state where `days_late` follows works it out too, as for
+  [a table](#where-it-follows-and-where-it-stands): B-1 had its 6
+  days in the version that made it, and the variable lists the
+  schedule alone. A class in which a disputed bill may come back to
+  `sent` has the number of that day in the commit that brings it
+  back.
+- **The next moment is in the queue.** Each schedule of a class has a
+  row of the [outbox](the-outbox-and-the-worker.md) that waits for
+  it: its action is `follow`, its `rule` the schedule, and its
+  `due_at` the moment. The row that ran queues the next.
+- **A server that was down at the moment** works the values out once
+  when it is started, and not once for each moment it missed.
+- **The nights the clocks change.** A time that such a night does not
+  have, in the hour the clocks skip, fires when that hour would have
+  ended. A time it has twice fires the first time.
+
 ## What a triggered formula may read
 
 A formula that is worked out at a known moment may read what holds at
@@ -535,10 +826,12 @@ What each takes and what it answers is in
 | a computed variable has an `on` and is not triggered | `not_allowed` |
 | a triggered variable has no `on`, or an empty one | `missing` |
 | the `mode` is neither `auto` nor `triggered` | `bad_value` |
-| a trigger is none of the five, or is written wrongly, as `enter` with no state | `bad_trigger` |
+| a trigger is none of the seven, or is written wrongly, as `enter` with no state | `bad_trigger` |
 | a trigger names a state the class does not have | `unknown_state` |
 | a trigger names a transition the class does not have | `unknown_transition` |
-| a trigger is `table:<name>` or `schedule:<when>` | `not_supported` |
+| `schedule:<when>` is written in words the engine does not read | `bad_trigger` |
+| `table:<name>` names a table the variable's formula does not look into | `not_allowed` |
+| `table:<name>` names a class, or it or `schedule:<when>` stands on a list that is kept | `not_supported` |
 | a trigger could fire only on a frozen document | `not_allowed` |
 | a triggered variable has a `default` or is `required` | `not_allowed` |
 | a triggered formula reads other documents and names no `type` | `missing` |
@@ -564,12 +857,13 @@ What each takes and what it answers is in
 
 ## Not here yet
 
-- A trigger for a change of a table, `table:<name>`, and one for a
-  time, `schedule:<when>`. A class that names either is refused with
-  `not_supported`. Until then a program sends the refresh: when the
-  table changed, or when the time came.
+- **Working days and holidays in a schedule.** The engine has no
+  calendar of holidays. Nor is there "every second week" or "every
+  third day".
+- **`TODAY()` by the database's time zone.** It is the day in UTC.
+- A value that follows the documents of another class, as `table:`
+  follows a table. Today a rule of that class sends the refresh.
+- A list that is kept follows neither a table nor a schedule.
 - Working a variable out again for every document of a class in one
-  call. Today it is one refresh for each document.
-- A trigger for a change of values. A rule on `values_change` with the
-  action `refresh` does that today.
-- A range on a computed variable that names no type.
+  call. A refresh is one call for each document; only a table and a
+  schedule bring many.

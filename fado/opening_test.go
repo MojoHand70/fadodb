@@ -53,7 +53,7 @@ func TestOpeningADatabase(t *testing.T) {
 
 	// What opening does, and what is on disk.
 	db := must(open("notes.fado", fado.Options{}))
-	if got := db.Classes(); !reflect.DeepEqual(got, []string{"Substitution"}) || len(db.Schemas()) != 9 || len(db.Tables()) != 0 {
+	if got := db.Classes(); !reflect.DeepEqual(got, []string{"Substitution"}) || len(db.Schemas()) != 9 || !reflect.DeepEqual(db.Tables(), systemTables) {
 		t.Errorf("a new database has the classes %v, %d schemas and the tables %v", got, len(db.Schemas()), db.Tables())
 	}
 	if info, err := os.Stat(filepath.Join(dir, "notes.fado")); err != nil {
@@ -321,6 +321,27 @@ func TestOpeningADatabase(t *testing.T) {
 			kept := must(open("question.fado", fado.Options{}))
 			if got := kept.MaxQuestion(); got != time.Minute {
 				t.Errorf("a limit given once is not kept: %v", got)
+			}
+		},
+		"TimeZone": func(row []string) {
+			if got := reopened(fado.Options{}, fado.Options{TimeZone: "Europe/Warsaw"}) + " and kept"; got != row[4] {
+				t.Errorf("TimeZone, opened again with another value: %s, and the chapter says %s", got, row[4])
+			}
+			// None given: UTC. One given is kept when none is given
+			// again, and one nobody knows is refused.
+			fresh := must(open("zone.fado", fado.Options{}))
+			if got := fresh.TimeZone(); got != row[3] {
+				t.Errorf("a new database is in the zone %s, and the chapter says %s", got, row[3])
+			}
+			fresh.Close()
+			must(open("zone.fado", fado.Options{TimeZone: "Europe/Warsaw"})).Close()
+			kept := must(open("zone.fado", fado.Options{}))
+			if got := kept.TimeZone(); got != "Europe/Warsaw" {
+				t.Errorf("a zone given once is not kept: %s", got)
+			}
+			kept.Close()
+			if _, err := open("zone.fado", fado.Options{TimeZone: "Europe/Atlantis"}); fado.ErrorCode(err) != "bad_value" {
+				t.Errorf("a zone nobody knows: %v", err)
 			}
 		},
 	}

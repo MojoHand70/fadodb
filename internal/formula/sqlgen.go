@@ -1089,6 +1089,54 @@ func AggregateSQL(q *QuerySlot, d Dialect, arg func(i int, currency bool) string
 // lookupAlias names the source inside a lookup's subquery.
 const lookupAlias = "q"
 
+// PartsSQL translates a lookup slot into the rows it is worked out of,
+// for a caller that lists them (ADR-0099, part 2): the FROM and WHERE of
+// the matching rows, under LookupAlias, and the expression the
+// aggregate runs over, or the column a plain lookup takes, on each row.
+// The arguments are those of LookupSQL; the rows are those the slot's
+// own statement reads.
+func PartsSQL(q *QuerySlot, d Dialect, arg func(i int, currency bool) string, table func(string) string, params *Params) (string, SQLExpr, error) {
+	r, err := lookupRows(q, d, arg, table, params)
+	if err != nil {
+		return "", SQLExpr{}, err
+	}
+	if q.Value != nil {
+		x, err := r.sub(q.Value)
+		if err != nil {
+			return "", SQLExpr{}, fmt.Errorf("sqlgen: LOOKUP %s: %w", q.Agg, err)
+		}
+		return r.from, x, nil
+	}
+	x := SQLExpr{Val: lookupAlias + "." + quoteIdent(q.Column), Kind: q.Type.Kind, Scale: q.Type.Scale}
+	if q.Type.Kind == KindMoney {
+		x.Cur = lookupAlias + "." + quoteIdent(q.Column+CurrencySuffix)
+	}
+	return r.from, x, nil
+}
+
+// KeySQL is the expression of the document a lookup's key column is
+// compared with (QuerySlot.Key), for a caller that narrows the rows by
+// the column's index first; "" when the slot has none. The arguments
+// are those of LookupSQL.
+func KeySQL(q *QuerySlot, d Dialect, arg func(i int, currency bool) string, table func(string) string, params *Params) (string, error) {
+	if q.Key == nil || q.IndexColumn == "" {
+		return "", nil
+	}
+	r, err := lookupRows(q, d, arg, table, params)
+	if err != nil {
+		return "", err
+	}
+	k, err := r.sub(q.Key)
+	if err != nil {
+		return "", err
+	}
+	return k.Val, nil
+}
+
+// LookupAlias is the name the rows of a lookup go by in the statements
+// LookupSQL, AggregateSQL and PartsSQL write.
+const LookupAlias = lookupAlias
+
 // rowsSQL is the matching rows of a lookup: the FROM and WHERE of its
 // subquery, the order of the source's key, and what translates a program
 // of the slot.

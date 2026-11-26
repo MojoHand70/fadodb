@@ -59,6 +59,7 @@ the engine on each push.
 | [Bring what a condition needs](manual/guides/bring-what-a-condition-needs.md) | **written** |
 | [Keep the lines a decision stood on](manual/guides/keep-the-lines-a-decision-stood-on.md) | **written** |
 | [See where documents wait](manual/guides/see-where-documents-wait.md) | **written** |
+| [Where a value comes from](manual/guides/where-a-value-comes-from.md) | **written** |
 | [Change a class that already has documents](manual/guides/change-a-class.md) | **written** |
 
 ## Reference

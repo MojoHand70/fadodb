@@ -249,8 +249,9 @@ db, err := fado.Open("notes.fado", fado.Options{Analytics: analytics.Engine{}})
 - **The database feeds the copy itself**, every `CopyEvery` and when it
   closes. `FeedCopy` feeds it at once.
 - **The copy holds**, for every class, the documents as they are now
-  and every version of them, and the events. The lines of a document
-  are not in it.
+  and every version of them, the events, and the moves of the
+  documents that exist: each time one was made or moved along a
+  transition. The lines of a document are not in it.
 - **The copy is never the truth.** It is the file `notes.fado.duckdb`
   beside the database. It needs no backup: when it is lost, or does not
   open, or belongs to another database, the engine makes it again by
@@ -269,9 +270,10 @@ nor a caller chooses.
 | The question | The copy answers it |
 |---|---|
 | the flow of a class, the command [`flow`](commands.md#flow) and the call `Flow` | always |
-| how many documents a condition takes, the command [`count`](commands.md#count) and the call `Count` | when no index narrows it |
-| a total, or the first document, that a `LOOKUP` in a live variable asks for: `LOOKUP(Invoice, SUM(net), urgent)` | when no index narrows it |
-| a figure over a list, `SUM(invoices.net)`, `COUNT(invoices)` | when no index narrows the list |
+| how many documents a condition takes, the command [`count`](commands.md#count) and the call `Count` | at once when no index narrows it; otherwise when the store has not answered in a moment |
+| a total, or the first document, that a `LOOKUP` in a live variable asks for: `LOOKUP(Invoice, SUM(net), urgent)` | the same |
+| a figure over a list, `SUM(invoices.net)`, `COUNT(invoices)` | the same |
+| a page of a list, the command [`query`](commands.md#query) and a live list | at once when the store would read and sort the class for it; otherwise when the store has not found the page in a moment |
 
 **An index narrows a question** when its condition compares an indexed
 variable with a value: the invoices of one order, the documents in one
@@ -280,6 +282,11 @@ reader who reads their own, `owner = USER()`. Such a question names
 what it wants, and the store answers it in a moment, as ever. A
 question that no index narrows reads the class, and that is what the
 copy is for.
+
+An index may narrow a question to very many documents all the same:
+the invoices in one state may be most of the class. So a question an
+index narrows is the store's for a moment, five milliseconds, and the
+copy's when the moment has passed.
 
 - **An answer is never older than its question.** Before it answers,
   the copy is brought up to the database. When nothing was written
@@ -307,13 +314,32 @@ The first of such questions after the file was last read from the
 disk takes a program without the copy seconds, and a question that no
 index serves is stopped after five (see
 [A large class](lists.md#a-large-class)). The flow of that class, ten
-million visits of a state, takes the store 19 seconds and the copy
-about half a second.
+million moves, takes the store 18 seconds and the copy 19 ms: the copy
+keeps the moves ready, and the flow is one sum over them.
 
-**What stays with the store:** a page of a list, the command `query`
-and a live list, whatever its condition; and everything inside a
-commit, so a value that a triggered variable keeps is worked out by
-the store.
+**A page of a list** is found in the copy and read from the store.
+The copy says which documents the question takes, in its order, and
+the store hands over those documents, as many as the page has. A page
+the store can fill at once, the invoices of one order or the first
+fifty that meet a condition most documents meet, is the store's: it
+is given a moment, five milliseconds, and the copy is asked only when
+the moment has passed. A page that no index serves and that is sorted
+by a variable without an index would have the store read and sort
+every document it takes, so the copy is asked for it at once.
+
+Measured among the same 3,400,000 invoices:
+
+| The page | A program without the copy | With the copy |
+|---|---|---|
+| `query`: the fifty dearest invoices | 318 ms | 8 ms |
+| `query`: the fifty dearest invoices of one customer, where `customer` has no index | 309 ms | 6 ms |
+| a live list: the fifty dearest invoices | 417 ms | 14 ms |
+| a live list: the fifty dearest invoices of one owner, whom an index narrows to a million | 278 ms | 11 ms |
+| `query`: fifty invoices over an amount, as they come | 0.2 ms | 0.2 ms, from the store |
+| `query`: the newest fifty invoices; an index holds the order | 0.9 ms | 0.9 ms, from the store |
+
+**What stays with the store:** everything inside a commit, so a value
+that a triggered variable keeps is worked out by the store.
 
 The program `fadodb` is built without the module; the same program
 built with it, `fadodb-full`, serves a database with its copy

@@ -278,7 +278,7 @@ result:
 | Pure | `IF IFERROR ROUND SUM LEFT DATE ADDMONTHS DECIMAL MONEY JSONVALUE` | everywhere |
 | Context | `USER() INGROUP() USERKIND() ACTINGFOR() NOW() TODAY() STATE() ID()` | defaults, triggered formulas, guards, rules, access rules; not in auto formulas |
 | Lookup | `LOOKUP(source, column, condition)` | everywhere; in auto formulas only against explicit tables |
-| Query | `QUERY(source, columns, condition, sort)` | the whole formula of a live variable (ADR-0076), or of a triggered one, which keeps the list with the document (ADR-0078); grouping, the limit and a `QUERY` anywhere else are not built yet |
+| Query | `QUERY(source, columns, condition, sort)` | the whole formula of a live variable (ADR-0076), or of a triggered one, which keeps the list with the document (ADR-0078); a total among the columns of a live one gives one line for each group (ADR-0090, proposed); the limit and a `QUERY` anywhere else are not built yet |
 | Secret | `SECRET("token")` | the request of an action definition, and nowhere else (ADR-0045) |
 
 The rule behind the table: the stored value of an auto variable must be a
@@ -314,9 +314,9 @@ filter are refused them, since those run for every row of a query; the
 `_states` view has the same facts for every document.
 
 Inside `LOOKUP` and `QUERY`, bare names are columns of the source and the
-document's own variables are reached as `THIS.name`. Columns may be
-aggregates (`COUNT(id)`, `SUM(amount)`) and `groupby` names the grouping
-columns. A source is an explicit table or a class such as `Invoice`; the
+document's own variables are reached as `THIS.name`. A column may be a
+total (`COUNT(id)`, `SUM(amount)`); in a `QUERY` the plain columns beside
+it are then what the lines are grouped by (ADR-0090, proposed). A source is an explicit table or a class such as `Invoice`; the
 history of a class as a source waits. The compiler translates the call to
 the SQL dialect of the storage that holds the source, binds the condition
 to its columns, and rejects anything else at definition time. Formulas

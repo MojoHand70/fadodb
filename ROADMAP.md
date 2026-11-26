@@ -475,7 +475,7 @@ the stop of a free question that no index serves, after five
 seconds, with the variable an index is needed on, and the index for
 the key of a lookup or a list that is no pointer, made when the class
 that asks is defined: with these ADR-0075 is built. Counts, sums and
-grouping in a `QUERY` are not; they come with the analytical engine. Then the lists in and out of messages and requests, ADR-0085: a list in a message, which becomes the lines of a document; a list in a request, the lines of a document sent out by an action; and a list in an answer, written back into the document. All three are built.
+grouping in a `QUERY` came with the analytical engine: a total among the columns of a live list gives one line for each group (ADR-0090, proposed). Then the lists in and out of messages and requests, ADR-0085: a list in a message, which becomes the lines of a document; a list in a request, the lines of a document sent out by an action; and a list in an answer, written back into the document. All three are built.
 After these comes the analytical engine itself: DuckDB beside the
 documents, fed from the commits, for the question that reads
 everything; the mining views; a value that follows its source or the
@@ -487,8 +487,8 @@ its measurements: over ten million visits of a state, a question the
 store answers in 12 to 26 seconds takes the copy under half a second.
 Its first two steps are built: a program that is given DuckDB keeps
 the copy and feeds it, and answers the flow of a class from it, in
-under half a second among ten million visits of a state where the
-store takes 19. The server program is built with DuckDB too, as
+19 ms among ten million moves where the store takes 18 seconds: the
+copy keeps the moves of the documents ready. The server program is built with DuckDB too, as
 `fadodb-full`, on the machine that runs it; `fadodb` stays in pure Go.
 The counts and totals a class already asks, the command `count` and
 what a `LOOKUP` or a figure over a list works out when it is read, go

@@ -107,9 +107,15 @@ const (
 	copyNoVersion = "-"
 	copyPartial   = "+"
 	copyVersions  = "_versions"
+	copyMoves     = "_moves"
 	copyMarkEvent = "event"
 	copyMarkClass = "class:"
-	copyEventsSQL = `"event_id", "class", "doc_id", "kind", "name", "from_state", "to_state", "actor_id", "actor_kind", "actor_for", "before_version", "after_version", "cause_event_id", "command_key", "command_hash", "business_date", "ts", "origin", "override", "reason", "seen_version"`
+	// copyMarkFormat marks what a copy holds beside the rows of the
+	// store: a copy fed before it kept the moves of the documents has
+	// another mark, or none, and is given them.
+	copyMarkFormat = "format"
+	copyFormat     = "moves"
+	copyEventsSQL  = `"event_id", "class", "doc_id", "kind", "name", "from_state", "to_state", "actor_id", "actor_kind", "actor_for", "before_version", "after_version", "cause_event_id", "command_key", "command_hash", "business_date", "ts", "origin", "override", "reason", "seen_version"`
 )
 
 // copyEventColumns are the columns of the events in the copy, in the
@@ -126,6 +132,37 @@ var copyEventColumns = func() []CopyColumn {
 	}
 	return cols
 }()
+
+// copyMoveColumns are the columns of the moves of a class in the copy
+// (ADR-0089, item 2): one row for each time a document that exists was
+// made or moved along a transition, with the moment it happened and,
+// for a move, the moment the state it left was entered. The question of
+// how documents moved is one sum over these rows, and reads neither the
+// events nor the versions.
+var copyMoveColumns = []CopyColumn{{"id", CopyText}, {"kind", CopyText}, {"name", CopyText}, {"from_state", CopyText}, {"to_state", CopyText}, {"ts", CopyWhole}, {"left_since", CopyWhole}}
+
+// The places of what a move takes among the columns copyEventsSQL
+// reads, and leftSinceSQL is what the feed reads after them: for a
+// transition, the moment the state it left was entered, which the
+// version the event left holds. The store finds that version by its
+// key, inside the one statement that reads the events.
+const (
+	eventClass, eventDoc, eventKind, eventName, eventFrom, eventTo, eventTS = 1, 2, 3, 4, 5, 6, 16
+)
+
+func leftSinceSQL(layouts []*copyLayout) string {
+	if len(layouts) == 0 {
+		return "NULL"
+	}
+	var b strings.Builder
+	b.WriteString(`CASE WHEN "kind" = '` + EventTransition + `' THEN CASE "class"`)
+	for _, l := range layouts {
+		b.WriteString(` WHEN '` + strings.ReplaceAll(l.name, "'", "''") + `' THEN (SELECT p."state_entered_at" FROM ` + quote(l.history) +
+			` p WHERE p."id" = "events"."doc_id" AND p."version" = "events"."before_version")`)
+	}
+	b.WriteString(` END END`)
+	return b.String()
+}
 
 // Defaults of the feed. A class whose feed holds more new versions than
 // copyRemakeNow has its documents as they are now read whole, which is
@@ -206,6 +243,8 @@ type copyLayout struct {
 	version        int
 	history, table string
 	now, versions  CopyTable
+	// moves is the table of the moves of the class's documents.
+	moves CopyTable
 	// nowSQL and versionsSQL are the column lists of the two reads; the
 	// place of the event among the columns of a version is eventAt.
 	nowSQL, versionsSQL string
@@ -243,6 +282,7 @@ func layoutOf(c *class) *copyLayout {
 	}
 	l.now = CopyTable{Name: l.name, Columns: append(append([]CopyColumn{}, system...), vars...)}
 	l.versions = CopyTable{Name: l.name + copyVersions, Columns: append(versioned, vars...)}
+	l.moves = CopyTable{Name: l.name + copyMoves, Columns: copyMoveColumns}
 	names := func(cols []CopyColumn) string {
 		quoted := make([]string, len(cols))
 		for i, col := range cols {
@@ -566,6 +606,13 @@ func (s *Store) feedOnce(ctx context.Context, f *feeder, most int64) (bool, erro
 			return false, storageErr("read the database for the copy", err)
 		}
 	}
+	// A copy that was fed before it kept the moves has the events and
+	// none of the moves: the events are read again from the first, and
+	// the moves are made with them. The versions and the documents stay.
+	again := !whole && next[copyMarkFormat] != copyFormat
+	if again {
+		from = 0
+	}
 	// Where the copy stands is known from here, before a table is laid
 	// or a row copied: it is behind when it is made again whole, when
 	// it is more than copyCatchUp events behind, and when a class is in
@@ -588,7 +635,7 @@ func (s *Store) feedOnce(ctx context.Context, f *feeder, most int64) (bool, erro
 	var lay []CopyTable
 	for _, l := range layouts {
 		if f.laid[l.name] != l.version {
-			lay = append(lay, l.now, l.versions)
+			lay = append(lay, l.now, l.versions, l.moves)
 		}
 	}
 	if _, ok := f.laid[copyEvents]; !ok {
@@ -611,28 +658,42 @@ func (s *Store) feedOnce(ctx context.Context, f *feeder, most int64) (bool, erro
 	}
 	// Nothing new, and nothing to make again: the copy is as the
 	// database is.
-	if !whole && last.Int64 == from && len(lay) == 0 {
+	if !whole && !again && last.Int64 == from && len(lay) == 0 {
 		return false, nil
+	}
+	byClass := make(map[string]*copyLayout, len(layouts))
+	for _, l := range layouts {
+		byClass[strings.ToUpper(l.name)] = l
 	}
 
 	wrote, more := false, false
 	give := func(w CopyWriter) error {
-		if whole {
+		if whole || again {
 			if err := w.Empty(copyEvents); err != nil {
 				return err
 			}
+			for _, l := range layouts {
+				if err := w.Empty(l.moves.Name); err != nil {
+					return err
+				}
+			}
 		}
+		next[copyMarkFormat] = copyFormat
 		// The events since the mark, and the documents they removed: a
-		// removal writes no version, so only its event tells of it.
+		// removal writes no version, so only its event tells of it. With
+		// each event comes, for a transition, the moment the state it
+		// left was entered: what a move is timed by.
 		removed := map[string][]string{}
 		if whole {
 			from = 0
 		}
-		rows, err := conn.QueryContext(ctx, `SELECT rowid, `+copyEventsSQL+` FROM "events" WHERE rowid > ? ORDER BY rowid LIMIT ?`, from, copySlice)
+		rows, err := conn.QueryContext(ctx, `SELECT rowid, `+copyEventsSQL+`, `+leftSinceSQL(layouts)+` FROM "events" WHERE rowid > ? ORDER BY rowid LIMIT ?`, from, copySlice)
 		if err != nil {
 			return storageErr("read the events for the copy", err)
 		}
-		row, dest := scanInto(len(copyEventColumns) + 1)
+		row, dest := scanInto(len(copyEventColumns) + 2)
+		event, leftAt := row[1:len(copyEventColumns)+1], len(copyEventColumns)+1
+		move := make([]any, len(copyMoveColumns))
 		events := int64(0)
 		for rows.Next() {
 			events++
@@ -643,12 +704,22 @@ func (s *Store) feedOnce(ctx context.Context, f *feeder, most int64) (bool, erro
 			place, _ := row[0].(int64)
 			id, _ := row[1].(string)
 			next[copyMarkEvent] = strconv.FormatInt(place, 10) + " " + id
-			if kind, _ := row[4].(string); kind == EventDeleted {
-				class, _ := row[2].(string)
-				doc, _ := row[3].(string)
+			class, _ := event[eventClass].(string)
+			switch kind, _ := event[eventKind].(string); kind {
+			case EventDeleted:
+				doc, _ := event[eventDoc].(string)
 				removed[strings.ToUpper(class)] = append(removed[strings.ToUpper(class)], doc)
+			case EventCreated, EventTransition:
+				// A move of a document of a class the database has.
+				if l := byClass[strings.ToUpper(class)]; l != nil {
+					move[0], move[1], move[2], move[3], move[4], move[5], move[6] = event[eventDoc], kind, event[eventName], event[eventFrom], event[eventTo], event[eventTS], row[leftAt]
+					if err := w.Append(l.moves.Name, move); err != nil {
+						rows.Close()
+						return err
+					}
+				}
 			}
-			if err := w.Append(copyEvents, row[1:]); err != nil {
+			if err := w.Append(copyEvents, event); err != nil {
 				rows.Close()
 				return err
 			}
@@ -662,6 +733,12 @@ func (s *Store) feedOnce(ctx context.Context, f *feeder, most int64) (bool, erro
 		more = events == copySlice
 
 		for _, l := range layouts {
+			// A document that was deleted has no moves any more: the
+			// moves are of the documents that exist, as the flow is. The
+			// id of a deleted document is never given again.
+			if err := w.Remove(l.moves.Name, removed[strings.ToUpper(l.name)]); err != nil {
+				return err
+			}
 			did, left, err := feedClass(ctx, conn, w, l, next, removed[strings.ToUpper(l.name)])
 			if err != nil {
 				return err

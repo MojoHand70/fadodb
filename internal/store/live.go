@@ -217,6 +217,9 @@ func (s *Store) LivePage(ctx context.Context, r LiveRead, opts ...Option) (*Live
 	if tbl != nil {
 		return s.liveTable(ctx, tbl, cv.v, on, r, o)
 	}
+	if q.Totals != nil {
+		return s.liveTotals(ctx, src, cv.v, on, r, o)
+	}
 	return s.liveList(ctx, src, cv.v, on, r, o)
 }
 
@@ -421,7 +424,13 @@ func (s *Store) liveList(ctx context.Context, src *class, v *model.Variable, on 
 	if plan.Fields == nil {
 		plan.Fields = []string{} // system columns alone: no variable is read
 	}
-	docs, more, err := s.answer(ctx, src, o, plan, "live", true)
+	var docs []*Document
+	var more bool
+	if s.feeder != nil {
+		docs, more, err = s.pageWithCopy(ctx, src, o, plan, f, on, "live", true)
+	} else {
+		docs, more, err = s.answer(ctx, src, o, plan, "live", true)
+	}
 	if err != nil {
 		return nil, err
 	}

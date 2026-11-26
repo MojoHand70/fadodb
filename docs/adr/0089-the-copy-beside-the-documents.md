@@ -78,6 +78,7 @@ Two findings decide what follows.
    | every version of every document, with the columns of its class, who made it and when | how documents moved, and what they held at a past moment |
    | the documents as they are now | totals over a whole class |
    | the events | what happened, by whom and how |
+   | the moves of the documents that exist: each time one was made or moved along a transition, with the moment, and for a move the moment the state it left was entered | how documents moved, as one sum over one table |
 
    Not in the copy: reference tables, until the step that gives DuckDB
    tables of its own; users, groups, keys and sessions; definitions;
@@ -115,8 +116,8 @@ Two findings decide what follows.
    | anything inside a commit | the store, always (ADR-0020, item 4) |
    | how documents moved: which state follows which, how long they wait | the copy |
    | a count or a total that no index narrows: the command `count`, and the total or the first row that a `LOOKUP` or a figure over a list asks for when it is read | the copy |
-   | a page of a list that no index serves | the copy; not built |
-   | groups with their totals among the columns of a `QUERY` | the copy; not built |
+   | a page of a list that the store does not find in a moment: the copy says which documents, in which order, and the store hands them over | the copy |
+   | groups with their totals among the columns of a `QUERY` (ADR-0090), when no index narrows what they count | the copy |
 
    No formula is written differently for it. The compiler sends each
    question where it belongs, as ADR-0075 says.
@@ -212,6 +213,11 @@ Two findings decide what follows.
   3,400,000 invoices and ten million visits, three runs: 18.6 seconds
   from the store, 0.33 from the copy, the same answer. The budget of
   ADR-0017 is 2 seconds.
+- **Step 2, again: the moves kept ready, on 2026-11-25.** The copy
+  keeps the moves of the documents that exist, and the flow is one sum
+  over them: 19 ms over the same ten million moves, for a reader who
+  reads every document. An existing copy is given its moves in 47
+  seconds, once, and is 0.62 GB where it was 0.54.
 - **The first half of step 6, the program with the engine, on
   2026-11-25**, ahead of steps 3 to 5: the copy answers nothing for a
   person until a server has it. The code of the program `fadodb` is
@@ -234,9 +240,27 @@ Two findings decide what follows.
   and 1.5. A count by the state, which has an index, stays with the
   store, in 4 ms, and so does the sum of the 170,000 invoices in
   review that a figure over a list asks for, in 36 ms.
-- **Still the store's:** a page of a list, the command `query` and a
-  live list, which the second part of step 3 sends to the copy when no
-  index serves it.
+- **Step 3, its second part: the pages of lists, on 2026-11-25.** A
+  page of the command `query` or of a live list is found in the copy
+  when the store would read and sort the class for it, or has not
+  found it in five milliseconds; its documents are then read from the
+  store. Measured through the engine among 3,400,000 invoices, three
+  runs that agree: the fifty dearest invoices take a program without
+  the copy 318 ms and one with it 8; a live list of the fifty dearest
+  417 ms and 14; the fifty dearest of one owner, whom an index narrows
+  to a million invoices, 278 ms and 11. Fifty invoices over an amount,
+  as they come, and the newest fifty, which the store hands over at
+  once, stay with the store, in under a millisecond.
+- **Step 3, its third part: groups with their totals, on 2026-11-26.**
+  A live variable whose `QUERY` has a total among its columns gives
+  one line for each group (ADR-0090, proposed). It is answered by the
+  copy when no index narrows what it counts, and by the store
+  otherwise, with the same lines. Measured through the engine among 3,400,000 invoices, three
+  runs that agree: one line for each customer takes a program without
+  the copy 675 ms and one with it 12; a list by owner and state, the
+  largest sum first, 3.4 seconds and 15 ms; one line of the whole
+  class 980 ms and 10; the invoices in review by customer, which the
+  index of the state narrows to 170,000, 72 ms and 13.
 
 ## Settled while building the copy and its feed
 
@@ -338,6 +362,13 @@ strike.
   pure Go everywhere: the releases, the image, the manual. So the new
   one is built as `fadodb-full`, and nothing that exists is renamed.
   Which program keeps the name `fadodb` is the owner's to say.
+
+  The owner said it on 2026-11-25: the program with DuckDB is
+  `fadodb`, and the one in pure Go is `fadodb-core`. The names move
+  with step 6, when the program with DuckDB is built and released for
+  each system: on the day `fadodb` means the program with the engine,
+  every release has one. Until then the two are built as
+  `fadodb-full` and `fadodb`.
 - **The engine of a server takes at most 2 GB of memory** unless its
   settings say otherwise, `analytics.memory`. DuckDB's own limit is
   four fifths of the machine, which a server shares with its database
@@ -347,6 +378,67 @@ strike.
 - **Only a served database gets the engine.** The commands of the
   program that open a database for a moment, such as `fadodb user
   add`, keep no copy.
+
+## Settled while building the moves the copy keeps ready
+
+Each of these is settled by me while building, and is the owner's to
+strike.
+
+- **The flow was not in milliseconds, and the copy now keeps what
+  makes it so.** As first built, the flow joined the events with the
+  versions each time it was asked, ten million rows with ten million:
+  a third of a second on the day it was built, and half a second when
+  it was measured again beside this. The copy now keeps the moves
+  ready, in a table `<Class>_moves` for each class, and the flow is
+  one sum over it: 19 ms over the same ten million moves, measured
+  through the engine in three runs that agree, where the store takes
+  18.2 seconds. The answer is the same.
+- **When the state a move left was entered is read while the copy is
+  fed**, from the version the event left, which the store finds by its
+  key inside the one statement that reads the new events. Nothing is
+  read row by row from outside the store.
+- **A deleted document has no moves in the copy.** The flow is of the
+  documents that exist, as the store answers it, and the id of a
+  deleted document is never given again. So a reader who reads every
+  document is asked for no more than the sum; the reader's documents
+  are named only for a reader whose rule leaves some out. Naming them
+  costs about a tenth of a second when the rule picks millions of
+  documents, measured on the statement alone.
+- **A copy that was fed before it kept the moves is given them**: it
+  carries a mark of what it holds, and a copy with another mark has
+  its events read again from the first, once. Its versions and its
+  documents stay.
+
+## Settled while building the pages of lists from the copy
+
+Each of these is settled by me while building, and is the owner's to
+strike.
+
+- **The store is given a moment first: five milliseconds.** A first
+  build sent every page that no index serves to the copy. Measured, a
+  page the store fills at once, the first fifty invoices over an
+  amount, took the store 0.3 ms and the copy 4; and a list that an
+  index narrows to a million invoices and then sorts stayed with the
+  store, at 296 ms. So the rule looks at what the store does and not
+  at how the question is written: the store finds the page in the
+  moment, or the copy is asked. Whichever finds it, the page is the
+  same.
+- **A page that needs the class read and sorted is the copy's at
+  once**: no index serves its condition, and the first thing it is
+  sorted by has no index. The store has no way to hand that over in a
+  moment, and the moment would be lost.
+- **The copy says which documents, and the store hands them over.**
+  The copy is asked for the ids of the page alone. The documents are
+  read from the store by those ids, with their lists and under the
+  question's own condition still, so a document changed since the
+  copy looked is never shown where it no longer belongs, and what the
+  reader may see of each document is decided by the code that decides
+  it for every read.
+- **A blank sorts where it sorts in the store**: before every value.
+  DuckDB's own way is the other, so the order is written out for it.
+- **The moment is spent only in a program that keeps the copy.** A
+  program without one asks the store as before, and a question no
+  index serves is still stopped after five seconds there.
 
 ## Settled while building the counts and totals from the copy
 
@@ -358,11 +450,19 @@ strike.
   for that reader, compares an indexed variable with a value, or it
   does not. A `LOOKUP` goes by its key. Nothing looks at how many
   documents there are.
-- **So a count that an index narrows stays with the store even when
-  it counts millions**: the documents of one state, the documents of
-  one owner. The store counts them through the index, which is faster
-  than reading the class and slower than the copy. Sending such a
-  count to the copy when the index finds many is not built.
+- **A count or a total that an index narrows is the store's for a
+  moment**, the five milliseconds a page has, and the copy's when the
+  moment has passed. An index narrows a question to the invoices of
+  one order, or to the documents of one state, which may be millions;
+  how the question is written does not say which. As first built such
+  a count stayed with the store whatever it counted. Measured through
+  the engine among 3,400,000 invoices, three runs that agree: the
+  count of the paid invoices, most of the class, takes 8 ms where the
+  store took 82; the sum of the 170,000 invoices in review that a
+  figure over a list asks for, 10 ms where it took 34; the count of
+  the drafts, a few, stays with the store, under a millisecond. A
+  count the store answers in about the moment, 4 ms, goes one way or
+  the other, and takes 4 to 5 ms either way.
 - **A question never waits for a copy that is being made.** While the
   copy is being made, or is more than one piece of a long load behind,
   the store answers, and `CopyState` says so. This holds for the flow
@@ -423,7 +523,7 @@ strike.
 
 | Budget | The benchmark that proves it |
 |---|---|
-| which state follows which, with the middle wait and the slow tenth, over 10,000,000 visits: under 2 s (ADR-0017) | with step 2, in the module `analytics/` |
-| bringing the copy up to date after up to 1,000 new versions: under 50 ms | `BenchmarkFeed` in the module `analytics/`: 31.7 ms, measured with step 1 on 2026-11-25, in a class of 20,000 documents |
+| which state follows which, with the middle wait and the slow tenth, over 10,000,000 visits: under 2 s (ADR-0017) | with step 2, in the module `analytics/`; the flow, which has neither the middle wait nor the slow tenth, takes 19 ms over 10,000,000 moves, measured by hand on 2026-11-25 |
+| bringing the copy up to date after up to 1,000 new versions: under 50 ms | `BenchmarkFeed` in the module `analytics/`: 31.7 ms, measured with step 1 on 2026-11-25, in a class of 20,000 documents; 28.5 ms with the moves kept, where it took 24.7 the same hour without them |
 | a commit is no slower for the copy, and allocates nothing more: the feed is not on the path of a commit | the benchmark gate, with step 1 |
 | the small build is no larger (ADR-0072) | the size gate |

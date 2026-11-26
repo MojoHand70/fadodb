@@ -10,6 +10,52 @@ Phase 8 started on 2026-11-25.
 
 ### Added
 
+- One line for each group, with its totals: a column of a `QUERY` may
+  be a total (ADR-0090, proposed). In a live variable,
+  `QUERY(Invoice, {customer, COUNT(id), SUM(net)})` answers one line
+  for each customer, with how many invoices and their sum: when a
+  column is a total, the plain columns say what the lines are grouped
+  by, as in a pivot table, and with none the list is one line. The
+  totals are `COUNT`, `SUM`, `MIN`, `MAX`, `AVERAGE` and
+  `COUNTUNIQUE`, each over one variable of the source, as in a
+  `LOOKUP`; the list is sorted by a group or a total, `{-SUM(net)}`,
+  and each reader gets the totals of the documents they may read. A
+  line is no document and has no `id`; a total stands under its
+  function and its variable, `count_id`, `sum_net`. A program that
+  keeps the copy answers such a list from DuckDB when no index narrows
+  what it counts: among 3,400,000 invoices one line for each customer
+  takes 12 ms where the store takes 675. Not built: `MEDIAN` among the
+  columns, such a list kept by a triggered variable, a figure over
+  one, and a table as its source.
+- A count or a total that an index narrows goes to the copy when the
+  store has not answered in a moment (ADR-0089, step 3). An index
+  narrows a question to the invoices of one order or to the documents
+  of one state, which may be most of a class. In a program that keeps
+  the copy the store is given five milliseconds for such a count, for
+  the total of such a `LOOKUP` and for such a figure over a list, and
+  the copy is asked when they have passed. Among 3,400,000 invoices
+  the count of the paid ones, most of the class, takes 8 ms where it
+  took 82; a count of a few documents stays with the store.
+- A page of a list is found in the copy when the store does not find
+  it in a moment (ADR-0089, step 3, its second part). In a program
+  that keeps the copy, the command `query` and a live list give the
+  store five milliseconds to find the page; a page it has not found
+  by then, and a page it would read and sort the class for, is found
+  in DuckDB, which says which documents and in which order, and the
+  store hands those documents over. The page is the same either way.
+  Among 3,400,000 invoices the fifty dearest take 8 ms where they
+  took 318, and the fifty dearest of one owner, whom an index narrows
+  to a million invoices, 11 ms where they took 278; a page the store
+  fills at once stays with the store.
+- The flow of a class is answered from the copy in milliseconds: the
+  copy keeps the moves of the documents ready (ADR-0089, step 2). For
+  each class it holds one row for each time a document that exists
+  was made or moved along a transition, with the moment the state it
+  left was entered, and the command `flow` is one sum over those rows.
+  Among 3,400,000 invoices that made ten million moves the flow takes
+  19 ms, where it took half a second from the copy before and takes 18
+  seconds from the store; the answer is the same. A copy made before
+  is given its moves by itself, once.
 - The counts and totals a class already asks are answered from the
   copy in the analytical engine when no index narrows them (ADR-0089,
   step 3, its first part). In a program that keeps the copy, the

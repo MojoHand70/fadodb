@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/MojoHand70/fadodb/internal/formula"
 	"github.com/MojoHand70/fadodb/internal/query"
@@ -196,9 +197,11 @@ func (s *Store) figure(ctx context.Context, q *formula.QuerySlot, args []formula
 	// and so is its one row: the value, its currency and its error.
 	var v, c any
 	var code sql.NullString
-	answered := false
+	// tried says the copy was asked already and did not answer.
+	answered, tried := false, false
 	if s.feeder != nil && !plan.Narrowed && !(q.Key != nil && query.Indexed(src.cls, q.IndexColumn)) {
 		v, c, code, answered = s.figureFromCopy(ctx, src, q, args, &read, o, of)
+		tried = true
 	}
 	if !answered {
 		d := formula.NewSQLite().WithLimits(s.limits)
@@ -258,7 +261,34 @@ func (s *Store) figure(ctx context.Context, q *formula.QuerySlot, args []formula
 		if err != nil {
 			return formula.Value{}, storageErr("prepare a figure over "+src.cls.Name, err)
 		}
-		err = st.stmt.QueryRowContext(ctx, named...).Scan(&v, &c, &code)
+		// In a program that keeps the copy, a figure that an index
+		// narrows is the store's for a moment, and the copy's when the
+		// moment has passed: the invoices of one order are a few, the
+		// invoices in one state may be millions. When the copy does not
+		// answer, the store does, for as long as it takes.
+		asked, done := ctx, context.CancelFunc(nil)
+		if s.feeder != nil && !tried {
+			// With no moment at all, zero, the copy is asked at once:
+			// a moment that lies behind has passed before the store
+			// begins.
+			moment := copyStoreFirst
+			if moment == 0 {
+				moment = -time.Second
+			}
+			asked, done = context.WithTimeout(ctx, moment)
+		}
+		err = st.stmt.QueryRowContext(asked, named...).Scan(&v, &c, &code)
+		if done != nil {
+			passed := err != nil && asked.Err() != nil && ctx.Err() == nil
+			done()
+			if passed {
+				if v, c, code, answered = s.figureFromCopy(ctx, src, q, args, &read, o, of); answered {
+					err = nil
+				} else {
+					err = st.stmt.QueryRowContext(ctx, named...).Scan(&v, &c, &code)
+				}
+			}
+		}
 		s.filters.release(st)
 		if err != nil {
 			return formula.Value{}, storageErr("look in "+src.cls.Name, err)
@@ -282,21 +312,7 @@ func (s *Store) figure(ctx context.Context, q *formula.QuerySlot, args []formula
 			}
 			return plan.Where, plan.Args, nil
 		}
-		text := "SELECT count(*) FROM " + quote(src.cls.Name)
-		if where != "" {
-			text += " WHERE " + where
-		}
-		cst, err := s.filters.acquire(ctx, s.db, text)
-		if err != nil {
-			return formula.Value{}, storageErr("prepare the count of "+src.cls.Name, err)
-		}
-		var all int64
-		err = cst.stmt.QueryRowContext(ctx, append(given[:len(given):len(given)], s.liveArgs(o, of)...)...).Scan(&all)
-		s.filters.release(cst)
-		if err != nil {
-			return formula.Value{}, storageErr("count "+src.cls.Name, err)
-		}
-		past, err := s.pastCount(ctx, src, o, all, func(p query.Principal) (string, []any, error) {
+		err := s.logCounted(ctx, src, o, where, append(given[:len(given):len(given)], s.liveArgs(o, of)...), func(p query.Principal) (string, []any, error) {
 			where, given, err := rows(p)
 			var qe *query.Error
 			if errors.As(err, &qe) && qe.Code == query.CodeForbidden && qe.Variable != "" {
@@ -308,11 +324,6 @@ func (s *Store) figure(ctx context.Context, q *formula.QuerySlot, args []formula
 			return where, given, nil
 		})
 		if err != nil {
-			return formula.Value{}, err
-		}
-		r := newRead("live", src)
-		r.counted, r.hasCounted, r.past = past, true, past > 0
-		if err := s.logRead(ctx, o, r); err != nil {
 			return formula.Value{}, err
 		}
 	}

@@ -120,8 +120,86 @@ func TestLists(t *testing.T) {
 		}
 	}
 
+	// Totals by group (ADR-0090): the class Books of the chapter, its
+	// one document, and its lists as each reader gets them. A line is
+	// written as the chapter writes it: its values, in the order of the
+	// columns.
+	if classes["Books"] == nil {
+		t.Fatal("the chapter shows the class Books")
+	}
+	books, err := db.DefineClass(ctx, classes["Books"], setup)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The engine notes the two lists that have no condition, and not
+	// the one that compares the state.
+	noted := map[string]bool{}
+	for _, d := range books.Notes {
+		if d.Code == "reads_all" {
+			noted[d.Path] = true
+		}
+	}
+	if !noted["/variables/by_owner/formula"] || !noted["/variables/whole/formula"] || noted["/variables/by_order/formula"] {
+		t.Errorf("the engine notes reads_all on %v, and the chapter says on by_owner and whole", noted)
+	}
+	if _, err := db.Create(ctx, "Books", fado.Values{"name": "Acme"}, people["Ewa"], fado.WithID("acme")); err != nil {
+		t.Fatal(err)
+	}
+	lines := func(v *fado.LiveValue) string {
+		var out []string
+		for _, r := range v.Rows {
+			if r.ID != "" {
+				t.Errorf("a line of totals has the id %s, and the chapter says it has none", r.ID)
+			}
+			var cells []string
+			for _, col := range v.Columns {
+				cells = append(cells, shown(r.Values[col.Name]))
+			}
+			out = append(out, strings.Join(cells, ", "))
+		}
+		if len(out) == 0 {
+			return "none"
+		}
+		return strings.Join(out, "; ")
+	}
+	for _, row := range rows(marked(t, page, "totals")) {
+		who, list, want := row[0], strings.Trim(row[1], "`"), row[2]
+		got, err := db.Live(ctx, "Books", "acme", list, people[who])
+		if err != nil || lines(got) != want {
+			t.Errorf("%s reads %s: the engine answers %v, %v, and the chapter says %s", who, list, got, err, want)
+		}
+	}
+	for _, row := range rows(marked(t, page, "the totals page")) {
+		with, want, more := row[0], row[1], row[2]
+		read := fado.LiveRead{}
+		if with != "nothing more" {
+			if err := json.Unmarshal([]byte("{"+with+"}"), &read); err != nil {
+				t.Fatalf("the chapter asks with %s: %v", with, err)
+			}
+		}
+		read.Class, read.ID, read.Variable = "Books", "acme", "by_owner"
+		got, err := db.LivePage(ctx, read, people["Ewa"])
+		if err != nil || lines(got) != want || got.More != (more == "yes") {
+			t.Errorf("Ewa asks by_owner with %s: the engine answers %v, %v, and the chapter says %s, more %s", with, got, err, want, more)
+		}
+	}
+	// What the section says is refused when it is read.
+	var refusal *fado.Error
+	if _, err := db.LivePage(ctx, fado.LiveRead{Class: "Books", ID: "acme", Variable: "by_owner", Fields: []string{"owner"}}, people["Ewa"]); !errors.As(err, &refusal) || refusal.Code != "not_allowed" {
+		t.Errorf("fields of a list of totals: %v, and the chapter says it is refused", err)
+	}
+
 	// The command and its answer, as the chapter shows them.
 	squeeze := func(text []byte) string { return strings.Join(strings.Fields(string(text)), "") }
+	var totals fado.LiveRead
+	if err := json.Unmarshal(jsoncAt(t, page, "the totals command"), &totals); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := db.LivePage(ctx, totals, people["Ewa"]); err != nil {
+		t.Errorf("the command of the totals: %v", err)
+	} else if answered, _ := json.Marshal(got); squeeze(answered) != squeeze(jsoncAt(t, page, "the totals answer")) {
+		t.Errorf("the command of the totals answers %s, and the chapter shows %s", squeeze(answered), squeeze(jsoncAt(t, page, "the totals answer")))
+	}
 	var asked fado.LiveRead
 	if err := json.Unmarshal(jsoncAt(t, page, "the command"), &asked); err != nil {
 		t.Fatal(err)
@@ -184,7 +262,14 @@ func TestLists(t *testing.T) {
 		"a QUERY inside a larger formula":                               {live(`IF(TRUE, QUERY(Invoice, number), BLANK)`)},
 		"a source nobody defined":                                       {live(`QUERY(Nothing, number)`)},
 		"a column the source has not":                                   {live(`QUERY(Invoice, {number, nothing})`)},
-		"a count among the columns":                                     {live(`QUERY(Invoice, {number, COUNT(net)})`)},
+		"the middle value of each group, MEDIAN among the columns":      {live(`QUERY(Invoice, {owner, MEDIAN(net)})`)},
+		"a function that is no total among the columns":                 {live(`QUERY(Invoice, {owner, UPPER(number)})`)},
+		"a total over what is worked out, as SUM(net * 2)":              {live(`QUERY(Invoice, {owner, SUM(net * 2)})`)},
+		"a total over a column the source has not":                      {live(`QUERY(Invoice, {owner, SUM(nothing)})`)},
+		"a sum over a text":                                             {live(`QUERY(Invoice, {owner, SUM(number)})`)},
+		"the same total twice":                                          {live(`QUERY(Invoice, {owner, SUM(net), SUM(net)})`)},
+		"a list of totals sorted by what is none of its columns":        {live(`QUERY(Invoice, {owner, SUM(net)}, TRUE, {-number})`), live(`QUERY(Invoice, {owner, SUM(net)}, TRUE, {MAX(net)})`)},
+		"a list of totals in a triggered variable, which would keep it": {list(`"type": "rows", "mode": "triggered", "on": ["create"], "schema": {"owner": "text", "sum_net": "money(2)"}, "formula": "QUERY(Invoice, {owner, SUM(net)})"`)},
 		"a condition that is no condition":                              {live(`QUERY(Invoice, number, net)`)},
 		"a pointer compared with a text":                                {live(`QUERY(Invoice, number, order = \"Order:ORD-17\")`)},
 		"REF() compared with a pointer to another class":                {live(`QUERY(Invoice, number, order = REF())`)},

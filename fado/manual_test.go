@@ -119,7 +119,7 @@ func TestManualExamples(t *testing.T) {
 			cls, err := db.DefineClass(ctx, []byte(class), setup)
 			if err != nil {
 				t.Errorf("%s: class %d is refused: %v", name, i+1, err)
-			} else if notes := withoutDescriptions(cls.Notes); len(notes) > 0 {
+			} else if notes := unsaid(name, cls.Name, withoutDescriptions(cls.Notes)); len(notes) > 0 {
 				t.Errorf("%s: the class %s leaves a rule out: %v", name, cls.Name, notes)
 			}
 			for j, w := range words {
@@ -284,4 +284,27 @@ func kindOf(block []byte) string {
 		return "action"
 	}
 	return "piece"
+}
+
+// saidNotes are the notes an example of the manual is defined with
+// because its chapter says so, by page and class: the test of that
+// chapter holds the sentence to the engine.
+var saidNotes = map[string]string{
+	"lists.md/Books": "reads_all", // a list of totals over a whole class (TestLists)
+}
+
+// unsaid leaves out of the notes of an example the one its chapter
+// announces.
+func unsaid(page, class string, notes fado.Diagnostics) fado.Diagnostics {
+	said, ok := saidNotes[page+"/"+class]
+	if !ok {
+		return notes
+	}
+	var out fado.Diagnostics
+	for _, d := range notes {
+		if d.Code != said {
+			out = append(out, d)
+		}
+	}
+	return out
 }

@@ -1170,6 +1170,9 @@ func listsOf(cls *Class, v *Variable, r *envSources) func(name string) (*formula
 			// A list that is kept is a list the document holds
 			// (ADR-0078, item 5): its figures are worked out over its
 			// rows, as over entered lines.
+		case lv.Query != nil && lv.Query.Totals != nil, lv.Query == nil && totalsIn(lv.queryCall):
+			// A list of totals (ADR-0090): its lines are no documents,
+			// and a figure over them is not built.
 		case lv.Query != nil:
 			source = lv.Query.Source
 		case lv.queryCall != nil && len(lv.queryCall.Args) > 0:

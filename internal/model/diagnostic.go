@@ -367,8 +367,15 @@ func (c *collector) asks(path string, prog *formula.Program) {
 // list reads every document until its page is full. A list without a
 // condition is read in the order of the ids, a page at a time, and is
 // served by that.
-func (c *collector) asksList(path string, src *Class, cond formula.Node) {
+func (c *collector) asksList(path string, src *Class, cond formula.Node, totals bool) {
 	if cond == nil {
+		if totals {
+			// Totals over a whole class: every document is read to be
+			// counted (ADR-0090).
+			c.wide = append(c.wide, Diagnostic{Code: CodeReadsAll, Path: path, Pos: -1, Note: true,
+				Message: "this list of totals reads every document of " + src.Name + " each time it is read: it has no condition",
+				Hint:    "a program with the analytical engine answers it from its copy of the documents; without one, a condition that compares an indexed variable narrows what is read"})
+		}
 		return
 	}
 	served := false
@@ -406,6 +413,12 @@ func (c *collector) asksList(path string, src *Class, cond formula.Node) {
 		}
 	}
 	walk(cond)
+	if !served && totals {
+		c.wide = append(c.wide, Diagnostic{Code: CodeReadsAll, Path: path, Pos: -1, Note: true,
+			Message: "this list of totals reads every document of " + src.Name + " each time it is read: its condition compares no indexed variable of " + src.Name + " for equality with a value",
+			Hint:    "a program with the analytical engine answers it from its copy of the documents; without one, begin the condition with such a comparison, as customer = THIS.customer"})
+		return
+	}
 	if !served {
 		c.wide = append(c.wide, Diagnostic{Code: CodeReadsAll, Path: path, Pos: -1, Note: true,
 			Message: "this list reads every document of " + src.Name + " until its page is full: its condition compares no indexed variable of " + src.Name + " for equality with a value",

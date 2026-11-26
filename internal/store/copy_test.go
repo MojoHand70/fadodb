@@ -708,3 +708,206 @@ func TestCopy_AQuestionDoesNotWaitForALoad(t *testing.T) {
 		t.Fatalf("after the feed the copy holds %d versions and was asked with %v", c.count("Invoice_versions"), err)
 	}
 }
+
+// The copy keeps the moves of the documents that exist (ADR-0089, item
+// 2): one row for each time a document was made or moved along a
+// transition, and for a move the moment the state it left was entered.
+// A document that is deleted has no moves any more, and a copy that
+// was fed before it kept them is given them.
+func TestCopy_KeepsTheMoves(t *testing.T) {
+	c := newMemCopy()
+	now := start
+	tick := func() time.Time { now = now.Add(time.Minute); return now }
+	s, path := openStore(t, Options{Analytics: memEngine{c}, CopyEvery: time.Hour, Now: tick})
+	ctx := context.Background()
+	<-s.feeder.first
+	if _, err := s.defineOpen(ctx, []byte(copyInvoice), asSetup); err != nil {
+		t.Fatal(err)
+	}
+	at := map[string]int64{}
+	for i := 1; i <= 3; i++ {
+		d, err := s.Create(ctx, "Invoice", Values{"number": fmt.Sprintf("FV-%d", i)}, WithID(fmt.Sprintf("i-%d", i)))
+		if err != nil {
+			t.Fatal(err)
+		}
+		at[d.ID] = d.CreatedAt
+	}
+	filed, err := s.Transition(ctx, "Invoice", "i-1", "file", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// A change that moves nothing is no move.
+	if _, err := s.Set(ctx, "Invoice", "i-1", Values{"customer": "Globex"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Transition(ctx, "Invoice", "i-1", "approve", nil); err != nil {
+		t.Fatal(err)
+	}
+	mustFeed(t, s)
+	// moves are the rows of the moves as one text each, sorted: the
+	// document, what happened, between which states, and since when the
+	// state it left was held.
+	moves := func() string {
+		c.mu.Lock()
+		defer c.mu.Unlock()
+		var out []string
+		for _, row := range c.rows["Invoice_moves"] {
+			out = append(out, fmt.Sprintf("%v %v %v %v>%v left since %v", row[0], row[1], row[2], row[3], row[4], row[6]))
+		}
+		sort.Strings(out)
+		return strings.Join(out, "\n")
+	}
+	want := fmt.Sprintf(`i-1 created <nil> <nil>>draft left since <nil>
+i-1 transition approve review>paid left since %d
+i-1 transition file draft>review left since %d
+i-2 created <nil> <nil>>draft left since <nil>
+i-3 created <nil> <nil>>draft left since <nil>`, filed.StateEnteredAt, at["i-1"])
+	if got := moves(); got != want {
+		t.Fatalf("the moves in the copy:\n%s\nwant\n%s", got, want)
+	}
+	// A deleted document has no moves; its events stay in the copy.
+	events := c.count("events")
+	if err := s.Delete(ctx, "Invoice", "i-3"); err != nil {
+		t.Fatal(err)
+	}
+	mustFeed(t, s)
+	if got := moves(); strings.Contains(got, "i-3") || c.count("Invoice_moves") != 4 || c.count("events") != events+1 {
+		t.Errorf("after i-3 was deleted the copy holds %d events (%d before) and the moves\n%s", c.count("events"), events, got)
+	}
+	// A copy that was fed before it kept the moves: its events are read
+	// again, once, and the moves are made with them.
+	kept := moves()
+	if err := s.Close(); err != nil {
+		t.Fatal(err)
+	}
+	c.mu.Lock()
+	delete(c.marks, copyMarkFormat)
+	c.rows["Invoice_moves"] = nil
+	c.mu.Unlock()
+	s, err = Open(path, Options{Analytics: memEngine{c}, CopyEvery: time.Hour, Now: tick, Outbox: OutboxOptions{Manual: true}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { s.Close() })
+	<-s.feeder.first
+	mustFeed(t, s)
+	if got := moves(); got != kept || c.count("events") != events+1 {
+		t.Errorf("a copy without its moves, after a feed: %d events (want %d) and the moves\n%s\nwant\n%s", c.count("events"), events+1, got, kept)
+	}
+}
+
+// In a program that keeps the copy, a page of a list is the store's
+// for a moment and the copy's when the moment has passed; a page the
+// store would read and sort the class for is the copy's at once
+// (ADR-0089, item 6). Whichever is asked, the page is the same. The
+// stand-in answers no statement, so a page it is asked for comes from
+// the store after all, and the state of the copy says it was asked.
+func TestCopy_APageIsTheStoresForAMoment(t *testing.T) {
+	c := newMemCopy()
+	s, _, ctx := copied(t, c)
+	moment := copyStoreFirst
+	t.Cleanup(func() { copyStoreFirst = moment })
+	for i := 1; i <= 6; i++ {
+		if _, err := s.Create(ctx, "Invoice", Values{"number": fmt.Sprintf("FV-%d", i), "customer": []string{"Globex", "Acme"}[i%2]}, WithID(fmt.Sprintf("i-%d", i))); err != nil {
+			t.Fatal(err)
+		}
+	}
+	mustFeed(t, s)
+	asked := func(f Filter) (string, bool) {
+		t.Helper()
+		s.feeder.notAnswered(nil)
+		docs, err := s.Query(ctx, f)
+		if err != nil {
+			t.Fatalf("the query %+v: %v", f, err)
+		}
+		var ids []string
+		for _, d := range docs {
+			ids = append(ids, d.ID)
+		}
+		st := s.CopyState()
+		return strings.Join(ids, " "), st.AskErr != nil && strings.Contains(st.AskErr.Error(), "answers no statement")
+	}
+	ofOne := Filter{Class: "Invoice", Where: `customer = "Acme"`}
+	sorted := Filter{Class: "Invoice", Where: `customer = "Acme"`, Order: []string{"-number"}}
+	// The store has all the time it wants: it finds the page, and the
+	// copy is not asked.
+	copyStoreFirst = time.Hour
+	if got, copy := asked(ofOne); got != "i-1 i-3 i-5" || copy {
+		t.Errorf("with a moment that never passes: %q, the copy asked %v", got, copy)
+	}
+	// A page sorted by what no index holds is the copy's at once.
+	if got, copy := asked(sorted); got != "i-5 i-3 i-1" || !copy {
+		t.Errorf("a page sorted by what no index holds: %q, the copy asked %v", got, copy)
+	}
+	// A page whose order an index holds is the store's for the moment.
+	if got, copy := asked(Filter{Class: "Invoice", Order: []string{"-created_at"}, Limit: 2}); got == "" || copy {
+		t.Errorf("a page in an order an index holds: %q, the copy asked %v", got, copy)
+	}
+	// The moment has passed before the store began: the copy is asked.
+	// A moment that lies behind is one that has passed on every
+	// machine, where the shortest one ahead may outlast a small read.
+	copyStoreFirst = -time.Second
+	if got, copy := asked(ofOne); got != "i-1 i-3 i-5" || !copy {
+		t.Errorf("with a moment that has passed: %q, the copy asked %v", got, copy)
+	}
+	// With no moment at all the copy is asked at once.
+	copyStoreFirst = 0
+	if got, copy := asked(ofOne); got != "i-1 i-3 i-5" || !copy {
+		t.Errorf("with no moment for the store: %q, the copy asked %v", got, copy)
+	}
+}
+
+// In a program that keeps the copy, a count or a figure that an index
+// narrows is the store's for a moment, and the copy's when the moment
+// has passed: the documents of one state may be a few or millions
+// (ADR-0089, item 6). The stand-in answers no statement, so what it is
+// asked comes from the store after all, and the state of the copy says
+// it was asked.
+func TestCopy_ACountIsTheStoresForAMoment(t *testing.T) {
+	c := newMemCopy()
+	s, _, ctx := copied(t, c)
+	moment := copyStoreFirst
+	t.Cleanup(func() { copyStoreFirst = moment })
+	if _, err := s.defineOpen(ctx, []byte(`{"name": "Books", "title": "name", "variables": {"name": {"type": "text"},
+	  "drafts": {"mode": "live", "formula": "LOOKUP(Invoice, COUNT(id), state = \"draft\")"}},
+	  "states": {"initial": "open", "list": ["open"]}}`), asSetup); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Create(ctx, "Books", Values{"name": "Acme"}, WithID("acme")); err != nil {
+		t.Fatal(err)
+	}
+	for i := 1; i <= 4; i++ {
+		if _, err := s.Create(ctx, "Invoice", Values{"number": fmt.Sprintf("FV-%d", i)}, WithID(fmt.Sprintf("i-%d", i))); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := s.Transition(ctx, "Invoice", "i-1", "file", nil); err != nil {
+		t.Fatal(err)
+	}
+	mustFeed(t, s)
+	asked := func() bool {
+		st := s.CopyState()
+		return st.AskErr != nil && strings.Contains(st.AskErr.Error(), "answers no statement")
+	}
+	for _, tc := range []struct {
+		name   string
+		moment time.Duration
+		copy   bool
+	}{
+		{"a moment that never passes", time.Hour, false},
+		{"a moment that has passed", -time.Second, true},
+		{"no moment at all", 0, true},
+	} {
+		copyStoreFirst = tc.moment
+		s.feeder.notAnswered(nil)
+		n, err := s.Count(ctx, Filter{Class: "Invoice", Where: `state = "draft"`})
+		if err != nil || n != 3 || asked() != tc.copy {
+			t.Errorf("with %s, the count of the drafts: %d, %v, the copy asked %v; want 3 and %v", tc.name, n, err, asked(), tc.copy)
+		}
+		s.feeder.notAnswered(nil)
+		v, err := s.Live(ctx, "Books", "acme", "drafts")
+		if err != nil || v.Value != float64(3) || asked() != tc.copy {
+			t.Errorf("with %s, the drafts a live variable counts: %v, %v, the copy asked %v; want 3 and %v", tc.name, v, err, asked(), tc.copy)
+		}
+	}
+}

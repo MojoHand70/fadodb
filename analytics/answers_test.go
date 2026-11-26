@@ -136,10 +136,8 @@ func TestAnswers_FromTheCopyAreTheStores(t *testing.T) {
 		t.Helper()
 		for name, who := range map[string][]fado.Option{"ewa, who reads all": {ewa}, "jan": {jan}, "dan, on duty": {dan}, "somebody who reads none": {nobody}, "a content administrator with a reason": root} {
 			// The rule of ewa and of the administrator names no column, so
-			// nothing narrows what they ask but the question itself; jan
-			// and the one who reads none are led by owner = USER().
+			// nothing narrows what they ask but the question itself.
 			readsAll := name == "ewa, who reads all" || name == "a content administrator with a reason"
-			own := name == "jan" || name == "somebody who reads none"
 			for _, books := range []string{"acme", "none"} {
 				for _, variable := range figures {
 					before := withCopy.CopyState().Answers
@@ -148,11 +146,11 @@ func TestAnswers_FromTheCopyAreTheStores(t *testing.T) {
 					if want := live(plain, books, variable, who...); got != want {
 						t.Errorf("%s, %s reads %s of %s: the copy's program says %s, the store's %s", when, name, variable, books, got, want)
 					}
-					switch {
-					case readsAll && !keyed[variable] && asked != 1:
+					// What no index narrows is the copy's at once. What an
+					// index narrows is the store's for a moment and the
+					// copy's after it, so only its answer is held here.
+					if readsAll && !keyed[variable] && asked != 1 {
 						t.Errorf("%s, %s reads %s of %s: the copy answered %d times, want once (%+v)", when, name, variable, books, asked, withCopy.CopyState())
-					case (keyed[variable] || own) && asked != 0:
-						t.Errorf("%s, %s reads %s of %s: the copy was asked %d times, and an index narrows the question", when, name, variable, books, asked)
 					}
 				}
 			}
@@ -164,11 +162,8 @@ func TestAnswers_FromTheCopyAreTheStores(t *testing.T) {
 				if want := said(m, err); got != want {
 					t.Errorf("%s, %s counts %s: the copy's program says %s, the store's %s", when, name, label, got, want)
 				}
-				switch {
-				case readsAll && !led[label] && asked != 1:
+				if readsAll && !led[label] && asked != 1 {
 					t.Errorf("%s, %s counts %s: the copy answered %d times, want once (%+v)", when, name, label, asked, withCopy.CopyState())
-				case (led[label] || own) && asked != 0:
-					t.Errorf("%s, %s counts %s: the copy was asked %d times, and an index narrows the question", when, name, label, asked)
 				}
 			}
 		}

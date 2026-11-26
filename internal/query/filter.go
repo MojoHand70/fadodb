@@ -360,6 +360,7 @@ func CompileFor(d formula.Dialect, f Filter, on *On, cls *model.Class, sources f
 	}
 	// Order: by id unless told otherwise.
 	var order []string
+	ofStore := d.Name() == (formula.SQLite{}).Name()
 	seen := map[string]bool{}
 	for i, o := range f.Order {
 		desc := false
@@ -384,6 +385,16 @@ func CompileFor(d formula.Dialect, f Filter, on *On, cls *model.Class, sources f
 		term := quoteIdent(c.name)
 		if desc {
 			term += " DESC"
+		}
+		// In the store a blank sorts before every value: first going
+		// up, last going down. Another engine is told so, since its own
+		// way may be another (ADR-0089, item 7).
+		if !ofStore {
+			if desc {
+				term += " NULLS LAST"
+			} else {
+				term += " NULLS FIRST"
+			}
 		}
 		order = append(order, term)
 	}

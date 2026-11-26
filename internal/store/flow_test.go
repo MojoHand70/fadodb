@@ -456,3 +456,121 @@ func TestTheThroughputGoesByTheDatabasesZone(t *testing.T) {
 		t.Errorf("the weeks in Warsaw: %+v", weeks.Periods)
 	}
 }
+
+// The paths the documents of a class took (ADR-0097): the most taken
+// first, for the caller, of the documents made in the period, each with
+// its path up to now. The story is that of the flow, with one invoice
+// that was sent back and came again.
+func TestThePathsDocumentsTook(t *testing.T) {
+	cl := &still{now: time.Date(2026, 11, 2, 9, 0, 0, 0, time.UTC)}
+	s, _ := openStore(t, Options{Now: cl.Now})
+	ctx := context.Background()
+	back := strings.Replace(flowInvoice, `{"name": "submit", "from": "draft", "to": "review"},`, `{"name": "submit", "from": "draft", "to": "review"}, {"name": "send_back", "from": "review", "to": "draft"},`, 1)
+	if back == flowInvoice {
+		t.Fatal("the class of the test was not given its way back")
+	}
+	if _, err := s.DefineClass(ctx, []byte(back), asSetup); err != nil {
+		t.Fatal(err)
+	}
+	must := func(_ *Document, err error) {
+		t.Helper()
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, id := range []string{"B-1", "B-2", "B-3", "B-4"} {
+		must(s.Create(ctx, "Invoice", Values{"total": "100.00"}, flowBob, WithID(id)))
+	}
+	must(s.Create(ctx, "Invoice", Values{"total": "0.00"}, flowDan, WithID("D-1")))
+	cl.add(time.Hour)
+	must(s.Transition(ctx, "Invoice", "B-1", "submit", nil, flowBob))
+	must(s.Transition(ctx, "Invoice", "B-2", "submit", nil, flowBob))
+	must(s.Transition(ctx, "Invoice", "B-4", "submit", nil, flowBob))
+	// Dan's is of nothing: submitted, and cancelled by the engine in the
+	// same commit, the same second. Its path tells the two apart.
+	must(s.Transition(ctx, "Invoice", "D-1", "submit", nil, flowDan))
+	// B-4 is sent back and comes again, all within one second.
+	must(s.Transition(ctx, "Invoice", "B-4", "send_back", nil, flowAnn))
+	must(s.Transition(ctx, "Invoice", "B-4", "submit", nil, flowBob))
+	cl.add(3 * time.Hour)
+	must(s.Transition(ctx, "Invoice", "B-1", "approve", nil, flowAnn))
+	must(s.Transition(ctx, "Invoice", "B-4", "approve", nil, flowAnn))
+	cl.add(24 * time.Hour)
+	must(s.Transition(ctx, "Invoice", "B-3", "cancel", nil, flowBob))
+	// Wednesday: one more, which goes the usual way.
+	cl.add(24 * time.Hour)
+	must(s.Create(ctx, "Invoice", Values{"total": "9.00"}, flowBob, WithID("B-5")))
+	must(s.Transition(ctx, "Invoice", "B-5", "submit", nil, flowBob))
+	must(s.Transition(ctx, "Invoice", "B-5", "approve", nil, flowAnn))
+
+	told := func(as Option, ask PathsAsk) string {
+		t.Helper()
+		p, err := s.Paths(ctx, "Invoice", ask, as)
+		if err != nil {
+			t.Fatal(err)
+		}
+		out := make([]string, len(p.Paths))
+		listed := int64(0)
+		for i, path := range p.Paths {
+			out[i] = fmt.Sprintf("%s %d", strings.Join(path.States, ">"), path.Documents)
+			if path.Finished {
+				out[i] += " finished"
+			}
+			listed += path.Documents
+		}
+		if p.Documents != listed+p.Others || p.Class != "Invoice" {
+			t.Errorf("the sums of the paths: %+v", p)
+		}
+		return fmt.Sprintf("%d documents, %d paths, %d others: %s", p.Documents, p.Different, p.Others, strings.Join(out, "; "))
+	}
+	// Ann reads every invoice. The most taken first, and among those
+	// taken as often, in the order of their states.
+	all := "6 documents, 5 paths, 0 others: draft>review>approved 2 finished; draft>cancelled 1 finished; draft>review 1; draft>review>cancelled 1 finished; draft>review>draft>review>approved 1 finished"
+	if got := told(flowAnn, PathsAsk{}); got != all {
+		t.Errorf("Ann's paths: %s", got)
+	}
+	// The two most taken, and how many took another.
+	if got := told(flowAnn, PathsAsk{Limit: 2}); got != "6 documents, 5 paths, 3 others: draft>review>approved 2 finished; draft>cancelled 1 finished" {
+		t.Errorf("Ann's two most taken paths: %s", got)
+	}
+	// Bob reads his own: Dan's is in no number of his.
+	if got := told(flowBob, PathsAsk{}); got != "5 documents, 4 paths, 0 others: draft>review>approved 2 finished; draft>cancelled 1 finished; draft>review 1; draft>review>draft>review>approved 1 finished" {
+		t.Errorf("Bob's paths: %s", got)
+	}
+	// The documents made in a period, each with its whole path: the one
+	// made on Wednesday, and those made before.
+	wednesday := time.Date(2026, 11, 4, 0, 0, 0, 0, time.UTC)
+	if got := told(flowAnn, PathsAsk{Since: wednesday}); got != "1 documents, 1 paths, 0 others: draft>review>approved 1 finished" {
+		t.Errorf("the paths of the invoices made since Wednesday: %s", got)
+	}
+	if got := told(flowAnn, PathsAsk{Until: wednesday}); got != "5 documents, 5 paths, 0 others: draft>cancelled 1 finished; draft>review 1; draft>review>approved 1 finished; draft>review>cancelled 1 finished; draft>review>draft>review>approved 1 finished" {
+		t.Errorf("the paths of the invoices made before Wednesday: %s", got)
+	}
+	// Eve reads none.
+	if got := told(flowEve, PathsAsk{}); got != "0 documents, 0 paths, 0 others: " {
+		t.Errorf("Eve's paths: %s", got)
+	}
+	// A deleted document is in no path.
+	if err := s.Delete(ctx, "Invoice", "B-2", flowBob); err != nil {
+		t.Fatal(err)
+	}
+	if got := told(flowAnn, PathsAsk{}); strings.Contains(got, "draft>review 1;") || !strings.HasPrefix(got, "5 documents, 4 paths") {
+		t.Errorf("Ann's paths after a delete: %s", got)
+	}
+	// What is refused.
+	for what, c := range map[string]struct {
+		class string
+		ask   PathsAsk
+		code  string
+	}{
+		"a class there is none of":            {"Receipt", PathsAsk{}, CodeUnknownClass},
+		"a period that ends before it begins": {"Invoice", PathsAsk{Since: wednesday, Until: wednesday.Add(-time.Hour)}, CodeBadValue},
+		"more paths than an answer lists":     {"Invoice", PathsAsk{Limit: MaxPaths + 1}, CodeBadValue},
+		"fewer than one":                      {"Invoice", PathsAsk{Limit: -1}, CodeBadValue},
+	} {
+		var refused *Error
+		if _, err := s.Paths(ctx, c.class, c.ask, flowAnn); !errors.As(err, &refused) || refused.Code != c.code {
+			t.Errorf("%s: %v, want %s", what, err, c.code)
+		}
+	}
+}

@@ -4319,6 +4319,87 @@
         "x-fado-mark": "reads"
       }
     },
+    "/v1/paths": {
+      "post": {
+        "description": "It reads. In Go it is the call `Paths`.",
+        "operationId": "paths",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "class": {
+                    "description": "the name of the class",
+                    "type": "string"
+                  },
+                  "for": {
+                    "description": "the id of whoever the caller acts for; let through only while a substitution says so",
+                    "type": "string"
+                  },
+                  "limit": {
+                    "description": "how many paths to answer, the most taken first; 20 when left out, 1,000 at the most",
+                    "type": "integer"
+                  },
+                  "reason": {
+                    "description": "why a content administrator acts or reads past a rule; a change keeps it on its event, a read in the log of reads",
+                    "type": "string"
+                  },
+                  "since": {
+                    "description": "the first moment a document was made at to be counted; since the class began when left out",
+                    "type": [
+                      "string",
+                      "integer"
+                    ]
+                  },
+                  "until": {
+                    "description": "the moment before which a document was made to be counted; now when left out",
+                    "type": [
+                      "string",
+                      "integer"
+                    ]
+                  }
+                },
+                "required": [
+                  "class"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "paths": {
+                      "description": "how many documents were counted and how many different paths they took; the most taken paths, each with its states in the order a document came into them, how many documents took it, and whether it ends in a final state; and how many documents took another path"
+                    }
+                  },
+                  "required": [
+                    "paths"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "The command ran."
+          },
+          "default": {
+            "$ref": "#/components/responses/Refused"
+          }
+        },
+        "summary": "Answers the paths the documents of a class took through its states, the most taken first, for the documents the caller may read.",
+        "tags": [
+          "Documents"
+        ],
+        "x-fado-call": "Paths",
+        "x-fado-mark": "reads"
+      }
+    },
     "/v1/preview": {
       "post": {
         "description": "It reads. In Go it is the call `Preview`.",

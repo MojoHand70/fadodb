@@ -86,8 +86,8 @@ One, asked on 2026-11-26 on a page of its own.
    three, this one first. The other way: this one only, and the other
    two when a screen asks for them. This record builds what both
    answers hold. **Answered on 2026-11-26: "yes - all three."** The
-   documents made and finished in each period are ADR-0096; the paths
-   have a record of their own.
+   documents made and finished in each period are ADR-0096, and the
+   paths ADR-0097.
 
 ## Decisions of mine, each the owner's to strike
 

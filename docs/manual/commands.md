@@ -120,6 +120,7 @@ A command takes the ones its list below shows, and no other.
 | [`count`](#count) | Counts the documents of a class that match a filter. | reads |
 | [`flow`](#flow) | Answers the flow of a class: the documents the caller may read in each state now, and their moves along each transition. | reads |
 | [`throughput`](#throughput) | Answers how many documents of a class the caller may read were made and how many finished in each day, week or month: whether the pile grows. | reads |
+| [`paths`](#paths) | Answers the paths the documents of a class took through its states, the most taken first, for the documents the caller may read. | reads |
 | [`sql`](#sql) | Runs one read-only SELECT over the views, for an analyst. | reads |
 
 ### create
@@ -564,6 +565,25 @@ It answers:
 | Member | What it holds |
 |---|---|
 | `throughput` | the periods from the first in which a document was made or finished to the last, each with its first day and how many documents were made and how many finished in it; and the two sums |
+
+### paths
+
+Answers the paths the documents of a class took through its states, the most taken first, for the documents the caller may read. It reads; in Go it is the call `Paths`.
+
+| Member | Type | | What it is |
+|---|---|---|---|
+| `class` | text | needed | the name of the class |
+| `since` | moment |  | the first moment a document was made at to be counted; since the class began when left out |
+| `until` | moment |  | the moment before which a document was made to be counted; now when left out |
+| `limit` | whole number |  | how many paths to answer, the most taken first; 20 when left out, 1,000 at the most |
+
+And, of the members that mean the same everywhere: `reason`, `for`.
+
+It answers:
+
+| Member | What it holds |
+|---|---|
+| `paths` | how many documents were counted and how many different paths they took; the most taken paths, each with its states in the order a document came into them, how many documents took it, and whether it ends in a final state; and how many documents took another path |
 
 ### sql
 

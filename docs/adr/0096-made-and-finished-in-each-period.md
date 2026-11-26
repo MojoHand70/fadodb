@@ -124,7 +124,7 @@ Settled while building, on 2026-11-26.
 
 ## What this record leaves out
 
-- **The paths documents took.**
+- **The paths documents took.** Built since, by ADR-0097.
 - **Finished by final state**, and the moves along each transition by
   period.
 - **A zone of the caller's choosing.** The periods go by the

@@ -828,6 +828,43 @@ func TestTheFlowIsACommand(t *testing.T) {
 			t.Errorf("throughput %s: %s at %q (%s), want %s at %q", object, e.Code, e.Path, e.Message, want[0], want[1])
 		}
 	}
+
+	// The command paths answers what the Go call answers (ADR-0097): the
+	// paths the documents took, the most taken first.
+	for object, ask := range map[string]store.PathsAsk{
+		`{"class": "Invoice"}`:                 {},
+		`{"class": "Invoice", "limit": 1}`:     {Limit: 1},
+		`{"class": "Invoice", "until": 86400}`: {Until: time.Unix(86400, 0)},
+	} {
+		direct, err := s.Paths(context.Background(), "Invoice", ask, store.As(ann))
+		if err != nil {
+			t.Fatal(err)
+		}
+		var want any
+		if err := json.Unmarshal(mustJSON(direct), &want); err != nil {
+			t.Fatal(err)
+		}
+		if got := run(t, s, ann, "paths", object); !reflect.DeepEqual(got["paths"], want) {
+			t.Errorf("paths %s answered %v, and the Go call %v", object, got["paths"], want)
+		}
+	}
+	if got := run(t, s, ann, "paths", `{"class": "Invoice"}`); at(t, got, "paths.documents") != float64(2) {
+		t.Errorf("paths answered %v", got)
+	}
+	for object, want := range map[string][2]string{
+		`{}`:                                     {CodeBadJSON, "/class"},
+		`{"class": "Receipt"}`:                   {store.CodeUnknownClass, ""},
+		`{"class": "Invoice", "limit": -1}`:      {store.CodeBadValue, "/limit"},
+		`{"class": "Invoice", "limit": 1001}`:    {store.CodeBadValue, "/limit"},
+		`{"class": "Invoice", "since": "soon"}`:  {store.CodeBadValue, "/since"},
+		`{"class": "Invoice", "until": "never"}`: {store.CodeBadValue, "/until"},
+		`{"class": "Invoice", "since": "2026-11-14", "until": "2026-11-13"}`: {store.CodeBadValue, ""},
+		`{"class": "Invoice", "by": "day"}`:                                  {CodeBadJSON, "/by"},
+	} {
+		if e := refused(t, s, ann, "paths", object); e.Code != want[0] || e.Path != want[1] {
+			t.Errorf("paths %s: %s at %q (%s), want %s at %q", object, e.Code, e.Path, e.Message, want[0], want[1])
+		}
+	}
 }
 
 func TestWhoCallsIsNeverInTheCommand(t *testing.T) {

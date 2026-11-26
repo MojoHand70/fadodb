@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"sort"
+	"strings"
 	"testing"
 	"time"
 
@@ -131,6 +132,29 @@ func TestFlow_FromTheCopyIsTheStores(t *testing.T) {
 				if string(a) != string(b) {
 					t.Errorf("%s, %s, %s:\nthe copy  %s\nthe store %s", when, name, label, a, b)
 				}
+				// The paths the documents took (ADR-0097): the copy
+				// reads its moves in the order of their versions, the
+				// store its events.
+				for _, limit := range []int{0, 2, 1000} {
+					ask := fado.PathsAsk{Since: period.Since, Until: period.Until, Limit: limit}
+					before := withCopy.CopyState().Answers
+					fromCopy, err := withCopy.Paths(ctx, "Invoice", ask, who)
+					if err != nil {
+						t.Fatalf("%s, %s, %s, limit %d: the paths from the copy: %v", when, name, label, limit, err)
+					}
+					if st := withCopy.CopyState(); st.Answers != before+1 || st.AskErr != nil {
+						t.Fatalf("%s, %s, %s, limit %d: the copy did not answer: %+v", when, name, label, limit, st)
+					}
+					fromStore, err := plain.Paths(ctx, "Invoice", ask, who)
+					if err != nil {
+						t.Fatalf("%s, %s, %s, limit %d: the paths from the store: %v", when, name, label, limit, err)
+					}
+					a, _ := json.Marshal(fromCopy)
+					b, _ := json.Marshal(fromStore)
+					if string(a) != string(b) {
+						t.Errorf("%s, %s, %s, limit %d:\nthe copy  %s\nthe store %s", when, name, label, limit, a, b)
+					}
+				}
 				// How many were made and how many finished in each
 				// period (ADR-0096), over the same time: the copy
 				// counts its moves, the store its events.
@@ -179,6 +203,19 @@ func TestFlow_FromTheCopyIsTheStores(t *testing.T) {
 	}
 	if made.Created != 39 || made.Finished != 12 || made.By != fado.ThroughputDay || len(made.Periods) < 2 {
 		t.Errorf("the throughput: %d made and %d finished in %d days by %s; want 39 and 12 in several days", made.Created, made.Finished, len(made.Periods), made.By)
+	}
+	// And which ways they went: 39 invoices on five paths, three of
+	// them filed, sent back and filed again.
+	ways, err := withCopy.Paths(ctx, "Invoice", fado.PathsAsk{}, ewa)
+	if err != nil {
+		t.Fatal(err)
+	}
+	took := map[string]int64{}
+	for _, p := range ways.Paths {
+		took[strings.Join(p.States, ">")] = p.Documents
+	}
+	if ways.Documents != 39 || ways.Others != 0 || took["draft>review>paid"] != 12 || took["draft>review>draft>review"] != 3 || took["draft>review>draft"] != 3 || took["draft"] != 9 || took["draft>review"] != 12 {
+		t.Errorf("the paths: %d documents, %d others, %v", ways.Documents, ways.Others, took)
 	}
 	mine, err := withCopy.Flow(ctx, "Invoice", fado.FlowPeriod{}, nobody)
 	if err != nil {

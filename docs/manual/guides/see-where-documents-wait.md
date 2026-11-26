@@ -330,6 +330,104 @@ cancelled B-3. One is still open, B-2.
 - **Among ten million moves** a program with the analytical engine
   answers it in 6 to 7 ms, and a program without it in 9 seconds.
 
+## Which way documents went
+
+A third command, `paths`, says which ways the documents went through
+the states, the most taken first:
+
+```jsonc
+{"class": "Invoice"}
+```
+
+<!-- the paths Ann sees -->
+```jsonc
+{
+  "paths": {
+    "class": "Invoice",
+    "class_version": 1,
+    "documents": 4,
+    "different": 4,
+    "paths": [
+      {
+        "states": [
+          "draft",
+          "cancelled"
+        ],
+        "documents": 1,
+        "finished": true
+      },
+      {
+        "states": [
+          "draft",
+          "review"
+        ],
+        "documents": 1
+      },
+      {
+        "states": [
+          "draft",
+          "review",
+          "approved"
+        ],
+        "documents": 1,
+        "finished": true
+      },
+      {
+        "states": [
+          "draft",
+          "review",
+          "cancelled"
+        ],
+        "documents": 1,
+        "finished": true
+      }
+    ],
+    "others": 0
+  }
+}
+```
+
+Four invoices, and each went its own way. B-2 is still in review: its
+path is not finished, and is its path so far.
+
+<!-- what the paths say -->
+| Member | Of | Says |
+|---|---|---|
+| `documents` | the paths | how many documents were counted |
+| `different` | the paths | how many different paths they took |
+| `paths` | the paths | the most taken of them, at most as many as `limit` says |
+| `others` | the paths | how many documents took a path that is not listed |
+| `states` | a path | the states in the order a document came into them: the first is the state it was made in, and a state stands there as often as it was entered |
+| `documents` | a path | how many documents took the path |
+| `finished` | a path | the path ends in a final state; left out for the path so far of documents that are still open |
+
+<!-- the paths each sees -->
+| Who asks | The object | Documents | Others | The paths |
+|---|---|---|---|---|
+| Ann | `{"class": "Invoice"}` | 4 | 0 | draft, cancelled: 1; draft, review: 1; draft, review, approved: 1; draft, review, cancelled: 1 |
+| Bob | `{"class": "Invoice"}` | 3 | 0 | draft, cancelled: 1; draft, review: 1; draft, review, approved: 1 |
+| Ann | `{"class": "Invoice", "limit": 1}` | 4 | 3 | draft, cancelled: 1 |
+| Ann | `{"class": "Invoice", "since": "2026-11-03"}` | 0 | 0 | |
+
+- **The documents counted are those made in the period**, from
+  `since` and before `until`, that the caller may read. Each is
+  counted with its whole path, up to now: also the moves it made
+  after the period.
+- **A document that is sent back and comes again has a longer
+  path**: draft, review, draft, review, approved.
+- **D-1 went draft, review, cancelled**, though the engine cancelled
+  it in the same moment it was submitted: the moves of one moment are
+  told apart.
+- **The most taken path comes first**, and paths taken as often stand
+  in the order of their states.
+- **`limit` says how many paths are listed**, 20 when left out and
+  1,000 at the most; `others` says how many documents took one of the
+  rest.
+- **A deleted document is in no path.**
+- **Among 3,400,000 invoices that made ten million moves** a program
+  with the analytical engine answers the paths in a quarter of a
+  second, and a program without it in 9 seconds.
+
 ## Asking
 
 In a Go program:
@@ -342,14 +440,17 @@ flow, err := db.Flow(ctx, "Invoice", fado.FlowPeriod{}, fado.As(ann))
 
 ```go
 weeks, err := db.Throughput(ctx, "Invoice", fado.ThroughputAsk{By: fado.ThroughputWeek}, fado.As(ann))
+paths, err := db.Paths(ctx, "Invoice", fado.PathsAsk{Limit: 10}, fado.As(ann))
 ```
 
-As commands, over HTTP or through `Exec`, they are `flow` and
-`throughput` ([the commands](../commands.md#flow)). From a terminal:
+As commands, over HTTP or through `Exec`, they are `flow`,
+`throughput` and `paths` ([the commands](../commands.md#flow)). From a
+terminal:
 
 ```sh
 fadodb exec flow '{"class": "Invoice", "since": "2026-11-03"}'
 fadodb exec throughput '{"class": "Invoice", "by": "week"}'
+fadodb exec paths '{"class": "Invoice", "limit": 10}'
 ```
 
 ## What it does not count
@@ -365,4 +466,5 @@ fadodb exec throughput '{"class": "Invoice", "by": "week"}'
 
 - **The picture at a moment in the past.** The documents in each state
   are counted now.
-- **The paths documents took.**
+- **How long each path took**, and the paths told apart by the
+  transitions and not by the states alone.

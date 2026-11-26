@@ -700,6 +700,69 @@ func TestGuide_SeeWhereDocumentsWait(t *testing.T) {
 			t.Errorf("the guide explains %s, which a throughput has not", member)
 		}
 	}
+	// Which way documents went: the answer the guide shows, each line of
+	// its table, and every member of the answer explained.
+	ways := func(as fado.Principal, object string) (*fado.Paths, string) {
+		t.Helper()
+		answer, err := db.Exec(ctx, as, "paths", []byte(object))
+		if err != nil {
+			t.Fatalf("paths %s: %v", object, err)
+		}
+		var got struct{ Paths *fado.Paths }
+		if err := json.Unmarshal(answer, &got); err != nil {
+			t.Fatal(err)
+		}
+		var shown bytes.Buffer
+		if err := json.Indent(&shown, answer, "", "  "); err != nil {
+			t.Fatal(err)
+		}
+		return got.Paths, shown.String()
+	}
+	annWays, shownWays := ways(who["Ann"], `{"class": "Invoice"}`)
+	if want := strings.TrimSuffix(strings.TrimPrefix(block("the paths Ann sees"), "```jsonc\n"), "\n```"); shownWays != want {
+		t.Errorf("the paths Ann sees are\n%s\nand the guide shows\n%s", shownWays, want)
+	}
+	if viaCall, err := db.Paths(ctx, "Invoice", fado.PathsAsk{}, ann); err != nil || !reflect.DeepEqual(viaCall, annWays) {
+		t.Errorf("the Go call answers %+v (%v), and the command %+v", viaCall, err, annWays)
+	}
+	went := rows("the paths each sees")
+	if len(went) != 4 {
+		t.Fatalf("the guide asks for the paths %d times, want 4", len(went))
+	}
+	for _, row := range went {
+		p, _ := ways(who[row[0]], row[1])
+		listed := make([]string, len(p.Paths))
+		for i, path := range p.Paths {
+			listed[i] = fmt.Sprintf("%s: %d", strings.Join(path.States, ", "), path.Documents)
+		}
+		if got := strings.Join(listed, "; "); p.Documents != number(row[2]) || p.Others != number(row[3]) || got != row[4] {
+			t.Errorf("%s sends %s and reads %d documents, %d others and %s; the guide says %s, %s and %s", row[0], row[1], p.Documents, p.Others, got, row[2], row[3], row[4])
+		}
+	}
+	saidOfPaths := map[string]bool{}
+	for _, row := range rows("what the paths say") {
+		saidOfPaths[strings.Trim(row[0], "`")] = true
+	}
+	hasOfPaths := map[string]bool{}
+	for _, of := range []any{fado.Paths{}, fado.Path{}} {
+		kind := reflect.TypeOf(of)
+		for i := 0; i < kind.NumField(); i++ {
+			member, _, _ := strings.Cut(kind.Field(i).Tag.Get("json"), ",")
+			switch member {
+			case "class", "class_version", "since", "until":
+				continue // what the paths are of
+			}
+			if !saidOfPaths[member] {
+				t.Errorf("the guide does not say what %s of the paths says", member)
+			}
+			hasOfPaths[member] = true
+		}
+	}
+	for member := range saidOfPaths {
+		if !hasOfPaths[member] {
+			t.Errorf("the guide explains %s, which the paths have not", member)
+		}
+	}
 	// Each caller sees their own.
 	for _, row := range rows("who sees what") {
 		p, known := who[row[0]]

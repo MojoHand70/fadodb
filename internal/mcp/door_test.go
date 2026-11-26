@@ -273,7 +273,7 @@ func TestTheModernForm(t *testing.T) {
 	}
 	says := discovered["instructions"].(string)
 	for _, part := range []string{"at https://fado.acme.example", "whoami answers", "preview answers", "the refusal under error",
-		"take a key, and one sent again with the same key makes no second commit: create, set, reset, refresh, transition, transition_many, delete. No other tool takes one."} {
+		"take a key, and one sent again with the same key makes no second commit: create, set, reset, refresh, transition, transition_many, delete, comment. No other tool takes one."} {
 		if !strings.Contains(says, part) {
 			t.Errorf("the door does not say %q of itself: %s", part, says)
 		}
@@ -496,7 +496,7 @@ func TestTheToolsThatTakeAKey(t *testing.T) {
 			listed = append(listed, tool.Name)
 		}
 	}
-	if got := keyed(d.tools); strings.Join(got, ",") != strings.Join(listed, ",") || len(got) != 7 {
+	if got := keyed(d.tools); strings.Join(got, ",") != strings.Join(listed, ",") || len(got) != 8 {
 		t.Errorf("the door says these take a key: %v, and the tools that list one are %v", got, listed)
 	}
 	// A door with one such tool names that one, and a door with none says

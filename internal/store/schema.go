@@ -15,6 +15,7 @@ import (
 var qualifiers = [][2]string{
 	{EventCreated, "created"}, {EventSet, "changed"}, {EventReset, "changed"}, {EventRefresh, "refreshed"},
 	{EventTransition, "transitioned"}, {EventDeleted, "deleted"}, {EventMigrated, "migrated"}, {EventCustom, "emitted"},
+	{EventCommented, "commented"},
 }
 
 // qualifierOf is how the event_docs row of an event of the kind

@@ -285,6 +285,26 @@ func TestACommandIsTheCallOfTheGoAPI(t *testing.T) {
 	if e := refused(t, s, bob, "get", `{"class": "Invoice", "id": "FV/2026/11/0043"}`); e.Code != store.CodeUnknownDocument {
 		t.Fatalf("the deleted document: %v", e)
 	}
+
+	// A comment on the invoice of the record (ADR-0098): the engine says who and when, the key makes twice once, empty
+	// words are refused at their place, and a comment takes no reason; comments reads them back.
+	said := run(t, s, bob, "comment", `{"class": "Invoice", "id": "FV/2026/11/0042", "text": "Matches order PO-118.", "key": "note-0042", "business_date": "2026-11-12"}`)
+	if at(t, said, "comment.actor_id") != "bob" || at(t, said, "comment.actor_kind") != "person" || at(t, said, "comment.doc_id") != "FV/2026/11/0042" || at(t, said, "comment.business_date") != "2026-11-12" || at(t, said, "comment.text") != "Matches order PO-118." {
+		t.Fatalf("comment answered %v", said)
+	}
+	if again := run(t, s, bob, "comment", `{"class": "Invoice", "id": "FV/2026/11/0042", "text": "Matches order PO-118.", "key": "note-0042", "business_date": "2026-11-12"}`); !reflect.DeepEqual(again, said) {
+		t.Fatalf("the same comment with the same key answered %v, the first time %v", again, said)
+	}
+	if e := refused(t, s, bob, "comment", `{"class": "Invoice", "id": "FV/2026/11/0042", "text": "  "}`); e.Code != store.CodeRequired || e.Path != "/text" {
+		t.Fatalf("a comment with no words: %v", e)
+	}
+	if e := refused(t, s, bob, "comment", `{"class": "Invoice", "id": "FV/2026/11/0042", "text": "Seen.", "reason": "audit"}`); e.Code != CodeBadJSON {
+		t.Fatalf("a comment with a reason: %v", e)
+	}
+	read := run(t, s, bob, "comments", `{"class": "Invoice", "id": "FV/2026/11/0042"}`)
+	if list := read["comments"].([]any); len(list) != 1 || list[0].(map[string]any)["comment_id"] != at(t, said, "comment.comment_id") {
+		t.Fatalf("comments answered %v", read)
+	}
 }
 
 func TestDefinitionsAreReadBackAsTheyWereGiven(t *testing.T) {

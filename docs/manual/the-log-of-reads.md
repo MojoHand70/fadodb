@@ -186,5 +186,8 @@ in their groups, which is often all they need. An agent in the group
 - A list that says how many documents it left out for want of a
   reason.
 - Trimming the log after some years.
-- The analytical engine of Phase 8. Its SQL is SQL, and every
-  statement will be kept when it is built.
+- What an analyst reads with a program of their own over the file of
+  the database, such as DuckDB
+  ([Reading a database with DuckDB](reading-with-duckdb.md)). The
+  engine does not see it, so nothing is written here: whoever has the
+  file reads all of it.

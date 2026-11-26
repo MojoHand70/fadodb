@@ -403,6 +403,10 @@ no index, a quantity and a price, three runs of each program:
 that a triggered variable keeps is worked out by the store; a row of
 a table found by its key; and the command `table_rows`.
 
+The copy is the engine's own. An analyst who wants DuckDB over a
+database opens the database itself, from a program of their own; see
+[Reading a database with DuckDB](reading-with-duckdb.md).
+
 The program `fadodb-core` is built without the module; the same
 program built with it, `fadodb`, serves a database with its copy
 ([A server with the analytical engine](serving-a-database.md#a-server-with-the-analytical-engine)).

@@ -10,6 +10,14 @@ Phase 8 started on 2026-11-25.
 
 ### Added
 
+- A chapter of the manual for an analyst with tools of their own,
+  "Reading a database with DuckDB" (ADR-0089, item 10): how DuckDB,
+  and through it Python and R, open the file of a database from a
+  program of their own, what is in it, how DuckDB reads an exact
+  number, a day and a moment, five questions with their answers, and
+  what to mind while a server has the database open. Whoever has the
+  file reads all of it: no rule is asked and nothing is written into
+  the log of reads. A test runs the chapter's statements with DuckDB.
 - How the stays of a state spread (ADR-0095, proposed). The command
   `flow` takes one more word, `"spread": true`, and a Go program
   `FlowPeriod.Spread`. Each state then says, beside the average and

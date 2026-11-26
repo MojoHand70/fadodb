@@ -227,8 +227,9 @@ Two findings decide what follows.
   serves keeps its copy, and the settings of the server say how much
   memory the engine may take. Not built then: the program for each
   operating system, released, which came on 2026-11-26 with the names
-  (see "The names" below); an image for containers with the engine;
-  the page for analysts.
+  (see "The names" below); an image for containers with the engine,
+  which came the same day; the page for analysts, which came that day
+  too, as the manual's chapter "Reading a database with DuckDB".
 - **Step 3, its first part: the counts and totals a class already
   asks, on 2026-11-25.** The command `count`, and the total or the
   first row that a `LOOKUP` in a live variable or a figure over a list
@@ -523,6 +524,34 @@ strike.
 - **What a content administrator is written down with**, how many
   documents only the override let them count (ADR-0067), is counted
   by the store, whichever engine answered.
+
+## Settled while writing the page for analysts
+
+Item 10 says that an analyst's own program reads the database itself,
+and that a page says how. The page is the manual's chapter "Reading a
+database with DuckDB", of 2026-11-26. Each of these is settled by me
+while writing it, and is the owner's to strike.
+
+- **The page is played by a test, with DuckDB's own extension.** The
+  extension for SQLite files is not in the library the program is
+  built with; an analyst fetches it once, and so does the test, on
+  GitHub, where `FADODB_DUCKDB_SQLITE` is `install`. Where it cannot
+  be had the test is skipped and says that the chapter was not played.
+  No program of the project loads the extension.
+- **The test closes the database before DuckDB opens it.** DuckDB
+  brings its own SQLite, and two in one program that hold one file is
+  what item 2 of the Context forbids. That DuckDB reads beside a
+  running server was tried by hand, with two programs.
+- **The views are what the page tells an analyst to ask.** DuckDB shows
+  the tables behind them and the engine's own as well, the users and
+  the records of sign-ins among them; the page says so, and that a
+  release may lay those out otherwise.
+- **The programs for Python and R are written and not run.** Neither
+  package was on the machine the page was written on.
+- **What DuckDB needs beside the file** was found by trying: it makes
+  SQLite's two small files to read a database nobody has open, is
+  refused where it may not write in the directory, and the engine
+  clears the two files when it next closes the database.
 
 ## Consequences
 

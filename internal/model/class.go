@@ -285,10 +285,11 @@ const (
 )
 
 // Trigger is one trigger of a triggered variable: refresh, enter:<state>,
-// exit:<state>, transition:<name> or before:<name>, which brings the
-// value when somebody asks for the named transition, before its guard is
-// asked (ADR-0078, item 4). table:<name> and schedule:<spec> are refused
-// until the phase that runs them (ADR-0043).
+// exit:<state>, transition:<name>, before:<name>, which brings the value
+// when somebody asks for the named transition, before its guard is asked
+// (ADR-0078, item 4), or table:<name>, which brings it when the rows of
+// a table its formula looks into change (ADR-0091). schedule:<spec> is
+// refused until the build that runs it.
 type Trigger struct {
 	Kind string
 	Arg  string
@@ -329,6 +330,25 @@ func (v *Variable) Triggered() bool { return v.Computed && v.Mode == ModeTrigger
 // the reader, and kept nowhere (ADR-0076): it has no column, no history
 // and no event, and nothing that is kept or decided reads it.
 func (v *Variable) Live() bool { return v.Computed && v.Mode == ModeLive }
+
+// Follows lists the variables of the class that follow the table: the
+// triggered ones that list table:<name> (ADR-0091), in the order of the
+// class.
+func (c *Class) Follows(table string) []*Variable {
+	var out []*Variable
+	for _, v := range c.Variables {
+		if !v.Triggered() {
+			continue
+		}
+		for _, t := range v.Triggers {
+			if t.Kind == "table" && upper(t.Arg) == upper(table) {
+				out = append(out, v)
+				break
+			}
+		}
+	}
+	return out
+}
 
 // On reports whether the variable lists the trigger: On("refresh", ""),
 // On("enter", "approved").
@@ -459,6 +479,14 @@ type RightRule struct {
 // Cell words the cell a rule is written in, as a refusal names it:
 // review / amounts.
 func (r *RightRule) Cell() string { return r.State + " / " + r.Name }
+
+// Nobody reports whether the rule is the word FALSE: nobody. It is how a
+// class says that a value which follows its table stands in a state
+// (ADR-0091, item 4): a rule that names people is about people, and one
+// that names nobody holds for the engine too. A nil rule is nobody's.
+func (r *RightRule) Nobody() bool {
+	return r != nil && r.Groups == nil && strings.EqualFold(strings.TrimSpace(r.Src), "FALSE")
+}
 
 // ReadRule resolves the read right that governs a variable in a state
 // (ADR-0028, ADR-0041, ADR-0069): the state's cell of the variable, then
@@ -1418,13 +1446,55 @@ func checkTrigger(c *collector, path, text string, cls *Class, v *Variable) {
 			c.addf(CodeUnknownTransition, path, "unknown transition %s", quote(arg))
 			return
 		}
-	case "table", "schedule":
-		// Accepted and never fired until ADR-0043; refused until the
-		// phase that runs them, as a binding a build lacks is.
-		c.hint(CodeNotSupported, path, "this build does not recompute a variable on "+kind+":", "use refresh, and send the command when the "+map[string]string{"table": "table changes", "schedule": "time comes"}[kind]+"; "+kind+": arrives with the set-wise work of a later phase")
+	case "table":
+		// A kept value that follows its table (ADR-0091): the table is
+		// one the variable's own formula looks into, and the engine works
+		// the variable out again when its rows change.
+		if arg == "" {
+			c.add(CodeBadTrigger, path, "table names a table: table:<name>")
+			return
+		}
+		if v.queryCall != nil {
+			c.hint(CodeNotSupported, path, "this build does not bring a list that is kept again when a table changes", "list refresh, and send the command; a value that is no list follows a table")
+			return
+		}
+		if v.Formula == nil {
+			// The formula did not bind, which is a finding of its own, or
+			// was left unbound in a shallow compilation: nothing says
+			// which tables it reads.
+			t.Arg = arg
+			break
+		}
+		name := ""
+		for _, s := range v.Sources {
+			if upper(s) == upper(arg) {
+				name = s
+			}
+		}
+		if name == "" {
+			c.hint(CodeNotAllowed, path, v.Name+" lists table:"+arg+", and its formula does not look into "+arg,
+				"a variable follows a table its own formula reads with LOOKUP; name that table, or drop the trigger")
+			return
+		}
+		if c.env.Sources != nil {
+			src, ok := c.env.Sources.Source(name)
+			if !ok || src.Class {
+				c.hint(CodeNotSupported, path, name+" is a class: this build brings a value again when a table changes, and not when the documents of a class do",
+					"list refresh, and let a rule of "+name+" send it: {\"action\": \"refresh\"}")
+				return
+			}
+			name = src.Name
+		}
+		t.Arg = name
+		v.Triggers = append(v.Triggers, t)
+		return
+	case "schedule":
+		// Accepted by ADR-0015 and never fired; refused until the build
+		// that runs it (ADR-0091), as a binding a build lacks is.
+		c.hint(CodeNotSupported, path, "this build does not recompute a variable on schedule:", "use refresh, and send the command when the time comes; schedule: is the next step of the record that built table: (ADR-0091)")
 		return
 	default:
-		c.hint(CodeBadTrigger, path, "unknown trigger "+quote(text), "one of refresh, enter:<state>, exit:<state>, transition:<name>, before:<name>")
+		c.hint(CodeBadTrigger, path, "unknown trigger "+quote(text), "one of refresh, enter:<state>, exit:<state>, transition:<name>, before:<name>, table:<name>")
 		return
 	}
 	// A frozen document computes nothing (ADR-0043, item 8): a trigger

@@ -452,8 +452,21 @@ func (s *Store) DefineTable(ctx context.Context, data []byte, opts ...Option) (*
 		return rollback(derr)
 	}
 	def.Defined = defined
+	// A table that held rows may hold them otherwise under its new
+	// definition (ADR-0084): the values that follow it are looked at
+	// again (ADR-0091), as the designer who changed it.
+	followed := 0
+	if old != nil && !moving {
+		var ferr error
+		if followed, ferr = s.queueFollowsOf(ctx, t, s.followersOf(def.Name), o.principal, o.reason, 0, s.now()); ferr != nil {
+			return rollback(ferr)
+		}
+	}
 	if err := s.endTransaction(ctx); err != nil {
 		return nil, storageErr("commit", err)
+	}
+	if followed > 0 {
+		s.wakeWorker()
 	}
 	if moving {
 		// The same storage, the same statements and the same rows in
@@ -553,10 +566,18 @@ func (s *Store) ImportRows(ctx context.Context, name string, rows []Values, opts
 			return rollback(err)
 		}
 	}
+	// The values that follow the table (ADR-0091), queued with the rows.
+	followed, err := s.queueFollows(ctx, t, o.principal, o.reason, 0, s.now())
+	if err != nil {
+		return rollback(err)
+	}
 	if err := s.endTransaction(ctx); err != nil {
 		return rollback(storageErr("commit", err))
 	}
 	t.cache, t.tooBig = nil, false
+	if followed > 0 {
+		s.wakeWorker()
+	}
 	return len(rows), nil
 }
 

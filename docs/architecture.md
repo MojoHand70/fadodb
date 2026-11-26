@@ -412,12 +412,19 @@ views add the time as `<name>__at`, and a document carries all three
 under `computed`. Such a value is consistent as of that moment, and the
 document says which.
 
-Triggered variables are also to recalculate on `table:<name>` when the
-named table or stack changes, and on `schedule:<spec>`. Those recomputes
-are **set-wise**: one query per class computes the new value for every
-affected document, and the results are applied as system commits, never
-one query per document. They arrive with the set-wise work of Phase 8;
-until then a class that names either trigger is refused.
+A triggered variable that lists `table:<name>` follows that table
+(ADR-0091): when its rows change, the variable is worked out again in
+every document of the class that is not finished, and kept where it
+comes out different. The change of the table queues a row of the
+outbox in its own transaction; the worker finds the documents with
+one statement of the store, the formula written as SQL and compared
+with the kept value, and brings them a thousand in a transaction,
+each with a version and an event of its own, never one query per
+document. Nobody's right is asked for it: the right is asked of
+whoever changes the table, and a class stops the value in a state
+with a `write` right of `FALSE`. A trigger for a time,
+`schedule:<spec>`, is designed in the same record and not built: a
+class that names it is refused.
 
 The browser evaluates auto formulas live while a user edits, from the same
 bytecode, so the user sees totals change before saving. The server's result

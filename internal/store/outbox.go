@@ -826,6 +826,11 @@ func (s *Store) dueRows(ctx context.Context, due *sql.Stmt, now int64) ([]*outbo
 // attempted: a row another runner has taken in the meantime is not. own
 // says the worker itself runs the row, in a look of its own.
 func (s *Store) runAction(ctx context.Context, row *outboxRow, own bool) (bool, error) {
+	if row.action == ActionFollow {
+		// A follow takes the writer for a thousand documents at a time
+		// and lets it go between (ADR-0091, item 6).
+		return s.runFollow(ctx, row, own)
+	}
 	timer := row.action == ActionTimer
 	if !timer && !model.EngineAction(row.action) {
 		return s.runCall(ctx, row)
@@ -1049,7 +1054,14 @@ func (s *Store) perform(ctx context.Context, row *outboxRow, day int64, now time
 				return nil, false, asError(err)
 			}
 		}
-		return nil, false, nil
+		// The values that follow the table (ADR-0091), one action deeper
+		// than this one, so that a rule which writes the table its own
+		// class follows ends.
+		followed, err := s.queueFollows(ctx, t, cmd.o.principal, cmd.o.reason, cmd.depth, now)
+		if err != nil {
+			return nil, false, asError(err)
+		}
+		return nil, followed > 0, nil
 	default:
 		return nil, false, hintf(CodeUnknownAction, "", "the engine does not run the action "+row.action, "the actions it runs are in the class's rules as the definition accepted them; this row was queued by another build")
 	}

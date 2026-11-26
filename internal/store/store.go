@@ -342,7 +342,10 @@ type Store struct {
 	drainMu  sync.Mutex
 	flightMu sync.Mutex
 	inFlight map[flight]struct{}
-	wake     chan struct{}
+	// followRuns is where each follow that is under way stands between
+	// two of its transactions (ADR-0091), by the key of its row; under mu.
+	followRuns map[string]*followRun
+	wake       chan struct{}
 	// sleepUntil is the second of the database's clock at which the worker
 	// looks at the outbox again when nothing wakes it, 0 while it is
 	// awake; wakeAt, under the writer's lock, the earliest moment of the
@@ -863,7 +866,7 @@ func (s *Store) prepareEngine(ctx context.Context) error {
 	// it waits for its moment, which may be far off, and holds back no
 	// action of its document meanwhile; and it is the document's own
 	// move, which no action of the document holds back.
-	engine := "'" + strings.Join([]string{model.ActionCreate, model.ActionTransition, model.ActionRefresh, model.ActionTableInsert, model.ActionTableUpdate, model.ActionTableDelete, ActionTimer}, "', '") + "'"
+	engine := "'" + strings.Join([]string{model.ActionCreate, model.ActionTransition, model.ActionRefresh, model.ActionTableInsert, model.ActionTableUpdate, model.ActionTableDelete, ActionTimer, ActionFollow}, "', '") + "'"
 	for _, due := range []struct {
 		dst  **sql.Stmt
 		only string

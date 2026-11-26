@@ -93,10 +93,22 @@ func (s *Store) DeleteRows(ctx context.Context, name string, keys []Values, opts
 			return rollback(err)
 		}
 	}
+	// The values that follow the table (ADR-0091), queued with the
+	// removal.
+	followed := 0
+	if removed > 0 {
+		var err error
+		if followed, err = s.queueFollows(ctx, t, o.principal, o.reason, 0, s.now()); err != nil {
+			return rollback(err)
+		}
+	}
 	if err := s.endTransaction(ctx); err != nil {
 		return rollback(storageErr("commit", err))
 	}
 	t.cache, t.tooBig = nil, false
+	if followed > 0 {
+		s.wakeWorker()
+	}
 	return removed, nil
 }
 

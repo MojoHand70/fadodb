@@ -553,7 +553,7 @@ func TestGuide_SeeWhereDocumentsWait(t *testing.T) {
 		}
 	}
 	has := map[string]bool{}
-	for _, of := range []any{fado.Flow{}, fado.FlowState{}, fado.FlowTransition{}} {
+	for _, of := range []any{fado.Flow{}, fado.FlowState{}, fado.FlowTransition{}, fado.FlowSpread{}} {
 		kind := reflect.TypeOf(of)
 		for i := 0; i < kind.NumField(); i++ {
 			member, _, _ := strings.Cut(kind.Field(i).Tag.Get("json"), ",")
@@ -597,6 +597,42 @@ func TestGuide_SeeWhereDocumentsWait(t *testing.T) {
 		}
 		t.Fatalf("the flow has no transition %s from %s", name, from)
 		return 0
+	}
+	// How the stays spread, for a caller who asks: the state the guide
+	// shows, and each line of its table.
+	spread, _ := asked(who["Ann"], `{"class": "Invoice", "spread": true}`)
+	draft, err := json.MarshalIndent(spread.States[0], "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := strings.TrimSuffix(strings.TrimPrefix(block("the draft state with its spread"), "```jsonc\n"), "\n```"); string(draft) != want {
+		t.Errorf("the state draft with its spread is\n%s\nand the guide shows\n%s", draft, want)
+	}
+	if viaCall, err := db.Flow(ctx, "Invoice", fado.FlowPeriod{Spread: true}, ann); err != nil || !reflect.DeepEqual(viaCall, spread) {
+		t.Errorf("the Go call answers %+v (%v), and the command %+v", viaCall, err, spread)
+	}
+	if plain, _ := asked(who["Ann"], `{"class": "Invoice"}`); plain.States[0].Spread != nil {
+		t.Errorf("a flow that did not ask is told how the stays spread: %+v", plain.States[0])
+	}
+	lines := rows("how the stays spread")
+	if len(lines) != 4 {
+		t.Fatalf("the guide tells how the stays spread in %d lines, want 4", len(lines))
+	}
+	for _, row := range lines {
+		f, _ := asked(who[row[0]], `{"class": "Invoice", "spread": true}`)
+		found := false
+		for _, st := range f.States {
+			if st.Name != row[1] {
+				continue
+			}
+			found = true
+			if st.Spread == nil || st.Stays != number(row[2]) || st.AverageSeconds != number(row[3]) || st.Spread.MiddleSeconds != number(row[4]) || st.Spread.SlowTenthSeconds != number(row[5]) {
+				t.Errorf("%s reads of %s: %+v with %+v, and the guide says %v", row[0], row[1], st, st.Spread, row[2:])
+			}
+		}
+		if !found {
+			t.Errorf("the flow %s reads has no state %s", row[0], row[1])
+		}
 	}
 	// Each caller sees their own.
 	for _, row := range rows("who sees what") {

@@ -10,6 +10,18 @@ Phase 8 started on 2026-11-25.
 
 ### Added
 
+- How the stays of a state spread (ADR-0095, proposed). The command
+  `flow` takes one more word, `"spread": true`, and a Go program
+  `FlowPeriod.Spread`. Each state then says, beside the average and
+  the longest of the stays that ended in the period, the middle stay,
+  which half of them did not outlast, and the slow tenth, which nine
+  in ten did not outlast: `"spread": {"middle_seconds": 3600,
+  "slow_tenth_seconds": 100800}`. Each is the length of one of the
+  stays, the one at place `(n+1)/2` and at place `(9n+9)/10` of `n`
+  stays in the order of their lengths, so `fadodb` and `fadodb-core`
+  give the same number. A flow that does not ask is as it was, in
+  every member and at its cost. Among ten million moves `fadodb`
+  answers the flow in 12 ms and the flow with its spread in 80 to 87.
 - The rows of the tables in the copy (ADR-0094, proposed). The program
   with the analytical engine, `fadodb`, keeps a copy of the rows of
   every table beside its copy of the documents, and asks it the

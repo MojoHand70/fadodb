@@ -573,10 +573,10 @@ bin/fadodb serve acme.fado
   that it keeps none and why; without the copy it answers by the
   store.
 
-Not here yet: an image for containers with the engine. The image
-holds the program without it. And no release has been made with
-`fadodb` yet: until the one after v0.7.0 it is built from the
-repository.
+The image for containers holds `fadodb`, and a second one
+`fadodb-core` ([In a container](in-a-container.md#the-image)). No
+release has been made with either name yet: until the one after
+v0.7.0 the programs and the images are built from the repository.
 
 ## What it says when it starts
 

@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/MojoHand70/fadodb/internal/server/web"
+	"github.com/MojoHand70/fadodb/internal/store"
 )
 
 // Where a page sends a person when they are done: a path of the server,
@@ -167,5 +168,28 @@ func TestPagesSendAReferrerToThemselvesAlone(t *testing.T) {
 	p.ServeHTTP(w, r)
 	if got := w.Header().Get("Referrer-Policy"); got != "same-origin" {
 		t.Errorf("the pages' referrer policy is %q", got)
+	}
+}
+
+// The account page says a passkey is synced once: after its dates, or
+// in its name when the name says it already, as a synced passkey whose
+// password manager is not known is named (the owner's ruling,
+// 2026-11-26).
+func TestTheAccountPageSaysSyncedOnce(t *testing.T) {
+	var b strings.Builder
+	accountShown(&b, &page{Passkeys: []*store.Passkey{
+		{ID: "k1", Name: "Google Password Manager", Synced: true, AddedAt: 1},
+		{ID: "k2", Name: "Olga's iPhone, synced", Synced: true, AddedAt: 2},
+		{ID: "k3", Name: "Olga's laptop", AddedAt: 3},
+	}})
+	got := b.String()
+	for _, want := range []string{
+		"<span>Google Password Manager</span><span class=\"when\">added 1970-01-01 00:00 UTC, synced</span>",
+		"<span>Olga&#39;s iPhone, synced</span><span class=\"when\">added 1970-01-01 00:00 UTC</span>",
+		"<span>Olga&#39;s laptop</span><span class=\"when\">added 1970-01-01 00:00 UTC</span>",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("the account page lacks %s in\n%s", want, got)
+		}
 	}
 }

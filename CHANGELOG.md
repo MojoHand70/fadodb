@@ -331,7 +331,9 @@ Phase 8 started on 2026-11-25.
   invitation does the same on any device, and the invitation is used.
   A synced passkey is named after the password manager that keeps it,
   "Google Password Manager" or "1Password", by the AAGUID the browser
-  says, from a table of 67 makers the engine keeps.
+  says, from a table of 67 makers the engine keeps; one whose manager
+  is not known keeps the device's name with ", synced" after it,
+  "Olga's iPhone, synced".
 
 - People sign in with a passkey, invited by a link (ADR-0088, its
   second step): their fingerprint, their face or their device's PIN,

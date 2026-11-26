@@ -1377,8 +1377,10 @@ func accountShown(b *strings.Builder, d *page) {
 			if k.UsedAt != 0 {
 				b.WriteString(", last used " + esc(moment(k.UsedAt)))
 			}
-			if k.Synced {
-				b.WriteString(", synced")
+			// A name that says it already, "Olga's iPhone, synced", is
+			// not followed by it again.
+			if k.Synced && !strings.HasSuffix(k.Name, store.SyncedName) {
+				b.WriteString(store.SyncedName)
 			}
 			b.WriteString(`</span></div><form method="post" action="` + PageAccount + `">`)
 			hidden(b, "do", "remove-passkey")

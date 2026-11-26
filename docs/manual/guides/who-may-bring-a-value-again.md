@@ -108,6 +108,12 @@ Piotr's refusal:
   class that refreshes its own document is not asked either.
 - **A rule that refreshes another document** is asked the right of the
   person whose command set the rule off.
+- **A table that brings a value asks nobody.** A variable that lists
+  `table:<name>` is brought when the table changes, whoever changed
+  it and whatever the line says about people. One line stops it: a
+  `write` right of `FALSE` in a state, which is nobody, and a table
+  is nobody too; see
+  [Following a table](../triggered-variables.md#following-a-table).
 - **A content administrator** gets past the line with a reason, which
   the event keeps, as past any right.
 

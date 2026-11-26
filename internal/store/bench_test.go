@@ -1011,6 +1011,42 @@ func BenchmarkTransitionMany(b *testing.B) {
 	}
 }
 
+// BenchmarkFollow measures a change of a table that 1,000 documents
+// follow (ADR-0091): the row of the outbox the change queues, the
+// statement that finds the documents, the commit of each in one
+// transaction, and the look that finds no more and marks the row done.
+// An iteration is one change of the table and 1,000 documents brought,
+// each with a version and an event of its own; beside
+// BenchmarkTransitionMany it says what a document costs that a table
+// brings.
+func BenchmarkFollow(b *testing.B) {
+	s, ctx := openFollow(b, followInvoice)
+	docs := make([]Values, followMany)
+	for i := range docs {
+		docs[i] = Values{"number": "FV", "amount": "100.00", "currency": "EUR"}
+	}
+	made, err := s.CreateMany(ctx, "Invoice", docs, As(followOla))
+	if err != nil {
+		b.Fatal(err)
+	}
+	rates := [2]string{"4.3100", "4.2500"}
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; b.Loop(); i++ {
+		if _, err := s.ImportRows(ctx, "Rates", []Values{{"code": "EUR", "rate": rates[i%2]}}, As(followTess)); err != nil {
+			b.Fatal(err)
+		}
+		if n, err := s.Drain(ctx, asSetup); err != nil || n != 1 {
+			b.Fatal(n, err)
+		}
+	}
+	b.StopTimer()
+	last, err := s.Get(ctx, "Invoice", made[len(made)-1].ID, As(followAnna))
+	if err != nil || last.Version != int64(b.N)+1 {
+		b.Fatalf("the last invoice is at version %d after %d changes: %v", last.Version, b.N, err)
+	}
+}
+
 // BenchmarkTransitionManyRefused measures a batch of 1,000 documents
 // that are all refused by their guard: what a document that does not
 // move costs the batch.

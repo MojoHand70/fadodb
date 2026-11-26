@@ -310,7 +310,7 @@ from every row that matches. With the three rows Tess imported:
 |---|---|
 | a computed variable | when the document is created, and again when a value the lookup reads changes; not when the table changes |
 | a default | once, when the document is created |
-| a triggered variable | at the moments it names, a state change, a `refresh`, or `before:` a transition, when somebody asks for that transition and before its guard is asked; not when the table changes |
+| a triggered variable | at the moments it names, a state change, a `refresh`, or `before:` a transition, when somebody asks for that transition and before its guard is asked; when the table changes only if it lists `table:<name>` |
 | a line of `access`, a right to write, a rule | each time it is asked, over the table as it is then |
 
 So a document keeps the value it looked up. Ann's first expense keeps
@@ -324,6 +324,12 @@ there keeps its blank when the row arrives. It looks again only when
 take a value at a moment of its own, name that moment: a
 [triggered variable](triggered-variables.md) whose formula is the
 lookup, or a rule that sets the value on the transition that needs it.
+
+And where a document must not keep a value the table no longer has,
+while it is open, the triggered variable lists the table itself:
+`"on": ["table:Rates"]`. A change of the rows then brings the value
+again in every document of the class that is not finished; see
+[Following a table](triggered-variables.md#following-a-table).
 
 ### Where a lookup may stand
 

@@ -72,6 +72,10 @@ type class struct {
 	// sources are the explicit tables the class's formulas read, by
 	// upper-cased name.
 	sources map[string]bool
+	// follows are the variables that follow a table (ADR-0091), by the
+	// table's upper-cased name, each with the states it follows it in;
+	// nil when the class has none.
+	follows map[string][]follower
 	// files are the File objects among the leaves (ADR-0033).
 	files []filePair
 	// refs are the leaves that point at a document, each with the variable
@@ -350,6 +354,9 @@ func newClass(cls *model.Class, src []byte) (*class, error) {
 			c.refs = append(c.refs, refLeaf{leaf: i, cv: cv})
 		}
 	}
+	// The variables that follow a table (ADR-0091), once each has its
+	// stored value.
+	c.layFollows()
 	for _, v := range cls.Variables {
 		if v.Type.Kind == formula.KindObject {
 			c.files = append(c.files, filePairs(v.Name, v.Type, c.leafIndex)...)

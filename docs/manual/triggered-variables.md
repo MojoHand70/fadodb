@@ -53,6 +53,7 @@ The triggers:
 | `transition:<name>` | a commit that makes the transition | the state left |
 | `before:<name>` | a command that asks for the transition, before its guard is asked; see [Before a transition](#before-a-transition) | the state left |
 | `refresh` | a refresh of the document; see [Refreshing](#refreshing) | the state the document is in |
+| `table:<name>` | a change of the rows of the table, for every document of the class that is not finished; see [Following a table](#following-a-table) | the state the document is in |
 
 - **A variable is worked out once in a commit**, however many of its
   triggers the commit fires. A move from a state into the same state
@@ -410,6 +411,106 @@ In Go it is the call `Refresh`. As a command, the refresh of step 11:
 {"class": "Invoice", "id": "I-1", "variables": ["rate"]}
 ```
 
+## Following a table
+
+A triggered variable keeps its value between its triggers. Sometimes
+the wish is the other one: a value that is kept, so that it has a
+history and costs nothing to read, and that still does not go stale
+while its document is open. The trigger `table:<name>` does that.
+When the rows of the table change, the engine works the variable out
+again in every document of the class that is not finished, and keeps
+the new value where it came out different.
+
+Acme's estimates in a foreign currency follow the table of rates
+while they are drafts. Once an estimate is sent its rate stands: the
+customer has it in hand.
+
+```json
+{
+  "name": "Estimate",
+  "title": "\"Estimate \" & number",
+  "variables": {
+    "number":   {"type": "text", "required": true},
+    "amount":   {"type": "decimal", "scale": 2, "required": true},
+    "currency": {"type": "text", "required": true},
+    "rate":     {"type": "decimal", "scale": 4,
+                 "formula": "LOOKUP(Rates, rate, code = THIS.currency)",
+                 "mode": "triggered", "on": ["enter:draft", "table:Rates"]},
+    "in_pln":   {"formula": "ROUND(amount * rate, 2)"}
+  },
+  "states": {"initial": "draft", "list": ["draft", "sent", "accepted"], "final": ["accepted"]},
+  "transitions": [
+    {"name": "send",   "from": "draft", "to": "sent"},
+    {"name": "accept", "from": "sent",  "to": "accepted"}
+  ],
+  "rights": {
+    "sent": {"rate": {"write": "FALSE"}}
+  },
+  "access": {
+    "read":   "CREATEDBY() = USER() OR INGROUP(\"sales-lead\")",
+    "create": "INGROUP(\"everyone\")",
+    "update": "CREATEDBY() = USER()",
+    "delete": "FALSE",
+    "transition": {
+      "send":   "CREATEDBY() = USER()",
+      "accept": "INGROUP(\"sales-lead\")"
+    }
+  }
+}
+```
+
+Ola writes estimates. Marek is in the group `sales-lead`. Tess, in
+the treasury, keeps the table, and may not see an estimate. The table
+has EUR at 4.2500 and USD at 3.9000. Ola has four estimates of 100.00
+each. Then Tess changes the EUR rate to 4.3100.
+
+<!-- what follows the table -->
+| Estimate | In | Before Tess's change | After it |
+|---|---|---|---|
+| E-1, in EUR | `draft` | version 1, rate 4.2500, 425.00 in PLN | version 2, rate 4.3100, 431.00 in PLN |
+| E-2, in EUR | `sent` | version 2, rate 4.2500, 425.00 in PLN | the same |
+| E-3, in USD | `draft` | version 1, rate 3.9000, 390.00 in PLN | the same |
+| E-4, in EUR | `accepted` | version 3, rate 4.2500, 425.00 in PLN | the same |
+
+- **E-1 follows.** It gets a version of its own, and `in_pln` follows
+  `rate` as after any change. The event of that version is of the
+  kind `refresh`, its name is `table:Rates` and its actor is Tess: the
+  history says which table moved the rate, and whose change it was.
+- **E-2 stands, because the class says so.** A `write` right of
+  `FALSE` on the variable in a state means nobody brings it again
+  there, and a table is nobody too. Any other `write` right is about
+  the people who refresh by hand, and does not stop a table.
+- **E-3 is left alone.** Its rate came out the same, so it gets no
+  version and no event.
+- **E-4 is finished**, and a finished document is frozen.
+
+What holds for it:
+
+- **Nobody's right is asked.** Tess needs the right to change the
+  table, which is the table's own `write` rule, and nothing more.
+  What follows in the documents is what the class says, and the
+  engine writes it, as it writes `in_pln`. Tess may not so much as
+  read an estimate.
+- **It is a commit like any other.** The rules of the class fire, a
+  transition whose guard now holds fires, and a command that says it
+  saw the version before is refused with `stale_version`: nobody acts
+  on a number that changed under their eyes.
+- **It is not instant.** The change of the table queues the work in
+  its own transaction, as a row of the
+  [outbox](the-outbox-and-the-worker.md) whose action is `follow`,
+  and the worker does it afterwards: a thousand documents in a
+  transaction, so that other people's commits go in between. A
+  reader who looks in that moment may still see the old value. The
+  moment of the value says which version brought it.
+- **What changes a table**: `import_rows`, `delete_rows`, the actions
+  `table.insert`, `table.update` and `table.delete` of a rule, and a
+  new definition of a table that holds rows.
+- **A value that cannot be worked out, or that the variable does not
+  accept**, leaves the value as it was and says what failed, as on
+  any trigger; see [When working it out fails](#when-working-it-out-fails).
+- **The table is one the variable's own formula looks into.** A
+  variable whose formula reads two tables may list both.
+
 ## What a triggered formula may read
 
 A formula that is worked out at a known moment may read what holds at
@@ -535,10 +636,12 @@ What each takes and what it answers is in
 | a computed variable has an `on` and is not triggered | `not_allowed` |
 | a triggered variable has no `on`, or an empty one | `missing` |
 | the `mode` is neither `auto` nor `triggered` | `bad_value` |
-| a trigger is none of the five, or is written wrongly, as `enter` with no state | `bad_trigger` |
+| a trigger is none of the six, or is written wrongly, as `enter` with no state | `bad_trigger` |
 | a trigger names a state the class does not have | `unknown_state` |
 | a trigger names a transition the class does not have | `unknown_transition` |
-| a trigger is `table:<name>` or `schedule:<when>` | `not_supported` |
+| a trigger is `schedule:<when>` | `not_supported` |
+| `table:<name>` names a table the variable's formula does not look into | `not_allowed` |
+| `table:<name>` names a class, or stands on a list that is kept | `not_supported` |
 | a trigger could fire only on a frozen document | `not_allowed` |
 | a triggered variable has a `default` or is `required` | `not_allowed` |
 | a triggered formula reads other documents and names no `type` | `missing` |
@@ -564,12 +667,12 @@ What each takes and what it answers is in
 
 ## Not here yet
 
-- A trigger for a change of a table, `table:<name>`, and one for a
-  time, `schedule:<when>`. A class that names either is refused with
-  `not_supported`. Until then a program sends the refresh: when the
-  table changed, or when the time came.
+- A trigger for a time, `schedule:<when>`: every night, every hour. A
+  class that names it is refused with `not_supported`. Until then a
+  program sends the refresh when the time comes.
+- A value that follows the documents of another class, as `table:`
+  follows a table. Today a rule of that class sends the refresh.
+- A list that is kept does not follow a table.
 - Working a variable out again for every document of a class in one
-  call. Today it is one refresh for each document.
-- A trigger for a change of values. A rule on `values_change` with the
-  action `refresh` does that today.
-- A range on a computed variable that names no type.
+  call. A refresh is one call for each document; only the change of a
+  table brings many.

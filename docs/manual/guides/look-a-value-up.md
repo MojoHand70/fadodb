@@ -83,6 +83,7 @@ at 3.9000.
 | read the documents of another class in the place of a table | `LOOKUP(Approval, COUNT(id), purchase = ID() AND state = "granted")`, in a triggered variable, a default or a rule |
 | let a guard decide on a value of a table | a guard reads its document alone: bring the value with a triggered variable that lists `"before:<transition>"`, and let the guard read the variable; see [Bring what a condition needs](bring-what-a-condition-needs.md) |
 | take the newest rate at a moment you choose | make the variable triggered, with `"mode": "triggered"` and `"on": ["refresh"]`, and refresh the document; see [Triggered variables](../triggered-variables.md) |
+| keep the value what the table gives while the document is open | make the variable triggered and list the table: `"mode": "triggered"`, `"on": ["enter:draft", "table:Rates"]`; a change of the table then brings it again in every document that is not finished; see [Following a table](../triggered-variables.md#following-a-table) |
 
 See also: [Tables](../tables.md), the reference for everything a table
 can do; [The functions](../functions.md); and the Purchase sample

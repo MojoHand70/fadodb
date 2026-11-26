@@ -10,6 +10,26 @@ Phase 8 started on 2026-11-25.
 
 ### Added
 
+- A kept value that follows its table (ADR-0091, proposed). A
+  triggered variable may list `table:<name>`, the name of a table its
+  own formula looks into: `"on": ["enter:draft", "table:Rates"]`.
+  When the rows of that table change, the variable is worked out
+  again in every document of the class that is not in a final state,
+  and kept where it comes out different; a document whose value
+  comes out the same gets no version. Nobody's right is asked: the
+  right is asked of whoever changes the table, by the table's own
+  `write` rule, and what follows is the class's. A class stops the
+  value in a state with a `write` right of `FALSE` on the variable
+  there. Each document brought gets a commit of its own, with an
+  event of the kind `refresh` named `table:<Name>` by whoever changed
+  the table; the rules of the class fire, and a command that saw the
+  version before is refused with `stale_version`. The change queues
+  the work as a row of the outbox whose action is `follow`, and the
+  worker brings the documents a thousand in a transaction: 100,000
+  invoices in under five seconds, with a commit of somebody else
+  waiting 45 ms meanwhile. Not built: `schedule:<when>`, a value
+  that follows the documents of a class, and a kept list that
+  follows a table.
 - One line for each group, with its totals: a column of a `QUERY` may
   be a total (ADR-0090, proposed). In a live variable,
   `QUERY(Invoice, {customer, COUNT(id), SUM(net)})` answers one line

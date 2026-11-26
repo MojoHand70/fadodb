@@ -45,7 +45,7 @@ func TestTriggeredVariables(t *testing.T) {
 		t.Fatal(err)
 	}
 	ctx := context.Background()
-	var table, invoice, offer []byte
+	var table, invoice, offer, estimate []byte
 	for _, m := range regexp.MustCompile("(?s)```json\r?\n(.*?)\r?\n```").FindAllSubmatch(page, -1) {
 		switch kindOf(m[1]) {
 		case "table":
@@ -56,11 +56,13 @@ func TestTriggeredVariables(t *testing.T) {
 				invoice = m[1]
 			case "Offer":
 				offer = m[1]
+			case "Estimate":
+				estimate = m[1]
 			}
 		}
 	}
-	if table == nil || invoice == nil || offer == nil {
-		t.Fatal("the chapter shows the table Rates and the classes Invoice and Offer")
+	if table == nil || invoice == nil || offer == nil || estimate == nil {
+		t.Fatal("the chapter shows the table Rates and the classes Invoice, Offer and Estimate")
 	}
 
 	start := time.Date(2026, 12, 1, 9, 0, 0, 0, time.UTC)
@@ -339,6 +341,119 @@ func TestTriggeredVariables(t *testing.T) {
 		return doc
 	}
 
+	// Following a table: the estimates, in a database of their own, with
+	// the rates the chapter says. gauge is a class of the test's own,
+	// which keeps the state it was in when the table brought it.
+	follows := notionDB(t, fado.Options{Now: func() time.Time { return clock }})
+	marek := person("marek", "sales-lead")
+	if _, err := follows.DefineTable(ctx, table, setup); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := follows.ImportRows(ctx, "Rates", []fado.Values{{"code": "EUR", "rate": "4.2500"}, {"code": "USD", "rate": "3.9000"}}, tess); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := follows.DefineClass(ctx, estimate, setup); err != nil {
+		t.Fatalf("the class Estimate of the chapter: %v", err)
+	}
+	if _, err := follows.DefineClass(ctx, []byte(scratch("Gauge",
+		`"at_table":{"type":"text","formula":"IF(ISBLANK(LOOKUP(Rates, rate, code = \"EUR\")), \"\", STATE())","mode":"triggered","on":["table:Rates"]}`,
+		`"states":{"initial":"off","list":["off","on"]},"transitions":[{"name":"light","from":"off","to":"on"}]`)), setup); err != nil {
+		t.Fatal(err)
+	}
+	gauge, err := follows.Create(ctx, "Gauge", nil, ola)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if gauge, err = follows.Transition(ctx, "Gauge", gauge.ID, "light", nil, ola); err != nil || gauge.Values["at_table"] != nil {
+		t.Fatalf("the gauge before the table changed: %v, %v", gauge, err)
+	}
+	estimates := map[string]*fado.Document{}
+	for _, e := range []struct{ id, currency, state string }{
+		{"E-1", "EUR", "draft"}, {"E-2", "EUR", "sent"}, {"E-3", "USD", "draft"}, {"E-4", "EUR", "accepted"},
+	} {
+		doc, err := follows.Create(ctx, "Estimate", fado.Values{"number": e.id, "amount": "100.00", "currency": e.currency}, ola, fado.WithID(e.id))
+		if err == nil && e.state != "draft" {
+			doc, err = follows.Transition(ctx, "Estimate", e.id, "send", nil, ola)
+		}
+		if err == nil && e.state == "accepted" {
+			doc, err = follows.Transition(ctx, "Estimate", e.id, "accept", nil, marek)
+		}
+		if err != nil || doc.State != e.state {
+			t.Fatalf("the estimate %s in %s: %v, %v", e.id, e.state, doc, err)
+		}
+		estimates[e.id] = doc
+	}
+	holding := func(doc *fado.Document) string {
+		return fmt.Sprintf("version %d, rate %s, %s in PLN", doc.Version, shown(doc.Values["rate"]), shown(doc.Values["in_pln"]))
+	}
+	// Tess changes the rate. She may not see an estimate, and the work
+	// waits in the outbox until the worker runs.
+	if _, err := follows.ImportRows(ctx, "Rates", []fado.Values{{"code": "EUR", "rate": "4.3100"}}, tess); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := follows.Get(ctx, "Estimate", "E-1", tess); codeOf(err) != "unknown_document" {
+		t.Errorf("Tess reads an estimate: %v", err)
+	}
+	if doc, err := follows.Get(ctx, "Estimate", "E-1", ola); err != nil || holding(doc) != holding(estimates["E-1"]) {
+		t.Errorf("before the worker ran E-1 holds %v, %v", doc, err)
+	}
+	queued, err := follows.Outbox(ctx, fado.OutboxFilter{Class: "Estimate"}, setup)
+	if err != nil || len(queued) != 1 || queued[0].Action != "follow" || queued[0].Rule != "table:Rates" || queued[0].Status != "pending" || queued[0].PrincipalID != "tess" {
+		t.Errorf("the row the change of the table queued: %+v, %v", queued, err)
+	}
+	if _, err := follows.Drain(ctx, setup); err != nil {
+		t.Fatal(err)
+	}
+	// The gauge was brought by the same change, in the state it is in.
+	lit2, err := follows.Get(ctx, "Gauge", gauge.ID, ola)
+	if err != nil {
+		t.Fatal(err)
+	}
+	checks(t, page, "what follows the table", func() map[string]func(row []string) {
+		by := map[string]func(row []string){}
+		for id, before := range estimates {
+			after, err := follows.Get(ctx, "Estimate", id, marek)
+			if err != nil {
+				t.Fatal(err)
+			}
+			by[id+", in "+fmt.Sprint(before.Values["currency"])] = func(row []string) {
+				want := row[3]
+				if want == "the same" {
+					want = row[2]
+				}
+				if row[1] != before.State || holding(before) != row[2] || holding(after) != want {
+					t.Errorf("%s in %s held %q and holds %q; the chapter says %s, %q and %q", row[0], before.State, holding(before), holding(after), row[1], row[2], row[3])
+				}
+			}
+		}
+		return by
+	}())
+	events, err = follows.Events(ctx, "Estimate", "E-1", marek)
+	if err != nil || len(events) != 2 {
+		t.Fatalf("the events of E-1: %v, %v", events, err)
+	}
+	if e := events[1]; e.Kind != "refresh" || e.Name != "table:Rates" || e.ActorID != "tess" || e.AfterVersion != 2 {
+		t.Errorf("the event of the version the table brought: %+v", e)
+	}
+	// Ola read E-1 before the change, and her command says so.
+	if _, err := follows.Transition(ctx, "Estimate", "E-1", "send", nil, ola, fado.Saw(1)); codeOf(err) != "stale_version" {
+		t.Errorf("a command that saw the version before the table brought the rate is answered %s", codeOf(err))
+	}
+	// A removed row is a change of the table too: the drafts in euro
+	// have no rate, and the estimate that was sent keeps its own.
+	if _, err := follows.DeleteRows(ctx, "Rates", []fado.Values{{"code": "EUR"}}, tess); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := follows.Drain(ctx, setup); err != nil {
+		t.Fatal(err)
+	}
+	if doc, err := follows.Get(ctx, "Estimate", "E-1", ola); err != nil || doc.Values["rate"] != nil || doc.Version != 3 {
+		t.Errorf("E-1 after the row of its currency was removed: %v, %v", doc, err)
+	}
+	if doc, err := follows.Get(ctx, "Estimate", "E-2", ola); err != nil || holding(doc) != holding(estimates["E-2"]) {
+		t.Errorf("E-2 after the row of its currency was removed: %v, %v", doc, err)
+	}
+
 	// The triggers, and what STATE() is in each.
 	define("Lamp", `"at_first":{"formula":"STATE()","mode":"triggered","on":["enter:off"]},
 		"at_enter":{"formula":"STATE()","mode":"triggered","on":["enter:on"]},
@@ -384,6 +499,11 @@ func TestTriggeredVariables(t *testing.T) {
 		"refresh": func(row []string) {
 			if shone.Values["at_refresh"] != state[row[2]] || lit.Values["at_refresh"] != nil {
 				t.Errorf("on %s STATE() is %v, and the chapter says %s", row[0], shone.Values["at_refresh"], row[2])
+			}
+		},
+		"table:<name>": func(row []string) {
+			if lit2.Values["at_table"] != state[row[2]] {
+				t.Errorf("on %s STATE() is %v, and the chapter says %s", row[0], lit2.Values["at_table"], row[2])
 			}
 		},
 	})
@@ -630,13 +750,21 @@ func TestTriggeredVariables(t *testing.T) {
 			one(`"a":{"type":"int"},"b":{"formula":"a + 1","mode":"triggered","on":[]}`),
 		},
 		"the mode is neither auto nor triggered": {one(`"a":{"type":"int"},"b":{"formula":"a + 1","mode":"sometimes","on":["refresh"]}`)},
-		"a trigger is none of the five, or is written wrongly, as enter with no state": {
-			on("values_change"), on("create"), on("enter"), on("exit"), on("transition"), on("before"), on("refresh:now"),
+		"a trigger is none of the six, or is written wrongly, as enter with no state": {
+			on("values_change"), on("create"), on("enter"), on("exit"), on("transition"), on("before"), on("refresh:now"), on("table"),
 		},
 		"a trigger names a state the class does not have":      {on("enter:nowhere"), on("exit:nowhere")},
 		"a trigger names a transition the class does not have": {on("transition:fly"), on("before:fly")},
-		"a trigger is table:<name> or schedule:<when>":         {on("table:Rates"), on("schedule:daily")},
-		"a trigger could fire only on a frozen document":       {on("exit:z"), on("transition:undo"), on("before:undo"), on("enter:y")},
+		"a trigger is schedule:<when>":                         {on("schedule:daily")},
+		"table:<name> names a table the variable's formula does not look into": {
+			on("table:Rates"),
+			one(`"c":{"type":"text"},"b":{"formula":"LOOKUP(Rates, rate, code = THIS.c)","mode":"triggered","on":["table:Limits"]}`),
+		},
+		"table:<name> names a class, or stands on a list that is kept": {
+			one(`"a":{"type":"int"},"b":{"type":"number","formula":"LOOKUP(Invoice, COUNT(id), currency = \"EUR\")","mode":"triggered","on":["table:Invoice"]}`),
+			one(`"b":{"type":"rows","schema":{"code":"text","rate":"decimal(4)"},"formula":"QUERY(Rates, {code, rate})","mode":"triggered","on":["table:Rates"]}`),
+		},
+		"a trigger could fire only on a frozen document": {on("exit:z"), on("transition:undo"), on("before:undo"), on("enter:y")},
 		"a triggered variable has a default or is required": {
 			one(`"a":{"type":"int"},"b":{"formula":"a + 1","default":"1","mode":"triggered","on":["refresh"]}`),
 			one(`"a":{"type":"int"},"b":{"formula":"a + 1","required":true,"mode":"triggered","on":["refresh"]}`),

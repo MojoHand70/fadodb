@@ -438,8 +438,10 @@ Phase 8 builds the record first, in four steps, one pull request each.
 | 3 | `before:` a transition, and a guard that reads the document alone (item 4) | built |
 | 4 | a list that is kept (item 5) | built |
 
-Item 6, a kept value that follows its source, is built with the
-analytical engine, later in the phase.
+Item 6, a kept value that follows its source, is built for a table by
+ADR-0091, which also decides whose right is asked: nobody's. A value
+that follows the documents of a class, and one that follows the
+clock, are not built.
 
 ## Settled while building the version a command saw
 

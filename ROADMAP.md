@@ -463,7 +463,7 @@ triggered variable before the guard is asked); and a list that is
 kept, which is built: a `QUERY` as the whole formula of a triggered
 variable, held with every version of the document. With it the four
 steps of ADR-0078 are built; a kept value that follows its source,
-its item 6, comes with the analytical engine. Then what ADR-0076 and ADR-0075 leave:
+its item 6, is built for a table (ADR-0091, proposed). Then what ADR-0076 and ADR-0075 leave:
 a table as the source of a list, a `LOOKUP` in a live variable, and
 `REF()` wherever `ID()` may stand with `REF("Order", "ORD-17")` for a
 named document, which are built, as are the way the engine chooses
@@ -495,6 +495,16 @@ what a `LOOKUP` or a figure over a list works out when it is read, go
 to the copy by themselves when no index narrows them. A page of a list
 is still the store's, and the program with DuckDB is not yet built for
 each operating system and released.
+
+A kept value follows its table (ADR-0091, proposed on 2026-11-26): a
+triggered variable that lists `table:<name>` is worked out again in
+every document of its class that is not finished when the rows of the
+table change. Nobody's right is asked for it, and a class stops the
+value in a state with a `write` right of `FALSE`. The store does it
+by itself, a thousand documents in a transaction: 100,000 invoices
+are brought in under five seconds, and a commit of somebody else
+waits 45 ms meanwhile. A value that follows the clock,
+`schedule:<when>`, is designed in the same record and not built.
 
 Two things of the engine come first, by the owner's word of
 2026-11-25: what a class already asks, its lookups and its lists,

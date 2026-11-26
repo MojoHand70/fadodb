@@ -176,10 +176,11 @@ func TestEventNameReason(t *testing.T) {
 	}
 }
 
-// The triggers of a triggered variable (ADR-0043, items 8 and 9): table:
-// and schedule: wait for the phase that runs them, and a trigger that can
-// fire on a move out of a terminal state is refused, since a frozen
-// document computes nothing.
+// The triggers of a triggered variable (ADR-0043, items 8 and 9):
+// schedule: waits for the build that runs it, table: names a table the
+// formula looks into (ADR-0091), and a trigger that can fire on a move
+// out of a terminal state is refused, since a frozen document computes
+// nothing.
 func TestTriggers_Diagnostics(t *testing.T) {
 	on := func(triggers string) string {
 		return `{"name": "T", "variables": {"a": {"type": "int"}, "b": {"formula": "a", "mode": "triggered", "on": [` + triggers + `]}},
@@ -193,7 +194,8 @@ func TestTriggers_Diagnostics(t *testing.T) {
 	}
 	for _, tc := range []struct{ name, triggers, code string }{
 		{"a schedule", `"schedule:daily"`, CodeNotSupported},
-		{"a table", `"table:Rates"`, CodeNotSupported},
+		{"a table the formula does not look into", `"table:Rates"`, CodeNotAllowed},
+		{"a table without a name", `"table"`, CodeBadTrigger},
 		{"the exit of a terminal state", `"exit:done"`, CodeNotAllowed},
 		{"a transition that leaves a terminal state", `"transition:file"`, CodeNotAllowed},
 		{"a transition one of whose sources is terminal", `"transition:park"`, CodeNotAllowed},

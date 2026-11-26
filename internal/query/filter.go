@@ -1122,6 +1122,47 @@ func Value(src string, cls *model.Class, sources formula.Sources) (string, formu
 	return stmt.Value, stmt.Kind, nil
 }
 
+// Kept translates the formula of a variable a document keeps into the
+// SQL of its value over the rows of the class's documents, read under
+// the alias doc: for the statement that finds the documents whose kept
+// value is no longer what the formula gives (ADR-0091, item 6). Unlike
+// Value it takes a formula that looks into tables, each a correlated
+// subquery over the table that table names. It applies no read right,
+// since the statement is the engine's, and binds no parameter of its
+// own: the context parameters it lists are the caller's to bind.
+//
+// It refuses what one statement over a class cannot say: a formula that
+// reads the documents of a class or a list the document holds, and one
+// that reads the document's life, which is bound for one document at a
+// time. Whoever asks then takes every document, and works the value out
+// in each.
+func Kept(src string, cls *model.Class, sources formula.Sources, doc string, table func(string) string) (formula.SQL, error) {
+	scope, cols, err := scopeOf(cls)
+	if err != nil {
+		return formula.SQL{}, err
+	}
+	prog, err := formula.Bind(src, scope, formula.BindOptions{Sources: sources, Class: cls.Name, Loose: true})
+	if err != nil {
+		return formula.SQL{}, formulaError(err)
+	}
+	if e := noLive(cls, prog, "value"); e != nil {
+		return formula.SQL{}, e
+	}
+	if len(prog.Folds) > 0 || prog.ReadsLife || prog.HasOp(formula.OpQuery) {
+		return formula.SQL{}, &Error{Code: CodeNotAllowed, Element: "value", Pos: -1, Message: "the formula reads a list or the life of one document; it runs over every row of the class"}
+	}
+	column := quoter(cols)
+	stmt, err := formula.GenerateSQLBound(prog, formula.NewSQLite(), formula.SQLBinding{
+		Column: func(s formula.Slot) string { return doc + "." + column(s) },
+		Table:  table,
+		Row:    func(name string) string { return doc + "." + quoteIdent(name) },
+	})
+	if err != nil {
+		return formula.SQL{}, &Error{Code: CodeBadFormula, Element: "value", Pos: -1, Message: err.Error()}
+	}
+	return stmt, nil
+}
+
 // rightsPlans caches, per class, the read rights as the compiler needs
 // them (ADR-0041): for every variable with a read rule in some state, per
 // state the group list or the SQL of the formula, and the predicate text

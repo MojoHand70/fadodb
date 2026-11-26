@@ -261,6 +261,18 @@ Two findings decide what follows.
   largest sum first, 3.4 seconds and 15 ms; one line of the whole
   class 980 ms and 10; the invoices in review by customer, which the
   index of the state narrows to 170,000, 72 ms and 13.
+- **Measured at ten times the size, on 2026-11-26**, with all of the
+  above: 34,000,000 invoices that made a hundred million moves, a
+  database of 75 GB, whose copy is 6.1 GB. One run, the copy asked
+  five times and the store once. The flow takes 158 ms from the copy
+  and 7 minutes 40 seconds from the store; before the moves were kept
+  ready it took the copy 7.2 seconds. The sum of every invoice in a
+  `LOOKUP` takes 47 ms where the store takes 4.5 seconds; a count by a
+  variable with no index 6 ms and 2.4 seconds; the count of the paid
+  invoices, most of the class, 12 ms and 16.6 seconds; the fifty
+  dearest invoices 59 ms and 3 seconds; one line for each customer 76
+  ms and 110 seconds. A page the store fills at once stays with the
+  store, under a millisecond.
 
 ## Settled while building the copy and its feed
 
@@ -501,18 +513,8 @@ strike.
 - **Lines.** The measured invoices have no lines. Whether the copy
   holds the lines of every version or the lines documents hold now is
   decided with the step that sends a total over lines to the copy.
-- **A flow under 2 seconds over a hundred million visits.** Measured
-  with step 2, on 2026-11-25, in a database of 34,000,000 invoices
-  that visited a hundred million states, 75.4 GB. The copy is made in
-  29 minutes, in a hundred pieces, and is 5.4 GB. The flow takes 7.2
-  seconds from the copy, the middle of five askings between 7.0 and
-  8.2, and 7 minutes 40 seconds from the store; the two answers are
-  the same. The copy was made once and the store asked once, on a
-  machine that ran tests beside them, so the numbers say seconds
-  against minutes and no more. Ten times the visits took the copy 22
-  times as long: its time grows faster than the class, and at this
-  size it is past the 2 seconds ADR-0017 sets for ten million. Three
-  hundred million visits are not measured.
+- **Three hundred million visits.** A hundred million are measured:
+  see "What is built". Three times that is not.
 - **The statement of an analyst**, the command `sql`. It stays with the
   store, in the store's dialect.
 - **A copy on another machine.**

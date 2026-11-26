@@ -12,10 +12,30 @@ import (
 	"testing"
 	"time"
 
+	"github.com/MojoHand70/fadodb/internal/qrcode/qrcodetest"
 	"github.com/MojoHand70/fadodb/internal/webauthn/webauthntest"
 )
 
-var questionShown = regexp.MustCompile(`data-question="([^"]*)"`)
+var (
+	questionShown  = regexp.MustCompile(`data-question="([^"]*)"`)
+	phoneCodeShown = regexp.MustCompile(`<figure class="code"[^>]*>(<svg.*?</svg>)`)
+	heldShownRe    = regexp.MustCompile(`<form id="held"[^>]*data-question="([^"]*)"`)
+)
+
+// phoneLinkOf reads the code for the phone a page shows, as a phone's
+// camera does, and answers the path of its link.
+func phoneLinkOf(t *testing.T, base, page string) string {
+	t.Helper()
+	m := phoneCodeShown.FindStringSubmatch(page)
+	if m == nil {
+		t.Fatalf("the page shows no code for the phone:\n%s", page)
+	}
+	link, err := qrcodetest.ReadSVG(m[1])
+	if err != nil || !strings.HasPrefix(link, base+"/auth/phone?t=fadop_") {
+		t.Fatalf("the code reads %q, %v", link, err)
+	}
+	return strings.TrimPrefix(link, base)
+}
 
 // questionOf is the question a page gives the browser to make or use a
 // passkey.
@@ -156,6 +176,127 @@ func TestTheChapterOnPasskeys(t *testing.T) {
 		}
 	}
 
+	// The code for the phone, row by row: Ann's computer shows it, her
+	// phone reads it.
+	annPC := newBrowser(t, base)
+	onPhone := newBrowser(t, base)
+	phone := webauthntest.New(webauthntest.EdDSA)
+	phone.Counts, phone.Synced = false, true
+	var phoneLink, phonePage, heldPC string
+	// heldQuestion is the question of the form that signs in with a
+	// passkey the device holds, which the page hides until the device
+	// says it holds one.
+	heldQuestion := func(page string) string {
+		t.Helper()
+		m := heldShownRe.FindStringSubmatch(page)
+		if m == nil {
+			t.Fatalf("the page offers no sign-in with a passkey held:\n%s", page)
+		}
+		return html.UnescapeString(m[1])
+	}
+	for _, row := range tableAfter(t, text, "<!-- the code for the phone -->") {
+		var got string
+		switch row[0] {
+		case "Ann opens her invitation on her computer":
+			_, page := annPC.get(ann3)
+			phoneLink = phoneLinkOf(t, base, page)
+			if strings.Contains(page, "Point your phone&#39;s camera at the code. Your phone keeps the key.") && strings.Contains(page, ">Use this computer instead</button>") &&
+				strings.Index(page, `<figure class="code"`) < strings.Index(page, "Use this computer instead") {
+				got = "the page shows the code for her phone, and **Use this computer instead** below it"
+			}
+		case "her phone reads the code and opens its link":
+			code, page := onPhone.get(phoneLink)
+			phonePage = page
+			if code == 200 && strings.Contains(page, "<h1>Welcome, Ann</h1>") && strings.Contains(page, `data-device="Ann Nowak"`) && !strings.Contains(page, `<figure class="code"`) {
+				got = "the phone's page greets her, **Welcome, Ann**"
+			}
+		case "Ann adds the passkey on her phone":
+			answer, err := phone.Make(base, questionOf(t, phonePage))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, state := annPC.get("/auth/phone/state"); state != `{"state":"waiting"}` {
+				t.Errorf("before the phone, the computer reads %s", state)
+			}
+			token := strings.TrimPrefix(phoneLink, "/auth/phone?t=")
+			code, page := onPhone.post("/auth/phone", url.Values{"t": {token}, "device": {"Ann's iPhone"}, "response": {answer}})
+			if code == 200 && strings.Contains(page, "signed in as <strong>ann</strong>") && strings.Contains(page, "Ann&#39;s iPhone") {
+				got = "the phone is signed in"
+			}
+		case "the computer that showed the code":
+			if _, state := annPC.get("/auth/phone/state"); state != `{"state":"done"}` {
+				t.Errorf("after the phone, the computer reads %s", state)
+			}
+			other := newBrowser(t, base)
+			otherCode, _ := other.post("/auth/phone/enter", url.Values{})
+			code, page := annPC.post("/auth/phone/enter", url.Values{})
+			again, _ := annPC.post("/auth/phone/enter", url.Values{})
+			// The code signs one browser in, once.
+			if code == 200 && strings.Contains(page, "signed in as <strong>ann</strong>") && otherCode == http.StatusUnauthorized && again == http.StatusUnauthorized {
+				got = "is signed in too, and no other browser is"
+			}
+			if _, body := command("sign_ins", `{"user": "ann"}`); !strings.Contains(body, `"way":"phone"`) {
+				t.Errorf("the computer's sign-in is not recorded with the way phone: %s", body)
+			}
+		case "the code's link is opened again":
+			if code, page := newBrowser(t, base).get(phoneLink); code == http.StatusNotFound && strings.Contains(page, "This code has ended") {
+				got = "the page says the code has ended"
+			}
+		case "Ann's account page, on her computer":
+			_, page := annPC.get("/auth/account")
+			phoneLinkOf(t, base, page)
+			if strings.Contains(page, "To add a passkey on your phone, point its camera at the code.") {
+				got = "shows a code of the same kind, to add a passkey on another phone"
+			}
+		case "her phone, which holds her synced passkey, reads the code of a new invitation":
+			pc := newBrowser(t, base)
+			heldPC = invitationOf("ann")
+			_, page := pc.get(heldPC)
+			phoneLink = phoneLinkOf(t, base, page)
+			annPC = pc
+			code, page := onPhone.get(phoneLink)
+			phonePage = page
+			// The phone's own refusal is the browser's: the page holds the
+			// form that takes the button's place, hidden until then.
+			if code == 200 && strings.Contains(page, `data-held="held"`) && strings.Contains(page, `<form id="held"`) &&
+				strings.Contains(page, "This phone holds a passkey of yours for this server already.") && strings.Contains(page, ">Sign in with it</button>") {
+				heldQuestion(page)
+				got = "the phone makes no other, and its page offers **Sign in with it** in the place of its button"
+			}
+		case "Ann signs in with it on her phone":
+			answer, err := phone.Use(base, heldQuestion(phonePage))
+			if err != nil {
+				t.Fatal(err)
+			}
+			token := strings.TrimPrefix(phoneLink, "/auth/phone?t=")
+			code, page := onPhone.post("/auth/phone", url.Values{"t": {token}, "do": {"held"}, "response": {answer}})
+			entered, pcPage := annPC.post("/auth/phone/enter", url.Values{})
+			if code == 200 && strings.Contains(page, "signed in as <strong>ann</strong>") && entered == 200 && strings.Contains(pcPage, "signed in as <strong>ann</strong>") &&
+				doesNotHold(newBrowser(t, base), heldPC) {
+				got = "the phone and the computer are signed in, and the invitation is used"
+			}
+		case "a computer that holds her synced passkey opens a new invitation of hers":
+			pc := newBrowser(t, base)
+			link := invitationOf("ann")
+			_, page := pc.get(link)
+			offered := strings.Contains(page, `data-held="held"`) && strings.Contains(page, "This device holds a passkey of yours for this server already.")
+			answer, err := phone.Use(base, heldQuestion(page))
+			if err != nil {
+				t.Fatal(err)
+			}
+			token := strings.TrimPrefix(link, "/auth/invite?t=")
+			code, page := pc.post("/auth/invite", url.Values{"t": {token}, "do": {"held"}, "response": {answer}})
+			if offered && code == 200 && strings.Contains(page, "signed in as <strong>ann</strong>") && doesNotHold(newBrowser(t, base), link) {
+				got = "the page offers **Sign in with it** too, and she is signed in with the invitation"
+			}
+		default:
+			t.Fatalf("the test does not know the row %q", row[0])
+		}
+		if got != row[1] {
+			t.Errorf("%s: %q, the chapter says %s", row[0], got, row[1])
+		}
+	}
+
 	// Signing in with a passkey, row by row.
 	for _, row := range tableAfter(t, text, "<!-- a passkey -->") {
 		var got string
@@ -215,13 +356,8 @@ func TestTheChapterOnPasskeys(t *testing.T) {
 		}
 	}
 
-	// A person's passkeys, row by row. Ann's phone takes her invitation.
-	phone := webauthntest.New(webauthntest.EdDSA)
-	phone.Counts, phone.Synced = false, true
-	onPhone := newBrowser(t, base)
-	if code, page := accept(onPhone, ann3, phone, "Ann's iPhone"); code != 200 || !strings.Contains(page, "signed in as <strong>ann</strong>") {
-		t.Fatalf("Ann's phone: %d\n%s", code, page)
-	}
+	// A person's passkeys, row by row. Ann's phone holds the passkey of
+	// her invitation, and her phone's session.
 	computer := newBrowser(t, base)
 	pc := webauthntest.New(webauthntest.RS256)
 	var ids []string

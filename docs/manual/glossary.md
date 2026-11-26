@@ -52,6 +52,7 @@ exactly so in a class or a formula.
 | grant | a client a person allowed, such as Claude: its passes hold until the person or an administrator ends it, or no pass was renewed for 30 days; see [Signing in](signing-in.md#connecting-a-client) |
 | passkey | how a person signs in to `fadodb serve`: a key their phone or computer makes for the server's address and opens with their fingerprint, their face or the device's PIN; the server keeps its public half; see [Signing in](signing-in.md#signing-in-with-a-passkey) |
 | invitation | a link an administrator makes for a person, good once and for 7 days, with which they add their first passkey; see [Signing in](signing-in.md#an-invitation) |
+| code for the phone | the QR code the page of an invitation, and the account page, show on a computer: a phone's camera reads it and the person adds a passkey on the phone, which signs in the phone and the computer that showed it; good once and for 10 minutes; see [Signing in](signing-in.md#the-code-for-the-phone) |
 | second step | a code of six digits from an authenticator app, asked after the password of an administrator or a designer, until passwords go; see [Signing in](signing-in.md) |
 | group | a named set of callers, as the host program knows them, such as `ACCOUNTING` |
 | system group | one of four groups that hold work which is not about one document: `administrators`, `designers`, `content-administrators`, `analysts` |

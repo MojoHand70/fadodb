@@ -58,6 +58,9 @@ type Device struct {
 	BreakSignature bool
 	// Format is the format of the maker's statement, "none" when empty.
 	Format string
+	// AAGUID is what it says its maker is: sixteen zeros, as Safari
+	// says, when left at zero.
+	AAGUID [16]byte
 
 	// What it made: the passkey's id, the person it is for, and the key.
 	ID, Handle []byte
@@ -207,7 +210,7 @@ func (d *Device) authData(host string, made bool) []byte {
 	}
 	out = binary.BigEndian.AppendUint32(out, count)
 	if made {
-		out = append(out, make([]byte, 16)...)
+		out = append(out, d.AAGUID[:]...)
 		out = binary.BigEndian.AppendUint16(out, uint16(len(d.ID)))
 		out = append(out, d.ID...)
 		out = append(out, d.cose...)

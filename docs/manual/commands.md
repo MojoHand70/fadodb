@@ -1937,6 +1937,7 @@ A few calls of the Go package have no command.
 
 | Call | Why |
 |---|---|
+| `AccountPhoneCode` | it is the code the server's page /auth/account shows, for a phone's camera |
 | `Action` | it answers one entry of the catalogue that list_actions answers whole |
 | `AddPasskey` | a passkey is made by the person's device, on the server's page /auth/account; remove_passkey removes one |
 | `AddPasskeyQuestion` | it is the question the server's page /auth/account gives the browser, to make another passkey |
@@ -1953,13 +1954,16 @@ A few calls of the Go package have no command.
 | `Consent` | it belongs to the server's page /auth/allow, which asks the person |
 | `CopyState` | the analytical engine is given by the program that opens the database, which asks how its copy stands; a caller of the server has nothing to do with it |
 | `Deny` | it belongs to the server's page /auth/allow, which asks the person |
+| `EnterByPhone` | it signs in the browser that showed the code, at /auth/phone/enter, with the secret of its cookie |
 | `Exchange` | a code and a pass never travel in a command: the server's address /auth/token takes them |
 | `Exec` | it is the door the commands come through |
 | `FeedCopy` | the copy in the analytical engine is fed by the database itself, and by the program that opened it when it will not wait; a caller of the server never sees the copy |
 | `FinishSignIn` | it belongs to a sign-in under way on the server's page /auth/signin |
 | `HasSecondStep` | the server's page /auth/account shows it to the person |
 | `Inlet` | it answers one entry of the list that list_inlets answers whole |
+| `InvitationPhoneCode` | it is the code the server's page /auth/invite shows, for a phone's camera |
 | `InvitationQuestion` | it is the question the server's page /auth/invite gives the browser, to make a passkey |
+| `InvitationSignInQuestion` | it is the question the server's page /auth/invite gives a device that holds a passkey already, to use it |
 | `Invited` | it belongs to the server's page /auth/invite, which an invitation opens |
 | `KnownClient` | it answers a client to the server's page /auth/authorize; list_clients lists them |
 | `LivePage` | it is live with the page of a list given, for a Go program: the command takes the page in the same call |
@@ -1969,6 +1973,10 @@ A few calls of the Go package have no command.
 | `OutboxCounts` | it counts what of the queue is still to do, for whoever watches a server, which answers it at GET /v1/metrics; outbox lists the actions themselves |
 | `PassCaller` | it answers who a pass belongs to, for the door that is given the pass; a caller that wants to know who it is sends whoami |
 | `PasswordLinkUser` | it belongs to the server's page /auth/password, which a link opens |
+| `PhoneCodeState` | the page that shows the code asks it, at /auth/phone/state, with the secret of its cookie |
+| `PhoneLink` | it belongs to the server's page /auth/phone, which the code's link opens |
+| `PhoneQuestion` | it is the question the server's page /auth/phone gives the phone's browser, to make a passkey |
+| `PhoneSignInQuestion` | it is the question the server's page /auth/phone gives a phone that holds a passkey already, to use it |
 | `Ping` | it asks whether the database answers; a server answers it at GET /v1/health, for anybody |
 | `PutBlob` | the bytes of a file are not JSON: they travel beside the commands, with the server |
 | `Receive` | it takes a message from outside, which proves itself and carries no key of a user: a server answers it at POST /v1/in/<inlet> |
@@ -1978,7 +1986,9 @@ A few calls of the Go package have no command.
 | `SessionCaller` | it answers who a session belongs to, for the door that is given the session; a caller that wants to know who it is sends whoami |
 | `SetUpMySecondStep` | its secret never travels in a command: the server's page /auth/account shows it |
 | `SetUpSecondStep` | it belongs to a sign-in under way on the server's page /auth/signin |
+| `SignInByPhoneLink` | it takes the answer of a phone that used its passkey on the server's page /auth/phone, and gives a session |
 | `SignInQuestion` | it is the question the server's page /auth/signin gives the browser, to use a passkey |
+| `SignInWithInvitation` | it takes the answer of a device that used its passkey on the server's page /auth/invite, and gives a session |
 | `SignInWithPasskey` | it takes the browser's answer on the server's page /auth/signin, and gives a session |
 | `SignOn` | it takes who a company's provider vouched for, which the server checked on its page /auth/callback; no command carries a provider's word |
 | `SignOut` | it ends the session it is sent with, on the server's page /auth/signout; end_session ends one by its id |
@@ -1986,3 +1996,4 @@ A few calls of the Go package have no command.
 | `TablesOf` | it is list_tables with its app given, for a Go program |
 | `UseInvitation` | it takes the browser's answer on the server's page /auth/invite, and gives a session |
 | `UsePasswordLink` | a password never travels in a command: the server's page /auth/password takes it |
+| `UsePhoneLink` | it takes the phone's answer on the server's page /auth/phone, and gives a session |

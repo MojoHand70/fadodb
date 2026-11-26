@@ -59,14 +59,16 @@ const (
 
 // Made is a new passkey, as the server keeps it: the id the device knows
 // it by, its public key as the device wrote it, the kind of the key, the
-// device's counter, and whether it is a synced passkey, which follows
-// its owner to a new phone.
+// device's counter, whether it is a synced passkey, which follows its
+// owner to a new phone, and the name of its maker, by its AAGUID, when
+// the table of makers holds it.
 type Made struct {
 	Credential []byte
 	Key        []byte
 	Alg        int
 	Count      uint32
 	Synced     bool
+	Maker      string
 }
 
 // Used is what a passkey's use says of it: its counter now, and whether
@@ -210,6 +212,7 @@ type authData struct {
 	host       []byte
 	flags      byte
 	count      uint32
+	aaguid     [16]byte
 	credential []byte
 	key        []byte
 }
@@ -227,6 +230,7 @@ func readAuthData(b []byte) (*authData, error) {
 		if len(rest) < 18 {
 			return nil, ErrMalformed
 		}
+		copy(d.aaguid[:], rest[:16])
 		n := int(binary.BigEndian.Uint16(rest[16:18]))
 		rest = rest[18:]
 		if n < 16 || n > 1023 || len(rest) < n {
@@ -301,7 +305,7 @@ func (p Party) CheckCreation(c *Creation, challenge []byte) (*Made, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Made{Credential: d.credential, Key: d.key, Alg: key.alg, Count: d.count, Synced: d.flags&flagSynced != 0}, nil
+	return &Made{Credential: d.credential, Key: d.key, Alg: key.alg, Count: d.count, Synced: d.flags&flagSynced != 0, Maker: MakerOf(d.aaguid)}, nil
 }
 
 // CheckAssertion checks the use of a passkey the server keeps, with its

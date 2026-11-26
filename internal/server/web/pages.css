@@ -24,6 +24,7 @@ code,.fig{font-family:var(--fig);font-stretch:87.5%;font-size:.88em;overflow-wra
 a{color:var(--accent-text)}
 .lnk{color:var(--ink-3);text-decoration:underline dotted var(--rule-2);text-underline-offset:3px}.lnk:hover{color:var(--ink)}
 form{display:grid;gap:12px;margin:0}
+[hidden]{display:none!important}
 label{display:grid;gap:5px;font-size:12.5px;color:var(--ink-2);text-align:left}
 input{font:inherit;font-size:15px;padding:10px 12px;border:1px solid var(--rule-2);border-radius:8px;background:var(--sheet);color:var(--ink);width:100%;min-width:0}
 .btn{font:inherit;font-size:14px;font-weight:500;border:1px solid var(--accent);background:var(--accent);color:var(--on-accent);border-radius:999px;padding:9px 16px;cursor:pointer}
@@ -42,3 +43,11 @@ a.btn{display:inline-block;text-decoration:none}
 .pair{display:flex;gap:10px;justify-content:center;flex-wrap:wrap}.pair form{display:block}
 .codes{font-family:var(--fig);font-stretch:87.5%;display:grid;grid-template-columns:repeat(2,max-content);gap:6px 28px;justify-content:center;padding:0;list-style:none}
 @media (prefers-reduced-motion:no-preference){main{animation:in .18s ease-out}@keyframes in{from{opacity:.4;transform:translateY(4px)}}}
+/* The code for the phone (ADR-0088, item 3): dark on white in either
+   scheme, so that a camera reads it, with its caption under it. */
+figure.code{margin:4px auto 0;width:min(220px,100%);text-align:center}
+figure.code svg{display:block;width:100%;height:auto;border-radius:12px;box-shadow:0 0 0 1px var(--rule)}
+figure.code figcaption{margin-top:12px;color:var(--ink-2);font-size:14px}
+figure.code.ended svg{opacity:.25}
+.state{margin-top:6px;font-size:13px;color:var(--ok)}.state:empty{display:none}
+figure.code.ended .state{color:var(--ink-2)}

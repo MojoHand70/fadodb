@@ -87,6 +87,9 @@ type Invited struct {
 	Name   string
 	By     string
 	ByName string
+	// Passkeys says the person holds a passkey already, which the
+	// device that opened the invitation may hold too.
+	Passkeys bool
 }
 
 // Passkey is a passkey as the database lists it: its id, which is no
@@ -110,6 +113,11 @@ const (
 	askSignIn = 's'
 	askInvite = 'i'
 	askAdd    = 'a'
+	// askPhone uses, on a phone, a passkey the person holds there
+	// already, for a code for the phone; askHeld, on the device that
+	// opened an invitation, for the invitation.
+	askPhone = 'p'
+	askHeld  = 'h'
 )
 
 // A challenge is good once and for 5 minutes, and only for what it was
@@ -351,7 +359,11 @@ func (s *Store) Invited(ctx context.Context, token string) (*Invited, error) {
 	if err := s.db.QueryRowContext(ctx, "SELECT made_by FROM fado_invitations WHERE id = ?", id).Scan(&by); err != nil {
 		return nil, storageErr("read the invitation", err)
 	}
-	out := &Invited{User: u.ID, Name: screenName(u), By: by, ByName: by}
+	held, err := s.credentials(ctx, u.ID)
+	if err != nil {
+		return nil, err
+	}
+	out := &Invited{User: u.ID, Name: screenName(u), By: by, ByName: by, Passkeys: len(held) > 0}
 	s.people.mu.RLock()
 	if maker := s.people.users[by]; maker != nil {
 		out.ByName = screenName(maker)
@@ -484,6 +496,13 @@ func newPasskey(user, name, with string, m *webauthn.Made) (*Passkey, error) {
 	if err != nil {
 		return nil, &Error{Code: CodeStorage, Message: "name the passkey: " + err.Error()}
 	}
+	// A synced passkey lives in a password manager, on each device of
+	// the person's: it is named after the manager, when its AAGUID says
+	// which (the owner's ruling, 2026-11-25), and not after the device
+	// it was made on.
+	if m.Synced && m.Maker != "" {
+		name = m.Maker
+	}
 	return &Passkey{ID: id, User: user, Name: name, Synced: m.Synced, AddedWith: with}, nil
 }
 
@@ -501,6 +520,13 @@ func (s *Store) UseInvitation(ctx context.Context, token string, answer []byte, 
 	if !ok {
 		return nil, s.refuseSignIn(ctx, "", WayPasskey, address)
 	}
+	return s.useInvitation(ctx, id, u, answer, device, origin, address, lengths)
+}
+
+// useInvitation takes the passkey a person made with the invitation id,
+// from its page or from the link of its code for the phone.
+func (s *Store) useInvitation(ctx context.Context, id string, u *User, answer []byte, device, origin, address string, lengths SessionLengths) (*Session, error) {
+	g := s.signingIn()
 	name, e := deviceName(device)
 	if e != nil {
 		return nil, e
@@ -520,8 +546,8 @@ func (s *Store) UseInvitation(ctx context.Context, token string, answer []byte, 
 		return nil, s.refuseSignIn(ctx, u.ID, WayPasskey, address)
 	}
 	me := Principal{ID: u.ID, Kind: u.Kind}
-	return s.beginSession(ctx, u.ID, key.ID, address, lengths, func(w execer, now int64) error {
-		res, err := w.ExecContext(ctx, "UPDATE fado_invitations SET ended_at = ?, ended_by = ?, ended_how = 'used' WHERE id = ? AND ended_at = 0", now, u.ID, id)
+	return s.beginSession(ctx, u.ID, key.ID, WayPasskey, address, lengths, func(w execer, now int64) error {
+		res, err := w.ExecContext(ctx, "UPDATE fado_invitations SET ended_at = ?, ended_by = ?, ended_how = 'used' WHERE id = ? AND ended_at = 0 AND ends > ?", now, u.ID, id, now)
 		if err != nil {
 			return storageErr("use the invitation", err)
 		}
@@ -532,16 +558,16 @@ func (s *Store) UseInvitation(ctx context.Context, token string, answer []byte, 
 	})
 }
 
-// beginSession writes a session begun with a passkey, with what else the
-// sign-in writes, and records the sign-in.
-func (s *Store) beginSession(ctx context.Context, user, passkey, address string, lengths SessionLengths, also func(w execer, now int64) error) (*Session, error) {
+// beginSession writes a session begun with a passkey, the way given,
+// with what else the sign-in writes, and records the sign-in.
+func (s *Store) beginSession(ctx context.Context, user, passkey, way, address string, lengths SessionLengths, also func(w execer, now int64) error) (*Session, error) {
 	g := s.signingIn()
 	lengths = fitLengths(lengths)
 	id, secret, err := secretText()
 	if err != nil {
 		return nil, &Error{Code: CodeStorage, Message: "make the session: " + err.Error()}
 	}
-	held := &heldSession{Session: Session{ID: id, User: user, Way: WayPasskey, Address: address, Passkey: passkey, Idle: int64(lengths.Idle / time.Second)}, hash: hashSecret(secret)}
+	held := &heldSession{Session: Session{ID: id, User: user, Way: way, Address: address, Passkey: passkey, Idle: int64(lengths.Idle / time.Second)}, hash: hashSecret(secret)}
 	err = s.writeUsers(ctx, func(w execer, now int64) error {
 		if err := also(w, now); err != nil {
 			return err
@@ -555,7 +581,7 @@ func (s *Store) beginSession(ctx context.Context, user, passkey, address string,
 		if _, err := w.ExecContext(ctx, "INSERT INTO fado_session_passkeys (session, passkey) VALUES (?, ?)", held.ID, passkey); err != nil {
 			return storageErr("store the session's passkey", err)
 		}
-		return s.logSignIn(ctx, w, now, user, WayPasskey, address, true)
+		return s.logSignIn(ctx, w, now, user, way, address, true)
 	}, func() {})
 	if err != nil {
 		return nil, err
@@ -599,6 +625,105 @@ func (s *Store) SignInWithPasskey(ctx context.Context, answer []byte, origin, ad
 	if wait := g.waitFor(now, "a:"+address); wait > 0 {
 		return nil, tooMany(wait)
 	}
+	use, err := s.checkUse(ctx, answer, origin, askSignIn, "", address, now)
+	if err != nil {
+		return nil, err
+	}
+	if !g.spend(use.challenge, now) {
+		return nil, s.refuseSignIn(ctx, use.user, WayPasskey, address)
+	}
+	return s.beginSession(ctx, use.user, use.id, WayPasskey, address, lengths, func(w execer, now int64) error {
+		return usePasskey(ctx, w, use, now)
+	})
+}
+
+// InvitationSignInQuestion is the question the page of an invitation
+// gives a device that holds a passkey of the person's already, which a
+// synced passkey may be: to use it, with the invitation. A device asked
+// to make another passkey there is refused by the device itself.
+func (s *Store) InvitationSignInQuestion(ctx context.Context, token, origin string) (string, error) {
+	id, _, ok := s.invitation(ctx, token)
+	if !ok {
+		return "", refused()
+	}
+	return s.useQuestion(origin, askHeld, id)
+}
+
+// useQuestion is the question that asks a browser to use a passkey it
+// holds, with a challenge for what it is for.
+func (s *Store) useQuestion(origin string, ask byte, bound string) (string, error) {
+	party, e := partyOf(origin)
+	if e != nil {
+		return "", e
+	}
+	c, err := s.signingIn().challenge(ask, bound, nil, s.now().Add(challengeLasts).Unix())
+	if err != nil {
+		return "", &Error{Code: CodeStorage, Message: "make the challenge: " + err.Error()}
+	}
+	return party.RequestOptions(c, challengeLasts), nil
+}
+
+// SignInWithInvitation takes the passkey of the person's that the device
+// holds already, the answer to InvitationSignInQuestion, and gives the
+// person's session. The invitation is used, and holds no more. A passkey
+// of another person is refused as any that does not hold.
+func (s *Store) SignInWithInvitation(ctx context.Context, token string, answer []byte, origin, address string, lengths SessionLengths) (*Session, error) {
+	if !s.people.on {
+		return nil, notKept()
+	}
+	if wait := s.signingIn().waitFor(s.now().Unix(), "a:"+address); wait > 0 {
+		return nil, tooMany(wait)
+	}
+	id, u, ok := s.invitation(ctx, token)
+	if !ok {
+		return nil, s.refuseSignIn(ctx, "", WayPasskey, address)
+	}
+	return s.signInHeld(ctx, u, id, askHeld, id, answer, origin, address, lengths)
+}
+
+// signInHeld checks the use of a passkey of the person's, for the
+// question asked and what it is for, and begins their session with it:
+// with their invitation, if one is given, which is used.
+func (s *Store) signInHeld(ctx context.Context, u *User, invitation string, ask byte, bound string, answer []byte, origin, address string, lengths SessionLengths) (*Session, error) {
+	g := s.signingIn()
+	now := s.now().Unix()
+	use, err := s.checkUse(ctx, answer, origin, ask, bound, address, now)
+	if err != nil {
+		return nil, err
+	}
+	if use.user != u.ID || !g.spend(use.challenge, now) {
+		return nil, s.refuseSignIn(ctx, u.ID, WayPasskey, address)
+	}
+	return s.beginSession(ctx, u.ID, use.id, WayPasskey, address, lengths, func(w execer, now int64) error {
+		if invitation != "" {
+			res, err := w.ExecContext(ctx, "UPDATE fado_invitations SET ended_at = ?, ended_by = ?, ended_how = 'used' WHERE id = ? AND ended_at = 0 AND ends > ?", now, u.ID, invitation, now)
+			if err != nil {
+				return storageErr("use the invitation", err)
+			}
+			if n, _ := res.RowsAffected(); n != 1 {
+				return refused()
+			}
+		}
+		return usePasskey(ctx, w, use, now)
+	})
+}
+
+// passkeyUse is a passkey a browser used, once its answer held: the
+// passkey, its person, the challenge it answered and what the device
+// said.
+type passkeyUse struct {
+	id, user  string
+	challenge []byte
+	used      *webauthn.Used
+}
+
+// checkUse checks a browser's answer to a question that asks it to use a
+// passkey, for that question and what it is for: a challenge the server
+// gave and nobody used, a passkey the database holds of a person it
+// has, and an answer that holds. Each is refused in the same words. The
+// challenge is not spent: the caller spends it once it takes the use.
+func (s *Store) checkUse(ctx context.Context, answer []byte, origin string, ask byte, bound, address string, now int64) (*passkeyUse, error) {
+	g := s.signingIn()
 	party, e := partyOf(origin)
 	if e != nil {
 		return nil, e
@@ -611,7 +736,7 @@ func (s *Store) SignInWithPasskey(ctx context.Context, answer []byte, origin, ad
 	if err != nil {
 		return nil, s.refuseSignIn(ctx, "", WayPasskey, address)
 	}
-	if _, ok := g.challengeOf(challenge, askSignIn, "", now); !ok {
+	if _, ok := g.challengeOf(challenge, ask, bound, now); !ok {
 		return nil, s.refuseSignIn(ctx, "", WayPasskey, address)
 	}
 	var id, user string
@@ -636,24 +761,26 @@ func (s *Store) SignInWithPasskey(ctx context.Context, answer []byte, origin, ad
 			return recordUserChange(ctx, w, user, PasskeyCounterFell, Principal{ID: user, Kind: ActorPerson}, now, map[string]any{"id": id, "count": count})
 		}, func() {})
 	}
-	if err != nil || !g.spend(challenge, now) {
+	if err != nil {
 		return nil, s.refuseSignIn(ctx, user, WayPasskey, address)
 	}
-	return s.beginSession(ctx, user, id, address, lengths, func(w execer, now int64) error {
-		// In the writer's turn the counter only rises: of two uses at
-		// once checked against the same counter, the one that comes
-		// second with a lower counter is refused, and the counter is
-		// never set back.
-		count := int64(used.Count)
-		res, err := w.ExecContext(ctx, "UPDATE fado_passkeys SET sign_count = ?, synced = ?, used_at = ? WHERE id = ? AND removed_at = 0 AND (sign_count < ? OR ? = 0)", count, used.Synced, now, id, count, count)
-		if err != nil {
-			return storageErr("store the passkey's use", err)
-		}
-		if n, _ := res.RowsAffected(); n != 1 {
-			return refused()
-		}
-		return nil
-	})
+	return &passkeyUse{id: id, user: user, challenge: challenge, used: used}, nil
+}
+
+// usePasskey writes the use of a passkey, in the writer's turn, where
+// the counter only rises: of two uses at once checked against the same
+// counter, the one that comes second with a lower counter is refused,
+// and the counter is never set back.
+func usePasskey(ctx context.Context, w execer, use *passkeyUse, now int64) error {
+	count := int64(use.used.Count)
+	res, err := w.ExecContext(ctx, "UPDATE fado_passkeys SET sign_count = ?, synced = ?, used_at = ? WHERE id = ? AND removed_at = 0 AND (sign_count < ? OR ? = 0)", count, use.used.Synced, now, use.id, count, count)
+	if err != nil {
+		return storageErr("store the passkey's use", err)
+	}
+	if n, _ := res.RowsAffected(); n != 1 {
+		return refused()
+	}
+	return nil
 }
 
 // AddPasskeyQuestion is the question the account page gives the browser,

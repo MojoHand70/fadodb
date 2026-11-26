@@ -312,6 +312,27 @@ Phase 8 started on 2026-11-25.
   afterwards: keep a copy if you may go back. A database of a release
   before v0.7.0 is refused as before.
 
+- The code for the phone (ADR-0088, its third step). On a computer,
+  the page of an invitation shows a QR code first: "Point your phone's
+  camera at the code. Your phone keeps the key." The phone opens its
+  link at `/auth/phone`, the person adds a passkey there with their
+  face or fingerprint, and the phone is signed in; the computer that
+  showed the code is signed in too, that browser alone, recorded with
+  the way `phone`. **Use this computer instead** makes the passkey on
+  the computer. The account page shows a code of the same kind, to add
+  a passkey on another phone. A code holds once and for 10 minutes, and
+  a new one ends the one before. The server draws the code itself, in
+  `internal/qrcode`, Go's standard library and code of its own; a page
+  that shows one lets its script ask the server alone how it stands
+  (`connect-src 'self'`). A phone that holds the person's passkey
+  already, as a password manager keeps one on each device, makes no
+  other: the page then offers **Sign in with it**, the phone signs in
+  with that passkey and the computer enters too. The page of an
+  invitation does the same on any device, and the invitation is used.
+  A synced passkey is named after the password manager that keeps it,
+  "Google Password Manager" or "1Password", by the AAGUID the browser
+  says, from a table of 67 makers the engine keeps.
+
 - People sign in with a passkey, invited by a link (ADR-0088, its
   second step): their fingerprint, their face or their device's PIN,
   and nothing to type. An administrator makes an invitation, good once

@@ -3,8 +3,10 @@ package webauthn_test
 import (
 	"bytes"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -81,6 +83,67 @@ func TestASyncedPasskey(t *testing.T) {
 			t.Fatalf("used %d: %+v %v", i, u, err)
 		}
 	}
+}
+
+// aaguid writes an AAGUID as the table of makers does.
+func aaguid(t *testing.T, s string) [16]byte {
+	t.Helper()
+	var a [16]byte
+	b, err := hex.DecodeString(strings.ReplaceAll(s, "-", ""))
+	if err != nil || len(b) != 16 {
+		t.Fatalf("the AAGUID %q", s)
+	}
+	copy(a[:], b)
+	return a
+}
+
+// The maker of a passkey is named by its AAGUID: Google Password
+// Manager's, as Chrome says it; none for sixteen zeros, as Safari says,
+// nor for one the table does not hold.
+func TestTheMakerOfAPasskey(t *testing.T) {
+	for _, c := range []struct{ aaguid, want string }{
+		{"ea9b8d66-4d01-1d21-3ce4-b6b48cb575d4", "Google Password Manager"},
+		{"fbfc3007-154e-4ecc-8c0b-6e020557d7bd", "Apple Passwords"},
+		{"bada5566-a7aa-401f-bd96-45619a55120d", "1Password"},
+		{"08987058-cadc-4b81-b6e1-30de50dcbe96", "Windows Hello"},
+		{"00000000-0000-0000-0000-000000000000", ""},
+		{"01020304-0506-0708-0102-030405060708", ""},
+	} {
+		d := webauthntest.New(webauthntest.ES256)
+		d.Counts, d.Synced, d.AAGUID = false, true, aaguid(t, c.aaguid)
+		if m := made(t, d); m.Maker != c.want {
+			t.Errorf("%s: the maker %q, want %q", c.aaguid, m.Maker, c.want)
+		}
+	}
+}
+
+// Each AAGUID of the table of makers is written as MakerOf looks it up,
+// so that none is held in a form nothing finds.
+func TestTheTableOfMakers(t *testing.T) {
+	n := 0
+	for _, line := range strings.Split(string(makersFile(t)), "\n") {
+		f := strings.SplitN(strings.TrimSpace(line), `": "`, 2)
+		if len(f) != 2 || !strings.HasPrefix(f[0], `"`) {
+			continue
+		}
+		n++
+		name := strings.TrimSuffix(f[1], `",`)
+		if got := webauthn.MakerOf(aaguid(t, strings.Trim(f[0], `"`))); got != name {
+			t.Errorf("%s: %q, want %q", f[0], got, name)
+		}
+	}
+	if n < 60 {
+		t.Errorf("the table holds %d makers", n)
+	}
+}
+
+func makersFile(t *testing.T) []byte {
+	t.Helper()
+	b, err := os.ReadFile("makers.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return b
 }
 
 // The statement of a device's maker is not read, whatever its format.

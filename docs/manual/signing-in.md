@@ -12,11 +12,11 @@ OAuth. A program goes on calling with a key, as
 The story is Acme's. Olga is an administrator, and the first person
 who signs in. Ann is in finance.
 
-> **Status.** Invitations, and passkeys on the device in use, are
-> built, as are sessions, a company's sign-on, the passes of clients,
-> and the door for agents at `/mcp`, which takes Claude's pass. The
-> code a phone scans to add its passkey is planned; passwords and the
-> second step, still built, go after it (ADR-0088, item 11).
+> **Status.** Invitations, passkeys on the device in use and the code
+> a phone scans to add its passkey are built, as are sessions, a
+> company's sign-on, the passes of clients, and the door for agents at
+> `/mcp`, which takes Claude's pass. Passwords and the second step,
+> still built, go next (ADR-0088, item 11).
 
 ## The first passkey, on the machine
 
@@ -46,11 +46,14 @@ has lost every passkey.
 
 ## An invitation
 
-Olga opens the link. The page greets her, **Welcome, Olga**, and asks
-her to name the device, proposing a name from her browser, such as
-"Olga's Mac". She presses **Add a passkey and enter**; her browser asks
-for her fingerprint, her face or the device's PIN, and she is signed
-in. The device keeps the passkey, the server its public half.
+Olga opens the link. The page greets her, **Welcome, Olga**. On a
+computer it shows the code for her phone first, as the next section
+tells; Olga keeps her passkey on the computer, and presses **Use this
+computer instead**, under the name the page proposes for the device
+from her browser, such as "Olga's Mac". Her browser asks for her
+fingerprint, her face or the device's PIN, and she is signed in. On a
+phone the page shows no code: the button is **Add a passkey and
+enter**. The device keeps the passkey, the server its public half.
 
 <!-- an invitation -->
 | What happens | Answer |
@@ -71,6 +74,46 @@ The link is the server's address, `/auth/invite?t=` and the `token` of
 the answer. The door for agents does not offer `create_invitation`: a
 link that lets somebody in never stays in an agent's conversation.
 Ewa, who signs in with Microsoft, needs none.
+
+## The code for the phone
+
+On a computer, the page of an invitation shows a QR code first: "Point
+your phone's camera at the code. Your phone keeps the key." The code
+holds a link of the same invitation, good once and for 10 minutes. Ann
+points her phone's camera at it, the phone opens the link and greets
+her, and she adds the passkey on the phone with her face. The phone is
+signed in, and so is the computer that showed the code: that browser
+alone, which keeps a secret of its own for the code in a cookie, and
+only within the 10 minutes. A computer that holds the invitation could
+have added a passkey itself, so this gives it nothing more.
+
+<!-- the code for the phone -->
+| What happens | Answer |
+|---|---|
+| Ann opens her invitation on her computer | the page shows the code for her phone, and **Use this computer instead** below it |
+| her phone reads the code and opens its link | the phone's page greets her, **Welcome, Ann** |
+| Ann adds the passkey on her phone | the phone is signed in |
+| the computer that showed the code | is signed in too, and no other browser is |
+| the code's link is opened again | the page says the code has ended |
+| Ann's account page, on her computer | shows a code of the same kind, to add a passkey on another phone |
+| her phone, which holds her synced passkey, reads the code of a new invitation | the phone makes no other, and its page offers **Sign in with it** in the place of its button |
+| Ann signs in with it on her phone | the phone and the computer are signed in, and the invitation is used |
+| a computer that holds her synced passkey opens a new invitation of hers | the page offers **Sign in with it** too, and she is signed in with the invitation |
+
+A synced passkey, which a password manager keeps on each device of the
+person's, is on the phone already when the person added it on their
+computer, and a device makes no second passkey of the same person for
+the same server: it says it holds one. The page then offers **Sign in
+with it**, and the device signs in with the passkey it holds, which
+must be the person's. The invitation is used, as when a passkey is
+added, and the computer that showed the code enters with the same
+passkey.
+
+The server draws the code itself, in Go, as a picture in the page. A
+new code, of the same invitation or the same person, ends the one
+before, and a server that starts again holds none: the page shows a new
+one when it is loaded. Each sign-in of a computer by the phone is
+recorded with the way `phone`.
 
 ## Signing in with a passkey
 
@@ -106,7 +149,17 @@ itself, open the server at `http://localhost`, not at
 Olga's account page lists her passkeys, each with its device's name,
 when it was added and last used, and whether it is synced, following
 her to a new phone as Apple's and Google's do. She adds one on the
-device she is using, and removes any.
+device she is using, or on her phone with the code the page shows, and
+removes any.
+
+A synced passkey lives in a password manager, on each of her devices,
+and is named after it: "Google Password Manager", "1Password",
+"Bitwarden", not "Olga's Windows PC". The browser says which manager
+made it, by the passkey's AAGUID, and the server looks the AAGUID up in
+a table of its own, of the 67 makers the community list of passkey
+providers held in November 2026. A browser that does not say, as
+Safari does not, leaves the name of the device, and so does a passkey
+that stays on its device, such as Windows Hello's.
 
 <!-- passkeys -->
 | What happens | Answer |
@@ -129,8 +182,7 @@ device she is using, and removes any.
 
 A password, set with a link, and a second step from an app on the
 phone for the people who define and keep the database, still sign a
-person in (ADR-0071). They go once the code for the phone is built
-(ADR-0088, item 11). The sign-in page offers them under **Sign in with
+person in (ADR-0071). They go next (ADR-0088, item 11). The sign-in page offers them under **Sign in with
 a password**.
 
 Olga's first password is set with a link, made on the machine. A

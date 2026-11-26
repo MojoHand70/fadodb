@@ -270,9 +270,9 @@ nor a caller chooses.
 | The question | The copy answers it |
 |---|---|
 | the flow of a class, the command [`flow`](commands.md#flow) and the call `Flow` | always |
-| how many documents a condition takes, the command [`count`](commands.md#count) and the call `Count` | when no index narrows it |
-| a total, or the first document, that a `LOOKUP` in a live variable asks for: `LOOKUP(Invoice, SUM(net), urgent)` | when no index narrows it |
-| a figure over a list, `SUM(invoices.net)`, `COUNT(invoices)` | when no index narrows the list |
+| how many documents a condition takes, the command [`count`](commands.md#count) and the call `Count` | at once when no index narrows it; otherwise when the store has not answered in a moment |
+| a total, or the first document, that a `LOOKUP` in a live variable asks for: `LOOKUP(Invoice, SUM(net), urgent)` | the same |
+| a figure over a list, `SUM(invoices.net)`, `COUNT(invoices)` | the same |
 | a page of a list, the command [`query`](commands.md#query) and a live list | at once when the store would read and sort the class for it; otherwise when the store has not found the page in a moment |
 
 **An index narrows a question** when its condition compares an indexed
@@ -282,6 +282,11 @@ reader who reads their own, `owner = USER()`. Such a question names
 what it wants, and the store answers it in a moment, as ever. A
 question that no index narrows reads the class, and that is what the
 copy is for.
+
+An index may narrow a question to very many documents all the same:
+the invoices in one state may be most of the class. So a question an
+index narrows is the store's for a moment, five milliseconds, and the
+copy's when the moment has passed.
 
 - **An answer is never older than its question.** Before it answers,
   the copy is brought up to the database. When nothing was written

@@ -367,11 +367,29 @@ func (s *Store) Count(ctx context.Context, f Filter, opts ...Option) (int64, err
 	if err != nil {
 		return 0, filterErr(err)
 	}
-	// A count that no index narrows reads the class, and is the copy's
-	// to answer when the program keeps one (ADR-0089, item 6).
+	// In a program that keeps the copy (ADR-0089, item 6): a count that
+	// no index narrows reads the class, and is the copy's at once. One
+	// that an index narrows is the store's for a moment, since most
+	// such counts are of few documents, and the copy's when the moment
+	// has passed: the documents of one state may be millions.
 	n, counted := int64(0), false
-	if !plan.Narrowed {
+	switch {
+	case s.feeder == nil:
+	case !plan.Narrowed, copyStoreFirst == 0:
 		n, counted = s.countFromCopy(ctx, c, f, o)
+	case copyStoreFirst != 0:
+		moment, done := context.WithTimeout(ctx, copyStoreFirst)
+		m, merr := s.countInStore(moment, c, plan, o)
+		passed := merr != nil && moment.Err() != nil && ctx.Err() == nil
+		done()
+		switch {
+		case merr == nil:
+			n, counted = m, true
+		case passed:
+			n, counted = s.countFromCopy(ctx, c, f, o)
+		default:
+			return 0, merr
+		}
 	}
 	if !counted {
 		if n, err = s.countInStore(ctx, c, plan, o); err != nil {

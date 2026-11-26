@@ -440,11 +440,19 @@ strike.
   for that reader, compares an indexed variable with a value, or it
   does not. A `LOOKUP` goes by its key. Nothing looks at how many
   documents there are.
-- **So a count that an index narrows stays with the store even when
-  it counts millions**: the documents of one state, the documents of
-  one owner. The store counts them through the index, which is faster
-  than reading the class and slower than the copy. Sending such a
-  count to the copy when the index finds many is not built.
+- **A count or a total that an index narrows is the store's for a
+  moment**, the five milliseconds a page has, and the copy's when the
+  moment has passed. An index narrows a question to the invoices of
+  one order, or to the documents of one state, which may be millions;
+  how the question is written does not say which. As first built such
+  a count stayed with the store whatever it counted. Measured through
+  the engine among 3,400,000 invoices, three runs that agree: the
+  count of the paid invoices, most of the class, takes 8 ms where the
+  store took 82; the sum of the 170,000 invoices in review that a
+  figure over a list asks for, 10 ms where it took 34; the count of
+  the drafts, a few, stays with the store, under a millisecond. A
+  count the store answers in about the moment, 4 ms, goes one way or
+  the other, and takes 4 to 5 ms either way.
 - **A question never waits for a copy that is being made.** While the
   copy is being made, or is more than one piece of a long load behind,
   the store answers, and `CopyState` says so. This holds for the flow

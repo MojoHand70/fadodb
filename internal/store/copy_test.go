@@ -856,3 +856,58 @@ func TestCopy_APageIsTheStoresForAMoment(t *testing.T) {
 		t.Errorf("with no moment for the store: %q, the copy asked %v", got, copy)
 	}
 }
+
+// In a program that keeps the copy, a count or a figure that an index
+// narrows is the store's for a moment, and the copy's when the moment
+// has passed: the documents of one state may be a few or millions
+// (ADR-0089, item 6). The stand-in answers no statement, so what it is
+// asked comes from the store after all, and the state of the copy says
+// it was asked.
+func TestCopy_ACountIsTheStoresForAMoment(t *testing.T) {
+	c := newMemCopy()
+	s, _, ctx := copied(t, c)
+	moment := copyStoreFirst
+	t.Cleanup(func() { copyStoreFirst = moment })
+	if _, err := s.defineOpen(ctx, []byte(`{"name": "Books", "title": "name", "variables": {"name": {"type": "text"},
+	  "drafts": {"mode": "live", "formula": "LOOKUP(Invoice, COUNT(id), state = \"draft\")"}},
+	  "states": {"initial": "open", "list": ["open"]}}`), asSetup); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Create(ctx, "Books", Values{"name": "Acme"}, WithID("acme")); err != nil {
+		t.Fatal(err)
+	}
+	for i := 1; i <= 4; i++ {
+		if _, err := s.Create(ctx, "Invoice", Values{"number": fmt.Sprintf("FV-%d", i)}, WithID(fmt.Sprintf("i-%d", i))); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := s.Transition(ctx, "Invoice", "i-1", "file", nil); err != nil {
+		t.Fatal(err)
+	}
+	mustFeed(t, s)
+	asked := func() bool {
+		st := s.CopyState()
+		return st.AskErr != nil && strings.Contains(st.AskErr.Error(), "answers no statement")
+	}
+	for _, tc := range []struct {
+		name   string
+		moment time.Duration
+		copy   bool
+	}{
+		{"a moment that never passes", time.Hour, false},
+		{"a moment that has passed", -time.Second, true},
+		{"no moment at all", 0, true},
+	} {
+		copyStoreFirst = tc.moment
+		s.feeder.notAnswered(nil)
+		n, err := s.Count(ctx, Filter{Class: "Invoice", Where: `state = "draft"`})
+		if err != nil || n != 3 || asked() != tc.copy {
+			t.Errorf("with %s, the count of the drafts: %d, %v, the copy asked %v; want 3 and %v", tc.name, n, err, asked(), tc.copy)
+		}
+		s.feeder.notAnswered(nil)
+		v, err := s.Live(ctx, "Books", "acme", "drafts")
+		if err != nil || v.Value != float64(3) || asked() != tc.copy {
+			t.Errorf("with %s, the drafts a live variable counts: %v, %v, the copy asked %v; want 3 and %v", tc.name, v, err, asked(), tc.copy)
+		}
+	}
+}

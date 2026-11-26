@@ -66,9 +66,10 @@ jobs:
           CGO_ENABLED: "1"
           # The manual's chapter on reading a database with DuckDB is
           # played with DuckDB's own extension for SQLite files, which
-          # is fetched here; where it cannot be had the test is skipped
-          # and says so.
-          FADODB_DUCKDB_SQLITE: install
+          # is fetched here from DuckDB's site. "must": the chapter is
+          # played, or this step fails and says the extension could
+          # not be had. A skipped test would not show in this log.
+          FADODB_DUCKDB_SQLITE: must
         run: |
           go vet ./...
           go test -count=1 ./...

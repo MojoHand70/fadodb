@@ -25,9 +25,12 @@ import (
 // says, runs every statement of the chapter and compares the answers.
 //
 // The extension is DuckDB's, fetched from DuckDB's site. The test loads
-// it when the machine has it, fetches it when FADODB_DUCKDB_SQLITE is
-// "install", as the checks on GitHub set it, and is skipped where it
-// cannot be had: the chapter is then not played, and the test says so.
+// it when the machine has it. Where it has not, FADODB_DUCKDB_SQLITE
+// says what to do: "must", as the checks on GitHub set it, fetches the
+// extension and fails when it cannot be had, so that the chapter is
+// played there or the checks say why not; "install" fetches it and
+// skips the test when it cannot; and with nothing set the test is
+// skipped, and says that the chapter was not played.
 //
 // DuckDB brings its own SQLite. Two SQLites in one program that hold
 // one file can lose each other's locks, so the engine has closed the
@@ -48,11 +51,20 @@ func TestReadingWithDuckDB(t *testing.T) {
 	defer duck.Close()
 	// One connection: an extension and an attached file are its own.
 	duck.SetMaxOpenConns(1)
+	// DuckDB fetches an extension it knows by itself when it is loaded.
+	// The test fetches nothing it was not told to.
+	if _, err := duck.ExecContext(ctx, "SET autoinstall_known_extensions = false"); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := duck.ExecContext(ctx, "LOAD sqlite"); err != nil {
-		if os.Getenv("FADODB_DUCKDB_SQLITE") != "install" {
+		mode := os.Getenv("FADODB_DUCKDB_SQLITE")
+		if mode != "install" && mode != "must" {
 			t.Skipf("the chapter is not played: DuckDB's extension for SQLite is not on this machine (%v); set FADODB_DUCKDB_SQLITE=install to fetch it", firstLine(err))
 		}
 		if _, err := duck.ExecContext(ctx, "INSTALL sqlite"); err != nil {
+			if mode == "must" {
+				t.Fatalf("the chapter is not played: DuckDB's extension for SQLite could not be fetched: %v", err)
+			}
 			t.Skipf("the chapter is not played: DuckDB's extension for SQLite could not be fetched: %v", firstLine(err))
 		}
 		if _, err := duck.ExecContext(ctx, "LOAD sqlite"); err != nil {

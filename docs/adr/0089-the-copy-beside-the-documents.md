@@ -535,9 +535,11 @@ while writing it, and is the owner's to strike.
 - **The page is played by a test, with DuckDB's own extension.** The
   extension for SQLite files is not in the library the program is
   built with; an analyst fetches it once, and so does the test, on
-  GitHub, where `FADODB_DUCKDB_SQLITE` is `install`. Where it cannot
-  be had the test is skipped and says that the chapter was not played.
-  No program of the project loads the extension.
+  GitHub, where `FADODB_DUCKDB_SQLITE` is `must`: the chapter is
+  played there, or the check fails and says the extension could not
+  be had. On another machine the test loads the extension when it is
+  there and is skipped when it is not, saying that the chapter was
+  not played. No program of the project loads the extension.
 - **The test closes the database before DuckDB opens it.** DuckDB
   brings its own SQLite, and two in one program that hold one file is
   what item 2 of the Context forbids. That DuckDB reads beside a

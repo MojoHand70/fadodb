@@ -79,8 +79,13 @@ builds it as `bin/libfadodb-core.so` (`.dylib` on macOS,
 as many databases through it as it needs. Every call may be made from
 any thread: the library lets go of Python's lock while it works.
 
-The package is not yet published, and releases do not yet carry the
-library (step D of Phase 9).
+Every release carries the package as wheels: one for each system with
+the library inside, which `fadodb.open` finds with nothing named, and
+`fadodb-<version>-py3-none-any.whl` for every system without it, for a
+program that talks to a server. `pip install` takes the file of the
+release. A release also publishes them on PyPI, so from the first
+release that carries them `pip install fadodb` takes the right one for
+the machine.
 
 ## Its tests
 

@@ -63,5 +63,9 @@ A program of C is compiled with the header and linked to the library:
 cc -I bin -o books books.c -L bin -lfadodb-core
 ```
 
-Releases do not carry the library yet; that is step D of Phase 9.
-Python, over HTTP and in the same process, is step C.
+Every release carries the library for Linux (Intel and ARM), macOS
+(Apple and Intel) and Windows (Intel), as
+`fadodb-core-library_<version>_<os>_<arch>.tar.gz` (`.zip` on Windows),
+with `fadodb.h`. `scripts/library.sh build`, `try` and `pack` do on one
+machine what a release does on each. Python, over HTTP and in the same
+process, is in [clients/py](../clients/py/README.md).

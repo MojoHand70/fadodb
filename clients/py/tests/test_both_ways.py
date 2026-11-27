@@ -25,7 +25,10 @@ import threading
 import time
 import unittest
 
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
+# The package tried: the one beside these tests, or one a wheel was
+# unpacked into, which FADODB_PYTHON_PACKAGE names (scripts/library.sh
+# pack tries every wheel it makes).
+sys.path.insert(0, os.environ.get("FADODB_PYTHON_PACKAGE") or os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
 
 import fadodb  # noqa: E402
 
@@ -202,7 +205,13 @@ class InTheSameProcess(BothWays, unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        library = needed("library", "FADODB_LIBRARY")
+        # A wheel for a system holds its library, which fadodb.open finds
+        # beside the package; otherwise FADODB_LIBRARY names one.
+        packaged = os.path.join(os.path.dirname(fadodb.__file__), "lib")
+        if not os.environ.get("FADODB_LIBRARY") and os.path.isdir(packaged) and os.listdir(packaged):
+            library = None
+        else:
+            library = needed("library", "FADODB_LIBRARY")
         cls.dir = tempfile.mkdtemp(prefix="fadodb-python-")
         cls.opened = fadodb.open(os.path.join(cls.dir, "books.fado"), library=library)
         cls.define()

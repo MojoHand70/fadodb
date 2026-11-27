@@ -104,7 +104,7 @@ func TestTheContainerFiles(t *testing.T) {
 		}
 	}
 	var copied []string
-	for _, m := range regexp.MustCompile(`(?m)^COPY ([a-z./ ]+)$`).FindAllStringSubmatch(dockerfile, -1) {
+	for _, m := range regexp.MustCompile(`(?m)^COPY ([A-Za-z./ ]+)$`).FindAllStringSubmatch(dockerfile, -1) {
 		words := strings.Fields(m[1])
 		copied = append(copied, words[:len(words)-1]...)
 	}

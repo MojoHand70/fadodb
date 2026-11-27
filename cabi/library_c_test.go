@@ -53,6 +53,9 @@ func built(t *testing.T, dir string) string {
 	t.Helper()
 	lib := filepath.Join(dir, libraryName())
 	if given := os.Getenv("FADODB_LIBRARY"); given != "" {
+		// Under its own name: a library carries its name inside it,
+		// and a program linked to it looks for that name.
+		lib = filepath.Join(dir, filepath.Base(given))
 		data, err := os.ReadFile(given)
 		if err != nil {
 			t.Fatalf("FADODB_LIBRARY: %v", err)
@@ -85,6 +88,18 @@ func built(t *testing.T, dir string) string {
 	return lib
 }
 
+// linkedTo is how the compiler is told to link a program to a library:
+// the file itself on Windows; elsewhere its folder and its name, with
+// the folder where the program finds it when it runs.
+func linkedTo(lib string) []string {
+	if runtime.GOOS == "windows" {
+		return []string{lib}
+	}
+	name := strings.TrimPrefix(filepath.Base(lib), "lib")
+	name = strings.TrimSuffix(name, filepath.Ext(name))
+	return []string{"-L" + filepath.Dir(lib), "-l" + name, "-Wl,-rpath," + filepath.Dir(lib)}
+}
+
 func TestTheLibraryFromC(t *testing.T) {
 	cc := compiler(t)
 	dir := t.TempDir()
@@ -95,16 +110,10 @@ func TestTheLibraryFromC(t *testing.T) {
 		program += ".exe"
 	}
 	args := []string{"-std=c11", "-Wall", "-Werror", "-I.", "-o", program, filepath.Join("testdata", "try.c")}
-	switch runtime.GOOS {
-	case "windows":
-		// The DLL itself is what the program is linked to, and it
-		// is found beside the program when it runs.
-		args = append(args, lib)
-	default:
-		args = append(args, "-L"+dir, "-lfadodb-core", "-pthread")
-		if runtime.GOOS == "linux" {
-			args = append(args, "-Wl,-rpath,"+dir)
-		}
+	// On Windows the DLL is found beside the program when it runs.
+	args = append(args, linkedTo(lib)...)
+	if runtime.GOOS != "windows" {
+		args = append(args, "-pthread")
 	}
 	if out, err := exec.Command(cc, args...).CombinedOutput(); err != nil {
 		t.Fatalf("try.c was not compiled against fadodb.h and the library: %v\n%s", err, out)

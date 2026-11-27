@@ -88,9 +88,21 @@ PY
   echo "library: DuckDB's $duck from $url"
 }
 
+# needed says what a library needs from its system, so that a log says
+# which file a program that would not start was missing.
+needed() {
+  case "$os" in
+  linux) readelf -d "$1" | grep NEEDED || true ;;
+  darwin) otool -L "$1" ;;
+  windows) objdump -p "$1" | grep -i 'DLL Name' || true ;;
+  esac
+}
+
 # checked holds a built library to what a user's machine has.
 checked() {
   local library="$1" needs borrowed
+  echo "library: $library needs:"
+  needed "$library" | sed 's/^/  /'
   if [ "$os" = "linux" ] && [ -n "$GLIBC_MAX" ]; then
     needs="$(objdump -T "$library" | grep -o -E 'GLIBC_[0-9.]+' | sed 's/GLIBC_//' | sort -V | tail -1)"
     if [ "$(printf '%s\n%s\n' "$needs" "$GLIBC_MAX" | sort -V | tail -1)" != "$GLIBC_MAX" ]; then
@@ -189,18 +201,36 @@ build)
   commit="$(git rev-parse --short HEAD 2>/dev/null || echo "")"
   date="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
   ldflags="-s -w -X main.version=$version -X main.commit=$commit -X main.date=$date"
-  (cd cabi && CGO_ENABLED=1 go build -buildmode=c-shared -trimpath -ldflags "$ldflags" -o "../$out/$core" .)
+  # On macOS a library's header keeps room for the name it is given
+  # below.
+  pad=''
+  [ "$os" = "darwin" ] && pad='-Wl,-headerpad_max_install_names'
+  (cd cabi && CGO_ENABLED=1 CGO_LDFLAGS="$pad" go build -buildmode=c-shared -trimpath -ldflags "$ldflags" -o "../$out/$core" .)
   # The library with DuckDB, linked to DuckDB's own library, which it
   # finds in its own folder.
   fetch
   case "$os" in
   linux) rpath='-Wl,-rpath,$ORIGIN' ;;
-  darwin) rpath='-Wl,-rpath,@loader_path' ;;
+  darwin) rpath='-Wl,-rpath,@loader_path -Wl,-headerpad_max_install_names' ;;
   *) rpath='' ;;
   esac
   duckdb_dir="$(native "$(pwd)/$out/duckdb")"
   (cd cabi && CGO_ENABLED=1 CGO_LDFLAGS="-L$duckdb_dir $rpath" \
     go build -tags duckdb,duckdb_use_lib -buildmode=c-shared -trimpath -ldflags "$ldflags" -o "../$out/$full" .)
+  if [ "$os" = "darwin" ]; then
+    # A library of macOS carries the name a program linked to it looks
+    # for, and Go writes the bare file name: each is named as found
+    # through the program's own list of folders, @rpath, and libfadodb
+    # finds DuckDB's library in its own folder, whatever name DuckDB
+    # built it with. A changed library is signed again, as macOS asks.
+    install_name_tool -id "@rpath/$core" "$out/$core"
+    install_name_tool -id "@rpath/$full" "$out/$full"
+    linked="$(otool -L "$out/$full" | awk '/libduckdb/ {print $1; exit}')"
+    if [ -n "$linked" ] && [ "$linked" != "@rpath/$duck" ]; then
+      install_name_tool -change "$linked" "@loader_path/$duck" "$out/$full"
+    fi
+    codesign -f -s - "$out/$core" "$out/$full"
+  fi
   # Go writes a header of its own beside each library; fadodb.h is the
   # one for people, and a test holds the two to the same functions.
   rm -f "${out:?}/${core%.*}.h" "${out:?}/${full%.*}.h"

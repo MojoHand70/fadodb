@@ -14,20 +14,20 @@ Context Protocol, `fadodb mcp`, which offers each command as a tool. A skill tel
 commits, to carry an idempotency key, to read a rejection's code and
 location rather than guess; the API is what it then calls.
 
-**Status on 2026-11-21: all six skills are written.** Each tells the
+**Status on 2026-11-27: all five skills are written.** Each tells the
 agent what to read in the manual under `../docs/`, shows one piece of
 work with the engine's own answers, and lists what goes wrong most
 often. The engine defines the class each skill shows in a test on
-each push, and for the operator's, the analyst's, the simulator's, the
-own-work and the face builder's skill the same test sends the commands
+each push, and for the operator's, the analyst's, the simulator's and the
+own-work skill the same test sends the commands
 of the page and compares the answers. The shared reference set is the
 manual: the class format, the formula language, the functions, the
 commands and the refusals are chapters of it. The sample corpus under
-`../examples/classes/` holds five classes.
+`../examples/classes/` holds four classes.
 
-## The six hats
+## The five hats
 
-An agent wears one of six hats when it works with FadoDB. One skill each,
+An agent wears one of five hats when it works with FadoDB. One skill each,
 so the right one loads for the task at hand.
 
 | Hat | Skill | What it does | Today |
@@ -37,7 +37,6 @@ so the right one loads for the task at hand.
 | Simulator | [`fadodb-simulate/`](fadodb-simulate/SKILL.md) | replays a scenario in a scratch database and keeps the class that worked | scratch files and `At` work; replay is by hand |
 | Analyst | [`fadodb-mine/`](fadodb-mine/SKILL.md) | mines the event log and the views in SQL and feeds the finding back into the class | filter and read-only SQL shipped; `Events` on the Go API; DuckDB views designed |
 | Its own principal | [`fadodb-own-work/`](fadodb-own-work/SKILL.md) | runs the agent's own work as documents: the task ledger, the approval inbox, the saga | principal, the rules of a class and per-transition rights enforced; acting for a person checked against a substitution; a rule calls a Go function of the host program, or the agent's endpoint over HTTP |
-| Face builder | [`fadodb-face/`](fadodb-face/SKILL.md) | builds what people see of a server so that it is good to look at and looks like every other face of that server: reads the server's look, defines one with a person when there is none, and holds to it | written; the look is a document of the class `Look`, an ordinary class defined from the skill's page: drafted by a designer, approved by a person of the group `brand`; the server handing the skills to an agent that connects is planned |
 
 The person who embeds the engine in a program is a seventh caller, a
 developer or a coding agent. That is not a hat but a guide of the
@@ -46,6 +45,11 @@ and [naming the caller](../docs/manual/naming-the-caller.md); in any
 other language, through the library of C,
 [in a program of another language](../docs/manual/other-languages.md)
 (Phase 9).
+
+What people see of a server, its faces and their look, is not the
+engine's. The skill that builds faces belongs to the tool that builds
+them, and left this folder on the owner's word on 2026-11-27
+(ADR-0060).
 
 ## Layout
 
@@ -57,7 +61,6 @@ skills/
   fadodb-simulate/SKILL.md
   fadodb-mine/SKILL.md
   fadodb-own-work/SKILL.md
-  fadodb-face/SKILL.md
   reference/              the shared reference set, generated from the repository
 examples/classes/         the sample classes the skills draw on, checked in CI
 ```

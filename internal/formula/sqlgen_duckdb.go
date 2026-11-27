@@ -465,9 +465,6 @@ func (d DuckDB) Call(name string, args []SQLExpr, params *Params) (SQLExpr, erro
 		return d.stateCall(name, args[0], params), nil
 	case "INGROUP":
 		return SQLExpr{Val: "COALESCE(list_contains(" + params.Use("groups") + ", " + d.Text(args[0]) + "), FALSE)", Kind: KindBool, Sure: true}, nil
-	case "INROLE":
-		// A role travels in the list of the groups after roleMark (ADR-0100).
-		return SQLExpr{Val: "COALESCE(list_contains(" + params.Use("groups") + ", chr(30) || " + d.Text(args[0]) + "), FALSE)", Kind: KindBool, Sure: true}, nil
 	case "LEFT", "RIGHT":
 		n := intArg(d.Num(args[1]))
 		return SQLExpr{Val: strings.ToLower(name) + "(" + d.Text(args[0]) + ", GREATEST(" + n + ", 0))", Err: countErr(n), Kind: KindText, Sure: true}, nil

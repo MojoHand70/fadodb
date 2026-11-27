@@ -641,7 +641,6 @@ The functions these formulas use most, of the whole list in
 |---|---|
 | `USER()` | the id of the caller |
 | `INGROUP("finance")` | whether the caller is in that group |
-| `INROLE("approver")` | whether the caller holds that role of the class's app, which each server gives to groups and people ([the roles of an app](apps.md#the-roles-of-an-app)) |
 | `INGROUP("everyone")` | TRUE for every caller that has an id |
 | `STATE()` | the state the document is in |
 | `CREATEDBY()` | the id of whoever created the document |

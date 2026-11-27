@@ -247,7 +247,7 @@ func CompileFor(d formula.Dialect, f Filter, on *On, cls *model.Class, sources f
 	// REF() in a filter is the pointer to the document of the row, as
 	// ID() is its id, and a REF that names a class writes it as the
 	// class of the filter does (ADR-0076, item 10).
-	src, opts, notBlank := f.Where, formula.BindOptions{Sources: sources, Class: cls.Name, Classes: cls, App: cls.App}, func(n formula.Node) bool { return isNamed(n) || p.named(n) }
+	src, opts, notBlank := f.Where, formula.BindOptions{Sources: sources, Class: cls.Name, Classes: cls}, func(n formula.Node) bool { return isNamed(n) || p.named(n) }
 	// bound gives the SQL of a slot of the caller's condition: a column
 	// of the class, or a value of the document a list is read on.
 	bound := quoted
@@ -838,7 +838,7 @@ func readPlanFor(cls *model.Class, scope *formula.Scope, cols map[string]column,
 	if rp, ok := rr.plans[key]; ok {
 		return rp, nil
 	}
-	f := folder{rr: rr, mask: mask, scope: scope, sources: sources, class: cls.Name, app: cls.App, d: d, quoted: quoted}
+	f := folder{rr: rr, mask: mask, scope: scope, sources: sources, class: cls.Name, d: d, quoted: quoted}
 	node := f.fold(rr.node)
 	rp := &readPlan{}
 	if lit, ok := node.(*formula.BoolLit); ok {
@@ -852,7 +852,7 @@ func readPlanFor(cls *model.Class, scope *formula.Scope, cols map[string]column,
 		// A read rule is the class's own formula: REF() in it is the
 		// pointer to the document of the row, and what a database holds
 		// runs as it was written.
-		opts := formula.BindOptions{Sources: sources, Class: cls.Name, Loose: true, App: cls.App}
+		opts := formula.BindOptions{Sources: sources, Class: cls.Name, Loose: true}
 		prog, err := formula.BindNode(rr.src, node, scope, opts)
 		if err != nil {
 			return nil, refused(err.Error())
@@ -911,7 +911,6 @@ type folder struct {
 	scope   *formula.Scope
 	sources formula.Sources
 	class   string
-	app     string
 	d       formula.Dialect
 	quoted  func(formula.Slot) string
 }
@@ -981,7 +980,7 @@ func (f *folder) probe(n formula.Node) (isBool, fails bool) {
 	if _, ok := n.(*formula.BoolLit); ok {
 		return true, false
 	}
-	prog, err := formula.BindNode(f.rr.src, n, f.scope, formula.BindOptions{Sources: f.sources, Class: f.class, Loose: true, App: f.app})
+	prog, err := formula.BindNode(f.rr.src, n, f.scope, formula.BindOptions{Sources: f.sources, Class: f.class, Loose: true})
 	if err != nil {
 		return false, true
 	}
@@ -1097,7 +1096,7 @@ func Value(src string, cls *model.Class, sources formula.Sources) (string, formu
 	if err != nil {
 		return "", 0, err
 	}
-	prog, err := formula.Bind(src, scope, formula.BindOptions{Sources: sources, Class: cls.Name, Loose: true, App: cls.App})
+	prog, err := formula.Bind(src, scope, formula.BindOptions{Sources: sources, Class: cls.Name, Loose: true})
 	if err != nil {
 		return "", 0, formulaError(err)
 	}
@@ -1142,7 +1141,7 @@ func Kept(src string, cls *model.Class, sources formula.Sources, doc string, tab
 	if err != nil {
 		return formula.SQL{}, err
 	}
-	prog, err := formula.Bind(src, scope, formula.BindOptions{Sources: sources, Class: cls.Name, Loose: true, App: cls.App})
+	prog, err := formula.Bind(src, scope, formula.BindOptions{Sources: sources, Class: cls.Name, Loose: true})
 	if err != nil {
 		return formula.SQL{}, formulaError(err)
 	}

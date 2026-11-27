@@ -15,6 +15,10 @@ Published per tagged release, with the budgets from
 - [v0.6.0](v0.6.0.md): the server, Phase 6.
 - [v0.7.0](v0.7.0.md): the browser VM, people and agents at the server,
   Phase 7.
+- [v0.9.0](v0.9.0.md): embedding, Phase 9: one command on each way to a
+  database, from the Go API to Python over HTTP; opening and loading;
+  an action the program carries out; the sizes of the libraries. The
+  rows of the earlier phases are run again on the build that is tagged.
 
 The end-to-end suite is the `bench` package: scenarios written against
 database/sql so that the same one runs on every storage engine. Each

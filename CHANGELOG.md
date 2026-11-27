@@ -42,6 +42,31 @@ Phase 8 started on 2026-11-25, and Phase 9 on 2026-11-27.
   environment; without `outbound` the database sends nothing. The
   server and the library find secrets with one piece of Go,
   `internal/secret`.
+- The Python client (ADR-0101, its step C), in `clients/py/`, with
+  nothing but Python's own library. `fadodb.connect(url, key)` is a
+  server, as the user whose key it is, and `fadodb.open(path,
+  caller=…)` the database file in the same process, through the
+  library of C; both give a `Database` whose `exec(command, object)`
+  answers the command's answer as a `dict` and raises `fadodb.Refused`
+  with the code of a refusal. `as_caller` gives a database in the same
+  process to another caller; `put_file`, `get_file` and `get_blob` carry
+  files both ways; `wait_for_changes` waits on its own thread. The same
+  tests run both ways, over HTTP against a `fadodb-core serve` they
+  start and in the same process, on Linux, macOS and Windows, which is
+  the test the plan sets for Phase 9.
+- The library of C and the Python package in every release (ADR-0101,
+  its step D). For each of the five systems `fadodb` is released for, a
+  release carries `fadodb-core-library_<version>_<os>_<arch>` with the
+  library, `fadodb.h`, the licence and a README, and a wheel of the
+  Python package with the library inside, which `fadodb.open` finds;
+  and one wheel for every system without it, for a program that talks
+  to a server. `scripts/library.sh` builds, tries and packs them on a
+  machine of each system, on every pull request: the tests of the
+  module, the program of C against the very file built, the Python
+  client both ways, and each wheel installed and tried. The wheel is
+  written by `clients/py/wheel.py` with Python's own `zipfile`. A
+  release publishes the wheels on PyPI as `fadodb`, by trusted
+  publishing, with no token kept anywhere.
 
 - Where a value comes from (ADR-0099, proposed; its second step). A new
   command, `lineage`, in Go `Lineage`, answers one value of one
@@ -236,8 +261,10 @@ Phase 8 started on 2026-11-25, and Phase 9 on 2026-11-27.
   version before is refused with `stale_version`. The change queues
   the work as a row of the outbox whose action is `follow`, and the
   worker brings the documents a thousand in a transaction: 100,000
-  invoices in under five seconds, with a commit of somebody else
-  waiting 45 ms meanwhile. Not built: a value that follows the
+  invoices in 4.2 seconds, with a commit of somebody else waiting
+  17 ms meanwhile, 60 at the longest. A document has no savepoint of
+  its own until one is refused; then its thousand is brought again,
+  each with one. Not built: a value that follows the
   documents of a class, and a kept list that follows a table.
 - One line for each group, with its totals: a column of a `QUERY` may
   be a total (ADR-0090, proposed). In a live variable,

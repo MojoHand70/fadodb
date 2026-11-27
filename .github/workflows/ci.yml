@@ -57,38 +57,13 @@ jobs:
       - name: Build
         run: go build ./...
 
-  # The library of C (ADR-0101), built and tried from a program of C on
-  # each system the tests run on. Its module needs cgo, so it is not in
-  # the tests of the core.
+  # The library of C and the Python client (ADR-0101), built and tried
+  # on each system a release publishes them for
+  # (.github/workflows/library.yml). The library's module needs cgo, so
+  # it is not in the tests of the core.
   library:
-    name: library / ${{ matrix.os }}
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
-    defaults:
-      run:
-        shell: bash
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-go@v7
-        with:
-          go-version-file: go.mod
-          check-latest: true
-      - name: Vet the module of the library
-        working-directory: cabi
-        env:
-          CGO_ENABLED: "1"
-        run: go vet ./...
-      - name: Test it, which builds the library and runs a program of C against it
-        working-directory: cabi
-        env:
-          CGO_ENABLED: "1"
-          # "must": the program of C is compiled and run, or this step
-          # fails; a skipped test would not show in this log.
-          FADODB_CABI: must
-        run: go test -count=1 ./...
+    name: library
+    uses: ./.github/workflows/library.yml
 
   # fadodb, the program with the analytical engine, built and tried on
   # each system it is released for; the DuckDB module is tested whole on

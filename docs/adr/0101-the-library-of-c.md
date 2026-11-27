@@ -179,7 +179,8 @@ day:
     Its name follows the programs (ADR-0089): `libfadodb-core.so` on
     Linux, `libfadodb-core.dylib` on macOS and `fadodb-core.dll` on
     Windows. `make library` puts it in `bin/` with `fadodb.h` beside it.
-    About 14 MB on Linux. `fadodb.h` is written by hand, for people to
+    About 16 MB on Linux, with the sender of the requests of actions
+    (step B). `fadodb.h` is written by hand, for people to
     read, and a test holds it to the functions Go says the library
     exports.
 
@@ -250,6 +251,92 @@ Mine, while building step B, each for the owner to strike:
   share one piece of Go, `internal/secret`, taken out of the server, so
   that they cannot drift apart; its words say "the program" where the
   server's say "the server".
+
+Mine, while building step C:
+
+- **One package, `fadodb`, in `clients/py/`, with nothing but Python's
+  own library.** `fadodb.connect(url, key)` is a server, as the user
+  whose key it is; `fadodb.open(path, caller=…, options=…)` is the file
+  in the same process, through the library. Both give a `Database` with
+  the same calls:
+
+  ```python
+  ann = fadodb.open("books.fado", caller={"id": "ann", "kind": "person", "groups": ["sales"]})
+  bob = ann.as_caller({"id": "bob", "kind": "person", "groups": ["accounting"]})
+  ann.exec("create", {"class": "Invoice", "id": "FV/2026/11/0042", "values": {"number": "FV/2026/11/0042"}})
+  try:
+      bob.exec("transition", {"class": "Invoice", "id": "FV/2026/11/0042", "transition": "book"})
+  except fadodb.Refused as refusal:
+      print(refusal.code)    # guard_false
+  ```
+
+- **`exec` with the name of the command is the whole of it**, as
+  `fado_exec` and the tools of the door for agents are. The plan said
+  the clients are generated from the OpenAPI file; a method for each
+  command would add nothing an agent needs and one more thing to keep
+  in step with the table, so none is generated. A refusal is raised as
+  `fadodb.Refused` with `code`, `message`, `hint`, `path` and the whole
+  `answer`; no answer at all is `fadodb.NoAnswer`.
+- **`as_caller` only in the same process.** Over HTTP the key says who
+  calls, and `as_caller` raises `TypeError`.
+- **`subscribe` is refused the same both ways**, `not_supported`,
+  before anything is sent: over HTTP its answer would be a stream that
+  `exec` cannot return. `wait_for_changes` answers the same events.
+- **Files**: `put_file(bytes, name=…, media_type=…)` answers the facts;
+  `get_file(class_, id, hash, version=…, for_=…, reason=…)` and
+  `get_blob(hash, reason=…)` answer the facts and the bytes. Over HTTP
+  the facts come from the headers of the reply. A file of no known type
+  is `application/octet-stream` both ways, as a server serves it.
+- **Where the library is found**: the path given, the variable
+  `FADODB_LIBRARY`, `fadodb/lib` beside the package (where a release
+  will put it, step D), or the one the system finds. A process loads
+  one; asking for another is refused.
+- **The test of the phase** is `clients/py/tests/test_both_ways.py`:
+  one set of tests run as a server's callers, against a `fadodb-core
+  serve` the tests start with a user and a key for each person, and in
+  the same process with the same people. GitHub runs it on Linux,
+  macOS and Windows with the machine's own Python.
+
+Mine, while building step D:
+
+- **The library carries the database of time zones**, as both
+  programs do (ADR-0093, item 3). Found on Windows by the first release
+  build of step D: Windows has no such database, a library built
+  without one opened no database whose zone is `Europe/Warsaw`, and the
+  module's own tests had passed only because Go was on the machine.
+- **The library for the five systems the program `fadodb` is built
+  for**: Linux for Intel and ARM, built on Ubuntu 22.04 so that it
+  needs no newer C library than 2.35; macOS for Apple and Intel; and
+  Windows for Intel, where it may need no library of the compiler it
+  was built with. Windows on ARM has none: its C compiler is not on
+  GitHub's machines. `scripts/library.sh` builds, tries and packs it on
+  a machine of each system, as `scripts/program.sh` does the program.
+- **What a release carries**: for each system
+  `fadodb-core-library_<version>_<os>_<arch>.tar.gz` (`.zip` on Windows)
+  with the library, `fadodb.h`, the licence and the README of `cabi/`;
+  and the Python package as wheels, one for each system with the
+  library inside, in `fadodb/lib`, where `fadodb.open` finds it, and one
+  for every system without it, for a program that only talks to a
+  server. A wheel for Linux is named after the C library the library
+  needs (`manylinux_2_35_x86_64`), one for macOS after the oldest macOS
+  Go builds for (`macosx_12_0_arm64`).
+- **The wheel is written by `clients/py/wheel.py`** with Python's own
+  `zipfile`, from what `pyproject.toml` says: a wheel is a zip and three
+  files that say what it is, so a release fetches no build tool from
+  the network to make one.
+- **Every pull request builds, tries and packs all five**, as it does
+  the program, so that a release cannot be the first to find a system
+  it does not build on. Each wheel is installed with pip and its tests
+  run in the same process through the library inside it. A release
+  keeps the files and attaches them.
+- **Published on PyPI as `fadodb`, on the owner's word of
+  2026-11-27** ("Yes, publish it on PyPI as fadodb"): every release
+  publishes its wheels there, so that `pip install fadodb` finds them,
+  from a job of its own that the release neither waits for nor fails
+  with, as the browser VM's on npm. PyPI trusts the release workflow by
+  a trusted publisher setting for the environment `pypi`, which the
+  owner makes on PyPI; no token is kept anywhere. A tag of a version
+  before its release, `v1.0.0-rc.1`, is `1.0.0rc1` to Python.
 
 ## Left out
 

@@ -1,6 +1,6 @@
 # ADR-0096: How many documents were made and finished in each period
 
-- Status: Proposed; amends ADR-0055 (one command, `throughput`, joins the table), ADR-0089 (the second of what it calls the mining views is built), ADR-0095 (its question to the owner is answered)
+- Status: Proposed; amends ADR-0055 (one command, `throughput`, joins the table), ADR-0089 (the second of what it calls the mining views is built), ADR-0095 (its question to the owner is answered); amended by ADR-0099 (each number of `throughput` opens to the documents behind it, with `documents`)
 - Date: 2026-11-26
 
 ## Context

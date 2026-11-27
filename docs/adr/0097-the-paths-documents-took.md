@@ -1,6 +1,6 @@
 # ADR-0097: The paths documents took
 
-- Status: Proposed; amends ADR-0055 (one command, `paths`, joins the table), ADR-0089 (a move in the copy says which version it made; the third of what it calls the mining views is built)
+- Status: Proposed; amends ADR-0055 (one command, `paths`, joins the table), ADR-0089 (a move in the copy says which version it made; the third of what it calls the mining views is built); amended by ADR-0099 (each path of `paths` opens to the documents that took it, with `documents`)
 - Date: 2026-11-26
 
 ## Context

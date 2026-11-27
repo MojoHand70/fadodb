@@ -67,14 +67,54 @@ func (s *Store) DefineApp(ctx context.Context, data []byte, opts ...Option) (*Ap
 		}
 		version = old.Version + 1
 	}
+	// A role a class or a table of the app asks for stays (ADR-0100,
+	// item 6); one nobody asks for goes, and its holders with it.
+	var gone []string
+	if old, ok := s.apps[key]; ok {
+		for _, r := range old.Def.RoleOrder {
+			if !def.HasRole(r) {
+				gone = append(gone, r)
+			}
+		}
+	}
+	if asked := s.rolesAsked(def.Name, gone); len(asked) > 0 {
+		var diags model.Diagnostics
+		for _, a := range asked {
+			diags = append(diags, model.Diagnostic{Code: model.CodeNotAllowed, Path: "/roles", Pos: -1,
+				Message: "the app leaves out a role that " + a,
+				Hint:    "keep the role, or change what asks for it first"})
+		}
+		return nil, diags
+	}
 	now := s.now().Unix()
-	if _, err := s.writer.ExecContext(ctx, "INSERT INTO apps (name, version, json, created_at, updated_at) VALUES (?, ?, ?, ?, ?)"+
+	w := s.writer
+	if _, err := w.ExecContext(ctx, "BEGIN IMMEDIATE"); err != nil {
+		return nil, storageErr("begin", err)
+	}
+	rollback := func(err error) (*App, error) {
+		_, _ = w.ExecContext(context.WithoutCancel(ctx), "ROLLBACK")
+		return nil, err
+	}
+	if _, err := w.ExecContext(ctx, "INSERT INTO apps (name, version, json, created_at, updated_at) VALUES (?, ?, ?, ?, ?)"+
 		" ON CONFLICT (name) DO UPDATE SET version = excluded.version, json = excluded.json, updated_at = excluded.updated_at",
 		def.Name, version, string(compact), now, now); err != nil {
-		return nil, storageErr("store the app", err)
+		return rollback(storageErr("store the app", err))
 	}
-	if _, err := recordDefinition(ctx, s.writer, DefinitionApp, def.Name, version, o.principal, now); err != nil {
-		return nil, err
+	if _, err := recordDefinition(ctx, w, DefinitionApp, def.Name, version, o.principal, now); err != nil {
+		return rollback(err)
+	}
+	var kept []RoleHolders
+	if len(gone) > 0 {
+		var err error
+		if kept, err = s.dropHolders(ctx, w, def.Name, gone, o.principal, now); err != nil {
+			return rollback(err)
+		}
+	}
+	if err := s.endTransaction(ctx); err != nil {
+		return rollback(storageErr("commit", err))
+	}
+	if len(gone) > 0 {
+		s.publishHolders(kept)
 	}
 	if _, ok := s.apps[key]; !ok {
 		s.appOrder = append(s.appOrder, def.Name)

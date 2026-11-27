@@ -893,7 +893,48 @@ func runGetSchema(c *call) error {
 }
 
 func runGetApp(c *call) error {
-	return c.stored("app", store.DefinitionApp, c.text("name"), 0, nil)
+	def, err := c.s.Definition(c.ctx, store.DefinitionApp, c.text("name"), 0)
+	if err != nil {
+		return err
+	}
+	holders, err := c.s.Holders(c.text("name"))
+	if err != nil {
+		return err
+	}
+	text, err := Marshal(def)
+	if err != nil {
+		return err
+	}
+	more, err := Marshal(list(holders))
+	if err != nil {
+		return err
+	}
+	c.open("app")
+	c.out = append(c.out, text...)
+	if len(holders) > 0 {
+		c.next("holders")
+		c.out = append(c.out, more...)
+	}
+	c.close()
+	return nil
+}
+
+func runSetRole(c *call) error {
+	groups, e := c.texts("groups")
+	if e != nil {
+		return e
+	}
+	users, e := c.texts("users")
+	if e != nil {
+		return e
+	}
+	r, err := c.s.SetRole(c.ctx, c.text("app"), c.text("role"), groups, users, c.opts...)
+	return c.answer("role", r, err)
+}
+
+func runRoleChanges(c *call) error {
+	changes, err := c.s.RoleChanges(c.ctx, c.text("app"), c.text("role"), c.opts...)
+	return c.answer("changes", list(changes), err)
 }
 
 func runGetTable(c *call) error {
@@ -1452,6 +1493,14 @@ func runWhoami(c *call) error {
 	if acts != "" {
 		c.next("for")
 		c.out = strconv.AppendQuote(c.out, acts)
+	}
+	if held := c.s.RolesHeld(c.opts...); len(held) > 0 {
+		roles, err := Marshal(held)
+		if err != nil {
+			return err
+		}
+		c.next("roles")
+		c.out = append(c.out, roles...)
 	}
 	c.close()
 	return nil

@@ -385,11 +385,11 @@ func (s *Store) momentOf(ctx context.Context, c *class, id string, row *docRow) 
 // live value's is its reader's, now.
 func (s *Store) lineageContext(o options, out *Lineage, row *docRow, id string) formula.Context {
 	if out.Since == nil {
-		f := contextOf(o.principal, s.clock(o))
+		f := s.contextOf(o.principal, s.clock(o))
 		f.State, f.ID = row.state, id
 		return f
 	}
-	f := contextOf(Principal{ID: out.Since.By, Kind: out.Since.ByKind, For: out.Since.For}, out.Since.At)
+	f := s.contextOf(Principal{ID: out.Since.By, Kind: out.Since.ByKind, For: out.Since.For}, out.Since.At)
 	f.State, f.ID = row.state, id
 	return f
 }
@@ -541,7 +541,7 @@ func (s *Store) lineageLookup(ctx context.Context, q *formula.QuerySlot, args []
 			// The rule's own values are named, so that they are bound
 			// wherever the statement holds it (SQLite numbers the values
 			// of a statement in the order of its text).
-			reader := contextOf(x.o.principal, s.clock(x.o))
+			reader := s.contextOf(x.o.principal, s.clock(x.o))
 			where, args := namedRule(plan.Where, plan.Args, formula.NewSQLite().ContextArgs(&reader))
 			visible = `SELECT "id" FROM ` + quote(src.cls.Name) + ` WHERE ` + where
 			named = append(named, args...)

@@ -505,7 +505,7 @@ func (s *Store) liveKey(t *table, q *formula.QuerySlot, args []formula.Value, o 
 		}
 		vars[i] = args[a]
 	}
-	evalCtx := contextOf(o.principal, s.clock(o))
+	evalCtx := s.contextOf(o.principal, s.clock(o))
 	if of != nil {
 		evalCtx = *of
 	}

@@ -316,7 +316,7 @@ func (s *Store) throughputFromCopy(ctx context.Context, c *class, o options, out
 	}
 	if plan.Where != "" {
 		only = append(only, `"id" IN (SELECT "id" FROM `+quote(c.cls.Name)+` WHERE `+plan.Where+`)`)
-		evalCtx := contextOf(o.principal, s.clock(o))
+		evalCtx := s.contextOf(o.principal, s.clock(o))
 		args = append(append(args, plan.Args...), d.ContextArgs(&evalCtx)...)
 	}
 	if len(only) > 0 {

@@ -439,7 +439,7 @@ func (s *Store) bringMany(ctx context.Context, row *outboxRow, trigger string, r
 	if text == "" {
 		return 0, 0, nil
 	}
-	evalCtx := contextOf(row.principal, now.Unix())
+	evalCtx := s.contextOf(row.principal, now.Unix())
 	named := []any{sql.Named("fado_after", run.after)}
 	named = formula.NewSQLite().ContextArgsFor(&evalCtx, params, named)
 	rows, err := s.writer.QueryContext(ctx, text, named...)

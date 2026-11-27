@@ -23,6 +23,9 @@ type Class struct {
 	// App is the app the class belongs to, as the class names it
 	// (ADR-0077); empty for a class that belongs to none.
 	App string
+	// Roles are the roles of that app its formulas ask for with INROLE
+	// (ADR-0100), so that the app is not redefined without one of them.
+	Roles []string
 	// Title is the compiled title formula, nil when TITLE is ID.
 	Title *formula.Program
 	// Variables in declaration order.
@@ -564,6 +567,9 @@ type Env struct {
 	// class that names the app it belongs to (ADR-0077); nil when there
 	// are none.
 	Apps func(name string) bool
+	// Roles gives the roles an app names, for a formula that asks for one
+	// with INROLE (ADR-0100); nil, or nil for an app, knows none.
+	Roles func(app string) []string
 	// Lenient compiles a stored definition, which was checked when it was
 	// defined: what an action says about another class, or about the
 	// definition of an action, is taken as it is, typed against it where
@@ -785,6 +791,7 @@ func CompileIn(def *Definition, env Env) (*Class, Diagnostics) {
 		return nil, c.list
 	}
 	cls.Reads = c.reads
+	cls.Roles = c.roles
 	cls.Notes = append(append(leftOut(def), c.wide...), noDescription(def)...)
 	cls.Keys = c.keys
 	return cls, nil
@@ -1825,7 +1832,7 @@ func compileTimer(c *collector, cls *Class, t *Transition, d TransitionDef, path
 	case prog.Calls("NOW") || prog.Calls("TODAY"):
 		c.hint(CodeNotAllowed, path+"/at", "an at may not read the clock: its moment is worked out when the document enters the state, and stands until a value it reads changes",
 			`a time counted from the entry is an after: "after": "30d"; a time counted from a date is that date moved: ADDDAYS(due, 30)`)
-	case prog.Calls("USER") || prog.Calls("INGROUP") || prog.Calls("USERKIND") || prog.Calls("ACTINGFOR"):
+	case prog.Calls("USER") || prog.Calls("INGROUP") || prog.Calls("INROLE") || prog.Calls("USERKIND") || prog.Calls("ACTINGFOR"):
 		c.hint(CodeNotAllowed, path+"/at", "an at may not read who asks: its moment is the document's, the same for everyone",
 			"compute the moment from the document's own values")
 	case len(prog.Queries) > 0:

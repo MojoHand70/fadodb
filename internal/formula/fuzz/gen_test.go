@@ -17,6 +17,9 @@ var notGenerated = map[string]bool{
 	"SECRET": true,
 	// REF binds only in the condition of a live QUERY (ADR-0076, item 10).
 	"REF": true,
+	// INROLE binds only in a formula of an app, which names the role
+	// (ADR-0100); the conformance suites play it.
+	"INROLE": true,
 	// The functions over a list bind only in a live variable, over a list
 	// of its document (ADR-0081).
 	"COUNTIF": true, "SUMIF": true, "MINIF": true, "MAXIF": true, "AVERAGEIF": true, "ANY": true, "ALL": true,

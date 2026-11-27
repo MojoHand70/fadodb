@@ -42,6 +42,18 @@ Phase 8 started on 2026-11-25, and Phase 9 on 2026-11-27.
   environment; without `outbound` the database sends nothing. The
   server and the library find secrets with one piece of Go,
   `internal/secret`.
+- The Python client (ADR-0101, its step C), in `clients/py/`, with
+  nothing but Python's own library. `fadodb.connect(url, key)` is a
+  server, as the user whose key it is, and `fadodb.open(path,
+  caller=…)` the database file in the same process, through the
+  library of C; both give a `Database` whose `exec(command, object)`
+  answers the command's answer as a `dict` and raises `fadodb.Refused`
+  with the code of a refusal. `as_caller` gives a database in the same
+  process to another caller; `put_file`, `get_file` and `get_blob` carry
+  files both ways; `wait_for_changes` waits on its own thread. The same
+  tests run both ways, over HTTP against a `fadodb-core serve` they
+  start and in the same process, on Linux, macOS and Windows, which is
+  the test the plan sets for Phase 9.
 
 - Where a value comes from (ADR-0099, proposed; its second step). A new
   command, `lineage`, in Go `Lineage`, answers one value of one

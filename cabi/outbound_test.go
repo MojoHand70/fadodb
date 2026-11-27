@@ -77,7 +77,7 @@ func TestTheRequestsOfActions(t *testing.T) {
 		{`{"outbound": {"host": ["slack.com"]}}`, "/outbound/host"},
 		{`{"secrets_dir": 7}`, "/secrets_dir"},
 	} {
-		got, refusal := openDatabase(filepath.Join(t.TempDir(), "x.fado"), c.options)
+		got, refusal := openDatabase(filepath.Join(t.TempDir(), "x.fado"), c.options, nil)
 		if got != 0 {
 			closeDatabase(got)
 			t.Errorf("%s opened a database", c.options)

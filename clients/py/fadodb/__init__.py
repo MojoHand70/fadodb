@@ -25,6 +25,6 @@ POST /v1/<command>. A refusal is raised as Refused, with the code a
 program branches on. Nothing but the standard library is needed.
 """
 
-from ._database import Database, NoAnswer, Refused, connect, open
+from ._database import Database, NoAnswer, Permanent, Refused, connect, open
 
-__all__ = ["Database", "NoAnswer", "Refused", "connect", "open"]
+__all__ = ["Database", "NoAnswer", "Permanent", "Refused", "connect", "open"]

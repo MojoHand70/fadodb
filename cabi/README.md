@@ -19,6 +19,10 @@ int         fado_close(fado_db db, char **refusal);
 void        fado_free(void *answer);
 const char *fado_version(void);
 
+typedef void (*fado_action)(void *context, uint64_t call, const char *action, const char *object);
+fado_db fado_open_with(const char *path, const char *options, fado_action actions, void *context, char **refusal);
+int     fado_answer(uint64_t call, const char *answer);
+
 char *fado_put_file(fado_db db, const char *caller, const char *object, const void *bytes, size_t length);
 char *fado_get_file(fado_db db, const char *caller, const char *object, void **bytes, size_t *length);
 char *fado_get_blob(fado_db db, const char *caller, const char *object, void **bytes, size_t *length);
@@ -45,7 +49,10 @@ commits on a document, and `fado_get_file` reads them back under the
 rules of the document. A database sends the requests of its actions
 only to the hosts the option `outbound` lists, with the secrets of the
 directory `secrets_dir` or of the program's environment, as
-`fadodb serve` does. Every function may be called from any thread. A
+`fadodb serve` does. An action whose definition has no request is the
+program's own: `fado_open_with` gives the library a function of the
+program, which it calls with the call, as a webhook gets it, and which
+answers with `fado_answer` ([ADR-0102](../docs/adr/0102-the-programs-own-actions-and-the-library-with-duckdb.md)). Every function may be called from any thread. A
 process loads the library once.
 
 ## Building it

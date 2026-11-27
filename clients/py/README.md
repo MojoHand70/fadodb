@@ -55,6 +55,27 @@ ann.exec("set", {"class": "Claim", "id": "C-7", "values": {"scan": facts}})
 facts, data = bob.get_file("Claim", "C-7", facts["hash"])
 ```
 
+## The program's own actions
+
+An action whose definition has no request is carried out by the
+program, in the same process: a function by the name of the action.
+It is called with the call, as a webhook gets it, from a thread of the
+worker, and returns what the action returns:
+
+```python
+def post(call):
+    entry = books.post(amount=call["args"]["amount"], key=call["key"])
+    return {"entry": entry}
+
+shop = fadodb.open("shop.fado", actions={"books.post": post})
+```
+
+`raise fadodb.Permanent("the period 2026-11 is closed")` refuses the
+call, and the action is dead at once; any other exception is a failure,
+tried again later. The call's `key` is the same at every attempt, so
+the function makes twice once by it. Over HTTP the server carries out
+the actions, and `fadodb.connect` takes none.
+
 ## Waiting for a change
 
 ```python

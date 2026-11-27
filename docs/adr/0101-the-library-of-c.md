@@ -359,15 +359,14 @@ Mine, while building step E:
 Each of these is named so that it is not mistaken for decided:
 
 - **Actions that the host program implements itself**, in its own
-  language, as a Go program gives `Options.Actions`. A database opened
-  through the library runs its own rules and the engine's actions; an
-  action whose function would be the host's dies saying it has none,
-  as under `fadodb serve` (ADR-0059). A record of its own takes up a
-  function of C called back by the library, when a host asks for it.
+  language, as a Go program gives `Options.Actions`. Taken up by
+  ADR-0102 on the owner's word of 2026-11-27: `fado_open_with` and
+  `fado_answer`.
 - **The stream of changes as a function called back.**
   `wait_for_changes` answers the same events.
 - **A library with DuckDB**, `libfadodb`. ADR-0017 makes the library the
-  build without it. The names leave room for it.
+  build without it. Taken up by ADR-0102 on the owner's word of
+  2026-11-27.
 - **The DuckDB extension** that the plan keeps as an option for this
   phase. It waits for what the plan says it waits for.
 

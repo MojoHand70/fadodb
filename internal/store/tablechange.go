@@ -23,7 +23,11 @@ import (
 // column it changes or removes. Every value of a column whose type it
 // changes converts to the new type, as an import of that value into the
 // new column would take it: exactly, or not at all.
-func (s *Store) reshape(ctx context.Context, old *table, def *model.Table) ([]Values, model.Diagnostics) {
+//
+// The history of the rows is carried the same way (ADR-0099, step 3):
+// each row of it converts as a row now would, and with each row its
+// moment goes too.
+func (s *Store) reshape(ctx context.Context, old *table, def *model.Table) ([]carriedRow, model.Diagnostics) {
 	var diags model.Diagnostics
 	same := len(old.def.Key) == len(def.Key)
 	for i := 0; same && i < len(def.Key); i++ {
@@ -55,22 +59,24 @@ func (s *Store) reshape(ctx context.Context, old *table, def *model.Table) ([]Va
 			return nil, diags
 		}
 	}
-	// Check 1: the rows, each as the new version takes it.
-	rows, _, err := old.scanRows(ctx, old.selectAll, 0)
+	// Check 1: the rows, each as the new version takes it, and the rows
+	// of the history.
+	rows, err := s.carriedRows(ctx, old)
 	if err != nil {
 		return nil, model.Diagnostics{{Code: CodeStorage, Path: "/name", Pos: -1, Message: err.Error()}}
 	}
 	tmp := newTable(def, nil)
 	vals := make([]formula.Value, len(tmp.leaves))
-	out := make([]Values, 0, len(rows))
+	out := make([]carriedRow, 0, len(rows))
 	type miss struct {
 		n     int
 		first string
+		past  bool // the first is a row of the history
 	}
 	bad := map[string]*miss{}
 	var badOrder []string
 	for _, row := range rows {
-		was, _ := getFields(row, old.leafIndex, "", old.def.Fields)
+		was, _ := getFields(row.leaves, old.leafIndex, "", old.def.Fields)
 		next := Values{}
 		for _, f := range def.Fields {
 			x, had := field(was, f.Name)
@@ -96,10 +102,13 @@ func (s *Store) reshape(ctx context.Context, old *table, def *model.Table) ([]Va
 			if m.n++; m.n == 1 {
 				v, _ := field(was, col)
 				m.first = fmt.Sprintf("the row %s holds %s", rowKeyText(was, old.def.Key), quoteValue(v))
+				if row.until.Valid {
+					m.first, m.past = fmt.Sprintf("the row %s held %s, in the history of the rows", rowKeyText(was, old.def.Key), quoteValue(v)), true
+				}
 			}
 			continue
 		}
-		out = append(out, next)
+		out = append(out, carriedRow{values: next, since: row.since, until: row.until})
 	}
 	for _, col := range badOrder {
 		m := bad[strings.ToUpper(col)]
@@ -108,9 +117,13 @@ func (s *Store) reshape(ctx context.Context, old *table, def *model.Table) ([]Va
 		if m.n > 1 {
 			rows = strconv.Itoa(m.n) + " rows do not convert"
 		}
+		hint := "change those rows first, or keep the type (ADR-0084)"
+		if m.past {
+			hint = "the history of the rows keeps what a row held (ADR-0099): keep the type, or define a table of another name"
+		}
 		diags = append(diags, model.Diagnostic{Code: model.CodeBadValue, Path: "/columns/" + col, Pos: -1,
 			Message: fmt.Sprintf("%s to %s: %s, the first: %s", rows, nf.Type, "the values would change or be lost", m.first),
-			Hint:    "change those rows first, or keep the type (ADR-0084)"})
+			Hint:    hint})
 	}
 	return out, diags
 }

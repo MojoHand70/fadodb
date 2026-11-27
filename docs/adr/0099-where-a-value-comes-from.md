@@ -1,6 +1,6 @@
 # ADR-0099: Where a value comes from, and the documents behind a number
 
-- Status: Proposed; amends ADR-0037 (a table keeps the history of its rows), ADR-0055 (the command `lineage` joins the table; `flow`, `throughput` and `paths` take `documents`), ADR-0063, ADR-0096 and ADR-0097 (each number they give can be opened), ADR-0078 (what it left out as "a history of a table" is taken up)
+- Status: Proposed; amends ADR-0037 (a table keeps the history of its rows), ADR-0055 (the commands `lineage` and `row_history` join the table; `flow`, `throughput` and `paths` take `documents`), ADR-0063, ADR-0096 and ADR-0097 (each number they give can be opened), ADR-0067 (the history of the rows says who changed a row; the log of reads still keeps a write past a rule), ADR-0078 (what it left out as "a history of a table" is taken up), ADR-0094 (the token of a table's rows is the id of the change that wrote them)
 - Date: 2026-11-26
 
 ## Context
@@ -220,6 +220,61 @@ Decisions of mine, on 2026-11-27, each the owner's to strike.
     which then reads the class (seen on 2026-11-26, put to the owner,
     not mended in this record).
 
+## Settled while building the third step
+
+Decisions of mine, on 2026-11-27, each the owner's to strike.
+
+16. **SQLite writes the history**, by two triggers on each table: a row
+    whose values change is kept as it was, and so is a row removed. So
+    every way of writing a row keeps it, an import, a delete, a
+    replace, a rule's action, and any way added later. A change is
+    written first in its transaction, and the triggers read it. The
+    engine binds nothing more to a statement than it did, so a value
+    that follows a table costs what it did (BenchmarkFollow: the same
+    allocations).
+17. **Who made a change is kept once a change**, not once a row, in
+    `fado_table_changes`: its number, its kind, who, of what kind and
+    for whom. Its id is an event id, so it is ordered with the commits
+    of documents, and the token of the rows (ADR-0094) is it. The last
+    change before a moment is found by halves, since the numbers and
+    the ids rise together under the one writer.
+18. **Each row says which change gave it its values**, `__since`, the
+    change's number, in a column no name of the database's own can
+    have. A table that keeps no history keeps it too, so a row
+    unchanged since a moment is known to be as it was then. A row
+    brought with the values it has is not written at all.
+19. **A replace removes only what it did not bring.** The table is no
+    longer emptied first: the rows go into a list of their own, the
+    table takes what changed from it in one statement, and the rows it
+    did not bring are removed after, each kept as it was.
+20. **A delete that removes nothing is no change**, and leaves none.
+21. **A version of a table carries the history with the rows**, by the
+    rules of ADR-0084, the past as the present: a column added is
+    blank in the past, a column whose type changes converts in the
+    past too, and a value of the past that does not convert refuses
+    the version. `"history": false` drops the history kept; leaving it
+    out again keeps it from then. The moment a history began is kept,
+    and lineage reads the past only after it.
+22. **Engine schema 16.** A database of schema 15 is brought to it
+    when it is opened: every table gains `__since` and its history, which
+    begins at that opening. The rows it holds have no moment ("before
+    the history"). An engine of schema 15 no longer opens the file: its
+    writes would be kept with no moment.
+23. **Removing a table removes the history of its rows**; who made
+    its changes stays.
+24. **A reading command, `row_history`**, in Go the call `RowHistory`:
+    the history of one row by its key, the row now first and then as it
+    was before each change, a page at a time, by the table's read rule.
+    It answers the owner's "who changed this rate, and when?".
+25. **A system table keeps no history** (ADR-0092): its rows are the
+    engine's records. `row_history` refuses it.
+26. **In lineage, a row of a table says `since` and `until`**: the
+    change that gave it the values read, and the one after. Where the
+    table kept no history at the moment, the rows are as they are now,
+    and `rows_now` says so.
+27. **The store answers it.** The copy in the analytical engine does
+    not hold the history, and SQL does not read it, yet.
+
 ## The steps
 
 Each is one pull request.
@@ -238,6 +293,12 @@ Each is one pull request.
   `Lineage`, with `LineageAsk` and what it answers; `PartsSQL` in the
   compiler, beside `AggregateSQL`, for the parts of a lookup; the
   manual's guide "Where a value comes from".
+- Part 3: the history of the rows of every table, `"history": false`
+  in the definition of a table, engine schema 16; the command
+  `row_history` and the call `RowHistory`, with `RowHistoryAsk`,
+  `RowHistory` and `RowVersion`; lineage of a value read from a table,
+  as the rows were; the manual's section "The history of the rows" in
+  the chapter on tables.
 
 ## Consequences
 
@@ -245,7 +306,10 @@ Each is one pull request.
   behind it in the next call, and act on them.
 - A chart of a process can open each of its numbers.
 - The layout of a database changes with Part 3: a table of history
-  beside each table.
+  beside each table, the column `__since` in each, the table
+  `fado_table_changes`, engine schema 16.
+- The file grows by the rows a change changes, and by nothing where no
+  row changes.
 
 ## What this record leaves out
 
@@ -285,8 +349,32 @@ kept total exactly.
 | 1,700 invoices, none changed since | 60 to 61 ms |
 | 1,700,000 invoices, three changed since | 21.5 to 21.6 seconds |
 
+Part 3, through the engine as this record builds it: its own
+`ImportRows`, on disk, beside the engine of Part 2, three runs that
+agree. A table of ten rates and one of a million prices.
+
+| What | Before Part 3 | With the history |
+|---|---|---|
+| one rate changed (200 times, the middle of five rounds) | 12.5 to 13.2 millionths of a second | 28.8 to 29.9 millionths |
+| a million prices brought first | 1.95 to 2.03 seconds | 2.42 to 2.46 seconds |
+| a million prices brought again, 10,000 changed | 1.81 to 1.89 seconds | 2.02 to 2.08 seconds |
+| the same as a replace | 1.59 to 1.64 seconds | 2.17 to 2.25 seconds |
+| the file after three of each | 45.5 MB | 49.5 MB, 60,000 rows of history |
+| a value that follows a table (BenchmarkFollow) | 171,389 allocations | 171,389 allocations |
+
+- **One rate changed costs twice what it did**: the commit writes the
+  change with who made it, the row as it was and its index, beside the
+  row and the token of the rows. A value that follows the table costs
+  milliseconds for its documents beside it.
+- **A row kept stores the number of its change**, a few bytes, where
+  an id would be 26: 4 MB more for a million rows.
+- **A replace** brings its rows into a list of its own and writes what
+  changed in one statement, in key order, then removes what it did not
+  bring: a third more than emptying the table first, where the
+  stand-in below took more than twice as long.
+
 The figures below came first, from statements of mine written beside
-the engine; Part 3 is not built.
+the engine, before Part 3 was built.
 
 Lineage, the engine at 373839a; a customer with 1,700 invoices and
 one with 1,700,000, three runs of five askings, which agree:

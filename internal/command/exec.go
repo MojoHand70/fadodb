@@ -982,6 +982,25 @@ func runTableRows(c *call) error {
 	return c.answer("rows", list(rows), err)
 }
 
+// runRowHistory reads the history of a row of a table (ADR-0099, step
+// 3).
+func runRowHistory(c *call) error {
+	key, e := c.values("key")
+	if e != nil {
+		return e
+	}
+	limit, e := c.integer("limit")
+	if e != nil {
+		return e
+	}
+	offset, e := c.integer("offset")
+	if e != nil {
+		return e
+	}
+	h, err := c.s.RowHistory(c.ctx, c.text("table"), key, store.RowHistoryAsk{Limit: int(limit), Offset: int(offset)}, c.opts...)
+	return c.answer("history", h, err)
+}
+
 func runImportRows(c *call) error {
 	rows, e := c.objects("rows")
 	if e != nil {

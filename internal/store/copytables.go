@@ -110,30 +110,10 @@ func tableLayoutOf(t *table) *tableLayout {
 	return l
 }
 
-// rowsChanged writes the token of a table's rows anew, in the
-// transaction that changes them (ADR-0094, item 3). A program without an
-// analytical engine writes it too: the next one to open the database may
-// keep a copy.
-func (s *Store) rowsChanged(ctx context.Context, t *table, now time.Time) error {
-	var err error
-	if t.noteRows != nil {
-		_, err = t.noteRows.ExecContext(ctx, s.ids.next(now))
-	} else {
-		// A table that is being defined again has its statements when
-		// its transaction is over.
-		_, err = s.writer.ExecContext(ctx, noteRowsSQL(t.def.Name), s.ids.next(now))
-	}
-	if err != nil {
-		return storageErr("note the change of "+t.def.Name, err)
-	}
-	return nil
-}
-
-// noteRowsSQL is the statement that writes the token of a table's rows:
-// the name is in its text, and the token its one value.
-func noteRowsSQL(name string) string {
-	return `INSERT INTO metadata (key, value) VALUES ('` + strings.ReplaceAll(rowsKey+strings.ToUpper(name), "'", "''") + `', ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value`
-}
+// The token of a table's rows is written anew in the transaction that
+// changes them (ADR-0094, item 3), as the change itself (tableChange,
+// ADR-0099, step 3). A program without an analytical engine writes it
+// too: the next one to open the database may keep a copy.
 
 // rowTokens reads the token of every table's rows, by the table's name
 // in upper case, at the moment of the database the connection reads.

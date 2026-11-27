@@ -747,6 +747,71 @@ func TestFollow_ADocumentThatCannotTakeTheValue(t *testing.T) {
 	}
 }
 
+// A document is brought with no savepoint of its own until one is
+// refused: then the transaction goes back whole and is brought again,
+// a savepoint for each document, and so is every later transaction of
+// the follow. A document brought before the refusal is brought once.
+// A transaction takes a thousand; the test's store takes two.
+func TestFollow_ARefusalTakesTheTransactionBackAndTheRestIsCareful(t *testing.T) {
+	class := strings.Replace(followInvoice, `"in_pln":`, `"share": {"formula": "amount / (amount * rate - 431)"}, "in_pln":`, 1)
+	s, ctx := openFollow(t, class)
+	s.followEach = 2
+	first := invoiced(t, s, ctx, "FV-1", "50.00", "EUR", "entered")
+	stuck := invoiced(t, s, ctx, "FV-2", "100.00", "EUR", "entered")
+	rest := []*Document{
+		invoiced(t, s, ctx, "FV-3", "50.00", "EUR", "entered"),
+		invoiced(t, s, ctx, "FV-4", "50.00", "EUR", "entered"),
+		invoiced(t, s, ctx, "FV-5", "50.00", "EUR", "entered"),
+	}
+	var steps []string
+	s.testStep = func(step string, row *outboxRow) *Error {
+		if row.action == ActionFollow && (step == "perform" || step == "committed") {
+			steps = append(steps, step)
+		}
+		return nil
+	}
+	if _, err := s.ImportRows(ctx, "Rates", []Values{{"code": "EUR", "rate": "4.3100"}}, As(followTess)); err != nil {
+		t.Fatal(err)
+	}
+	drained(t, s, ctx)
+	s.testStep = nil
+	// Three transactions committed, each asked once, the one taken back
+	// and brought again among them.
+	if want := []string{"perform", "committed", "perform", "committed", "perform", "committed"}; strings.Join(steps, " ") != strings.Join(want, " ") {
+		t.Errorf("the steps of the follow: %v, want %v", steps, want)
+	}
+	if doc, _ := s.Get(ctx, "Invoice", stuck.ID, As(followAnna)); doc.Values["rate"] != "4.2500" || doc.Version != stuck.Version {
+		t.Errorf("the invoice whose share cannot be worked out: %v, version %d", doc.Values, doc.Version)
+	}
+	for _, d := range append([]*Document{first}, rest...) {
+		doc, err := s.Get(ctx, "Invoice", d.ID, As(followAnna))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if doc.Values["rate"] != "4.3100" || doc.Version != d.Version+1 {
+			t.Errorf("%v: %v, version %d after %d", d.Values["number"], doc.Values, doc.Version, d.Version)
+		}
+		events, err := s.Events(ctx, "Invoice", d.ID, As(followAnna))
+		if err != nil {
+			t.Fatal(err)
+		}
+		brought := 0
+		for _, e := range events {
+			if e.Kind == EventRefresh && e.Name == "table:Rates" {
+				brought++
+			}
+		}
+		if brought != 1 {
+			t.Errorf("%v has %d events of the follow, want 1", d.Values["number"], brought)
+		}
+	}
+	rows := follows(t, s, ctx)
+	if len(rows) != 1 || rows[0].Status != ActionDone || rows[0].IntoCode != "div_by_zero" ||
+		!strings.HasPrefix(rows[0].IntoMessage, "1 of 5 documents kept their value; the first: Invoice "+stuck.ID+": ") {
+		t.Fatalf("the row of the follow: %+v", rows)
+	}
+}
+
 // The worker brings one transaction of documents and looks at what else
 // is due before the next: the row stays pending in between, and the run
 // goes on from where it stood. A transaction takes a thousand; the

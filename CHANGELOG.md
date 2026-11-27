@@ -6,9 +6,29 @@ All notable changes to FadoDB are recorded here. The format follows
 
 ## [Unreleased]
 
-Phase 8 started on 2026-11-25.
+Phase 8 started on 2026-11-25, and Phase 9 on 2026-11-27.
 
 ### Added
+
+- The library of C (ADR-0101, proposed; the first step of Phase 9). A
+  program in any language that can call C holds a FadoDB database in
+  its own process, with no server: `fado_open` opens a database file,
+  `fado_exec` runs one command of the command set as the caller the
+  program names, `fado_close` closes it, `fado_free` gives back an
+  answer and `fado_version` says which library was loaded. A command
+  and its answer are those of `POST /v1/<command>`, byte for byte; the
+  caller is a JSON object beside the command, with the members a user
+  has (`id`, `kind`, `groups`, `system_groups`, and `today`, the
+  business day), and the options of `fado_open` are named as the
+  settings of `fadodb serve` name the same things. A database is a
+  number given once in the life of the process, so a number kept after
+  its close is refused with `closed`; every function may be called from
+  any thread; a close answers the commands that wait first; a panic in
+  the engine is answered `internal` and leaves the program running. The
+  library is the engine of `fadodb-core`, built in the module `cabi/`
+  with `make library` as `libfadodb-core.so`, `libfadodb-core.dylib` or
+  `fadodb-core.dll`, with `fadodb.h`. GitHub builds it on Linux, macOS
+  and Windows on every pull request and runs a program of C against it.
 
 - Where a value comes from (ADR-0099, proposed; its second step). A new
   command, `lineage`, in Go `Lineage`, answers one value of one

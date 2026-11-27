@@ -12,7 +12,9 @@ Website: [fadodb.org](https://fadodb.org). The manual starts at
 
 > **Status: Phase 7, the browser VM and the reference frontend, is
 > done and released as v0.7.0. Phase 8, the analytical engine, started
-> on 2026-11-25.** The Go API stores
+> on 2026-11-25, and Phase 9, embedding, beside it on 2026-11-27: a
+> program in any language holds a database in its own process through
+> the library of C ([cabi/](cabi/README.md)).** The Go API stores
 > documents of typed classes as commits with recalculation, history and
 > an event log,
 > with attachments, lookups into reference tables, filters and read-only

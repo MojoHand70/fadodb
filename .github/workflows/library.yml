@@ -37,7 +37,7 @@ jobs:
         include:
           # Linux is built on the oldest Linux there is a machine for, as
           # the program is (programs.yml).
-          - {system: linux-amd64, machine: ubuntu-22.04}
+          - {system: linux-amd64, machine: ubuntu-22.04, languages: must}
           - {system: linux-arm64, machine: ubuntu-22.04-arm}
           - {system: darwin-arm64, machine: macos-latest}
           - {system: darwin-amd64, machine: macos-15-intel}
@@ -58,8 +58,11 @@ jobs:
         env:
           CGO_ENABLED: "1"
           # "must": the program of C is compiled and run, or this step
-          # fails; a skipped test would not show in this log.
+          # fails; a skipped test would not show in this log. On one
+          # machine every language of the chapter on other languages
+          # must run too (docs/manual/other-languages.md).
           FADODB_CABI: must
+          FADODB_LANGUAGES: ${{ matrix.languages }}
         run: |
           go vet ./...
           go test -count=1 ./...
@@ -75,6 +78,7 @@ jobs:
           [ "$RUNNER_OS" = "Windows" ] && program=bin/fadodb-core.exe
           CGO_ENABLED=0 go build -o "$program" ./cmd/fadodb-core
           python=$(command -v python3 || command -v python)
+          [ "$RUNNER_OS" = "Windows" ] && python=$(command -v python || command -v python3)
           cd clients/py/tests
           FADODB_PROGRAM="../../../$program" "$python" -m unittest -v test_both_ways.OverHTTP
       - name: Pack it, with the wheel of the Python package, and try the wheel

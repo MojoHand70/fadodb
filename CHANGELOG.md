@@ -90,6 +90,14 @@ Phase 8 started on 2026-11-25, and Phase 9 on 2026-11-27.
   written by `clients/py/wheel.py` with Python's own `zipfile`. A
   release publishes the wheels on PyPI as `fadodb`, by trusted
   publishing, with no token kept anywhere.
+- A chapter of the manual, [in a program of another
+  language](docs/manual/other-languages.md) (ADR-0101, its step E): the
+  library for each system, its five functions, the caller beside the
+  command, files, and what every program minds; and one story, an
+  invoice that Ann makes and Bob books, told as a whole program in C,
+  Python, Go, Node (through koffi) and C# (with P/Invoke), each in
+  `examples/languages`. A test runs every program and compares what it
+  prints with the chapter.
 
 - Where a value comes from (ADR-0099, proposed; its second step). A new
   command, `lineage`, in Go `Lineage`, answers one value of one
@@ -360,6 +368,12 @@ Phase 8 started on 2026-11-25, and Phase 9 on 2026-11-27.
   before it answers, so a move made a moment ago is in the flow. When
   the copy does not answer, the store does. A program without the
   engine, and the program `fadodb`, answer as before.
+- The analytical engine takes no extension from outside the program
+  (ADR-0089). DuckDB by itself would fetch from the network an
+  extension a statement needs and the program lacks, and load one
+  installed on the machine; every connection to the copy now turns
+  both off, and a test holds it on GitHub. The program uses only what
+  its library carries: core_functions, icu, json and parquet.
 - The server program can be built with the analytical engine (ADR-0089,
   the first half of its step 6). `make full` builds `bin/fadodb-full`
   in the module `analytics`: the program `fadodb`, from the same code,

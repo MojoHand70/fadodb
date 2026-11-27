@@ -426,6 +426,22 @@ strike.
 - **Only a served database gets the engine.** The commands of the
   program that open a database for a moment, such as `fadodb user
   add`, keep no copy.
+- **The engine takes no extension from outside the program**
+  (2026-11-27). The library the program is built with carries
+  core_functions, icu, json and parquet, loaded when DuckDB starts,
+  and those are all the copy's statements use. DuckDB starts with
+  `autoinstall_known_extensions` and `autoload_known_extensions` on:
+  a statement that needs an extension it lacks would make it fetch
+  one from the network, and load one an analyst installed on the
+  machine, the extension for SQLite files among them, which must
+  never read the store's file inside the program (Context, item 2).
+  Every connection to the copy turns both off. A test holds it on
+  GitHub, where the network is there: both settings off on each
+  connection, no extension loaded but those the library carries, and
+  a function of another extension, `ST_Point` of spatial, refused at
+  once. That is what the plan's "offline extension installation
+  verified in CI" asks: the program needs no extension installed,
+  and fetches none.
 
 ## Settled while building the moves the copy keeps ready
 

@@ -20,12 +20,6 @@ An approval is answered by its approver or by whoever acts for them
 with a substitution (ADR-0053): `approver = USER() OR approver =
 ACTINGFOR()`. `TestExampleApprovals` walks them through.
 
-**Added on 2026-11-21:** `look.json`, the look of a server's faces
-(ADR-0060): one document is one look, written as a DESIGN.md, drafted
-by a designer and approved by a person of the group `brand`. It is the
-class the face builder's skill shows, word for word, and
-`TestFaceSkill` walks it through.
-
 ## Naming
 
 A sample drawn from the use-case catalogue on fadodb.org is named by its

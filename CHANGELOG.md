@@ -6,6 +6,14 @@ All notable changes to FadoDB are recorded here. The format follows
 
 ## [Unreleased]
 
+### Removed
+
+- The face builder's skill, `skills/fadodb-face/`, and the sample class
+  `Look` it showed, `examples/classes/look.json`, on the owner's word:
+  what people see of a server, its faces and their look, is the tool's
+  that builds faces, not the engine's. ADR-0060 says so, and the skills
+  are five hats again.
+
 Phase 8 started on 2026-11-25, and Phase 9 on 2026-11-27.
 
 ### Added

@@ -450,6 +450,162 @@
         "x-fado-mark": "writes"
       }
     },
+    "/v1/comment": {
+      "post": {
+        "description": "It writes. In Go it is the call `Comment`.",
+        "operationId": "comment",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "business_date": {
+                    "description": "the business day of the commit, as \"2026-11-13\"; the server's day when left out",
+                    "type": "string"
+                  },
+                  "class": {
+                    "description": "the name of the class",
+                    "type": "string"
+                  },
+                  "for": {
+                    "description": "the id of whoever the caller acts for; let through only while a substitution says so",
+                    "type": "string"
+                  },
+                  "id": {
+                    "description": "the id of the document",
+                    "type": "string"
+                  },
+                  "key": {
+                    "description": "the idempotency key: the same command sent again with the same key makes no second commit and is answered as the first was",
+                    "type": "string"
+                  },
+                  "text": {
+                    "description": "the words: plain text, line breaks kept, at most the database's limit for a text",
+                    "type": "string"
+                  },
+                  "version": {
+                    "description": "the version of the document its sender read before deciding; when the document is at another, the command is refused with stale_version and nothing is written",
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "class",
+                  "id",
+                  "text"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "comment": {
+                      "description": "the comment as the engine keeps it: its id, the words, who wrote them, what they are and for whom they acted, the version of the document, the business day and the moment"
+                    }
+                  },
+                  "required": [
+                    "comment"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "The command ran."
+          },
+          "default": {
+            "$ref": "#/components/responses/Refused"
+          }
+        },
+        "summary": "Writes a comment on a document: words the engine keeps beside it, with who wrote them and when. It makes no version of the document.",
+        "tags": [
+          "Documents"
+        ],
+        "x-fado-call": "Comment",
+        "x-fado-mark": "writes"
+      }
+    },
+    "/v1/comments": {
+      "post": {
+        "description": "It reads. In Go it is the call `Comments`.",
+        "operationId": "comments",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "at": {
+                    "description": "the moment the command reads at: \"2026-11-13\", \"2026-11-13 09:30:00\" in UTC, or seconds since the epoch; now when left out",
+                    "type": [
+                      "string",
+                      "integer"
+                    ]
+                  },
+                  "class": {
+                    "description": "the name of the class",
+                    "type": "string"
+                  },
+                  "for": {
+                    "description": "the id of whoever the caller acts for; let through only while a substitution says so",
+                    "type": "string"
+                  },
+                  "id": {
+                    "description": "the id of the document",
+                    "type": "string"
+                  },
+                  "reason": {
+                    "description": "why a content administrator acts or reads past a rule; a change keeps it on its event, a read in the log of reads",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "class",
+                  "id"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "comments": {
+                      "description": "the comments, oldest first; none for a document the caller may not see"
+                    }
+                  },
+                  "required": [
+                    "comments"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "The command ran."
+          },
+          "default": {
+            "$ref": "#/components/responses/Refused"
+          }
+        },
+        "summary": "Reads the comments on a document, oldest first.",
+        "tags": [
+          "Documents"
+        ],
+        "x-fado-call": "Comments",
+        "x-fado-mark": "reads"
+      }
+    },
     "/v1/count": {
       "post": {
         "description": "It reads. In Go it is the call `Count`.",

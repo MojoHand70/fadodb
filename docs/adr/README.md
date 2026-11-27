@@ -103,3 +103,4 @@ line says so. Copy `0000-template.md` to start.
 | [0095](0095-how-the-stays-of-a-state-spread.md) | How the stays of a state spread: the middle stay and the slow tenth | Proposed |
 | [0096](0096-made-and-finished-in-each-period.md) | How many documents were made and finished in each period | Proposed |
 | [0097](0097-the-paths-documents-took.md) | The paths documents took | Proposed |
+| [0098](0098-comments-on-a-document.md) | Comments on a document | Proposed |

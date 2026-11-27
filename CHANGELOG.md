@@ -531,6 +531,13 @@ Phase 8 started on 2026-11-25.
 
 ### Fixed
 
+- The phone's page of a code, and an invitation's page, offer **Sign in
+  with it** from the start to a person who has a passkey already, under
+  the button that adds one (ADR-0088). A phone whose password manager
+  holds the person's synced passkey makes no other, and Safari on an
+  iPhone may say so only in a sheet of its own, which the page cannot
+  tell from a window closed: the page then said "Try again" and offered
+  no way on. The way the page took after the browser's refusal stays.
 - A `LOOKUP` in a live variable that is keyed by the key of a table,
   or by a column that leads an index of it, read the table up to its
   row each time the value was read: 67 to 70 ms for a row a third of

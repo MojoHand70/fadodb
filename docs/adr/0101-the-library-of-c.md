@@ -179,7 +179,8 @@ day:
     Its name follows the programs (ADR-0089): `libfadodb-core.so` on
     Linux, `libfadodb-core.dylib` on macOS and `fadodb-core.dll` on
     Windows. `make library` puts it in `bin/` with `fadodb.h` beside it.
-    About 14 MB on Linux. `fadodb.h` is written by hand, for people to
+    About 16 MB on Linux, with the sender of the requests of actions
+    (step B). `fadodb.h` is written by hand, for people to
     read, and a test holds it to the functions Go says the library
     exports.
 
@@ -295,6 +296,37 @@ Mine, while building step C:
   serve` the tests start with a user and a key for each person, and in
   the same process with the same people. GitHub runs it on Linux,
   macOS and Windows with the machine's own Python.
+
+Mine, while building step D:
+
+- **The library for the five systems the program `fadodb` is built
+  for**: Linux for Intel and ARM, built on Ubuntu 22.04 so that it
+  needs no newer C library than 2.35; macOS for Apple and Intel; and
+  Windows for Intel, where it may need no library of the compiler it
+  was built with. Windows on ARM has none: its C compiler is not on
+  GitHub's machines. `scripts/library.sh` builds, tries and packs it on
+  a machine of each system, as `scripts/program.sh` does the program.
+- **What a release carries**: for each system
+  `fadodb-core-library_<version>_<os>_<arch>.tar.gz` (`.zip` on Windows)
+  with the library, `fadodb.h`, the licence and the README of `cabi/`;
+  and the Python package as wheels, one for each system with the
+  library inside, in `fadodb/lib`, where `fadodb.open` finds it, and one
+  for every system without it, for a program that only talks to a
+  server. A wheel for Linux is named after the C library the library
+  needs (`manylinux_2_35_x86_64`), one for macOS after the oldest macOS
+  Go builds for (`macosx_12_0_arm64`).
+- **The wheel is written by `clients/py/wheel.py`** with Python's own
+  `zipfile`, from what `pyproject.toml` says: a wheel is a zip and three
+  files that say what it is, so a release fetches no build tool from
+  the network to make one.
+- **Every pull request builds, tries and packs all five**, as it does
+  the program, so that a release cannot be the first to find a system
+  it does not build on. Each wheel is installed with pip and its tests
+  run in the same process through the library inside it. A release
+  keeps the files and attaches them.
+- **Left out of the step: publishing the package on PyPI**, so that
+  `pip install fadodb` finds it. It takes an account on PyPI and a name
+  there, which are the owner's to make.
 
 ## Left out
 

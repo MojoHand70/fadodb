@@ -54,6 +54,18 @@ Phase 8 started on 2026-11-25, and Phase 9 on 2026-11-27.
   tests run both ways, over HTTP against a `fadodb-core serve` they
   start and in the same process, on Linux, macOS and Windows, which is
   the test the plan sets for Phase 9.
+- The library of C and the Python package in every release (ADR-0101,
+  its step D). For each of the five systems `fadodb` is released for, a
+  release carries `fadodb-core-library_<version>_<os>_<arch>` with the
+  library, `fadodb.h`, the licence and a README, and a wheel of the
+  Python package with the library inside, which `fadodb.open` finds;
+  and one wheel for every system without it, for a program that talks
+  to a server. `scripts/library.sh` builds, tries and packs them on a
+  machine of each system, on every pull request: the tests of the
+  module, the program of C against the very file built, the Python
+  client both ways, and each wheel installed and tried. The wheel is
+  written by `clients/py/wheel.py` with Python's own `zipfile`. The
+  package is not yet on PyPI.
 
 - Where a value comes from (ADR-0099, proposed; its second step). A new
   command, `lineage`, in Go `Lineage`, answers one value of one

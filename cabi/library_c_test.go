@@ -46,10 +46,22 @@ func compiler(t *testing.T) string {
 	return ""
 }
 
-// built builds the library into dir and answers its path.
+// built builds the library into dir and answers its path; or, when
+// FADODB_LIBRARY names one, answers a copy of that one in dir: the very
+// file a release publishes (scripts/library.sh try).
 func built(t *testing.T, dir string) string {
 	t.Helper()
 	lib := filepath.Join(dir, libraryName())
+	if given := os.Getenv("FADODB_LIBRARY"); given != "" {
+		data, err := os.ReadFile(given)
+		if err != nil {
+			t.Fatalf("FADODB_LIBRARY: %v", err)
+		}
+		if err := os.WriteFile(lib, data, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		return lib
+	}
 	golang, err := exec.LookPath("go")
 	if err != nil {
 		t.Fatalf("no go to build the library with: %v", err)
@@ -109,6 +121,7 @@ func TestTheLibraryFromC(t *testing.T) {
 // header Go writes beside the library lists the functions it has.
 func TestTheHeaderIsTheLibrarys(t *testing.T) {
 	compiler(t)
+	t.Setenv("FADODB_LIBRARY", "")
 	dir := t.TempDir()
 	lib := built(t, dir)
 	generated, err := os.ReadFile(strings.TrimSuffix(lib, filepath.Ext(lib)) + ".h")

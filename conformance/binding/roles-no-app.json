@@ -1,9 +1,0 @@
-{
-  "suite": "roles-no-app",
-  "description": "A formula that belongs to no app has no roles to ask for (ADR-0100): INROLE is refused, whatever it names.",
-  "variables": {"who": "text"},
-  "accept": ["INGROUP(\"approvers\")"],
-  "reject": [
-    {"formula": "INROLE(\"approver\")", "reason": "a formula of no app has no roles"}
-  ]
-}

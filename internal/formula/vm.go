@@ -3,7 +3,6 @@ package formula
 import (
 	"fmt"
 	"math"
-	"strings"
 	"time"
 	"unicode/utf8"
 )
@@ -38,47 +37,20 @@ func (c *Context) InGroup(name string) bool {
 	return c.User != "" && name == GroupEveryone
 }
 
-// HasRole reports whether the user holds the role, written as the app's
-// name, a dot and the role's name (ADR-0100): INROLE asks it, with the
-// name its binder made of the app the formula belongs to.
-func (c *Context) HasRole(name string) bool {
-	if c == nil {
-		return false
-	}
-	for _, r := range c.Roles {
-		if r == name {
-			return true
-		}
-	}
-	return false
-}
-
-// RoleName is how a role is written where the roles of every app stand
-// in one list: the app's name, a dot and the role's name, in capitals,
-// since a name means the same whatever its case (ADR-0013). Neither name
-// holds a dot, so no two roles are written alike.
-func RoleName(app, role string) string { return strings.ToUpper(app) + "." + strings.ToUpper(role) }
-
-// AllGroups lists every group InGroup answers TRUE for, and the roles
-// HasRole answers, each marked as a role: the groups as they are for a
-// user with no id, no system group and no role, nil included, and a new
-// list otherwise.
+// AllGroups lists every group InGroup answers TRUE for: the groups as
+// they are for a user with no id and no system group, nil included, and
+// a new list otherwise.
 func (c *Context) AllGroups() []string {
 	if c == nil {
 		return nil
 	}
-	if c.User == "" && len(c.System) == 0 && len(c.Roles) == 0 {
+	if c.User == "" && len(c.System) == 0 {
 		return c.Groups
 	}
-	all := make([]string, 0, len(c.Groups)+len(c.System)+1+len(c.Roles))
+	all := make([]string, 0, len(c.Groups)+len(c.System)+1)
 	all = append(append(all, c.Groups...), c.System...)
 	if c.User != "" {
 		all = append(all, GroupEveryone)
-	}
-	// The roles travel to SQL among the groups, each after the record
-	// separator, which no group's name holds (ADR-0100).
-	for _, r := range c.Roles {
-		all = append(all, roleMark+r)
 	}
 	return all
 }
@@ -93,10 +65,6 @@ type Context struct {
 	// answers them beside Groups, and answers GroupEveryone for a user
 	// that has an id.
 	System []string
-	// Roles are the roles the user holds, of every app, each written as
-	// RoleName writes it (ADR-0100). The engine works them out from who
-	// holds each role on this database; INROLE answers them.
-	Roles []string
 	// Kind is what the user is, for USERKIND(): person, agent or service,
 	// or empty when the host program does not say (ADR-0050). For is the
 	// id of whoever the user acts for, for ACTINGFOR(); empty when it acts

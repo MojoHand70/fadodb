@@ -272,11 +272,6 @@ type (
 	Group       = store.Group
 	GroupEdit   = store.GroupEdit
 	GroupChange = store.GroupChange
-	// RoleHolders says who holds one role of an app on this database
-	// (ADR-0100): the groups whose members hold it and the users who hold
-	// it by name. RoleChange is one change to them.
-	RoleHolders = store.RoleHolders
-	RoleChange  = store.RoleChange
 	// Signing in (ADR-0071): SignIn is a sign-in under way after its
 	// password, SecondStep the secret a person enters in an
 	// authenticator app, Session a session and SessionLengths how long
@@ -640,27 +635,6 @@ func (db *DB) Apps() []string { return db.s.Apps() }
 
 // App returns an app by name.
 func (db *DB) App(name string) (*App, bool) { return db.s.App(name) }
-
-// SetRole says who holds a role of an app on this database (ADR-0100):
-// the groups whose members hold it and the users who hold it by name, in
-// place of the ones it had. A formula of a class of the app asks for the
-// role with INROLE. It is a database administrator's.
-func (db *DB) SetRole(ctx context.Context, app, role string, groups, users []string, opts ...Option) (*RoleHolders, error) {
-	return db.s.SetRole(ctx, app, role, groups, users, opts...)
-}
-
-// Holders answers who holds each role of an app, in the order the app
-// names them.
-func (db *DB) Holders(app string) ([]RoleHolders, error) { return db.s.Holders(app) }
-
-// RolesHeld answers the roles the caller holds, by app.
-func (db *DB) RolesHeld(opts ...Option) map[string][]string { return db.s.RolesHeld(opts...) }
-
-// RoleChanges lists every change to who holds a role, the earliest
-// first. It is a database administrator's.
-func (db *DB) RoleChanges(ctx context.Context, app, role string, opts ...Option) ([]RoleChange, error) {
-	return db.s.RoleChanges(ctx, app, role, opts...)
-}
 
 // ClassesOf lists the classes that belong to an app, in definition
 // order. A name that is no app is refused with unknown_app.

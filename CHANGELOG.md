@@ -30,25 +30,6 @@ Phase 8 started on 2026-11-25.
   steps after it: where a value comes from (`lineage`), and the
   history of a table's rows, which every table keeps by the owner's
   word.
-- The roles of an app (ADR-0100, proposed). An app names the parts
-  people play in it, under `roles` in its definition, each with a
-  `label` and a `description`. A formula of a class or a table of the
-  app asks for one with `INROLE("approver")`, wherever `INGROUP` may
-  stand, the read rule and the rights among them; a role the app does
-  not name, or `INROLE` where there is no app, is refused with the new
-  finding `unknown_role`, and a next version of an app without a role a
-  class or a table asks for with `not_allowed`. Each database says who
-  holds a role with the new command `set_role`, in Go `SetRole`, an
-  administrator's: the groups whose members hold it and the users who
-  hold it by name, kept beside the app and never in it; `role_changes`,
-  in Go `RoleChanges`, lists each change. `get_app` answers `holders`
-  beside the definition and `whoami` answers `roles`, the roles the
-  caller holds by app; both leave the member out when there is nothing
-  in it. The browser VM answers `INROLE` from the roles a page gives it.
-  The tables `fado_role_holders` and `fado_role_changes` are made when a
-  database is opened; the schema keeps its number, and an earlier
-  engine cannot read an app that names roles. New section:
-  `docs/manual/apps.md#the-roles-of-an-app`.
 - Comments on a document (ADR-0098, proposed). Two new commands:
   `comment`, in Go `Comment`, writes words the engine keeps beside a
   document, with who wrote them (a person, an agent or a service, and

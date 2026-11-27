@@ -45,12 +45,7 @@ type Suite struct {
 	// Class is the class the formulas of the suite belong to, for REF()
 	// (ADR-0076, item 10); absent, they belong to none.
 	Class string `json:"class,omitempty"`
-	// App is the app the formulas belong to and Roles the roles it
-	// names, which INROLE asks for (ADR-0100); absent, they belong to
-	// no app.
-	App   string   `json:"app,omitempty"`
-	Roles []string `json:"roles,omitempty"`
-	Cases []Case   `json:"cases"`
+	Cases []Case `json:"cases"`
 	// File is where the suite was loaded from, for messages.
 	File string `json:"-"`
 }
@@ -58,7 +53,7 @@ type Suite struct {
 // BindOptions are the options the formulas of the suite bind under,
 // over the sources given.
 func (s *Suite) BindOptions(sources Sources) BindOptions {
-	return BindOptions{Sources: sources, Class: s.Class, App: s.App, Roles: s.Roles}
+	return BindOptions{Sources: sources, Class: s.Class}
 }
 
 // SuiteSource declares one table a suite's LOOKUP cases read: its columns
@@ -314,9 +309,6 @@ type CaseContext struct {
 	Groups []string `json:"groups,omitempty"`
 	// System are the system groups the user is in (ADR-0052).
 	System []string `json:"system,omitempty"`
-	// Roles are the roles the user holds, each written app.role, which
-	// the runner writes as RoleName does (ADR-0100).
-	Roles []string `json:"roles,omitempty"`
 	// Kind is what the user is and For whom it acts for (ADR-0050).
 	Kind  string `json:"kind,omitempty"`
 	For   string `json:"for,omitempty"`
@@ -397,19 +389,15 @@ type BindingSuite struct {
 	Class   string            `json:"class,omitempty"`
 	Points  map[string]string `json:"points,omitempty"`
 	Classes []string          `json:"classes,omitempty"`
-	// App is the app the formulas belong to and Roles the roles it
-	// names, which INROLE asks for (ADR-0100).
-	App    string       `json:"app,omitempty"`
-	Roles  []string     `json:"roles,omitempty"`
-	Accept []string     `json:"accept"`
-	Reject []RejectCase `json:"reject"`
-	File   string       `json:"-"`
+	Accept  []string          `json:"accept"`
+	Reject  []RejectCase      `json:"reject"`
+	File    string            `json:"-"`
 }
 
 // BindOptions are the options the formulas of the suite bind under,
 // over the sources given.
 func (s *BindingSuite) BindOptions(sources Sources) BindOptions {
-	opts := BindOptions{Mode: s.BindMode(), Sources: sources, Secrets: s.Secrets, States: s.States, Class: s.Class, App: s.App, Roles: s.Roles}
+	opts := BindOptions{Mode: s.BindMode(), Sources: sources, Secrets: s.Secrets, States: s.States, Class: s.Class}
 	if s.Classes != nil {
 		opts.Classes = suiteClasses(s.Classes)
 	}
@@ -851,10 +839,6 @@ func (c *CaseContext) Context() (*Context, error) {
 		return nil, nil
 	}
 	ctx := &Context{User: c.User, Groups: c.Groups, System: c.System, Kind: c.Kind, For: c.For, State: c.State, ID: c.ID}
-	for _, r := range c.Roles {
-		app, role, _ := strings.Cut(r, ".")
-		ctx.Roles = append(ctx.Roles, RoleName(app, role))
-	}
 	if c.Now != "" {
 		secs, err := ParseCaseDate(c.Now)
 		if err != nil {

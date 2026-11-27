@@ -55,7 +55,10 @@ native() {
 fetch() {
   [ -n "$python" ] || { echo "library: no Python to read the Go driver's record of DuckDB with"; exit 1; }
   local bindings told url sum got
-  bindings="$(cd cabi && go list -m -f '{{.Dir}}' github.com/duckdb/duckdb-go-bindings)"
+  # The driver is fetched first: go list names the folder of a module
+  # only once the module is on the machine.
+  bindings="$(cd cabi && go mod download github.com/duckdb/duckdb-go-bindings && go list -m -f '{{.Dir}}' github.com/duckdb/duckdb-go-bindings)"
+  [ -n "$bindings" ] && [ -f "$bindings/duckdb-release.json" ] || { echo "library: Go names no folder of DuckDB's Go driver with its record of DuckDB: $bindings"; exit 1; }
   told="$("$python" - "$bindings/duckdb-release.json" "$os-$arch" <<'PY'
 import json, sys
 release = json.load(open(sys.argv[1]))

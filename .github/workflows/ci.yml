@@ -58,8 +58,9 @@ jobs:
         run: go build ./...
 
   # The library of C (ADR-0101), built and tried from a program of C on
-  # each system the tests run on. Its module needs cgo, so it is not in
-  # the tests of the core.
+  # each system the tests run on, and the Python client over HTTP and
+  # through it. Its module needs cgo, so it is not in the tests of the
+  # core.
   library:
     name: library / ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
@@ -89,6 +90,29 @@ jobs:
           # fails; a skipped test would not show in this log.
           FADODB_CABI: must
         run: go test -count=1 ./...
+      # The Python client (ADR-0101, step C): the same tests over HTTP,
+      # against a fadodb-core serve they start, and in the same process,
+      # through the library. The machine's own Python runs them: the
+      # client needs nothing but Python's own library.
+      - name: Build the library and fadodb-core for the tests of the Python client
+        run: |
+          case "$RUNNER_OS" in
+            Windows) library=fadodb-core.dll program=fadodb-core.exe ;;
+            macOS) library=libfadodb-core.dylib program=fadodb-core ;;
+            *) library=libfadodb-core.so program=fadodb-core ;;
+          esac
+          (cd cabi && CGO_ENABLED=1 go build -buildmode=c-shared -o "../bin/$library" .)
+          CGO_ENABLED=0 go build -o "bin/$program" ./cmd/fadodb-core
+          echo "FADODB_LIBRARY=bin/$library" >> "$GITHUB_ENV"
+          echo "FADODB_PROGRAM=bin/$program" >> "$GITHUB_ENV"
+      - name: The Python client, over HTTP and in the same process
+        env:
+          # "must": both ways run, or this step fails.
+          FADODB_PYTHON: must
+        run: |
+          python=$(command -v python3 || command -v python)
+          "$python" --version
+          "$python" -m unittest discover -s clients/py/tests -v
 
   # fadodb, the program with the analytical engine, built and tried on
   # each system it is released for; the DuckDB module is tested whole on

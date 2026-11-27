@@ -1325,10 +1325,14 @@ the read path, so the encoder is hand-written and reflection-free.
 
 ### C ABI
 
-`go build -buildmode=c-shared` producing `libfadodb` with three functions:
-`fado_open`, `fado_exec(json) → json`, `fado_close`. The payload is the same
-JSON command set, so every language binding is a thin wrapper and the HTTP and
-in-process paths share client code. The C ABI is built from the lite build.
+`go build -buildmode=c-shared` in the module `cabi/` produces
+`libfadodb-core` (ADR-0101) with five functions: `fado_open`,
+`fado_exec(db, caller, command, object) → json`, `fado_close`, `fado_free`
+and `fado_version`. The payload is the same JSON command set, so every
+language binding is a thin wrapper and the HTTP and in-process paths share
+client code. The caller is a JSON object beside the command, as a Go
+program gives a `Principal`. The library is the engine of `fadodb-core`,
+without DuckDB.
 
 ### Clients
 
@@ -1463,7 +1467,7 @@ fadodb/
   api/                   openapi.json, json schemas for class and wire documents
   analytics/             duckdb module: projection, native tables, attach, mining views
   postgres/              postgres dialect and driver (separate module)
-  cabi/                  c-shared build and header (lite build)
+  cabi/                  the library of C: c-shared build and fadodb.h (fadodb-core), a module of its own
   web/vm/                TypeScript VM, zero dependencies, built to one plain JavaScript file
   web/renderer/          reference frontend
   clients/ts/  clients/py/
@@ -1472,8 +1476,8 @@ fadodb/
   docs/                  this document, adr/, perf/, dependencies.md, function reference
 ```
 
-Separate Go modules for `analytics/` and `postgres/` keep cgo and drivers out
-of the core `go.mod`.
+Separate Go modules for `analytics/`, `cabi/` and `postgres/` keep cgo and
+drivers out of the core `go.mod`.
 
 ---
 

@@ -1,6 +1,6 @@
 # ADR-0101: FadoDB in a program of any language: the library of C
 
-- Status: Proposed; carries out ADR-0011 (its three functions, with the caller beside the command and two more functions) and ADR-0017 (the library is the build without DuckDB, named `fadodb-core` after the programs, ADR-0089); leaves ADR-0033 item 6 (a put and an open of files) to a later step of the phase
+- Status: Proposed; carries out ADR-0011 (its three functions, with the caller beside the command and two more functions), ADR-0017 (the library is the build without DuckDB, named `fadodb-core` after the programs, ADR-0089) and, in step B, ADR-0033 item 6 (a put and an open of files)
 - Date: 2026-11-27
 
 ## Context
@@ -213,6 +213,43 @@ day:
 
     Letters and not numbers, so that no step of any phase is numbered
     thirteen.
+
+## Settled while building
+
+Mine, while building step B, each for the owner to strike:
+
+- **Three functions for files**, one for each address of ADR-0055,
+  item 9, named as the door for agents names its tools:
+
+  ```c
+  char *fado_put_file(fado_db db, const char *caller, const char *object, const void *bytes, size_t length);
+  char *fado_get_file(fado_db db, const char *caller, const char *object, void **bytes, size_t *length);
+  char *fado_get_blob(fado_db db, const char *caller, const char *object, void **bytes, size_t *length);
+  ```
+
+  Each takes the database, the caller and one JSON object, as
+  `fado_exec` does, and the bytes beside them, and answers one JSON
+  object. Ann puts the scan of a taxi receipt:
+  `fado_put_file(db, ann, "{\"name\": \"taxi.pdf\", \"media_type\":
+  \"application/pdf\"}", scan, length)` answers `{"file": {"hash":
+  "d694…", "name": "taxi.pdf", "media_type": "application/pdf",
+  "size": 48213}}`, the facts she then commits on her claim with `set`.
+  Bob reads it with `{"class": "Claim", "id": "C-7", "hash": "d694…"}`,
+  under the rules of the claim, and may give `version`, `for` and
+  `reason` as over HTTP. The bytes are the program's to give back with
+  `fado_free`, which is why it takes any pointer. A file is read whole
+  into memory: a file is at most the database's `max_blob_bytes`, 32 MiB
+  unless raised.
+- **The hosts an action may call, and its secrets**, as `fadodb serve`
+  has them (ADR-0059, items 4 and 5): the option `outbound` in the
+  words of its settings, and `secrets_dir`. Without `outbound` the
+  database sends nothing, and a definition with a request is refused,
+  as in a Go program that gives no `Outbound`. A secret is the file of
+  the directory or the variable `FADODB_SECRET_<CONNECTION>__<NAME>` of
+  the program's environment, read again for every request. The two
+  share one piece of Go, `internal/secret`, taken out of the server, so
+  that they cannot drift apart; its words say "the program" where the
+  server's say "the server".
 
 ## Left out
 

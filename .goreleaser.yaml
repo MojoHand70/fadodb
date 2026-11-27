@@ -48,6 +48,8 @@ checksum:
     - glob: ./bin/programs/fadodb_*.zip
     - glob: ./bin/library/fadodb-core-library_*.tar.gz
     - glob: ./bin/library/fadodb-core-library_*.zip
+    - glob: ./bin/library/fadodb-library_*.tar.gz
+    - glob: ./bin/library/fadodb-library_*.zip
     - glob: ./bin/library/fadodb-*.whl
     - glob: ./web/vm/dist/fadodb-vm.js
     - glob: ./web/vm/dist/fadodb-vm.iife.js
@@ -74,6 +76,8 @@ release:
     - glob: ./bin/programs/fadodb_*.zip
     - glob: ./bin/library/fadodb-core-library_*.tar.gz
     - glob: ./bin/library/fadodb-core-library_*.zip
+    - glob: ./bin/library/fadodb-library_*.tar.gz
+    - glob: ./bin/library/fadodb-library_*.zip
     - glob: ./bin/library/fadodb-*.whl
     - glob: ./web/vm/dist/fadodb-vm.js
     - glob: ./web/vm/dist/fadodb-vm.iife.js

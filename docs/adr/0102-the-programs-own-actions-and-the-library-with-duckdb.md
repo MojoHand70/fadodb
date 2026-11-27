@@ -144,6 +144,30 @@ Facts this record was written from, each checked on the day:
     Windows on ARM, and GitHub's machines have no C compiler for it, so
     neither program nor library is built there.
 
+## Settled while building
+
+Mine, while building step G, each for the owner to strike:
+
+- **Both libraries are built by every run of `scripts/library.sh
+  build`**, on every pull request, and tried there: the program of C
+  and the Python client in the same process against each, the tests
+  only `libfadodb` has (a copy beside the database, its options), and
+  the wheel installed with pip and tried with nothing named, which must
+  find `libfadodb`.
+- **Measured on Linux for Intel, 2026-11-27**: `libfadodb.so` 17.7 MB
+  and DuckDB's `libduckdb.so` 96 MB; the archive 34.6 MB and the wheel
+  34.6 MB; `libfadodb-core.so` 16.8 MB, its archive 6.7 MB.
+- **The DuckDB module's own tests pass linked to DuckDB's shared
+  library**, the test that only extensions built into the library are
+  loaded among them (ADR-0089): the shared library carries what the
+  copy needs.
+- **DuckDB's notice travels with DuckDB**: the archive and the wheel of
+  `libfadodb` carry `LICENSE-duckdb`, the MIT notice of the Stichting
+  DuckDB Foundation, taken from the Go driver, which carries the same
+  words.
+- **`fadodb.open` looks for `libfadodb` before `libfadodb-core`**,
+  beside the package and on the system; `FADODB_LIBRARY` names either.
+
 ## Left out
 
 - **A second package on PyPI, `fadodb-core`**, for a Python program

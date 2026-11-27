@@ -12,9 +12,13 @@ Website: [fadodb.org](https://fadodb.org). The manual starts at
 
 > **Status: Phase 7, the browser VM and the reference frontend, is
 > done and released as v0.7.0. Phase 8, the analytical engine, started
-> on 2026-11-25, and Phase 9, embedding, beside it on 2026-11-27: a
-> program in any language holds a database in its own process through
-> the library of C ([cabi/](cabi/README.md)).** The Go API stores
+> on 2026-11-25. Phase 9, embedding, begun beside it on 2026-11-27, is
+> built (2026-11-28) and is released with the next tag: a program in any
+> language holds a database in its own process through the library of
+> C, with or without DuckDB, and carries out its own actions; Python
+> reaches a database in the same process or over HTTP
+> ([cabi/](cabi/README.md), [clients/py](clients/py/README.md), [in a
+> program of another language](docs/manual/other-languages.md)).** The Go API stores
 > documents of typed classes as commits with recalculation, history and
 > an event log,
 > with attachments, lookups into reference tables, filters and read-only

@@ -54,13 +54,15 @@ day:
    fado_db     fado_open(const char *path, const char *options, char **refusal);
    char       *fado_exec(fado_db db, const char *caller, const char *command, const char *object);
    int         fado_close(fado_db db, char **refusal);
-   void        fado_free(char *answer);
+   void        fado_free(void *answer);
    const char *fado_version(void);
    ```
 
    The three of ADR-0011, and two that a library of C cannot do
-   without: one that gives back the memory of an answer, and one that
-   says which version the program loaded.
+   without: one that gives back the memory of what the library answered
+   (an answer, a refusal, and from step B the bytes of a file, so it
+   takes any pointer), and one that says which version the program
+   loaded.
 
    Ann of sales and Bob of accounting, in a program of C:
 

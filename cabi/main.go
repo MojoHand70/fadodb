@@ -71,16 +71,14 @@ func fado_close(db C.uint64_t, refusal **C.char) C.int {
 }
 
 //export fado_free
-func fado_free(s *C.char) { C.free(unsafe.Pointer(s)) }
+func fado_free(p unsafe.Pointer) { C.free(p) }
 
-// versionText is made once and never given back: fado_version answers
-// the same memory every time.
+// versionText is made once, when the library is loaded, and never given
+// back: fado_version answers the same memory every time, from any
+// thread.
 var versionText *C.char
 
+func init() { versionText = C.CString(version) }
+
 //export fado_version
-func fado_version() *C.char {
-	if versionText == nil {
-		versionText = C.CString(version)
-	}
-	return versionText
-}
+func fado_version() *C.char { return versionText }

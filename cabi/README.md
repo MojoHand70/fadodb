@@ -16,7 +16,7 @@ and [`fadodb.h`](fadodb.h) declares its five functions:
 fado_db     fado_open(const char *path, const char *options, char **refusal);
 char       *fado_exec(fado_db db, const char *caller, const char *command, const char *object);
 int         fado_close(fado_db db, char **refusal);
-void        fado_free(char *answer);
+void        fado_free(void *answer);
 const char *fado_version(void);
 ```
 

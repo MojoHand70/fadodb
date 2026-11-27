@@ -80,8 +80,9 @@ char *fado_exec(fado_db db, const char *caller, const char *command, const char 
  * then *refusal, when refusal is not NULL, is set as fado_open sets it. */
 int fado_close(fado_db db, char **refusal);
 
-/* Gives back an answer or a refusal of the library. NULL is nothing. */
-void fado_free(char *answer);
+/* Gives back what the library answered: an answer, a refusal, or the
+ * bytes of a file. NULL is nothing. */
+void fado_free(void *answer);
 
 /* The version of the library, such as "v0.9.0", or "dev" for a build
  * that is no release. The library's own memory: never freed. */

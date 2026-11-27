@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"runtime/debug"
 	"strconv"
 	"strings"
@@ -13,6 +14,8 @@ import (
 	"time"
 
 	"github.com/MojoHand70/fadodb/fado"
+	"github.com/MojoHand70/fadodb/fado/outbound"
+	"github.com/MojoHand70/fadodb/internal/secret"
 )
 
 // The library in Go: the databases it opened and what each function of
@@ -83,6 +86,21 @@ func openDatabase(path, options string) (n uint64, refusal []byte) {
 // on the database of number n.
 func execCommand(n uint64, caller, name, object string) (answer []byte) {
 	defer caught(name, &answer)
+	return onDatabase(n, caller, func(d *database, p fado.Principal) []byte {
+		if strings.TrimSpace(object) == "" {
+			object = "{}"
+		}
+		answer, err := d.db.Exec(d.ctx, p, name, []byte(object))
+		if err != nil && fado.ErrorCode(err) == codeInternal {
+			return failed(err)
+		}
+		return answer
+	})
+}
+
+// onDatabase runs do on the database of number n, as the caller, while
+// the database is held open: a close waits for it to end.
+func onDatabase(n uint64, caller string, do func(*database, fado.Principal) []byte) []byte {
 	mu.Lock()
 	d := databases[n]
 	mu.Unlock()
@@ -98,14 +116,7 @@ func execCommand(n uint64, caller, name, object string) (answer []byte) {
 	if e != nil {
 		return refuse(e)
 	}
-	if strings.TrimSpace(object) == "" {
-		object = "{}"
-	}
-	answer, err := d.db.Exec(d.ctx, p, name, []byte(object))
-	if err != nil && fado.ErrorCode(err) == codeInternal {
-		return failed(err)
-	}
-	return answer
+	return do(d, p)
 }
 
 // closeDatabase is fado_close: nil once the database of number n is
@@ -187,10 +198,12 @@ func firstLines(s string, n int) string {
 // the same things.
 func readOptions(text string) (fado.Options, *fado.Error) {
 	var o fado.Options
-	members, e := object(text, "the options")
+	members, e := readObject(text, "the options")
 	if e != nil {
 		return o, e
 	}
+	var calls outbound.Options
+	var secrets string
 	for name, raw := range members {
 		var err error
 		switch name {
@@ -221,20 +234,69 @@ func readOptions(text string) (fado.Options, *fado.Error) {
 			if e := readOutbox(raw, &o.Outbox); e != nil {
 				return o, e
 			}
+		case "outbound":
+			if e := readOutbound(raw, &calls); e != nil {
+				return o, e
+			}
+		case "secrets_dir":
+			err = json.Unmarshal(raw, &secrets)
 		default:
 			return o, &fado.Error{Code: codeBadJSON, Path: pointer(name),
 				Message: "the options have no member " + strconv.Quote(name),
-				Hint:    "the options are synchronous, timezone, max_text, max_indexed_rows, max_question_seconds, max_blob_bytes, blob_store, host_answers_for and outbox"}
+				Hint:    "the options are synchronous, timezone, max_text, max_indexed_rows, max_question_seconds, max_blob_bytes, blob_store, host_answers_for, outbox, outbound and secrets_dir"}
 		}
 		if err != nil {
 			return o, wrongType(name, "the options", err)
 		}
 	}
+	// The database sends requests only when the options list a host,
+	// and only to the hosts they list, as fadodb serve does (ADR-0059,
+	// items 2 and 4); the secrets of the connections are in the
+	// directory of secrets or the environment of the program (item 5).
+	if len(calls.Hosts) > 0 || len(calls.Connections) > 0 {
+		sender, err := outbound.Allow(calls)
+		if err != nil {
+			return o, &fado.Error{Code: codeBadValue, Path: "/outbound", Message: "the outbound hosts: " + err.Error(),
+				Hint: "a host is slack.com, .slack.com for every host under it, books.internal:8443 with its port, or http://localhost:8080 over http"}
+		}
+		o.Outbound = sender
+		o.Secrets = (&secret.Finder{Dir: secrets, Env: os.LookupEnv, Holder: "program"}).Find
+	}
 	return o, nil
 }
 
+// readOutbound reads the hosts the actions of the database may call, in
+// the words of the settings of fadodb serve: {"hosts": [...],
+// "connections": {"slack": ["slack.com"]}}.
+func readOutbound(text []byte, calls *outbound.Options) *fado.Error {
+	members, e := readObject(string(text), "the outbound hosts")
+	if e != nil {
+		e.Path = "/outbound" + e.Path
+		return e
+	}
+	for name, raw := range members {
+		var err error
+		switch name {
+		case "hosts":
+			err = json.Unmarshal(raw, &calls.Hosts)
+		case "connections":
+			err = json.Unmarshal(raw, &calls.Connections)
+		default:
+			return &fado.Error{Code: codeBadJSON, Path: "/outbound" + pointer(name),
+				Message: "the outbound hosts have no member " + strconv.Quote(name),
+				Hint:    "outbound takes hosts, a list, and connections, each a list of hosts by the connection's name"}
+		}
+		if err != nil {
+			e := wrongType(name, "the outbound hosts", err)
+			e.Path = "/outbound" + e.Path
+			return e
+		}
+	}
+	return nil
+}
+
 func readOutbox(text []byte, o *fado.OutboxOptions) *fado.Error {
-	members, e := object(string(text), "the outbox")
+	members, e := readObject(string(text), "the outbox")
 	if e != nil {
 		e.Path = "/outbox" + e.Path
 		return e
@@ -270,7 +332,7 @@ func readOutbox(text []byte, o *fado.OutboxOptions) *fado.Error {
 // left empty is in Go.
 func readCaller(text string) (fado.Principal, *fado.Error) {
 	var p fado.Principal
-	members, e := object(text, "the caller")
+	members, e := readObject(text, "the caller")
 	if e != nil {
 		return p, e
 	}
@@ -307,9 +369,9 @@ func readCaller(text string) (fado.Principal, *fado.Error) {
 	return p, nil
 }
 
-// object reads a JSON object into its members, each given once. Text
-// that is empty is the empty object.
-func object(text, what string) (map[string]json.RawMessage, *fado.Error) {
+// readObject reads a JSON object into its members, each given once.
+// Text that is empty is the empty object.
+func readObject(text, what string) (map[string]json.RawMessage, *fado.Error) {
 	members := map[string]json.RawMessage{}
 	if strings.TrimSpace(text) == "" {
 		return members, nil

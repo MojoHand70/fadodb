@@ -16,6 +16,7 @@
 package main
 
 /*
+#include <stddef.h>
 #include <stdint.h>
 #include <stdlib.h>
 */
@@ -68,6 +69,49 @@ func fado_close(db C.uint64_t, refusal **C.char) C.int {
 		return -1
 	}
 	return 0
+}
+
+//export fado_put_file
+func fado_put_file(db C.uint64_t, caller, object *C.char, bytes unsafe.Pointer, length C.size_t) *C.char {
+	var data []byte
+	if bytes != nil && length > 0 {
+		// The program's memory, read while the call runs and not kept.
+		data = unsafe.Slice((*byte)(bytes), int(length))
+	}
+	return answer(putFile(uint64(db), text(caller), text(object), data))
+}
+
+//export fado_get_file
+func fado_get_file(db C.uint64_t, caller, object *C.char, bytes *unsafe.Pointer, length *C.size_t) *C.char {
+	a, data := getFile(uint64(db), text(caller), text(object))
+	hand(data, bytes, length)
+	return answer(a)
+}
+
+//export fado_get_blob
+func fado_get_blob(db C.uint64_t, caller, object *C.char, bytes *unsafe.Pointer, length *C.size_t) *C.char {
+	a, data := getBlob(uint64(db), text(caller), text(object))
+	hand(data, bytes, length)
+	return answer(a)
+}
+
+// hand gives the bytes of a file to C, in memory that fado_free gives
+// back: never NULL for a file that was read, even an empty one, and
+// NULL for one that was not.
+func hand(data []byte, bytes *unsafe.Pointer, length *C.size_t) {
+	if bytes != nil {
+		*bytes = nil
+		if data != nil {
+			if len(data) == 0 {
+				*bytes = C.malloc(1)
+			} else {
+				*bytes = C.CBytes(data)
+			}
+		}
+	}
+	if length != nil {
+		*length = C.size_t(len(data))
+	}
 }
 
 //export fado_free

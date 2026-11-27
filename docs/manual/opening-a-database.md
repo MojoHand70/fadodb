@@ -359,8 +359,8 @@ every table for it (ADR-0094). Nothing is written for it in the table.
   memory: `MaxIndexedRows`, 100,000 unless the database says otherwise.
   A question over a smaller table is the store's for a moment, as
   above.
-- **The copy of a table is made again when its rows change**, whole: a
-  table has no log of its changes. A table of up to 10,000 rows is
+- **The copy of a table is made again when its rows change**, whole:
+  the copy does not read the history of the rows. A table of up to 10,000 rows is
   copied by the very question that finds it changed, which is a
   moment. A larger one takes seconds, and no question waits for that:
   the store answers until the copy is made.
@@ -455,8 +455,10 @@ what it holds stays as it was. The engine that made it no longer opens
 it afterwards, so keep a copy of the file if you may go back. A file of
 a release before v0.7.0 cannot be brought forward: it is made again.
 
-A newer engine may keep indexes the earlier one did not. They are made
-right after that transaction, before the database answers anything, so
+A newer engine may keep indexes the earlier one did not, or the history
+of the rows of every table, which a database of an earlier engine has
+no past of: the history of its rows begins at that opening. They are
+made right after that transaction, before the database answers anything, so
 the first opening of a large database takes longer than the others. A
 program that is stopped meanwhile loses nothing: the next opening
 makes what is missing.

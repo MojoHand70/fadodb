@@ -69,7 +69,7 @@ const lastOfCommandSQL = "SELECT max(after_version) FROM events WHERE class = ? 
 // one when it is opened, in the transaction that opens it, from
 // oldestUpgraded on; a database older than that is refused and made
 // again, as every pre-release file was before v0.7.0.
-const engineSchema = 15
+const engineSchema = 16
 
 // oldestUpgraded is the earliest engine schema Open brings to the
 // current one in place: 13, the schema of v0.7.0, the first release
@@ -700,6 +700,13 @@ func upgradeSchema(ctx context.Context, w *sql.Conn, from int64) error {
 	// Schema 15 (ADR-0075, item 2): the engine keeps its own indexes on
 	// every class table. They are made once the classes are loaded
 	// (keepIndexes), since only a compiled class says which it has.
+	//
+	// Schema 16 (ADR-0099, step 3): every table keeps the history of its
+	// rows, written by triggers that read the change from fado_table_
+	// changes. The column __since, the history and the triggers are made
+	// as each table is loaded (keepHistory), since only a compiled table
+	// says its columns; an engine of schema 15 would write rows that the
+	// triggers keep with no moment, so it no longer opens the file.
 	if _, err := w.ExecContext(ctx, "UPDATE schema_version SET version = ?", engineSchema); err != nil {
 		return storageErr("write the schema version", err)
 	}
@@ -717,7 +724,7 @@ func (s *Store) init(ctx context.Context, wantSync string, wantMaxText int, want
 		_, _ = w.ExecContext(ctx, "ROLLBACK")
 		return err
 	}
-	for _, ddl := range append(append(append(append(append(append(append(append(append([]string(nil), engineDDL...), usersDDL...), groupsDDL...), signinDDL...), passkeysDDL...), signonDDL...), oauthDDL...), readsDDL...), commentsDDL...) {
+	for _, ddl := range append(append(append(append(append(append(append(append(append(append([]string(nil), engineDDL...), usersDDL...), groupsDDL...), signinDDL...), passkeysDDL...), signonDDL...), oauthDDL...), readsDDL...), commentsDDL...), tableChangesDDL...) {
 		if _, err := w.ExecContext(ctx, ddl); err != nil {
 			return rollback(storageErr("create the engine tables", err))
 		}
@@ -1002,6 +1009,12 @@ func (s *Store) load(ctx context.Context) error {
 		}
 		def.Version = st.version
 		t := newTable(def, st.json)
+		// The history of its rows (ADR-0099, step 3), made here for a
+		// database of an earlier schema, before the statements that
+		// read it.
+		if err := s.keepHistory(ctx, t); err != nil {
+			return err
+		}
 		if err := t.prepare(ctx, s.writer, s.db); err != nil {
 			return err
 		}

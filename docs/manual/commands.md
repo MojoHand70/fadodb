@@ -1244,6 +1244,7 @@ It answers:
 | Command | What it does | |
 |---|---|---|
 | [`table_rows`](#table_rows) | Reads every row of a table, in the order of its key. | reads |
+| [`row_history`](#row_history) | Reads the history of one row of a table: the row as it is now, then as it was before each change, the newest first, with who changed it and when. | reads |
 | [`import_rows`](#import_rows) | Writes rows into a table; a row whose key exists is replaced. | writes |
 | [`delete_rows`](#delete_rows) | Removes the rows of a table that have the keys given; a key the table does not have removes nothing. | writes |
 | [`preview_action`](#preview_action) | Answers what an action would be called with, or the request it would send, with every secret masked; nothing is called or sent. | reads |
@@ -1270,6 +1271,25 @@ It answers:
 |---|---|
 | `rows` | the rows, each an object of values by column |
 
+### row_history
+
+Reads the history of one row of a table: the row as it is now, then as it was before each change, the newest first, with who changed it and when. It reads; in Go it is the call `RowHistory`.
+
+| Member | Type | | What it is |
+|---|---|---|---|
+| `table` | text | needed | the name of the table |
+| `key` | object | needed | the key of the row: a value for every column of the table's key, and for no other |
+| `limit` | whole number |  | how many versions to answer, the newest first; 50 when left out, 1,000 at the most |
+| `offset` | whole number |  | how many versions to skip |
+
+And, of the members that mean the same everywhere: `reason`, `at`, `for`.
+
+It answers:
+
+| Member | What it holds |
+|---|---|
+| `history` | whether the table keeps the history of its rows, how many versions the row has had, and the page of them: each its values, the change that gave them and the one that changed or removed them, each with when, who, of what kind and for whom, and the kind of change |
+
 ### import_rows
 
 Writes rows into a table; a row whose key exists is replaced. It writes; in Go it is the call `ImportRows`.
@@ -1278,7 +1298,7 @@ Writes rows into a table; a row whose key exists is replaced. It writes; in Go i
 |---|---|---|---|
 | `table` | text | needed | the name of the table |
 | `rows` | list of objects | needed | the rows, each an object of values by column |
-| `replace` | true or false |  | true empties the table first, so that the rows given are all its rows |
+| `replace` | true or false |  | true makes the rows given all its rows: a row of the table that is not among them is removed |
 
 And, of the members that mean the same everywhere: `reason`, `for`.
 

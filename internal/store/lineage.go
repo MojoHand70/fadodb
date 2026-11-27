@@ -74,15 +74,22 @@ type Lineage struct {
 // LineageMoment is a commit that gave a document a value: its version,
 // its moment in seconds, who made it, of what kind and for whom, and
 // the event: created, set, transition with the transition's name, or
-// refresh with the trigger's, table:Rates for a table that changed.
+// refresh with the trigger's, table:Rates for a table that changed. For
+// a row of a table it is a change of the table's rows (ADR-0099, step
+// 3), with no version, and the event is the change's kind: import,
+// replace, delete, define, or the action of a rule, table.insert,
+// table.update or table.delete.
 type LineageMoment struct {
-	Version int64  `json:"version"`
+	Version int64  `json:"version,omitempty"`
 	At      int64  `json:"at"`
 	By      string `json:"by,omitempty"`
 	ByKind  string `json:"by_kind,omitempty"`
 	For     string `json:"for,omitempty"`
 	Event   string `json:"event,omitempty"`
 	Name    string `json:"name,omitempty"`
+	// change is the number of a change of a table's rows while it is
+	// read (rowMoments).
+	change int64
 }
 
 // LineageVariable is a value of the document itself that a formula read;
@@ -100,8 +107,10 @@ type LineageVariable struct {
 // read, with what they add up to for a sum or a count; ChangedSince,
 // for a kept value, the parts that have changed since it was worked
 // out, and Now what the lookup gives now. TableChangedSince says a
-// table's rows changed after the value was worked out: the rows listed
-// are as they are now.
+// table's rows changed after the value was worked out. The rows listed
+// are as they were at that moment, from the history of the rows; RowsNow
+// says they are as they are now, since the table kept no history then
+// and has changed since.
 type LineageLookup struct {
 	Class             string          `json:"class,omitempty"`
 	Table             string          `json:"table,omitempty"`
@@ -116,15 +125,21 @@ type LineageLookup struct {
 	ChangedSince      *LineageChanged `json:"changed_since,omitempty"`
 	Now               any             `json:"now,omitempty"`
 	TableChangedSince *bool           `json:"table_changed_since,omitempty"`
+	RowsNow           bool            `json:"rows_now,omitempty"`
 }
 
 // LineagePart is one document a lookup read, at the version it read, or
 // one row of a table by its key, with the value the lookup took of it.
+// For a row, Since is the change that gave it the values read and Until
+// the one that changed or removed it after (ADR-0099, step 3); Since is
+// left out for a row older than the history of the rows.
 type LineagePart struct {
-	ID      string `json:"id,omitempty"`
-	Version int64  `json:"version,omitempty"`
-	Key     Values `json:"key,omitempty"`
-	Value   any    `json:"value"`
+	ID      string         `json:"id,omitempty"`
+	Version int64          `json:"version,omitempty"`
+	Key     Values         `json:"key,omitempty"`
+	Value   any            `json:"value"`
+	Since   *LineageMoment `json:"since,omitempty"`
+	Until   *LineageMoment `json:"until,omitempty"`
 }
 
 // LineageHidden is how many parts the reader may not read, and for a sum
@@ -457,25 +472,47 @@ func (s *Store) lineageLookup(ctx context.Context, q *formula.QuerySlot, args []
 	}
 
 	if t, e := s.table(q.Source); e == nil {
-		// A table: its rows as they are now, and whether they changed
-		// after the moment.
+		// A table: its rows as they were just before the commit of the
+		// moment, from the history of the rows (ADR-0099, step 3), each
+		// with the change that gave it its values and the one after; or,
+		// for a live value, as they are now.
 		l.Table = t.def.Name
+		rel := t.rowsNow
 		if x.event != "" {
 			var token sql.NullString
-			if err := s.db.QueryRowContext(ctx, `SELECT "value" FROM "metadata" WHERE "key" = ?`, rowsKey+strings.ToUpper(t.def.Name)).Scan(&token); err != nil && err != sql.ErrNoRows {
+			if err := s.db.QueryRowContext(ctx, `SELECT "value" FROM "metadata" WHERE "key" = ?`, rowsKey+t.tableKey()).Scan(&token); err != nil && err != sql.ErrNoRows {
 				return l, formula.Value{}, storageErr("read the change of "+t.def.Name, err)
 			}
 			changed := token.Valid && token.String > x.event
 			l.TableChangedSince = &changed
+			kept, err := s.historyAt(ctx, t, x.event)
+			if err != nil {
+				return l, formula.Value{}, err
+			}
+			if kept {
+				rel = t.rowsAsOf
+				before, err := s.changeBefore(ctx, x.event)
+				if err != nil {
+					return l, formula.Value{}, err
+				}
+				named = append(named, sql.Named("lineage_change", before))
+			} else {
+				l.RowsNow = changed
+			}
 		}
-		rel := func(string) string { return quote(t.name) }
 		v, err := s.lineageValue(ctx, q, d, arg, rel, params, named)
 		if err != nil {
 			return l, formula.Value{}, err
 		}
 		l.Value = valueOut(v)
-		if err := s.lineageParts(ctx, q, d, arg, rel, params, named, "", t.def.Key, x, &l); err != nil {
+		keys := append(append([]string{}, t.def.Key...), sinceColumn, untilColumn)
+		if err := s.lineageParts(ctx, q, d, arg, rel, params, named, "", keys, x, &l); err != nil {
 			return l, formula.Value{}, err
+		}
+		for i := range l.Parts {
+			if err := s.rowMoments(ctx, &l.Parts[i]); err != nil {
+				return l, formula.Value{}, err
+			}
 		}
 		return l, v, nil
 	}
@@ -856,7 +893,21 @@ func (s *Store) lineageParts(ctx context.Context, q *formula.QuerySlot, d formul
 		} else {
 			p.Key = Values{}
 			for i, k := range keys {
-				p.Key[k] = text1Or(cells[i])
+				switch k {
+				case sinceColumn, untilColumn:
+					// Kept as the change's number until rowMoments
+					// reads it.
+					if cells[i] != nil {
+						m := &LineageMoment{change: whole(cells[i])}
+						if k == sinceColumn {
+							p.Since = m
+						} else {
+							p.Until = m
+						}
+					}
+				default:
+					p.Key[k] = text1Or(cells[i])
+				}
 			}
 		}
 		l.Parts = append(l.Parts, p)

@@ -102,7 +102,8 @@ What Tomek reads:
   document that holds them, so they need a reason every time, and the
   entry keeps the hash. Over HTTP the reason is a parameter of the
   address, `reason=`.
-- **Tables.** A table keeps no history of its own, so a content
+- **Tables.** The history of a table's rows says who changed a row,
+  and not which rule they got past or why, so a content
   administrator's import past its write rule, or read past its read
   rule, is kept here with the table and the number of rows. So is a
   row that a rule's action writes past the table's rule, with the

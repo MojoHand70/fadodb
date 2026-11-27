@@ -461,6 +461,32 @@ func TestTablesActionsAndTheQueue(t *testing.T) {
 	if got := rows["rows"].([]any); len(got) != 1 || got[0].(map[string]any)["currency"] != "CHF" {
 		t.Fatalf("table_rows answered %v", rows)
 	}
+	// The row the replace removed is in the history of the rows
+	// (ADR-0099, step 3), as the Go call answers it.
+	history := run(t, s, bob, "row_history", `{"table": "Rates", "key": {"currency": "EUR"}}`)
+	direct, err := s.RowHistory(context.Background(), "Rates", store.Values{"currency": "EUR"}, store.RowHistoryAsk{}, store.As(bob))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var want any
+	_ = json.Unmarshal(mustJSON(direct), &want)
+	versions := at(t, history, "history.rows").([]any)
+	was, _ := versions[0].(map[string]any)
+	if !reflect.DeepEqual(history["history"], want) || at(t, history, "history.count") != float64(1) || len(versions) != 1 ||
+		was["values"].(map[string]any)["rate"] != 4.25 || was["since"].(map[string]any)["event"] != "import" ||
+		was["until"].(map[string]any)["event"] != "replace" || was["until"].(map[string]any)["by"] != "ann" {
+		t.Fatalf("row_history answered %v, and the Go call %v", history["history"], want)
+	}
+	for object, want := range map[string][2]string{
+		`{"table": "Rates"}`:                                          {CodeBadJSON, "/key"},
+		`{"table": "Rates", "key": {"rate": 4.25}}`:                   {store.CodeUnknownVariable, "/key/rate"},
+		`{"table": "Rates", "key": {"currency": "EUR"}, "limit": -1}`: {store.CodeBadValue, "/limit"},
+		`{"table": "Nothing", "key": {"currency": "EUR"}}`:            {store.CodeUnknownTable, ""},
+	} {
+		if e := refused(t, s, bob, "row_history", object); e.Code != want[0] || e.Path != want[1] {
+			t.Errorf("row_history %s: %s at %q (%s), want %s at %q", object, e.Code, e.Path, e.Message, want[0], want[1])
+		}
+	}
 
 	// An action of the host program, and a class whose rule calls it.
 	posted := run(t, s, dan, "define_action", `{"definition": {"name": "books.post", "params": {"amount": {"type": "number"}}, "returns": {"entry": {"type": "text"}}}}`)

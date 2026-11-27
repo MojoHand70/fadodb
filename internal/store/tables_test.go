@@ -78,7 +78,9 @@ func TestDefineTable(t *testing.T) {
 		names = append(names, typ+":"+name)
 	}
 	rows.Close()
-	if got := strings.Join(names, " "); got != "index:sqlite_autoindex_tbl_Rates_1 index:tbl_Rates_name table:tbl_Rates view:Rates" {
+	// With the history of the rows and its three triggers (ADR-0099,
+	// step 3).
+	if got := strings.Join(names, " "); got != "index:sqlite_autoindex_tbl_Rates_1 index:tbl_Rates__history_key index:tbl_Rates_name table:tbl_Rates table:tbl_Rates__history trigger:tbl_Rates__changed trigger:tbl_Rates__removed trigger:tbl_Rates__since view:Rates" {
 		t.Errorf("objects: %s", got)
 	}
 	var n int

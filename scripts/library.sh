@@ -95,7 +95,7 @@ pack)
   stage="$out/$pack"
   rm -rf "$stage"
   mkdir -p "$stage"
-  cp "$library" "$out/fadodb.h" LICENSE "$stage/"
+  cp "$library" "$out/fadodb.h" LICENSE THIRD_PARTY_NOTICES.md "$stage/"
   cp cabi/README.md "$stage/README.md"
   if [ "$os" = "windows" ]; then
     rm -f "$out/$pack.zip"

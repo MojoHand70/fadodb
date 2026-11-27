@@ -77,7 +77,7 @@ func (s *Store) tableRefusal(t *table, write bool, o options, now int64) (past b
 	var failure error
 	if prog != nil {
 		ev := s.reader()
-		ev.ctx = contextOf(p, now)
+		ev.ctx = s.contextOf(p, now)
 		var val formula.Value
 		if val, failure = ev.vm.Run(prog, nil, &ev.ctx); failure == nil {
 			held = val.Truth()

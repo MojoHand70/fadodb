@@ -2496,10 +2496,14 @@
                   "properties": {
                     "app": {
                       "description": "the definition as it was given, with its name, its version and who defined it"
+                    },
+                    "holders": {
+                      "description": "each role the app names, in its order, with the groups and the users who hold it here: app, role, groups, users; left out for an app that names no roles"
                     }
                   },
                   "required": [
-                    "app"
+                    "app",
+                    "holders"
                   ],
                   "type": "object"
                 }
@@ -2511,7 +2515,7 @@
             "$ref": "#/components/responses/Refused"
           }
         },
-        "summary": "Reads an app back as it was defined.",
+        "summary": "Reads an app back as it was defined, with who holds each of its roles on this database.",
         "tags": [
           "Definitions"
         ],
@@ -5864,6 +5868,70 @@
         "x-fado-mark": "writes"
       }
     },
+    "/v1/role_changes": {
+      "post": {
+        "description": "It reads. In Go it is the call `RoleChanges`.",
+        "operationId": "role_changes",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "app": {
+                    "description": "the name of the app",
+                    "type": "string"
+                  },
+                  "for": {
+                    "description": "the id of whoever the caller acts for; let through only while a substitution says so",
+                    "type": "string"
+                  },
+                  "role": {
+                    "description": "the name of the role",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "app",
+                  "role"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "changes": {
+                      "description": "the changes: what (set or removed), when, by whom, of what kind and for whom, and the groups and users the role was left with"
+                    }
+                  },
+                  "required": [
+                    "changes"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "The command ran."
+          },
+          "default": {
+            "$ref": "#/components/responses/Refused"
+          }
+        },
+        "summary": "Lists every change to who holds a role, the earliest first, a role's the app no longer names too. It is a database administrator's.",
+        "tags": [
+          "Users, groups and keys"
+        ],
+        "x-fado-call": "RoleChanges",
+        "x-fado-mark": "reads"
+      }
+    },
     "/v1/set": {
       "post": {
         "description": "It writes. In Go it is the call `Set`.",
@@ -6012,6 +6080,84 @@
           "Users, groups and keys"
         ],
         "x-fado-call": "SetGroup",
+        "x-fado-mark": "writes"
+      }
+    },
+    "/v1/set_role": {
+      "post": {
+        "description": "It writes. In Go it is the call `SetRole`.",
+        "operationId": "set_role",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "app": {
+                    "description": "the name of the app",
+                    "type": "string"
+                  },
+                  "for": {
+                    "description": "the id of whoever the caller acts for; let through only while a substitution says so",
+                    "type": "string"
+                  },
+                  "groups": {
+                    "description": "the groups whose members hold the role",
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "role": {
+                    "description": "the name of the role, as the app names it",
+                    "type": "string"
+                  },
+                  "users": {
+                    "description": "the ids of the users who hold it by name",
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "app",
+                  "role"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "role": {
+                      "description": "the role with its holders: app, role, groups, users"
+                    }
+                  },
+                  "required": [
+                    "role"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "The command ran."
+          },
+          "default": {
+            "$ref": "#/components/responses/Refused"
+          }
+        },
+        "summary": "Says who holds a role of an app on this database: the groups whose members hold it and the users who hold it by name, in place of the ones it had. Two empty lists leave it held by nobody; the same holders again change nothing. It is a database administrator's.",
+        "tags": [
+          "Users, groups and keys"
+        ],
+        "x-fado-call": "SetRole",
         "x-fado-mark": "writes"
       }
     },
@@ -7358,13 +7504,17 @@
                     "for": {
                       "description": "the id of whoever the caller acts for, when the command names one"
                     },
+                    "roles": {
+                      "description": "the roles the caller holds, by app: {\"Expenses\": [\"approver\"]}; left out when they hold none"
+                    },
                     "user": {
                       "description": "the user: its id, its kind, its name, its groups, its system groups and whether it is disabled"
                     }
                   },
                   "required": [
                     "user",
-                    "for"
+                    "for",
+                    "roles"
                   ],
                   "type": "object"
                 }
@@ -7376,7 +7526,7 @@
             "$ref": "#/components/responses/Refused"
           }
         },
-        "summary": "Answers who the database takes the caller for.",
+        "summary": "Answers who the database takes the caller for, and the roles they hold.",
         "tags": [
           "Users, groups and keys"
         ],

@@ -346,7 +346,7 @@ func (s *Store) tableFigureFromCopy(ctx context.Context, t *table, q *formula.Qu
 	if err != nil {
 		return nil, nil, code, false
 	}
-	evalCtx := contextOf(o.principal, s.clock(o))
+	evalCtx := s.contextOf(o.principal, s.clock(o))
 	if of != nil {
 		evalCtx = *of
 	}
@@ -438,7 +438,7 @@ func (s *Store) tablePageFromCopy(ctx context.Context, t *table, plan *query.Pla
 		text += " WHERE " + asked.Where
 	}
 	text += " ORDER BY " + asked.Order + " LIMIT " + fmt.Sprint(plan.Limit+1) + " OFFSET " + fmt.Sprint(plan.Offset)
-	evalCtx := contextOf(o.principal, s.clock(o))
+	evalCtx := s.contextOf(o.principal, s.clock(o))
 	fd, ready := s.copyReadyTable(ctx, t)
 	if !ready {
 		return nil, false

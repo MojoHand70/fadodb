@@ -39,9 +39,13 @@ so the right one loads for the task at hand.
 | Its own principal | [`fadodb-own-work/`](fadodb-own-work/SKILL.md) | runs the agent's own work as documents: the task ledger, the approval inbox, the saga | principal, the rules of a class and per-transition rights enforced; acting for a person checked against a substitution; a rule calls a Go function of the host program, or the agent's endpoint over HTTP |
 | Face builder | [`fadodb-face/`](fadodb-face/SKILL.md) | builds what people see of a server so that it is good to look at and looks like every other face of that server: reads the server's look, defines one with a person when there is none, and holds to it | written; the look is a document of the class `Look`, an ordinary class defined from the skill's page: drafted by a designer, approved by a person of the group `brand`; the server handing the skills to an agent that connects is planned |
 
-The person who embeds the engine in a Go program is a seventh caller, a
-developer or a coding agent. That is an embedding guide, planned for
-Phase 9, not a hat.
+The person who embeds the engine in a program is a seventh caller, a
+developer or a coding agent. That is not a hat but a guide of the
+manual: in Go, [opening a database](../docs/manual/opening-a-database.md)
+and [naming the caller](../docs/manual/naming-the-caller.md); in any
+other language, through the library of C,
+[in a program of another language](../docs/manual/other-languages.md)
+(Phase 9).
 
 ## Layout
 

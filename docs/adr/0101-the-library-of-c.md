@@ -338,6 +338,22 @@ Mine, while building step D:
   owner makes on PyPI; no token is kept anywhere. A tag of a version
   before its release, `v1.0.0-rc.1`, is `1.0.0rc1` to Python.
 
+Mine, while building step E:
+
+- **The guide is one chapter of the manual,
+  [in a program of another language](../manual/other-languages.md)**,
+  beside the two chapters a Go program already has. One story, Dan's
+  invoice that Ann makes and Bob books, told as a whole program in C,
+  Python, Go, Node and C#, each in `examples/languages`, each printing
+  the same five lines. A test holds each program shown to its file and
+  runs each; GitHub runs every language on Linux and those a machine
+  has on macOS and Windows.
+- **Node calls the library through koffi**, a package (MIT): Node has
+  no way of its own to call a library of C. The test fetches it, as the
+  chapter tells a reader to. **.NET calls it with P/Invoke** and needs no
+  package; the project names .NET 10, and the test builds it for the
+  .NET a machine has.
+
 ## Left out
 
 Each of these is named so that it is not mistaken for decided:

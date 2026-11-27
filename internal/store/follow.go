@@ -274,6 +274,11 @@ type followRun struct {
 	// ones that could not take the value; first is the first refusal.
 	brought, refused int
 	first            *Error
+	// careful says a document of the run was refused: from then on each
+	// document has a savepoint of its own, to be taken back to. Until
+	// then none has, and a refusal takes the transaction back whole
+	// (bringMany).
+	careful bool
 }
 
 // runFollow runs a follow row (ADR-0091, item 6): transaction after
@@ -348,22 +353,44 @@ func (s *Store) followBatch(ctx context.Context, row *outboxRow, args followArgs
 	}()
 	now := s.now()
 	w := s.writer
-	if _, err := w.ExecContext(ctx, "BEGIN IMMEDIATE"); err != nil {
-		return false, false, storageErr("begin", err)
-	}
-	var status string
+	// Where the run stood before this transaction: one taken back to be
+	// brought again begins there.
+	start := *run
 	var attempts int
-	if err := w.QueryRowContext(ctx, `SELECT status, attempts FROM outbox WHERE event_id = ? AND idx = ?`, row.eventID, row.idx).Scan(&status, &attempts); err != nil || status != ActionPending {
-		_, _ = w.ExecContext(ctx, "ROLLBACK")
-		if err != nil && err != sql.ErrNoRows {
-			return false, false, storageErr("read the follow", err)
-		}
-		return false, false, nil
-	}
-	failure := s.at("perform", row)
+	var failure *Error
 	found, queued := 0, 0
-	if failure == nil {
-		found, queued, failure = s.bringMany(ctx, row, args.trigger(), run, now)
+	for again := false; ; {
+		if _, err := w.ExecContext(ctx, "BEGIN IMMEDIATE"); err != nil {
+			return false, false, storageErr("begin", err)
+		}
+		var status string
+		if err := w.QueryRowContext(ctx, `SELECT status, attempts FROM outbox WHERE event_id = ? AND idx = ?`, row.eventID, row.idx).Scan(&status, &attempts); err != nil || status != ActionPending {
+			_, _ = w.ExecContext(ctx, "ROLLBACK")
+			if err != nil && err != sql.ErrNoRows {
+				return false, false, storageErr("read the follow", err)
+			}
+			return false, false, nil
+		}
+		if !again {
+			failure = s.at("perform", row)
+		}
+		if failure == nil {
+			found, queued, again, failure = s.bringMany(ctx, row, args.trigger(), run, now)
+		}
+		if !again {
+			break
+		}
+		// A document was refused with no savepoint to take it back to:
+		// the transaction goes back whole, with the moment of the
+		// earliest wake-up its commits queued, and its documents are
+		// brought again, each with a savepoint, as is every later one of
+		// the run.
+		if _, err := w.ExecContext(ctx, "ROLLBACK"); err != nil {
+			return false, false, storageErr("rollback", err)
+		}
+		s.wakeAt = 0
+		*run = start
+		run.careful = true
 	}
 	if failure == nil {
 		failure = s.at("performed", row)
@@ -428,23 +455,29 @@ func (s *Store) followBatch(ctx context.Context, row *outboxRow, args followArgs
 // returns how many documents the statement found and how many rows of
 // the outbox their commits queued. Only a failure of the store is a
 // failure of the follow.
-func (s *Store) bringMany(ctx context.Context, row *outboxRow, trigger string, run *followRun, now time.Time) (found, queued int, failure *Error) {
+//
+// A document is taken back to the savepoint set before it, once the run
+// is careful. Until then no document has one, since a savepoint costs
+// SQLite a copy of each page the document's commit writes; again then
+// says a document was refused, and the caller takes the transaction
+// back and brings it again, careful.
+func (s *Store) bringMany(ctx context.Context, row *outboxRow, trigger string, run *followRun, now time.Time) (found, queued int, again bool, failure *Error) {
 	c, e := s.class(row.class)
 	if e != nil || len(c.follows[strings.ToUpper(trigger)]) == 0 {
 		// The class is gone, or no longer follows the table or the
 		// schedule: nothing is left to bring.
-		return 0, 0, nil
+		return 0, 0, false, nil
 	}
 	text, params := s.followSQL(c, trigger)
 	if text == "" {
-		return 0, 0, nil
+		return 0, 0, false, nil
 	}
 	evalCtx := contextOf(row.principal, now.Unix())
 	named := []any{sql.Named("fado_after", run.after)}
 	named = formula.NewSQLite().ContextArgsFor(&evalCtx, params, named)
 	rows, err := s.writer.QueryContext(ctx, text, named...)
 	if err != nil {
-		return 0, 0, asError(storageErr("find the documents that follow "+trigger, err))
+		return 0, 0, false, asError(storageErr("find the documents that follow "+trigger, err))
 	}
 	type place struct {
 		rowid int64
@@ -455,20 +488,20 @@ func (s *Store) bringMany(ctx context.Context, row *outboxRow, trigger string, r
 		var p place
 		if err := rows.Scan(&p.rowid, &p.id); err != nil {
 			rows.Close()
-			return 0, 0, asError(storageErr("find the documents that follow "+trigger, err))
+			return 0, 0, false, asError(storageErr("find the documents that follow "+trigger, err))
 		}
 		places = append(places, p)
 	}
 	if err := rows.Close(); err != nil {
-		return 0, 0, asError(storageErr("find the documents that follow "+trigger, err))
+		return 0, 0, false, asError(storageErr("find the documents that follow "+trigger, err))
 	}
 	cmd := command{op: opRefresh, c: c, o: options{principal: row.principal, reason: row.reason}, internal: true, engine: true,
 		depth: row.depth + 1, follow: trigger, day: businessDay(options{}, now), hasDay: true}
 	marked := false
 	for _, p := range places {
-		if !marked {
+		if run.careful && !marked {
 			if _, err := s.stmts.mark.ExecContext(ctx); err != nil {
-				return 0, 0, asError(storageErr("mark the follow", err))
+				return 0, 0, false, asError(storageErr("mark the follow", err))
 			}
 			marked = true
 		}
@@ -478,10 +511,14 @@ func (s *Store) bringMany(ctx context.Context, row *outboxRow, trigger string, r
 		if err != nil {
 			refusal, ok := err.(*Error)
 			if !ok || refusal.Code == CodeStorage || refusal.Code == CodeClosed || ctx.Err() != nil {
-				return 0, 0, asError(err)
+				return 0, 0, false, asError(err)
+			}
+			if !run.careful {
+				// What its commit wrote has no savepoint to go back to.
+				return 0, 0, true, nil
 			}
 			if _, err := s.stmts.toMark.ExecContext(ctx); err != nil {
-				return 0, 0, asError(storageErr("take a refused document back", err))
+				return 0, 0, false, asError(storageErr("take a refused document back", err))
 			}
 			run.refused++
 			if run.first == nil {
@@ -495,19 +532,21 @@ func (s *Store) bringMany(ctx context.Context, row *outboxRow, trigger string, r
 			// Its value came out the same: nothing was written.
 			continue
 		}
-		if _, err := s.stmts.unmark.ExecContext(ctx); err != nil {
-			return 0, 0, asError(storageErr("release the mark", err))
+		if marked {
+			if _, err := s.stmts.unmark.ExecContext(ctx); err != nil {
+				return 0, 0, false, asError(storageErr("release the mark", err))
+			}
+			marked = false
 		}
-		marked = false
 		run.brought++
 		queued += res.queued
 	}
 	if marked {
 		if _, err := s.stmts.unmark.ExecContext(ctx); err != nil {
-			return 0, 0, asError(storageErr("release the mark", err))
+			return 0, 0, false, asError(storageErr("release the mark", err))
 		}
 	}
-	return len(places), queued, nil
+	return len(places), queued, false, nil
 }
 
 // followed marks a follow done, in the transaction of its last

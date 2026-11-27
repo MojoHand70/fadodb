@@ -67,6 +67,14 @@ Phase 8 started on 2026-11-25, and Phase 9 on 2026-11-27.
   written by `clients/py/wheel.py` with Python's own `zipfile`. A
   release publishes the wheels on PyPI as `fadodb`, by trusted
   publishing, with no token kept anywhere.
+- A chapter of the manual, [in a program of another
+  language](docs/manual/other-languages.md) (ADR-0101, its step E): the
+  library for each system, its five functions, the caller beside the
+  command, files, and what every program minds; and one story, an
+  invoice that Ann makes and Bob books, told as a whole program in C,
+  Python, Go, Node (through koffi) and C# (with P/Invoke), each in
+  `examples/languages`. A test runs every program and compares what it
+  prints with the chapter.
 
 - Where a value comes from (ADR-0099, proposed; its second step). A new
   command, `lineage`, in Go `Lineage`, answers one value of one

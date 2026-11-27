@@ -31,8 +31,13 @@ library="$out/$name"
 # scripts/program.sh says it of the program.
 GLIBC_MAX="${LIBRARY_GLIBC_MAX:-}"
 
-# python is the machine's own Python; the client needs nothing else.
-python="$(command -v python3 || command -v python || true)"
+# python is the machine's own Python; the client needs nothing else. On
+# Windows python3 may be the stub of the store.
+if [ "$os" = "windows" ]; then
+  python="$(command -v python || command -v python3 || true)"
+else
+  python="$(command -v python3 || command -v python || true)"
+fi
 
 # native is a path as the programs of the system take it: on Windows,
 # under Git's bash, /d/a/x is D:\a\x to Go and to Python.

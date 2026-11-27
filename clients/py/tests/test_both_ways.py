@@ -285,9 +285,16 @@ class OverHTTP(BothWays, unittest.TestCase):
         if cls.url is None:
             cls.server.kill()
             raise RuntimeError("the server did not say where it serves")
-        # The rest of what it says is read, so that it never waits on a
-        # full pipe.
-        threading.Thread(target=cls.server.stdout.read, daemon=True).start()
+        # The rest of what it says is kept, so that it never waits on a
+        # full pipe, and shown when the tests end on GitHub, where it is
+        # the only account of a request that got no answer.
+        cls.said = []
+
+        def keep():
+            for line in cls.server.stdout:
+                cls.said.append(line.rstrip("\n"))
+
+        threading.Thread(target=keep, daemon=True).start()
         cls.define()
 
     @classmethod
@@ -297,6 +304,8 @@ class OverHTTP(BothWays, unittest.TestCase):
             cls.server.wait(timeout=20)
         except subprocess.TimeoutExpired:
             cls.server.kill()
+        if os.environ.get("FADODB_PYTHON") == "must":
+            print("\nwhat the server said:", *cls.said[-60:], sep="\n  ", file=sys.stderr)
         shutil.rmtree(cls.dir, ignore_errors=True)
 
     @classmethod

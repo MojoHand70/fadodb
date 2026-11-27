@@ -97,6 +97,7 @@ refusal writes nothing**.
 | `custom` | a rule emits an event of your own |
 | `action_run` | an action the document queued was carried out |
 | `action_failed` | an action the document queued was refused, or gave up |
+| `commented` | somebody comments on the document; it makes no version of it, and its `before_version` is the version the comment was written on (see [Comments](../comments.md)) |
 
 ## Sending a call twice
 

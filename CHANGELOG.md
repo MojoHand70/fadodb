@@ -52,6 +52,24 @@ Phase 8 started on 2026-11-25.
   steps after it: where a value comes from (`lineage`), and the
   history of a table's rows, which every table keeps by the owner's
   word.
+- Comments on a document (ADR-0098, proposed). Two new commands:
+  `comment`, in Go `Comment`, writes words the engine keeps beside a
+  document, with who wrote them (a person, an agent or a service, and
+  for whom it acted), when, and the version they were written on; and
+  `comments`, in Go `Comments`, reads them, oldest first. Whoever may
+  read the document may comment on it, in any state, a final one too;
+  whoever may not is answered as if there were no such document. A
+  comment makes no version of the document and runs nothing; each is an
+  event of the new kind `commented`, in `events`, the stream of
+  changes, `<Class>_events` and the copy, with its `before_version` and
+  no `after_version`. It takes `key`, so a retry writes it once, and
+  `version`, so it is refused with `stale_version` when the document
+  moved on. Empty words are refused with `required`, words past the
+  limit for a text with `out_of_range`, a control character other than
+  a line break or a tab with `bad_value`. The table `fado_comments` is
+  made when a database is opened; the schema keeps its number. New
+  chapter: `docs/manual/comments.md`.
+
 - The paths documents took (ADR-0097, proposed). A new command,
   `paths`, in Go `Paths`, answers for a class which ways its documents
   went through the states, the most taken first: each path with its

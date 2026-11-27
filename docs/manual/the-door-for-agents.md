@@ -181,9 +181,10 @@ the database refuses is answered with the refusal under error: a code,
 a message, the place in the command and a hint. The tools that commit
 a document take a key, and one sent again with the same key makes no
 second commit: create, set, reset, refresh, transition,
-transition_many, delete. No other tool takes one. Decide on what you
-read: a document you read has a version, and a change to it says which
-version you read, as version (set, reset, refresh, transition, delete).
+transition_many, delete, comment. No other tool takes one. Decide on
+what you read: a document you read has a version, and a change to it
+says which version you read, as version (set, reset, refresh,
+transition, delete, comment).
 When the document has moved on since, the command is refused with
 stale_version and nothing is written: read the document again and
 decide on what it holds now.
@@ -245,8 +246,8 @@ before one that removes:
 <!-- the marks -->
 | The command | Tools | `readOnlyHint` | `destructiveHint` | `openWorldHint` |
 |---|---|---|---|---|
-| reads | 60 | true | false | false |
-| writes | 35 | false | false | false |
+| reads | 61 | true | false | false |
+| writes | 36 | false | false | false |
 | writes, and runs an action now: `try_action`, `drain` | 2 | false | false | true |
 | removes: `delete` | 1 | false | true | false |
 
@@ -425,7 +426,7 @@ sent:
 | The command | What the hint says |
 |---|---|
 | reads, such as `get` or `query` | nothing was changed: ask again |
-| commits a document and so takes a `key`: `create`, `set`, `reset`, `refresh`, `transition`, `transition_many`, `delete` | sent again with the same key, it makes no second commit; sent with no key, read the document before sending it again |
+| commits a document and so takes a `key`: `create`, `set`, `reset`, `refresh`, `transition`, `transition_many`, `delete`, `comment` | sent again with the same key, it makes no second commit; sent with no key, read the document before sending it again |
 | writes anything else, such as `define_class`, `set_user` or `try_action` | it takes no key: read what it would have changed before sending it again |
 
 So an agent gives a `key` to every command that commits a document,
@@ -444,7 +445,7 @@ not see them:
   cannot move an invoice.
 - `--tools get,query,transitions,transition` offers these tools and no
   other. A short list also costs an agent less to read: the whole list
-  is about 85,000 characters.
+  is about 88,000 characters.
 
 An agent that calls a tool the door does not offer is told why:
 

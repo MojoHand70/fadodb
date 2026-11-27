@@ -111,6 +111,8 @@ A command takes the ones its list below shows, and no other.
 | [`history`](#history) | Reads every committed version of a document, oldest first. | reads |
 | [`version`](#version) | Reads one committed version of a document. | reads |
 | [`events`](#events) | Reads the events that touched a document, oldest first. | reads |
+| [`comment`](#comment) | Writes a comment on a document: words the engine keeps beside it, with who wrote them and when. It makes no version of the document. | writes |
+| [`comments`](#comments) | Reads the comments on a document, oldest first. | reads |
 | [`subscribe`](#subscribe) | Opens the stream of changes: the caller is told of every event it may read of, in the order of the commits, as each is written. | reads |
 | [`wait_for_changes`](#wait_for_changes) | Answers the events the caller may hear of after a place in the log, as the stream of changes tells them, and waits up to seconds for the first when there is none yet; the answer says where to ask from next. | reads |
 | [`preview`](#preview) | Runs a create, a set or a transition without writing anything. | reads |
@@ -391,6 +393,41 @@ It answers:
 | Member | What it holds |
 |---|---|
 | `events` | the events |
+
+### comment
+
+Writes a comment on a document: words the engine keeps beside it, with who wrote them and when. It makes no version of the document. It writes; in Go it is the call `Comment`.
+
+| Member | Type | | What it is |
+|---|---|---|---|
+| `class` | text | needed | the name of the class |
+| `id` | text | needed | the id of the document |
+| `text` | text | needed | the words: plain text, line breaks kept, at most the database's limit for a text |
+
+And, of the members that mean the same everywhere: `key`, `business_date`, `for`, `version`.
+
+It answers:
+
+| Member | What it holds |
+|---|---|
+| `comment` | the comment as the engine keeps it: its id, the words, who wrote them, what they are and for whom they acted, the version of the document, the business day and the moment |
+
+### comments
+
+Reads the comments on a document, oldest first. It reads; in Go it is the call `Comments`.
+
+| Member | Type | | What it is |
+|---|---|---|---|
+| `class` | text | needed | the name of the class |
+| `id` | text | needed | the id of the document |
+
+And, of the members that mean the same everywhere: `reason`, `at`, `for`.
+
+It answers:
+
+| Member | What it holds |
+|---|---|
+| `comments` | the comments, oldest first; none for a document the caller may not see |
 
 ### subscribe
 

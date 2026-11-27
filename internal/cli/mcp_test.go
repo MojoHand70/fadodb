@@ -220,8 +220,8 @@ func TestTheChapterOnTheDoor(t *testing.T) {
 	if code != exitDone || said != "" || len(wrote) != 1 {
 		t.Fatalf("the list of the tools: exit %d, %d lines, said %q", code, len(wrote), said)
 	}
-	if n := len(wrote[0]); n < 80_000 || n > 90_000 {
-		t.Errorf("the list of the tools is %d characters, and the chapter says about 85,000", n)
+	if n := len(wrote[0]); n < 83_000 || n > 93_000 {
+		t.Errorf("the list of the tools is %d characters, and the chapter says about 88,000", n)
 	}
 	var list struct {
 		Result struct {

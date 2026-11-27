@@ -297,6 +297,15 @@ var commands = []*Command{
 	{Group: Documents, Name: "events", Mark: Reads, Call: "Events", Does: "Reads the events that touched a document, oldest first.",
 		Fields: []Field{req("class", Text, theClass), req("id", Text, theID)},
 		Answer: answer("events", "the events"), takes: asReader, run: runEvents},
+	// Comments on a document (ADR-0098): kept by the engine beside it, read under its rules, never a version of it.
+	// A comment takes no reason: a content administrator comments only where the rules let them.
+	{Group: Documents, Name: "comment", Mark: Writes, Call: "Comment", Does: "Writes a comment on a document: words the engine keeps beside it, with who wrote them and when. It makes no version of the document.",
+		Fields: []Field{req("class", Text, theClass), req("id", Text, theID), req("text", Text, "the words: plain text, line breaks kept, at most the database's limit for a text")},
+		Answer: answer("comment", "the comment as the engine keeps it: its id, the words, who wrote them, what they are and for whom they acted, the version of the document, the business day and the moment"),
+		takes:  takesKey | takesBusinessDate | takesFor | refusesAt | takesVersion, run: runComment},
+	{Group: Documents, Name: "comments", Mark: Reads, Call: "Comments", Does: "Reads the comments on a document, oldest first.",
+		Fields: []Field{req("class", Text, theClass), req("id", Text, theID)},
+		Answer: answer("comments", "the comments, oldest first; none for a document the caller may not see"), takes: asReader, run: runComments},
 	{Group: Documents, Name: "subscribe", Mark: Reads, Call: "Subscribe", Stream: true,
 		Does: "Opens the stream of changes: the caller is told of every event it may read of, in the order of the commits, as each is written.",
 		Fields: []Field{opt("classes", Texts, "the classes to hear of; every class when left out"),

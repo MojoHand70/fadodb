@@ -6,10 +6,52 @@ All notable changes to FadoDB are recorded here. The format follows
 
 ## [Unreleased]
 
-Phase 8 started on 2026-11-25.
+Phase 8 started on 2026-11-25, and Phase 9 on 2026-11-27.
 
 ### Added
 
+- The library of C (ADR-0101, proposed; the first step of Phase 9). A
+  program in any language that can call C holds a FadoDB database in
+  its own process, with no server: `fado_open` opens a database file,
+  `fado_exec` runs one command of the command set as the caller the
+  program names, `fado_close` closes it, `fado_free` gives back an
+  answer and `fado_version` says which library was loaded. A command
+  and its answer are those of `POST /v1/<command>`, byte for byte; the
+  caller is a JSON object beside the command, with the members a user
+  has (`id`, `kind`, `groups`, `system_groups`, and `today`, the
+  business day), and the options of `fado_open` are named as the
+  settings of `fadodb serve` name the same things. A database is a
+  number given once in the life of the process, so a number kept after
+  its close is refused with `closed`; every function may be called from
+  any thread; a close answers the commands that wait first; a panic in
+  the engine is answered `internal` and leaves the program running. The
+  library is the engine of `fadodb-core`, built in the module `cabi/`
+  with `make library` as `libfadodb-core.so`, `libfadodb-core.dylib` or
+  `fadodb-core.dll`, with `fadodb.h`. GitHub builds it on Linux, macOS
+  and Windows on every pull request and runs a program of C against it.
+
+- Where a value comes from (ADR-0099, proposed; its second step). A new
+  command, `lineage`, in Go `Lineage`, answers one value of one
+  document and what it is made of, one level: its kind (typed,
+  computed, kept or live), its formula, the moment it came (the commit
+  that worked a kept value out, or the version since which a typed or
+  computed value is what it is, with who and by which event), the
+  values of the document its formula read, and for each lookup the
+  documents or the rows it read: how many, what they give, the page of
+  them the caller may read with their values, the largest first, how
+  many the caller may not read (and for a sum or a count what they
+  come to), which have changed since and what the lookup gives now. A
+  kept value is worked out again by its own formula over the documents
+  as they were just before the commit that worked it out, and
+  `adds_up` says whether it agrees; nothing is written by any commit
+  for it. `version` walks down in the past. A table's rows are as they
+  are now, and `table_changed_since` says they changed after the value
+  was worked out. A content administrator's call past the rule is kept
+  in the log of reads with the parts only the override showed. The
+  manual has a guide, "Where a value comes from", which a test plays.
+  Among 3,400,000 invoices it answers a customer's kept total of 1,700
+  invoices in 60 to 61 ms and one of 1,700,000 in 22 seconds, from the
+  store in both programs; the copy does not answer it yet.
 - The documents behind a number (ADR-0099, proposed; its first step).
   `flow`, `throughput` and `paths` take one member more, `documents`,
   which names one of their numbers, and then answer the documents

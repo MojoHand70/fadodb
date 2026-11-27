@@ -14,7 +14,7 @@ STATICCHECK_VERSION ?= latest
 GOVULNCHECK_VERSION ?= latest
 BENCHSTAT_VERSION   ?= latest
 
-.PHONY: all build full run test analytics bench fmt vet lint vuln tools depgate sizegate filegate benchgate gates clean docs image imagecheck vm vmtest
+.PHONY: all build full library cabi run test analytics bench fmt vet lint vuln tools depgate sizegate filegate benchgate gates clean docs image imagecheck vm vmtest
 
 all: build
 
@@ -27,6 +27,23 @@ build:
 full:
 	cd analytics && CGO_ENABLED=1 go build -trimpath -ldflags '$(LDFLAGS)' -o ../$(FULL) ./cmd/fadodb
 
+# The library of C (ADR-0101): the engine of fadodb-core as a shared
+# library, with fadodb.h beside it, for a program of any language that
+# opens a database in its own process. It is built in the module cabi,
+# with cgo and a C compiler, and is no part of the gates of the core.
+ifeq ($(shell go env GOOS),windows)
+LIBRARY := bin/fadodb-core.dll
+else ifeq ($(shell go env GOOS),darwin)
+LIBRARY := bin/libfadodb-core.dylib
+else
+LIBRARY := bin/libfadodb-core.so
+endif
+
+library:
+	cd cabi && CGO_ENABLED=1 go build -buildmode=c-shared -trimpath -ldflags '$(LDFLAGS)' -o ../$(LIBRARY) .
+	rm -f $(basename $(LIBRARY)).h
+	cp cabi/fadodb.h bin/fadodb.h
+
 run: build
 	$(CORE) version
 
@@ -36,6 +53,11 @@ test:
 # The DuckDB module is a separate Go module and needs cgo and a C compiler.
 analytics:
 	cd analytics && CGO_ENABLED=1 go vet ./... && CGO_ENABLED=1 go test -count=1 ./...
+
+# The module of the library: vetted, and tested, which builds the
+# library and tries it from a program of C; it needs a C compiler.
+cabi:
+	cd cabi && CGO_ENABLED=1 go vet ./... && CGO_ENABLED=1 FADODB_CABI=must go test -count=1 ./...
 
 # docs writes the generated chapters of the manual again: the list of
 # functions and the list of refusal codes, from the engine's own tables.

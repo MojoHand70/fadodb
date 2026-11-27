@@ -105,3 +105,4 @@ line says so. Copy `0000-template.md` to start.
 | [0097](0097-the-paths-documents-took.md) | The paths documents took | Proposed |
 | [0098](0098-comments-on-a-document.md) | Comments on a document | Proposed |
 | [0099](0099-where-a-value-comes-from.md) | Where a value comes from, and the documents behind a number | Proposed |
+| [0101](0101-the-library-of-c.md) | FadoDB in a program of any language: the library of C | Proposed |

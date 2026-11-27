@@ -746,6 +746,26 @@ func runPaths(c *call) error {
 	return c.answer("paths", paths, err)
 }
 
+// runLineage answers where a value comes from (ADR-0099, part 2).
+func runLineage(c *call) error {
+	var ask store.LineageAsk
+	version, e := c.integer("version")
+	if e != nil {
+		return e
+	}
+	limit, e := c.integer("limit")
+	if e != nil {
+		return e
+	}
+	offset, e := c.integer("offset")
+	if e != nil {
+		return e
+	}
+	ask.Version, ask.Limit, ask.Offset = version, int(limit), int(offset)
+	lineage, err := c.s.Lineage(c.ctx, c.text("class"), c.text("id"), c.text("variable"), ask, c.opts...)
+	return c.answer("lineage", lineage, err)
+}
+
 func runSQL(c *call) error {
 	args, e := c.scalars("args")
 	if e != nil {

@@ -149,6 +149,19 @@ type (
 	DocumentsAsk = store.DocumentsAsk
 	Documents    = store.Documents
 	DocumentRow  = store.DocumentRow
+	// Lineage is where a value of a document comes from, LineageAsk
+	// which value and the page of its parts, and the rest what it says:
+	// the moment the value came, the values of the document its formula
+	// read, and what each lookup read (ADR-0099).
+	Lineage         = store.Lineage
+	LineageAsk      = store.LineageAsk
+	LineageMoment   = store.LineageMoment
+	LineageVariable = store.LineageVariable
+	LineageLookup   = store.LineageLookup
+	LineagePart     = store.LineagePart
+	LineageHidden   = store.LineageHidden
+	LineageChanged  = store.LineageChanged
+	LineageChange   = store.LineageChange
 	// ActionFunc is a Go function that implements an action, given to Open
 	// in Options.Actions under the action's name (ADR-0027, ADR-0045);
 	// ActionCall is what it is called with, and DeliveredEvent the event
@@ -375,6 +388,10 @@ const (
 // rows the documents behind a number answer when told nothing, and at
 // the most (ADR-0099).
 const (
+	LineageTyped     = store.LineageTyped
+	LineageComputed  = store.LineageComputed
+	LineageKept      = store.LineageKept
+	LineageLive      = store.LineageLive
 	AtLeastMiddle    = store.AtLeastMiddle
 	AtLeastSlowTenth = store.AtLeastSlowTenth
 	DefaultDocuments = store.DefaultDocuments
@@ -1157,6 +1174,18 @@ func (db *DB) Throughput(ctx context.Context, class string, ask ThroughputAsk, o
 //	paths, err := db.Paths(ctx, "Invoice", fado.PathsAsk{Limit: 10}, fado.As(ann))
 func (db *DB) Paths(ctx context.Context, class string, ask PathsAsk, opts ...Option) (*Paths, error) {
 	return db.s.Paths(ctx, class, ask, opts...)
+}
+
+// Lineage answers where a value of a document comes from (ADR-0099):
+// how it is made, the moment it came, the values of the document its
+// formula read, and for each lookup the documents or rows it read, the
+// page of them the caller may read. A kept value is worked out again,
+// by its formula, over the documents as they were when it was worked
+// out, and says whether it adds up.
+//
+//	l, err := db.Lineage(ctx, "Customer", "Acme", "invoiced", fado.LineageAsk{}, fado.As(dan))
+func (db *DB) Lineage(ctx context.Context, class, id, variable string, ask LineageAsk, opts ...Option) (*Lineage, error) {
+	return db.s.Lineage(ctx, class, id, variable, ask, opts...)
 }
 
 // FlowDocuments answers the documents behind one number of a flow

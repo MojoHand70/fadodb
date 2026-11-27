@@ -349,7 +349,7 @@ func (s *Store) totalsFromCopy(ctx context.Context, src *class, lay *totalsOf, o
 	if err != nil {
 		return nil, false
 	}
-	evalCtx := s.contextOf(o.principal, s.clock(o))
+	evalCtx := contextOf(o.principal, s.clock(o))
 	args := append(asked.Args[:len(asked.Args):len(asked.Args)], d.ContextArgs(&evalCtx)...)
 	args = append(args, sql.Named(formula.TotalsLimit, plan.Limit+1), sql.Named(formula.TotalsOffset, plan.Offset))
 	fd, ready := s.copyReady(ctx)

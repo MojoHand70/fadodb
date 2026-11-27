@@ -469,7 +469,7 @@ func (s *Store) flowFromCopy(ctx context.Context, c *class, o options, flow *Flo
 	if plan.Where != "" {
 		where = " WHERE " + plan.Where
 	}
-	evalCtx := s.contextOf(o.principal, s.clock(o))
+	evalCtx := contextOf(o.principal, s.clock(o))
 	rule := append(append([]any{}, plan.Args...), d.ContextArgs(&evalCtx)...)
 	// DuckDB takes the values of a statement by name or by place and
 	// not both; the reader's rule names its own, so these are named.

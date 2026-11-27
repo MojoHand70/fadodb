@@ -371,21 +371,9 @@ func (s *Store) DefineTable(ctx context.Context, data []byte, opts ...Option) (*
 	// The app the table belongs to is one the database has (ADR-0079,
 	// item 2), as for a class (ADR-0077, item 3).
 	if def.App != "" {
-		if a, ok := s.apps[strings.ToUpper(def.App)]; !ok {
+		if _, ok := s.apps[strings.ToUpper(def.App)]; !ok {
 			diags = append(diags, model.Diagnostic{Code: model.CodeUnknownApp, Path: "/app", Pos: -1, Message: "unknown app " + strconv.Quote(def.App),
 				Hint: "define the app first, with define_app, or leave app out: a table may belong to none"})
-		} else {
-			// A rule of the table asks for roles the app names (ADR-0100).
-			for _, r := range def.Roles {
-				if !a.Def.HasRole(r) {
-					hint := "the app " + a.Def.Name + " names no roles; name it among the app's roles, in its definition"
-					if len(a.Def.RoleOrder) > 0 {
-						hint = "the roles of " + a.Def.Name + " are " + strings.Join(a.Def.RoleOrder, ", ")
-					}
-					diags = append(diags, model.Diagnostic{Code: model.CodeUnknownRole, Path: "/access", Pos: -1,
-						Message: "a rule of the table asks for the role " + strconv.Quote(r) + ", which the app " + a.Def.Name + " does not name", Hint: hint})
-				}
-			}
 		}
 	}
 	// A table moves to another app by its next version, whatever it holds

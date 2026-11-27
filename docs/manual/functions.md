@@ -165,7 +165,6 @@ Who is calling, what time it is, and what the engine keeps about the document: i
 | `TODAY()` | context | The current calendar day in UTC. |
 | `USER()` | context | The id of the user on whose behalf the formula runs. Blank for a system recompute. |
 | `INGROUP(group)` | context | TRUE when the current user is a member of the named group. |
-| `INROLE(role)` | context | TRUE when the current user holds the named role of the app the formula belongs to: INROLE("approver"). The app names its roles; each server says which groups and people hold them. The role is written as text, never worked out, and the app must name it. |
 | `USERKIND()` | context | What the current user is: person, agent or service. Blank when the host program does not say. |
 | `ACTINGFOR()` | context | The id of whoever the current user acts for. Blank when it acts for itself. |
 | `STATE()` | context | The state of the document the formula runs over. Blank for a class without states. |

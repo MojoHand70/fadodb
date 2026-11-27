@@ -6,7 +6,7 @@ All notable changes to FadoDB are recorded here. The format follows
 
 ## [Unreleased]
 
-Phase 8 started on 2026-11-25.
+Phase 8 started on 2026-11-25, and Phase 9 on 2026-11-27.
 
 ### Added
 
@@ -33,6 +33,39 @@ Phase 8 started on 2026-11-25.
   SQLite keeps the history by triggers, so a value that follows a table
   costs the same allocations as before. The chapter on tables has a
   section, "The history of the rows", which a test plays.
+- The library of C (ADR-0101, proposed; the first step of Phase 9). A
+  program in any language that can call C holds a FadoDB database in
+  its own process, with no server: `fado_open` opens a database file,
+  `fado_exec` runs one command of the command set as the caller the
+  program names, `fado_close` closes it, `fado_free` gives back an
+  answer and `fado_version` says which library was loaded. A command
+  and its answer are those of `POST /v1/<command>`, byte for byte; the
+  caller is a JSON object beside the command, with the members a user
+  has (`id`, `kind`, `groups`, `system_groups`, and `today`, the
+  business day), and the options of `fado_open` are named as the
+  settings of `fadodb serve` name the same things. A database is a
+  number given once in the life of the process, so a number kept after
+  its close is refused with `closed`; every function may be called from
+  any thread; a close answers the commands that wait first; a panic in
+  the engine is answered `internal` and leaves the program running. The
+  library is the engine of `fadodb-core`, built in the module `cabi/`
+  with `make library` as `libfadodb-core.so`, `libfadodb-core.dylib` or
+  `fadodb-core.dll`, with `fadodb.h`. GitHub builds it on Linux, macOS
+  and Windows on every pull request and runs a program of C against it.
+- Files and the requests of actions through the library of C
+  (ADR-0101, its step B). `fado_put_file` keeps the bytes of a file and
+  answers its facts, which a command commits on a document;
+  `fado_get_file` reads a file a document holds, under the rules of the
+  document, at a version when one is given; `fado_get_blob` reads bytes
+  by their hash, for a content administrator with a reason; each as its
+  address over HTTP does. The option `outbound` of `fado_open` lists the
+  hosts the declared actions of the database may call, in the words of
+  the settings of `fadodb serve`, and a secret is the file of
+  `secrets_dir` or a variable `FADODB_SECRET_…` of the program's
+  environment; without `outbound` the database sends nothing. The
+  server and the library find secrets with one piece of Go,
+  `internal/secret`.
+
 - Where a value comes from (ADR-0099, proposed; its second step). A new
   command, `lineage`, in Go `Lineage`, answers one value of one
   document and what it is made of, one level: its kind (typed,
@@ -76,25 +109,6 @@ Phase 8 started on 2026-11-25.
   steps after it: where a value comes from (`lineage`), and the
   history of a table's rows, which every table keeps by the owner's
   word.
-- The roles of an app (ADR-0100, proposed). An app names the parts
-  people play in it, under `roles` in its definition, each with a
-  `label` and a `description`. A formula of a class or a table of the
-  app asks for one with `INROLE("approver")`, wherever `INGROUP` may
-  stand, the read rule and the rights among them; a role the app does
-  not name, or `INROLE` where there is no app, is refused with the new
-  finding `unknown_role`, and a next version of an app without a role a
-  class or a table asks for with `not_allowed`. Each database says who
-  holds a role with the new command `set_role`, in Go `SetRole`, an
-  administrator's: the groups whose members hold it and the users who
-  hold it by name, kept beside the app and never in it; `role_changes`,
-  in Go `RoleChanges`, lists each change. `get_app` answers `holders`
-  beside the definition and `whoami` answers `roles`, the roles the
-  caller holds by app; both leave the member out when there is nothing
-  in it. The browser VM answers `INROLE` from the roles a page gives it.
-  The tables `fado_role_holders` and `fado_role_changes` are made when a
-  database is opened; the schema keeps its number, and an earlier
-  engine cannot read an app that names roles. New section:
-  `docs/manual/apps.md#the-roles-of-an-app`.
 - Comments on a document (ADR-0098, proposed). Two new commands:
   `comment`, in Go `Comment`, writes words the engine keeps beside a
   document, with who wrote them (a person, an agent or a service, and

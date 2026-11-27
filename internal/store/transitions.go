@@ -71,7 +71,7 @@ func (s *Store) Transitions(ctx context.Context, class, id string, opts ...Optio
 		}
 		return nil, storageErr("read the document", err)
 	}
-	ctxOf := s.contextOf(o.principal, s.clock(o))
+	ctxOf := contextOf(o.principal, s.clock(o))
 	evalCtx := &ctxOf
 	evalCtx.State, evalCtx.ID = row.state, row.id
 	// A document the caller may not see does not exist for them

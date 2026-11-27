@@ -3,7 +3,6 @@ package model
 import (
 	"bytes"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"slices"
 	"strings"
@@ -57,12 +56,9 @@ type TableAccessDef struct {
 type Table struct {
 	// Defined says who defined this version of the table, and when
 	// (ADR-0052, item 7); the store sets it.
-	Defined Defined
-	Name    string
-	App     string // the app it belongs to, or none (ADR-0079)
-	// Roles are the roles of that app its rules ask for with INROLE
-	// (ADR-0100).
-	Roles       []string
+	Defined     Defined
+	Name        string
+	App         string // the app it belongs to, or none (ADR-0079)
 	Version     int
 	Label       string
 	Description string
@@ -259,17 +255,8 @@ func CompileTable(def *TableDef) (*Table, Diagnostics) {
 	// the clock. They are about the table as a whole, so they read no
 	// column, and they read no other table or document.
 	if def.Access != nil {
-		t.Read = tableRule(c, def.App, "/access/read", def.Access.Read, "a read rule")
-		t.Write = tableRule(c, def.App, "/access/write", def.Access.Write, "a write rule")
-		for _, prog := range []*formula.Program{t.Read, t.Write} {
-			if prog != nil {
-				for _, role := range prog.Roles {
-					if !slices.Contains(t.Roles, role) {
-						t.Roles = append(t.Roles, role)
-					}
-				}
-			}
-		}
+		t.Read = tableRule(c, "/access/read", def.Access.Read, "a read rule")
+		t.Write = tableRule(c, "/access/write", def.Access.Write, "a write rule")
 	}
 	if c.failed() {
 		return nil, c.list
@@ -283,19 +270,12 @@ var noColumns = func() *formula.Scope {
 	return scope
 }()
 
-// tableRule binds a rule of a table. A table of an app may ask for the
-// app's roles (ADR-0100); the store holds each name to the roles the app
-// names, as it holds the app to the apps the database has.
-func tableRule(c *collector, app, path, src, what string) *formula.Program {
+// tableRule binds a rule of a table.
+func tableRule(c *collector, path, src, what string) *formula.Program {
 	if src == "" {
 		return nil
 	}
-	prog, err := formula.Bind(src, noColumns, formula.BindOptions{Mode: formula.ModeAny, App: app})
-	var fe *formula.Error
-	if errors.As(err, &fe) && fe.Role {
-		c.hint(CodeUnknownRole, path, what+" of a table: "+fe.Msg, "put the table in an app, whose roles its rules may ask for")
-		return nil
-	}
+	prog, err := formula.Bind(src, noColumns, formula.BindOptions{Mode: formula.ModeAny})
 	if err != nil {
 		c.hint(CodeBadFormula, path, what+" of a table: "+err.Error(),
 			"it is a condition over the caller and the clock, such as INGROUP(\"treasury\"); it is about the table as a whole and reads no column, no other table and no document")

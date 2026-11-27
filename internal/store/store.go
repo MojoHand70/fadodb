@@ -315,11 +315,6 @@ type Store struct {
 	// their names in the order they were defined.
 	apps     map[string]*app
 	appOrder []string
-	// holders are who holds each role of an app on this database
-	// (ADR-0100), made whole again after each change; appRoles is
-	// s.roles, made once for env.
-	holders  atomic.Pointer[holderSet]
-	appRoles func(app string) []string
 	// words are the words in other languages by kind, upper-cased name
 	// and language (ADR-0068, item 6), in the order first defined.
 	words      map[string]*wordsDef
@@ -533,7 +528,6 @@ func open(path string, o Options) (*Store, error) {
 		stop: make(chan struct{}), done: make(chan struct{}),
 		outbox: o.Outbox, wake: make(chan struct{}, 1), workDone: make(chan struct{}),
 	}
-	s.appRoles = s.roles
 	s.subs.host = o.HostAnswersFor
 	s.people.on = o.Users
 	if s.now == nil {
@@ -730,7 +724,7 @@ func (s *Store) init(ctx context.Context, wantSync string, wantMaxText int, want
 		_, _ = w.ExecContext(ctx, "ROLLBACK")
 		return err
 	}
-	for _, ddl := range append(append(append(append(append(append(append(append(append(append(append([]string(nil), engineDDL...), usersDDL...), groupsDDL...), signinDDL...), passkeysDDL...), signonDDL...), oauthDDL...), readsDDL...), commentsDDL...), rolesDDL...), tableChangesDDL...) {
+	for _, ddl := range append(append(append(append(append(append(append(append(append(append([]string(nil), engineDDL...), usersDDL...), groupsDDL...), signinDDL...), passkeysDDL...), signonDDL...), oauthDDL...), readsDDL...), commentsDDL...), tableChangesDDL...) {
 		if _, err := w.ExecContext(ctx, ddl); err != nil {
 			return rollback(storageErr("create the engine tables", err))
 		}
@@ -963,9 +957,6 @@ func (s *Store) load(ctx context.Context) error {
 	if err := s.loadApps(ctx); err != nil {
 		return err
 	}
-	if err := s.loadRoleHolders(ctx); err != nil {
-		return err
-	}
 	rows, err := s.db.QueryContext(ctx, "SELECT name, version, json FROM schemas ORDER BY rowid")
 	if err != nil {
 		return storageErr("read the schemas", err)
@@ -1142,18 +1133,7 @@ func (s *Store) env() model.Env {
 	}, Apps: func(name string) bool {
 		_, ok := s.apps[strings.ToUpper(name)]
 		return ok
-	}, Roles: s.appRoles}
-}
-
-// roles answers the roles an app names, for a formula that asks for one
-// (ADR-0100). Open makes it once as s.appRoles: a function made in env
-// would be made again for every class compiled, and every query compiles
-// its filter. The caller holds cmu.
-func (s *Store) roles(app string) []string {
-	if a, ok := s.apps[strings.ToUpper(app)]; ok {
-		return a.Def.RoleNames()
-	}
-	return nil
+	}}
 }
 
 // compileStored compiles one stored version of a class, prepares it and

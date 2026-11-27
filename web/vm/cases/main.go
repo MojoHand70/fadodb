@@ -71,7 +71,6 @@ type context struct {
 	User   string   `json:"user,omitempty"`
 	Groups []string `json:"groups,omitempty"`
 	System []string `json:"system,omitempty"`
-	Roles  []string `json:"roles,omitempty"`
 	Kind   string   `json:"kind,omitempty"`
 	For    string   `json:"for,omitempty"`
 	Now    int64    `json:"now,omitempty"`
@@ -298,7 +297,7 @@ func run(dir string) error {
 				return fmt.Errorf("%s: %w", label, err)
 			}
 			if ctx != nil {
-				e.Context = &context{User: ctx.User, Groups: ctx.Groups, System: ctx.System, Roles: ctx.Roles, Kind: ctx.Kind, For: ctx.For, Now: ctx.Now, State: ctx.State, ID: ctx.ID}
+				e.Context = &context{User: ctx.User, Groups: ctx.Groups, System: ctx.System, Kind: ctx.Kind, For: ctx.For, Now: ctx.Now, State: ctx.State, ID: ctx.ID}
 				if d := ctx.Doc; d != nil {
 					e.Context.Doc = &life{Version: d.Version, CreatedAt: d.CreatedAt, CreatedBy: d.CreatedBy, UpdatedAt: d.UpdatedAt, UpdatedBy: d.UpdatedBy,
 						EnteredAt: d.EnteredAt, EnteredBy: d.EnteredBy, EnteredFrom: d.EnteredFrom, States: d.States}

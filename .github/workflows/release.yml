@@ -18,8 +18,14 @@ jobs:
       version: ${{ github.ref_name }}
       keep: true
 
+  library:
+    uses: ./.github/workflows/library.yml
+    with:
+      version: ${{ github.ref_name }}
+      keep: true
+
   goreleaser:
-    needs: programs
+    needs: [programs, library]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -51,6 +57,20 @@ jobs:
           ls -l bin/programs
           for system in linux_amd64 linux_arm64 darwin_arm64 darwin_amd64 windows_amd64; do
             ls bin/programs/fadodb_*_"$system".* >/dev/null
+          done
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: fadodb-core-library-*
+          path: bin/library
+          merge-multiple: true
+      - name: Every system has its library and its wheel
+        run: |
+          ls -l bin/library
+          for system in linux_amd64 linux_arm64 darwin_arm64 darwin_amd64 windows_amd64; do
+            ls bin/library/fadodb-core-library_*_"$system".* >/dev/null
+          done
+          for platform in manylinux_2_*_x86_64 manylinux_2_*_aarch64 macosx_12_0_arm64 macosx_12_0_x86_64 win_amd64 any; do
+            ls bin/library/fadodb-*-py3-none-$platform.whl >/dev/null
           done
       - uses: goreleaser/goreleaser-action@v7
         with:
@@ -132,3 +152,35 @@ jobs:
           else
             npm publish ./web/vm/dist --access public
           fi
+
+  pypi:
+    # The Python client on PyPI, as fadodb (ADR-0101, step D; the owner's
+    # word of 2026-11-27): the wheels the library job made and tried, one
+    # for each system with the library inside and one for every system
+    # without it. A job of its own, as npm's is: the release neither waits
+    # for it nor fails with it. PyPI trusts this workflow, for the
+    # environment pypi, by its trusted publisher setting: no token is kept
+    # anywhere. A version PyPI has already is passed over, so a run again
+    # publishes nothing twice.
+    needs: library
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/project/fadodb/
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: fadodb-core-library-*
+          path: bin/library
+          merge-multiple: true
+      - name: Only the wheels go to PyPI
+        run: |
+          mkdir -p dist
+          mv bin/library/fadodb-*.whl dist/
+          ls -l dist
+      - uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          skip-existing: true

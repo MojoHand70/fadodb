@@ -1,14 +1,19 @@
 #!/usr/bin/env bash
-# The library of C, libfadodb-core (ADR-0101, step D): built, tried and
-# packed on the system it is for. A library of C is built with that
-# system's C compiler and cannot be built for another system from here.
-# A workflow runs this on a machine of each system
-# (.github/workflows/library.yml); a person runs it on their own.
+# The libraries of C (ADR-0101, step D; ADR-0102, step G): libfadodb-core,
+# the engine of fadodb-core, and libfadodb, the engine of fadodb, with
+# DuckDB's own shared library beside it. Built, tried and packed on the
+# system they are for: a library of C is built with that system's C
+# compiler and cannot be built for another system from here. A workflow
+# runs this on a machine of each system (.github/workflows/library.yml);
+# a person runs it on their own.
 #
-#   scripts/library.sh build [VERSION]   bin/library/libfadodb-core.so (.dylib, fadodb-core.dll) and fadodb.h
-#   scripts/library.sh try               the program of C and the Python client against what was built
-#   scripts/library.sh pack [VERSION]    bin/library/fadodb-core-library_VERSION_OS_ARCH.tar.gz, or .zip,
-#                                        and the wheel of the Python package for this system beside it
+#   scripts/library.sh build [VERSION]   both, in bin/library, with fadodb.h; DuckDB's library is
+#                                        fetched from DuckDB's release and held to the checksum the
+#                                        Go driver records
+#   scripts/library.sh try               the program of C and the Python client against each
+#   scripts/library.sh pack [VERSION]    bin/library/fadodb-core-library_VERSION_OS_ARCH.tar.gz and
+#                                        fadodb-library_…, .zip on Windows, and the wheel of the Python
+#                                        package for this system, with libfadodb inside
 #
 # VERSION is a tag or a version, v0.9.0 or 0.9.0; dev when it is left out.
 set -euo pipefail
@@ -20,11 +25,10 @@ version="${version#v}"
 os="$(go env GOOS)"
 arch="$(go env GOARCH)"
 case "$os" in
-windows) name=fadodb-core.dll ;;
-darwin) name=libfadodb-core.dylib ;;
-*) name=libfadodb-core.so ;;
+windows) core=fadodb-core.dll full=fadodb.dll duck=duckdb.dll ;;
+darwin) core=libfadodb-core.dylib full=libfadodb.dylib duck=libduckdb.dylib ;;
+*) core=libfadodb-core.so full=libfadodb.so duck=libduckdb.so ;;
 esac
-library="$out/$name"
 
 # LIBRARY_GLIBC_MAX is the newest C library a library for Linux may
 # need, which whoever builds a release says, as PROGRAM_GLIBC_MAX of
@@ -40,79 +44,90 @@ else
 fi
 
 # native is a path as the programs of the system take it: on Windows,
-# under Git's bash, /d/a/x is D:\a\x to Go and to Python.
+# under Git's bash, /d/a/x is D:/a/x to Go, Python and the C compiler.
 native() {
-  if command -v cygpath >/dev/null 2>&1; then cygpath -w "$1"; else printf '%s\n' "$1"; fi
+  if command -v cygpath >/dev/null 2>&1; then cygpath -m "$1"; else printf '%s\n' "$1"; fi
 }
 
-case "${1:-}" in
-build)
-  mkdir -p "$out"
-  commit="$(git rev-parse --short HEAD 2>/dev/null || echo "")"
-  date="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-  (cd cabi && CGO_ENABLED=1 go build -buildmode=c-shared -trimpath \
-    -ldflags "-s -w -X main.version=$version -X main.commit=$commit -X main.date=$date" \
-    -o "../$library" .)
-  # Go writes a header of its own beside the library; fadodb.h is the
-  # one for people, and a test holds the two to the same functions.
-  rm -f "${library%.*}.h"
-  cp cabi/fadodb.h "$out/fadodb.h"
-  ls -l "$library"
-  ;;
-try)
-  [ -f "$library" ] || { echo "library: $library is not built; run scripts/library.sh build"; exit 1; }
+# fetch takes DuckDB's shared library for this system from DuckDB's
+# release, the one the Go driver is built from, and refuses a file
+# whose checksum is not the one the driver records (ADR-0102, item 7).
+fetch() {
+  [ -n "$python" ] || { echo "library: no Python to read the Go driver's record of DuckDB with"; exit 1; }
+  local bindings told url sum got
+  bindings="$(cd cabi && go list -m -f '{{.Dir}}' github.com/duckdb/duckdb-go-bindings)"
+  told="$("$python" - "$bindings/duckdb-release.json" "$os-$arch" <<'PY'
+import json, sys
+release = json.load(open(sys.argv[1]))
+system = release["platforms"].get(sys.argv[2])
+if system is None:
+    sys.exit("DuckDB has no shared library for " + sys.argv[2])
+print(release["base_url"] + "/duckdb-shared-libs-" + system["shared"] + ".tar.gz", system["shared_sha256"])
+PY
+)"
+  url="${told% *}"
+  sum="${told#* }"
+  rm -rf "${out:?}/duckdb"
+  mkdir -p "$out/duckdb"
+  curl -fsSL --retry 3 -o "$out/duckdb.tar.gz" "$url"
+  if command -v sha256sum >/dev/null 2>&1; then got="$(sha256sum "$out/duckdb.tar.gz" | cut -d' ' -f1)"; else got="$(shasum -a 256 "$out/duckdb.tar.gz" | cut -d' ' -f1)"; fi
+  if [ "$got" != "$sum" ]; then
+    echo "library: $url has the checksum $got, and the Go driver records $sum"
+    exit 1
+  fi
+  tar -C "$out/duckdb" -xzf "$out/duckdb.tar.gz"
+  rm -f "${out:?}/duckdb.tar.gz"
+  cp "$out/duckdb/$duck" "$out/$duck"
+  # DuckDB's notice travels with DuckDB (MIT): the Go driver carries the
+  # same words as DuckDB's own licence.
+  cp "$bindings/LICENSE" "$out/LICENSE-duckdb"
+  chmod 644 "$out/LICENSE-duckdb"
+  echo "library: DuckDB's $duck from $url"
+}
+
+# checked holds a built library to what a user's machine has.
+checked() {
+  local library="$1" needs borrowed
   if [ "$os" = "linux" ] && [ -n "$GLIBC_MAX" ]; then
     needs="$(objdump -T "$library" | grep -o -E 'GLIBC_[0-9.]+' | sed 's/GLIBC_//' | sort -V | tail -1)"
     if [ "$(printf '%s\n%s\n' "$needs" "$GLIBC_MAX" | sort -V | tail -1)" != "$GLIBC_MAX" ]; then
-      echo "library: it needs the C library $needs, and it may need $GLIBC_MAX at the most"
+      echo "library: $library needs the C library $needs, and it may need $GLIBC_MAX at the most"
       echo "  it was built on a newer Linux than a release is built on"
       exit 1
     fi
-    echo "library: it needs the C library $needs or newer"
+    echo "library: $library needs the C library $needs or newer"
   fi
   if [ "$os" = "windows" ] && command -v objdump >/dev/null 2>&1; then
     # A library that needs the libraries of the compiler it was built
     # with loads on the machine that built it and on few others.
     borrowed="$(objdump -p "$library" | grep -i -E 'DLL Name: (libstdc\+\+|libgcc|libwinpthread)' || true)"
     if [ -n "$borrowed" ]; then
-      echo "library: it needs libraries of the compiler, which a user's machine does not have:"
+      echo "library: $library needs libraries of the compiler, which a user's machine does not have:"
       echo "$borrowed"
       exit 1
     fi
   fi
-  given="$(native "$(pwd)/$library")"
-  # The program of C, compiled against fadodb.h and linked to this very
-  # file (cabi/library_c_test.go).
+}
+
+# tried runs the program of C and the Python client in the same process
+# against a library, the very file built.
+tried() {
+  local given
+  given="$(native "$(pwd)/$1")"
   (cd cabi && FADODB_LIBRARY="$given" FADODB_CABI=must CGO_ENABLED=1 \
     go test -count=1 -run '^TestTheLibraryFromC$' .)
-  # The Python client in the same process, with this very file.
   [ -n "$python" ] || { echo "library: no Python to try the client with"; exit 1; }
-  (cd clients/py/tests && FADODB_LIBRARY="$given" FADODB_PYTHON=must "$python" -m unittest test_both_ways.InTheSameProcess)
-  ;;
-pack)
-  [ -f "$library" ] || { echo "library: $library is not built; run scripts/library.sh build"; exit 1; }
-  pack="fadodb-core-library_${version}_${os}_${arch}"
-  stage="$out/$pack"
-  rm -rf "$stage"
-  mkdir -p "$stage"
-  cp "$library" "$out/fadodb.h" LICENSE THIRD_PARTY_NOTICES.md "$stage/"
-  cp cabi/README.md "$stage/README.md"
-  if [ "$os" = "windows" ]; then
-    rm -f "$out/$pack.zip"
-    (cd "$stage" && 7z a -tzip "../$pack.zip" . >/dev/null)
-    echo "$out/$pack.zip"
-  else
-    tar -C "$stage" -czf "$out/$pack.tar.gz" .
-    echo "$out/$pack.tar.gz"
-  fi
-  rm -rf "$stage"
-  # The Python package for this system, with the library in it, as a
-  # wheel; and, on Linux for Intel, the one for every system, without
-  # it, for a program that only talks to a server.
-  [ -n "$python" ] || { echo "library: no Python to make the wheel with"; exit 1; }
+  (cd clients/py/tests && FADODB_LIBRARY="$given" FADODB_PYTHON=must FADODB_ENGINE="${2:-}" \
+    "$python" -m unittest test_both_ways.InTheSameProcess)
+}
+
+# wheeled makes the wheel of the Python package for this system, with
+# libfadodb and DuckDB's library inside, and tries it as a user has it.
+wheeled() {
+  local platform needs machine wheel installed
   case "$os/$arch" in
   linux/*)
-    needs="$(objdump -T "$library" | grep -o -E 'GLIBC_[0-9.]+' | sed 's/GLIBC_//' | sort -V | tail -1)"
+    needs="$(objdump -T "$out/$full" "$out/$duck" 2>/dev/null | grep -o -E 'GLIBC_[0-9.]+' | sed 's/GLIBC_//' | sort -V | tail -1)"
     machine=x86_64
     [ "$arch" = "arm64" ] && machine=aarch64
     platform="manylinux_${needs//./_}_$machine"
@@ -122,7 +137,8 @@ pack)
   windows/amd64) platform=win_amd64 ;;
   *) echo "library: no wheel is made for $os/$arch"; exit 1 ;;
   esac
-  wheel="$("$python" clients/py/wheel.py --version "$version" --out "$out" --library "$library" --platform "$platform")"
+  wheel="$("$python" clients/py/wheel.py --version "$version" --out "$out" --platform "$platform" \
+    --library "$out/$full" --library "$out/$duck" --license "$out/LICENSE-duckdb")"
   echo "$wheel"
   if [ "$os/$arch" = "linux/amd64" ]; then
     "$python" clients/py/wheel.py --version "$version" --out "$out"
@@ -136,14 +152,86 @@ pack)
     echo "library: pip installed $wheel"
   else
     "$python" -c 'import sys, zipfile; zipfile.ZipFile(sys.argv[1]).extractall(sys.argv[2])' "$wheel" "$installed"
+    chmod +x "$installed"/fadodb/lib/* 2>/dev/null || true
     echo "library: no pip here: $wheel unpacked"
   fi
-  (cd clients/py/tests && env -u FADODB_LIBRARY FADODB_PYTHON_PACKAGE="$installed" FADODB_PYTHON=must \
+  (cd clients/py/tests && env -u FADODB_LIBRARY FADODB_PYTHON_PACKAGE="$installed" FADODB_PYTHON=must FADODB_ENGINE=must \
     "$python" -m unittest test_both_ways.InTheSameProcess)
-  rm -rf "$installed"
+  rm -rf "${installed:?}"
+}
+
+# packed makes the archive of one library, with what travels with it.
+packed() {
+  local pack="$1" stage
+  shift
+  stage="$out/$pack"
+  rm -rf "${stage:?}"
+  mkdir -p "$stage"
+  cp "$@" "$out/fadodb.h" LICENSE THIRD_PARTY_NOTICES.md "$stage/"
+  cp cabi/README.md "$stage/README.md"
+  if [ "$os" = "windows" ]; then
+    rm -f "${out:?}/${pack:?}.zip"
+    (cd "$stage" && 7z a -tzip "../$pack.zip" . >/dev/null)
+    echo "$out/$pack.zip"
+  else
+    tar -C "$stage" -czf "$out/$pack.tar.gz" .
+    echo "$out/$pack.tar.gz"
+  fi
+  rm -rf "${stage:?}"
+}
+
+case "${1:-}" in
+build)
+  mkdir -p "$out"
+  commit="$(git rev-parse --short HEAD 2>/dev/null || echo "")"
+  date="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  ldflags="-s -w -X main.version=$version -X main.commit=$commit -X main.date=$date"
+  (cd cabi && CGO_ENABLED=1 go build -buildmode=c-shared -trimpath -ldflags "$ldflags" -o "../$out/$core" .)
+  # The library with DuckDB, linked to DuckDB's own library, which it
+  # finds in its own folder.
+  fetch
+  case "$os" in
+  linux) rpath='-Wl,-rpath,$ORIGIN' ;;
+  darwin) rpath='-Wl,-rpath,@loader_path' ;;
+  *) rpath='' ;;
+  esac
+  duckdb_dir="$(native "$(pwd)/$out/duckdb")"
+  (cd cabi && CGO_ENABLED=1 CGO_LDFLAGS="-L$duckdb_dir $rpath" \
+    go build -tags duckdb,duckdb_use_lib -buildmode=c-shared -trimpath -ldflags "$ldflags" -o "../$out/$full" .)
+  # Go writes a header of its own beside each library; fadodb.h is the
+  # one for people, and a test holds the two to the same functions.
+  rm -f "${out:?}/${core%.*}.h" "${out:?}/${full%.*}.h"
+  cp cabi/fadodb.h "$out/fadodb.h"
+  ls -l "$out/$core" "$out/$full" "$out/$duck"
+  ;;
+try)
+  for library in "$out/$core" "$out/$full"; do
+    [ -f "$library" ] || { echo "library: $library is not built; run scripts/library.sh build"; exit 1; }
+    checked "$library"
+  done
+  tried "$out/$core"
+  tried "$out/$full" must
+  # The tests of the module that only the library with DuckDB has, built
+  # with it and run with DuckDB's library where the system looks.
+  duckdb_dir="$(native "$(pwd)/$out/duckdb")"
+  case "$os" in
+  linux) export LD_LIBRARY_PATH="$duckdb_dir${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" ;;
+  darwin) export DYLD_LIBRARY_PATH="$duckdb_dir" ;;
+  windows) PATH="$(pwd)/$out/duckdb:$PATH"; export PATH ;;
+  esac
+  (cd cabi && CGO_ENABLED=1 CGO_LDFLAGS="-L$duckdb_dir" go test -count=1 -tags duckdb,duckdb_use_lib -run 'Engine' .)
+  ;;
+pack)
+  for library in "$out/$core" "$out/$full"; do
+    [ -f "$library" ] || { echo "library: $library is not built; run scripts/library.sh build"; exit 1; }
+  done
+  packed "fadodb-core-library_${version}_${os}_${arch}" "$out/$core"
+  packed "fadodb-library_${version}_${os}_${arch}" "$out/$full" "$out/$duck" "$out/LICENSE-duckdb"
+  [ -n "$python" ] || { echo "library: no Python to make the wheel with"; exit 1; }
+  wheeled
   ;;
 *)
-  sed -n '2,15p' "$0" | sed 's/^# \{0,1\}//'
+  sed -n '2,18p' "$0" | sed 's/^# \{0,1\}//'
   exit 2
   ;;
 esac

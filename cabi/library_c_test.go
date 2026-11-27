@@ -60,6 +60,17 @@ func built(t *testing.T, dir string) string {
 		if err := os.WriteFile(lib, data, 0o755); err != nil {
 			t.Fatal(err)
 		}
+		// libfadodb finds DuckDB's library in its own folder
+		// (ADR-0102, item 7), so it goes there too.
+		for _, duckdb := range []string{"libduckdb.so", "libduckdb.dylib", "duckdb.dll"} {
+			data, err := os.ReadFile(filepath.Join(filepath.Dir(given), duckdb))
+			if err != nil {
+				continue
+			}
+			if err := os.WriteFile(filepath.Join(dir, duckdb), data, 0o755); err != nil {
+				t.Fatal(err)
+			}
+		}
 		return lib
 	}
 	golang, err := exec.LookPath("go")

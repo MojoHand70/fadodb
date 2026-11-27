@@ -1,7 +1,8 @@
 name: library
 
-# The library of C, libfadodb-core, and the Python client (ADR-0101),
-# for each system a release publishes them for. A library of C is built
+# The libraries of C, libfadodb-core and libfadodb with DuckDB's own
+# library beside it, and the Python client (ADR-0101, ADR-0102), for
+# each system a release publishes them for. A library of C is built
 # on a machine of the system it is for, with that system's C compiler,
 # and tried there: the tests of its module, a program of C linked to the
 # very file built, the Python client over HTTP against a fadodb-core
@@ -66,7 +67,7 @@ jobs:
         run: |
           go vet ./...
           go test -count=1 ./...
-      - name: Build the library
+      - name: Build the two libraries, with DuckDB's from DuckDB's release
         run: scripts/library.sh build "${{ inputs.version }}"
       - name: Try it from C and from Python
         run: scripts/library.sh try
@@ -90,6 +91,8 @@ jobs:
           path: |
             bin/library/fadodb-core-library_*.tar.gz
             bin/library/fadodb-core-library_*.zip
+            bin/library/fadodb-library_*.tar.gz
+            bin/library/fadodb-library_*.zip
             bin/library/fadodb-*.whl
           if-no-files-found: error
           retention-days: 3

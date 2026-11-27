@@ -333,6 +333,25 @@ class InTheSameProcess(BothWays, unittest.TestCase):
         self.assertEqual(ann.exec("get", {"class": "Order", "id": "O-1"})["document"]["values"]["entry"], "JE-2026-0008")
         self.assertNotIn(threading.get_ident(), threads)
 
+    def test_the_analytical_engine(self):
+        """libfadodb keeps a copy of a database's documents in DuckDB
+        beside its file; libfadodb-core has no engine and refuses its
+        options. FADODB_ENGINE=must holds the library to be libfadodb."""
+        path = os.path.join(self.dir, "copy.fado")
+        try:
+            db = fadodb.open(path, options={"analytics": {"threads": 1}})
+        except fadodb.Refused as refused:
+            if os.environ.get("FADODB_ENGINE") == "must":
+                raise
+            self.assertEqual((refused.code, refused.path), ("bad_value", "/analytics"))
+            self.assertIn("libfadodb-core", refused.message)
+            return
+        dan = db.as_caller(CALLERS["dan"])
+        dan.exec("define_class", {"definition": INVOICE})
+        self.assertEqual(dan.exec("flow", {"class": "Invoice"})["flow"]["class"], "Invoice")
+        db.close()
+        self.assertTrue(os.path.exists(path + ".duckdb"))
+
     def test_the_version(self):
         from fadodb import _library
 

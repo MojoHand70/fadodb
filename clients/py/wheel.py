@@ -9,9 +9,10 @@ release needs no tool fetched from the network to make one:
         process it finds the library as fadodb.open says
 
     python3 clients/py/wheel.py --version 0.9.0 --out bin/library \\
-        --library bin/library/libfadodb-core.so --platform manylinux_2_35_x86_64
+        --platform manylinux_2_35_x86_64 --library bin/library/libfadodb.so \\
+        --library bin/library/libduckdb.so --license bin/library/LICENSE-duckdb
         fadodb-0.9.0-py3-none-manylinux_2_35_x86_64.whl: the same, with
-        the library of that system in fadodb/lib, which fadodb.open finds
+        the libraries of that system in fadodb/lib, which fadodb.open finds
 
 The name, the description and what Python is needed are read from
 pyproject.toml, so the wheel says what the project says.
@@ -57,10 +58,13 @@ def main():
     asked = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     asked.add_argument("--version", required=True, help="the version, such as 0.9.0; a leading v is left out")
     asked.add_argument("--out", required=True, help="the directory the wheel is written to")
-    asked.add_argument("--library", help="the library of C to put in fadodb/lib")
+    asked.add_argument("--library", action="append", default=[],
+                       help="a library of C to put in fadodb/lib; libfadodb and DuckDB's beside it")
+    asked.add_argument("--license", action="append", default=[],
+                       help="the licence of what a library carries, such as DuckDB's, put beside the project's")
     asked.add_argument("--platform", default="any", help="the platform the library is for, as a wheel names it")
     told = asked.parse_args()
-    if (told.library is None) != (told.platform == "any"):
+    if (not told.library) != (told.platform == "any"):
         asked.error("a wheel for a platform holds its library, and one for any platform none")
 
     project = read_project(os.path.join(HERE, "pyproject.toml"))
@@ -84,9 +88,9 @@ def main():
         if entry.endswith(".py"):
             with open(os.path.join(package, entry), "rb") as f:
                 files["fadodb/" + entry] = f.read()
-    if told.library:
-        with open(told.library, "rb") as f:
-            files["fadodb/lib/" + os.path.basename(told.library)] = f.read()
+    for library in told.library:
+        with open(library, "rb") as f:
+            files["fadodb/lib/" + os.path.basename(library)] = f.read()
 
     info = f"{name}-{version}.dist-info"
     metadata = "\n".join([
@@ -98,6 +102,7 @@ def main():
         f"License-Expression: {project['license']}",
         "License-File: LICENSE",
         *(["License-File: THIRD_PARTY_NOTICES.md"] if told.library else []),
+        *(f"License-File: {os.path.basename(path)}" for path in told.license),
         *(f"Project-URL: {k}, {v}" for k, v in project.get("urls", {}).items()),
         "Description-Content-Type: text/markdown",
         "",
@@ -119,6 +124,9 @@ def main():
     if told.library:
         with open(os.path.join(REPOSITORY, "THIRD_PARTY_NOTICES.md"), "rb") as f:
             files[f"{info}/licenses/THIRD_PARTY_NOTICES.md"] = f.read()
+    for path in told.license:
+        with open(path, "rb") as f:
+            files[f"{info}/licenses/{os.path.basename(path)}"] = f.read()
     record = "".join(f"{path},{digest(data)},{len(data)}\n" for path, data in files.items())
     files[f"{info}/RECORD"] = (record + f"{info}/RECORD,,\n").encode("utf-8")
 

@@ -3,6 +3,7 @@ private/
 
 # Build output
 bin/
+__pycache__/
 dist/
 node_modules/
 /fadodb

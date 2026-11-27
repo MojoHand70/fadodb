@@ -14,7 +14,9 @@ All notable changes to FadoDB are recorded here. The format follows
   that builds faces, not the engine's. ADR-0060 says so, and the skills
   are five hats again.
 
-Phase 8 started on 2026-11-25, and Phase 9 on 2026-11-27.
+Phase 8 started on 2026-11-25, and Phase 9 on 2026-11-27. Phase 9's
+steps were all merged on 2026-11-28, and it is released with the next
+tag; its measurements are [docs/perf/v0.9.0.md](docs/perf/v0.9.0.md).
 
 ### Added
 

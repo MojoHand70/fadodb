@@ -68,6 +68,11 @@ def main():
     if version == "dev":
         # A build that is no release, under a version Python takes.
         version = "0.0.0.dev0"
+    # A tag of a version before its release, v1.0.0-rc.1, is 1.0.0rc1 to
+    # Python, and -alpha and -beta are a and b.
+    pre = re.fullmatch(r"(\d+\.\d+\.\d+)-(alpha|beta|rc)\.?(\d+)", version)
+    if pre:
+        version = pre.group(1) + {"alpha": "a", "beta": "b", "rc": "rc"}[pre.group(2)] + pre.group(3)
     if not re.fullmatch(r"\d+\.\d+\.\d+((a|b|rc)\d+|\.dev\d+)?", version):
         asked.error("the version " + version + " is no version a wheel takes, such as 0.9.0 or 0.9.0rc1")
     with open(os.path.join(HERE, project["readme"]), encoding="utf-8") as f:

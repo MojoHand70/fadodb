@@ -324,9 +324,14 @@ Mine, while building step D:
   it does not build on. Each wheel is installed with pip and its tests
   run in the same process through the library inside it. A release
   keeps the files and attaches them.
-- **Left out of the step: publishing the package on PyPI**, so that
-  `pip install fadodb` finds it. It takes an account on PyPI and a name
-  there, which are the owner's to make.
+- **Published on PyPI as `fadodb`, on the owner's word of
+  2026-11-27** ("Yes, publish it on PyPI as fadodb"): every release
+  publishes its wheels there, so that `pip install fadodb` finds them,
+  from a job of its own that the release neither waits for nor fails
+  with, as the browser VM's on npm. PyPI trusts the release workflow by
+  a trusted publisher setting for the environment `pypi`, which the
+  owner makes on PyPI; no token is kept anywhere. A tag of a version
+  before its release, `v1.0.0-rc.1`, is `1.0.0rc1` to Python.
 
 ## Left out
 

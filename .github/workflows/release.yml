@@ -152,3 +152,35 @@ jobs:
           else
             npm publish ./web/vm/dist --access public
           fi
+
+  pypi:
+    # The Python client on PyPI, as fadodb (ADR-0101, step D; the owner's
+    # word of 2026-11-27): the wheels the library job made and tried, one
+    # for each system with the library inside and one for every system
+    # without it. A job of its own, as npm's is: the release neither waits
+    # for it nor fails with it. PyPI trusts this workflow, for the
+    # environment pypi, by its trusted publisher setting: no token is kept
+    # anywhere. A version PyPI has already is passed over, so a run again
+    # publishes nothing twice.
+    needs: library
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/project/fadodb/
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: fadodb-core-library-*
+          path: bin/library
+          merge-multiple: true
+      - name: Only the wheels go to PyPI
+        run: |
+          mkdir -p dist
+          mv bin/library/fadodb-*.whl dist/
+          ls -l dist
+      - uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          skip-existing: true

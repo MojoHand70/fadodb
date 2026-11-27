@@ -64,8 +64,9 @@ Phase 8 started on 2026-11-25, and Phase 9 on 2026-11-27.
   machine of each system, on every pull request: the tests of the
   module, the program of C against the very file built, the Python
   client both ways, and each wheel installed and tried. The wheel is
-  written by `clients/py/wheel.py` with Python's own `zipfile`. The
-  package is not yet on PyPI.
+  written by `clients/py/wheel.py` with Python's own `zipfile`. A
+  release publishes the wheels on PyPI as `fadodb`, by trusted
+  publishing, with no token kept anywhere.
 
 - Where a value comes from (ADR-0099, proposed; its second step). A new
   command, `lineage`, in Go `Lineage`, answers one value of one

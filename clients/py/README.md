@@ -83,7 +83,9 @@ Every release carries the package as wheels: one for each system with
 the library inside, which `fadodb.open` finds with nothing named, and
 `fadodb-<version>-py3-none-any.whl` for every system without it, for a
 program that talks to a server. `pip install` takes the file of the
-release. The package is not yet on PyPI.
+release. A release also publishes them on PyPI, so from the first
+release that carries them `pip install fadodb` takes the right one for
+the machine.
 
 ## Its tests
 

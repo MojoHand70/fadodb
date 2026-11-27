@@ -1594,6 +1594,9 @@ func TestGuide_WhereAValueComesFrom(t *testing.T) {
 	for _, of := range []any{fado.Lineage{}, fado.LineageMoment{}, fado.LineageVariable{}, fado.LineageLookup{}, fado.LineagePart{}, fado.LineageHidden{}, fado.LineageChanged{}, fado.LineageChange{}} {
 		kind := reflect.TypeOf(of)
 		for i := 0; i < kind.NumField(); i++ {
+			if !kind.Field(i).IsExported() {
+				continue // not on the wire
+			}
 			member, _, _ := strings.Cut(kind.Field(i).Tag.Get("json"), ",")
 			if !said[member] {
 				t.Errorf("the guide does not say what %s of %s says", member, kind.Name())

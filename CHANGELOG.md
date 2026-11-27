@@ -10,6 +10,29 @@ Phase 8 started on 2026-11-25.
 
 ### Added
 
+- The history of a table's rows (ADR-0099, proposed; its third step,
+  by the owner's answer "1. B"). Every table keeps each row as it was
+  until a change replaced or removed it, and who made each change, of
+  what kind, for whom and when: an import, a replace, a delete, a
+  version of the table, or a rule's `table.insert`, `table.update` or
+  `table.delete`. A row brought again with the values it has is no
+  change and keeps nothing; a delete that removes nothing is none. A
+  table whose definition says `"history": false` keeps none, and each
+  of its rows still says which change gave it its values. A new
+  command, `row_history`, in Go `RowHistory`, answers the history of
+  one row by its key, the row now first, a page at a time, by the
+  table's read rule. `lineage` of a value a document kept from a table
+  now reads the rows as they were when it was kept, each with `since`
+  and `until`, and the rate of the manual's guide adds up; where the
+  table kept no history then, `rows_now` says the rows are as they are
+  now. A version of a table carries the history with its rows, by the
+  rules for converting them; removing a table removes its history. The
+  engine schema is 16: **a database of schema 15 is brought to it when
+  it is opened**, its tables gain the history of their rows, which
+  begins then, and an engine of schema 15 no longer opens the file.
+  SQLite keeps the history by triggers, so a value that follows a table
+  costs the same allocations as before. The chapter on tables has a
+  section, "The history of the rows", which a test plays.
 - Where a value comes from (ADR-0099, proposed; its second step). A new
   command, `lineage`, in Go `Lineage`, answers one value of one
   document and what it is made of, one level: its kind (typed,
@@ -24,9 +47,10 @@ Phase 8 started on 2026-11-25.
   kept value is worked out again by its own formula over the documents
   as they were just before the commit that worked it out, and
   `adds_up` says whether it agrees; nothing is written by any commit
-  for it. `version` walks down in the past. A table's rows are as they
-  are now, and `table_changed_since` says they changed after the value
-  was worked out. A content administrator's call past the rule is kept
+  for it. `version` walks down in the past. A table's rows are read
+  as they were, from the history of its rows (above), and
+  `table_changed_since` says they changed after the value was worked
+  out. A content administrator's call past the rule is kept
   in the log of reads with the parts only the override showed. The
   manual has a guide, "Where a value comes from", which a test plays.
   Among 3,400,000 invoices it answers a customer's kept total of 1,700
@@ -623,6 +647,11 @@ Phase 8 started on 2026-11-25.
 
 ### Changed
 
+- `import_rows` with `replace` no longer empties the table first: it
+  writes the rows it brings and then removes the rows it did not bring
+  (ADR-0099, step 3). The table holds the same rows afterwards; a row
+  brought as it was is no change, so the history of the rows keeps only
+  what the replace changed or removed.
 - The image for containers holds `fadodb`, the program with the
   analytical engine, and a second image holds `fadodb-core` (ADR-0089).
   From the next release on `ghcr.io/mojohand70/fadodb:<version>` is

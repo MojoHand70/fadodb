@@ -528,8 +528,10 @@ of `flow`, `throughput` and `paths` opens, with the member
 a page at a time; among ten million moves the copy lists the moves
 along a transition in a week in 70 to 80 ms. The second is built too:
 `lineage` says where a value comes from, one level a call, worked out
-again from the history, and whether it adds up. The third, a history of
-the rows of every table, is planned and not built.
+again from the history, and whether it adds up. The third is built as
+well: every table keeps the history of its rows, unless its definition
+says `"history": false`, `row_history` reads the history of one row,
+and lineage reads a table's rows as they were (engine schema 16).
 
 The rows of the tables are in the copy too (ADR-0094, proposed on
 2026-11-26): a total a live `LOOKUP` asks of a large table, and a

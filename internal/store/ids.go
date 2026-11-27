@@ -3,8 +3,11 @@ package store
 import (
 	"crypto/rand"
 	"encoding/binary"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 )
 
 // Document and event ids are ULIDs: 48 bits of milliseconds since the
@@ -24,6 +27,46 @@ type idGen struct {
 
 // next makes an id for the moment now.
 func (g *idGen) next(now time.Time) string {
+	out := g.make(now)
+	return string(out[:])
+}
+
+// change makes an id for the moment now with who made the change after
+// it, as one text (ADR-0099, step 3): the id, the length of who in
+// characters in six digits, who, and for whom. changeSQL takes it apart.
+// A text that is not UTF-8 is made so, since SQLite counts characters.
+func (g *idGen) change(now time.Time, who, whoFor string) string {
+	if !utf8.ValidString(who) {
+		who = strings.ToValidUTF8(who, "\uFFFD")
+	}
+	if !utf8.ValidString(whoFor) {
+		whoFor = strings.ToValidUTF8(whoFor, "\uFFFD")
+	}
+	n := utf8.RuneCountInString(who)
+	if n > 999_999 {
+		// Six digits: an id longer than that is kept cut.
+		who, n = string([]rune(who)[:999_999]), 999_999
+	}
+	out := g.make(now)
+	var buf [96]byte
+	b := append(buf[:0], out[:]...)
+	b = strconv.AppendInt(append(b, "000000"[:6-digits(n)]...), int64(n), 10)
+	b = append(append(b, who...), whoFor...)
+	return string(b)
+}
+
+// digits is how many decimal digits n has, 1 for 0.
+func digits(n int) int {
+	d := 1
+	for n >= 10 {
+		n /= 10
+		d++
+	}
+	return d
+}
+
+// make makes the characters of an id for the moment now.
+func (g *idGen) make(now time.Time) [26]byte {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	ms := now.UnixMilli()
@@ -51,5 +94,5 @@ func (g *idGen) next(now time.Time) string {
 		lo = lo>>5 | hi<<59
 		hi >>= 5
 	}
-	return string(out[:])
+	return out
 }

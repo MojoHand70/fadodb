@@ -3229,7 +3229,7 @@
                     "type": "string"
                   },
                   "replace": {
-                    "description": "true empties the table first, so that the rows given are all its rows",
+                    "description": "true makes the rows given all its rows: a row of the table that is not among them is removed",
                     "type": "boolean"
                   },
                   "rows": {
@@ -5862,6 +5862,89 @@
         ],
         "x-fado-call": "RevokeKey",
         "x-fado-mark": "writes"
+      }
+    },
+    "/v1/row_history": {
+      "post": {
+        "description": "It reads. In Go it is the call `RowHistory`.",
+        "operationId": "row_history",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "at": {
+                    "description": "the moment the command reads at: \"2026-11-13\", \"2026-11-13 09:30:00\" in UTC, or seconds since the epoch; now when left out",
+                    "type": [
+                      "string",
+                      "integer"
+                    ]
+                  },
+                  "for": {
+                    "description": "the id of whoever the caller acts for; let through only while a substitution says so",
+                    "type": "string"
+                  },
+                  "key": {
+                    "description": "the key of the row: a value for every column of the table's key, and for no other",
+                    "type": "object"
+                  },
+                  "limit": {
+                    "description": "how many versions to answer, the newest first; 50 when left out, 1,000 at the most",
+                    "type": "integer"
+                  },
+                  "offset": {
+                    "description": "how many versions to skip",
+                    "type": "integer"
+                  },
+                  "reason": {
+                    "description": "why a content administrator acts or reads past a rule; a change keeps it on its event, a read in the log of reads",
+                    "type": "string"
+                  },
+                  "table": {
+                    "description": "the name of the table",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "table",
+                  "key"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "history": {
+                      "description": "whether the table keeps the history of its rows, how many versions the row has had, and the page of them: each its values, the change that gave them and the one that changed or removed them, each with when, who, of what kind and for whom, and the kind of change"
+                    }
+                  },
+                  "required": [
+                    "history"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "The command ran."
+          },
+          "default": {
+            "$ref": "#/components/responses/Refused"
+          }
+        },
+        "summary": "Reads the history of one row of a table: the row as it is now, then as it was before each change, the newest first, with who changed it and when.",
+        "tags": [
+          "Tables, actions and the queue"
+        ],
+        "x-fado-call": "RowHistory",
+        "x-fado-mark": "reads"
       }
     },
     "/v1/set": {

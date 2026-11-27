@@ -22,7 +22,14 @@ package main
 */
 import "C"
 
-import "unsafe"
+import (
+	"unsafe"
+
+	// The library carries the database of time zones, as both programs
+	// do (ADR-0093, item 3): a machine may have none, Windows never has
+	// one, and a database whose zone is Europe/Warsaw would not open.
+	_ "time/tzdata"
+)
 
 // main is never run: a library has no program of its own, and Go asks
 // for the function all the same.

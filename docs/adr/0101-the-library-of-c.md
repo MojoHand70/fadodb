@@ -299,6 +299,11 @@ Mine, while building step C:
 
 Mine, while building step D:
 
+- **The library carries the database of time zones**, as both
+  programs do (ADR-0093, item 3). Found on Windows by the first release
+  build of step D: Windows has no such database, a library built
+  without one opened no database whose zone is `Europe/Warsaw`, and the
+  module's own tests had passed only because Go was on the machine.
 - **The library for the five systems the program `fadodb` is built
   for**: Linux for Intel and ARM, built on Ubuntu 22.04 so that it
   needs no newer C library than 2.35; macOS for Apple and Intel; and

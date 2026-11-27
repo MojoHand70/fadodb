@@ -744,9 +744,9 @@ func eventsAfter(src *class, op string) string {
 
 // lineageKeyed is the documents of a lookup's class as they are now,
 // narrowed by the index of the lookup's key column when it has one and
-// the key is not blank: the invoices of one customer, where the
-// condition alone reads the class. A blank key narrows nothing, so the
-// rows are the condition's in every case.
+// the key is neither blank nor the zero of its kind: the invoices of one
+// customer, where the condition alone reads the class. Such a key
+// narrows nothing, so the rows are the condition's in every case.
 func (s *Store) lineageKeyed(ctx context.Context, q *formula.QuerySlot, d formula.Dialect, arg func(int, bool) string, params *formula.Params, named []any, src *class) (func(string) string, error) {
 	whole := func(string) string { return quote(src.cls.Name) }
 	key, err := formula.KeySQL(q, d, arg, whole, params)
@@ -759,11 +759,35 @@ func (s *Store) lineageKeyed(ctx context.Context, q *formula.QuerySlot, d formul
 		return whole, nil
 	}
 	defer s.filters.release(st)
-	if err := st.stmt.QueryRowContext(ctx, named...).Scan(&v); err != nil || v == nil || v == "" {
+	if err := st.stmt.QueryRowContext(ctx, named...).Scan(&v); err != nil {
 		return whole, nil
 	}
-	if b, ok := v.([]byte); ok && len(b) == 0 {
+	// A key that is blank or the zero of its kind equals every blank
+	// row too, as a number of 0 equals a document with no number: it
+	// narrows nothing, as in the lookup of a commit.
+	switch k := v.(type) {
+	case nil:
 		return whole, nil
+	case string:
+		if k == "" {
+			return whole, nil
+		}
+	case []byte:
+		if len(k) == 0 {
+			return whole, nil
+		}
+	case int64:
+		if k == 0 {
+			return whole, nil
+		}
+	case float64:
+		if k == 0 {
+			return whole, nil
+		}
+	case bool:
+		if !k {
+			return whole, nil
+		}
 	}
 	return func(string) string {
 		return `(SELECT * FROM ` + quote(src.cls.Name) + ` WHERE ` + quote(q.IndexColumn) + ` = ` + key + `)`

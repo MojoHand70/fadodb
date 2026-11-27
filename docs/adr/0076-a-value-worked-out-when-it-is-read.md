@@ -427,6 +427,20 @@ building, and is the owner's to strike.
   live lookup reads, as for a class a list lists (ADR-0053).
 - **A live value that looks something up is not worked out on the
   page**: it was the server's already (item 13).
+- **A `LOOKUP` over a class keyed by a value the class keeps an index
+  of is first narrowed to the documents of that value**, as the lookup
+  of a commit is (ADR-0046), beside the read rule; the condition still
+  decides. Settled on 2026-11-27, when the owner said to mend it before
+  v0.8.0: until then the store read every document of the class for
+  it, since through the condition a blank compares as the zero of its
+  kind and SQLite uses no index. A key that is blank or the zero of its
+  kind narrows nothing. On the database of 3.4 million invoices, with
+  no copy: the live sum of a customer of 1,700 invoices 241 ms before,
+  2.2 to 2.5 ms after; of a customer of 1,700,000, half the class, 395
+  ms before and 637 ms after, since the index then finds half the rows
+  one by one where reading the class in order was cheaper. Where the
+  program keeps the copy, a figure the store has not answered in 5 ms
+  is the copy's (ADR-0089, item 6).
 
 ## Settled while building REF everywhere
 

@@ -271,3 +271,42 @@ func TestAPartThatNoLongerMatches(t *testing.T) {
 		}
 	}
 }
+
+// A kept count over the documents whose number equals the document's,
+// where that number is 0, counts the documents with no number too, since
+// a blank reads as 0; and where it comes from lists them all, so that it
+// adds up. The key 0 narrows nothing, as the lookup of a commit does not
+// narrow it (ADR-0046).
+func TestWhereAValueComesFromWhenItsKeyIsZero(t *testing.T) {
+	s, _ := openStore(t, Options{})
+	ctx := context.Background()
+	for _, def := range []string{
+		`{"name": "Ticket", "title": "name", "variables": {"name": {"type": "text"}, "bucket": {"type": "number", "index": true}},
+ "states": {"initial": "open", "list": ["open"]}, "access": {"read": "TRUE", "create": "TRUE", "update": "TRUE", "delete": "FALSE"}}`,
+		`{"name": "Box", "title": "name", "variables": {"name": {"type": "text"}, "bucket": {"type": "number"},
+   "tickets": {"type": "number", "mode": "triggered", "on": ["enter:open", "refresh"], "formula": "LOOKUP(Ticket, COUNT(id), bucket = THIS.bucket)"}},
+ "states": {"initial": "open", "list": ["open"]}, "access": {"read": "TRUE", "create": "TRUE", "update": "TRUE", "delete": "FALSE"}}`,
+	} {
+		if _, err := s.defineOpen(ctx, []byte(def), asSetup); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for id, v := range map[string]Values{"T-0": {"name": "at 0", "bucket": 0.0}, "T-B": {"name": "no bucket"}, "T-1": {"name": "at 1", "bucket": 1.0}} {
+		if _, err := s.Create(ctx, "Ticket", v, copyWanda, WithID(id)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := s.Create(ctx, "Box", Values{"name": "the first", "bucket": 0.0}, copyWanda, WithID("B-0")); err != nil {
+		t.Fatal(err)
+	}
+	l, err := s.Lineage(ctx, "Box", "B-0", "tickets", LineageAsk{}, copyWanda)
+	got := lineageJSON(t, l, err)
+	for _, want := range []string{`"kind":"kept"`, `"value":2`, `"count":2`, `"adds_up":true`, `"id":"T-0"`, `"id":"T-B"`} {
+		if !strings.Contains(got, want) {
+			t.Errorf("where the first box's 2 comes from: %s\nwant %s in it", got, want)
+		}
+	}
+	if strings.Contains(got, `"id":"T-1"`) {
+		t.Errorf("where the first box's 2 comes from names T-1, which is at 1: %s", got)
+	}
+}

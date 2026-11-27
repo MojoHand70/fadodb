@@ -887,6 +887,35 @@ func TestTheFlowIsACommand(t *testing.T) {
 	}
 }
 
+// The command lineage answers what the Go call answers (ADR-0099, part
+// 2): where a value comes from.
+func TestLineageIsACommand(t *testing.T) {
+	s := open(t)
+	define(t, s)
+	ctx := context.Background()
+	run(t, s, bob, "create", `{"class": "Invoice", "id": "I-1", "values": {"number": "I-1"}}`)
+	got := run(t, s, ann, "lineage", `{"class": "Invoice", "id": "I-1", "variable": "number"}`)
+	direct, err := s.Lineage(ctx, "Invoice", "I-1", "number", store.LineageAsk{}, store.As(ann))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var want any
+	_ = json.Unmarshal(mustJSON(direct), &want)
+	if !reflect.DeepEqual(got["lineage"], want) || at(t, got, "lineage.kind") != "typed" || at(t, got, "lineage.since.by") != "bob" {
+		t.Errorf("lineage answered %v, and the Go call %v", got["lineage"], want)
+	}
+	for object, want := range map[string][2]string{
+		`{"class": "Invoice", "id": "I-1"}`:                                    {CodeBadJSON, "/variable"},
+		`{"class": "Invoice", "id": "I-1", "variable": "nothing"}`:             {store.CodeUnknownVariable, "nothing"},
+		`{"class": "Invoice", "id": "I-1", "variable": "number", "limit": -1}`: {store.CodeBadValue, "/limit"},
+		`{"class": "Invoice", "id": "I-9", "variable": "number"}`:              {store.CodeUnknownDocument, ""},
+	} {
+		if e := refused(t, s, ann, "lineage", object); e.Code != want[0] || (e.Path != want[1] && e.Variable != want[1]) {
+			t.Errorf("lineage %s: %s at %q %q (%s), want %s at %q", object, e.Code, e.Path, e.Variable, e.Message, want[0], want[1])
+		}
+	}
+}
+
 func TestWhoCallsIsNeverInTheCommand(t *testing.T) {
 	s := open(t)
 	define(t, s)

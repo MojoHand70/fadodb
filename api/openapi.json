@@ -3370,6 +3370,98 @@
         ]
       }
     },
+    "/v1/lineage": {
+      "post": {
+        "description": "It reads. In Go it is the call `Lineage`.",
+        "operationId": "lineage",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "at": {
+                    "description": "the moment the command reads at: \"2026-11-13\", \"2026-11-13 09:30:00\" in UTC, or seconds since the epoch; now when left out",
+                    "type": [
+                      "string",
+                      "integer"
+                    ]
+                  },
+                  "class": {
+                    "description": "the name of the class",
+                    "type": "string"
+                  },
+                  "for": {
+                    "description": "the id of whoever the caller acts for; let through only while a substitution says so",
+                    "type": "string"
+                  },
+                  "id": {
+                    "description": "the id of the document",
+                    "type": "string"
+                  },
+                  "limit": {
+                    "description": "how many parts of each lookup to answer, the largest first; 50 when left out, 1,000 at the most",
+                    "type": "integer"
+                  },
+                  "offset": {
+                    "description": "how many parts to skip",
+                    "type": "integer"
+                  },
+                  "reason": {
+                    "description": "why a content administrator acts or reads past a rule; a change keeps it on its event, a read in the log of reads",
+                    "type": "string"
+                  },
+                  "variable": {
+                    "description": "the variable whose value is asked about",
+                    "type": "string"
+                  },
+                  "version": {
+                    "description": "the version of the document the value is of, to walk down in the past; the version it is at when left out",
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "class",
+                  "id",
+                  "variable"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "lineage": {
+                      "description": "the value, its kind (typed, computed, kept or live), its formula, the moment it came, the values of the document its formula read, and for each lookup the documents or rows it read: how many, what they give, the page of them the caller may read with their values, how many the caller may not, which changed since and what the lookup gives now; and whether the formula worked out again over what it read gives the value"
+                    }
+                  },
+                  "required": [
+                    "lineage"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "The command ran."
+          },
+          "default": {
+            "$ref": "#/components/responses/Refused"
+          }
+        },
+        "summary": "Answers where a value of a document comes from, one level: how it is made, when, and what it read, with the values of the parts.",
+        "tags": [
+          "Documents"
+        ],
+        "x-fado-call": "Lineage",
+        "x-fado-mark": "reads"
+      }
+    },
     "/v1/list_actions": {
       "post": {
         "description": "It reads. In Go it is the call `Actions`.",

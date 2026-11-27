@@ -31,11 +31,13 @@ type shipped struct {
 // What is shipped. fadodb links DuckDB's prebuilt library, which comes in
 // modules of its own for each system, each carrying DuckDB; it is listed
 // with the tag duckdb_use_lib, which leaves them out, and DuckDB is named
-// once, below.
+// once, below. libfadodb is built with that tag, and DuckDB's own shared
+// library travels beside it (ADR-0102).
 var ships = []shipped{
 	{"fadodb-core", ".", "./cmd/fadodb-core", false, ""},
 	{"fadodb", "analytics", "./cmd/fadodb", true, "duckdb_use_lib"},
 	{"libfadodb-core", "cabi", ".", true, ""},
+	{"libfadodb", "cabi", ".", true, "duckdb,duckdb_use_lib"},
 }
 
 // The systems a release is built for.

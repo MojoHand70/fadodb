@@ -763,6 +763,78 @@ func TestGuide_SeeWhereDocumentsWait(t *testing.T) {
 			t.Errorf("the guide explains %s, which the paths have not", member)
 		}
 	}
+	// The documents behind a number (ADR-0099): the answer the guide
+	// shows, the Go call's, each line of its table, and every member of
+	// the answer explained.
+	opened := func(as fado.Principal, command, object string) (*fado.Documents, string) {
+		t.Helper()
+		answer, err := db.Exec(ctx, as, command, []byte(object))
+		if err != nil {
+			t.Fatalf("%s %s: %v", command, object, err)
+		}
+		var got struct{ Documents *fado.Documents }
+		if err := json.Unmarshal(answer, &got); err != nil {
+			t.Fatal(err)
+		}
+		if got.Documents == nil {
+			t.Fatalf("%s %s answers no documents: %s", command, object, answer)
+		}
+		var shown bytes.Buffer
+		if err := json.Indent(&shown, answer, "", "  "); err != nil {
+			t.Fatal(err)
+		}
+		return got.Documents, shown.String()
+	}
+	moved, shownMoved := opened(who["Ann"], "flow", `{"class": "Invoice", "documents": {"transition": "submit"}}`)
+	if want := strings.TrimSuffix(strings.TrimPrefix(block("the moves along submit"), "```jsonc\n"), "\n```"); shownMoved != want {
+		t.Errorf("the moves along submit Ann sees are\n%s\nand the guide shows\n%s", shownMoved, want)
+	}
+	if viaCall, err := db.FlowDocuments(ctx, "Invoice", fado.FlowPeriod{}, fado.DocumentsAsk{Transition: "submit"}, ann); err != nil || !reflect.DeepEqual(viaCall, moved) {
+		t.Errorf("the Go call answers %+v (%v), and the command %+v", viaCall, err, moved)
+	}
+	behind := rows("the documents behind each number")
+	if len(behind) != 9 {
+		t.Fatalf("the guide opens %d numbers, want 9", len(behind))
+	}
+	for _, row := range behind {
+		d, _ := opened(who[row[0]], row[1], `{"class": "Invoice", "documents": `+row[2]+`}`)
+		ids := make([]string, len(d.Rows))
+		for i, r := range d.Rows {
+			ids[i] = r.ID
+		}
+		if got := strings.Join(ids, ", "); d.Count != number(row[3]) || got != row[4] {
+			t.Errorf("%s opens %s %s to %d: %s; the guide says %s: %s", row[0], row[1], row[2], d.Count, got, row[3], row[4])
+		}
+	}
+	saidOfDocuments := map[string]bool{}
+	for _, row := range rows("what the documents say") {
+		for _, member := range strings.Split(row[0], ", ") {
+			saidOfDocuments[strings.Trim(member, "`")] = true
+		}
+	}
+	hasOfDocuments := map[string]bool{}
+	for _, of := range []any{fado.Documents{}, fado.DocumentRow{}} {
+		kind := reflect.TypeOf(of)
+		for i := 0; i < kind.NumField(); i++ {
+			member, _, _ := strings.Cut(kind.Field(i).Tag.Get("json"), ",")
+			if !saidOfDocuments[member] {
+				t.Errorf("the guide does not say what %s of the documents says", member)
+			}
+			hasOfDocuments[member] = true
+		}
+	}
+	for member := range saidOfDocuments {
+		if !hasOfDocuments[member] {
+			t.Errorf("the guide explains %s, which the documents have not", member)
+		}
+	}
+	// Every number the guide's table of what can be opened names is
+	// one the command opens.
+	for _, row := range rows("what can be opened") {
+		if _, err := db.Exec(ctx, who["Ann"], row[0], []byte(`{"class": "Invoice", "documents": `+row[1]+`}`)); err != nil {
+			t.Errorf("%s does not open %s: %v", row[0], row[1], err)
+		}
+	}
 	// Each caller sees their own.
 	for _, row := range rows("who sees what") {
 		p, known := who[row[0]]

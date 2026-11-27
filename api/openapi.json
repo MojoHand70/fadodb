@@ -2255,6 +2255,10 @@
                     "description": "the name of the class",
                     "type": "string"
                   },
+                  "documents": {
+                    "description": "one number of the flow whose documents to answer in place of the flow: {\"created\": true}, {\"state\": \"review\"}, {\"stays\": \"review\"} with \"at_least\": \"middle\" or \"slow_tenth\" to keep the longest, or {\"transition\": \"approve\"} with \"from\" and \"to\" to narrow it; \"limit\" (50 when left out, 1,000 at the most) and \"offset\" page them",
+                    "type": "object"
+                  },
                   "for": {
                     "description": "the id of whoever the caller acts for; let through only while a substitution says so",
                     "type": "string"
@@ -2297,12 +2301,16 @@
               "application/json": {
                 "schema": {
                   "properties": {
+                    "documents": {
+                      "description": "when documents names a number, in place of the flow: how many there are, the page of them, each with its id, its title and state now, when it moved, entered, was made or finished, how long a stay lasted, the version and who; and whether more follow"
+                    },
                     "flow": {
                       "description": "the states of the class, each with its documents now, since when the oldest is there, and how many stays ended in the period and how long they lasted, with their middle and their slow tenth when spread asks for them; and its transitions, each with its moves in the period"
                     }
                   },
                   "required": [
-                    "flow"
+                    "flow",
+                    "documents"
                   ],
                   "type": "object"
                 }
@@ -4489,6 +4497,10 @@
                     "description": "the name of the class",
                     "type": "string"
                   },
+                  "documents": {
+                    "description": "one path whose documents to answer in place of the paths: {\"path\": [\"draft\", \"review\", \"approved\"]}; \"limit\" (50 when left out, 1,000 at the most) and \"offset\" page them",
+                    "type": "object"
+                  },
                   "for": {
                     "description": "the id of whoever the caller acts for; let through only while a substitution says so",
                     "type": "string"
@@ -4531,12 +4543,16 @@
               "application/json": {
                 "schema": {
                   "properties": {
+                    "documents": {
+                      "description": "when documents names a path, in place of the paths: how many documents took it, the page of them, each with its id, its title and state now, when it was made and who made it; and whether more follow"
+                    },
                     "paths": {
                       "description": "how many documents were counted and how many different paths they took; the most taken paths, each with its states in the order a document came into them, how many documents took it, and whether it ends in a final state; and how many documents took another path"
                     }
                   },
                   "required": [
-                    "paths"
+                    "paths",
+                    "documents"
                   ],
                   "type": "object"
                 }
@@ -6300,6 +6316,10 @@
                     "description": "the name of the class",
                     "type": "string"
                   },
+                  "documents": {
+                    "description": "one number of the throughput whose documents to answer in place of it: {\"made\": \"2026-11-02\"} or {\"finished\": \"2026-11-02\"}, the first day of a period; \"limit\" (50 when left out, 1,000 at the most) and \"offset\" page them",
+                    "type": "object"
+                  },
                   "for": {
                     "description": "the id of whoever the caller acts for; let through only while a substitution says so",
                     "type": "string"
@@ -6338,12 +6358,16 @@
               "application/json": {
                 "schema": {
                   "properties": {
+                    "documents": {
+                      "description": "when documents names a number, in place of the throughput: how many there are, the page of them, each with its id, its title and state now, when it was made or finished, the version and who; and whether more follow"
+                    },
                     "throughput": {
                       "description": "the periods from the first in which a document was made or finished to the last, each with its first day and how many documents were made and how many finished in it; and the two sums"
                     }
                   },
                   "required": [
-                    "throughput"
+                    "throughput",
+                    "documents"
                   ],
                   "type": "object"
                 }

@@ -683,6 +683,22 @@ tag; its measurements are [docs/perf/v0.9.0.md](docs/perf/v0.9.0.md).
 
 ### Fixed
 
+- A live `LOOKUP` over a class finds its documents through the index.
+  Keyed by a value the class keeps an index of, `customer =
+  THIS.name`, it read every document of the class on the store, since
+  through its condition a blank compares as the zero of its kind; it
+  is now first narrowed to the documents of that value, as the lookup
+  of a commit is (ADR-0076, settled while building). The live sum of a
+  customer of 1,700 among 3.4 million invoices takes 2.2 to 2.5 ms in
+  `fadodb-core`, where it took 241 ms; of a customer of 1,700,000, half
+  the class, 637 ms, where it took 395, the index finding half the rows
+  one by one. It came with live lookups in Phase 8 and was in no
+  release.
+- Where a value comes from adds up when its key is 0. A kept value
+  keyed by a number of 0, or false, which a document with no value
+  equals too, was answered by `lineage` with only the documents of 0:
+  the count 1 where 2 were kept, and `adds_up` false. The key 0 now
+  narrows nothing, as in the lookup of a commit (ADR-0099, step 2).
 - DuckDB's notice travels with DuckDB. The program `fadodb` and its
   image carry DuckDB, linked in, and carried no word of its licence,
   which is MIT and asks for its notice in every copy: each archive of

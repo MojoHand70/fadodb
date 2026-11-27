@@ -10,6 +10,28 @@ Phase 8 started on 2026-11-25.
 
 ### Added
 
+- Where a value comes from (ADR-0099, proposed; its second step). A new
+  command, `lineage`, in Go `Lineage`, answers one value of one
+  document and what it is made of, one level: its kind (typed,
+  computed, kept or live), its formula, the moment it came (the commit
+  that worked a kept value out, or the version since which a typed or
+  computed value is what it is, with who and by which event), the
+  values of the document its formula read, and for each lookup the
+  documents or the rows it read: how many, what they give, the page of
+  them the caller may read with their values, the largest first, how
+  many the caller may not read (and for a sum or a count what they
+  come to), which have changed since and what the lookup gives now. A
+  kept value is worked out again by its own formula over the documents
+  as they were just before the commit that worked it out, and
+  `adds_up` says whether it agrees; nothing is written by any commit
+  for it. `version` walks down in the past. A table's rows are as they
+  are now, and `table_changed_since` says they changed after the value
+  was worked out. A content administrator's call past the rule is kept
+  in the log of reads with the parts only the override showed. The
+  manual has a guide, "Where a value comes from", which a test plays.
+  Among 3,400,000 invoices it answers a customer's kept total of 1,700
+  invoices in 60 to 61 ms and one of 1,700,000 in 22 seconds, from the
+  store in both programs; the copy does not answer it yet.
 - The documents behind a number (ADR-0099, proposed; its first step).
   `flow`, `throughput` and `paths` take one member more, `documents`,
   which names one of their numbers, and then answer the documents

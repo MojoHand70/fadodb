@@ -123,6 +123,7 @@ A command takes the ones its list below shows, and no other.
 | [`flow`](#flow) | Answers the flow of a class: the documents the caller may read in each state now, and their moves along each transition. | reads |
 | [`throughput`](#throughput) | Answers how many documents of a class the caller may read were made and how many finished in each day, week or month: whether the pile grows. | reads |
 | [`paths`](#paths) | Answers the paths the documents of a class took through its states, the most taken first, for the documents the caller may read. | reads |
+| [`lineage`](#lineage) | Answers where a value of a document comes from, one level: how it is made, when, and what it read, with the values of the parts. | reads |
 | [`sql`](#sql) | Runs one read-only SELECT over the views, for an analyst. | reads |
 
 ### create
@@ -627,6 +628,27 @@ It answers:
 |---|---|
 | `paths` | how many documents were counted and how many different paths they took; the most taken paths, each with its states in the order a document came into them, how many documents took it, and whether it ends in a final state; and how many documents took another path |
 | `documents` | when documents names a path, in place of the paths: how many documents took it, the page of them, each with its id, its title and state now, when it was made and who made it; and whether more follow |
+
+### lineage
+
+Answers where a value of a document comes from, one level: how it is made, when, and what it read, with the values of the parts. It reads; in Go it is the call `Lineage`.
+
+| Member | Type | | What it is |
+|---|---|---|---|
+| `class` | text | needed | the name of the class |
+| `id` | text | needed | the id of the document |
+| `variable` | text | needed | the variable whose value is asked about |
+| `version` | whole number |  | the version of the document the value is of, to walk down in the past; the version it is at when left out |
+| `limit` | whole number |  | how many parts of each lookup to answer, the largest first; 50 when left out, 1,000 at the most |
+| `offset` | whole number |  | how many parts to skip |
+
+And, of the members that mean the same everywhere: `reason`, `at`, `for`.
+
+It answers:
+
+| Member | What it holds |
+|---|---|
+| `lineage` | the value, its kind (typed, computed, kept or live), its formula, the moment it came, the values of the document its formula read, and for each lookup the documents or rows it read: how many, what they give, the page of them the caller may read with their values, how many the caller may not, which changed since and what the lookup gives now; and whether the formula worked out again over what it read gives the value |
 
 ### sql
 

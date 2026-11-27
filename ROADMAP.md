@@ -526,10 +526,10 @@ The owner extended the phase on 2026-11-26 into lineage and drill down
 of `flow`, `throughput` and `paths` opens, with the member
 `documents`, to the documents behind it, as many as the number says,
 a page at a time; among ten million moves the copy lists the moves
-along a transition in a week in 70 to 80 ms. The second, `lineage`,
-where a value comes from, one level a call, rebuilt from the history,
-and the third, a history of the rows of every table, are planned and
-not built.
+along a transition in a week in 70 to 80 ms. The second is built too:
+`lineage` says where a value comes from, one level a call, worked out
+again from the history, and whether it adds up. The third, a history of
+the rows of every table, is planned and not built.
 
 The rows of the tables are in the copy too (ADR-0094, proposed on
 2026-11-26): a total a live `LOOKUP` asks of a large table, and a

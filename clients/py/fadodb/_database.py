@@ -2,7 +2,7 @@
 
 import json
 
-__all__ = ["Database", "NoAnswer", "Refused", "connect", "open"]
+__all__ = ["Database", "NoAnswer", "Permanent", "Refused", "connect", "open"]
 
 
 class Refused(Exception):
@@ -36,6 +36,12 @@ class NoAnswer(Exception):
     again."""
 
 
+class Permanent(Exception):
+    """Raised by the program's function for an action, a refusal: an
+    answer that asking again would not change. The action is dead at
+    once, with these words; any other exception is tried again."""
+
+
 def connect(url, key, *, timeout=60.0):
     """The database a server serves at url, as the user whose key it is.
 
@@ -48,7 +54,7 @@ def connect(url, key, *, timeout=60.0):
     return Database(Server(url, key, timeout), None)
 
 
-def open(path, *, caller=None, options=None, library=None):
+def open(path, *, caller=None, options=None, library=None, actions=None):
     """The database file at path, held in this process through the
     library of C, and made when it does not exist.
 
@@ -62,10 +68,17 @@ def open(path, *, caller=None, options=None, library=None):
     "Europe/Warsaw"}. library is the path of the library; when it is
     None, the variable FADODB_LIBRARY of the environment names it, or
     the one beside this package, or the one the system finds.
+
+    actions are the actions the program carries out itself, a function
+    by the name of each (ADR-0102): {"mail.send": send}. The function is
+    called with the call, a dict as a webhook gets it, from a thread of
+    the worker, and returns the action's result as a dict, or None for
+    nothing; raising Permanent refuses the call, and any other exception
+    fails it, to be tried again.
     """
     from ._library import Opened
 
-    return Database(Opened(path, options, library), caller)
+    return Database(Opened(path, options, library, actions), caller)
 
 
 # A command whose answer is a stream, which one call cannot answer.

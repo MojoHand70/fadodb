@@ -19,6 +19,8 @@ package main
 #include <stddef.h>
 #include <stdint.h>
 #include <stdlib.h>
+
+typedef void (*fado_action)(void *context, uint64_t call, const char *action, const char *object);
 */
 import "C"
 
@@ -48,7 +50,12 @@ func answer(b []byte) *C.char { return C.CString(string(b)) }
 
 //export fado_open
 func fado_open(path, options *C.char, refusal **C.char) C.uint64_t {
-	n, refused := openDatabase(text(path), text(options))
+	return fado_open_with(path, options, nil, nil, refusal)
+}
+
+//export fado_open_with
+func fado_open_with(path, options *C.char, actions C.fado_action, context unsafe.Pointer, refusal **C.char) C.uint64_t {
+	n, refused := openDatabase(text(path), text(options), hostOf(actions, context))
 	if refusal != nil {
 		*refusal = nil
 		if refused != nil {
@@ -76,6 +83,11 @@ func fado_close(db C.uint64_t, refusal **C.char) C.int {
 		return -1
 	}
 	return 0
+}
+
+//export fado_answer
+func fado_answer(call C.uint64_t, answer *C.char) C.int {
+	return C.int(answerCall(uint64(call), text(answer)))
 }
 
 //export fado_put_file

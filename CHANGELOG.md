@@ -29,6 +29,19 @@ Phase 8 started on 2026-11-25, and Phase 9 on 2026-11-27.
   with `make library` as `libfadodb-core.so`, `libfadodb-core.dylib` or
   `fadodb-core.dll`, with `fadodb.h`. GitHub builds it on Linux, macOS
   and Windows on every pull request and runs a program of C against it.
+- Files and the requests of actions through the library of C
+  (ADR-0101, its step B). `fado_put_file` keeps the bytes of a file and
+  answers its facts, which a command commits on a document;
+  `fado_get_file` reads a file a document holds, under the rules of the
+  document, at a version when one is given; `fado_get_blob` reads bytes
+  by their hash, for a content administrator with a reason; each as its
+  address over HTTP does. The option `outbound` of `fado_open` lists the
+  hosts the declared actions of the database may call, in the words of
+  the settings of `fadodb serve`, and a secret is the file of
+  `secrets_dir` or a variable `FADODB_SECRET_…` of the program's
+  environment; without `outbound` the database sends nothing. The
+  server and the library find secrets with one piece of Go,
+  `internal/secret`.
 
 - Where a value comes from (ADR-0099, proposed; its second step). A new
   command, `lineage`, in Go `Lineage`, answers one value of one

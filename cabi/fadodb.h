@@ -29,6 +29,7 @@
 #ifndef FADODB_H
 #define FADODB_H
 
+#include <stddef.h>
 #include <stdint.h>
 
 #ifdef __cplusplus
@@ -48,9 +49,17 @@ typedef uint64_t fado_db;
  *      "max_indexed_rows": 100000, "max_blob_bytes": 33554432,
  *      "blob_store": "sqlite", "host_answers_for": false,
  *      "outbox": {"manual": false, "workers": 4, "max_attempts": 10,
- *                 "backoff_seconds": 1}}
+ *                 "backoff_seconds": 1},
+ *      "outbound": {"hosts": ["hooks.acme.example"],
+ *                   "connections": {"slack": ["slack.com"]}},
+ *      "secrets_dir": "/etc/books/secrets"}
  *
- * Every member may be left out. Answers the database, or 0 when it was
+ * Every member may be left out. outbound lists the hosts the declared
+ * actions of the database may call, in the words of the settings of
+ * fadodb serve; without it the database sends no request. The secret
+ * token of the connection slack is then the file slack/token in
+ * secrets_dir, or the variable FADODB_SECRET_SLACK__TOKEN of the
+ * program's environment, read again for every request. Answers the database, or 0 when it was
  * not opened; then *refusal, when refusal is not NULL, is set to the
  * refusal, {"error": {...}}, to be given back with fado_free. */
 fado_db fado_open(const char *path, const char *options, char **refusal);
@@ -79,6 +88,35 @@ char *fado_exec(fado_db db, const char *caller, const char *command, const char 
  * ones that run end first, and the file is closed. Answers 0, or -1 and
  * then *refusal, when refusal is not NULL, is set as fado_open sets it. */
 int fado_close(fado_db db, char **refusal);
+
+/* The files travel beside the commands, as over HTTP: their bytes are no
+ * JSON. What a file is on a document, its facts, is a value like any
+ * other, which a command commits. Each function takes the database, the
+ * caller and one JSON object, as fado_exec does, and answers one JSON
+ * object, never NULL, given back with fado_free.
+ *
+ * fado_put_file keeps length bytes and answers the facts of the file,
+ * {"file": {"hash": "d694…", "name": "taxi.pdf", "media_type":
+ * "application/pdf", "size": 48213}}, for a command to commit in a
+ * variable of the schema File, as POST /v1/blobs does. object is
+ * {"name": "taxi.pdf", "media_type": "application/pdf"}; both may be
+ * left out. The bytes are read before the call returns. */
+char *fado_put_file(fado_db db, const char *caller, const char *object, const void *bytes, size_t length);
+
+/* fado_get_file reads a file a document holds, under the rules of the
+ * document, as GET /v1/file does. object is {"class": "Receipt", "id":
+ * "R-7", "hash": "d694…"}, with "version" for an earlier version of the
+ * document, "for" for whom the caller acts and "reason" for a content
+ * administrator who reads past a rule. It answers the facts of the file,
+ * and sets *bytes and *length to its bytes, which fado_free gives back;
+ * on a refusal *bytes is NULL. */
+char *fado_get_file(fado_db db, const char *caller, const char *object, void **bytes, size_t *length);
+
+/* fado_get_blob reads bytes by their hash alone, which the engine does
+ * for a content administrator and nobody else, with a reason the log of
+ * reads keeps, as GET /v1/blob does. object is {"hash": "d694…",
+ * "reason": "…"}. It answers and sets the bytes as fado_get_file. */
+char *fado_get_blob(fado_db db, const char *caller, const char *object, void **bytes, size_t *length);
 
 /* Gives back what the library answered: an answer, a refusal, or the
  * bytes of a file. NULL is nothing. */

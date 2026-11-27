@@ -7,7 +7,8 @@
  *
  * Ann of sales makes an invoice, Bob of accounting gives its account,
  * the ledger agent may not book it and Bob does; then sixteen threads
- * make invoices at once. It prints what it did and ends with 0, or says
+ * make invoices at once; then Ann puts the scan of a taxi receipt on a
+ * claim and Bob reads it back. It prints what it did and ends with 0, or says
  * what was not as it should be and ends with 1.
  */
 #include <stdio.h>
@@ -31,6 +32,14 @@ static const char *invoice =
     "\"access\": {\"read\": \"CREATEDBY() = USER() OR INGROUP(\\\"accounting\\\")\","
     "\"create\": \"INGROUP(\\\"sales\\\")\", \"update\": \"INGROUP(\\\"accounting\\\")\", \"delete\": \"FALSE\","
     "\"transition\": {\"book\": \"INGROUP(\\\"accounting\\\") AND USERKIND() = \\\"person\\\"\"}}}}";
+
+static const char *claim =
+    "{\"definition\": {"
+    "\"name\": \"Claim\","
+    "\"variables\": {\"number\": {\"type\": \"text\", \"required\": true}, \"scan\": {\"type\": \"object\", \"schema\": \"File\"}},"
+    "\"states\": {\"initial\": \"open\", \"list\": [\"open\"]},"
+    "\"access\": {\"read\": \"CREATEDBY() = USER() OR INGROUP(\\\"accounting\\\")\","
+    "\"create\": \"INGROUP(\\\"sales\\\")\", \"update\": \"CREATEDBY() = USER()\", \"delete\": \"FALSE\"}}}";
 
 static const char *dan = "{\"id\": \"dan\", \"kind\": \"person\", \"system_groups\": [\"designers\"]}";
 static const char *ann = "{\"id\": \"ann\", \"kind\": \"person\", \"groups\": [\"sales\"]}";
@@ -151,6 +160,45 @@ int main(int argc, char **argv) {
         printf("%d threads: %d invoices\n", THREADS, made);
     }
     expect(db, bob, "count", "{\"class\": \"Invoice\"}", "\"count\":321");
+
+    /* A file: its bytes travel beside the commands, its facts in them. */
+    expect(db, dan, "define_class", claim, "\"class\":");
+    expect(db, ann, "create", "{\"class\": \"Claim\", \"id\": \"C-7\", \"values\": {\"number\": \"C-7\"}}", "\"state\":\"open\"");
+    static const char scan[] = "%PDF-1.7 the taxi from the airport, 84.00 PLN\0and a zero byte in it";
+    char *put = fado_put_file(db, ann, "{\"name\": \"taxi.pdf\", \"media_type\": \"application/pdf\"}", scan, sizeof scan);
+    const char *at = put ? strstr(put, "\"file\":") : NULL;
+    if (at == NULL) {
+        printf("FAIL fado_put_file: %s\n", put ? put : "(no answer)");
+        failures++;
+    } else {
+        /* {"file":{…}} is the facts to commit; the hash is in them. */
+        char set[512], get[256];
+        size_t facts = strlen(at + 7) - 1;
+        snprintf(set, sizeof set, "{\"class\": \"Claim\", \"id\": \"C-7\", \"values\": {\"scan\": %.*s}}", (int)facts, at + 7);
+        expect(db, ann, "set", set, "\"name\":\"taxi.pdf\"");
+        const char *hash = strstr(put, "\"hash\":\"");
+        snprintf(get, sizeof get, "{\"class\": \"Claim\", \"id\": \"C-7\", \"hash\": \"%.64s\"}", hash ? hash + 8 : "");
+        void *bytes = NULL;
+        size_t length = 0;
+        char *got = fado_get_file(db, bob, get, &bytes, &length);
+        if (bytes == NULL || length != sizeof scan || memcmp(bytes, scan, sizeof scan) != 0) {
+            printf("FAIL fado_get_file gave %d bytes: %s\n", (int)length, got);
+            failures++;
+        } else {
+            printf("fado_get_file: the %d bytes Ann put\n", (int)length);
+        }
+        fado_free(got);
+        fado_free(bytes);
+        got = fado_get_file(db, robot, "{\"class\": \"Claim\", \"id\": \"C-7\"}", &bytes, &length);
+        if (bytes != NULL || got == NULL || strstr(got, "\"path\":\"/hash\"") == NULL) {
+            printf("FAIL a get with no hash: %s\n", got ? got : "(no answer)");
+            failures++;
+        } else {
+            printf("fado_get_file: refused /hash\n");
+        }
+        fado_free(got);
+    }
+    fado_free(put);
 
     if (fado_close(db, &refusal) != 0) {
         printf("FAIL fado_close: %s\n", refusal);

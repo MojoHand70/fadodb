@@ -10,7 +10,7 @@ engine of `fadodb-core`, without the analytical engine:
 | macOS | `libfadodb-core.dylib` |
 | Windows | `fadodb-core.dll` |
 
-and [`fadodb.h`](fadodb.h) declares its five functions:
+and [`fadodb.h`](fadodb.h) declares its functions:
 
 ```c
 fado_db     fado_open(const char *path, const char *options, char **refusal);
@@ -18,6 +18,10 @@ char       *fado_exec(fado_db db, const char *caller, const char *command, const
 int         fado_close(fado_db db, char **refusal);
 void        fado_free(void *answer);
 const char *fado_version(void);
+
+char *fado_put_file(fado_db db, const char *caller, const char *object, const void *bytes, size_t length);
+char *fado_get_file(fado_db db, const char *caller, const char *object, void **bytes, size_t *length);
+char *fado_get_blob(fado_db db, const char *caller, const char *object, void **bytes, size_t *length);
 ```
 
 A command is a name and one JSON object, and its answer is one JSON
@@ -35,7 +39,13 @@ fado_free(answer);
 ```
 
 An answer with `error` at its top is a refusal, and its `code` is what a
-program branches on. Every function may be called from any thread. A
+program branches on. The bytes of a file travel beside the commands, as
+over HTTP: `fado_put_file` keeps them and answers the facts a command
+commits on a document, and `fado_get_file` reads them back under the
+rules of the document. A database sends the requests of its actions
+only to the hosts the option `outbound` lists, with the secrets of the
+directory `secrets_dir` or of the program's environment, as
+`fadodb serve` does. Every function may be called from any thread. A
 process loads the library once.
 
 ## Building it

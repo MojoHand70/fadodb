@@ -42,7 +42,7 @@ func (s *Store) countFromCopy(ctx context.Context, c *class, f Filter, o options
 	if plan.Where != "" {
 		text += " WHERE " + plan.Where
 	}
-	evalCtx := contextOf(o.principal, s.clock(o))
+	evalCtx := s.contextOf(o.principal, s.clock(o))
 	fd, ready := s.copyReady(ctx)
 	if !ready {
 		return 0, false
@@ -105,7 +105,7 @@ func (s *Store) figureFromCopy(ctx context.Context, src *class, q *formula.Query
 	// The values of the statement, every one by its name: the reader's
 	// rule's, the caller and the clock, and what the condition reads of
 	// the document as THIS.name, a money one with its currency.
-	evalCtx := contextOf(o.principal, s.clock(o))
+	evalCtx := s.contextOf(o.principal, s.clock(o))
 	if of != nil {
 		evalCtx = *of
 	}
@@ -224,7 +224,7 @@ func (s *Store) pageFromCopy(ctx context.Context, c *class, o options, plan *que
 		text += " WHERE " + asked.Where
 	}
 	text += " ORDER BY " + asked.Order + " LIMIT " + fmt.Sprint(limit) + " OFFSET " + fmt.Sprint(plan.Offset)
-	evalCtx := contextOf(o.principal, s.clock(o))
+	evalCtx := s.contextOf(o.principal, s.clock(o))
 	fd, ready := s.copyReady(ctx)
 	if !ready {
 		return nil

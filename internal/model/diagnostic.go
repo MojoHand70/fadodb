@@ -3,6 +3,7 @@ package model
 import (
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/MojoHand70/fadodb/internal/formula"
@@ -176,6 +177,9 @@ const (
 	// CodeUnknownApp: a class names an app the database does not have
 	// (ADR-0077).
 	CodeUnknownApp = "unknown_app"
+	// CodeUnknownRole: a formula asks for a role its app does not name,
+	// or asks for one where it belongs to no app (ADR-0100).
+	CodeUnknownRole = "unknown_role"
 	// CodeUnusedWords: a note and no refusal. The words in another
 	// language name something the current version of the class, the
 	// table or the schema no longer has (ADR-0068, item 6).
@@ -208,6 +212,9 @@ type collector struct {
 	// questions ask of the classes they read (item 2).
 	wide Diagnostics
 	keys []Key
+	// roles are the roles of its app the class's formulas ask for with
+	// INROLE (ADR-0100), in the order they were first met.
+	roles []string
 }
 
 // liveRead says a formula reads a live variable. A live value is worked
@@ -229,6 +236,19 @@ var errUnbound = errors.New("the formula reads a class and was not bound")
 func (c *collector) bind(src string, scope *formula.Scope, mode formula.Mode) (*formula.Program, error) {
 	r := &envSources{c: c}
 	opts := formula.BindOptions{Mode: mode, Sources: r, States: c.states(), Loose: c.env.Lenient}
+	// INROLE asks for a role of the class's app, one the app names; a
+	// stored definition was checked when it was defined (ADR-0100).
+	if c.self != nil && c.self.App != "" {
+		opts.App = c.self.App
+		if !c.env.Lenient {
+			opts.Roles = []string{}
+			if c.env.Roles != nil {
+				if roles := c.env.Roles(c.self.App); roles != nil {
+					opts.Roles = roles
+				}
+			}
+		}
+	}
 	// REF() is the pointer to a document of the class being compiled,
 	// and a REF that names a class names one the database has, written
 	// as its definition writes it (ADR-0076, item 10). A definition
@@ -244,6 +264,13 @@ func (c *collector) bind(src string, scope *formula.Scope, mode formula.Mode) (*
 	prog, err := formula.Bind(src, scope, opts)
 	if err != nil && r.class && c.env.Shallow {
 		return nil, errUnbound
+	}
+	if err == nil {
+		for _, role := range prog.Roles {
+			if !slices.Contains(c.roles, role) {
+				c.roles = append(c.roles, role)
+			}
+		}
 	}
 	if err == nil && len(c.live) > 0 {
 		for _, s := range prog.Slots {
@@ -554,6 +581,10 @@ func (c *collector) formulaErr(path string, err error) {
 	if errors.As(err, &fe) {
 		d.Pos = fe.Pos
 		d.Message = fe.Msg
+		if fe.Role {
+			d.Code = CodeUnknownRole
+			d.Hint = "name the role among the roles of the app, in its definition, and give it to people with set_role; a class of no app has no roles"
+		}
 		if fe.Mismatch {
 			// a comparison of pointers to two classes (ADR-0076, item 10)
 			d.Code = CodeTypeMismatch

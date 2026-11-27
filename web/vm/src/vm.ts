@@ -76,6 +76,8 @@ export interface Context {
   groups?: readonly string[];
   /** The system groups the user is in. */
   system?: readonly string[];
+  /** The roles the user holds, each written app.role (ADR-0100). */
+  roles?: readonly string[];
   /** person, agent or service. */
   kind?: string;
   /** The id of whoever the user acts for. */

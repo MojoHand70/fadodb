@@ -102,12 +102,129 @@ the expenses, so Dan puts them into Expenses:
   none. The app decides nothing.
 - **`list_tables` with `app`** answers the tables of the app.
 
+## The roles of an app
+
+A class says with formulas who may see, change and move its documents
+([who may](notions/who-may.md)). Written with `INGROUP("finance")`, it
+names a group of one server, and an app taken to another server would
+need that server to have the same groups. So an app names the parts
+people play in it, its roles, and each server says who holds them.
+
+Dan names three roles in the next version of Expenses:
+
+<!-- an app -->
+```json
+{
+  "name": "Expenses",
+  "label": "Expenses",
+  "description": "What employees paid for the company, approved and paid back.",
+  "roles": {
+    "employee": {"label": "Employee", "description": "Files expenses and is paid back."},
+    "approver": {"label": "Approver", "description": "Decides the expenses of the people they manage."},
+    "finance":  {"label": "Finance",  "description": "Pays the approved expenses."}
+  }
+}
+```
+
+A role's name follows the rule of every name, and means the same
+whatever its case. Its `label` and its `description` are for people,
+and say nothing of who holds it.
+
+A formula asks for a role with `INROLE("approver")`: TRUE when the
+caller holds that role of the class's app. Dan's class says, line by
+line, who files, who sees, who approves and who pays:
+
+```json
+{
+  "name": "Claim",
+  "app": "Expenses",
+  "label": "Claim",
+  "plural": "Claims",
+  "description": "An expense an employee files, an approver decides and finance pays.",
+  "title": "what",
+  "variables": {
+    "what":   {"type": "text", "required": true, "description": "What was bought."},
+    "amount": {"type": "money", "scale": 2, "required": true, "description": "What the employee is paid back."},
+    "note":   {"type": "text", "description": "What the approver says of it."},
+    "paid":   {"type": "bool", "default": "FALSE", "description": "Whether finance paid it back."}
+  },
+  "states": {"initial": "filed", "list": ["filed", "approved"], "final": ["approved"],
+             "descriptions": {"filed": "Waiting for an approver.", "approved": "Approved, and paid when finance says so."}},
+  "transitions": [
+    {"name": "approve", "from": "filed", "to": "approved", "description": "An approver approves the claim."}
+  ],
+  "access": {
+    "read":   "CREATEDBY() = USER() OR INROLE(\"approver\") OR INROLE(\"finance\")",
+    "create": "INROLE(\"employee\")",
+    "update": "(CREATEDBY() = USER() AND STATE() = \"filed\") OR (INROLE(\"finance\") AND STATE() = \"approved\")",
+    "delete": "FALSE",
+    "transition": {"approve": "INROLE(\"approver\") AND CREATEDBY() <> USER()"}
+  },
+  "rights": {
+    "*":        {"note": {"read": "INROLE(\"approver\")", "write": "INROLE(\"approver\")"},
+                 "paid": {"write": "INROLE(\"finance\")"}},
+    "approved": {"*": {"write": "FALSE"}, "paid": {"write": "INROLE(\"finance\")"}}
+  }
+}
+```
+
+- **The role is written as text**, never worked out, and the app must
+  name it: `INROLE("payer")` is refused with `unknown_role` at the line
+  that asks, before anything is stored. So is `INROLE` in a class or a
+  table of no app.
+- **It stands where `INGROUP` stands**: every line of `access`, the
+  read rule among them, `rights`, a transition's condition and a
+  variable's formula. A table of the app asks for its roles in its read
+  and write rules. It does not stand in the condition of a `QUERY`: it
+  asks about the caller, not about a row, so ask it outside.
+- **A role a class or a table asks for stays in the app.** A next
+  version of the app without it is refused with `not_allowed`, naming
+  each class and table that asks. A role nobody asks for may go.
+
+Olga, an administrator, says who holds each role on this server, with
+`set_role`:
+
+```jsonc
+// set_role
+{"app": "Expenses", "role": "employee", "groups": ["staff"]}
+{"app": "Expenses", "role": "approver", "users": ["bob"]}
+{"app": "Expenses", "role": "finance",  "groups": ["finance"]}
+```
+
+The groups and the users given take the place of those the role had;
+two empty lists leave it held by nobody, and the same holders again
+change nothing. They are kept by the server, never in the app, so an
+app taken to another server carries its roles and none of these
+people. Giving roles is an administrator's, as giving groups is;
+naming them is a designer's, as defining the app is.
+
+Now the story plays. Eve, in `staff`, files a claim for a train to
+Gdańsk. She sees it, and so do Bob, who holds `approver` by name, and
+Ann, in `finance`; Carl, who holds no role, finds no such claim. Ann
+may not approve it; Bob approves it and writes his note, which Eve and
+Ann never see. Once it is approved nobody changes what was bought, and
+Ann alone marks it paid.
+
+- **A caller holds a role** when one of their groups is among its
+  groups, or their id among its users. `everyone` and the system groups
+  count as groups. An agent holds a role as a person does.
+- **A role nobody holds lets nobody through**, as a line left out does.
+- **Who acts for somebody holds their own roles**, not that person's,
+  as they have their own groups.
+
+| Command | What it does |
+|---|---|
+| `set_role` | says who holds a role of an app on this server; an administrator's |
+| `get_app` | the app as it was defined, and `holders`: each role it names with its groups and its users |
+| `whoami` | who the caller is, and `roles`: the roles they hold, by app, `{"Expenses": ["approver"]}` |
+| `role_changes` | every change to who holds a role, the earliest first, with who made it; an administrator's |
+
 ## Reading what there is
 
 | Command | What it answers |
 |---|---|
 | `list_apps` | the names of the apps, in the order they were defined |
-| `get_app` | one app as it was defined, with its version and who defined it |
+| `get_app` | one app as it was defined, with its version and who defined it, and who holds each of its roles here |
 | `list_classes` with `"app": "Expenses"` | the names of the classes that belong to the app; an empty list for an app that has none yet |
 | `list_tables` with `"app": "Expenses"` | the names of the tables that belong to the app, in the same way |
 | `get_class`, `get_bundle`, `get_table` | the class or the table with its `app`, as it was defined |
@@ -132,6 +249,7 @@ needs to belong to it.
 
 - An app cannot be removed or renamed.
 - An app has no groups, schemas or actions of its own: a class and a
-  table name their app, nothing else does today.
+  table name their app, nothing else does today. Its roles are its
+  own; who holds them is each server's.
 - An app is not exported from one database and brought into another.
 - An app has no words in other languages.

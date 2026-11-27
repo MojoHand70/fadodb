@@ -747,6 +747,16 @@ export const builtins: readonly Builtin[] = [
       return id.kind === Kind.Blank || id.str === "" ? BLANK : ref(s[a]!.str + ":" + id.str);
     },
   },
+  // Whether the caller holds a role of the formula's app (ADR-0100): the
+  // binder wrote the role as APP.ROLE in capitals, and a page may give the
+  // roles in the case the server answers them.
+  {
+    name: "INROLE",
+    fn: (vm, s, a) => {
+      const r = s[a]!.str;
+      return bool(vm.ctx?.roles?.some((held) => held.toUpperCase() === r) ?? false);
+    },
+  },
 ];
 
 /** Compares two scalar values that are neither exact: -1, 0 or 1. */

@@ -426,9 +426,9 @@ var commands = []*Command{
 	{Group: Definitions, Name: "get_action", Mark: Reads, Call: "Definition", Does: "Reads an action's definition back as it was defined.", takes: asNobody,
 		Fields: []Field{req("name", Text, "the name of the action"), opt("version", Integer, "an earlier version; the current one when left out")},
 		Answer: answer("action", theStored), run: runGetAction},
-	{Group: Definitions, Name: "get_app", Mark: Reads, Call: "Definition", Does: "Reads an app back as it was defined.", takes: asNobody,
+	{Group: Definitions, Name: "get_app", Mark: Reads, Call: "Definition", Does: "Reads an app back as it was defined, with who holds each of its roles on this database.", takes: asNobody,
 		Fields: []Field{req("name", Text, "the name of the app")},
-		Answer: answer("app", theStored), run: runGetApp},
+		Answer: answer("app", theStored, "holders", "each role the app names, in its order, with the groups and the users who hold it here: app, role, groups, users; left out for an app that names no roles"), run: runGetApp},
 	{Group: Definitions, Name: "list_classes", Mark: Reads, Call: "Classes", Does: "Lists the classes: all of them, or those of one app.", takes: asNobody,
 		Fields: []Field{opt("app", Text, "the name of an app, for the classes that belong to it; every class when left out")},
 		Answer: answer("classes", "the names, in the order they were defined"), run: runListClasses},
@@ -619,8 +619,18 @@ var commands = []*Command{
 		Answer: answer("grants", "the grants, oldest first: the person, the agent, the client, the address, the substitution, when allowed and last renewed, and when it ends unless renewed"), takes: asCaller, run: runListGrants},
 	{Group: Users, Users: true, Name: "end_grant", Mark: Writes, Call: "EndGrant", Does: "Ends a grant: its passes are refused, and its agent's substitution is withdrawn. An administrator ends any, a person their own.",
 		Fields: []Field{req("grant", Text, "the id of the grant, as list_grants shows it")}, takes: asWriter, run: runEndGrant},
-	{Group: Users, Users: true, Name: "whoami", Mark: Reads, Call: "Whoami", Does: "Answers who the database takes the caller for.",
-		Answer: answer("user", theUser, "for", "the id of whoever the caller acts for, when the command names one"), takes: asCaller, run: runWhoami},
+	{Group: Users, Users: true, Name: "whoami", Mark: Reads, Call: "Whoami", Does: "Answers who the database takes the caller for, and the roles they hold.",
+		Answer: answer("user", theUser, "for", "the id of whoever the caller acts for, when the command names one",
+			"roles", "the roles the caller holds, by app: {\"Expenses\": [\"approver\"]}; left out when they hold none"), takes: asCaller, run: runWhoami},
+	// The roles of an app (ADR-0100): the app names them, each database
+	// says who holds them.
+	{Group: Users, Name: "set_role", Mark: Writes, Call: "SetRole", Does: "Says who holds a role of an app on this database: the groups whose members hold it and the users who hold it by name, in place of the ones it had. Two empty lists leave it held by nobody; the same holders again change nothing. It is a database administrator's.",
+		Fields: []Field{req("app", Text, "the name of the app"), req("role", Text, "the name of the role, as the app names it"),
+			opt("groups", Texts, "the groups whose members hold the role"), opt("users", Texts, "the ids of the users who hold it by name")},
+		Answer: answer("role", "the role with its holders: app, role, groups, users"), takes: asWriter, run: runSetRole},
+	{Group: Users, Name: "role_changes", Mark: Reads, Call: "RoleChanges", Does: "Lists every change to who holds a role, the earliest first, a role's the app no longer names too. It is a database administrator's.",
+		Fields: []Field{req("app", Text, "the name of the app"), req("role", Text, "the name of the role")},
+		Answer: answer("changes", "the changes: what (set or removed), when, by whom, of what kind and for whom, and the groups and users the role was left with"), takes: asCaller, run: runRoleChanges},
 }
 
 // NotCommands are the methods of fado.DB that are not commands, each
@@ -641,6 +651,8 @@ var NotCommands = map[string]string{
 	"Class":               "it answers the engine's compiled form to a Go program; get_class answers the definition",
 	"Schema":              "it answers the engine's compiled form to a Go program; get_schema answers the definition",
 	"App":                 "it answers the engine's parsed form to a Go program; get_app answers the definition",
+	"Holders":             "get_app answers who holds each role of the app beside its definition",
+	"RolesHeld":           "whoami answers the roles the caller holds",
 	"ClassesOf":           "it is list_classes with its app given, for a Go program",
 	"TablesOf":            "it is list_tables with its app given, for a Go program",
 	"LivePage":            "it is live with the page of a list given, for a Go program: the command takes the page in the same call",

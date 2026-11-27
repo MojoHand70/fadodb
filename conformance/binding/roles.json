@@ -1,0 +1,24 @@
+{
+  "suite": "roles",
+  "description": "INROLE asks for a role of the app the formula belongs to (ADR-0100). The role is written as text, never worked out, and the app must name it, whatever the case of the name; it is a context function, which an auto formula may not call. A formula of no app has no roles: conformance/binding/roles-no-app.json.",
+  "app": "Expenses",
+  "roles": ["approver", "finance"],
+  "variables": {"who": "text", "paid": "bool"},
+  "accept": [
+    "INROLE(\"approver\")",
+    "INROLE(\"Finance\")",
+    "INROLE(\"approver\") OR INGROUP(\"approvers\")",
+    "INROLE(\"finance\") AND paid",
+    "IF(INROLE(\"approver\"), \"may decide\", \"may not\")",
+    "NOT INROLE(\"finance\") AND who = USER()"
+  ],
+  "reject": [
+    {"formula": "INROLE(\"payer\")", "reason": "the app names no role payer"},
+    {"formula": "INROLE(who)", "reason": "the role is written as text, never worked out"},
+    {"formula": "INROLE(\"approv\" & \"er\")", "reason": "a role put together is worked out too"},
+    {"formula": "INROLE()", "reason": "INROLE takes one role"},
+    {"formula": "INROLE(\"approver\", \"finance\")", "reason": "INROLE takes one role"},
+    {"formula": "INROLE(5)", "reason": "INROLE needs text"},
+    {"formula": "INROLE(\"Expenses.approver\")", "reason": "a role is named as its app names it, without the app"}
+  ]
+}

@@ -365,40 +365,9 @@ func (s *Store) flowFromStore(ctx context.Context, c *class, o options, flow *Fl
 	if err != nil || !spread {
 		return now, moves, nil, err
 	}
-	plan, err := query.Compile(Filter{Class: c.cls.Name}, c.cls, s.sources(), caller(o, c))
+	stays, err := s.spreadFromStore(ctx, c, o, flow)
 	if err != nil {
-		return nil, nil, nil, filterErr(err)
-	}
-	where := ""
-	if plan.Where != "" {
-		where = " WHERE " + plan.Where
-	}
-	var args []any
-	text := flowSpreadSQL(c, flow, where, c.history, func(_ string, v any) string {
-		args = append(args, v)
-		return "?"
-	})
-	st, err := s.filters.acquire(ctx, s.db, text)
-	if err != nil {
-		return nil, nil, nil, storageErr("prepare the stays of "+c.cls.Name, err)
-	}
-	defer s.filters.release(st)
-	rows, err := st.stmt.QueryContext(ctx, append(append(args, plan.Args...), s.contextArgs(o)...)...)
-	if err != nil {
-		return nil, nil, nil, storageErr("the stays of "+c.cls.Name, err)
-	}
-	defer rows.Close()
-	var stays []flowStay
-	for rows.Next() {
-		var state sql.NullString
-		var middle, slow sql.NullInt64
-		if err := rows.Scan(&state, &middle, &slow); err != nil {
-			return nil, nil, nil, storageErr("the stays of "+c.cls.Name, err)
-		}
-		stays = append(stays, flowStay{state: state.String, middle: middle.Int64, slowTenth: slow.Int64})
-	}
-	if err := rows.Err(); err != nil {
-		return nil, nil, nil, storageErr("the stays of "+c.cls.Name, err)
+		return nil, nil, nil, err
 	}
 	return now, moves, stays, nil
 }

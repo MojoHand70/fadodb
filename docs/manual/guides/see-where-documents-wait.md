@@ -428,6 +428,113 @@ path is not finished, and is its path so far.
   with the analytical engine answers the paths in a quarter of a
   second, and a program without it in 9 seconds.
 
+## The documents behind a number
+
+Each number of the three commands opens to the documents it counts.
+The command is asked as before, with one member more, `documents`,
+which names the number; it answers those documents in place of the
+numbers. Ann asks which invoices moved along `submit`:
+
+```jsonc
+{"class": "Invoice", "documents": {"transition": "submit"}}
+```
+
+<!-- the moves along submit -->
+```jsonc
+{
+  "documents": {
+    "count": 3,
+    "rows": [
+      {
+        "id": "B-1",
+        "state": "approved",
+        "at": 1793613600,
+        "version": 2,
+        "by": "bob"
+      },
+      {
+        "id": "B-2",
+        "state": "review",
+        "at": 1793613600,
+        "version": 2,
+        "by": "bob"
+      },
+      {
+        "id": "D-1",
+        "state": "cancelled",
+        "at": 1793613600,
+        "version": 2,
+        "by": "dan"
+      }
+    ],
+    "more": false
+  }
+}
+```
+
+All three moved on Monday at 10:00, Bob's two and Dan's one; each row
+says where the invoice is now.
+
+<!-- the documents behind each number -->
+| Who asks | Command | `documents` | Count | The documents |
+|---|---|---|---|---|
+| Ann | `flow` | `{"created": true}` | 4 | B-1, B-2, B-3, D-1 |
+| Ann | `flow` | `{"state": "review"}` | 1 | B-2 |
+| Ann | `flow` | `{"stays": "draft"}` | 4 | B-3, B-1, B-2, D-1 |
+| Ann | `flow` | `{"stays": "draft", "at_least": "slow_tenth"}` | 1 | B-3 |
+| Ann | `flow` | `{"transition": "cancel", "from": "draft"}` | 1 | B-3 |
+| Ann | `flow` | `{"from": "review", "to": "cancelled"}` | 1 | D-1 |
+| Bob | `flow` | `{"transition": "submit"}` | 2 | B-1, B-2 |
+| Ann | `throughput` | `{"finished": "2026-11-02"}` | 2 | B-1, D-1 |
+| Ann | `paths` | `{"path": ["draft", "review", "approved"]}` | 1 | B-1 |
+
+<!-- what the documents say -->
+| Member | Of | Says |
+|---|---|---|
+| `count` | the documents | how many there are: the number they are behind |
+| `rows` | the documents | the page asked for, in the order of the number |
+| `more` | the documents | rows follow the last one |
+| `id`, `title`, `state` | a row | the document as it is now |
+| `at` | a row | the moment that put it into the number: when it moved, entered its state, was made or finished, in seconds |
+| `seconds` | a row | how long the stay lasted, for a stay; left out where the engine does not know when it began |
+| `version` | a row | the version the move made, or the document is at |
+| `by` | a row | who made the move, or put the document into its state, or made it |
+
+What can be opened, and in which order the rows come:
+
+<!-- what can be opened -->
+| Command | `documents` | The documents | In the order |
+|---|---|---|---|
+| `flow` | `{"created": true}` | made in the period | the newest first |
+| `flow` | `{"state": "review"}` | in the state now | the one there longest first |
+| `flow` | `{"stays": "review"}` | each stay in the state that ended in the period | the longest first |
+| `flow` | `{"stays": "review", "at_least": "slow_tenth"}` | of those, the stays that lasted at least the slow tenth; `"middle"` for the middle stay | the longest first |
+| `flow` | `{"transition": "approve"}` | each move along it in the period | the newest first |
+| `throughput` | `{"made": "2026-11-02"}` | made in the period of `by` that begins that day | the newest first |
+| `throughput` | `{"finished": "2026-11-02"}` | finished in it | the newest first |
+| `paths` | `{"path": ["draft", "review", "approved"]}` | made in the period, that took the path | the newest first |
+
+- **The count is the number.** The documents are counted as the
+  command counts them: the same period, the same day of the
+  database's time zone, the same caller. A document that moved twice
+  along a transition is two rows, as it is two moves.
+- **`from` and `to` narrow a transition** that leaves several states,
+  as `cancel` does, and name one that has no name.
+- **A page at a time**: `limit` inside `documents`, 50 when left out
+  and 1,000 at the most, and `offset`, how many to skip; `more` says
+  that rows follow.
+- **Each caller sees their own**, as in the numbers. A content
+  administrator who asks past the rule gives a reason, and the log of
+  reads names the documents only the override showed.
+- **A word written wrong is refused**, with its place: a state or a
+  transition that the class has not and that no document ever went
+  through, two numbers at once, a day that does not begin a period.
+- **Among ten million moves** a program with the analytical engine
+  opens the 766,915 moves along a transition in a week in 70 to 80 ms,
+  the stays of its slow tenth in 74 to 77 ms and one path's 166,600
+  invoices in about half a second; a program without it takes 3, 7
+  and 6 seconds.
+
 ## Asking
 
 In a Go program:
@@ -443,6 +550,15 @@ weeks, err := db.Throughput(ctx, "Invoice", fado.ThroughputAsk{By: fado.Throughp
 paths, err := db.Paths(ctx, "Invoice", fado.PathsAsk{Limit: 10}, fado.As(ann))
 ```
 
+The documents behind a number are three calls of their own, each with
+the ask of its command and a `fado.DocumentsAsk`:
+
+```go
+moved, err := db.FlowDocuments(ctx, "Invoice", fado.FlowPeriod{}, fado.DocumentsAsk{Transition: "submit"}, fado.As(ann))
+done, err := db.ThroughputDocuments(ctx, "Invoice", fado.ThroughputAsk{}, fado.DocumentsAsk{Finished: "2026-11-02"}, fado.As(ann))
+went, err := db.PathsDocuments(ctx, "Invoice", fado.PathsAsk{}, fado.DocumentsAsk{Path: []string{"draft", "review", "approved"}}, fado.As(ann))
+```
+
 As commands, over HTTP or through `Exec`, they are `flow`,
 `throughput` and `paths` ([the commands](../commands.md#flow)). From a
 terminal:
@@ -451,6 +567,7 @@ terminal:
 fadodb exec flow '{"class": "Invoice", "since": "2026-11-03"}'
 fadodb exec throughput '{"class": "Invoice", "by": "week"}'
 fadodb exec paths '{"class": "Invoice", "limit": 10}'
+fadodb exec flow '{"class": "Invoice", "documents": {"transition": "submit"}}'
 ```
 
 ## What it does not count

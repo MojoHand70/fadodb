@@ -1,6 +1,7 @@
 package command
 
 import (
+	"bytes"
 	"encoding/json"
 	"strconv"
 	"strings"
@@ -431,4 +432,24 @@ func day(value []byte) (time.Time, *store.Error) {
 			Hint: `write it as "2026-11-13"`}
 	}
 	return t, nil
+}
+
+// documentsAsk reads the member documents of flow, throughput and paths:
+// the one number whose documents are asked for (ADR-0099). given says
+// the member is there. A member of it the engine does not know is
+// refused by its place, so that a word written wrong is not taken for
+// nothing asked.
+func (c *call) documentsAsk() (store.DocumentsAsk, bool, *store.Error) {
+	var ask store.DocumentsAsk
+	value := c.given("documents")
+	if value == nil {
+		return ask, false, nil
+	}
+	dec := json.NewDecoder(bytes.NewReader(value))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&ask); err != nil {
+		return ask, true, badJSON(pointer("documents"), "documents names one number: "+err.Error(),
+			`write one of created, state, stays (with at_least), transition (with from and to), made, finished or path, and limit and offset`)
+	}
+	return ask, true, nil
 }

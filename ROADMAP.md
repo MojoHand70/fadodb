@@ -521,6 +521,16 @@ moves. The third is the command `paths` (ADR-0097, proposed on
 most taken first. The owner said on 2026-11-26 that all three are for
 this phase, and with it all three are built.
 
+The owner extended the phase on 2026-11-26 into lineage and drill down
+(ADR-0099, proposed), in three steps. The first is built: each number
+of `flow`, `throughput` and `paths` opens, with the member
+`documents`, to the documents behind it, as many as the number says,
+a page at a time; among ten million moves the copy lists the moves
+along a transition in a week in 70 to 80 ms. The second, `lineage`,
+where a value comes from, one level a call, rebuilt from the history,
+and the third, a history of the rows of every table, are planned and
+not built.
+
 The rows of the tables are in the copy too (ADR-0094, proposed on
 2026-11-26): a total a live `LOOKUP` asks of a large table, and a
 page of a live list over it, are answered by the copy, in 2 to 10 ms
@@ -567,7 +577,7 @@ Legend: ✅ done · 🚧 in progress · ⬜ not started
 | 5 | Security: the class-level access rules enforced on every path, who may see, create, change and delete a document, with the read rule compiled to a SQL predicate; the kind of actor, a person, an agent or a service, and whom it acts for, on every event, checked against a substitution the database keeps; who may define, operate and query, by four system groups; a content administrator who acts past a rule with a reason; the rules of a table | ✅ |
 | 6 | Server and CLI: the JSON command set over HTTP, one address for each command; users, groups and API keys kept in the database, and the authenticator for a host program that has its own; the stream of changes filtered by the read rule; documents on the wire; the door for agents (MCP); the command-line tool with a check of a class and of an action; the flow of a class in one call; a way in for messages from outside; OpenAPI; `fadodb serve` | ✅ |
 | 7 | Browser VM and reference frontend: the log of reads first; TypeScript VM on the same bytecode shipped as one plain JavaScript file, what a class says to people and its sections, the class bundle, `QUERY` when the first page needs a list of rows (otherwise with the reports of Phase 8), signing in with a password or a company's sign-on, the pages of a face handed out by `fadodb serve` from a folder (a face, which draws a document from its class, lives apart from the engine; chip, card, coins and rating are the face's), the door for agents at the server itself, a small client file beside the VM | ✅ |
-| 8 | Analytical engine: first what ADR-0078, ADR-0076, ADR-0075 and ADR-0085 leave unbuilt after v0.7.0; then the DuckDB projection of document tables and of the tables' rows (in place of the native and attached bindings, ADR-0094), set-wise recompute, mining views, full build per OS | 🚧 |
+| 8 | Analytical engine: first what ADR-0078, ADR-0076, ADR-0075 and ADR-0085 leave unbuilt after v0.7.0; then the DuckDB projection of document tables and of the tables' rows (in place of the native and attached bindings, ADR-0094), set-wise recompute, mining views, full build per OS; lineage and drill down (ADR-0099) | 🚧 |
 | 9 | Embedding: C ABI, Python client, embedding guides | ⬜ |
 | 10 | Postgres backend | ⬜ |
 | 11 | Optional AI layer: authoring assistant (the MCP server moved to Phase 6) | ⬜ |

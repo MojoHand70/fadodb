@@ -177,6 +177,54 @@ func TestFlow_FromTheCopyIsTheStores(t *testing.T) {
 					if string(a) != string(b) {
 						t.Errorf("%s, %s, %s by %q:\nthe copy  %s\nthe store %s", when, name, label, by, a, b)
 					}
+					// The documents behind each period's numbers
+					// (ADR-0099): the same rows from both, and as many
+					// as the number.
+					for _, p := range fromStore.Periods {
+						for _, ask2 := range []fado.DocumentsAsk{{Made: p.From, Limit: 1000}, {Finished: p.From, Limit: 1000}} {
+							want := p.Created
+							if ask2.Finished != "" {
+								want = p.Finished
+							}
+							bothOpen(t, fmt.Sprintf("%s, %s, %s by %q, %+v", when, name, label, by, ask2), want,
+								func(db *fado.DB) (*fado.Documents, error) {
+									return db.ThroughputDocuments(ctx, "Invoice", ask, ask2, who)
+								}, withCopy, plain)
+						}
+					}
+				}
+				// The documents behind every number of the flow
+				// (ADR-0099), and behind every path.
+				if period.Spread {
+					continue
+				}
+				flowOpened := func(what string, want int64, ask fado.DocumentsAsk) {
+					t.Helper()
+					ask.Limit = 1000
+					bothOpen(t, fmt.Sprintf("%s, %s, %s, %s", when, name, label, what), want,
+						func(db *fado.DB) (*fado.Documents, error) { return db.FlowDocuments(ctx, "Invoice", period, ask, who) }, withCopy, plain)
+				}
+				flowOpened("created", fromStore.Created, fado.DocumentsAsk{Created: true})
+				for _, st := range fromStore.States {
+					flowOpened("in "+st.Name, st.Documents, fado.DocumentsAsk{State: st.Name})
+					flowOpened("stays in "+st.Name, st.Stays, fado.DocumentsAsk{Stays: st.Name})
+					for _, least := range []string{fado.AtLeastMiddle, fado.AtLeastSlowTenth} {
+						flowOpened("stays in "+st.Name+" at least the "+least, -1, fado.DocumentsAsk{Stays: st.Name, AtLeast: least})
+					}
+				}
+				for _, tr := range fromStore.Transitions {
+					flowOpened("along "+tr.Name+" from "+tr.From, tr.Moves, fado.DocumentsAsk{Transition: tr.Name, From: tr.From, To: tr.To})
+				}
+				ways, err := plain.Paths(ctx, "Invoice", fado.PathsAsk{Since: period.Since, Until: period.Until, Limit: 1000}, who)
+				if err != nil {
+					t.Fatal(err)
+				}
+				for _, p := range ways.Paths {
+					ask := fado.PathsAsk{Since: period.Since, Until: period.Until}
+					bothOpen(t, fmt.Sprintf("%s, %s, %s, path %v", when, name, label, p.States), p.Documents,
+						func(db *fado.DB) (*fado.Documents, error) {
+							return db.PathsDocuments(ctx, "Invoice", ask, fado.DocumentsAsk{Path: p.States, Limit: 1000}, who)
+						}, withCopy, plain)
 				}
 			}
 		}
@@ -382,5 +430,33 @@ func TestFlow_TheSpreadAtEveryNumberOfStays(t *testing.T) {
 				t.Errorf("%d stays, %s: the middle stay and the slow tenth are %s, want %s", n, program, got, want)
 			}
 		}
+	}
+}
+
+// bothOpen asks for the documents behind a number of both programs: the
+// copy answers in the one, the store in the other, and the two answers
+// are the same rows; want is the number, or -1 where the flow gives
+// none to hold the count against.
+func bothOpen(t *testing.T, what string, want int64, ask func(db *fado.DB) (*fado.Documents, error), withCopy, plain *fado.DB) {
+	t.Helper()
+	before := withCopy.CopyState().Answers
+	fromCopy, err := ask(withCopy)
+	if err != nil {
+		t.Fatalf("%s: from the copy: %v", what, err)
+	}
+	if st := withCopy.CopyState(); st.Answers <= before || st.AskErr != nil {
+		t.Fatalf("%s: the copy did not answer: %+v", what, st)
+	}
+	fromStore, err := ask(plain)
+	if err != nil {
+		t.Fatalf("%s: from the store: %v", what, err)
+	}
+	a, _ := json.Marshal(fromCopy)
+	b, _ := json.Marshal(fromStore)
+	if string(a) != string(b) {
+		t.Errorf("%s:\nthe copy  %s\nthe store %s", what, a, b)
+	}
+	if want >= 0 && fromStore.Count != want {
+		t.Errorf("%s: %d documents behind the number %d", what, fromStore.Count, want)
 	}
 }

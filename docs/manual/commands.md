@@ -575,6 +575,7 @@ Answers the flow of a class: the documents the caller may read in each state now
 | `since` | moment |  | the first moment of the period the moves and the stays are counted in; since the class began when left out |
 | `until` | moment |  | the moment the period ends before; now when left out |
 | `spread` | true or false |  | true to be told how the stays of each state spread as well: the middle stay and the slow tenth. It reads every stay of the period, so it is asked for only when it is wanted |
+| `documents` | object |  | one number of the flow whose documents to answer in place of the flow: {"created": true}, {"state": "review"}, {"stays": "review"} with "at_least": "middle" or "slow_tenth" to keep the longest, or {"transition": "approve"} with "from" and "to" to narrow it; "limit" (50 when left out, 1,000 at the most) and "offset" page them |
 
 And, of the members that mean the same everywhere: `reason`, `for`.
 
@@ -583,6 +584,7 @@ It answers:
 | Member | What it holds |
 |---|---|
 | `flow` | the states of the class, each with its documents now, since when the oldest is there, and how many stays ended in the period and how long they lasted, with their middle and their slow tenth when spread asks for them; and its transitions, each with its moves in the period |
+| `documents` | when documents names a number, in place of the flow: how many there are, the page of them, each with its id, its title and state now, when it moved, entered, was made or finished, how long a stay lasted, the version and who; and whether more follow |
 
 ### throughput
 
@@ -594,6 +596,7 @@ Answers how many documents of a class the caller may read were made and how many
 | `by` | text |  | the length of a period: day, week or month, by the clock of the database's time zone; day when left out |
 | `since` | moment |  | the first moment that is counted; since the class began when left out |
 | `until` | moment |  | the moment the counting ends before; now when left out |
+| `documents` | object |  | one number of the throughput whose documents to answer in place of it: {"made": "2026-11-02"} or {"finished": "2026-11-02"}, the first day of a period; "limit" (50 when left out, 1,000 at the most) and "offset" page them |
 
 And, of the members that mean the same everywhere: `reason`, `for`.
 
@@ -602,6 +605,7 @@ It answers:
 | Member | What it holds |
 |---|---|
 | `throughput` | the periods from the first in which a document was made or finished to the last, each with its first day and how many documents were made and how many finished in it; and the two sums |
+| `documents` | when documents names a number, in place of the throughput: how many there are, the page of them, each with its id, its title and state now, when it was made or finished, the version and who; and whether more follow |
 
 ### paths
 
@@ -613,6 +617,7 @@ Answers the paths the documents of a class took through its states, the most tak
 | `since` | moment |  | the first moment a document was made at to be counted; since the class began when left out |
 | `until` | moment |  | the moment before which a document was made to be counted; now when left out |
 | `limit` | whole number |  | how many paths to answer, the most taken first; 20 when left out, 1,000 at the most |
+| `documents` | object |  | one path whose documents to answer in place of the paths: {"path": ["draft", "review", "approved"]}; "limit" (50 when left out, 1,000 at the most) and "offset" page them |
 
 And, of the members that mean the same everywhere: `reason`, `for`.
 
@@ -621,6 +626,7 @@ It answers:
 | Member | What it holds |
 |---|---|
 | `paths` | how many documents were counted and how many different paths they took; the most taken paths, each with its states in the order a document came into them, how many documents took it, and whether it ends in a final state; and how many documents took another path |
+| `documents` | when documents names a path, in place of the paths: how many documents took it, the page of them, each with its id, its title and state now, when it was made and who made it; and whether more follow |
 
 ### sql
 
@@ -2077,6 +2083,7 @@ A few calls of the Go package have no command.
 | `Exec` | it is the door the commands come through |
 | `FeedCopy` | the copy in the analytical engine is fed by the database itself, and by the program that opened it when it will not wait; a caller of the server never sees the copy |
 | `FinishSignIn` | it belongs to a sign-in under way on the server's page /auth/signin |
+| `FlowDocuments` | it is flow with documents given, for a Go program: the command takes the number to open in the same call |
 | `HasSecondStep` | the server's page /auth/account shows it to the person |
 | `Holders` | get_app answers who holds each role of the app beside its definition |
 | `Inlet` | it answers one entry of the list that list_inlets answers whole |
@@ -2092,6 +2099,7 @@ A few calls of the Go package have no command.
 | `OutboxCounts` | it counts what of the queue is still to do, for whoever watches a server, which answers it at GET /v1/metrics; outbox lists the actions themselves |
 | `PassCaller` | it answers who a pass belongs to, for the door that is given the pass; a caller that wants to know who it is sends whoami |
 | `PasswordLinkUser` | it belongs to the server's page /auth/password, which a link opens |
+| `PathsDocuments` | it is paths with documents given, for a Go program: the command takes the number to open in the same call |
 | `PhoneCodeState` | the page that shows the code asks it, at /auth/phone/state, with the secret of its cookie |
 | `PhoneLink` | it belongs to the server's page /auth/phone, which the code's link opens |
 | `PhoneQuestion` | it is the question the server's page /auth/phone gives the phone's browser, to make a passkey |
@@ -2114,6 +2122,7 @@ A few calls of the Go package have no command.
 | `SignOut` | it ends the session it is sent with, on the server's page /auth/signout; end_session ends one by its id |
 | `Table` | it answers the engine's compiled form to a Go program; get_table answers the definition |
 | `TablesOf` | it is list_tables with its app given, for a Go program |
+| `ThroughputDocuments` | it is throughput with documents given, for a Go program: the command takes the number to open in the same call |
 | `TimeZone` | the time zone of the database is set by the program that opens it, with the option of that name, and read by it |
 | `UseInvitation` | it takes the browser's answer on the server's page /auth/invite, and gives a session |
 | `UsePasswordLink` | a password never travels in a command: the server's page /auth/password takes it |

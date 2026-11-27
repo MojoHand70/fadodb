@@ -142,6 +142,13 @@ type (
 	Paths    = store.Paths
 	Path     = store.Path
 	PathsAsk = store.PathsAsk
+	// DocumentsAsk names one number of a flow, a throughput or the
+	// paths whose documents are asked for, Documents are those
+	// documents, a page of them, and DocumentRow one of them, with what
+	// put it into the number (ADR-0099).
+	DocumentsAsk = store.DocumentsAsk
+	Documents    = store.Documents
+	DocumentRow  = store.DocumentRow
 	// ActionFunc is a Go function that implements an action, given to Open
 	// in Options.Actions under the action's name (ADR-0027, ADR-0045);
 	// ActionCall is what it is called with, and DeliveredEvent the event
@@ -366,6 +373,17 @@ const (
 	GroupContentAdministrators = store.GroupContentAdministrators
 	GroupAnalysts              = store.GroupAnalysts
 	GroupEveryone              = store.GroupEveryone
+)
+
+// The stays a flow's documents keep with DocumentsAsk.AtLeast: those
+// that lasted at least the middle stay, or the slow tenth; and how many
+// rows the documents behind a number answer when told nothing, and at
+// the most (ADR-0099).
+const (
+	AtLeastMiddle    = store.AtLeastMiddle
+	AtLeastSlowTenth = store.AtLeastSlowTenth
+	DefaultDocuments = store.DefaultDocuments
+	MaxDocuments     = store.MaxDocuments
 )
 
 // The lengths of a period of a throughput (ADR-0096): ThroughputAsk.By.
@@ -1165,6 +1183,33 @@ func (db *DB) Throughput(ctx context.Context, class string, ask ThroughputAsk, o
 //	paths, err := db.Paths(ctx, "Invoice", fado.PathsAsk{Limit: 10}, fado.As(ann))
 func (db *DB) Paths(ctx context.Context, class string, ask PathsAsk, opts ...Option) (*Paths, error) {
 	return db.s.Paths(ctx, class, ask, opts...)
+}
+
+// FlowDocuments answers the documents behind one number of a flow
+// (ADR-0099): those made in the period, those in a state now, the stays
+// in a state that ended in the period, or the moves along a transition.
+// The count is the flow's number, for the same period and the same
+// caller.
+//
+//	moved, err := db.FlowDocuments(ctx, "Invoice", fado.FlowPeriod{}, fado.DocumentsAsk{Transition: "approve"}, fado.As(ann))
+func (db *DB) FlowDocuments(ctx context.Context, class string, period FlowPeriod, ask DocumentsAsk, opts ...Option) (*Documents, error) {
+	return db.s.FlowDocuments(ctx, class, period, ask, opts...)
+}
+
+// ThroughputDocuments answers the documents made, or finished, in one
+// period of a throughput (ADR-0099), named by its first day.
+//
+//	done, err := db.ThroughputDocuments(ctx, "Invoice", fado.ThroughputAsk{}, fado.DocumentsAsk{Finished: "2026-11-02"}, fado.As(ann))
+func (db *DB) ThroughputDocuments(ctx context.Context, class string, ask ThroughputAsk, documents DocumentsAsk, opts ...Option) (*Documents, error) {
+	return db.s.ThroughputDocuments(ctx, class, ask, documents, opts...)
+}
+
+// PathsDocuments answers the documents that took one path (ADR-0099),
+// of those made in the period the paths are asked over.
+//
+//	went, err := db.PathsDocuments(ctx, "Invoice", fado.PathsAsk{}, fado.DocumentsAsk{Path: []string{"draft", "review", "approved"}}, fado.As(ann))
+func (db *DB) PathsDocuments(ctx context.Context, class string, ask PathsAsk, documents DocumentsAsk, opts ...Option) (*Documents, error) {
+	return db.s.PathsDocuments(ctx, class, ask, documents, opts...)
 }
 
 // SQL runs one read-only SELECT over the views with positional

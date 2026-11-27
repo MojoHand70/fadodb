@@ -10,6 +10,26 @@ Phase 8 started on 2026-11-25.
 
 ### Added
 
+- The documents behind a number (ADR-0099, proposed; its first step).
+  `flow`, `throughput` and `paths` take one member more, `documents`,
+  which names one of their numbers, and then answer the documents
+  behind it in place of the numbers: those made in the period, in a
+  state now, each stay in a state that ended in the period (with
+  `at_least` the stays that lasted at least the middle stay or the
+  slow tenth), each move along a transition, those made or finished in
+  one period of a throughput, those that took one path. `count` is the
+  number, counted the same way for the same caller; the rows come a
+  page at a time, each with the document's id, title and state now,
+  the moment that put it into the number, how long a stay lasted, the
+  version and who. In Go the calls `FlowDocuments`,
+  `ThroughputDocuments` and `PathsDocuments`, with `DocumentsAsk`. A
+  content administrator's call past the rule is kept in the log of
+  reads with the documents only the override showed. Among ten million
+  moves `fadodb` opens the 766,915 moves along a transition in a week
+  in 70 to 80 ms, and `fadodb-core` in 3 seconds. The record names two
+  steps after it: where a value comes from (`lineage`), and the
+  history of a table's rows, which every table keeps by the owner's
+  word.
 - The roles of an app (ADR-0100, proposed). An app names the parts
   people play in it, under `roles` in its definition, each with a
   `label` and a `description`. A formula of a class or a table of the

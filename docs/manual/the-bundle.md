@@ -199,7 +199,6 @@ the context:
 | A function | The page gives it from |
 |---|---|
 | `USER()`, `INGROUP()`, `USERKIND()`, `ACTINGFOR()` | `whoami`: the user, the groups, the system groups, the kind, for whom the user acts |
-| `INROLE()` | `whoami`'s `roles`, each written app and role with a dot between, `Expenses.approver`, in the context's `roles` ([the roles of an app](apps.md#the-roles-of-an-app)) |
 | `STATE()`, `ID()`, `VERSION()` | the document |
 | `CREATEDBY()`, `UPDATEDAT()`, `ENTEREDAT()` and the others of the document's row | the document's system variables |
 | `FIRSTENTERED()`, `DAYSIN()` and the others of a state's history | nothing: they are the server's (below) |

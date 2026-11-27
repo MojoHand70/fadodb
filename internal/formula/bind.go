@@ -182,12 +182,6 @@ type BindOptions struct {
 	// is otherwise refused: a definition that a database already holds
 	// runs as it was written.
 	Loose bool
-	// App is the app the formula belongs to, whose roles INROLE asks for
-	// (ADR-0100); "" is a formula of no app, where INROLE is refused.
-	// Roles are the roles that app names: nil checks no name, as for a
-	// definition the database already holds.
-	App   string
-	Roles []string
 }
 
 // ClassNames says of a name whether it is a class, and how the
@@ -397,56 +391,6 @@ func exactConst(src string, n Node) (int64, int, bool) {
 
 func (b *binder) errAt(pos int, format string, args ...any) error {
 	return newError(b.src, pos, format, args...)
-}
-
-// inRole checks the role an INROLE call asks for and writes it as the
-// role of the formula's app (ADR-0100): the call the code is made of
-// names app.role, so that the Go VM, SQL and the browser VM answer it
-// from one list of the caller's roles. The role is a name written in the
-// formula, never worked out, so that a definition is checked.
-func (b *binder) inRole(n *Call) (*Call, error) {
-	if len(n.Args) != 1 {
-		return nil, b.errAt(n.P, "INROLE takes one argument, the name of a role, as INROLE(\"approver\"), got %d", len(n.Args))
-	}
-	lit, ok := n.Args[0].(*TextLit)
-	if !ok {
-		return nil, b.errAt(n.Args[0].Pos(), "INROLE: the role is written as text, as INROLE(\"approver\"), so that the definition is checked (ADR-0100)")
-	}
-	if b.opts.This != nil {
-		return nil, b.errAt(n.P, "INROLE may not stand in the condition of a QUERY: it asks about the caller and not about a row, so ask it outside the QUERY (ADR-0100)")
-	}
-	if b.opts.App == "" {
-		err := newError(b.src, n.P, "INROLE: a formula of no app has no roles to ask for: roles are an app's (ADR-0100)")
-		err.Role = true
-		return nil, err
-	}
-	role := lit.Value
-	if b.opts.Roles != nil {
-		at := slices.IndexFunc(b.opts.Roles, func(r string) bool { return strings.EqualFold(r, lit.Value) })
-		if at < 0 {
-			err := newError(b.src, lit.P, "INROLE: the app %s has no role %q; %s", b.opts.App, lit.Value, rolesOf(b.opts.App, b.opts.Roles))
-			err.Role = true
-			return nil, err
-		}
-		role = b.opts.Roles[at]
-	}
-	b.prog.Roles = appendUnique(b.prog.Roles, role)
-	return &Call{Name: n.Name, Args: []Node{&TextLit{Value: RoleName(b.opts.App, lit.Value), P: lit.P}}, P: n.P}, nil
-}
-
-// rolesOf says which roles an app names, for a message.
-func rolesOf(app string, roles []string) string {
-	if len(roles) == 0 {
-		return app + " names no roles"
-	}
-	return "its roles are " + strings.Join(roles, ", ")
-}
-
-func appendUnique(list []string, s string) []string {
-	if slices.ContainsFunc(list, func(t string) bool { return strings.EqualFold(t, s) }) {
-		return list
-	}
-	return append(list, s)
 }
 
 func (b *binder) emit(op Op, arg int32, pos int) int {
@@ -1141,13 +1085,6 @@ func (b *binder) call(n *Call) (Type, error) {
 	spec := builtins[id]
 	if !b.opts.Mode.allows(spec.class) {
 		return Type{}, b.errAt(n.P, "%s is a %s function and may not be used in %s", n.Name, spec.class, b.opts.Mode.where())
-	}
-	if n.Name == "INROLE" {
-		to, err := b.inRole(n)
-		if err != nil {
-			return Type{}, err
-		}
-		n = to
 	}
 	if len(n.Args) > 255 {
 		return Type{}, b.errAt(n.P, "%s: at most 255 arguments", n.Name)

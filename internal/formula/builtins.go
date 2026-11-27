@@ -137,10 +137,6 @@ var builtins = []*builtin{
 	// one too, with the class of the formula and ID(), which the binder
 	// writes.
 	{name: "REF", class: ClassPure, args: []argKind{akText, akText}, result: KindRef, fn: fnRef},
-	// Whether the caller holds a role of the formula's app (ADR-0100).
-	// The binder writes the role as app.role, so the call asks the one
-	// list of the caller's roles.
-	{name: "INROLE", class: ClassContext, args: []argKind{akText}, result: KindBool, fn: fnInRole},
 }
 
 // BuiltinNames lists the functions of the VM in the order of the table,
@@ -1273,8 +1269,4 @@ func fnDaysIn(vm *VM, args []Value) (Value, *EvalError) {
 
 func fnInGroup(vm *VM, args []Value) (Value, *EvalError) {
 	return Bool(vm.ctx.InGroup(args[0].str)), nil
-}
-
-func fnInRole(vm *VM, args []Value) (Value, *EvalError) {
-	return Bool(vm.ctx.HasRole(args[0].str)), nil
 }

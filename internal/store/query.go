@@ -465,7 +465,7 @@ func (ch *child) loadCurrent(ctx context.Context, db *sql.DB, c *class, docs []*
 // the principal, and the clock, the moment chosen with At or the
 // database's (ADR-0042).
 func (s *Store) contextArgs(o options) []any {
-	ctx := s.contextOf(o.principal, s.clock(o))
+	ctx := contextOf(o.principal, s.clock(o))
 	return formula.NewSQLite().ContextArgs(&ctx)
 }
 

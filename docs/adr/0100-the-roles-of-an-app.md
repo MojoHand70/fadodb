@@ -63,12 +63,14 @@ and `rights`, with the function this record adds.
    among them, since like `INGROUP` it asks the caller and not the
    document; `rights`; a transition's condition; a variable's formula.
    A table that belongs to an app asks its roles the same way in its
-   read and write rules.
+   read and write rules. It does not stand in the condition of a
+   `QUERY`: it asks about the caller and not about a row, so it is
+   asked outside.
 
    - The name is a text written in the formula, never worked out, so
      that the definition is checked: a role the app does not name is
      refused with `unknown_role` at that place, and the fix says to add
-     it to the app's roles.
+     it to the app's roles. A name means the same whatever its case.
    - A class or table of no app has no roles. `INROLE` there is
      refused the same way, and the fix says to put it in an app.
    - A class asks the roles of its own app only.
@@ -106,17 +108,23 @@ and `rights`, with the function this record adds.
      person's, as with groups (ADR-0057).
 
 6. **A role that a class or table asks for cannot leave the app.** A
-   new version of the app without it is refused, naming each class and
-   table that asks. A role nobody asks may leave. Its holders go with
+   new version of the app without it is refused with `not_allowed`,
+   naming each class and table that asks. A role nobody asks may leave. Its holders go with
    it, and the change is kept.
 
 7. **Who holds what is visible.**
-   - `get_app` answers each role with its holders, to every caller, as
-     `list_users` shows everybody's groups (ADR-0057, ruling 4).
+   - `get_app` answers each role with its holders, `holders`, to every
+     caller, as `list_users` shows everybody's groups (ADR-0057,
+     ruling 4).
    - `whoami` answers the caller's roles, app by app:
      `"roles": {"Expenses": ["approver"]}`. A page uses that to answer
      `INROLE` as the engine does, and an agent can see what it holds
      before it acts.
+   - Both leave the member out when there is nothing in it, so what
+     they answered before roles is what they answer where none is
+     held.
+   - `role_changes` lists the changes to who holds a role, for an
+     administrator, as `group_changes` does for a group.
 
 ## Not here
 
@@ -132,6 +140,8 @@ and `rights`, with the function this record adds.
 - **A system table of roles** beside the four of ADR-0092. One can
   follow when asked.
 - **Roles of the app System.** It has none.
+- **`INROLE` in the condition of a `QUERY`.** It asks about the caller,
+  so it stands outside the `QUERY`.
 
 ## Consequences
 
@@ -142,15 +152,22 @@ and `rights`, with the function this record adds.
   system groups are still groups.
 - `INROLE` is answered on the Go VM, in SQL (SQLite and DuckDB) and on
   the browser VM, with cases under `conformance/` played on all three.
-- The database gains two tables, the holders and their changes. The
-  schema moves on by one, so going back to an earlier engine means the
-  backup taken before.
+- The database gains two tables, the holders and their changes, made
+  when it is opened, as the table of comments was (ADR-0098); the
+  schema keeps its number. An earlier engine cannot read an app that
+  names roles, so going back after one is defined means the backup
+  taken before.
 
 ## Performance
 
 - A database whose apps name no roles pays nothing: no call works out
   roles.
 - With roles, the holders live in memory, made again when a holder
-  changes. A caller's roles are worked out once per call, and only when
-  a formula of that call asks `INROLE`. The benchmarks of the gate name
-  no roles and must show no change.
+  changes, and read without a lock. A caller's roles are worked out
+  where the context of a formula is made, with no read of the
+  database.
+- In SQL the roles travel inside the parameter that carries the
+  caller's groups, each after a mark no group's name holds, so no
+  statement gains a parameter, and a caller who holds no role binds
+  what it bound before. The benchmarks of the gate name no roles and
+  must show no change.

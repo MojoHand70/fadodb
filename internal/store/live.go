@@ -242,7 +242,7 @@ func (s *Store) liveOn(ctx context.Context, c *class, cv *cvar, id string, o opt
 		}
 		return nil, nil, nil, storageErr("read the document", err)
 	}
-	ctxOf := contextOf(o.principal, s.clock(o))
+	ctxOf := s.contextOf(o.principal, s.clock(o))
 	evalCtx := &ctxOf
 	evalCtx.State, evalCtx.ID = row.state, row.id
 	// A document the caller may not see does not exist for them

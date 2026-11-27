@@ -204,7 +204,7 @@ func (s *Store) pastRow(ev *evaluator, c, vc *class, row *docRow, p Principal, n
 	if vc != c {
 		row = c.adopted(vc, row)
 	}
-	ctx := s.contextOf(p, now)
+	ctx := contextOf(p, now)
 	ctx.State, ctx.ID = row.state, row.id
 	var rules []string
 	if ok, _ := ev.may(c, ruleRead, row, &ctx); !ok {

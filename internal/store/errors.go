@@ -66,8 +66,6 @@ const (
 	CodeUnknownSchema = "unknown_schema"
 	// CodeUnknownApp: no app of that name (ADR-0077).
 	CodeUnknownApp = "unknown_app"
-	// CodeUnknownRole: the app names no role of that name (ADR-0100).
-	CodeUnknownRole = "unknown_role"
 	// CodeUnknownVariable: a value names a variable or a field the class
 	// does not have.
 	CodeUnknownVariable = "unknown_variable"

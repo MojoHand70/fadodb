@@ -232,11 +232,6 @@ type Program struct {
 	// 6), so that whoever runs it tells the life its states first. A
 	// program that reads the states reads the life.
 	ReadsStates bool
-	// Roles are the roles of its app the program asks for with INROLE
-	// (ADR-0100), by name as the formula writes them, so that an app is
-	// not redefined without a role a formula of it asks for. They are
-	// worked out when the program is bound, not stored.
-	Roles []string
 	// MaxStack is the stack depth the program needs.
 	MaxStack int
 	// Bound and BoundFor are the embedder's: where it keeps the value of

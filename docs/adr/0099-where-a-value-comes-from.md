@@ -186,6 +186,40 @@ Settled on 2026-11-26.
 7. **Rebuilt when asked, nothing written by commits**, for lineage
    over documents.
 
+## Settled while building the second step
+
+Decisions of mine, on 2026-11-27, each the owner's to strike.
+
+8. **Whether it adds up is the formula's own answer.** The kept value's
+   formula is worked out again by the engine, on the version that
+   worked it out, with each lookup answered from the documents as they
+   were; `adds_up` compares that with the value, and `rebuilt` says what
+   it gives when the two differ. Adding up the parts by hand would hold
+   only for a formula that is one sum.
+9. **`now` and `changed_since` belong to each lookup**, for a formula
+   may hold several; the value as a whole is what `adds_up` speaks of.
+10. **The documents as they were are read among those that can have
+    been read**: a document that matched the lookup then matches it
+    now, or has changed since. The store finds those by its indexes and
+    reads their earlier versions by their key, so a customer's 1,700
+    invoices are read, not the class.
+11. **A typed or a computed value's moment** is the version since which
+    it is what it is, with that version's event.
+12. **The reader's rule is asked with the reader's own values**, while
+    a kept value's lookup is worked out with those of the commit that
+    worked it out: its clock, its author, the document's state and id.
+13. **A figure over a list of the document**, `SUM(lines.net)`, is
+    refused for now with `not_allowed`: the list is read with `live`.
+14. **The store answers it in both programs.** The copy is not asked
+    yet.
+15. **Lineage narrows by the index of a lookup's key column**: "the
+    invoices of this customer" are found by the index on `customer`
+    when the customer is not blank, and the events after the moment by
+    the events' own key. A lookup worked out by itself, as a live value
+    is, does not do so yet: its condition hides the column from SQLite,
+    which then reads the class (seen on 2026-11-26, put to the owner,
+    not mended in this record).
+
 ## The steps
 
 Each is one pull request.
@@ -200,6 +234,10 @@ Each is one pull request.
   `FlowDocuments`, `ThroughputDocuments` and `PathsDocuments`, with
   `DocumentsAsk`, `Documents` and `DocumentRow`; their statements for
   the store and for the copy.
+- Part 2, over documents: the command `lineage` and the call
+  `Lineage`, with `LineageAsk` and what it answers; `PartsSQL` in the
+  compiler, beside `AggregateSQL`, for the parts of a lookup; the
+  manual's guide "Where a value comes from".
 
 ## Consequences
 
@@ -238,9 +276,17 @@ as the engine's number.
 | 108,215 invoices finished on a day of Warsaw | 37 to 42 ms | 2.4 to 2.5 seconds |
 | 166,600 invoices that took one path | 0.53 to 0.56 seconds | 6.3 to 6.5 seconds |
 
-Parts 2 and 3 are not built. Their figures are from statements of
-mine written beside the engine, and each is measured again through
-the engine as it is built.
+Part 2, through the engine as this record builds it, from the store in
+both programs; three askings, three runs that agree. Each rebuilt the
+kept total exactly.
+
+| `lineage` of a customer's kept total | `fadodb` and `fadodb-core` |
+|---|---|
+| 1,700 invoices, none changed since | 60 to 61 ms |
+| 1,700,000 invoices, three changed since | 21.5 to 21.6 seconds |
+
+The figures below came first, from statements of mine written beside
+the engine; Part 3 is not built.
 
 Lineage, the engine at 373839a; a customer with 1,700 invoices and
 one with 1,700,000, three runs of five askings, which agree:

@@ -33,7 +33,6 @@ What a call is answered with when the engine does not carry it out: a create, a 
 | `unknown_table` | No explicit table of that name. |
 | `unknown_schema` | No schema of that name. |
 | `unknown_app` | No app of that name (ADR-0077). |
-| `unknown_role` | The app names no role of that name (ADR-0100). |
 | `unknown_variable` | A value names a variable or a field the class does not have. |
 | `read_only` | A value is given for a computed variable. |
 | `required` | A required input is blank. |
@@ -130,7 +129,6 @@ What the engine reports when it checks a class, a table, a schema or an action b
 | `reads_all` | A note and no refusal. A question a class declares, a LOOKUP or a list over the documents of a class, compares no variable an index answers, so it reads every document of that class each time it is worked out (ADR-0075, item 5). On a small class that is harmless; the note says the mend. |
 | `builds_index` | A note and no refusal, of a check before anything is written. Taking the definition would make an index on a class that already holds many documents, and the commits of the database wait while it is built (ADR-0075, item 7). |
 | `unknown_app` | A class names an app the database does not have (ADR-0077). |
-| `unknown_role` | A formula asks for a role its app does not name, or asks for one where it belongs to no app (ADR-0100). |
 | `unused_words` | A note and no refusal. The words in another language name something the current version of the class, the table or the schema no longer has (ADR-0068, item 6). |
 
 ## Refusals of a command

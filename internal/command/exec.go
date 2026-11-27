@@ -746,6 +746,26 @@ func runPaths(c *call) error {
 	return c.answer("paths", paths, err)
 }
 
+// runLineage answers where a value comes from (ADR-0099, part 2).
+func runLineage(c *call) error {
+	var ask store.LineageAsk
+	version, e := c.integer("version")
+	if e != nil {
+		return e
+	}
+	limit, e := c.integer("limit")
+	if e != nil {
+		return e
+	}
+	offset, e := c.integer("offset")
+	if e != nil {
+		return e
+	}
+	ask.Version, ask.Limit, ask.Offset = version, int(limit), int(offset)
+	lineage, err := c.s.Lineage(c.ctx, c.text("class"), c.text("id"), c.text("variable"), ask, c.opts...)
+	return c.answer("lineage", lineage, err)
+}
+
 func runSQL(c *call) error {
 	args, e := c.scalars("args")
 	if e != nil {
@@ -873,48 +893,7 @@ func runGetSchema(c *call) error {
 }
 
 func runGetApp(c *call) error {
-	def, err := c.s.Definition(c.ctx, store.DefinitionApp, c.text("name"), 0)
-	if err != nil {
-		return err
-	}
-	holders, err := c.s.Holders(c.text("name"))
-	if err != nil {
-		return err
-	}
-	text, err := Marshal(def)
-	if err != nil {
-		return err
-	}
-	more, err := Marshal(list(holders))
-	if err != nil {
-		return err
-	}
-	c.open("app")
-	c.out = append(c.out, text...)
-	if len(holders) > 0 {
-		c.next("holders")
-		c.out = append(c.out, more...)
-	}
-	c.close()
-	return nil
-}
-
-func runSetRole(c *call) error {
-	groups, e := c.texts("groups")
-	if e != nil {
-		return e
-	}
-	users, e := c.texts("users")
-	if e != nil {
-		return e
-	}
-	r, err := c.s.SetRole(c.ctx, c.text("app"), c.text("role"), groups, users, c.opts...)
-	return c.answer("role", r, err)
-}
-
-func runRoleChanges(c *call) error {
-	changes, err := c.s.RoleChanges(c.ctx, c.text("app"), c.text("role"), c.opts...)
-	return c.answer("changes", list(changes), err)
+	return c.stored("app", store.DefinitionApp, c.text("name"), 0, nil)
 }
 
 func runGetTable(c *call) error {
@@ -1454,14 +1433,6 @@ func runWhoami(c *call) error {
 	if acts != "" {
 		c.next("for")
 		c.out = strconv.AppendQuote(c.out, acts)
-	}
-	if held := c.s.RolesHeld(c.opts...); len(held) > 0 {
-		roles, err := Marshal(held)
-		if err != nil {
-			return err
-		}
-		c.next("roles")
-		c.out = append(c.out, roles...)
 	}
 	c.close()
 	return nil

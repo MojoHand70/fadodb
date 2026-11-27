@@ -133,7 +133,7 @@ func groupsArg(ctx *Context) any {
 		return nil
 	}
 	named := ctx.User != ""
-	if len(ctx.System) == 0 && !named && len(ctx.Roles) == 0 {
+	if len(ctx.System) == 0 && !named {
 		if ctx.Groups == nil {
 			return nil
 		}
@@ -151,9 +151,6 @@ func groupsArg(ctx *Context) any {
 	if named {
 		n += len(GroupEveryone) + 1
 	}
-	for _, r := range ctx.Roles {
-		n += len(r) + 2
-	}
 	var b strings.Builder
 	b.Grow(n)
 	b.WriteString(groupSep)
@@ -169,21 +166,8 @@ func groupsArg(ctx *Context) any {
 		b.WriteString(GroupEveryone)
 		b.WriteString(groupSep)
 	}
-	for _, r := range ctx.Roles {
-		b.WriteString(roleMark)
-		b.WriteString(r)
-		b.WriteString(groupSep)
-	}
 	return b.String()
 }
-
-// roleMark starts a role among the groups a statement binds (ADR-0100):
-// the roles the caller holds travel in the parameter of the groups, each
-// as the record separator, char(30), then APP.ROLE, so that INROLE reads
-// the one parameter INGROUP reads, no group is ever taken for a role (a
-// group's name holds no control character), and a caller who holds no
-// role binds what it bound before roles were.
-const roleMark = "\x1e"
 
 const groupSep = "\x1f"
 
@@ -972,10 +956,6 @@ func (d SQLite) Call(name string, args []SQLExpr, params *Params) (SQLExpr, erro
 		// group (groupsArg); a group is in it when the name between two
 		// separators is a substring. NULL groups are no groups.
 		return SQLExpr{Val: "COALESCE(instr(" + params.Use("groups") + ", char(31) || " + d.Text(args[0]) + " || char(31)) > 0, 0)", Kind: KindBool, Sure: true}, nil
-	case "INROLE":
-		// A role travels among the groups after roleMark, written
-		// APP.ROLE as the binder wrote the argument (ADR-0100).
-		return SQLExpr{Val: "COALESCE(instr(" + params.Use("groups") + ", char(31) || char(30) || " + d.Text(args[0]) + " || char(31)) > 0, 0)", Kind: KindBool, Sure: true}, nil
 	case "LEFT":
 		n := intArg(d.Num(args[1]))
 		return SQLExpr{Val: "substr(" + d.Text(args[0]) + ", 1, " + n + ")", Err: countErr(n), Kind: KindText, Sure: true}, nil

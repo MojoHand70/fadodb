@@ -123,6 +123,7 @@ A command takes the ones its list below shows, and no other.
 | [`flow`](#flow) | Answers the flow of a class: the documents the caller may read in each state now, and their moves along each transition. | reads |
 | [`throughput`](#throughput) | Answers how many documents of a class the caller may read were made and how many finished in each day, week or month: whether the pile grows. | reads |
 | [`paths`](#paths) | Answers the paths the documents of a class took through its states, the most taken first, for the documents the caller may read. | reads |
+| [`lineage`](#lineage) | Answers where a value of a document comes from, one level: how it is made, when, and what it read, with the values of the parts. | reads |
 | [`sql`](#sql) | Runs one read-only SELECT over the views, for an analyst. | reads |
 
 ### create
@@ -628,6 +629,27 @@ It answers:
 | `paths` | how many documents were counted and how many different paths they took; the most taken paths, each with its states in the order a document came into them, how many documents took it, and whether it ends in a final state; and how many documents took another path |
 | `documents` | when documents names a path, in place of the paths: how many documents took it, the page of them, each with its id, its title and state now, when it was made and who made it; and whether more follow |
 
+### lineage
+
+Answers where a value of a document comes from, one level: how it is made, when, and what it read, with the values of the parts. It reads; in Go it is the call `Lineage`.
+
+| Member | Type | | What it is |
+|---|---|---|---|
+| `class` | text | needed | the name of the class |
+| `id` | text | needed | the id of the document |
+| `variable` | text | needed | the variable whose value is asked about |
+| `version` | whole number |  | the version of the document the value is of, to walk down in the past; the version it is at when left out |
+| `limit` | whole number |  | how many parts of each lookup to answer, the largest first; 50 when left out, 1,000 at the most |
+| `offset` | whole number |  | how many parts to skip |
+
+And, of the members that mean the same everywhere: `reason`, `at`, `for`.
+
+It answers:
+
+| Member | What it holds |
+|---|---|
+| `lineage` | the value, its kind (typed, computed, kept or live), its formula, the moment it came, the values of the document its formula read, and for each lookup the documents or rows it read: how many, what they give, the page of them the caller may read with their values, how many the caller may not, which changed since and what the lookup gives now; and whether the formula worked out again over what it read gives the value |
+
 ### sql
 
 Runs one read-only SELECT over the views, for an analyst. It reads; in Go it is the call `SQL`.
@@ -665,7 +687,7 @@ It answers:
 | [`get_schema`](#get_schema) | Reads a schema back as it was defined. | reads |
 | [`get_table`](#get_table) | Reads a table's definition back as it was defined. | reads |
 | [`get_action`](#get_action) | Reads an action's definition back as it was defined. | reads |
-| [`get_app`](#get_app) | Reads an app back as it was defined, with who holds each of its roles on this database. | reads |
+| [`get_app`](#get_app) | Reads an app back as it was defined. | reads |
 | [`list_classes`](#list_classes) | Lists the classes: all of them, or those of one app. | reads |
 | [`list_apps`](#list_apps) | Lists the apps. | reads |
 | [`list_schemas`](#list_schemas) | Lists the schemas. | reads |
@@ -923,7 +945,7 @@ It answers:
 
 ### get_app
 
-Reads an app back as it was defined, with who holds each of its roles on this database. It reads; in Go it is the call `Definition`.
+Reads an app back as it was defined. It reads; in Go it is the call `Definition`.
 
 | Member | Type | | What it is |
 |---|---|---|---|
@@ -934,7 +956,6 @@ It answers:
 | Member | What it holds |
 |---|---|
 | `app` | the definition as it was given, with its name, its version and who defined it |
-| `holders` | each role the app names, in its order, with the groups and the users who hold it here: app, role, groups, users; left out for an app that names no roles |
 
 ### list_classes
 
@@ -1443,9 +1464,7 @@ database this way, and a Go program does with `Options.Users`.
 | [`remove_client`](#remove_client) | Removes a client: every grant of it ends. For a database administrator. | writes |
 | [`list_grants`](#list_grants) | Lists the clients a person allowed that still hold, never a pass. An administrator asks of anybody, a user of itself. | reads |
 | [`end_grant`](#end_grant) | Ends a grant: its passes are refused, and its agent's substitution is withdrawn. An administrator ends any, a person their own. | writes |
-| [`whoami`](#whoami) | Answers who the database takes the caller for, and the roles they hold. | reads |
-| [`set_role`](#set_role) | Says who holds a role of an app on this database: the groups whose members hold it and the users who hold it by name, in place of the ones it had. Two empty lists leave it held by nobody; the same holders again change nothing. It is a database administrator's. | writes |
-| [`role_changes`](#role_changes) | Lists every change to who holds a role, the earliest first, a role's the app no longer names too. It is a database administrator's. | reads |
+| [`whoami`](#whoami) | Answers who the database takes the caller for. | reads |
 
 ### create_user
 
@@ -1896,7 +1915,7 @@ It answers `{}`.
 
 ### whoami
 
-Answers who the database takes the caller for, and the roles they hold. It reads; in Go it is the call `Whoami`.
+Answers who the database takes the caller for. It reads; in Go it is the call `Whoami`.
 
 It takes nothing of its own; of the members that mean the same everywhere, `for`.
 
@@ -1906,43 +1925,6 @@ It answers:
 |---|---|
 | `user` | the user: its id, its kind, its name, its groups, its system groups and whether it is disabled |
 | `for` | the id of whoever the caller acts for, when the command names one |
-| `roles` | the roles the caller holds, by app: {"Expenses": ["approver"]}; left out when they hold none |
-
-### set_role
-
-Says who holds a role of an app on this database: the groups whose members hold it and the users who hold it by name, in place of the ones it had. Two empty lists leave it held by nobody; the same holders again change nothing. It is a database administrator's. It writes; in Go it is the call `SetRole`.
-
-| Member | Type | | What it is |
-|---|---|---|---|
-| `app` | text | needed | the name of the app |
-| `role` | text | needed | the name of the role, as the app names it |
-| `groups` | list of texts |  | the groups whose members hold the role |
-| `users` | list of texts |  | the ids of the users who hold it by name |
-
-And, of the members that mean the same everywhere: `for`.
-
-It answers:
-
-| Member | What it holds |
-|---|---|
-| `role` | the role with its holders: app, role, groups, users |
-
-### role_changes
-
-Lists every change to who holds a role, the earliest first, a role's the app no longer names too. It is a database administrator's. It reads; in Go it is the call `RoleChanges`.
-
-| Member | Type | | What it is |
-|---|---|---|---|
-| `app` | text | needed | the name of the app |
-| `role` | text | needed | the name of the role |
-
-And, of the members that mean the same everywhere: `for`.
-
-It answers:
-
-| Member | What it holds |
-|---|---|
-| `changes` | the changes: what (set or removed), when, by whom, of what kind and for whom, and the groups and users the role was left with |
 
 ## Over HTTP
 
@@ -2085,7 +2067,6 @@ A few calls of the Go package have no command.
 | `FinishSignIn` | it belongs to a sign-in under way on the server's page /auth/signin |
 | `FlowDocuments` | it is flow with documents given, for a Go program: the command takes the number to open in the same call |
 | `HasSecondStep` | the server's page /auth/account shows it to the person |
-| `Holders` | get_app answers who holds each role of the app beside its definition |
 | `Inlet` | it answers one entry of the list that list_inlets answers whole |
 | `InvitationPhoneCode` | it is the code the server's page /auth/invite shows, for a phone's camera |
 | `InvitationQuestion` | it is the question the server's page /auth/invite gives the browser, to make a passkey |
@@ -2109,7 +2090,6 @@ A few calls of the Go package have no command.
 | `Receive` | it takes a message from outside, which proves itself and carries no key of a user: a server answers it at POST /v1/in/<inlet> |
 | `Renew` | a pass never travels in a command: the server's address /auth/token takes it |
 | `Revoke` | a pass never travels in a command: the server's address /auth/revoke takes it; end_grant ends a grant by its id |
-| `RolesHeld` | whoami answers the roles the caller holds |
 | `Schema` | it answers the engine's compiled form to a Go program; get_schema answers the definition |
 | `SessionCaller` | it answers who a session belongs to, for the door that is given the session; a caller that wants to know who it is sends whoami |
 | `SetUpMySecondStep` | its secret never travels in a command: the server's page /auth/account shows it |

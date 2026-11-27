@@ -81,6 +81,28 @@
     if (!input.value) input.value = device(input.getAttribute('data-device'));
   });
 
+  // The form that signs in with a passkey of the person's the device
+  // holds already takes the place of the one that makes a passkey, and
+  // the words that lead to making one go.
+  function openHeld(form, held) {
+    var other = held && document.getElementById(held);
+    if (!other) return false;
+    if (form) form.hidden = true;
+    other.hidden = false;
+    document.querySelectorAll('[data-make-lead]').forEach(function (p) { p.hidden = true; });
+    var go = other.querySelector('button[type="submit"]');
+    if (go) go.focus();
+    return true;
+  }
+
+  // Asked for by the person, before the browser says anything: a phone
+  // may say that it holds a passkey only in a sheet of its own.
+  document.querySelectorAll('[data-show-held]').forEach(function (b) {
+    b.addEventListener('click', function () {
+      openHeld(document.querySelector('form[data-held="' + b.getAttribute('data-show-held') + '"]'), b.getAttribute('data-show-held'));
+    });
+  });
+
   document.querySelectorAll('form[data-passkey]').forEach(function (form) {
     var said = form.querySelector('[data-said]');
     var button = form.querySelector('button[type="submit"]');
@@ -105,15 +127,7 @@
         // password manager may have brought there, makes no other: the
         // form that signs in with that one takes this one's place.
         var held = err && err.name === 'InvalidStateError' && form.getAttribute('data-held');
-        var other = held && document.getElementById(held);
-        if (other) {
-          form.hidden = true;
-          other.hidden = false;
-          document.querySelectorAll('[data-make-lead]').forEach(function (p) { p.hidden = true; });
-          var go = other.querySelector('button[type="submit"]');
-          if (go) go.focus();
-          return;
-        }
+        if (openHeld(form, held)) return;
         if (said) said.textContent = words(err, make);
       });
     });

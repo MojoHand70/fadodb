@@ -138,6 +138,13 @@ func (s *Store) asked(ctx context.Context, opts []Option, class string) (options
 	return o, nil
 }
 
+// contextOf is the context of a formula that runs for the principal at
+// the moment: who asks, in which groups, what they are and for whom they
+// act.
+func contextOf(p Principal, now int64) formula.Context {
+	return formula.Context{User: p.ID, Groups: p.Groups, System: p.System, Kind: p.Kind, For: p.For, Now: now}
+}
+
 // Values are variable values by declared name, in the wire shape of
 // ADR-0018: a blank is nil, a bool a bool, a number a float64 or any Go
 // integer, an exact value text such as "12.30" or a number that is exact

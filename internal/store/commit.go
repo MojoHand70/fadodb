@@ -420,7 +420,7 @@ func (s *Store) run(ctx context.Context, cmd command, now time.Time) (*result, e
 	// Every event the command writes says what its principal is and for
 	// whom it acts (ADR-0050).
 	s.actAs(cmd.o.principal)
-	ctxOf := s.contextOf(cmd.o.principal, clock)
+	ctxOf := contextOf(cmd.o.principal, clock)
 	evalCtx := &ctxOf
 	var before *docRow
 	var beforeClass *class // the version that computed the current row

@@ -117,10 +117,6 @@ type Error struct {
 	// comparison of pointers to two classes (ADR-0076, item 10), and not
 	// for how it is written.
 	Mismatch bool
-	// Role says the formula asks for a role that the app it belongs to
-	// does not name, or asks for one where it belongs to no app
-	// (ADR-0100).
-	Role bool
 }
 
 func (e *Error) Error() string {

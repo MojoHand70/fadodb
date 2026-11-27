@@ -399,7 +399,7 @@ func (s *Store) spreadFromCopy(ctx context.Context, c *class, o options, flow *F
 		return d.Param(name)
 	})
 	if where != "" {
-		evalCtx := s.contextOf(o.principal, s.clock(o))
+		evalCtx := contextOf(o.principal, s.clock(o))
 		args = append(append(args, plan.Args...), d.ContextArgs(&evalCtx)...)
 	}
 	f, ready := s.copyReady(ctx)
@@ -734,7 +734,7 @@ func (s *Store) documentsFromCopy(ctx context.Context, c *class, o options, d dr
 	ruleArgs := func() {
 		if !ruled {
 			ruled = true
-			evalCtx := s.contextOf(o.principal, s.clock(o))
+			evalCtx := contextOf(o.principal, s.clock(o))
 			args = append(append(args, plan.Args...), dd.ContextArgs(&evalCtx)...)
 		}
 	}

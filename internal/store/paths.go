@@ -209,7 +209,7 @@ func (s *Store) pathsFromCopy(ctx context.Context, c *class, o options, out *Pat
 	}
 	if plan.Where != "" {
 		only = append(only, "("+plan.Where+")")
-		evalCtx := s.contextOf(o.principal, s.clock(o))
+		evalCtx := contextOf(o.principal, s.clock(o))
 		args = append(append(args, plan.Args...), d.ContextArgs(&evalCtx)...)
 	}
 	// The moves of a deleted document are not in the copy, so a caller

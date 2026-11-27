@@ -27,6 +27,8 @@ func shown(t *testing.T) map[string]string {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// Git may check the page out with the ends of line of Windows.
+	page = bytes.ReplaceAll(page, []byte("\r\n"), []byte("\n"))
 	blocks := map[string]string{}
 	for _, m := range regexp.MustCompile("(?s)<!-- (.+?) -->\r?\n```[a-z]*\r?\n(.*?)\r?\n```").FindAllSubmatch(page, -1) {
 		blocks[string(m[1])] = string(m[2])
@@ -194,25 +196,29 @@ func TestEveryLanguageTellsTheStory(t *testing.T) {
 	t.Run("C#", func(t *testing.T) {
 		dotnet := tool(t, "dotnet")
 		project := t.TempDir()
+		// The project names .NET 10; a machine with another .NET builds
+		// the same program for the one it has, in its own copy of the
+		// project, so that the restore and the build agree on it.
+		target := "net10.0"
+		if version, err := exec.Command(dotnet, "--version").Output(); err == nil {
+			if major, _, _ := strings.Cut(strings.TrimSpace(string(version)), "."); major != "" {
+				target = "net" + major + ".0"
+			}
+		}
 		for _, file := range []string{"books.csproj", "Program.cs"} {
 			data, err := os.ReadFile(filepath.Join(examples, "dotnet", file))
 			if err != nil {
 				t.Fatal(err)
+			}
+			if file == "books.csproj" {
+				data = bytes.Replace(data, []byte("<TargetFramework>net10.0</TargetFramework>"), []byte("<TargetFramework>"+target+"</TargetFramework>"), 1)
 			}
 			if err := os.WriteFile(filepath.Join(project, file), data, 0o644); err != nil {
 				t.Fatal(err)
 			}
 		}
 		out := filepath.Join(project, "out")
-		args := []string{"build", "--nologo", "-v", "quiet", "-c", "Release", "-o", out}
-		// The project names .NET 10; a machine with an older .NET builds
-		// the same program for the one it has.
-		if version, err := exec.Command(dotnet, "--version").Output(); err == nil {
-			if major, _, _ := strings.Cut(strings.TrimSpace(string(version)), "."); major != "10" && major != "" {
-				args = append(args, "-p:TargetFramework=net"+major+".0")
-			}
-		}
-		build := exec.Command(dotnet, args...)
+		build := exec.Command(dotnet, "build", "--nologo", "-v", "quiet", "-c", "Release", "-o", out)
 		build.Dir = project
 		build.Env = append(os.Environ(), "DOTNET_NOLOGO=1", "DOTNET_CLI_TELEMETRY_OPTOUT=1")
 		if text, err := build.CombinedOutput(); err != nil {

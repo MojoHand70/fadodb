@@ -104,7 +104,7 @@ func TestTheContainerFiles(t *testing.T) {
 		}
 	}
 	var copied []string
-	for _, m := range regexp.MustCompile(`(?m)^COPY ([A-Za-z./ ]+)$`).FindAllStringSubmatch(dockerfile, -1) {
+	for _, m := range regexp.MustCompile(`(?m)^COPY ([A-Za-z_./ ]+)$`).FindAllStringSubmatch(dockerfile, -1) {
 		words := strings.Fields(m[1])
 		copied = append(copied, words[:len(words)-1]...)
 	}
@@ -370,7 +370,7 @@ func TestTheChapterOnContainers(t *testing.T) {
 			}
 			return false
 		}
-		for _, part := range []string{"fadodb", "etc/ssl/certs/ca-certificates.crt", "libstdc++.so", "libc.so", "licenses/LICENSE", "licenses/LICENSE-duckdb"} {
+		for _, part := range []string{"fadodb", "etc/ssl/certs/ca-certificates.crt", "libstdc++.so", "libc.so", "licenses/LICENSE", "licenses/LICENSE-duckdb", "licenses/THIRD_PARTY_NOTICES.md"} {
 			if !has(part) {
 				t.Errorf("the image holds no %s", part)
 			}
@@ -396,7 +396,7 @@ func TestTheChapterOnContainers(t *testing.T) {
 			t.Skip("FADODB_IMAGE_CORE names no image of fadodb-core: scripts/image.sh check")
 		}
 		rows := between(fromTheRepository(t, "docs", "manual", "in-a-container.md"), "<!-- the small image -->\n", "\n\n")
-		if !strings.Contains(rows, "| What it holds | the tool, `/fadodb-core`, and the certificates. No shell and no other program |") {
+		if !strings.Contains(rows, "| What it holds | the tool, `/fadodb-core`, and the certificates; FadoDB's licence and the notices of the code of others the tool carries, in `/licenses`. No shell and no other program |") {
 			t.Errorf("the chapter's table of the small image:\n%s", rows)
 		}
 		_, out, said := docker(t, "", nil, "image", "inspect", "--format", "{{json .Config}}", small)
@@ -423,9 +423,10 @@ func TestTheChapterOnContainers(t *testing.T) {
 		if code, out, _ := docker(t, "", nil, "run", "--rm", small, "version"); code != 0 || !strings.HasPrefix(out, "fadodb-core ") || strings.Contains(out, "analytical engine") {
 			t.Errorf("the program in the small image says of itself: exit %d %s", code, out)
 		}
-		// It holds the tool and the certificates, and no other file.
+		// It holds the tool, the certificates and the licences, and no
+		// other file.
 		holds, total := filesOf(p.in(t), small)
-		if got := strings.Join(holds, " "); got != "etc/ssl/certs/ca-certificates.crt fadodb-core" {
+		if got := strings.Join(holds, " "); got != "etc/ssl/certs/ca-certificates.crt fadodb-core licenses/LICENSE licenses/THIRD_PARTY_NOTICES.md" {
 			t.Errorf("the small image holds %s", got)
 		}
 		// "about 17 MB": the tool has its own budget of 20 MiB, which the

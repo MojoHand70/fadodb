@@ -1,7 +1,7 @@
 # In a container
 
 `fadodb serve` runs in a container as it runs on a machine. The image
-holds the tool and nothing else, so everything in
+holds the tool and no other program, so everything in
 [Serving a database](serving-a-database.md) holds here as it stands.
 This chapter says what a container changes: where the database is
 kept, how the server is told to listen, and how it is reached, watched
@@ -53,7 +53,7 @@ docker build -t fadodb .
 <!-- the image -->
 | | |
 |---|---|
-| What it holds | the tool, `/fadodb`, the C and C++ libraries the analytical engine needs, and the certificates by which a request of an action knows another service; the licences of FadoDB and of DuckDB, which is linked into the tool, in `/licenses`. No shell and no other program |
+| What it holds | the tool, `/fadodb`, the C and C++ libraries the analytical engine needs, and the certificates by which a request of an action knows another service; the licences of FadoDB and of DuckDB, which is linked into the tool, and the notices of the code of others it carries, in `/licenses`. No shell and no other program |
 | What it runs | the tool: what follows the name of the image is what follows `fadodb` at a terminal. Told nothing, it prints its help |
 | Who it runs as | the user `65532`, who is not root |
 | Where a database is kept | `/data`. A command starts there, so `acme.fado` is `/data/acme.fado` |
@@ -371,8 +371,8 @@ what to keep with each backup.
 ## The small image
 
 `fadodb-core` is the same program without the analytical engine. Its
-image holds the program and the certificates, and no other file: no
-library, since the program needs none.
+image holds the program, the certificates and the licences, and no
+other file: no library, since the program needs none.
 
 <!-- building the small image -->
 ```sh
@@ -382,7 +382,7 @@ docker build -t fadodb-core --target core .
 <!-- the small image -->
 | | |
 |---|---|
-| What it holds | the tool, `/fadodb-core`, and the certificates. No shell and no other program |
+| What it holds | the tool, `/fadodb-core`, and the certificates; FadoDB's licence and the notices of the code of others the tool carries, in `/licenses`. No shell and no other program |
 | What it runs | the tool, as the other image does: `docker run --rm fadodb-core version` |
 | Who it runs as, where a database is kept, the port it names | as the other image: the user `65532`, `/data`, `8080` |
 

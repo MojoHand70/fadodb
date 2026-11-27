@@ -23,6 +23,7 @@ COPY bench bench
 COPY cmd cmd
 COPY fado fado
 COPY internal internal
+COPY LICENSE THIRD_PARTY_NOTICES.md ./
 
 # fadodb-core is pure Go, so it is built for the machine the image is
 # for by the compiler of the machine that builds it.
@@ -43,8 +44,11 @@ RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache
 #                   to any other
 #   /tmp            for a check of a class in a file and for a large
 #                   sort
-RUN mkdir -p /image/etc/ssl/certs /image/data /image/tmp \
+#   /licenses       FadoDB's licence and the notices of the code of others
+#                   the tool carries
+RUN mkdir -p /image/etc/ssl/certs /image/data /image/tmp /image/licenses \
  && cp /etc/ssl/certs/ca-certificates.crt /image/etc/ssl/certs/ \
+ && cp LICENSE THIRD_PARTY_NOTICES.md /image/licenses/ \
  && chown 65532:65532 /image/data && chmod 0700 /image/data \
  && chmod 1777 /image/tmp
 
@@ -78,14 +82,15 @@ RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache
       -ldflags "-s -w -X main.version=$VERSION -X main.commit=$COMMIT -X main.date=$DATE" \
       -o /image/fadodb ./cmd/fadodb && \
     mkdir -p /image/licenses && \
-    cp "$(go list -m -f '{{.Dir}}' github.com/duckdb/duckdb-go-bindings)/LICENSE" /image/licenses/LICENSE-duckdb
+    cp "$(go list -m -f '{{.Dir}}' github.com/duckdb/duckdb-go-bindings)/LICENSE" /image/licenses/LICENSE-duckdb && \
+    cp /src/LICENSE /src/THIRD_PARTY_NOTICES.md /image/licenses/
 # /data is where a database and its copy are kept, the user's own and
 # closed to any other. The certificates, /tmp and the C and C++
 # libraries the program needs are the base image's.
 RUN mkdir -p /image/data && chown 65532:65532 /image/data && chmod 0700 /image/data
 
-# The image of fadodb-core: the program, the certificates and nothing
-# else.
+# The image of fadodb-core: the program, the certificates, the licences
+# and nothing else.
 FROM scratch AS core
 ARG VERSION=dev
 ARG COMMIT=
@@ -121,7 +126,6 @@ LABEL org.opencontainers.image.title="FadoDB" \
       org.opencontainers.image.version="$VERSION" \
       org.opencontainers.image.revision="$COMMIT"
 COPY --from=build /image /
-COPY LICENSE /licenses/LICENSE
 # No user of the image is root: the user 65532, which the base calls
 # nonroot.
 USER 65532:65532

@@ -24,6 +24,13 @@ jobs:
       - run: make depgate
       - run: make sizegate
       - run: make filegate
+      - name: The notices of the code of others are those of the modules as they are
+        # THIRD_PARTY_NOTICES.md, written from the modules each program
+        # and library is built from on every system; "must": the test
+        # runs here, where a skipped one would not show.
+        env:
+          FADODB_NOTICES: must
+        run: go test -count=1 ./internal/notices/
       - uses: actions/setup-node@v7
         with:
           node-version: 24

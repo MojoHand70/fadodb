@@ -645,6 +645,17 @@ Phase 8 started on 2026-11-25, and Phase 9 on 2026-11-27.
   `org.opencontainers.image.licenses` saying `Apache-2.0 AND MIT`. Every
   pull request now packs the program as a release does, so that a
   release is not the first to.
+- The notices of the code of others travel with every copy.
+  `THIRD_PARTY_NOTICES.md` holds, in full, the notice of Go, its
+  standard library and runtime, of DuckDB, and of every module a
+  program or library is built from on every system a release is built
+  for, with a table of which carries what; their licences, most of them
+  BSD and MIT, ask for the notice in every copy, and none was carried.
+  Every archive of `fadodb` and `fadodb-core` and of the library holds
+  it, both images in `/licenses/` with FadoDB's own licence, and every
+  wheel with a library. `internal/notices` writes it from the modules,
+  and the checks on GitHub hold it to them, so a module added or moved
+  fails until it is written again.
 - The phone's page of a code, and an invitation's page, offer **Sign in
   with it** from the start to a person who has a passkey already, under
   the button that adds one (ADR-0088). A phone whose password manager

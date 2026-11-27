@@ -116,6 +116,18 @@ Phase 8 started on 2026-11-25, and Phase 9 on 2026-11-27.
   Python, `fadodb.open(path, actions={"books.post": post})` gives a
   function by name; it returns the result as a dict, and raising
   `fadodb.Permanent` refuses the call.
+- The library with DuckDB, `libfadodb` (ADR-0102, proposed; Phase 9's
+  step G), the engine of `fadodb` beside `libfadodb-core`: a database
+  it opens keeps a copy of its documents in DuckDB beside its file,
+  and the questions that read everything are answered from it, as
+  under `fadodb serve`; its options take `analytics`, which
+  `libfadodb-core` refuses. It is linked to DuckDB's own shared
+  library, which travels beside it, since DuckDB's prebuilt library
+  cannot be loaded by a program that is running, as Python, Node and
+  .NET load a library. `scripts/library.sh` builds, tries and packs
+  both on each system; a release carries `fadodb-library_…` beside
+  `fadodb-core-library_…`, and the wheel of the Python package for a
+  system now carries `libfadodb` and DuckDB's library, about 35 MB.
 
 - Where a value comes from (ADR-0099, proposed; its second step). A new
   command, `lineage`, in Go `Lineage`, answers one value of one

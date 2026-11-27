@@ -45,10 +45,16 @@ These live in their own Go modules so their weight and cgo never reach the core.
 | `github.com/duckdb/duckdb-go/v2` with `go.duckdb.org/libduckdb/<os>-<arch>` | `analytics/` | MIT | Needs cgo and a C compiler; a minimal binary linking DuckDB 2.0.0 is 75 MB. Prebuilt libraries for five platforms; `duckdb_use_lib` links a system library instead. In use since Phase 1 for the DuckDB conformance runner (ADR-0020) and since Phase 2 for the DuckDB target of the store benchmarks (ADR-0017). |
 | `github.com/jackc/pgx/v5` | `postgres/` | MIT | Driver and its tree are only needed by the enterprise backend. |
 
-The library of C, `cabi/` (ADR-0101), is a module of its own because it
-needs cgo; it adds no dependency to those of the core. Like
-`analytics/go.mod`, its `go.mod` is tidied when a version in the core's
-moves.
+The libraries of C, `cabi/` (ADR-0101, ADR-0102), are a module of their
+own because they need cgo. `libfadodb-core` adds no dependency to those
+of the core. `libfadodb`, built with the tag `duckdb`, adds the module
+`analytics/` above, and is linked to DuckDB's own shared library, which
+travels beside it: `scripts/library.sh` takes it from DuckDB's release
+for the version the Go driver is built from (`duckdb-release.json` in
+`github.com/duckdb/duckdb-go-bindings`), refuses a file whose checksum
+is not the one the driver records, and puts DuckDB's notice (MIT)
+beside it as `LICENSE-duckdb`. Like `analytics/go.mod`, `cabi/go.mod`
+is tidied when a version in the core's or the analytics module's moves.
 
 ## The images for containers
 

@@ -121,26 +121,26 @@ func TestEveryLanguageTellsTheStory(t *testing.T) {
 		dir := t.TempDir()
 		program := filepath.Join(dir, "books"+exe)
 		args := []string{"-std=c11", "-Wall", "-Werror", "-I.", "-o", program, filepath.Join(examples, "c", "books.c")}
-		switch runtime.GOOS {
-		case "windows":
-			args = append(args, library)
-		default:
-			args = append(args, "-L"+filepath.Dir(library), "-lfadodb-core")
-			if runtime.GOOS == "linux" {
-				args = append(args, "-Wl,-rpath,"+filepath.Dir(library))
-			}
-		}
+		args = append(args, linkedTo(library)...)
 		if out, err := exec.Command(cc, args...).CombinedOutput(); err != nil {
 			t.Fatalf("books.c was not compiled: %v\n%s", err, out)
 		}
 		if runtime.GOOS == "windows" {
-			// The library is found beside the program.
-			data, err := os.ReadFile(library)
+			// The libraries are found beside the program.
+			entries, err := os.ReadDir(filepath.Dir(library))
 			if err != nil {
 				t.Fatal(err)
 			}
-			if err := os.WriteFile(filepath.Join(dir, filepath.Base(library)), data, 0o755); err != nil {
-				t.Fatal(err)
+			for _, e := range entries {
+				if strings.HasSuffix(e.Name(), ".dll") {
+					data, err := os.ReadFile(filepath.Join(filepath.Dir(library), e.Name()))
+					if err != nil {
+						t.Fatal(err)
+					}
+					if err := os.WriteFile(filepath.Join(dir, e.Name()), data, 0o755); err != nil {
+						t.Fatal(err)
+					}
+				}
 			}
 		}
 		if runtime.GOOS == "darwin" {

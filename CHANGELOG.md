@@ -285,8 +285,10 @@ Phase 8 started on 2026-11-25, and Phase 9 on 2026-11-27.
   version before is refused with `stale_version`. The change queues
   the work as a row of the outbox whose action is `follow`, and the
   worker brings the documents a thousand in a transaction: 100,000
-  invoices in under five seconds, with a commit of somebody else
-  waiting 45 ms meanwhile. Not built: a value that follows the
+  invoices in 4.2 seconds, with a commit of somebody else waiting
+  17 ms meanwhile, 60 at the longest. A document has no savepoint of
+  its own until one is refused; then its thousand is brought again,
+  each with one. Not built: a value that follows the
   documents of a class, and a kept list that follows a table.
 - One line for each group, with its totals: a column of a `QUERY` may
   be a total (ADR-0090, proposed). In a live variable,

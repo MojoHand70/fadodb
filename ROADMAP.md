@@ -549,8 +549,8 @@ variable follows, a new one among them. Nobody's right is asked for
 it, and a class stops the value in a state with a `write` right of
 `FALSE`. The store does it
 by itself, a thousand documents in a transaction: 100,000 invoices
-are brought in under five seconds, and a commit of somebody else
-waits 45 ms meanwhile. A kept value follows the clock too (ADR-0093,
+are brought in 4.2 seconds, and a commit of somebody else waits 17 ms
+meanwhile, 60 at the longest. A kept value follows the clock too (ADR-0093,
 proposed on 2026-11-26): a variable that lists `schedule:<when>` is
 worked out again at the moments its words name, `daily at 03:00`,
 `monthly on 3rd monday`, `every 4h`, by the clock of the database's

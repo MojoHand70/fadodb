@@ -53,7 +53,7 @@ docker build -t fadodb .
 <!-- the image -->
 | | |
 |---|---|
-| What it holds | the tool, `/fadodb`, the C and C++ libraries the analytical engine needs, and the certificates by which a request of an action knows another service. No shell and no other program |
+| What it holds | the tool, `/fadodb`, the C and C++ libraries the analytical engine needs, and the certificates by which a request of an action knows another service; the licences of FadoDB and of DuckDB, which is linked into the tool, in `/licenses`. No shell and no other program |
 | What it runs | the tool: what follows the name of the image is what follows `fadodb` at a terminal. Told nothing, it prints its help |
 | Who it runs as | the user `65532`, who is not root |
 | Where a database is kept | `/data`. A command starts there, so `acme.fado` is `/data/acme.fado` |

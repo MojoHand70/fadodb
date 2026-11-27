@@ -76,7 +76,9 @@ RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache
     fi; \
     cd analytics && CGO_ENABLED=1 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath \
       -ldflags "-s -w -X main.version=$VERSION -X main.commit=$COMMIT -X main.date=$DATE" \
-      -o /image/fadodb ./cmd/fadodb
+      -o /image/fadodb ./cmd/fadodb && \
+    mkdir -p /image/licenses && \
+    cp "$(go list -m -f '{{.Dir}}' github.com/duckdb/duckdb-go-bindings)/LICENSE" /image/licenses/LICENSE-duckdb
 # /data is where a database and its copy are kept, the user's own and
 # closed to any other. The certificates, /tmp and the C and C++
 # libraries the program needs are the base image's.
@@ -106,7 +108,8 @@ CMD ["help"]
 
 # The image of fadodb, with the analytical engine: the program, on a
 # base that has the C and C++ libraries DuckDB needs, the certificates,
-# and no shell or other program.
+# the licences of FadoDB and of DuckDB, which is linked into the
+# program, and no shell or other program.
 FROM gcr.io/distroless/cc-debian12:nonroot
 ARG VERSION=dev
 ARG COMMIT=
@@ -114,10 +117,11 @@ LABEL org.opencontainers.image.title="FadoDB" \
       org.opencontainers.image.description="An embeddable active document database: the command-line tool and its server, with the analytical engine" \
       org.opencontainers.image.source="https://github.com/MojoHand70/fadodb" \
       org.opencontainers.image.documentation="https://github.com/MojoHand70/fadodb/blob/main/docs/manual/in-a-container.md" \
-      org.opencontainers.image.licenses="Apache-2.0" \
+      org.opencontainers.image.licenses="Apache-2.0 AND MIT" \
       org.opencontainers.image.version="$VERSION" \
       org.opencontainers.image.revision="$COMMIT"
 COPY --from=build /image /
+COPY LICENSE /licenses/LICENSE
 # No user of the image is root: the user 65532, which the base calls
 # nonroot.
 USER 65532:65532

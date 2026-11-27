@@ -637,6 +637,14 @@ Phase 8 started on 2026-11-25, and Phase 9 on 2026-11-27.
 
 ### Fixed
 
+- DuckDB's notice travels with DuckDB. The program `fadodb` and its
+  image carry DuckDB, linked in, and carried no word of its licence,
+  which is MIT and asks for its notice in every copy: each archive of
+  `fadodb` now holds `LICENSE-duckdb`, and the image `/licenses/LICENSE`
+  and `/licenses/LICENSE-duckdb`, with the label
+  `org.opencontainers.image.licenses` saying `Apache-2.0 AND MIT`. Every
+  pull request now packs the program as a release does, so that a
+  release is not the first to.
 - The phone's page of a code, and an invitation's page, offer **Sign in
   with it** from the start to a person who has a passkey already, under
   the button that adds one (ADR-0088). A phone whose password manager

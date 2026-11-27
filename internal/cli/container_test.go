@@ -370,7 +370,7 @@ func TestTheChapterOnContainers(t *testing.T) {
 			}
 			return false
 		}
-		for _, part := range []string{"fadodb", "etc/ssl/certs/ca-certificates.crt", "libstdc++.so", "libc.so"} {
+		for _, part := range []string{"fadodb", "etc/ssl/certs/ca-certificates.crt", "libstdc++.so", "libc.so", "licenses/LICENSE", "licenses/LICENSE-duckdb"} {
 			if !has(part) {
 				t.Errorf("the image holds no %s", part)
 			}

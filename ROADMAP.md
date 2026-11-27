@@ -528,8 +528,10 @@ of `flow`, `throughput` and `paths` opens, with the member
 a page at a time; among ten million moves the copy lists the moves
 along a transition in a week in 70 to 80 ms. The second is built too:
 `lineage` says where a value comes from, one level a call, worked out
-again from the history, and whether it adds up. The third, a history of
-the rows of every table, is planned and not built.
+again from the history, and whether it adds up. The third is built as
+well: every table keeps the history of its rows, unless its definition
+says `"history": false`, `row_history` reads the history of one row,
+and lineage reads a table's rows as they were (engine schema 16).
 
 The rows of the tables are in the copy too (ADR-0094, proposed on
 2026-11-26): a total a live `LOOKUP` asks of a large table, and a
@@ -578,7 +580,7 @@ Legend: ✅ done · 🚧 in progress · ⬜ not started
 | 6 | Server and CLI: the JSON command set over HTTP, one address for each command; users, groups and API keys kept in the database, and the authenticator for a host program that has its own; the stream of changes filtered by the read rule; documents on the wire; the door for agents (MCP); the command-line tool with a check of a class and of an action; the flow of a class in one call; a way in for messages from outside; OpenAPI; `fadodb serve` | ✅ |
 | 7 | Browser VM and reference frontend: the log of reads first; TypeScript VM on the same bytecode shipped as one plain JavaScript file, what a class says to people and its sections, the class bundle, `QUERY` when the first page needs a list of rows (otherwise with the reports of Phase 8), signing in with a password or a company's sign-on, the pages of a face handed out by `fadodb serve` from a folder (a face, which draws a document from its class, lives apart from the engine; chip, card, coins and rating are the face's), the door for agents at the server itself, a small client file beside the VM | ✅ |
 | 8 | Analytical engine: first what ADR-0078, ADR-0076, ADR-0075 and ADR-0085 leave unbuilt after v0.7.0; then the DuckDB projection of document tables and of the tables' rows (in place of the native and attached bindings, ADR-0094), set-wise recompute, mining views, full build per OS; lineage and drill down (ADR-0099) | 🚧 |
-| 9 | Embedding: the library of C, with five functions and the command set in JSON (ADR-0101); Python over HTTP and in the same process, with one set of tests both ways; the library and the Python package in each release; embedding guides for Go, Node, Python and .NET | 🚧 |
+| 9 | Embedding: the library of C, with five functions and the command set in JSON (ADR-0101); Python over HTTP and in the same process, with one set of tests both ways; the library and the Python package in each release; embedding guides for Go, Node, Python and .NET; the program's own actions through the library, and the library with DuckDB (ADR-0102) | 🚧 |
 | 10 | Postgres backend | ⬜ |
 | 11 | Optional AI layer: authoring assistant (the MCP server moved to Phase 6) | ⬜ |
 | 12 | 1.0 hardening: compatibility promises, documentation site, published benchmarks | ⬜ |

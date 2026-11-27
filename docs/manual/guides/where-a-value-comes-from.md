@@ -325,31 +325,49 @@ since which it is what it is: the one Ann's filing made. And the rate:
       {
         "table": "Rates",
         "column": "rate",
-        "value": "4.3100",
+        "value": "4.2500",
         "count": 1,
         "parts": [
           {
             "key": {
               "currency": "EUR"
             },
-            "value": "4.3100"
+            "value": "4.2500",
+            "since": {
+              "at": 1796202000,
+              "by": "tess",
+              "by_kind": "person",
+              "event": "import"
+            },
+            "until": {
+              "at": 1796292000,
+              "by": "tess",
+              "by_kind": "person",
+              "event": "import"
+            }
           }
         ],
         "more": false,
         "table_changed_since": true
       }
     ],
-    "adds_up": false,
-    "rebuilt": "4.3100"
+    "adds_up": true
   }
 }
 ```
 
 The invoice kept the rate it read, 4.2500. The table has changed since
-(`table_changed_since`): its row is 4.3100 now, and the formula worked
-out over the row as it is now gives that, so it does not add up. The
-table keeps no history of its rows yet, so what the row held on 2
-December is not in the answer.
+(`table_changed_since`): its row is 4.3100 now. A table keeps the
+history of its rows, so the answer reads the row as it was when Ann
+filed: **the row EUR held 4.2500 from 2 December at 9:00, put there by
+Tess's import (`since`), until her import of 3 December at 10:00
+(`until`)**. Worked out again over that row, the formula gives the rate
+the invoice kept: it adds up.
+
+A table whose definition says `"history": false` keeps none of it. Its
+rows are then read as they are now, and when the table has changed
+since, the answer says so with `"rows_now": true`; each row still says,
+in `since`, which change gave it the values it has.
 
 The amount is what Ann typed:
 
@@ -418,7 +436,7 @@ the past: INV-18's net at version 2, the one the night read, is
 | `variables` | the answer | the values of the document itself the formula read, at that moment |
 | `lookups` | the answer | what each lookup of the formula read |
 | `adds_up`, `rebuilt` | the answer | the formula worked out again over what it read gives the value; what it gives when it does not |
-| `version`, `at`, `by`, `by_kind`, `for`, `event`, `name` | the moment | the version, when, who, of what kind and for whom, and the event: `created`, `set`, `transition` with its name, `refresh` |
+| `version`, `at`, `by`, `by_kind`, `for`, `event`, `name` | the moment | the version, when, who, of what kind and for whom, and the event: `created`, `set`, `transition` with its name, `refresh`; for a row of a table, a change of the table's rows, with no version: `import`, `replace`, `delete`, `define`, or a rule's `table.insert`, `table.update`, `table.delete` |
 | `variable`, `value`, `hidden` | a value it read | its name, its value, and that the reader may not read it |
 | `class`, `table`, `list` | a lookup | what it read |
 | `aggregate`, `column` | a lookup | `SUM`, `COUNT` and the rest, and what it adds up or takes |
@@ -427,7 +445,9 @@ the past: INV-18's net at version 2, the one the night read, is
 | `hidden` | a lookup | how many parts the reader may not read, and for a sum or a count what they come to |
 | `changed_since`, `now` | a lookup | for a kept value: the parts with a version after it was worked out, and what the lookup gives now |
 | `table_changed_since` | a lookup | the table's rows changed after the value was worked out |
+| `rows_now` | a lookup | the table kept no history of its rows at the moment and has changed since: the rows are as they are now |
 | `id`, `key`, `version`, `value` | a part | the document at the version read, or the row by its key, and the value taken of it |
+| `since`, `until` | a part | for a row of a table: the change that gave it the values read, and the one that changed or removed it after; `since` is left out for a row older than the history |
 | `count`, `parts` | what changed | how many, and the page of them |
 | `id`, `version`, `at`, `by` | a change | the document, its version now, when and by whom it last changed |
 
@@ -449,8 +469,6 @@ fadodb exec lineage '{"class": "Customer", "id": "Acme", "variable": "invoiced"}
 
 ## Not here yet
 
-- **The history of a table's rows**, so that a part that is a row says
-  what it held when it was read: planned, ADR-0099, step 3.
 - **The parts of a figure over a list** of the document, as
   `SUM(lines.net)`: read the list with `live`.
 - **The copy in the analytical engine**: lineage is answered by the

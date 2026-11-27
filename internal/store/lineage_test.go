@@ -54,13 +54,18 @@ var (
 // lineageCase plays the story of the page: on 2 December the rates, the
 // invoices filed; that night the customers at 03:00 and the region at
 // 04:00; on 3 December Tess changes the euro at 10:00 and Piotr corrects
-// INV-18 at 11:00.
-func lineageCase(t *testing.T) *Store {
+// INV-18 at 11:00. A definition of Rates given takes the place of the
+// case's.
+func lineageCase(t *testing.T, rates ...string) *Store {
 	t.Helper()
 	cl := &still{now: time.Date(2026, 12, 2, 9, 0, 0, 0, time.UTC)}
 	s, _ := openStore(t, Options{Now: cl.Now})
 	ctx := context.Background()
-	if _, err := s.DefineTable(ctx, []byte(lineageRates), asSetup); err != nil {
+	def := lineageRates
+	if len(rates) > 0 {
+		def = rates[0]
+	}
+	if _, err := s.DefineTable(ctx, []byte(def), asSetup); err != nil {
 		t.Fatal(err)
 	}
 	for _, def := range []string{
@@ -152,12 +157,14 @@ func TestWhereAValueComesFrom(t *testing.T) {
 			`{"class":"Invoice","id":"INV-17","variable":"net","version":2,"value":"1275.00","kind":"computed","formula":"ROUND(amount * rate, 2)",` +
 				`"since":{"version":2,"at":` + filed + `,"by":"ann","by_kind":"person","event":"transition","name":"file"},` +
 				`"variables":[{"variable":"amount","value":"300.00"},{"variable":"rate","value":"4.2500"}],"adds_up":true}`},
-		{"the rate, from a table that has changed since", "Invoice", "INV-17", "rate", 0, lineageDan,
+		{"the rate, from the row as it was, though the table has changed since", "Invoice", "INV-17", "rate", 0, lineageDan,
 			`{"class":"Invoice","id":"INV-17","variable":"rate","version":2,"value":"4.2500","kind":"kept","formula":"LOOKUP(Rates, rate, currency = THIS.currency)",` +
 				`"since":{"version":2,"at":` + filed + `,"by":"ann","by_kind":"person","event":"transition","name":"file"},` +
 				`"variables":[{"variable":"currency","value":"EUR"}],` +
-				`"lookups":[{"table":"Rates","column":"rate","value":"4.3100","count":1,"parts":[{"key":{"currency":"EUR"},"value":"4.3100"}],"more":false,"table_changed_since":true}],` +
-				`"adds_up":false,"rebuilt":"4.3100"}`},
+				`"lookups":[{"table":"Rates","column":"rate","value":"4.2500","count":1,"parts":[{"key":{"currency":"EUR"},"value":"4.2500",` +
+				`"since":{"at":` + filed + `,"by":"tess","by_kind":"person","event":"import"},"until":{"at":` + at(10) + `,"by":"tess","by_kind":"person","event":"import"}}],` +
+				`"more":false,"table_changed_since":true}],` +
+				`"adds_up":true}`},
 		{"the amount Ann typed", "Invoice", "INV-17", "amount", 0, lineageDan,
 			`{"class":"Invoice","id":"INV-17","variable":"amount","version":2,"value":"300.00","kind":"typed",` +
 				`"since":{"version":1,"at":` + filed + `,"by":"ann","by_kind":"person","event":"created"}}`},

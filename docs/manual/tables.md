@@ -61,6 +61,7 @@ A table is written once, as one JSON document, like a class.
 | `key` | the columns that identify a row. No two rows have the same values in them, none of them is ever blank, and the table is ordered by them |
 | `indexes` | further sets of columns to keep an index on, for lookups that do not begin with the first column of the key |
 | `access` | who may read the rows and who may write them; see [Who may](#who-may) |
+| `history` | whether the table keeps the history of its rows: `true`, which is also what is taken when the word is left out, or `false`; see [The history of the rows](#the-history-of-the-rows) |
 | `binding` | where the rows are kept: `sqlite`, the database file itself, which is also what is taken when the word is left out. No other place is built. A program with the analytical engine keeps a copy of the rows by itself, with nothing written here; see [A large table](#a-large-table) |
 | `version` | may be left out: the engine counts the versions itself |
 
@@ -106,16 +107,17 @@ its columns.
 - **A row whose key is new is added.**
 - **A row whose key the table has replaces that row, whole.** A column
   the new row leaves out is blank afterwards.
-- **An import can replace the table.** With that option the table is
-  emptied first, so that it holds the rows of this import and no
-  others. An import of no rows with that option empties the table.
+- **An import can replace the table.** With that option the table
+  holds the rows of this import and no others afterwards: a row it does
+  not bring is removed. An import of no rows with that option empties
+  the table.
 - **`delete_rows` removes rows by their keys**, all of them in one
   go: each key a value for every column of the table's key, and for no
   other. A key the table does not have removes nothing. The `write`
   line of the table is asked, as for an import. A rule removes one row,
   as below.
-- **An import is not an event.** The rows of a table have no versions
-  and no log. Nothing says who wrote a row, or what it was before.
+- **An import is not an event of a document.** The table keeps what
+  it changed in the history of its rows, below.
 
 Rows are read back in the order of the key, whatever order they were
 written in:
@@ -126,6 +128,76 @@ written in:
 | EUR | 2026-11-12 | 4.2500 | NBP |
 | EUR | 2026-11-13 | 4.2700 | NBP |
 | USD | 2026-11-13 | 3.9000 | NBP |
+
+## The history of the rows
+
+Every table keeps the history of its rows: each row as it was until a
+change replaced or removed it, and who made each change, and when. Tess
+brought the three rows above on 13 November at 9:00 (UTC). Then:
+
+<!-- what Tess did -->
+| When | Tess |
+|---|---|
+| 10:00 | corrects the euro of 13 November to 4.2800 |
+| 11:00 | brings the rates again, whole, with the two euro rows and no dollar |
+
+Ann asks for the history of the euro of 13 November, with
+`row_history`:
+
+<!-- the history of a row, asked -->
+```jsonc
+{"table": "Rates", "key": {"currency": "EUR", "day": "2026-11-13"}}
+```
+
+<!-- the history of a row -->
+```jsonc
+{
+  "history": {
+    "table": "Rates",
+    "key": {"currency": "EUR", "day": "2026-11-13"},
+    "history": true,
+    "count": 2,
+    "rows": [
+      {
+        "values": {"currency": "EUR", "day": "2026-11-13", "rate": "4.2800", "source": "NBP"},
+        "since": {"at": 1794564000, "by": "tess", "by_kind": "person", "event": "import"}
+      },
+      {
+        "values": {"currency": "EUR", "day": "2026-11-13", "rate": "4.2700", "source": "NBP"},
+        "since": {"at": 1794560400, "by": "tess", "by_kind": "person", "event": "import"},
+        "until": {"at": 1794564000, "by": "tess", "by_kind": "person", "event": "import"}
+      }
+    ],
+    "more": false
+  }
+}
+```
+
+- **The row as it is now comes first**, then the row as it was before
+  each change, the newest first: its `values`, the change that gave
+  them (`since`) and the one that changed them (`until`). A change
+  says when, who, of what kind and for whom, and what it was:
+  `import`, `replace`, `delete`, `define` for a version of the table,
+  or a rule's `table.insert`, `table.update` or `table.delete`.
+- **A row brought again as it was is no change.** The replace of 11:00
+  brought both euro rows as they were, and neither has a version of
+  11:00. The dollar, which it did not bring, was removed: its last
+  version ends at that `replace`.
+- **Whoever may read the rows may read their history**, by the
+  table's `read` line. A content administrator past it gives a reason,
+  and the [log of reads](the-log-of-reads.md) keeps it.
+- **Where a value comes from reads the rows as they were.** A value a
+  document kept from a table is worked out again over the rows as they
+  were when it was kept ([Where a value comes
+  from](guides/where-a-value-comes-from.md)).
+- **`"history": false` keeps none**, for a table brought in whole that
+  no decision reads. A change then keeps nothing of a row as it was,
+  and `row_history` answers the row as it is, with `"history": false`.
+  Each row still says which change gave it the values it has, and who
+  made each change is kept.
+- **It costs nothing where no row changes.** A change writes the rows
+  it changes as they were, beside the table, and nothing for a row
+  that stays as it was.
 
 ## Two classes beside it
 
@@ -408,9 +480,10 @@ Three actions of a rule change one row each.
 - **One row each.** Many rows are an import.
 - **An update changes no key column.** To move a row, delete it and
   insert another.
-- **The record is the document's.** The table keeps no log, and the
-  rate entry does: who entered the rate, who published it, when, and
-  the event `action_run` for the row. The column `source` holds the id
+- **The record is the document's.** The history of the table's rows
+  says that a rule of Olga's commit wrote the row, and when; the rate
+  entry says the rest: who entered the rate, who published it, when,
+  and the event `action_run` for the row. The column `source` holds the id
   of the entry, so every row leads back to it.
 
 <!-- the log of the rate entry -->
@@ -481,10 +554,11 @@ with `bad_formula`, and the message says which.
   `INGROUP("everyone")` asks for a caller with an id.
 - **A content administrator reads and writes every table, with a
   reason.** Without one the lines apply to them as to anybody, and
-  what they would get past is refused with `reason_required`. A table
-  keeps no history of its own, so the [log of reads](the-log-of-reads.md)
-  keeps the import or the read: the table, how many rows, the line it
-  got past, who and why. An action a rule queued writes a table as the
+  what they would get past is refused with `reason_required`. The
+  history of the rows says who changed a row, and not which line they
+  got past or why, so the [log of reads](the-log-of-reads.md) keeps the
+  import or the read: the table, how many rows, the line it got past,
+  who and why. An action a rule queued writes a table as the
   person whose commit queued it, with the reason that commit gave.
 - **A formula asks neither line**, as said above.
 
@@ -503,9 +577,14 @@ The system groups are in [Who may](notions/who-may.md).
 | would break a rule of a class that writes it | is refused, `not_allowed` |
 | gains columns, none of them in its key, and nothing else changes | is taken, as the next version, whatever rows it holds and whoever reads it; its rows are blank in each new column |
 | names another app, or none, and nothing else changes | is taken, as the next version, whatever rows it holds and whoever reads it |
+| says `"history": false`, or leaves it out again, and nothing else changes | is taken, as the next version, whatever rows it holds and whoever reads it; `false` drops the history kept, and leaving it out again keeps it from then |
 
 - **The same definition again changes nothing**, and the version
   stays.
+- **A version carries the history of the rows** with the rows: a
+  column added is blank in the past, a column whose type changes
+  converts in the past as in the rows, and a value of the past that
+  does not convert refuses the version, `bad_value`, as a row does.
 - **Every version says who defined it and when**, and every caller may
   read that.
 - **`remove_table` takes a table away**; see [Removing a
@@ -530,8 +609,8 @@ documents](guides/change-a-class.md).
 
 ## Removing a table
 
-`remove_table` takes a table away with its rows, its view and its
-words. It is for the system group `designers`, as defining one is.
+`remove_table` takes a table away with its rows, the history of its
+rows, its view and its words. It is for the system group `designers`, as defining one is.
 
 <!-- removing a table -->
 | The table | `remove_table` |
@@ -666,6 +745,7 @@ an agent that speaks to the engine in JSON.
 | list the tables, or those of one app | `list_tables` |
 | write rows | `import_rows` |
 | read the rows | `table_rows` |
+| read the history of a row | `row_history` |
 | remove rows | `delete_rows` |
 | remove a table | `remove_table` |
 
@@ -740,5 +820,5 @@ import.
 - An import from a file through the command line.
 - A rule that a change of a table sets off.
 - Rights for single rows or single columns.
-- A record of who changed a row. Where that matters today, let
-  documents feed the table, as the rate entry does.
+- The history of a table's rows in the copy of the analytical engine,
+  or in SQL: `row_history` and lineage read it from the store.

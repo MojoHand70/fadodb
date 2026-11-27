@@ -8,7 +8,9 @@
  * Ann of sales makes an invoice, Bob of accounting gives its account,
  * the ledger agent may not book it and Bob does; then sixteen threads
  * make invoices at once; then Ann puts the scan of a taxi receipt on a
- * claim and Bob reads it back. It prints what it did and ends with 0, or says
+ * claim and Bob reads it back; then a shop whose actions are functions
+ * of this program sends an order, and the entry the books gave it comes
+ * back into the order. It prints what it did and ends with 0, or says
  * what was not as it should be and ends with 1.
  */
 #include <stdio.h>
@@ -93,6 +95,37 @@ static void *make(void *arg)
         fado_free(answer);
     }
     return 0;
+}
+
+/* The shop of the chapter on the outbox: sending an order mails the
+ * customer and posts it to the books, whose entry comes back into it. */
+static const char *order =
+    "{\"definition\": {\"name\": \"Order\","
+    "\"variables\": {\"customer\": {\"type\": \"text\", \"required\": true}, \"amount\": {\"type\": \"number\", \"required\": true}, \"entry\": {\"type\": \"text\"}},"
+    "\"states\": {\"initial\": \"new\", \"list\": [\"new\", \"sent\"]},"
+    "\"transitions\": [{\"name\": \"send\", \"from\": \"new\", \"to\": \"sent\"}],"
+    "\"rules\": [{\"on\": \"transition\", \"name\": \"send\", \"do\": ["
+    "{\"action\": \"mail.send\", \"args\": {\"to\": \"customer\"}},"
+    "{\"action\": \"books.post\", \"args\": {\"amount\": \"amount\"}, \"into\": {\"entry\": \"entry\"}}]}],"
+    "\"access\": {\"read\": \"INGROUP(\\\"everyone\\\")\", \"create\": \"INGROUP(\\\"everyone\\\")\", \"update\": \"CREATEDBY() = USER()\", \"delete\": \"FALSE\"}}}";
+
+/* carry_out is the program's function for the shop's two actions. */
+static void carry_out(void *context, uint64_t call, const char *action, const char *object) {
+    int *calls = context;
+    (*calls)++;
+    if (strcmp(action, "mail.send") == 0) {
+        if (strstr(object, "\"to\":\"jan@example.com\"") == NULL) {
+            fado_answer(call, "{\"error\": {\"message\": \"no customer to mail\", \"permanent\": true}}");
+            return;
+        }
+        fado_answer(call, "{\"result\": {}}");
+        return;
+    }
+    fado_answer(call, "{\"result\": {\"entry\": \"JE-2026-0007\"}}");
+    if (fado_answer(call, "{\"result\": {}}") != -1) {
+        printf("FAIL a second fado_answer was taken\n");
+        failures++;
+    }
 }
 
 int main(int argc, char **argv) {
@@ -210,6 +243,40 @@ int main(int argc, char **argv) {
         printf("FAIL a second fado_close was not refused\n");
         failures++;
     }
+
+    /* The program's own actions. */
+    int calls = 0;
+    fado_db shop = fado_open_with("shop.fado", "{\"actions\": [\"mail.send\", \"books.post\"], \"outbox\": {\"manual\": true}}",
+                                  carry_out, &calls, &refusal);
+    if (shop == 0) {
+        printf("FAIL fado_open_with: %s\n", refusal);
+        fado_free(refusal);
+        return 1;
+    }
+    const char *ada = "{\"id\": \"ada\", \"kind\": \"person\", \"system_groups\": [\"administrators\"]}";
+    expect(shop, dan, "define_action", "{\"definition\": {\"name\": \"mail.send\", \"params\": {\"to\": \"text\"}}}", "\"action\":");
+    expect(shop, dan, "define_action", "{\"definition\": {\"name\": \"books.post\", \"params\": {\"amount\": \"number\"}, \"returns\": {\"entry\": \"text\"}}}", "\"action\":");
+    expect(shop, dan, "define_class", order, "\"class\":");
+    expect(shop, ann, "create", "{\"class\": \"Order\", \"id\": \"O-1\", \"values\": {\"customer\": \"jan@example.com\", \"amount\": 120}}", "\"state\":\"new\"");
+    expect(shop, ann, "transition", "{\"class\": \"Order\", \"id\": \"O-1\", \"transition\": \"send\"}", "\"state\":\"sent\"");
+    expect(shop, ada, "drain", "{}", "2");
+    expect(shop, ann, "get", "{\"class\": \"Order\", \"id\": \"O-1\"}", "\"entry\":\"JE-2026-0007\"");
+    if (calls != 2) {
+        printf("FAIL the program's function was called %d times\n", calls);
+        failures++;
+    } else {
+        printf("fado_open_with: the program carried out 2 actions\n");
+    }
+    fado_close(shop, NULL);
+    refusal = NULL;
+    fado_db none = fado_open("none.fado", "{\"actions\": [\"mail.send\"]}", &refusal);
+    if (none != 0 || refusal == NULL || strstr(refusal, "\"path\":\"/actions\"") == NULL) {
+        printf("FAIL fado_open took actions with no function: %s\n", refusal ? refusal : "(none)");
+        failures++;
+    } else {
+        printf("fado_open: refused /actions\n");
+    }
+    fado_free(refusal);
 
     if (failures > 0) {
         printf("%d failures\n", failures);

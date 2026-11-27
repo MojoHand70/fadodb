@@ -38,9 +38,13 @@ so the right one loads for the task at hand.
 | Analyst | [`fadodb-mine/`](fadodb-mine/SKILL.md) | mines the event log and the views in SQL and feeds the finding back into the class | filter and read-only SQL shipped; `Events` on the Go API; DuckDB views designed |
 | Its own principal | [`fadodb-own-work/`](fadodb-own-work/SKILL.md) | runs the agent's own work as documents: the task ledger, the approval inbox, the saga | principal, the rules of a class and per-transition rights enforced; acting for a person checked against a substitution; a rule calls a Go function of the host program, or the agent's endpoint over HTTP |
 
-The person who embeds the engine in a Go program is a seventh caller, a
-developer or a coding agent. That is an embedding guide, planned for
-Phase 9, not a hat.
+The person who embeds the engine in a program is a seventh caller, a
+developer or a coding agent. That is not a hat but a guide of the
+manual: in Go, [opening a database](../docs/manual/opening-a-database.md)
+and [naming the caller](../docs/manual/naming-the-caller.md); in any
+other language, through the library of C,
+[in a program of another language](../docs/manual/other-languages.md)
+(Phase 9).
 
 What people see of a server, its faces and their look, is not the
 engine's. The skill that builds faces belongs to the tool that builds

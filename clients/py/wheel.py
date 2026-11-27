@@ -97,6 +97,7 @@ def main():
         f"Requires-Python: {project['requires-python']}",
         f"License-Expression: {project['license']}",
         "License-File: LICENSE",
+        *(["License-File: THIRD_PARTY_NOTICES.md"] if told.library else []),
         *(f"Project-URL: {k}, {v}" for k, v in project.get("urls", {}).items()),
         "Description-Content-Type: text/markdown",
         "",
@@ -113,6 +114,11 @@ def main():
     ]).encode("utf-8")
     with open(os.path.join(REPOSITORY, "LICENSE"), "rb") as f:
         files[f"{info}/licenses/LICENSE"] = f.read()
+    # A wheel with a library carries the code of others the library is
+    # built from, and their notices.
+    if told.library:
+        with open(os.path.join(REPOSITORY, "THIRD_PARTY_NOTICES.md"), "rb") as f:
+            files[f"{info}/licenses/THIRD_PARTY_NOTICES.md"] = f.read()
     record = "".join(f"{path},{digest(data)},{len(data)}\n" for path, data in files.items())
     files[f"{info}/RECORD"] = (record + f"{info}/RECORD,,\n").encode("utf-8")
 

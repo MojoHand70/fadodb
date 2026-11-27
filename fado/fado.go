@@ -162,6 +162,12 @@ type (
 	LineageHidden   = store.LineageHidden
 	LineageChanged  = store.LineageChanged
 	LineageChange   = store.LineageChange
+	// RowHistory is the history of one row of a table, RowHistoryAsk
+	// the page of it, and RowVersion the row as it was, with the change
+	// that gave it its values and the one after (ADR-0099, step 3).
+	RowHistory    = store.RowHistory
+	RowHistoryAsk = store.RowHistoryAsk
+	RowVersion    = store.RowVersion
 	// ActionFunc is a Go function that implements an action, given to Open
 	// in Options.Actions under the action's name (ADR-0027, ADR-0045);
 	// ActionCall is what it is called with, and DeliveredEvent the event
@@ -1186,6 +1192,17 @@ func (db *DB) Paths(ctx context.Context, class string, ask PathsAsk, opts ...Opt
 //	l, err := db.Lineage(ctx, "Customer", "Acme", "invoiced", fado.LineageAsk{}, fado.As(dan))
 func (db *DB) Lineage(ctx context.Context, class, id, variable string, ask LineageAsk, opts ...Option) (*Lineage, error) {
 	return db.s.Lineage(ctx, class, id, variable, ask, opts...)
+}
+
+// RowHistory answers the history of the row of a table that has the key
+// (ADR-0099, step 3): the row as it is now, then as it was before each
+// change, the newest first, each with the change that gave it its values
+// and the one that changed or removed it: when, who, of what kind and
+// for whom, and the kind of change.
+//
+//	h, err := db.RowHistory(ctx, "Rates", fado.Values{"currency": "EUR"}, fado.RowHistoryAsk{}, fado.As(dan))
+func (db *DB) RowHistory(ctx context.Context, table string, key Values, ask RowHistoryAsk, opts ...Option) (*RowHistory, error) {
+	return db.s.RowHistory(ctx, table, key, ask, opts...)
 }
 
 // FlowDocuments answers the documents behind one number of a flow

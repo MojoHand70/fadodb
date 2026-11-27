@@ -47,7 +47,7 @@ const (
 // the test ends unless the test closed it.
 func opened(t *testing.T, options string) uint64 {
 	t.Helper()
-	n, refusal := openDatabase(filepath.Join(t.TempDir(), "books.fado"), options)
+	n, refusal := openDatabase(filepath.Join(t.TempDir(), "books.fado"), options, nil)
 	if n == 0 {
 		t.Fatalf("not opened: %s", refusal)
 	}
@@ -218,7 +218,7 @@ func TestWhatTheOptionsMaySay(t *testing.T) {
 		{`[]`, "bad_json", ""},
 	} {
 		path := filepath.Join(dir, fmt.Sprintf("%d.fado", i))
-		got, refusal := openDatabase(path, c.options)
+		got, refusal := openDatabase(path, c.options, nil)
 		if got != 0 {
 			closeDatabase(got)
 			t.Errorf("options %s opened a database", c.options)
@@ -229,7 +229,7 @@ func TestWhatTheOptionsMaySay(t *testing.T) {
 			t.Errorf("options %s: refused with %v, want %s at %q", c.options, e, c.code, c.path)
 		}
 	}
-	if got, refusal := openDatabase("", ""); got != 0 || refused(t, refusal)["code"] != "bad_value" {
+	if got, refusal := openDatabase("", "", nil); got != 0 || refused(t, refusal)["code"] != "bad_value" {
 		t.Errorf("a database with no file: %d %s", got, refusal)
 	}
 }
@@ -238,8 +238,8 @@ func TestWhatTheOptionsMaySay(t *testing.T) {
 // number is given twice.
 func TestTheNumberOfADatabase(t *testing.T) {
 	dir := t.TempDir()
-	first, _ := openDatabase(filepath.Join(dir, "a.fado"), "")
-	second, _ := openDatabase(filepath.Join(dir, "b.fado"), "")
+	first, _ := openDatabase(filepath.Join(dir, "a.fado"), "", nil)
+	second, _ := openDatabase(filepath.Join(dir, "b.fado"), "", nil)
 	if first == 0 || second == 0 || first == second {
 		t.Fatalf("numbers %d and %d", first, second)
 	}
@@ -255,7 +255,7 @@ func TestTheNumberOfADatabase(t *testing.T) {
 	if e := refused(t, execCommand(0, designer, "list_classes", `{}`)); e["code"] != "closed" {
 		t.Fatalf("a command to 0: %v", e)
 	}
-	again, _ := openDatabase(filepath.Join(dir, "a.fado"), "")
+	again, _ := openDatabase(filepath.Join(dir, "a.fado"), "", nil)
 	if again == first || again == second {
 		t.Fatalf("the number %d was given again", again)
 	}
@@ -301,7 +301,7 @@ func TestManyThreadsAndAClose(t *testing.T) {
 // A command that waits is answered at once when its database is closed,
 // and the close does not wait out its seconds.
 func TestACloseEndsTheWaiting(t *testing.T) {
-	n, refusal := openDatabase(filepath.Join(t.TempDir(), "books.fado"), "")
+	n, refusal := openDatabase(filepath.Join(t.TempDir(), "books.fado"), "", nil)
 	if n == 0 {
 		t.Fatal(string(refusal))
 	}

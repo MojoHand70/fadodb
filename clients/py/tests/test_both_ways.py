@@ -70,6 +70,24 @@ CLAIM = {
 }
 
 
+# The shop of the chapter on the outbox: sending an order mails the
+# customer and posts it to the books, whose entry comes back into it.
+ORDER = {
+    "name": "Order",
+    "variables": {"customer": {"type": "text", "required": True}, "amount": {"type": "number", "required": True},
+                  "entry": {"type": "text"}},
+    "states": {"initial": "new", "list": ["new", "sent"]},
+    "transitions": [{"name": "send", "from": "new", "to": "sent"}],
+    "rules": [{"on": "transition", "name": "send", "do": [
+        {"action": "mail.send", "args": {"to": "customer"}},
+        {"action": "books.post", "args": {"amount": "amount"}, "into": {"entry": "entry"}}]}],
+    "access": {"read": 'INGROUP("everyone")', "create": 'INGROUP("everyone")', "update": "CREATEDBY() = USER()",
+               "delete": "FALSE"},
+}
+MAIL_SEND = {"name": "mail.send", "params": {"to": "text"}}
+BOOKS_POST = {"name": "books.post", "params": {"amount": "number"}, "returns": {"entry": "text"}}
+
+
 def needed(what, variable):
     path = os.environ.get(variable)
     if path and os.path.exists(path):
@@ -241,6 +259,80 @@ class InTheSameProcess(BothWays, unittest.TestCase):
             other.exec("list_classes")
         self.assertEqual(refused.exception.code, "closed")
 
+    def shop(self, name, actions, outbox=None):
+        """A shop whose actions are functions of this program."""
+        shop = fadodb.open(os.path.join(self.dir, name), options={"outbox": outbox or {"manual": True}}, actions=actions)
+        self.addCleanup(shop.close)
+        dan = shop.as_caller(CALLERS["dan"])
+        dan.exec("define_action", {"definition": MAIL_SEND})
+        dan.exec("define_action", {"definition": BOOKS_POST})
+        dan.exec("define_class", {"definition": ORDER})
+        ann = shop.as_caller(CALLERS["ann"])
+        ann.exec("create", {"class": "Order", "id": "O-1", "values": {"customer": "jan@example.com", "amount": 120}})
+        ann.exec("transition", {"class": "Order", "id": "O-1", "transition": "send"})
+        return shop
+
+    def test_the_programs_own_actions(self):
+        heard = []
+
+        def send(call):
+            heard.append(call)
+
+        def post(call):
+            heard.append(call)
+            return {"entry": "JE-2026-0007"}
+
+        shop = self.shop("shop.fado", {"mail.send": send, "books.post": post})
+        shop.as_caller(CALLERS["ada"]).exec("drain")
+        self.assertEqual([c["action"] for c in heard], ["mail.send", "books.post"])
+        self.assertEqual(heard[0]["args"], {"to": "jan@example.com"})
+        self.assertEqual(heard[0]["event"]["document"]["state"], "sent")
+        order = shop.as_caller(CALLERS["ann"]).exec("get", {"class": "Order", "id": "O-1"})["document"]
+        self.assertEqual(order["values"]["entry"], "JE-2026-0007")
+
+    def test_when_the_programs_action_fails(self):
+        def post(call):
+            raise fadodb.Permanent("the period 2026-11 is closed")
+
+        shop = self.shop("refused.fado", {"mail.send": lambda call: None, "books.post": post})
+        ada = shop.as_caller(CALLERS["ada"])
+        ada.exec("drain")
+        rows = {row["action"]: row for row in ada.exec("outbox", {"id": "O-1"})["actions"]}
+        self.assertEqual((rows["mail.send"]["status"], rows["books.post"]["status"]), ("done", "dead"))
+        self.assertEqual(rows["books.post"]["error_message"], "the period 2026-11 is closed")
+
+        def send(call):
+            raise ConnectionError("the mail server is down")
+
+        shop = self.shop("failed.fado", {"mail.send": send, "books.post": lambda call: {"entry": "x"}})
+        ada = shop.as_caller(CALLERS["ada"])
+        ada.exec("drain")
+        rows = {row["action"]: row for row in ada.exec("outbox", {"id": "O-1"})["actions"]}
+        self.assertEqual(rows["mail.send"]["status"], "pending")
+        self.assertEqual(rows["mail.send"]["error_message"], "ConnectionError: the mail server is down")
+
+        with self.assertRaises(TypeError):
+            fadodb.open(os.path.join(self.dir, "twice.fado"), options={"actions": ["mail.send"]},
+                        actions={"mail.send": send})
+
+    def test_the_worker_calls_from_its_threads(self):
+        threads = set()
+
+        def post(call):
+            threads.add(threading.get_ident())
+            return {"entry": "JE-2026-0008"}
+
+        shop = self.shop("worker.fado", {"mail.send": lambda call: threads.add(threading.get_ident()),
+                                         "books.post": post}, outbox={"workers": 2})
+        ann = shop.as_caller(CALLERS["ann"])
+        began = time.monotonic()
+        while time.monotonic() - began < 20:
+            if ann.exec("get", {"class": "Order", "id": "O-1"})["document"]["values"]["entry"]:
+                break
+            time.sleep(0.1)
+        self.assertEqual(ann.exec("get", {"class": "Order", "id": "O-1"})["document"]["values"]["entry"], "JE-2026-0008")
+        self.assertNotIn(threading.get_ident(), threads)
+
     def test_the_version(self):
         from fadodb import _library
 
@@ -285,9 +377,16 @@ class OverHTTP(BothWays, unittest.TestCase):
         if cls.url is None:
             cls.server.kill()
             raise RuntimeError("the server did not say where it serves")
-        # The rest of what it says is read, so that it never waits on a
-        # full pipe.
-        threading.Thread(target=cls.server.stdout.read, daemon=True).start()
+        # The rest of what it says is kept, so that it never waits on a
+        # full pipe, and shown when the tests end on GitHub, where it is
+        # the only account of a request that got no answer.
+        cls.said = []
+
+        def keep():
+            for line in cls.server.stdout:
+                cls.said.append(line.rstrip("\n"))
+
+        threading.Thread(target=keep, daemon=True).start()
         cls.define()
 
     @classmethod
@@ -297,6 +396,8 @@ class OverHTTP(BothWays, unittest.TestCase):
             cls.server.wait(timeout=20)
         except subprocess.TimeoutExpired:
             cls.server.kill()
+        if os.environ.get("FADODB_PYTHON") == "must":
+            print("\nwhat the server said:", *cls.said[-60:], sep="\n  ", file=sys.stderr)
         shutil.rmtree(cls.dir, ignore_errors=True)
 
     @classmethod

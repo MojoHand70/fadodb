@@ -78,7 +78,11 @@ pack)
   stage="$out/$name"
   rm -rf "$stage"
   mkdir -p "$stage"
-  cp "$program" LICENSE README.md "$stage/"
+  cp "$program" LICENSE THIRD_PARTY_NOTICES.md README.md "$stage/"
+  # DuckDB is linked into the program, and its notice (MIT) travels with
+  # it: the Go driver carries the same words as DuckDB's own licence.
+  cp "$(cd analytics && go list -m -f '{{.Dir}}' github.com/duckdb/duckdb-go-bindings)/LICENSE" "$stage/LICENSE-duckdb"
+  chmod 644 "$stage/LICENSE-duckdb"
   if [ "$os" = "windows" ]; then
     rm -f "$out/$name.zip"
     (cd "$stage" && 7z a -tzip "../$name.zip" . >/dev/null)

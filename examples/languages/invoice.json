@@ -1,0 +1,18 @@
+{
+  "name": "Invoice",
+  "variables": {
+    "number":  {"type": "text", "required": true},
+    "account": {"type": "text"}
+  },
+  "states": {"initial": "open", "list": ["open", "booked"], "final": ["booked"]},
+  "transitions": [
+    {"name": "book", "from": "open", "to": "booked", "guard": "NOT ISBLANK(account)"}
+  ],
+  "access": {
+    "read":   "CREATEDBY() = USER() OR INGROUP(\"accounting\")",
+    "create": "INGROUP(\"sales\")",
+    "update": "INGROUP(\"accounting\")",
+    "delete": "FALSE",
+    "transition": {"book": "INGROUP(\"accounting\") AND USERKIND() = \"person\""}
+  }
+}

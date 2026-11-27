@@ -948,8 +948,10 @@ Attachments are `File` values: a variable of type `object<File>` or
 `rows<File>` holds the hash, name, media type and size, attaching is a
 commit, and the bytes live behind a blob store, in the database file, in a
 directory beside it or in the embedder's own store (ADR-0033). Comments are
-neither variables nor visuals; they are planned after 1.0 as side objects
-keyed by class and document id, with their own events.
+neither variables nor visuals: the engine keeps them beside a document, in
+the table `fado_comments`, with who wrote them and when, read under the
+document's read rule; a comment makes no version of the document, and each
+is an event of the kind `commented` (ADR-0098, proposed).
 
 ---
 
@@ -1481,5 +1483,5 @@ Parallel statechart regions; BPMN; multi-tenancy inside one database file
 (run one file per tenant); replication and clustering; WASM plugin actions;
 a visual class designer; OCEL export; nested
 composites (rows inside rows, arrays of arrays); raw SQL inside formulas;
-comments (planned as side objects after 1.0); layouts of any kind, which
+replies to comments and mentions in them; layouts of any kind, which
 are the face's (ADR-0069).

@@ -75,6 +75,9 @@ type (
 	HistoryRow = store.HistoryRow
 	// Event is one row of the event log.
 	Event = store.Event
+	// Comment is one comment on a document, kept by the engine beside it
+	// (ADR-0098).
+	Comment = store.Comment
 	// Preview is what a commit would do (ADR-0025): the document, the
 	// errors per variable, the states visited, the transitions open and
 	// the rules the command would run.
@@ -1093,6 +1096,20 @@ func (db *DB) History(ctx context.Context, class, id string, opts ...Option) ([]
 // Events reads the events that touched a document, oldest first.
 func (db *DB) Events(ctx context.Context, class, id string, opts ...Option) ([]*Event, error) {
 	return db.s.Events(ctx, class, id, opts...)
+}
+
+// Comment writes a comment on a document (ADR-0098): words the engine
+// keeps beside it, with who wrote them and when. Whoever may read the
+// document may comment on it, in any state. It makes no version of the
+// document; its event, commented, is written with it.
+func (db *DB) Comment(ctx context.Context, class, id, text string, opts ...Option) (*Comment, error) {
+	return db.s.Comment(ctx, class, id, text, opts...)
+}
+
+// Comments reads the comments on a document, oldest first; none for a
+// document the caller may not see.
+func (db *DB) Comments(ctx context.Context, class, id string, opts ...Option) ([]*Comment, error) {
+	return db.s.Comments(ctx, class, id, opts...)
 }
 
 // Query reads the documents of a class that match a filter, in its

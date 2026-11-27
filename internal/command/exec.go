@@ -523,6 +523,18 @@ func runEvents(c *call) error {
 	return c.answer("events", list(events), err)
 }
 
+// runComment writes a comment on a document (ADR-0098).
+func runComment(c *call) error {
+	made, err := c.s.Comment(c.ctx, c.text("class"), c.text("id"), c.text("text"), c.opts...)
+	return c.answer("comment", made, err)
+}
+
+// runComments reads the comments on a document, oldest first.
+func runComments(c *call) error {
+	comments, err := c.s.Comments(c.ctx, c.text("class"), c.text("id"), c.opts...)
+	return c.answer("comments", list(comments), err)
+}
+
 // runSubscribe refuses the stream of changes to Exec, which answers one
 // object.
 func runSubscribe(*call) error {

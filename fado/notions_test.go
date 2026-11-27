@@ -1588,6 +1588,9 @@ func TestNotion_HistoryAndTheLog(t *testing.T) {
 	if _, err := db.Refresh(ctx, "Kinds", k.ID, nil, krzysztof); err != nil {
 		t.Fatal(err)
 	}
+	if _, err := db.Comment(ctx, "Kinds", k.ID, "Worth a look.", krzysztof); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := db.DefineClass(ctx, []byte(strings.Replace(kinds, `"a":{"type":"number","default":"1"}`, `"a":{"type":"number","default":"1"},"b":{"type":"text"}`, 1)), setup); err != nil {
 		t.Fatal(err)
 	}

@@ -57,17 +57,26 @@ var (
 	last      uint64
 )
 
-// openDatabase is fado_open: the number of the database it opened, or 0
-// and the refusal that says why it did not.
-func openDatabase(path, options string) (n uint64, refusal []byte) {
+// openDatabase is fado_open, and fado_open_with when f is the program's
+// function for its actions (ADR-0102): the number of the database it
+// opened, or 0 and the refusal that says why it did not.
+func openDatabase(path, options string, f host) (n uint64, refusal []byte) {
 	defer caught("fado_open", &refusal)
 	if path == "" {
 		return 0, refuse(&fado.Error{Code: codeBadValue, Message: "fado_open was given no file",
 			Hint: "give the path of the database file; it is made when it does not exist"})
 	}
-	o, e := readOptions(options)
+	o, names, e := readOptions(options)
 	if e != nil {
 		return 0, refuse(e)
+	}
+	switch {
+	case len(names) > 0 && f == nil:
+		return 0, refuse(&fado.Error{Code: codeBadValue, Path: "/actions",
+			Message: "the options name actions the program carries out, and the program gave no function to carry them out",
+			Hint:    "open the database with fado_open_with and the program's function, or leave actions out"})
+	case len(names) > 0:
+		o.Actions = actionsOf(names, f)
 	}
 	db, err := fado.Open(path, o)
 	if err != nil {
@@ -196,11 +205,12 @@ func firstLines(s string, n int) string {
 // readOptions reads the options of fado_open (ADR-0101, item 4): a JSON
 // object whose members are named as the settings of fadodb serve name
 // the same things.
-func readOptions(text string) (fado.Options, *fado.Error) {
+func readOptions(text string) (fado.Options, []string, *fado.Error) {
 	var o fado.Options
+	var names []string
 	members, e := readObject(text, "the options")
 	if e != nil {
-		return o, e
+		return o, nil, e
 	}
 	var calls outbound.Options
 	var secrets string
@@ -224,7 +234,7 @@ func readOptions(text string) (fado.Options, *fado.Error) {
 		case "blob_store":
 			err = json.Unmarshal(raw, &o.BlobStore)
 			if err == nil && o.BlobStore == "external" {
-				return o, &fado.Error{Code: codeBadValue, Path: "/blob_store",
+				return o, nil, &fado.Error{Code: codeBadValue, Path: "/blob_store",
 					Message: "a blob store of the embedder's is a Go value, which the options of the library cannot hold",
 					Hint:    "sqlite keeps the files in the database file and dir in a directory beside it"}
 			}
@@ -232,21 +242,23 @@ func readOptions(text string) (fado.Options, *fado.Error) {
 			err = json.Unmarshal(raw, &o.HostAnswersFor)
 		case "outbox":
 			if e := readOutbox(raw, &o.Outbox); e != nil {
-				return o, e
+				return o, nil, e
 			}
 		case "outbound":
 			if e := readOutbound(raw, &calls); e != nil {
-				return o, e
+				return o, nil, e
 			}
 		case "secrets_dir":
 			err = json.Unmarshal(raw, &secrets)
+		case "actions":
+			err = json.Unmarshal(raw, &names)
 		default:
-			return o, &fado.Error{Code: codeBadJSON, Path: pointer(name),
+			return o, nil, &fado.Error{Code: codeBadJSON, Path: pointer(name),
 				Message: "the options have no member " + strconv.Quote(name),
-				Hint:    "the options are synchronous, timezone, max_text, max_indexed_rows, max_question_seconds, max_blob_bytes, blob_store, host_answers_for, outbox, outbound and secrets_dir"}
+				Hint:    "the options are synchronous, timezone, max_text, max_indexed_rows, max_question_seconds, max_blob_bytes, blob_store, host_answers_for, outbox, outbound, secrets_dir and actions"}
 		}
 		if err != nil {
-			return o, wrongType(name, "the options", err)
+			return o, nil, wrongType(name, "the options", err)
 		}
 	}
 	// The database sends requests only when the options list a host,
@@ -256,13 +268,13 @@ func readOptions(text string) (fado.Options, *fado.Error) {
 	if len(calls.Hosts) > 0 || len(calls.Connections) > 0 {
 		sender, err := outbound.Allow(calls)
 		if err != nil {
-			return o, &fado.Error{Code: codeBadValue, Path: "/outbound", Message: "the outbound hosts: " + err.Error(),
+			return o, nil, &fado.Error{Code: codeBadValue, Path: "/outbound", Message: "the outbound hosts: " + err.Error(),
 				Hint: "a host is slack.com, .slack.com for every host under it, books.internal:8443 with its port, or http://localhost:8080 over http"}
 		}
 		o.Outbound = sender
 		o.Secrets = (&secret.Finder{Dir: secrets, Env: os.LookupEnv, Holder: "program"}).Find
 	}
-	return o, nil
+	return o, names, nil
 }
 
 // readOutbound reads the hosts the actions of the database may call, in

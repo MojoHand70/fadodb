@@ -64,6 +64,39 @@ typedef uint64_t fado_db;
  * refusal, {"error": {...}}, to be given back with fado_free. */
 fado_db fado_open(const char *path, const char *options, char **refusal);
 
+/* An action the program carries out itself (ADR-0102): an action whose
+ * definition has no request, which a Go program would give as a
+ * function. The library calls the function with the context the program
+ * gave fado_open_with, the number of the call, the name of the action
+ * and the call, as JSON, as a webhook gets it (api/call.schema.json):
+ *
+ *     {"key": "01M8F…:1", "attempt": 1, "action": "books.post",
+ *      "args": {"amount": 120}, "event": {"kind": "transition", …}}
+ *
+ * The function answers before it returns, with fado_answer:
+ *
+ *     {"result": {"entry": "JE-2026-0007"}}       what the action returns
+ *     {"error": {"message": "…"}}                 tried again later
+ *     {"error": {"message": "…", "permanent": true}}   dead at once
+ *
+ * One that returns without answering has failed, and is tried again. It
+ * is called from any thread, as many at once as the outbox's workers,
+ * and from the thread that sends drain; it may send the database
+ * commands itself. fado_close waits for the ones that run. */
+typedef void (*fado_action)(void *context, uint64_t call, const char *action, const char *object);
+
+/* fado_open, with the program's function for its actions. The options
+ * name the actions the function carries out: {"actions": ["mail.send",
+ * "books.post"]}; a name no definition has yet waits for define_action.
+ * fado_open is fado_open_with with no function, and refuses options that
+ * name actions. */
+fado_db fado_open_with(const char *path, const char *options, fado_action actions, void *context, char **refusal);
+
+/* Answers a call of the program's function, while it runs. Answers 0, or
+ * -1 for a call that was answered already or has returned. The answer is
+ * copied before it returns. */
+int fado_answer(uint64_t call, const char *answer);
+
 /* Runs one command on the database as the caller, and answers it.
  *
  * caller is who the program says is calling, as a JSON object with the

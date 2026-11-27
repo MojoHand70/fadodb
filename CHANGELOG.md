@@ -75,6 +75,16 @@ Phase 8 started on 2026-11-25, and Phase 9 on 2026-11-27.
   Python, Go, Node (through koffi) and C# (with P/Invoke), each in
   `examples/languages`. A test runs every program and compares what it
   prints with the chapter.
+- Actions the program carries out itself, through the library of C
+  (ADR-0102, proposed; Phase 9's step F). `fado_open_with` opens a
+  database with a function of the program, for the actions its options
+  name; the library calls it with the call, as a webhook gets it, from
+  the worker's threads or the one that sends `drain`, and the function
+  answers with `fado_answer`: what the action returns, a failure tried
+  again, or a refusal, dead at once, as a Go function's would be. In
+  Python, `fadodb.open(path, actions={"books.post": post})` gives a
+  function by name; it returns the result as a dict, and raising
+  `fadodb.Permanent` refuses the call.
 
 - Where a value comes from (ADR-0099, proposed; its second step). A new
   command, `lineage`, in Go `Lineage`, answers one value of one

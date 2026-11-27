@@ -273,6 +273,12 @@ Phase 8 started on 2026-11-25.
   before it answers, so a move made a moment ago is in the flow. When
   the copy does not answer, the store does. A program without the
   engine, and the program `fadodb`, answer as before.
+- The analytical engine takes no extension from outside the program
+  (ADR-0089). DuckDB by itself would fetch from the network an
+  extension a statement needs and the program lacks, and load one
+  installed on the machine; every connection to the copy now turns
+  both off, and a test holds it on GitHub. The program uses only what
+  its library carries: core_functions, icu, json and parquet.
 - The server program can be built with the analytical engine (ADR-0089,
   the first half of its step 6). `make full` builds `bin/fadodb-full`
   in the module `analytics`: the program `fadodb`, from the same code,

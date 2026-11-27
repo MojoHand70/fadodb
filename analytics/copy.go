@@ -68,6 +68,13 @@ func (e Engine) OpenCopy(ctx context.Context, database string) (fado.Copy, error
 	return c, nil
 }
 
+// The settings every connection to a copy opens with, so that DuckDB
+// takes no extension from outside the program.
+const (
+	noExtensionFetched = "SET autoinstall_known_extensions = false"
+	noExtensionLoaded  = "SET autoload_known_extensions = false"
+)
+
 // openCopies are the copies this program has open, by their paths.
 var openCopies sync.Map
 
@@ -92,7 +99,13 @@ func (e Engine) openOrMake(ctx context.Context, path string) (*duckCopy, error) 
 
 func (e Engine) open(ctx context.Context, path string) (*duckCopy, error) {
 	connector, err := duckdb.NewConnector(path, func(execer driver.ExecerContext) error {
-		var settings []string
+		// The engine uses what the library it is built with carries, and
+		// nothing else: DuckDB neither fetches an extension from the
+		// network nor loads one an analyst installed on the machine, as
+		// it would by itself for a statement that needs one. The
+		// extension for SQLite files above all must never read the
+		// store's file inside this program (ADR-0089, Context item 2).
+		settings := []string{noExtensionFetched, noExtensionLoaded}
 		if e.Memory != "" {
 			settings = append(settings, "SET memory_limit = '"+strings.ReplaceAll(e.Memory, "'", "")+"'")
 		}

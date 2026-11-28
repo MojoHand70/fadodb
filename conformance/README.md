@@ -12,8 +12,9 @@ function catalog is `internal/formula/catalog.json`.
 
 ## Status
 
-The Go VM and the SQL generator's SQLite and DuckDB dialects run every
-evaluation case in CI, and all three must match exactly. SUM and AVERAGE
+The Go VM and the SQL generator's SQLite, DuckDB and Postgres dialects
+run every evaluation case in CI, Postgres on versions 17, 18 and 19
+(ADR-0104), and all four must match exactly. SUM and AVERAGE
 add left to right on every evaluator so that aggregates agree to the
 last bit, rather than differing within what ADR-0019 allows them. The
 browser VM does not exist yet.
@@ -32,6 +33,22 @@ trim spaces only on DuckDB where the VM trims all whitespace; `UPPER` of
 "ß" is "ẞ" on DuckDB and "ß" in the VM; an invalid `REGEXREPLACE` pattern
 built at run time fails the statement on DuckDB instead of yielding
 `bad_text`.
+
+Known differences of the Postgres dialect; the first three are each
+held by a test of the module `postgres/` that fails when the
+difference goes away, and the last two are let by where its tests
+compare with Go:
+`REGEXREPLACE` runs Postgres's patterns and not RE2, so the longest
+alternative wins (`a|ab` on "ab" takes "ab"), `(?P<n>…)`, `\pL` and
+`\x{41}` are refused, back references and look-ahead are taken, and `.`
+matches a new line; `PROPER` treats as a letter what Unicode calls
+alphabetic ("Ⅳa" stays "Ⅳa", "ⅣA" in the VM); `JSONVALUE` refuses JSON
+that writes the character of number zero and a number with an exponent
+past what `numeric` holds; a product or quotient within one part in
+2^53 above half of the smallest number is zero where the VM gives the
+smallest number; and `LN`, `LOG` and `^` of a number under 2.2e-308
+are right on Postgres and wrong in the VM, whose logarithm is Go's.
+No statement fails where the VM gives an error code.
 
 ## Evaluation cases: `formula/*.json`
 

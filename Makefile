@@ -14,7 +14,7 @@ STATICCHECK_VERSION ?= latest
 GOVULNCHECK_VERSION ?= latest
 BENCHSTAT_VERSION   ?= latest
 
-.PHONY: all build full library cabi run test analytics bench fmt vet lint vuln tools depgate sizegate filegate benchgate gates clean docs image imagecheck vm vmtest
+.PHONY: all build full library cabi run test analytics postgres bench fmt vet lint vuln tools depgate sizegate filegate benchgate gates clean docs image imagecheck vm vmtest
 
 all: build
 
@@ -58,6 +58,15 @@ analytics:
 # library and tries it from a program of C; it needs a C compiler.
 cabi:
 	cd cabi && CGO_ENABLED=1 go vet ./... && CGO_ENABLED=1 FADODB_CABI=must go test -count=1 ./...
+
+# The Postgres module (ADR-0104) is a separate Go module, with the pgx
+# driver. Its tests need a Postgres 17 or later, named in FADODB_POSTGRES
+# as postgres://user:password@host:port/database: each run makes a schema
+# of its own there and drops it. With no address they are skipped;
+# FADODB_POSTGRES=must fails them, as on GitHub, where a skipped test
+# would not show.
+postgres:
+	cd postgres && go vet ./... && go test -count=1 ./...
 
 # docs writes the generated chapters of the manual again: the list of
 # functions and the list of refusal codes, from the engine's own tables.

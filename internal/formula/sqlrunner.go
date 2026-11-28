@@ -33,16 +33,24 @@ func RunSQL(db *sql.DB, d Dialect, prog *Program, vars []Value, ctx *Context) (S
 	}
 	cols := make([]string, 0, len(prog.Slots)+1)
 	args := make([]any, 0, len(prog.Slots)+4)
+	// ref is the parameter of a variable, with its type where the
+	// dialect's engine has to be told it.
+	ref := func(name string, k Kind) string {
+		if t, ok := d.(paramTyper); ok {
+			return t.TypedParam(d.Param(name), k)
+		}
+		return d.Param(name)
+	}
 	for i, s := range prog.Slots {
 		name := fmt.Sprintf("v%d", i)
-		cols = append(cols, d.Param(name)+" AS "+quoteIdent(s.Name))
+		cols = append(cols, ref(name, s.Type.Kind)+" AS "+quoteIdent(s.Name))
 		args = append(args, sql.Named(name, vars[i].DriverValue()))
 		if s.Type.Kind == KindMoney {
 			var cur any
 			if vars[i].kind == KindMoney {
 				cur = vars[i].str
 			}
-			cols = append(cols, d.Param(name+"c")+" AS "+quoteIdent(s.Name+CurrencySuffix))
+			cols = append(cols, ref(name+"c", KindText)+" AS "+quoteIdent(s.Name+CurrencySuffix))
 			args = append(args, sql.Named(name+"c", cur))
 		}
 	}
@@ -116,23 +124,37 @@ func NearlyEqual(a, b Value, rel float64) bool {
 // half of LOOKUP on the SQL dialects. Rows are row-major in column order;
 // a money column is its amount and its currency column.
 func SetupSources(db *sql.DB, d Dialect, rows map[*Source][][]Value) error {
+	// column is what the table declares for a column of the kind, and
+	// mark the parameter a value of the kind is written through: the
+	// type and a ? for most dialects.
+	column, mark := d.ColumnType, func(Kind) string { return "?" }
+	if c, ok := d.(sourceColumner); ok {
+		column = c.SourceColumn
+	}
+	if t, ok := d.(paramTyper); ok {
+		mark = func(k Kind) string { return t.TypedParam("?", k) }
+	}
 	for src, data := range rows {
 		table := src.Name
 		cols := make([]string, 0, len(src.Columns))
 		names := make([]string, 0, len(src.Columns))
+		marks := make([]string, 0, len(src.Columns))
 		if src.Held {
 			// A list the document holds: a table of its own, as a store
 			// keeps it, with the place of each row in the list.
 			table = HeldTable(src.Name)
-			cols = append(cols, quoteIdent(HeldOrder)+" "+d.ColumnType(KindNumber))
+			cols = append(cols, quoteIdent(HeldOrder)+" "+column(KindNumber))
 			names = append(names, quoteIdent(HeldOrder))
+			marks = append(marks, mark(KindNumber))
 		}
 		for _, f := range src.Columns {
-			cols = append(cols, quoteIdent(f.Name)+" "+d.ColumnType(f.Type.Kind))
+			cols = append(cols, quoteIdent(f.Name)+" "+column(f.Type.Kind))
 			names = append(names, quoteIdent(f.Name))
+			marks = append(marks, mark(f.Type.Kind))
 			if f.Type.Kind == KindMoney {
-				cols = append(cols, quoteIdent(f.Name+CurrencySuffix)+" "+d.ColumnType(KindText))
+				cols = append(cols, quoteIdent(f.Name+CurrencySuffix)+" "+column(KindText))
 				names = append(names, quoteIdent(f.Name+CurrencySuffix))
+				marks = append(marks, mark(KindText))
 			}
 		}
 		if _, err := db.Exec("DROP TABLE IF EXISTS " + quoteIdent(table)); err != nil {
@@ -141,8 +163,7 @@ func SetupSources(db *sql.DB, d Dialect, rows map[*Source][][]Value) error {
 		if _, err := db.Exec("CREATE TABLE " + quoteIdent(table) + " (" + strings.Join(cols, ", ") + ")"); err != nil {
 			return fmt.Errorf("%s: %w", src.Name, err)
 		}
-		marks := strings.TrimSuffix(strings.Repeat("?, ", len(names)), ", ")
-		insert := "INSERT INTO " + quoteIdent(table) + " (" + strings.Join(names, ", ") + ") VALUES (" + marks + ")"
+		insert := "INSERT INTO " + quoteIdent(table) + " (" + strings.Join(names, ", ") + ") VALUES (" + strings.Join(marks, ", ") + ")"
 		for ri, row := range data {
 			args := make([]any, 0, len(names))
 			if src.Held {

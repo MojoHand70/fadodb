@@ -12,21 +12,21 @@ release is built for, and a test holds it to them:
 
 | Code | Version | Carried by |
 |---|---|---|
-| Go, its standard library and runtime | go1.26.11 | fadodb, fadodb-core, libfadodb-core |
-| DuckDB | v2.0.0 | fadodb |
-| github.com/duckdb/duckdb-go-bindings | v0.20000.0 | fadodb |
-| github.com/duckdb/duckdb-go/v2 | v2.20000.0 | fadodb |
-| github.com/dustin/go-humanize | v1.1.0 | fadodb, fadodb-core, libfadodb-core |
-| github.com/go-viper/mapstructure/v2 | v2.5.0 | fadodb |
-| github.com/google/uuid | v1.6.0 | fadodb, fadodb-core, libfadodb-core |
-| github.com/mattn/go-isatty | v0.0.24 | fadodb, fadodb-core, libfadodb-core |
-| github.com/ncruces/go-strftime | v1.1.0 | fadodb, fadodb-core, libfadodb-core |
-| github.com/remyoudompheng/bigfft | v0.0.0-20230129092748-24d4a6f8daec | fadodb, fadodb-core, libfadodb-core |
-| golang.org/x/sys | v0.49.0 | fadodb, fadodb-core, libfadodb-core |
-| modernc.org/libc | v1.80.1 | fadodb, fadodb-core, libfadodb-core |
-| modernc.org/mathutil | v1.7.1 | fadodb, fadodb-core, libfadodb-core |
-| modernc.org/memory | v1.12.1 | fadodb, fadodb-core, libfadodb-core |
-| modernc.org/sqlite | v1.62.0 | fadodb, fadodb-core, libfadodb-core |
+| Go, its standard library and runtime | go1.26.11 | fadodb, fadodb-core, libfadodb, libfadodb-core |
+| DuckDB | v2.0.0 | fadodb, libfadodb |
+| github.com/duckdb/duckdb-go-bindings | v0.20000.0 | fadodb, libfadodb |
+| github.com/duckdb/duckdb-go/v2 | v2.20000.0 | fadodb, libfadodb |
+| github.com/dustin/go-humanize | v1.1.0 | fadodb, fadodb-core, libfadodb, libfadodb-core |
+| github.com/go-viper/mapstructure/v2 | v2.5.0 | fadodb, libfadodb |
+| github.com/google/uuid | v1.6.0 | fadodb, fadodb-core, libfadodb, libfadodb-core |
+| github.com/mattn/go-isatty | v0.0.24 | fadodb, fadodb-core, libfadodb, libfadodb-core |
+| github.com/ncruces/go-strftime | v1.1.0 | fadodb, fadodb-core, libfadodb, libfadodb-core |
+| github.com/remyoudompheng/bigfft | v0.0.0-20230129092748-24d4a6f8daec | fadodb, fadodb-core, libfadodb, libfadodb-core |
+| golang.org/x/sys | v0.49.0 | fadodb, fadodb-core, libfadodb, libfadodb-core |
+| modernc.org/libc | v1.80.1 | fadodb, fadodb-core, libfadodb, libfadodb-core |
+| modernc.org/mathutil | v1.7.1 | fadodb, fadodb-core, libfadodb, libfadodb-core |
+| modernc.org/memory | v1.12.1 | fadodb, fadodb-core, libfadodb, libfadodb-core |
+| modernc.org/sqlite | v1.62.0 | fadodb, fadodb-core, libfadodb, libfadodb-core |
 
 ## Go, its standard library and runtime go1.26.11
 

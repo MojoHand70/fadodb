@@ -8,13 +8,14 @@ import sys
 import threading
 import weakref
 
-# The file the library is on each system.
+# The files of the two libraries on each system (ADR-0102): libfadodb,
+# with DuckDB, which a wheel carries, and libfadodb-core.
 if sys.platform == "win32":
-    _NAME = "fadodb-core.dll"
+    _NAMES = ("fadodb.dll", "fadodb-core.dll")
 elif sys.platform == "darwin":
-    _NAME = "libfadodb-core.dylib"
+    _NAMES = ("libfadodb.dylib", "libfadodb-core.dylib")
 else:
-    _NAME = "libfadodb-core.so"
+    _NAMES = ("libfadodb.so", "libfadodb-core.so")
 
 # A process holds one library: a second Go library beside it would not
 # work (ADR-0101, item 11). It is loaded the first time it is asked for.
@@ -30,9 +31,11 @@ def _load(path):
                 raise RuntimeError("this process already holds the library " + _loaded[0]
                                    + ", and a process holds one library")
             return _loaded[1]
+        here = os.path.join(os.path.dirname(os.path.abspath(__file__)), "lib")
         candidates = [path] if path is not None else [
             os.environ.get("FADODB_LIBRARY"),
-            os.path.join(os.path.dirname(os.path.abspath(__file__)), "lib", _NAME),
+            *(os.path.join(here, name) for name in _NAMES),
+            ctypes.util.find_library("fadodb"),
             ctypes.util.find_library("fadodb-core"),
         ]
         tried = []
@@ -50,7 +53,8 @@ def _load(path):
             return lib
         raise FileNotFoundError(
             "no library of FadoDB was found (" + ", ".join(tried or ["none was named"]) + "): "
-            "give its path as library, or in the variable FADODB_LIBRARY; make library builds it as bin/" + _NAME)
+            "give its path as library, or in the variable FADODB_LIBRARY; scripts/library.sh build builds both as bin/library/"
+            + _NAMES[0] + " and " + _NAMES[1])
 
 
 # The program's function for its actions, as fadodb.h declares it.

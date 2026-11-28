@@ -6,7 +6,20 @@ All notable changes to FadoDB are recorded here. The format follows
 
 ## [Unreleased]
 
-Phase 8 started on 2026-11-25, and Phase 9 on 2026-11-27.
+### Removed
+
+- The face builder's skill, `skills/fadodb-face/`, and the sample class
+  `Look` it showed, `examples/classes/look.json`, on the owner's word:
+  what people see of a server, its faces and their look, is the tool's
+  that builds faces, not the engine's. ADR-0060 says so, and the skills
+  are five hats again.
+
+Phase 8 started on 2026-11-25, and Phase 9 on 2026-11-27. Phase 9's
+steps were all merged on 2026-11-28, and it is released with the next
+tag; its measurements are [docs/perf/v0.9.0.md](docs/perf/v0.9.0.md).
+Phase 8's are [docs/perf/v0.8.0.md](docs/perf/v0.8.0.md): every
+budget of its records holds; one of Phase 5, a read rule that reads
+the row in an indexed filter, does not, and is open.
 
 ### Added
 
@@ -112,6 +125,18 @@ Phase 8 started on 2026-11-25, and Phase 9 on 2026-11-27.
   Python, `fadodb.open(path, actions={"books.post": post})` gives a
   function by name; it returns the result as a dict, and raising
   `fadodb.Permanent` refuses the call.
+- The library with DuckDB, `libfadodb` (ADR-0102, proposed; Phase 9's
+  step G), the engine of `fadodb` beside `libfadodb-core`: a database
+  it opens keeps a copy of its documents in DuckDB beside its file,
+  and the questions that read everything are answered from it, as
+  under `fadodb serve`; its options take `analytics`, which
+  `libfadodb-core` refuses. It is linked to DuckDB's own shared
+  library, which travels beside it, since DuckDB's prebuilt library
+  cannot be loaded by a program that is running, as Python, Node and
+  .NET load a library. `scripts/library.sh` builds, tries and packs
+  both on each system; a release carries `fadodb-library_…` beside
+  `fadodb-core-library_…`, and the wheel of the Python package for a
+  system now carries `libfadodb` and DuckDB's library, about 35 MB.
 
 - Where a value comes from (ADR-0099, proposed; its second step). A new
   command, `lineage`, in Go `Lineage`, answers one value of one
@@ -665,6 +690,38 @@ Phase 8 started on 2026-11-25, and Phase 9 on 2026-11-27.
 
 ### Fixed
 
+- A live `LOOKUP` over a class finds its documents through the index.
+  Keyed by a value the class keeps an index of, `customer =
+  THIS.name`, it read every document of the class on the store, since
+  through its condition a blank compares as the zero of its kind; it
+  is now first narrowed to the documents of that value, as the lookup
+  of a commit is (ADR-0076, settled while building). The live sum of a
+  customer of 1,700 among 3.4 million invoices takes 2.2 to 2.5 ms in
+  `fadodb-core`, where it took 241 ms; of a customer of 1,700,000, half
+  the class, 637 ms, where it took 395, the index finding half the rows
+  one by one. It came with live lookups in Phase 8 and was in no
+  release.
+- A question that two indexes fit looks no further than it must. The
+  engine counts, in each index that fits, the documents of the value
+  compared, and asks through the one that ends first (ADR-0075, item
+  10); every look counted up to a thousand, so a second look into a
+  value of many documents read a thousand entries only to lose. A look
+  after the first now counts no further than the fewest an earlier one
+  found, rounded up to 1, 10, 100 or a thousand, and the index chosen
+  is the one it was. One ticket by its number, for a caller whom the
+  class's read rule `owner = USER()` limits to their own, among
+  1,000,000 with an index on the owner, takes 22.7 to 23.0 µs where it
+  took 55.6 to 56.6; without the rule it takes 15.5 to 16.0, so the
+  rule still costs it more than the 15% of ADR-0049. In memory the
+  invoices of one order for one customer take 0.18 ms where they took
+  0.21 (`BenchmarkQueryLook`), and the drafts of one order 0.14 ms
+  where they took 0.17 (`BenchmarkDraftsOfOneOrder`). It came with the
+  look in Phase 8 and was in no release.
+- Where a value comes from adds up when its key is 0. A kept value
+  keyed by a number of 0, or false, which a document with no value
+  equals too, was answered by `lineage` with only the documents of 0:
+  the count 1 where 2 were kept, and `adds_up` false. The key 0 now
+  narrows nothing, as in the lookup of a commit (ADR-0099, step 2).
 - DuckDB's notice travels with DuckDB. The program `fadodb` and its
   image carry DuckDB, linked in, and carried no word of its licence,
   which is MIT and asks for its notice in every copy: each archive of

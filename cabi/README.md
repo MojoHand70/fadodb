@@ -1,14 +1,20 @@
 # The library of C
 
 FadoDB in a program of any language, in its own process, with no server
-([ADR-0101](../docs/adr/0101-the-library-of-c.md)). The library is the
-engine of `fadodb-core`, without the analytical engine:
+([ADR-0101](../docs/adr/0101-the-library-of-c.md)). There are two
+libraries, as there are two programs:
 
-| System | File |
-|---|---|
-| Linux | `libfadodb-core.so` |
-| macOS | `libfadodb-core.dylib` |
-| Windows | `fadodb-core.dll` |
+| System | `libfadodb`, with DuckDB | `libfadodb-core` |
+|---|---|---|
+| Linux | `libfadodb.so` and `libduckdb.so` | `libfadodb-core.so` |
+| macOS | `libfadodb.dylib` and `libduckdb.dylib` | `libfadodb-core.dylib` |
+| Windows | `fadodb.dll` and `duckdb.dll` | `fadodb-core.dll` |
+
+`libfadodb` is the engine of `fadodb`: a database it opens keeps a copy
+of its documents in DuckDB beside its file, and the questions that read
+everything are answered from it. It is linked to DuckDB's own library,
+which travels beside it ([ADR-0102](../docs/adr/0102-the-programs-own-actions-and-the-library-with-duckdb.md)).
+`libfadodb-core` is the engine of `fadodb-core`, without it.
 
 and [`fadodb.h`](fadodb.h) declares its functions:
 
@@ -60,7 +66,8 @@ process loads the library once.
 It needs Go and a C compiler:
 
 ```sh
-make library        # bin/libfadodb-core.so (or .dylib, .dll) and bin/fadodb.h
+make library                 # bin/libfadodb-core.so (or .dylib, .dll) and bin/fadodb.h
+scripts/library.sh build     # both, in bin/library, DuckDB's library fetched from DuckDB's release
 make cabi           # its tests, which compile testdata/try.c against it and run it
 ```
 

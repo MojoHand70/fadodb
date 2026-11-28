@@ -57,15 +57,27 @@ bob books it: booked
 
 ## The library
 
-| System | The file | In the release, with `fadodb.h` |
-|---|---|---|
-| Linux, Intel and ARM | `libfadodb-core.so` | `fadodb-core-library_<version>_linux_amd64.tar.gz`, `…_linux_arm64.tar.gz` |
-| macOS, Apple and Intel | `libfadodb-core.dylib` | `fadodb-core-library_<version>_darwin_arm64.tar.gz`, `…_darwin_amd64.tar.gz` |
-| Windows, Intel | `fadodb-core.dll` | `fadodb-core-library_<version>_windows_amd64.zip` |
+There are two, as there are two programs
+([ADR-0102](../adr/0102-the-programs-own-actions-and-the-library-with-duckdb.md)):
+`libfadodb`, the engine of `fadodb`, which keeps a copy of a database's
+documents in DuckDB beside its file and answers the questions that read
+everything from it, with DuckDB's own library beside it; and
+`libfadodb-core`, the engine of `fadodb-core`, small and without it.
 
-`make library` builds it from the repository into `bin/`, with Go and
-a C compiler. It is the engine of `fadodb-core`, without the analytical
-engine. [`cabi/fadodb.h`](../../cabi/fadodb.h) declares its functions;
+| System | `libfadodb`, with DuckDB's library | `libfadodb-core` |
+|---|---|---|
+| Linux, Intel and ARM | `libfadodb.so` and `libduckdb.so` | `libfadodb-core.so` |
+| macOS, Apple and Intel | `libfadodb.dylib` and `libduckdb.dylib` | `libfadodb-core.dylib` |
+| Windows, Intel | `fadodb.dll` and `duckdb.dll` | `fadodb-core.dll` |
+
+A release has each in an archive with `fadodb.h`:
+`fadodb-library_<version>_<os>_<arch>.tar.gz` and
+`fadodb-core-library_<version>_<os>_<arch>.tar.gz`, `.zip` on Windows.
+`scripts/library.sh build` builds both from the repository into
+`bin/library/`, with Go and a C compiler, and `make library` the small
+one into `bin/`. `libfadodb` takes the options of its engine,
+`{"analytics": {"memory": "2GB", "threads": 8}}`, which
+`libfadodb-core` refuses. [`cabi/fadodb.h`](../../cabi/fadodb.h) declares its functions;
 these five are the ones every program uses:
 
 ```c

@@ -214,6 +214,8 @@ func readOptions(text string) (fado.Options, []string, *fado.Error) {
 	}
 	var calls outbound.Options
 	var secrets string
+	var memory string
+	var threads int
 	for name, raw := range members {
 		var err error
 		switch name {
@@ -252,10 +254,19 @@ func readOptions(text string) (fado.Options, []string, *fado.Error) {
 			err = json.Unmarshal(raw, &secrets)
 		case "actions":
 			err = json.Unmarshal(raw, &names)
+		case "analytics":
+			if engine == nil {
+				return o, nil, &fado.Error{Code: codeBadValue, Path: "/analytics",
+					Message: "this library is " + whichLibrary() + ", which has no analytical engine",
+					Hint:    "libfadodb, the library with DuckDB, takes the options of its engine; leave analytics out here"}
+			}
+			if e := readAnalytics(raw, &memory, &threads); e != nil {
+				return o, nil, e
+			}
 		default:
 			return o, nil, &fado.Error{Code: codeBadJSON, Path: pointer(name),
 				Message: "the options have no member " + strconv.Quote(name),
-				Hint:    "the options are synchronous, timezone, max_text, max_indexed_rows, max_question_seconds, max_blob_bytes, blob_store, host_answers_for, outbox, outbound, secrets_dir and actions"}
+				Hint:    "the options are synchronous, timezone, max_text, max_indexed_rows, max_question_seconds, max_blob_bytes, blob_store, host_answers_for, outbox, outbound, secrets_dir, actions and, in libfadodb, analytics"}
 		}
 		if err != nil {
 			return o, nil, wrongType(name, "the options", err)
@@ -274,7 +285,41 @@ func readOptions(text string) (fado.Options, []string, *fado.Error) {
 		o.Outbound = sender
 		o.Secrets = (&secret.Finder{Dir: secrets, Env: os.LookupEnv, Holder: "program"}).Find
 	}
+	// The library with DuckDB keeps a copy of every database it opens,
+	// as fadodb serve does (ADR-0102, item 6).
+	if engine != nil {
+		o.Analytics = engine(memory, threads)
+	}
 	return o, names, nil
+}
+
+// readAnalytics reads the options of the analytical engine, in the
+// words of the settings of fadodb serve: {"memory": "2GB", "threads": 8}.
+func readAnalytics(text []byte, memory *string, threads *int) *fado.Error {
+	members, e := readObject(string(text), "the analytics")
+	if e != nil {
+		e.Path = "/analytics" + e.Path
+		return e
+	}
+	for name, raw := range members {
+		var err error
+		switch name {
+		case "memory":
+			err = json.Unmarshal(raw, memory)
+		case "threads":
+			err = json.Unmarshal(raw, threads)
+		default:
+			return &fado.Error{Code: codeBadJSON, Path: "/analytics" + pointer(name),
+				Message: "the analytics have no member " + strconv.Quote(name),
+				Hint:    "analytics takes memory, such as 2GB, and threads, a whole number"}
+		}
+		if err != nil {
+			e := wrongType(name, "the analytics", err)
+			e.Path = "/analytics" + e.Path
+			return e
+		}
+	}
+	return nil
 }
 
 // readOutbound reads the hosts the actions of the database may call, in

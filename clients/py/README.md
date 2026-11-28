@@ -94,14 +94,19 @@ while True:
 
 `fadodb.open` loads the library of C: the path given as `library`, or
 the one the variable `FADODB_LIBRARY` names, or the one beside the
-package in `fadodb/lib`, or the one the system finds. `make library`
-builds it as `bin/libfadodb-core.so` (`.dylib` on macOS,
-`fadodb-core.dll` on Windows). A process holds one library, and opens
+package in `fadodb/lib`, or the one the system finds: `libfadodb`, with
+DuckDB, before `libfadodb-core`. A database opened through `libfadodb`
+keeps a copy of its documents in DuckDB beside its file, and the
+questions that read everything, such as `flow`, are answered from it;
+`fadodb.open(path, options={"analytics": {"memory": "2GB"}})` tells it
+how much it may take. `scripts/library.sh build` builds both into
+`bin/library/`. A process holds one library, and opens
 as many databases through it as it needs. Every call may be made from
 any thread: the library lets go of Python's lock while it works.
 
 Every release carries the package as wheels: one for each system with
-the library inside, which `fadodb.open` finds with nothing named, and
+`libfadodb` and DuckDB's library inside, which `fadodb.open` finds with
+nothing named, about 35 MB, and
 `fadodb-<version>-py3-none-any.whl` for every system without it, for a
 program that talks to a server. `pip install` takes the file of the
 release. A release also publishes them on PyPI, so from the first

@@ -8,6 +8,12 @@ All notable changes to FadoDB are recorded here. The format follows
 
 ### Changed
 
+- The bench gate runs `BenchmarkTransitionMany` and `BenchmarkFollow`
+  for a fixed 20 rounds in both trees (ADR-0030, amended 2026-11-28).
+  Their database grows with every round, so their allocations per
+  operation followed the number of rounds, and a faster tree, given
+  more rounds, was refused for allocations it did not make (#264).
+  `BENCH_ROUNDS` and `BENCH_ROUNDS_PATTERN` set them.
 - `modernc.org/sqlite` 1.63.0 in place of 1.62.0, in the core module,
   `analytics/` and `cabi/` alike, and `THIRD_PARTY_NOTICES.md` written
   again for it (#264). The SQLite it carries is 3.54.1, as before.

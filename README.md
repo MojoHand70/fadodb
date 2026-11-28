@@ -13,7 +13,10 @@ Website: [fadodb.org](https://fadodb.org). The manual starts at
 > **Status: Phase 9, embedding, is done and released as v0.9.0
 > (2026-11-28), and Phase 8, the analytical engine, as v0.8.0 the same
 > day. Phase 10, Postgres, began on 2026-11-28 with the seal of the log
-> (ADR-0103), built before the Postgres store. Every budget of Phase 8 holds; one of Phase 5, a read rule that reads the
+> (ADR-0103), built before the Postgres store and on main since that
+> day: every event is sealed, chained to the one before, and `fadodb
+> check` finds a change made to the file behind the engine's back
+> ([checking](docs/manual/running-it.md#checking)). Every budget of Phase 8 holds; one of Phase 5, a read rule that reads the
 > row in an indexed filter, does not, and is open
 > ([docs/perf/v0.8.0.md](docs/perf/v0.8.0.md)). With Phase 9 a program
 > in any language holds a database in its own process through the
@@ -228,7 +231,8 @@ with a code and the place. Files are attached as `File` values behind a
 blob store, reference data lives in explicit tables that formulas read
 with `LOOKUP`, and a class can be redefined as a new version that
 touches no existing document. `fadodb check FILE` verifies the files of
-a database: that their bytes are unchanged and that none is missing. The full walk-through is `fado/example_test.go`, and
+a database, that their bytes are unchanged and that none is missing,
+and the seal of every event of its log. The full walk-through is `fado/example_test.go`, and
 `fado/readme_test.go` runs the class and the calls above.
 
 ## Which program
@@ -293,9 +297,9 @@ Unpack the one for your system and put the program on your path.
   `fadodb` is not installed that way: it is built in a clone of the
   repository, with `make full` and a C compiler.
 
-- **For containers there is an image of each**, from the next
-  release on: `ghcr.io/mojohand70/fadodb:<version>` holds `fadodb`,
-  and `ghcr.io/mojohand70/fadodb:<version>-core` holds `fadodb-core`
+- **For containers there is an image of each**, from v0.8.0 on:
+  `ghcr.io/mojohand70/fadodb:<version>` holds `fadodb`, and
+  `ghcr.io/mojohand70/fadodb:<version>-core` holds `fadodb-core`
   ([in a container](docs/manual/in-a-container.md)). The image of
   `fadodb` carries the libraries it needs, so it runs on any Linux
   that runs containers.

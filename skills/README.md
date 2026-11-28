@@ -15,7 +15,8 @@ commits, to carry an idempotency key, to read a rejection's code and
 location rather than guess; the API is what it then calls.
 
 **Status on 2026-11-28: all five skills are written, with the marks of
-what Phase 8 built.** Each tells the
+what Phases 8 and 9 built and of the seal of the log, Phase 10's
+first step.** Each tells the
 agent what to read in the manual under `../docs/`, shows one piece of
 work with the engine's own answers, and lists what goes wrong most
 often. The engine defines the class each skill shows in a test on

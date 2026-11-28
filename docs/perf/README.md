@@ -15,6 +15,11 @@ Published per tagged release, with the budgets from
 - [v0.6.0](v0.6.0.md): the server, Phase 6.
 - [v0.7.0](v0.7.0.md): the browser VM, people and agents at the server,
   Phase 7.
+- [v0.8.0](v0.8.0.md): the analytical engine, Phase 8: the copy beside
+  the documents and the questions that read everything, over 3,400,000
+  invoices; a value that follows a table; lists in and out; the indexes
+  the engine keeps and how it chooses between two. The rows of the
+  earlier phases are run again, beside v0.7.0 the same night.
 - [v0.9.0](v0.9.0.md): embedding, Phase 9: one command on each way to a
   database, from the Go API to Python over HTTP; opening and loading;
   an action the program carries out; the sizes of the libraries. The

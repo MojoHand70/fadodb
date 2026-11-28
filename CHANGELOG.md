@@ -107,6 +107,17 @@ word of 2026-11-28.
   `fadodb-core-library_…`, and the wheel of the Python package for a
   system now carries `libfadodb` and DuckDB's library, about 35 MB.
 
+### Changed
+
+- A synced passkey whose password manager is not known, because the
+  browser does not say (as Safari does not) or the table of makers does
+  not hold it, is named after the device with ", synced" after it:
+  "Olga's iPhone, synced", by the owner's ruling (ADR-0088, item 28).
+  In v0.8.0 it kept the device's name alone. The account page then says
+  "synced" once, in the name, and not again after the dates. A passkey
+  that stays on its device keeps the device's name alone, and passkeys
+  made before keep their names.
+
 ## [0.8.0] - 2026-11-28
 
 Phase 8, the analytical engine, started on 2026-11-25, and its steps

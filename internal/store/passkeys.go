@@ -491,6 +491,10 @@ func insertPasskey(ctx context.Context, w execer, key *Passkey, m *webauthn.Made
 }
 
 // newPasskey is the passkey a person adds, before it is written.
+// SyncedName follows the device's name of a synced passkey whose
+// password manager is not known: "Olga's iPhone, synced".
+const SyncedName = ", synced"
+
 func newPasskey(user, name, with string, m *webauthn.Made) (*Passkey, error) {
 	id, _, err := secretText()
 	if err != nil {
@@ -499,9 +503,15 @@ func newPasskey(user, name, with string, m *webauthn.Made) (*Passkey, error) {
 	// A synced passkey lives in a password manager, on each device of
 	// the person's: it is named after the manager, when its AAGUID says
 	// which (the owner's ruling, 2026-11-25), and not after the device
-	// it was made on.
-	if m.Synced && m.Maker != "" {
+	// it was made on. One whose manager is not known, as Safari says
+	// none, keeps the device's name with ", synced" after it (his
+	// ruling, 2026-11-26), so that it is not taken for a passkey kept on
+	// that device alone.
+	switch {
+	case m.Synced && m.Maker != "":
 		name = m.Maker
+	case m.Synced:
+		name += SyncedName
 	}
 	return &Passkey{ID: id, User: user, Name: name, Synced: m.Synced, AddedWith: with}, nil
 }

@@ -694,6 +694,22 @@ tag; its measurements are [docs/perf/v0.9.0.md](docs/perf/v0.9.0.md).
   the class, 637 ms, where it took 395, the index finding half the rows
   one by one. It came with live lookups in Phase 8 and was in no
   release.
+- A question that two indexes fit looks no further than it must. The
+  engine counts, in each index that fits, the documents of the value
+  compared, and asks through the one that ends first (ADR-0075, item
+  10); every look counted up to a thousand, so a second look into a
+  value of many documents read a thousand entries only to lose. A look
+  after the first now counts no further than the fewest an earlier one
+  found, rounded up to 1, 10, 100 or a thousand, and the index chosen
+  is the one it was. One ticket by its number, for a caller whom the
+  class's read rule `owner = USER()` limits to their own, among
+  1,000,000 with an index on the owner, takes 22.7 to 23.0 µs where it
+  took 55.6 to 56.6; without the rule it takes 15.5 to 16.0, so the
+  rule still costs it more than the 15% of ADR-0049. In memory the
+  invoices of one order for one customer take 0.18 ms where they took
+  0.21 (`BenchmarkQueryLook`), and the drafts of one order 0.14 ms
+  where they took 0.17 (`BenchmarkDraftsOfOneOrder`). It came with the
+  look in Phase 8 and was in no release.
 - Where a value comes from adds up when its key is 0. A kept value
   keyed by a number of 0, or false, which a document with no value
   equals too, was answered by `lineage` with only the documents of 0:

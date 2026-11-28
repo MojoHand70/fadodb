@@ -109,8 +109,8 @@ class; the evidence is the log.
 
 FadoDB is before version 1.0. This is what works on main, through the
 Go package `fado`, the server and the library of C. The last release
-is v0.7.0; Phases 8 and 9 are built and are released with the next
-tag:
+is v0.8.0, Phase 8's; Phase 9 is built and is released with
+v0.9.0:
 
 | Works on main | Comes later |
 |---|---|

@@ -1,6 +1,6 @@
 # Roadmap
 
-**Current status: Phases 8 and 9, the analytical engine and embedding, are built (2026-11-28) and are released with the next tag. Every budget of Phase 8 holds; one of Phase 5, a read rule that reads the row in an indexed filter, does not, and is open ([docs/perf/v0.8.0.md](docs/perf/v0.8.0.md)). Phase 7, the browser VM and the reference frontend, was released as v0.7.0 on 2026-11-24.**
+**Current status: Phase 8, the analytical engine, was released as v0.8.0 on 2026-11-28. Phase 9, embedding, is built (2026-11-28) and is released with v0.9.0. Every budget of Phase 8 holds; one of Phase 5, a read rule that reads the row in an indexed filter, does not, and is open ([docs/perf/v0.8.0.md](docs/perf/v0.8.0.md)).**
 The Go API (`fado`) opens a database file, defines schemas, classes and
 explicit tables, and creates, changes, reads and deletes documents as
 commits: assignments and defaults, the auto recalculation, typed history
@@ -575,7 +575,7 @@ database has the app `System`, the engine's own, whose four tables
 give a formula the apps, classes, users and groups the database holds
 (ADR-0092, proposed).
 
-The phase was built on 2026-11-28, with the measurements of
+The phase closed on 2026-11-28 with the measurements of
 [docs/perf/v0.8.0.md](docs/perf/v0.8.0.md): every budget of its
 records holds, and so do those of Phases 2 to 7 on the same build but
 one of Phase 5. A read rule that reads the row costs an indexed filter
@@ -599,8 +599,8 @@ Legend: ✅ done · 🚧 in progress · ⬜ not started
 | 5 | Security: the class-level access rules enforced on every path, who may see, create, change and delete a document, with the read rule compiled to a SQL predicate; the kind of actor, a person, an agent or a service, and whom it acts for, on every event, checked against a substitution the database keeps; who may define, operate and query, by four system groups; a content administrator who acts past a rule with a reason; the rules of a table | ✅ |
 | 6 | Server and CLI: the JSON command set over HTTP, one address for each command; users, groups and API keys kept in the database, and the authenticator for a host program that has its own; the stream of changes filtered by the read rule; documents on the wire; the door for agents (MCP); the command-line tool with a check of a class and of an action; the flow of a class in one call; a way in for messages from outside; OpenAPI; `fadodb serve` | ✅ |
 | 7 | Browser VM and reference frontend: the log of reads first; TypeScript VM on the same bytecode shipped as one plain JavaScript file, what a class says to people and its sections, the class bundle, `QUERY` when the first page needs a list of rows (otherwise with the reports of Phase 8), signing in with a password or a company's sign-on, the pages of a face handed out by `fadodb serve` from a folder (a face, which draws a document from its class, lives apart from the engine; chip, card, coins and rating are the face's), the door for agents at the server itself, a small client file beside the VM | ✅ |
-| 8 | Analytical engine: first what ADR-0078, ADR-0076, ADR-0075 and ADR-0085 leave unbuilt after v0.7.0; then the DuckDB projection of document tables and of the tables' rows (in place of the native and attached bindings, ADR-0094), set-wise recompute, mining views, full build per OS; lineage and drill down (ADR-0099) | ✅ built on 2026-11-28; released with the next tag |
-| 9 | Embedding: the library of C, with five functions and the command set in JSON (ADR-0101); Python over HTTP and in the same process, with one set of tests both ways; the library and the Python package in each release; embedding guides for Go, Node, Python and .NET; the program's own actions through the library, and the library with DuckDB (ADR-0102) | ✅ built on 2026-11-28; released with the next tag |
+| 8 | Analytical engine: first what ADR-0078, ADR-0076, ADR-0075 and ADR-0085 leave unbuilt after v0.7.0; then the DuckDB projection of document tables and of the tables' rows (in place of the native and attached bindings, ADR-0094), set-wise recompute, mining views, full build per OS; lineage and drill down (ADR-0099) | ✅ |
+| 9 | Embedding: the library of C, with five functions and the command set in JSON (ADR-0101); Python over HTTP and in the same process, with one set of tests both ways; the library and the Python package in each release; embedding guides for Go, Node, Python and .NET; the program's own actions through the library, and the library with DuckDB (ADR-0102) | ✅ built on 2026-11-28; released with v0.9.0 |
 | 10 | Postgres backend | ⬜ |
 | 11 | Optional AI layer: authoring assistant (the MCP server moved to Phase 6) | ⬜ |
 | 12 | 1.0 hardening: compatibility promises, documentation site, published benchmarks | ⬜ |

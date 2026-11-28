@@ -18,7 +18,13 @@ jobs:
       version: ${{ github.ref_name }}
       keep: true
 
+  # The library of C and the Python package are Phase 9's, and are
+  # first released with v0.9.0: v0.8.0 is Phase 8's release alone (the
+  # owner's word of 2026-11-28), so a tag of the 0.8 line builds neither,
+  # attaches neither and publishes nothing on PyPI, whose job waits for
+  # this one.
   library:
+    if: ${{ !startsWith(github.ref_name, 'v0.8.') }}
     uses: ./.github/workflows/library.yml
     with:
       version: ${{ github.ref_name }}
@@ -26,6 +32,9 @@ jobs:
 
   goreleaser:
     needs: [programs, library]
+    # The library is skipped on a tag of the 0.8 line, and the release
+    # is made without it; a library that failed stops the release.
+    if: ${{ !cancelled() && needs.programs.result == 'success' && (needs.library.result == 'success' || needs.library.result == 'skipped') }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -59,11 +68,13 @@ jobs:
             ls bin/programs/fadodb_*_"$system".* >/dev/null
           done
       - uses: actions/download-artifact@v8
+        if: ${{ needs.library.result == 'success' }}
         with:
           pattern: fadodb-core-library-*
           path: bin/library
           merge-multiple: true
       - name: Every system has its two libraries and its wheel
+        if: ${{ needs.library.result == 'success' }}
         run: |
           ls -l bin/library
           for system in linux_amd64 linux_arm64 darwin_arm64 darwin_amd64 windows_amd64; do

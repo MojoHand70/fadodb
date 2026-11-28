@@ -6,51 +6,15 @@ All notable changes to FadoDB are recorded here. The format follows
 
 ## [Unreleased]
 
-### Removed
-
-- The face builder's skill, `skills/fadodb-face/`, and the sample class
-  `Look` it showed, `examples/classes/look.json`, on the owner's word:
-  what people see of a server, its faces and their look, is the tool's
-  that builds faces, not the engine's. ADR-0060 says so, and the skills
-  are five hats again.
-
-Phase 8 started on 2026-11-25, and Phase 9 on 2026-11-27. The steps
-of both were all merged on 2026-11-28, and they are released with the
-next tag. Phase 9's measurements are
+Phase 9, embedding, started on 2026-11-27, and its steps were all
+merged on 2026-11-28. It is released with v0.9.0. Its code is in the
+source of v0.8.0, whose release builds and publishes neither the
+library of C nor the Python package: v0.8.0 is Phase 8's release
+alone, by the owner's word of 2026-11-28. Phase 9's measurements are
 [docs/perf/v0.9.0.md](docs/perf/v0.9.0.md).
-Phase 8's are [docs/perf/v0.8.0.md](docs/perf/v0.8.0.md): every
-budget of its records holds; one of Phase 5, a read rule that reads
-the row in an indexed filter, does not, and is open.
 
 ### Added
 
-- ADR-0099, where a value comes from and the documents behind a number,
-  accepted by the owner on 2026-11-27, after its three steps were
-  built (#268, #271 and #273), with none of its decisions struck; the
-  records it amends say so.
-- The history of a table's rows (ADR-0099, proposed; its third step,
-  by the owner's answer "1. B"). Every table keeps each row as it was
-  until a change replaced or removed it, and who made each change, of
-  what kind, for whom and when: an import, a replace, a delete, a
-  version of the table, or a rule's `table.insert`, `table.update` or
-  `table.delete`. A row brought again with the values it has is no
-  change and keeps nothing; a delete that removes nothing is none. A
-  table whose definition says `"history": false` keeps none, and each
-  of its rows still says which change gave it its values. A new
-  command, `row_history`, in Go `RowHistory`, answers the history of
-  one row by its key, the row now first, a page at a time, by the
-  table's read rule. `lineage` of a value a document kept from a table
-  now reads the rows as they were when it was kept, each with `since`
-  and `until`, and the rate of the manual's guide adds up; where the
-  table kept no history then, `rows_now` says the rows are as they are
-  now. A version of a table carries the history with its rows, by the
-  rules for converting them; removing a table removes its history. The
-  engine schema is 16: **a database of schema 15 is brought to it when
-  it is opened**, its tables gain the history of their rows, which
-  begins then, and an engine of schema 15 no longer opens the file.
-  SQLite keeps the history by triggers, so a value that follows a table
-  costs the same allocations as before. The chapter on tables has a
-  section, "The history of the rows", which a test plays.
 - The library of C (ADR-0101, proposed; the first step of Phase 9). A
   program in any language that can call C holds a FadoDB database in
   its own process, with no server: `fado_open` opens a database file,
@@ -139,6 +103,53 @@ the row in an indexed filter, does not, and is open.
   `fadodb-core-library_…`, and the wheel of the Python package for a
   system now carries `libfadodb` and DuckDB's library, about 35 MB.
 
+## [0.8.0] - 2026-11-28
+
+Phase 8, the analytical engine, started on 2026-11-25, and its steps
+were all merged on 2026-11-28. Its measurements are
+[docs/perf/v0.8.0.md](docs/perf/v0.8.0.md): every budget of its
+records holds; one of Phase 5, a read rule that reads the row in an
+indexed filter, does not, and is open. The library of C and the Python
+package of Phase 9 are in the source of this release, and are
+released with v0.9.0.
+
+### Removed
+
+- The face builder's skill, `skills/fadodb-face/`, and the sample class
+  `Look` it showed, `examples/classes/look.json`, on the owner's word:
+  what people see of a server, its faces and their look, is the tool's
+  that builds faces, not the engine's. ADR-0060 says so, and the skills
+  are five hats again.
+
+### Added
+
+- ADR-0099, where a value comes from and the documents behind a number,
+  accepted by the owner on 2026-11-27, after its three steps were
+  built (#268, #271 and #273), with none of its decisions struck; the
+  records it amends say so.
+- The history of a table's rows (ADR-0099, proposed; its third step,
+  by the owner's answer "1. B"). Every table keeps each row as it was
+  until a change replaced or removed it, and who made each change, of
+  what kind, for whom and when: an import, a replace, a delete, a
+  version of the table, or a rule's `table.insert`, `table.update` or
+  `table.delete`. A row brought again with the values it has is no
+  change and keeps nothing; a delete that removes nothing is none. A
+  table whose definition says `"history": false` keeps none, and each
+  of its rows still says which change gave it its values. A new
+  command, `row_history`, in Go `RowHistory`, answers the history of
+  one row by its key, the row now first, a page at a time, by the
+  table's read rule. `lineage` of a value a document kept from a table
+  now reads the rows as they were when it was kept, each with `since`
+  and `until`, and the rate of the manual's guide adds up; where the
+  table kept no history then, `rows_now` says the rows are as they are
+  now. A version of a table carries the history with its rows, by the
+  rules for converting them; removing a table removes its history. The
+  engine schema is 16: **a database of schema 15 is brought to it when
+  it is opened**, its tables gain the history of their rows, which
+  begins then, and an engine of schema 15 no longer opens the file.
+  SQLite keeps the history by triggers, so a value that follows a table
+  costs the same allocations as before. The chapter on tables has a
+  section, "The history of the rows", which a test plays.
 - Where a value comes from (ADR-0099, proposed; its second step). A new
   command, `lineage`, in Go `Lineage`, answers one value of one
   document and what it is made of, one level: its kind (typed,
@@ -737,9 +748,9 @@ the row in an indexed filter, does not, and is open.
   program or library is built from on every system a release is built
   for, with a table of which carries what; their licences, most of them
   BSD and MIT, ask for the notice in every copy, and none was carried.
-  Every archive of `fadodb` and `fadodb-core` and of the library holds
-  it, both images in `/licenses/` with FadoDB's own licence, and every
-  wheel with a library. `internal/notices` writes it from the modules,
+  Every archive of `fadodb` and `fadodb-core` holds it, and both
+  images in `/licenses/` with FadoDB's own licence; so will the
+  library and every wheel with one, released with v0.9.0. `internal/notices` writes it from the modules,
   and the checks on GitHub hold it to them, so a module added or moved
   fails until it is written again.
 - The phone's page of a code, and an invitation's page, offer **Sign in
@@ -831,7 +842,7 @@ the row in an indexed filter, does not, and is open.
   what the replace changed or removed.
 - The image for containers holds `fadodb`, the program with the
   analytical engine, and a second image holds `fadodb-core` (ADR-0089).
-  From the next release on `ghcr.io/mojohand70/fadodb:<version>` is
+  From v0.8.0 on `ghcr.io/mojohand70/fadodb:<version>` is
   the first and `ghcr.io/mojohand70/fadodb:<version>-core` the second;
   the images up to v0.7.0 hold the program without the engine under
   the plain name. The image of `fadodb` stands on a base with the C
@@ -850,7 +861,7 @@ the row in an indexed filter, does not, and is open.
   engine" and `fadodb-core version` begins with its own name. In the
   repository `make build` makes `bin/fadodb-core` and `make full`
   makes `bin/fadodb`; the program in pure Go is `cmd/fadodb-core`, so
-  from the next release on it is installed with
+  from v0.8.0 on it is installed with
   `go install github.com/MojoHand70/fadodb/cmd/fadodb-core@latest`.
   The releases up to v0.7.0 have one program, named `fadodb`: it is
   the one without the engine.
@@ -3303,7 +3314,8 @@ Project scaffold. Nothing to run beyond `fadodb version`.
 - Contributing guide, code of conduct, security policy, issue and pull request
   templates, roadmap.
 
-[Unreleased]: https://github.com/MojoHand70/fadodb/compare/v0.7.0...HEAD
+[Unreleased]: https://github.com/MojoHand70/fadodb/compare/v0.8.0...HEAD
+[0.8.0]: https://github.com/MojoHand70/fadodb/releases/tag/v0.8.0
 [0.7.0]: https://github.com/MojoHand70/fadodb/releases/tag/v0.7.0
 [0.6.0]: https://github.com/MojoHand70/fadodb/releases/tag/v0.6.0
 [0.5.0]: https://github.com/MojoHand70/fadodb/releases/tag/v0.5.0

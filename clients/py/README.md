@@ -104,14 +104,13 @@ how much it may take. `scripts/library.sh build` builds both into
 as many databases through it as it needs. Every call may be made from
 any thread: the library lets go of Python's lock while it works.
 
-Every release carries the package as wheels: one for each system with
+From v0.9.0 on, every release carries the package as wheels: one for each system with
 `libfadodb` and DuckDB's library inside, which `fadodb.open` finds with
 nothing named, about 35 MB, and
 `fadodb-<version>-py3-none-any.whl` for every system without it, for a
 program that talks to a server. `pip install` takes the file of the
-release. A release also publishes them on PyPI, so from the first
-release that carries them `pip install fadodb` takes the right one for
-the machine.
+release. A release also publishes them on PyPI, so from v0.9.0 on
+`pip install fadodb` takes the right one for the machine.
 
 ## Its tests
 

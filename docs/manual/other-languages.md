@@ -221,8 +221,8 @@ int main(void) {
 ## Python
 
 The package `fadodb` is in [`clients/py`](../../clients/py/README.md). It
-needs nothing but Python's own library. A release carries a wheel of it
-for each system with the library inside, which `fadodb.open` finds by
+needs nothing but Python's own library. From v0.9.0 on, a release carries a wheel
+of it for each system with the library inside, which `fadodb.open` finds by
 itself; `pip install` takes the file. Here `FADODB_LIBRARY` names the
 library instead.
 

@@ -10,10 +10,9 @@ Website: [fadodb.org](https://fadodb.org). The manual starts at
 [how it works](docs/manual/how-it-works.md) and
 [your first application](docs/manual/first-application.md).
 
-> **Status: Phase 8, the analytical engine, is done and released as
-> v0.8.0 (2026-11-28). Phase 9, embedding, begun beside it on
-> 2026-11-27, is built (2026-11-28) and is released with v0.9.0. Every
-> budget of Phase 8 holds; one of Phase 5, a read rule that reads the
+> **Status: Phase 9, embedding, is done and released as v0.9.0
+> (2026-11-28), and Phase 8, the analytical engine, as v0.8.0 the same
+> day. Phase 10, Postgres, is next. Every budget of Phase 8 holds; one of Phase 5, a read rule that reads the
 > row in an indexed filter, does not, and is open
 > ([docs/perf/v0.8.0.md](docs/perf/v0.8.0.md)). With Phase 9 a program
 > in any language holds a database in its own process through the

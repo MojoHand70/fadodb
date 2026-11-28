@@ -6,12 +6,16 @@ All notable changes to FadoDB are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-11-28
+
 Phase 9, embedding, started on 2026-11-27, and its steps were all
-merged on 2026-11-28. It is released with v0.9.0. Its code is in the
-source of v0.8.0, whose release builds and publishes neither the
-library of C nor the Python package: v0.8.0 is Phase 8's release
-alone, by the owner's word of 2026-11-28. Phase 9's measurements are
-[docs/perf/v0.9.0.md](docs/perf/v0.9.0.md).
+merged on 2026-11-28. Its measurements are
+[docs/perf/v0.9.0.md](docs/perf/v0.9.0.md). This is the first release
+that carries the library of C, `libfadodb-core` and `libfadodb`, and
+the Python package, which it also publishes on PyPI as `fadodb`. Their
+code was already in the source of v0.8.0, whose release built and
+published neither: v0.8.0 is Phase 8's release alone, by the owner's
+word of 2026-11-28.
 
 ### Added
 
@@ -3314,7 +3318,8 @@ Project scaffold. Nothing to run beyond `fadodb version`.
 - Contributing guide, code of conduct, security policy, issue and pull request
   templates, roadmap.
 
-[Unreleased]: https://github.com/MojoHand70/fadodb/compare/v0.8.0...HEAD
+[Unreleased]: https://github.com/MojoHand70/fadodb/compare/v0.9.0...HEAD
+[0.9.0]: https://github.com/MojoHand70/fadodb/releases/tag/v0.9.0
 [0.8.0]: https://github.com/MojoHand70/fadodb/releases/tag/v0.8.0
 [0.7.0]: https://github.com/MojoHand70/fadodb/releases/tag/v0.7.0
 [0.6.0]: https://github.com/MojoHand70/fadodb/releases/tag/v0.6.0

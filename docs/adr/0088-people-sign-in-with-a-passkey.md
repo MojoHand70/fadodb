@@ -426,6 +426,11 @@ by me, each the owner's to strike:
     community list `passkeydeveloper/passkey-authenticator-aaguids`, as
     it stood on 2026-11-25, 67 makers: the list takes nothing new since
     2026-11-01 and answers nothing from 2027-01-06. The AAGUID itself is
-    not kept. Safari says sixteen zeros, and such a passkey keeps the
-    name given. Not ruled: the name when the maker is unknown, and the
+    not kept. Safari says sixteen zeros. A synced passkey whose maker
+    is not known, by those zeros or by an AAGUID the table does not
+    hold, keeps the name given with ", synced" after it: "Krzysztof's
+    Mac, synced" (the owner's ruling, 2026-11-26: "device name plus
+    synced"). The account page then says "synced" once, in the name,
+    and not again after the dates (settled while building). A passkey
+    that stays on its device keeps the name given alone. Not ruled: the
     passkeys made before, which are named as they were.

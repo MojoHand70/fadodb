@@ -176,7 +176,7 @@ func (s *Store) DefineWords(ctx context.Context, data []byte, opts ...Option) (*
 	}
 	now := s.now().Unix()
 	w := s.writer
-	if _, err := w.ExecContext(ctx, "BEGIN IMMEDIATE"); err != nil {
+	if err := s.beginWriter(ctx, "BEGIN IMMEDIATE"); err != nil {
 		return nil, storageErr("begin", err)
 	}
 	rollback := func(err error) (*WordsInfo, error) {
@@ -271,7 +271,7 @@ func (s *Store) RemoveWords(ctx context.Context, of WordsOf, opts ...Option) err
 	}
 	now := s.now().Unix()
 	wr := s.writer
-	if _, err := wr.ExecContext(ctx, "BEGIN IMMEDIATE"); err != nil {
+	if err := s.beginWriter(ctx, "BEGIN IMMEDIATE"); err != nil {
 		return storageErr("begin", err)
 	}
 	rollback := func(err error) error {

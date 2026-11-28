@@ -308,7 +308,7 @@ func TestSaw_ADatabaseOfSchema13IsBroughtUp(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Make the file what v0.7.0 left: no column, the view without it,
-	// and the number 13.
+	// no seal on the events (ADR-0103), and the number 13.
 	raw, err := sql.Open("sqlite", path)
 	if err != nil {
 		t.Fatal(err)
@@ -317,7 +317,7 @@ func TestSaw_ADatabaseOfSchema13IsBroughtUp(t *testing.T) {
 	if old == eventsViewDDL("Purchase") {
 		t.Fatal("the view of events does not name seen_version")
 	}
-	for _, stmt := range []string{`DROP VIEW "Purchase_events"`, `DROP VIEW "Substitution_events"`, `ALTER TABLE events DROP COLUMN seen_version`,
+	for _, stmt := range []string{`DROP VIEW "Purchase_events"`, `DROP VIEW "Substitution_events"`, `ALTER TABLE events DROP COLUMN seen_version`, `ALTER TABLE events DROP COLUMN seal`,
 		old, strings.ReplaceAll(old, "Purchase", "Substitution"), `UPDATE schema_version SET version = 13`} {
 		if _, err := raw.Exec(stmt); err != nil {
 			t.Fatalf("%s: %v", stmt, err)

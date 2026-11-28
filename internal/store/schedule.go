@@ -123,7 +123,7 @@ func (s *Store) openSchedules(ctx context.Context, rezoned bool) error {
 	}
 	now := s.now()
 	w := s.writer
-	if _, err := w.ExecContext(ctx, "BEGIN IMMEDIATE"); err != nil {
+	if err := s.beginWriter(ctx, "BEGIN IMMEDIATE"); err != nil {
 		return storageErr("begin", err)
 	}
 	if rezoned {

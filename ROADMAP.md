@@ -1,6 +1,6 @@
 # Roadmap
 
-**Current status: Phase 9, embedding, was released as v0.9.0 on 2026-11-28, and Phase 8, the analytical engine, as v0.8.0 the same day. Phase 10, Postgres, is next. Every budget of Phase 8 holds; one of Phase 5, a read rule that reads the row in an indexed filter, does not, and is open ([docs/perf/v0.8.0.md](docs/perf/v0.8.0.md)).**
+**Current status: Phase 9, embedding, was released as v0.9.0 on 2026-11-28, and Phase 8, the analytical engine, as v0.8.0 the same day. Phase 10, Postgres, began on 2026-11-28 with the seal of the log (ADR-0103), built before the Postgres store. Every budget of Phase 8 holds; one of Phase 5, a read rule that reads the row in an indexed filter, does not, and is open ([docs/perf/v0.8.0.md](docs/perf/v0.8.0.md)).**
 The Go API (`fado`) opens a database file, defines schemas, classes and
 explicit tables, and creates, changes, reads and deletes documents as
 commits: assignments and defaults, the auto recalculation, typed history
@@ -601,7 +601,7 @@ Legend: ✅ done · 🚧 in progress · ⬜ not started
 | 7 | Browser VM and reference frontend: the log of reads first; TypeScript VM on the same bytecode shipped as one plain JavaScript file, what a class says to people and its sections, the class bundle, `QUERY` when the first page needs a list of rows (otherwise with the reports of Phase 8), signing in with a password or a company's sign-on, the pages of a face handed out by `fadodb serve` from a folder (a face, which draws a document from its class, lives apart from the engine; chip, card, coins and rating are the face's), the door for agents at the server itself, a small client file beside the VM | ✅ |
 | 8 | Analytical engine: first what ADR-0078, ADR-0076, ADR-0075 and ADR-0085 leave unbuilt after v0.7.0; then the DuckDB projection of document tables and of the tables' rows (in place of the native and attached bindings, ADR-0094), set-wise recompute, mining views, full build per OS; lineage and drill down (ADR-0099) | ✅ |
 | 9 | Embedding: the library of C, with five functions and the command set in JSON (ADR-0101); Python over HTTP and in the same process, with one set of tests both ways; the library and the Python package in each release; embedding guides for Go, Node, Python and .NET; the program's own actions through the library, and the library with DuckDB (ADR-0102) | ✅ |
-| 10 | Postgres backend | ⬜ |
+| 10 | Postgres backend: first the seal of the log, so that nobody alters what happened unseen, built in SQLite before the Postgres store is written (ADR-0103: every event sealed and the check, built; the signed seals handed out of the file, and the engine's other tables, planned) | 🚧 |
 | 11 | Optional AI layer: authoring assistant (the MCP server moved to Phase 6) | ⬜ |
 | 12 | 1.0 hardening: compatibility promises, documentation site, published benchmarks | ⬜ |
 

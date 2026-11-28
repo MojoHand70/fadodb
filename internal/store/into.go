@@ -173,16 +173,15 @@ func (s *Store) writeBack(ctx context.Context, row *outboxRow, outcomeEvent stri
 	cmd := command{op: opSet, c: c, id: row.docID, values: values,
 		o:     options{principal: row.principal, key: outboxKeyPrefix + "into:" + outcomeEvent},
 		cause: outcomeEvent, depth: row.depth + 1, internal: true, engine: true, day: day, hasDay: true}
-	w := s.writer
-	if _, err := w.ExecContext(ctx, "SAVEPOINT fado_into"); err != nil {
+	if err := s.savepoint(ctx, "fado_into"); err != nil {
 		return false, nil, storageErr("begin the write of the result", err)
 	}
 	res, err := s.run(ctx, cmd, now)
 	if err != nil {
-		if _, rerr := w.ExecContext(ctx, "ROLLBACK TO fado_into"); rerr != nil {
+		if rerr := s.backTo(ctx, "fado_into"); rerr != nil {
 			return false, nil, storageErr("undo the write of the result", rerr)
 		}
-		if _, rerr := w.ExecContext(ctx, "RELEASE fado_into"); rerr != nil {
+		if rerr := s.releasePoint(ctx, "fado_into"); rerr != nil {
 			return false, nil, storageErr("undo the write of the result", rerr)
 		}
 		if refused := asError(err); !noAnswer(refused) {
@@ -190,7 +189,7 @@ func (s *Store) writeBack(ctx context.Context, row *outboxRow, outcomeEvent stri
 		}
 		return false, nil, err
 	}
-	if _, err := w.ExecContext(ctx, "RELEASE fado_into"); err != nil {
+	if err := s.releasePoint(ctx, "fado_into"); err != nil {
 		return false, nil, storageErr("end the write of the result", err)
 	}
 	return res.queued > 0, nil, nil

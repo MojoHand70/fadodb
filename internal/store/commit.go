@@ -295,7 +295,7 @@ func (s *Store) commit(ctx context.Context, cmd command) (*result, error) {
 	if cmd.preview {
 		begin = "BEGIN"
 	}
-	if _, err := s.writer.ExecContext(ctx, begin); err != nil {
+	if err := s.beginWriter(ctx, begin); err != nil {
 		return nil, storageErr("begin", err)
 	}
 	res, err := s.run(ctx, cmd, now)
@@ -1292,6 +1292,8 @@ func (s *Store) write(ctx context.Context, c *class, before, after *docRow, kids
 	if c.brought {
 		s.wroteSubstitution()
 	}
+	// What the version writes is sealed with its event (ADR-0103).
+	s.seal.start(len(c.children))
 	// Every value is boxed once and bound wherever it goes: to the current
 	// row, to the history row and to the event. The buffers are the
 	// writer's, which writes one row at a time.
@@ -1322,6 +1324,7 @@ func (s *Store) write(ctx context.Context, c *class, before, after *docRow, kids
 		if _, err := stmt.ExecContext(ctx, upd...); err != nil {
 			return storageErr("write the current row", err)
 		}
+		s.seal.closing(c.history, after.id, before.version, secs)
 		if _, err := c.w.closeHistory.ExecContext(ctx, secsArg, idArg, before.version); err != nil {
 			return storageErr("close the history row", err)
 		}
@@ -1333,25 +1336,31 @@ func (s *Store) write(ctx context.Context, c *class, before, after *docRow, kids
 	hist = append(hist, secsArg, actorArg, eventArg)
 	hist = append(hist, args[sys:]...)
 	s.histArgs = hist
+	s.seal.row(&c.sealHist, hist)
 	if _, err := c.w.insertHistory.ExecContext(ctx, hist...); err != nil {
 		return storageErr("write the history row", err)
 	}
-	for _, ch := range c.children {
+	for n, ch := range c.children {
 		if rows, ok := kids[ch]; ok {
+			s.seal.list(n, ch.table, false, "", 0, 0)
 			for i, row := range rows {
 				cargs := make([]any, 0, len(childKey)+len(ch.def.Columns))
 				cargs = append(cargs, after.id, after.version, int64(i))
 				for j, l := range ch.leaves {
 					cargs = encode(cargs, l, row[j])
 				}
+				s.seal.row(&ch.sealCols, cargs)
 				if _, err := ch.insert.ExecContext(ctx, cargs...); err != nil {
 					return storageErr("write "+ch.v.Name, err)
 				}
 			}
 		} else if before != nil {
+			s.seal.list(n, ch.table, true, after.id, before.version, after.version)
 			if _, err := ch.copyRows.ExecContext(ctx, after.version, after.id, before.version); err != nil {
 				return storageErr("carry "+ch.v.Name+" forward", err)
 			}
+		} else {
+			s.seal.list(n, ch.table, false, "", 0, 0)
 		}
 	}
 	var beforeVersion any
@@ -1392,6 +1401,8 @@ func (s *Store) writeDelete(ctx context.Context, c *class, before *docRow, secs 
 	if c.brought {
 		s.wroteSubstitution()
 	}
+	s.seal.start(0)
+	s.seal.closing(c.history, before.id, before.version, secs)
 	if _, err := c.w.closeHistory.ExecContext(ctx, secs, before.id, before.version); err != nil {
 		return storageErr("close the history row", err)
 	}
@@ -1419,16 +1430,37 @@ func (s *Store) writeEventArgs(ctx context.Context, eventID, class, docID any, e
 	if ev.seen {
 		seen = before
 	}
-	args := append(s.eventArgs[:0], eventID, class, docID, word(ev.kind), nullText(ev.name), s.stateArg(ev.from), s.stateArg(ev.to), actor, before, after, nullText(ev.cause), nullText(key), nullText(hash), s.dayArg, secs, originCode(ev.origin),
+	// The name of a transition is boxed once, as a state's is: a class
+	// has few, and the box an event's row binds otherwise is the
+	// allocation its seal costs the driver (ADR-0103, Performance).
+	args := append(s.eventArgs[:0], eventID, class, docID, word(ev.kind), s.stateArg(ev.name), s.stateArg(ev.from), s.stateArg(ev.to), actor, before, after, nullText(ev.cause), nullText(key), nullText(hash), s.dayArg, secs, originCode(ev.origin),
 		s.acting.kind, s.acting.acts, s.acting.override, s.acting.reason, seen)
+	// The event is sealed with what it wrote before its row, its own
+	// columns and its event_docs row, and its row carries the seal
+	// (ADR-0103).
+	qualifier := word(qualifierOf(ev.kind))
+	z := &s.seal
+	z.starting()
+	z.row(&eventSealCols, args)
+	z.docArgs = [4]any{eventID, class, docID, qualifier}
+	z.row(&eventDocSealCols, z.docArgs[:])
+	args = append(args, z.seal())
 	s.eventArgs = args
 	// The override is of the command, and its own event, the first it
 	// writes, keeps it; what follows in its chain is the engine's.
 	s.acting.override, s.acting.reason = nil, nil
-	if _, err := s.stmts.insertEvent.ExecContext(ctx, args...); err != nil {
+	res, err := s.stmts.insertEvent.ExecContext(ctx, args...)
+	if err != nil {
 		return storageErr("write the event", err)
 	}
-	args = append(s.eventArgs[:0], eventID, class, docID, word(qualifierOf(ev.kind)))
+	row, err := res.LastInsertId()
+	if err != nil {
+		return storageErr("write the event", err)
+	}
+	if err := z.wrote(ctx, row); err != nil {
+		return err
+	}
+	args = append(s.eventArgs[:0], eventID, class, docID, qualifier)
 	s.eventArgs = args
 	if _, err := s.stmts.insertEventDoc.ExecContext(ctx, args...); err != nil {
 		return storageErr("write the event's documents", err)
@@ -1468,10 +1500,11 @@ var words = func() map[string]any {
 	return m
 }()
 
-// stateArg boxes the name of a state for a statement: nil when it is
-// empty, and one box for each name, made when the name is first written.
-// The classes of a database have few states between them; past a bound
-// a name is boxed for itself, so the list cannot grow without end.
+// stateArg boxes the name of a state, or of a transition, for a
+// statement: nil when it is empty, and one box for each name, made when
+// the name is first written. The classes of a database have few states
+// and transitions between them; past a bound a name is boxed for
+// itself, so the list cannot grow without end.
 func (s *Store) stateArg(name string) any {
 	if name == "" {
 		return nil

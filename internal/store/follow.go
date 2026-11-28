@@ -360,7 +360,7 @@ func (s *Store) followBatch(ctx context.Context, row *outboxRow, args followArgs
 	var failure *Error
 	found, queued := 0, 0
 	for again := false; ; {
-		if _, err := w.ExecContext(ctx, "BEGIN IMMEDIATE"); err != nil {
+		if err := s.beginWriter(ctx, "BEGIN IMMEDIATE"); err != nil {
 			return false, false, storageErr("begin", err)
 		}
 		var status string
@@ -431,7 +431,7 @@ func (s *Store) followBatch(ctx context.Context, row *outboxRow, args followArgs
 	if ctx.Err() != nil {
 		return false, false, ctx.Err()
 	}
-	if _, err := w.ExecContext(ctx, "BEGIN IMMEDIATE"); err != nil {
+	if err := s.beginWriter(ctx, "BEGIN IMMEDIATE"); err != nil {
 		return false, false, storageErr("begin", err)
 	}
 	if err := s.followFailed(ctx, row, attempts, failure, now); err != nil {
@@ -500,7 +500,7 @@ func (s *Store) bringMany(ctx context.Context, row *outboxRow, trigger string, r
 	marked := false
 	for _, p := range places {
 		if run.careful && !marked {
-			if _, err := s.stmts.mark.ExecContext(ctx); err != nil {
+			if err := s.markMany(ctx); err != nil {
 				return 0, 0, false, asError(storageErr("mark the follow", err))
 			}
 			marked = true
@@ -517,7 +517,7 @@ func (s *Store) bringMany(ctx context.Context, row *outboxRow, trigger string, r
 				// What its commit wrote has no savepoint to go back to.
 				return 0, 0, true, nil
 			}
-			if _, err := s.stmts.toMark.ExecContext(ctx); err != nil {
+			if err := s.backToMany(ctx); err != nil {
 				return 0, 0, false, asError(storageErr("take a refused document back", err))
 			}
 			run.refused++
@@ -533,7 +533,7 @@ func (s *Store) bringMany(ctx context.Context, row *outboxRow, trigger string, r
 			continue
 		}
 		if marked {
-			if _, err := s.stmts.unmark.ExecContext(ctx); err != nil {
+			if err := s.releaseMany(ctx); err != nil {
 				return 0, 0, false, asError(storageErr("release the mark", err))
 			}
 			marked = false
@@ -542,7 +542,7 @@ func (s *Store) bringMany(ctx context.Context, row *outboxRow, trigger string, r
 		queued += res.queued
 	}
 	if marked {
-		if _, err := s.stmts.unmark.ExecContext(ctx); err != nil {
+		if err := s.releaseMany(ctx); err != nil {
 			return 0, 0, false, asError(storageErr("release the mark", err))
 		}
 	}
@@ -602,7 +602,7 @@ func (s *Store) followEnd(ctx context.Context, row *outboxRow, failure *Error) (
 		return false, errf(CodeClosed, "", "the store is closed")
 	}
 	now := s.now()
-	if _, err := s.writer.ExecContext(ctx, "BEGIN IMMEDIATE"); err != nil {
+	if err := s.beginWriter(ctx, "BEGIN IMMEDIATE"); err != nil {
 		return false, storageErr("begin", err)
 	}
 	if _, err := s.writer.ExecContext(ctx, `UPDATE outbox SET status = ?, attempts = attempts + 1, finished_at = ?, error_code = ?, error_message = ? WHERE event_id = ? AND idx = ? AND status = ?`,

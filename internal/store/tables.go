@@ -456,7 +456,7 @@ func (s *Store) DefineTable(ctx context.Context, data []byte, opts ...Option) (*
 	t := newTable(def, compact)
 	now := s.now().Unix()
 	w := s.writer
-	if _, err := w.ExecContext(ctx, "BEGIN IMMEDIATE"); err != nil {
+	if err := s.beginWriter(ctx, "BEGIN IMMEDIATE"); err != nil {
 		return nil, storageErr("begin", err)
 	}
 	rollback := func(err error) (*model.Table, error) {
@@ -666,7 +666,7 @@ func (s *Store) ImportRows(ctx context.Context, name string, rows []Values, opts
 		return 0, errf(CodeClosed, "", "the store is closed")
 	}
 	w := s.writer
-	if _, err := w.ExecContext(ctx, "BEGIN IMMEDIATE"); err != nil {
+	if err := s.beginWriter(ctx, "BEGIN IMMEDIATE"); err != nil {
 		return 0, storageErr("begin", err)
 	}
 	rollback := func(err error) (int, error) {

@@ -556,6 +556,15 @@ func TestTablesActionsAndTheQueue(t *testing.T) {
 	if checked["checked"] != float64(0) || string(mustJSON(checked["mismatched"])) != "[]" || string(mustJSON(checked["missing"])) != "[]" {
 		t.Fatalf("check_blobs answered %v", checked)
 	}
+	// The seal of the log (ADR-0103): every event sealed, every seal
+	// matching; and an administrator's to ask.
+	sealed := run(t, s, olga, "check_log", `{}`)
+	if events, _ := sealed["events"].(float64); events < 2 || sealed["sealed"] != sealed["events"] || sealed["sealed_from"] == float64(0) || string(mustJSON(sealed["faults"])) != "[]" {
+		t.Fatalf("check_log answered %v", sealed)
+	}
+	if e := refused(t, s, ann, "check_log", `{}`); e.Code != store.CodeForbidden {
+		t.Fatalf("the log checked by somebody who is no administrator: %v", e)
+	}
 }
 
 func TestWhatIsNotACommandIsRefused(t *testing.T) {

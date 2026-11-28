@@ -25,12 +25,18 @@ import (
 // Main runs the tests of a package and ends the test program. It fails
 // the tests when they passed and a database is still open.
 func Main(m *testing.M) {
-	code := m.Run()
+	os.Exit(Check(m.Run()))
+}
+
+// Check is the exit code of tests that ended with the code given: 1
+// when they passed and a database is still open. A TestMain that checks
+// more after the tests calls it in place of Main.
+func Check(code int) int {
 	if left := Open(); len(left) > 0 && code == 0 {
 		fmt.Fprintf(os.Stderr, "FAIL: a test left a database open, which fails the tests on Windows, where an open file is not removed. Close it, as with defer db.Close():\n  %s\n", strings.Join(left, "\n  "))
 		code = 1
 	}
-	os.Exit(code)
+	return code
 }
 
 // Open lists the files of databases that this process holds open: the

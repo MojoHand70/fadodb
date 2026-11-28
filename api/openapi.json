@@ -401,6 +401,70 @@
         "x-fado-mark": "reads"
       }
     },
+    "/v1/check_log": {
+      "post": {
+        "description": "It reads. In Go it is the call `CheckLog`.",
+        "operationId": "check_log",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "for": {
+                    "description": "the id of whoever the caller acts for; let through only while a substitution says so",
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "events": {
+                      "description": "how many events the log holds"
+                    },
+                    "faults": {
+                      "description": "the places where the log does not match, in the order of the log, each {\"what\", \"event\", \"kind\", \"name\", \"at\", \"class\", \"id\", \"version\", \"message\"}; what is changed, unsealed, carried, stray or current"
+                    },
+                    "sealed": {
+                      "description": "how many of them carry a seal"
+                    },
+                    "sealed_from": {
+                      "description": "the moment of the first sealed event, in seconds since 1970; 0 when none is"
+                    }
+                  },
+                  "required": [
+                    "events",
+                    "sealed",
+                    "sealed_from",
+                    "faults"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "The command ran."
+          },
+          "default": {
+            "$ref": "#/components/responses/Refused"
+          }
+        },
+        "summary": "Works the seal of every event out again from what the event wrote, and names every place where the log does not match its seals.",
+        "tags": [
+          "Tables, actions and the queue"
+        ],
+        "x-fado-call": "CheckLog",
+        "x-fado-mark": "reads"
+      }
+    },
     "/v1/clear_second_step": {
       "post": {
         "description": "It writes. In Go it is the call `ClearSecondStep`. It is offered only by a database that keeps its own users, groups and keys; any other answers `unknown_command`.",

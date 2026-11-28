@@ -73,7 +73,7 @@ func (s *Store) DeleteRows(ctx context.Context, name string, keys []Values, opts
 		return 0, errf(CodeClosed, "", "the store is closed")
 	}
 	w := s.writer
-	if _, err := w.ExecContext(ctx, "BEGIN IMMEDIATE"); err != nil {
+	if err := s.beginWriter(ctx, "BEGIN IMMEDIATE"); err != nil {
 		return 0, storageErr("begin", err)
 	}
 	rollback := func(err error) (int, error) {
@@ -83,7 +83,7 @@ func (s *Store) DeleteRows(ctx context.Context, name string, keys []Values, opts
 	// The change of the rows comes first (ADR-0099, step 3): the history
 	// of a row removed ends at it. A delete that removes nothing is no
 	// change, and leaves none.
-	if _, err := w.ExecContext(ctx, "SAVEPOINT fado_change"); err != nil {
+	if err := s.savepoint(ctx, "fado_change"); err != nil {
 		return rollback(storageErr("begin", err))
 	}
 	if err := s.tableChange(ctx, t, ChangeDelete, o.principal, s.now()); err != nil {
@@ -100,11 +100,11 @@ func (s *Store) DeleteRows(ctx context.Context, name string, keys []Values, opts
 		removed += int(n)
 	}
 	if removed == 0 {
-		if _, err := w.ExecContext(ctx, "ROLLBACK TO fado_change"); err != nil {
+		if err := s.backTo(ctx, "fado_change"); err != nil {
 			return rollback(storageErr("rollback", err))
 		}
 	}
-	if _, err := w.ExecContext(ctx, "RELEASE fado_change"); err != nil {
+	if err := s.releasePoint(ctx, "fado_change"); err != nil {
 		return rollback(storageErr("commit", err))
 	}
 	if past {
@@ -170,7 +170,7 @@ func (s *Store) RemoveTable(ctx context.Context, name string, opts ...Option) er
 		}
 	}
 	w := s.writer
-	if _, err := w.ExecContext(ctx, "BEGIN IMMEDIATE"); err != nil {
+	if err := s.beginWriter(ctx, "BEGIN IMMEDIATE"); err != nil {
 		return storageErr("begin", err)
 	}
 	rollback := func(err error) error {

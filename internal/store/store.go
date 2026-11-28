@@ -69,7 +69,7 @@ const lastOfCommandSQL = "SELECT max(after_version) FROM events WHERE class = ? 
 // one when it is opened, in the transaction that opens it, from
 // oldestUpgraded on; a database older than that is refused and made
 // again, as every pre-release file was before v0.7.0.
-const engineSchema = 16
+const engineSchema = 17
 
 // oldestUpgraded is the earliest engine schema Open brings to the
 // current one in place: 13, the schema of v0.7.0, the first release
@@ -202,6 +202,11 @@ type Options struct {
 	Now func() time.Time
 }
 
+// atClose, when set, is called as a database closes, while everything
+// is still open. The tests of this package check the seal of every
+// database they made there (ADR-0103).
+var atClose func(*Store)
+
 // Store is one open database.
 type Store struct {
 	path        string
@@ -270,9 +275,11 @@ type Store struct {
 	// and the ones read for it: one map for every commit, emptied at each,
 	// so that the writer's evaluator can hold it for the folds of the
 	// commit's formulas (ADR-0081, step 2) without a map made per commit.
-	kids    map[*child][]childRow
-	ids     idGen
-	stmts   engineStmts
+	kids  map[*child][]childRow
+	ids   idGen
+	stmts engineStmts
+	// seal is the writer's part of the seal of the log (ADR-0103).
+	seal    sealer
 	plans   map[*formula.QuerySlot]*lookupPlan
 	filters filterStmts // the prepared statements of Query and Count, by text
 
@@ -420,10 +427,12 @@ type engineStmts struct {
 	// before each document, releases when the document moved and returns
 	// to when it was refused (ADR-0048, item 3).
 	mark, unmark, toMark *sql.Stmt
+	// sealAgain writes the seal of an event again (ADR-0103, sealer.wrote).
+	sealAgain *sql.Stmt
 }
 
 func (e *engineStmts) close() {
-	for _, st := range []*sql.Stmt{e.lookupKey, e.lastOfCommand, e.insertEvent, e.insertEventDoc, e.listEvents, e.selectLife, e.selectMoves, e.insertOutbox, e.dueOutbox, e.dueEngine, e.dueCalls, e.callOutbox, e.mark, e.unmark, e.toMark} {
+	for _, st := range []*sql.Stmt{e.lookupKey, e.lastOfCommand, e.insertEvent, e.insertEventDoc, e.listEvents, e.selectLife, e.selectMoves, e.insertOutbox, e.dueOutbox, e.dueEngine, e.dueCalls, e.callOutbox, e.mark, e.unmark, e.toMark, e.sealAgain} {
 		if st != nil {
 			st.Close()
 		}
@@ -603,6 +612,11 @@ func open(path string, o Options) (*Store, error) {
 	if err := s.prepareEngine(ctx); err != nil {
 		return fail(err)
 	}
+	// The writer goes on from the seal of the last event (ADR-0103).
+	s.seal.update = s.stmts.sealAgain
+	if err := s.loadSeal(ctx); err != nil {
+		return fail(err)
+	}
 	if err := s.load(ctx); err != nil {
 		return fail(err)
 	}
@@ -707,6 +721,18 @@ func upgradeSchema(ctx context.Context, w *sql.Conn, from int64) error {
 	// as each table is loaded (keepHistory), since only a compiled table
 	// says its columns; an engine of schema 15 would write rows that the
 	// triggers keep with no moment, so it no longer opens the file.
+	if from < 17 {
+		// Schema 17 (ADR-0103): every event carries its seal. The events
+		// written before have none; the log is sealed from the first event
+		// this engine writes, which the metadata keeps, and the check says
+		// from when.
+		if _, err := w.ExecContext(ctx, "ALTER TABLE events ADD COLUMN seal BLOB"); err != nil {
+			return storageErr("add seal to the events", err)
+		}
+		if _, err := w.ExecContext(ctx, "INSERT INTO metadata (key, value) SELECT 'sealed_after', coalesce(max(rowid), 0) FROM events"); err != nil {
+			return storageErr("write the metadata", err)
+		}
+	}
 	if _, err := w.ExecContext(ctx, "UPDATE schema_version SET version = ?", engineSchema); err != nil {
 		return storageErr("write the schema version", err)
 	}
@@ -717,7 +743,7 @@ func upgradeSchema(ctx context.Context, w *sql.Conn, from int64) error {
 // the metadata.
 func (s *Store) init(ctx context.Context, wantSync string, wantMaxText int, wantIndexed int, wantQuestion time.Duration, wantBlobs string, wantMaxBlob int64, wantZone string) error {
 	w := s.writer
-	if _, err := w.ExecContext(ctx, "BEGIN IMMEDIATE"); err != nil {
+	if err := s.beginWriter(ctx, "BEGIN IMMEDIATE"); err != nil {
 		return storageErr("begin", err)
 	}
 	rollback := func(err error) error {
@@ -894,8 +920,10 @@ func (s *Store) prepareEngine(ctx context.Context) error {
 	}
 	prep(&s.stmts.lookupKey, "SELECT kind, class, doc_id, after_version, command_hash, event_id FROM events WHERE command_key = ?")
 	prep(&s.stmts.lastOfCommand, lastOfCommandSQL)
-	prep(&s.stmts.insertEvent, "INSERT INTO events (event_id, class, doc_id, kind, name, from_state, to_state, actor_id, before_version, after_version, cause_event_id, command_key, command_hash, business_date, ts, origin, actor_kind, actor_for, override, reason, seen_version)"+
-		" VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
+	// The last column is the event's seal (ADR-0103).
+	prep(&s.stmts.insertEvent, "INSERT INTO events (event_id, class, doc_id, kind, name, from_state, to_state, actor_id, before_version, after_version, cause_event_id, command_key, command_hash, business_date, ts, origin, actor_kind, actor_for, override, reason, seen_version, seal)"+
+		" VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
+	prep(&s.stmts.sealAgain, "UPDATE events SET seal = ? WHERE rowid = ?")
 	prep(&s.stmts.insertEventDoc, "INSERT INTO event_docs (event_id, class, doc_id, qualifier) VALUES (?, ?, ?, ?)")
 	prep(&s.stmts.selectLife, lifeSQL)
 	prep(&s.stmts.selectMoves, movesSQL)
@@ -1377,6 +1405,9 @@ func (s *Store) Close() error {
 	<-s.done
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if atClose != nil {
+		atClose(s)
+	}
 	s.cmu.Lock()
 	for _, vs := range s.versions {
 		for _, c := range vs {

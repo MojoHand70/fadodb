@@ -389,7 +389,7 @@ func (s *Store) migrateBatch(ctx context.Context, c *class, ids []string, o opti
 		return errf(CodeClosed, "", "the store is closed")
 	}
 	now := s.now()
-	if _, err := s.writer.ExecContext(ctx, "BEGIN IMMEDIATE"); err != nil {
+	if err := s.beginWriter(ctx, "BEGIN IMMEDIATE"); err != nil {
 		return storageErr("begin", err)
 	}
 	for _, id := range ids {

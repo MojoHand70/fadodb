@@ -275,6 +275,11 @@ type (
 	// not have: its hash, and the class, the id, the first version and
 	// the variable of the document.
 	MissingFile = store.MissingFile
+	// LogCheck is what CheckLog found: how many events the log holds,
+	// how many carry a seal, from when, and every place where the log
+	// does not match its seals (ADR-0103); LogFault is one such place.
+	LogCheck = store.LogCheck
+	LogFault = store.LogFault
 	// User is a person, an agent or a service that a database which
 	// keeps its own users knows by its id (ADR-0057); UserEdit is what
 	// SetUser changes, UserFilter narrows a list of users, UserKey is a
@@ -370,6 +375,18 @@ const (
 	ActorPerson  = store.ActorPerson
 	ActorAgent   = store.ActorAgent
 	ActorService = store.ActorService
+)
+
+// The kinds of fault CheckLog finds (ADR-0103): an event whose seal does
+// not match what the log holds; an event without a seal where the log is
+// sealed; a list a version carried forward that holds other rows; a row
+// no event wrote; a document whose current row is not its last version.
+const (
+	FaultChanged  = store.FaultChanged
+	FaultUnsealed = store.FaultUnsealed
+	FaultCarried  = store.FaultCarried
+	FaultStray    = store.FaultStray
+	FaultCurrent  = store.FaultCurrent
 )
 
 // The system groups (ADR-0052), given to a caller in Principal.System,
@@ -1261,6 +1278,16 @@ func (db *DB) OpenBlob(ctx context.Context, hash string, opts ...Option) (io.Rea
 // version, whose bytes the store does not have, with its document.
 func (db *DB) CheckBlobs(ctx context.Context, opts ...Option) (*BlobCheck, error) {
 	return db.s.CheckBlobs(ctx, opts...)
+}
+
+// CheckLog checks the seal of the log (ADR-0103): it works the seal of
+// every event out again from the rows the event wrote and the seal of
+// the event before, and names every event whose seal does not match;
+// and the rows of the histories, the lists and event_docs that no event
+// wrote, and the documents whose current row is not their last version.
+// It reads one snapshot and stops no commit. A database administrator's.
+func (db *DB) CheckLog(ctx context.Context, opts ...Option) (*LogCheck, error) {
+	return db.s.CheckLog(ctx, opts...)
 }
 
 // Ping reads from the database, to say that it answers. A server asks

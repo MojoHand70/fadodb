@@ -246,7 +246,7 @@ before one that removes:
 <!-- the marks -->
 | The command | Tools | `readOnlyHint` | `destructiveHint` | `openWorldHint` |
 |---|---|---|---|---|
-| reads | 62 | true | false | false |
+| reads | 63 | true | false | false |
 | writes | 36 | false | false | false |
 | writes, and runs an action now: `try_action`, `drain` | 2 | false | false | true |
 | removes: `delete` | 1 | false | true | false |

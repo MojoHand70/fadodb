@@ -36,7 +36,7 @@ func (s *Store) CreateMany(ctx context.Context, class string, docs []Values, opt
 		return nil, errf(CodeClosed, "", "the store is closed")
 	}
 	now := s.now()
-	if _, err := s.writer.ExecContext(ctx, "BEGIN IMMEDIATE"); err != nil {
+	if err := s.beginWriter(ctx, "BEGIN IMMEDIATE"); err != nil {
 		return nil, storageErr("begin", err)
 	}
 	out := make([]*Document, 0, len(docs))
@@ -168,7 +168,7 @@ func (s *Store) moveMany(ctx context.Context, class, name string, ids []string, 
 		return nil, errf(CodeClosed, "", "the store is closed")
 	}
 	now := s.now()
-	if _, err := s.writer.ExecContext(ctx, "BEGIN IMMEDIATE"); err != nil {
+	if err := s.beginWriter(ctx, "BEGIN IMMEDIATE"); err != nil {
 		return nil, storageErr("begin", err)
 	}
 	// undo takes the whole batch back. The moment of the earliest wake-up
@@ -187,7 +187,7 @@ func (s *Store) moveMany(ctx context.Context, class, name string, ids []string, 
 	for i, id := range ids {
 		out[i].ID = id
 		if !marked {
-			if _, err := s.stmts.mark.ExecContext(ctx); err != nil {
+			if err := s.markMany(ctx); err != nil {
 				undo()
 				return nil, storageErr("mark the batch", err)
 			}
@@ -212,14 +212,14 @@ func (s *Store) moveMany(ctx context.Context, class, name string, ids []string, 
 				undo()
 				return nil, err
 			}
-			if _, err := s.stmts.toMark.ExecContext(ctx); err != nil {
+			if err := s.backToMany(ctx); err != nil {
 				undo()
 				return nil, storageErr("take a refused document back", err)
 			}
 			out[i].Refusal = refusal
 			continue
 		}
-		if _, err := s.stmts.unmark.ExecContext(ctx); err != nil {
+		if err := s.releaseMany(ctx); err != nil {
 			undo()
 			return nil, storageErr("release the mark", err)
 		}

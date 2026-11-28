@@ -122,7 +122,7 @@ func (s *Store) bringSystemApp(ctx context.Context) error {
 		return &Error{Code: CodeStorage, Message: "the app " + model.SystemApp + " does not compile: " + diags.Error()}
 	}
 	w := s.writer
-	if _, err := w.ExecContext(ctx, "BEGIN IMMEDIATE"); err != nil {
+	if err := s.beginWriter(ctx, "BEGIN IMMEDIATE"); err != nil {
 		return storageErr("begin", err)
 	}
 	now := s.now().Unix()

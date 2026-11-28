@@ -214,12 +214,13 @@ the two that nobody made.
 
 ## Checking
 
-`fadodb check` looks at the files of a database both ways. It reads
-the bytes of every file the database keeps, works out the hash of each
-again, and names the ones that do not match. And it reads the hash of
-every file a document holds, in every version, and names the ones the
-database no longer keeps, each with its document. It is how to see
-that a copy has its files, and has them as they were put.
+`fadodb check` looks at the files of a database both ways, and at its
+log. It reads the bytes of every file the database keeps, works out
+the hash of each again, and names the ones that do not match. It reads
+the hash of every file a document holds, in every version, and names
+the ones the database no longer keeps, each with its document. And it
+checks the seal of the log. It is how to see that a copy has its files
+as they were put, and that nobody changed what happened.
 
 ```
 fadodb check books.fado
@@ -228,17 +229,36 @@ fadodb check books.fado
 <!-- the check -->
 ```text
 books.fado: 2 classes, 0 tables, 2 blobs checked, all match, no file of a document is missing
+the log: 2 events, all sealed, every seal matches
 ```
 
 The two classes are `Receipt` and `Substitution`, which every database
 has. A blob is the bytes of one file: here the scans of `R-1` and
-`R-2`. When one byte of the scan of `R-1` is changed on disk:
+`R-2`. The two events are the making of the two receipts.
+
+Every event carries a seal: a fingerprint of what it wrote, its
+version of the document, the rows of its lists, the event itself and
+its documents, chained to the seal of the event before. The check
+works every seal out again from what the file holds. When Adam, who
+looks after the machine, opens `books.fado` with an SQLite tool and
+makes himself the one who filed `R-1`:
+
+<!-- the check, an event altered -->
+```text
+books.fado: 2 classes, 0 tables, 2 blobs checked, all match, no file of a document is missing
+the log: 2 events, all sealed, 1 place does not match its seal:
+  Receipt R-1, version 1, created at 2026-11-02 14:05:00 UTC: the seal does not match what the log holds: the event, or a row it wrote, was changed, or an event before it was taken out or put in
+```
+
+He puts it back as it was, and the check finds the log as it was
+written. Then one byte of the scan of `R-1` is changed on disk:
 
 <!-- the check, a file altered -->
 ```text
 books.fado: 2 classes, 0 tables, 2 blobs checked, 1 do not match, no file of a document is missing
 the bytes of these blobs are not the bytes that were put:
   7a67c33675777c40c57af1be207dd2a250dee13c3e5e8b6668371477b80b0e21
+the log: 2 events, all sealed, every seal matches
 ```
 
 And when the scan of `R-2` is then removed from the disk:
@@ -250,20 +270,25 @@ the bytes of these blobs are not the bytes that were put:
   7a67c33675777c40c57af1be207dd2a250dee13c3e5e8b6668371477b80b0e21
 these documents hold a file that the store does not have:
   Receipt R-2, scan, since version 1: f15bad6b676368f0048e01e9ed1b8edbe821b8578ef8c91649497a5a6523dd0f
+the log: 2 events, all sealed, every seal matches
 ```
 
 <!-- what the check finds -->
 | On disk | The check |
 |---|---|
-| every file as it was put | names nothing |
+| every file as it was put, the log as it was written | names nothing |
 | a file whose bytes were changed | names its hash |
 | a file that is missing | names the document that holds it |
+| an event, or a version, a list or a row of event_docs it wrote, changed; an event taken out or put in | names the event |
+| a version or a row of a list that no event wrote | names the document and the version |
+| a document whose values were changed in its own row alone | names the document and the values |
 
 <!-- how the check ends -->
 | The check | It ends with |
 |---|---|
-| finds every file as it was put | 0 |
+| finds every file as it was put and every seal matching | 0 |
 | names a file | 1 |
+| names an event | 1 |
 | cannot open the database, because another program holds it alone | 1 |
 | is called with no database | 2 |
 
@@ -274,9 +299,18 @@ these documents hold a file that the store does not have:
   left the directory of files out fails the check.
 - **The database file itself is not checked.** The check opens it, and
   says how many classes and tables it read.
+- **The seal stops a change by anybody but the holder of the file.**
+  Whoever holds the file can change an event and work out every seal
+  after it again, and the check then finds nothing. The latest seal
+  signed with a key that is not in the file, and handed out of it, is
+  what stops that: planned, not built (ADR-0103).
+- **A database made before the seal** is sealed from the first event
+  an engine with the seal wrote; the check says from when, and how
+  many events before that are not sealed.
 - **A served database is checked through its server**, by an
-  administrator, with the command
-  [`check_blobs`](commands.md#check_blobs). `fadodb check` is refused
+  administrator, with the commands
+  [`check_blobs`](commands.md#check_blobs) and
+  [`check_log`](commands.md#check_log). `fadodb check` is refused
   with `in_use` while the server holds the database.
 
 - **The check leaves the queue alone**, and so do `fadodb user add`

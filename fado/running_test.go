@@ -441,10 +441,68 @@ func TestRunningIt(t *testing.T) {
 	define(db)
 	hashes := []string{filed(db, "R-1", "a taxi"), filed(db, "R-2", "a hotel"), filed(db, "R-3", "a dinner")}
 	onDiskAs := func(hash string) string { return filepath.Join(checked+".blobs", hash[:2], hash) }
+	// behind runs a statement on the file as an SQLite tool would, with
+	// the database closed, and opens it again.
+	behind := func(stmt string) {
+		t.Helper()
+		db.Close()
+		raw, err := sql.Open("sqlite", checked)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, err = raw.Exec(stmt)
+		raw.Close()
+		if err != nil {
+			t.Fatal(err)
+		}
+		db = open(checked, program)
+	}
+	// theLog checks the log and answers its faults as kind, document and
+	// version.
+	theLog := func() []string {
+		t.Helper()
+		found, err := db.CheckLog(ctx, adam)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var out []string
+		for _, f := range found.Faults {
+			out = append(out, fmt.Sprintf("%s %s %d", f.What, f.ID, f.Version))
+		}
+		return out
+	}
 	checks(t, page, "what the check finds", map[string]func([]string){
-		"every file as it was put": func(row []string) {
+		"every file as it was put, the log as it was written": func(row []string) {
 			if found, err := db.CheckBlobs(ctx, adam); err != nil || len(found.Mismatched) != 0 || len(found.Missing) != 0 || found.Checked != 3 || row[1] != "names nothing" {
 				t.Errorf("the check of files as they were put: %+v, %v", found, err)
+			}
+			if faults := theLog(); len(faults) != 0 {
+				t.Errorf("the check of the log as it was written: %v", faults)
+			}
+		},
+		"an event, or a version, a list or a row of event_docs it wrote, changed; an event taken out or put in": func(row []string) {
+			// Adam makes himself the one who filed R-3.
+			behind("UPDATE events SET actor_id = 'adam' WHERE doc_id = 'R-3' AND kind = 'created'")
+			if faults := theLog(); fmt.Sprint(faults) != "[changed R-3 1]" || row[1] != "names the event" {
+				t.Errorf("the check of an event changed: %v", faults)
+			}
+			behind("UPDATE events SET actor_id = 'ola' WHERE doc_id = 'R-3' AND kind = 'created'")
+		},
+		"a version or a row of a list that no event wrote": func(row []string) {
+			behind(`INSERT INTO "doc_Receipt_history" (id, version, class_version, created_at, updated_at, valid_from, event_id) VALUES ('R-3', 9, 1, 0, 0, 0, 'forged')`)
+			if faults := theLog(); fmt.Sprint(faults) != "[stray R-3 9]" || row[1] != "names the document and the version" {
+				t.Errorf("the check of a version no event wrote: %v", faults)
+			}
+			behind(`DELETE FROM "doc_Receipt_history" WHERE id = 'R-3' AND version = 9`)
+		},
+		"a document whose values were changed in its own row alone": func(row []string) {
+			behind(`UPDATE "doc_Receipt" SET what = 'a limousine' WHERE id = 'R-3'`)
+			if faults := theLog(); fmt.Sprint(faults) != "[current R-3 2]" || row[1] != "names the document and the values" {
+				t.Errorf("the check of a document changed in its own row: %v", faults)
+			}
+			behind(`UPDATE "doc_Receipt" SET what = 'a dinner' WHERE id = 'R-3'`)
+			if faults := theLog(); len(faults) != 0 {
+				t.Errorf("the check of the log put back as it was: %v", faults)
 			}
 		},
 		"a file whose bytes were changed": func(row []string) {

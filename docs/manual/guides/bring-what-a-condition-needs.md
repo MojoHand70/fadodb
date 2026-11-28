@@ -119,8 +119,7 @@ either.
 - **A guard may not look outside.** Written as
   `amount <= LOOKUP(Limits, limit, grade = THIS.grade)`, the guard is
   refused when the class is defined, with `not_allowed`: a guard is
-  not stored, and a table keeps nothing of what a row was, so nothing
-  would hold the number it saw.
+  not stored, so the document would not hold the number it saw.
 - **`before:approve` brings the value in the same commit as the
   move.** The value is worked out after the values the command sets
   and before the guard. When the guard holds, the version the move

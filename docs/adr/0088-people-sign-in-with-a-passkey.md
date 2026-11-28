@@ -186,10 +186,10 @@ designer; Ann, in finance; Ewa, who signs in with Microsoft.
      elsewhere, none written into a page, and no framing.
    - The words stay English (ADR-0071, item 9).
    - **The server's own look on these pages**, its mark and its
-     colours, is a step of its own (item 11, step 5). The class `Look`
-     (ADR-0060, item 3) holds no mark yet, and its colours are inside
-     its DESIGN.md, which the engine does not read today. Until then
-     the pages carry the server's name and FadoDB's look.
+     colours, is a step of its own (item 11, step 5). Where the engine
+     takes them from is open: the class `Look` (ADR-0060, item 3) was
+     withdrawn on 2026-11-27. Until then the pages carry the server's
+     name and FadoDB's look.
 
 8. **The address a request came from, behind a proxy** (amends
    ADR-0059). The settings gain `proxies`, the addresses of the
@@ -234,8 +234,9 @@ designer; Ann, in finance; Ewa, who signs in with Microsoft.
     4. passwords and the second step go: their pages, commands,
        settings and sections of the manual. A database made before
        keeps their tables, and nothing reads them;
-    5. the server's own look on its pages: a mark joins `Look`, and the
-       pages take the approved look's colours.
+    5. the server's own look on its pages, its mark and its colours,
+       from a place still to be decided (`Look` was withdrawn on
+       2026-11-27).
 
     Each moves the manual's chapter on signing in, and the marks in
     `skills/`, in the same pull request.
@@ -343,7 +344,7 @@ to strike:
     for no password (the owner's first try, before the merge).
 13. **The server's name on its pages is its address**, the host of
     `url` (or `localhost:8080` on the machine), under FadoDB's mark,
-    until a `Look` gives a name and a mark (step 5).
+    until step 5 gives a name and a mark.
 14. **The pages load their style from a file of the server's too**, so
     their policy is `style-src 'self'`, and no longer
     `'unsafe-inline'`: nothing written in a page runs or styles it.
@@ -425,6 +426,11 @@ by me, each the owner's to strike:
     community list `passkeydeveloper/passkey-authenticator-aaguids`, as
     it stood on 2026-11-25, 67 makers: the list takes nothing new since
     2026-11-01 and answers nothing from 2027-01-06. The AAGUID itself is
-    not kept. Safari says sixteen zeros, and such a passkey keeps the
-    name given. Not ruled: the name when the maker is unknown, and the
+    not kept. Safari says sixteen zeros. A synced passkey whose maker
+    is not known, by those zeros or by an AAGUID the table does not
+    hold, keeps the name given with ", synced" after it: "Krzysztof's
+    Mac, synced" (the owner's ruling, 2026-11-26: "device name plus
+    synced"). The account page then says "synced" once, in the name,
+    and not again after the dates (settled while building). A passkey
+    that stays on its device keeps the name given alone. Not ruled: the
     passkeys made before, which are named as they were.

@@ -108,6 +108,119 @@ func TestLiveLookup_ByAKeyIsFoundThroughTheIndex(t *testing.T) {
 	}
 }
 
+// A LOOKUP of a live formula over the documents of a class, keyed by a
+// value the class keeps an index of, finds them through the index, as
+// the lookup of a commit does (ADR-0046, ADR-0075): the invoices of one
+// customer are read, not every invoice. A column that a lookup compares
+// has its index whether the class names it or not, since the engine
+// makes one for what a lookup asks (ADR-0075). The reader's rule still
+// holds, and a blank key, which every blank customer equals, is
+// answered as before.
+func TestLiveLookup_OverAClassByAnIndexedValueIsFoundThroughTheIndex(t *testing.T) {
+	s, _ := openStore(t, Options{})
+	ctx := context.Background()
+	if _, err := s.defineOpen(ctx, []byte(`{"name": "Invoice", "title": "number",
+ "variables": {
+   "number":   {"type": "text"},
+   "customer": {"type": "text", "index": true},
+   "note":     {"type": "text"},
+   "owner":    {"type": "text"},
+   "net":      {"type": "number"}
+ },
+ "states": {"initial": "open", "list": ["open", "paid"]},
+ "transitions": [{"name": "pay", "from": "open", "to": "paid"}],
+ "access": {"read": "owner = USER()", "create": "TRUE", "update": "TRUE", "delete": "FALSE"}}`), asSetup); err != nil {
+		t.Fatal(err)
+	}
+	for _, v := range []Values{
+		{"number": "I-1", "customer": "Acme", "owner": "wanda", "net": 100.0, "note": "a"},
+		{"number": "I-2", "customer": "Acme", "owner": "wanda", "net": 50.0},
+		{"number": "I-3", "customer": "Borg", "owner": "wanda", "net": 70.0, "note": "a"},
+		{"number": "I-4", "owner": "wanda", "net": 5.0},
+		{"number": "I-5", "customer": "Acme", "owner": "olga", "net": 1.0},
+	} {
+		if _, err := s.Create(ctx, "Invoice", v, copyWanda, WithID(v["number"].(string))); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := s.Transition(ctx, "Invoice", "I-2", "pay", nil, copyWanda); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.defineOpen(ctx, []byte(`{"name": "Customer", "title": "name",
+ "variables": {
+   "name":     {"type": "text"},
+   "note":     {"type": "text"},
+   "invoiced": {"mode": "live", "formula": "LOOKUP(Invoice, SUM(net), customer = THIS.name)"},
+   "open":     {"mode": "live", "formula": "LOOKUP(Invoice, COUNT(id), customer = THIS.name AND state = \"open\")"},
+   "first":    {"mode": "live", "formula": "LOOKUP(Invoice, number, customer = THIS.name)"},
+   "by_note":  {"mode": "live", "formula": "LOOKUP(Invoice, COUNT(id), note = THIS.note)"}
+ },
+ "states": {"initial": "open", "list": ["open"]},
+ "access": {"read": "TRUE", "create": "TRUE", "update": "TRUE", "delete": "FALSE"}}`), asSetup); err != nil {
+		t.Fatal(err)
+	}
+	for id, values := range map[string]Values{
+		"acme":   {"name": "Acme", "note": "a"},
+		"blank":  {},
+		"nobody": {"name": "Nobody"},
+	} {
+		if _, err := s.Create(ctx, "Customer", values, copyWanda, WithID(id)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, c := range []struct {
+		customer, variable string
+		want               any
+	}{
+		// Olga's I-5 is not Wanda's to read, and is in none of them.
+		{"acme", "invoiced", 150.0}, {"acme", "open", 1.0}, {"acme", "first", "I-1"}, {"acme", "by_note", 2.0},
+		// A blank name is the customer of the invoice that has none.
+		{"blank", "invoiced", 5.0}, {"blank", "open", 1.0}, {"blank", "first", "I-4"}, {"blank", "by_note", 2.0},
+		{"nobody", "invoiced", 0.0}, {"nobody", "open", 0.0}, {"nobody", "first", nil},
+	} {
+		got, err := s.Live(ctx, "Customer", c.customer, c.variable, copyWanda)
+		if err != nil || got.Value != c.want {
+			t.Errorf("%s of the customer %s: %v, %v; want %v", c.variable, c.customer, got, err, c.want)
+		}
+	}
+	// How SQLite runs the lookups that were narrowed to the customer or
+	// the note: through an index, not by reading every invoice.
+	s.filters.mu.Lock()
+	var narrowed []string
+	for text := range s.filters.stmts {
+		if strings.Contains(text, ":fak") {
+			narrowed = append(narrowed, text)
+		}
+	}
+	s.filters.mu.Unlock()
+	// The sum, the count with the state, the first number, and the count
+	// by a note, which the engine indexes for the lookup: four
+	// statements.
+	if len(narrowed) != 4 {
+		t.Fatalf("%d statements were narrowed to a key, want 4: %q", len(narrowed), narrowed)
+	}
+	for _, text := range narrowed {
+		args := []any{sql.Named("fak", "Acme"), sql.Named("fa0", "Acme"), sql.Named("user", "wanda")}
+		steps, err := s.db.QueryContext(ctx, "EXPLAIN QUERY PLAN "+text, args...)
+		if err != nil {
+			t.Fatalf("how SQLite runs %s: %v", text, err)
+		}
+		how := ""
+		for steps.Next() {
+			var id, parent, unused int
+			var detail string
+			if err := steps.Scan(&id, &parent, &unused, &detail); err != nil {
+				t.Fatal(err)
+			}
+			how += detail + "; "
+		}
+		steps.Close()
+		if !strings.Contains(how, "SEARCH doc_Invoice USING INDEX") || strings.Contains(how, "SCAN doc_Invoice") {
+			t.Errorf("a lookup narrowed to its key runs as: %s\n%s", how, text)
+		}
+	}
+}
+
 // A table that holds more rows than the store keeps in memory is still
 // over the limit after rows were added or changed, so the lookup of the
 // next commit does not read it up to the limit again to find that out

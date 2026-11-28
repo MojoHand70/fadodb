@@ -1152,6 +1152,19 @@ func codeShown(b *strings.Builder, d *page, say string) {
 	}
 }
 
+// heldOffered is the line, under the button that makes a passkey, that
+// opens the form signing in with a passkey of the person's the device
+// holds already. A browser says so in its own way, or not at all: Safari
+// on a phone may only show a sheet of its own, and the page hears
+// nothing it can tell apart from a window closed. So a person who has a
+// passkey is offered this way from the start, before any refusal.
+func heldOffered(b *strings.Builder, d *page, device string) {
+	if d.Held == "" || d.HeldOpen {
+		return
+	}
+	b.WriteString(`<p class="small" data-make-lead><button type="button" class="lnk" data-show-held="held">A passkey of yours is on this ` + device + ` already? Sign in with it</button></p>` + "\n")
+}
+
 // saidHere writes where the script says what went wrong, under a button.
 func saidHere(b *strings.Builder) {
 	b.WriteString(`<p class="said" data-said role="status" aria-live="polite"></p>`)
@@ -1254,6 +1267,7 @@ func drawn(name, host string, d *page) string {
 		}
 		saidHere(&b)
 		b.WriteString("</form>\n")
+		heldOffered(&b, d, "device")
 		if d.Held != "" {
 			heldShown(&b, d, PageInvite, "device")
 		}
@@ -1272,6 +1286,7 @@ func drawn(name, host string, d *page) string {
 		// A phone that holds a passkey of the person's already, which a
 		// password manager may have brought there, makes no other: it
 		// signs in with that one, and the computer enters too.
+		heldOffered(&b, d, "phone")
 		if d.Held != "" {
 			heldShown(&b, d, PagePhone, "phone")
 		}
@@ -1377,8 +1392,10 @@ func accountShown(b *strings.Builder, d *page) {
 			if k.UsedAt != 0 {
 				b.WriteString(", last used " + esc(moment(k.UsedAt)))
 			}
-			if k.Synced {
-				b.WriteString(", synced")
+			// A name that says it already, "Olga's iPhone, synced", is
+			// not followed by it again.
+			if k.Synced && !strings.HasSuffix(k.Name, store.SyncedName) {
+				b.WriteString(store.SyncedName)
 			}
 			b.WriteString(`</span></div><form method="post" action="` + PageAccount + `">`)
 			hidden(b, "do", "remove-passkey")

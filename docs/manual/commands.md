@@ -11,11 +11,14 @@ One command is answered by more than one object: [`subscribe`](#subscribe)
 opens the stream of changes, and its answer is a reply that stays open
 and says each event as it is written.
 
-A command reaches a database two ways today. A Go program runs one with
-the call `Exec`. And a Go program that has opened a database can let it
+A command reaches a database three ways today. A Go program runs one with
+the call `Exec`. A Go program that has opened a database can let it
 answer commands [over HTTP](#over-http), through the package
 `fado/httpdoor`. The program `fadodb serve` does that for a database with
 users and keys of its own: [Serving a database](serving-a-database.md).
+And a program in any language that can call C runs one with `fado_exec`
+of the library of C, in its own process, with the same object and the
+same answer: [In a program of another language](other-languages.md).
 
 For a program in another language the same list is in
 [api/openapi.json](../../api/openapi.json), an OpenAPI document written
@@ -111,6 +114,8 @@ A command takes the ones its list below shows, and no other.
 | [`history`](#history) | Reads every committed version of a document, oldest first. | reads |
 | [`version`](#version) | Reads one committed version of a document. | reads |
 | [`events`](#events) | Reads the events that touched a document, oldest first. | reads |
+| [`comment`](#comment) | Writes a comment on a document: words the engine keeps beside it, with who wrote them and when. It makes no version of the document. | writes |
+| [`comments`](#comments) | Reads the comments on a document, oldest first. | reads |
 | [`subscribe`](#subscribe) | Opens the stream of changes: the caller is told of every event it may read of, in the order of the commits, as each is written. | reads |
 | [`wait_for_changes`](#wait_for_changes) | Answers the events the caller may hear of after a place in the log, as the stream of changes tells them, and waits up to seconds for the first when there is none yet; the answer says where to ask from next. | reads |
 | [`preview`](#preview) | Runs a create, a set or a transition without writing anything. | reads |
@@ -119,6 +124,9 @@ A command takes the ones its list below shows, and no other.
 | [`query`](#query) | Reads the documents of a class that match a filter. | reads |
 | [`count`](#count) | Counts the documents of a class that match a filter. | reads |
 | [`flow`](#flow) | Answers the flow of a class: the documents the caller may read in each state now, and their moves along each transition. | reads |
+| [`throughput`](#throughput) | Answers how many documents of a class the caller may read were made and how many finished in each day, week or month: whether the pile grows. | reads |
+| [`paths`](#paths) | Answers the paths the documents of a class took through its states, the most taken first, for the documents the caller may read. | reads |
+| [`lineage`](#lineage) | Answers where a value of a document comes from, one level: how it is made, when, and what it read, with the values of the parts. | reads |
 | [`sql`](#sql) | Runs one read-only SELECT over the views, for an analyst. | reads |
 
 ### create
@@ -389,6 +397,41 @@ It answers:
 |---|---|
 | `events` | the events |
 
+### comment
+
+Writes a comment on a document: words the engine keeps beside it, with who wrote them and when. It makes no version of the document. It writes; in Go it is the call `Comment`.
+
+| Member | Type | | What it is |
+|---|---|---|---|
+| `class` | text | needed | the name of the class |
+| `id` | text | needed | the id of the document |
+| `text` | text | needed | the words: plain text, line breaks kept, at most the database's limit for a text |
+
+And, of the members that mean the same everywhere: `key`, `business_date`, `for`, `version`.
+
+It answers:
+
+| Member | What it holds |
+|---|---|
+| `comment` | the comment as the engine keeps it: its id, the words, who wrote them, what they are and for whom they acted, the version of the document, the business day and the moment |
+
+### comments
+
+Reads the comments on a document, oldest first. It reads; in Go it is the call `Comments`.
+
+| Member | Type | | What it is |
+|---|---|---|---|
+| `class` | text | needed | the name of the class |
+| `id` | text | needed | the id of the document |
+
+And, of the members that mean the same everywhere: `reason`, `at`, `for`.
+
+It answers:
+
+| Member | What it holds |
+|---|---|
+| `comments` | the comments, oldest first; none for a document the caller may not see |
+
 ### subscribe
 
 Opens the stream of changes: the caller is told of every event it may read of, in the order of the commits, as each is written. It reads; in Go it is the call `Subscribe`.
@@ -536,6 +579,7 @@ Answers the flow of a class: the documents the caller may read in each state now
 | `since` | moment |  | the first moment of the period the moves and the stays are counted in; since the class began when left out |
 | `until` | moment |  | the moment the period ends before; now when left out |
 | `spread` | true or false |  | true to be told how the stays of each state spread as well: the middle stay and the slow tenth. It reads every stay of the period, so it is asked for only when it is wanted |
+| `documents` | object |  | one number of the flow whose documents to answer in place of the flow: {"created": true}, {"state": "review"}, {"stays": "review"} with "at_least": "middle" or "slow_tenth" to keep the longest, or {"transition": "approve"} with "from" and "to" to narrow it; "limit" (50 when left out, 1,000 at the most) and "offset" page them |
 
 And, of the members that mean the same everywhere: `reason`, `for`.
 
@@ -544,6 +588,70 @@ It answers:
 | Member | What it holds |
 |---|---|
 | `flow` | the states of the class, each with its documents now, since when the oldest is there, and how many stays ended in the period and how long they lasted, with their middle and their slow tenth when spread asks for them; and its transitions, each with its moves in the period |
+| `documents` | when documents names a number, in place of the flow: how many there are, the page of them, each with its id, its title and state now, when it moved, entered, was made or finished, how long a stay lasted, the version and who; and whether more follow |
+
+### throughput
+
+Answers how many documents of a class the caller may read were made and how many finished in each day, week or month: whether the pile grows. It reads; in Go it is the call `Throughput`.
+
+| Member | Type | | What it is |
+|---|---|---|---|
+| `class` | text | needed | the name of the class |
+| `by` | text |  | the length of a period: day, week or month, by the clock of the database's time zone; day when left out |
+| `since` | moment |  | the first moment that is counted; since the class began when left out |
+| `until` | moment |  | the moment the counting ends before; now when left out |
+| `documents` | object |  | one number of the throughput whose documents to answer in place of it: {"made": "2026-11-02"} or {"finished": "2026-11-02"}, the first day of a period; "limit" (50 when left out, 1,000 at the most) and "offset" page them |
+
+And, of the members that mean the same everywhere: `reason`, `for`.
+
+It answers:
+
+| Member | What it holds |
+|---|---|
+| `throughput` | the periods from the first in which a document was made or finished to the last, each with its first day and how many documents were made and how many finished in it; and the two sums |
+| `documents` | when documents names a number, in place of the throughput: how many there are, the page of them, each with its id, its title and state now, when it was made or finished, the version and who; and whether more follow |
+
+### paths
+
+Answers the paths the documents of a class took through its states, the most taken first, for the documents the caller may read. It reads; in Go it is the call `Paths`.
+
+| Member | Type | | What it is |
+|---|---|---|---|
+| `class` | text | needed | the name of the class |
+| `since` | moment |  | the first moment a document was made at to be counted; since the class began when left out |
+| `until` | moment |  | the moment before which a document was made to be counted; now when left out |
+| `limit` | whole number |  | how many paths to answer, the most taken first; 20 when left out, 1,000 at the most |
+| `documents` | object |  | one path whose documents to answer in place of the paths: {"path": ["draft", "review", "approved"]}; "limit" (50 when left out, 1,000 at the most) and "offset" page them |
+
+And, of the members that mean the same everywhere: `reason`, `for`.
+
+It answers:
+
+| Member | What it holds |
+|---|---|
+| `paths` | how many documents were counted and how many different paths they took; the most taken paths, each with its states in the order a document came into them, how many documents took it, and whether it ends in a final state; and how many documents took another path |
+| `documents` | when documents names a path, in place of the paths: how many documents took it, the page of them, each with its id, its title and state now, when it was made and who made it; and whether more follow |
+
+### lineage
+
+Answers where a value of a document comes from, one level: how it is made, when, and what it read, with the values of the parts. It reads; in Go it is the call `Lineage`.
+
+| Member | Type | | What it is |
+|---|---|---|---|
+| `class` | text | needed | the name of the class |
+| `id` | text | needed | the id of the document |
+| `variable` | text | needed | the variable whose value is asked about |
+| `version` | whole number |  | the version of the document the value is of, to walk down in the past; the version it is at when left out |
+| `limit` | whole number |  | how many parts of each lookup to answer, the largest first; 50 when left out, 1,000 at the most |
+| `offset` | whole number |  | how many parts to skip |
+
+And, of the members that mean the same everywhere: `reason`, `at`, `for`.
+
+It answers:
+
+| Member | What it holds |
+|---|---|
+| `lineage` | the value, its kind (typed, computed, kept or live), its formula, the moment it came, the values of the document its formula read, and for each lookup the documents or rows it read: how many, what they give, the page of them the caller may read with their values, how many the caller may not, which changed since and what the lookup gives now; and whether the formula worked out again over what it read gives the value |
 
 ### sql
 
@@ -1139,6 +1247,7 @@ It answers:
 | Command | What it does | |
 |---|---|---|
 | [`table_rows`](#table_rows) | Reads every row of a table, in the order of its key. | reads |
+| [`row_history`](#row_history) | Reads the history of one row of a table: the row as it is now, then as it was before each change, the newest first, with who changed it and when. | reads |
 | [`import_rows`](#import_rows) | Writes rows into a table; a row whose key exists is replaced. | writes |
 | [`delete_rows`](#delete_rows) | Removes the rows of a table that have the keys given; a key the table does not have removes nothing. | writes |
 | [`preview_action`](#preview_action) | Answers what an action would be called with, or the request it would send, with every secret masked; nothing is called or sent. | reads |
@@ -1165,6 +1274,25 @@ It answers:
 |---|---|
 | `rows` | the rows, each an object of values by column |
 
+### row_history
+
+Reads the history of one row of a table: the row as it is now, then as it was before each change, the newest first, with who changed it and when. It reads; in Go it is the call `RowHistory`.
+
+| Member | Type | | What it is |
+|---|---|---|---|
+| `table` | text | needed | the name of the table |
+| `key` | object | needed | the key of the row: a value for every column of the table's key, and for no other |
+| `limit` | whole number |  | how many versions to answer, the newest first; 50 when left out, 1,000 at the most |
+| `offset` | whole number |  | how many versions to skip |
+
+And, of the members that mean the same everywhere: `reason`, `at`, `for`.
+
+It answers:
+
+| Member | What it holds |
+|---|---|
+| `history` | whether the table keeps the history of its rows, how many versions the row has had, and the page of them: each its values, the change that gave them and the one that changed or removed them, each with when, who, of what kind and for whom, and the kind of change |
+
 ### import_rows
 
 Writes rows into a table; a row whose key exists is replaced. It writes; in Go it is the call `ImportRows`.
@@ -1173,7 +1301,7 @@ Writes rows into a table; a row whose key exists is replaced. It writes; in Go i
 |---|---|---|---|
 | `table` | text | needed | the name of the table |
 | `rows` | list of objects | needed | the rows, each an object of values by column |
-| `replace` | true or false |  | true empties the table first, so that the rows given are all its rows |
+| `replace` | true or false |  | true makes the rows given all its rows: a row of the table that is not among them is removed |
 
 And, of the members that mean the same everywhere: `reason`, `for`.
 
@@ -1960,6 +2088,7 @@ A few calls of the Go package have no command.
 | `Exec` | it is the door the commands come through |
 | `FeedCopy` | the copy in the analytical engine is fed by the database itself, and by the program that opened it when it will not wait; a caller of the server never sees the copy |
 | `FinishSignIn` | it belongs to a sign-in under way on the server's page /auth/signin |
+| `FlowDocuments` | it is flow with documents given, for a Go program: the command takes the number to open in the same call |
 | `HasSecondStep` | the server's page /auth/account shows it to the person |
 | `Inlet` | it answers one entry of the list that list_inlets answers whole |
 | `InvitationPhoneCode` | it is the code the server's page /auth/invite shows, for a phone's camera |
@@ -1974,6 +2103,7 @@ A few calls of the Go package have no command.
 | `OutboxCounts` | it counts what of the queue is still to do, for whoever watches a server, which answers it at GET /v1/metrics; outbox lists the actions themselves |
 | `PassCaller` | it answers who a pass belongs to, for the door that is given the pass; a caller that wants to know who it is sends whoami |
 | `PasswordLinkUser` | it belongs to the server's page /auth/password, which a link opens |
+| `PathsDocuments` | it is paths with documents given, for a Go program: the command takes the number to open in the same call |
 | `PhoneCodeState` | the page that shows the code asks it, at /auth/phone/state, with the secret of its cookie |
 | `PhoneLink` | it belongs to the server's page /auth/phone, which the code's link opens |
 | `PhoneQuestion` | it is the question the server's page /auth/phone gives the phone's browser, to make a passkey |
@@ -1995,6 +2125,7 @@ A few calls of the Go package have no command.
 | `SignOut` | it ends the session it is sent with, on the server's page /auth/signout; end_session ends one by its id |
 | `Table` | it answers the engine's compiled form to a Go program; get_table answers the definition |
 | `TablesOf` | it is list_tables with its app given, for a Go program |
+| `ThroughputDocuments` | it is throughput with documents given, for a Go program: the command takes the number to open in the same call |
 | `TimeZone` | the time zone of the database is set by the program that opens it, with the option of that name, and read by it |
 | `UseInvitation` | it takes the browser's answer on the server's page /auth/invite, and gives a session |
 | `UsePasswordLink` | a password never travels in a command: the server's page /auth/password takes it |

@@ -1,6 +1,6 @@
 # ADR-0060: The organisation's rule-book: the things it keeps and the look of its faces
 
-- Status: Accepted by the owner on 2026-11-21 ("accept adr-0060"). Built: the look, item 3, as a sample class a test walks, and the face builder's skill of item 4. Decided and not built yet: the things the organisation keeps, item 2, the designer's skill reading them, and the starter of question 4.
+- Status: Accepted by the owner on 2026-11-21 ("accept adr-0060"). Item 3, the class `Look`, and the face builder's skill of item 4 withdrawn by the owner on 2026-11-27: a face and its look are the tool's that builds faces, not the engine's. Decided and not built yet: the things the organisation keeps, item 2, the designer's skill reading them, and the starter of question 4.
 - Date: 2026-11-15; the look rewritten 2026-11-21
 
 ## Context
@@ -77,6 +77,8 @@ in them at all.
    an id may read the entities.
 
 3. **`Look`: one document for each look of the organisation's faces.**
+   **Withdrawn by the owner on 2026-11-27**, with its sample class and
+   its test: the look of faces is kept by the tool that builds them.
    Rewritten on 2026-11-21. The owner saw the faces an agent had built
    without a rule and said what was missing, in three steps: "Define a
    direction. Verify that direction with user. Stay consistent in
@@ -127,7 +129,9 @@ in them at all.
      It never defines a class or a table for a thing an entity keeps
      elsewhere. It proposes an entity for a thing it finds nowhere,
      and a class to keep it when it is born nowhere.
-   - The face builder's skill, `skills/fadodb-face/`, written on
+   - **Withdrawn by the owner on 2026-11-27**, with item 3: the face
+     builder's skill left the engine for the tool that builds faces.
+     As it was: the face builder's skill, `skills/fadodb-face/`, written on
      2026-11-21 as the sixth hat, reads the approved look before it
      draws anything. With none, it defines a direction with the
      person, shows it to them drawn, never described, and stores the

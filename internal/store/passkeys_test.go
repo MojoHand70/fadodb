@@ -219,7 +219,7 @@ func TestPasskeys(t *testing.T) {
 		t.Fatalf("Ann signs in on her PC: %v %+v", err, onPC)
 	}
 	keys, err := s.Passkeys(ctx, "", annAs)
-	if err != nil || len(keys) != 2 || keys[0].Name != "Ann's iPhone" || !keys[0].Synced || keys[0].AddedWith != AddedWithInvitation || keys[1].UsedAt == 0 {
+	if err != nil || len(keys) != 2 || keys[0].Name != "Ann's iPhone, synced" || !keys[0].Synced || keys[0].AddedWith != AddedWithInvitation || keys[1].UsedAt == 0 {
 		t.Fatalf("Ann's passkeys: %v %+v", err, keys)
 	}
 	if list, err := s.Passkeys(ctx, "ann", olga); err != nil || len(list) != 2 {
@@ -429,13 +429,16 @@ func hasChange(changes []UserChange, what string) bool {
 
 // A synced passkey is named after the password manager that keeps it,
 // by its AAGUID (the owner's ruling, 2026-11-25), and not after the
-// device it was made on; one whose manager the browser does not say, as
-// Safari does not, and one that stays on its device keep the name given.
+// device it was made on. One whose manager the browser does not say, as
+// Safari does not, or the table does not hold, keeps the name given
+// with ", synced" after it (his ruling, 2026-11-26); one that stays on
+// its device keeps the name given alone.
 func TestASyncedPasskeyIsNamedAfterItsManager(t *testing.T) {
 	ctx := context.Background()
 	s := openUsers(t, filepath.Join(t.TempDir(), "acme.fado"), &still{now: time.Date(2026, 11, 25, 9, 0, 0, 0, time.UTC)})
 	gpm, zeros, hello := [16]byte{0xea, 0x9b, 0x8d, 0x66, 0x4d, 0x01, 0x1d, 0x21, 0x3c, 0xe4, 0xb6, 0xb4, 0x8c, 0xb5, 0x75, 0xd4}, [16]byte{},
 		[16]byte{0x08, 0x98, 0x70, 0x58, 0xca, 0xdc, 0x4b, 0x81, 0xb6, 0xe1, 0x30, 0xde, 0x50, 0xdc, 0xbe, 0x96}
+	unknown := [16]byte{0x0f, 0xad, 0x0d, 0xb0}
 	for _, c := range []struct {
 		user   string
 		aaguid [16]byte
@@ -444,8 +447,10 @@ func TestASyncedPasskeyIsNamedAfterItsManager(t *testing.T) {
 		want   string
 	}{
 		{"ann", gpm, true, "Ann's Windows PC", "Google Password Manager"},
-		{"bob", zeros, true, "Bob's iPhone", "Bob's iPhone"},
+		{"bob", zeros, true, "Bob's iPhone", "Bob's iPhone, synced"},
 		{"cyd", hello, false, "Cyd's laptop", "Cyd's laptop"},
+		{"dan", unknown, true, "Dan's Mac", "Dan's Mac, synced"},
+		{"eve", zeros, false, "Eve's key", "Eve's key"},
 	} {
 		if _, err := s.CreateUser(ctx, User{ID: c.user, Kind: ActorPerson}, machine); err != nil {
 			t.Fatal(err)

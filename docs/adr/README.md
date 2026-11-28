@@ -42,7 +42,7 @@ line says so. Copy `0000-template.md` to start.
 | [0034](0034-range-constraints-on-numeric-variables.md) | Range constraints on numeric variables | Accepted, amended by 0069 |
 | [0035](0035-sqlite-is-the-transactional-store.md) | SQLite is the transactional store, by measurement | Accepted |
 | [0036](0036-in-memory-index-for-lookups-in-commits.md) | An in-memory index serves LOOKUP inside commits, by measurement | Accepted |
-| [0037](0037-explicit-tables-and-the-compiled-lookup.md) | Explicit tables bound to SQLite and the compiled LOOKUP | Accepted, amended by 0046, 0051, 0080, 0082, 0084 |
+| [0037](0037-explicit-tables-and-the-compiled-lookup.md) | Explicit tables bound to SQLite and the compiled LOOKUP | Accepted, amended by 0046, 0051, 0080, 0082, 0084, 0099 |
 | [0038](0038-the-filter-and-the-read-only-sql-endpoint.md) | The filter and the read-only SQL endpoint | Accepted, amended by 0049, 0051, 0067, 0075, 0076 |
 | [0039](0039-class-versions-terminal-states-and-migrations.md) | Class versions, terminal states and migrations | Accepted, amended by 0040, 0043, 0051 |
 | [0040](0040-transitions-as-commits.md) | Transitions as commits: the command, eventless chains and state visits | Accepted, amended by 0043, 0047, 0048, 0078 |
@@ -60,7 +60,7 @@ line says so. Copy `0000-template.md` to start.
 | [0052](0052-system-groups-and-the-content-administrator.md) | System groups: who runs the database, who designs, who reads everything and who may act on any document | Accepted, amended by 0057, 0059, 0067, 0083 |
 | [0053](0053-acting-for-somebody.md) | Acting for somebody: a recorded substitution for people and assistants | Accepted, amended by 0071 |
 | [0054](0054-the-screen-on-a-layout-component.md) | The screen on a layout component: `mobile` and `desktop` | Withdrawn by 0069 |
-| [0055](0055-the-command-set-on-the-wire.md) | The command set on the wire: every command, its JSON, and one address each | Accepted, amended by 0057, 0058, 0059, 0063, 0065, 0067, 0070, 0074, 0077, 0076, 0078, 0079, 0082, 0083, 0086, 0088, 0064 |
+| [0055](0055-the-command-set-on-the-wire.md) | The command set on the wire: every command, its JSON, and one address each | Accepted, amended by 0057, 0058, 0059, 0063, 0065, 0067, 0070, 0074, 0077, 0076, 0078, 0079, 0082, 0083, 0086, 0088, 0064, 0099 |
 | [0056](0056-one-database-for-each-customer.md) | One database for each customer, and a server that serves one database | Accepted |
 | [0057](0057-users-groups-and-keys.md) | Who is calling: users, groups and keys, kept in the database | Accepted, amended by 0071, 0086, 0088 |
 | [0058](0058-the-stream-of-changes.md) | The stream of changes: the log read forward, over plain HTTP | Accepted, amended by 0067, 0064 |
@@ -68,11 +68,11 @@ line says so. Copy `0000-template.md` to start.
 | [0060](0060-the-organisations-rule-book.md) | The organisation's rule-book: the things it keeps and the look of its faces | Accepted |
 | [0061](0061-apache-license.md) | License: Apache 2.0 | Accepted |
 | [0062](0062-commands-from-a-terminal.md) | Commands from a terminal: `fadodb exec` | Accepted |
-| [0063](0063-the-flow-of-a-class.md) | The flow of a class in one call | Accepted |
+| [0063](0063-the-flow-of-a-class.md) | The flow of a class in one call | Accepted, amended by 0099 |
 | [0064](0064-the-door-for-agents.md) | The door for agents: `fadodb mcp`, each command a tool | Accepted, amended by 0071 |
 | [0065](0065-a-way-in-for-messages-from-outside.md) | A way in for messages from outside: an inlet, a definition the server runs | Accepted, amended by 0085 |
 | [0066](0066-what-the-servers-budget-is-measured-beside.md) | What the server's budget is measured beside: the Go API called by a request | Accepted |
-| [0067](0067-the-log-of-reads.md) | The log of reads: what a content administrator sees past a rule, and every SQL statement | Accepted |
+| [0067](0067-the-log-of-reads.md) | The log of reads: what a content administrator sees past a rule, and every SQL statement | Accepted, amended by 0099 |
 | [0068](0068-what-a-class-says-to-people.md) | What a class says to people: labels, The List, formats, descriptions and other languages | Accepted, amended by 0069, 0077, 0083 |
 | [0069](0069-the-screen-is-the-faces-and-a-class-has-sections.md) | The screen is the face's, and a class has sections | Accepted |
 | [0070](0070-the-bundle.md) | The bundle: a class, its words and its compiled formulas in one call | Accepted, amended by 0076 |
@@ -83,7 +83,7 @@ line says so. Copy `0000-template.md` to start.
 | [0075](0075-the-engine-makes-its-own-indexes.md) | The engine makes its own indexes, and says which question it cannot serve | Accepted |
 | [0076](0076-a-value-worked-out-when-it-is-read.md) | A value worked out when it is read: the mode `live`, the list of other documents, and what a `ref` compares with | Accepted, amended by 0078 |
 | [0077](0077-the-app.md) | The app, a name for the classes that belong together | Accepted, amended by 0079 |
-| [0078](0078-a-decision-stands-on-what-the-document-holds.md) | A decision stands on what the document holds: the version a command saw, who may bring a value again, and what a condition saw | Accepted |
+| [0078](0078-a-decision-stands-on-what-the-document-holds.md) | A decision stands on what the document holds: the version a command saw, who may bring a value again, and what a condition saw | Accepted, amended by 0099 |
 | [0079](0079-a-table-belongs-to-an-app.md) | A table belongs to an app | Proposed |
 | [0080](0080-a-column-added-to-a-table-in-use.md) | A column added to a table in use | Proposed, amended by 0084 |
 | [0081](0081-functions-over-a-list.md) | Functions over a list, each with its SQL from the start | Proposed |
@@ -99,5 +99,11 @@ line says so. Copy `0000-template.md` to start.
 | [0091](0091-a-kept-value-that-follows-its-table.md) | A kept value that follows its table | Proposed |
 | [0092](0092-the-app-system-and-its-tables.md) | The app System and its tables: what the database holds, read as any table | Proposed |
 | [0093](0093-a-kept-value-that-follows-the-clock.md) | A kept value that follows the clock, and the time zone of a database | Proposed |
-| [0094](0094-the-rows-of-a-table-stay-in-the-store.md) | The rows of a table stay in the store, and the copy holds them too | Proposed |
+| [0094](0094-the-rows-of-a-table-stay-in-the-store.md) | The rows of a table stay in the store, and the copy holds them too | Proposed, amended by 0099 |
 | [0095](0095-how-the-stays-of-a-state-spread.md) | How the stays of a state spread: the middle stay and the slow tenth | Proposed |
+| [0096](0096-made-and-finished-in-each-period.md) | How many documents were made and finished in each period | Proposed, amended by 0099 |
+| [0097](0097-the-paths-documents-took.md) | The paths documents took | Proposed, amended by 0099 |
+| [0098](0098-comments-on-a-document.md) | Comments on a document | Proposed |
+| [0099](0099-where-a-value-comes-from.md) | Where a value comes from, and the documents behind a number | Accepted |
+| [0101](0101-the-library-of-c.md) | FadoDB in a program of any language: the library of C | Proposed |
+| [0102](0102-the-programs-own-actions-and-the-library-with-duckdb.md) | The program's own actions through the library, and the library with DuckDB | Proposed |

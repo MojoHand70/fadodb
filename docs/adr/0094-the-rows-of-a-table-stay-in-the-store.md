@@ -1,6 +1,6 @@
 # ADR-0094: The rows of a table stay in the store, and the copy holds them too
 
-- Status: Proposed; amends ADR-0016 (the storage bindings `duckdb` and `external` are not built: every table's rows live in the store), ADR-0017 (the program with the analytical engine does not bind tables to DuckDB, and attaches no other database), ADR-0036 (a lookup of a live formula that is keyed by an indexed column is narrowed to its key, as the lookup of a commit is), ADR-0089 (the copy holds the rows of the tables too, and answers the questions a class asks of them)
+- Status: Proposed; amends ADR-0016 (the storage bindings `duckdb` and `external` are not built: every table's rows live in the store), ADR-0017 (the program with the analytical engine does not bind tables to DuckDB, and attaches no other database), ADR-0036 (a lookup of a live formula that is keyed by an indexed column is narrowed to its key, as the lookup of a commit is), ADR-0089 (the copy holds the rows of the tables too, and answers the questions a class asks of them); amended by ADR-0099 (the token of a table's rows is the id of the change that last wrote them, written before the rows)
 - Date: 2026-11-26
 
 ## Context

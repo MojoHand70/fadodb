@@ -102,23 +102,27 @@ class; the evidence is the log.
   that embeds it says on every call who the caller is and which groups
   they are in. A database can also keep its own users, groups and
   keys, for callers that reach it with a key, and `fadodb serve` signs
-  its people in with a password or a company's sign-on
+  its people in with a passkey, a password or a company's sign-on
   ([signing in](signing-in.md)).
 
 ## Where it stands
 
-FadoDB is before version 1.0. This is what works today, release
-v0.7.0, through the Go package `fado` and the server:
+FadoDB is before version 1.0. This is what works on main, through the
+Go package `fado`, the server and the library of C. The last release
+is v0.9.0, Phase 9's:
 
-| Works today | Comes later |
+| Works on main | Comes later |
 |---|---|
-| classes, variables, formulas, exact money, dates | the engine's own indexes, and a decision that stands on what the document holds |
-| states, transitions, guards, automatic moves by time | an analytical engine for large reports |
-| rules and actions, calls to other systems, exactly once | the engine called from other languages than Go |
-| who may: access, rights, system groups, substitutions | Postgres as the store |
+| classes, variables, formulas, exact money, dates | Postgres as the store |
+| states, transitions, guards, automatic moves by time | |
+| rules and actions, calls to other systems, exactly once | |
+| who may: access, rights, system groups, substitutions | |
 | versions, events, previews, filters, read-only SQL | |
 | a server with its own users, groups and keys, and a door for agents (MCP) that an agent's program starts | |
 | formulas in the browser, people signing in, apps, lists of other documents, the door for agents at the server itself, a tool with which an agent waits for a change, files through the door from a folder | |
+| the engine's own indexes, a decision that stands on what the document holds, values that follow a table or the clock, comments, where a value comes from, the history of a table's rows, signing in with a passkey (Phase 8) | |
+| an analytical engine for large reports: the program `fadodb` answers the questions that read a whole class from a copy in DuckDB ([opening a database](opening-a-database.md#an-analytical-engine)) (Phase 8) | |
+| the engine called from other languages than Go, through the library of C, and Python ([in a program of another language](other-languages.md)) (Phase 9) | |
 
 The [roadmap](../../ROADMAP.md) has the phases, the
 [changelog](../../CHANGELOG.md) what each release changed, and

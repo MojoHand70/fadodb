@@ -96,7 +96,7 @@ have added a passkey itself, so this gives it nothing more.
 | the computer that showed the code | is signed in too, and no other browser is |
 | the code's link is opened again | the page says the code has ended |
 | Ann's account page, on her computer | shows a code of the same kind, to add a passkey on another phone |
-| her phone, which holds her synced passkey, reads the code of a new invitation | the phone makes no other, and its page offers **Sign in with it** in the place of its button |
+| her phone, which holds her synced passkey, reads the code of a new invitation | its page offers **Sign in with it** under its button from the start, and in the button's place once the phone makes no other |
 | Ann signs in with it on her phone | the phone and the computer are signed in, and the invitation is used |
 | a computer that holds her synced passkey opens a new invitation of hers | the page offers **Sign in with it** too, and she is signed in with the invitation |
 
@@ -157,9 +157,12 @@ and is named after it: "Google Password Manager", "1Password",
 "Bitwarden", not "Olga's Windows PC". The browser says which manager
 made it, by the passkey's AAGUID, and the server looks the AAGUID up in
 a table of its own, of the 67 makers the community list of passkey
-providers held in November 2026. A browser that does not say, as
-Safari does not, leaves the name of the device, and so does a passkey
-that stays on its device, such as Windows Hello's.
+providers held in November 2026. A synced passkey whose maker is not
+known, because the browser does not say, as Safari does not, or the
+table does not hold it, keeps the name of the device with ", synced"
+after it: "Olga's iPhone, synced". The page then says "synced" once,
+in the name. A passkey that stays on its device, such as Windows
+Hello's, keeps the name of the device alone.
 
 <!-- passkeys -->
 | What happens | Answer |

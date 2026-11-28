@@ -1,0 +1,23 @@
+# The Python client of FadoDB (ADR-0101, step C): one package, over
+# HTTP or in the same process through the library of C, with nothing
+# but the standard library. A release sets its version and puts the
+# library of each system beside it, in fadodb/lib (step D).
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "fadodb"
+version = "0.0.0.dev0"
+description = "FadoDB for Python: a database over HTTP, or in the same process"
+readme = "README.md"
+license = "Apache-2.0"
+requires-python = ">=3.9"
+dependencies = []
+
+[project.urls]
+Homepage = "https://fadodb.org"
+Source = "https://github.com/MojoHand70/fadodb"
+
+[tool.setuptools]
+packages = ["fadodb"]

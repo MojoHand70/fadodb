@@ -7,9 +7,11 @@ import (
 
 // BenchmarkQueryLook asks a free question that two indexes fit, the
 // invoices of one order for one customer: the engine looks into both
-// indexes, at most a thousand documents each, and asks through the one
-// that ends first (ADR-0075, item 10). It is the whole call of the
-// command `query`, which returns the forty invoices the question finds.
+// indexes, the order's for at most a thousand documents and Globex's
+// no further than the order's eighty, rounded up to a hundred, and
+// asks through the one that ends first (ADR-0075, item 10). It is the
+// whole call of the command `query`, which returns the forty invoices
+// the question finds.
 // BenchmarkQueryOneIndex asks the same documents through the one
 // comparison of the pointer, and nobody looks: the difference between
 // the two is what the looks cost.

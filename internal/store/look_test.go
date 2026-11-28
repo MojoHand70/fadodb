@@ -199,6 +199,53 @@ func TestLook_TheReadRuleIsAFitToo(t *testing.T) {
 	}
 }
 
+// A look after the first counts no further than the fewest an earlier
+// one found, rounded up to 1, 10, 100 or a thousand: the first look of
+// Ewa's question finds the 83 invoices of ORD-5, so the look into
+// Globex's, which would count a thousand, stops at a hundred. Piotr's
+// rule is looked into the same way and still ends first, with his
+// three. Neither choice changes.
+func TestLook_ALaterLookCountsNoFurtherThanTheFewest(t *testing.T) {
+	looks := func(s *Store) map[string]string {
+		s.filters.mu.Lock()
+		defer s.filters.mu.Unlock()
+		out := map[string]string{}
+		for text := range s.filters.stmts {
+			if !strings.HasPrefix(text, "SELECT count(*) FROM (SELECT 1 FROM") {
+				continue
+			}
+			for _, column := range []string{"order", "customer", "owner"} {
+				if strings.Contains(text, `"`+column+`"`) {
+					out[column] = text[strings.LastIndex(text, " LIMIT ")+len(" LIMIT ") : len(text)-1]
+				}
+			}
+		}
+		return out
+	}
+	for _, tc := range []struct {
+		name, where string
+		who         Principal
+		column      string
+		limits      map[string]string
+	}{
+		{"Ewa, the invoices of ORD-5 for Globex", `order = REF("Order", "ORD-5") AND customer = "Globex"`, liveEwa, "order", map[string]string{"order": "1000", "customer": "100"}},
+		{"Piotr, the invoices of ORD-5", `order = REF("Order", "ORD-5")`, livePiotr, "owner", map[string]string{"order": "1000", "owner": "100"}},
+	} {
+		s, _ := openLook(t)
+		if column, how := taken(t, s, tc.where, tc.who); column != tc.column || !strings.Contains(how, "doc_Invoice_"+tc.column) {
+			t.Errorf("%s: asked through %q; want the index on %s\n%s", tc.name, column, tc.column, how)
+		}
+		if got := looks(s); fmt.Sprint(got) != fmt.Sprint(tc.limits) {
+			t.Errorf("%s: the looks counted up to %v; want %v", tc.name, got, tc.limits)
+		}
+	}
+	for least, want := range map[int]string{1: "1", 2: "10", 10: "10", 83: "100", 100: "100", 101: "1000", lookLimit: "1000", lookLimit + 1: fmt.Sprint(lookLimit)} {
+		if got := lookUpTo(least); got != want {
+			t.Errorf("after %d documents a look counts up to %s; want %s", least, got, want)
+		}
+	}
+}
+
 // A question that one index fits, or none, is asked as it always was,
 // and so is one a look finds nothing for.
 func TestLook_OnlyWhereTwoIndexesFit(t *testing.T) {

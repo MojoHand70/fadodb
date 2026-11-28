@@ -1,7 +1,7 @@
 # In a container
 
 `fadodb serve` runs in a container as it runs on a machine. The image
-holds the tool and nothing else, so everything in
+holds the tool and no other program, so everything in
 [Serving a database](serving-a-database.md) holds here as it stands.
 This chapter says what a container changes: where the database is
 kept, how the server is told to listen, and how it is reached, watched
@@ -19,12 +19,12 @@ What is not here yet is listed at the end.
 A release publishes the image at `ghcr.io/mojohand70/fadodb`, for
 `linux/amd64` and `linux/arm64`, under its version and under no other
 name: there is no `latest`, so that a server never changes its engine
-by itself. The first was v0.6.0, and the last is v0.7.0:
+by itself. The first was v0.6.0, and the last is v0.9.0:
 
 <!-- pulling it -->
 ```sh
-docker pull ghcr.io/mojohand70/fadodb:0.7.0
-docker tag ghcr.io/mojohand70/fadodb:0.7.0 fadodb
+docker pull ghcr.io/mojohand70/fadodb:0.9.0
+docker tag ghcr.io/mojohand70/fadodb:0.9.0 fadodb
 ```
 
 The second command gives the image the short name `fadodb`, which the
@@ -32,7 +32,7 @@ commands of this chapter use.
 
 FadoDB is two programs from one code
 ([the two programs](serving-a-database.md#a-server-with-the-analytical-engine)),
-and from the release after v0.7.0 on there is an image of each:
+and from v0.8.0 on there is an image of each:
 
 | The image | The program in it |
 |---|---|
@@ -53,7 +53,7 @@ docker build -t fadodb .
 <!-- the image -->
 | | |
 |---|---|
-| What it holds | the tool, `/fadodb`, the C and C++ libraries the analytical engine needs, and the certificates by which a request of an action knows another service. No shell and no other program |
+| What it holds | the tool, `/fadodb`, the C and C++ libraries the analytical engine needs, and the certificates by which a request of an action knows another service; the licences of FadoDB and of DuckDB, which is linked into the tool, and the notices of the code of others it carries, in `/licenses`. No shell and no other program |
 | What it runs | the tool: what follows the name of the image is what follows `fadodb` at a terminal. Told nothing, it prints its help |
 | Who it runs as | the user `65532`, who is not root |
 | Where a database is kept | `/data`. A command starts there, so `acme.fado` is `/data/acme.fado` |
@@ -364,15 +364,18 @@ the port of the server, and needs no program in the image.
 An image is named with its version, and a newer one is put in its
 place by Tomek: he stops the server, makes a backup, and starts the
 container from the newer image. Before version 1.0 a release may
-change how a database is laid out, and there is no way yet to bring a
-database forward: [Running it](running-it.md#another-release) says
-what to keep with each backup.
+change how a database is laid out. A database that v0.7.0 or a later
+release made is brought forward when the newer server opens it, and
+the older one no longer opens it afterwards, so the backup is the way
+back; one of a release before v0.7.0 is refused:
+[Running it](running-it.md#another-release) says what to keep with
+each backup.
 
 ## The small image
 
 `fadodb-core` is the same program without the analytical engine. Its
-image holds the program and the certificates, and no other file: no
-library, since the program needs none.
+image holds the program, the certificates and the licences, and no
+other file: no library, since the program needs none.
 
 <!-- building the small image -->
 ```sh
@@ -382,7 +385,7 @@ docker build -t fadodb-core --target core .
 <!-- the small image -->
 | | |
 |---|---|
-| What it holds | the tool, `/fadodb-core`, and the certificates. No shell and no other program |
+| What it holds | the tool, `/fadodb-core`, and the certificates; FadoDB's licence and the notices of the code of others the tool carries, in `/licenses`. No shell and no other program |
 | What it runs | the tool, as the other image does: `docker run --rm fadodb-core version` |
 | Who it runs as, where a database is kept, the port it names | as the other image: the user `65532`, `/data`, `8080` |
 

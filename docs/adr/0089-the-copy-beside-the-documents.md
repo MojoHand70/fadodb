@@ -1,6 +1,6 @@
 # ADR-0089: The copy beside the documents: how the analytical engine is fed and asked
 
-- Status: Proposed; amends ADR-0017 (who feeds the copy, what it holds, how fresh an answer is, how it is made again), ADR-0020 (item 3: which question the copy answers); amended by ADR-0094 (Proposed: the copy holds the rows of the tables too)
+- Status: Proposed; amends ADR-0017 (who feeds the copy, what it holds, how fresh an answer is, how it is made again), ADR-0020 (item 3: which question the copy answers); amended by ADR-0094 (Proposed: the copy holds the rows of the tables too) and by ADR-0097 (Proposed: a move in the copy says which version it made)
 - Date: 2026-11-25
 
 ## Context
@@ -357,10 +357,13 @@ strike.
   alone. With the events, the engine makes the copy of that database
   in 84 seconds, in ten pieces, and it is 0.54 GB, a fourteenth of the
   database. Found again at the next opening, it is checked in 21 ms.
-- **Not built:** the middle wait and the slow tenth, the paths
+- **Not built then:** the middle wait and the slow tenth, the paths
   documents took and the documents made and finished in each period,
   which the roadmap calls the mining views. Each is a question the
-  copy can answer when a face asks for it.
+  copy can answer when a face asks for it. All three were built in
+  Phase 8, each as an answer of the engine and no view: the spread of
+  the stays in `flow` (ADR-0095), the command `throughput` (ADR-0096)
+  and the command `paths` (ADR-0097).
 
 ## Settled while building the program with the engine
 
@@ -426,6 +429,22 @@ strike.
 - **Only a served database gets the engine.** The commands of the
   program that open a database for a moment, such as `fadodb user
   add`, keep no copy.
+- **The engine takes no extension from outside the program**
+  (2026-11-27). The library the program is built with carries
+  core_functions, icu, json and parquet, loaded when DuckDB starts,
+  and those are all the copy's statements use. DuckDB starts with
+  `autoinstall_known_extensions` and `autoload_known_extensions` on:
+  a statement that needs an extension it lacks would make it fetch
+  one from the network, and load one an analyst installed on the
+  machine, the extension for SQLite files among them, which must
+  never read the store's file inside the program (Context, item 2).
+  Every connection to the copy turns both off. A test holds it on
+  GitHub, where the network is there: both settings off on each
+  connection, no extension loaded but those the library carries, and
+  a function of another extension, `ST_Point` of spatial, refused at
+  once. That is what the plan's "offline extension installation
+  verified in CI" asks: the program needs no extension installed,
+  and fetches none.
 
 ## Settled while building the moves the copy keeps ready
 

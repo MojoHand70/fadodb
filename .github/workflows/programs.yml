@@ -74,7 +74,8 @@ jobs:
           go vet ./...
           go test -count=1 ./...
       - name: Pack it
-        if: inputs.keep
+        # On every pull request, so that a release is not the first to
+        # pack it; only a release keeps the archive.
         run: scripts/program.sh pack "${{ inputs.version }}"
       - uses: actions/upload-artifact@v7
         if: inputs.keep

@@ -29,8 +29,9 @@ Every pull request must pass:
    [docs/dependencies.md](docs/dependencies.md) fails the build.
 5. The size gate: a release-style core binary over the budget fails the build.
 6. The file gate: a tracked file over 1 MB fails the build. The repository
-   holds source, documents and test data; build `fadodb` with `make build`,
-   which writes to `bin/`, and never commit what a build makes.
+   holds source, documents and test data; build `fadodb-core` with
+   `make build` and `fadodb` with `make full`, which write to `bin/`,
+   and never commit what a build makes.
 7. The benchmark gate, in its short form (`scripts/benchgate.sh --quick`):
    any extra allocation per operation, more than 5% more bytes per
    operation, or a benchmark more than half slower against the base branch

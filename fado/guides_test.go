@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -634,6 +635,206 @@ func TestGuide_SeeWhereDocumentsWait(t *testing.T) {
 			t.Errorf("the flow %s reads has no state %s", row[0], row[1])
 		}
 	}
+	// Whether the pile grows: the answer the guide shows, each line of
+	// its table, and every member of the answer explained.
+	through := func(as fado.Principal, object string) (*fado.Throughput, string) {
+		t.Helper()
+		answer, err := db.Exec(ctx, as, "throughput", []byte(object))
+		if err != nil {
+			t.Fatalf("throughput %s: %v", object, err)
+		}
+		var got struct{ Throughput *fado.Throughput }
+		if err := json.Unmarshal(answer, &got); err != nil {
+			t.Fatal(err)
+		}
+		var shown bytes.Buffer
+		if err := json.Indent(&shown, answer, "", "  "); err != nil {
+			t.Fatal(err)
+		}
+		return got.Throughput, shown.String()
+	}
+	byDay, shownDays := through(who["Ann"], `{"class": "Invoice", "by": "day"}`)
+	if want := strings.TrimSuffix(strings.TrimPrefix(block("the throughput Ann sees"), "```jsonc\n"), "\n```"); shownDays != want {
+		t.Errorf("the throughput Ann sees is\n%s\nand the guide shows\n%s", shownDays, want)
+	}
+	if viaCall, err := db.Throughput(ctx, "Invoice", fado.ThroughputAsk{By: fado.ThroughputDay}, ann); err != nil || !reflect.DeepEqual(viaCall, byDay) {
+		t.Errorf("the Go call answers %+v (%v), and the command %+v", viaCall, err, byDay)
+	}
+	made := rows("made and finished")
+	if len(made) != 5 {
+		t.Fatalf("the guide asks for the throughput %d times, want 5", len(made))
+	}
+	for _, row := range made {
+		th, _ := through(who[row[0]], row[1])
+		periods := make([]string, len(th.Periods))
+		for i, p := range th.Periods {
+			periods[i] = fmt.Sprintf("%s %d/%d", p.From, p.Created, p.Finished)
+		}
+		if got := strings.Join(periods, ", "); got != row[2] {
+			t.Errorf("%s sends %s and reads %s; the guide says %s", row[0], row[1], got, row[2])
+		}
+	}
+	explained := map[string]bool{}
+	for _, row := range rows("what a throughput says") {
+		for _, member := range strings.Split(row[0], ", ") {
+			explained[strings.Trim(member, "`")] = true
+		}
+	}
+	told := map[string]bool{}
+	for _, of := range []any{fado.Throughput{}, fado.ThroughputPeriod{}} {
+		kind := reflect.TypeOf(of)
+		for i := 0; i < kind.NumField(); i++ {
+			member, _, _ := strings.Cut(kind.Field(i).Tag.Get("json"), ",")
+			switch member {
+			case "class", "class_version", "since", "until":
+				continue // what the throughput is of
+			}
+			if !explained[member] {
+				t.Errorf("the guide does not say what %s of a throughput says", member)
+			}
+			told[member] = true
+		}
+	}
+	for member := range explained {
+		if !told[member] {
+			t.Errorf("the guide explains %s, which a throughput has not", member)
+		}
+	}
+	// Which way documents went: the answer the guide shows, each line of
+	// its table, and every member of the answer explained.
+	ways := func(as fado.Principal, object string) (*fado.Paths, string) {
+		t.Helper()
+		answer, err := db.Exec(ctx, as, "paths", []byte(object))
+		if err != nil {
+			t.Fatalf("paths %s: %v", object, err)
+		}
+		var got struct{ Paths *fado.Paths }
+		if err := json.Unmarshal(answer, &got); err != nil {
+			t.Fatal(err)
+		}
+		var shown bytes.Buffer
+		if err := json.Indent(&shown, answer, "", "  "); err != nil {
+			t.Fatal(err)
+		}
+		return got.Paths, shown.String()
+	}
+	annWays, shownWays := ways(who["Ann"], `{"class": "Invoice"}`)
+	if want := strings.TrimSuffix(strings.TrimPrefix(block("the paths Ann sees"), "```jsonc\n"), "\n```"); shownWays != want {
+		t.Errorf("the paths Ann sees are\n%s\nand the guide shows\n%s", shownWays, want)
+	}
+	if viaCall, err := db.Paths(ctx, "Invoice", fado.PathsAsk{}, ann); err != nil || !reflect.DeepEqual(viaCall, annWays) {
+		t.Errorf("the Go call answers %+v (%v), and the command %+v", viaCall, err, annWays)
+	}
+	went := rows("the paths each sees")
+	if len(went) != 4 {
+		t.Fatalf("the guide asks for the paths %d times, want 4", len(went))
+	}
+	for _, row := range went {
+		p, _ := ways(who[row[0]], row[1])
+		listed := make([]string, len(p.Paths))
+		for i, path := range p.Paths {
+			listed[i] = fmt.Sprintf("%s: %d", strings.Join(path.States, ", "), path.Documents)
+		}
+		if got := strings.Join(listed, "; "); p.Documents != number(row[2]) || p.Others != number(row[3]) || got != row[4] {
+			t.Errorf("%s sends %s and reads %d documents, %d others and %s; the guide says %s, %s and %s", row[0], row[1], p.Documents, p.Others, got, row[2], row[3], row[4])
+		}
+	}
+	saidOfPaths := map[string]bool{}
+	for _, row := range rows("what the paths say") {
+		saidOfPaths[strings.Trim(row[0], "`")] = true
+	}
+	hasOfPaths := map[string]bool{}
+	for _, of := range []any{fado.Paths{}, fado.Path{}} {
+		kind := reflect.TypeOf(of)
+		for i := 0; i < kind.NumField(); i++ {
+			member, _, _ := strings.Cut(kind.Field(i).Tag.Get("json"), ",")
+			switch member {
+			case "class", "class_version", "since", "until":
+				continue // what the paths are of
+			}
+			if !saidOfPaths[member] {
+				t.Errorf("the guide does not say what %s of the paths says", member)
+			}
+			hasOfPaths[member] = true
+		}
+	}
+	for member := range saidOfPaths {
+		if !hasOfPaths[member] {
+			t.Errorf("the guide explains %s, which the paths have not", member)
+		}
+	}
+	// The documents behind a number (ADR-0099): the answer the guide
+	// shows, the Go call's, each line of its table, and every member of
+	// the answer explained.
+	opened := func(as fado.Principal, command, object string) (*fado.Documents, string) {
+		t.Helper()
+		answer, err := db.Exec(ctx, as, command, []byte(object))
+		if err != nil {
+			t.Fatalf("%s %s: %v", command, object, err)
+		}
+		var got struct{ Documents *fado.Documents }
+		if err := json.Unmarshal(answer, &got); err != nil {
+			t.Fatal(err)
+		}
+		if got.Documents == nil {
+			t.Fatalf("%s %s answers no documents: %s", command, object, answer)
+		}
+		var shown bytes.Buffer
+		if err := json.Indent(&shown, answer, "", "  "); err != nil {
+			t.Fatal(err)
+		}
+		return got.Documents, shown.String()
+	}
+	moved, shownMoved := opened(who["Ann"], "flow", `{"class": "Invoice", "documents": {"transition": "submit"}}`)
+	if want := strings.TrimSuffix(strings.TrimPrefix(block("the moves along submit"), "```jsonc\n"), "\n```"); shownMoved != want {
+		t.Errorf("the moves along submit Ann sees are\n%s\nand the guide shows\n%s", shownMoved, want)
+	}
+	if viaCall, err := db.FlowDocuments(ctx, "Invoice", fado.FlowPeriod{}, fado.DocumentsAsk{Transition: "submit"}, ann); err != nil || !reflect.DeepEqual(viaCall, moved) {
+		t.Errorf("the Go call answers %+v (%v), and the command %+v", viaCall, err, moved)
+	}
+	behind := rows("the documents behind each number")
+	if len(behind) != 9 {
+		t.Fatalf("the guide opens %d numbers, want 9", len(behind))
+	}
+	for _, row := range behind {
+		d, _ := opened(who[row[0]], row[1], `{"class": "Invoice", "documents": `+row[2]+`}`)
+		ids := make([]string, len(d.Rows))
+		for i, r := range d.Rows {
+			ids[i] = r.ID
+		}
+		if got := strings.Join(ids, ", "); d.Count != number(row[3]) || got != row[4] {
+			t.Errorf("%s opens %s %s to %d: %s; the guide says %s: %s", row[0], row[1], row[2], d.Count, got, row[3], row[4])
+		}
+	}
+	saidOfDocuments := map[string]bool{}
+	for _, row := range rows("what the documents say") {
+		for _, member := range strings.Split(row[0], ", ") {
+			saidOfDocuments[strings.Trim(member, "`")] = true
+		}
+	}
+	hasOfDocuments := map[string]bool{}
+	for _, of := range []any{fado.Documents{}, fado.DocumentRow{}} {
+		kind := reflect.TypeOf(of)
+		for i := 0; i < kind.NumField(); i++ {
+			member, _, _ := strings.Cut(kind.Field(i).Tag.Get("json"), ",")
+			if !saidOfDocuments[member] {
+				t.Errorf("the guide does not say what %s of the documents says", member)
+			}
+			hasOfDocuments[member] = true
+		}
+	}
+	for member := range saidOfDocuments {
+		if !hasOfDocuments[member] {
+			t.Errorf("the guide explains %s, which the documents have not", member)
+		}
+	}
+	// Every number the guide's table of what can be opened names is
+	// one the command opens.
+	for _, row := range rows("what can be opened") {
+		if _, err := db.Exec(ctx, who["Ann"], row[0], []byte(`{"class": "Invoice", "documents": `+row[1]+`}`)); err != nil {
+			t.Errorf("%s does not open %s: %v", row[0], row[1], err)
+		}
+	}
 	// Each caller sees their own.
 	for _, row := range rows("who sees what") {
 		p, known := who[row[0]]
@@ -1230,4 +1431,192 @@ func TestGuide_KeepTheLinesADecisionStoodOn(t *testing.T) {
 		// read_only, which the store's own test holds.
 		t.Errorf("a set of the list of a closed order: %v", err)
 	}
+}
+
+// The guide on where a value comes from (ADR-0099, part 2): the table
+// and the classes are the guide's own, the story its table, and each
+// answer it shows is the one Dan gets.
+func TestGuide_WhereAValueComesFrom(t *testing.T) {
+	const guide = "where-a-value-comes-from.md"
+	text, err := os.ReadFile(filepath.Join("..", "docs", "manual", "guides", guide))
+	if err != nil {
+		t.Fatal(err)
+	}
+	page := strings.ReplaceAll(string(text), "\r\n", "\n")
+	block := func(mark string) string {
+		t.Helper()
+		_, after, found := strings.Cut(page, "<!-- "+mark+" -->\n")
+		if !found {
+			t.Fatalf("the guide has nothing marked %q", mark)
+		}
+		part, _, _ := strings.Cut(after, "\n\n")
+		return part
+	}
+	code := func(mark string) string {
+		t.Helper()
+		b := block(mark)
+		b = strings.TrimPrefix(strings.TrimPrefix(b, "```jsonc\n"), "```json\n")
+		return strings.TrimSuffix(b, "\n```")
+	}
+	rows := func(mark string) [][]string {
+		t.Helper()
+		var out [][]string
+		for i, line := range strings.Split(block(mark), "\n") {
+			if i < 2 {
+				continue
+			}
+			cells := strings.Split(strings.Trim(line, "|"), "|")
+			for j := range cells {
+				cells[j] = strings.Trim(strings.TrimSpace(cells[j]), "`")
+			}
+			out = append(out, cells)
+		}
+		return out
+	}
+	var clock atomic.Int64
+	clock.Store(time.Date(2026, 12, 2, 9, 0, 0, 0, time.UTC).Unix())
+	db, err := fado.Open(filepath.Join(t.TempDir(), "guide.fado"), fado.Options{Now: func() time.Time { return time.Unix(clock.Load(), 0).UTC() }, Outbox: fado.OutboxOptions{Manual: true}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	ctx := context.Background()
+	if _, err := db.DefineTable(ctx, []byte(code("the table")), setup); err != nil {
+		t.Fatal(err)
+	}
+	// Each class names the next, so the first two are made bare first.
+	for _, def := range []string{
+		`{"name": "Region", "title": "name", "variables": {"name": {"type": "text", "required": true}}, "states": {"initial": "open", "list": ["open"]}, "access": {"read": "TRUE", "create": "TRUE", "update": "TRUE", "delete": "FALSE"}}`,
+		`{"name": "Customer", "title": "name", "variables": {"name": {"type": "text", "required": true}}, "states": {"initial": "open", "list": ["open"]}, "access": {"read": "TRUE", "create": "TRUE", "update": "TRUE", "delete": "FALSE"}}`,
+		code("the invoice"), code("the customer"), code("the region"),
+	} {
+		if _, err := db.DefineClass(ctx, []byte(def), setup); err != nil {
+			t.Fatalf("a class of the guide is refused: %v", err)
+		}
+	}
+	tess, ann, piotr, dan := person("tess", "treasury"), person("ann", "sales"), person("piotr", "sales"), person("dan", "leads")
+	must := func(_ *fado.Document, err error) {
+		t.Helper()
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	at := func(day, hour int) { clock.Store(time.Date(2026, 12, day, hour, 0, 0, 0, time.UTC).Unix()) }
+	if _, err := db.ImportRows(ctx, "Rates", []fado.Values{{"currency": "EUR", "rate": "4.2500"}, {"currency": "PLN", "rate": "1.0000"}}, tess); err != nil {
+		t.Fatal(err)
+	}
+	must(db.Create(ctx, "Region", fado.Values{"name": "North"}, dan, fado.WithID("north")))
+	must(db.Create(ctx, "Customer", fado.Values{"name": "Acme", "region": "Region:north"}, dan, fado.WithID("Acme")))
+	must(db.Create(ctx, "Customer", fado.Values{"name": "Borg", "region": "Region:north"}, dan, fado.WithID("Borg")))
+	for _, inv := range []struct {
+		who                            fado.Option
+		id, customer, amount, currency string
+	}{{ann, "INV-17", "Acme", "300.00", "EUR"}, {piotr, "INV-18", "Acme", "2000.00", "PLN"}, {ann, "INV-19", "Borg", "500.00", "EUR"}} {
+		must(db.Create(ctx, "Invoice", fado.Values{"number": inv.id, "customer": "Customer:" + inv.customer, "amount": inv.amount, "currency": inv.currency}, inv.who, fado.WithID(inv.id)))
+		must(db.Transition(ctx, "Invoice", inv.id, "file", nil, inv.who))
+	}
+	at(3, 3)
+	must(db.Refresh(ctx, "Customer", "Acme", nil, dan))
+	must(db.Refresh(ctx, "Customer", "Borg", nil, dan))
+	at(3, 4)
+	must(db.Refresh(ctx, "Region", "north", nil, dan))
+	at(3, 10)
+	if _, err := db.ImportRows(ctx, "Rates", []fado.Values{{"currency": "EUR", "rate": "4.3100"}}, tess); err != nil {
+		t.Fatal(err)
+	}
+	at(3, 11)
+	must(db.Set(ctx, "Invoice", "INV-18", fado.Values{"amount": "2200.00"}, piotr))
+	at(3, 12)
+
+	who := map[string]fado.Principal{
+		"Dan":   {ID: "dan", Kind: fado.ActorPerson, Groups: []string{"leads"}},
+		"Piotr": {ID: "piotr", Kind: fado.ActorPerson, Groups: []string{"sales"}},
+	}
+	asked := func(as fado.Principal, object string) (*fado.Lineage, string) {
+		t.Helper()
+		answer, err := db.Exec(ctx, as, "lineage", []byte(object))
+		if err != nil {
+			t.Fatalf("lineage %s: %v", object, err)
+		}
+		var got struct{ Lineage *fado.Lineage }
+		if err := json.Unmarshal(answer, &got); err != nil {
+			t.Fatal(err)
+		}
+		var shown bytes.Buffer
+		if err := json.Indent(&shown, answer, "", "  "); err != nil {
+			t.Fatal(err)
+		}
+		return got.Lineage, shown.String()
+	}
+	for mark, object := range map[string]string{
+		"north":      `{"class": "Region", "id": "north", "variable": "sales"}`,
+		"acme":       `{"class": "Customer", "id": "Acme", "variable": "invoiced"}`,
+		"the net":    `{"class": "Invoice", "id": "INV-17", "variable": "net"}`,
+		"the rate":   `{"class": "Invoice", "id": "INV-17", "variable": "rate"}`,
+		"the amount": `{"class": "Invoice", "id": "INV-17", "variable": "amount"}`,
+	} {
+		if _, shown := asked(who["Dan"], object); shown != code(mark) {
+			t.Errorf("Dan asks %s and is answered\n%s\nand the guide shows\n%s", object, shown, code(mark))
+		}
+	}
+	direct, err := db.Lineage(ctx, "Customer", "Acme", "invoiced", fado.LineageAsk{}, dan)
+	viaCommand, _ := asked(who["Dan"], `{"class": "Customer", "id": "Acme", "variable": "invoiced"}`)
+	if a, b := mustMarshal(t, direct), mustMarshal(t, viaCommand); err != nil || a != b {
+		t.Errorf("the Go call answers %s (%v), and the command %s", a, err, b)
+	}
+	for _, row := range rows("acme for piotr") {
+		l, _ := asked(who[row[0]], `{"class": "Customer", "id": "Acme", "variable": "invoiced"}`)
+		ids := []string{}
+		for _, p := range l.Lookups[0].Parts {
+			ids = append(ids, p.ID)
+		}
+		hidden := ""
+		if h := l.Lookups[0].Hidden; h != nil {
+			hidden = fmt.Sprintf("%d, together %v", h.Count, h.Value)
+		}
+		if got := strings.Join(ids, ", "); got != row[1] || hidden != row[2] {
+			t.Errorf("%s reads the parts %s and hidden %q; the guide says %s and %q", row[0], got, hidden, row[1], row[2])
+		}
+	}
+	for _, row := range rows("in the past") {
+		l, _ := asked(who["Dan"], row[0])
+		if fmt.Sprint(l.Value) != row[1] || fmt.Sprintf("version %d", l.Since.Version) != row[2] {
+			t.Errorf("%s answers %v since version %d; the guide says %s, %s", row[0], l.Value, l.Since.Version, row[1], row[2])
+		}
+	}
+	said := map[string]bool{}
+	for _, row := range rows("what lineage says") {
+		for _, member := range strings.Split(row[0], ", ") {
+			said[strings.Trim(member, "`")] = true
+		}
+	}
+	has := map[string]bool{}
+	for _, of := range []any{fado.Lineage{}, fado.LineageMoment{}, fado.LineageVariable{}, fado.LineageLookup{}, fado.LineagePart{}, fado.LineageHidden{}, fado.LineageChanged{}, fado.LineageChange{}} {
+		kind := reflect.TypeOf(of)
+		for i := 0; i < kind.NumField(); i++ {
+			if !kind.Field(i).IsExported() {
+				continue // not on the wire
+			}
+			member, _, _ := strings.Cut(kind.Field(i).Tag.Get("json"), ",")
+			if !said[member] {
+				t.Errorf("the guide does not say what %s of %s says", member, kind.Name())
+			}
+			has[member] = true
+		}
+	}
+	for member := range said {
+		if !has[member] {
+			t.Errorf("the guide explains %s, which lineage has not", member)
+		}
+	}
+}
+
+// mustMarshal writes a value as its JSON, for a test to compare.
+func mustMarshal(t *testing.T, v any) string {
+	t.Helper()
+	b, err := json.Marshal(v)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(b)
 }

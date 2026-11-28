@@ -523,6 +523,18 @@ func runEvents(c *call) error {
 	return c.answer("events", list(events), err)
 }
 
+// runComment writes a comment on a document (ADR-0098).
+func runComment(c *call) error {
+	made, err := c.s.Comment(c.ctx, c.text("class"), c.text("id"), c.text("text"), c.opts...)
+	return c.answer("comment", made, err)
+}
+
+// runComments reads the comments on a document, oldest first.
+func runComments(c *call) error {
+	comments, err := c.s.Comments(c.ctx, c.text("class"), c.text("id"), c.opts...)
+	return c.answer("comments", list(comments), err)
+}
+
 // runSubscribe refuses the stream of changes to Exec, which answers one
 // object.
 func runSubscribe(*call) error {
@@ -671,8 +683,87 @@ func runFlow(c *call) error {
 		return e
 	}
 	period.Spread = c.flag("spread")
+	ask, given, e := c.documentsAsk()
+	if e != nil {
+		return e
+	}
+	if given {
+		documents, err := c.s.FlowDocuments(c.ctx, c.text("class"), period, ask, c.opts...)
+		return c.answer("documents", documents, err)
+	}
 	flow, err := c.s.Flow(c.ctx, c.text("class"), period, c.opts...)
 	return c.answer("flow", flow, err)
+}
+
+// runThroughput answers how many documents of a class were made and how
+// many finished in each period (ADR-0096).
+func runThroughput(c *call) error {
+	var ask store.ThroughputAsk
+	var e *store.Error
+	if ask.Since, e = c.moment("since"); e != nil {
+		return e
+	}
+	if ask.Until, e = c.moment("until"); e != nil {
+		return e
+	}
+	ask.By = c.text("by")
+	documents, given, e := c.documentsAsk()
+	if e != nil {
+		return e
+	}
+	if given {
+		page, err := c.s.ThroughputDocuments(c.ctx, c.text("class"), ask, documents, c.opts...)
+		return c.answer("documents", page, err)
+	}
+	throughput, err := c.s.Throughput(c.ctx, c.text("class"), ask, c.opts...)
+	return c.answer("throughput", throughput, err)
+}
+
+// runPaths answers the paths the documents of a class took (ADR-0097).
+func runPaths(c *call) error {
+	var ask store.PathsAsk
+	var e *store.Error
+	if ask.Since, e = c.moment("since"); e != nil {
+		return e
+	}
+	if ask.Until, e = c.moment("until"); e != nil {
+		return e
+	}
+	limit, e := c.integer("limit")
+	if e != nil {
+		return e
+	}
+	ask.Limit = int(limit)
+	documents, given, e := c.documentsAsk()
+	if e != nil {
+		return e
+	}
+	if given {
+		page, err := c.s.PathsDocuments(c.ctx, c.text("class"), ask, documents, c.opts...)
+		return c.answer("documents", page, err)
+	}
+	paths, err := c.s.Paths(c.ctx, c.text("class"), ask, c.opts...)
+	return c.answer("paths", paths, err)
+}
+
+// runLineage answers where a value comes from (ADR-0099, part 2).
+func runLineage(c *call) error {
+	var ask store.LineageAsk
+	version, e := c.integer("version")
+	if e != nil {
+		return e
+	}
+	limit, e := c.integer("limit")
+	if e != nil {
+		return e
+	}
+	offset, e := c.integer("offset")
+	if e != nil {
+		return e
+	}
+	ask.Version, ask.Limit, ask.Offset = version, int(limit), int(offset)
+	lineage, err := c.s.Lineage(c.ctx, c.text("class"), c.text("id"), c.text("variable"), ask, c.opts...)
+	return c.answer("lineage", lineage, err)
 }
 
 func runSQL(c *call) error {
@@ -889,6 +980,25 @@ func runMigrate(c *call) error {
 func runTableRows(c *call) error {
 	rows, err := c.s.TableRows(c.ctx, c.text("table"), c.opts...)
 	return c.answer("rows", list(rows), err)
+}
+
+// runRowHistory reads the history of a row of a table (ADR-0099, step
+// 3).
+func runRowHistory(c *call) error {
+	key, e := c.values("key")
+	if e != nil {
+		return e
+	}
+	limit, e := c.integer("limit")
+	if e != nil {
+		return e
+	}
+	offset, e := c.integer("offset")
+	if e != nil {
+		return e
+	}
+	h, err := c.s.RowHistory(c.ctx, c.text("table"), key, store.RowHistoryAsk{Limit: int(limit), Offset: int(offset)}, c.opts...)
+	return c.answer("history", h, err)
 }
 
 func runImportRows(c *call) error {

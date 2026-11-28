@@ -213,11 +213,32 @@ func (s *Store) figure(ctx context.Context, q *formula.QuerySlot, args []formula
 			}
 			return d.Param(fmt.Sprintf("fa%d", i))
 		}
+		// A LOOKUP keyed by a value the class keeps an index of is first
+		// narrowed to the documents of that value, as the lookup of a
+		// commit is (ADR-0046): SQLite then finds them by the index, and
+		// not by reading every document, which it cannot do through the
+		// condition, since a blank compares there as the zero of its kind.
+		// The condition itself still decides. A figure over a list has no
+		// value of the document to key it.
+		var keyArg any
+		keyed := false
+		if on == nil {
+			keyArg, keyed = s.classKey(src, q, args, o, of)
+		}
+		among := where
+		if keyed {
+			narrow := quote(q.IndexColumn) + " = " + d.Param("fak")
+			if among == "" {
+				among = narrow
+			} else {
+				among = "(" + among + ") AND " + narrow
+			}
+		}
 		table := func(string) string {
-			if where == "" {
+			if among == "" {
 				return quote(src.cls.Name)
 			}
-			return "(SELECT * FROM " + quote(src.cls.Name) + " WHERE " + where + ")"
+			return "(SELECT * FROM " + quote(src.cls.Name) + " WHERE " + among + ")"
 		}
 		// An aggregate is one statement over the matching rows, with its
 		// error beside it; a column is the first matching row's, in the
@@ -257,6 +278,9 @@ func (s *Store) figure(ctx context.Context, q *formula.QuerySlot, args []formula
 				}
 				named = append(named, sql.Named(fmt.Sprintf("fa%dc", i), cur))
 			}
+		}
+		if keyed {
+			named = append(named, sql.Named("fak", keyArg))
 		}
 		st, err := s.filters.acquire(ctx, s.db, text)
 		if err != nil {
@@ -497,6 +521,28 @@ func (s *Store) liveKey(t *table, q *formula.QuerySlot, args []formula.Value, o 
 	if !ok {
 		return nil, false
 	}
+	return s.keyValue(q, t.leaves[li].typ, args, o, of)
+}
+
+// classKey is liveKey for a LOOKUP of a live formula over the documents
+// of a class: it narrows when the class keeps an index of the key
+// column (ADR-0075), as the lookup of a commit narrows (ADR-0046).
+func (s *Store) classKey(src *class, q *formula.QuerySlot, args []formula.Value, o options, of *formula.Context) (any, bool) {
+	if q.Key == nil || !query.Indexed(src.cls, q.IndexColumn) {
+		return nil, false
+	}
+	f, ok := src.cls.Source().Column(q.IndexColumn)
+	if !ok {
+		return nil, false
+	}
+	return s.keyValue(q, f.Type, args, o, of)
+}
+
+// keyValue works out the key of a LOOKUP of a live formula and answers
+// it as the store compares it with a key column of the type typ, and
+// whether it narrows: a key that is blank or the zero of its kind, which
+// a blank row would equal too, does not.
+func (s *Store) keyValue(q *formula.QuerySlot, typ formula.Type, args []formula.Value, o options, of *formula.Context) (any, bool) {
 	vars := make([]formula.Value, len(q.Key.Slots))
 	for i, sl := range q.Key.Slots {
 		a := q.ArgIndex(sl.Name)
@@ -516,7 +562,7 @@ func (s *Store) liveKey(t *table, q *formula.QuerySlot, args []formula.Value, o 
 	if err != nil || key.IsBlank() {
 		return nil, false
 	}
-	switch typ := t.leaves[li].typ; typ.Kind {
+	switch typ.Kind {
 	case formula.KindDecimal:
 		k, err := formula.Rescale(key, int(typ.Scale))
 		if err != nil || k.Mant() == 0 {

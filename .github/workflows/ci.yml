@@ -24,6 +24,13 @@ jobs:
       - run: make depgate
       - run: make sizegate
       - run: make filegate
+      - name: The notices of the code of others are those of the modules as they are
+        # THIRD_PARTY_NOTICES.md, written from the modules each program
+        # and library is built from on every system; "must": the test
+        # runs here, where a skipped one would not show.
+        env:
+          FADODB_NOTICES: must
+        run: go test -count=1 ./internal/notices/
       - uses: actions/setup-node@v7
         with:
           node-version: 24
@@ -56,6 +63,14 @@ jobs:
         run: go test -count=1 ./...
       - name: Build
         run: go build ./...
+
+  # The library of C and the Python client (ADR-0101), built and tried
+  # on each system a release publishes them for
+  # (.github/workflows/library.yml). The library's module needs cgo, so
+  # it is not in the tests of the core.
+  library:
+    name: library
+    uses: ./.github/workflows/library.yml
 
   # fadodb, the program with the analytical engine, built and tried on
   # each system it is released for; the DuckDB module is tested whole on

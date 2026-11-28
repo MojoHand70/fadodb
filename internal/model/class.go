@@ -612,7 +612,7 @@ var reservedClassNames = map[string]bool{
 	"events": true, "event_docs": true, "classes": true, "class_versions": true, "schemas": true,
 	"layouts": true, "outbox": true, "blobs": true, "tables_registry": true, "schema_version": true, "metadata": true,
 	"actions": true, "action_versions": true, "inlets": true, "inlet_versions": true, "words": true, "words_versions": true, "apps": true,
-	"fado_users": true, "fado_keys": true, "fado_user_changes": true,
+	"fado_users": true, "fado_keys": true, "fado_user_changes": true, "fado_comments": true,
 }
 
 // CompileIn validates a definition against the environment and compiles

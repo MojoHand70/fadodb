@@ -1,7 +1,7 @@
 # ADR-0091: A kept value that follows its table
 
 - Status: Proposed; builds item 6 of ADR-0078 for a table; amends ADR-0015 and ADR-0043 (the trigger `table:<name>` is taken and fired), ADR-0044 (the outbox keeps a second kind of row of the engine's own, beside the wake-up), ADR-0078 (item 6: whose right is asked, which it left to its build)
-- Date: 2026-11-26
+- Date: 2026-11-26; decision 14 of 2026-11-27
 
 ## Context
 
@@ -279,6 +279,21 @@ Settled while building, on 2026-11-26.
     of a class or a list the document holds, and when the formula
     gives another type than the variable keeps. The answer is the
     same; it costs a look at every open document.
+14. **A document has no savepoint of its own until one is refused**
+    (2026-11-27). A savepoint costs SQLite a copy of every page the
+    document's commit writes, kept in a file of its own once the
+    copies pass 64 KiB, and the file stays to the end of the
+    transaction: a fifth of the time went to it. Without it the 100,000 of the
+    measurement are brought in 4.2 seconds instead of 5.4. A
+    document that is refused then has nothing to go back to: the
+    transaction goes back whole, with the moment of the earliest
+    wake-up its commits queued, and its documents are brought again,
+    each with a savepoint, as is every later document of the follow.
+    So a refusal costs one thousand brought twice, once a follow. The
+    other ways: a savepoint for each, as before; or SQLite's scratch
+    kept in memory (`temp_store`), which saves less, 4.7 seconds, and
+    also has every sort of the writer done in memory without a bound,
+    the index made over a large class included.
 
 ## What is built
 
@@ -359,6 +374,28 @@ the 100,000, as a program had to send them before, 80.
 The plan's number for this was 100,000 documents under 2 seconds. It
 is not met: each document gets a commit of its own, with its history
 row and its event, and that is what the time is.
+
+Measured again on 2026-11-27 for decision 14, through the engine, on
+disk, with the same database made again (the program of the day
+before was not kept), three runs each beside main in the same hour:
+
+| What | Main | With decision 14 |
+|---|---|---|
+| the 100,000 invoices brought | 5.43 to 5.46 seconds | 4.15 to 4.17 seconds, 41 millionths of a second each |
+| a commit of somebody else meanwhile, one every 10 ms | 25 ms in the middle, 64 to 66 at the longest | 17 ms in the middle, 55 to 60 at the longest |
+
+In this program main takes 5.4 seconds where the first took 4.7 to
+4.9; the commit that built this record takes the same as main in it,
+so the program measures differently, and the code did not grow
+slower. Of a document's 41 millionths of a second its event takes
+about 15, the document and its history row about 20, and reading the
+document the rest: reaching 2 seconds would take writing the
+documents together, a statement for each table, and not a commit for
+each. That is not proposed.
+
+On 2026-11-27 the owner set the bar for Phase 8 at 100,000 documents
+under 5 seconds, with no commit of somebody else waiting more than
+0.1 seconds meanwhile. It is met with decision 14.
 
 `BenchmarkFollow`, a thousand documents brought by one change of a
 table, takes 43 ms beside the 39 of `BenchmarkTransitionMany`.

@@ -1,6 +1,6 @@
 # ADR-0030: The benchmark gate measures the minimum over code placements
 
-- Status: Accepted; amends ADR-0012; since 2026-11-15 it describes the full form of the gate, which is run on the author's machine, and not what a pull request is held to on GitHub (see the last section)
+- Status: Accepted; amends ADR-0012; since 2026-11-15 it describes the full form of the gate, which is run on the author's machine, and not what a pull request is held to on GitHub (see the section of that date); amended on 2026-11-28: a benchmark whose database grows runs a fixed number of rounds (see the last section)
 - Date: 2026-11-07
 
 ## Context
@@ -100,3 +100,27 @@ benchmark is more than half slower. The gate of this record, the
 minimum over five placements at 5%, is the full form: `make benchgate`
 on the machine of whoever changes a hot path, where the same two trees
 measured at twelve placements each gave the same numbers.
+
+## Amended on 2026-11-28: a fixed number of rounds where the database grows
+
+On the owner's word (#264). This record took bytes and allocations per
+operation to depend on the code alone. For a benchmark whose database
+grows with every round they depend on the rounds too.
+`BenchmarkTransitionMany` moves the same 1,000 documents in every round,
+and `BenchmarkFollow` brings 1,000; each move is a version and an event
+more. So a later round allocates a little more or less than an early
+one, and the mean follows the number of rounds the go tool chooses for
+the time it is given. A faster tree runs more rounds.
+
+On #264, `modernc.org/sqlite` 1.63.0 made `TransitionMany` 10% faster
+and failed the gate by about 20 allocations in 146,800: +0.02% on the
+author's machine and +0.03% on the runner. On main alone, 31 rounds
+gave 146,829 allocations an operation, 32 gave 146,834 and 33 gave
+146,840. At 60 rounds each, the two trees gave 146,925 and 146,924.
+
+So the benchmarks of `BENCH_ROUNDS_PATTERN`, by default
+`^Benchmark(TransitionMany|Follow)$`, run `BENCH_ROUNDS` rounds in both
+trees, by default `20x`. They run in a `go test` call of their own,
+which the main call skips with `-skip`, in both forms of the gate. Their
+time is then compared at equal sizes as well. The limits are unchanged.
+A benchmark of that shape joins the pattern when it joins the gate.

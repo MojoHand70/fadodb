@@ -26,7 +26,7 @@ release is built for, and a test holds it to them:
 | modernc.org/libc | v1.80.1 | fadodb, fadodb-core, libfadodb, libfadodb-core |
 | modernc.org/mathutil | v1.7.1 | fadodb, fadodb-core, libfadodb, libfadodb-core |
 | modernc.org/memory | v1.12.1 | fadodb, fadodb-core, libfadodb, libfadodb-core |
-| modernc.org/sqlite | v1.62.0 | fadodb, fadodb-core, libfadodb, libfadodb-core |
+| modernc.org/sqlite | v1.63.0 | fadodb, fadodb-core, libfadodb, libfadodb-core |
 
 ## Go, its standard library and runtime go1.26.11
 
@@ -907,7 +907,7 @@ ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ````
 
-## modernc.org/sqlite v1.62.0
+## modernc.org/sqlite v1.63.0
 
 LICENSE:
 
@@ -968,6 +968,7 @@ Jan Mercl <0xjnml@gmail.com>
 Josh Bleecher Snyder <josharian@gmail.com>
 Josh Klein <josh.klein@outlook.com>
 Logan Snow <logansnow@protonmail.com>
+Michael Haddon <michael@politepixels.io>
 Michael Hoffmann <mhoffm@posteo.de>
 Michael Rykov <mrykov@gmail.com>
 Morgan Bazalgette <morgan@howl.moe>

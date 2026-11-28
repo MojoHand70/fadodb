@@ -408,10 +408,12 @@ func TestATableFromSchema15KeepsItsHistory(t *testing.T) {
 	if _, err := s.ImportRows(ctx, "Rates", []Values{{"currency": "EUR", "rate": "4.2500"}}, asSetup); err != nil {
 		t.Fatal(err)
 	}
-	// The layout of schema 15: no history, no moments, no changes.
+	// The layout of schema 15: no history, no moments, no changes, and
+	// no seal on the events (ADR-0103).
 	for _, text := range []string{
 		`DROP TRIGGER "tbl_Rates__changed"`, `DROP TRIGGER "tbl_Rates__since"`, `DROP TRIGGER "tbl_Rates__removed"`, `DROP TABLE "tbl_Rates__history"`,
 		`ALTER TABLE "tbl_Rates" DROP COLUMN "__since"`, `DROP TABLE fado_table_changes`,
+		`ALTER TABLE events DROP COLUMN seal`,
 		`UPDATE schema_version SET version = 15`,
 	} {
 		if _, err := s.writer.ExecContext(ctx, text); err != nil {

@@ -246,7 +246,7 @@ func (s *Store) logReadHeld(ctx context.Context, o options, entries ...*readLog)
 		return errf(CodeClosed, "", "the store is closed")
 	}
 	w := s.writer
-	if _, err := w.ExecContext(ctx, "BEGIN IMMEDIATE"); err != nil {
+	if err := s.beginWriter(ctx, "BEGIN IMMEDIATE"); err != nil {
 		return storageErr("begin the log of reads", err)
 	}
 	for _, r := range entries {

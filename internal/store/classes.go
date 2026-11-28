@@ -20,6 +20,9 @@ type class struct {
 	cls            *model.Class
 	json           []byte
 	table, history string
+	// sealHist are the columns of its insert into the history, for the
+	// seal (ADR-0103).
+	sealHist sealCols
 	// asked are the variables of the class that questions of the
 	// classes defined now ask an index for (ADR-0075, item 2), in the
 	// order of their names.
@@ -177,6 +180,8 @@ type child struct {
 
 	insert, copyRows, selectRows *sql.Stmt // on the writer
 	readRows                     *sql.Stmt // on the pool
+	// sealCols are the columns its insert writes, for the seal.
+	sealCols sealCols
 	// gone says the table no longer holds the columns of this version of
 	// the list: the list was taken out of the class, or given other
 	// columns, when it held no value anywhere. It has no statements, and
@@ -634,6 +639,9 @@ func (c *class) prepare(ctx context.Context, writer *sql.Conn, db *sql.DB) error
 			written = append(written, col)
 		}
 	}
+	// The same columns by name, for the seal (ADR-0103).
+	sealed := append(append([]string{}, systemColumns...), "valid_from", "actor_id", "event_id")
+	c.sealHist = newSealCols(c.history, append(sealed, columnNames(c.cls.Columns)...))
 	prepW(&c.w.insertHistory, "INSERT INTO "+quote(c.history)+" ("+strings.Join(written, ", ")+") VALUES ("+marks(len(written))+")")
 	prepW(&c.w.deleteCurrent, "DELETE FROM "+quote(c.table)+` WHERE "id" = ?`)
 	prepR(&c.r.getCurrent, selectCurrent)
@@ -647,6 +655,7 @@ func (c *class) prepare(ctx context.Context, writer *sql.Conn, db *sql.DB) error
 		ccols := quoteAll(columnNames(ch.def.Columns))
 		all := append(quoteAll(childKey), ccols...)
 		prepW(&ch.insert, "INSERT INTO "+quote(ch.table)+" ("+strings.Join(all, ", ")+") VALUES ("+marks(len(all))+")")
+		ch.sealCols = newSealCols(ch.table, append(append([]string{}, childKey...), columnNames(ch.def.Columns)...))
 		prepW(&ch.copyRows, "INSERT INTO "+quote(ch.table)+" ("+strings.Join(all, ", ")+`) SELECT "doc_id", ?, "idx"`+joinWithPrefix(ccols)+" FROM "+quote(ch.table)+` WHERE "doc_id" = ? AND "version" = ?`)
 		selectRows := "SELECT " + strings.Join(ccols, ", ") + " FROM " + quote(ch.table) + ` WHERE "doc_id" = ? AND "version" = ? ORDER BY "idx"`
 		prepW(&ch.selectRows, selectRows)
@@ -1091,7 +1100,7 @@ func (s *Store) defineClasses(ctx context.Context, datas [][]byte, set bool, by 
 	}
 	now := s.now().Unix()
 	w := s.writer
-	if _, err := w.ExecContext(ctx, "BEGIN IMMEDIATE"); err != nil {
+	if err := s.beginWriter(ctx, "BEGIN IMMEDIATE"); err != nil {
 		return nil, storageErr("begin", err)
 	}
 	fresh := make([]bool, len(ps))

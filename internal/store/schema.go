@@ -90,7 +90,7 @@ var engineDDL = []string{
 		defined_by TEXT, defined_kind TEXT, defined_for TEXT, PRIMARY KEY (what, name, version))`,
 	`CREATE TABLE IF NOT EXISTS events (event_id TEXT PRIMARY KEY, class TEXT NOT NULL, doc_id TEXT NOT NULL, kind TEXT NOT NULL, name TEXT, from_state TEXT, to_state TEXT,
 		actor_id TEXT, actor_kind TEXT, actor_for TEXT, before_version INTEGER, after_version INTEGER, cause_event_id TEXT, command_key TEXT, command_hash TEXT, business_date INTEGER NOT NULL, ts INTEGER NOT NULL, origin INTEGER, override TEXT, reason TEXT,
-		seen_version INTEGER)`,
+		seen_version INTEGER, seal BLOB)`,
 	`CREATE UNIQUE INDEX IF NOT EXISTS events_command_key ON events (command_key)`,
 	`CREATE INDEX IF NOT EXISTS events_class_doc ON events (class, doc_id, ts)`,
 	`CREATE INDEX IF NOT EXISTS events_business_date ON events (business_date)`,
@@ -426,7 +426,7 @@ func (s *Store) keepIndexes(ctx context.Context) error {
 	if len(ddl) == 0 {
 		return nil
 	}
-	if _, err := s.writer.ExecContext(ctx, "BEGIN IMMEDIATE"); err != nil {
+	if err := s.beginWriter(ctx, "BEGIN IMMEDIATE"); err != nil {
 		return storageErr("begin making the indexes", err)
 	}
 	for _, stmt := range ddl {

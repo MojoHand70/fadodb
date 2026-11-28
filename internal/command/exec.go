@@ -1213,6 +1213,25 @@ func runDrain(c *call) error {
 	return c.answer("attempted", n, err)
 }
 
+// runCheckLog checks the seal of the log (ADR-0103).
+func runCheckLog(c *call) error {
+	check, err := c.s.CheckLog(c.ctx, c.opts...)
+	if err != nil {
+		return err
+	}
+	faults, _ := Marshal(check.Faults)
+	c.open("events")
+	c.out = strconv.AppendInt(c.out, int64(check.Events), 10)
+	c.next("sealed")
+	c.out = strconv.AppendInt(c.out, int64(check.Sealed), 10)
+	c.next("sealed_from")
+	c.out = strconv.AppendInt(c.out, check.SealedFrom, 10)
+	c.next("faults")
+	c.out = append(c.out, faults...)
+	c.close()
+	return nil
+}
+
 func runCheckBlobs(c *call) error {
 	check, err := c.s.CheckBlobs(c.ctx, c.opts...)
 	if err != nil {

@@ -3,12 +3,14 @@ package cli
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/MojoHand70/fadodb/fado"
 )
@@ -54,6 +56,9 @@ func TestTheChapterOnRunning(t *testing.T) {
 	designer := fado.As(fado.Principal{ID: "dan", Kind: fado.ActorPerson, System: []string{fado.GroupDesigners}})
 	ola := fado.As(fado.Principal{ID: "ola", Kind: fado.ActorPerson, Groups: []string{"sales"}})
 	program := fado.Options{
+		// The receipts are made at 14:05 on 2 November, which the check
+		// of an altered event says.
+		Now:       func() time.Time { return time.Date(2026, 11, 2, 14, 5, 0, 0, time.UTC) },
 		BlobStore: "dir",
 		Outbox:    fado.OutboxOptions{Manual: true},
 		Actions: map[string]fado.ActionFunc{
@@ -96,7 +101,28 @@ func TestTheChapterOnRunning(t *testing.T) {
 	if out != fenced("the check") {
 		t.Errorf("the check prints:\n%s%s\nand the chapter shows:\n%s", out, said, fenced("the check"))
 	}
-	ends["finds every file as it was put"] = code
+	ends["finds every file as it was put and every seal matching"] = code
+
+	// Adam makes himself the one who filed R-1, with an SQLite tool, and
+	// then puts it back.
+	behind := func(stmt string) {
+		t.Helper()
+		raw, err := sql.Open("sqlite", "books.fado")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer raw.Close()
+		if _, err := raw.Exec(stmt); err != nil {
+			t.Fatal(err)
+		}
+	}
+	behind("UPDATE events SET actor_id = 'adam' WHERE doc_id = 'R-1'")
+	code, out, said = check("books.fado")
+	if out != fenced("the check, an event altered") {
+		t.Errorf("the check of an altered event prints:\n%s%s\nand the chapter shows:\n%s", out, said, fenced("the check, an event altered"))
+	}
+	ends["names an event"] = code
+	behind("UPDATE events SET actor_id = 'ola' WHERE doc_id = 'R-1'")
 
 	// Adam changes one byte of the scan of R-1 on disk.
 	scan := filepath.Join("books.fado.blobs", hashes[0][:2], hashes[0])

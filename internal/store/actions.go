@@ -465,7 +465,7 @@ func (s *Store) DefineAction(ctx context.Context, data []byte, opts ...Option) (
 	spec.Version = version
 	now := s.now().Unix()
 	w := s.writer
-	if _, err := w.ExecContext(ctx, "BEGIN IMMEDIATE"); err != nil {
+	if err := s.beginWriter(ctx, "BEGIN IMMEDIATE"); err != nil {
 		return nil, storageErr("begin", err)
 	}
 	rollback := func(err error) (*ActionInfo, error) {
@@ -856,7 +856,7 @@ func (s *Store) runCall(ctx context.Context, row *outboxRow) (bool, error) {
 	}
 	now := s.now()
 	w := s.writer
-	if _, err := w.ExecContext(ctx, "BEGIN IMMEDIATE"); err != nil {
+	if err := s.beginWriter(ctx, "BEGIN IMMEDIATE"); err != nil {
 		return false, storageErr("begin", err)
 	}
 	// The row is still as it was read: its document is claimed.

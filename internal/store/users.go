@@ -388,7 +388,7 @@ func (s *Store) writeUsers(ctx context.Context, write func(w execer, now int64) 
 		return errf(CodeClosed, "", "the store is closed")
 	}
 	w := s.writer
-	if _, err := w.ExecContext(ctx, "BEGIN IMMEDIATE"); err != nil {
+	if err := s.beginWriter(ctx, "BEGIN IMMEDIATE"); err != nil {
 		return storageErr("begin", err)
 	}
 	if err := write(w, s.now().Unix()); err != nil {

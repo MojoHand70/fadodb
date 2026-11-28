@@ -115,7 +115,7 @@ func (s *Store) Comment(ctx context.Context, class, id, text string, opts ...Opt
 		return nil, errf(CodeClosed, "", "the store is closed")
 	}
 	now := s.now()
-	if _, err := s.writer.ExecContext(ctx, "BEGIN IMMEDIATE"); err != nil {
+	if err := s.beginWriter(ctx, "BEGIN IMMEDIATE"); err != nil {
 		return nil, storageErr("begin", err)
 	}
 	made, again, err := s.comment(ctx, c, id, words, o, now)

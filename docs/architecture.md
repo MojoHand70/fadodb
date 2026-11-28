@@ -544,7 +544,8 @@ events                    one row per thing that happened            key: event_
                           actor_id, actor_kind, actor_for,
                           before_version, after_version, cause_event_id,
                           command_key (unique, the caller's idempotency key),
-                          business_date (a calendar day the caller gives)
+                          business_date (a calendar day the caller gives),
+                          seal (ADR-0103)
 event_docs                every document an event touched            (event_id, class, doc_id, qualifier)
 ```
 
@@ -557,6 +558,16 @@ nothing is stored twice. The event log is the source of truth for what
 happened and why; the history table is the source of truth for what the
 document looked like. Both are append-only and never rewritten; deletions
 append a `deleted` event and remove the current row.
+
+Every event carries a seal (ADR-0103): a SHA-256 of the seal of the
+event before it and of what the event wrote, its history row, the
+closing of the version before, the rows of its lists, its own row and
+its `event_docs` row. The seal rides in the event's row; the writer
+keeps the last one in memory, and a transaction taken back, whole or to
+a savepoint, takes its seals back. `CheckLog` works every seal out again
+from the file, so a change made to the file behind the engine's back is
+found. The latest seal signed with a key outside the file, which stops
+the holder of the file too, is planned.
 
 What users see are views, never the physical names:
 

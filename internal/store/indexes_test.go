@@ -143,7 +143,7 @@ func TestIndexes_ADatabaseOfAnEarlierSchema(t *testing.T) {
 		t.Fatal(err)
 	}
 	// The file as v0.7.0 left it: schema 14, one index, on the customer
-	// alone.
+	// alone, and no seal on the events (ADR-0103).
 	raw, err := sql.Open("sqlite", path)
 	if err != nil {
 		t.Fatal(err)
@@ -153,6 +153,7 @@ func TestIndexes_ADatabaseOfAnEarlierSchema(t *testing.T) {
 		`DROP INDEX "doc_Invoice_order"`, `DROP INDEX "doc_Invoice_owner"`, `DROP INDEX "doc_Invoice_customer"`,
 		`DROP INDEX "doc_Order_state"`, `DROP INDEX "doc_Order_created_at"`, `DROP INDEX "doc_Order_updated_at"`,
 		`CREATE INDEX "doc_Invoice_customer" ON "doc_Invoice" ("customer")`,
+		`ALTER TABLE events DROP COLUMN seal`,
 		`UPDATE schema_version SET version = 14`,
 	} {
 		if _, err := raw.Exec(stmt); err != nil {

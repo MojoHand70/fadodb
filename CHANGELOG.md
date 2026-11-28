@@ -6,8 +6,29 @@ All notable changes to FadoDB are recorded here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- The seal of the log (ADR-0103, Proposed), the first step of Phase
+  10. Every event carries a seal: a SHA-256 of the seal of the event
+  before it and of what the event wrote, its version of the document,
+  the closing of the version before, the rows of its lists, its own row
+  and its `event_docs` row. The seal rides in the event's row, so a
+  commit writes no statement for it. `CheckLog`, the command
+  `check_log` for administrators, and `fadodb check` work every seal out
+  again from the file and name every event whose seal does not match,
+  every version or line that no event wrote, and every document whose
+  current row is not its last version. So a change made to the file
+  with an SQLite tool, behind the engine's back, is found. Whoever holds
+  the file can still work every seal out again; the signed seals that
+  stop that are planned.
+
 ### Changed
 
+- `fadodb check` checks the seal of the log after the files, and ends
+  with 1 when a seal does not match.
+- The engine schema is 17. A database of schema 13 to 16 is brought to
+  it when it is opened; its events before then carry no seal, and the
+  check says from when the log is sealed.
 - The bench gate runs `BenchmarkTransitionMany` and `BenchmarkFollow`
   for a fixed 20 rounds in both trees (ADR-0030, amended 2026-11-28).
   Their database grows with every round, so their allocations per

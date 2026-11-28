@@ -1256,6 +1256,7 @@ It answers:
 | [`retry_action`](#retry_action) | Makes a dead action pending again. | writes |
 | [`drain`](#drain) | Runs every queued action that is due, now. | writes |
 | [`check_blobs`](#check_blobs) | Recomputes the hash of every file the database holds, and looks for every file a document holds. | reads |
+| [`check_log`](#check_log) | Works the seal of every event out again from what the event wrote, and names every place where the log does not match its seals. | reads |
 | [`reads`](#reads) | Lists the log of reads: what a content administrator saw past a rule, with the reason, and every SQL statement. It is a database administrator's. | reads |
 
 ### table_rows
@@ -1418,6 +1419,21 @@ It answers:
 | `checked` | how many files it checked |
 | `mismatched` | the hashes of the files whose bytes do not match |
 | `missing` | the files a document holds, in any version, that the database has lost, each {"hash", "class", "id", "version", "variable"} |
+
+### check_log
+
+Works the seal of every event out again from what the event wrote, and names every place where the log does not match its seals. It reads; in Go it is the call `CheckLog`.
+
+It takes nothing of its own; of the members that mean the same everywhere, `for`.
+
+It answers:
+
+| Member | What it holds |
+|---|---|
+| `events` | how many events the log holds |
+| `sealed` | how many of them carry a seal |
+| `sealed_from` | the moment of the first sealed event, in seconds since 1970; 0 when none is |
+| `faults` | the places where the log does not match, in the order of the log, each {"what", "event", "kind", "name", "at", "class", "id", "version", "message"}; what is changed, unsealed, carried, stray or current |
 
 ### reads
 

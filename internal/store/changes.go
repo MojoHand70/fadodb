@@ -100,10 +100,14 @@ func (s *Store) endTransaction(ctx context.Context) error {
 func (s *Store) endQuietly(ctx context.Context) error { return s.commitWriter(ctx) }
 
 // commitWriter is the one statement that commits the writer's
-// transaction.
+// transaction. The last event it wrote is then the last of the log,
+// whose seal the next one is chained to (ADR-0103).
 func (s *Store) commitWriter(ctx context.Context) error {
-	_, err := s.writer.ExecContext(ctx, "COMMIT")
-	return err
+	if _, err := s.writer.ExecContext(ctx, "COMMIT"); err != nil {
+		return err
+	}
+	s.seal.commit()
+	return nil
 }
 
 // Subscribe opens a stream of changes for the caller (ADR-0058): the

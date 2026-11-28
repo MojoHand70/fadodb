@@ -842,7 +842,7 @@ func (s *Store) runAction(ctx context.Context, row *outboxRow, own bool) (bool, 
 	}
 	now := s.now()
 	w := s.writer
-	if _, err := w.ExecContext(ctx, "BEGIN IMMEDIATE"); err != nil {
+	if err := s.beginWriter(ctx, "BEGIN IMMEDIATE"); err != nil {
 		return false, storageErr("begin", err)
 	}
 	var status string
@@ -914,7 +914,7 @@ func (s *Store) runAction(ctx context.Context, row *outboxRow, own bool) (bool, 
 		// The caller gave up; the row is as it was.
 		return false, ctx.Err()
 	}
-	if _, err := w.ExecContext(ctx, "BEGIN IMMEDIATE"); err != nil {
+	if err := s.beginWriter(ctx, "BEGIN IMMEDIATE"); err != nil {
 		return false, storageErr("begin", err)
 	}
 	ended, err := s.failed(ctx, row, attempts, failure, noAnswer(failure), 0, day, now)

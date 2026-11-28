@@ -1,10 +1,18 @@
 # FadoDB architecture
 
-Status: design, revised 2026-11-06 with the document model (variables,
-commits, recalculation, document tables, explicit tables, DuckDB as the
-analytical engine, class metadata, layouts, the wire format). Of what is
-described below, the formula engine exists as of v0.1.0, with the
-exceptions its section lists; the rest is design. See
+Status: design, written before most of the engine existed and revised
+2026-11-06 with the document model (variables, commits, recalculation,
+document tables, explicit tables, DuckDB as the analytical engine, class
+metadata, layouts, the wire format). Most of what it describes is built
+now, through Phases 1 to 9: the formula engine, the document model and
+its store on SQLite, the statechart, rules and actions with the outbox,
+access, the command set with its HTTP door, the server and the door for
+agents, the browser VM, the analytical engine, which keeps a copy of
+the documents in DuckDB (ADR-0089), and the library of C (ADR-0101).
+The Postgres store is design (Phase 10). Where a design below was
+dropped or replaced, its section says what is there instead, with the
+record: the native and attached tables in DuckDB (ADR-0094), the lite
+build with an analytical engine on SQLite, the mining views. See
 [ROADMAP.md](../ROADMAP.md) for what exists today and [perf/](perf/) for
 the measured numbers. Decisions with their reasoning are in [adr/](adr/).
 Revised 2026-11-18: the engine keeps no layouts, and a class has
@@ -16,10 +24,13 @@ actions on state changes. Every change is a versioned commit; the history of
 every document is a typed table, not a log of blobs. Formulas run on the
 server and in the browser from one compiled bytecode. Every document class is
 a queryable table, explicit tables plug into any storage, and user and group
-rules are themselves formulas. DuckDB is the analytical engine: query
-functions in formulas, analytics over the document stack and process mining
-run on it. The core library is pure Go and talks to the analytical engine
-through an interface, so a lite build exists for embedding anywhere.
+rules are themselves formulas. DuckDB is the analytical engine: a program
+that has it keeps a copy of the documents in it, and the questions that
+read everything, the totals of live lookups, the pages of live lists,
+analytics over the document stack and process mining, are answered from
+that copy. The core library is pure Go and talks to the analytical engine
+through an interface, `fado.Analytics`, so the program without it,
+`fadodb-core`, embeds anywhere.
 
 ---
 
@@ -56,15 +67,21 @@ through an interface, so a lite build exists for embedding anywhere.
 │ Transactional store: SQLite (core) │ Postgres (enterprise)           │
 │   current · history · child tables · events · outbox · tables       │
 ├──────────────────────────────────────────────────────────────────────┤
-│ Analytical engine: DuckDB (full build) │ SQLite fallback (lite)     │
-│   projection of document tables · native tables · attached DBs      │
+│ Analytical engine: DuckDB, in fadodb │ none in fadodb-core          │
+│   a copy of the documents, their moves and the rows of every table  │
 └──────────────────────────────────────────────────────────────────────┘
 ```
 
-Two builds from one code base: `fadodb`, the reference product with DuckDB
-compiled in, and `fadodb-lite`, pure Go for embedding and the C ABI, where
-the analytical engine is implemented on SQLite with documented limits. The
-browser VM is a TypeScript port of the Go VM executing the same bytecode.
+Two programs from one code base (ADR-0089): `fadodb`, with DuckDB linked
+in as the analytical engine, built in the module `analytics/` from
+`analytics/cmd/fadodb` with `make full`, and `fadodb-core`, pure Go, built
+from `cmd/fadodb-core` with `make build`. Every command, flag, setting and
+answer is the same in both; `fadodb-core` answers every question by the
+store. The design had a lite build whose analytical engine ran on SQLite
+with documented limits; it was not built, and the program without DuckDB
+has no analytical engine at all. The library of C is built both ways,
+`libfadodb-core` and `libfadodb` (ADR-0101, ADR-0102). The browser VM is a
+TypeScript port of the Go VM executing the same bytecode.
 
 ---
 
@@ -328,9 +345,10 @@ one column or with `COUNT`, `SUM`, `MIN`, `MAX`, `AVERAGE`, `MEDIAN` or
 `COUNTUNIQUE` over one expression of the columns. `QUERY` is built as the whole formula of a live variable
 (ADR-0076): a list of the documents of a class, asked when somebody
 reads it and answered through what answers a filter, so that reader
-gets the documents and the values they may read. A `QUERY` over a
-table, with aggregates or kept in a triggered variable is not built
-yet. A live variable may work a figure out of such a list (ADR-0081):
+gets the documents and the values they may read. A `QUERY` over the
+rows of a table (ADR-0076, item 9), with totals among its columns
+(ADR-0090, proposed), and kept by a triggered variable (ADR-0078, item
+5) is built too. A live variable may work a figure out of such a list (ADR-0081):
 `COUNT(invoices)`, `SUM(invoices.net)`, `MIN`, `MAX`, `AVERAGE`,
 `MEDIAN`, `COUNTUNIQUE`, the forms with a condition, `ANY` and `ALL`.
 Each is the aggregate a `LOOKUP` has, over the rows the list has for
@@ -731,25 +749,35 @@ A table is a first-class named object with a schema in the same type system,
 indexes, permissions, and one attribute document tables do not have: a
 **storage binding**.
 
-| Binding | Where rows live | Default in |
+| Binding | Where rows live | Built |
 |---|---|---|
-| `sqlite` | the transactional store | lite build |
-| `duckdb` | DuckDB's native columnar storage | full build |
-| `external` | a connector: anything DuckDB can attach (Postgres, MySQL, SQLite files) in the full build; a `database/sql` driver in the lite build | |
+| `sqlite` | the transactional store | yes, and the only one (ADR-0094) |
+| `duckdb` | DuckDB's native columnar storage | no: refused with `not_supported` (ADR-0094) |
+| `external` | a connector: anything DuckDB can attach (Postgres, MySQL, SQLite files), or a `database/sql` driver | no: refused with `not_supported`; the rows are brought in with `import_rows` (ADR-0094) |
 
-Behind every binding is the same Go interface: dialect, query, exec, schema,
-capabilities. Implementing it is how a third party hooks up their own
-database. Administrators create tables through a DDL subset, load them with
-the bulk import command (CSV and Parquet through DuckDB), and change them
-through the `table.*` actions. Formulas read them through `LOOKUP` and
-`QUERY`; the compiler uses the dialect of the table's binding.
+In the design, behind every binding is the same Go interface: dialect,
+query, exec, schema, capabilities. Implementing it is how a third party
+hooks up their own database. Administrators create tables through a DDL
+subset, load them with the bulk import command (CSV and Parquet through
+DuckDB), and change them through the `table.*` actions. Formulas read them
+through `LOOKUP` and `QUERY`; the compiler uses the dialect of the table's
+binding. DuckDB, in the program with it, was to be where everything
+meets: native tables, attached external databases, and a projection of
+every document table, so that `QUERY` would join the document stack with
+analytical data in one engine; a lite build would answer `LOOKUP` and
+`QUERY` from SQLite with a subset of that. Of this, the `table.*`
+actions, `LOOKUP` and `QUERY` are built; the rest is not, and what there
+is instead follows.
 
-In the full build, DuckDB is where everything meets: native tables, attached
-external databases, and a projection of every document table fed from the
-history and event tables. That projection is what lets `QUERY` join the
-document stack with analytical data in one engine. Joins across bindings are
-only available there; the lite build answers `LOOKUP` and `QUERY` from
-SQLite with a documented subset of capabilities.
+ADR-0094 (proposed on 2026-11-26) changes this where it was not built.
+The rows of every table live in the store, where a commit finds one of
+them by its key in a few millionths of a second; the bindings `duckdb`
+and `external` are not built. The program with the analytical engine
+keeps a copy of every table's rows beside its copy of the documents,
+made again whole when a table changes, and sends it the questions that
+read a large table: a total a live `LOOKUP` asks, and a page of a live
+list in an order no index holds. A table of another database is
+brought in from outside with `import_rows`.
 
 Today a table is defined in JSON, `{"name": "Rates", "columns": {"code":
 "text", "rate": "decimal(6)"}, "key": ["code"]}`, stored as `tbl_Rates`
@@ -760,9 +788,9 @@ may carry `"access": {"read": ..., "write": ...}`, two conditions over
 the caller and the clock that say who may read its rows with
 `TableRows` and who may write them, by `ImportRows` or by a rule's
 action (ADR-0051); only the
-`sqlite` binding exists; the other bindings come with the analytical
-engine; `QUERY` lists the documents of a class in a live variable
-(ADR-0076) and does not read a table yet. A lookup
+`sqlite` binding exists, and ADR-0094 keeps it so; `QUERY` lists the documents of a class
+or the rows of a table, in a live variable (ADR-0076) or kept by a
+triggered one (ADR-0078). A lookup
 whose condition is one equality of a column with an expression of the
 document is answered from an in-memory index while the table has at most
 `MaxIndexedRows` rows, and through a prepared statement narrowed by the
@@ -866,8 +894,11 @@ Three paths, all with the caller's predicates injected:
 1. `LOOKUP` and `QUERY` inside formulas, compiled, cached, portable.
 2. A JSON filter DSL (`where`, `order`, `limit`, `fields`) for clients.
 3. A read-only SQL endpoint over the views above, for analysts and BI tools.
-   The SQLite authorizer restricts statements to `SELECT`; in the full build
-   the same views exist in DuckDB.
+   The SQLite authorizer restricts statements to `SELECT`. The same views
+   in DuckDB, through the engine, are not built: the copy answers the
+   engine's own questions, and an analyst who has the file reads it with
+   DuckDB from a program of their own
+   ([Reading a database with DuckDB](manual/reading-with-duckdb.md)).
 
 Today the Go API has the second and the third (ADR-0038): `Query` takes a
 class, a `where` formula over the class's variables and the system
@@ -939,8 +970,10 @@ Attachments are `File` values: a variable of type `object<File>` or
 `rows<File>` holds the hash, name, media type and size, attaching is a
 commit, and the bytes live behind a blob store, in the database file, in a
 directory beside it or in the embedder's own store (ADR-0033). Comments are
-neither variables nor visuals; they are planned after 1.0 as side objects
-keyed by class and document id, with their own events.
+neither variables nor visuals: the engine keeps them beside a document, in
+the table `fado_comments`, with who wrote them and when, read under the
+document's read rule; a comment makes no version of the document, and each
+is an event of the kind `commented` (ADR-0098, proposed).
 
 ---
 
@@ -951,23 +984,25 @@ static types and the function-class check of the evaluation mode,
 bytecode format v1 with its binary and JSON forms, the Go VM, the SQL
 generator with the SQLite and DuckDB dialects, the catalog, the
 conformance suite with its property tests, and `fadodb formula eval`.
-Since then, unreleased: the exact types `decimal`, `int` and `money`
+Since then, in v0.2.0: the exact types `decimal`, `int` and `money`
 (ADR-0022), `date` as a calendar day beside `datetime` (ADR-0023),
 division by zero as an error and `IFERROR` (ADR-0024), constant folding of
-literal expressions, and bytecode format v2.
+literal expressions, and bytecode format v2; the format is at version 4
+since v0.4.0.
 Since Phase 2 started: object field paths, a leaf of an `object<Schema>`
 variable read as one scalar slot (ADR-0031), a pure-only binding mode
 for titles and presentation formulas, in `internal/model` the class
 definition compiled with the dependency graph of its formulas, cycle
 detection and the evaluation order, and in `internal/store` the commit
 that runs defaults and the auto recalculation over the stored row and
-writes the current, history and child rows and the event. Not yet: whole-object operations,
-composite values (arrays and rows) and the query functions, which arrive
-with the document model in Phase 2; the browser VM (Phase 7); the
+writes the current, history and child rows and the event. The
+composite values, arrays and rows, and the query functions came with
+the document model of Phase 2 and the phases after it, and the browser
+VM with Phase 7 (ADR-0029). Not yet: whole-object operations, and the
 Postgres dialect (Phase 10). The pipeline and the value struct
 below are the design: today's `Value` holds a kind, a scale, a number
-and a text, and an array is a column-wise value beside it that no
-operation consumes yet.
+and a text, and an array is a column-wise value beside it, which the
+functions over a list fold (ADR-0081).
 
 ### Pipeline
 
@@ -1073,15 +1108,39 @@ a commit that names a blob the store does not hold is refused, and
 
 ### Analytical engine: DuckDB
 
-In the full build DuckDB holds native explicit tables, attaches external
-databases, and keeps a projection of every document table fed from the
-history and event tables, append-only. `QUERY` over a stack, set-wise
-recomputes, analytics and process mining run there. The projection lags the
-transactional store by its feed delay; triggered variables record the version
-they were computed at, and the documentation says so. The DuckDB Go client
-bundles only the ICU, JSON, Parquet and Autocomplete extensions, so any
-extension the full build relies on is installed at build time and verified
-offline in CI. See ADR-0002 for the measured cost of the client.
+The design had DuckDB hold native explicit tables, attach external
+databases, and keep a projection of every document table, with `QUERY`
+over a stack, set-wise recomputes, analytics and process mining run there.
+
+What is built (ADR-0089, ADR-0094): the program `fadodb` gives the
+database DuckDB as its analytical engine, and the database keeps a copy
+of its documents in the file `<database>.duckdb` beside its own and
+feeds it itself, every `CopyEvery` and when it closes: for every class
+the documents as they are now, every version of them, the events and
+the moves, and the rows of every table but the system tables; the lines
+of a document are not in it. The copy is
+never the truth and needs no backup: the engine makes it again when it
+is lost, does not open or belongs to another database, and a commit
+never waits for it. It answers the questions that read everything: the
+flow, the throughput and the paths of a class and the documents behind
+their numbers; a count, the total of a live `LOOKUP`, a figure over a
+list and a list of totals that no index narrows; a page of a list the
+store does not find in a moment; and the same of a large table. It is
+brought up to the database before it answers, so an answer is never
+older than its question, and it is the store's answer for the same
+reader. Everything inside a commit stays with the store, and so do
+`lineage` and `row_history`. No table lives in DuckDB and none is
+attached: the rows of every table live in the store, and a table of
+another database is brought in with `import_rows` (ADR-0094). A value
+that follows a table is brought by the store, a thousand documents to a
+transaction, each with a commit of its own (ADR-0091).
+
+The DuckDB library the program is built with carries the extensions
+core_functions, icu, json and parquet, linked in, and those are all the
+copy's statements use. DuckDB by itself would fetch from the network an
+extension a statement needs, and load one installed on the machine;
+every connection to the copy turns both off, and a test holds it on
+GitHub (ADR-0089). See ADR-0002 for the measured cost of the client.
 
 ### Postgres (enterprise)
 
@@ -1147,10 +1206,18 @@ package has `Open`, `DefineClass`, `ValidateClass`, `DefineClasses` and
 `Delete`, `Migrate`,
 `Drain`, `Outbox`, `RetryAction`, `DefineAction`, `ValidateAction`,
 `Actions`, `Action`, `PreviewAction`, `TryAction`, `Get`, `Version`,
-`History`, `Events`, `Query`, `Count`, `Flow`, `SQL`, `PutBlob`, `OpenFile`,
+`History`, `Events`, `Query`, `Count`, `Live` and `LivePage`, which read
+a live variable, a list among them (ADR-0076), `Flow`, `SQL`, `PutBlob`, `OpenFile`,
 `OpenBlob`, `CheckBlobs`, and `Preview` and `PreviewDraft` of a create, a
 set or a transition, and `PreviewMany` of a batch of moves; a preview, a listing or a read runs at a moment the
 caller chooses with `At`, and a preview reports its moment (ADR-0042).
+Phase 8 added `Comment` and `Comments` (ADR-0098);
+`Throughput` and `Paths` beside `Flow` (ADR-0096, ADR-0097);
+`FlowDocuments`, `ThroughputDocuments` and `PathsDocuments`, the
+documents behind one of their numbers, `Lineage`, where a value comes
+from, and `RowHistory`, the history of a row of a table (ADR-0099);
+and `CopyState` and `FeedCopy`, how the copy in the analytical engine
+stands and feeding it at once (ADR-0089).
 The principal decides what a call may set and sees
 (ADR-0041): a right or a transition rule that is not TRUE for it refuses
 with `forbidden`, and every document comes back projected.
@@ -1162,7 +1229,7 @@ is a `fado.Error` with a stable code and the variable it is about, or the
 table or an action back as it was given, and `Schema` and `Schemas`
 read the schemas. `Exec` runs any of these calls sent as a command, a
 name and one JSON object, and `Commands` lists them (ADR-0055).
-`QUERY` arrives with its phase; the engine keeps no layouts (ADR-0069).
+The engine keeps no layouts (ADR-0069).
 
 ### JSON command set
 
@@ -1314,23 +1381,38 @@ the read path, so the encoder is hand-written and reflection-free.
 
 ### C ABI
 
-`go build -buildmode=c-shared` producing `libfadodb` with three functions:
-`fado_open`, `fado_exec(json) → json`, `fado_close`. The payload is the same
-JSON command set, so every language binding is a thin wrapper and the HTTP and
-in-process paths share client code. The C ABI is built from the lite build.
+`go build -buildmode=c-shared` in the module `cabi/` produces
+`libfadodb-core` (ADR-0101) with five functions: `fado_open`,
+`fado_exec(db, caller, command, object) → json`, `fado_close`, `fado_free`
+and `fado_version`. The payload is the same JSON command set, so every
+language binding is a thin wrapper and the HTTP and in-process paths share
+client code. The caller is a JSON object beside the command, as a Go
+program gives a `Principal`. The library is the engine of `fadodb-core`,
+without DuckDB. Phase 9 added files through it, `fado_put_file`,
+`fado_get_file` and `fado_get_blob`; actions the program carries out
+itself, `fado_open_with` and `fado_answer`; and `libfadodb`, the engine
+of `fadodb` with its copy in DuckDB, beside `libfadodb-core` (ADR-0101,
+ADR-0102). [In a program of another language](manual/other-languages.md)
+is the chapter.
 
 ### Clients
 
-TypeScript (used by the reference renderer) and Python, both generated from
-OpenAPI, both zero-dependency. Other languages come from the community through
-the OpenAPI file and the C ABI.
+The design had TypeScript (used by the reference renderer) and Python,
+both generated from OpenAPI. Python is built, in `clients/py/`, written by
+hand on nothing but Python's own library: `fadodb.connect` is a server,
+over HTTP, and `fadodb.open` the database file in the same process,
+through the library of C (ADR-0101). There is no TypeScript client. Other
+languages come from the community through the OpenAPI file and the C ABI.
 
 ---
 
 ## Analytics and process mining
 
-All mining is SQL over the `_states` and `_events` views, parameterised by
-class. Views shipped with both builds:
+The design: all mining is SQL over the `_states` and `_events` views,
+parameterised by class, in six views. None of them is built; the store
+has no such view. Commands answer what the first five were to answer,
+below the sketch; for the counts of `mining_actions` there are the
+events `action_run` and `action_failed`.
 
 | View | Answers |
 |---|---|
@@ -1356,9 +1438,40 @@ FROM steps WHERE next_state IS NOT NULL
 GROUP BY 1, 2 ORDER BY n DESC;
 ```
 
-The lite build runs the same views on SQLite, computing percentiles in Go.
+The design had a lite build run the same views on SQLite, computing
+percentiles in Go; there is no lite build, and `fadodb-core` answers the
+commands below from the store.
 An OCEL 2.0 export command may be added after 1.0 for users of PM4Py or
 Celonis. It is an export, not a dependency.
+
+What is built in place of the views. The command `flow`
+(ADR-0063) answers what a chart of a process draws, for its caller and
+by the read rule: the documents in each state, the moves along each
+transition, and the stays that ended with their average and their
+longest; from the copy when the program keeps one (ADR-0089). Asked
+with `"spread": true` it says of each state the middle stay and the
+slow tenth as well (ADR-0095, proposed): the length of the stay at the
+middle place and at nine tenths, counted with whole numbers, so that
+the store and the copy answer the same. The command `throughput`
+(ADR-0096, proposed) says how many documents were made and how many
+finished in each day, week or month, by the clock of the database's
+time zone: both engines count by the quarter of an hour, and the
+engine puts the quarters into the periods of the zone. The command
+`paths` (ADR-0097, proposed) says which ways the documents went
+through the states, the most taken first: the states of each
+document's moves are joined in the order of the versions the moves
+made, which the copy keeps with each move, and the documents are
+counted by what comes out.
+
+- **The documents behind a number** (ADR-0099): `flow`,
+  `throughput` and `paths` take `documents`, which names one of their
+  numbers, and answer the documents behind it, a page at a time.
+- **Where a value comes from** (ADR-0099): the command `lineage`
+  answers one value of a document and what it is made of, one level,
+  and works a kept value out again over the documents as they were.
+- **The history of a table's rows** (ADR-0099): every table keeps each
+  row as it was until a change replaced or removed it, and who made the
+  change; the command `row_history` answers one row's.
 
 ---
 
@@ -1370,7 +1483,12 @@ A budget is a target until the phase that brings its feature measures it
 and publishes the result under [perf/](perf/). Phase 1 measured the
 arithmetic row and the binary size row: the five-operation formula runs
 in 13.7 ns with no allocation, and the core binary is 2.9 MB
-([perf/v0.1.0.md](perf/v0.1.0.md)). The other rows wait for their phases.
+([perf/v0.1.0.md](perf/v0.1.0.md)). The phases after it measured the
+rows of their features; [perf/v0.8.0.md](perf/v0.8.0.md) has those of
+Phase 8 and runs those of Phases 2 to 7 again. Over ten million moves
+the copy answers which state follows which, with the spread of the
+stays, in 85.5 ms, and a change of a table brings 100,000 documents in
+about 4.1 s.
 
 | Measure | Budget |
 |---|---|
@@ -1380,11 +1498,11 @@ in 13.7 ns with no allocation, and the core binary is 2.9 MB
 | Commit, p99 (assignments, recalc, history row, child rows, events), NVMe | < 2 ms |
 | Document creates per second, batched | ≥ 10,000 |
 | Commits per second, unbatched, single writer | ≥ 2,000 |
-| Set-wise recompute of one triggered variable over 100,000 documents | < 2 s end to end |
+| A change of a table that 100,000 documents follow, each brought with a commit of its own (ADR-0091) | < 5 s, no commit of somebody else waiting more than 0.1 s meanwhile: the owner's bar of 2026-11-27, where the plan said 2 s for a set-wise recompute |
 | Indexed filter over 1,000,000 documents | < 10 ms |
-| `mining_dfg` over 10,000,000 state visits, full build | < 2 s |
+| Which state follows which, with the spread of the stays, over 10,000,000 moves, `fadodb` from its copy | < 2 s |
 | Browser VM recalculation of 200 formulas | < 1 ms |
-| Lite binary and library size | ≤ 20 MB (ADR-0072) |
+| The core program, `fadodb-core` | ≤ 20 MB (ADR-0072) |
 | Open an existing database | < 50 ms |
 | Encode a 50-variable document to JSON | < 5 µs |
 
@@ -1431,19 +1549,21 @@ fadodb/
   internal/query/        LOOKUP/QUERY compilation, filter DSL, SQL endpoint, authorizer
   internal/server/       the HTTP door: requests to commands, the stream of changes
   api/                   openapi.json, json schemas for class and wire documents
-  analytics/             duckdb module: projection, native tables, attach, mining views
-  postgres/              postgres dialect and driver (separate module)
-  cabi/                  c-shared build and header (lite build)
+  analytics/             the DuckDB module: the analytical engine, its copy of the documents and the feed (ADR-0089)
+  analytics/cmd/fadodb/  the program fadodb: internal/cli with DuckDB linked in
+  postgres/              postgres dialect and driver (separate module), Phase 10: not there yet
+  cabi/                  the library of C: c-shared build and fadodb.h, libfadodb-core and, with the tag duckdb, libfadodb; a module of its own
   web/vm/                TypeScript VM, zero dependencies, built to one plain JavaScript file
-  web/renderer/          reference frontend
-  clients/ts/  clients/py/
+  clients/py/            the Python client, over HTTP and through the library of C
   conformance/           formula and statechart cases run by all targets
   bench/                 perf suite, dataset generators, baselines
   docs/                  this document, adr/, perf/, dependencies.md, function reference
 ```
 
-Separate Go modules for `analytics/` and `postgres/` keep cgo and drivers out
-of the core `go.mod`.
+Separate Go modules for `analytics/`, `cabi/` and, with Phase 10,
+`postgres/` keep cgo and drivers out of the core `go.mod`. There is no
+reference frontend in the repository: the screen is the face's, and a
+face lives apart from the engine (ADR-0069).
 
 ---
 
@@ -1453,5 +1573,5 @@ Parallel statechart regions; BPMN; multi-tenancy inside one database file
 (run one file per tenant); replication and clustering; WASM plugin actions;
 a visual class designer; OCEL export; nested
 composites (rows inside rows, arrays of arrays); raw SQL inside formulas;
-comments (planned as side objects after 1.0); layouts of any kind, which
+replies to comments and mentions in them; layouts of any kind, which
 are the face's (ADR-0069).

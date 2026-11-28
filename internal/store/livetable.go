@@ -120,7 +120,15 @@ func (s *Store) liveTable(ctx context.Context, t *table, v *model.Variable, on *
 		return nil, filterErr(err)
 	}
 	args := append(plan.Args, s.contextArgs(o)...)
-	rows, err := t.tableRows(ctx, s.db, tableSelect(t, plan, plan.Limit+1), args)
+	// In a program that keeps the copy, a page that reads a large table
+	// to find its rows is found there (ADR-0094, item 6); its rows are
+	// the store's all the same.
+	var rows [][]formula.Value
+	if text := tableSelect(t, plan, plan.Limit+1); s.feeder == nil || t.system {
+		rows, err = t.tableRows(ctx, s.db, text, args)
+	} else {
+		rows, err = s.tablePageWithCopy(ctx, t, plan, f, on, o, text, args)
+	}
 	if err != nil {
 		return nil, err
 	}

@@ -566,7 +566,7 @@ func TestRunningIt(t *testing.T) {
 		}
 		return strings.Join(strings.Fields(string(data)), " ")
 	}
-	v5, v2 := perf("v0.5.0.md"), perf("v0.2.0.md")
+	v8, v2 := perf("v0.8.0.md"), perf("v0.2.0.md")
 	// quoted holds a row to the page it is taken from: the figures the
 	// row gives, and the words of the page that give them.
 	quoted := func(in string, figures []string, source string) func([]string) {
@@ -583,18 +583,22 @@ func TestRunningIt(t *testing.T) {
 		}
 	}
 	checks(t, page, "measured", map[string]func([]string){
-		"one document created":                                      quoted(v5, []string{"0.20 ms"}, "0.20 ms for a create, 0.27 ms for a set"),
-		"one document changed":                                      quoted(v5, []string{"0.27 ms"}, "0.20 ms for a create, 0.27 ms for a set"),
-		"one document moved by a transition":                        quoted(v5, []string{"0.17 ms", "12,740 a second"}, "0.17 ms / 12,740 /"),
-		"many documents moved by one call":                          quoted(v5, []string{"27,488 a second"}, "27,488 over 1,000,000 documents"),
-		"many documents created in one transaction":                 quoted(v5, []string{"25,220 a second"}, "/ 25,220 /"),
-		"one document read by its id":                               quoted(v5, []string{"0.005 ms at the median"}, "0.005 ms at the median"),
-		"a filter on an indexed variable, over 1,000,000 documents": quoted(v5, []string{"15.45 µs"}, "15.45 µs against 15.35 µs over 1,000,000 documents"),
-		"opening a database of 11.2 GB":                             quoted(v5, []string{"4.7 ms"}, "4.7 ms with an 11.2 GB file"),
+		"one document created":                                      quoted(v8, []string{"0.314 ms"}, "0.314 ms for a create, 0.329 ms for a set"),
+		"one document changed":                                      quoted(v8, []string{"0.329 ms"}, "0.314 ms for a create, 0.329 ms for a set"),
+		"one document moved by a transition":                        quoted(v8, []string{"0.205 ms", "12,777 a second"}, "0.205 ms / 12,777 /"),
+		"many documents moved by one call":                          quoted(v8, []string{"23,962 a second"}, "23,962 over 1,000,000 documents"),
+		"many documents created in one transaction":                 quoted(v8, []string{"17,086 a second"}, "/ 17,086 /"),
+		"one document read by its id":                               quoted(v8, []string{"0.005 ms at the median"}, "read by id, by the owner | 1,000,000 | 166,800/s | 0.005 ms"),
+		"a filter on an indexed variable, over 1,000,000 documents": quoted(v8, []string{"15.91 µs"}, "one ticket by its indexed number, a read rule the caller alone decides | 15.91 µs"),
+		"opening a database of 11.5 GB":                             quoted(v8, []string{"5.7 ms"}, "5.7 ms with an 11.5 GB file"),
 	})
+	if !strings.Contains(strings.Join(strings.Fields(text), " "), "8 to 10% in memory and 10 to 16% on disk") || !strings.Contains(v8, "every commit is 8 to 10% slower in memory and 10 to 16% slower on disk") {
+		t.Error("the chapter and the performance page of v0.8.0 differ on what a commit costs beside v0.7.0")
+	}
 	checks(t, page, "what is slow", map[string]func([]string){
-		"a commit made while another caller moves documents in batches of 1,000": quoted(v5, []string{"69 ms"}, "waited 69 ms at p90"),
-		"the first ten of a caller's own 10,000 documents, sorted":               quoted(v5, []string{"10.7 ms"}, "10,000 tickets take 10.7 ms"),
+		"a commit made while another caller moves documents in batches of 1,000": quoted(v8, []string{"82.29 ms"}, "while batches moved 284,000 documents | 1,000 | 81/s | 0.169 ms | 82.29 ms"),
+		"the first ten of a caller's own 10,000 documents, sorted":               quoted(v8, []string{"11.0 ms"}, "the first 10 of 10,000 | 12.1 ms, by a condition | 11.0 ms, by the rule alone"),
+		"the flow of a class of 3,400,000 documents, in fadodb-core":             quoted(v8, []string{"18.0 s", "13.5 ms"}, "13.5 ms (13.3 to 14.8) | 18.0 s"),
 		"a commit in a database created with FULL": func(row []string) {
 			db, err := fado.Open(filepath.Join(root, "full.fado"), fado.Options{Synchronous: "FULL", Outbox: byHand})
 			if err != nil {

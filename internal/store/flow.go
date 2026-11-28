@@ -52,6 +52,23 @@ type FlowState struct {
 	Stays          int64 `json:"stays"`
 	AverageSeconds int64 `json:"average_seconds"`
 	LongestSeconds int64 `json:"longest_seconds"`
+	// Spread says how those stays spread, when the caller asked for it
+	// (ADR-0095); nil when not.
+	Spread *FlowSpread `json:"spread,omitempty"`
+}
+
+// FlowSpread says how the stays in a state that ended in the period
+// spread (ADR-0095). An average is moved by one document that lay
+// forgotten; these two are not. MiddleSeconds is the middle stay: half
+// of the stays lasted no longer. SlowTenthSeconds is the slow tenth:
+// nine stays in ten lasted no longer. Each is the length of one of the
+// stays, the one at that place when they are put in the order of their
+// lengths: of n stays the middle one is at place (n+1)/2 and the slow
+// tenth at place (9n+9)/10, both rounded down. Both are zero for a
+// state no stay ended in.
+type FlowSpread struct {
+	MiddleSeconds    int64 `json:"middle_seconds"`
+	SlowTenthSeconds int64 `json:"slow_tenth_seconds"`
 }
 
 // FlowTransition is a transition of the class in its flow, from one
@@ -74,9 +91,13 @@ type FlowTransition struct {
 
 // FlowPeriod is the period the moves and the stays of a flow are
 // counted in: from Since, and before Until. A zero moment leaves that
-// end open, so the zero period is since the class began.
+// end open, so the zero period is since the class began. Spread asks
+// for how the stays spread too, the middle stay and the slow tenth of
+// each state (ADR-0095): it reads and orders every stay, so a flow is
+// told only when it is wanted.
 type FlowPeriod struct {
 	Since, Until time.Time
+	Spread       bool
 }
 
 // Flow answers the flow of a class for its caller: the documents the
@@ -112,10 +133,10 @@ func (s *Store) Flow(ctx context.Context, class string, period FlowPeriod, opts 
 	// built for reading everything (ADR-0089, items 5 to 7); what the
 	// copy cannot answer, and every program without one, the store
 	// answers. The answer is the same.
-	now, moves, asked := s.flowFromCopy(ctx, c, o, flow)
+	now, moves, spreads, asked := s.flowFromCopy(ctx, c, o, flow, period.Spread)
 	if !asked {
 		var err error
-		if now, moves, err = s.flowFromStore(ctx, c, o, flow); err != nil {
+		if now, moves, spreads, err = s.flowFromStore(ctx, c, o, flow, period.Spread); err != nil {
 			return nil, err
 		}
 	}
@@ -167,6 +188,18 @@ func (s *Store) Flow(ctx context.Context, class string, period FlowPeriod, opts 
 	for name, sum := range lasted {
 		if sum.timed > 0 {
 			states[name].AverageSeconds = (sum.seconds + sum.timed/2) / sum.timed
+		}
+	}
+	// How the stays spread, for a caller who asked: every state says
+	// it, with zeros where no stay ended.
+	if period.Spread {
+		for _, sp := range spreads {
+			state(sp.state).Spread = &FlowSpread{MiddleSeconds: sp.middle, SlowTenthSeconds: sp.slowTenth}
+		}
+		for _, st := range states {
+			if st.Spread == nil {
+				st.Spread = &FlowSpread{}
+			}
 		}
 	}
 
@@ -253,7 +286,54 @@ type (
 		kind, name, from, to           string
 		moves, timed, seconds, longest int64
 	}
+	// flowStay is how the timed stays in a state that ended in the
+	// period spread: the middle one and the slow tenth.
+	flowStay struct {
+		state             string
+		middle, slowTenth int64
+	}
 )
+
+// flowSpreadSQL is the third statement of a flow, asked only of a
+// caller who wants it (ADR-0095): for each state, the length of the
+// stay at the middle place and of the one at the slow tenth's place,
+// among the timed stays that ended in the period, put in the order of
+// their lengths. It is written for the store, over the events and the
+// versions as the second statement is; the places are whole numbers,
+// so that no rounding moves one.
+func flowSpreadSQL(c *class, flow *Flow, where, versions string, bind func(name string, v any) string) string {
+	stays := `SELECT e."from_state" AS "s", e."ts" - h."state_entered_at" AS "d",` +
+		` row_number() OVER (PARTITION BY e."from_state" ORDER BY e."ts" - h."state_entered_at") AS "rn",` +
+		` count(*) OVER (PARTITION BY e."from_state") AS "n"` +
+		` FROM "events" e JOIN ` + quote(versions) + ` h ON h."id" = e."doc_id" AND h."version" = e."before_version"` +
+		` WHERE e."class" = ` + bind("flow_class", c.cls.Name) + ` AND e."kind" = '` + EventTransition + `' AND h."state_entered_at" IS NOT NULL`
+	if flow.Since != 0 {
+		stays += ` AND e."ts" >= ` + bind("flow_since", flow.Since)
+	}
+	if flow.Until != 0 {
+		stays += ` AND e."ts" < ` + bind("flow_until", flow.Until)
+	}
+	stays += ` AND e."doc_id" IN (SELECT "id" FROM ` + quote(c.cls.Name) + where + `)`
+	return `SELECT "s", min("d") FILTER (WHERE "rn" >= ("n" + 1) / 2), min("d") FILTER (WHERE "rn" >= (9 * "n" + 9) / 10) FROM (` + stays + `) GROUP BY "s"`
+}
+
+// flowSpreadKept is flowSpreadSQL over the moves the copy keeps ready,
+// in the analytical engine's own words: its discrete quantile, given
+// the share as an exact decimal, takes the value at the same place.
+func flowSpreadKept(c *class, flow *Flow, where string, bind func(name string, v any) string) string {
+	stays := `SELECT "from_state", quantile_disc("ts" - "left_since", 0.5), quantile_disc("ts" - "left_since", 0.9) FROM ` + quote(c.cls.Name+copyMoves) +
+		` WHERE "kind" = '` + EventTransition + `' AND "left_since" IS NOT NULL`
+	if flow.Since != 0 {
+		stays += ` AND "ts" >= ` + bind("flow_since", flow.Since)
+	}
+	if flow.Until != 0 {
+		stays += ` AND "ts" < ` + bind("flow_until", flow.Until)
+	}
+	if where != "" {
+		stays += ` AND "id" IN (SELECT "id" FROM ` + quote(c.cls.Name) + where + `)`
+	}
+	return stays + ` GROUP BY "from_state"`
+}
 
 // flowStatements are the two statements of a flow: where is the
 // reader's rule over the documents as they are now, " WHERE ..." or
@@ -278,8 +358,22 @@ func flowStatements(c *class, flow *Flow, where, versions string, bind func(name
 	return now, moves
 }
 
-// flowFromStore reads the two answers of a flow from the store.
-func (s *Store) flowFromStore(ctx context.Context, c *class, o options, flow *Flow) ([]flowNow, []flowMove, error) {
+// flowFromStore reads the answers of a flow from the store: the two it
+// always has, and how the stays spread when spread asks for it.
+func (s *Store) flowFromStore(ctx context.Context, c *class, o options, flow *Flow, spread bool) ([]flowNow, []flowMove, []flowStay, error) {
+	now, moves, err := s.flowOfStore(ctx, c, o, flow)
+	if err != nil || !spread {
+		return now, moves, nil, err
+	}
+	stays, err := s.spreadFromStore(ctx, c, o, flow)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	return now, moves, stays, nil
+}
+
+// flowOfStore reads the two answers a flow always has from the store.
+func (s *Store) flowOfStore(ctx context.Context, c *class, o options, flow *Flow) ([]flowNow, []flowMove, error) {
 	// The read rule of the class for this caller, as query and count
 	// ask it.
 	plan, err := query.Compile(Filter{Class: c.cls.Name}, c.cls, s.sources(), caller(o, c))
@@ -358,9 +452,9 @@ func (s *Store) flowFromStore(ctx context.Context, c *class, o options, flow *Fl
 // program keeps none, the feed failed, or the copy cannot run the
 // statement. The store then answers, and what the copy said is kept
 // for CopyState.
-func (s *Store) flowFromCopy(ctx context.Context, c *class, o options, flow *Flow) ([]flowNow, []flowMove, bool) {
+func (s *Store) flowFromCopy(ctx context.Context, c *class, o options, flow *Flow, spread bool) ([]flowNow, []flowMove, []flowStay, bool) {
 	if s.feeder == nil {
-		return nil, nil, false
+		return nil, nil, nil, false
 	}
 	// The reader's rule, written for the analytical engine. The copy
 	// holds the documents of the class in a table of its name, with
@@ -369,7 +463,7 @@ func (s *Store) flowFromCopy(ctx context.Context, c *class, o options, flow *Flo
 	plan, err := query.CompileFor(d, Filter{Class: c.cls.Name}, nil, c.cls, s.sources(), caller(o, c))
 	if err != nil {
 		// The store says what is wrong with the question.
-		return nil, nil, false
+		return nil, nil, nil, false
 	}
 	where := ""
 	if plan.Where != "" {
@@ -394,13 +488,23 @@ func (s *Store) flowFromCopy(ctx context.Context, c *class, o options, flow *Flo
 	if where != "" {
 		args = append(args, rule...)
 	}
+	// How the stays spread takes the values the moves take, each under
+	// its own name.
+	var spreadArgs []any
+	spreadSQL := flowSpreadKept(c, flow, where, func(name string, v any) string {
+		spreadArgs = append(spreadArgs, sql.Named(name, v))
+		return d.Param(name)
+	})
+	if where != "" {
+		spreadArgs = append(spreadArgs, rule...)
+	}
 	f, ready := s.copyReady(ctx)
 	if !ready {
-		return nil, nil, false
+		return nil, nil, nil, false
 	}
-	fail := func(err error) ([]flowNow, []flowMove, bool) {
+	fail := func(err error) ([]flowNow, []flowMove, []flowStay, bool) {
 		f.notAnswered(err)
-		return nil, nil, false
+		return nil, nil, nil, false
 	}
 	_, rows, err := f.copy.Ask(ctx, nowSQL, rule...)
 	if err != nil {
@@ -425,8 +529,20 @@ func (s *Store) flowFromCopy(ctx context.Context, c *class, o options, flow *Flo
 		moves = append(moves, flowMove{kind: text(row[0]), name: text(row[1]), from: text(row[2]), to: text(row[3]),
 			moves: whole(row[4]), timed: whole(row[5]), seconds: whole(row[6]), longest: whole(row[7])})
 	}
+	var stays []flowStay
+	if spread {
+		if _, rows, err = f.copy.Ask(ctx, spreadSQL, spreadArgs...); err != nil {
+			return fail(err)
+		}
+		for _, row := range rows {
+			if len(row) != 3 {
+				return fail(errors.New("the copy answered the stays with a row of another shape"))
+			}
+			stays = append(stays, flowStay{state: text(row[0]), middle: whole(row[1]), slowTenth: whole(row[2])})
+		}
+	}
 	f.answered()
-	return now, moves, true
+	return now, moves, stays, true
 }
 
 // flowMovesKept is the second statement of a flow over the moves the

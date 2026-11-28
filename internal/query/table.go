@@ -27,7 +27,13 @@ type TableFilter struct {
 // one line of its definition, which the caller asks before it reads.
 // The context parameters of the dialect are bound by the caller.
 func CompileTable(f TableFilter, on *On, src *formula.Source, sources formula.Sources) (*Plan, error) {
-	d := formula.NewSQLite()
+	return CompileTableFor(formula.NewSQLite(), f, on, src, sources)
+}
+
+// CompileTableFor is CompileTable in the dialect of an engine: the
+// store's, or the analytical engine's, whose copy holds the rows of a
+// table with the columns the store keeps them in (ADR-0094).
+func CompileTableFor(d formula.Dialect, f TableFilter, on *On, src *formula.Source, sources formula.Sources) (*Plan, error) {
 	plan := &Plan{Limit: f.Limit, Offset: f.Offset}
 	switch {
 	case plan.Limit == 0:
@@ -85,6 +91,7 @@ func CompileTable(f TableFilter, on *On, src *formula.Source, sources formula.So
 	// Order: what is asked, then the key of the table, so that a page
 	// is the same page each time it is read.
 	var order []string
+	ofStore := d.Name() == (formula.SQLite{}).Name()
 	seen := map[string]bool{}
 	for i, o := range f.Order {
 		desc := false
@@ -106,6 +113,16 @@ func CompileTable(f TableFilter, on *On, src *formula.Source, sources formula.So
 		term := quoteIdent(c.name)
 		if desc {
 			term += " DESC"
+		}
+		// In the store a blank sorts before every value: first going
+		// up, last going down. Another engine is told so, as for the
+		// documents of a class (ADR-0089, item 7).
+		if !ofStore {
+			if desc {
+				term += " NULLS LAST"
+			} else {
+				term += " NULLS FIRST"
+			}
 		}
 		order = append(order, term)
 	}

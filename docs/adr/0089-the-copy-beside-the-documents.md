@@ -1,6 +1,6 @@
 # ADR-0089: The copy beside the documents: how the analytical engine is fed and asked
 
-- Status: Proposed; amends ADR-0017 (who feeds the copy, what it holds, how fresh an answer is, how it is made again), ADR-0020 (item 3: which question the copy answers)
+- Status: Proposed; amends ADR-0017 (who feeds the copy, what it holds, how fresh an answer is, how it is made again), ADR-0020 (item 3: which question the copy answers); amended by ADR-0094 (Proposed: the copy holds the rows of the tables too) and by ADR-0097 (Proposed: a move in the copy says which version it made)
 - Date: 2026-11-25
 
 ## Context
@@ -227,8 +227,9 @@ Two findings decide what follows.
   serves keeps its copy, and the settings of the server say how much
   memory the engine may take. Not built then: the program for each
   operating system, released, which came on 2026-11-26 with the names
-  (see "The names" below); an image for containers with the engine;
-  the page for analysts.
+  (see "The names" below); an image for containers with the engine,
+  which came the same day; the page for analysts, which came that day
+  too, as the manual's chapter "Reading a database with DuckDB".
 - **Step 3, its first part: the counts and totals a class already
   asks, on 2026-11-25.** The command `count`, and the total or the
   first row that a `LOOKUP` in a live variable or a figure over a list
@@ -356,10 +357,13 @@ strike.
   alone. With the events, the engine makes the copy of that database
   in 84 seconds, in ten pieces, and it is 0.54 GB, a fourteenth of the
   database. Found again at the next opening, it is checked in 21 ms.
-- **Not built:** the middle wait and the slow tenth, the paths
+- **Not built then:** the middle wait and the slow tenth, the paths
   documents took and the documents made and finished in each period,
   which the roadmap calls the mining views. Each is a question the
-  copy can answer when a face asks for it.
+  copy can answer when a face asks for it. All three were built in
+  Phase 8, each as an answer of the engine and no view: the spread of
+  the stays in `flow` (ADR-0095), the command `throughput` (ADR-0096)
+  and the command `paths` (ADR-0097).
 
 ## Settled while building the program with the engine
 
@@ -425,6 +429,22 @@ strike.
 - **Only a served database gets the engine.** The commands of the
   program that open a database for a moment, such as `fadodb user
   add`, keep no copy.
+- **The engine takes no extension from outside the program**
+  (2026-11-27). The library the program is built with carries
+  core_functions, icu, json and parquet, loaded when DuckDB starts,
+  and those are all the copy's statements use. DuckDB starts with
+  `autoinstall_known_extensions` and `autoload_known_extensions` on:
+  a statement that needs an extension it lacks would make it fetch
+  one from the network, and load one an analyst installed on the
+  machine, the extension for SQLite files among them, which must
+  never read the store's file inside the program (Context, item 2).
+  Every connection to the copy turns both off. A test holds it on
+  GitHub, where the network is there: both settings off on each
+  connection, no extension loaded but those the library carries, and
+  a function of another extension, `ST_Point` of spatial, refused at
+  once. That is what the plan's "offline extension installation
+  verified in CI" asks: the program needs no extension installed,
+  and fetches none.
 
 ## Settled while building the moves the copy keeps ready
 
@@ -523,6 +543,36 @@ strike.
 - **What a content administrator is written down with**, how many
   documents only the override let them count (ADR-0067), is counted
   by the store, whichever engine answered.
+
+## Settled while writing the page for analysts
+
+Item 10 says that an analyst's own program reads the database itself,
+and that a page says how. The page is the manual's chapter "Reading a
+database with DuckDB", of 2026-11-26. Each of these is settled by me
+while writing it, and is the owner's to strike.
+
+- **The page is played by a test, with DuckDB's own extension.** The
+  extension for SQLite files is not in the library the program is
+  built with; an analyst fetches it once, and so does the test, on
+  GitHub, where `FADODB_DUCKDB_SQLITE` is `must`: the chapter is
+  played there, or the check fails and says the extension could not
+  be had. On another machine the test loads the extension when it is
+  there and is skipped when it is not, saying that the chapter was
+  not played. No program of the project loads the extension.
+- **The test closes the database before DuckDB opens it.** DuckDB
+  brings its own SQLite, and two in one program that hold one file is
+  what item 2 of the Context forbids. That DuckDB reads beside a
+  running server was tried by hand, with two programs.
+- **The views are what the page tells an analyst to ask.** DuckDB shows
+  the tables behind them and the engine's own as well, the users and
+  the records of sign-ins among them; the page says so, and that a
+  release may lay those out otherwise.
+- **The programs for Python and R are written and not run.** Neither
+  package was on the machine the page was written on.
+- **What DuckDB needs beside the file** was found by trying: it makes
+  SQLite's two small files to read a database nobody has open, is
+  refused where it may not write in the directory, and the engine
+  clears the two files when it next closes the database.
 
 ## Consequences
 

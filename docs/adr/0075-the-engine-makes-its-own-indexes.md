@@ -385,6 +385,29 @@ the one comparison of the pointer (`BenchmarkQueryOneIndex`). The two
 looks and the two ways the question is written cost 0.03 ms and 44
 allocations. `BenchmarkQueryLook` joins the gate.
 
+Settled on 2026-11-28, found by the measuring of v0.8.0, mine and the
+owner's to strike:
+
+- **A later look counts no further than the fewest found so far.** The
+  first look counts up to a thousand. Each after it counts up to the
+  fewest an earlier one found, rounded up to 1, 10, 100 or a thousand
+  so that each fit has at most four statements: it is taken only when
+  it ends before that, and it does whenever a look to a thousand
+  would. The index chosen is the same. Until then every look counted
+  to a thousand, and one that was going to lose still read a thousand
+  entries: one ticket by its number, for a caller whom the read rule
+  `owner = USER()` limits to their own 10,000 among 1,000,000 with an
+  index on the owner, took 55.6 to 56.6 µs, where without the rule it
+  took 15.5 to 16.0 µs and ADR-0049 allows 15% more. It now takes 22.7
+  to 23.0 µs, three runs of `BenchmarkFilter` on disk. In the gate,
+  `BenchmarkQueryLook` takes 0.18 ms where it took 0.21, and
+  `BenchmarkDraftsOfOneOrder` 0.14 ms where it took 0.17.
+- **What it leaves is a fault: the looks themselves.** Each look is a
+  statement of its own, and the rule's comparison is a fit like the
+  caller's, so that ticket is asked with two looks. They are the 7 µs
+  that remain: the rule costs the filter 43 to 46%, where ADR-0049
+  allows 15%. Open, for the owner.
+
 ## Settled while building the engine's own indexes
 
 Built on 2026-11-25, in Phase 8, after the look: three of the four

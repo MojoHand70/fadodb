@@ -1,0 +1,98 @@
+name: library
+
+# The libraries of C, libfadodb-core and libfadodb with DuckDB's own
+# library beside it, and the Python client (ADR-0101, ADR-0102), for
+# each system a release publishes them for. A library of C is built
+# on a machine of the system it is for, with that system's C compiler,
+# and tried there: the tests of its module, a program of C linked to the
+# very file built, the Python client over HTTP against a fadodb-core
+# serve and in the same process through that file, and the wheel of
+# the Python package installed and tried as a user has it. ci.yml calls
+# this on every pull request; release.yml calls it with keep, and
+# attaches the archives and the wheels to the release.
+#
+# Windows on ARM has no library: a library of C for it needs a C
+# compiler for that machine, which the machines of GitHub do not have.
+on:
+  workflow_call:
+    inputs:
+      version:
+        description: the version the library says it is, a tag or dev
+        type: string
+        default: dev
+      keep:
+        description: keep each archive and wheel, for the caller to publish
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  library:
+    name: library / ${{ matrix.system }}
+    runs-on: ${{ matrix.machine }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Linux is built on the oldest Linux there is a machine for, as
+          # the program is (programs.yml).
+          - {system: linux-amd64, machine: ubuntu-22.04, languages: must}
+          - {system: linux-arm64, machine: ubuntu-22.04-arm}
+          - {system: darwin-arm64, machine: macos-latest}
+          - {system: darwin-amd64, machine: macos-15-intel}
+          - {system: windows-amd64, machine: windows-latest}
+    defaults:
+      run:
+        shell: bash
+    env:
+      LIBRARY_GLIBC_MAX: "2.35"
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          check-latest: true
+      - name: Vet and test the module of the library
+        working-directory: cabi
+        env:
+          CGO_ENABLED: "1"
+          # "must": the program of C is compiled and run, or this step
+          # fails; a skipped test would not show in this log. On one
+          # machine every language of the chapter on other languages
+          # must run too (docs/manual/other-languages.md).
+          FADODB_CABI: must
+          FADODB_LANGUAGES: ${{ matrix.languages }}
+        run: |
+          go vet ./...
+          go test -count=1 ./...
+      - name: Build the two libraries, with DuckDB's from DuckDB's release
+        run: scripts/library.sh build "${{ inputs.version }}"
+      - name: Try it from C and from Python
+        run: scripts/library.sh try
+      - name: The Python client over HTTP, against a fadodb-core serve
+        env:
+          FADODB_PYTHON: must
+        run: |
+          program=bin/fadodb-core
+          [ "$RUNNER_OS" = "Windows" ] && program=bin/fadodb-core.exe
+          CGO_ENABLED=0 go build -o "$program" ./cmd/fadodb-core
+          python=$(command -v python3 || command -v python)
+          [ "$RUNNER_OS" = "Windows" ] && python=$(command -v python || command -v python3)
+          cd clients/py/tests
+          FADODB_PROGRAM="../../../$program" "$python" -m unittest -v test_both_ways.OverHTTP
+      - name: Pack it, with the wheel of the Python package, and try the wheel
+        run: scripts/library.sh pack "${{ inputs.version }}"
+      - uses: actions/upload-artifact@v7
+        if: inputs.keep
+        with:
+          name: fadodb-core-library-${{ matrix.system }}
+          path: |
+            bin/library/fadodb-core-library_*.tar.gz
+            bin/library/fadodb-core-library_*.zip
+            bin/library/fadodb-library_*.tar.gz
+            bin/library/fadodb-library_*.zip
+            bin/library/fadodb-*.whl
+          if-no-files-found: error
+          retention-days: 3

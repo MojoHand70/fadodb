@@ -60,13 +60,32 @@ func (s *Store) Query(ctx context.Context, f Filter, opts ...Option) ([]*Documen
 // counting (ADR-0075, item 10).
 const lookLimit = 1000
 
+// lookUpTo is how far a look counts once an earlier one found least
+// documents: no further than least, rounded up to 1, 10, 100 or
+// lookLimit, so that each fit has at most four statements. A later look
+// is taken only when it ends before least, and it does whenever it
+// would have before lookLimit.
+func lookUpTo(least int) string {
+	switch {
+	case least <= 1:
+		return "1"
+	case least <= 10:
+		return "10"
+	case least <= 100:
+		return "100"
+	}
+	return "1000"
+}
+
 // through answers the condition and the parameters to ask a plan with.
 // A question that two or more indexes fit is asked through the one that
 // ends first: the engine looks into each for the value the question
 // compares, for at most lookLimit documents, since the store has no
-// numbers on the data to choose by (ADR-0075, item 10). Of two looks
-// that end alike the earlier fit is taken, and a look that finds
-// nothing ends the looking: through that index the answer is empty.
+// numbers on the data to choose by (ADR-0075, item 10). A look after
+// the first counts no further than the fewest an earlier one found
+// (lookUpTo). Of two looks that end alike the earlier fit is taken,
+// and a look that finds nothing ends the looking: through that index
+// the answer is empty.
 func (s *Store) through(ctx context.Context, c *class, plan *query.Plan, o options) (string, []any, error) {
 	named := s.contextArgs(o)
 	if len(plan.Fits) < 2 {
@@ -75,7 +94,7 @@ func (s *Store) through(ctx context.Context, c *class, plan *query.Plan, o optio
 	best, least := 0, lookLimit+1
 	for i := range plan.Fits {
 		f := &plan.Fits[i]
-		text := "SELECT count(*) FROM (SELECT 1 FROM " + quote(c.table) + " WHERE " + f.Look + " LIMIT " + fmt.Sprint(lookLimit) + ")"
+		text := "SELECT count(*) FROM (SELECT 1 FROM " + quote(c.table) + " WHERE " + f.Look + " LIMIT " + lookUpTo(least) + ")"
 		st, err := s.filters.acquire(ctx, s.db, text)
 		if err != nil {
 			return "", nil, storageErr("prepare a look into "+c.cls.Name, err)

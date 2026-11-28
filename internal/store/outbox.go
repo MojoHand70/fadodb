@@ -1045,6 +1045,13 @@ func (s *Store) perform(ctx context.Context, row *outboxRow, day int64, now time
 		if e != nil {
 			return nil, false, e
 		}
+		// The change of the rows, before them (ADR-0099, step 3): under
+		// the name of the action, made by the person who set the rule
+		// off. Its id is the token of the rows anew, so that a copy of
+		// the table is made again (ADR-0094).
+		if err := s.tableChange(ctx, t, row.action, cmd.o.principal, now); err != nil {
+			return nil, false, asError(err)
+		}
 		if e := s.tableAction(ctx, t, row.action, args.Row, args.Key, args.Set); e != nil {
 			return nil, false, e
 		}
@@ -1182,7 +1189,7 @@ func (s *Store) tableAction(ctx context.Context, t *table, action string, row, k
 	if err != nil {
 		return asError(storageErr("write "+t.def.Name, err))
 	}
-	t.cache, t.tooBig = nil, false
+	t.rowsWritten(action == model.ActionTableDelete)
 	return nil
 }
 

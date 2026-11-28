@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"path/filepath"
+	"sort"
+	"strings"
 	"testing"
 	"time"
 
@@ -104,6 +106,14 @@ func TestFlow_FromTheCopyIsTheStores(t *testing.T) {
 				"since the middle":      {Since: middle},
 				"until the middle":      {Until: middle},
 				"an hour of the middle": {Since: middle.Add(-30 * time.Minute), Until: middle.Add(30 * time.Minute)},
+				// How the stays spread, the middle one and the slow tenth
+				// (ADR-0095): the store orders the stays and takes the one
+				// at each place, the copy asks DuckDB's quantile, and the
+				// two are the same.
+				"since the class began, with the spread": {Spread: true},
+				"since the middle, with the spread":      {Since: middle, Spread: true},
+				"until the middle, with the spread":      {Until: middle, Spread: true},
+				"an hour of the middle, with the spread": {Since: middle.Add(-30 * time.Minute), Until: middle.Add(30 * time.Minute), Spread: true},
 			} {
 				before := withCopy.CopyState().Answers
 				fromCopy, err := withCopy.Flow(ctx, "Invoice", period, who)
@@ -122,6 +132,100 @@ func TestFlow_FromTheCopyIsTheStores(t *testing.T) {
 				if string(a) != string(b) {
 					t.Errorf("%s, %s, %s:\nthe copy  %s\nthe store %s", when, name, label, a, b)
 				}
+				// The paths the documents took (ADR-0097): the copy
+				// reads its moves in the order of their versions, the
+				// store its events.
+				for _, limit := range []int{0, 2, 1000} {
+					ask := fado.PathsAsk{Since: period.Since, Until: period.Until, Limit: limit}
+					before := withCopy.CopyState().Answers
+					fromCopy, err := withCopy.Paths(ctx, "Invoice", ask, who)
+					if err != nil {
+						t.Fatalf("%s, %s, %s, limit %d: the paths from the copy: %v", when, name, label, limit, err)
+					}
+					if st := withCopy.CopyState(); st.Answers != before+1 || st.AskErr != nil {
+						t.Fatalf("%s, %s, %s, limit %d: the copy did not answer: %+v", when, name, label, limit, st)
+					}
+					fromStore, err := plain.Paths(ctx, "Invoice", ask, who)
+					if err != nil {
+						t.Fatalf("%s, %s, %s, limit %d: the paths from the store: %v", when, name, label, limit, err)
+					}
+					a, _ := json.Marshal(fromCopy)
+					b, _ := json.Marshal(fromStore)
+					if string(a) != string(b) {
+						t.Errorf("%s, %s, %s, limit %d:\nthe copy  %s\nthe store %s", when, name, label, limit, a, b)
+					}
+				}
+				// How many were made and how many finished in each
+				// period (ADR-0096), over the same time: the copy
+				// counts its moves, the store its events.
+				for _, by := range []string{"", fado.ThroughputDay, fado.ThroughputWeek, fado.ThroughputMonth} {
+					ask := fado.ThroughputAsk{Since: period.Since, Until: period.Until, By: by}
+					before := withCopy.CopyState().Answers
+					fromCopy, err := withCopy.Throughput(ctx, "Invoice", ask, who)
+					if err != nil {
+						t.Fatalf("%s, %s, %s by %q: the throughput from the copy: %v", when, name, label, by, err)
+					}
+					if st := withCopy.CopyState(); st.Answers != before+1 || st.AskErr != nil {
+						t.Fatalf("%s, %s, %s by %q: the copy did not answer: %+v", when, name, label, by, st)
+					}
+					fromStore, err := plain.Throughput(ctx, "Invoice", ask, who)
+					if err != nil {
+						t.Fatalf("%s, %s, %s by %q: the throughput from the store: %v", when, name, label, by, err)
+					}
+					a, _ := json.Marshal(fromCopy)
+					b, _ := json.Marshal(fromStore)
+					if string(a) != string(b) {
+						t.Errorf("%s, %s, %s by %q:\nthe copy  %s\nthe store %s", when, name, label, by, a, b)
+					}
+					// The documents behind each period's numbers
+					// (ADR-0099): the same rows from both, and as many
+					// as the number.
+					for _, p := range fromStore.Periods {
+						for _, ask2 := range []fado.DocumentsAsk{{Made: p.From, Limit: 1000}, {Finished: p.From, Limit: 1000}} {
+							want := p.Created
+							if ask2.Finished != "" {
+								want = p.Finished
+							}
+							bothOpen(t, fmt.Sprintf("%s, %s, %s by %q, %+v", when, name, label, by, ask2), want,
+								func(db *fado.DB) (*fado.Documents, error) {
+									return db.ThroughputDocuments(ctx, "Invoice", ask, ask2, who)
+								}, withCopy, plain)
+						}
+					}
+				}
+				// The documents behind every number of the flow
+				// (ADR-0099), and behind every path.
+				if period.Spread {
+					continue
+				}
+				flowOpened := func(what string, want int64, ask fado.DocumentsAsk) {
+					t.Helper()
+					ask.Limit = 1000
+					bothOpen(t, fmt.Sprintf("%s, %s, %s, %s", when, name, label, what), want,
+						func(db *fado.DB) (*fado.Documents, error) { return db.FlowDocuments(ctx, "Invoice", period, ask, who) }, withCopy, plain)
+				}
+				flowOpened("created", fromStore.Created, fado.DocumentsAsk{Created: true})
+				for _, st := range fromStore.States {
+					flowOpened("in "+st.Name, st.Documents, fado.DocumentsAsk{State: st.Name})
+					flowOpened("stays in "+st.Name, st.Stays, fado.DocumentsAsk{Stays: st.Name})
+					for _, least := range []string{fado.AtLeastMiddle, fado.AtLeastSlowTenth} {
+						flowOpened("stays in "+st.Name+" at least the "+least, -1, fado.DocumentsAsk{Stays: st.Name, AtLeast: least})
+					}
+				}
+				for _, tr := range fromStore.Transitions {
+					flowOpened("along "+tr.Name+" from "+tr.From, tr.Moves, fado.DocumentsAsk{Transition: tr.Name, From: tr.From, To: tr.To})
+				}
+				ways, err := plain.Paths(ctx, "Invoice", fado.PathsAsk{Since: period.Since, Until: period.Until, Limit: 1000}, who)
+				if err != nil {
+					t.Fatal(err)
+				}
+				for _, p := range ways.Paths {
+					ask := fado.PathsAsk{Since: period.Since, Until: period.Until}
+					bothOpen(t, fmt.Sprintf("%s, %s, %s, path %v", when, name, label, p.States), p.Documents,
+						func(db *fado.DB) (*fado.Documents, error) {
+							return db.PathsDocuments(ctx, "Invoice", ask, fado.DocumentsAsk{Path: p.States, Limit: 1000}, who)
+						}, withCopy, plain)
+				}
 			}
 		}
 	}
@@ -138,6 +242,28 @@ func TestFlow_FromTheCopyIsTheStores(t *testing.T) {
 	}
 	if in["draft"] != 12 || in["review"] != 15 || in["paid"] != 12 || all.Created != 39 {
 		t.Errorf("the flow: %d drafts, %d in review, %d paid, %d created; want 12, 15, 12 and 39", in["draft"], in["review"], in["paid"], all.Created)
+	}
+	// And how many were made and finished: 39 invoices that exist, 12
+	// of them paid, in the days the clock of the test went through.
+	made, err := withCopy.Throughput(ctx, "Invoice", fado.ThroughputAsk{}, ewa)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if made.Created != 39 || made.Finished != 12 || made.By != fado.ThroughputDay || len(made.Periods) < 2 {
+		t.Errorf("the throughput: %d made and %d finished in %d days by %s; want 39 and 12 in several days", made.Created, made.Finished, len(made.Periods), made.By)
+	}
+	// And which ways they went: 39 invoices on five paths, three of
+	// them filed, sent back and filed again.
+	ways, err := withCopy.Paths(ctx, "Invoice", fado.PathsAsk{}, ewa)
+	if err != nil {
+		t.Fatal(err)
+	}
+	took := map[string]int64{}
+	for _, p := range ways.Paths {
+		took[strings.Join(p.States, ">")] = p.Documents
+	}
+	if ways.Documents != 39 || ways.Others != 0 || took["draft>review>paid"] != 12 || took["draft>review>draft>review"] != 3 || took["draft>review>draft"] != 3 || took["draft"] != 9 || took["draft>review"] != 12 {
+		t.Errorf("the paths: %d documents, %d others, %v", ways.Documents, ways.Others, took)
 	}
 	mine, err := withCopy.Flow(ctx, "Invoice", fado.FlowPeriod{}, nobody)
 	if err != nil {
@@ -238,5 +364,99 @@ func BenchmarkFlow(b *testing.B) {
 				b.Fatalf("the copy did not answer: %+v", st)
 			}
 		})
+	}
+}
+
+// The middle stay and the slow tenth are the lengths of the stays at
+// two places among the stays in the order of their lengths (ADR-0095):
+// of n stays, at place (n+1)/2 and at place (9n+9)/10, rounded down.
+// The store takes them by a count, DuckDB by its quantile, and the test
+// by sorting: at every number of stays from one to forty-five, tens and
+// odd numbers among them, the three agree.
+func TestFlow_TheSpreadAtEveryNumberOfStays(t *testing.T) {
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "acme.fado")
+	now := time.Date(2026, 3, 2, 8, 0, 0, 0, time.UTC)
+	clock := func() time.Time { return now }
+	withCopy, err := fado.Open(path, fado.Options{Analytics: Engine{Threads: 2}, CopyEvery: time.Hour, Outbox: fado.OutboxOptions{Manual: true}, Now: clock})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer withCopy.Close()
+	if _, err := withCopy.DefineClass(ctx, []byte(flowInvoice), olga); err != nil {
+		t.Fatal(err)
+	}
+	plain, err := fado.Open(path, fado.Options{Outbox: fado.OutboxOptions{Manual: true}, Now: clock})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer plain.Close()
+	ewa := person("ewa", "finance")
+	var lengths []int64
+	seed := uint32(7)
+	for n := 1; n <= 45; n++ {
+		// A stay in draft of a length that repeats now and then, so
+		// that equal lengths stand side by side too.
+		seed = seed*1664525 + 1013904223
+		length := int64(seed>>8) % 50 * 60
+		d, err := withCopy.Create(ctx, "Invoice", fado.Values{"number": fmt.Sprintf("FV-%d", n), "owner": "ewa", "customer": "Globex", "net": "1.00 PLN"}, ewa)
+		if err != nil {
+			t.Fatal(err)
+		}
+		now = now.Add(time.Duration(length) * time.Second)
+		if _, err := withCopy.Transition(ctx, "Invoice", d.ID, "file", nil, ewa); err != nil {
+			t.Fatal(err)
+		}
+		lengths = append(lengths, length)
+		sorted := append([]int64(nil), lengths...)
+		sort.Slice(sorted, func(i, j int) bool { return sorted[i] < sorted[j] })
+		want := fmt.Sprintf("%d/%d", sorted[(n+1)/2-1], sorted[(9*n+9)/10-1])
+		for program, db := range map[string]*fado.DB{"the program with the copy": withCopy, "the program without it": plain} {
+			before := withCopy.CopyState().Answers
+			f, err := db.Flow(ctx, "Invoice", fado.FlowPeriod{Spread: true}, ewa)
+			if err != nil {
+				t.Fatalf("%d stays, %s: %v", n, program, err)
+			}
+			if db == withCopy && withCopy.CopyState().Answers != before+1 {
+				t.Fatalf("%d stays: the copy did not answer: %+v", n, withCopy.CopyState())
+			}
+			got := ""
+			for _, st := range f.States {
+				if st.Name == "draft" && st.Spread != nil {
+					got = fmt.Sprintf("%d/%d", st.Spread.MiddleSeconds, st.Spread.SlowTenthSeconds)
+				}
+			}
+			if got != want {
+				t.Errorf("%d stays, %s: the middle stay and the slow tenth are %s, want %s", n, program, got, want)
+			}
+		}
+	}
+}
+
+// bothOpen asks for the documents behind a number of both programs: the
+// copy answers in the one, the store in the other, and the two answers
+// are the same rows; want is the number, or -1 where the flow gives
+// none to hold the count against.
+func bothOpen(t *testing.T, what string, want int64, ask func(db *fado.DB) (*fado.Documents, error), withCopy, plain *fado.DB) {
+	t.Helper()
+	before := withCopy.CopyState().Answers
+	fromCopy, err := ask(withCopy)
+	if err != nil {
+		t.Fatalf("%s: from the copy: %v", what, err)
+	}
+	if st := withCopy.CopyState(); st.Answers <= before || st.AskErr != nil {
+		t.Fatalf("%s: the copy did not answer: %+v", what, st)
+	}
+	fromStore, err := ask(plain)
+	if err != nil {
+		t.Fatalf("%s: from the store: %v", what, err)
+	}
+	a, _ := json.Marshal(fromCopy)
+	b, _ := json.Marshal(fromStore)
+	if string(a) != string(b) {
+		t.Errorf("%s:\nthe copy  %s\nthe store %s", what, a, b)
+	}
+	if want >= 0 && fromStore.Count != want {
+		t.Errorf("%s: %d documents behind the number %d", what, fromStore.Count, want)
 	}
 }

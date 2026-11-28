@@ -450,6 +450,162 @@
         "x-fado-mark": "writes"
       }
     },
+    "/v1/comment": {
+      "post": {
+        "description": "It writes. In Go it is the call `Comment`.",
+        "operationId": "comment",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "business_date": {
+                    "description": "the business day of the commit, as \"2026-11-13\"; the server's day when left out",
+                    "type": "string"
+                  },
+                  "class": {
+                    "description": "the name of the class",
+                    "type": "string"
+                  },
+                  "for": {
+                    "description": "the id of whoever the caller acts for; let through only while a substitution says so",
+                    "type": "string"
+                  },
+                  "id": {
+                    "description": "the id of the document",
+                    "type": "string"
+                  },
+                  "key": {
+                    "description": "the idempotency key: the same command sent again with the same key makes no second commit and is answered as the first was",
+                    "type": "string"
+                  },
+                  "text": {
+                    "description": "the words: plain text, line breaks kept, at most the database's limit for a text",
+                    "type": "string"
+                  },
+                  "version": {
+                    "description": "the version of the document its sender read before deciding; when the document is at another, the command is refused with stale_version and nothing is written",
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "class",
+                  "id",
+                  "text"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "comment": {
+                      "description": "the comment as the engine keeps it: its id, the words, who wrote them, what they are and for whom they acted, the version of the document, the business day and the moment"
+                    }
+                  },
+                  "required": [
+                    "comment"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "The command ran."
+          },
+          "default": {
+            "$ref": "#/components/responses/Refused"
+          }
+        },
+        "summary": "Writes a comment on a document: words the engine keeps beside it, with who wrote them and when. It makes no version of the document.",
+        "tags": [
+          "Documents"
+        ],
+        "x-fado-call": "Comment",
+        "x-fado-mark": "writes"
+      }
+    },
+    "/v1/comments": {
+      "post": {
+        "description": "It reads. In Go it is the call `Comments`.",
+        "operationId": "comments",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "at": {
+                    "description": "the moment the command reads at: \"2026-11-13\", \"2026-11-13 09:30:00\" in UTC, or seconds since the epoch; now when left out",
+                    "type": [
+                      "string",
+                      "integer"
+                    ]
+                  },
+                  "class": {
+                    "description": "the name of the class",
+                    "type": "string"
+                  },
+                  "for": {
+                    "description": "the id of whoever the caller acts for; let through only while a substitution says so",
+                    "type": "string"
+                  },
+                  "id": {
+                    "description": "the id of the document",
+                    "type": "string"
+                  },
+                  "reason": {
+                    "description": "why a content administrator acts or reads past a rule; a change keeps it on its event, a read in the log of reads",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "class",
+                  "id"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "comments": {
+                      "description": "the comments, oldest first; none for a document the caller may not see"
+                    }
+                  },
+                  "required": [
+                    "comments"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "The command ran."
+          },
+          "default": {
+            "$ref": "#/components/responses/Refused"
+          }
+        },
+        "summary": "Reads the comments on a document, oldest first.",
+        "tags": [
+          "Documents"
+        ],
+        "x-fado-call": "Comments",
+        "x-fado-mark": "reads"
+      }
+    },
     "/v1/count": {
       "post": {
         "description": "It reads. In Go it is the call `Count`.",
@@ -2099,6 +2255,10 @@
                     "description": "the name of the class",
                     "type": "string"
                   },
+                  "documents": {
+                    "description": "one number of the flow whose documents to answer in place of the flow: {\"created\": true}, {\"state\": \"review\"}, {\"stays\": \"review\"} with \"at_least\": \"middle\" or \"slow_tenth\" to keep the longest, or {\"transition\": \"approve\"} with \"from\" and \"to\" to narrow it; \"limit\" (50 when left out, 1,000 at the most) and \"offset\" page them",
+                    "type": "object"
+                  },
                   "for": {
                     "description": "the id of whoever the caller acts for; let through only while a substitution says so",
                     "type": "string"
@@ -2113,6 +2273,10 @@
                       "string",
                       "integer"
                     ]
+                  },
+                  "spread": {
+                    "description": "true to be told how the stays of each state spread as well: the middle stay and the slow tenth. It reads every stay of the period, so it is asked for only when it is wanted",
+                    "type": "boolean"
                   },
                   "until": {
                     "description": "the moment the period ends before; now when left out",
@@ -2137,12 +2301,16 @@
               "application/json": {
                 "schema": {
                   "properties": {
+                    "documents": {
+                      "description": "when documents names a number, in place of the flow: how many there are, the page of them, each with its id, its title and state now, when it moved, entered, was made or finished, how long a stay lasted, the version and who; and whether more follow"
+                    },
                     "flow": {
-                      "description": "the states of the class, each with its documents now, since when the oldest is there, and how many stays ended in the period and how long they lasted; and its transitions, each with its moves in the period"
+                      "description": "the states of the class, each with its documents now, since when the oldest is there, and how many stays ended in the period and how long they lasted, with their middle and their slow tenth when spread asks for them; and its transitions, each with its moves in the period"
                     }
                   },
                   "required": [
-                    "flow"
+                    "flow",
+                    "documents"
                   ],
                   "type": "object"
                 }
@@ -3061,7 +3229,7 @@
                     "type": "string"
                   },
                   "replace": {
-                    "description": "true empties the table first, so that the rows given are all its rows",
+                    "description": "true makes the rows given all its rows: a row of the table that is not among them is removed",
                     "type": "boolean"
                   },
                   "rows": {
@@ -3196,6 +3364,98 @@
         "tags": [
           "Messages from outside"
         ]
+      }
+    },
+    "/v1/lineage": {
+      "post": {
+        "description": "It reads. In Go it is the call `Lineage`.",
+        "operationId": "lineage",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "at": {
+                    "description": "the moment the command reads at: \"2026-11-13\", \"2026-11-13 09:30:00\" in UTC, or seconds since the epoch; now when left out",
+                    "type": [
+                      "string",
+                      "integer"
+                    ]
+                  },
+                  "class": {
+                    "description": "the name of the class",
+                    "type": "string"
+                  },
+                  "for": {
+                    "description": "the id of whoever the caller acts for; let through only while a substitution says so",
+                    "type": "string"
+                  },
+                  "id": {
+                    "description": "the id of the document",
+                    "type": "string"
+                  },
+                  "limit": {
+                    "description": "how many parts of each lookup to answer, the largest first; 50 when left out, 1,000 at the most",
+                    "type": "integer"
+                  },
+                  "offset": {
+                    "description": "how many parts to skip",
+                    "type": "integer"
+                  },
+                  "reason": {
+                    "description": "why a content administrator acts or reads past a rule; a change keeps it on its event, a read in the log of reads",
+                    "type": "string"
+                  },
+                  "variable": {
+                    "description": "the variable whose value is asked about",
+                    "type": "string"
+                  },
+                  "version": {
+                    "description": "the version of the document the value is of, to walk down in the past; the version it is at when left out",
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "class",
+                  "id",
+                  "variable"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "lineage": {
+                      "description": "the value, its kind (typed, computed, kept or live), its formula, the moment it came, the values of the document its formula read, and for each lookup the documents or rows it read: how many, what they give, the page of them the caller may read with their values, how many the caller may not, which changed since and what the lookup gives now; and whether the formula worked out again over what it read gives the value"
+                    }
+                  },
+                  "required": [
+                    "lineage"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "The command ran."
+          },
+          "default": {
+            "$ref": "#/components/responses/Refused"
+          }
+        },
+        "summary": "Answers where a value of a document comes from, one level: how it is made, when, and what it read, with the values of the parts.",
+        "tags": [
+          "Documents"
+        ],
+        "x-fado-call": "Lineage",
+        "x-fado-mark": "reads"
       }
     },
     "/v1/list_actions": {
@@ -4312,6 +4572,95 @@
           "Tables, actions and the queue"
         ],
         "x-fado-call": "Outbox",
+        "x-fado-mark": "reads"
+      }
+    },
+    "/v1/paths": {
+      "post": {
+        "description": "It reads. In Go it is the call `Paths`.",
+        "operationId": "paths",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "class": {
+                    "description": "the name of the class",
+                    "type": "string"
+                  },
+                  "documents": {
+                    "description": "one path whose documents to answer in place of the paths: {\"path\": [\"draft\", \"review\", \"approved\"]}; \"limit\" (50 when left out, 1,000 at the most) and \"offset\" page them",
+                    "type": "object"
+                  },
+                  "for": {
+                    "description": "the id of whoever the caller acts for; let through only while a substitution says so",
+                    "type": "string"
+                  },
+                  "limit": {
+                    "description": "how many paths to answer, the most taken first; 20 when left out, 1,000 at the most",
+                    "type": "integer"
+                  },
+                  "reason": {
+                    "description": "why a content administrator acts or reads past a rule; a change keeps it on its event, a read in the log of reads",
+                    "type": "string"
+                  },
+                  "since": {
+                    "description": "the first moment a document was made at to be counted; since the class began when left out",
+                    "type": [
+                      "string",
+                      "integer"
+                    ]
+                  },
+                  "until": {
+                    "description": "the moment before which a document was made to be counted; now when left out",
+                    "type": [
+                      "string",
+                      "integer"
+                    ]
+                  }
+                },
+                "required": [
+                  "class"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "documents": {
+                      "description": "when documents names a path, in place of the paths: how many documents took it, the page of them, each with its id, its title and state now, when it was made and who made it; and whether more follow"
+                    },
+                    "paths": {
+                      "description": "how many documents were counted and how many different paths they took; the most taken paths, each with its states in the order a document came into them, how many documents took it, and whether it ends in a final state; and how many documents took another path"
+                    }
+                  },
+                  "required": [
+                    "paths",
+                    "documents"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "The command ran."
+          },
+          "default": {
+            "$ref": "#/components/responses/Refused"
+          }
+        },
+        "summary": "Answers the paths the documents of a class took through its states, the most taken first, for the documents the caller may read.",
+        "tags": [
+          "Documents"
+        ],
+        "x-fado-call": "Paths",
         "x-fado-mark": "reads"
       }
     },
@@ -5515,6 +5864,89 @@
         "x-fado-mark": "writes"
       }
     },
+    "/v1/row_history": {
+      "post": {
+        "description": "It reads. In Go it is the call `RowHistory`.",
+        "operationId": "row_history",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "at": {
+                    "description": "the moment the command reads at: \"2026-11-13\", \"2026-11-13 09:30:00\" in UTC, or seconds since the epoch; now when left out",
+                    "type": [
+                      "string",
+                      "integer"
+                    ]
+                  },
+                  "for": {
+                    "description": "the id of whoever the caller acts for; let through only while a substitution says so",
+                    "type": "string"
+                  },
+                  "key": {
+                    "description": "the key of the row: a value for every column of the table's key, and for no other",
+                    "type": "object"
+                  },
+                  "limit": {
+                    "description": "how many versions to answer, the newest first; 50 when left out, 1,000 at the most",
+                    "type": "integer"
+                  },
+                  "offset": {
+                    "description": "how many versions to skip",
+                    "type": "integer"
+                  },
+                  "reason": {
+                    "description": "why a content administrator acts or reads past a rule; a change keeps it on its event, a read in the log of reads",
+                    "type": "string"
+                  },
+                  "table": {
+                    "description": "the name of the table",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "table",
+                  "key"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "history": {
+                      "description": "whether the table keeps the history of its rows, how many versions the row has had, and the page of them: each its values, the change that gave them and the one that changed or removed them, each with when, who, of what kind and for whom, and the kind of change"
+                    }
+                  },
+                  "required": [
+                    "history"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "The command ran."
+          },
+          "default": {
+            "$ref": "#/components/responses/Refused"
+          }
+        },
+        "summary": "Reads the history of one row of a table: the row as it is now, then as it was before each change, the newest first, with who changed it and when.",
+        "tags": [
+          "Tables, actions and the queue"
+        ],
+        "x-fado-call": "RowHistory",
+        "x-fado-mark": "reads"
+      }
+    },
     "/v1/set": {
       "post": {
         "description": "It writes. In Go it is the call `Set`.",
@@ -6038,6 +6470,95 @@
           "Tables, actions and the queue"
         ],
         "x-fado-call": "TableRows",
+        "x-fado-mark": "reads"
+      }
+    },
+    "/v1/throughput": {
+      "post": {
+        "description": "It reads. In Go it is the call `Throughput`.",
+        "operationId": "throughput",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "by": {
+                    "description": "the length of a period: day, week or month, by the clock of the database's time zone; day when left out",
+                    "type": "string"
+                  },
+                  "class": {
+                    "description": "the name of the class",
+                    "type": "string"
+                  },
+                  "documents": {
+                    "description": "one number of the throughput whose documents to answer in place of it: {\"made\": \"2026-11-02\"} or {\"finished\": \"2026-11-02\"}, the first day of a period; \"limit\" (50 when left out, 1,000 at the most) and \"offset\" page them",
+                    "type": "object"
+                  },
+                  "for": {
+                    "description": "the id of whoever the caller acts for; let through only while a substitution says so",
+                    "type": "string"
+                  },
+                  "reason": {
+                    "description": "why a content administrator acts or reads past a rule; a change keeps it on its event, a read in the log of reads",
+                    "type": "string"
+                  },
+                  "since": {
+                    "description": "the first moment that is counted; since the class began when left out",
+                    "type": [
+                      "string",
+                      "integer"
+                    ]
+                  },
+                  "until": {
+                    "description": "the moment the counting ends before; now when left out",
+                    "type": [
+                      "string",
+                      "integer"
+                    ]
+                  }
+                },
+                "required": [
+                  "class"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "documents": {
+                      "description": "when documents names a number, in place of the throughput: how many there are, the page of them, each with its id, its title and state now, when it was made or finished, the version and who; and whether more follow"
+                    },
+                    "throughput": {
+                      "description": "the periods from the first in which a document was made or finished to the last, each with its first day and how many documents were made and how many finished in it; and the two sums"
+                    }
+                  },
+                  "required": [
+                    "throughput",
+                    "documents"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "The command ran."
+          },
+          "default": {
+            "$ref": "#/components/responses/Refused"
+          }
+        },
+        "summary": "Answers how many documents of a class the caller may read were made and how many finished in each day, week or month: whether the pile grows.",
+        "tags": [
+          "Documents"
+        ],
+        "x-fado-call": "Throughput",
         "x-fado-mark": "reads"
       }
     },

@@ -12,7 +12,7 @@ push. One measurement is not played, and is marked.
 ## What is on disk
 
 [Opening a database](opening-a-database.md#what-is-on-disk) lists the
-files. Three things matter here:
+files. Four things matter here:
 
 - **A database that is closed is one file**, `books.fado`.
 - **While a program has it open, its latest commits are in a second
@@ -21,6 +21,12 @@ files. Three things matter here:
 - **The files that documents hold are in the database**, or, with the
   store `dir`, in the directory `books.fado.blobs` beside it; see
   [Files](files.md#where-the-bytes-are-kept).
+- **A program with the analytical engine, such as `fadodb`, keeps a
+  copy beside it**, `books.fado.duckdb`. It is never the truth and
+  needs no backup: the engine makes it again when it is lost or does
+  not open, and when it was fed from another database or from a later
+  moment than a backup that was put back; see
+  [An analytical engine](opening-a-database.md#an-analytical-engine).
 
 ## The database of the story
 
@@ -76,7 +82,8 @@ What the story shows:
 
 - **A backup is a copy made while no program has the database open**:
   the file, and the directory of the store `dir`. Nothing else is
-  needed. The file `books.fado.lock` need not be copied.
+  needed. The file `books.fado.lock` need not be copied, nor the copy
+  of the analytical engine, `books.fado.duckdb`.
 - **Putting a copy back brings back everything as it was**: the
   documents with their versions, the log, the classes, the users and
   their keys, and the queue.
@@ -333,41 +340,51 @@ same database without pause.
 
 ## How fast it is
 
-Measured for [v0.5.0](../perf/v0.5.0.md), on one machine, which that
-page describes. Yours is another:
-[the page](../perf/v0.5.0.md#how-to-run-it) says how to run the same
+Measured for Phase 8, on the page of [v0.8.0](../perf/v0.8.0.md), on
+one machine, which that page describes. Yours is another:
+[the page](../perf/v0.8.0.md#how-to-run-it) says how to run the same
 measurements.
 
 <!-- measured -->
 | Work | Measured |
 |---|---|
-| one document created | 99 of 100 take less than 0.20 ms |
-| one document changed | 99 of 100 take less than 0.27 ms |
-| one document moved by a transition | 99 of 100 take less than 0.17 ms; 12,740 a second |
-| many documents moved by one call | 27,488 a second |
-| many documents created in one transaction | 25,220 a second |
+| one document created | 99 of 100 take less than 0.314 ms |
+| one document changed | 99 of 100 take less than 0.329 ms |
+| one document moved by a transition | 99 of 100 take less than 0.205 ms; 12,777 a second |
+| many documents moved by one call | 23,962 a second |
+| many documents created in one transaction | 17,086 a second |
 | one document read by its id | 0.005 ms at the median |
-| a filter on an indexed variable, over 1,000,000 documents | 15.45 µs |
-| opening a database of 11.2 GB | 4.7 ms |
+| a filter on an indexed variable, over 1,000,000 documents | 15.91 µs |
+| opening a database of 11.5 GB | 5.7 ms |
+
+- **Every commit is slower than in v0.7.0**: 8 to 10% in memory and
+  10 to 16% on disk, measured beside v0.7.0 the same night. It is the
+  indexes the engine keeps by itself since Phase 8, on the state, on
+  the moments a document was made and last changed, and on every
+  pointer, which each commit writes; see
+  [beside v0.7.0](../perf/v0.8.0.md#beside-v070-the-same-night).
 
 What is slower than a reader might expect:
 
 <!-- what is slow -->
 | What | Measured | Why |
 |---|---|---|
-| a commit made while another caller moves documents in batches of 1,000 | 9 of 10 waited less than 69 ms | there is one writer at a time, and a batch keeps it until all its documents are moved |
-| the first ten of a caller's own 10,000 documents, sorted | 10.7 ms | the engine finds the 10,000 and sorts them before it answers ten |
+| a commit made while another caller moves documents in batches of 1,000 | 9 of 10 waited less than 82.29 ms | there is one writer at a time, and a batch keeps it until all its documents are moved |
+| the first ten of a caller's own 10,000 documents, sorted | 11.0 ms | the engine finds the 10,000 and sorts them before it answers ten |
+| the flow of a class of 3,400,000 documents, in `fadodb-core` | 18.0 s; `fadodb` answers it from its copy in 13.5 ms | without the analytical engine a question that reads a whole class reads every document; see [A server with the analytical engine](serving-a-database.md#a-server-with-the-analytical-engine) |
 | a commit in a database created with `FULL` | as slow as the disk confirms a write | every commit waits for the disk; see [How sure a commit is](opening-a-database.md#how-sure-a-commit-is) |
 | a lookup in a table with no index for it | grows with the table | see [How fast a lookup is](tables.md#how-fast-a-lookup-is) |
 
 ## Another release
 
 Before version 1.0 a release may change how the file is laid out. A
-database is opened only by an engine that lays it out the same way,
-and any other is refused with `not_supported`; see
-[Opening a database](opening-a-database.md#what-is-refused). There is
-no way yet to bring a file forward. So keep with each backup the
-release that made it: `fadodb version` says it, and the
+database that v0.7.0 or a later release made is brought to the layout
+of the engine that opens it, when it opens it, and the engine that made
+it no longer opens it afterwards; a file of a release before v0.7.0,
+or of a newer engine, is refused with `not_supported`; see
+[Opening a database](opening-a-database.md#what-is-refused). So make a
+backup before a newer release opens the database, and keep with each
+backup the release that made it: `fadodb version` says it, and the
 [changelog](../../CHANGELOG.md) says which release changes the file.
 
 ## Not here yet
@@ -376,4 +393,4 @@ release that made it: `fadodb version` says it, and the
 - A check of the database file itself.
 - Making the file smaller: nothing removes old versions, events or
   bytes.
-- A way to bring a file of an earlier release forward.
+- A way to bring a file of a release before v0.7.0 forward.

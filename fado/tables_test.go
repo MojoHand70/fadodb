@@ -1110,6 +1110,11 @@ func TestTables(t *testing.T) {
 		{"list the tables, or those of one app", "list_tables", func() bool {
 			return string(exec(reader, "list_tables", `{}`)["tables"]) == `["Rates",`+systemTablesJSON+`]`
 		}},
+		{"read the history of a row", "row_history", func() bool {
+			var got fado.RowHistory
+			json.Unmarshal(exec(reader, "row_history", `{"table":"Rates","key":{"currency":"EUR","day":"2026-11-12"}}`)["history"], &got)
+			return got.History && got.Count == 1 && got.Rows[0].Since != nil && got.Rows[0].Since.By == "tess"
+		}},
 		{"remove rows", "delete_rows", func() bool {
 			return string(exec(treasurer, "delete_rows", `{"table":"Rates","keys":[{"currency":"XXX","day":"2026-11-13"}]}`)["deleted"]) == "0"
 		}},
@@ -1266,6 +1271,34 @@ func TestTables(t *testing.T) {
 				t.Errorf("the table did not leave the app: %v, %v", in, err)
 			}
 		},
+		"says \"history\": false, or leaves it out again, and nothing else changes": func(row []string) {
+			// Held in use, its row changed once: the history holds the
+			// row as it was. false drops it and keeps the row; left out
+			// again, the history starts empty (ADR-0099, step 3).
+			define(plain("Kept", lines+`,"app":"Expenses"`))
+			define(plain("Kept", lines))
+			if _, err := db3.ImportRows(ctx, "Kept", []fado.Values{{"k": "a", "v": "c"}}, ann); err != nil {
+				t.Fatal(err)
+			}
+			versions := func() int64 {
+				h, err := db3.RowHistory(ctx, "Kept", fado.Values{"k": "a"}, fado.RowHistoryAsk{}, ann)
+				if err != nil {
+					t.Fatal(err)
+				}
+				return h.Count
+			}
+			before := versions()
+			define(plain("Kept", lines+`,"history":false`))
+			off, _ := db3.Table("Kept")
+			dropped := versions()
+			define(plain("Kept", lines))
+			on, _ := db3.Table("Kept")
+			rows, err := db3.TableRows(ctx, "Kept", ann)
+			if before != 2 || dropped != 1 || versions() != 1 || off == nil || off.History || on == nil || !on.History || err != nil || len(rows) != 1 ||
+				row[1] != "is taken, as the next version, whatever rows it holds and whoever reads it; false drops the history kept, and leaving it out again keeps it from then" {
+				t.Errorf("history false and back: %d, %d, %d versions, %+v %+v, %d rows %v, and the chapter says it %s", before, dropped, versions(), off, on, len(rows), err, row[1])
+			}
+		},
 		"would break a rule of a class that writes it": func(row []string) {
 			define(plain("Fed", lines))
 			class := scratch("Feeds", `"c":{"type":"text"}`,
@@ -1334,7 +1367,7 @@ func TestTables(t *testing.T) {
 		"has a json column in its key":                                   {col("T", `"k":"json"`, key)},
 		"has an index that names no column":                              {col("T", `"k":"text"`, key+`,"indexes":[[]]`)},
 		"has an index that names a column it does not have":              {col("T", `"k":"text"`, key+`,"indexes":[["z"]]`)},
-		"has a binding that is not built yet, duckdb or external": {
+		"has a binding that is not built, duckdb or external": {
 			col("T", `"k":"text"`, key+`,"binding":"duckdb"`),
 			col("T", `"k":"text"`, key+`,"binding":"external"`),
 		},
@@ -1447,3 +1480,75 @@ var (
 	systemTables     = []string{"SystemApps", "SystemClasses", "SystemUsers", "SystemGroups"}
 	systemTablesJSON = `"SystemApps","SystemClasses","SystemUsers","SystemGroups"`
 )
+
+// TestTables_TheHistoryOfARow plays "The history of the rows": Tess
+// brings the chapter's rows at 9:00, corrects the euro at 10:00 and
+// brings the rates again whole at 11:00 without the dollar; Ann's
+// row_history is answered as the chapter shows, and the dollar's last
+// version ends at the replace.
+func TestTables_TheHistoryOfARow(t *testing.T) {
+	page, err := os.ReadFile(filepath.Join("..", "docs", "manual", "tables.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	var rates []byte
+	for _, m := range regexp.MustCompile("(?s)```json\r?\n(.*?)\r?\n```").FindAllSubmatch(page, -1) {
+		if kindOf(m[1]) == "table" {
+			rates = m[1]
+			break
+		}
+	}
+	given := regexp.MustCompile("(?s)```jsonc\r?\n(.*?)\r?\n```").FindSubmatch(page)
+	var imported []fado.Values
+	if err := json.Unmarshal(given[1], &imported); err != nil {
+		t.Fatal(err)
+	}
+	at := time.Date(2026, 11, 13, 9, 0, 0, 0, time.UTC)
+	db, err := fado.Open(filepath.Join(t.TempDir(), "rates.fado"), fado.Options{Now: func() time.Time { return at }, Outbox: fado.OutboxOptions{Manual: true}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	dan := fado.As(fado.Principal{ID: "dan", Kind: fado.ActorPerson, System: []string{fado.GroupDesigners}})
+	tess, ann := person("tess", "treasury"), person("ann")
+	if _, err := db.DefineTable(ctx, rates, dan); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.ImportRows(ctx, "Rates", imported, tess); err != nil {
+		t.Fatal(err)
+	}
+	at = at.Add(time.Hour)
+	if _, err := db.ImportRows(ctx, "Rates", []fado.Values{{"currency": "EUR", "day": "2026-11-13", "rate": "4.2800", "source": "NBP"}}, tess); err != nil {
+		t.Fatal(err)
+	}
+	at = at.Add(time.Hour)
+	if _, err := db.ImportRows(ctx, "Rates", []fado.Values{
+		{"currency": "EUR", "day": "2026-11-12", "rate": "4.2500", "source": "NBP"},
+		{"currency": "EUR", "day": "2026-11-13", "rate": "4.2800", "source": "NBP"},
+	}, tess, fado.Replace()); err != nil {
+		t.Fatal(err)
+	}
+	if steps := rows(marked(t, page, "what Tess did")); len(steps) != 2 {
+		t.Errorf("the chapter tells %d steps of Tess, and the test plays 2", len(steps))
+	}
+	answered, err := db.Exec(ctx, fado.Principal{ID: "ann", Kind: fado.ActorPerson}, "row_history", []byte(fenced(t, page, "the history of a row, asked")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var have, want any
+	if err := json.Unmarshal(answered, &have); err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal([]byte(fenced(t, page, "the history of a row")), &want); err != nil {
+		t.Fatalf("the answer the chapter shows: %v", err)
+	}
+	if !reflect.DeepEqual(have, want) {
+		pretty, _ := json.MarshalIndent(have, "", "  ")
+		t.Errorf("row_history answers\n%s\nand the chapter shows\n%s", pretty, fenced(t, page, "the history of a row"))
+	}
+	usd, err := db.RowHistory(ctx, "Rates", fado.Values{"currency": "USD", "day": "2026-11-13"}, fado.RowHistoryAsk{}, ann)
+	if err != nil || usd.Count != 1 || usd.Rows[0].Until == nil || usd.Rows[0].Until.Event != "replace" || usd.Rows[0].Until.At != at.Unix() {
+		t.Errorf("the dollar: %+v, %v", usd, err)
+	}
+}

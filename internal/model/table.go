@@ -36,6 +36,11 @@ type TableDef struct {
 	// Access holds the table's two rules (ADR-0051): who may read its
 	// rows and who may write them.
 	Access *TableAccessDef `json:"access,omitempty"`
+	// History says whether the table keeps the history of its rows
+	// (ADR-0099, step 3): every row as it was, until a change replaced
+	// or removed it. Left out it does; false keeps none, for a table
+	// brought in whole that no decision reads.
+	History *bool `json:"history,omitempty"`
 	// ColumnOrder lists the columns in the order written.
 	ColumnOrder []string `json:"-"`
 }
@@ -58,6 +63,9 @@ type Table struct {
 	Label       string
 	Description string
 	Binding     string
+	// History says the table keeps the history of its rows (ADR-0099,
+	// step 3): true unless the definition says "history": false.
+	History bool
 	// Fields are the logical columns in order; Columns the storage
 	// columns, a money field as two.
 	Fields  []formula.Field
@@ -119,7 +127,10 @@ func ParseTable(data []byte) (*TableDef, Diagnostics) {
 	return &def, c.list
 }
 
-// The bindings this build knows, and the ones it stores rows in.
+// The bindings the engine knows by name, and the one it stores rows in.
+// The rows of every table live in the store (ADR-0094): a program with
+// the analytical engine keeps a copy of them by itself, and a table of
+// another database is brought in from outside.
 var (
 	knownBindings     = map[string]bool{"sqlite": true, "duckdb": true, "external": true}
 	supportedBindings = map[string]bool{"sqlite": true}
@@ -128,7 +139,7 @@ var (
 // CompileTable checks a table definition and lays it out.
 func CompileTable(def *TableDef) (*Table, Diagnostics) {
 	c := &collector{}
-	t := &Table{Name: def.Name, App: def.App, Version: def.Version, Label: def.Label, Description: def.Description, Binding: def.Binding, Def: def}
+	t := &Table{Name: def.Name, App: def.App, Version: def.Version, Label: def.Label, Description: def.Description, Binding: def.Binding, History: def.History == nil || *def.History, Def: def}
 	if c.checkName("/name", def.Name, reservedClassNames) {
 		if lower := strings.ToLower(def.Name); strings.HasPrefix(lower, "doc_") || strings.HasPrefix(lower, "tbl_") {
 			c.add(CodeReservedName, "/name", "a table name may not start with doc_ or tbl_, the prefixes of the generated tables")
@@ -145,8 +156,10 @@ func CompileTable(def *TableDef) (*Table, Diagnostics) {
 	default:
 		if !knownBindings[t.Binding] {
 			c.hint(CodeBadValue, "/binding", "unknown binding "+quote(t.Binding), "one of sqlite, duckdb, external")
+		} else if t.Binding == "duckdb" {
+			c.hint(CodeNotSupported, "/binding", "the duckdb binding is not built: the rows of a table are kept in the database itself", "leave binding out; a program with the analytical engine keeps a copy of the rows by itself")
 		} else if !supportedBindings[t.Binding] {
-			c.hint(CodeNotSupported, "/binding", "the "+t.Binding+" binding is not implemented yet", "sqlite is the binding of this build")
+			c.hint(CodeNotSupported, "/binding", "the "+t.Binding+" binding is not built: the engine reads no table of another database", "leave binding out, and bring the rows in with import_rows")
 		}
 	}
 	checkWords(c, "", def.Label, def.Description)
@@ -276,16 +289,18 @@ func tableRule(c *collector, path, src, what string) *formula.Program {
 }
 
 // OnlyTheApp says whether two definitions of a table differ in nothing
-// but the app they name (and the version they write): the columns in
-// their order, the key, the indexes, the binding, the rules and the
-// words are the same. A table moves to another app so (ADR-0079, item
-// 4), whatever it holds.
+// but the app they name, whether they keep the history of the rows,
+// and the version they write: the columns in their order, the key, the
+// indexes, the binding, the rules and the words are the same. A table
+// moves to another app so (ADR-0079, item 4), whatever it holds, and
+// starts or stops keeping its history so (ADR-0099, step 3).
 func OnlyTheApp(a, b *TableDef) bool {
 	if a == nil || b == nil || !slices.Equal(a.ColumnOrder, b.ColumnOrder) {
 		return false
 	}
 	x, y := *a, *b
 	x.App, y.App, x.Version, y.Version = "", "", 0, 0
+	x.History, y.History = nil, nil
 	l, errL := json.Marshal(x)
 	r, errR := json.Marshal(y)
 	return errL == nil && errR == nil && bytes.Equal(l, r)
@@ -325,6 +340,7 @@ func AddsColumns(a, b *TableDef) ([]string, bool) {
 	}
 	x, y := *a, *b
 	x.App, y.App, x.Version, y.Version = "", "", 0, 0
+	x.History, y.History = nil, nil
 	x.Columns, y.Columns, x.ColumnOrder, y.ColumnOrder = nil, nil, nil, nil
 	l, errL := json.Marshal(x)
 	r, errR := json.Marshal(y)

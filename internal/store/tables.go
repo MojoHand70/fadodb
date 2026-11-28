@@ -29,8 +29,8 @@ type table struct {
 	leafIndex map[string]int
 	src       *formula.Source
 
-	upsert, insert, deleteAll, selectAll *sql.Stmt // on the writer
-	readAll                              *sql.Stmt // on the pool
+	upsert, insert, selectAll *sql.Stmt // on the writer
+	readAll                   *sql.Stmt // on the pool
 
 	// cache holds the rows while the table is small enough (ADR-0036);
 	// nil until a lookup needs it, dropped by an import and by a rule's
@@ -42,6 +42,10 @@ type table struct {
 	// view, which nobody writes, and its rows change with the engine's
 	// records, so they are never kept in memory.
 	system bool
+	// noteRows writes a change of the table's rows (ADR-0099, step 3),
+	// whose id is the token of the rows anew (ADR-0094), on the writer.
+	// It stands last: a lookup reads the fields above it.
+	noteRows *sql.Stmt
 }
 
 type tableCache struct {
@@ -95,13 +99,17 @@ func newTable(def *model.Table, src []byte) *table {
 	return t
 }
 
+// createDDL makes the table with its indexes, the history of its rows
+// with its triggers (ADR-0099, step 3), and its view.
 func (t *table) createDDL() []string {
 	ddl := []string{
-		"CREATE TABLE " + quote(t.name) + " (" + columnDDL(t.def.Columns) + ", PRIMARY KEY (" + strings.Join(quoteAll(t.def.Key), ", ") + "))",
+		"CREATE TABLE " + quote(t.name) + " (" + columnDDL(t.def.Columns) + ", " + quote(sinceColumn) + " INTEGER, PRIMARY KEY (" + strings.Join(quoteAll(t.def.Key), ", ") + "))",
 	}
 	for _, idx := range t.def.Indexes {
 		ddl = append(ddl, "CREATE INDEX "+quote(t.name+"_"+strings.Join(idx, "_"))+" ON "+quote(t.name)+" ("+strings.Join(quoteAll(idx), ", ")+")")
 	}
+	ddl = append(ddl, t.historyDDL()...)
+	ddl = append(ddl, t.triggerDDL()...)
 	return append(ddl, t.viewDDL())
 }
 
@@ -111,26 +119,42 @@ func (t *table) viewDDL() string {
 	return "CREATE VIEW " + quote(t.def.Name) + " AS SELECT " + strings.Join(quoteAll(columnNames(t.def.Columns)), ", ") + " FROM " + quote(t.name)
 }
 
+// dropDDL drops the table, its triggers and its view; the history of its
+// rows stays, for a version that carries it (dropHistoryDDL drops it).
 func (t *table) dropDDL() []string {
 	return []string{"DROP VIEW IF EXISTS " + quote(t.def.Name), "DROP TABLE IF EXISTS " + quote(t.name)}
 }
 
-func (t *table) prepare(ctx context.Context, writer *sql.Conn, db *sql.DB) error {
-	cols := quoteAll(columnNames(t.def.Columns))
+// dropHistoryDDL drops the history of the table's rows.
+func (t *table) dropHistoryDDL() []string {
+	return []string{"DROP TABLE IF EXISTS " + quote(t.historyName())}
+}
+
+// conflictSQL is what an import does with a row whose key the table has.
+// A row brought with the values it has is not written at all: no change,
+// no history; a row changed gets the change as its moment in the same
+// write (ADR-0099, step 3).
+func (t *table) conflictSQL() string {
 	keys := map[string]bool{}
 	for _, k := range t.def.Key {
 		keys[strings.ToUpper(k)] = true
 	}
-	var sets []string
+	var sets, differ []string
 	for _, c := range t.def.Columns {
 		if !keys[strings.ToUpper(c.Variable)] {
 			sets = append(sets, quote(c.Name)+" = excluded."+quote(c.Name))
+			differ = append(differ, quote(c.Name)+" IS NOT excluded."+quote(c.Name))
 		}
 	}
-	conflict := " DO NOTHING"
-	if len(sets) > 0 {
-		conflict = " DO UPDATE SET " + strings.Join(sets, ", ")
+	if len(sets) == 0 {
+		return " DO NOTHING"
 	}
+	return " DO UPDATE SET " + strings.Join(sets, ", ") + ", " + quote(sinceColumn) + " = excluded." + quote(sinceColumn) + " WHERE " + strings.Join(differ, " OR ")
+}
+
+func (t *table) prepare(ctx context.Context, writer *sql.Conn, db *sql.DB) error {
+	cols := quoteAll(columnNames(t.def.Columns))
+	conflict := t.conflictSQL()
 	order := " ORDER BY " + strings.Join(quoteAll(t.def.Key), ", ")
 	selectAll := "SELECT " + strings.Join(cols, ", ") + " FROM " + quote(t.name) + order
 	var err error
@@ -151,12 +175,16 @@ func (t *table) prepare(ctx context.Context, writer *sql.Conn, db *sql.DB) error
 		}
 		return nil
 	}
-	prep(&t.upsert, writer, "INSERT INTO "+quote(t.name)+" ("+strings.Join(cols, ", ")+") VALUES ("+marks(len(cols))+") ON CONFLICT ("+strings.Join(quoteAll(t.def.Key), ", ")+")"+conflict)
+	// A row inserted is the change being written (ADR-0099, step 3): the
+	// statement reads it, so that nothing more is bound to it. A row
+	// changed is the triggers' (triggerDDL).
+	into := "INSERT INTO " + quote(t.name) + " (" + strings.Join(cols, ", ") + ", " + quote(sinceColumn) + ") VALUES (" + marks(len(cols)) + ", " + t.tokenSQL() + ") ON CONFLICT (" + strings.Join(quoteAll(t.def.Key), ", ") + ")"
+	prep(&t.upsert, writer, into+conflict)
 	// The insert of a rule's table.insert, which an existing key refuses.
-	prep(&t.insert, writer, "INSERT INTO "+quote(t.name)+" ("+strings.Join(cols, ", ")+") VALUES ("+marks(len(cols))+") ON CONFLICT ("+strings.Join(quoteAll(t.def.Key), ", ")+") DO NOTHING")
-	prep(&t.deleteAll, writer, "DELETE FROM "+quote(t.name))
+	prep(&t.insert, writer, into+" DO NOTHING")
 	prep(&t.selectAll, writer, selectAll)
 	prep(&t.readAll, db, selectAll)
+	prep(&t.noteRows, writer, changeSQL(t.tableKey()))
 	if err != nil {
 		t.close()
 		return storageErr("prepare the statements of "+t.def.Name, err)
@@ -165,7 +193,7 @@ func (t *table) prepare(ctx context.Context, writer *sql.Conn, db *sql.DB) error
 }
 
 func (t *table) close() {
-	for _, st := range []*sql.Stmt{t.upsert, t.insert, t.deleteAll, t.selectAll, t.readAll} {
+	for _, st := range []*sql.Stmt{t.upsert, t.insert, t.selectAll, t.readAll, t.noteRows} {
 		if st != nil {
 			st.Close()
 		}
@@ -391,7 +419,7 @@ func (s *Store) DefineTable(ctx context.Context, data []byte, opts ...Option) (*
 	// class reads, is taken when it keeps its key, uses of its columns
 	// stay whole and its rows convert (ADR-0084); its rows are carried
 	// over, as it takes them.
-	var carried []Values
+	var carried []carriedRow
 	if old != nil && !moving && len(adding) == 0 {
 		inUse := false
 		for _, name := range s.order {
@@ -403,6 +431,12 @@ func (s *Store) DefineTable(ctx context.Context, data []byte, opts ...Option) (*
 		var n int64
 		if err := s.writer.QueryRowContext(ctx, "SELECT count(*) FROM "+quote(old.name)).Scan(&n); err == nil && n > 0 {
 			inUse = true
+		}
+		// So is one whose history holds rows (ADR-0099, step 3).
+		if has, _ := hasHistory(ctx, s.writer, old); has {
+			if err := s.writer.QueryRowContext(ctx, "SELECT count(*) FROM "+quote(old.historyName())).Scan(&n); err == nil && n > 0 {
+				inUse = true
+			}
 		}
 		if inUse {
 			rows, d := s.reshape(ctx, old, def)
@@ -429,6 +463,14 @@ func (s *Store) DefineTable(ctx context.Context, data []byte, opts ...Option) (*
 		_, _ = w.ExecContext(ctx, "ROLLBACK")
 		return nil, err
 	}
+	// A version that changes the columns is a change of the rows, kept
+	// before them (ADR-0099, step 3); its id is the token of the rows
+	// anew, so that the copy of the table is made again (ADR-0094).
+	if old != nil && !moving {
+		if err := s.tableChange(ctx, t, ChangeDefine, o.principal, s.now()); err != nil {
+			return rollback(err)
+		}
+	}
 	// A move to another app keeps the storage as it is; columns added are
 	// added to it, and its view is made again with them; any other version
 	// is the table made again, empty.
@@ -444,15 +486,45 @@ func (s *Store) DefineTable(ctx context.Context, data []byte, opts ...Option) (*
 			if _, err := w.ExecContext(ctx, "ALTER TABLE "+quote(t.name)+" ADD COLUMN "+quote(c.Name)+" "+sqlType(c.Type.Kind)); err != nil {
 				return rollback(storageErr("add the column "+c.Name+" to "+def.Name, err))
 			}
+			// The history has it too, blank before (ADR-0099, step 3).
+			if has, _ := hasHistory(ctx, s.writer, old); has {
+				if _, err := w.ExecContext(ctx, "ALTER TABLE "+quote(t.historyName())+" ADD COLUMN "+quote(c.Name)+" "+sqlType(c.Type.Kind)); err != nil {
+					return rollback(storageErr("add the column "+c.Name+" to the history of "+def.Name, err))
+				}
+			}
 		}
 		for _, ddl := range []string{"DROP VIEW IF EXISTS " + quote(def.Name), t.viewDDL()} {
 			if _, err := w.ExecContext(ctx, ddl); err != nil {
 				return rollback(storageErr("make the view of "+def.Name+" again", err))
 			}
 		}
-	} else if !moving {
+	}
+	// A version that adds columns, or that starts or stops keeping the
+	// history, keeps the storage: the history is made or dropped, and the
+	// triggers are made again for the columns they compare.
+	if len(adding) > 0 || moving {
+		if err := s.historyAs(ctx, old, t); err != nil {
+			return rollback(err)
+		}
+	} else {
 		if old != nil {
-			for _, ddl := range old.dropDDL() {
+			// A version that starts keeping the history keeps it from
+			// now; one that stops keeps no moment of it (ADR-0099, step
+			// 3).
+			had, err := hasHistory(ctx, w, old)
+			if err != nil {
+				return rollback(err)
+			}
+			switch {
+			case t.def.History && !had:
+				_, err = w.ExecContext(ctx, t.historyBegins(), s.ids.next(s.now()))
+			case !t.def.History:
+				_, err = w.ExecContext(ctx, "DELETE FROM metadata WHERE key = ?", historyKey+t.tableKey())
+			}
+			if err != nil {
+				return rollback(storageErr("make the history of "+def.Name, err))
+			}
+			for _, ddl := range append(old.dropDDL(), old.dropHistoryDDL()...) {
 				if _, err := w.ExecContext(ctx, ddl); err != nil {
 					return rollback(storageErr("drop the table "+old.def.Name, err))
 				}
@@ -473,24 +545,35 @@ func (s *Store) DefineTable(ctx context.Context, data []byte, opts ...Option) (*
 			}
 		}
 		// The rows the old shape held, as the new one takes them, in the
-		// same transaction (ADR-0084).
+		// same transaction (ADR-0084), each with its moment, and the rows
+		// of the history the same way, for a version that keeps it
+		// (ADR-0099, step 3).
 		if len(carried) > 0 {
-			cols := quoteAll(columnNames(t.def.Columns))
-			ins := "INSERT INTO " + quote(t.name) + " (" + strings.Join(cols, ", ") + ") VALUES (" + marks(len(cols)) + ")"
+			cols := strings.Join(quoteAll(columnNames(t.def.Columns)), ", ")
+			ins := "INSERT INTO " + quote(t.name) + " (" + cols + ", " + quote(sinceColumn) + ") VALUES (" + marks(len(t.def.Columns)+1) + ")"
+			past := "INSERT INTO " + quote(t.historyName()) + " (" + cols + ", " + quote(sinceColumn) + ", " + quote(untilColumn) + ") VALUES (" + marks(len(t.def.Columns)+2) + ")"
 			vals := make([]formula.Value, len(t.leaves))
-			args := make([]any, 0, len(cols))
+			args := make([]any, 0, len(t.def.Columns)+2)
 			for _, row := range carried {
+				if row.until.Valid && !t.def.History {
+					continue
+				}
 				for j := range vals {
 					vals[j] = formula.Blank()
 				}
-				if e := setFields(vals, t.leafIndex, "", t.def.Fields, row, "", s.limits); e != nil {
+				if e := setFields(vals, t.leafIndex, "", t.def.Fields, row.values, "", s.limits); e != nil {
 					return rollback(e)
 				}
 				args = args[:0]
 				for j, l := range t.leaves {
 					args = encode(args, l, vals[j])
 				}
-				if _, err := w.ExecContext(ctx, ins, args...); err != nil {
+				text := ins
+				args = append(args, row.since)
+				if row.until.Valid {
+					text, args = past, append(args, row.until)
+				}
+				if _, err := w.ExecContext(ctx, text, args...); err != nil {
 					return rollback(storageErr("carry the rows of "+def.Name, err))
 				}
 			}
@@ -590,10 +673,28 @@ func (s *Store) ImportRows(ctx context.Context, name string, rows []Values, opts
 		_, _ = w.ExecContext(ctx, "ROLLBACK")
 		return 0, err
 	}
+	// The change of the rows comes first (ADR-0099, step 3): the rows
+	// it inserts and the history of the rows it changes read it. Its id
+	// is the token of the rows anew, so that a copy of the table is made
+	// again (ADR-0094).
+	kind := ChangeImport
 	if o.replace {
-		if _, err := t.deleteAll.ExecContext(ctx); err != nil {
-			return rollback(storageErr("empty "+t.def.Name, err))
+		kind = ChangeReplace
+	}
+	if err := s.tableChange(ctx, t, kind, o.principal, s.now()); err != nil {
+		return rollback(err)
+	}
+	// A replace brings its rows into a list of its own first; the table
+	// takes what changed from it in one statement, and the rows it does
+	// not hold are removed after, so that a row brought again as it was
+	// is no change.
+	var kept *sql.Stmt
+	if o.replace {
+		var e error
+		if kept, e = t.replacing(ctx, w); e != nil {
+			return rollback(e)
 		}
+		defer kept.Close()
 	}
 	vals := make([]formula.Value, len(t.leaves))
 	args := make([]any, 0, len(t.def.Columns))
@@ -614,8 +715,17 @@ func (s *Store) ImportRows(ctx context.Context, name string, rows []Values, opts
 		for j, l := range t.leaves {
 			args = encode(args, l, vals[j])
 		}
-		if _, err := t.upsert.ExecContext(ctx, args...); err != nil {
+		into := t.upsert
+		if kept != nil {
+			into = kept
+		}
+		if _, err := into.ExecContext(ctx, args...); err != nil {
 			return rollback(storageErr(fmt.Sprintf("write row %d of %s", i, t.def.Name), err))
+		}
+	}
+	if kept != nil {
+		if err := t.replaced(ctx, w); err != nil {
+			return rollback(err)
 		}
 	}
 	if past {
@@ -632,7 +742,7 @@ func (s *Store) ImportRows(ctx context.Context, name string, rows []Values, opts
 	if err := s.endTransaction(ctx); err != nil {
 		return rollback(storageErr("commit", err))
 	}
-	t.cache, t.tooBig = nil, false
+	t.rowsWritten(o.replace)
 	if followed > 0 {
 		s.wakeWorker()
 	}
@@ -953,6 +1063,20 @@ func (s *Store) lookupStatement(p *lookupPlan, q *formula.QuerySlot, args []form
 		return formula.Value{}, &formula.EvalError{Code: formula.ErrQueryFailed, Pos: -1, Msg: err.Error()}
 	}
 	return formula.ValueOfType(v, q.Type, c), nil
+}
+
+// rowsWritten drops what the store keeps in memory of a table whose rows
+// were written (ADR-0036). fewer says rows may have gone: a removal, or
+// an import that empties the table first. A table that was found to
+// hold more rows than the limit is still over it when none can have
+// gone, after an import that adds or replaces rows and after a rule's
+// insert or update: the next lookup then does not read the table up to
+// the limit again to find that out (ADR-0094).
+func (t *table) rowsWritten(fewer bool) {
+	t.cache = nil
+	if fewer {
+		t.tooBig = false
+	}
 }
 
 // cacheFor returns the table's rows in memory, building them when the

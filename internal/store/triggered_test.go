@@ -297,10 +297,12 @@ func TestTriggered_EngineSchema(t *testing.T) {
 	// is a row of the log of definitions, which every database of schema
 	// 13 has, and left it 13 (ADR-0083). The version a command saw, on
 	// its event, made it 14 (ADR-0078, item 2), and the indexes the
-	// engine keeps by itself made it 15 (ADR-0075, item 2); a database
-	// of schema 13 or 14 is brought to it when it is opened.
-	if engineSchema != 15 {
-		t.Fatalf("the engine schema is %d, want 15", engineSchema)
+	// engine keeps by itself made it 15 (ADR-0075, item 2), and the
+	// history of the rows of every table made it 16 (ADR-0099, step 3);
+	// a database of schema 13, 14 or 15 is brought to it when it is
+	// opened.
+	if engineSchema != 16 {
+		t.Fatalf("the engine schema is %d, want 16", engineSchema)
 	}
 	if _, err := s.writer.ExecContext(context.Background(), "UPDATE schema_version SET version = 3"); err != nil {
 		t.Fatal(err)

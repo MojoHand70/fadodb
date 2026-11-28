@@ -75,6 +75,9 @@ type (
 	HistoryRow = store.HistoryRow
 	// Event is one row of the event log.
 	Event = store.Event
+	// Comment is one comment on a document, kept by the engine beside it
+	// (ADR-0098).
+	Comment = store.Comment
 	// Preview is what a commit would do (ADR-0025): the document, the
 	// errors per variable, the states visited, the transitions open and
 	// the rules the command would run.
@@ -119,11 +122,52 @@ type (
 	Waited = store.Waited
 	// Flow is the flow of a class as one caller sees it, FlowState and
 	// FlowTransition a state and a transition in it, and FlowPeriod the
-	// period its moves are counted in (ADR-0063).
+	// period its moves are counted in (ADR-0063). FlowSpread is how the
+	// stays in a state spread, the middle stay and the slow tenth, for
+	// a caller whose FlowPeriod asks for it (ADR-0095).
 	Flow           = store.Flow
 	FlowState      = store.FlowState
 	FlowTransition = store.FlowTransition
 	FlowPeriod     = store.FlowPeriod
+	FlowSpread     = store.FlowSpread
+	// Throughput is how many documents of a class were made and how
+	// many finished in each period, ThroughputPeriod one of the
+	// periods, and ThroughputAsk what it is asked over (ADR-0096).
+	Throughput       = store.Throughput
+	ThroughputPeriod = store.ThroughputPeriod
+	ThroughputAsk    = store.ThroughputAsk
+	// Paths are the paths the documents of a class took through its
+	// states, Path one of them, and PathsAsk which are asked for
+	// (ADR-0097).
+	Paths    = store.Paths
+	Path     = store.Path
+	PathsAsk = store.PathsAsk
+	// DocumentsAsk names one number of a flow, a throughput or the
+	// paths whose documents are asked for, Documents are those
+	// documents, a page of them, and DocumentRow one of them, with what
+	// put it into the number (ADR-0099).
+	DocumentsAsk = store.DocumentsAsk
+	Documents    = store.Documents
+	DocumentRow  = store.DocumentRow
+	// Lineage is where a value of a document comes from, LineageAsk
+	// which value and the page of its parts, and the rest what it says:
+	// the moment the value came, the values of the document its formula
+	// read, and what each lookup read (ADR-0099).
+	Lineage         = store.Lineage
+	LineageAsk      = store.LineageAsk
+	LineageMoment   = store.LineageMoment
+	LineageVariable = store.LineageVariable
+	LineageLookup   = store.LineageLookup
+	LineagePart     = store.LineagePart
+	LineageHidden   = store.LineageHidden
+	LineageChanged  = store.LineageChanged
+	LineageChange   = store.LineageChange
+	// RowHistory is the history of one row of a table, RowHistoryAsk
+	// the page of it, and RowVersion the row as it was, with the change
+	// that gave it its values and the one after (ADR-0099, step 3).
+	RowHistory    = store.RowHistory
+	RowHistoryAsk = store.RowHistoryAsk
+	RowVersion    = store.RowVersion
 	// ActionFunc is a Go function that implements an action, given to Open
 	// in Options.Actions under the action's name (ADR-0027, ADR-0045);
 	// ActionCall is what it is called with, and DeliveredEvent the event
@@ -343,6 +387,28 @@ const (
 	GroupContentAdministrators = store.GroupContentAdministrators
 	GroupAnalysts              = store.GroupAnalysts
 	GroupEveryone              = store.GroupEveryone
+)
+
+// The stays a flow's documents keep with DocumentsAsk.AtLeast: those
+// that lasted at least the middle stay, or the slow tenth; and how many
+// rows the documents behind a number answer when told nothing, and at
+// the most (ADR-0099).
+const (
+	LineageTyped     = store.LineageTyped
+	LineageComputed  = store.LineageComputed
+	LineageKept      = store.LineageKept
+	LineageLive      = store.LineageLive
+	AtLeastMiddle    = store.AtLeastMiddle
+	AtLeastSlowTenth = store.AtLeastSlowTenth
+	DefaultDocuments = store.DefaultDocuments
+	MaxDocuments     = store.MaxDocuments
+)
+
+// The lengths of a period of a throughput (ADR-0096): ThroughputAsk.By.
+const (
+	ThroughputDay   = store.ThroughputDay
+	ThroughputWeek  = store.ThroughputWeek
+	ThroughputMonth = store.ThroughputMonth
 )
 
 // LogStart is the place before the first event of the log, for
@@ -1055,6 +1121,20 @@ func (db *DB) Events(ctx context.Context, class, id string, opts ...Option) ([]*
 	return db.s.Events(ctx, class, id, opts...)
 }
 
+// Comment writes a comment on a document (ADR-0098): words the engine
+// keeps beside it, with who wrote them and when. Whoever may read the
+// document may comment on it, in any state. It makes no version of the
+// document; its event, commented, is written with it.
+func (db *DB) Comment(ctx context.Context, class, id, text string, opts ...Option) (*Comment, error) {
+	return db.s.Comment(ctx, class, id, text, opts...)
+}
+
+// Comments reads the comments on a document, oldest first; none for a
+// document the caller may not see.
+func (db *DB) Comments(ctx context.Context, class, id string, opts ...Option) ([]*Comment, error) {
+	return db.s.Comments(ctx, class, id, opts...)
+}
+
 // Query reads the documents of a class that match a filter, in its
 // order, at most its limit, with the fields it names.
 func (db *DB) Query(ctx context.Context, f Filter, opts ...Option) ([]*Document, error) {
@@ -1076,6 +1156,80 @@ func (db *DB) Count(ctx context.Context, f Filter, opts ...Option) (int64, error
 //	flow, err := db.Flow(ctx, "Invoice", fado.FlowPeriod{Since: firstOfNovember}, fado.As(ann))
 func (db *DB) Flow(ctx context.Context, class string, period FlowPeriod, opts ...Option) (*Flow, error) {
 	return db.s.Flow(ctx, class, period, opts...)
+}
+
+// Throughput answers how many documents of a class were made and how
+// many finished in each day, week or month, for its caller (ADR-0096):
+// whether the pile grows. A document is made when it is created and
+// finished when it comes into a final state; a day begins at midnight
+// by the clock of the database's time zone. It counts the documents
+// the caller may read, and no other.
+//
+//	weeks, err := db.Throughput(ctx, "Invoice", fado.ThroughputAsk{By: fado.ThroughputWeek}, fado.As(ann))
+func (db *DB) Throughput(ctx context.Context, class string, ask ThroughputAsk, opts ...Option) (*Throughput, error) {
+	return db.s.Throughput(ctx, class, ask, opts...)
+}
+
+// Paths answers the paths the documents of a class took through its
+// states, for its caller (ADR-0097): the most taken first, each with
+// its states in the order a document came into them and how many
+// documents took it. It counts the documents the caller may read that
+// were made in the period, each with its path up to now: a document
+// that is still open is counted with its path so far.
+//
+//	paths, err := db.Paths(ctx, "Invoice", fado.PathsAsk{Limit: 10}, fado.As(ann))
+func (db *DB) Paths(ctx context.Context, class string, ask PathsAsk, opts ...Option) (*Paths, error) {
+	return db.s.Paths(ctx, class, ask, opts...)
+}
+
+// Lineage answers where a value of a document comes from (ADR-0099):
+// how it is made, the moment it came, the values of the document its
+// formula read, and for each lookup the documents or rows it read, the
+// page of them the caller may read. A kept value is worked out again,
+// by its formula, over the documents as they were when it was worked
+// out, and says whether it adds up.
+//
+//	l, err := db.Lineage(ctx, "Customer", "Acme", "invoiced", fado.LineageAsk{}, fado.As(dan))
+func (db *DB) Lineage(ctx context.Context, class, id, variable string, ask LineageAsk, opts ...Option) (*Lineage, error) {
+	return db.s.Lineage(ctx, class, id, variable, ask, opts...)
+}
+
+// RowHistory answers the history of the row of a table that has the key
+// (ADR-0099, step 3): the row as it is now, then as it was before each
+// change, the newest first, each with the change that gave it its values
+// and the one that changed or removed it: when, who, of what kind and
+// for whom, and the kind of change.
+//
+//	h, err := db.RowHistory(ctx, "Rates", fado.Values{"currency": "EUR"}, fado.RowHistoryAsk{}, fado.As(dan))
+func (db *DB) RowHistory(ctx context.Context, table string, key Values, ask RowHistoryAsk, opts ...Option) (*RowHistory, error) {
+	return db.s.RowHistory(ctx, table, key, ask, opts...)
+}
+
+// FlowDocuments answers the documents behind one number of a flow
+// (ADR-0099): those made in the period, those in a state now, the stays
+// in a state that ended in the period, or the moves along a transition.
+// The count is the flow's number, for the same period and the same
+// caller.
+//
+//	moved, err := db.FlowDocuments(ctx, "Invoice", fado.FlowPeriod{}, fado.DocumentsAsk{Transition: "approve"}, fado.As(ann))
+func (db *DB) FlowDocuments(ctx context.Context, class string, period FlowPeriod, ask DocumentsAsk, opts ...Option) (*Documents, error) {
+	return db.s.FlowDocuments(ctx, class, period, ask, opts...)
+}
+
+// ThroughputDocuments answers the documents made, or finished, in one
+// period of a throughput (ADR-0099), named by its first day.
+//
+//	done, err := db.ThroughputDocuments(ctx, "Invoice", fado.ThroughputAsk{}, fado.DocumentsAsk{Finished: "2026-11-02"}, fado.As(ann))
+func (db *DB) ThroughputDocuments(ctx context.Context, class string, ask ThroughputAsk, documents DocumentsAsk, opts ...Option) (*Documents, error) {
+	return db.s.ThroughputDocuments(ctx, class, ask, documents, opts...)
+}
+
+// PathsDocuments answers the documents that took one path (ADR-0099),
+// of those made in the period the paths are asked over.
+//
+//	went, err := db.PathsDocuments(ctx, "Invoice", fado.PathsAsk{}, fado.DocumentsAsk{Path: []string{"draft", "review", "approved"}}, fado.As(ann))
+func (db *DB) PathsDocuments(ctx context.Context, class string, ask PathsAsk, documents DocumentsAsk, opts ...Option) (*Documents, error) {
+	return db.s.PathsDocuments(ctx, class, ask, documents, opts...)
 }
 
 // SQL runs one read-only SELECT over the views with positional

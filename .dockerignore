@@ -1,5 +1,6 @@
 # The images are built from the Go module, the module with DuckDB, the
-# benchmark harness it uses and the three trees of the tool, and from nothing else in the folder: no
+# benchmark harness it uses and the three trees of the tool, and the
+# licence and notices the images carry, and from nothing else in the folder: no
 # personal file, no database and no build output reaches the builder.
 *
 !go.mod
@@ -9,6 +10,8 @@
 !cmd
 !fado
 !internal
+!LICENSE
+!THIRD_PARTY_NOTICES.md
 **/*.exe
 **/*.test
 **/*.out

@@ -285,6 +285,26 @@ func TestACommandIsTheCallOfTheGoAPI(t *testing.T) {
 	if e := refused(t, s, bob, "get", `{"class": "Invoice", "id": "FV/2026/11/0043"}`); e.Code != store.CodeUnknownDocument {
 		t.Fatalf("the deleted document: %v", e)
 	}
+
+	// A comment on the invoice of the record (ADR-0098): the engine says who and when, the key makes twice once, empty
+	// words are refused at their place, and a comment takes no reason; comments reads them back.
+	said := run(t, s, bob, "comment", `{"class": "Invoice", "id": "FV/2026/11/0042", "text": "Matches order PO-118.", "key": "note-0042", "business_date": "2026-11-12"}`)
+	if at(t, said, "comment.actor_id") != "bob" || at(t, said, "comment.actor_kind") != "person" || at(t, said, "comment.doc_id") != "FV/2026/11/0042" || at(t, said, "comment.business_date") != "2026-11-12" || at(t, said, "comment.text") != "Matches order PO-118." {
+		t.Fatalf("comment answered %v", said)
+	}
+	if again := run(t, s, bob, "comment", `{"class": "Invoice", "id": "FV/2026/11/0042", "text": "Matches order PO-118.", "key": "note-0042", "business_date": "2026-11-12"}`); !reflect.DeepEqual(again, said) {
+		t.Fatalf("the same comment with the same key answered %v, the first time %v", again, said)
+	}
+	if e := refused(t, s, bob, "comment", `{"class": "Invoice", "id": "FV/2026/11/0042", "text": "  "}`); e.Code != store.CodeRequired || e.Path != "/text" {
+		t.Fatalf("a comment with no words: %v", e)
+	}
+	if e := refused(t, s, bob, "comment", `{"class": "Invoice", "id": "FV/2026/11/0042", "text": "Seen.", "reason": "audit"}`); e.Code != CodeBadJSON {
+		t.Fatalf("a comment with a reason: %v", e)
+	}
+	read := run(t, s, bob, "comments", `{"class": "Invoice", "id": "FV/2026/11/0042"}`)
+	if list := read["comments"].([]any); len(list) != 1 || list[0].(map[string]any)["comment_id"] != at(t, said, "comment.comment_id") {
+		t.Fatalf("comments answered %v", read)
+	}
 }
 
 func TestDefinitionsAreReadBackAsTheyWereGiven(t *testing.T) {
@@ -440,6 +460,32 @@ func TestTablesActionsAndTheQueue(t *testing.T) {
 	rows := run(t, s, bob, "table_rows", `{"table": "Rates"}`)
 	if got := rows["rows"].([]any); len(got) != 1 || got[0].(map[string]any)["currency"] != "CHF" {
 		t.Fatalf("table_rows answered %v", rows)
+	}
+	// The row the replace removed is in the history of the rows
+	// (ADR-0099, step 3), as the Go call answers it.
+	history := run(t, s, bob, "row_history", `{"table": "Rates", "key": {"currency": "EUR"}}`)
+	direct, err := s.RowHistory(context.Background(), "Rates", store.Values{"currency": "EUR"}, store.RowHistoryAsk{}, store.As(bob))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var want any
+	_ = json.Unmarshal(mustJSON(direct), &want)
+	versions := at(t, history, "history.rows").([]any)
+	was, _ := versions[0].(map[string]any)
+	if !reflect.DeepEqual(history["history"], want) || at(t, history, "history.count") != float64(1) || len(versions) != 1 ||
+		was["values"].(map[string]any)["rate"] != 4.25 || was["since"].(map[string]any)["event"] != "import" ||
+		was["until"].(map[string]any)["event"] != "replace" || was["until"].(map[string]any)["by"] != "ann" {
+		t.Fatalf("row_history answered %v, and the Go call %v", history["history"], want)
+	}
+	for object, want := range map[string][2]string{
+		`{"table": "Rates"}`:                                          {CodeBadJSON, "/key"},
+		`{"table": "Rates", "key": {"rate": 4.25}}`:                   {store.CodeUnknownVariable, "/key/rate"},
+		`{"table": "Rates", "key": {"currency": "EUR"}, "limit": -1}`: {store.CodeBadValue, "/limit"},
+		`{"table": "Nothing", "key": {"currency": "EUR"}}`:            {store.CodeUnknownTable, ""},
+	} {
+		if e := refused(t, s, bob, "row_history", object); e.Code != want[0] || e.Path != want[1] {
+			t.Errorf("row_history %s: %s at %q (%s), want %s at %q", object, e.Code, e.Path, e.Message, want[0], want[1])
+		}
 	}
 
 	// An action of the host program, and a class whose rule calls it.
@@ -790,6 +836,109 @@ func TestTheFlowIsACommand(t *testing.T) {
 	}
 	if e := refused(t, s, ann, "flow", `{"class": "Invoice", "since": "soon"}`); !strings.HasPrefix(e.Message, "since is a day") {
 		t.Errorf("a moment that is none is refused with: %s", e.Message)
+	}
+
+	// The command throughput answers what the Go call answers (ADR-0096):
+	// how many documents were made and how many finished in each period.
+	for object, ask := range map[string]store.ThroughputAsk{
+		`{"class": "Invoice"}`:                 {},
+		`{"class": "Invoice", "by": "week"}`:   {By: store.ThroughputWeek},
+		`{"class": "Invoice", "by": "month"}`:  {By: store.ThroughputMonth},
+		`{"class": "Invoice", "since": 86400}`: {Since: time.Unix(86400, 0)},
+	} {
+		direct, err := s.Throughput(context.Background(), "Invoice", ask, store.As(ann))
+		if err != nil {
+			t.Fatal(err)
+		}
+		var want any
+		if err := json.Unmarshal(mustJSON(direct), &want); err != nil {
+			t.Fatal(err)
+		}
+		if got := run(t, s, ann, "throughput", object); !reflect.DeepEqual(got["throughput"], want) {
+			t.Errorf("throughput %s answered %v, and the Go call %v", object, got["throughput"], want)
+		}
+	}
+	if got := run(t, s, ann, "throughput", `{"class": "Invoice"}`); at(t, got, "throughput.by") != "day" || at(t, got, "throughput.created") != float64(2) {
+		t.Errorf("throughput answered %v", got)
+	}
+	for object, want := range map[string][2]string{
+		`{}`:                                     {CodeBadJSON, "/class"},
+		`{"class": "Receipt"}`:                   {store.CodeUnknownClass, ""},
+		`{"class": "Invoice", "by": "year"}`:     {store.CodeBadValue, "/by"},
+		`{"class": "Invoice", "since": "soon"}`:  {store.CodeBadValue, "/since"},
+		`{"class": "Invoice", "until": "never"}`: {store.CodeBadValue, "/until"},
+		`{"class": "Invoice", "since": "2026-11-14", "until": "2026-11-13"}`: {store.CodeBadValue, ""},
+		`{"class": "Invoice", "spread": true}`:                               {CodeBadJSON, "/spread"},
+	} {
+		if e := refused(t, s, ann, "throughput", object); e.Code != want[0] || e.Path != want[1] {
+			t.Errorf("throughput %s: %s at %q (%s), want %s at %q", object, e.Code, e.Path, e.Message, want[0], want[1])
+		}
+	}
+
+	// The command paths answers what the Go call answers (ADR-0097): the
+	// paths the documents took, the most taken first.
+	for object, ask := range map[string]store.PathsAsk{
+		`{"class": "Invoice"}`:                 {},
+		`{"class": "Invoice", "limit": 1}`:     {Limit: 1},
+		`{"class": "Invoice", "until": 86400}`: {Until: time.Unix(86400, 0)},
+	} {
+		direct, err := s.Paths(context.Background(), "Invoice", ask, store.As(ann))
+		if err != nil {
+			t.Fatal(err)
+		}
+		var want any
+		if err := json.Unmarshal(mustJSON(direct), &want); err != nil {
+			t.Fatal(err)
+		}
+		if got := run(t, s, ann, "paths", object); !reflect.DeepEqual(got["paths"], want) {
+			t.Errorf("paths %s answered %v, and the Go call %v", object, got["paths"], want)
+		}
+	}
+	if got := run(t, s, ann, "paths", `{"class": "Invoice"}`); at(t, got, "paths.documents") != float64(2) {
+		t.Errorf("paths answered %v", got)
+	}
+	for object, want := range map[string][2]string{
+		`{}`:                                     {CodeBadJSON, "/class"},
+		`{"class": "Receipt"}`:                   {store.CodeUnknownClass, ""},
+		`{"class": "Invoice", "limit": -1}`:      {store.CodeBadValue, "/limit"},
+		`{"class": "Invoice", "limit": 1001}`:    {store.CodeBadValue, "/limit"},
+		`{"class": "Invoice", "since": "soon"}`:  {store.CodeBadValue, "/since"},
+		`{"class": "Invoice", "until": "never"}`: {store.CodeBadValue, "/until"},
+		`{"class": "Invoice", "since": "2026-11-14", "until": "2026-11-13"}`: {store.CodeBadValue, ""},
+		`{"class": "Invoice", "by": "day"}`:                                  {CodeBadJSON, "/by"},
+	} {
+		if e := refused(t, s, ann, "paths", object); e.Code != want[0] || e.Path != want[1] {
+			t.Errorf("paths %s: %s at %q (%s), want %s at %q", object, e.Code, e.Path, e.Message, want[0], want[1])
+		}
+	}
+}
+
+// The command lineage answers what the Go call answers (ADR-0099, part
+// 2): where a value comes from.
+func TestLineageIsACommand(t *testing.T) {
+	s := open(t)
+	define(t, s)
+	ctx := context.Background()
+	run(t, s, bob, "create", `{"class": "Invoice", "id": "I-1", "values": {"number": "I-1"}}`)
+	got := run(t, s, ann, "lineage", `{"class": "Invoice", "id": "I-1", "variable": "number"}`)
+	direct, err := s.Lineage(ctx, "Invoice", "I-1", "number", store.LineageAsk{}, store.As(ann))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var want any
+	_ = json.Unmarshal(mustJSON(direct), &want)
+	if !reflect.DeepEqual(got["lineage"], want) || at(t, got, "lineage.kind") != "typed" || at(t, got, "lineage.since.by") != "bob" {
+		t.Errorf("lineage answered %v, and the Go call %v", got["lineage"], want)
+	}
+	for object, want := range map[string][2]string{
+		`{"class": "Invoice", "id": "I-1"}`:                                    {CodeBadJSON, "/variable"},
+		`{"class": "Invoice", "id": "I-1", "variable": "nothing"}`:             {store.CodeUnknownVariable, "nothing"},
+		`{"class": "Invoice", "id": "I-1", "variable": "number", "limit": -1}`: {store.CodeBadValue, "/limit"},
+		`{"class": "Invoice", "id": "I-9", "variable": "number"}`:              {store.CodeUnknownDocument, ""},
+	} {
+		if e := refused(t, s, ann, "lineage", object); e.Code != want[0] || (e.Path != want[1] && e.Variable != want[1]) {
+			t.Errorf("lineage %s: %s at %q %q (%s), want %s at %q", object, e.Code, e.Path, e.Variable, e.Message, want[0], want[1])
+		}
 	}
 }
 

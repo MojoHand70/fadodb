@@ -34,7 +34,7 @@ What a call is answered with when the engine does not carry it out: a create, a 
 | `unknown_schema` | No schema of that name. |
 | `unknown_app` | No app of that name (ADR-0077). |
 | `unknown_variable` | A value names a variable or a field the class does not have. |
-| `read_only` | A value is given for a computed variable. |
+| `read_only` | A value is given for a computed variable, or a caller imports rows into a system table, whose rows the engine keeps, deletes its rows or removes it (ADR-0092). |
 | `required` | A required input is blank. |
 | `bad_value` | A value is not of the variable's type, or an argument is malformed. |
 | `not_in_values` | A text is outside the variable's enum list (ADR-0023). |

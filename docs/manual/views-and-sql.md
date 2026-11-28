@@ -336,5 +336,7 @@ Give it a `LIMIT`, or ask for less.
 - SQL over a class that was defined after the program's first
   statement, without opening the database again.
 - An end for the last stay of a deleted document.
-- The analytical engine, DuckDB, over the same views; it is designed
-  and comes later.
+- DuckDB over the same views through the engine, for a caller with a
+  name. An analyst who has the file itself reads it with DuckDB from
+  a program of their own, past every rule; see
+  [Reading a database with DuckDB](reading-with-duckdb.md).

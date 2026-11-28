@@ -676,6 +676,8 @@ small class. On a large one, a program that keeps a copy of the
 documents in the analytical engine answers such a list from the copy,
 in milliseconds, with the same lines for the same reader
 ([An analytical engine](opening-a-database.md#an-analytical-engine)).
+A list over a large table is found in the copy in the same way
+([A large table](tables.md#a-large-table)).
 
 ## Figures over the lines a document holds
 

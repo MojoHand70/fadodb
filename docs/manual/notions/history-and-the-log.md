@@ -90,13 +90,14 @@ refusal writes nothing**.
 | `created` | a document is created |
 | `set` | values are changed |
 | `reset` | variables are put back to their defaults by a call |
-| `refresh` | variables that are worked out at chosen moments are worked out again by a call |
+| `refresh` | variables that are worked out at chosen moments are worked out again: by a call, or by the engine itself when a table they follow changes, named `table:<Name>` and by whoever changed the table, or at a moment of their schedule, named after the schedule and with no actor (see [Triggered variables](../triggered-variables.md#following-a-table)) |
 | `transition` | a transition is taken, by a caller or by the engine |
 | `deleted` | a document is deleted |
 | `migrated` | a document is moved to a new version of its class on purpose |
 | `custom` | a rule emits an event of your own |
 | `action_run` | an action the document queued was carried out |
 | `action_failed` | an action the document queued was refused, or gave up |
+| `commented` | somebody comments on the document; it makes no version of it, and its `before_version` is the version the comment was written on (see [Comments](../comments.md)) |
 
 ## Sending a call twice
 

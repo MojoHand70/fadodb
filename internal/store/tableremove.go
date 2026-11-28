@@ -80,6 +80,15 @@ func (s *Store) DeleteRows(ctx context.Context, name string, keys []Values, opts
 		_, _ = w.ExecContext(ctx, "ROLLBACK")
 		return 0, err
 	}
+	// The change of the rows comes first (ADR-0099, step 3): the history
+	// of a row removed ends at it. A delete that removes nothing is no
+	// change, and leaves none.
+	if _, err := w.ExecContext(ctx, "SAVEPOINT fado_change"); err != nil {
+		return rollback(storageErr("begin", err))
+	}
+	if err := s.tableChange(ctx, t, ChangeDelete, o.principal, s.now()); err != nil {
+		return rollback(err)
+	}
 	stmt := "DELETE FROM " + quote(t.name) + " WHERE " + strings.Join(where, " AND ")
 	removed := 0
 	for i := range keys {
@@ -89,6 +98,14 @@ func (s *Store) DeleteRows(ctx context.Context, name string, keys []Values, opts
 		}
 		n, _ := res.RowsAffected()
 		removed += int(n)
+	}
+	if removed == 0 {
+		if _, err := w.ExecContext(ctx, "ROLLBACK TO fado_change"); err != nil {
+			return rollback(storageErr("rollback", err))
+		}
+	}
+	if _, err := w.ExecContext(ctx, "RELEASE fado_change"); err != nil {
+		return rollback(storageErr("commit", err))
 	}
 	if past {
 		r := &readLog{command: "delete_rows", table: t.def.Name, rules: []string{"/access/write"}, rows: int64(removed), hasRows: true, past: true}
@@ -108,7 +125,7 @@ func (s *Store) DeleteRows(ctx context.Context, name string, keys []Values, opts
 	if err := s.endTransaction(ctx); err != nil {
 		return rollback(storageErr("commit", err))
 	}
-	t.cache, t.tooBig = nil, false
+	t.rowsWritten(true)
 	if followed > 0 {
 		s.wakeWorker()
 	}
@@ -160,12 +177,19 @@ func (s *Store) RemoveTable(ctx context.Context, name string, opts ...Option) er
 		_, _ = w.ExecContext(ctx, "ROLLBACK")
 		return err
 	}
-	for _, ddl := range t.dropDDL() {
+	// The history of its rows goes with them (ADR-0099, step 3); who
+	// changed them, in fado_table_changes, stays.
+	for _, ddl := range append(t.dropDDL(), t.dropHistoryDDL()...) {
 		if _, err := w.ExecContext(ctx, ddl); err != nil {
 			return rollback(storageErr("drop the table "+t.def.Name, err))
 		}
 	}
 	if _, err := w.ExecContext(ctx, "DELETE FROM tables_registry WHERE name = ? COLLATE NOCASE", t.def.Name); err != nil {
+		return rollback(storageErr("remove the table "+t.def.Name, err))
+	}
+	// The token of its rows goes with them (ADR-0094), and the moment
+	// its history began (ADR-0099, step 3).
+	if _, err := w.ExecContext(ctx, "DELETE FROM metadata WHERE key IN (?, ?)", rowsKey+strings.ToUpper(t.def.Name), historyKey+strings.ToUpper(t.def.Name)); err != nil {
 		return rollback(storageErr("remove the table "+t.def.Name, err))
 	}
 	now := s.now().Unix()

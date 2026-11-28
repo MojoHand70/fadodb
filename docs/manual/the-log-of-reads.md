@@ -102,7 +102,8 @@ What Tomek reads:
   document that holds them, so they need a reason every time, and the
   entry keeps the hash. Over HTTP the reason is a parameter of the
   address, `reason=`.
-- **Tables.** A table keeps no history of its own, so a content
+- **Tables.** The history of a table's rows says who changed a row,
+  and not which rule they got past or why, so a content
   administrator's import past its write rule, or read past its read
   rule, is kept here with the table and the number of rows. So is a
   row that a rule's action writes past the table's rule, with the
@@ -186,5 +187,8 @@ in their groups, which is often all they need. An agent in the group
 - A list that says how many documents it left out for want of a
   reason.
 - Trimming the log after some years.
-- The analytical engine of Phase 8. Its SQL is SQL, and every
-  statement will be kept when it is built.
+- What an analyst reads with a program of their own over the file of
+  the database, such as DuckDB
+  ([Reading a database with DuckDB](reading-with-duckdb.md)). The
+  engine does not see it, so nothing is written here: whoever has the
+  file reads all of it.

@@ -1461,8 +1461,8 @@ func (s *Store) actAs(p Principal) {
 // boxed once, so that binding one allocates nothing.
 var words = func() map[string]any {
 	m := map[string]any{}
-	for _, w := range []string{EventCreated, EventSet, EventDeleted, EventMigrated, EventTransition, EventReset, EventRefresh, EventActionRun, EventActionFailed, EventCustom,
-		"caused", "changed", "created", "deleted", "emitted", "migrated", "refreshed", "transitioned", ActorPerson, ActorAgent, ActorService} {
+	for _, w := range []string{EventCreated, EventSet, EventDeleted, EventMigrated, EventTransition, EventReset, EventRefresh, EventActionRun, EventActionFailed, EventCustom, EventCommented,
+		"caused", "changed", "created", "deleted", "emitted", "migrated", "refreshed", "transitioned", "commented", ActorPerson, ActorAgent, ActorService} {
 		m[w] = w
 	}
 	return m

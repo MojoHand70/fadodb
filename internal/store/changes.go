@@ -40,7 +40,7 @@ type ChangeFilter struct {
 const LogStart = "start"
 
 // eventKinds are the kinds of event the log holds.
-var eventKinds = []string{EventCreated, EventSet, EventTransition, EventDeleted, EventReset, EventRefresh, EventMigrated, EventActionRun, EventActionFailed, EventCustom}
+var eventKinds = []string{EventCreated, EventSet, EventTransition, EventDeleted, EventReset, EventRefresh, EventMigrated, EventActionRun, EventActionFailed, EventCustom, EventCommented}
 
 // Changes is a stream of changes for one caller. Next answers its
 // events one by one; Close ends it. It is used by one goroutine.

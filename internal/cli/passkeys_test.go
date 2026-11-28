@@ -258,10 +258,14 @@ func TestTheChapterOnPasskeys(t *testing.T) {
 			phonePage = page
 			// The phone's own refusal is the browser's: the page holds the
 			// form that takes the button's place, hidden until then.
+			// The phone's own refusal is the browser's, which a phone may
+			// show only in a sheet of its own: the way to sign in with the
+			// passkey it holds is offered from the start, under the button.
 			if code == 200 && strings.Contains(page, `data-held="held"`) && strings.Contains(page, `<form id="held"`) &&
-				strings.Contains(page, "This phone holds a passkey of yours for this server already.") && strings.Contains(page, ">Sign in with it</button>") {
+				strings.Contains(page, "This phone holds a passkey of yours for this server already.") && strings.Contains(page, ">Sign in with it</button>") &&
+				strings.Contains(page, `data-show-held="held">A passkey of yours is on this phone already? Sign in with it</button>`) {
 				heldQuestion(page)
-				got = "the phone makes no other, and its page offers **Sign in with it** in the place of its button"
+				got = "its page offers **Sign in with it** under its button from the start, and in the button's place once the phone makes no other"
 			}
 		case "Ann signs in with it on her phone":
 			answer, err := phone.Use(base, heldQuestion(phonePage))
@@ -279,7 +283,8 @@ func TestTheChapterOnPasskeys(t *testing.T) {
 			pc := newBrowser(t, base)
 			link := invitationOf("ann")
 			_, page := pc.get(link)
-			offered := strings.Contains(page, `data-held="held"`) && strings.Contains(page, "This device holds a passkey of yours for this server already.")
+			offered := strings.Contains(page, `data-held="held"`) && strings.Contains(page, "This device holds a passkey of yours for this server already.") &&
+				strings.Contains(page, `data-show-held="held">A passkey of yours is on this device already? Sign in with it</button>`)
 			answer, err := phone.Use(base, heldQuestion(page))
 			if err != nil {
 				t.Fatal(err)

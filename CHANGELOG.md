@@ -6,10 +6,276 @@ All notable changes to FadoDB are recorded here. The format follows
 
 ## [Unreleased]
 
-Phase 8 started on 2026-11-25.
+Phase 9, embedding, started on 2026-11-27, and its steps were all
+merged on 2026-11-28. It is released with v0.9.0. Its code is in the
+source of v0.8.0, whose release builds and publishes neither the
+library of C nor the Python package: v0.8.0 is Phase 8's release
+alone, by the owner's word of 2026-11-28. Phase 9's measurements are
+[docs/perf/v0.9.0.md](docs/perf/v0.9.0.md).
 
 ### Added
 
+- The library of C (ADR-0101, proposed; the first step of Phase 9). A
+  program in any language that can call C holds a FadoDB database in
+  its own process, with no server: `fado_open` opens a database file,
+  `fado_exec` runs one command of the command set as the caller the
+  program names, `fado_close` closes it, `fado_free` gives back an
+  answer and `fado_version` says which library was loaded. A command
+  and its answer are those of `POST /v1/<command>`, byte for byte; the
+  caller is a JSON object beside the command, with the members a user
+  has (`id`, `kind`, `groups`, `system_groups`, and `today`, the
+  business day), and the options of `fado_open` are named as the
+  settings of `fadodb serve` name the same things. A database is a
+  number given once in the life of the process, so a number kept after
+  its close is refused with `closed`; every function may be called from
+  any thread; a close answers the commands that wait first; a panic in
+  the engine is answered `internal` and leaves the program running. The
+  library is the engine of `fadodb-core`, built in the module `cabi/`
+  with `make library` as `libfadodb-core.so`, `libfadodb-core.dylib` or
+  `fadodb-core.dll`, with `fadodb.h`. GitHub builds it on Linux, macOS
+  and Windows on every pull request and runs a program of C against it.
+- Files and the requests of actions through the library of C
+  (ADR-0101, its step B). `fado_put_file` keeps the bytes of a file and
+  answers its facts, which a command commits on a document;
+  `fado_get_file` reads a file a document holds, under the rules of the
+  document, at a version when one is given; `fado_get_blob` reads bytes
+  by their hash, for a content administrator with a reason; each as its
+  address over HTTP does. The option `outbound` of `fado_open` lists the
+  hosts the declared actions of the database may call, in the words of
+  the settings of `fadodb serve`, and a secret is the file of
+  `secrets_dir` or a variable `FADODB_SECRET_…` of the program's
+  environment; without `outbound` the database sends nothing. The
+  server and the library find secrets with one piece of Go,
+  `internal/secret`.
+- The Python client (ADR-0101, its step C), in `clients/py/`, with
+  nothing but Python's own library. `fadodb.connect(url, key)` is a
+  server, as the user whose key it is, and `fadodb.open(path,
+  caller=…)` the database file in the same process, through the
+  library of C; both give a `Database` whose `exec(command, object)`
+  answers the command's answer as a `dict` and raises `fadodb.Refused`
+  with the code of a refusal. `as_caller` gives a database in the same
+  process to another caller; `put_file`, `get_file` and `get_blob` carry
+  files both ways; `wait_for_changes` waits on its own thread. The same
+  tests run both ways, over HTTP against a `fadodb-core serve` they
+  start and in the same process, on Linux, macOS and Windows, which is
+  the test the plan sets for Phase 9.
+- The library of C and the Python package in every release (ADR-0101,
+  its step D). For each of the five systems `fadodb` is released for, a
+  release carries `fadodb-core-library_<version>_<os>_<arch>` with the
+  library, `fadodb.h`, the licence and a README, and a wheel of the
+  Python package with the library inside, which `fadodb.open` finds;
+  and one wheel for every system without it, for a program that talks
+  to a server. `scripts/library.sh` builds, tries and packs them on a
+  machine of each system, on every pull request: the tests of the
+  module, the program of C against the very file built, the Python
+  client both ways, and each wheel installed and tried. The wheel is
+  written by `clients/py/wheel.py` with Python's own `zipfile`. A
+  release publishes the wheels on PyPI as `fadodb`, by trusted
+  publishing, with no token kept anywhere.
+- A chapter of the manual, [in a program of another
+  language](docs/manual/other-languages.md) (ADR-0101, its step E): the
+  library for each system, its five functions, the caller beside the
+  command, files, and what every program minds; and one story, an
+  invoice that Ann makes and Bob books, told as a whole program in C,
+  Python, Go, Node (through koffi) and C# (with P/Invoke), each in
+  `examples/languages`. A test runs every program and compares what it
+  prints with the chapter.
+- Actions the program carries out itself, through the library of C
+  (ADR-0102, proposed; Phase 9's step F). `fado_open_with` opens a
+  database with a function of the program, for the actions its options
+  name; the library calls it with the call, as a webhook gets it, from
+  the worker's threads or the one that sends `drain`, and the function
+  answers with `fado_answer`: what the action returns, a failure tried
+  again, or a refusal, dead at once, as a Go function's would be. In
+  Python, `fadodb.open(path, actions={"books.post": post})` gives a
+  function by name; it returns the result as a dict, and raising
+  `fadodb.Permanent` refuses the call.
+- The library with DuckDB, `libfadodb` (ADR-0102, proposed; Phase 9's
+  step G), the engine of `fadodb` beside `libfadodb-core`: a database
+  it opens keeps a copy of its documents in DuckDB beside its file,
+  and the questions that read everything are answered from it, as
+  under `fadodb serve`; its options take `analytics`, which
+  `libfadodb-core` refuses. It is linked to DuckDB's own shared
+  library, which travels beside it, since DuckDB's prebuilt library
+  cannot be loaded by a program that is running, as Python, Node and
+  .NET load a library. `scripts/library.sh` builds, tries and packs
+  both on each system; a release carries `fadodb-library_…` beside
+  `fadodb-core-library_…`, and the wheel of the Python package for a
+  system now carries `libfadodb` and DuckDB's library, about 35 MB.
+
+## [0.8.0] - 2026-11-28
+
+Phase 8, the analytical engine, started on 2026-11-25, and its steps
+were all merged on 2026-11-28. Its measurements are
+[docs/perf/v0.8.0.md](docs/perf/v0.8.0.md): every budget of its
+records holds; one of Phase 5, a read rule that reads the row in an
+indexed filter, does not, and is open. The library of C and the Python
+package of Phase 9 are in the source of this release, and are
+released with v0.9.0.
+
+### Removed
+
+- The face builder's skill, `skills/fadodb-face/`, and the sample class
+  `Look` it showed, `examples/classes/look.json`, on the owner's word:
+  what people see of a server, its faces and their look, is the tool's
+  that builds faces, not the engine's. ADR-0060 says so, and the skills
+  are five hats again.
+
+### Added
+
+- ADR-0099, where a value comes from and the documents behind a number,
+  accepted by the owner on 2026-11-27, after its three steps were
+  built (#268, #271 and #273), with none of its decisions struck; the
+  records it amends say so.
+- The history of a table's rows (ADR-0099, proposed; its third step,
+  by the owner's answer "1. B"). Every table keeps each row as it was
+  until a change replaced or removed it, and who made each change, of
+  what kind, for whom and when: an import, a replace, a delete, a
+  version of the table, or a rule's `table.insert`, `table.update` or
+  `table.delete`. A row brought again with the values it has is no
+  change and keeps nothing; a delete that removes nothing is none. A
+  table whose definition says `"history": false` keeps none, and each
+  of its rows still says which change gave it its values. A new
+  command, `row_history`, in Go `RowHistory`, answers the history of
+  one row by its key, the row now first, a page at a time, by the
+  table's read rule. `lineage` of a value a document kept from a table
+  now reads the rows as they were when it was kept, each with `since`
+  and `until`, and the rate of the manual's guide adds up; where the
+  table kept no history then, `rows_now` says the rows are as they are
+  now. A version of a table carries the history with its rows, by the
+  rules for converting them; removing a table removes its history. The
+  engine schema is 16: **a database of schema 15 is brought to it when
+  it is opened**, its tables gain the history of their rows, which
+  begins then, and an engine of schema 15 no longer opens the file.
+  SQLite keeps the history by triggers, so a value that follows a table
+  costs the same allocations as before. The chapter on tables has a
+  section, "The history of the rows", which a test plays.
+- Where a value comes from (ADR-0099, proposed; its second step). A new
+  command, `lineage`, in Go `Lineage`, answers one value of one
+  document and what it is made of, one level: its kind (typed,
+  computed, kept or live), its formula, the moment it came (the commit
+  that worked a kept value out, or the version since which a typed or
+  computed value is what it is, with who and by which event), the
+  values of the document its formula read, and for each lookup the
+  documents or the rows it read: how many, what they give, the page of
+  them the caller may read with their values, the largest first, how
+  many the caller may not read (and for a sum or a count what they
+  come to), which have changed since and what the lookup gives now. A
+  kept value is worked out again by its own formula over the documents
+  as they were just before the commit that worked it out, and
+  `adds_up` says whether it agrees; nothing is written by any commit
+  for it. `version` walks down in the past. A table's rows are read
+  as they were, from the history of its rows (above), and
+  `table_changed_since` says they changed after the value was worked
+  out. A content administrator's call past the rule is kept
+  in the log of reads with the parts only the override showed. The
+  manual has a guide, "Where a value comes from", which a test plays.
+  Among 3,400,000 invoices it answers a customer's kept total of 1,700
+  invoices in 60 to 61 ms and one of 1,700,000 in 22 seconds, from the
+  store in both programs; the copy does not answer it yet.
+- The documents behind a number (ADR-0099, proposed; its first step).
+  `flow`, `throughput` and `paths` take one member more, `documents`,
+  which names one of their numbers, and then answer the documents
+  behind it in place of the numbers: those made in the period, in a
+  state now, each stay in a state that ended in the period (with
+  `at_least` the stays that lasted at least the middle stay or the
+  slow tenth), each move along a transition, those made or finished in
+  one period of a throughput, those that took one path. `count` is the
+  number, counted the same way for the same caller; the rows come a
+  page at a time, each with the document's id, title and state now,
+  the moment that put it into the number, how long a stay lasted, the
+  version and who. In Go the calls `FlowDocuments`,
+  `ThroughputDocuments` and `PathsDocuments`, with `DocumentsAsk`. A
+  content administrator's call past the rule is kept in the log of
+  reads with the documents only the override showed. Among ten million
+  moves `fadodb` opens the 766,915 moves along a transition in a week
+  in 70 to 80 ms, and `fadodb-core` in 3 seconds. The record names two
+  steps after it: where a value comes from (`lineage`), and the
+  history of a table's rows, which every table keeps by the owner's
+  word.
+- Comments on a document (ADR-0098, proposed). Two new commands:
+  `comment`, in Go `Comment`, writes words the engine keeps beside a
+  document, with who wrote them (a person, an agent or a service, and
+  for whom it acted), when, and the version they were written on; and
+  `comments`, in Go `Comments`, reads them, oldest first. Whoever may
+  read the document may comment on it, in any state, a final one too;
+  whoever may not is answered as if there were no such document. A
+  comment makes no version of the document and runs nothing; each is an
+  event of the new kind `commented`, in `events`, the stream of
+  changes, `<Class>_events` and the copy, with its `before_version` and
+  no `after_version`. It takes `key`, so a retry writes it once, and
+  `version`, so it is refused with `stale_version` when the document
+  moved on. Empty words are refused with `required`, words past the
+  limit for a text with `out_of_range`, a control character other than
+  a line break or a tab with `bad_value`. The table `fado_comments` is
+  made when a database is opened; the schema keeps its number. New
+  chapter: `docs/manual/comments.md`.
+
+- The paths documents took (ADR-0097, proposed). A new command,
+  `paths`, in Go `Paths`, answers for a class which ways its documents
+  went through the states, the most taken first: each path with its
+  states in the order a document came into them, how many documents
+  took it, and whether it ends in a final state. It counts the
+  documents the caller may read that were made in the period, each
+  with its whole path up to now; `limit` says how many paths are
+  listed, and `others` how many documents took another. The moves of
+  one moment, a chain that one commit makes, are told apart by the
+  versions they made; in the copy a move says its version for that,
+  and a copy of an earlier build is given its moves again, once.
+  Among 3,400,000 invoices that made ten million moves `fadodb`
+  answers it in 0.22 to 0.27 seconds and `fadodb-core` in 9.
+- How many documents were made and finished in each period (ADR-0096,
+  proposed). A new command, `throughput`, in Go `Throughput`, answers
+  for a class how many documents the caller may read were made and how
+  many came into a final state in each day, week or month, said by
+  `by`: whether the pile grows. A day begins at midnight by the clock
+  of the database's time zone, a week on its Monday and a month on its
+  first; every period from the first to the last is in the answer,
+  the empty ones too. `since` and `until` say what is counted, as for
+  the flow. Among ten million moves `fadodb` answers it in 6 to 7 ms
+  and `fadodb-core` in 9 seconds.
+- A chapter of the manual for an analyst with tools of their own,
+  "Reading a database with DuckDB" (ADR-0089, item 10): how DuckDB,
+  and through it Python and R, open the file of a database from a
+  program of their own, what is in it, how DuckDB reads an exact
+  number, a day and a moment, five questions with their answers, and
+  what to mind while a server has the database open. Whoever has the
+  file reads all of it: no rule is asked and nothing is written into
+  the log of reads. A test runs the chapter's statements with DuckDB.
+- How the stays of a state spread (ADR-0095, proposed). The command
+  `flow` takes one more word, `"spread": true`, and a Go program
+  `FlowPeriod.Spread`. Each state then says, beside the average and
+  the longest of the stays that ended in the period, the middle stay,
+  which half of them did not outlast, and the slow tenth, which nine
+  in ten did not outlast: `"spread": {"middle_seconds": 3600,
+  "slow_tenth_seconds": 100800}`. Each is the length of one of the
+  stays, the one at place `(n+1)/2` and at place `(9n+9)/10` of `n`
+  stays in the order of their lengths, so `fadodb` and `fadodb-core`
+  give the same number. A flow that does not ask is as it was, in
+  every member and at its cost. Among ten million moves `fadodb`
+  answers the flow in 12 ms and the flow with its spread in 80 to 87.
+- The rows of the tables in the copy (ADR-0094, proposed). The program
+  with the analytical engine, `fadodb`, keeps a copy of the rows of
+  every table beside its copy of the documents, and asks it the
+  questions a class has for a large table: a total, a count, a
+  smallest, a largest or the first row that a `LOOKUP` in a live
+  variable asks where no index finds the rows, and a page of a live
+  list over a table in an order no index holds. Nothing is written
+  for it. The answer is the store's, and never older than its
+  question: every change of a table's rows writes a token in the same
+  transaction, and the copy answers only when it was made under the
+  token the database has. A table of up to 10,000 rows is copied again
+  by the question that finds it changed; a larger one by the feed that
+  runs by itself, and the store answers meanwhile. Measured among
+  5,000,000 rows: a sum of prices over the table 320 to 345 ms from
+  the store and 2.5 ms from the copy; the fifty dearest rows 395 to
+  435 ms and 7 to 10 ms; the copy of the table is made in four to five
+  seconds. A sum of plain numbers, the type `number`, is added in the
+  order of the key in every program and is no faster. The rows of
+  every table stay in the database: the bindings `duckdb` and
+  `external` are not built, and a table of another database is brought
+  in with `import_rows`. Not built: one line for each group of rows of
+  a table, with its totals.
 - The app System and its tables (ADR-0092, proposed). Every database
   has the app `System`, the engine's own, and four tables in it:
   `SystemApps`, `SystemClasses`, `SystemUsers` and `SystemGroups`,
@@ -78,8 +344,10 @@ Phase 8 started on 2026-11-25.
   version before is refused with `stale_version`. The change queues
   the work as a row of the outbox whose action is `follow`, and the
   worker brings the documents a thousand in a transaction: 100,000
-  invoices in under five seconds, with a commit of somebody else
-  waiting 45 ms meanwhile. Not built: a value that follows the
+  invoices in 4.2 seconds, with a commit of somebody else waiting
+  17 ms meanwhile, 60 at the longest. A document has no savepoint of
+  its own until one is refused; then its thousand is brought again,
+  each with one. Not built: a value that follows the
   documents of a class, and a kept list that follows a table.
 - One line for each group, with its totals: a column of a `QUERY` may
   be a total (ADR-0090, proposed). In a live variable,
@@ -150,9 +418,15 @@ Phase 8 started on 2026-11-25.
   answer for the same reader. The copy is brought up to the database
   before it answers, so a move made a moment ago is in the flow. When
   the copy does not answer, the store does. A program without the
-  engine, and the program `fadodb`, answer as before.
+  engine, and the program `fadodb-core`, answer as before.
+- The analytical engine takes no extension from outside the program
+  (ADR-0089). DuckDB by itself would fetch from the network an
+  extension a statement needs and the program lacks, and load one
+  installed on the machine; every connection to the copy now turns
+  both off, and a test holds it on GitHub. The program uses only what
+  its library carries: core_functions, icu, json and parquet.
 - The server program can be built with the analytical engine (ADR-0089,
-  the first half of its step 6). `make full` builds `bin/fadodb-full`
+  the first half of its step 6). `make full` builds `bin/fadodb`
   in the module `analytics`: the program `fadodb`, from the same code,
   with DuckDB linked in. A database it serves keeps a copy of its
   documents beside its own file and answers the flow of a class from
@@ -161,9 +435,9 @@ Phase 8 started on 2026-11-25.
   program built without the engine refuses settings that name it.
   `fadodb version` says which program it is. The code of the program
   moved from `cmd/fadodb` to the package `internal/cli`, which both
-  programs are built from; `fadodb` itself is as it was, in pure Go.
-  Not built: the program with the engine for each operating system,
-  released, and an image for containers with it.
+  programs are built from; `fadodb-core` is as it was, in pure Go.
+  The program with the engine for each operating system, released, and
+  an image for containers with it came after it (under Changed).
 - The first step of the analytical engine: the copy and its feed
   (ADR-0089, proposed; ADR-0017). A program built with the module
   `analytics` gives the database DuckDB as its analytical engine, with
@@ -207,8 +481,8 @@ Phase 8 started on 2026-11-25.
   is sorted. With every index in place, the drafts of one order among
   1,000,000 invoices, which the pointer and the state both fit, take
   0.32 ms (`BenchmarkDraftsOfOneOrder`, the test the record sets).
-  Not built: an index for the key of a `LOOKUP` that is no pointer,
-  which still wants `"index": true`.
+  An index for the key of a `LOOKUP` that is no pointer came after it
+  (below).
 - A list in a message becomes the lines of a document (ADR-0085, item
   1, the first of its three steps). In the `values` of an inlet a
   `rows` variable takes a repeat in place of a formula: `each`, the
@@ -235,8 +509,8 @@ Phase 8 started on 2026-11-25.
   variable has every column the parameter has, of the same type.
   `preview_action` shows the whole body, every line, with the secrets
   masked. Building the request for a hundred lines takes 0.14 ms. Not
-  built: a list in an answer (item 3), and a list that is worked out
-  when it is read given to an action.
+  built: a list that is worked out when it is read given to an action.
+  A list in an answer (item 3) came after it (below).
 - A list in an answer becomes the lines of a document (ADR-0085, item
   3, the last of its three steps). A value an action returns may be of
   the type `rows`, with a `schema` of its columns, and its `result` is
@@ -430,6 +704,78 @@ Phase 8 started on 2026-11-25.
 
 ### Fixed
 
+- A live `LOOKUP` over a class finds its documents through the index.
+  Keyed by a value the class keeps an index of, `customer =
+  THIS.name`, it read every document of the class on the store, since
+  through its condition a blank compares as the zero of its kind; it
+  is now first narrowed to the documents of that value, as the lookup
+  of a commit is (ADR-0076, settled while building). The live sum of a
+  customer of 1,700 among 3.4 million invoices takes 2.2 to 2.5 ms in
+  `fadodb-core`, where it took 241 ms; of a customer of 1,700,000, half
+  the class, 637 ms, where it took 395, the index finding half the rows
+  one by one. It came with live lookups in Phase 8 and was in no
+  release.
+- A question that two indexes fit looks no further than it must. The
+  engine counts, in each index that fits, the documents of the value
+  compared, and asks through the one that ends first (ADR-0075, item
+  10); every look counted up to a thousand, so a second look into a
+  value of many documents read a thousand entries only to lose. A look
+  after the first now counts no further than the fewest an earlier one
+  found, rounded up to 1, 10, 100 or a thousand, and the index chosen
+  is the one it was. One ticket by its number, for a caller whom the
+  class's read rule `owner = USER()` limits to their own, among
+  1,000,000 with an index on the owner, takes 22.7 to 23.0 µs where it
+  took 55.6 to 56.6; without the rule it takes 15.5 to 16.0, so the
+  rule still costs it more than the 15% of ADR-0049. In memory the
+  invoices of one order for one customer take 0.18 ms where they took
+  0.21 (`BenchmarkQueryLook`), and the drafts of one order 0.14 ms
+  where they took 0.17 (`BenchmarkDraftsOfOneOrder`). It came with the
+  look in Phase 8 and was in no release.
+- Where a value comes from adds up when its key is 0. A kept value
+  keyed by a number of 0, or false, which a document with no value
+  equals too, was answered by `lineage` with only the documents of 0:
+  the count 1 where 2 were kept, and `adds_up` false. The key 0 now
+  narrows nothing, as in the lookup of a commit (ADR-0099, step 2).
+- DuckDB's notice travels with DuckDB. The program `fadodb` and its
+  image carry DuckDB, linked in, and carried no word of its licence,
+  which is MIT and asks for its notice in every copy: each archive of
+  `fadodb` now holds `LICENSE-duckdb`, and the image `/licenses/LICENSE`
+  and `/licenses/LICENSE-duckdb`, with the label
+  `org.opencontainers.image.licenses` saying `Apache-2.0 AND MIT`. Every
+  pull request now packs the program as a release does, so that a
+  release is not the first to.
+- The notices of the code of others travel with every copy.
+  `THIRD_PARTY_NOTICES.md` holds, in full, the notice of Go, its
+  standard library and runtime, of DuckDB, and of every module a
+  program or library is built from on every system a release is built
+  for, with a table of which carries what; their licences, most of them
+  BSD and MIT, ask for the notice in every copy, and none was carried.
+  Every archive of `fadodb` and `fadodb-core` holds it, and both
+  images in `/licenses/` with FadoDB's own licence; so will the
+  library and every wheel with one, released with v0.9.0. `internal/notices` writes it from the modules,
+  and the checks on GitHub hold it to them, so a module added or moved
+  fails until it is written again.
+- The phone's page of a code, and an invitation's page, offer **Sign in
+  with it** from the start to a person who has a passkey already, under
+  the button that adds one (ADR-0088). A phone whose password manager
+  holds the person's synced passkey makes no other, and Safari on an
+  iPhone may say so only in a sheet of its own, which the page cannot
+  tell from a window closed: the page then said "Try again" and offered
+  no way on. The way the page took after the browser's refusal stays.
+- A `LOOKUP` in a live variable that is keyed by the key of a table,
+  or by a column that leads an index of it, read the table up to its
+  row each time the value was read: 67 to 70 ms for a row a third of
+  the way into 5,000,000. Inside a commit the same lookup used the
+  index. It uses it in both now, and takes 0.02 ms (ADR-0094, item
+  11). No release had it: a lookup in a live variable was built in
+  this phase.
+- After any change of a table that holds more rows than the store
+  keeps in memory, 100,000 unless the database says otherwise, the
+  next lookup of a commit read the table up to that limit to find
+  again that it is over it: about 70 ms, once after each change, so in
+  every commit that followed a rule's `table.update` on a large
+  table. The store now keeps what it knew when rows were only added
+  or changed (ADR-0094, item 12). Since v0.2.0.
 - **A database did not open again after a class without documents lost
   a variable.** Olga defines Order, takes `note` out of it before
   anybody made an order, and stops the server. The next start refused
@@ -483,12 +829,22 @@ Phase 8 started on 2026-11-25.
   not worked out again when a `reset`, by a command or by a rule,
   emptied the lines: the document kept the old figure beside no lines.
   It is worked out again now. In v0.7.0 too.
+- The skills and the manual say what Phase 8 built. Pages that still
+  called its work not built or to come, named the two programs by
+  their earlier names, or gave figures from before
+  [docs/perf/v0.8.0.md](docs/perf/v0.8.0.md) now say what works, and
+  the glossary has the words of the phase.
 
 ### Changed
 
+- `import_rows` with `replace` no longer empties the table first: it
+  writes the rows it brings and then removes the rows it did not bring
+  (ADR-0099, step 3). The table holds the same rows afterwards; a row
+  brought as it was is no change, so the history of the rows keeps only
+  what the replace changed or removed.
 - The image for containers holds `fadodb`, the program with the
   analytical engine, and a second image holds `fadodb-core` (ADR-0089).
-  From the next release on `ghcr.io/mojohand70/fadodb:<version>` is
+  From v0.8.0 on `ghcr.io/mojohand70/fadodb:<version>` is
   the first and `ghcr.io/mojohand70/fadodb:<version>-core` the second;
   the images up to v0.7.0 hold the program without the engine under
   the plain name. The image of `fadodb` stands on a base with the C
@@ -507,7 +863,7 @@ Phase 8 started on 2026-11-25.
   engine" and `fadodb-core version` begins with its own name. In the
   repository `make build` makes `bin/fadodb-core` and `make full`
   makes `bin/fadodb`; the program in pure Go is `cmd/fadodb-core`, so
-  from the next release on it is installed with
+  from v0.8.0 on it is installed with
   `go install github.com/MojoHand70/fadodb/cmd/fadodb-core@latest`.
   The releases up to v0.7.0 have one program, named `fadodb`: it is
   the one without the engine.
@@ -518,8 +874,7 @@ Phase 8 started on 2026-11-25.
   arm64, under one `checksums.txt`. A release is made only when every
   `fadodb` is there. The Linux `fadodb` runs on Debian 12, Ubuntu
   22.04 and what is as new. Every pull request builds and tries
-  `fadodb` on the five systems. The image for containers still holds
-  the program without the engine.
+  `fadodb` on the five systems.
 
 - A message is read faster: the formulas of an inlet read one body,
   and the engine now parses it once and not once for each formula. A
@@ -2961,7 +3316,8 @@ Project scaffold. Nothing to run beyond `fadodb version`.
 - Contributing guide, code of conduct, security policy, issue and pull request
   templates, roadmap.
 
-[Unreleased]: https://github.com/MojoHand70/fadodb/compare/v0.7.0...HEAD
+[Unreleased]: https://github.com/MojoHand70/fadodb/compare/v0.8.0...HEAD
+[0.8.0]: https://github.com/MojoHand70/fadodb/releases/tag/v0.8.0
 [0.7.0]: https://github.com/MojoHand70/fadodb/releases/tag/v0.7.0
 [0.6.0]: https://github.com/MojoHand70/fadodb/releases/tag/v0.6.0
 [0.5.0]: https://github.com/MojoHand70/fadodb/releases/tag/v0.5.0

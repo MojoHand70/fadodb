@@ -527,8 +527,11 @@ on disk, on invoices that were each made, filed and paid:
 | the flowchart of the class | 37 ms | 0.4 s | 4.8 s | 18 s |
 | a list or a count an index narrows to a few documents | 1 ms | 1 ms | 1 ms | 1 ms |
 
-In `fadodb` each of these takes 1 to 11 ms at every size of the
-table.
+In `fadodb`, among 3,400,000 invoices, those of these questions that
+[Phase 8's measurements](../perf/v0.8.0.md#counts-totals-and-figures)
+asked took 2.1 to 24.6 ms: a sum in a live `LOOKUP` 7.0 to 7.2 ms, a
+count over an amount, which has no index, 2.1 to 2.4 ms, totals by
+customer 12.1 to 12.3 ms, and the flowchart 13.3 to 24.6 ms.
 
 - **Up to about 100,000 documents in the largest class, `fadodb-core`
   is enough**: everything a class asks is answered in under 30 ms, and
@@ -542,7 +545,7 @@ table.
 - **The same in both at any size**: reading a document, a commit, and
   a list or a count that an index narrows.
 
-Both are in a release, from the one after v0.7.0 on; the
+Both are in a release, from v0.8.0 on; the
 [README](../../README.md#install) says for which systems. From the
 repository they are built with:
 
@@ -563,10 +566,15 @@ bin/fadodb serve acme.fado
   says what it holds, what is answered from it and how fresh it is.
 - **What is answered from the copy**: the flow of a class, the
   command [`flow`](commands.md#flow), which a flowchart is drawn from;
-  a count, and the total of a live `LOOKUP` or of a figure over a
-  list, that no index narrows; a page of a list the store does not
-  find in a moment; and a list of totals by group. Everything inside a
-  commit is the store's.
+  how many were made and finished in each period,
+  [`throughput`](commands.md#throughput); the paths the documents
+  took, [`paths`](commands.md#paths); the documents behind a number of
+  these three; a count, and the total of a live `LOOKUP` or of a figure
+  over a list, that no index narrows; a page of a list the store does
+  not find in a moment; and a list of totals by group. Everything
+  inside a commit is the store's, and so are
+  [`lineage`](commands.md#lineage) and
+  [`row_history`](commands.md#row_history).
 - **It takes at most 2 GB of memory** for the engine, unless the
   settings say otherwise with `analytics.memory`.
 - **When it starts it says** that it keeps a copy of the documents, or
@@ -574,9 +582,9 @@ bin/fadodb serve acme.fado
   store.
 
 The image for containers holds `fadodb`, and a second one
-`fadodb-core` ([In a container](in-a-container.md#the-image)). No
-release has been made with either name yet: until the one after
-v0.7.0 the programs and the images are built from the repository.
+`fadodb-core` ([In a container](in-a-container.md#the-image)). Both are
+in a release from v0.8.0 on; the releases up to v0.7.0 have one
+program and one image, without the engine, under the name `fadodb`.
 
 ## What it says when it starts
 

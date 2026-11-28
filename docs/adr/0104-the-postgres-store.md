@@ -69,7 +69,8 @@ together, the same statements take a quarter of the time.
    the operator says otherwise.** It is Postgres's own default, and
    what Postgres is chosen for. The fast way is an option, as `FULL` is
    on SQLite. The other way is fast by default, as on SQLite: a server
-   that stops suddenly then loses up to a second of commits. Open.
+   that stops suddenly then loses up to a second of commits. Ruled
+   by the owner on 2026-11-28: yes.
 
 Item 3 of ADR-0103, one writer for each database on Postgres, is his
 and open too. The store below is built on it.
@@ -177,12 +178,12 @@ and open too. The store below is built on it.
     - `LN`, `LOG` and `^` of a number smaller than 2.2e-308: Go's
       logarithm is wrong there (`math.Log(5e-324)` gives -709.09 for
       -744.44), and Postgres is right.
-19. **A fault of the VM, found on the way and not corrected here.**
-    `ROUND` of an exact value that drops 19 digits, as a value of 18
-    places rounded to tens: 6.3 gives 0 in the VM and on SQLite, and
-    10 on Postgres and on DuckDB. 10 is right. It is on main since
-    exact numbers were built, and DuckDB has differed from the VM
-    there all along.
+19. **A fault of the VM, found on the way.** `ROUND` of an exact
+    value that drops 19 digits, as a value of 18 places rounded to
+    tens: 6.3 gave 0 in the VM, in the browser VM and on SQLite, and
+    10 on Postgres and on DuckDB. 10 is right. It was on main since
+    exact numbers were built. Corrected in the pull request after this
+    step, with its cases in `conformance/formula/decimal.json`.
 
 What holds it: the 1,691 evaluation cases of `conformance/formula`, on
 Postgres 17, 18 and 19 on GitHub; 2,000 generated formulas on each, and

@@ -110,25 +110,34 @@ export function roundMant(m: bigint, s: number, places: number, rm: RoundMethodC
   const drop = s - places;
   let q: bigint;
   let r: bigint;
-  let p: bigint;
-  if (drop > MAX_SCALE) {
-    q = 0n;
-    r = m;
-    p = U64 - 1n;
-  } else {
+  // Half of the step, the power of ten of the digits dropped, which the
+  // remainder is held against, as the Go VM holds it.
+  let half: bigint;
+  if (drop <= MAX_SCALE) {
     const pp = pow10i(drop);
     q = m / pp;
     r = m % pp;
-    p = pp;
+    half = pp / 2n;
+  } else if (drop === MAX_SCALE + 1) {
+    // Every digit goes, and the step is 10^19, which a mantissa reaches
+    // half of: 6.3 held with 18 places is 10 to the nearest ten.
+    q = 0n;
+    r = m;
+    half = 5_000_000_000_000_000_000n;
+  } else {
+    // A step no mantissa reaches half of.
+    q = 0n;
+    r = m;
+    half = U64 - 1n;
   }
   const sg = sign(m);
   switch (rm) {
     case RoundMethod.HalfUp:
-      if (r !== 0n && twice64(abs(r)) >= p) q += sg;
+      if (r !== 0n && abs(r) >= half) q += sg;
       break;
     case RoundMethod.HalfEven: {
-      const t = twice64(abs(r));
-      if (r !== 0n && (t > p || (t === p && (q & 1n) !== 0n))) q += sg;
+      const a = abs(r);
+      if (r !== 0n && (a > half || (a === half && (q & 1n) !== 0n))) q += sg;
       break;
     }
     case RoundMethod.Down:

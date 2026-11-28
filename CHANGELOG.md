@@ -24,6 +24,10 @@ the row in an indexed filter, does not, and is open.
 
 ### Added
 
+- ADR-0099, where a value comes from and the documents behind a number,
+  accepted by the owner on 2026-11-27, after its three steps were
+  built (#268, #271 and #273), with none of its decisions struck; the
+  records it amends say so.
 - The history of a table's rows (ADR-0099, proposed; its third step,
   by the owner's answer "1. B"). Every table keeps each row as it was
   until a change replaced or removed it, and who made each change, of

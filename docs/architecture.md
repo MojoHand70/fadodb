@@ -1463,7 +1463,7 @@ document's moves are joined in the order of the versions the moves
 made, which the copy keeps with each move, and the documents are
 counted by what comes out.
 
-- **The documents behind a number** (ADR-0099, proposed): `flow`,
+- **The documents behind a number** (ADR-0099): `flow`,
   `throughput` and `paths` take `documents`, which names one of their
   numbers, and answer the documents behind it, a page at a time.
 - **Where a value comes from** (ADR-0099): the command `lineage`

@@ -1,6 +1,6 @@
 # ADR-0099: Where a value comes from, and the documents behind a number
 
-- Status: Proposed; amends ADR-0037 (a table keeps the history of its rows), ADR-0055 (the commands `lineage` and `row_history` join the table; `flow`, `throughput` and `paths` take `documents`), ADR-0063, ADR-0096 and ADR-0097 (each number they give can be opened), ADR-0067 (the history of the rows says who changed a row; the log of reads still keeps a write past a rule), ADR-0078 (what it left out as "a history of a table" is taken up), ADR-0094 (the token of a table's rows is the id of the change that wrote them)
+- Status: Accepted; amends ADR-0037 (a table keeps the history of its rows), ADR-0055 (the commands `lineage` and `row_history` join the table; `flow`, `throughput` and `paths` take `documents`), ADR-0063, ADR-0096 and ADR-0097 (each number they give can be opened), ADR-0067 (the history of the rows says who changed a row; the log of reads still keeps a write past a rule), ADR-0078 (what it left out as "a history of a table" is taken up), ADR-0094 (the token of a table's rows is the id of the change that wrote them)
 - Date: 2026-11-26
 
 ## Context
@@ -166,7 +166,15 @@ asks. He answered "1. B" on 2026-11-26.
     same values is not written; a replace keeps the rows it changed or
     took out, not the whole table.
 
-## Decisions of mine, each the owner's to strike
+## The owner's ruling
+
+Accepted by him on 2026-11-27, after the three pull requests that
+built it were merged (#268, #271 and #273): "ADR-0099 sounds good to
+me, accepted." The decisions below were put to him by name, with the
+record and in those pull requests, and he struck none of them. The
+records it amends say so.
+
+## Decisions of mine, accepted with the record
 
 Settled on 2026-11-26.
 
@@ -188,7 +196,7 @@ Settled on 2026-11-26.
 
 ## Settled while building the second step
 
-Decisions of mine, on 2026-11-27, each the owner's to strike.
+Decisions of mine, on 2026-11-27, accepted with the record.
 
 8. **Whether it adds up is the formula's own answer.** The kept value's
    formula is worked out again by the engine, on the version that
@@ -222,7 +230,7 @@ Decisions of mine, on 2026-11-27, each the owner's to strike.
 
 ## Settled while building the third step
 
-Decisions of mine, on 2026-11-27, each the owner's to strike.
+Decisions of mine, on 2026-11-27, accepted with the record.
 
 16. **SQLite writes the history**, by two triggers on each table: a row
     whose values change is kept as it was, and so is a row removed. So

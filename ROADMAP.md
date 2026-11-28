@@ -524,7 +524,7 @@ most taken first. The owner said on 2026-11-26 that all three are for
 this phase, and with it all three are built.
 
 The owner extended the phase on 2026-11-26 into lineage and drill down
-(ADR-0099, proposed), in three steps. The first is built: each number
+(ADR-0099, accepted by the owner on 2026-11-27), in three steps. The first is built: each number
 of `flow`, `throughput` and `paths` opens, with the member
 `documents`, to the documents behind it, as many as the number says,
 a page at a time; among ten million moves the copy lists the moves

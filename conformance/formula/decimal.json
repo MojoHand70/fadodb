@@ -1,7 +1,7 @@
 {
   "suite": "decimal",
   "description": "Exact numbers (ADR-0022): a decimal is an int64 mantissa at a scale of 0 to 18, int is scale 0. + and - are exact at the larger scale, * at the sum of the scales, / lands on the dividend's scale plus four rounding half away from zero, % adds two places. A number literal that meets an exact operand is read exactly from its spelling. ROUND, FLOOR, CEILING, TRUNC and DECIMAL take their places from the formula and a method; a result that does not fit 18 digits is the error overflow. Blank reads as 0.",
-  "variables": {"A": "decimal(2)", "B": "decimal(4)", "I": "int", "N": "number", "T": "text", "Z": "decimal(2)"},
+  "variables": {"A": "decimal(2)", "B": "decimal(4)", "I": "int", "N": "number", "T": "text", "Z": "decimal(2)", "W": "decimal(18)"},
   "cases": [
     {"name": "0.10 + 0.20 is 0.30, exactly", "formula": "A + B", "inputs": {"A": 0.10, "B": 0.2}, "type": "decimal(4)", "expected": 0.3},
     {"formula": "A + 0.2 = 0.3", "inputs": {"A": 0.1}, "expected": true},
@@ -251,6 +251,17 @@
     {"formula": "ROUND(A * 23%, 2)", "inputs": {"A": 12345.67}, "type": "decimal(2)", "expected": "2839.50"},
     {"formula": "A + ROUND(A * 23%, 2)", "inputs": {"A": 12345.67}, "type": "decimal(2)", "expected": "15185.17"},
     {"formula": "ROUND(A / 3, 2) * 3 = A", "inputs": {"A": 1.00}, "expected": false},
-    {"formula": "ROUND(A / 3, 2) * 3", "inputs": {"A": 1.00}, "type": "decimal(2)", "expected": "0.99"}
+    {"formula": "ROUND(A / 3, 2) * 3", "inputs": {"A": 1.00}, "type": "decimal(2)", "expected": "0.99"},
+    {"name": "rounding away every digit a value holds, nineteen of them, still rounds: 6.3 is 10 to the nearest ten", "formula": "ROUND(W, -1)", "inputs": {"W": "6.300000000000000000"}, "type": "int", "expected": "10"},
+    {"formula": "ROUND(W, -1)", "inputs": {"W": "4.999999999999999999"}, "type": "int", "expected": "0"},
+    {"formula": "ROUND(W, -1)", "inputs": {"W": "5.000000000000000000"}, "type": "int", "expected": "10"},
+    {"formula": "ROUND(W, -1)", "inputs": {"W": "-6.300000000000000000"}, "type": "int", "expected": "-10"},
+    {"name": "the largest value eighteen places hold", "formula": "ROUND(W, -1)", "inputs": {"W": "9.223372036854775807"}, "type": "int", "expected": "10"},
+    {"name": "and the smallest, whose double no 64 bits hold", "formula": "ROUND(W, -1)", "inputs": {"W": "-9.223372036854775808"}, "type": "int", "expected": "-10"},
+    {"name": "a half goes to the even neighbour, which is zero", "formula": "ROUND(W, -1, \"half_even\")", "inputs": {"W": "5.000000000000000000"}, "type": "int", "expected": "0"},
+    {"formula": "ROUND(W, -1, \"half_even\")", "inputs": {"W": "5.000000000000000001"}, "type": "int", "expected": "10"},
+    {"name": "twenty digits away, nothing reaches half of a hundred", "formula": "ROUND(W, -2)", "inputs": {"W": "9.223372036854775807"}, "type": "int", "expected": "0"},
+    {"name": "but up is up, however small", "formula": "ROUND(W, -2, \"up\")", "inputs": {"W": "0.000000000000000001"}, "type": "int", "expected": "100"},
+    {"formula": "ROUND(W, -2, \"floor\")", "inputs": {"W": "-0.000000000000000001"}, "type": "int", "expected": "-100"}
   ]
 }

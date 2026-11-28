@@ -193,6 +193,10 @@ var RoundMethods = []string{"half_up", "half_even", "down", "up", "floor", "ceil
 // be negative to round to tens and hundreds, and returns the mantissa at
 // scale max(places, 0). Moving to more places is exact; fewer places drop
 // digits by the method.
+// pow10u19 is 10^19, the one power of ten past MaxScale digits that an
+// unsigned 64-bit number holds.
+const pow10u19 uint64 = 10_000_000_000_000_000_000
+
 func roundMant(m int64, s int, places int, rm roundMethod) (int64, int, bool) {
 	if places >= s {
 		r, ok := scaleBy(m, places-s)
@@ -200,23 +204,31 @@ func roundMant(m int64, s int, places int, rm roundMethod) (int64, int, bool) {
 	}
 	drop := s - places
 	var q, r int64
-	var p uint64
-	if drop > MaxScale {
-		// Every digit goes: the magnitude is below the step, so the
-		// quotient is zero and the whole value is the remainder.
-		q, r, p = 0, m, math.MaxUint64
-	} else {
+	// half is half of the step, the power of ten of the digits dropped.
+	// The remainder is held against it and not its double against the
+	// step: the double of a remainder may not fit.
+	var half uint64
+	switch {
+	case drop <= MaxScale:
 		pp := pow10i[drop]
-		q, r, p = m/pp, m%pp, uint64(pp)
+		q, r, half = m/pp, m%pp, uint64(pp)/2
+	case drop == MaxScale+1:
+		// Every digit goes: the quotient is zero and the whole value is
+		// the remainder. The step is 10^19, and a mantissa reaches half
+		// of it: 6.3 held with 18 places is 10 to the nearest ten.
+		q, r, half = 0, m, pow10u19/2
+	default:
+		// A step no mantissa reaches half of.
+		q, r, half = 0, m, math.MaxUint64
 	}
 	sign := sign64(m)
 	switch rm {
 	case rmHalfUp:
-		if r != 0 && 2*absU(r) >= p {
+		if r != 0 && absU(r) >= half {
 			q += sign
 		}
 	case rmHalfEven:
-		if twice := 2 * absU(r); r != 0 && (twice > p || twice == p && q&1 != 0) {
+		if a := absU(r); r != 0 && (a > half || a == half && q&1 != 0) {
 			q += sign
 		}
 	case rmDown:

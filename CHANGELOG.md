@@ -55,6 +55,15 @@ All notable changes to FadoDB are recorded here. The format follows
   `analytics/` and `cabi/` alike, and `THIRD_PARTY_NOTICES.md` written
   again for it (#264). The SQLite it carries is 3.54.1, as before.
 
+### Fixed
+
+- `ROUND` of an exact value that drops nineteen digits rounds: 6.3
+  held with 18 places is 10 to the nearest ten. The Go VM, the browser
+  VM and SQLite gave 0, since the step was taken for larger than it
+  is; DuckDB and Postgres gave 10 all along. Found by the generated
+  formulas on Postgres. Eleven cases in the conformance suite hold it
+  on every evaluator.
+
 ## [0.9.0] - 2026-11-28
 
 Phase 9, embedding, started on 2026-11-27, and its steps were all

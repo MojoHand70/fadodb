@@ -79,6 +79,47 @@ jobs:
     name: programs
     uses: ./.github/workflows/programs.yml
 
+  # Formulas on Postgres (ADR-0104): the conformance suite and the
+  # generated formulas, on the oldest Postgres the engine takes and on
+  # each one after it, started beside the job.
+  postgres:
+    name: postgres / ${{ matrix.postgres }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        postgres: [17, 18, 19]
+    services:
+      postgres:
+        image: postgres:${{ matrix.postgres }}
+        env:
+          POSTGRES_USER: fadodb
+          POSTGRES_PASSWORD: fadodb
+          POSTGRES_DB: fadodb
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U fadodb"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          check-latest: true
+      - run: make tools
+      - name: Lint the Postgres module and look for known vulnerabilities in what it is built from
+        working-directory: postgres
+        run: |
+          staticcheck ./...
+          govulncheck ./...
+      - name: Test the Postgres module against Postgres ${{ matrix.postgres }}
+        env:
+          FADODB_POSTGRES: postgres://fadodb:fadodb@localhost:5432/fadodb
+        run: make postgres
+
   image:
     name: image / ${{ matrix.machine }}
     runs-on: ${{ matrix.machine }}

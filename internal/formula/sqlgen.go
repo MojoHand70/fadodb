@@ -157,6 +157,61 @@ type Dialect interface {
 	WithLimits(l Limits) Dialect
 }
 
+// The interfaces below are optional: a dialect implements one where its
+// engine needs what the others do not, and the generator asks for it by
+// a type assertion. SQLite and DuckDB implement none, and what is
+// generated for them is what it was before these were written.
+
+// floatSpeller is a dialect whose engine fails a statement where a
+// number leaves the range of a float, where the others give an infinity
+// the error column then reports: Postgres. FloatOp spells x op y, for
+// OpAdd, OpSub, OpMul and OpDiv, so that no operands make it fail.
+type floatSpeller interface {
+	FloatOp(op Op, x, y string) string
+}
+
+// textOrderer is a dialect whose engine orders text by a rule of the
+// database unless it is told otherwise: Postgres. OrderText spells a
+// text expression so that it is ordered by its code points, as the VM
+// orders it, whatever the database's own rule.
+type textOrderer interface {
+	OrderText(x string) string
+}
+
+// paramTyper is a dialect whose engine must be told what a parameter
+// holds where the statement gives it no type: Postgres. TypedParam
+// spells the reference ref, a Param or a ?, of a parameter bound to
+// what Value.DriverValue gives for the kind, as a value of the type
+// the dialect holds the kind in.
+type paramTyper interface {
+	TypedParam(ref string, k Kind) string
+}
+
+// rowTaker is a dialect whose engine has no MIN for every type the value
+// of a row may have: Postgres, which has none for a boolean. OneRow
+// spells the value v of the one row a statement reads, of the kind, as
+// an aggregate over that row, which MIN is for the others.
+type rowTaker interface {
+	OneRow(v string, k Kind) string
+}
+
+// blankTyper is a dialect whose engine gives a NULL a type, and will not
+// set one of another type beside it: Postgres, where the blank
+// alternative of an IF would be a text beside a number. TypedBlank
+// spells the blank of a kind, which stands for an alternative that is
+// blank whatever it reads.
+type blankTyper interface {
+	TypedBlank(k Kind) string
+}
+
+// sourceColumner is a dialect whose tables declare more for a column
+// than its type: Postgres, whose text columns say how they are
+// ordered. SourceColumn is what a table declares for a column of the
+// kind; ColumnType stays the type alone, which a CAST takes.
+type sourceColumner interface {
+	SourceColumn(k Kind) string
+}
+
 // ErrStateOverRows says a function of a state stands in a formula that
 // is translated for a statement over document rows, a filter or a read
 // rule: the view of stays has the same facts for every document.
@@ -314,6 +369,10 @@ func (t *sqlTranslator) block(start, end int) (SQLExpr, error) {
 			case OpNeg:
 				push(SQLExpr{Val: "(-" + d.Num(x) + ")", Err: x.Err, Kind: KindNumber, Sure: true})
 			case OpPercent:
+				if f, ok := d.(floatSpeller); ok {
+					push(SQLExpr{Val: "(" + f.FloatOp(OpDiv, d.Num(x), d.NumberLit(100)) + ")", Err: x.Err, Kind: KindNumber, Sure: true})
+					break
+				}
 				push(SQLExpr{Val: "(" + d.Num(x) + " / " + d.NumberLit(100) + ")", Err: x.Err, Kind: KindNumber, Sure: true})
 			default:
 				push(SQLExpr{Val: "(NOT " + d.Cond(x) + ")", Err: x.Err, Kind: KindBool, Sure: true})
@@ -603,6 +662,17 @@ func arith(d Dialect, op Op, a, b SQLExpr) SQLExpr {
 	x, y := d.Num(a), d.Num(b)
 	zero := d.NumberLit(0)
 	var val, own string
+	if f, ok := d.(floatSpeller); ok && op != OpPow {
+		// The dialect writes the operation, where the engine's own
+		// operator may fail the statement.
+		val = "(" + f.FloatOp(op, x, y) + ")"
+		own = notFiniteErr(d, val)
+		if op == OpDiv || op == OpDivStrict {
+			val = "(CASE WHEN " + y + " = " + zero + " THEN NULL ELSE " + f.FloatOp(op, x, y) + " END)"
+			own = coalesceErr("CASE WHEN "+y+" = "+zero+" THEN 'div_by_zero' END", notFiniteErr(d, val))
+		}
+		return SQLExpr{Val: val, Err: coalesceErr(a.Err, b.Err, own), Kind: KindNumber, Sure: op != OpDiv && op != OpDivStrict}
+	}
 	switch op {
 	case OpAdd:
 		val = "(" + x + " + " + y + ")"
@@ -753,6 +823,9 @@ func comparison(d Dialect, op Op, a, b SQLExpr) SQLExpr {
 	switch k {
 	case KindText, KindRef, KindJSON:
 		x, y = d.Text(a), d.Text(b)
+		if o, ok := d.(textOrderer); ok && op != OpEq && op != OpNe {
+			x, y = o.OrderText(x), o.OrderText(y)
+		}
 	case KindBool:
 		x, y = d.Cond(a), d.Cond(b)
 	case KindDecimal, KindMoney:
@@ -778,6 +851,13 @@ func joined(d Dialect, then, els SQLExpr) (SQLExpr, SQLExpr, Kind, int8, string,
 		kind = els.Kind
 	}
 	scale := max(then.Scale, els.Scale)
+	if b, ok := d.(blankTyper); ok && kind != KindNull {
+		for _, e := range []*SQLExpr{&then, &els} {
+			if e.Kind == KindNull {
+				e.Val = b.TypedBlank(kind)
+			}
+		}
+	}
 	var res [2]string
 	if kind.IsExact() {
 		for i, e := range []*SQLExpr{&then, &els} {
@@ -1332,7 +1412,11 @@ func (r *rowsSQL) aggregate() (aggregateSQL, error) {
 		} else {
 			sum, e := d.NumberRowSum(num, r.order)
 			n := "COUNT(" + num + ")"
-			a.val = "(CASE WHEN " + n + " = 0 THEN NULL ELSE (" + sum + ") / " + n + " END)"
+			mean := "(" + sum + ") / " + n
+			if f, ok := d.(floatSpeller); ok {
+				mean = f.FloatOp(OpDiv, sum, n)
+			}
+			a.val = "(CASE WHEN " + n + " = 0 THEN NULL ELSE " + mean + " END)"
 			a.errs = append(a.errs, e)
 		}
 	case "MEDIAN":
@@ -1364,6 +1448,10 @@ func (r *rowsSQL) aggregate() (aggregateSQL, error) {
 			// Each half is taken before they are added, as the fold does:
 			// the middle of two numbers is a number, and nothing fails.
 			a.val = "MIN(m.v) / 2 + MAX(m.v) / 2"
+			if f, ok := d.(floatSpeller); ok {
+				two := d.NumberLit(2)
+				a.val = f.FloatOp(OpAdd, f.FloatOp(OpDiv, "MIN(m.v)", two), f.FloatOp(OpDiv, "MAX(m.v)", two))
+			}
 		}
 	case "COUNTUNIQUE":
 		// The values that differ as = compares them: an exact value by its
@@ -1419,9 +1507,12 @@ func (r *rowsSQL) aggregate() (aggregateSQL, error) {
 			}
 			a.errs = append(a.errs, "CASE WHEN COUNT(*) = 0 THEN 'out_of_range' END")
 		}
-		if exact {
+		switch o, ok := d.(rowTaker); {
+		case exact:
 			a.val = d.Narrow("MIN(m.v)")
-		} else {
+		case ok:
+			a.val = o.OneRow("m.v", x.Kind)
+		default:
 			a.val = "MIN(m.v)"
 		}
 	case "JOIN":

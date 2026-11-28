@@ -43,7 +43,7 @@ These live in their own Go modules so their weight and cgo never reach the core.
 | Module | Used by | License | Why separate |
 |---|---|---|---|
 | `github.com/duckdb/duckdb-go/v2` with `go.duckdb.org/libduckdb/<os>-<arch>` | `analytics/` | MIT | Needs cgo and a C compiler; a minimal binary linking DuckDB 2.0.0 is 75 MB. Prebuilt libraries for five platforms; `duckdb_use_lib` links a system library instead. In use since Phase 1 for the DuckDB conformance runner (ADR-0020) and since Phase 2 for the DuckDB target of the store benchmarks (ADR-0017). Since Phase 8 it is the analytical engine of the program `fadodb` (`analytics/`, `analytics/cmd/fadodb`; ADR-0089), which keeps its copy of the documents in it. The library carries core_functions, icu, json and parquet, linked in; every connection to the copy turns off DuckDB's fetching of an extension from the network and its loading of one from the machine, so nothing else is fetched or loaded. |
-| `github.com/jackc/pgx/v5` | `postgres/` | MIT | Driver and its tree are only needed by the enterprise backend. |
+| `github.com/jackc/pgx/v5` | `postgres/` | MIT | The driver for Postgres, in pure Go, and its tree are needed only by the Postgres store (ADR-0104). In use since Phase 10 for the conformance runner on Postgres; the store follows. No program links it yet, so `THIRD_PARTY_NOTICES.md` does not name it. Dependabot watches it: it speaks to a server over a network. |
 
 The libraries of C, `cabi/` (ADR-0101, ADR-0102), are a module of their
 own because they need cgo. `libfadodb-core` adds no dependency to those

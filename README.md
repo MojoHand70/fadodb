@@ -16,7 +16,11 @@ Website: [fadodb.org](https://fadodb.org). The manual starts at
 > (ADR-0103), built before the Postgres store and on main since that
 > day: every event is sealed, chained to the one before, and `fadodb
 > check` finds a change made to the file behind the engine's back
-> ([checking](docs/manual/running-it.md#checking)). Every budget of Phase 8 holds; one of Phase 5, a read rule that reads the
+> ([checking](docs/manual/running-it.md#checking)). Its second step,
+> formulas on Postgres, is built: every case of the conformance suite
+> gives on Postgres 17 and later what it gives everywhere else
+> (ADR-0104). The Postgres store itself is not there yet: a database is
+> an SQLite file. Every budget of Phase 8 holds; one of Phase 5, a read rule that reads the
 > row in an indexed filter, does not, and is open
 > ([docs/perf/v0.8.0.md](docs/perf/v0.8.0.md)). With Phase 9 a program
 > in any language holds a database in its own process through the

@@ -4,6 +4,12 @@ updates:
     directory: /
     schedule:
       interval: weekly
+  # The driver of the Postgres module (ADR-0104): it speaks to a server
+  # over a network, so its fixes are taken as they come.
+  - package-ecosystem: gomod
+    directory: /postgres
+    schedule:
+      interval: weekly
   - package-ecosystem: github-actions
     directory: /
     schedule:

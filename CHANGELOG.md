@@ -8,6 +8,22 @@ All notable changes to FadoDB are recorded here. The format follows
 
 ### Added
 
+- Formulas on Postgres (ADR-0104, Proposed), the second step of Phase
+  10. `formula.Postgres` is the third dialect of the SQL generator, for
+  Postgres 17 and later: every evaluation case of the conformance suite
+  gives on Postgres what it gives in the Go VM, on SQLite and on
+  DuckDB, and no statement fails where the VM gives an error code,
+  though Postgres raises where the others give an infinity or a NULL.
+  Text is ordered by its code points whatever the database was created
+  with. The module `postgres/`, a Go module of its own with the pgx
+  driver, holds the driver that spells a statement's parameters for
+  Postgres, `?` and `@name` as `$1`, `$2`, and runs the suite and
+  generated formulas on Postgres 17, 18 and 19 on GitHub (`make
+  postgres`, with `FADODB_POSTGRES` naming a server). The differences
+  from the VM that remain are listed in `conformance/README.md`. The
+  Postgres store itself is not there yet: a database is an SQLite
+  file, and no program links the driver.
+
 - The seal of the log (ADR-0103, Proposed), the first step of Phase
   10. Every event carries a seal: a SHA-256 of the seal of the event
   before it and of what the event wrote, its version of the document,

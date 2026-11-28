@@ -9,7 +9,8 @@ its store on SQLite, the statechart, rules and actions with the outbox,
 access, the command set with its HTTP door, the server and the door for
 agents, the browser VM, the analytical engine, which keeps a copy of
 the documents in DuckDB (ADR-0089), and the library of C (ADR-0101).
-The Postgres store is design (Phase 10). Where a design below was
+The Postgres store is design (Phase 10, ADR-0104); of it, formulas on
+Postgres are built. Where a design below was
 dropped or replaced, its section says what is there instead, with the
 record: the native and attached tables in DuckDB (ADR-0094), the lite
 build with an analytical engine on SQLite, the mining views. See
@@ -1009,8 +1010,8 @@ that runs defaults and the auto recalculation over the stored row and
 writes the current, history and child rows and the event. The
 composite values, arrays and rows, and the query functions came with
 the document model of Phase 2 and the phases after it, and the browser
-VM with Phase 7 (ADR-0029). Not yet: whole-object operations, and the
-Postgres dialect (Phase 10). The pipeline and the value struct
+VM with Phase 7 (ADR-0029), and the Postgres dialect with Phase 10
+(ADR-0104). Not yet: whole-object operations. The pipeline and the value struct
 below are the design: today's `Value` holds a kind, a scale, a number
 and a text, and an array is a column-wise value beside it, which the
 functions over a list fold (ADR-0081).
@@ -1158,6 +1159,13 @@ GitHub (ADR-0089). See ADR-0002 for the measured cost of the client.
 Same engine, a third dialect, driver `pgx` through `database/sql`, kept in a
 separate Go module. Row-level security is still FadoDB's predicate injection,
 not Postgres RLS, so behaviour is identical across backends.
+
+Built of it (ADR-0104): the dialect, `formula.Postgres`, which every
+case of the conformance suite passes on Postgres 17 and later, and the
+module `postgres/` with the driver that spells a statement's parameters
+for Postgres. The store on Postgres is planned: the same store, with
+what differs between the two databases asked in one place; a database
+as one schema; a commit sent in one trip.
 
 ### Class versions and migrations
 
@@ -1562,7 +1570,7 @@ fadodb/
   api/                   openapi.json, json schemas for class and wire documents
   analytics/             the DuckDB module: the analytical engine, its copy of the documents and the feed (ADR-0089)
   analytics/cmd/fadodb/  the program fadodb: internal/cli with DuckDB linked in
-  postgres/              postgres dialect and driver (separate module), Phase 10: not there yet
+  postgres/              the Postgres module: the driver over pgx and the conformance suite on Postgres (ADR-0104); the store on Postgres is planned
   cabi/                  the library of C: c-shared build and fadodb.h, libfadodb-core and, with the tag duckdb, libfadodb; a module of its own
   web/vm/                TypeScript VM, zero dependencies, built to one plain JavaScript file
   clients/py/            the Python client, over HTTP and through the library of C
@@ -1571,8 +1579,8 @@ fadodb/
   docs/                  this document, adr/, perf/, dependencies.md, function reference
 ```
 
-Separate Go modules for `analytics/`, `cabi/` and, with Phase 10,
-`postgres/` keep cgo and drivers out of the core `go.mod`. There is no
+Separate Go modules for `analytics/`, `cabi/` and `postgres/` keep cgo
+and drivers out of the core `go.mod`. There is no
 reference frontend in the repository: the screen is the face's, and a
 face lives apart from the engine (ADR-0069).
 

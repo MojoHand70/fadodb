@@ -77,7 +77,7 @@ A program of C is compiled with the header and linked to the library:
 cc -I bin -o books books.c -L bin -lfadodb-core
 ```
 
-Every release carries the library for Linux (Intel and ARM), macOS
+From v0.9.0 on, every release carries the library for Linux (Intel and ARM), macOS
 (Apple and Intel) and Windows (Intel), as
 `fadodb-core-library_<version>_<os>_<arch>.tar.gz` (`.zip` on Windows),
 with `fadodb.h`. `scripts/library.sh build`, `try` and `pack` do on one

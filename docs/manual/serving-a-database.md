@@ -545,7 +545,7 @@ customer 12.1 to 12.3 ms, and the flowchart 13.3 to 24.6 ms.
 - **The same in both at any size**: reading a document, a commit, and
   a list or a count that an index narrows.
 
-Both are in a release, from the one after v0.7.0 on; the
+Both are in a release, from v0.8.0 on; the
 [README](../../README.md#install) says for which systems. From the
 repository they are built with:
 
@@ -582,9 +582,9 @@ bin/fadodb serve acme.fado
   store.
 
 The image for containers holds `fadodb`, and a second one
-`fadodb-core` ([In a container](in-a-container.md#the-image)). No
-release has been made with either name yet: until the one after
-v0.7.0 the programs and the images are built from the repository.
+`fadodb-core` ([In a container](in-a-container.md#the-image)). Both are
+in a release from v0.8.0 on; the releases up to v0.7.0 have one
+program and one image, without the engine, under the name `fadodb`.
 
 ## What it says when it starts
 

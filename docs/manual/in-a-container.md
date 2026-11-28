@@ -19,12 +19,12 @@ What is not here yet is listed at the end.
 A release publishes the image at `ghcr.io/mojohand70/fadodb`, for
 `linux/amd64` and `linux/arm64`, under its version and under no other
 name: there is no `latest`, so that a server never changes its engine
-by itself. The first was v0.6.0, and the last is v0.7.0:
+by itself. The first was v0.6.0, and the last is v0.8.0:
 
 <!-- pulling it -->
 ```sh
-docker pull ghcr.io/mojohand70/fadodb:0.7.0
-docker tag ghcr.io/mojohand70/fadodb:0.7.0 fadodb
+docker pull ghcr.io/mojohand70/fadodb:0.8.0
+docker tag ghcr.io/mojohand70/fadodb:0.8.0 fadodb
 ```
 
 The second command gives the image the short name `fadodb`, which the
@@ -32,7 +32,7 @@ commands of this chapter use.
 
 FadoDB is two programs from one code
 ([the two programs](serving-a-database.md#a-server-with-the-analytical-engine)),
-and from the release after v0.7.0 on there is an image of each:
+and from v0.8.0 on there is an image of each:
 
 | The image | The program in it |
 |---|---|

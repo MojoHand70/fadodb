@@ -10,10 +10,9 @@ Website: [fadodb.org](https://fadodb.org). The manual starts at
 [how it works](docs/manual/how-it-works.md) and
 [your first application](docs/manual/first-application.md).
 
-> **Status: Phase 7, the browser VM and the reference frontend, is
-> done and released as v0.7.0. Phase 8, the analytical engine, started
-> on 2026-11-25, and Phase 9, embedding, begun beside it on 2026-11-27,
-> are built (2026-11-28) and are released with the next tag. Every
+> **Status: Phase 8, the analytical engine, is done and released as
+> v0.8.0 (2026-11-28). Phase 9, embedding, begun beside it on
+> 2026-11-27, is built (2026-11-28) and is released with v0.9.0. Every
 > budget of Phase 8 holds; one of Phase 5, a read rule that reads the
 > row in an indexed filter, does not, and is open
 > ([docs/perf/v0.8.0.md](docs/perf/v0.8.0.md)). With Phase 9 a program
@@ -282,14 +281,14 @@ A release has archives of both programs, with one `checksums.txt`, on the
 
 Unpack the one for your system and put the program on your path.
 
-- **This holds from the next release on.** The releases up to v0.7.0
+- **This holds from v0.8.0 on.** The releases up to v0.7.0
   have one program, named `fadodb`: it is the one without the engine,
   which is `fadodb-core` now.
 - **`fadodb` for Linux needs Debian 12, Ubuntu 22.04 or a Linux as
   new.** On an older one, on the Red Hat 9 family and on Alpine, take
   `fadodb-core`, which needs nothing from the system.
-- **With Go 1.26 or newer `fadodb-core` is built instead**, from the
-  next release on with
+- **With Go 1.26 or newer `fadodb-core` is built instead**, from
+  v0.8.0 on with
   `go install github.com/MojoHand70/fadodb/cmd/fadodb-core@latest`.
   `fadodb` is not installed that way: it is built in a clone of the
   repository, with `make full` and a C compiler.

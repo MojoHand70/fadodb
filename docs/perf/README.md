@@ -23,7 +23,8 @@ Published per tagged release, with the budgets from
 - [v0.9.0](v0.9.0.md): embedding, Phase 9: one command on each way to a
   database, from the Go API to Python over HTTP; opening and loading;
   an action the program carries out; the sizes of the libraries. The
-  rows of the earlier phases are run again on the build that is tagged.
+  rows of the earlier phases are v0.8.0's: the code is the same but for
+  the name of a passkey.
 
 The end-to-end suite is the `bench` package: scenarios written against
 database/sql so that the same one runs on every storage engine. Each

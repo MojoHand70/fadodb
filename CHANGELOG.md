@@ -6,6 +6,15 @@ All notable changes to FadoDB are recorded here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- The bench gate runs `BenchmarkTransitionMany` and `BenchmarkFollow`
+  for a fixed 20 rounds in both trees (ADR-0030, amended 2026-11-28).
+  Their database grows with every round, so their allocations per
+  operation followed the number of rounds, and a faster tree, given
+  more rounds, was refused for allocations it did not make (#264).
+  `BENCH_ROUNDS` and `BENCH_ROUNDS_PATTERN` set them.
+
 ## [0.9.0] - 2026-11-28
 
 Phase 9, embedding, started on 2026-11-27, and its steps were all

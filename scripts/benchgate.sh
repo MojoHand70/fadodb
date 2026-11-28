@@ -36,6 +36,10 @@
 # for a release's perf page. BENCH_PATTERN overrides the set;
 # BENCH_PATTERN=. runs every benchmark of BENCH_PACKAGES.
 #
+# A benchmark whose database grows with every round runs a fixed number
+# of rounds, the same in both trees (ADR-0030, amended 2026-11-28): see
+# ROUNDS_PATTERN below.
+#
 # The gate has two forms (ADR-0012, since 2026-11-15). The full one is
 # what this script does when it is told nothing, and what a change to a
 # hot path is measured with on the machine of whoever makes it, before
@@ -78,6 +82,23 @@ PLACEMENTS="${BENCH_PLACEMENTS:-5}"
 BENCHTIME="${BENCH_BENCHTIME:-}"
 PATTERN="${BENCH_PATTERN:-^Benchmark(VM_Arithmetic5|VM_Exact5|Recalculate|Recalculate50|LookupIndexed|LookupKeyedStatement|LookupClass|Transition|ExecTransition|DoorTransition|WhoIsCalling|TransitionAccess|TransitionMany|Transitions10|GuardLoop|Project|WriteCheck|Rules|Outbox|Timer|LifeEditors|TransitionKeyed|Receive|LiveList|LiveFigure|TransitionBefore|QueryLook|DraftsOfOneOrder|ReceiveLines|RequestLines|Follow)$}"
 PACKAGES="${BENCH_PACKAGES:-./internal/formula/ ./internal/store/}"
+# A benchmark whose database grows with every round allocates a little
+# more or less in a later round than in an early one, so its allocations
+# per operation follow the number of rounds the go tool chooses for the
+# time it is given, and a faster tree runs more rounds: TransitionMany
+# moves the same 1,000 documents in every round and Follow brings them,
+# each a version and an event more. On #264 a driver 10% faster failed
+# the gate by 20 allocations in 146,800 that equal rounds did not show
+# (146,925 against 146,924 at 60 rounds). Those benchmarks run
+# BENCH_ROUNDS rounds in both trees, in a call of their own that the main
+# call skips. When BENCH_PATTERN is given they run in it as any other,
+# unless BENCH_ROUNDS_PATTERN is given too.
+if [ -n "${BENCH_PATTERN:-}" ]; then
+  ROUNDS_PATTERN="${BENCH_ROUNDS_PATTERN:-}"
+else
+  ROUNDS_PATTERN="${BENCH_ROUNDS_PATTERN:-^Benchmark(TransitionMany|Follow)$}"
+fi
+ROUNDS="${BENCH_ROUNDS:-20x}"
 
 # evaluate_csv prints every regression found in a benchstat CSV and returns 1
 # when there is at least one. It judges time, bytes and allocations for
@@ -268,10 +289,16 @@ cleanup() {
 }
 trap cleanup EXIT
 
-# One round of the gate's benchmarks in the tree at $1.
+# One round of the gate's benchmarks in the tree at $1: those of
+# ROUNDS_PATTERN at their fixed number of rounds, the others for the
+# time BENCH_BENCHTIME gives.
 run_bench() {
   # shellcheck disable=SC2086
-  (cd "$1" && go test -run '^$' -bench "$PATTERN" -benchmem -count 1 ${BENCHTIME:+-benchtime $BENCHTIME} $PACKAGES 2>&1) || true
+  (cd "$1" && go test -run '^$' -bench "$PATTERN" ${ROUNDS_PATTERN:+-skip "$ROUNDS_PATTERN"} -benchmem -count 1 ${BENCHTIME:+-benchtime $BENCHTIME} $PACKAGES 2>&1) || true
+  if [ -n "$ROUNDS_PATTERN" ]; then
+    # shellcheck disable=SC2086
+    (cd "$1" && go test -run '^$' -bench "$ROUNDS_PATTERN" -benchmem -count 1 -benchtime "$ROUNDS" $PACKAGES 2>&1) || true
+  fi
 }
 
 if find . -name a_layoutpad.go -not -path './.git/*' | grep -q .; then
@@ -361,7 +388,7 @@ benchstat "$work/old.txt" "$work/new.txt" 2>/dev/null || true
 benchstat -format csv "$work/old.txt" "$work/new.txt" > "$work/cmp.csv" 2>/dev/null || true
 
 if evaluate_csv "$work/cmp.csv"; then
-  echo "benchgate: ok (base $BASE, $PLACEMENTS placements, $COUNT rounds each${BENCHTIME:+ of $BENCHTIME}, benchmarks $PATTERN; limits sec/op +${TIME_PCT}%, B/op +${BYTES_PCT}%, allocs/op +0)"
+  echo "benchgate: ok (base $BASE, $PLACEMENTS placements, $COUNT rounds each${BENCHTIME:+ of $BENCHTIME}, benchmarks $PATTERN${ROUNDS_PATTERN:+, $ROUNDS_PATTERN at $ROUNDS}; limits sec/op +${TIME_PCT}%, B/op +${BYTES_PCT}%, allocs/op +0)"
 else
   echo "benchgate: failed, see the regressions above"
   exit 1

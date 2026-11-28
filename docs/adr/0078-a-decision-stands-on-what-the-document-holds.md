@@ -1,6 +1,6 @@
 # ADR-0078: A decision stands on what the document holds: the version a command saw, who may bring a value again, and what a condition saw
 
-- Status: Accepted; amends ADR-0015 (the order inside a commit; a trigger before a condition), ADR-0026 (the event keeps the version a command saw), ADR-0028 and ADR-0041 (the write right of a triggered variable), ADR-0040 (one more refusal; what a guard may read), ADR-0043 (what a `Refresh` asks; a triggered variable that fails before a condition), ADR-0046 (item 6: where a lookup may be written), ADR-0048 (`versions` in `transition_many`), ADR-0055 (a sixth member that means the same), ADR-0076 (the list that is kept); amended by ADR-0099 (Proposed: "a history of a table", left out here, is built: every table keeps the history of its rows)
+- Status: Accepted; amends ADR-0015 (the order inside a commit; a trigger before a condition), ADR-0026 (the event keeps the version a command saw), ADR-0028 and ADR-0041 (the write right of a triggered variable), ADR-0040 (one more refusal; what a guard may read), ADR-0043 (what a `Refresh` asks; a triggered variable that fails before a condition), ADR-0046 (item 6: where a lookup may be written), ADR-0048 (`versions` in `transition_many`), ADR-0055 (a sixth member that means the same), ADR-0076 (the list that is kept); amended by ADR-0099 ("a history of a table", left out here, is built: every table keeps the history of its rows)
 - Date: 2026-11-21
 
 ## Context

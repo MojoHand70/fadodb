@@ -1,6 +1,6 @@
 # ADR-0067: The log of reads: what a content administrator sees past a rule, and every SQL statement
 
-- Status: Accepted; amends ADR-0052 (question G is answered: a content administrator's read past a rule needs a reason and is recorded, and so is an import into a table past its write rule), ADR-0033 (a file opened by its hash alone needs a reason), ADR-0038 (every SQL statement is recorded), ADR-0051 (a table's rules: the content administrator's pass needs a reason), ADR-0058 (what a content administrator hears without a reason), ADR-0055 (one command joins the table, and the reading commands take `reason`); amended by ADR-0099 (Proposed: a table keeps the history of its rows, which says who changed a row; the log of reads still keeps a write or a read past a rule, and `row_history` past one)
+- Status: Accepted; amends ADR-0052 (question G is answered: a content administrator's read past a rule needs a reason and is recorded, and so is an import into a table past its write rule), ADR-0033 (a file opened by its hash alone needs a reason), ADR-0038 (every SQL statement is recorded), ADR-0051 (a table's rules: the content administrator's pass needs a reason), ADR-0058 (what a content administrator hears without a reason), ADR-0055 (one command joins the table, and the reading commands take `reason`); amended by ADR-0099 (a table keeps the history of its rows, which says who changed a row; the log of reads still keeps a write or a read past a rule, and `row_history` past one)
 - Date: 2026-11-17
 
 ## Context

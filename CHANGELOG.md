@@ -103,6 +103,17 @@ alone, by the owner's word of 2026-11-28. Phase 9's measurements are
   `fadodb-core-library_…`, and the wheel of the Python package for a
   system now carries `libfadodb` and DuckDB's library, about 35 MB.
 
+### Changed
+
+- A synced passkey whose password manager is not known, because the
+  browser does not say (as Safari does not) or the table of makers does
+  not hold it, is named after the device with ", synced" after it:
+  "Olga's iPhone, synced", by the owner's ruling (ADR-0088, item 28).
+  In v0.8.0 it kept the device's name alone. The account page then says
+  "synced" once, in the name, and not again after the dates. A passkey
+  that stays on its device keeps the device's name alone, and passkeys
+  made before keep their names.
+
 ## [0.8.0] - 2026-11-28
 
 Phase 8, the analytical engine, started on 2026-11-25, and its steps
@@ -676,9 +687,7 @@ released with v0.9.0.
   invitation does the same on any device, and the invitation is used.
   A synced passkey is named after the password manager that keeps it,
   "Google Password Manager" or "1Password", by the AAGUID the browser
-  says, from a table of 67 makers the engine keeps; one whose manager
-  is not known keeps the device's name with ", synced" after it,
-  "Olga's iPhone, synced".
+  says, from a table of 67 makers the engine keeps.
 
 - People sign in with a passkey, invited by a link (ADR-0088, its
   second step): their fingerprint, their face or their device's PIN,

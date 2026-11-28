@@ -17,6 +17,9 @@ All notable changes to FadoDB are recorded here. The format follows
 Phase 8 started on 2026-11-25, and Phase 9 on 2026-11-27. Phase 9's
 steps were all merged on 2026-11-28, and it is released with the next
 tag; its measurements are [docs/perf/v0.9.0.md](docs/perf/v0.9.0.md).
+Phase 8's are [docs/perf/v0.8.0.md](docs/perf/v0.8.0.md): every
+budget of its records holds; one of Phase 5, a read rule that reads
+the row in an indexed filter, does not, and is open.
 
 ### Added
 

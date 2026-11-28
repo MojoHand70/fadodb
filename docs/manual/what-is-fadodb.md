@@ -123,6 +123,7 @@ is v0.9.0, Phase 9's:
 | the engine's own indexes, a decision that stands on what the document holds, values that follow a table or the clock, comments, where a value comes from, the history of a table's rows, signing in with a passkey (Phase 8) | |
 | an analytical engine for large reports: the program `fadodb` answers the questions that read a whole class from a copy in DuckDB ([opening a database](opening-a-database.md#an-analytical-engine)) (Phase 8) | |
 | the engine called from other languages than Go, through the library of C, and Python ([in a program of another language](other-languages.md)) (Phase 9) | |
+| the seal of the log: `fadodb check` finds a change made to the file behind the engine's back ([checking](running-it.md#checking)) (Phase 10, after v0.9.0) | the latest seal signed with a key outside the file |
 
 The [roadmap](../../ROADMAP.md) has the phases, the
 [changelog](../../CHANGELOG.md) what each release changed, and

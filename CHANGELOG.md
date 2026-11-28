@@ -14,9 +14,10 @@ All notable changes to FadoDB are recorded here. The format follows
   that builds faces, not the engine's. ADR-0060 says so, and the skills
   are five hats again.
 
-Phase 8 started on 2026-11-25, and Phase 9 on 2026-11-27. Phase 9's
-steps were all merged on 2026-11-28, and it is released with the next
-tag; its measurements are [docs/perf/v0.9.0.md](docs/perf/v0.9.0.md).
+Phase 8 started on 2026-11-25, and Phase 9 on 2026-11-27. The steps
+of both were all merged on 2026-11-28, and they are released with the
+next tag. Phase 9's measurements are
+[docs/perf/v0.9.0.md](docs/perf/v0.9.0.md).
 Phase 8's are [docs/perf/v0.8.0.md](docs/perf/v0.8.0.md): every
 budget of its records holds; one of Phase 5, a read rule that reads
 the row in an indexed filter, does not, and is open.
@@ -402,7 +403,7 @@ the row in an indexed filter, does not, and is open.
   answer for the same reader. The copy is brought up to the database
   before it answers, so a move made a moment ago is in the flow. When
   the copy does not answer, the store does. A program without the
-  engine, and the program `fadodb`, answer as before.
+  engine, and the program `fadodb-core`, answer as before.
 - The analytical engine takes no extension from outside the program
   (ADR-0089). DuckDB by itself would fetch from the network an
   extension a statement needs and the program lacks, and load one
@@ -410,7 +411,7 @@ the row in an indexed filter, does not, and is open.
   both off, and a test holds it on GitHub. The program uses only what
   its library carries: core_functions, icu, json and parquet.
 - The server program can be built with the analytical engine (ADR-0089,
-  the first half of its step 6). `make full` builds `bin/fadodb-full`
+  the first half of its step 6). `make full` builds `bin/fadodb`
   in the module `analytics`: the program `fadodb`, from the same code,
   with DuckDB linked in. A database it serves keeps a copy of its
   documents beside its own file and answers the flow of a class from
@@ -419,9 +420,9 @@ the row in an indexed filter, does not, and is open.
   program built without the engine refuses settings that name it.
   `fadodb version` says which program it is. The code of the program
   moved from `cmd/fadodb` to the package `internal/cli`, which both
-  programs are built from; `fadodb` itself is as it was, in pure Go.
-  Not built: the program with the engine for each operating system,
-  released, and an image for containers with it.
+  programs are built from; `fadodb-core` is as it was, in pure Go.
+  The program with the engine for each operating system, released, and
+  an image for containers with it came after it (under Changed).
 - The first step of the analytical engine: the copy and its feed
   (ADR-0089, proposed; ADR-0017). A program built with the module
   `analytics` gives the database DuckDB as its analytical engine, with
@@ -465,8 +466,8 @@ the row in an indexed filter, does not, and is open.
   is sorted. With every index in place, the drafts of one order among
   1,000,000 invoices, which the pointer and the state both fit, take
   0.32 ms (`BenchmarkDraftsOfOneOrder`, the test the record sets).
-  Not built: an index for the key of a `LOOKUP` that is no pointer,
-  which still wants `"index": true`.
+  An index for the key of a `LOOKUP` that is no pointer came after it
+  (below).
 - A list in a message becomes the lines of a document (ADR-0085, item
   1, the first of its three steps). In the `values` of an inlet a
   `rows` variable takes a repeat in place of a formula: `each`, the
@@ -493,8 +494,8 @@ the row in an indexed filter, does not, and is open.
   variable has every column the parameter has, of the same type.
   `preview_action` shows the whole body, every line, with the secrets
   masked. Building the request for a hundred lines takes 0.14 ms. Not
-  built: a list in an answer (item 3), and a list that is worked out
-  when it is read given to an action.
+  built: a list that is worked out when it is read given to an action.
+  A list in an answer (item 3) came after it (below).
 - A list in an answer becomes the lines of a document (ADR-0085, item
   3, the last of its three steps). A value an action returns may be of
   the type `rows`, with a `schema` of its columns, and its `result` is
@@ -811,6 +812,11 @@ the row in an indexed filter, does not, and is open.
   not worked out again when a `reset`, by a command or by a rule,
   emptied the lines: the document kept the old figure beside no lines.
   It is worked out again now. In v0.7.0 too.
+- The skills and the manual say what Phase 8 built. Pages that still
+  called its work not built or to come, named the two programs by
+  their earlier names, or gave figures from before
+  [docs/perf/v0.8.0.md](docs/perf/v0.8.0.md) now say what works, and
+  the glossary has the words of the phase.
 
 ### Changed
 
@@ -851,8 +857,7 @@ the row in an indexed filter, does not, and is open.
   arm64, under one `checksums.txt`. A release is made only when every
   `fadodb` is there. The Linux `fadodb` runs on Debian 12, Ubuntu
   22.04 and what is as new. Every pull request builds and tries
-  `fadodb` on the five systems. The image for containers still holds
-  the program without the engine.
+  `fadodb` on the five systems.
 
 - A message is read faster: the formulas of an inlet read one body,
   and the engine now parses it once and not once for each formula. A

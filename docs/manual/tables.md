@@ -804,7 +804,6 @@ import.
 - A new key for a table that holds rows, or that a class reads.
 - Renaming a column that holds values: a column removed and another
   added do not carry its values.
-- A record of who removed a table.
 - The last row in the order of the key, and `MIN` and `MAX` of days.
   So "the newest rate on or before a day" has no short form today: a
   table of rates needs a row for every day that is asked for.

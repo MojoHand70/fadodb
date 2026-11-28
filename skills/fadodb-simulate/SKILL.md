@@ -387,8 +387,9 @@ result and discards the file or adopts the class.
 | what the timers of one document would do by a chosen moment: `Preview` of nothing with `At(t)` shows the chain a commit at that moment would fire, a reminder once, and `Transitions` the moment each timer fires | shipped with Phase 4 |
 | a commit at a chosen moment | not designed: a commit runs at the database's clock |
 | timers that fire by themselves in a scratch database, under a clock the simulation moves: open the copy with `Options.Now` and `Outbox.Manual`, move the clock, and `Drain` runs every timer that has come, as the worker would | shipped with Phase 4 |
-| a variable on a schedule, `schedule:daily at 03:00` | shipped after v0.7.0 (ADR-0093, proposed): in a copy of the file opened with `Options.Now` set and the worker switched off, move the clock past the moment and call `Drain`: the schedule runs then, once, however many moments were passed |
-| a rule on a schedule | designed, not built |
+| a variable on a schedule, `schedule:daily at 03:00` | shipped with Phase 8 (ADR-0093, proposed): in a copy of the file opened with `Options.Now` set and the worker switched off, move the clock past the moment and call `Drain`: the schedule runs then, once, however many moments were passed |
+| a variable that follows a table, `"on": ["table:Rates"]` | shipped with Phase 8 (ADR-0091, proposed): a change of the table's rows only queues a row of the outbox, the action `follow`; with `Outbox.Manual` the documents already there keep the old value until `Drain` runs that row, as for a schedule, and only a commit that brings a document into a state where the variable follows takes the table's value at once. With the worker on it is not instant either: the worker brings the documents after the change, a thousand in a transaction, so read them after it has run |
+| a rule on a schedule | not built: refused with `not_supported` (ADR-0093 leaves it out). A variable that follows the clock, `schedule:`, with a `values_change` rule on it covers a value that changes |
 | replaying an event log into a database | not designed |
 
 ## Procedure, in outline

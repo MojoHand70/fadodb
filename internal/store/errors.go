@@ -69,7 +69,9 @@ const (
 	// CodeUnknownVariable: a value names a variable or a field the class
 	// does not have.
 	CodeUnknownVariable = "unknown_variable"
-	// CodeReadOnly: a value is given for a computed variable.
+	// CodeReadOnly: a value is given for a computed variable, or a
+	// caller imports rows into a system table, whose rows the engine
+	// keeps, deletes its rows or removes it (ADR-0092).
 	CodeReadOnly = "read_only"
 	// CodeRequired: a required input is blank.
 	CodeRequired = "required"

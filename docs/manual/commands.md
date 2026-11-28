@@ -11,11 +11,14 @@ One command is answered by more than one object: [`subscribe`](#subscribe)
 opens the stream of changes, and its answer is a reply that stays open
 and says each event as it is written.
 
-A command reaches a database two ways today. A Go program runs one with
-the call `Exec`. And a Go program that has opened a database can let it
+A command reaches a database three ways today. A Go program runs one with
+the call `Exec`. A Go program that has opened a database can let it
 answer commands [over HTTP](#over-http), through the package
 `fado/httpdoor`. The program `fadodb serve` does that for a database with
 users and keys of its own: [Serving a database](serving-a-database.md).
+And a program in any language that can call C runs one with `fado_exec`
+of the library of C, in its own process, with the same object and the
+same answer: [In a program of another language](other-languages.md).
 
 For a program in another language the same list is in
 [api/openapi.json](../../api/openapi.json), an OpenAPI document written

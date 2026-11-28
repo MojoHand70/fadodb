@@ -5,13 +5,14 @@ pass. This chapter says how a class speaks of time, how the engine
 moves a document when its time comes, and how to look at a database
 as it will be on another day.
 
-## Three ways a class speaks of time
+## Four ways a class speaks of time
 
 | A class can | Written as | Where |
 |---|---|---|
 | read the clock | `TODAY()`, `NOW()` | in a default, a guard, a line of `access`, a rule |
 | read the life of the document | `ENTEREDAT()`, `DAYSIN("sent")`, `FIRSTENTERED("sent")` and the others | the same places |
 | give a transition its time | `after`, `at` | on the transition |
+| work a kept value out again at moments of the clock | `"on": ["schedule:daily at 03:00"]` | on a triggered variable; see [Following the clock](../triggered-variables.md#following-the-clock) |
 
 A computed variable reads neither the clock nor the life of the
 document. Its value must stay true until an input changes, and a value
@@ -159,9 +160,17 @@ transition with a time, here `expire`.
 
 ## What a day is
 
-A day is 24 hours of UTC, and a date is a calendar day in UTC. The
-engine knows no time zones and no working days today. A deadline in
-local time is a `datetime` that your program works out.
+A day is 24 hours of UTC, and a date is a calendar day in UTC:
+`TODAY()` and `NOW()` are in UTC, and a date in `at` is the first
+moment of its day in UTC. A database has a time zone as well, such as
+`Europe/Warsaw`, which a Go program gives in `Options.TimeZone` and a
+server in the member `timezone` of its settings; the database keeps
+it, and is in UTC when it was never given one. Two things go by it:
+the moments of a [schedule](../triggered-variables.md#following-the-clock),
+and the days, weeks and months of
+[`throughput`](../guides/see-where-documents-wait.md#whether-the-pile-grows).
+The engine knows no working days today. A deadline in local time is a
+`datetime` that your program works out.
 
 ## What is checked when the class is defined
 
@@ -179,7 +188,8 @@ local time is a `datetime` that your program works out.
 
 - A rule that runs by time without moving the document. Today a
   reminder is a transition back into the same state, as above.
-- Working days and time zones.
+- Working days, and `TODAY()` and `NOW()` by the database's time
+  zone.
 - A move as soon as a condition holds, with no time involved, under a
   name. The owner ruled on 2026-11-13 that every transition has a
   name and an automatic one carries a mark; that is not built yet.

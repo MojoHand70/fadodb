@@ -1,6 +1,6 @@
 # Roadmap
 
-**Current status: Phase 8, the analytical engine, started on 2026-11-25. Phase 7, the browser VM and the reference frontend, was released as v0.7.0 on 2026-11-24.**
+**Current status: Phases 8 and 9, the analytical engine and embedding, are built (2026-11-28) and are released with the next tag. Every budget of Phase 8 holds; one of Phase 5, a read rule that reads the row in an indexed filter, does not, and is open ([docs/perf/v0.8.0.md](docs/perf/v0.8.0.md)). Phase 7, the browser VM and the reference frontend, was released as v0.7.0 on 2026-11-24.**
 The Go API (`fado`) opens a database file, defines schemas, classes and
 explicit tables, and creates, changes, reads and deletes documents as
 commits: assignments and defaults, the auto recalculation, typed history
@@ -140,7 +140,8 @@ with its reason.
 By the owner's rulings of that day a formula sees every document, and
 `QUERY`, which returns lists, is built with the first layout or report
 that needs one; tables stored outside the file come with the analytical
-engine in Phase 8. Phase 5 opened on 2026-11-13 with its design in
+engine in Phase 8. Phase 8 did not build them: the rows of every table
+stay in the database, and the copy holds them too (ADR-0094). Phase 5 opened on 2026-11-13 with its design in
 three records: ADR-0049, who may see, create, change and delete a
 document, with the read rule in every filter; ADR-0050, whether the
 one who acts is a person, an agent or a service, and for whom; and
@@ -381,7 +382,7 @@ records holds, and beside v0.6.0 the same evening a commit is no
 slower in memory and 2 to 3% slower on disk. No starter is built into
 the program (the owner, 2026-11-24): an app comes with a purchase of
 FadoDB, or is installed from the marketplace by exporting it from one
-database and importing it into another, which is built after v0.7.0.
+database and importing it into another, which is planned and not built.
 What the phase leaves for later, by the owner's word of the same day
 ("Can we close v0.7.0 now without" his face, and "don't wait, close
 v0.7.0 now"): its test, in which an agent with only the skills and the
@@ -393,15 +394,15 @@ first of five steps is in the release, comes after it: the second,
 invitations and passkeys on the device in use, is built since, and
 until passwords go a person may still sign in with a password, and an
 administrator or a designer with a code as well; and ADR-0085, a list sent by an action and taken
-from its answer, accepted, is built after the release. Built as they
+from its answer, accepted, is built in Phase 8. Built as they
 propose and still proposed, each the owner's to accept or strike:
 ADR-0079 to ADR-0084 and ADR-0086.
 Three records were accepted by the owner on 2026-11-22. Two are of
 2026-11-20. ADR-0075, the engine makes the
 index of every question a class declares and says which question it
 cannot serve, so that a class of a hundred million documents answers
-a declared question in under a thousandth of a second: nothing of it is
-built yet. ADR-0076, a
+a declared question in under a thousandth of a second: nothing of it was
+built in Phase 7, and Phase 8 built it (below). ADR-0076, a
 value worked out when it is read, `"mode": "live"`, with `QUERY` for
 the list of other documents on a document and `REF` for what a `ref`
 compares with: built are a live variable that reads its own document,
@@ -409,12 +410,12 @@ the caller and the clock, the command `live` that reads it, the check
 of a `ref` when it is set, what points at a class in the answer of
 `get_class`, and the list: a `QUERY` over the documents of a class as
 the whole formula of a live variable, with `THIS.name` and `REF()` in
-its condition, read a page at a time for its reader. Not built yet: a
+its condition, read a page at a time for its reader. Not built in
+Phase 7, and built in Phase 8 (below): a
 `QUERY` over a table, or with counts or sums (a `QUERY` kept in a
 triggered variable is built in Phase 8, and so is a `LOOKUP` in a live variable); `REF` outside the condition
 of a `QUERY` and with a class and an id; the engine's own index on
-every `ref`, which is ADR-0075's, so a list at scale wants
-`"index": true` on its pointer today. ADR-0081, proposed, functions over a
+every `ref`, which is ADR-0075's. ADR-0081, proposed, functions over a
 list, each with its SQL from the start: built over a list that is a
 `QUERY` are `COUNT`, `SUM`, `MIN`, `MAX`, `AVERAGE`, `MEDIAN` and
 `COUNTUNIQUE`, the forms with a condition (`COUNTIF`, `SUMIF`,
@@ -436,8 +437,8 @@ document holds. A command says which version of a document its sender
 saw, the `write` right of a triggered variable
 says who may bring its value again, and what a condition needs from
 outside the document is brought onto it before the condition is asked.
-Nothing of it was built in Phase 7; Phase 8 builds it first, and its
-first step is built: the version a command saw.
+Nothing of it was built in Phase 7; Phase 8 built it first, all four
+steps (below).
 Five more records proposed while the phase ran are built and wait for
 the owner's acceptance, all of them on the tables: ADR-0079, a table
 belongs to an app; ADR-0080, a column added to a table in use;
@@ -476,20 +477,21 @@ seconds, with the variable an index is needed on, and the index for
 the key of a lookup or a list that is no pointer, made when the class
 that asks is defined: with these ADR-0075 is built. Counts, sums and
 grouping in a `QUERY` came with the analytical engine: a total among the columns of a live list gives one line for each group (ADR-0090, proposed). Then the lists in and out of messages and requests, ADR-0085: a list in a message, which becomes the lines of a document; a list in a request, the lines of a document sent out by an action; and a list in an answer, written back into the document. All three are built.
-After these comes the analytical engine itself: DuckDB beside the
-documents, fed from the commits, for the question that reads
-everything; the mining views; a value that follows its source or the
-clock, worked out for many documents in one statement; the rows of
-the tables in the copy, which took the place of tables kept in DuckDB
-or in a database of the customer's own (ADR-0094); and the program
-with DuckDB built for each operating system. How the copy beside the
-documents is fed and asked is ADR-0089, proposed on 2026-11-25 with
-its measurements: over ten million visits of a state, a question the
-store answers in 12 to 26 seconds takes the copy under half a second.
-Its first two steps are built: a program that is given DuckDB keeps
-the copy and feeds it, and answers the flow of a class from it, in
-19 ms among ten million moves where the store takes 18 seconds: the
-copy keeps the moves of the documents ready. The server program is built with DuckDB too.
+After these came the analytical engine itself, and all of it is
+built: DuckDB beside the documents, fed from the commits, for the
+question that reads everything; the mining views, which became the
+spread of `flow` and the commands `throughput` and `paths` (below); a value that follows its table or the clock, which
+the store brings by itself, a commit for each document (below); the
+rows of the tables in the copy, which took the place of tables kept in
+DuckDB or in a database of the customer's own (ADR-0094); and the
+program with DuckDB built for each operating system. How the copy
+beside the documents is fed and asked is ADR-0089, proposed on
+2026-11-25 with its measurements: over ten million visits of a state,
+a question the store answers in 12 to 26 seconds takes the copy under
+half a second. A program that is given DuckDB keeps the copy and
+feeds it, and answers the flow of a class from it, in 19 ms among ten
+million moves where the store takes 18 seconds: the copy keeps the
+moves of the documents ready. The server program is built with DuckDB too.
 Since 2026-11-26 the two programs have the names the owner gave them:
 `fadodb` is the one with DuckDB, and `fadodb-core` the one in pure Go.
 `fadodb` is built and tried on GitHub for Linux and macOS on amd64 and
@@ -561,9 +563,27 @@ formula stay in UTC.
 Two things of the engine come first, by the owner's word of
 2026-11-25: what a class already asks, its lookups and its lists,
 takes milliseconds over a large class; and so does the question of how
-documents moved. The rest of the engine follows them: totals by group
-among the columns of a `QUERY`, a value that follows its source or the
-clock, the rows of the tables in the copy, and a page for analysts.
+documents moved. The rest of the engine followed them, and is built:
+totals by group among the columns of a `QUERY`, a value that follows
+its table or the clock, the rows of the tables in the copy, and a page
+for analysts.
+
+Two more records came with the phase, and are built. A document takes
+comments: words the engine keeps beside it with who wrote them and
+when, which make no version of it (ADR-0098, proposed). And every
+database has the app `System`, the engine's own, whose four tables
+give a formula the apps, classes, users and groups the database holds
+(ADR-0092, proposed).
+
+The phase was built on 2026-11-28, with the measurements of
+[docs/perf/v0.8.0.md](docs/perf/v0.8.0.md): every budget of its
+records holds, and so do those of Phases 2 to 7 on the same build but
+one of Phase 5. A read rule that reads the row costs an indexed filter
+43 to 46% where 15% is allowed, and that is open, for the owner.
+Beside v0.7.0 the same night every commit is 8 to 10% slower in memory
+and 10 to 16% slower on disk, for the indexes the engine keeps by
+itself.
+
 This page is updated when a phase starts and when it ends;
 it never describes a phase as done before its acceptance criteria pass.
 
@@ -579,7 +599,7 @@ Legend: ✅ done · 🚧 in progress · ⬜ not started
 | 5 | Security: the class-level access rules enforced on every path, who may see, create, change and delete a document, with the read rule compiled to a SQL predicate; the kind of actor, a person, an agent or a service, and whom it acts for, on every event, checked against a substitution the database keeps; who may define, operate and query, by four system groups; a content administrator who acts past a rule with a reason; the rules of a table | ✅ |
 | 6 | Server and CLI: the JSON command set over HTTP, one address for each command; users, groups and API keys kept in the database, and the authenticator for a host program that has its own; the stream of changes filtered by the read rule; documents on the wire; the door for agents (MCP); the command-line tool with a check of a class and of an action; the flow of a class in one call; a way in for messages from outside; OpenAPI; `fadodb serve` | ✅ |
 | 7 | Browser VM and reference frontend: the log of reads first; TypeScript VM on the same bytecode shipped as one plain JavaScript file, what a class says to people and its sections, the class bundle, `QUERY` when the first page needs a list of rows (otherwise with the reports of Phase 8), signing in with a password or a company's sign-on, the pages of a face handed out by `fadodb serve` from a folder (a face, which draws a document from its class, lives apart from the engine; chip, card, coins and rating are the face's), the door for agents at the server itself, a small client file beside the VM | ✅ |
-| 8 | Analytical engine: first what ADR-0078, ADR-0076, ADR-0075 and ADR-0085 leave unbuilt after v0.7.0; then the DuckDB projection of document tables and of the tables' rows (in place of the native and attached bindings, ADR-0094), set-wise recompute, mining views, full build per OS; lineage and drill down (ADR-0099) | 🚧 |
+| 8 | Analytical engine: first what ADR-0078, ADR-0076, ADR-0075 and ADR-0085 leave unbuilt after v0.7.0; then the DuckDB projection of document tables and of the tables' rows (in place of the native and attached bindings, ADR-0094), set-wise recompute, mining views, full build per OS; lineage and drill down (ADR-0099) | ✅ built on 2026-11-28; released with the next tag |
 | 9 | Embedding: the library of C, with five functions and the command set in JSON (ADR-0101); Python over HTTP and in the same process, with one set of tests both ways; the library and the Python package in each release; embedding guides for Go, Node, Python and .NET; the program's own actions through the library, and the library with DuckDB (ADR-0102) | ✅ built on 2026-11-28; released with the next tag |
 | 10 | Postgres backend | ⬜ |
 | 11 | Optional AI layer: authoring assistant (the MCP server moved to Phase 6) | ⬜ |

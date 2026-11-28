@@ -125,7 +125,8 @@ ola reads "buy milk", version 1
 - **A new database is not empty.** It has the nine schemas the engine
   brings and one class, `Substitution`, which says who may act for
   whom; see [Let somebody act for a
-  person](guides/acting-for-somebody.md). It has no tables.
+  person](guides/acting-for-somebody.md). It has no tables of its own,
+  and the four [system tables](system-tables.md) of the app `System`.
 - **It reads the definitions into memory**: every class, schema, table
   and action of the file.
 - **It starts the worker**, which runs the actions that commits queued
@@ -265,6 +266,11 @@ db, err := fado.Open("notes.fado", fado.Options{Analytics: analytics.Engine{}})
   and inside one program the engine gives the copy to the first
   opening of the database. A second opening works without a copy, and
   `CopyState` says so.
+- **The engine takes no extension from outside the program.** It uses
+  what the DuckDB it is built with carries, core_functions, icu, json
+  and parquet, and every connection to the copy turns off DuckDB's own
+  fetching of an extension from the network and its loading of one
+  installed on the machine (ADR-0089).
 
 **What the copy answers.** Nothing is written differently for it: the
 engine sends a question to the copy by itself, and neither a designer
@@ -273,9 +279,13 @@ nor a caller chooses.
 | The question | The copy answers it |
 |---|---|
 | the flow of a class, the command [`flow`](commands.md#flow) and the call `Flow` | always |
+| how many documents were made and finished in each period, the command [`throughput`](commands.md#throughput) and the call `Throughput` | always |
+| the paths the documents took, the command [`paths`](commands.md#paths) and the call `Paths` | always |
+| the documents behind a number of these three, their member `documents` and the calls `FlowDocuments`, `ThroughputDocuments` and `PathsDocuments` | always |
 | how many documents a condition takes, the command [`count`](commands.md#count) and the call `Count` | at once when no index narrows it; otherwise when the store has not answered in a moment |
 | a total, or the first document, that a `LOOKUP` in a live variable asks for: `LOOKUP(Invoice, SUM(net), urgent)` | the same |
 | a figure over a list, `SUM(invoices.net)`, `COUNT(invoices)` | the same |
+| a list of totals by group, `QUERY(Invoice, {customer, SUM(net)})`; see [Totals by group](lists.md#totals-by-group) | the same |
 | a page of a list, the command [`query`](commands.md#query) and a live list | at once when the store would read and sort the class for it; otherwise when the store has not found the page in a moment |
 | a total, or the first row, that a `LOOKUP` in a live variable asks of a table: `LOOKUP(Stock, SUM(price), bin = THIS.bin)` | at once when the table is a large one and no index of it finds the rows; otherwise when the store has not answered in a moment |
 | a page of a live list over a table: `QUERY(Stock, {sku, price}, qty > 0, {-price})` | at once when the table is a large one and no index of it holds the order; otherwise when the store has not found the page in a moment |
@@ -401,7 +411,9 @@ no index, a quantity and a price, three runs of each program:
 
 **What stays with the store:** everything inside a commit, so a value
 that a triggered variable keeps is worked out by the store; a row of
-a table found by its key; and the command `table_rows`.
+a table found by its key; the command `table_rows`; and where a value
+comes from, [`lineage`](commands.md#lineage), and the history of a
+table's rows, [`row_history`](commands.md#row_history).
 
 The copy is the engine's own. An analyst who wants DuckDB over a
 database opens the database itself, from a program of their own; see
@@ -467,7 +479,7 @@ makes what is missing.
 
 - A hold for every program. One that opens a database without `Alone`
   holds nothing, so two such programs on one file are not kept apart.
-- A way to bring a file of an earlier release forward.
+- A way to bring a file of a release before v0.7.0 forward.
 - A backup of an open database that the engine makes itself.
   [Running it](running-it.md#a-database-that-does-not-stop) says what
   can be done today.

@@ -357,10 +357,13 @@ strike.
   alone. With the events, the engine makes the copy of that database
   in 84 seconds, in ten pieces, and it is 0.54 GB, a fourteenth of the
   database. Found again at the next opening, it is checked in 21 ms.
-- **Not built:** the middle wait and the slow tenth, the paths
+- **Not built then:** the middle wait and the slow tenth, the paths
   documents took and the documents made and finished in each period,
   which the roadmap calls the mining views. Each is a question the
-  copy can answer when a face asks for it.
+  copy can answer when a face asks for it. All three were built in
+  Phase 8, each as an answer of the engine and no view: the spread of
+  the stays in `flow` (ADR-0095), the command `throughput` (ADR-0096)
+  and the command `paths` (ADR-0097).
 
 ## Settled while building the program with the engine
 

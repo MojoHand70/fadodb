@@ -364,9 +364,12 @@ the port of the server, and needs no program in the image.
 An image is named with its version, and a newer one is put in its
 place by Tomek: he stops the server, makes a backup, and starts the
 container from the newer image. Before version 1.0 a release may
-change how a database is laid out, and there is no way yet to bring a
-database forward: [Running it](running-it.md#another-release) says
-what to keep with each backup.
+change how a database is laid out. A database that v0.7.0 or a later
+release made is brought forward when the newer server opens it, and
+the older one no longer opens it afterwards, so the backup is the way
+back; one of a release before v0.7.0 is refused:
+[Running it](running-it.md#another-release) says what to keep with
+each backup.
 
 ## The small image
 

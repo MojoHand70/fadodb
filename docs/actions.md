@@ -7,11 +7,18 @@ system that speaks HTTP, how to use it in a rule, and how to keep its
 answer. The design is in
 [ADR-0045](adr/0045-actions-are-an-extension-point.md).
 
-**Status on 2026-11-12.** Everything on this page shipped with v0.4.0.
-FadoDB carries no ready-made definitions for
-particular services: by the owner's ruling they come with real needs,
-and until then an integration is a definition you write, which takes
-about twenty lines. A format for publishing several definitions together
+**Status on 2026-11-28.** Everything on this page shipped with v0.4.0,
+but for what `fadodb serve` decides and
+[checking an action from the command line](#checking-an-action-from-the-command-line),
+which shipped with v0.6.0, and for
+[a list in a request](#a-list-in-a-request),
+[a list in an answer](#a-list-in-an-answer) and
+[a rule that sends its lines itself](#a-rule-that-sends-its-lines-itself),
+which shipped with Phase 8
+([ADR-0085](adr/0085-lists-in-and-out.md)). FadoDB carries no
+ready-made definitions for particular services: by the owner's ruling
+they come with real needs, and until then an integration is a
+definition you write, which takes about twenty lines. A format for publishing several definitions together
 is planned.
 
 ## Three ways to add an action

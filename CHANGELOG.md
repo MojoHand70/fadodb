@@ -6,6 +6,12 @@ All notable changes to FadoDB are recorded here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- `modernc.org/sqlite` 1.63.0 in place of 1.62.0, in the core module,
+  `analytics/` and `cabi/` alike, and `THIRD_PARTY_NOTICES.md` written
+  again for it (#264). The SQLite it carries is 3.54.1, as before.
+
 ## [0.9.0] - 2026-11-28
 
 Phase 9, embedding, started on 2026-11-27, and its steps were all
